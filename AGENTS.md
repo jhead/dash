@@ -4,6 +4,33 @@ This project uses a file-backed task manager for coordinating work across agents
 sessions. **All task operations go through `./task`.** Do not create, edit, or delete
 task files under `.tasks/` by hand.
 
+Agents may **create, update, and delete tasks at any time** as work evolves. The task
+list is not fixed — treat it as a living backlog you maintain while working.
+
+## Task scope
+
+Tasks are **stories**: meaningful units of deliverable work, not checklist items.
+
+| Good (story-sized)              | Too small (do not create)     |
+|---------------------------------|-------------------------------|
+| Stage MVP                       | Run tests                     |
+| Timeline scrubbing & playback   | Fix typo in comment           |
+| Pencil tool (Flash 8 parity)    | Add import for utils          |
+| FLA project open/save           | Update README                 |
+
+A story should represent hours to days of focused work — a feature slice, subsystem, or
+vertical milestone — not a single commit or routine step. Testing, refactors, and small
+fixes belong *inside* the story you already hold; they do not get their own tasks.
+
+**Breaking down work:** While implementing a story, you may discover sub-stories worth
+tracking separately (e.g. holding "Stage MVP" and creating "Stage zoom & pan" when scope
+grows). Create sibling or follow-up tasks with `./task create`, link them in the
+description, and leave them `open` for other agents or a later session. You do not need
+permission — use your judgment.
+
+Conversely, merge or delete tasks that turned out to be duplicates or too granular:
+`./task update` to refine, `./task delete` to remove.
+
 ## Before you start
 
 1. Read `docs/README.md` and the relevant domain doc for your work.
@@ -22,7 +49,7 @@ task, and **must** release the lock when finished.
 # 2. Confirm lock and read details
 ./task show <task-id>
 
-# 3. Do the work ...
+# 3. Do the work (create/update/delete sibling tasks as scope becomes clear) ...
 
 # 4. Mark complete and release
 ./task update <task-id> --status done
@@ -82,9 +109,9 @@ Task JSON shape:
 
 ```json
 {
-  "id": "implement-timeline-a1b2",
-  "title": "Implement timeline scrubbing",
-  "description": "See docs/02-timeline-and-animation.md",
+  "id": "stage-mvp-a1b2",
+  "title": "Stage MVP",
+  "description": "Minimal stage: canvas, zoom, pan. See docs/01-documents-stage-scenes.md",
   "status": "open",
   "created_at": "2026-06-09T12:00:00Z",
   "updated_at": "2026-06-09T12:00:00Z"
@@ -95,7 +122,7 @@ Lock metadata (written by `acquire`, not edited manually):
 
 ```json
 {
-  "task_id": "implement-timeline-a1b2",
+  "task_id": "stage-mvp-a1b2",
   "holder": "cursor-my-machine",
   "pid": 12345,
   "hostname": "my-machine",
@@ -105,17 +132,45 @@ Lock metadata (written by `acquire`, not edited manually):
 }
 ```
 
-## Creating tasks
+## Managing tasks
 
-When breaking down new work, create tasks via the CLI:
+Use the CLI freely throughout a session — not only at the start.
+
+**Create** story-sized tasks when you identify new work:
 
 ```bash
 ./task create \
-  --title "Add pencil tool" \
-  --description "Implement pencil per docs/04-toolbox.md § Pencil"
+  --title "Stage MVP" \
+  --description "Minimal stage: canvas, zoom, pan, pixel grid. See docs/01-documents-stage-scenes.md"
 ```
 
-Commit new task JSON files so other agents can pick them up.
+**Update** when scope, status, or description changes:
+
+```bash
+./task update stage-mvp-a1b2 --description "Add pixel-snapping; see docs/01 § Stage properties"
+./task update stage-mvp-a1b2 --status cancelled   # if superseded
+```
+
+**Delete** tasks that are duplicates, obsolete, or mistakenly too small:
+
+```bash
+./task delete run-tests-x9f2              # remove mistaken micro-task
+./task delete obsolete-id --force         # --force only when the task is locked
+```
+
+**Example — breaking down mid-story:**
+
+```bash
+# You hold the lock on "Stage MVP" and realize zoom/pan is a separate chunk of work.
+./task create \
+  --title "Stage zoom and pan" \
+  --description "Split from stage-mvp-a1b2. See docs/01-documents-stage-scenes.md"
+
+# Keep working the original story, or release and pick up the new one.
+./task update stage-mvp-a1b2 --description "Canvas + grid only; zoom/pan → stage-zoom-pan-c4d1"
+```
+
+Commit new or updated task JSON files so other agents see the current backlog.
 
 ## Project context
 
