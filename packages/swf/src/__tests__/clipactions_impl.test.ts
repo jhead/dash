@@ -7,13 +7,14 @@
  * SWF spec (Flash 8):
  *   HasClipActions flag = bit 7 of PlaceObject2 flags byte = 0x80
  *
- * CLIPACTIONRECORD layout (SWF ≥ 6):
- *   ClipEventFlags   UI32
- *   ActionRecordSize UI32
- *   ActionBytes      UI8[] (compileAS2 output, includes 0x00 ActionEnd)
- *
- * AllEventFlags    UI32  (union of all ClipEventFlags, written before records)
- * Terminator       UI32 = 0x00000000 (written after last record)
+ * ClipActions block layout (SWF ≥ 6), immediately after MATRIX (and Name if present):
+ *   Reserved      UI16 = 0x0000 (must be zero; Ruffle reads this before AllEventFlags)
+ *   AllEventFlags UI32 (union of all ClipEventFlags, written before records)
+ *   for each CLIPACTIONRECORD:
+ *     ClipEventFlags   UI32
+ *     ActionRecordSize UI32
+ *     ActionBytes      UI8[] (compileAS2 output, includes 0x00 ActionEnd)
+ *   Terminator    UI32 = 0x00000000 (written after last record)
  *
  * ClipEventFlags (SWF spec 8.4.6.2):
  *   load       = 0x00000001
@@ -44,6 +45,10 @@ import type {
 // Helpers: read little-endian integers from a Uint8Array
 // ---------------------------------------------------------------------------
 
+function readUI16LE(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset]! | (bytes[offset + 1]! << 8)) & 0xffff;
+}
+
 function readUI32LE(bytes: Uint8Array, offset: number): number {
   return (
     bytes[offset]! |
@@ -51,6 +56,20 @@ function readUI32LE(bytes: Uint8Array, offset: number): number {
     (bytes[offset + 2]! << 16) |
     (bytes[offset + 3]! << 24)
   ) >>> 0;
+}
+
+/**
+ * Locate the offset of the clip-actions block (Reserved UI16) within a
+ * PlaceObject2 body. Scans from offset 5 (after flags+depth+charId) looking
+ * for two bytes of 0x00 followed by a UI32 equal to `expectedAllEventFlags`.
+ */
+function findClipActionsBlockOffset(body: Uint8Array, expectedAllEventFlags: number): number {
+  for (let i = 5; i <= body.length - 6; i++) {
+    if (readUI16LE(body, i) === 0x0000 && readUI32LE(body, i + 2) === expectedAllEventFlags) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +324,24 @@ describe("encodePlaceObject2WithClipActions — unit", () => {
     // Last 4 bytes must be the terminator = 0x00000000
     const last4 = readUI32LE(body, body.length - 4);
     expect(last4).toBe(0x00000000);
+  });
+
+  it("clip-actions block starts with reserved UI16=0 before AllEventFlags (Ruffle read_clip_actions expects this)", () => {
+    // Ruffle swf/src/read.rs read_clip_actions() calls read_u16() before read_clip_event_flags().
+    // Verify the exact layout: Reserved(UI16=0) + AllEventFlags(UI32) is present.
+    const clipActions: ClipAction[] = [
+      { event: "mouseDown", script: "gotoAndStop(2);" },
+    ];
+    const body = encodePlaceObject2WithClipActions(1, 1, 0, 0, clipActions);
+    // mouseDown = 0x00000010
+    const blockOffset = findClipActionsBlockOffset(body, 0x00000010);
+    expect(blockOffset).toBeGreaterThan(4);
+    // Confirm reserved UI16 at blockOffset is exactly 0x0000
+    expect(readUI16LE(body, blockOffset)).toBe(0x0000);
+    // Confirm AllEventFlags UI32 at blockOffset+2 is mouseDown bit
+    expect(readUI32LE(body, blockOffset + 2)).toBe(0x00000010);
+    // Confirm first ClipEventFlags record at blockOffset+6 is also mouseDown bit
+    expect(readUI32LE(body, blockOffset + 6)).toBe(0x00000010);
   });
 
   it("body is longer than a plain PlaceObject2 (clip action payload present)", () => {

@@ -1158,6 +1158,7 @@ const CLIP_EVENT_FLAGS: Record<ClipAction['event'], number> = {
  *   charId    UI16
  *   MATRIX    (bit-packed)
  *   [Name     null-terminated string, only when instanceName given]
+ *   Reserved  UI16 = 0 (must be 0, read by Ruffle before AllEventFlags)
  *   AllEventFlags  UI32 — union of all ClipEventFlags in the record set
  *   for each ClipAction:
  *     ClipEventFlags  UI32
@@ -1251,6 +1252,9 @@ export function encodePlaceObject2WithClipActions(
     const bytecode = compileAS2(action.script);
     records.push({ flags: eventFlag, bytecode });
   }
+
+  // Reserved UI16 = 0 (required by SWF spec before AllEventFlags; Ruffle reads this)
+  bw.writeUI16LE(0);
 
   // AllEventFlags: UI32 (union of all event flags in this record set)
   bw.writeUI32LE(allEventFlags);
