@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getTransformedBounds, getUnionBounds } from "../bounds.js";
+import { getTransformedBounds, getUnionBounds, getBoundingBox, getSelectionBounds, objectsOverlap, objectContainsPoint } from "../bounds.js";
 import type { DisplayObject } from "../types.js";
 
 describe("getTransformedBounds", () => {
@@ -98,5 +98,136 @@ describe("getUnionBounds", () => {
       x: 100, y: 100, width: 50, height: 50 } as DisplayObject;
     const u = getUnionBounds([a, b]);
     expect(u).toEqual({ x: 0, y: 0, width: 150, height: 150 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getBoundingBox
+// ---------------------------------------------------------------------------
+
+function makeBitmap(x: number, y: number, w: number, h: number): DisplayObject {
+  return { type: "bitmap", id: "1", libraryItemId: "bmp1", x, y, width: w, height: h } as DisplayObject;
+}
+
+describe("getBoundingBox", () => {
+  it("returns correct x/y/width/height for a simple object", () => {
+    const obj = makeBitmap(10, 20, 100, 50);
+    expect(getBoundingBox(obj)).toEqual({ x: 10, y: 20, width: 100, height: 50 });
+  });
+
+  it("returns zeros for object with no positional properties", () => {
+    const obj = { type: "shape", id: "s1", shape: { id: "s1", paths: [] } } as DisplayObject;
+    expect(getBoundingBox(obj)).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getSelectionBounds
+// ---------------------------------------------------------------------------
+
+describe("getSelectionBounds", () => {
+  it("returns null for empty array", () => {
+    expect(getSelectionBounds([])).toBeNull();
+  });
+
+  it("single object returns its own bounds", () => {
+    const obj = makeBitmap(5, 10, 60, 30);
+    expect(getSelectionBounds([obj])).toEqual({ x: 5, y: 10, width: 60, height: 30 });
+  });
+
+  it("two objects side by side return union", () => {
+    const a = makeBitmap(0, 0, 50, 50);
+    const b = makeBitmap(100, 0, 50, 50);
+    expect(getSelectionBounds([a, b])).toEqual({ x: 0, y: 0, width: 150, height: 50 });
+  });
+
+  it("two objects stacked vertically return union", () => {
+    const a = makeBitmap(0, 0, 100, 40);
+    const b = makeBitmap(0, 60, 100, 40);
+    expect(getSelectionBounds([a, b])).toEqual({ x: 0, y: 0, width: 100, height: 100 });
+  });
+
+  it("partially overlapping objects return tight union", () => {
+    const a = makeBitmap(0, 0, 80, 80);
+    const b = makeBitmap(40, 40, 80, 80);
+    expect(getSelectionBounds([a, b])).toEqual({ x: 0, y: 0, width: 120, height: 120 });
+  });
+
+  it("negative coordinates are handled correctly", () => {
+    const a = makeBitmap(-50, -50, 40, 40);
+    const b = makeBitmap(10, 10, 40, 40);
+    expect(getSelectionBounds([a, b])).toEqual({ x: -50, y: -50, width: 100, height: 100 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// objectsOverlap
+// ---------------------------------------------------------------------------
+
+describe("objectsOverlap", () => {
+  it("clearly overlapping rectangles return true", () => {
+    const a = makeBitmap(0, 0, 100, 100);
+    const b = makeBitmap(50, 50, 100, 100);
+    expect(objectsOverlap(a, b)).toBe(true);
+  });
+
+  it("non-overlapping rectangles return false", () => {
+    const a = makeBitmap(0, 0, 50, 50);
+    const b = makeBitmap(100, 100, 50, 50);
+    expect(objectsOverlap(a, b)).toBe(false);
+  });
+
+  it("rectangles touching at an edge return false (exclusive boundary)", () => {
+    const a = makeBitmap(0, 0, 50, 50);
+    const b = makeBitmap(50, 0, 50, 50);
+    expect(objectsOverlap(a, b)).toBe(false);
+  });
+
+  it("one rectangle fully inside another returns true", () => {
+    const outer = makeBitmap(0, 0, 200, 200);
+    const inner = makeBitmap(50, 50, 50, 50);
+    expect(objectsOverlap(outer, inner)).toBe(true);
+  });
+
+  it("symmetry: overlap(a,b) === overlap(b,a)", () => {
+    const a = makeBitmap(0, 0, 80, 80);
+    const b = makeBitmap(60, 60, 80, 80);
+    expect(objectsOverlap(a, b)).toBe(objectsOverlap(b, a));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// objectContainsPoint
+// ---------------------------------------------------------------------------
+
+describe("objectContainsPoint", () => {
+  it("point inside returns true", () => {
+    const obj = makeBitmap(0, 0, 100, 100);
+    expect(objectContainsPoint(obj, 50, 50)).toBe(true);
+  });
+
+  it("point outside returns false", () => {
+    const obj = makeBitmap(0, 0, 100, 100);
+    expect(objectContainsPoint(obj, 150, 50)).toBe(false);
+  });
+
+  it("point on top-left corner (boundary) returns true", () => {
+    const obj = makeBitmap(10, 20, 100, 50);
+    expect(objectContainsPoint(obj, 10, 20)).toBe(true);
+  });
+
+  it("point on bottom-right corner (boundary) returns true", () => {
+    const obj = makeBitmap(10, 20, 100, 50);
+    expect(objectContainsPoint(obj, 110, 70)).toBe(true);
+  });
+
+  it("point just outside right edge returns false", () => {
+    const obj = makeBitmap(0, 0, 100, 100);
+    expect(objectContainsPoint(obj, 101, 50)).toBe(false);
+  });
+
+  it("point just above top edge returns false", () => {
+    const obj = makeBitmap(0, 10, 100, 100);
+    expect(objectContainsPoint(obj, 50, 9)).toBe(false);
   });
 });

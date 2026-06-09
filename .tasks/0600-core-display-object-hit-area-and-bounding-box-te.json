@@ -1,0 +1,8 @@
+{
+  "id": "0600-core-display-object-hit-area-and-bounding-box-te",
+  "title": "Core display object hit area and bounding box tests",
+  "description": "Tests for display object geometry: getBoundingBox(obj), getSelectionBounds(objects[]), objectsOverlap(a, b), objectContainsPoint(obj, x, y). For SymbolInstance use x/y from model. Multi-select bounding box union.",
+  "status": "done",
+  "created_at": "2026-06-09T22:25:08Z",
+  "updated_at": "2026-06-09T22:29:01Z"
+}

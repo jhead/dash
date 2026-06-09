@@ -78,8 +78,9 @@ export { hexToColor, createRectShape, createOvalShape, createLineShape, createPo
 export { simplifyPath, smoothPath, createSimplifiedPencilShape } from "./simplify.js";
 
 // Snap utilities
-export type { SnapResult, SnapType, ObjectBounds, SnapConfig } from "./snap.js";
+export type { SnapResult, SnapType, ObjectBounds, SnapConfig, SnapSettings } from "./snap.js";
 export { snapPoint, snapToGrid, snapToPixels, snapToGuides, snapToObjects as snapPointToObjects, snapDistance } from "./snap.js";
+export { snapScalarToGrid, snapScalarToPixel, snapScalarToGuide, snapScalarX, snapScalarY } from "./snap.js";
 
 // Document-aware snap-to-objects helper
 export type { ObjectSnapResult } from "./snapObjects.js";
@@ -123,7 +124,7 @@ export { copyDisplayObjects, pasteDisplayObjects, cutDisplayObjects, deleteDispl
 export { mergeShapes as mergeShapesInDoc, breakApart, groupObjects, ungroupObjects } from "./shapeOps.js";
 
 // Bounding box utilities
-export { getTransformedBounds, getUnionBounds, type Bounds } from "./bounds.js";
+export { getTransformedBounds, getUnionBounds, getBoundingBox, getSelectionBounds, objectsOverlap, objectContainsPoint, type Bounds } from "./bounds.js";
 
 // Layer management operations (document-level, operate on FlashDocument)
 export {
