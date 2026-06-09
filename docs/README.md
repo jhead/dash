@@ -48,3 +48,4 @@ Start with `00-overview-and-architecture.md`, then read by domain.
 | 15 | [File Formats: FLA & SWF](./15-file-formats-fla-swf.md) | Project + output binary formats |
 | 16 | [Player Runtime](./16-player-runtime.md) | Display list, playback, Ruffle |
 | 17 | [Advanced & Specialized](./17-advanced-specialized.md) | Accessibility, screens, data, printing |
+| 18 | [Verification & Agent Automation](./18-verification-and-automation.md) | E2E test harness, SWF oracles, automation bridge, JSFL |
