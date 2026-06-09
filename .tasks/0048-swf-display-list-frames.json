@@ -1,0 +1,8 @@
+{
+  "id": "0048-swf-display-list-frames",
+  "title": "SWF display-list semantics: frame spans, Move flag, RemoveObject2, sprite defs",
+  "description": "Multi-frame movies compile wrong (packages/swf/src/compile.ts:196-292, sprite.ts:79-132): (1) Frame count uses layer.frames.length on a sparse keyframe array \u2014 must use max index+1 (core getLayerFrameCount), so keyframes at 0 and 9 publish as a 2-frame movie. (2) Every frame re-encodes DefineShape4 + re-places with Move=0 at depths restarting from 1 \u2014 invalid at occupied depths, O(frames x objects) bloat. Define each character once; place once; use PlaceFlagMove for updates; emit RemoveObject2 (tags.ts:12, currently unused) when objects leave. (3) DefineSprite bodies contain DefineShape4/DefineEditText \u2014 spec forbids definition tags inside sprites; hoist to top level before the sprite tag (sprite.ts:100-114). (4) Sprites emitted in library order can reference sibling sprites defined later \u2014 order definitions topologically. Blocks any real animation playback. See docs/15, docs/16.",
+  "status": "open",
+  "created_at": "2026-06-09T18:05:10Z",
+  "updated_at": "2026-06-09T18:05:10Z"
+}

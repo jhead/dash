@@ -1,0 +1,8 @@
+{
+  "id": "0064-stage-chrome-bugfixes",
+  "title": "Stage view bug fixes: wheel-zoom pan reset, ruler offset, stroke-none",
+  "description": "Bundle of verified stage/chrome bugs: (1) Wheel zoom resets vertical pan \u2014 onPanChange(newPanX, 0) hardcodes y=0 (StageArea.tsx:570-590); Shell stores panY=0 and the sync effect clobbers the correct internal value, so the stage jumps vertically on every wheel zoom while panned. Also onZoomChange/onPanChange are called INSIDE setState updater functions (StageArea.tsx:514-535 and zoom tool) \u2014 impure updaters double-fire under StrictMode; move them out. (2) Rulers assume the work area starts after the ruler but StageArea centers in the full container \u2014 constant 8px (rulerSize/2) error in tick labels and guide drops (Rulers.tsx:64,232-247,376-401). (3) Stroke None from the Color panel encodes as strokeColor #000000 + strokeAlpha 0, but shape creation ignores strokeAlpha (Shell.tsx:340-381) \u2014 no-stroke is impossible and strokes are always opaque; same issue in the ink-bottle handler (StageArea.tsx:658-665). See docs/01, docs/04.",
+  "status": "open",
+  "created_at": "2026-06-09T18:07:11Z",
+  "updated_at": "2026-06-09T18:07:11Z"
+}

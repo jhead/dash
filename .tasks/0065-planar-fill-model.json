@@ -1,0 +1,8 @@
+{
+  "id": "0065-planar-fill-model",
+  "title": "ARCH: per-edge fill0/fill1 planar shape representation",
+  "description": "Architectural flag \u2014 decide before more systems calcify on the current model. ShapePath holds ONE fill per closed contour (engine/types.ts:179-185), but Flash shapes and SWF shape records attach fills to BOTH sides of each edge (fill0/fill1); docs/03 requires a planar-map boolean engine with byte-faithful merge outcomes. The current representation cannot express two fills sharing an edge \u2014 the result of any real merge-drawing cut \u2014 and SWF export of multi-contour shapes already ignores FillStyle1/winding (shapes.ts:161,186-188, leaks noted in 0047). Migrating later rewrites renderer, tween morpher, merge engine, FLA schema, and SWF encoder simultaneously; cost grows with every feature built on the single-fill model. Scope this story to: design the per-edge representation, migration plan, and a decision on when to land it (post-MVP is acceptable; undocumented drift is not). See docs/03-drawing-vector-graphics.md.",
+  "status": "open",
+  "created_at": "2026-06-09T18:07:11Z",
+  "updated_at": "2026-06-09T18:07:11Z"
+}
