@@ -74,6 +74,15 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   `docProperties.backgroundColor` before encoding to PNG. See `Shell.tsx
   screenshotStage()`.
 
+### Verification
+
+- **Byte-presence unit tests are not runtime proof.** Task 0663 emitted plausible-looking
+  CLIPACTIONS (HasClipActions flag, AllEventFlags) and all unit tests passed, yet Ruffle
+  did not dispatch `onClipEvent(mouseDown)` at runtime (interactivity e2e pixelDiff = 0).
+  For any interaction/event/script feature, the Ruffle-based e2e oracles
+  (`interactivity.spec.ts`, visual-oracle) are the acceptance truth; unit tests on
+  encoded bytes are necessary but never sufficient.
+
 ### SWF encoding
 
 - **LINESTYLE2 byte order**: `EndCap` bits and miter limit must be written in the exact
