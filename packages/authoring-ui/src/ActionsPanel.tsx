@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { ClipAction, SymbolInstance } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // AS2 keyword list for lightweight syntax highlighting
@@ -42,41 +43,44 @@ function highlightLine(line: string, key: number): React.ReactNode {
   if (last < line.length) {
     parts.push(line.slice(last));
   }
-  return <span key={key}>{parts.length === 0 ? " " : parts}</span>;
+  return <span key={key}>{parts.length === 0 ? " " : parts}</span>;
 }
 
 // ---------------------------------------------------------------------------
-// Props
+// Clip event types (ordered as in Flash 8 Actions panel)
 // ---------------------------------------------------------------------------
 
-export interface ActionsPanelProps {
+const CLIP_EVENT_TYPES: Array<{ event: ClipAction["event"]; label: string }> = [
+  { event: "load",       label: "load" },
+  { event: "enterFrame", label: "enterFrame" },
+  { event: "unload",     label: "unload" },
+  { event: "mouseMove",  label: "mouseMove" },
+  { event: "mouseDown",  label: "mouseDown" },
+  { event: "mouseUp",    label: "mouseUp" },
+  { event: "keyDown",    label: "keyDown" },
+  { event: "keyUp",      label: "keyUp" },
+  { event: "data",       label: "data" },
+];
+
+// ---------------------------------------------------------------------------
+// ScriptEditor — reusable inline editor used by both frame and clip modes
+// ---------------------------------------------------------------------------
+
+interface ScriptEditorProps {
   script: string;
-  frameIndex: number;
-  layerName: string;
   onScriptChange: (script: string) => void;
-  isVisible: boolean;
-  onClose: () => void;
+  onCursorChange?: (line: number, col: number) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-export function ActionsPanel({
+function ScriptEditor({
   script,
-  frameIndex,
-  layerName,
   onScriptChange,
-  isVisible,
-  onClose,
-}: ActionsPanelProps): React.ReactElement | null {
+  onCursorChange,
+}: ScriptEditorProps): React.ReactElement {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [cursorLine, setCursorLine] = useState(1);
-  const [cursorCol, setCursorCol] = useState(1);
 
-  // Sync textarea scroll → line number div + overlay
   const handleScroll = useCallback(() => {
     const ta = textareaRef.current;
     const ln = lineNumRef.current;
@@ -85,15 +89,13 @@ export function ActionsPanel({
     if (ta && ov) ov.scrollTop = ta.scrollTop;
   }, []);
 
-  // Update cursor position indicator
   const updateCursor = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
     const before = ta.value.slice(0, ta.selectionStart);
     const lines = before.split("\n");
-    setCursorLine(lines.length);
-    setCursorCol((lines[lines.length - 1]?.length ?? 0) + 1);
-  }, []);
+    onCursorChange?.(lines.length, (lines[lines.length - 1]?.length ?? 0) + 1);
+  }, [onCursorChange]);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -103,7 +105,6 @@ export function ActionsPanel({
     [onScriptChange, updateCursor]
   );
 
-  // Tab key → insert 2 spaces
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Tab") {
@@ -111,10 +112,8 @@ export function ActionsPanel({
         const ta = e.currentTarget;
         const start = ta.selectionStart;
         const end = ta.selectionEnd;
-        const newVal =
-          ta.value.slice(0, start) + "  " + ta.value.slice(end);
+        const newVal = ta.value.slice(0, start) + "  " + ta.value.slice(end);
         onScriptChange(newVal);
-        // Restore cursor position after state update
         requestAnimationFrame(() => {
           if (textareaRef.current) {
             textareaRef.current.selectionStart = start + 2;
@@ -126,84 +125,8 @@ export function ActionsPanel({
     [onScriptChange]
   );
 
-  // Focus textarea when panel opens
-  useEffect(() => {
-    if (isVisible) {
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    }
-  }, [isVisible]);
-
-  if (!isVisible) return null;
-
   const lines = script.split("\n");
   const lineCount = lines.length;
-
-  // ---------------------------------------------------------------------------
-  // Styles
-  // ---------------------------------------------------------------------------
-
-  const panelStyle: React.CSSProperties = {
-    position: "fixed",
-    bottom: "40px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    width: "680px",
-    height: "320px",
-    background: "#1e1e1e",
-    border: "1px solid #444",
-    boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
-    display: "flex",
-    flexDirection: "column",
-    zIndex: 2000,
-    fontFamily: "'Consolas', 'Courier New', monospace",
-    fontSize: "13px",
-    color: "#d4d4d4",
-    borderRadius: "4px",
-    overflow: "hidden",
-  };
-
-  const titleBarStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    height: "24px",
-    background: "#2d2d2d",
-    borderBottom: "1px solid #444",
-    padding: "0 8px",
-    flexShrink: 0,
-    fontSize: "11px",
-    color: "#ccc",
-    userSelect: "none",
-  };
-
-  const toolbarStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    height: "26px",
-    background: "#252526",
-    borderBottom: "1px solid #333",
-    padding: "0 4px",
-    gap: "2px",
-    flexShrink: 0,
-  };
-
-  const toolBtnStyle: React.CSSProperties = {
-    background: "transparent",
-    border: "1px solid transparent",
-    borderRadius: "3px",
-    color: "#ccc",
-    cursor: "pointer",
-    fontSize: "12px",
-    padding: "2px 6px",
-    lineHeight: "1",
-  };
-
-  const editorAreaStyle: React.CSSProperties = {
-    display: "flex",
-    flex: 1,
-    overflow: "hidden",
-    position: "relative",
-  };
 
   const lineNumStyle: React.CSSProperties = {
     width: "40px",
@@ -261,6 +184,178 @@ export function ActionsPanel({
     color: "#d4d4d4",
   };
 
+  return (
+    <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
+      <div ref={lineNumRef} style={lineNumStyle}>
+        {Array.from({ length: lineCount }, (_, i) => (
+          <div key={i} style={{ lineHeight: "1.5" }}>
+            {i + 1}
+          </div>
+        ))}
+      </div>
+      <div ref={overlayRef} style={overlayStyle}>
+        {lines.map((line, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && "\n"}
+            {highlightLine(line, i)}
+          </React.Fragment>
+        ))}
+      </div>
+      <textarea
+        ref={textareaRef}
+        style={textareaStyle}
+        value={script}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onScroll={handleScroll}
+        onClick={updateCursor}
+        onKeyUp={updateCursor}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
+export interface ActionsPanelProps {
+  script: string;
+  frameIndex: number;
+  layerName: string;
+  onScriptChange: (script: string) => void;
+  isVisible: boolean;
+  onClose: () => void;
+  /** When set to a movieclip SymbolInstance, enables "Actions - Movie Clip" mode. */
+  selectedInstance?: SymbolInstance | null;
+  /** Called when clipActions on the selected movieclip instance should be updated. */
+  onClipActionsChange?: (clipActions: readonly ClipAction[]) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export function ActionsPanel({
+  script,
+  frameIndex,
+  layerName,
+  onScriptChange,
+  isVisible,
+  onClose,
+  selectedInstance,
+  onClipActionsChange,
+}: ActionsPanelProps): React.ReactElement | null {
+  const [cursorLine, setCursorLine] = useState(1);
+  const [cursorCol, setCursorCol] = useState(1);
+  // Which onClipEvent handler is currently selected in Movie Clip mode
+  const [selectedClipEvent, setSelectedClipEvent] = useState<ClipAction["event"]>("enterFrame");
+
+  // Determine if we're in Movie Clip mode
+  // (only when a movieclip instance is selected AND clipActions callbacks are wired)
+  const isMovieClipMode = !!(selectedInstance && onClipActionsChange);
+
+  // Focus first textarea when panel opens
+  const firstTextareaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isVisible) {
+      requestAnimationFrame(() => {
+        const ta = firstTextareaRef.current?.querySelector("textarea");
+        ta?.focus();
+      });
+    }
+  }, [isVisible]);
+
+  if (!isVisible) return null;
+
+  // ---------------------------------------------------------------------------
+  // Clip actions helpers
+  // ---------------------------------------------------------------------------
+
+  const clipActions = selectedInstance?.clipActions ?? [];
+
+  const getClipActionScript = (event: ClipAction["event"]): string => {
+    return clipActions.find((a) => a.event === event)?.script ?? "";
+  };
+
+  const handleClipActionScriptChange = (event: ClipAction["event"], newScript: string): void => {
+    if (!onClipActionsChange) return;
+    const filtered = clipActions.filter((a) => a.event !== event);
+    if (newScript.trim().length > 0) {
+      // Preserve order: insert at the canonical position
+      const idx = CLIP_EVENT_TYPES.findIndex((t) => t.event === event);
+      const before = filtered.filter((a) => CLIP_EVENT_TYPES.findIndex((t) => t.event === a.event) < idx);
+      const after = filtered.filter((a) => CLIP_EVENT_TYPES.findIndex((t) => t.event === a.event) >= idx);
+      onClipActionsChange([...before, { event, script: newScript }, ...after]);
+    } else {
+      // Remove empty handler
+      onClipActionsChange(filtered);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Styles
+  // ---------------------------------------------------------------------------
+
+  const panelStyle: React.CSSProperties = {
+    position: "fixed",
+    bottom: "40px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    width: isMovieClipMode ? "760px" : "680px",
+    height: "320px",
+    background: "#1e1e1e",
+    border: "1px solid #444",
+    boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
+    display: "flex",
+    flexDirection: "column",
+    zIndex: 2000,
+    fontFamily: "'Consolas', 'Courier New', monospace",
+    fontSize: "13px",
+    color: "#d4d4d4",
+    borderRadius: "4px",
+    overflow: "hidden",
+  };
+
+  const titleBarStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    height: "24px",
+    background: "#2d2d2d",
+    borderBottom: "1px solid #444",
+    padding: "0 8px",
+    flexShrink: 0,
+    fontSize: "11px",
+    color: "#ccc",
+    userSelect: "none",
+  };
+
+  const toolbarStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    height: "26px",
+    background: "#252526",
+    borderBottom: "1px solid #333",
+    padding: "0 4px",
+    gap: "2px",
+    flexShrink: 0,
+  };
+
+  const toolBtnStyle: React.CSSProperties = {
+    background: "transparent",
+    border: "1px solid transparent",
+    borderRadius: "3px",
+    color: "#ccc",
+    cursor: "pointer",
+    fontSize: "12px",
+    padding: "2px 6px",
+    lineHeight: "1",
+  };
+
   const statusBarStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
@@ -272,6 +367,111 @@ export function ActionsPanel({
     color: "#fff",
     gap: "12px",
   };
+
+  // ---------------------------------------------------------------------------
+  // Movie Clip mode: event list sidebar + editor for the selected event
+  // ---------------------------------------------------------------------------
+
+  if (isMovieClipMode) {
+    const instanceLabel = selectedInstance.instanceName
+      ? ` (${selectedInstance.instanceName})`
+      : "";
+    const currentScript = getClipActionScript(selectedClipEvent);
+
+    return (
+      <div style={panelStyle}>
+        {/* Title bar */}
+        <div style={titleBarStyle}>
+          <span>Actions - Movie Clip{instanceLabel}</span>
+          <button
+            style={{ background: "transparent", border: "none", color: "#ccc", cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
+            onClick={onClose}
+            title="Close (F9)"
+          >
+            &#x2715;
+          </button>
+        </div>
+
+        {/* Toolbar */}
+        <div style={toolbarStyle}>
+          <button style={toolBtnStyle} title="Add Statement">+</button>
+          <button style={toolBtnStyle} title="Find">&#128269;</button>
+          <button style={toolBtnStyle} title="Help">?</button>
+          <div style={{ width: "1px", height: "16px", background: "#555", margin: "0 4px" }} />
+          <span style={{ fontSize: "11px", color: "#888" }}>onClipEvent</span>
+        </div>
+
+        {/* Two-column layout: event list + editor */}
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+          {/* Event list sidebar */}
+          <div style={{
+            width: "140px",
+            flexShrink: 0,
+            background: "#252526",
+            borderRight: "1px solid #333",
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+          }}>
+            <div style={{ padding: "4px 8px", fontSize: "10px", color: "#888", borderBottom: "1px solid #333", userSelect: "none" }}>
+              onClipEvent
+            </div>
+            {CLIP_EVENT_TYPES.map(({ event, label }) => {
+              const hasScript = getClipActionScript(event).trim().length > 0;
+              const isSelected = selectedClipEvent === event;
+              return (
+                <button
+                  key={event}
+                  onClick={() => setSelectedClipEvent(event)}
+                  style={{
+                    background: isSelected ? "#094771" : "transparent",
+                    border: "none",
+                    borderBottom: "1px solid #2a2a2a",
+                    color: isSelected ? "#fff" : hasScript ? "#d4d4d4" : "#777",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    padding: "5px 8px",
+                    textAlign: "left",
+                    fontFamily: "'Consolas', 'Courier New', monospace",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  {hasScript && (
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4ec9b0", flexShrink: 0, display: "inline-block" }} />
+                  )}
+                  {!hasScript && <span style={{ width: "6px", flexShrink: 0, display: "inline-block" }} />}
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Script editor for selected event */}
+          <div ref={firstTextareaRef} style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+            <ScriptEditor
+              script={currentScript}
+              onScriptChange={(s) => handleClipActionScriptChange(selectedClipEvent, s)}
+              onCursorChange={(l, c) => { setCursorLine(l); setCursorCol(c); }}
+            />
+          </div>
+        </div>
+
+        {/* Status bar */}
+        <div style={statusBarStyle}>
+          <span>ActionScript 2.0</span>
+          <span>onClipEvent({selectedClipEvent})</span>
+          <span>Ln {cursorLine}, Col {cursorCol}</span>
+          <span style={{ marginLeft: "auto", fontSize: "10px", opacity: 0.8 }}>F9 to close</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Frame script mode (original behavior)
+  // ---------------------------------------------------------------------------
 
   return (
     <div style={panelStyle}>
@@ -317,39 +517,11 @@ export function ActionsPanel({
       </div>
 
       {/* Editor area */}
-      <div style={editorAreaStyle}>
-        {/* Line numbers */}
-        <div ref={lineNumRef} style={lineNumStyle}>
-          {Array.from({ length: lineCount }, (_, i) => (
-            <div key={i} style={{ lineHeight: "1.5" }}>
-              {i + 1}
-            </div>
-          ))}
-        </div>
-
-        {/* Highlight overlay */}
-        <div ref={overlayRef} style={overlayStyle}>
-          {lines.map((line, i) => (
-            <React.Fragment key={i}>
-              {i > 0 && "\n"}
-              {highlightLine(line, i)}
-            </React.Fragment>
-          ))}
-        </div>
-
-        {/* Actual textarea (transparent text, but caret visible) */}
-        <textarea
-          ref={textareaRef}
-          style={textareaStyle}
-          value={script}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onScroll={handleScroll}
-          onClick={updateCursor}
-          onKeyUp={updateCursor}
+      <div ref={firstTextareaRef} style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        <ScriptEditor
+          script={script}
+          onScriptChange={onScriptChange}
+          onCursorChange={(l, c) => { setCursorLine(l); setCursorCol(c); }}
         />
       </div>
 

@@ -31,6 +31,7 @@ import { TransformHandles } from "./TransformHandles";
 import type {
   BitmapDisplayObject,
   BitmapItem,
+  ClipAction,
   DisplayObject,
   DocumentProperties,
   Fill,
@@ -1013,6 +1014,29 @@ export function Shell(): React.ReactElement {
       ));
     },
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
+  );
+
+  /**
+   * Returns the currently selected SymbolInstance if it references a movieclip symbol,
+   * otherwise null. Used by ActionsPanel for "Actions - Movie Clip" mode.
+   */
+  const selectedMovieClipInstance = useMemo<SymbolInstance | null>(() => {
+    if (!selectedDisplayObject || selectedDisplayObject.type !== "instance") return null;
+    const inst = selectedDisplayObject as SymbolInstance;
+    const libItem = doc.library.items.find(
+      (i) => i.id === inst.symbolId && i.itemType === "symbol"
+    );
+    if (!libItem || libItem.itemType !== "symbol" || libItem.symbolType !== "movieclip") return null;
+    return inst;
+  }, [selectedDisplayObject, doc.library.items]);
+
+  /** Update clipActions on the currently selected movieclip instance. */
+  const handleClipActionsChange = useCallback(
+    (clipActions: readonly ClipAction[]) => {
+      if (!selectedMovieClipInstance) return;
+      handleUpdateInstance(selectedMovieClipInstance.id, { clipActions });
+    },
+    [selectedMovieClipInstance, handleUpdateInstance]
   );
 
   /** Generic display object updater used by PropertiesPanel. */
@@ -2358,6 +2382,7 @@ export function Shell(): React.ReactElement {
     if (!isTestEnv) return;
 
     setAgentCallbacks({
+      // Readers
       getDoc: () => doc,
       getSelectedIds: () => (selectedShapeId ? [selectedShapeId] : []),
       getCurrentFrame: () => currentFrame,
@@ -2366,6 +2391,63 @@ export function Shell(): React.ReactElement {
       getEditContext: () => editContext,
       getActiveSceneIndex: () => activeSceneIndex,
       getUndoDepth: () => history.undoDepth,
+      getRedoDepth: () => history.redoDepth,
+
+      // Mutators
+      pushDoc,
+      undo,
+      redo,
+
+      // View / selection setters
+      setCurrentFrame,
+      setActiveLayerByIndex: (index: number) => setActiveLayerIndex(index),
+      setActiveLayerById: (layerId: string) => {
+        const idx = timeline.layers.findIndex((l) => l.id === layerId);
+        if (idx >= 0) setActiveLayerIndex(idx);
+      },
+      setSelectedIds: (ids: string[]) => {
+        setSelectedShapeId(ids.length === 1 ? ids[0] : null);
+      },
+      setZoom: handleZoomChangeDirect,
+      setPan: handlePanChange,
+      selectTool: (toolId: string) => handleToolChange(toolId as import("./tools/types.js").ToolId),
+      startPlayback,
+      stopPlayback,
+
+      // Escape hatches
+      runJSFL: (source: string) => {
+        const sceneIndex = Math.min(activeSceneIndex, doc.scenes.length - 1);
+        const context = (buildJsflContext as (doc: import("@flash/core").FlashDocument, sceneIndex: number, frameIndex: number) => unknown)(doc, sceneIndex, currentFrame);
+        const result = (runJsfl as (source: string, context: unknown) => { traces: string[]; returnValue?: unknown; error?: string; finalDocument?: import("@flash/core").FlashDocument })(source, context);
+        if (result.finalDocument) {
+          pushDoc(result.finalDocument);
+        }
+        return {
+          traces: result.traces,
+          returnValue: result.returnValue,
+          error: result.error,
+          rev: 0 as import("@flash/agent-protocol").Rev,
+        };
+      },
+      screenshotStage: (_frameIndex?: number): string => {
+        const w = docProperties.width;
+        const h = docProperties.height;
+        const offscreen = document.createElement("canvas");
+        offscreen.width = w;
+        offscreen.height = h;
+        const renderer = new CanvasRenderer(offscreen);
+        renderer.resize(w, h, 1);
+        renderer.render(fullSceneGraph, { x: 0, y: 0, zoom: 1 }, doc.library);
+        const composite = document.createElement("canvas");
+        composite.width = w;
+        composite.height = h;
+        const ctx = composite.getContext("2d")!;
+        ctx.fillStyle = docProperties.backgroundColor;
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(offscreen, 0, 0);
+        return composite.toDataURL("image/png").replace(/^data:image\/png;base64,/, "");
+      },
+      publishToBytes,
     });
 
     return () => {
@@ -2380,6 +2462,22 @@ export function Shell(): React.ReactElement {
     editContext,
     activeSceneIndex,
     history.undoDepth,
+    history.redoDepth,
+    pushDoc,
+    undo,
+    redo,
+    setCurrentFrame,
+    timeline,
+    handleZoomChangeDirect,
+    handlePanChange,
+    handleToolChange,
+    startPlayback,
+    stopPlayback,
+    buildJsflContext,
+    runJsfl,
+    publishToBytes,
+    fullSceneGraph,
+    docProperties,
   ]);
 
   useEffect(() => {
@@ -2892,7 +2990,7 @@ export function Shell(): React.ReactElement {
         onClose={() => setColorPanelVisible(false)}
       />
 
-      {/* Actions panel (F9) */}
+      {/* Actions panel (F9) — frame script mode OR "Actions - Movie Clip" mode */}
       <ActionsPanel
         script={currentScript}
         frameIndex={currentFrame}
@@ -2900,6 +2998,8 @@ export function Shell(): React.ReactElement {
         onScriptChange={handleScriptChange}
         isVisible={actionsPanelVisible}
         onClose={() => setActionsPanelVisible(false)}
+        selectedInstance={selectedMovieClipInstance}
+        onClipActionsChange={handleClipActionsChange}
       />
 
       {/* Filters panel (Window > Filters) */}

@@ -2,6 +2,7 @@ import { zipSync, strToU8 } from "fflate";
 import { createDocument } from "../../model/document.js";
 import { saveFla, loadFla } from "../zip.js";
 import { serializeDocument } from "../serialize.js";
+import type { ClipAction, SymbolInstance, FlashDocument } from "../../engine/types.js";
 
 describe("FLA round-trip", () => {
   it("serializes and deserializes a default document with lossless round-trip", () => {
@@ -210,6 +211,89 @@ describe("FLA round-trip", () => {
     expect(() => loadFla(flaBytes)).toThrow(
       /FLA open error: missing asset entry "assets\/bitmaps\/bmp-missing-1\.png"/
     );
+  });
+
+  it("preserves clipActions on a SymbolInstance through FLA round-trip", () => {
+    const doc = createDocument();
+
+    // Build a minimal doc with a movieclip symbol and an instance with clipActions
+    const clipActions: ClipAction[] = [
+      { event: "load", script: "trace('loaded');" },
+      { event: "enterFrame", script: "this._x += 5;" },
+    ];
+
+    const sym = {
+      id: "sym-clip-1",
+      name: "MyClip",
+      itemType: "symbol" as const,
+      symbolType: "movieclip" as const,
+      timeline: {
+        layers: [{
+          id: "lyr-1", name: "Layer 1", type: "normal" as const,
+          visible: true, locked: false, outlineMode: false,
+          outlineColor: "#ff0000", height: 20, parentFolderId: null,
+          frames: [{
+            index: 0, isKeyframe: true, isEmpty: true, tweenType: "none" as const,
+            label: "", labelType: "name" as const, script: "", sound: null,
+            motionEase: 0, motionRotate: "none" as const, motionRotateCount: 0,
+            motionOrientToPath: false, motionSync: false, motionScale: false,
+            shapeEase: 0, shapeBlend: "distributive" as const, displayObjects: [],
+          }],
+          frameCount: 1,
+        }],
+      },
+      linkage: {
+        exportForActionScript: false, exportInFirstFrame: false,
+        linkageIdentifier: "", className: "",
+        exportForRuntimeSharing: false, importForRuntimeSharing: false, sharedUrl: "",
+      },
+      scale9Grid: null,
+    };
+
+    const inst: SymbolInstance = {
+      id: "inst-clip-1", type: "instance", symbolId: "sym-clip-1",
+      x: 100, y: 50, instanceName: "myMC", clipActions,
+    };
+
+    const frame = {
+      index: 0, isKeyframe: true, isEmpty: false, tweenType: "none" as const,
+      label: "", labelType: "name" as const, script: "", sound: null,
+      motionEase: 0, motionRotate: "none" as const, motionRotateCount: 0,
+      motionOrientToPath: false, motionSync: false, motionScale: false,
+      shapeEase: 0, shapeBlend: "distributive" as const, displayObjects: [inst],
+    };
+
+    const docWithClipActions: FlashDocument = {
+      ...doc,
+      library: { ...doc.library, items: [...doc.library.items, sym] },
+      scenes: [{
+        ...doc.scenes[0]!,
+        timeline: {
+          layers: [{
+            ...doc.scenes[0]!.timeline.layers[0]!,
+            frames: [frame],
+            frameCount: 1,
+          }],
+        },
+      }],
+    };
+
+    const restored = loadFla(saveFla(docWithClipActions));
+
+    // Find the restored instance
+    const restoredFrame = restored.scenes[0]?.timeline.layers[0]?.frames[0];
+    expect(restoredFrame).toBeDefined();
+
+    const restoredInst = restoredFrame!.displayObjects.find(
+      (o) => o.id === "inst-clip-1"
+    ) as SymbolInstance | undefined;
+    expect(restoredInst).toBeDefined();
+    expect(restoredInst!.clipActions).toHaveLength(2);
+    expect(restoredInst!.clipActions![0]!.event).toBe("load");
+    expect(restoredInst!.clipActions![0]!.script).toBe("trace('loaded');");
+    expect(restoredInst!.clipActions![1]!.event).toBe("enterFrame");
+    expect(restoredInst!.clipActions![1]!.script).toBe("this._x += 5;");
+    expect(restoredInst!.instanceName).toBe("myMC");
   });
 
   it("preserves custom document properties on round-trip", () => {
