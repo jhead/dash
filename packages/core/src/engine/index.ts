@@ -1,6 +1,7 @@
 // Types
 export type {
   BitmapDisplayObject,
+  ClipAction,
   Color,
   ColorEffect,
   CurveSegment,
@@ -155,7 +156,7 @@ export {
   removeLibraryItem as removeLibraryItemFromDoc,
   updateLibraryItem as updateLibraryItemInDoc,
   duplicateLibraryItem,
-  renameLibraryItem,
+  renameLibraryItemInDoc,
   deleteLibraryItem,
 } from "./library.js";
 

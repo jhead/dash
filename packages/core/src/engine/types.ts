@@ -253,6 +253,27 @@ export interface ColorEffect {
 }
 
 /**
+ * A clip event handler attached to a MovieClip instance.
+ * Corresponds to an `onClipEvent(event) {}` block in AS2.
+ * Encoded as a CLIPACTIONRECORD in the PlaceObject2/PlaceObject3 SWF tag.
+ */
+export interface ClipAction {
+  /** The event that triggers this handler. */
+  readonly event:
+    | 'load'
+    | 'enterFrame'
+    | 'unload'
+    | 'mouseMove'
+    | 'mouseDown'
+    | 'mouseUp'
+    | 'keyDown'
+    | 'keyUp'
+    | 'data';
+  /** AS2 source code for the handler body (not wrapped in onClipEvent{}). */
+  readonly script: string;
+}
+
+/**
  * An instance of a library symbol placed on a layer.
  */
 export interface SymbolInstance {
@@ -287,6 +308,12 @@ export interface SymbolInstance {
   readonly blendMode?: 'normal' | 'layer' | 'multiply' | 'screen' | 'lighten' | 'darken' |
                        'difference' | 'add' | 'subtract' | 'invert' | 'alpha' | 'erase' |
                        'overlay' | 'hardlight';
+  /**
+   * onClipEvent handlers attached to this MovieClip instance.
+   * Encoded as CLIPACTIONRECORD entries in the PlaceObject2 HasClipActions block.
+   * Only meaningful when the referenced symbol is a movieclip.
+   */
+  readonly clipActions?: readonly ClipAction[];
 }
 
 /**

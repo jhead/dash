@@ -23,6 +23,7 @@ import {
   encodePlaceObject2WithName,
   encodePlaceObject2WithCXForm,
   encodePlaceObject2WithClipDepth,
+  encodePlaceObject2WithClipActions,
 } from "./shapes.js";
 import {
   encodeDefineMorphShape,
@@ -976,6 +977,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               const charId = charIdMap.get(displayObj.symbolId);
               if (charId !== undefined) {
                 const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
+                const hasClipActions = !!displayObj.clipActions && displayObj.clipActions.length > 0;
                 if (hasBlend || hasEnabledFilters(displayObj.filters)) {
                   const placeBody = hasBlend
                     ? encodePlaceObject3WithBlendMode(
@@ -994,6 +996,21 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         displayObj.filters!
                       );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
+                } else if (hasClipActions) {
+                  // Clip actions: encode CLIPACTIONRECORD block in PlaceObject2
+                  const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)
+                    ? { scaleX, scaleY, rotation }
+                    : undefined;
+                  const placeBody = encodePlaceObject2WithClipActions(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    displayObj.clipActions!,
+                    transform,
+                    displayObj.instanceName
+                  );
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
                   // Check for color effect (CXFormWithAlpha)
                   const cxform = displayObj.colorEffect

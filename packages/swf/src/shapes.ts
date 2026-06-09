@@ -7,8 +7,8 @@
  * Coordinates: the SWF format uses "twips" (1 pixel = 20 twips).
  */
 import { BitWriter } from "./bits.js";
-import type { Fill, Shape, ShapePath, SolidStroke } from "@flash/core";
-import { toSWFMatrix, composeMatrix } from "@flash/core";
+import type { ClipAction, Fill, Shape, ShapePath, SolidStroke } from "@flash/core";
+import { toSWFMatrix, composeMatrix, compileAS2 } from "@flash/core";
 import { px, edgeNumBits, writeRect } from "./helpers.js";
 import { encodeCxformWithAlpha, encodeCXFormWithAlpha } from "./cxform.js";
 import type { CXForm } from "./cxform.js";
@@ -1125,6 +1125,148 @@ export function encodePlaceObject2WithClipDepth(
 
   // ClipDepth: UI16 (written after MATRIX, no CXFORM or Name present)
   bw.writeUI16LE(clipDepth);
+
+  return bw.getBytes();
+}
+
+// ---------------------------------------------------------------------------
+// ClipEventFlags lookup (SWF spec 8.4.6.2)
+// ---------------------------------------------------------------------------
+
+/** Maps a ClipAction event name to its SWF ClipEventFlags bit. */
+const CLIP_EVENT_FLAGS: Record<ClipAction['event'], number> = {
+  load:       0x00000001,
+  enterFrame: 0x00000002,
+  unload:     0x00000004,
+  mouseMove:  0x00000008,
+  mouseDown:  0x00000010,
+  mouseUp:    0x00000020,
+  keyDown:    0x00000040,
+  keyUp:      0x00000080,
+  data:       0x00000100,
+};
+
+/**
+ * Encode a PlaceObject2 tag body that includes one or more CLIPACTIONRECORD entries
+ * (HasClipActions flag, SWF v8 / Flash 8).
+ *
+ * Structure (SWF ≥ 6):
+ *   flags     UI8   — PlaceFlagHasCharacter (0x02) | PlaceFlagHasMatrix (0x04) |
+ *                     PlaceFlagHasClipActions (0x80)  = 0x86
+ *             (add 0x20 when instanceName is supplied)
+ *   depth     UI16
+ *   charId    UI16
+ *   MATRIX    (bit-packed)
+ *   [Name     null-terminated string, only when instanceName given]
+ *   AllEventFlags  UI32 — union of all ClipEventFlags in the record set
+ *   for each ClipAction:
+ *     ClipEventFlags  UI32
+ *     ActionRecordSize UI32 — byte length of bytecode (including ActionEnd 0x00)
+ *     ActionBytes     UI8[]
+ *     ActionEnd       UI8  (0x00) — already included in compileAS2 output
+ *   Terminator   UI32 = 0x00000000
+ *
+ * @param charId        Character ID to place
+ * @param depth         Display list depth (1-based)
+ * @param x             X position in pixels
+ * @param y             Y position in pixels
+ * @param clipActions   Array of clip event handlers (must be non-empty)
+ * @param transform     Optional scale/rotation/skew
+ * @param instanceName  Optional AS2 instance name
+ */
+export function encodePlaceObject2WithClipActions(
+  charId: number,
+  depth: number,
+  x: number,
+  y: number,
+  clipActions: readonly ClipAction[],
+  transform?: {
+    scaleX?: number;
+    scaleY?: number;
+    rotation?: number;
+    skewX?: number;
+    skewY?: number;
+  },
+  instanceName?: string
+): Uint8Array {
+  const bw = new BitWriter();
+
+  // Flags: HasCharacter (0x02) | HasMatrix (0x04) | HasClipActions (0x80) = 0x86
+  // Add HasName (0x20) if instanceName is provided
+  const flags = 0x86 | (instanceName && instanceName.length > 0 ? 0x20 : 0x00);
+  bw.writeUI8(flags);
+
+  // Depth: UI16
+  bw.writeUI16LE(depth);
+
+  // CharacterId: UI16
+  bw.writeUI16LE(charId);
+
+  // MATRIX
+  const m = composeMatrix({
+    tx: x,
+    ty: y,
+    scaleX: transform?.scaleX ?? 1,
+    scaleY: transform?.scaleY ?? 1,
+    rotation: transform?.rotation ?? 0,
+    skewX: transform?.skewX ?? 0,
+    skewY: transform?.skewY ?? 0,
+  });
+  const swfM = toSWFMatrix(m);
+  const { hasScale, scaleX, scaleY, hasRotate, rotateSkew0, rotateSkew1, translateX, translateY } = swfM;
+
+  bw.writeBits(hasScale ? 1 : 0, 1);
+  if (hasScale) {
+    const nBits = Math.max(edgeNumBits([scaleX, scaleY]), 2);
+    bw.writeBits(nBits, 5);
+    bw.writeBits(scaleX, nBits);
+    bw.writeBits(scaleY, nBits);
+  }
+  bw.writeBits(hasRotate ? 1 : 0, 1);
+  if (hasRotate) {
+    const nBits = Math.max(edgeNumBits([rotateSkew0, rotateSkew1]), 2);
+    bw.writeBits(nBits, 5);
+    bw.writeBits(rotateSkew0, nBits);
+    bw.writeBits(rotateSkew1, nBits);
+  }
+  {
+    const nBits = Math.max(edgeNumBits([translateX, translateY]), 2);
+    bw.writeBits(nBits, 5);
+    bw.writeBits(translateX, nBits);
+    bw.writeBits(translateY, nBits);
+  }
+  bw.flushBits();
+
+  // Optional: instance name (written after MATRIX, before clip actions)
+  if (instanceName && instanceName.length > 0) {
+    bw.writeString(instanceName);
+  }
+
+  // Compile each action and build records
+  const records: Array<{ flags: number; bytecode: Uint8Array }> = [];
+  let allEventFlags = 0;
+  for (const action of clipActions) {
+    const eventFlag = CLIP_EVENT_FLAGS[action.event] ?? 0;
+    allEventFlags |= eventFlag;
+    const bytecode = compileAS2(action.script);
+    records.push({ flags: eventFlag, bytecode });
+  }
+
+  // AllEventFlags: UI32 (union of all event flags in this record set)
+  bw.writeUI32LE(allEventFlags);
+
+  // Emit each CLIPACTIONRECORD
+  for (const record of records) {
+    // ClipEventFlags: UI32
+    bw.writeUI32LE(record.flags);
+    // ActionRecordSize: UI32 (byte count of bytecode; compileAS2 already includes 0x00 ActionEnd)
+    bw.writeUI32LE(record.bytecode.length);
+    // Action bytes
+    bw.writeBytes(record.bytecode);
+  }
+
+  // Terminator: UI32 = 0x00000000
+  bw.writeUI32LE(0x00000000);
 
   return bw.getBytes();
 }
