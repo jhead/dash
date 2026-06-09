@@ -1,0 +1,378 @@
+#!/usr/bin/env python3
+"""File-backed task manager with safe concurrency and agent locks."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import re
+import secrets
+import shutil
+import socket
+import sys
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parent
+TASKS_DIR = ROOT / ".tasks"
+LOCKS_DIR = TASKS_DIR / "locks"
+MUTEX_FILE = TASKS_DIR / ".mutex"
+DEFAULT_TTL = 3600
+STATUSES = frozenset({"open", "in_progress", "done", "cancelled"})
+
+
+def die(message: str) -> None:
+    print(f"task: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_iso(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def default_holder() -> str:
+    agent_id = os.environ.get("TASK_AGENT_ID")
+    if agent_id:
+        return agent_id
+    return f"{os.environ.get('USER', 'unknown')}@{socket.gethostname()}"
+
+
+def slugify(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return (slug[:48] or "task")
+
+
+def task_path(task_id: str) -> Path:
+    return TASKS_DIR / f"{task_id}.json"
+
+
+def lock_dir(task_id: str) -> Path:
+    return LOCKS_DIR / task_id
+
+
+def lock_meta_path(task_id: str) -> Path:
+    return lock_dir(task_id) / "meta.json"
+
+
+def ensure_dirs() -> None:
+    TASKS_DIR.mkdir(parents=True, exist_ok=True)
+    LOCKS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@contextmanager
+def global_mutex():
+    ensure_dirs()
+    with open(MUTEX_FILE, "a", encoding="utf-8") as mutex:
+        fcntl.flock(mutex.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(mutex.fileno(), fcntl.LOCK_UN)
+
+
+def read_task(task_id: str) -> dict[str, Any]:
+    path = task_path(task_id)
+    if not path.is_file():
+        die(f"task not found: {task_id}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_task(task: dict[str, Any]) -> None:
+    path = task_path(task["id"])
+    path.write_text(json.dumps(task, indent=2) + "\n", encoding="utf-8")
+
+
+def read_lock_meta(task_id: str) -> dict[str, Any] | None:
+    path = lock_meta_path(task_id)
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def lock_is_expired(meta: dict[str, Any]) -> bool:
+    expires = meta.get("expires_at")
+    if not expires:
+        return True
+    try:
+        return datetime.now(timezone.utc) >= parse_iso(expires)
+    except ValueError:
+        return False
+
+
+def active_lock(task_id: str) -> dict[str, Any] | None:
+    meta = read_lock_meta(task_id)
+    if meta is None:
+        return None
+    if lock_is_expired(meta):
+        return None
+    return meta
+
+
+def cleanup_stale_lock(task_id: str) -> bool:
+    """Remove expired or corrupt lock. Returns True if a lock dir was removed."""
+    directory = lock_dir(task_id)
+    if not directory.is_dir():
+        return False
+    meta = read_lock_meta(task_id)
+    if meta is None or lock_is_expired(meta):
+        shutil.rmtree(directory, ignore_errors=True)
+        return True
+    return False
+
+
+def write_lock_meta(task_id: str, holder: str, ttl: int) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(seconds=ttl)
+    meta = {
+        "task_id": task_id,
+        "holder": holder,
+        "pid": os.getpid(),
+        "hostname": socket.gethostname(),
+        "acquired_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "expires_at": expires.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "ttl_seconds": ttl,
+    }
+    directory = lock_dir(task_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_meta_path(task_id).write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    return meta
+
+
+def task_with_lock(task_id: str) -> dict[str, Any]:
+    task = read_task(task_id)
+    task["lock"] = active_lock(task_id)
+    return task
+
+
+def cmd_create(args: argparse.Namespace) -> None:
+    with global_mutex():
+        task_id = args.id
+        if not task_id:
+            task_id = f"{slugify(args.title)}-{secrets.token_hex(2)}"
+        path = task_path(task_id)
+        if path.exists():
+            die(f"task already exists: {task_id}")
+        ts = now_iso()
+        task = {
+            "id": task_id,
+            "title": args.title,
+            "description": args.description or "",
+            "status": args.status,
+            "created_at": ts,
+            "updated_at": ts,
+        }
+        write_task(task)
+    print(task_id)
+
+
+def cmd_list(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    tasks = []
+    for path in sorted(TASKS_DIR.glob("*.json")):
+        task = json.loads(path.read_text(encoding="utf-8"))
+        if args.status and task.get("status") != args.status:
+            continue
+        task["lock"] = active_lock(task["id"])
+        tasks.append(task)
+
+    if args.json:
+        print(json.dumps(tasks, indent=2))
+        return
+
+    if not tasks:
+        print("No tasks.")
+        return
+
+    print(f"{'ID':<32} {'STATUS':<12} {'LOCK':<24} TITLE")
+    print("-" * 90)
+    for task in tasks:
+        lock = task.get("lock")
+        lock_str = lock["holder"] if lock else "-"
+        title = task.get("title", "")[:40]
+        print(f"{task['id']:<32} {task.get('status', ''):<12} {lock_str:<24} {title}")
+
+
+def cmd_show(args: argparse.Namespace) -> None:
+    ensure_dirs()
+    task = task_with_lock(args.id)
+    if args.json:
+        print(json.dumps(task, indent=2))
+        return
+
+    print(f"ID:          {task['id']}")
+    print(f"Title:       {task.get('title', '')}")
+    print(f"Status:      {task.get('status', '')}")
+    print(f"Created:     {task.get('created_at', '')}")
+    print(f"Updated:     {task.get('updated_at', '')}")
+    desc = task.get("description") or ""
+    if desc:
+        print(f"Description: {desc}")
+    lock = task.get("lock")
+    if lock:
+        print(f"Lock holder: {lock.get('holder')} (expires {lock.get('expires_at')})")
+    else:
+        print("Lock:        none")
+
+
+def cmd_update(args: argparse.Namespace) -> None:
+    if not any([args.title, args.description is not None, args.status]):
+        die("update requires at least one field")
+
+    with global_mutex():
+        task = read_task(args.id)
+        if args.title:
+            task["title"] = args.title
+        if args.description is not None:
+            task["description"] = args.description
+        if args.status:
+            task["status"] = args.status
+        task["updated_at"] = now_iso()
+        write_task(task)
+    print(f"updated: {args.id}")
+
+
+def cmd_delete(args: argparse.Namespace) -> None:
+    with global_mutex():
+        read_task(args.id)
+        directory = lock_dir(args.id)
+        if directory.is_dir() and not cleanup_stale_lock(args.id):
+            if not args.force:
+                die("task is locked; use --force to delete anyway")
+            shutil.rmtree(directory, ignore_errors=True)
+        task_path(args.id).unlink(missing_ok=True)
+    print(f"deleted: {args.id}")
+
+
+def cmd_acquire(args: argparse.Namespace) -> None:
+    holder = args.holder or default_holder()
+    with global_mutex():
+        task = read_task(args.id)
+        directory = lock_dir(args.id)
+
+        if directory.is_dir():
+            if cleanup_stale_lock(args.id):
+                pass
+            else:
+                current = read_lock_meta(args.id)
+                current_holder = current.get("holder", "") if current else ""
+                if current_holder == holder:
+                    write_lock_meta(args.id, holder, args.ttl)
+                    print(f"lock renewed for existing holder: {holder}")
+                    return
+                die(f"task locked by: {current_holder}")
+
+        try:
+            directory.mkdir(parents=False, exist_ok=False)
+        except FileExistsError:
+            die(f"failed to acquire lock (contention on {args.id})")
+
+        write_lock_meta(args.id, holder, args.ttl)
+        if task.get("status") == "open":
+            task["status"] = "in_progress"
+            task["updated_at"] = now_iso()
+            write_task(task)
+
+    print(f"acquired: {args.id} (holder={holder}, ttl={args.ttl}s)")
+
+
+def cmd_release(args: argparse.Namespace) -> None:
+    holder = args.holder or default_holder()
+    with global_mutex():
+        directory = lock_dir(args.id)
+        if not directory.is_dir():
+            die(f"no lock held on: {args.id}")
+        if not args.force:
+            current = read_lock_meta(args.id)
+            current_holder = current.get("holder", "") if current else ""
+            if current_holder != holder:
+                die(f"lock held by {current_holder}, not {holder}")
+        shutil.rmtree(directory, ignore_errors=True)
+    print(f"released: {args.id}")
+
+
+def cmd_renew(args: argparse.Namespace) -> None:
+    holder = args.holder or default_holder()
+    with global_mutex():
+        directory = lock_dir(args.id)
+        if not directory.is_dir():
+            die(f"no lock held on: {args.id}")
+        current = read_lock_meta(args.id)
+        current_holder = current.get("holder", "") if current else ""
+        if current_holder != holder:
+            die(f"lock held by {current_holder}, not {holder}")
+        write_lock_meta(args.id, holder, args.ttl)
+    print(f"renewed: {args.id} (ttl={args.ttl}s)")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="task",
+        description="File-backed task manager with safe concurrency and agent locks.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    create = sub.add_parser("create", help="Create a task")
+    create.add_argument("--title", required=True)
+    create.add_argument("--description", default="")
+    create.add_argument("--id", default="")
+    create.add_argument("--status", default="open", choices=sorted(STATUSES))
+    create.set_defaults(func=cmd_create)
+
+    list_cmd = sub.add_parser("list", help="List tasks")
+    list_cmd.add_argument("--status", choices=sorted(STATUSES))
+    list_cmd.add_argument("--json", action="store_true")
+    list_cmd.set_defaults(func=cmd_list)
+
+    show = sub.add_parser("show", help="Show one task")
+    show.add_argument("id")
+    show.add_argument("--json", action="store_true")
+    show.set_defaults(func=cmd_show)
+
+    update = sub.add_parser("update", help="Update task fields")
+    update.add_argument("id")
+    update.add_argument("--title")
+    update.add_argument("--description")
+    update.add_argument("--status", choices=sorted(STATUSES))
+    update.set_defaults(func=cmd_update)
+
+    delete = sub.add_parser("delete", help="Delete a task")
+    delete.add_argument("id")
+    delete.add_argument("--force", action="store_true")
+    delete.set_defaults(func=cmd_delete)
+
+    acquire = sub.add_parser("acquire", help="Acquire task lock (required before working)")
+    acquire.add_argument("id")
+    acquire.add_argument("--holder")
+    acquire.add_argument("--ttl", type=int, default=DEFAULT_TTL)
+    acquire.set_defaults(func=cmd_acquire)
+
+    release = sub.add_parser("release", help="Release task lock")
+    release.add_argument("id")
+    release.add_argument("--holder")
+    release.add_argument("--force", action="store_true")
+    release.set_defaults(func=cmd_release)
+
+    renew = sub.add_parser("renew", help="Extend lock TTL")
+    renew.add_argument("id")
+    renew.add_argument("--holder")
+    renew.add_argument("--ttl", type=int, default=DEFAULT_TTL)
+    renew.set_defaults(func=cmd_renew)
+
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
