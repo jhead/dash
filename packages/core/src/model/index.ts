@@ -41,6 +41,7 @@ export {
   createFrame,
   addLayer,
   deleteLayer,
+  duplicateLayer,
   moveLayer,
   setLayerVisible,
   setLayerLocked,
@@ -69,8 +70,14 @@ export {
   removeScene,
   renameScene,
   reorderScenes,
+  moveScene,
   duplicateScene,
   updateDocumentProperties,
+  setDocumentWidth,
+  setDocumentHeight,
+  setFrameRate,
+  setBackgroundColor,
+  setRulerUnits,
   updateGridSettings,
   addGuide,
   removeGuide,
@@ -100,6 +107,15 @@ export {
   moveDisplayObjectToTop,
   moveDisplayObjectToBottom,
 } from "./display-order.js";
+
+// Layer reorder
+export {
+  moveLayerUp,
+  moveLayerDown,
+  moveLayerToTop,
+  moveLayerToBottom,
+  moveLayerBefore,
+} from "./layer-reorder.js";
 
 // Library
 export {

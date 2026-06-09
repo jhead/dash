@@ -112,6 +112,20 @@ export function deleteLayer(timeline: Timeline, layerId: string): Timeline {
 }
 
 /**
+ * Duplicate a layer by ID, inserting the copy immediately after the source.
+ * The copy gets a new unique ID and has " copy" appended to its name.
+ */
+export function duplicateLayer(timeline: Timeline, layerId: string): Timeline {
+  const idx = timeline.layers.findIndex((l) => l.id === layerId);
+  if (idx < 0) return timeline;
+  const source = timeline.layers[idx];
+  const copy: Layer = { ...source, id: nextId("layer"), name: `${source.name} copy` };
+  const layers = [...timeline.layers];
+  layers.splice(idx + 1, 0, copy);
+  return { ...timeline, layers };
+}
+
+/**
  * Move a layer to a new index position.
  */
 export function moveLayer(

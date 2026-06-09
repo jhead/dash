@@ -1,0 +1,8 @@
+{
+  "id": "0578-core-layer-add-remove-duplicate-operations-tests",
+  "title": "Core layer add remove duplicate operations tests",
+  "description": "Tests for timeline layer management: addLayer(timeline, name, type), removeLayer(timeline, layerId), duplicateLayer(timeline, layerId), renameLayer(timeline, layerId, name). All immutable, return new Timeline.",
+  "status": "done",
+  "created_at": "2026-06-09T22:17:54Z",
+  "updated_at": "2026-06-09T22:21:38Z"
+}
