@@ -187,6 +187,14 @@ export { bringToFront, sendToBack, bringForward, sendBackward } from "./zorder.j
 export type { BrushPoint } from "./brushtool.js";
 export { addBrushStroke } from "./brushtool.js";
 
+// Display object factory helpers
+export {
+  createSymbolInstance,
+  createTextInstance,
+  createShapeInstance,
+  isDisplayObject,
+} from "./factory.js";
+
 // Ink Bottle tool
 export { applyInkBottle } from "./inkbottle.js";
 
@@ -208,3 +216,7 @@ export {
   createRadialGradient,
   normalizeGradientRatios,
 } from "./gradient.js";
+
+// Validation utilities
+export type { ValidationResult, PropertyValidationResult } from "./validate.js";
+export { validateFrameScript, validateDocumentProperties } from "./validate.js";
