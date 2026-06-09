@@ -14,7 +14,7 @@
  *  - doc.library — items / addNewItem / deleteItem / renameItem
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createDocument } from "@flash/core";
 import { runJsfl, buildJsflContext } from "../runtime.js";
 import type { JsflContext } from "../runtime.js";

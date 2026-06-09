@@ -77,6 +77,8 @@ export interface UseHistoryResult {
   canRedo: boolean;
   /** Number of entries in the undo stack (past snapshots). */
   undoDepth: number;
+  /** Number of entries in the redo stack (future snapshots). */
+  redoDepth: number;
 }
 
 /**
@@ -142,5 +144,6 @@ export function useHistory(initial: FlashDocument): UseHistoryResult {
     canUndo: historyCanUndo(state),
     canRedo: historyCanRedo(state),
     undoDepth: state.past.length,
+    redoDepth: state.future.length,
   };
 }
