@@ -9,6 +9,7 @@
  *   tools                         list tools with schemas (JSON output)
  *   call <tool> [json|--k=v ...]  invoke any tool, print result JSON
  *   read <resource-uri>           read an MCP resource
+ *   watch                         stream doc-changed events as JSON lines
  *   screenshot [-o stage.png]     sugar: call stage_screenshot, write PNG
  *   publish [-o out.swf]          sugar: call publish_swf, write bytes
  *   repl                          interactive REPL on a single connection
@@ -21,7 +22,8 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ResourceUpdatedNotification } from "@modelcontextprotocol/sdk/types.js";
+import { ResourceUpdatedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import * as readline from "node:readline";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -372,6 +374,42 @@ async function cmdPublish(url: string, args: string[]): Promise<void> {
   }
 }
 
+async function cmdWatch(url: string): Promise<void> {
+  const client = await getClient(url);
+  console.error(
+    `[flash-agent watch] Connected to ${url}. Streaming events as JSON lines (Ctrl-C to stop).`
+  );
+
+  // Subscribe to resource updates by opening a long-lived session.
+  // The MCP SDK's StreamableHTTPClientTransport manages SSE internally;
+  // resource update notifications arrive as structured events.
+  client.setNotificationHandler(
+    ResourceUpdatedNotificationSchema,
+    (notification: ResourceUpdatedNotification) => {
+      const uri = notification.params.uri;
+      // Only emit once per doc-change batch (skip summary duplicate)
+      if (uri === "flash://document") {
+        const event = { type: "doc-changed", uri, ts: new Date().toISOString() };
+        process.stdout.write(JSON.stringify(event) + "\n");
+      } else if (uri !== "flash://document/summary") {
+        const event = { type: "resource-updated", uri, ts: new Date().toISOString() };
+        process.stdout.write(JSON.stringify(event) + "\n");
+      }
+    }
+  );
+
+  // Keep the process alive until interrupted
+  await new Promise<void>((resolve) => {
+    process.on("SIGINT", () => {
+      console.error("\n[flash-agent watch] Stopped.");
+      resolve();
+    });
+    process.on("SIGTERM", resolve);
+  });
+
+  await client.close();
+}
+
 async function cmdRepl(url: string): Promise<void> {
   const client = await getClient(url);
   console.error(`Connected to ${url}`);
@@ -496,6 +534,7 @@ Commands:
   tools                          List all tools with schemas
   call <tool> [json|--k=v ...]   Invoke a tool, print result JSON
   read <resource-uri>            Read an MCP resource
+  watch                          Stream doc-changed events as JSON lines
   screenshot [-o stage.png]      Take a screenshot (writes PNG)
   publish [-o out.swf]           Publish to SWF (writes binary)
   repl                           Interactive REPL session
@@ -506,6 +545,7 @@ Examples:
   flash-agent call stage_add_shape '{"kind":"rect","x1":10,"y1":10,"x2":100,"y2":50}'
   flash-agent call doc_set_properties --frameRate=24
   flash-agent read flash://document/summary
+  flash-agent watch
   flash-agent screenshot -o my-stage.png
   flash-agent publish -o movie.swf
   flash-agent --url http://localhost:1420/mcp repl
@@ -534,6 +574,10 @@ async function main(): Promise<void> {
 
     case "read":
       await cmdRead(url, args);
+      break;
+
+    case "watch":
+      await cmdWatch(url);
       break;
 
     case "screenshot":

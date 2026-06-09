@@ -212,6 +212,12 @@ importers:
       vite:
         specifier: ^5.3.4
         version: 5.4.21(@types/node@25.9.2)
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@25.9.2)
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
 
 packages:
 

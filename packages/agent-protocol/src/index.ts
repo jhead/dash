@@ -603,6 +603,45 @@ export const BridgeResponseSchema = z.discriminatedUnion("ok", [
 export type BridgeResponse = z.infer<typeof BridgeResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Bridge push notifications (editor → plugin)
+//
+// These are one-way event messages that the editor page sends to the Vite
+// plugin over the /__agent WebSocket. Unlike BridgeRequest/BridgeResponse,
+// these have no id and expect no reply. The plugin forwards them to connected
+// MCP clients as MCP resource update notifications.
+// ---------------------------------------------------------------------------
+
+/** Doc changed: emitted after every pushDoc() / bumpRev(). */
+export const BridgeDocChangedSchema = z.object({
+  type: z.literal("doc-changed"),
+  rev: RevSchema,
+});
+export type BridgeDocChanged = z.infer<typeof BridgeDocChangedSchema>;
+
+/** Selection changed: emitted when the stage selection changes. */
+export const BridgeSelectionChangedSchema = z.object({
+  type: z.literal("selection-changed"),
+  ids: z.array(z.string()),
+  rev: RevSchema,
+});
+export type BridgeSelectionChanged = z.infer<typeof BridgeSelectionChangedSchema>;
+
+/** Playhead moved: emitted when the current frame changes. */
+export const BridgePlayheadMovedSchema = z.object({
+  type: z.literal("playhead-moved"),
+  frameIndex: z.number().int().nonnegative(),
+  rev: RevSchema,
+});
+export type BridgePlayheadMoved = z.infer<typeof BridgePlayheadMovedSchema>;
+
+export const BridgeNotificationSchema = z.discriminatedUnion("type", [
+  BridgeDocChangedSchema,
+  BridgeSelectionChangedSchema,
+  BridgePlayheadMovedSchema,
+]);
+export type BridgeNotification = z.infer<typeof BridgeNotificationSchema>;
+
+// ---------------------------------------------------------------------------
 // Command registry types
 // ---------------------------------------------------------------------------
 

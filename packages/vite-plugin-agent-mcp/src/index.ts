@@ -25,6 +25,7 @@ import { z } from "zod";
 import type {
   BridgeRequest,
   BridgeResponse,
+  BridgeNotification,
   EditorStatusResult,
   DocGetResult,
   DocSummaryResult,
@@ -40,12 +41,28 @@ interface PendingCall {
   timer: ReturnType<typeof setTimeout>;
 }
 
+/** A live MCP session (stateful Streamable HTTP). */
+interface McpSession {
+  server: McpServer;
+  transport: StreamableHTTPServerTransport;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin state (module-level so it persists across HMR)
 // ---------------------------------------------------------------------------
 
 let _editorSocket: WebSocket | null = null;
 const _pending = new Map<string, PendingCall>();
+
+/**
+ * Active MCP sessions keyed by session ID.
+ *
+ * The plugin uses stateful Streamable HTTP transport so that the MCP server
+ * can push resource update notifications to subscribed clients when the
+ * document changes. Each client connection maintains a session; GET requests
+ * open an SSE stream on which notifications are delivered.
+ */
+const _sessions = new Map<string, McpSession>();
 
 /** Forward a command to the editor page over the private WS bridge. */
 function forwardToEditor(
@@ -140,12 +157,43 @@ function errorContent(message: string): {
 }
 
 // ---------------------------------------------------------------------------
-// Create a fresh McpServer for each stateless HTTP request.
+// Handle bridge push notifications (editor → plugin → MCP clients)
+// ---------------------------------------------------------------------------
+
+/**
+ * Called when the editor page sends a push notification over the /__agent WS.
+ * Forwards the event to all active MCP sessions as resource update notifications.
+ */
+async function handleBridgeNotification(notification: BridgeNotification): Promise<void> {
+  if (notification.type === "doc-changed") {
+    // Notify all subscribed MCP clients that the document changed
+    const promises: Promise<void>[] = [];
+    for (const session of _sessions.values()) {
+      promises.push(
+        session.server.server
+          .sendResourceUpdated({ uri: "flash://document" })
+          .catch(() => {/* session may be closing */})
+      );
+      promises.push(
+        session.server.server
+          .sendResourceUpdated({ uri: "flash://document/summary" })
+          .catch(() => {/* session may be closing */})
+      );
+    }
+    await Promise.allSettled(promises);
+  } else if (notification.type === "selection-changed") {
+    // No dedicated MCP resource for selection yet; a future extension point
+  } else if (notification.type === "playhead-moved") {
+    // No dedicated MCP resource for playhead yet; a future extension point
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Create a fresh McpServer for a session.
 //
-// We cannot reuse a single McpServer across requests because
-// McpServer.connect() is not idempotent — it binds to exactly one transport
-// and throws if called again while already connected. For the stateless
-// Streamable HTTP pattern each request gets its own Server instance.
+// In stateful mode each MCP client gets its own McpServer+transport pair that
+// persists across multiple HTTP requests within the session. This allows the
+// server to push resource update notifications to subscribed clients.
 // ---------------------------------------------------------------------------
 
 function createMcpServerForRequest(): McpServer {
@@ -935,11 +983,250 @@ function createMcpServerForRequest(): McpServer {
     }
   );
 
+  // =========================================================================
+  // MCP Prompts — canned authoring recipes
+  // =========================================================================
+
+  server.registerPrompt(
+    "create_animation",
+    {
+      title: "Create Animation",
+      description:
+        "Step-by-step guide to creating a simple motion animation: " +
+        "add a shape to the stage, convert it to a MovieClip symbol, then animate it " +
+        "by inserting keyframes and updating position/properties on each keyframe.",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text:
+              "Walk me through creating a simple motion animation in the Flash 8 editor.",
+          },
+        },
+        {
+          role: "assistant" as const,
+          content: {
+            type: "text" as const,
+            text: [
+              "Here is the standard workflow for a motion animation:",
+              "",
+              "**Step 1 — Orient**",
+              "Call `doc_summary` to confirm the document structure (scenes, layers, frame count).",
+              "",
+              "**Step 2 — Add a shape**",
+              "Use `stage_add_shape` to place a shape on the stage at frame 0:",
+              "```",
+              'stage_add_shape { kind: "rect", x1: 50, y1: 100, x2: 150, y2: 200, fill: "#FF0000" }',
+              "```",
+              "Note the returned `id` — you will need it for subsequent steps.",
+              "",
+              "**Step 3 — Convert to a MovieClip symbol**",
+              "Animations require a symbol instance. Convert the shape:",
+              "```",
+              'library_convert_to_symbol { ids: ["<id>"], name: "Ball", symbolType: "movieclip" }',
+              "```",
+              "",
+              "**Step 4 — Set a motion tween**",
+              "Insert a keyframe at the destination frame and set a motion tween on frame 0:",
+              "```",
+              'timeline_insert_keyframe { layerId: "<layerId>", frameIndex: 24 }',
+              'timeline_set_tween    { layerId: "<layerId>", frameIndex: 0, kind: "motion" }',
+              "```",
+              "",
+              "**Step 5 — Set the end-keyframe position**",
+              "Move the playhead to frame 24 and update the instance position:",
+              "```",
+              'view_set    { currentFrame: 24 }',
+              'stage_update { id: "<instanceId>", updates: { x: 400, y: 200 } }',
+              "```",
+              "",
+              "**Step 6 — Verify**",
+              "Call `doc_summary` to confirm the tween is set, then optionally `stage_screenshot` " +
+                "to visually inspect the end frame.",
+            ].join("\n"),
+          },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "create_button",
+    {
+      title: "Create Button",
+      description:
+        "Step-by-step guide to creating an interactive button symbol: " +
+        "add a shape, convert it to a Button symbol, then attach an AS2 event script.",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: "How do I create an interactive button in the Flash 8 editor?",
+          },
+        },
+        {
+          role: "assistant" as const,
+          content: {
+            type: "text" as const,
+            text: [
+              "Here is the standard workflow for creating a button with an event handler:",
+              "",
+              "**Step 1 — Orient**",
+              "Call `doc_summary` to note the active layer id.",
+              "",
+              "**Step 2 — Add a shape for the button face**",
+              "```",
+              'stage_add_shape { kind: "rect", x1: 200, y1: 150, x2: 350, y2: 210, fill: "#0066CC" }',
+              "```",
+              "",
+              "**Step 3 — Add a label**",
+              "```",
+              'stage_add_text { x: 220, y: 165, width: 110, height: 30, text: "Click Me", color: "#FFFFFF" }',
+              "```",
+              "",
+              "**Step 4 — Convert both objects to a Button symbol**",
+              "Select both ids and convert:",
+              "```",
+              'library_convert_to_symbol { ids: ["<shapeId>", "<textId>"], name: "MyButton", symbolType: "button" }',
+              "```",
+              "",
+              "**Step 5 — Give the instance an AS2 name**",
+              "```",
+              'stage_update { id: "<instanceId>", updates: { name: "myBtn" } }',
+              "```",
+              "",
+              "**Step 6 — Attach a click handler on the main timeline frame 0**",
+              "```",
+              'script_set {',
+              '  layerId: "<layerId>",',
+              '  frameIndex: 0,',
+              '  script: "myBtn.onRelease = function() { trace(\\"Button clicked!\\"); };"',
+              '}',
+              "```",
+              "",
+              "**Step 7 — Verify**",
+              "Check `script_set` diagnostics (should be empty). " +
+                "Use `stage_screenshot` to confirm the visual layout.",
+            ].join("\n"),
+          },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "author_game_loop",
+    {
+      title: "Author Game Loop (Avoider/Catcher)",
+      description:
+        "Guide to building a simple avoider/catcher game in Flash 8 AS2: " +
+        "set up the stage, create player and enemy MovieClips, attach an onEnterFrame " +
+        "game loop with keyboard controls and basic collision detection.",
+    },
+    async () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: "Help me build a simple avoider game in the Flash 8 editor.",
+          },
+        },
+        {
+          role: "assistant" as const,
+          content: {
+            type: "text" as const,
+            text: [
+              "Here is the avoider/catcher game pattern for Flash 8 AS2:",
+              "",
+              "**Step 1 — Document setup**",
+              "```",
+              'doc_set_properties { width: 550, height: 400, frameRate: 24, backgroundColor: "#000022" }',
+              "```",
+              "",
+              "**Step 2 — Create the player symbol**",
+              "Add a shape, convert it to a MovieClip named `Player`:",
+              "```",
+              'stage_add_shape  { kind: "oval", x1: 255, y1: 355, x2: 295, y2: 395, fill: "#00FF88" }',
+              'library_convert_to_symbol { ids: ["<shapeId>"], name: "Player", symbolType: "movieclip" }',
+              'stage_update { id: "<instanceId>", updates: { name: "player" } }',
+              "```",
+              "",
+              "**Step 3 — Create the enemy symbol**",
+              "```",
+              'stage_add_shape  { kind: "oval", x1: 255, y1: 5, x2: 285, y2: 35, fill: "#FF4444" }',
+              'library_convert_to_symbol { ids: ["<shapeId>"], name: "Enemy", symbolType: "movieclip" }',
+              'stage_update { id: "<instanceId>", updates: { name: "enemy" } }',
+              "```",
+              "",
+              "**Step 4 — Add a score text field**",
+              "```",
+              'stage_add_text { x: 10, y: 10, width: 200, height: 24,',
+              '  text: "Score: 0", textType: "dynamic", color: "#FFFFFF" }',
+              'stage_update { id: "<textId>", updates: { name: "scoreField" } }',
+              "```",
+              "",
+              "**Step 5 — Attach the game loop on frame 0**",
+              "```",
+              'script_set {',
+              '  layerId: "<layerId>",',
+              '  frameIndex: 0,',
+              '  script: [',
+              '    "var speed:Number = 5;",',
+              '    "var score:Number = 0;",',
+              '    "_root.onEnterFrame = function() {",',
+              '    "  if (Key.isDown(Key.LEFT))  player._x -= speed;",',
+              '    "  if (Key.isDown(Key.RIGHT)) player._x += speed;",',
+              '    "  enemy._y += 3;",',
+              '    "  if (enemy._y > 420) { enemy._y = -20; enemy._x = Math.random()*520; score++; scoreField.text = \\"Score: \\" + score; }",',
+              '    "  if (player.hitTest(enemy)) { _root.gotoAndStop(\\"gameover\\"); }",',
+              '    "};"',
+              '  ].join("\\n")',
+              '}',
+              "```",
+              "",
+              "**Step 6 — Add a `gameover` frame label and stop script**",
+              "```",
+              'timeline_insert_blank_keyframe { layerId: "<layerId>", frameIndex: 1 }',
+              'timeline_set_frame_label       { layerId: "<layerId>", frameIndex: 1, label: "gameover" }',
+              'script_set { layerId: "<layerId>", frameIndex: 1, script: "stop();" }',
+              "```",
+              "",
+              "**Step 7 — Verify**",
+              "Call `doc_summary` to confirm labels, then `publish_swf` to compile and test in Ruffle.",
+            ].join("\n"),
+          },
+        },
+      ],
+    })
+  );
+
   return server;
 }
 
 // ---------------------------------------------------------------------------
-// Handle a single MCP HTTP request
+// Handle a single MCP HTTP request (stateful session management)
+//
+// Uses stateful Streamable HTTP transport so the server can push resource
+// update notifications to subscribed clients. Each client gets a session ID
+// on the first (initialize) request; subsequent requests include the session ID
+// header to be routed to the correct server instance.
+//
+// Packaged-Tauri hosting note:
+//   In a packaged Tauri build the Vite dev server is not available. The same
+//   MCP server could be hosted by a Node sidecar process (spawned from
+//   src-tauri/src/main.rs via tauri::api::process::Command) or by a Rust MCP
+//   SDK implementation in src-tauri. The @flash/agent-protocol zod schemas and
+//   the authoring-ui AgentCommandRegistry are transport-agnostic — only the
+//   Vite plugin wrapper (this file) is Vite-specific. A follow-up task should
+//   create packages/tauri-agent-sidecar that re-exports the same McpServer
+//   factory against an stdio or TCP transport for packaged builds.
 // ---------------------------------------------------------------------------
 
 async function handleMcpRequest(
@@ -960,34 +1247,71 @@ async function handleMcpRequest(
     return;
   }
 
-  // Stateless transport — new transport and server per request
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+  // Route to an existing session if the client provides a session ID
+  if (sessionId && _sessions.has(sessionId)) {
+    const session = _sessions.get(sessionId)!;
+    const body = await parseBody(req);
+    await session.transport.handleRequest(req, res, body);
+    return;
+  }
+
+  // DELETE: close a session
+  if (req.method === "DELETE" && sessionId) {
+    const session = _sessions.get(sessionId);
+    if (session) {
+      await session.transport.close();
+      _sessions.delete(sessionId);
+    }
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  // New session — must be an initialize request
   const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
+    sessionIdGenerator: () => randomUUID(),
   });
 
   const mcpServer = createMcpServerForRequest();
+
+  // Remove the session when the transport closes
+  transport.onclose = () => {
+    if (transport.sessionId) {
+      _sessions.delete(transport.sessionId);
+    }
+  };
+
   await mcpServer.connect(transport);
 
-  // Parse body for POST
-  let body: unknown;
-  if (req.method === "POST") {
-    body = await new Promise<unknown>((resolve, reject) => {
-      let data = "";
-      req.on("data", (chunk: Buffer) => {
-        data += chunk.toString();
-      });
-      req.on("end", () => {
-        try {
-          resolve(data ? JSON.parse(data) : undefined);
-        } catch {
-          reject(new Error("Invalid JSON body"));
-        }
-      });
-      req.on("error", reject);
-    });
-  }
-
+  // Store the session after connect (sessionId is set after the first response)
+  const body = await parseBody(req);
   await transport.handleRequest(req, res, body);
+
+  // After handleRequest, transport.sessionId is set for initialize responses
+  if (transport.sessionId && !_sessions.has(transport.sessionId)) {
+    _sessions.set(transport.sessionId, { server: mcpServer, transport });
+  }
+}
+
+/** Parse the request body for POST requests. */
+async function parseBody(req: IncomingMessage): Promise<unknown> {
+  if (req.method !== "POST") return undefined;
+  return new Promise<unknown>((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk: Buffer) => {
+      data += chunk.toString();
+    });
+    req.on("end", () => {
+      try {
+        resolve(data ? JSON.parse(data) : undefined);
+      } catch {
+        reject(new Error("Invalid JSON body"));
+      }
+    });
+    req.on("error", reject);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1027,12 +1351,25 @@ export function agentMcpPlugin(): Plugin {
         _editorSocket = ws;
 
         ws.on("message", (data: Buffer) => {
-          let response: BridgeResponse;
+          let msg: unknown;
           try {
-            response = JSON.parse(data.toString()) as BridgeResponse;
+            msg = JSON.parse(data.toString());
           } catch {
             return;
           }
+
+          // Push notifications from the editor have a `type` discriminant
+          // but no `id` field (they are not replies to pending calls).
+          const asAny = msg as Record<string, unknown>;
+          if (typeof asAny["type"] === "string" && typeof asAny["id"] === "undefined") {
+            handleBridgeNotification(msg as BridgeNotification).catch((err: Error) => {
+              console.warn("[agent-mcp] Notification handling error:", err.message);
+            });
+            return;
+          }
+
+          // Otherwise it's a BridgeResponse (reply to a pending command)
+          const response = msg as BridgeResponse;
           const pending = _pending.get(response.id);
           if (!pending) return;
           clearTimeout(pending.timer);
@@ -1098,7 +1435,7 @@ export function agentMcpPlugin(): Plugin {
   };
 }
 
-// Re-export errorContent for potential external use in tests
-export { errorContent };
+// Re-export for tests
+export { errorContent, createMcpServerForRequest };
 
 export default agentMcpPlugin;

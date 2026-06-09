@@ -83,14 +83,30 @@ import type {
 } from "@flash/core";
 
 // ---------------------------------------------------------------------------
-// Rev counter
+// Rev counter + change notification hook
 // ---------------------------------------------------------------------------
 
 let _rev: Rev = 0;
 
-/** Called by the Shell after every pushDoc(). Bumps the rev counter. */
+/** Callback invoked after every bumpRev(). Wired by bridge.ts to send
+ *  notifications to the Vite plugin over the /__agent WebSocket. */
+let _onDocChanged: ((rev: Rev) => void) | null = null;
+
+/** Register a callback to be called whenever the document changes.
+ *  Called by bridge.ts after the WebSocket is established. */
+export function setDocChangedCallback(fn: ((rev: Rev) => void) | null): void {
+  _onDocChanged = fn;
+}
+
+/** Called by the Shell after every pushDoc(). Bumps the rev counter
+ *  and fires the doc-changed notification callback. */
 export function bumpRev(): void {
   _rev++;
+  try {
+    _onDocChanged?.(_rev);
+  } catch {
+    // notification errors must not propagate into the caller
+  }
 }
 
 /** Returns the current revision number. */
