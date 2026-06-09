@@ -8,7 +8,6 @@ import fcntl
 import json
 import os
 import re
-import secrets
 import shutil
 import socket
 import sys
@@ -21,7 +20,10 @@ ROOT = Path(__file__).resolve().parent
 TASKS_DIR = ROOT / ".tasks"
 LOCKS_DIR = TASKS_DIR / "locks"
 MUTEX_FILE = TASKS_DIR / ".mutex"
+COUNTER_FILE = TASKS_DIR / ".counter"
 DEFAULT_TTL = 3600
+ID_WIDTH = 4
+ID_PREFIX_RE = re.compile(r"^\d{" + str(ID_WIDTH) + r"}-")
 STATUSES = frozenset({"open", "in_progress", "done", "cancelled"})
 
 
@@ -48,6 +50,36 @@ def default_holder() -> str:
 def slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return (slug[:48] or "task")
+
+
+def normalize_slug(raw: str) -> str:
+    """Strip an existing numeric prefix and return a filesystem-safe slug."""
+    slug = ID_PREFIX_RE.sub("", raw.strip())
+    slug = re.sub(r"[^a-z0-9-]+", "-", slug.lower()).strip("-")
+    return slug[:48] or "task"
+
+
+def make_task_id(number: int, slug: str) -> str:
+    return f"{number:0{ID_WIDTH}d}-{slug}"
+
+
+def read_counter() -> int:
+    if not COUNTER_FILE.is_file():
+        return 1
+    try:
+        return max(1, int(COUNTER_FILE.read_text(encoding="utf-8").strip()))
+    except ValueError:
+        return 1
+
+
+def write_counter(value: int) -> None:
+    COUNTER_FILE.write_text(f"{max(1, value)}\n", encoding="utf-8")
+
+
+def allocate_task_number() -> int:
+    number = read_counter()
+    write_counter(number + 1)
+    return number
 
 
 def task_path(task_id: str) -> Path:
@@ -154,9 +186,9 @@ def task_with_lock(task_id: str) -> dict[str, Any]:
 
 def cmd_create(args: argparse.Namespace) -> None:
     with global_mutex():
-        task_id = args.id
-        if not task_id:
-            task_id = f"{slugify(args.title)}-{secrets.token_hex(2)}"
+        number = allocate_task_number()
+        slug = normalize_slug(args.id) if args.id else slugify(args.title)
+        task_id = make_task_id(number, slug)
         path = task_path(task_id)
         if path.exists():
             die(f"task already exists: {task_id}")
@@ -191,13 +223,13 @@ def cmd_list(args: argparse.Namespace) -> None:
         print("No tasks.")
         return
 
-    print(f"{'ID':<32} {'STATUS':<12} {'LOCK':<24} TITLE")
-    print("-" * 90)
+    print(f"{'ID':<40} {'STATUS':<12} {'LOCK':<24} TITLE")
+    print("-" * 98)
     for task in tasks:
         lock = task.get("lock")
         lock_str = lock["holder"] if lock else "-"
         title = task.get("title", "")[:40]
-        print(f"{task['id']:<32} {task.get('status', ''):<12} {lock_str:<24} {title}")
+        print(f"{task['id']:<40} {task.get('status', ''):<12} {lock_str:<24} {title}")
 
 
 def cmd_show(args: argparse.Namespace) -> None:
@@ -312,6 +344,62 @@ def cmd_renew(args: argparse.Namespace) -> None:
     print(f"renewed: {args.id} (ttl={args.ttl}s)")
 
 
+def cmd_migrate(args: argparse.Namespace) -> None:
+    """Assign numeric ID prefixes to legacy task files and sync the counter."""
+    with global_mutex():
+        entries: list[tuple[Path, dict[str, Any]]] = []
+        for path in sorted(TASKS_DIR.glob("*.json")):
+            entries.append((path, json.loads(path.read_text(encoding="utf-8"))))
+
+        if not entries:
+            print("no tasks to migrate")
+            return
+
+        entries.sort(key=lambda item: item[1].get("created_at", ""))
+        next_number = 1
+        migrated = 0
+
+        for path, task in entries:
+            old_id = task["id"]
+            if ID_PREFIX_RE.match(old_id):
+                next_number = max(next_number, int(old_id.split("-", 1)[0]) + 1)
+                continue
+
+            slug = normalize_slug(old_id)
+            new_id = make_task_id(next_number, slug)
+            task["id"] = new_id
+            task["updated_at"] = now_iso()
+
+            old_lock = lock_dir(old_id)
+            new_lock = lock_dir(new_id)
+            if old_lock.is_dir():
+                if new_lock.exists():
+                    shutil.rmtree(new_lock, ignore_errors=True)
+                old_lock.rename(new_lock)
+                meta = read_lock_meta(new_id)
+                if meta is not None:
+                    meta["task_id"] = new_id
+                    lock_meta_path(new_id).write_text(
+                        json.dumps(meta, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+
+            new_path = task_path(new_id)
+            new_path.write_text(json.dumps(task, indent=2) + "\n", encoding="utf-8")
+            if path != new_path:
+                path.unlink(missing_ok=True)
+
+            print(f"migrated: {old_id} -> {new_id}")
+            migrated += 1
+            next_number += 1
+
+        write_counter(max(next_number, read_counter()))
+        if migrated:
+            print(f"migrated {migrated} task(s); next id = {read_counter():0{ID_WIDTH}d}")
+        else:
+            print("all tasks already use numeric prefixes")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="task",
@@ -365,6 +453,12 @@ def build_parser() -> argparse.ArgumentParser:
     renew.add_argument("--holder")
     renew.add_argument("--ttl", type=int, default=DEFAULT_TTL)
     renew.set_defaults(func=cmd_renew)
+
+    migrate = sub.add_parser(
+        "migrate",
+        help="Assign numeric ID prefixes to legacy task files",
+    )
+    migrate.set_defaults(func=cmd_migrate)
 
     return parser
 

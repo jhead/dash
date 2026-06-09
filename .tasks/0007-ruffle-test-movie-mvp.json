@@ -1,0 +1,8 @@
+{
+  "id": "0007-ruffle-test-movie-mvp",
+  "title": "Ruffle test movie player",
+  "description": "Embed Ruffle (wasm) for Test Movie: publish SWF in-memory or temp file, play in player panel/window at document frame rate. Verify authored shapes, instances, and timeline playback. See docs/16-player-runtime.md (Our runtime strategy), docs/14-publishing-export.md (Test/preview). Depends on swf-compiler-mvp.",
+  "status": "open",
+  "created_at": "2026-06-09T16:31:27Z",
+  "updated_at": "2026-06-09T16:32:54Z"
+}

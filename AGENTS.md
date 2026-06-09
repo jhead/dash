@@ -82,7 +82,8 @@ export TASK_AGENT_ID="cursor-$(hostname)"
 ## Task CLI reference
 
 ```bash
-./task create  --title "..." [--description "..."] [--id custom-id]
+./task create  --title "..." [--description "..."] [--id slug-without-prefix]
+./task migrate
 ./task list    [--status open|in_progress|done|cancelled] [--json]
 ./task show    <id> [--json]
 ./task update  <id> [--title "..."] [--description "..."] [--status STATUS]
@@ -98,18 +99,24 @@ Add `--json` to `list` or `show` for machine-readable output.
 
 ```
 .tasks/
-  <task-id>.json       # task record (tracked in git)
+  <NNNN>-<slug>.json   # task record (tracked in git); NNNN = auto-increment id
+  .counter             # next auto-increment number (tracked in git)
   locks/
-    <task-id>/
+    <NNNN>-<slug>/
       meta.json        # runtime lock metadata (gitignored)
   .mutex               # runtime global lock file (gitignored)
 ```
+
+Task IDs and filenames always use a **4-digit auto-increment prefix** plus a slug
+(e.g. `0007-stage-view-mvp`). `./task create` assigns the next number automatically;
+`--id` sets the slug portion only. Legacy tasks without a prefix can be fixed with
+`./task migrate`.
 
 Task JSON shape:
 
 ```json
 {
-  "id": "stage-mvp-a1b2",
+  "id": "0007-stage-view-mvp",
   "title": "Stage MVP",
   "description": "Minimal stage: canvas, zoom, pan. See docs/01-documents-stage-scenes.md",
   "status": "open",
@@ -122,7 +129,7 @@ Lock metadata (written by `acquire`, not edited manually):
 
 ```json
 {
-  "task_id": "stage-mvp-a1b2",
+  "task_id": "0007-stage-view-mvp",
   "holder": "cursor-my-machine",
   "pid": 12345,
   "hostname": "my-machine",

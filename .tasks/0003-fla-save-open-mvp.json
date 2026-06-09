@@ -1,0 +1,8 @@
+{
+  "id": "0003-fla-save-open-mvp",
+  "title": "FLA project save & open",
+  "description": "Versioned zip/JSON project format (.fla extension) with lossless round-trip of the document model. New, Open, Save, Save As via shell dialogs. See docs/15-file-formats-fla-swf.md (Our FLA strategy). Depends on document-model-mvp.",
+  "status": "open",
+  "created_at": "2026-06-09T16:31:27Z",
+  "updated_at": "2026-06-09T16:32:54Z"
+}

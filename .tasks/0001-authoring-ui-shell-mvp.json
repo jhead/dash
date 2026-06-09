@@ -1,0 +1,8 @@
+{
+  "id": "0001-authoring-ui-shell-mvp",
+  "title": "Authoring UI shell",
+  "description": "Flash-like workspace: menu bar (File, Edit, View, Modify, Control), dockable panel regions, edit bar breadcrumb placeholder, status bar. Stage + Timeline + Tools panel layout. See docs/01-documents-stage-scenes.md (document tabs, edit context). Depends on monorepo-shell-mvp.",
+  "status": "open",
+  "created_at": "2026-06-09T16:31:27Z",
+  "updated_at": "2026-06-09T16:32:54Z"
+}

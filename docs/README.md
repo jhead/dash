@@ -3,16 +3,7 @@
 A pixel- and behavior-accurate clone of **Macromedia Flash Professional 8** (2005),
 rebuilt on modern web technologies and packaged as a desktop application.
 
-These documents define **what Flash 8 actually did**, domain by domain, so that the
-implementation can reproduce it *exactly*. Each doc lists the definitive feature set,
-notes Flash 8–specific behaviors that must be matched, and includes light implementation
-notes mapping the feature onto the clone's web stack.
-
-> **Guiding principle — accuracy first.** Every authoring tool, panel, and runtime
-> behavior must work *identically* to Flash 8. New features/tools/APIs may be added
-> later, but never at the expense of fidelity to the original.
-
-## Project goals (from the brief)
+## Project goals
 
 - Fully functioning **Stage/canvas**, **Timeline**, and **vector graphics** engine.
 - An **identical toolbox** to Flash 8 (every tool, modifier, and shortcut).
@@ -24,7 +15,16 @@ notes mapping the feature onto the clone's web stack.
 - Runs in a **web browser / desktop webview** (e.g. Tauri/Electron).
 - Heavy use of **GPU acceleration / shaders** for rendering and effects.
 
-## How to read these docs
+## Documentation
+
+These documents define **what Flash 8 actually did**, domain by domain, so that the
+implementation can reproduce it *exactly*. Each doc lists the definitive feature set,
+notes Flash 8–specific behaviors that must be matched, and includes light implementation
+notes mapping the feature onto the clone's web stack.
+
+> **Guiding principle — accuracy first.** Every authoring tool, panel, and runtime
+> behavior must work *identically* to Flash 8. New features/tools/APIs may be added
+> later, but never at the expense of fidelity to the original.
 
 Start with `00-overview-and-architecture.md`, then read by domain.
 
@@ -48,8 +48,3 @@ Start with `00-overview-and-architecture.md`, then read by domain.
 | 15 | [File Formats: FLA & SWF](./15-file-formats-fla-swf.md) | Project + output binary formats |
 | 16 | [Player Runtime](./16-player-runtime.md) | Display list, playback, Ruffle |
 | 17 | [Advanced & Specialized](./17-advanced-specialized.md) | Accessibility, screens, data, printing |
-
-## Status
-
-These are **product/feature specification documents** — the planning baseline.
-No application code exists yet. Implementation phases will be planned after review.

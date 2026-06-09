@@ -3,7 +3,7 @@
 ## What this project is
 
 A faithful re-implementation of the **Macromedia Flash Professional 8** authoring tool
-*and* a compatible playback runtime, built for modern browsers and packaged as a desktop
+_and_ a compatible playback runtime, built for modern browsers and packaged as a desktop
 app. It must reproduce Flash 8's authoring experience and output format with high fidelity,
 while taking advantage of GPU acceleration and modern engineering.
 
@@ -58,18 +58,18 @@ Flash 8 shipped in two editions; we target the **Professional 8** feature supers
 
 ## Proposed technology stack
 
-| Concern | Choice | Rationale |
-|---------|--------|-----------|
-| Desktop shell | **Tauri** (preferred) or Electron | Native FS/dialogs for FLA/SWF, smaller footprint; user rule favors a pre-scaffolded monorepo |
-| UI framework | React + TypeScript | Mature panel/docking ecosystem |
-| Package mgmt | **pnpm + corepack** (monorepo) | Per user rule; scaffold workspaces up front |
-| Rendering | **WebGPU** (preferred) → WebGL2 fallback | Shader-based vector fills, filters, blend modes, bitmap caching |
-| Vector geometry | Custom + (e.g. Lyon/earcut-style tessellation) | Match Flash fill/stroke rules incl. even-odd + edge merging |
-| Text shaping | HarfBuzz (wasm) + custom FlashType-style rasterizer | Match anti-aliasing settings |
-| ActionScript | Custom AS1/AS2 compiler + AVM1 interpreter | Authoring + accurate runtime |
-| SWF I/O | Custom writer; parser reuse from Ruffle's `swf` crate | Standards-accurate tags |
-| Playback | **Ruffle** (wasm) embedded for test movie | Proven AVM1/AVM2 emulator |
-| Media codecs | wasm decoders/encoders (MP3, ADPCM, JPEG, PNG, GIF, FLV/VP6) | Import + publish |
+| Concern         | Choice                                                       | Rationale                                                                                    |
+| --------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Desktop shell   | **Tauri** (preferred) or Electron                            | Native FS/dialogs for FLA/SWF, smaller footprint; user rule favors a pre-scaffolded monorepo |
+| UI framework    | React + TypeScript                                           | Mature panel/docking ecosystem                                                               |
+| Package mgmt    | **pnpm + corepack** (monorepo)                               | Per user rule; scaffold workspaces up front                                                  |
+| Rendering       | **WebGPU** (preferred) → WebGL2 fallback                     | Shader-based vector fills, filters, blend modes, bitmap caching                              |
+| Vector geometry | Custom + (e.g. Lyon/earcut-style tessellation)               | Match Flash fill/stroke rules incl. even-odd + edge merging                                  |
+| Text shaping    | HarfBuzz (wasm) + custom FlashType-style rasterizer          | Match anti-aliasing settings                                                                 |
+| ActionScript    | Custom AS1/AS2 compiler + AVM1 interpreter                   | Authoring + accurate runtime                                                                 |
+| SWF I/O         | Custom writer; parser reuse from Ruffle's `swf` crate        | Standards-accurate tags                                                                      |
+| Playback        | **Ruffle** (wasm) embedded for test movie                    | Proven AVM1/AVM2 emulator                                                                    |
+| Media codecs    | wasm decoders/encoders (MP3, ADPCM, JPEG, PNG, GIF, FLV/VP6) | Import + publish                                                                             |
 
 > Per project rules, when implementing against any of these libraries we verify current
 > APIs from their live docs rather than assuming.
