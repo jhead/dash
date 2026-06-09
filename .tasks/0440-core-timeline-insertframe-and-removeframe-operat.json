@@ -1,0 +1,8 @@
+{
+  "id": "0440-core-timeline-insertframe-and-removeframe-operat",
+  "title": "Core: Timeline insertFrame and removeFrame operations",
+  "description": "Test the insertFrame and removeFrame engine functions from packages/core/src/engine/timeline.ts. Test: insertFrame at middle of layer extends frameCount, insertFrame at end adds frame, removeFrame reduces frameCount, insertFrame preserves keyframes at correct indices, removeFrame on a keyframe converts it to empty, insertKeyframe at specific frame, insertBlankKeyframe. Use createLayer/createFrame helpers.",
+  "status": "done",
+  "created_at": "2026-06-09T21:41:56Z",
+  "updated_at": "2026-06-09T21:45:38Z"
+}

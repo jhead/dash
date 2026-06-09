@@ -1,0 +1,8 @@
+{
+  "id": "0422-core-as2-string-methods-replace-split-match",
+  "title": "Core: AS2 string methods (replace, split, match)",
+  "description": "Test compilation of string prototype methods used heavily in Flash 8 AS2: s.replace(pattern, replacement), s.replace(/re/, 'repl'), s.split(delimiter), s.match(/pattern/), s.search(/pattern/). Verify ActionCallMethod (0x52) for each. Also test: s.length (ActionGetMember 0x4f), s.charAt(n), s.indexOf(sub), s + other (ActionAdd2). Test string with special chars: \\n, \\t, Unicode.",
+  "status": "done",
+  "created_at": "2026-06-09T21:37:45Z",
+  "updated_at": "2026-06-09T21:41:37Z"
+}

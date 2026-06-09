@@ -1,0 +1,8 @@
+{
+  "id": "0516-as2-drawing-api-lineto-moveto-curveto-beginfill",
+  "title": "AS2 drawing API: lineTo, moveTo, curveTo, beginFill",
+  "description": "Test MovieClip drawing API: this.lineStyle(2, 0x000000, 100), this.moveTo(x,y), this.lineTo(x,y), this.curveTo(cx,cy,ax,ay), this.beginFill(color,alpha), this.endFill(), this.clear().",
+  "status": "open",
+  "created_at": "2026-06-09T22:01:49Z",
+  "updated_at": "2026-06-09T22:01:49Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0135-core-shape-merge-break-apart",
+  "title": "Core: merge shapes and break apart group operations",
+  "description": "Implement two operations in packages/core/src/engine/mutations.ts: (1) mergeShapes(doc, sceneIndex, layerIndex, frameIndex, shapeIds[]) -> FlashDocument: combine multiple ShapeObjects into one by concatenating their paths (Flash 8's Modify > Combine Objects > Union, simplified to path concatenation). (2) breakApart(doc, sceneIndex, layerIndex, frameIndex, objectId) -> FlashDocument: split a group/symbol-instance into its constituent shapes, placing them directly on the frame. For symbol instances, extract the shapes from the symbol's first keyframe. Add 8 unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T19:57:05Z",
+  "updated_at": "2026-06-09T20:02:06Z"
+}

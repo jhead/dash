@@ -1,0 +1,8 @@
+{
+  "id": "0100-fla-serialization-full-round-trip-test-suite",
+  "title": "FLA serialization: full round-trip test suite",
+  "description": "Add comprehensive tests for FLA save/load round-trips in packages/core/src/fla/__tests__/roundtrip.test.ts. Tests should create FlashDocument objects with various features and verify they survive a saveFla()/loadFla() round-trip with identical values: (1) Basic document properties (width, height, fps, background color, ruler units); (2) Multiple scenes with names; (3) Layer stack (multiple layers with names, types, visibility, lock, outline); (4) Keyframes with display objects (shapes, text, bitmaps, symbol instances); (5) Motion tween settings (ease, rotate, orientToPath); (6) Library items: BitmapItem with dataUri, SoundItem with dataUri, Symbol with nested timeline; (7) Document guides and grid settings; (8) Symbol linkage properties; (9) Large documents (100 frames, 10 layers) serialize/deserialize in under 500ms; (10) Missing asset entry throws descriptive error. Only touches packages/core/src/ test files \u2014 no production code changes unless bugs are found (fix them if found).",
+  "status": "done",
+  "created_at": "2026-06-09T19:28:37Z",
+  "updated_at": "2026-06-09T19:31:03Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0351-core-as2-equality-operators-deep-comparison",
+  "title": "Core: AS2 equality operators deep comparison",
+  "description": "Verify AS2 equality operators compile correctly: == (ActionEquals2 0x49), != (not-equals pattern), === (ActionStrictEquals 0xAC), !== (strict not-equals), null == undefined (ActionEquals2), null === undefined (ActionStrictEquals). Tests in packages/core/src/as2/__tests__/equality.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:19:20Z",
+  "updated_at": "2026-06-09T21:22:03Z"
+}

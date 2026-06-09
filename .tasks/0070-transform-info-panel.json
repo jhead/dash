@@ -1,0 +1,8 @@
+{
+  "id": "0070-transform-info-panel",
+  "title": "Transform/Info panel: numeric X/Y/W/H/rotation",
+  "description": "No numeric editing of position/size/rotation. Implement the Transform panel and Info panel docked below the stage or in the right panel group. Transform panel: W, H, scaleX%, scaleY%, rotation (degrees), skewX, skewY \u2014 editing any field commits via pushDoc (mutation on selected display object). Info panel (read-only during drag): X, Y, W, H, mouse X/Y. The existing Properties Panel area in the Shell UI should host these. Wire to selection state in Shell: when selectedObjectId changes, populate the fields; on blur/enter, commit. See docs/04-toolbox.md, docs/01.",
+  "status": "done",
+  "created_at": "2026-06-09T18:47:32Z",
+  "updated_at": "2026-06-09T19:00:11Z"
+}

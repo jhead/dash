@@ -1,0 +1,8 @@
+{
+  "id": "0431-core-as2-var-hoisting-and-function-hoisting",
+  "title": "Core: AS2 var hoisting and function hoisting",
+  "description": "Test compilation of AS2 variable and function hoisting behavior: (1) var x declared in block still accessible outside (AS2 uses function scope), (2) function declarations are hoisted to top of scope, (3) var x = 1 in for loop body is hoisted to function scope, (4) nested function declarations, (5) function expression (var fn = function(){}) vs declaration (function fn(){}). Verify ActionDefineFunction2 (0x8E) for declarations.",
+  "status": "done",
+  "created_at": "2026-06-09T21:40:08Z",
+  "updated_at": "2026-06-09T21:41:33Z"
+}

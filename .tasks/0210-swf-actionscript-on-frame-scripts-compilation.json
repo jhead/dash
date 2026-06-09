@@ -1,0 +1,8 @@
+{
+  "id": "0210-swf-actionscript-on-frame-scripts-compilation",
+  "title": "SWF: ActionScript on-frame scripts compilation",
+  "description": "Ensure frame scripts (Frame.script) compile to DoAction tags in the SWF output. Verify compile.ts emits DoAction (tag 12) with the compiled AS2 bytecode for each keyframe that has a non-empty script. Tests: a single-frame SWF with a script emits tag 12 containing ActionPush + ActionTrace bytes. Multi-frame: only frames with scripts get DoAction.",
+  "status": "done",
+  "created_at": "2026-06-09T20:40:51Z",
+  "updated_at": "2026-06-09T20:44:01Z"
+}

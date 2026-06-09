@@ -1,0 +1,8 @@
+{
+  "id": "0036-swf-audio-tags",
+  "title": "SWF audio tags: DefineSound & StartSound",
+  "description": "Extend the SWF compiler (packages/swf) to emit audio tags for SoundItem library assets and SoundLinkage keyframe events. DefineSound (tag 14) stores the audio data. StartSound (tag 15) triggers playback on a frame. SoundStreamHead2 (tag 45) + SoundStreamBlock (tag 19) for Stream sync sounds. Only touches packages/swf/. See docs/10-sound.md and docs/15-file-formats-fla-swf.md.",
+  "status": "done",
+  "created_at": "2026-06-09T17:52:21Z",
+  "updated_at": "2026-06-09T17:54:21Z"
+}

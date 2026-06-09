@@ -1,0 +1,8 @@
+{
+  "id": "0222-swf-test-swf-file-header-and-version-byte",
+  "title": "SWF: Test SWF file header and version byte",
+  "description": "Verify that compiled SWF files have correct header: signature FWS/CWS, version byte = 8 for Flash 8 SWFs, correct file length field. Tests: compile a minimal doc, parse the 8-byte header, verify signature, version=8, fileLength matches actual byte count. Also verify the RECT (frame size) field encodes width/height correctly as TWIPS (\u00d720).",
+  "status": "done",
+  "created_at": "2026-06-09T20:45:11Z",
+  "updated_at": "2026-06-09T20:48:50Z"
+}

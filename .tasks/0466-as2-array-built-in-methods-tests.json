@@ -1,0 +1,8 @@
+{
+  "id": "0466-as2-array-built-in-methods-tests",
+  "title": "AS2 Array built-in methods tests",
+  "description": "Test Array.push, pop, shift, unshift, splice, slice, concat, join, reverse, sort, indexOf, length. Compile-without-crash tests plus any bytecode verification.",
+  "status": "done",
+  "created_at": "2026-06-09T21:51:06Z",
+  "updated_at": "2026-06-09T21:52:34Z"
+}

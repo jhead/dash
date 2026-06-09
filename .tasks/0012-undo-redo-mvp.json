@@ -2,7 +2,7 @@
   "id": "0012-undo-redo-mvp",
   "title": "Undo/redo & history",
   "description": "Document-level undo/redo stack for authoring operations (draw, transform, timeline edits, symbol edits). Ctrl/Cmd+Z / Shift+Ctrl/Cmd+Z. Foundation for History panel later. See docs/01-documents-stage-scenes.md (Undo/Redo). Depends on document-model-mvp.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T16:31:27Z",
-  "updated_at": "2026-06-09T16:32:54Z"
+  "updated_at": "2026-06-09T16:58:01Z"
 }

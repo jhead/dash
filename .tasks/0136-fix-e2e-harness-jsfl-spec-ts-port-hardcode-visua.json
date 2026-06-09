@@ -1,0 +1,8 @@
+{
+  "id": "0136-fix-e2e-harness-jsfl-spec-ts-port-hardcode-visua",
+  "title": "Fix E2E harness: jsfl.spec.ts port hardcode + visual-oracle pixelmatch missing",
+  "description": "Two E2E harness bugs blocking automated testing:\n\n1. apps/desktop/e2e/jsfl.spec.ts lines 6, 21, 35 hardcode http://localhost:5173 but the app runs on port 1420. All 3 JSFL tests fail with ERR_CONNECTION_REFUSED. Fix: replace hardcoded URLs with baseURL from playwright config (use page.goto('/') or rely on baseURL).\n\n2. apps/desktop/e2e/visual-oracle.spec.ts imports pixelmatch which is not installed in the desktop package. Playwright collection crashes before any test can run. Fix: add pixelmatch as a devDependency to apps/desktop/package.json (pnpm --filter @flash/desktop add -D pixelmatch) and ensure the import works.\n\nAcceptance: pnpm --filter @flash/desktop e2e runs all three spec files without collection errors; smoke + jsfl tests all pass; visual-oracle tests run (may still have failures but must not crash at import).",
+  "status": "done",
+  "created_at": "2026-06-09T19:59:10Z",
+  "updated_at": "2026-06-09T20:02:13Z"
+}

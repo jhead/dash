@@ -1,0 +1,8 @@
+{
+  "id": "0141-swf-action-remove-object",
+  "title": "SWF: verify RemoveObject2 tags between scenes and on layer deletion",
+  "description": "Flash 8 emits RemoveObject2 (tag 28) to remove characters from the display list. Verify in packages/swf/src/compile.ts: (1) between scenes, all placed characters are removed; (2) when a layer has no object at a frame but had one previously, RemoveObject2 is emitted; (3) the depth counter increments correctly per layer. Find and fix any depth tracking bugs by checking the DepthState map. Add 6 tests in __tests__/removeobject.test.ts verifying that RemoveObject2 appears at expected positions.",
+  "status": "done",
+  "created_at": "2026-06-09T20:02:32Z",
+  "updated_at": "2026-06-09T20:05:22Z"
+}

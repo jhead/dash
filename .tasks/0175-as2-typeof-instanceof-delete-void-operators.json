@@ -1,0 +1,8 @@
+{
+  "id": "0175-as2-typeof-instanceof-delete-void-operators",
+  "title": "AS2: typeof, instanceof, delete, void operators",
+  "description": "Verify the AS2 compiler handles typeof (ActionTypeOf 0x44), instanceof (ActionInstanceOf 0x54), delete (ActionDelete 0x3a / ActionDelete2 0x3b), and void operators. Search packages/core/src/as2/compiler.ts for these. For any missing: typeof x -> ActionPush x + ActionTypeOf; x instanceof Y -> ActionPush x + ActionPush Y + ActionInstanceOf; delete obj.prop -> ActionPush obj + ActionPush prop + ActionDelete; void x -> compile x + ActionPop + ActionPush undefined. Add tests for each.",
+  "status": "done",
+  "created_at": "2026-06-09T20:25:07Z",
+  "updated_at": "2026-06-09T20:25:43Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0496-as2-xml-and-xmlsocket-built-in-class-tests",
+  "title": "AS2 XML and XMLSocket built-in class tests",
+  "description": "Test new XML('<root/>'), XML.load(), XML.parseXML(), XML.firstChild, XML.nodeName, XML.nodeValue. XMLSocket constructor. All compile-without-crash tests.",
+  "status": "done",
+  "created_at": "2026-06-09T21:57:11Z",
+  "updated_at": "2026-06-09T22:00:14Z"
+}

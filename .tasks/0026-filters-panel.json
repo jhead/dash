@@ -1,0 +1,8 @@
+{
+  "id": "0026-filters-panel",
+  "title": "Filters panel (drop shadow, glow, blur)",
+  "description": "Filters panel for selected display objects: drop shadow, glow, blur, bevel, gradient glow, gradient bevel, adjust color. Flash 8 Filters panel UI: add/remove/enable/disable per filter, parameter sliders. Render filters via Canvas 2D (CSS filter approximation or manual). Store FilterDef[] on DisplayObject. See docs/08-filters-blend-modes.md. Depends on selection-transform, stage-shape-rendering.",
+  "status": "done",
+  "created_at": "2026-06-09T17:34:44Z",
+  "updated_at": "2026-06-09T17:45:27Z"
+}

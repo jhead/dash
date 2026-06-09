@@ -2,7 +2,7 @@
   "id": "0061-merge-drawing-geometry",
   "title": "Fix merge-drawing geometry corruption (convex-hull union, offset-blind overlap)",
   "description": "Two correctness bugs in packages/core/src/engine/merge-drawing.ts permanently corrupt authored geometry: (1) unionPaths returns the CONVEX HULL of both polygons (merge-drawing.ts:459-477) \u2014 union of two rects in an L-shape fills the notch with triangles inside neither rect, and curves are flattened to 8-sample polylines written back into the document, destroying Bezier data that then round-trips through FLA save (irreversible). Replace hull union with real polygon boolean union (or keep both paths and rely on nonzero winding like mergeShapes does). (2) applyMergeDrawing only merges shapes at IDENTICAL x/y offsets and ignores scale/rotation (merge-drawing.ts:220) \u2014 merge must compare stage-space geometry. Also: the module exports two divergent merge implementations (mergeShapes/applyMergeDrawing vs mergeDraw) \u2014 pick one canonical path. Byte-faithful planar-map merge is the separate arch task swf-planar-fill-model. See docs/03-drawing-vector-graphics.md.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T18:07:11Z",
-  "updated_at": "2026-06-09T18:07:11Z"
+  "updated_at": "2026-06-09T18:16:39Z"
 }

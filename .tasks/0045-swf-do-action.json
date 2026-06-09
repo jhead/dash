@@ -1,0 +1,8 @@
+{
+  "id": "0045-swf-do-action",
+  "title": "SWF DoAction: emit frame scripts as AS2 stubs",
+  "description": "Extend SWF compiler to emit DoAction (tag 12) tags for keyframes with script content. For MVP: emit a raw ActionScript push-constant string + trace action for each frame script (not full AVM1 compilation). This embeds the AS2 source as a human-readable comment in the SWF via Action_PushString + Action_Trace. Also emit DoInitAction (tag 59) for symbol-linked export classes. Purely packages/swf/. See docs/12-actionscript.md and docs/15-file-formats-fla-swf.md.",
+  "status": "done",
+  "created_at": "2026-06-09T18:03:09Z",
+  "updated_at": "2026-06-09T18:04:59Z"
+}

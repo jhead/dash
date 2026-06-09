@@ -1,0 +1,8 @@
+{
+  "id": "0426-core-fla-round-trip-preserves-frame-scripts",
+  "title": "Core: FLA round-trip preserves frame scripts",
+  "description": "Test that a FlashDocument with AS2 frame scripts round-trips through saveFla/loadFla without data loss. Build a doc with frames that have non-empty script fields. Verify: (1) script content survives saveFla+loadFla, (2) scripts on different layers/frames are all preserved, (3) special characters in scripts (quotes, backslashes, unicode) survive, (4) empty string scripts remain empty.",
+  "status": "done",
+  "created_at": "2026-06-09T21:38:35Z",
+  "updated_at": "2026-06-09T21:40:59Z"
+}

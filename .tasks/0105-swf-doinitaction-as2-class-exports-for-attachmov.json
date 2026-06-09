@@ -1,0 +1,8 @@
+{
+  "id": "0105-swf-doinitaction-as2-class-exports-for-attachmov",
+  "title": "SWF DoInitAction: AS2 class exports for attachMovie/new ClassName",
+  "description": "When a Symbol has linkage.exportForActionScript=true and linkage.className set, Flash 8 emits a DoInitAction tag (tag 59) in frame 1 that registers the class with Object.registerClass(). (1) DoInitAction tag: UI16 SpriteId (the symbol's charId), then AVM1 bytecode. Bytecode for 'Object.registerClass(\"ClassName\", ClassName)': ActionPush 'ClassName', ActionGetVariable 'ClassName', ActionPush 2 (arg count), ActionPush 'registerClass', ActionGetVariable 'Object', ActionCallMethod (0x52), ActionPop. (2) For exportForActionScript symbols, also emit a DoInitAction that defines the class: if linkage.className is a valid identifier and the symbol has a timeline, emit a basic class definition that sets up the prototype chain. (3) Export in first frame: DoInitAction tags for exported symbols must appear before any PlaceObject tags in the first SWF frame. (4) Add tests in packages/swf/src/__tests__/doInitAction.test.ts: verify tag 59 present for exported symbol, SpriteId matches DefineSprite charId, bytecode contains registerClass string. Only touches packages/swf/src/ \u2014 no authoring-ui changes.",
+  "status": "done",
+  "created_at": "2026-06-09T19:35:49Z",
+  "updated_at": "2026-06-09T19:41:23Z"
+}

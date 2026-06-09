@@ -1,0 +1,8 @@
+{
+  "id": "0040-matrix-utilities",
+  "title": "2D transform matrix utilities",
+  "description": "Pure 2D matrix math helpers in packages/core/src/engine/matrix.ts: Matrix2D type (a,b,c,d,tx,ty), identity(), translate(), scale(), rotate(), skew(), multiply(a,b), inverse(m), applyToPoint(m, p), applyToRect(m, r), decompose(m) \u2192 {tx,ty,scaleX,scaleY,rotation,skewX,skewY}, compose({tx,ty,scaleX,scaleY,rotation}) \u2192 Matrix2D. Used by Free Transform tool and SWF MATRIX encoder. Export from engine/index.ts. No UI.",
+  "status": "done",
+  "created_at": "2026-06-09T17:57:18Z",
+  "updated_at": "2026-06-09T17:58:45Z"
+}

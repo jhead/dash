@@ -2,7 +2,7 @@
   "id": "0118-no-emojis-policy",
   "title": "Remove all emoji from app and docs; AGENTS.md rule: never use emojis",
   "description": "User directive: emojis are never acceptable in this project \u2014 Flash 8 (2005) had none and they break period accuracy. (1) Sweep all UI strings, panel labels, dialogs, alerts, tooltips, console messages, and docs for emoji/pictographs (grep by Unicode ranges) and replace with plain text or period-correct glyphs (checkmarks in menus are OK as ASCII/wingding-style only if Flash 8 used them \u2014 it used a checkmark glyph; keep the existing checkmark but verify rendering). (2) Add a rule to AGENTS.md: never use emojis anywhere \u2014 UI text, code comments, docs, task titles/descriptions, commit messages. (3) Optionally add a lint/grep check to pnpm verify to keep them out.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T19:45:23Z",
-  "updated_at": "2026-06-09T19:45:23Z"
+  "updated_at": "2026-06-09T19:55:24Z"
 }

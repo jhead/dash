@@ -1,0 +1,8 @@
+{
+  "id": "0043-as2-parser",
+  "title": "ActionScript 2 AST parser",
+  "description": "Build an AS2 recursive-descent parser on top of the tokenizer (0041) in packages/core/src/as2/parser.ts. AST node types: Program, FunctionDecl, ClassDecl, VarDecl, IfStmt, ForStmt, WhileStmt, ReturnStmt, ExprStmt, AssignExpr, BinaryExpr, UnaryExpr, CallExpr, MemberExpr, NewExpr, Literal, Identifier. parse(source: string): Program. Export from packages/core/src/as2/index.ts. No UI. See docs/12-actionscript.md.",
+  "status": "done",
+  "created_at": "2026-06-09T18:00:27Z",
+  "updated_at": "2026-06-09T18:04:11Z"
+}

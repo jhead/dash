@@ -1,0 +1,8 @@
+{
+  "id": "0300-core-as2-mouse-and-key-event-listeners",
+  "title": "Core: AS2 Mouse and Key event listeners",
+  "description": "Verify AS2 Mouse class event listener registration compiles: Mouse.addListener(obj), Mouse.removeListener(obj), listener.onMouseDown = function(){}, listener.onMouseUp = function(){}, listener.onMouseMove = function(){}. Also Mouse.hide(), Mouse.show(). Tests in packages/core/src/as2/__tests__/mouselistener.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:09:32Z",
+  "updated_at": "2026-06-09T21:10:45Z"
+}

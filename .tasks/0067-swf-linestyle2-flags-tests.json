@@ -2,7 +2,7 @@
   "id": "0067-swf-linestyle2-flags-tests",
   "title": "Fix LINESTYLE2 flag encoding (byte order, EndCap bits, miter desync) + land the missing SWF encoder tests",
   "description": "Follow-up to 0047 (closed without its test deliverable). Verified residual DefineShape4 truncation bug in packages/swf/src/shapes.ts:477-524: LineStyle2 flags are composed as a UI16 and written with writeUI16LE, but LINESTYLE2 flags are bit-packed fields written MSB-first \u2014 byte 1 must be StartCap UB2|Join UB2|HasFill|NoHScale|NoVScale|PixelHinting and byte 2 Reserved UB5|NoClose|EndCap UB2; LE swaps the bytes. Also EndCapStyle is placed at bits [4:3] instead of [1:0]. Consequence: with caps=none, capBits lands on the parser HasFillFlag -> parser expects a FILLSTYLE instead of RGBA; with joints=miter, the written MiterLimitFactor is never read back (JoinStyle parsed from the wrong byte) -> 2-byte desync. Either way the tag overruns: exactly the runtime error seen in Ruffle (ERROR tag_utils.rs: DefineShape4 ... failed to fill whole buffer, then non-registered character ID cascade). Latent today only because Shell creates round/round strokes; 0037 (stroke styles, in progress) will trip it. ALSO: 0047 promised byte-level golden tests + parse-back verification but packages/swf still has zero test files and no test script \u2014 add vitest, decode-back tests for DefineShape4 (solid/gradient fills, all cap/join combos), PlaceObject2/3 MATRIX, DefineEditText, filters, audio. That harness is the regression net for this whole bug class.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T18:37:57Z",
-  "updated_at": "2026-06-09T18:37:57Z"
+  "updated_at": "2026-06-09T18:47:50Z"
 }

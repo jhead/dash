@@ -1,0 +1,8 @@
+{
+  "id": "0394-swf-emit-definescalinggrid-tag-78-for-9-slice-sy",
+  "title": "SWF: emit DefineScalingGrid (tag 78) for 9-slice symbols",
+  "description": "Task 0339 wired 9-slice scaling into the model and FLA round-trip but the SWF compiler never emits tag 78. DefineScalingGrid must follow the DefineSprite tag for every symbol whose scale9Grid is non-null.\n\nWithout tag 78, Ruffle applies uniform scaling and distorts corners of 9-slice symbols.\n\nFix: in packages/swf/src/compile.ts, after emitting DefineSprite for a symbol, check if symbol.scale9Grid != null and emit a DefineScalingGrid record (tag 78) with the four rect values (left/right/top/bottom as twips). Also add the tag constant to packages/swf/src/tags.ts if absent.\n\nAcceptance: add a test in packages/swf/src/__tests__/integration.test.ts that compiles a document with a 9-slice symbol and parses back to assert a DefineScalingGrid tag follows its DefineSprite.",
+  "status": "done",
+  "created_at": "2026-06-09T21:31:15Z",
+  "updated_at": "2026-06-09T21:39:12Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0158-as2-class-inheritance-extends-super",
+  "title": "AS2: class inheritance (extends, super)",
+  "description": "The AS2 compiler in packages/core/src/as2/compiler.ts needs to handle class extends syntax and super() calls. In AVM1/Flash 8: class Foo extends Bar compiles to Foo.prototype = new Bar(); Foo.prototype.constructor = Foo; and super() in constructor compiles to ActionCallFunction on Bar.apply(this, arguments). Find where class declarations are compiled. Add extends handling: emit prototype chain setup. Add super() call handling in methods. Write tests in packages/core/src/as2/__tests__/inheritance.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:14:57Z",
+  "updated_at": "2026-06-09T20:16:56Z"
+}

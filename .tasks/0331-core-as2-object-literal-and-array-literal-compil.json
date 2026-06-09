@@ -1,0 +1,8 @@
+{
+  "id": "0331-core-as2-object-literal-and-array-literal-compil",
+  "title": "Core: AS2 Object literal and Array literal compilation",
+  "description": "Verify AS2 object and array literals compile: var o = {x: 1, y: 2}, var a = [1, 2, 3], nested: {nested: {deep: true}}, mixed: [{x:1}, {x:2}]. Verify ActionInitObject (0x43) and ActionInitArray (0x42) opcodes are emitted. Tests in packages/core/src/as2/__tests__/literals.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:14:49Z",
+  "updated_at": "2026-06-09T21:18:34Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0313-core-guide-layer-handling-in-renderer",
+  "title": "Core: Guide layer handling in renderer",
+  "description": "Unit tests verifying guide layers are not rendered to the SWF output and not visible in the canvas renderer. A layer with type='guide' should have its display objects excluded from both SWF export and canvas rendering. Tests in packages/core/src/engine/__tests__/guide-layer.test.ts. Check compile.ts skips guide layers.",
+  "status": "done",
+  "created_at": "2026-06-09T21:11:52Z",
+  "updated_at": "2026-06-09T21:14:06Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0312-core-as2-button-event-handlers-compilation",
+  "title": "Core: AS2 Button event handlers compilation",
+  "description": "Verify AS2 Button event handlers compile: btn.onPress = function(){}, btn.onRelease = function(){}, btn.onRollOver = function(){}, btn.onRollOut = function(){}, btn.onReleaseOutside = function(){}, btn.onDragOver = function(){}, btn.onDragOut = function(){}, btn.onKeyDown = function(){}, btn.onKeyUp = function(){}. Tests in packages/core/src/as2/__tests__/buttonevents.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:11:52Z",
+  "updated_at": "2026-06-09T21:12:55Z"
+}

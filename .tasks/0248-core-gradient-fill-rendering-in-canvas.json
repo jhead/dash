@@ -1,0 +1,8 @@
+{
+  "id": "0248-core-gradient-fill-rendering-in-canvas",
+  "title": "Core: Gradient fill rendering in canvas",
+  "description": "Verify gradient fills (linear and radial) render correctly in packages/core/src/engine/renderer.ts. Check that LinearGradientFill and RadialGradientFill ShapePath fills use ctx.createLinearGradient/createRadialGradient with correct color stops. Tests: render a shape with linear gradient (no crash, ctx.createLinearGradient called), radial gradient test.",
+  "status": "done",
+  "created_at": "2026-06-09T20:54:46Z",
+  "updated_at": "2026-06-09T20:56:07Z"
+}

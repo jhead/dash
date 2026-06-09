@@ -1,0 +1,8 @@
+{
+  "id": "0423-swf-actionscript-in-doaction-tag-tag-12",
+  "title": "SWF: ActionScript in DoAction tag (tag 12)",
+  "description": "Test that AS2 frame scripts attached to keyframes produce DoAction (tag 12) tags in the SWF. Verify: (1) a keyframe with script='trace(1)' produces tag 12, (2) tag 12 body contains AVM1 bytecode (at least ActionTrace 0x26), (3) tag 12 appears after PlaceObject2 for the frame, (4) tag 12 ends with ActionStop (0x00 end marker), (5) multiple scripts on different frames produce multiple tag 12 tags.",
+  "status": "done",
+  "created_at": "2026-06-09T21:37:45Z",
+  "updated_at": "2026-06-09T21:41:52Z"
+}

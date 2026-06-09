@@ -1,0 +1,8 @@
+{
+  "id": "0366-core-as2-color-class-and-colortransform-built-in",
+  "title": "Core: AS2 Color class and ColorTransform built-ins",
+  "description": "Test compilation of Color class: var c = new Color(mc), c.setRGB(0xFF0000), c.getRGB(), c.setTransform(obj), c.getTransform(). Test ColorTransform usage pattern (Flash 8 vs AS3). Verify ActionNew (0x4a) for construction, ActionCallMethod (0x52) for method calls, ActionGetMember (0x4f) for property access.",
+  "status": "done",
+  "created_at": "2026-06-09T21:25:20Z",
+  "updated_at": "2026-06-09T21:26:15Z"
+}

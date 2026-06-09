@@ -2,7 +2,7 @@
   "id": "0116-toolbox-pane-sizing",
   "title": "Toolbox pane renders too small (sizing/resolution issue)",
   "description": "User report: the toolbox left pane is very small, possibly a resolution/DPI issue. Investigate ToolsPanel/Shell layout sizing (fixed px widths vs devicePixelRatio, flex shrink). Flash 8 reference: single fixed-width tool column area (Tools/View/Colors/Options sections, 2-column icon grid) that does not shrink with window size. Verify at 1x and 2x DPR and at small window sizes. See docs/04-toolbox.md.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T19:45:23Z",
-  "updated_at": "2026-06-09T19:45:23Z"
+  "updated_at": "2026-06-09T20:00:51Z"
 }

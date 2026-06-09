@@ -1,0 +1,8 @@
+{
+  "id": "0181-swf-definefont3-utf-16-font-encoding",
+  "title": "SWF: DefineFont3 (UTF-16 font) encoding",
+  "description": "Flash 8 uses DefineFont3 (tag 75) for fonts with extended Unicode support (as opposed to DefineFont2 tag 48 which uses UCS-2). Check packages/swf/src/fonts.ts and compile.ts \u2014 what font tag is currently emitted? If DefineFont2 is used, add an option to emit DefineFont3 instead (same structure but tag 75). Add encodeDFineFont3 or note if DefineFont2 is sufficient. Add unit tests verifying the correct tag code.",
+  "status": "done",
+  "created_at": "2026-06-09T20:27:35Z",
+  "updated_at": "2026-06-09T20:30:34Z"
+}

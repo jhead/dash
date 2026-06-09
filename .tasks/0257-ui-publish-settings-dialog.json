@@ -1,0 +1,8 @@
+{
+  "id": "0257-ui-publish-settings-dialog",
+  "title": "UI: Publish Settings dialog",
+  "description": "Add a Publish Settings dialog to the authoring UI. Flash 8 had File > Publish Settings. The dialog should allow: SWF version selector (Flash 8 = SWF v8), stage dimensions, background color picker, frame rate. Uses withProperties() from @flash/core engine. Accessible via keyboard shortcut Ctrl+Shift+F12 and File menu. Modal overlay pattern consistent with other dialogs in the app.",
+  "status": "done",
+  "created_at": "2026-06-09T20:59:39Z",
+  "updated_at": "2026-06-09T21:02:43Z"
+}

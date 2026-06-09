@@ -1,0 +1,8 @@
+{
+  "id": "0202-swf-placeobject2-color-transform-color-effects",
+  "title": "SWF: PlaceObject2 color transform (color effects)",
+  "description": "Implement color transform encoding for PlaceObject2 (tag 26). When a SymbolInstance has a colorEffect (tint, alpha, brightness, advanced), encode the correct CXFormWithAlpha in the PlaceObject2 tag. Support: alpha (only), tint (RGB multiply + add), advanced (all 8 values). Tests verify the CXFormWithAlpha bytes match expected encoding for each effect type.",
+  "status": "done",
+  "created_at": "2026-06-09T20:37:24Z",
+  "updated_at": "2026-06-09T20:41:04Z"
+}

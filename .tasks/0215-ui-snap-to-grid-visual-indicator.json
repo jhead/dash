@@ -1,0 +1,8 @@
+{
+  "id": "0215-ui-snap-to-grid-visual-indicator",
+  "title": "UI: Snap-to-grid visual indicator",
+  "description": "Show grid dots/lines on the stage canvas when Grid.showGrid is enabled in document properties. Render in StageArea.tsx's canvas before drawing display objects. Use doc.properties.grid settings (gridWidth, gridHeight, gridColor). Also show ruler tick marks on the ruler areas if present. Tests: visual only, no unit tests needed.",
+  "status": "done",
+  "created_at": "2026-06-09T20:43:08Z",
+  "updated_at": "2026-06-09T20:45:23Z"
+}

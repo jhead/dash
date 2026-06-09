@@ -1,0 +1,8 @@
+{
+  "id": "0188-swf-actionnextframe-prevframe-gotoframe-in-timel",
+  "title": "SWF: ActionNextFrame/PrevFrame/GotoFrame in timeline",
+  "description": "Verify that gotoAndPlay(frame), gotoAndStop(frame) compile to the correct AVM1 opcodes. ActionGotoFrame (0x81) takes a uint16 literal frame number. ActionGotoAndPlay/GotoAndStop are 0x05 and 0x07 alternatives. But gotoAndPlay(expr) where expr is not a literal should use ActionCallFrame or ActionGotoFrame2 (0x9F). Check packages/core/src/as2/compiler.ts for gotoAndPlay/gotoAndStop handling. Fix if using wrong opcodes. Add tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:30:36Z",
+  "updated_at": "2026-06-09T20:32:00Z"
+}

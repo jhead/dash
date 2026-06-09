@@ -1,0 +1,8 @@
+{
+  "id": "0391-core-as2-do-while-loop",
+  "title": "Core: AS2 do-while loop",
+  "description": "Test compilation of do-while: do { trace(i); i++; } while (i < 10). Verify ActionJump (0x99) at end of body looping back. Test do-while with break inside. Test do-while with continue. Test do-while where body always executes at least once (compile-time behavior only \u2014 no runtime). Verify the bytecode contains the loop structure.",
+  "status": "done",
+  "created_at": "2026-06-09T21:30:22Z",
+  "updated_at": "2026-06-09T21:33:03Z"
+}

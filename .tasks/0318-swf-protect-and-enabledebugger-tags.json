@@ -1,0 +1,8 @@
+{
+  "id": "0318-swf-protect-and-enabledebugger-tags",
+  "title": "SWF: Protect and EnableDebugger tags",
+  "description": "Flash 8 SWF can include Protect (tag 24) to prevent decompilation and EnableDebugger2 (tag 64) for remote debugging. Unit tests: verify these tags are optional and not emitted by default. Check compile.ts for their presence. Tests in packages/swf/src/__tests__/protect.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:12:39Z",
+  "updated_at": "2026-06-09T21:14:44Z"
+}

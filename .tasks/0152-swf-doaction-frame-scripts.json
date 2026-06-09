@@ -1,0 +1,8 @@
+{
+  "id": "0152-swf-doaction-frame-scripts",
+  "title": "SWF: DoAction frame scripts",
+  "description": "Ensure frame scripts (frame.script !== '') are compiled to AS2 bytecode and emitted as DoAction (tag 12) before ShowFrame for each frame. Read packages/swf/src/compile.ts to check if DoAction is currently emitted. If the AS2 compiler (packages/core/src/as2/compiler.ts) is used correctly via compileAS2. Wire it: for each frame in the frame loop, if frame.script is non-empty compile it and emit DoAction(tag 12) body = AS2 bytes. Add unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:11:56Z",
+  "updated_at": "2026-06-09T20:13:34Z"
+}

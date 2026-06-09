@@ -1,0 +1,8 @@
+{
+  "id": "0301-swf-fileattributes-and-metadata-tags",
+  "title": "SWF: FileAttributes and Metadata tags",
+  "description": "SWF v8 includes FileAttributes (tag 69) and optional Metadata (tag 77). Unit test that exported SWF contains FileAttributes tag (type 69) as the first tag after the file header. The FileAttributes body byte flags should have bit 3 set (useNetwork=false for local files). Tests in packages/swf/src/__tests__/fileattribs.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:09:32Z",
+  "updated_at": "2026-06-09T21:10:25Z"
+}

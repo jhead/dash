@@ -1,0 +1,8 @@
+{
+  "id": "0114-swf-definemorphshape-tag-46-for-shape-tween-expo",
+  "title": "SWF DefineMorphShape (tag 46) for shape tween export",
+  "description": "Implement DefineMorphShape (tag 46) encoder in packages/swf for exporting shape tweens. Flash 8 exports two-keyframe shape tweens as a single DefineMorphShape record (startShape + endShape) with the player interpolating. Currently shape tweens emit separate DefineShape4 per frame. The correct export: find adjacent keyframes with tweenType='shape', encode the start and end ShapePath as a single DefineMorphShape tag, then emit PlaceMorphShape with ratio=0..65535 per intermediate frame. Reference: SWF spec \u00a7DefineMorphShape. Add to compile.ts in the character pre-pass. Write 8 tests in __tests__/morphshape.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T19:44:08Z",
+  "updated_at": "2026-06-09T19:51:55Z"
+}

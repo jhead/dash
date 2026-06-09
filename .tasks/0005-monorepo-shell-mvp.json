@@ -2,7 +2,7 @@
   "id": "0005-monorepo-shell-mvp",
   "title": "Monorepo & desktop shell",
   "description": "Scaffold pnpm monorepo (core, authoring-ui, swf, player workspaces) and Tauri desktop app with native file dialogs. Empty main window ready for panels. See docs/00-overview-and-architecture.md (tech stack, build targets). Prerequisite for all other MVP work.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T16:31:27Z",
-  "updated_at": "2026-06-09T16:32:54Z"
+  "updated_at": "2026-06-09T16:40:16Z"
 }

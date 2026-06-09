@@ -1,0 +1,8 @@
+{
+  "id": "0078-scene-panel",
+  "title": "Scene panel: add/remove/rename/reorder scenes",
+  "description": "Multiple scenes exist in the model but there is no UI to manage them. Add a Scene panel (Window > Scene, or always-visible below stage): list of scene names, active scene highlighted. Operations: (1) + button to add a new scene; (2) double-click to rename inline; (3) drag to reorder; (4) right-click > Delete scene (with confirmation). Clicking a scene name navigates to it (sets activeSceneIndex in Shell.tsx). The scene navigation already has addScene/removeScene/renameScene/reorderScenes in document-mutations.ts \u2014 just wire them to a ScenePanel.tsx component. Also: File > New resets to a single scene; SWF compile iterates all scenes in order. See docs/01-documents-stage-scenes.md.",
+  "status": "done",
+  "created_at": "2026-06-09T18:58:49Z",
+  "updated_at": "2026-06-09T19:11:02Z"
+}

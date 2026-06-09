@@ -1,0 +1,8 @@
+{
+  "id": "0211-core-timeline-insert-remove-frame-operations",
+  "title": "Core: Timeline insert/remove frame operations",
+  "description": "Verify and test insertFrame, removeFrame, insertKeyframe, insertBlankKeyframe in packages/core/src/engine/timeline.ts. Add tests for: inserting a frame extends frameCount, removing shifts subsequent keyframes, insertKeyframe copies previous keyframe display objects, blank keyframe is empty. Ensure all operations are immutable. 15+ tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:40:51Z",
+  "updated_at": "2026-06-09T20:43:45Z"
+}

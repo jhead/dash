@@ -1,0 +1,8 @@
+{
+  "id": "0434-core-as2-nested-class-definitions",
+  "title": "Core: AS2 nested class definitions",
+  "description": "Test compilation of nested/inner class patterns in AS2: (1) class defined inside a function body, (2) class defined inside a with() block, (3) class defined inside a conditional block (if/else), (4) anonymous class expressions (var Cls = class{}). Note that AS2 does not truly support nested classes \u2014 document actual behavior (parse error or ignoring nesting). Verify the compiler does not crash.",
+  "status": "done",
+  "created_at": "2026-06-09T21:41:08Z",
+  "updated_at": "2026-06-09T21:42:27Z"
+}

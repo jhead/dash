@@ -1,0 +1,8 @@
+{
+  "id": "0277-mask-layer-swf-export-set-clipdepth-hasclipdepth",
+  "title": "Mask layer SWF export: set ClipDepth / HasClipDepth in PlaceObject2",
+  "description": "Mask layers render correctly in the authoring stage (Canvas clip regions) but published SWFs ignore the mask entirely. compile.ts line ~755 has an explicit TODO: ClipDepth / HasClipDepth is never set on PlaceObject2 for mask layer objects.\n\nIn SWF, a mask is expressed by placing the mask shape with PlaceObject2 ClipDepth set to the depth of the last masked layer. Ruffle interprets this correctly.\n\nAcceptance criteria:\n- A document with a mask layer + masked layer produces a SWF where the mask shape's PlaceObject2 record has HasClipDepth=1 and ClipDepth = depth of last masked object + 1.\n- Add a test in packages/swf/src/__tests__/integration.test.ts that compiles a document with a mask layer and asserts ClipDepth is set.\n- Ruffle renders the masked output correctly (manual visual check or visual-oracle fixture).\n\nKey files: packages/swf/src/compile.ts (PlaceObject2 encoding), packages/swf/src/writer.ts (HasClipDepth flag bit).",
+  "status": "done",
+  "created_at": "2026-06-09T21:03:28Z",
+  "updated_at": "2026-06-09T21:11:49Z"
+}

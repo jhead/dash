@@ -1,0 +1,8 @@
+{
+  "id": "0177-swf-placeobject2-with-move-flag-for-position-onl",
+  "title": "SWF: PlaceObject2 with move flag for position-only updates",
+  "description": "In the SWF display list, if an object's character ID is the same across two consecutive keyframes but position/transform changed, emit PlaceObject2 with the Move flag (bit 0) instead of re-defining the character. Check packages/swf/src/compile.ts \u2014 find how PlaceObject2 is emitted between keyframes. If it always re-places characters, optimize: track if charId was previously placed at this depth, and if so, emit Move-only PlaceObject2. Add unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:25:07Z",
+  "updated_at": "2026-06-09T20:28:24Z"
+}

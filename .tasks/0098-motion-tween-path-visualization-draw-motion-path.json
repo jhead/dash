@@ -1,0 +1,8 @@
+{
+  "id": "0098-motion-tween-path-visualization-draw-motion-path",
+  "title": "Motion tween path visualization: draw motion path overlay on stage",
+  "description": "When a layer has a motion tween and the tween target moves, Flash 8 shows a dashed motion path line on the stage connecting the start position to end position. Add this to StageArea.tsx: (1) For each layer in the active scene's timeline with tweenType='motion' in the governing keyframe at currentFrame, check if there are two keyframes around currentFrame with different positions; (2) Compute the interpolated path points by sampling getTweenedFrame at each frame index between the start and end keyframes; (3) Draw a dashed polyline connecting the center points of the moving object at each frame sample; (4) Mark keyframe positions with small diamond markers; (5) Only draw for the active layer (or all layers when onionSkin is enabled); (6) The path should be drawn as a canvas overlay, not affecting the main scene rendering. This is view-only \u2014 no interaction needed for MVP. Implementation: add a drawMotionPaths() function called after the main scene render in StageArea.tsx's canvas useEffect. Pass the current timeline layers and currentFrame as props (they may already be available via sceneGraph or need to be added). Only touches packages/authoring-ui/src/StageArea.tsx and possibly Shell.tsx for passing the timeline prop \u2014 check if timeline is already accessible in StageArea before adding Shell.tsx changes. See docs/02-timeline-animation.md.",
+  "status": "done",
+  "created_at": "2026-06-09T19:27:18Z",
+  "updated_at": "2026-06-09T19:34:11Z"
+}

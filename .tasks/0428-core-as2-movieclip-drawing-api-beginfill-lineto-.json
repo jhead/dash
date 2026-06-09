@@ -1,0 +1,8 @@
+{
+  "id": "0428-core-as2-movieclip-drawing-api-beginfill-lineto-",
+  "title": "Core: AS2 MovieClip drawing API (beginFill, lineTo, moveTo)",
+  "description": "Test compilation of MovieClip drawing API: mc.beginFill(color, alpha), mc.beginGradientFill(type, colors, alphas, ratios, matrix), mc.endFill(), mc.lineStyle(thickness, color, alpha), mc.moveTo(x, y), mc.lineTo(x, y), mc.curveTo(cx, cy, ax, ay), mc.drawRect(x,y,w,h) (if exists), mc.clear(). Each should compile. Verify ActionCallMethod (0x52) for each method.",
+  "status": "done",
+  "created_at": "2026-06-09T21:39:24Z",
+  "updated_at": "2026-06-09T21:40:18Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0371-core-as2-textformat-class-built-in",
+  "title": "Core: AS2 TextFormat class built-in",
+  "description": "Test compilation of TextFormat: var fmt = new TextFormat(), fmt.font, fmt.size, fmt.bold, fmt.italic, fmt.underline, fmt.color, fmt.align, fmt.leftMargin, fmt.rightMargin, fmt.indent, fmt.leading, tf.setTextFormat(fmt), tf.getTextFormat(). Verify ActionNew (0x4a) for construction and ActionGetMember/ActionSetMember for properties.",
+  "status": "done",
+  "created_at": "2026-06-09T21:26:10Z",
+  "updated_at": "2026-06-09T21:27:40Z"
+}

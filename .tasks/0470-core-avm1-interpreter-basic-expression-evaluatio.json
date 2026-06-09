@@ -1,0 +1,8 @@
+{
+  "id": "0470-core-avm1-interpreter-basic-expression-evaluatio",
+  "title": "Core AVM1 interpreter basic expression evaluation",
+  "description": "Test the AVM1 interpreter (if one exists in packages/core/src/engine) on simple scripts: push/pop constants, arithmetic, string concat, variable get/set, method call return value.",
+  "status": "done",
+  "created_at": "2026-06-09T21:51:07Z",
+  "updated_at": "2026-06-09T21:54:30Z"
+}

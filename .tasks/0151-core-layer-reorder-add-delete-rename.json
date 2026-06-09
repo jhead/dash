@@ -1,0 +1,8 @@
+{
+  "id": "0151-core-layer-reorder-add-delete-rename",
+  "title": "Core: layer reorder, add, delete, rename",
+  "description": "Implement layer management operations in packages/core/src/engine/layers.ts (new file). Functions: addLayer(doc, sceneIdx, afterLayerIdx?, type?), deleteLayer(doc, sceneIdx, layerIdx), reorderLayer(doc, sceneIdx, fromIdx, toIdx), renameLayer(doc, sceneIdx, layerIdx, name), duplicateLayer(doc, sceneIdx, layerIdx). All return new FlashDocument (immutable). Must handle edge cases: can't delete last layer, reorder bounds check. Add unit tests in packages/core/src/engine/__tests__/layers.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:11:56Z",
+  "updated_at": "2026-06-09T20:14:17Z"
+}

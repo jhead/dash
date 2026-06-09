@@ -1,0 +1,8 @@
+{
+  "id": "0128-renderer-css-pixel-ratio-aware-canvas-hidpi-fix",
+  "title": "Renderer: CSS pixel-ratio aware canvas (HiDPI fix)",
+  "description": "The renderer canvas does not account for devicePixelRatio, causing blurry rendering on Retina/HiDPI displays. Fix in packages/authoring-ui/src/StageArea.tsx and renderer.ts: set canvas.width = stageW * dpr, canvas.height = stageH * dpr, ctx.scale(dpr, dpr), then set CSS width/height to stageW/stageH px. This is separate from the toolbox DPI issue (0116). The same fix applies to the off-screen onion skin canvas. Add a note in renderer.ts about the dpr scaling. No new tests needed (visual-only fix). Only touches StageArea.tsx and renderer.ts \u2014 NOT Shell.tsx.",
+  "status": "done",
+  "created_at": "2026-06-09T19:50:41Z",
+  "updated_at": "2026-06-09T19:55:21Z"
+}

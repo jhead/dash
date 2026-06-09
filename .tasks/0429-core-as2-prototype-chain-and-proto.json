@@ -1,0 +1,8 @@
+{
+  "id": "0429-core-as2-prototype-chain-and-proto",
+  "title": "Core: AS2 prototype chain and __proto__",
+  "description": "Test compilation of prototype manipulation: MyClass.prototype.method = function(){}, MyClass.prototype = new BaseClass(), obj.__proto__, obj.constructor.prototype, Object.prototype.toString, Function.prototype.call. Verify ActionGetMember (0x4f) for prototype access, ActionSetMember (0x4e) for prototype assignment. Test that prototype chain setup emits correct ActionNew + ActionSetMember sequence.",
+  "status": "done",
+  "created_at": "2026-06-09T21:39:24Z",
+  "updated_at": "2026-06-09T21:41:11Z"
+}

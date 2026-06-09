@@ -1,0 +1,8 @@
+{
+  "id": "0189-core-motion-guide-path-snapping",
+  "title": "Core: motion guide path snapping",
+  "description": "When a layer is type='guided' and its parent layer is type='guide', getTweenedFrame should already snap the object to the guide path. Read packages/core/src/engine/tween.ts and packages/core/src/engine/guidepath.ts. Add unit tests verifying: guided layer object follows guide path at t=0 (start), t=0.5 (midpoint), t=1.0 (end). The object x/y should match samplePath output at those t values. Add to packages/core/src/engine/__tests__/guidepath.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:30:36Z",
+  "updated_at": "2026-06-09T20:31:59Z"
+}

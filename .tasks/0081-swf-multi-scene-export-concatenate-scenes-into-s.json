@@ -1,0 +1,8 @@
+{
+  "id": "0081-swf-multi-scene-export-concatenate-scenes-into-s",
+  "title": "SWF multi-scene export: concatenate scenes into single timeline",
+  "description": "Flash 8 scenes compile into a single SWF timeline with FrameLabel tags marking each scene boundary. Currently packages/swf/src/compile.ts only exports doc.scenes[0]. Update to iterate all scenes: (1) concatenate each scene's timeline frames end-to-end into the SWF frame stream; (2) emit a FrameLabel tag (tag 43) at the first frame of each scene with the scene name as the label string (FrameLabel: UI16 length+2, string Name as null-terminated). FrameLabel format: tag 43, record header, then Name string (null-terminated, ASCII). The frame offset for scene N is sum of max(layer.frameCount) across all prior scenes. Depth assignments must be scene-local (reset per scene since each scene is a fresh stage). Update layerFrameCount() to accept a Timeline argument. Add tests in packages/swf/src/__tests__/scenes.test.ts: verify FrameLabel tags are emitted, verify correct frame counts per scene, verify 2-scene doc produces correct total frames. Only touches packages/swf/src/ \u2014 no authoring-ui changes.",
+  "status": "done",
+  "created_at": "2026-06-09T19:13:53Z",
+  "updated_at": "2026-06-09T19:19:45Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0208-as2-eventdispatcher-and-addeventlistener-compila",
+  "title": "AS2: EventDispatcher and addEventListener compilation",
+  "description": "Ensure AS2 class inheritance from EventDispatcher compiles correctly. Test: a class extending EventDispatcher with addEventListener, removeEventListener, dispatchEvent calls compiles to correct AVM1. Verify the prototype chain is set up correctly. Tests in packages/core/src/as2/__tests__/eventdispatcher.test.ts",
+  "status": "done",
+  "created_at": "2026-06-09T20:40:06Z",
+  "updated_at": "2026-06-09T20:42:17Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0176-core-keyboard-shortcut-action-dispatcher",
+  "title": "Core: keyboard shortcut action dispatcher",
+  "description": "Implement a keyboard shortcut system in packages/authoring-ui/src/useKeyboardShortcuts.ts. Hook: useKeyboardShortcuts({ onUndo, onRedo, onCopy, onPaste, onPasteInPlace, onDelete, onSelectAll, onDeselect, onGroup, onUngroup, onBringToFront, onSendToBack }). Wire up standard Flash 8 shortcuts: Ctrl+Z=undo, Ctrl+Shift+Z=redo, Ctrl+C=copy, Ctrl+V=paste, Ctrl+Shift+V=pasteInPlace, Delete/Backspace=delete, Ctrl+A=selectAll, Ctrl+G=group, Ctrl+Shift+G=ungroup, F5=insertFrame, F6=insertKeyframe, F7=insertBlankKeyframe. Returns nothing; uses useEffect. Add unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:25:07Z",
+  "updated_at": "2026-06-09T20:28:09Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0076-onion-skinning",
+  "title": "Onion skinning: show adjacent frame ghosts on stage",
+  "description": "Flash 8 onion skinning displays semi-transparent copies of neighboring frames behind the current frame to aid animation. Implement: (1) Onion Skin button on the timeline toolbar (toggle); (2) Onion Skin Outlines button (shows just strokes, no fills); (3) Onion markers on the timeline header (draggable range markers, default: 2 frames before and after current); (4) Stage renders onion frames as CanvasRenderer output on a separate canvas layer with reduced alpha (0.25 per frame) and tinted color (blue for before, green for after). The onion range markers can be an offset stored in Shell state (onionBefore=2, onionAfter=2). See docs/02-timeline-animation.md.",
+  "status": "done",
+  "created_at": "2026-06-09T18:58:49Z",
+  "updated_at": "2026-06-09T19:18:58Z"
+}

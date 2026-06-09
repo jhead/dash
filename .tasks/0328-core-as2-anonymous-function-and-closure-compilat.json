@@ -1,0 +1,8 @@
+{
+  "id": "0328-core-as2-anonymous-function-and-closure-compilat",
+  "title": "Core: AS2 anonymous function and closure compilation",
+  "description": "Verify AS2 anonymous functions and closures compile: var f = function(x) { return x * 2; }, immediately-invoked (function(){})(), closures that capture outer variables, function as argument, return function from function. Verify ActionDefineFunction2 (0x8E) is emitted. Tests in packages/core/src/as2/__tests__/closures.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:14:49Z",
+  "updated_at": "2026-06-09T21:17:10Z"
+}

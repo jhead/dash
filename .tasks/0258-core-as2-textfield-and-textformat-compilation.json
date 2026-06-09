@@ -1,0 +1,8 @@
+{
+  "id": "0258-core-as2-textfield-and-textformat-compilation",
+  "title": "Core: AS2 TextField and TextFormat compilation",
+  "description": "Verify AS2 TextField and TextFormat compile correctly. new TextField (via createTextField on MovieClip), tf.text, tf.htmlText, tf.multiline, tf.wordWrap, tf.border, tf.autoSize, tf.selectable, tf.type, tf.embedFonts. new TextFormat(), fmt.font, fmt.size, fmt.bold, fmt.italic, fmt.color, fmt.align, fmt.underline, tf.setTextFormat(fmt), tf.getTextFormat(). Tests in packages/core/src/as2/__tests__/textfield.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:59:39Z",
+  "updated_at": "2026-06-09T21:01:36Z"
+}

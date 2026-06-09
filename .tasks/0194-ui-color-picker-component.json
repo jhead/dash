@@ -1,0 +1,8 @@
+{
+  "id": "0194-ui-color-picker-component",
+  "title": "UI: Color picker component",
+  "description": "Implement a reusable ColorPicker component in packages/authoring-ui/src/ColorPicker.tsx. Shows a color swatch that when clicked opens a popover with: hex input, RGB sliders, opacity/alpha slider, and a set of Flash 8 default swatches. Props: { color: string, alpha?: number, onChange: (color: string, alpha?: number) => void }. Use native input[type=color] as the base with additional alpha control. Keep it self-contained with useState. Build must pass.",
+  "status": "done",
+  "created_at": "2026-06-09T20:32:31Z",
+  "updated_at": "2026-06-09T20:38:14Z"
+}

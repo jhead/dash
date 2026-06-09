@@ -1,0 +1,8 @@
+{
+  "id": "0187-swf-exportassets-tag-for-linked-symbols",
+  "title": "SWF: ExportAssets tag for linked symbols",
+  "description": "Symbols with linkage.exportForActionScript=true should be encoded with ExportAssets (tag 56) in the SWF. Check packages/swf/src/compile.ts \u2014 search for 'ExportAssets', 'tag 56', 'linkage', 'exportForActionScript'. If not already done: collect all symbols with exportForActionScript=true, emit ExportAssets tag before DoInitAction in frame 1. ExportAssets body: uint16 count, then for each: uint16 charId + null-terminated linkageIdentifier string. Add unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:29:23Z",
+  "updated_at": "2026-06-09T20:32:07Z"
+}

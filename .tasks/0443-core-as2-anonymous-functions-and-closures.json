@@ -1,0 +1,8 @@
+{
+  "id": "0443-core-as2-anonymous-functions-and-closures",
+  "title": "Core: AS2 anonymous functions and closures",
+  "description": "Test compilation of: anonymous function expressions (var fn = function(){}), immediately-invoked function expressions (IIFE): (function(){})(), closures that capture outer variables: function outer() { var x = 1; return function inner() { return x; }; }, callback patterns: arr.forEach(function(item) { trace(item); }). Verify ActionDefineFunction2 (0x8E) for each, and that captured variables are accessible.",
+  "status": "done",
+  "created_at": "2026-06-09T21:43:20Z",
+  "updated_at": "2026-06-09T21:44:12Z"
+}

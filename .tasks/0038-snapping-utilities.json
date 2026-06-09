@@ -1,0 +1,8 @@
+{
+  "id": "0038-snapping-utilities",
+  "title": "Snapping geometry utilities",
+  "description": "Pure geometry helpers in packages/core/src/engine/snap.ts for Flash 8 snapping: snapToGrid(point, gridW, gridH), snapToGuides(point, guides, tolerance), snapToPixels(point), snapToObject(point, objectBounds[], tolerance) returning snapped Point + snap type. Also snapDistance(a, b) and snapPoint(point, config: SnapConfig) as the main entry point. Export from packages/core/src/engine/index.ts. No UI. See docs/01-documents-stage-scenes.md \u00a7 Snapping.",
+  "status": "done",
+  "created_at": "2026-06-09T17:54:36Z",
+  "updated_at": "2026-06-09T17:55:47Z"
+}

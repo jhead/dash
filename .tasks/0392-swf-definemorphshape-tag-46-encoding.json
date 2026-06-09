@@ -1,0 +1,8 @@
+{
+  "id": "0392-swf-definemorphshape-tag-46-encoding",
+  "title": "SWF: DefineMorphShape (tag 46) encoding",
+  "description": "Test that a layer with shape tween (tweenType='shape') between two keyframes produces DefineMorphShape (tag 46) in exported SWF. Verify: (1) tag 46 appears, (2) body has valid start/end shape record structure (first 4 bytes are character ID UI16 + ratio UI16), (3) no DefineMorphShape for motion tweens or no-tween layers. Check compile.ts to see if DefineMorphShape is currently implemented.",
+  "status": "done",
+  "created_at": "2026-06-09T21:30:22Z",
+  "updated_at": "2026-06-09T21:31:41Z"
+}

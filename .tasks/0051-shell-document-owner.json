@@ -2,7 +2,7 @@
   "id": "0051-shell-document-owner",
   "title": "Shell document refactor: single FlashDocument owner, undo/redo, File menu wiring",
   "description": "Root-cause arch fix in packages/authoring-ui (see Shell.tsx:159-235). Shell holds timeline, library, instances, filtersByObjectId, docProperties, guides as independent useState; currentDoc is lossily reassembled at publish time only. Consequences: (1) useHistory (hooks/useHistory.ts) is imported by nothing \u2014 Ctrl+Z does nothing anywhere; (2) File New/Open/Save are dead \u2014 MenuBar.tsx:223-245 needs document/onDocumentChange/onFilePathChange props Shell never passes, and Shell has no way to install a loaded FlashDocument; (3) placed symbol instances live in React state and never enter the timeline, so publish/save drops them (Shell.tsx:684-698); (4) filters live in filtersByObjectId and are merged only for the stage renderer, so SWF/FLA never see them (Shell.tsx:798-805). Fix: Shell owns one FlashDocument through useHistory; panels derive state from it; filters and instances move into the document model; File menu wired; batch per-mousemove drag mutations into one history entry per gesture (StageArea onShapeMove commits per move). Add Edit>Undo/Redo menu items while wiring. See docs/01, docs/15.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T18:06:00Z",
-  "updated_at": "2026-06-09T18:06:00Z"
+  "updated_at": "2026-06-09T18:21:46Z"
 }

@@ -1,0 +1,8 @@
+{
+  "id": "0018-selection-transform",
+  "title": "Selection tool: transform handles",
+  "description": "Selection tool bounding box with 8 resize handles + rotation handle. Drag handles to scale shape, drag corner past edge to rotate. Flash 8 Free Transform behavior. Shows W/H/X/Y in Properties panel. Depends on draw-tools-integration, stage-shape-rendering.",
+  "status": "done",
+  "created_at": "2026-06-09T17:25:26Z",
+  "updated_at": "2026-06-09T17:31:24Z"
+}

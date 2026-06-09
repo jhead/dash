@@ -1,0 +1,8 @@
+{
+  "id": "0505-core-symbol-instance-transform-matrix-creation",
+  "title": "Core symbol instance transform matrix creation",
+  "description": "Test createInstanceMatrix(x, y, scaleX, scaleY, rotation): builds a 6-element affine transform matrix. Test decomposeMatrix(matrix): extracts x, y, scaleX, scaleY, rotation.",
+  "status": "in_progress",
+  "created_at": "2026-06-09T21:59:30Z",
+  "updated_at": "2026-06-09T22:00:28Z"
+}

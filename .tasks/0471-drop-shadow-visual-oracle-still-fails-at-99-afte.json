@@ -1,0 +1,8 @@
+{
+  "id": "0471-drop-shadow-visual-oracle-still-fails-at-99-afte",
+  "title": "CRITICAL regression: drop shadow filter SWF export fails visual oracle at 99%",
+  "description": "Task 0441 was marked done but its acceptance criterion still fails: the drop-shadow visual oracle shows 99.2% pixel mismatch, i.e. the filter is effectively not rendering in Ruffle at all. Likely suspects per CLAUDE.md learnings: filter must be emitted via PlaceObject3 (tag 70) on the REAL publish path (compile.ts), not just in an isolated encoder; check that compileDocument actually routes filtered instances through PO3 and that the FILTERLIST/DROPSHADOWFILTER record layout (fixed-point 16.16 distance/angle, color order, passes/flags bits) matches the spec. Cross-check against the local Ruffle clone's filter parsing (per CLAUDE.md: use the cloned ruffle repo as reference for SWF encoding). Filters are a headline Flash 8 feature; this is top-priority alongside 0442 (gradient export). Acceptance: visual oracle diff under threshold.",
+  "status": "in_progress",
+  "created_at": "2026-06-09T21:51:53Z",
+  "updated_at": "2026-06-09T22:02:37Z"
+}

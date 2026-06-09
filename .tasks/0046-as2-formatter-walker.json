@@ -1,0 +1,8 @@
+{
+  "id": "0046-as2-formatter-walker",
+  "title": "AS2 code formatter and AST walker",
+  "description": "Build packages/core/src/as2/formatter.ts: format(ast: Program, options?): string that pretty-prints an AS2 AST back to source with consistent indentation (2 spaces), semicolons, spacing. Also build packages/core/src/as2/walker.ts: walk(ast: Node, visitor: Visitor) depth-first traversal with enter/exit callbacks for each node type. Used by analysis tools and the Actions panel. Export from as2/index.ts. No UI.",
+  "status": "done",
+  "created_at": "2026-06-09T18:04:39Z",
+  "updated_at": "2026-06-09T18:07:12Z"
+}

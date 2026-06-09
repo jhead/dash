@@ -1,0 +1,8 @@
+{
+  "id": "0461-as2-regexp-literal-and-string-match-replace-test",
+  "title": "AS2 RegExp literal and String.match/replace tests",
+  "description": "Test RegExp literal /pattern/flags compilation, String.match(), String.replace(), String.search(), String.split(regex) \u2014 these map to standard AS2 method calls.",
+  "status": "done",
+  "created_at": "2026-06-09T21:49:46Z",
+  "updated_at": "2026-06-09T21:50:58Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0183-swf-actionscript-debugger-bytecode-actiontrace",
+  "title": "SWF: ActionScript debugger bytecode (ActionTrace)",
+  "description": "ActionTrace is the AS2 trace() function output. In AVM1, trace(msg) calls ActionTrace (0x26). Verify that trace('hello') in AS2 compiles to ActionTrace. Check packages/core/src/as2/compiler.ts for trace() call handling. Also verify: _root, _parent, _global compile to ActionGetVariable with those names. Add tests for trace(), _root access, _parent access in packages/core/src/as2/__tests__/builtins.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:27:35Z",
+  "updated_at": "2026-06-09T20:30:05Z"
+}

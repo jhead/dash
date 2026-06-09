@@ -1,0 +1,8 @@
+{
+  "id": "0112-publish-settings-dialog-and-test-movie-preview",
+  "title": "Publish settings dialog and Test Movie preview",
+  "description": "Implement Publish Settings dialog (File > Publish Settings): choose output filename, Flash version (lock to 8), ActionScript version (lock to AS2), JPEG quality, audio settings. Implement File > Publish: compile document to SWF using compileDocument(), trigger file download. Implement Control > Test Movie: compile document and open SWF in a new window/tab with an embedded Ruffle player for preview. Wire all three into the File/Control menu actions in Shell.tsx. See docs/15-file-formats-fla-swf.md.",
+  "status": "done",
+  "created_at": "2026-06-09T19:43:10Z",
+  "updated_at": "2026-06-09T20:03:26Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0256-core-tween-class-mx-transitions-compilation",
+  "title": "Core: Tween class (mx.transitions) compilation",
+  "description": "Verify mx.transitions.Tween and mx.transitions.easing AS2 usage compiles. new Tween(obj, prop, easing, begin, end, duration, useSeconds), t.start(), t.stop(), t.rewind(), t.fforward(), mx.transitions.easing.Strong.easeOut, t.onMotionFinished. Tests in packages/core/src/as2/__tests__/tweenclass.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:57:29Z",
+  "updated_at": "2026-06-09T21:01:37Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0362-core-as2-xmlsocket-and-loadvars-built-ins",
+  "title": "Core: AS2 XMLSocket and LoadVars built-ins",
+  "description": "Test compilation of XMLSocket: var xs = new XMLSocket(), xs.connect(host, port), xs.send(data), xs.close(), xs.onConnect = function(ok){}, xs.onData = function(s){}. Test LoadVars: var lv = new LoadVars(), lv.load(url), lv.sendAndLoad(url, target), lv.onLoad = function(ok){}, lv.loaded. Each should compile without error. Document actual opcodes emitted (ActionNew 0x4a, ActionCallMethod 0x52, ActionSetMember 0x4e).",
+  "status": "done",
+  "created_at": "2026-06-09T21:24:33Z",
+  "updated_at": "2026-06-09T21:25:43Z"
+}

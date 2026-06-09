@@ -1,0 +1,8 @@
+{
+  "id": "0170-swf-removeobject2-for-deleted-display-objects",
+  "title": "SWF: RemoveObject2 for deleted display objects",
+  "description": "When a display object is present in frame N but absent from frame N+1, emit RemoveObject2 (tag 28) for its depth in the SWF frame loop. Check packages/swf/src/compile.ts \u2014 search for 'RemoveObject2' or tag 28. If not implemented: track which depths were placed in the previous frame, compare to current frame, emit RemoveObject2 for depths that disappeared. Add unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:21:48Z",
+  "updated_at": "2026-06-09T20:23:23Z"
+}

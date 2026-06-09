@@ -1,0 +1,8 @@
+{
+  "id": "0335-swf-header-framecount-matches-actual-scene-frame",
+  "title": "SWF: Header frameCount matches actual scene frame count",
+  "description": "Unit test that the SWF file header frameCount field correctly reflects the total frame count of the document. For a 10-frame single-scene doc, the header frameCount should be 10. For a multi-scene doc with 5+8 frames, frameCount should be 13. Tests in packages/swf/src/__tests__/framecount.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:15:41Z",
+  "updated_at": "2026-06-09T21:18:24Z"
+}

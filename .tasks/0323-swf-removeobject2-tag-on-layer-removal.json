@@ -1,0 +1,8 @@
+{
+  "id": "0323-swf-removeobject2-tag-on-layer-removal",
+  "title": "SWF: RemoveObject2 tag on layer removal",
+  "description": "Unit tests verifying RemoveObject2 (tag 28) tags are emitted when display objects are removed between frames. Create a doc with a SymbolInstance on frame 0 only (not on frame 1), export SWF, verify RemoveObject2 tag (type 28) appears in the tag stream before ShowFrame for frame 2. Tests in packages/swf/src/__tests__/removeobject.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:13:22Z",
+  "updated_at": "2026-06-09T21:17:44Z"
+}

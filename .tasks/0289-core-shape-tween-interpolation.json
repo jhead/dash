@@ -1,0 +1,8 @@
+{
+  "id": "0289-core-shape-tween-interpolation",
+  "title": "Core: Shape tween interpolation",
+  "description": "Unit tests for shape tween interpolation. When tweenType='shape' on a frame, the renderer should produce intermediate shapes. Currently shape tweening may just return start/end frames without interpolation. Test that getDisplayObjectsAtFrame returns non-null results for all frames in a shape tween span. If interpolation not implemented, document with todos. Tests in packages/core/src/engine/__tests__/shape-tween.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:06:19Z",
+  "updated_at": "2026-06-09T21:09:35Z"
+}

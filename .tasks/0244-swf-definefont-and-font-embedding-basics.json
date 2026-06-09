@@ -1,0 +1,8 @@
+{
+  "id": "0244-swf-definefont-and-font-embedding-basics",
+  "title": "SWF: DefineFont and font embedding basics",
+  "description": "Verify DefineFont2 (tag 48) or DefineFont3 (tag 75) is emitted when the document has a FontItem with exportForActionScript. Check compile.ts for existing font embedding. If missing, add basic DefineFont3 tag with character glyph shapes. Tests: a doc with a font library item compiles to SWF containing tag 75 or tag 48.",
+  "status": "done",
+  "created_at": "2026-06-09T20:53:12Z",
+  "updated_at": "2026-06-09T20:56:29Z"
+}

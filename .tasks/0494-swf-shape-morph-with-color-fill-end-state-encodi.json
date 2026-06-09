@@ -1,0 +1,8 @@
+{
+  "id": "0494-swf-shape-morph-with-color-fill-end-state-encodi",
+  "title": "SWF shape morph with color fill end-state encoding",
+  "description": "Test DefineMorphShape (tag 46) body: start fill styles, end fill styles, start edge records, end edge records. Verify fill color changes between start/end states.",
+  "status": "done",
+  "created_at": "2026-06-09T21:57:11Z",
+  "updated_at": "2026-06-09T22:00:14Z"
+}

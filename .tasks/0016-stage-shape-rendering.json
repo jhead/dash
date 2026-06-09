@@ -1,0 +1,8 @@
+{
+  "id": "0016-stage-shape-rendering",
+  "title": "Stage shape rendering",
+  "description": "Replace placeholder rectangles in StageArea with real Canvas 2D rendering of Shape objects from the document model. Use CanvasRenderer from the vector engine to render the scene graph (current layer/frame shapes) onto a canvas element overlaid on the stage. Preview shapes during drawing (dashed outline). Depends on draw-tools-integration, vector-engine-mvp.",
+  "status": "done",
+  "created_at": "2026-06-09T17:18:04Z",
+  "updated_at": "2026-06-09T17:25:40Z"
+}

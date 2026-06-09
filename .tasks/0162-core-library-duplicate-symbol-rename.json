@@ -1,0 +1,8 @@
+{
+  "id": "0162-core-library-duplicate-symbol-rename",
+  "title": "Core: library duplicate symbol + rename",
+  "description": "Implement library item operations in packages/core/src/engine/library.ts. Functions: duplicateLibraryItem(doc, itemId) - deep clone a Symbol/BitmapItem/SoundItem with new id and name like 'Copy of Foo'; renameLibraryItem(doc, itemId, newName) - rename; deleteLibraryItem(doc, itemId) - remove from library (also remove all SymbolInstances that reference it from all frames). All immutable, return new FlashDocument. Add unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:16:29Z",
+  "updated_at": "2026-06-09T20:19:36Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0111-properties-panel-context-sensitive-inspector",
+  "title": "Properties panel: context-sensitive inspector",
+  "description": "Flash 8 Properties panel shows different controls depending on selection: no selection = document properties (fps, size, bg color); shape selected = fill/stroke color, line weight; text field selected = font, size, style, type, color; symbol instance selected = swap symbol, instance name, color effect, blend mode (defer to InstancePanel if already open). Implement as a docked bottom panel in Shell.tsx. Start with document and shape property views. See docs/03-drawing-shapes.md and docs/05-symbols-library.md.",
+  "status": "done",
+  "created_at": "2026-06-09T19:43:10Z",
+  "updated_at": "2026-06-09T20:12:01Z"
+}

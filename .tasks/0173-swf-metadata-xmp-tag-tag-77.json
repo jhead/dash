@@ -1,0 +1,8 @@
+{
+  "id": "0173-swf-metadata-xmp-tag-tag-77",
+  "title": "SWF: Metadata XMP tag (tag 77)",
+  "description": "SWF tag 77 (Metadata) carries XMP metadata as an XML string. When CompileOptions includes metadata: {title, description, author}, emit tag 77 after FileAttributes. Body is a UTF-8 XMP XML string (no null terminator). Build the XMP XML using template string. Add unit tests verifying tag 77 appears and contains the expected strings when metadata option is set.",
+  "status": "done",
+  "created_at": "2026-06-09T20:23:11Z",
+  "updated_at": "2026-06-09T20:25:50Z"
+}

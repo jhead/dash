@@ -1,0 +1,8 @@
+{
+  "id": "0378-core-as2-inheritance-and-super-keyword",
+  "title": "Core: AS2 inheritance and super keyword",
+  "description": "Test compilation of: class Animal { function speak() {} }, class Dog extends Animal { function speak() { super.speak(); } }. Test super() constructor call, super.method() calls, super property access. Verify ActionCallMethod (0x52) with 'speak' string, ActionGetVariable for super. Also test multi-level inheritance (A extends B extends C) compiles without error.",
+  "status": "done",
+  "created_at": "2026-06-09T21:28:01Z",
+  "updated_at": "2026-06-09T21:28:55Z"
+}

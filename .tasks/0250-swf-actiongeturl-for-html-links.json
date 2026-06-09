@@ -1,0 +1,8 @@
+{
+  "id": "0250-swf-actiongeturl-for-html-links",
+  "title": "SWF: ActionGetURL for HTML links",
+  "description": "Verify getURL(url, target) compiles correctly to ActionGetURL2 (0x9A) when called with 2 args, and ActionGetURL (0x83) or getURL2 variant for navigateToURL-style calls. Also test FSCommand('fullscreen','true') compiles. Tests in packages/core/src/as2/__tests__/geturl.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:55:34Z",
+  "updated_at": "2026-06-09T20:57:30Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0093-swf-definefont2-embed-font-glyphs-for-text-displ",
+  "title": "SWF DefineFont2: embed font glyphs for text display objects",
+  "description": "Currently TextDisplayObject is exported as DefineEditText with device fonts (no embedding). Add proper font embedding via DefineFont2 (tag 48): (1) For each unique font face used in TextDisplayObject instances across the document, emit DefineFont2 with: GlyphCount, GlyphShapeTable (one DefineShape record per glyph), CodeTable (glyph-to-Unicode mapping), FontName, IsBold, IsItalic, IsANSI, IsShiftJIS, IsUnicode, Ascent/Descent/Leading metrics, AdvanceTable (horizontal advance per glyph), BoundsTable (glyph bounds), KerningCount + KerningRecords. (2) Update DefineEditText to reference the embedded font's charId via HasFont=1 + FontID + FontHeight instead of device font fallback. For MVP, embed only printable ASCII (32-126). Use a canvas element to measure glyph metrics (ctx.measureText) and to rasterize/trace glyph outlines via a CanvasPath approach or approximate with rectangles for non-graphic fonts. (3) Assign unique charIds for each font in the pre-pass. Add tests verifying DefineFont2 tag present, FontName matches, CodeTable has correct Unicode values. Only touches packages/swf/src/ \u2014 no authoring-ui changes.",
+  "status": "done",
+  "created_at": "2026-06-09T19:25:57Z",
+  "updated_at": "2026-06-09T19:31:36Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0483-as2-movieclip-built-in-methods-compilation-tests",
+  "title": "AS2 MovieClip built-in methods compilation tests",
+  "description": "Test gotoAndPlay, gotoAndStop, play, stop, nextFrame, prevFrame, attachMovie, duplicateMovieClip, removeMovieClip, _root, _parent, _level0 references.",
+  "status": "done",
+  "created_at": "2026-06-09T21:54:49Z",
+  "updated_at": "2026-06-09T21:57:37Z"
+}

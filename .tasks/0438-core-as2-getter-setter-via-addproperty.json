@@ -1,0 +1,8 @@
+{
+  "id": "0438-core-as2-getter-setter-via-addproperty",
+  "title": "Core: AS2 getter/setter via addProperty",
+  "description": "Test compilation of the ActionScript 2 addProperty() pattern: this.addProperty('name', getter, setter), MyClass.prototype.addProperty('x', getX, setX). Verify ActionCallMethod (0x52) with 'addProperty' string. Also test Object.addProperty(obj, 'prop', getter, setter). Verify getter and setter are function references (ActionDefineFunction2 0x8E or ActionGetVariable 0x1c).",
+  "status": "done",
+  "created_at": "2026-06-09T21:41:56Z",
+  "updated_at": "2026-06-09T21:43:21Z"
+}

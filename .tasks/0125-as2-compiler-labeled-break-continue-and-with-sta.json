@@ -1,0 +1,8 @@
+{
+  "id": "0125-as2-compiler-labeled-break-continue-and-with-sta",
+  "title": "AS2 compiler: labeled break/continue and with-statement",
+  "description": "Implement two missing AS2 language features in packages/core/src/as2/compiler.ts: (1) Labeled break/continue: 'outer: for(...) { inner: for(...) { break outer; } }' \u2014 emit ActionJump with correct backpatch to the label's exit point. The parser may already produce LabeledStatement and BreakStatement(label)/ContinueStatement(label) nodes; check parser.ts. (2) with-statement: 'with(obj) { x = 1; }' \u2014 emit ActionWith (0x94) with block length. Both are uncommon but appear in Flash 8 component code. Add 6 tests each in __tests__/labeled.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T19:47:37Z",
+  "updated_at": "2026-06-09T19:52:09Z"
+}

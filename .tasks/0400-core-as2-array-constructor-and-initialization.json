@@ -1,0 +1,8 @@
+{
+  "id": "0400-core-as2-array-constructor-and-initialization",
+  "title": "Core: AS2 Array constructor and initialization",
+  "description": "Test compilation of Array construction: new Array(), new Array(5), new Array('a','b','c'), var arr = [], var arr = [1,2,3]. Test Array.from-like patterns. Verify ActionInitArray (0x36) for array literal, ActionNew (0x4a) for constructor. Test nested array literals: [[1,2],[3,4]]. Test array access: arr[0], arr[arr.length-1].",
+  "status": "done",
+  "created_at": "2026-06-09T21:31:25Z",
+  "updated_at": "2026-06-09T21:33:07Z"
+}

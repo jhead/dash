@@ -1,0 +1,8 @@
+{
+  "id": "0143-as2-global-vars",
+  "title": "AS2: global variable declarations and _global scope",
+  "description": "Implement _global scope in the AS2 compiler. In Flash 8, variables assigned to _global (e.g. _global.myVar = 5) are accessible from any scope. Also: class-level variable declarations (var x:Number = 5 at class body level) should compile to prototype assignments. Verify the compiler handles: (1) _global.foo = value \u2192 ActionPush 'foo', value; ActionPush '_global'; ActionGetVariable; ActionSetMember. (2) Top-level var declarations in scripts \u2192 ActionDefineLocal2 or ActionSetVariable. Add 6 tests in __tests__/globalvars.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:04:32Z",
+  "updated_at": "2026-06-09T20:06:33Z"
+}

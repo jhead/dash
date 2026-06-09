@@ -1,0 +1,8 @@
+{
+  "id": "0365-core-as2-math-object-built-in-methods",
+  "title": "Core: AS2 Math object built-in methods",
+  "description": "Test compilation of Math object: Math.abs(x), Math.ceil(x), Math.floor(x), Math.round(x), Math.sqrt(x), Math.pow(x,y), Math.min(a,b), Math.max(a,b), Math.random(), Math.PI, Math.E, Math.log(x), Math.sin(x), Math.cos(x), Math.tan(x), Math.atan2(y,x). Each should compile without error. Verify Math.PI emits ActionGetMember (0x4f) on the Math global object.",
+  "status": "done",
+  "created_at": "2026-06-09T21:24:33Z",
+  "updated_at": "2026-06-09T21:27:47Z"
+}

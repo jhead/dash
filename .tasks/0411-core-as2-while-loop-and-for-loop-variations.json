@@ -1,0 +1,8 @@
+{
+  "id": "0411-core-as2-while-loop-and-for-loop-variations",
+  "title": "Core: AS2 while loop and for loop variations",
+  "description": "Test compilation of: while(cond) { body }, for(init; cond; update) { body }, for(;;) { break; } (infinite loop), for(var i=0; i<10; i++) { if(i==5) continue; }, while(true) { break; }. Test that break/continue emit ActionJump (0x99). Test C-style for loop with no init/cond/update omitted. Verify loop opcodes ActionIf (0x9D) and ActionJump (0x99).",
+  "status": "done",
+  "created_at": "2026-06-09T21:33:38Z",
+  "updated_at": "2026-06-09T21:34:38Z"
+}

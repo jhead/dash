@@ -1,0 +1,8 @@
+{
+  "id": "0044-timeline-query-helpers",
+  "title": "Timeline query helpers",
+  "description": "Add pure query functions to packages/core/src/model/timeline.ts (no mutations): getGoverningKeyframe(layer, frameIndex): Frame (the keyframe at or before frameIndex), getDisplayObjectsAtFrame(timeline, frameIndex): DisplayObject[] (merged from all visible layers), getKeyframeIndices(layer): number[] (sorted list of keyframe positions), getFrameCount(timeline): number (max across all layers), findLayerById(timeline, layerId): Layer | null, getFramesBetween(layer, start, end): Frame[], getTweenedFrame(layer, frameIndex): Frame (with interpolated displayObjects for motion/shape tweens using existing interpolate helpers). Export from model/index.ts. No UI.",
+  "status": "done",
+  "created_at": "2026-06-09T18:01:25Z",
+  "updated_at": "2026-06-09T18:03:01Z"
+}

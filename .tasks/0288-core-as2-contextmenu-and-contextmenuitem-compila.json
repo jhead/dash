@@ -1,0 +1,8 @@
+{
+  "id": "0288-core-as2-contextmenu-and-contextmenuitem-compila",
+  "title": "Core: AS2 ContextMenu and ContextMenuItem compilation",
+  "description": "Verify AS2 ContextMenu and ContextMenuItem compile: new ContextMenu(), cm.hideBuiltInItems(), cm.customItems.push(item), new ContextMenuItem('label', handler), item.caption, item.onSelect = function(){}. _root.menu = cm. Tests in packages/core/src/as2/__tests__/contextmenu.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:06:19Z",
+  "updated_at": "2026-06-09T21:08:04Z"
+}

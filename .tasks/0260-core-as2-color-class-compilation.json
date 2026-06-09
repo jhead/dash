@@ -1,0 +1,8 @@
+{
+  "id": "0260-core-as2-color-class-compilation",
+  "title": "Core: AS2 Color class compilation",
+  "description": "Verify AS2 Color class compiles correctly: new Color(target), c.setRGB(0xff0000), c.getRGB(), c.setTransform({ra, rb, ga, gb, ba, bb, aa, ab}), c.getTransform(). Tests in packages/core/src/as2/__tests__/colorclass.test.ts. Verify ActionNew (0x4a), ActionCallMethod (0x52), ActionGetMember (0x4f) opcodes are emitted.",
+  "status": "done",
+  "created_at": "2026-06-09T21:00:30Z",
+  "updated_at": "2026-06-09T21:01:39Z"
+}

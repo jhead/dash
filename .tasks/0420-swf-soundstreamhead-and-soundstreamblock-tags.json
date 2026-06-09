@@ -1,0 +1,8 @@
+{
+  "id": "0420-swf-soundstreamhead-and-soundstreamblock-tags",
+  "title": "SWF: SoundStreamHead and SoundStreamBlock tags",
+  "description": "Test that a layer with stream-mode sound (syncMode='stream') produces SoundStreamHead (tag 18) and SoundStreamBlock (tag 19) tags. Verify: (1) tag 18 appears before first frame with sound data, (2) SoundStreamHead has correct codec byte, (3) SoundStreamBlock body has non-zero length. If streaming sound is not yet implemented, document with .todo tests.",
+  "status": "done",
+  "created_at": "2026-06-09T21:37:01Z",
+  "updated_at": "2026-06-09T21:40:34Z"
+}

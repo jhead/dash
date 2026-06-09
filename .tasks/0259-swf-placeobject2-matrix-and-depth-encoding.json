@@ -1,0 +1,8 @@
+{
+  "id": "0259-swf-placeobject2-matrix-and-depth-encoding",
+  "title": "SWF: PlaceObject2 matrix and depth encoding",
+  "description": "Unit tests for PlaceObject2 tag binary encoding in packages/swf. Verify that x/y translation, scale, rotation, depth are correctly written into the MATRIX record. Test at packages/swf/src/__tests__/placeobject2.test.ts. Import encodeMatrix from swf internals and verify bit-exact output for known transforms.",
+  "status": "done",
+  "created_at": "2026-06-09T20:59:40Z",
+  "updated_at": "2026-06-09T21:03:30Z"
+}

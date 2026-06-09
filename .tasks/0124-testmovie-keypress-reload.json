@@ -2,7 +2,7 @@
   "id": "0124-testmovie-keypress-reload",
   "title": "Test Movie: any keypress reloads the running SWF",
   "description": "User report: pressing any key while the Ruffle test-movie window is open causes the movie to reload immediately. Likely causes to investigate: Shell global keyboard shortcut handlers staying active while PlayerWindow is open and triggering state changes that remount RufflePlayer (each remount recreates the blob URL and reloads); or a keydown handler in PlayerWindow/RufflePlayer itself. Expected Flash 8 behavior: while Test Movie is focused, keyboard input goes to the MOVIE (Key.isDown etc. must work for authored content); only window-manager keys (Esc/Ctrl+W close, Ctrl+Enter re-test) act on the window, and authoring shortcuts are suspended. Fix focus scoping (disable Shell shortcuts while player open / stop propagation at the player container) and make RufflePlayer stable across parent re-renders (memo + stable blob URL). See docs/16-player-runtime.md.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T19:45:52Z",
-  "updated_at": "2026-06-09T19:45:52Z"
+  "updated_at": "2026-06-09T19:51:40Z"
 }

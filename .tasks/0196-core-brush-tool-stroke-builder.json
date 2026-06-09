@@ -1,0 +1,8 @@
+{
+  "id": "0196-core-brush-tool-stroke-builder",
+  "title": "Core: Brush tool stroke builder",
+  "description": "Implement a brush tool stroke builder in packages/core/src/engine/brushtool.ts. Function: addBrushStroke(doc, sceneIdx, layerIdx, frameIdx, points: Array<{x,y,pressure}>, strokeColor, strokeWidth): FlashDocument. Converts the points array to a smoothed ShapePath with filled paths (brush strokes are filled shapes, not stroked lines in Flash). Use Catmull-Rom spline smoothing and create a closed path outlining the stroke width. Add unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:32:31Z",
+  "updated_at": "2026-06-09T20:36:37Z"
+}

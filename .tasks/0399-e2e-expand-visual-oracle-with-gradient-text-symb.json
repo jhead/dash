@@ -1,0 +1,8 @@
+{
+  "id": "0399-e2e-expand-visual-oracle-with-gradient-text-symb",
+  "title": "E2E: expand visual oracle with gradient, text, symbol, filter, and multi-frame fixtures",
+  "description": "apps/desktop/e2e/visual-oracle.spec.ts has only 3 fixtures (solid rects, multi-rect, tween frame 0). Critical render paths have zero Ruffle-vs-canvas cross-check coverage.\n\nAdd visual oracle fixtures for:\n1. Linear gradient fill \u2014 a rectangle with a horizontal red-to-blue linear gradient.\n2. Static text \u2014 a 'Hello Flash 8' label with an embedded Arial font at 24px.\n3. Symbol instance \u2014 a MovieClip symbol placed on stage with a 30-degree rotation.\n4. Drop shadow filter \u2014 a white rectangle with a blur=4, distance=4, angle=45 drop shadow.\n5. Tween frame 2 \u2014 the tweened-rectangle fixture but asserting frame 2 (midpoint interpolation) not just frame 0.\n6. Bitmap fill \u2014 a rectangle filled with an imported 64x64 bitmap pattern.\n\nEach new fixture should follow the existing pattern: buildDocument() \u2192 loadDocument() \u2192 captureStageScreenshot() + captureRuffleScreenshot() \u2192 compareScreenshots() with threshold 0.20. Failures should attach both PNGs via testInfo.attach().\n\nKey file: apps/desktop/e2e/visual-oracle.spec.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:31:15Z",
+  "updated_at": "2026-06-09T21:39:15Z"
+}

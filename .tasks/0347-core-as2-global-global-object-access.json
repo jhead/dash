@@ -1,0 +1,8 @@
+{
+  "id": "0347-core-as2-global-global-object-access",
+  "title": "Core: AS2 global _global object access",
+  "description": "Verify AS2 _global object access compiles: _global.MyClass, _global.trace, _global.someVar = 5, _global.Array, _global.Object. Also: _global listener registration pattern common in AS2. Tests in packages/core/src/as2/__tests__/globalobj.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:18:37Z",
+  "updated_at": "2026-06-09T21:21:28Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0137-swf-exportassets-tag",
+  "title": "SWF: ExportAssets (tag 56) for symbol linkage",
+  "description": "Verify and fix ExportAssets (tag 56) emission in packages/swf/src/compile.ts. Tag 56 maps character IDs to export names for ActionScript attachment (attachMovie, new ClassName). Format: UI16 count, then per-symbol: UI16 CharId, null-terminated string Name. Check that symbols with linkage.exportForActionScript=true and non-empty linkageIdentifier are included. ExportAssets should be emitted once per scene (in the first frame), before DoInitAction. Add 5 tests in __tests__/exportassets.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T19:59:25Z",
+  "updated_at": "2026-06-09T20:01:47Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0019-color-panel-gradients",
+  "title": "Color panel & gradient fills",
+  "description": "Color panel (Window > Color): hex input, R/G/B/A sliders, color wheel/picker. Linear and radial gradient fills: gradient bar editor, add/remove/move color stops. Wire into toolbox fill/stroke swatches. Flash 8 Color panel parity. See docs/05-color-strokes-fills.md. Depends on draw-tools-integration.",
+  "status": "done",
+  "created_at": "2026-06-09T17:25:27Z",
+  "updated_at": "2026-06-09T17:31:26Z"
+}

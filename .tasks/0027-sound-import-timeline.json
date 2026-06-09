@@ -1,0 +1,8 @@
+{
+  "id": "0027-sound-import-timeline",
+  "title": "Sound import & timeline sync",
+  "description": "Import WAV/MP3/AIFF to library as SoundItem (data URI). Attach sounds to keyframes via Property inspector: sound selector, sync mode (Event/Start/Stop/Stream), repeat count. Authoring preview via Web Audio. See docs/10-sound.md.",
+  "status": "done",
+  "created_at": "2026-06-09T17:42:54Z",
+  "updated_at": "2026-06-09T17:49:06Z"
+}

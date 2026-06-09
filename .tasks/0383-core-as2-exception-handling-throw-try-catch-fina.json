@@ -1,0 +1,8 @@
+{
+  "id": "0383-core-as2-exception-handling-throw-try-catch-fina",
+  "title": "Core: AS2 exception handling (throw, try-catch-finally)",
+  "description": "Test compilation of: try { ... } catch(e:Error) { trace(e.message); } finally { ... }. Test: throw new Error('msg'), throw 'string', throw 42. Test ActionTry (0x8F) and ActionThrow (0x2A) opcodes. Test nested try-catch. Test re-throw: catch(e) { throw e; }. Test Error subclasses: class MyError extends Error {}; throw new MyError().",
+  "status": "done",
+  "created_at": "2026-06-09T21:28:51Z",
+  "updated_at": "2026-06-09T21:30:03Z"
+}

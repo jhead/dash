@@ -1,0 +1,8 @@
+{
+  "id": "0266-swf-definesprite-tag-encoding-for-symbols",
+  "title": "SWF: DefineSprite tag encoding for symbols",
+  "description": "Unit tests for DefineSprite (tag 39) binary encoding in packages/swf. DefineSpriteTag wraps a symbol's timeline. Create a FlashDocument with a MovieClip symbol that has a few frames, export to SWF, parse the binary, locate DefineSprite tags, verify the sprite ID and frameCount are correctly written. Tests in packages/swf/src/__tests__/definesprite.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:01:33Z",
+  "updated_at": "2026-06-09T21:02:31Z"
+}

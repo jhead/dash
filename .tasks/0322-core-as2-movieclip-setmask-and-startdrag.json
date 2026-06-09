@@ -1,0 +1,8 @@
+{
+  "id": "0322-core-as2-movieclip-setmask-and-startdrag",
+  "title": "Core: AS2 MovieClip setMask and startDrag",
+  "description": "Verify AS2 MovieClip mask and drag methods compile: mc.setMask(maskClip), mc.setMask(null) (remove mask), mc.startDrag(lockCenter, left, top, right, bottom), mc.stopDrag(), mc._xmouse, mc._ymouse, mc.hitArea. Tests in packages/core/src/as2/__tests__/mcmaskdrag.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:13:22Z",
+  "updated_at": "2026-06-09T21:15:05Z"
+}

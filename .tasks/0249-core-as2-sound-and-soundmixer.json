@@ -1,0 +1,8 @@
+{
+  "id": "0249-core-as2-sound-and-soundmixer",
+  "title": "Core: AS2 Sound and SoundMixer",
+  "description": "Verify Sound class AS2 compilation. new Sound(), s.attachSound(id), s.start(offset, loops), s.stop(), s.setVolume(v), s.getVolume(), s.setPan(p), s.onSoundComplete = function(){}, s.duration, s.position, s.loadSound(url, stream). Tests in packages/core/src/as2/__tests__/sound.test.ts: all compile without error.",
+  "status": "done",
+  "created_at": "2026-06-09T20:55:34Z",
+  "updated_at": "2026-06-09T20:58:29Z"
+}
