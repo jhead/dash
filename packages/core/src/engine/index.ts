@@ -201,3 +201,10 @@ export { applyEase, lerp, tweenValue } from "./tween.js";
 
 // Measurement unit conversion utilities
 export { toPx, fromPx, convertUnits, formatMeasurement } from "./units.js";
+
+// Gradient fill creation utilities
+export {
+  createLinearGradient,
+  createRadialGradient,
+  normalizeGradientRatios,
+} from "./gradient.js";
