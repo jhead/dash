@@ -2,7 +2,7 @@
   "id": "0658-as2-accessibility-class-and-tab-index-tests",
   "title": "AS2 Accessibility class and tab index tests",
   "description": "Test new Accessibility(), updateProperties, isActive, sendEvent all compile. Test _accProps object properties: name, description, shortcut, tabIndex, forceSimple, silent.",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T22:44:25Z",
-  "updated_at": "2026-06-09T22:45:17Z"
+  "updated_at": "2026-06-09T22:46:49Z"
 }

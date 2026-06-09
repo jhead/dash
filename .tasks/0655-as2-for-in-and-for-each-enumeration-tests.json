@@ -2,7 +2,7 @@
   "id": "0655-as2-for-in-and-for-each-enumeration-tests",
   "title": "AS2 for..in and for..each enumeration tests",
   "description": "Test for..in over plain objects, arrays, MovieClips. Test for each..in (AS2 extension). Verify ActionEnumerate2 opcode emitted. Test hasOwnProperty filtering pattern.",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T22:44:25Z",
-  "updated_at": "2026-06-09T22:45:06Z"
+  "updated_at": "2026-06-09T22:46:27Z"
 }

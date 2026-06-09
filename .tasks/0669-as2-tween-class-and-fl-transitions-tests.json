@@ -1,0 +1,8 @@
+{
+  "id": "0669-as2-tween-class-and-fl-transitions-tests",
+  "title": "AS2 Tween class and fl.transitions tests",
+  "description": "Test new mx.transitions.Tween(), update, animateProperty, onMotionFinished callback, easing functions (Regular.easeIn, etc.), MOTION_FINISH_EVENT, duration, position properties all compile.",
+  "status": "done",
+  "created_at": "2026-06-09T22:47:48Z",
+  "updated_at": "2026-06-09T22:49:10Z"
+}

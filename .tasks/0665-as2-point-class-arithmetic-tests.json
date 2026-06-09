@@ -1,0 +1,8 @@
+{
+  "id": "0665-as2-point-class-arithmetic-tests",
+  "title": "AS2 Point class arithmetic tests",
+  "description": "Test new flash.geom.Point(x,y), add, subtract, normalize, offset, distance, equals, clone, length, interpolate, polar all compile. Test point arithmetic patterns.",
+  "status": "done",
+  "created_at": "2026-06-09T22:46:38Z",
+  "updated_at": "2026-06-09T22:48:39Z"
+}

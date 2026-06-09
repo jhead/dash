@@ -61,7 +61,15 @@ Rules:
 - **Ruffle is the sole ActionScript execution engine.** Never create AVM1
   interpreter/runtime tasks (see docs/12-actionscript.md, docs/16-player-runtime.md).
 - **Closing a task requires evidence.** A visual-oracle or e2e acceptance criterion means
-  the spec actually ran and passed; don't mark done on unit tests alone.
+  the spec actually ran and passed; don't mark done on unit tests alone. When a task asks
+  for numbers or run output, paste them into the task (`./task update <id> --description`)
+  before closing. The Oracle reopens evidence-free closures.
+- **A task is not done until its code is committed.** Commit your own scope (and only
+  your own scope) before marking done; do not leave finished work sitting in the shared
+  working tree, and do not sweep other agents' uncommitted files into your commit.
+- **Do not batch-create tasks you immediately self-close.** If the work fits in minutes,
+  it was never a story — fold it into the story you already hold (see Task scope).
+  Created-then-closed-in-one-sitting batches are backlog noise and will be audited.
 
 ## Before you start
 

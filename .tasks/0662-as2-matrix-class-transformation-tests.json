@@ -2,7 +2,7 @@
   "id": "0662-as2-matrix-class-transformation-tests",
   "title": "AS2 Matrix class transformation tests",
   "description": "Test new flash.geom.Matrix(), identity, clone, invert, concat, rotate, scale, translate, transformPoint, deltaTransformPoint, createBox, createGradientBox all compile.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T22:45:27Z",
-  "updated_at": "2026-06-09T22:45:27Z"
+  "updated_at": "2026-06-09T22:48:17Z"
 }

@@ -1,0 +1,8 @@
+{
+  "id": "0682-fix-e2e-harness-vite-dev-server-crashes-mid-suit",
+  "title": "Fix E2E harness: Vite dev server crashes mid-suite + agent-mcp endpoint not wired",
+  "description": "E2E suite grew from 18 to 38 tests. Two new failure categories:\n\n1. DEV SERVER INSTABILITY: After agent-mcp.spec.ts runs (fetches /mcp endpoint), Vite dev server stops accepting connections. All subsequent tests get ERR_CONNECTION_REFUSED. Fix: ensure the MCP plugin or fetch handler does not crash the server; or add server health check / restart between spec files in playwright.config.ts.\n\n2. AGENT-MCP ENDPOINT: agent-mcp.spec.ts (7 tests) fails with 'TypeError: fetch failed' on /mcp \u2014 the MCP WS relay or HTTP endpoint from task 0613 is not yet served by the Vite dev server. Either wire it up or add a conditional skip while the feature is in-progress.\n\n3. INTERACTIVITY cascading failures: interactivity.spec.ts (2/3 tests) fail with ERR_CONNECTION_REFUSED because the server already crashed from #1. Fix #1 first.\n\nRun: pnpm --filter @flash/desktop e2e to verify \u2014 target 38/38 once both are fixed.",
+  "status": "in_progress",
+  "created_at": "2026-06-09T23:07:01Z",
+  "updated_at": "2026-06-09T23:09:19Z"
+}

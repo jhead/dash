@@ -2,7 +2,7 @@
   "id": "0659-as2-contextmenu-and-menu-item-tests",
   "title": "AS2 ContextMenu and menu item tests",
   "description": "Test new ContextMenu(), new ContextMenuItem(), customItems array, enabled, visible, separatorBefore. Test ContextMenu.hideBuiltInItems(). Test onSelect callback on menu items.",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T22:45:27Z",
-  "updated_at": "2026-06-09T22:46:03Z"
+  "updated_at": "2026-06-09T22:47:01Z"
 }

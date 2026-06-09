@@ -1,0 +1,8 @@
+{
+  "id": "0670-swf-compressed-output-and-decompression-integrit",
+  "title": "SWF compressed output and decompression integrity",
+  "description": "Test that compress:true output decompresses back to identical content as compress:false. Verify FWS vs CWS header, zlib magic bytes, decompressed size field, and that tag parsing works on both.",
+  "status": "done",
+  "created_at": "2026-06-09T22:47:48Z",
+  "updated_at": "2026-06-09T22:49:11Z"
+}

@@ -2,7 +2,7 @@
   "id": "0660-swf-removeobject2-tag-encoding-tests",
   "title": "SWF RemoveObject2 tag encoding tests",
   "description": "Test compileDocument emits RemoveObject2 (tag 28) when an object that was placed on a previous frame is absent on the next frame. Verify character ID in tag matches the placed object.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T22:45:27Z",
-  "updated_at": "2026-06-09T22:45:27Z"
+  "updated_at": "2026-06-09T22:47:01Z"
 }

@@ -1,0 +1,8 @@
+{
+  "id": "0681-fix-runtime-expanded-jsfl-test-failures-renameit",
+  "title": "Fix runtime-expanded JSFL test failures: renameItem null-safety + setSelectionRect off-by-one",
+  "description": "packages/authoring-ui/src/jsfl/__tests__/runtime-expanded.test.ts has 2 confirmed failures:\n1. renameItem: 'Cannot read properties of undefined (reading items)' \u2014 library.items is undefined during rename; need null-safety guard in the renameItem implementation\n2. setSelectionRect: expected ['1'] got ['2'] \u2014 selection count off-by-one when rect selects objects\n\nRun: pnpm --filter @flash/authoring-ui run test -- --run to verify. Both failures must go to 0.",
+  "status": "done",
+  "created_at": "2026-06-09T23:06:55Z",
+  "updated_at": "2026-06-09T23:08:47Z"
+}

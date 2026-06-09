@@ -2,7 +2,7 @@
   "id": "0518-interactivity-oracle-drive-compiled-swf-in-ruffl",
   "title": "CRITICAL: interactivity oracle \u2014 drive compiled SWF in Ruffle with synthesized input (e2e harness)",
   "description": "Per docs/18-verification-and-automation.md. The visual oracle only covers static rendering; nothing verifies input -> AS2 script -> hitTest -> screen in a published SWF. Build a Playwright e2e harness that loads a compiled SWF in the Ruffle player, dispatches synthesized mouse/keyboard events, advances frames, and asserts resulting state (screenshot diff and/or a __flashTest bridge reading player state). Reuse visual-oracle learnings in CLAUDE.md (on-screen player, deviceScaleFactor:1, port 1420). This harness is the verification backbone for the capstone game task and for button/keyboard regressions.",
-  "status": "open",
+  "status": "in_progress",
   "created_at": "2026-06-09T22:02:12Z",
-  "updated_at": "2026-06-09T22:45:59Z"
+  "updated_at": "2026-06-09T22:54:43Z"
 }
