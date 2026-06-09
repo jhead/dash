@@ -1,69 +1,78 @@
-/**
- * Tests for AS2 SharedObject local storage class.
- *
- * Verifies that SharedObject.getLocal(), data property access/set,
- * flush(), clear(), size, onStatus handler, and local path arguments
- * all compile without error using the AS2 compiler.
- */
-
 import { describe, it, expect } from "vitest";
 import { compileAS2 } from "../compiler.js";
 
-function compilesOk(src: string) {
-  expect(() => compileAS2(src)).not.toThrow();
-}
+function compilesOk(src: string) { expect(() => compileAS2(src)).not.toThrow(); }
 
-describe("AS2 SharedObject local storage", () => {
+describe("AS2 SharedObject", () => {
   it("SharedObject.getLocal() compiles", () => {
     compilesOk(`var so = SharedObject.getLocal("myData");`);
   });
 
-  it("SharedObject data property access compiles", () => {
+  it("SharedObject.getLocal with path compiles", () => {
+    compilesOk(`var so = SharedObject.getLocal("myData", "/");`);
+  });
+
+  it("so.data property access compiles", () => {
     compilesOk(`
       var so = SharedObject.getLocal("prefs");
       var vol = so.data.volume;
     `);
   });
 
-  it("SharedObject data property set compiles", () => {
+  it("so.data property write compiles", () => {
     compilesOk(`
       var so = SharedObject.getLocal("prefs");
-      so.data.volume = 80;
+      so.data.volume = 75;
+      so.data.playerName = "Player1";
     `);
   });
 
-  it("SharedObject.flush() compiles", () => {
+  it("so.flush() compiles", () => {
     compilesOk(`
-      var so = SharedObject.getLocal("scores");
-      so.data.highScore = 9999;
+      var so = SharedObject.getLocal("prefs");
+      so.data.score = 100;
       so.flush();
     `);
   });
 
-  it("SharedObject.clear() compiles", () => {
+  it("so.clear() compiles", () => {
     compilesOk(`
-      var so = SharedObject.getLocal("temp");
+      var so = SharedObject.getLocal("prefs");
       so.clear();
     `);
   });
 
-  it("SharedObject.size property compiles", () => {
+  it("so.getSize() compiles", () => {
     compilesOk(`
-      var so = SharedObject.getLocal("data");
-      var sz = so.size;
+      var so = SharedObject.getLocal("myData");
+      var size = so.getSize();
     `);
   });
 
-  it("SharedObject with local path compiles", () => {
+  it("so.onStatus callback compiles", () => {
     compilesOk(`
-      var so = SharedObject.getLocal("game", "/");
+      var so = SharedObject.getLocal("prefs");
+      so.onStatus = function(info) {
+        if (info.level == "error") trace("save failed");
+      };
+      so.flush();
     `);
   });
 
-  it("SharedObject.onStatus handler compiles", () => {
+  it("SharedObject.getRemote() compiles", () => {
+    compilesOk(`
+      var so = SharedObject.getRemote("data", "rtmp://server/app");
+    `);
+  });
+
+  it("SharedObject persistence pattern compiles", () => {
     compilesOk(`
       var so = SharedObject.getLocal("game");
-      so.onStatus = function(info) { trace(info.code); };
+      if (so.data.highScore == undefined) {
+        so.data.highScore = 0;
+        so.data.level = 1;
+      }
+      trace("High score: " + so.data.highScore);
     `);
   });
 });

@@ -1135,12 +1135,13 @@ class Compiler {
     if (op === '||') { this.compileShortCircuitOr(expr);  return; }
 
     // 'in' operator: key in obj → obj.hasOwnProperty(key)
-    // ActionCallMethod stack layout: obj | methodName | nArgs | arg[n-1] | ... | arg[0]
+    // ActionCallMethod stack (top popped first by Ruffle):
+    //   method_name | object | numArgs | arg[0] | ... | arg[n-1]
     if (op === 'in') {
-      this.compileExpr(expr.right);  // push obj
-      this.pushString('hasOwnProperty');
+      this.compileExpr(expr.left);   // push key (arg[0], deepest)
       this.pushInt(1);               // nArgs = 1
-      this.compileExpr(expr.left);   // push key (the argument)
+      this.compileExpr(expr.right);  // push obj (object)
+      this.pushString('hasOwnProperty'); // method name (top)
       this.emit(0x52);               // ActionCallMethod
       return;
     }
@@ -1313,14 +1314,19 @@ class Compiler {
   private compileCallExpr(expr: CallExpr): void {
     if (expr.callee.type === 'MemberExpr') {
       const member = expr.callee as MemberExpr;
-      // ActionCallMethod stack layout (top is arg[0]):
-      //   obj | name | nArgs | arg[n-1] | ... | arg[0]
-      this.compileExpr(member.object);
-      this.pushString(member.property);
-      this.pushInt(expr.args.length);
+      // ActionCallMethod stack layout (Ruffle pops top first):
+      //   method_name | object | numArgs | arg[0] | ... | arg[n-1]
+      //   (bottom to top: arg[n-1], ..., arg[0], numArgs, object, method_name)
+      // Push args deepest first (arg[n-1] first = deepest, arg[0] last = just above numArgs)
       for (let i = expr.args.length - 1; i >= 0; i--) {
         this.compileExpr(expr.args[i]!);
       }
+      // Push numArgs
+      this.pushInt(expr.args.length);
+      // Push and evaluate the object
+      this.compileExpr(member.object);
+      // Push method name — top of stack, first popped by Ruffle
+      this.pushString(member.property);
       this.emit(0x52); // ActionCallMethod
       return;
     }
@@ -1331,19 +1337,23 @@ class Compiler {
       // super(...) → SuperClass.call(this, ...) via ActionCallMethod
       if (name === 'super' && this.currentSuperClass !== null) {
         const superName = this.currentSuperClass;
-        // ActionCallMethod: obj | methodName | nArgs | arg[n-1]..arg[0]
-        // super(args) → SuperClass.call(this, args)
-        // Stack: [SuperClass, "call", nArgs+1, this, arg[n-1], ..., arg[0]]
-        this.pushString(superName);
-        this.emit(0x1c); // ActionGetVariable → SuperClass
-        this.pushString('call');
-        this.pushInt(expr.args.length + 1); // +1 for 'this'
-        // push 'this' identifier
-        this.pushString('this');
-        this.emit(0x1c); // ActionGetVariable → this
+        // ActionCallMethod stack (top popped first by Ruffle):
+        //   method_name | object | numArgs | arg[0] | ... | arg[n-1]
+        // super(args) → SuperClass.call(this, arg0, ..., argN-1)
+        // Push args deepest first (arg[n-1] first = deepest)
         for (let i = expr.args.length - 1; i >= 0; i--) {
           this.compileExpr(expr.args[i]!);
         }
+        // push 'this' as arg[0] (closest to numArgs)
+        this.pushString('this');
+        this.emit(0x1c); // ActionGetVariable → this
+        // Push nArgs (user args + 1 for 'this')
+        this.pushInt(expr.args.length + 1);
+        // Push SuperClass (object to call .call on)
+        this.pushString(superName);
+        this.emit(0x1c); // ActionGetVariable → SuperClass
+        // Push method name "call" — top of stack
+        this.pushString('call');
         this.emit(0x52); // ActionCallMethod
         return;
       }
@@ -1435,13 +1445,15 @@ class Compiler {
         return;
       }
 
-      // ActionCallFunction stack layout (top is arg[0]):
-      //   name | nArgs | arg[n-1] | ... | arg[0]
-      this.pushString(name);
-      this.pushInt(expr.args.length);
+      // ActionCallFunction stack (top popped first by Ruffle):
+      //   name | numArgs | arg[0] | ... | arg[n-1]
+      // Push args deepest first (arg[n-1] first = deepest, arg[0] last = just below numArgs)
       for (let i = expr.args.length - 1; i >= 0; i--) {
         this.compileExpr(expr.args[i]!);
       }
+      this.pushInt(expr.args.length);
+      // Push function name on top
+      this.pushString(name);
       this.emit(0x3d); // ActionCallFunction
       return;
     }
@@ -1757,34 +1769,40 @@ class Compiler {
     setter: FunctionDecl | undefined,
     superClass: string | null
   ): void {
-    // Push the prototype object (method receiver)
-    this.pushString(className);
-    this.emit(0x1c); // ActionGetVariable → ClassName
-    this.pushString('prototype');
-    this.emit(0x4f); // ActionGetMember → ClassName.prototype
+    // ActionCallMethod stack (top popped first by Ruffle):
+    //   method_name | object | numArgs | arg[0] | ... | arg[n-1]
+    // addProperty(propName, getter, setter): 3 args
+    //   arg[0] = propName, arg[1] = getter, arg[2] = setter
+    // Push args deepest first: arg[2] first, arg[0] last (closest to numArgs)
 
-    // Push method name
-    this.pushString('addProperty');
+    // Push arg[2] = setter (deepest arg)
+    if (setter !== undefined) {
+      this.emitDefineFunction2('', setter.params, setter.body.body, superClass);
+    } else {
+      this.pushNull();
+    }
 
-    // Push nArgs = 3
-    this.pushInt(3);
-
-    // Push arg[2] = property name string (deepest arg)
-    this.pushString(propName);
-
-    // Push arg[1] = getter function (or null)
+    // Push arg[1] = getter
     if (getter !== undefined) {
       this.emitDefineFunction2('', getter.params, getter.body.body, superClass);
     } else {
       this.pushNull();
     }
 
-    // Push arg[0] = setter function (or null) — top of stack (first popped = last arg)
-    if (setter !== undefined) {
-      this.emitDefineFunction2('', setter.params, setter.body.body, superClass);
-    } else {
-      this.pushNull();
-    }
+    // Push arg[0] = property name string (closest to numArgs)
+    this.pushString(propName);
+
+    // Push nArgs = 3
+    this.pushInt(3);
+
+    // Push the prototype object (method receiver)
+    this.pushString(className);
+    this.emit(0x1c); // ActionGetVariable → ClassName
+    this.pushString('prototype');
+    this.emit(0x4f); // ActionGetMember → ClassName.prototype
+
+    // Push method name — top of stack, first popped by Ruffle
+    this.pushString('addProperty');
 
     this.emit(0x52); // ActionCallMethod
     this.emit(0x17); // ActionPop — discard return value

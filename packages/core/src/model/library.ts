@@ -312,6 +312,35 @@ export function removeLibraryFolder(
 }
 
 /**
+ * Rename a LibraryFolder by id. Returns a new Library (immutable).
+ * If the id is not found, the library is returned unchanged.
+ */
+export function renameLibraryFolder(
+  library: Library,
+  folderId: string,
+  newName: string
+): Library {
+  if (!library.folders.some((f) => f.id === folderId)) return library;
+  return {
+    ...library,
+    folders: library.folders.map((f) =>
+      f.id === folderId ? { ...f, name: newName } : f
+    ),
+  };
+}
+
+/**
+ * Return all LibraryFolders that are direct children of the given parent folder id.
+ * Pass null to get top-level folders.
+ */
+export function getFoldersInFolder(
+  library: Library,
+  parentFolderId: string | null
+): readonly LibraryFolder[] {
+  return library.folders.filter((f) => f.parentFolderId === parentFolderId);
+}
+
+/**
  * Find a LibraryItem by id, or undefined if not found.
  * Alias of getLibraryItem for a more discoverable name.
  */

@@ -113,6 +113,13 @@ export {
   getSceneDuration,
 } from "./timeline-query.js";
 
+// Instance / display-object property mutation helpers (Frame-level)
+export type { InstanceTransform } from "./instance-mutations.js";
+export {
+  setInstanceProperty,
+  setInstanceTransform,
+} from "./instance-mutations.js";
+
 // Display z-order
 export {
   moveDisplayObjectUp,
@@ -156,6 +163,20 @@ export {
   renameLibraryItem,
   addLibraryFolder,
   removeLibraryFolder,
+  renameLibraryFolder,
+  getFoldersInFolder,
   findLibraryItem,
   getLibraryItemsByType,
 } from "./library.js";
+
+// Layer pairing helpers
+export type { LayerPairingIssue } from "./layer-pairing.js";
+export {
+  isGuidedLayer,
+  isMaskedLayer,
+  validateLayerPairing,
+  getGuideLayerFor,
+  getMaskLayerFor,
+  addGuideLayerAbove,
+  addMaskLayerAbove,
+} from "./layer-pairing.js";

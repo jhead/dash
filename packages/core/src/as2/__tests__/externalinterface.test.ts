@@ -124,3 +124,75 @@ describe("ExternalInterface addCallback()", () => {
     expect(containsString(bytes, "addCallback")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ExternalInterface.objectID property
+// ---------------------------------------------------------------------------
+
+describe("ExternalInterface objectID property", () => {
+  it("ExternalInterface.objectID compiles without error", () => {
+    expect(compilesOk("var id = ExternalInterface.objectID;")).toBe(true);
+  });
+
+  it("ExternalInterface.objectID emits ActionGetMember (0x4f)", () => {
+    const bytes = compileAS2("var id = ExternalInterface.objectID;");
+    expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
+    expect(containsString(bytes, "objectID")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ExternalInterface.call() with return value
+// ---------------------------------------------------------------------------
+
+describe("ExternalInterface call() return value", () => {
+  it("ExternalInterface.call() return value compiles without error", () => {
+    expect(
+      compilesOk('var result = ExternalInterface.call("getPlayerName"); trace(result);')
+    ).toBe(true);
+  });
+
+  it("ExternalInterface.call() return value emits ActionCallMethod (0x52)", () => {
+    const bytes = compileAS2('var result = ExternalInterface.call("getPlayerName"); trace(result);');
+    expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(true);
+    expect(containsString(bytes, "call")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fscommand() global function
+// ---------------------------------------------------------------------------
+
+describe("fscommand() global function", () => {
+  it('fscommand("quit") compiles without error', () => {
+    expect(compilesOk('fscommand("quit");')).toBe(true);
+  });
+
+  it('fscommand("fullscreen", "true") compiles without error', () => {
+    expect(compilesOk('fscommand("fullscreen", "true");')).toBe(true);
+  });
+
+  it('fscommand("exec", "myScript.exe") compiles without error', () => {
+    expect(compilesOk('fscommand("exec", "myScript.exe");')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// System.security
+// ---------------------------------------------------------------------------
+
+describe("System.security domain methods", () => {
+  it('System.security.allowDomain("*") compiles without error', () => {
+    expect(compilesOk('System.security.allowDomain("*");')).toBe(true);
+  });
+
+  it('System.security.allowInsecureDomain("*") compiles without error', () => {
+    expect(compilesOk('System.security.allowInsecureDomain("*");')).toBe(true);
+  });
+
+  it("System.security.allowDomain emits ActionCallMethod (0x52)", () => {
+    const bytes = compileAS2('System.security.allowDomain("*");');
+    expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(true);
+    expect(containsString(bytes, "allowDomain")).toBe(true);
+  });
+});

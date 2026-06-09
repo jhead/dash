@@ -84,10 +84,14 @@ export function duplicateLibraryItem(doc: FlashDocument, itemId: string): FlashD
 }
 
 /**
- * Rename a library item.
+ * Rename a library item in a document.
  * If the item is not found, returns the document unchanged.
+ *
+ * @alias renameLibraryItemInDoc — named with `InDoc` suffix to distinguish from
+ * the Library-level `renameLibraryItem` in model/library.ts which takes a Library
+ * rather than a FlashDocument.
  */
-export function renameLibraryItem(
+export function renameLibraryItemInDoc(
   doc: FlashDocument,
   itemId: string,
   newName: string

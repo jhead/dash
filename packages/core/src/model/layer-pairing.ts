@@ -1,4 +1,5 @@
 import type { Timeline, Layer } from "./types.js";
+import { createLayer } from "./timeline.js";
 
 export function isGuidedLayer(layer: Layer): boolean {
   return layer.type === "guided";
@@ -52,4 +53,42 @@ export function getMaskLayerFor(timeline: Timeline, maskedLayerId: string): Laye
     if (timeline.layers[i].type === "mask") return timeline.layers[i];
   }
   return undefined;
+}
+
+export function addGuideLayerAbove(timeline: Timeline, layerId: string): Timeline {
+  const idx = timeline.layers.findIndex(l => l.id === layerId);
+  if (idx < 0) return timeline;
+
+  // Set target layer type to "guided"
+  const targetLayer: Layer = { ...timeline.layers[idx]!, type: "guided" };
+
+  // Insert guide layer above (before) the target
+  const guideLayer: Layer = createLayer(`Guide: ${targetLayer.name}`, "guide", {
+    outlineColor: "#00aa00",
+    frameCount: targetLayer.frameCount,
+    frames: [],
+  });
+
+  const layers = [...timeline.layers];
+  layers[idx] = targetLayer;
+  layers.splice(idx, 0, guideLayer);
+  return { ...timeline, layers };
+}
+
+export function addMaskLayerAbove(timeline: Timeline, layerId: string): Timeline {
+  const idx = timeline.layers.findIndex(l => l.id === layerId);
+  if (idx < 0) return timeline;
+
+  const targetLayer: Layer = { ...timeline.layers[idx]!, type: "masked" };
+
+  const maskLayer: Layer = createLayer(`Mask: ${targetLayer.name}`, "mask", {
+    outlineColor: "#aa0000",
+    frameCount: targetLayer.frameCount,
+    frames: [],
+  });
+
+  const layers = [...timeline.layers];
+  layers[idx] = targetLayer;
+  layers.splice(idx, 0, maskLayer);
+  return { ...timeline, layers };
 }
