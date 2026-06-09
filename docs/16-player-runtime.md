@@ -51,10 +51,13 @@ Match Flash Player 8 ordering precisely:
 ## Our runtime strategy
 
 - **Test/playback engine**: embed **Ruffle** (wasm) as the proven AVM1 player for
-  `Test Movie` and final SWF verification.
-- **Authoring live preview**: our own scene graph + AVM1 interpreter renders/animates while
-  editing (so scripts and tweens run on the editable model without a publish step).
-- Both paths are validated against **Flash Player 8 reference captures** (golden frames).
+  `Test Movie` and final SWF verification. **Ruffle is the only ActionScript execution
+  engine in this project — building a custom AVM1 interpreter is explicitly out of
+  scope** (it would duplicate Ruffle for no MVP benefit; do not create tasks for it).
+- **Authoring live preview**: the stage renders geometry and evaluates tweens on the
+  editable model — no script execution. Anything involving scripts goes through
+  publish → Ruffle.
+- Playback is validated against **Flash Player 8 reference captures** (golden frames).
 
 ## Accuracy targets
 

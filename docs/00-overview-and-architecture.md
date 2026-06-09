@@ -46,7 +46,7 @@ Flash 8 shipped in two editions; we target the **Professional 8** feature supers
 │   • Vector/scene engine (drawing models, geometry, booleans)    │
 │   • Render engine (GPU: WebGL2/WebGPU + shaders)                 │
 │   • Animation/tween engine (motion, shape, easing)              │
-│   • AVM1 ActionScript VM (compile + execute)                    │
+│   • AS1/AS2 → AVM1 compiler (execution: Ruffle only)            │
 │   • Media pipeline (image/audio/video decode + encode)          │
 ├──────────────────────────────────────────────────────────────┤
 │ I/O                                                              │
@@ -66,7 +66,7 @@ Flash 8 shipped in two editions; we target the **Professional 8** feature supers
 | Rendering       | **WebGPU** (preferred) → WebGL2 fallback                     | Shader-based vector fills, filters, blend modes, bitmap caching                              |
 | Vector geometry | Custom + (e.g. Lyon/earcut-style tessellation)               | Match Flash fill/stroke rules incl. even-odd + edge merging                                  |
 | Text shaping    | HarfBuzz (wasm) + custom FlashType-style rasterizer          | Match anti-aliasing settings                                                                 |
-| ActionScript    | Custom AS1/AS2 compiler + AVM1 interpreter                   | Authoring + accurate runtime                                                                 |
+| ActionScript    | Custom AS1/AS2 compiler; **no custom interpreter** (Ruffle executes) | Compiling is the gap Ruffle doesn't fill; re-implementing AVM1 would duplicate Ruffle |
 | SWF I/O         | Custom writer; parser reuse from Ruffle's `swf` crate        | Standards-accurate tags                                                                      |
 | Playback        | **Ruffle** (wasm) embedded for test movie                    | Proven AVM1/AVM2 emulator                                                                    |
 | Media codecs    | wasm decoders/encoders (MP3, ADPCM, JPEG, PNG, GIF, FLV/VP6) | Import + publish                                                                             |

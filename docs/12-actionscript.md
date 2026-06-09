@@ -90,9 +90,10 @@ Representative, not exhaustive — the goal is full Player 8 AS2 stdlib parity:
 
 ## Implementation notes
 
-- Two parts: an **AS1/AS2 compiler** (lexer/parser → AVM1 action bytecode in `DoAction`
-  tags) and an **AVM1 interpreter** for the live stage/test player.
-- For playback fidelity, **Ruffle's AVM1** is the reference and the embedded test runtime;
+- One part: an **AS1/AS2 compiler** (lexer/parser → AVM1 action bytecode in `DoAction`
+  tags). **We do not implement an AVM1 interpreter/VM — this is explicitly out of scope.**
+  All execution happens in Ruffle; do not create tasks to build a custom interpreter.
+- For playback fidelity, **Ruffle's AVM1** is the sole execution engine and the reference;
   our compiler output is validated against Ruffle + Flash Player 8 captures.
-- Authoring "live preview" on the stage uses our own AVM1 interpreter so scripts run while
-  editing; Test Movie can hand off to Ruffle for a second opinion.
+- Authoring-time stage playback is geometry/tween preview only (no script execution).
+  Running scripts means Test Movie: publish the SWF and play it in the embedded Ruffle.
