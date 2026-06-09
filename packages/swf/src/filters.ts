@@ -18,21 +18,21 @@ import { edgeNumBits } from "./helpers.js";
  * Writes filter params into the BitWriter (after the FilterID byte is written by caller).
  */
 function writeDropShadowFilter(bw: BitWriter, f: DropShadowFilter): void {
-  // Color: RGBA first (per SWF spec: Color before the floats for drop shadow)
+  // Color: RGBA first (per SWF spec: Color before the fixed-point values)
   bw.writeUI8(f.color.r);
   bw.writeUI8(f.color.g);
   bw.writeUI8(f.color.b);
   // Alpha: from alpha field (0–1) → 0–255
   bw.writeUI8(Math.round(f.alpha * 255));
 
-  // BlurX: FLOAT
-  bw.writeFloat(f.blurX);
-  // BlurY: FLOAT
-  bw.writeFloat(f.blurY);
-  // Angle: FLOAT (degrees → radians)
-  bw.writeFloat((f.angle * Math.PI) / 180);
-  // Distance: FLOAT
-  bw.writeFloat(f.distance);
+  // BlurX: FIXED16 (16.16 fixed-point, 4 bytes LE)
+  bw.writeFixed16(f.blurX);
+  // BlurY: FIXED16
+  bw.writeFixed16(f.blurY);
+  // Angle: FIXED16 (degrees → radians, stored as 16.16 fixed-point)
+  bw.writeFixed16((f.angle * Math.PI) / 180);
+  // Distance: FIXED16
+  bw.writeFixed16(f.distance);
   // Strength: FIXED8 (2 bytes)
   bw.writeFixed8(f.strength);
 
@@ -50,10 +50,10 @@ function writeDropShadowFilter(bw: BitWriter, f: DropShadowFilter): void {
  * Encode a Blur filter (FilterID = 1).
  */
 function writeBlurFilter(bw: BitWriter, f: BlurFilter): void {
-  // BlurX: FLOAT
-  bw.writeFloat(f.blurX);
-  // BlurY: FLOAT
-  bw.writeFloat(f.blurY);
+  // BlurX: FIXED16 (16.16 fixed-point, 4 bytes LE)
+  bw.writeFixed16(f.blurX);
+  // BlurY: FIXED16
+  bw.writeFixed16(f.blurY);
   // Flags: UI8 — bits 7-3: Passes (quality), bits 2-0: reserved (0)
   bw.writeUI8((f.quality & 0x1f) << 3);
 }
@@ -68,10 +68,10 @@ function writeGlowFilter(bw: BitWriter, f: GlowFilter): void {
   bw.writeUI8(f.color.b);
   bw.writeUI8(Math.round(f.alpha * 255));
 
-  // BlurX: FLOAT
-  bw.writeFloat(f.blurX);
-  // BlurY: FLOAT
-  bw.writeFloat(f.blurY);
+  // BlurX: FIXED16 (16.16 fixed-point, 4 bytes LE)
+  bw.writeFixed16(f.blurX);
+  // BlurY: FIXED16
+  bw.writeFixed16(f.blurY);
   // Strength: FIXED8
   bw.writeFixed8(f.strength);
 
@@ -102,26 +102,29 @@ function writeGlowFilter(bw: BitWriter, f: GlowFilter): void {
  *     bits 0-3: Passes
  */
 function writeBevelFilter(bw: BitWriter, f: BevelFilter): void {
-  // ShadowColor: RGBA
-  bw.writeUI8(f.shadowColor.r);
-  bw.writeUI8(f.shadowColor.g);
-  bw.writeUI8(f.shadowColor.b);
-  bw.writeUI8(Math.round(f.shadowAlpha * 255));
-
+  // Note: Ruffle reads HighlightColor first, then ShadowColor (spec ordering is wrong).
+  // Per Ruffle swf/src/read.rs: "Note that the color order is wrong in the spec,
+  // it's highlight then shadow."
   // HighlightColor: RGBA
   bw.writeUI8(f.highlightColor.r);
   bw.writeUI8(f.highlightColor.g);
   bw.writeUI8(f.highlightColor.b);
   bw.writeUI8(Math.round(f.highlightAlpha * 255));
 
-  // BlurX: FLOAT
-  bw.writeFloat(f.blurX);
-  // BlurY: FLOAT
-  bw.writeFloat(f.blurY);
-  // Angle: FLOAT (degrees → radians)
-  bw.writeFloat((f.angle * Math.PI) / 180);
-  // Distance: FLOAT
-  bw.writeFloat(f.distance);
+  // ShadowColor: RGBA
+  bw.writeUI8(f.shadowColor.r);
+  bw.writeUI8(f.shadowColor.g);
+  bw.writeUI8(f.shadowColor.b);
+  bw.writeUI8(Math.round(f.shadowAlpha * 255));
+
+  // BlurX: FIXED16 (16.16 fixed-point, 4 bytes LE)
+  bw.writeFixed16(f.blurX);
+  // BlurY: FIXED16
+  bw.writeFixed16(f.blurY);
+  // Angle: FIXED16 (degrees → radians, stored as 16.16 fixed-point)
+  bw.writeFixed16((f.angle * Math.PI) / 180);
+  // Distance: FIXED16
+  bw.writeFixed16(f.distance);
   // Strength: FIXED8
   bw.writeFixed8(f.strength);
 
@@ -170,7 +173,7 @@ function writeGradientGlowFilter(bw: BitWriter, f: GradientGlowFilter): void {
   const numColors = f.gradient.length;
   bw.writeUI8(numColors);
 
-  // RGBA for each stop
+  // RGBA for each stop (all colors first, matching Ruffle read order)
   for (const stop of f.gradient) {
     const { r, g, b } = hexToRGB(stop.color);
     bw.writeUI8(r);
@@ -179,15 +182,15 @@ function writeGradientGlowFilter(bw: BitWriter, f: GradientGlowFilter): void {
     bw.writeUI8(Math.round(stop.alpha * 255));
   }
 
-  // Ratios for each stop
+  // Ratios for each stop (all ratios after all colors)
   for (const stop of f.gradient) {
     bw.writeUI8(Math.round(stop.ratio) & 0xff);
   }
 
-  bw.writeFloat(f.blurX);
-  bw.writeFloat(f.blurY);
-  bw.writeFloat((f.angle * Math.PI) / 180);
-  bw.writeFloat(f.distance);
+  bw.writeFixed16(f.blurX);
+  bw.writeFixed16(f.blurY);
+  bw.writeFixed16((f.angle * Math.PI) / 180);
+  bw.writeFixed16(f.distance);
   bw.writeFixed8(f.strength);
 
   let flags = 0;
@@ -207,6 +210,7 @@ function writeGradientBevelFilter(bw: BitWriter, f: GradientBevelFilter): void {
   const numColors = f.gradient.length;
   bw.writeUI8(numColors);
 
+  // RGBA for each stop (all colors first, matching Ruffle read order)
   for (const stop of f.gradient) {
     const { r, g, b } = hexToRGB(stop.color);
     bw.writeUI8(r);
@@ -215,14 +219,15 @@ function writeGradientBevelFilter(bw: BitWriter, f: GradientBevelFilter): void {
     bw.writeUI8(Math.round(stop.alpha * 255));
   }
 
+  // Ratios for each stop (all ratios after all colors)
   for (const stop of f.gradient) {
     bw.writeUI8(Math.round(stop.ratio) & 0xff);
   }
 
-  bw.writeFloat(f.blurX);
-  bw.writeFloat(f.blurY);
-  bw.writeFloat((f.angle * Math.PI) / 180);
-  bw.writeFloat(f.distance);
+  bw.writeFixed16(f.blurX);
+  bw.writeFixed16(f.blurY);
+  bw.writeFixed16((f.angle * Math.PI) / 180);
+  bw.writeFixed16(f.distance);
   bw.writeFixed8(f.strength);
 
   let flags = 0;

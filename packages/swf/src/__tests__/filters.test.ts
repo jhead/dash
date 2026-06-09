@@ -237,6 +237,21 @@ function readFloat32LE(bytes: Uint8Array, offset: number): number {
   return view.getFloat32(0, true /* LE */);
 }
 
+/**
+ * Read a SWF FIXED16 value (16.16 signed fixed-point, 4 bytes LE).
+ * The integer is interpreted as round(value * 65536), so divide by 65536 to get the float.
+ */
+function readFixed16(bytes: Uint8Array, offset: number): number {
+  const raw =
+    bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16) |
+    (bytes[offset + 3] << 24);
+  // Convert unsigned 32-bit to signed 32-bit
+  const signed = raw | 0;
+  return signed / 65536;
+}
+
 function readUI16LE(bytes: Uint8Array, offset: number): number {
   return bytes[offset] | (bytes[offset + 1] << 8);
 }
@@ -288,8 +303,9 @@ describe("SWF filter encoding", () => {
     const filterIdByte = body[filterListStart + 1];
     expect(filterIdByte).toBe(1); // FilterID for Blur
 
-    const blurX = readFloat32LE(body, filterListStart + 2);
-    const blurY = readFloat32LE(body, filterListStart + 6);
+    // BlurX/BlurY are FIXED16 (16.16 fixed-point), not IEEE 754 floats.
+    const blurX = readFixed16(body, filterListStart + 2);
+    const blurY = readFixed16(body, filterListStart + 6);
 
     expect(blurX).toBeCloseTo(8, 5);
     expect(blurY).toBeCloseTo(16, 5);
@@ -844,5 +860,85 @@ describe("SWF filter encoding", () => {
 
     expect(placeObject2Tags.length).toBeGreaterThan(0);
     expect(placeObject3Tags.length).toBe(0);
+  });
+
+  /**
+   * Test 15: DropShadowFilter uses FIXED16 (not IEEE 754 float) for BlurX/BlurY/Angle/Distance.
+   *
+   * Regression test for task 0664: filter values were previously written as IEEE 754 floats,
+   * but Ruffle's parser (swf/src/read.rs read_drop_shadow_filter) reads them as Fixed16.
+   *
+   * Fixed16 encoding: value * 65536 stored as signed LE int32.
+   * The raw bytes for blurX=4 in Fixed16: 4 * 65536 = 262144 = 0x00040000
+   *   → bytes [0x00, 0x00, 0x04, 0x00] (LE)
+   * If it were IEEE 754: 4.0f = 0x40800000 → bytes [0x00, 0x00, 0x80, 0x40]
+   */
+  it("DropShadowFilter blurX/blurY/angle/distance are FIXED16 (not IEEE 754 float)", () => {
+    const filter = makeDropShadowFilter({ blurX: 4, blurY: 8, angle: 45, distance: 10, alpha: 1.0 });
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+
+    // Find FILTERLIST (FilterCount=1, FilterID=0)
+    let filterListStart = -1;
+    for (let i = 7; i < body.length - 1; i++) {
+      if (body[i] === 1 && body[i + 1] === 0) {
+        filterListStart = i;
+        break;
+      }
+    }
+    expect(filterListStart).toBeGreaterThan(-1);
+
+    // Layout after FilterID (offset +1):
+    //   RGBA: 4 bytes (offset +2..+5)
+    //   BlurX: FIXED16, 4 bytes (offset +6..+9)
+    //   BlurY: FIXED16, 4 bytes (offset +10..+13)
+    //   Angle: FIXED16, 4 bytes (offset +14..+17)  (radians)
+    //   Distance: FIXED16, 4 bytes (offset +18..+21)
+    const blurXFixed = readFixed16(body, filterListStart + 2 + 4);          // +6 from filterListStart
+    const blurYFixed = readFixed16(body, filterListStart + 2 + 4 + 4);      // +10
+    const angleFixed = readFixed16(body, filterListStart + 2 + 4 + 4 + 4);  // +14
+    const distFixed  = readFixed16(body, filterListStart + 2 + 4 + 4 + 4 + 4); // +18
+
+    expect(blurXFixed).toBeCloseTo(4, 3);
+    expect(blurYFixed).toBeCloseTo(8, 3);
+    // angle=45° → π/4 ≈ 0.7854 radians
+    expect(angleFixed).toBeCloseTo(Math.PI / 4, 3);
+    expect(distFixed).toBeCloseTo(10, 3);
+
+    // Confirm it is NOT IEEE 754: blurX=4 as float32 bytes start with 0x00, 0x00, 0x80, 0x40
+    // but as Fixed16 they start with 0x00, 0x00, 0x04, 0x00
+    // blurX bytes at filterListStart+6
+    const blurXByte2 = body[filterListStart + 2 + 4 + 2]; // third byte of BlurX (LE)
+    // IEEE 754 float 4.0: 0x40800000 LE → bytes [0x00, 0x00, 0x80, 0x40], so third byte = 0x80
+    // Fixed16 4.0: 0x00040000 LE → bytes [0x00, 0x00, 0x04, 0x00], so third byte = 0x04
+    expect(blurXByte2).toBe(0x04); // FIXED16, not float
+  });
+
+  /**
+   * Test 16: BlurFilter uses FIXED16 (not IEEE 754 float) for BlurX/BlurY.
+   */
+  it("BlurFilter blurX/blurY are FIXED16 (not IEEE 754 float)", () => {
+    const filter = makeBlurFilter({ blurX: 6, blurY: 10 });
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+
+    // Find FILTERLIST (FilterCount=1, FilterID=1)
+    let filterListStart = -1;
+    for (let i = 7; i < body.length - 1; i++) {
+      if (body[i] === 1 && body[i + 1] === 1) {
+        filterListStart = i;
+        break;
+      }
+    }
+    expect(filterListStart).toBeGreaterThan(-1);
+
+    // BlurX at +2, BlurY at +6 (from filterListStart, after FilterID byte at +1)
+    const blurX = readFixed16(body, filterListStart + 2);
+    const blurY = readFixed16(body, filterListStart + 6);
+
+    expect(blurX).toBeCloseTo(6, 3);
+    expect(blurY).toBeCloseTo(10, 3);
+
+    // Third byte of blurX=6 in Fixed16: 6 * 65536 = 0x00060000 → third byte = 0x06
+    const blurXByte2 = body[filterListStart + 2 + 2];
+    expect(blurXByte2).toBe(0x06);
   });
 });

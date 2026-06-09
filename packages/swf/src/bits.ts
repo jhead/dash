@@ -90,6 +90,16 @@ export class BitWriter {
     this.writeSI16LE(Math.round(v * 256));
   }
 
+  /**
+   * Write a FIXED16 value (SWF 16.16 fixed-point, 4 bytes LE).
+   * Encoded as: round(value * 65536) stored as a signed 32-bit LE integer.
+   * Used for blur, angle, and distance fields in filter records.
+   * E.g. blurX=4.0 → 4 * 65536 = 262144 (0x00040000) → bytes [0x00, 0x00, 0x04, 0x00].
+   */
+  writeFixed16(v: number): void {
+    this.writeSI32LE(Math.round(v * 65536));
+  }
+
   // -------------------------------------------------------------------------
   // Byte buffers & strings
   // -------------------------------------------------------------------------
