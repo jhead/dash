@@ -2,7 +2,7 @@
   "id": "0517-critical-wire-button-actions-into-published-swfs",
   "title": "CRITICAL: wire button actions into published SWFs (DefineButton2 cond-actions + on()/onClipEvent authoring)",
   "description": "Biggest blocker for 'build a basic Flash game'. (1) packages/swf/src/buttons.ts writes ActionOffset=0 ('no button conditions for MVP', ~lines 139/303), so ALL button conditional actions are silently dropped from published SWFs. Task 0484's conditional-action encoder lives in button.ts but compile.ts calls buttons.ts \u2014 the encoder is unintegrated. Integrate it into the real publish path (usePublish -> compileDocument). (2) The document model has no per-instance scripts: 'script' exists only on keyframes (core/src/model/types.ts:82) and ActionsPanel is frame-only, so on()/onClipEvent authoring is impossible in the UI. Add per-instance script field to model + FLA serialize/deserialize + ActionsPanel mode (Actions - Button / Actions - Movie Clip). (3) Compile on(press/release/rollOver...){...} to BUTTONCONDACTION and onClipEvent(load/enterFrame/...) to PlaceObject2 clip actions. (4) Acceptance: e2e where clicking a published button in Ruffle visibly changes state. See docs/12-actionscript.md and docs/15-file-formats-fla-swf.md.",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T22:02:08Z",
-  "updated_at": "2026-06-09T22:20:38Z"
+  "updated_at": "2026-06-09T22:38:15Z"
 }

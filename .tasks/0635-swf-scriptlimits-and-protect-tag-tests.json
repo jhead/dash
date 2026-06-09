@@ -1,0 +1,8 @@
+{
+  "id": "0635-swf-scriptlimits-and-protect-tag-tests",
+  "title": "SWF ScriptLimits and Protect tag tests",
+  "description": "Test compileDocument emits ScriptLimits tag (65) with maxRecursionDepth/scriptTimeoutSeconds from publishSettings, and Protect tag (24) when protect=true. Verify tag order and values.",
+  "status": "done",
+  "created_at": "2026-06-09T22:38:34Z",
+  "updated_at": "2026-06-09T22:40:06Z"
+}

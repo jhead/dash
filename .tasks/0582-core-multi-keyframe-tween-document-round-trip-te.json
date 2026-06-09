@@ -2,7 +2,7 @@
   "id": "0582-core-multi-keyframe-tween-document-round-trip-te",
   "title": "Core multi-keyframe tween document round-trip tests",
   "description": "Tests for a complex tween document: 10-frame motion tween on layer with display object, compile to SWF, verify PlaceObject2 appears on every frame, HasMove flag on frames 1-9, HasCharacter+HasMatrix on frame 0.",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T22:19:55Z",
-  "updated_at": "2026-06-09T22:21:42Z"
+  "updated_at": "2026-06-09T22:38:21Z"
 }

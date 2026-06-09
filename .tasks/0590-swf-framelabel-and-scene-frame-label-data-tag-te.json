@@ -1,0 +1,8 @@
+{
+  "id": "0590-swf-framelabel-and-scene-frame-label-data-tag-te",
+  "title": "SWF FrameLabel and scene/frame label data tag tests",
+  "description": "Tests for FrameLabel tag (43): label string0 + optional named-anchor flag UI8. SceneAndFrameLabelData tag (86): scene count, scene offsets and names, frame label count and names. Verify labels appear at correct frame positions.",
+  "status": "done",
+  "created_at": "2026-06-09T22:23:16Z",
+  "updated_at": "2026-06-09T22:24:41Z"
+}

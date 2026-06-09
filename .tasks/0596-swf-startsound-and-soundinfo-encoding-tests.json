@@ -1,0 +1,8 @@
+{
+  "id": "0596-swf-startsound-and-soundinfo-encoding-tests",
+  "title": "SWF StartSound and SoundInfo encoding tests",
+  "description": "Tests for StartSound tag (15): SoundId UI16, SoundInfo (HasLoops, HasEnvelope, HasOutPoint, HasInPoint flags), LoopCount UI16. Verify for a library sound with syncMode='event'. Also verify streaming vs event sync difference.",
+  "status": "done",
+  "created_at": "2026-06-09T22:25:07Z",
+  "updated_at": "2026-06-09T22:28:07Z"
+}

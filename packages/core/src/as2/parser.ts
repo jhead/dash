@@ -874,6 +874,28 @@ class Parser {
     this.eat('punctuation', '(');
     const args: Expression[] = [];
     while (!this.check('punctuation', ')') && !this.check('eof')) {
+      // Special case: on(keyPress '<key>') — `keyPress` followed by a string
+      // literal without a comma is the AS2/AVM1 on() key-press event syntax.
+      // Parse both tokens as a single synthetic identifier so the call parses
+      // without error; the compiler treats on() calls as no-ops anyway.
+      const cur = this.peek();
+      if (cur.type === 'identifier' && cur.value === 'keyPress') {
+        const next = this.tokens[this.pos + 1];
+        if (next && next.type === 'string') {
+          this.advance(); // consume 'keyPress'
+          const keyToken = this.advance(); // consume the string, e.g. "'<Enter>'"
+          const keyValue = keyToken.value.slice(1, -1); // strip surrounding quotes
+          const synth: Identifier = {
+            type: 'Identifier',
+            name: `keyPress:${keyValue}`,
+            pos: cur.pos,
+            line: cur.line,
+          };
+          args.push(synth);
+          if (!this.tryEat('punctuation', ',')) break;
+          continue;
+        }
+      }
       args.push(this.parseAssignment());
       if (!this.tryEat('punctuation', ',')) break;
     }

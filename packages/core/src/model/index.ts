@@ -85,6 +85,18 @@ export {
   moveGuide,
 } from "./document-mutations.js";
 
+// Frame span and keyframe query helpers (pure, no mutations)
+export {
+  getFrameAtIndex,
+  getFrameSpan,
+  getAllKeyframes,
+  getKeyframeAt,
+  getNextKeyframe,
+  getPrevKeyframe,
+  copyFrames,
+  pasteFrames,
+} from "./frame-utils.js";
+
 // Timeline query helpers (pure, no mutations)
 export type { TweenSpan } from "./timeline-query.js";
 export {
@@ -117,6 +129,14 @@ export {
   moveLayerToBottom,
   moveLayerBefore,
 } from "./layer-reorder.js";
+
+// Layer visibility / outline mode
+export {
+  setLayerOutlineMode,
+  getVisibleLayers,
+  setAllLayersVisible,
+  setAllLayersLocked,
+} from "./layer-visibility.js";
 
 // Library
 export {

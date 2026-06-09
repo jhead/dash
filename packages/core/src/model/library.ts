@@ -351,3 +351,60 @@ export function convertSymbolType(
     ),
   };
 }
+
+/**
+ * Duplicate a LibraryItem by id. The copy receives a new unique id and has
+ * " copy" appended to its name. Returns a new Library (immutable).
+ * If the id is not found, the original library is returned unchanged (same reference).
+ */
+export function duplicateLibraryItem(library: Library, id: string): Library {
+  const source = library.items.find((item) => item.id === id);
+  if (!source) return library;
+  const copy: LibraryItem = {
+    ...source,
+    id: nextId(source.itemType),
+    name: `${source.name} copy`,
+  };
+  return {
+    ...library,
+    items: [...library.items, copy],
+  };
+}
+
+/**
+ * Apply a mutator function to the Symbol with the given id.
+ * Returns a new Library (immutable). If the id is not found or does not refer
+ * to a symbol, the library is returned unchanged.
+ */
+export function editSymbol(
+  library: Library,
+  id: string,
+  mutator: (symbol: Symbol) => Symbol
+): Library {
+  const item = library.items.find((i) => i.id === id);
+  if (!item || item.itemType !== "symbol") return library;
+  return {
+    ...library,
+    items: library.items.map((i) =>
+      i.id === id && i.itemType === "symbol" ? mutator(i as Symbol) : i
+    ),
+  };
+}
+
+/**
+ * Return the count of LibraryItems whose itemType matches the given type string.
+ * For "symbol", counts items where itemType === "symbol".
+ */
+export function getLibraryItemCountByType(
+  library: Library,
+  itemType: string
+): number {
+  return library.items.filter((item) => item.itemType === itemType).length;
+}
+
+/**
+ * Return true if the library contains an item with the given id, false otherwise.
+ */
+export function hasLibraryItem(library: Library, id: string): boolean {
+  return library.items.some((item) => item.id === id);
+}

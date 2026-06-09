@@ -2,7 +2,7 @@
   "id": "0583-as2-loadvars-class-http-request-tests",
   "title": "AS2 LoadVars class HTTP request tests",
   "description": "Tests for LoadVars class: new LoadVars(), lv.load(url), lv.send(url, target, method), lv.sendAndLoad(url, target), lv.onLoad handler, lv.onData handler, lv.loaded, lv.toString(), lv.decode(), variable access after load.",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T22:19:55Z",
-  "updated_at": "2026-06-09T22:21:42Z"
+  "updated_at": "2026-06-09T22:38:21Z"
 }

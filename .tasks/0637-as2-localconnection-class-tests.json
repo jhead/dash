@@ -1,0 +1,8 @@
+{
+  "id": "0637-as2-localconnection-class-tests",
+  "title": "AS2 LocalConnection class tests",
+  "description": "Test new LocalConnection(), send, connect, onStatus, close, domain property all compile. Test LocalConnection cross-movie messaging pattern.",
+  "status": "in_progress",
+  "created_at": "2026-06-09T22:38:34Z",
+  "updated_at": "2026-06-09T22:39:33Z"
+}

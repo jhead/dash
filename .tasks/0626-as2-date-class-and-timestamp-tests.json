@@ -1,0 +1,8 @@
+{
+  "id": "0626-as2-date-class-and-timestamp-tests",
+  "title": "AS2 Date class and timestamp tests",
+  "description": "Test new Date(), Date.getTime(), getFullYear/getMonth/getDate/getHours/getMinutes/getSeconds, setFullYear etc, Date.UTC(), toString(), getTimezoneOffset() all compile correctly.",
+  "status": "done",
+  "created_at": "2026-06-09T22:36:13Z",
+  "updated_at": "2026-06-09T22:38:24Z"
+}

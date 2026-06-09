@@ -162,6 +162,86 @@ export function snapToObjects(
 }
 
 // ---------------------------------------------------------------------------
+// Scalar (1-D) snap helpers
+// ---------------------------------------------------------------------------
+
+/** Snap a scalar value to the nearest multiple of gridSize.
+ * Returns the value unchanged if gridSize <= 0. */
+export function snapScalarToGrid(value: number, gridSize: number): number {
+  if (gridSize <= 0) return value;
+  return Math.round(value / gridSize) * gridSize;
+}
+
+/** Snap a scalar value to the nearest integer (whole pixel). */
+export function snapScalarToPixel(value: number): number {
+  return Math.round(value);
+}
+
+/** Snap a scalar value toward the nearest guide of the specified orientation.
+ * Returns the value unchanged if no guide is within the threshold. */
+export function snapScalarToGuide(
+  value: number,
+  guides: readonly Guide[],
+  orientation: "horizontal" | "vertical",
+  threshold: number
+): number {
+  let best = value;
+  let bestDist = Infinity;
+  for (const guide of guides) {
+    if (guide.orientation !== orientation) continue;
+    const dist = Math.abs(guide.position - value);
+    if (dist <= threshold && dist < bestDist) {
+      bestDist = dist;
+      best = guide.position;
+    }
+  }
+  return best;
+}
+
+export interface ScalarSnapConfig {
+  readonly snapToGrid: boolean;
+  readonly snapToPixels: boolean;
+  readonly snapToGuides: boolean;
+  readonly grid?: { readonly gridWidth: number; readonly gridHeight: number };
+  readonly guides: readonly Guide[];
+  readonly snapThreshold?: number;
+}
+
+const DEFAULT_SNAP_THRESHOLD = 5;
+
+/** Apply all enabled scalar snap modes to the X axis value. */
+export function snapScalarX(x: number, config: ScalarSnapConfig): number {
+  let v = x;
+  if (config.snapToGrid && config.grid) {
+    v = snapScalarToGrid(v, config.grid.gridWidth);
+  }
+  if (config.snapToPixels) {
+    v = snapScalarToPixel(v);
+  }
+  if (config.snapToGuides) {
+    const threshold = config.snapThreshold ?? DEFAULT_SNAP_THRESHOLD;
+    v = snapScalarToGuide(v, config.guides, "vertical", threshold);
+  }
+  return v;
+}
+
+/** Apply all enabled scalar snap modes to the Y axis value. */
+export function snapScalarY(y: number, config: ScalarSnapConfig): number {
+  let v = y;
+  if (config.snapToGrid && config.grid) {
+    v = snapScalarToGrid(v, config.grid.gridHeight);
+  }
+  if (config.snapToPixels) {
+    v = snapScalarToPixel(v);
+  }
+  if (config.snapToGuides) {
+    const threshold = config.snapThreshold ?? DEFAULT_SNAP_THRESHOLD;
+    v = snapScalarToGuide(v, config.guides, "horizontal", threshold);
+  }
+  return v;
+}
+
+// ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 

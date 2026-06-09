@@ -1,0 +1,8 @@
+{
+  "id": "0607-as2-setproperty-getproperty-eval-global-function",
+  "title": "AS2 setProperty getProperty eval global functions tests",
+  "description": "Tests for AS2 global functions: setProperty(target, property, value), getProperty(target, property), eval('expression'), call(frame), Number(val), String(val), Boolean(val), typeof val, void operator.",
+  "status": "done",
+  "created_at": "2026-06-09T22:28:38Z",
+  "updated_at": "2026-06-09T22:32:34Z"
+}

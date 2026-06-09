@@ -16,6 +16,7 @@
  *   ButtonConditions (optional, none emitted for MVP)
  */
 import type { BitmapItem, FlashDocument, Symbol } from "@flash/core";
+import { compileAS2 } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import { encodeCxformWithAlpha } from "./cxform.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "./shapes.js";
@@ -135,9 +136,6 @@ export function encodeDefineButton2(
 
   // ReservedFlags[7] + TrackAsMenu[1] = 0x00 (normal button)
   bw.writeUI8(0x00);
-
-  // ActionOffset: UI16 = 0 (no button conditions for MVP)
-  bw.writeUI16LE(0);
 
   const layers = symbol.timeline.layers;
 
@@ -283,9 +281,13 @@ export function encodeDefineButton2(
     }
   }
 
-  // Write all ButtonRecords
+  // ---------------------------------------------------------------------------
+  // Build ButtonRecord bytes separately so we know the size before writing
+  // ActionOffset.
+  // ---------------------------------------------------------------------------
+  const recordsBuf = new BitWriter();
   for (const entry of recordMap.values()) {
-    bw.writeBytes(
+    recordsBuf.writeBytes(
       buildButtonRecord(
         entry.stateUp,
         entry.stateOver,
@@ -296,11 +298,88 @@ export function encodeDefineButton2(
       )
     );
   }
-
   // Null terminator: ButtonRecord with all state bits = 0
-  bw.writeUI8(0x00);
+  recordsBuf.writeUI8(0x00);
+  const recordsBytes = recordsBuf.getBytes();
 
-  // No ButtonConditions emitted (ActionOffset = 0 above)
+  // ---------------------------------------------------------------------------
+  // Build BUTTONCONDACTION records for each buttonActions entry.
+  //
+  // BUTTONCONDACTION layout (SWF spec §12.14):
+  //   UI16  CondActionSize  — byte offset from start of this record to the next
+  //                           (0 for the last record)
+  //   UI16  ConditionBits   — event bitmask
+  //   ACTIONRECORD[]        — AVM1 bytecode
+  //   UI8   0x00            — EndAction
+  //
+  // ConditionBits:
+  //   bit 0: release          (overDownToIdle)
+  //   bit 1: press            (idleToOverDown)
+  //   bit 2: dragOut          (overDownToOutDown)
+  //   bit 3: dragOver         (outDownToOverDown)
+  //   bit 4: releaseOutside   (outDownToIdle)
+  //   bit 5: rollOut          (overUpToIdle)
+  //   bit 6: rollOver         (overUpToOverDown / idleToOverUp)
+  // ---------------------------------------------------------------------------
+  const eventBitMap: Record<string, number> = {
+    release:        0x0001,
+    press:          0x0002,
+    dragOut:        0x0004,
+    dragOver:       0x0008,
+    releaseOutside: 0x0010,
+    rollOut:        0x0020,
+    rollOver:       0x0040,
+  };
+
+  const actions = symbol.buttonActions;
+  const hasConditions = actions && actions.length > 0;
+
+  if (hasConditions) {
+    // Pre-compile all action bytecodes so we know sizes
+    const compiledActions: Array<{ condBits: number; bytecode: Uint8Array }> = [];
+    for (const action of actions!) {
+      const condBits = eventBitMap[action.event] ?? 0;
+      if (condBits === 0) continue; // unknown event — skip
+      const bytecode = compileAS2(action.script);
+      compiledActions.push({ condBits, bytecode });
+    }
+
+    if (compiledActions.length > 0) {
+      // Each record:  2 (CondActionSize) + 2 (ConditionBits) + bytecode.length + 1 (EndAction)
+      // CondActionSize for all but the last = size of that record; last = 0.
+
+      // Compute total BUTTONCONDACTION block size for ActionOffset calculation.
+      // ActionOffset = 2 (the UI16 ActionOffset field itself) + recordsBytes.length
+      //   (ButtonRecords + null terminator are counted from the ActionOffset field's
+      //    start position, which is 3 bytes into the tag body after ButtonId+TrackAsMenu)
+      const actionOffset = 2 + recordsBytes.length;
+
+      // Write ActionOffset
+      bw.writeUI16LE(actionOffset);
+
+      // Write ButtonRecords + null terminator
+      bw.writeBytes(recordsBytes);
+
+      // Write BUTTONCONDACTION records
+      for (let i = 0; i < compiledActions.length; i++) {
+        const { condBits, bytecode } = compiledActions[i]!;
+        const isLast = i === compiledActions.length - 1;
+        const recordSize = isLast ? 0 : (2 + 2 + bytecode.length + 1); // CondActionSize for this record
+        bw.writeUI16LE(recordSize);
+        bw.writeUI16LE(condBits);
+        bw.writeBytes(bytecode);
+        bw.writeUI8(0x00); // EndAction
+      }
+    } else {
+      // No valid condition actions — write ActionOffset=0
+      bw.writeUI16LE(0);
+      bw.writeBytes(recordsBytes);
+    }
+  } else {
+    // No button actions — ActionOffset = 0
+    bw.writeUI16LE(0);
+    bw.writeBytes(recordsBytes);
+  }
 
   return bw.getBytes();
 }
