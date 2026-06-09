@@ -1,0 +1,8 @@
+{
+  "id": "0651-as2-switch-statement-and-fall-through-tests",
+  "title": "AS2 switch statement and fall-through tests",
+  "description": "Test switch/case/default/break compile correctly. Verify AVM1 ActionJump/ActionIf chain emitted. Test fall-through (no break), string switch, numeric switch, nested switch.",
+  "status": "done",
+  "created_at": "2026-06-09T22:43:23Z",
+  "updated_at": "2026-06-09T22:45:38Z"
+}

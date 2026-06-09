@@ -1,0 +1,8 @@
+{
+  "id": "0663-critical-wire-onclipevent-clip-actions-into-the-",
+  "title": "CRITICAL: wire onClipEvent clip actions into the publish path (0517 gap)",
+  "description": "Task 0517 closed with scope item (3) missing: onClipEvent(load/enterFrame/keyDown/mouseDown...) handlers are NOT emitted in published SWFs. Encoder-level pieces exist (0609 PlaceObject2 CLIPACTIONS encoding tests, 0601 on()/onClipEvent compile tests, clipactions.test.ts) but compile.ts has zero clipAction/ClipEvent references \u2014 nothing routes instance clip events into PlaceObject2/PO3 CLIPACTIONS records during publish. Also the document model only supports per-instance scripts for symbolType === 'button' (model/types.ts buttonActions); movieclip instances need the same authoring affordance (model field + FLA serialize/deserialize + ActionsPanel 'Actions - Movie Clip' mode). Acceptance: an onClipEvent(enterFrame) script on a movieclip instance authored in the tool executes in Ruffle in the published SWF (verifiable via 0518 oracle or a frame-advance screenshot diff). Frame scripts assigning mc.onEnterFrame remain a workaround, but Flash 8 parity requires onClipEvent authoring.",
+  "status": "open",
+  "created_at": "2026-06-09T22:46:06Z",
+  "updated_at": "2026-06-09T22:46:06Z"
+}

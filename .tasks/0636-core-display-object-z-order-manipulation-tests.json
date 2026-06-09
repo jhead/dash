@@ -2,7 +2,7 @@
   "id": "0636-core-display-object-z-order-manipulation-tests",
   "title": "Core display object z-order manipulation tests",
   "description": "Test bringToFront, sendToBack, bringForward, sendBackward pure functions that reorder displayObjects within a frame. Verify immutability, index bounds, single-item no-op.",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T22:38:34Z",
-  "updated_at": "2026-06-09T22:39:33Z"
+  "updated_at": "2026-06-09T22:41:50Z"
 }

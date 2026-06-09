@@ -2,7 +2,7 @@
   "id": "0639-as2-object-class-and-prototype-chain-tests",
   "title": "AS2 Object class and prototype chain tests",
   "description": "Test Object constructor, hasOwnProperty, isPrototypeOf, propertyIsEnumerable, toString, valueOf. Test prototype chain: Foo.prototype, new Foo, instanceof, __proto__. Test Object.registerClass.",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T22:39:39Z",
-  "updated_at": "2026-06-09T22:40:14Z"
+  "updated_at": "2026-06-09T22:41:30Z"
 }

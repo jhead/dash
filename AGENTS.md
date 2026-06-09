@@ -38,6 +38,31 @@ permission — use your judgment.
 Conversely, merge or delete tasks that turned out to be duplicates or too granular:
 `./task update` to refine, `./task delete` to remove.
 
+## Prioritization — critical path first
+
+The backlog is not a buffet. Claim order:
+
+1. Tasks titled **CRITICAL:** — always claim these before anything else.
+2. MVP-gate work: the agent interface suite (0613–0616), the interactivity oracle
+   (0518), and the capstone game (0519).
+3. Everything else.
+
+Rules:
+
+- **Stop creating compile-only test-coverage tasks** for AS2 built-in classes
+  (Accessibility, PrintJob, NetStream, Capabilities, ...). Coverage breadth is no longer
+  the bottleneck — these add near-zero MVP value. Create test tasks only when tied to a
+  critical-path feature or a real, observed bug.
+- **Before creating any task, search for duplicates** — including `done` ones:
+  `./task list --json | grep -i <keyword>`. Parallel agent waves have re-created ~20
+  duplicate tasks; this wastes everyone's time.
+- The MVP exit criterion is **0519**: author a basic Flash game in the tool, publish it,
+  and verify it plays in Ruffle. If your task doesn't move toward that, question it.
+- **Ruffle is the sole ActionScript execution engine.** Never create AVM1
+  interpreter/runtime tasks (see docs/12-actionscript.md, docs/16-player-runtime.md).
+- **Closing a task requires evidence.** A visual-oracle or e2e acceptance criterion means
+  the spec actually ran and passed; don't mark done on unit tests alone.
+
 ## Before you start
 
 1. Read `docs/README.md` and the relevant domain doc for your work.
