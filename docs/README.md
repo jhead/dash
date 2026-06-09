@@ -49,4 +49,4 @@ Start with `00-overview-and-architecture.md`, then read by domain.
 | 16 | [Player Runtime](./16-player-runtime.md) | Display list, playback, Ruffle |
 | 17 | [Advanced & Specialized](./17-advanced-specialized.md) | Accessibility, screens, data, printing |
 | 18 | [Verification & Agent Automation](./18-verification-and-automation.md) | E2E test harness, SWF oracles, automation bridge, JSFL |
-| 19 | [Agent Control Interface](./19-agent-interface.md) | `flash-agent` CLI, JSON-RPC bridge, live editor control for LLM agents |
+| 19 | [Agent Control Interface](./19-agent-interface.md) | MCP server + thin CLI: live editor control for LLM agents |

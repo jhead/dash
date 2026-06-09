@@ -1,276 +1,267 @@
-# 19 — Agent Control Interface (`flash-agent` CLI + RPC bridge)
+# 19 — Agent Control Interface (MCP server + editor bridge)
 
-A live remote-control surface for the authoring tool: a CLI (and underlying JSON-RPC
-protocol) that connects to a **running editor instance** and manipulates the stage,
-timeline, scripts, library, document properties, selection, and publishing — without
-Playwright, without screenshots-as-input, without synthesizing pointer events.
+A live remote-control surface for the authoring tool, exposed as a **Model Context
+Protocol (MCP) server**. Any MCP client — Claude Code, Cursor, Claude Desktop, custom
+agents built on the MCP SDKs — connects to a running editor instance and manipulates
+the stage, timeline, scripts, library, document properties, selection, and publishing,
+without Playwright, without screenshots-as-input, without synthesizing pointer events.
 
 This extends `18-verification-and-automation.md`: Layer 2's `__flashTest` bridge and
 Layer 4's JSFL surface are *in-page* APIs reachable only through a browser automation
-harness. This doc adds the missing transport — a way for any out-of-process agent
-(an LLM in a terminal, a script, another tool) to reach those same capabilities over a
-socket, plus a typed command surface and a CLI front-end.
+harness. This doc adds the missing transport — an out-of-process, standards-based way
+to reach the same command layer.
 
-## Why this exists
+## Why this exists, and why MCP
 
 - **Playwright is the wrong altitude for editing.** Driving the UI through pointer
   events is the right way to *test the UI*, but the wrong way to *use the editor as a
   tool*. An agent that wants "a 100×50 red rectangle on layer 2, frame 5, with
   `stop();` on frame 5" should say exactly that, get a structured success/error back,
   and read the resulting document state as JSON.
-- **Sessions, not snapshots.** `runJSFL` via `page.evaluate` requires owning the
-  browser. The agent interface lets a human keep the editor open (Tauri or browser)
-  while one or more agents connect, inspect, and mutate the *same live session* — the
-  document the human is looking at updates in real time, with every agent mutation in
-  the undo history.
+- **Sessions, not snapshots.** A human keeps the editor open (Tauri or browser) while
+  agents connect, inspect, and mutate the *same live session* — the document the human
+  is looking at updates in real time, with every agent mutation in the undo history.
+- **MCP instead of a custom protocol.** Every capable agent runtime already speaks
+  MCP. By exposing the editor as an MCP server we get, with zero client-side work:
+  - **OOTB compatibility** — `claude mcp add`, a Cursor `mcpServers` entry, or any
+    SDK client connects immediately; tool schemas are self-describing.
+  - **Native image content** — `stage_screenshot` returns an MCP `image` content
+    block; clients put the rendered stage straight in front of the model's eyes.
+  - **Resources** — the document outline, library, and script index are browsable
+    MCP resources, not bespoke query commands.
+  - **Subscriptions** (follow-up) — doc-changed notifications map onto MCP resource
+    update notifications instead of a hand-rolled event stream.
 - **Text in, text out.** Per the doctrine in doc 18: every behavior must be assertable
-  as text or structure first. All commands return structured JSON; screenshots and
+  as text or structure first. All tools return structured JSON; screenshots and
   published SWF bytes are available but supplementary.
 
 ## Architecture
 
 The editor page runs in a browser context (Tauri webview or plain browser); it cannot
-listen on a port. The Vite dev server already owns port **1420** and proxies the page.
-So the bridge is a **relay inside the Vite dev server**, with two WebSocket roles:
+listen on a port. The Vite dev server already owns port **1420**. So the MCP server
+lives **inside a Vite plugin** (Node side) and forwards commands to the editor page
+over a private WebSocket bridge:
 
 ```
-flash-agent CLI ──ws──► ws://localhost:1420/__agent (role=client) ─┐
-                                                                   │  Vite plugin relay
-                                                                   │  (vite-plugin-agent-bridge)
-Editor page ───────ws──► ws://localhost:1420/__agent (role=editor) ┘
+MCP clients (Claude Code, Cursor, custom agents, flash-agent CLI)
+        │  Streamable HTTP — http://localhost:1420/mcp
+        ▼
+vite-plugin-agent-mcp  (apps/desktop, Node side of the dev server)
+  • McpServer from @modelcontextprotocol/sdk
+  • one MCP tool per editor command; resources for doc/library/scripts
+  • validates params (zod schemas shared via @flash/agent-protocol)
+        │  private WS bridge — ws://localhost:1420/__agent (role=editor)
+        ▼
+Editor page (packages/authoring-ui/src/agent/)
+  • dials the bridge on startup (dev / VITE_FLASH_TEST=1), reconnects with backoff
+  • dispatches to AgentCommandRegistry
         │
         ▼
-AgentCommandRegistry (authoring-ui)
-        │  typed commands; same command layer the UI uses
-        ▼
-@flash/core mutations ──► pushDoc() ──► history, React re-render
+AgentCommandRegistry ──► @flash/core mutations ──► pushDoc() ──► history, re-render
 ```
 
-- **`vite-plugin-agent-bridge`** (in `apps/desktop/vite.config.ts`): hooks the dev
-  server's HTTP `upgrade` event for path `/__agent`, accepts WebSocket connections,
-  and relays JSON-RPC frames between the single registered `editor` socket and any
-  number of `client` sockets. The relay is dumb: it routes, tags requests with client
-  ids so responses return to the right caller, and reports "no editor connected" /
-  "editor disconnected" errors. It holds no document state.
-- **Editor-side client** (`packages/authoring-ui/src/agent/`): when
-  `import.meta.env.DEV` or `VITE_FLASH_TEST=1`, the Shell opens a WebSocket to
-  `/__agent?role=editor`, registers, and dispatches incoming requests to the
-  **AgentCommandRegistry**. Reconnects with backoff if the socket drops (e.g. Vite
-  restart).
+- **`vite-plugin-agent-mcp`** (registered in `apps/desktop/vite.config.ts`): hosts the
+  MCP Streamable HTTP endpoint at `/mcp` via dev-server middleware, and accepts the
+  editor page's WebSocket on `/__agent`. It holds no document state: every tool call
+  is forwarded to the editor and the editor's reply becomes the tool result. If no
+  editor page is connected, tools fail fast with an actionable message ("editor page
+  not connected — open http://localhost:1420 or run `pnpm --filter @flash/desktop
+  dev`").
+- **The internal bridge is private.** Editor↔plugin frames are a trivial
+  request/response envelope internal to this feature — *not* a public protocol.
+  The public, versioned, documented surface is the MCP server.
 - **AgentCommandRegistry** (`packages/authoring-ui/src/agent/registry.ts`): a typed
-  map of `method → handler`. Handlers close over the same state and callbacks the
+  map of `command → handler`. Handlers close over the same state and callbacks the
   Shell already wires into `__flashTest` (current doc, `pushDoc`, selection setters,
   view-state setters, `runJSFL`, `publish`, `screenshotStage`). **Rule:** handlers go
-  through the shared command layer — `@flash/core` mutations + `pushDoc()` +
-  the Shell's selection/view setters. Never poke component internals, never mutate
-  the document outside history.
-- **`flash-agent` CLI** (`packages/agent-cli`, bin name `flash-agent`): a Node CLI
-  that connects as `role=client`, sends one request (or a batch / an interactive
-  session), prints structured output, and exits with a meaningful code.
+  through the shared command layer — `@flash/core` mutations + `pushDoc()` + the
+  Shell's selection/view setters. Never poke component internals, never mutate the
+  document outside history.
+- **`@flash/agent-protocol`** (`packages/agent-protocol`): zod schemas + TS types for
+  every command's params/result, shared by the plugin (MCP tool `inputSchema`,
+  validation) and the editor registry (dispatch typing). One definition per command;
+  the MCP tool list is generated from it.
 
-### Why a relay instead of a new server
+### Why host MCP in the dev server
 
 - No new port, no new daemon: anything that can reach the dev server can reach the
-  bridge, and the Playwright e2e suite (which already auto-starts Vite on 1420) can
-  test it with zero infra changes.
+  agent surface, and the Playwright e2e suite (which already auto-starts Vite on
+  1420) can test it with zero infra changes.
 - Works identically in browser-mode Vite and `tauri dev` (Tauri's webview loads the
   same dev URL).
-- **Non-goal (MVP):** packaged Tauri builds (no Vite). The follow-up is a small WS
-  server in `src-tauri` exposing the same protocol; the editor-side client and CLI
-  are transport-agnostic (a URL), so nothing else changes.
+- **Non-goal (MVP):** packaged Tauri builds (no Vite). Follow-up: host the same MCP
+  server in `src-tauri` (Rust MCP SDK or a Node sidecar); the registry and protocol
+  package are transport-agnostic, so nothing else changes.
 
 ### Security
 
 Dev-tool posture, same as `__flashTest`:
-- The relay binds to localhost only and is registered only by the dev-server plugin.
-- The editor-side client only starts in dev mode or under `VITE_FLASH_TEST=1`.
-- Optional shared token: if `FLASH_AGENT_TOKEN` is set in the dev server's env,
-  clients must present it (`?token=` or first-frame auth) — useful when port 1420 is
-  forwarded. Not required for MVP local use.
+- The dev server binds to localhost; the MCP endpoint additionally **validates the
+  `Origin`/`Host` headers** against localhost to block DNS-rebinding (per MCP
+  Streamable HTTP guidance).
+- The editor-side bridge client only starts in dev mode or under `VITE_FLASH_TEST=1`.
+- Optional shared secret: if `FLASH_AGENT_TOKEN` is set in the dev server's env, MCP
+  requests must carry it as a bearer token — useful when port 1420 is forwarded. Not
+  required for MVP local use.
 
-## Protocol
+## Connecting (OOTB)
 
-JSON-RPC 2.0 over WebSocket, one JSON object per text frame.
+```bash
+# Claude Code
+claude mcp add --transport http flash-editor http://localhost:1420/mcp
 
-```jsonc
-// request (client → editor, via relay)
-{ "jsonrpc": "2.0", "id": 7, "method": "timeline.insertKeyframe",
-  "params": { "layerId": "layer-2", "frameIndex": 4 } }
+# Cursor / Claude Desktop / other config-file clients
+{ "mcpServers": { "flash-editor": { "url": "http://localhost:1420/mcp" } } }
 
-// success
-{ "jsonrpc": "2.0", "id": 7, "result": { "ok": true, "rev": 42 } }
-
-// error
-{ "jsonrpc": "2.0", "id": 7, "error": { "code": -32602,
-  "message": "no layer with id 'layer-2'", "data": { "knownLayerIds": ["..."] } } }
+# stdio-only clients
+npx mcp-remote http://localhost:1420/mcp
 ```
 
-Conventions:
-- **`rev`**: the editor maintains a monotonically increasing document revision counter
-  (bumped on every `pushDoc`). Every mutating result includes the new `rev`; reads
-  include the `rev` they observed. Lets agents detect concurrent edits cheaply.
-- **Errors are actionable**: messages name the bad parameter and, where cheap, include
-  valid alternatives in `error.data` (known layer ids, valid tool ids, frame bounds).
-  An LLM should be able to self-correct from the error alone.
-- Relay-level errors (no editor connected, editor timeout) use reserved codes in the
-  `-32000` range with distinct messages.
-- Shared types live in `packages/agent-protocol` (`@flash/agent-protocol`): request/
-  response envelopes, method param/result types, error codes. Both the editor client
-  and the CLI depend on it; the Vite plugin treats frames as opaque.
+The server's `instructions` field teaches the usage doctrine up front: *call
+`doc_summary` (or read `flash://document/summary`) to orient before mutating; assert
+results from structure, use `stage_screenshot` only as a supplement; every mutation
+returns `rev` — re-read if it jumped unexpectedly (a human or another agent edited).*
 
-## Command surface (MVP)
+## Tool surface (MVP)
 
-Grouped by domain. Coordinates are stage coordinates (px). Colors are `#RRGGBB` or
-`#RRGGBBAA` strings at the protocol boundary (converted to/from model `RGBA` inside).
-All frame indices are 0-based (the CLI may render 1-based for humans, but the protocol
-is 0-based, matching the model).
+One MCP tool per command, named `domain_action` (MCP-safe `[a-z0-9_]`). Coordinates
+are stage px. Colors are `#RRGGBB` / `#RRGGBBAA` strings at the boundary (converted
+to/from model `RGBA` inside). Frame indices are **0-based**, matching the model.
+Every mutating tool's result includes the new document revision **`rev`** (a counter
+bumped on every `pushDoc`); reads include the `rev` they observed.
 
 ### Session & document
 
-| Method | Params | Result |
-|--------|--------|--------|
-| `editor.ping` | — | `{ ok, version, rev }` |
-| `editor.info` | — | document name, size, fps, bg color, scene count, edit context, active tool, `rev` |
-| `doc.get` | `{ path? }` (JSON-pointer-ish, e.g. `/scenes/0/timeline/layers/1`) | the (sub)document as JSON |
-| `doc.summary` | — | token-light outline: scenes → layers (id, name, type, frameCount) → keyframes (index, objectCount, hasScript, tween), library item list. **This is the default "look around" call** — `doc.get` on a real document can be huge. |
-| `doc.load` | `{ document }` | replace the document (pushes to history) |
-| `doc.properties.set` | `{ width?, height?, frameRate?, backgroundColor? }` | `{ ok, rev }` |
-| `history.undo` / `history.redo` | — | `{ ok, rev }` |
-| `history.depth` | — | `{ undo, redo }` |
+| Tool | Params | Result |
+|------|--------|--------|
+| `editor_status` | — | alive, version, document name, size, fps, bg color, scene count, edit context, active tool, `rev` |
+| `doc_get` | `{ path? }` (JSON-pointer-ish, e.g. `/scenes/0/timeline/layers/1`) | the (sub)document as JSON |
+| `doc_summary` | — | token-light outline: scenes → layers (id, name, type, frameCount) → keyframes (index, objectCount, hasScript, tween) + library list. **Default "look around" call** — `doc_get` on a real document can be huge. |
+| `doc_load` | `{ document }` | replace the document (pushes to history) |
+| `doc_set_properties` | `{ width?, height?, frameRate?, backgroundColor? }` | `{ ok, rev }` |
+| `history_undo` / `history_redo` | — | `{ ok, rev }` |
+| `history_depth` | — | `{ undo, redo }` |
 
 ### Stage & selection
 
-| Method | Params | Result |
-|--------|--------|--------|
-| `stage.addShape` | `{ kind: "rect"\|"oval"\|"line", bounds/points, fill?, stroke?, layerId?, frameIndex? }` | `{ id, rev }` (defaults: active layer, current frame) |
-| `stage.addText` | `{ x, y, width, height, text, textType?, fontFamily?, fontSize?, color?, ... }` | `{ id, rev }` |
-| `stage.placeInstance` | `{ symbolId, x, y, name? }` | `{ id, rev }` |
-| `stage.update` | `{ id, updates }` (x/y/scale/rotation/alpha/name/filters/text props…) | `{ ok, rev }` |
-| `stage.remove` | `{ ids }` | `{ ok, rev }` |
-| `stage.arrange` | `{ ids, op: "front"\|"back"\|"forward"\|"backward" }` | `{ ok, rev }` |
-| `stage.group` / `stage.ungroup` | `{ ids }` | `{ ok, rev }` |
-| `selection.get` | — | selected ids + their objects |
-| `selection.set` | `{ ids }` / `selection.clear` / `selection.all` | `{ ok }` |
-| `view.set` | `{ zoom?, panX?, panY?, currentFrame?, activeLayerId? }` | `{ ok }` |
-| `tool.select` | `{ toolId }` | `{ ok }` |
+| Tool | Params | Result |
+|------|--------|--------|
+| `stage_add_shape` | `{ kind: "rect"\|"oval"\|"line", bounds/points, fill?, stroke?, layerId?, frameIndex? }` | `{ id, rev }` (defaults: active layer, current frame) |
+| `stage_add_text` | `{ x, y, width, height, text, textType?, fontFamily?, fontSize?, color?, ... }` | `{ id, rev }` |
+| `stage_place_instance` | `{ symbolId, x, y, name? }` | `{ id, rev }` |
+| `stage_update` | `{ id, updates }` (x/y/scale/rotation/alpha/name/filters/text props…) | `{ ok, rev }` |
+| `stage_remove` | `{ ids }` | `{ ok, rev }` |
+| `stage_arrange` | `{ ids, op: "front"\|"back"\|"forward"\|"backward" }` | `{ ok, rev }` |
+| `stage_group` / `stage_ungroup` | `{ ids }` | `{ ok, rev }` |
+| `selection_get` | — | selected ids + their objects |
+| `selection_set` | `{ ids }` (empty = clear) / `{ all: true }` | `{ ok }` |
+| `view_set` | `{ zoom?, panX?, panY?, currentFrame?, activeLayerId? }` | `{ ok }` |
+| `tool_select` | `{ toolId }` | `{ ok }` |
 
 ### Timeline
 
-| Method | Params | Result |
-|--------|--------|--------|
-| `timeline.addLayer` | `{ name?, type? }` | `{ layerId, rev }` |
-| `timeline.removeLayer` | `{ layerId }` | `{ ok, rev }` |
-| `timeline.updateLayer` | `{ layerId, name?, locked?, visible?, type? }` | `{ ok, rev }` |
-| `timeline.insertFrame` / `insertKeyframe` / `insertBlankKeyframe` / `removeFrame` | `{ layerId, frameIndex }` | `{ ok, rev }` |
-| `timeline.setFrameLabel` | `{ layerId, frameIndex, label, labelType? }` | `{ ok, rev }` |
-| `timeline.setTween` | `{ layerId, frameIndex, kind: "motion"\|"shape"\|null, props? }` | `{ ok, rev }` |
-| `timeline.gotoFrame` | `{ frameIndex }` | `{ ok }` |
-| `playback.play` / `playback.stop` | — | `{ ok }` |
+| Tool | Params | Result |
+|------|--------|--------|
+| `timeline_add_layer` | `{ name?, type? }` | `{ layerId, rev }` |
+| `timeline_remove_layer` | `{ layerId }` | `{ ok, rev }` |
+| `timeline_update_layer` | `{ layerId, name?, locked?, visible?, type? }` | `{ ok, rev }` |
+| `timeline_insert_frame` / `timeline_insert_keyframe` / `timeline_insert_blank_keyframe` / `timeline_remove_frame` | `{ layerId, frameIndex }` | `{ ok, rev }` |
+| `timeline_set_frame_label` | `{ layerId, frameIndex, label, labelType? }` | `{ ok, rev }` |
+| `timeline_set_tween` | `{ layerId, frameIndex, kind: "motion"\|"shape"\|null, props? }` | `{ ok, rev }` |
+| `timeline_goto_frame` | `{ frameIndex }` | `{ ok }` |
+| `playback_play` / `playback_stop` | — | `{ ok }` |
 
 ### Code (AS2)
 
-| Method | Params | Result |
-|--------|--------|--------|
-| `script.get` | `{ layerId, frameIndex }` | `{ script }` (from governing keyframe) |
-| `script.set` | `{ layerId, frameIndex, script }` | `{ ok, rev, diagnostics }` — runs the AS2 compiler (`compileScript`) in check mode and returns syntax errors as diagnostics **without blocking the set** (Flash 8 lets you save broken scripts; the agent still gets immediate feedback) |
-| `script.check` | `{ script }` | `{ diagnostics }` — compile-check without mutating |
-| `script.list` | — | all `(sceneIndex, layerId, frameIndex)` triples that carry scripts, with first-line previews |
+| Tool | Params | Result |
+|------|--------|--------|
+| `script_get` | `{ layerId, frameIndex }` | `{ script }` (from governing keyframe) |
+| `script_set` | `{ layerId, frameIndex, script }` | `{ ok, rev, diagnostics }` — runs the AS2 compiler (`compileScript`) in check mode and returns syntax errors as diagnostics **without blocking the set** (Flash 8 lets you save broken scripts; the agent still gets immediate feedback) |
+| `script_check` | `{ script }` | `{ diagnostics }` — compile-check without mutating |
+| `script_list` | — | all `(sceneIndex, layerId, frameIndex)` triples carrying scripts, with first-line previews |
 
 ### Library & symbols
 
-| Method | Params | Result |
-|--------|--------|--------|
-| `library.list` | — | items (id, name, type, folder) |
-| `library.createSymbol` | `{ name, symbolType }` | `{ symbolId, rev }` |
-| `library.convertToSymbol` | `{ ids, name, symbolType }` | `{ symbolId, instanceId, rev }` |
-| `library.rename` / `library.remove` | `{ itemId, name? }` | `{ ok, rev }` |
+| Tool | Params | Result |
+|------|--------|--------|
+| `library_list` | — | items (id, name, type, folder) |
+| `library_create_symbol` | `{ name, symbolType }` | `{ symbolId, rev }` |
+| `library_convert_to_symbol` | `{ ids, name, symbolType }` | `{ symbolId, instanceId, rev }` |
+| `library_rename` / `library_remove` | `{ itemId, name? }` | `{ ok, rev }` |
 
 ### Output & escape hatches
 
-| Method | Params | Result |
-|--------|--------|--------|
-| `jsfl.run` | `{ source }` | `JsflResult` (`traces`, `returnValue`, `error`); mutations land in history |
-| `stage.screenshot` | `{ frameIndex? }` | `{ pngBase64, width, height }` (reuses `screenshotStage()`, 1:1 DPR, background-composited) |
-| `publish.swf` | — | `{ swfBase64, byteLength }` |
-| `file.saveFla` / `file.loadFla` | `{ flaBase64? }` | bytes / `{ ok, rev }` (in-memory, no native dialogs) |
+| Tool | Params | Result |
+|------|--------|--------|
+| `jsfl_run` | `{ source }` | `JsflResult` (`traces`, `returnValue`, `error`); mutations land in history |
+| `stage_screenshot` | `{ frameIndex? }` | MCP **`image` content block** (PNG; reuses `screenshotStage()`, 1:1 DPR, background-composited) + `{ width, height }` |
+| `publish_swf` | — | `{ swfBase64, byteLength }` |
+| `file_save_fla` / `file_load_fla` | `{ flaBase64? }` | bytes / `{ ok, rev }` (in-memory, no native dialogs) |
 
-`jsfl.run` is the deliberate escape hatch: anything not yet covered by a typed method
-is reachable by script, and grows the on-theme JSFL surface (doc 18, Layer 4) instead
-of an ad-hoc one. Typed methods are preferred where they exist because they validate
-params and return actionable errors.
+`jsfl_run` is the deliberate escape hatch: anything not yet covered by a typed tool is
+reachable by script, and grows the on-theme JSFL surface (doc 18, Layer 4) instead of
+an ad-hoc one. Typed tools are preferred where they exist because they validate params
+and return actionable errors.
 
-## The `flash-agent` CLI
+### Resources
 
-`packages/agent-cli`, bin `flash-agent` (workspace-linked; run as
-`pnpm --filter @flash/agent-cli exec flash-agent …` or via a root script alias).
-Node ≥ 18, dependencies kept minimal (`ws` + a tiny arg parser).
+Read-only browsable state, complementing the tools:
+
+| URI | Content |
+|-----|---------|
+| `flash://document/summary` | same outline as `doc_summary` |
+| `flash://document` | full document JSON |
+| `flash://library` | library item list |
+| `flash://scripts` | script index with previews |
+
+Resource **subscriptions** (notify on doc change, with `rev`) are a follow-up.
+
+### Error & result conventions
+
+- Tool errors use MCP `isError` results whose text **names the bad parameter** and,
+  where cheap, includes valid alternatives (known layer ids, valid tool ids, frame
+  bounds). An LLM must be able to self-correct from the error alone.
+- IDs everywhere: tools accept the model's stable ids (`layerId`, object `id`,
+  `symbolId`) as returned by `doc_summary` / `library_list`. No name-based fuzzy
+  matching in MVP (names are not unique).
+
+## The `flash-agent` CLI (thin client)
+
+Most agents need no CLI — they connect as MCP clients. A **thin generic wrapper**
+(`packages/agent-cli`, bin `flash-agent`, built on the MCP TS SDK client) remains for
+shell scripting, e2e tests, and humans:
 
 ```
-flash-agent [--url ws://localhost:1420/__agent] [--json] <command> [args]
+flash-agent [--url http://localhost:1420/mcp] <command>
 
-SESSION
-  status                          editor.ping + editor.info, human-readable
-DOCUMENT
-  doc summary                     token-light outline (default way to look around)
-  doc get [<json-pointer>]        full or partial document JSON
-  props set --width N --height N --fps N --bg '#RRGGBB'
-  undo / redo
-STAGE
-  add rect  --x1 --y1 --x2 --y2 [--fill '#f00'] [--stroke '#000,1'] [--layer ID] [--frame N]
-  add oval  ... / add line ... / add text --x --y --text "..."
-  place <symbolId> --x --y [--name inst1]
-  update <objectId> --set x=120 --set rotation=45 ...
-  remove <objectId...>
-  select <objectId...> | select --all | select --none
-TIMELINE
-  layer add [--name N] / layer rm <id> / layer set <id> --locked ...
-  frame insert|keyframe|blank|rm --layer <id> --frame <n>
-  tween set --layer <id> --frame <n> --kind motion|shape
-  goto <frame>  /  play  /  stop
-CODE
-  script list
-  script get --layer <id> --frame <n> [-o file.as]
-  script set --layer <id> --frame <n> [file.as | --eval 'stop();']   (prints diagnostics)
-  script check [file.as | --eval '...']
-LIBRARY
-  lib list / lib create-symbol --name N --type movieclip
-  lib convert <objectId...> --name N --type movieclip
-OUTPUT
-  screenshot [-o stage.png] [--frame N]
-  publish [-o out.swf]
-  save [-o project.fla] / open <project.fla>
-SCRIPTING
-  jsfl <file.jsfl>  |  jsfl --eval 'fl.trace(doc.width)'
-  repl                            interactive line-per-command session (keeps one socket)
+  tools                         list tools with schemas
+  call <tool> [json|--k=v ...]  invoke any tool; prints the result as JSON
+  read <resource-uri>           read an MCP resource
+  screenshot [-o stage.png]     sugar: call stage_screenshot, write the PNG
+  publish [-o out.swf]          sugar: call publish_swf, write the bytes
+  repl                          interactive session on one connection
 ```
 
-Conventions:
-- **`--json`** on any command prints the raw RPC result (one JSON object, stdout) —
-  the mode agents should use. Default output is concise human-readable text.
-- **Exit codes:** 0 success; 1 RPC-level error (bad params, unknown id); 2 transport
-  error (no dev server / no editor connected — message says exactly which, and how to
-  start it: `pnpm --filter @flash/desktop dev`).
-- Binary results (`screenshot`, `publish`, `save`) are written to files, never dumped
-  to stdout (unless `--json`, which keeps base64).
-- IDs everywhere: commands accept the model's stable ids (`layerId`, object `id`,
-  `symbolId`) as printed by `doc summary` / `lib list`. No name-based fuzzy matching
-  in MVP (names are not unique).
+No bespoke per-command argument tree: `call` + the self-describing tool schemas cover
+everything; only binary-output sugar gets dedicated verbs. Exit codes: 0 success,
+1 tool error (`isError`), 2 transport error (message says whether the dev server or
+the editor page is missing, and how to start it).
 
-### Agent workflow example
+### Agent workflow example (any MCP client)
 
-```bash
-flash-agent status                       # editor alive? doc name, size, rev
-flash-agent doc summary --json           # orient: scenes/layers/keyframes/library
-flash-agent add rect --x1 100 --y1 100 --x2 200 --y2 150 --fill '#FF0000'
-flash-agent frame keyframe --layer layer-1 --frame 4
-flash-agent script set --layer layer-1 --frame 4 --eval 'stop();'
-flash-agent doc get /scenes/0/timeline/layers/0 --json   # assert structure
-flash-agent screenshot -o /tmp/stage.png # optional visual check
-flash-agent publish -o /tmp/test.swf     # feed to swf-verify / Ruffle
-flash-agent undo                         # everything is in history
+```
+editor_status                    → editor alive? doc name, size, rev
+doc_summary                      → orient: scenes/layers/keyframes/library
+stage_add_shape {kind:"rect", x1:100, y1:100, x2:200, y2:150, fill:"#FF0000"}
+timeline_insert_keyframe {layerId:"layer-1", frameIndex:4}
+script_set {layerId:"layer-1", frameIndex:4, script:"stop();"}   → diagnostics: []
+doc_get {path:"/scenes/0/timeline/layers/0"}                     → assert structure
+stage_screenshot                 → optional visual check (image content)
+publish_swf                      → feed to swf-verify / Ruffle
+history_undo                     → everything is in history
 ```
 
-The verification loop stays textual: mutate → read `doc get`/`summary` → assert →
+The verification loop stays textual: mutate → read `doc_get`/`doc_summary` → assert →
 only then look at pixels.
 
 ## Relationship to existing layers
@@ -278,8 +269,8 @@ only then look at pixels.
 | Surface | Reaches it via | Keep using it for |
 |---------|----------------|-------------------|
 | `__flashTest` | `page.evaluate` (Playwright) | UI-path testing (gestures, menus) — it tests that the *UI* mutates the model correctly |
-| JSFL `runJSFL` | bridge or `jsfl.run` RPC | scripted/recorded scenarios, Flash-8-fidelity API |
-| **Agent RPC + CLI (this doc)** | WebSocket / terminal | live out-of-process control; the default surface for LLM agents doing authoring work |
+| JSFL `runJSFL` | bridge or `jsfl_run` tool | scripted/recorded scenarios, Flash-8-fidelity API |
+| **MCP server (this doc)** | any MCP client / `flash-agent` | live out-of-process control; the default surface for LLM agents doing authoring work |
 
 The registry and `__flashTest` should share one implementation of each command
 (extract the Shell's bridge closures into a shared module both consume) so the two
@@ -287,32 +278,36 @@ surfaces cannot drift.
 
 ## MVP scope
 
-**In:** relay plugin; editor client + registry with the method tables above; protocol
-package; CLI with all listed commands; e2e spec proving CLI ↔ live editor round-trips;
-docs (this file, AGENTS.md/CLAUDE.md pointers).
+**In:** Vite MCP plugin (Streamable HTTP `/mcp` + private editor WS bridge);
+`@flash/agent-protocol` zod schemas; editor client + registry with the tool tables
+above; the four resources; thin `flash-agent` CLI; e2e spec proving MCP client ↔ live
+editor round-trips; docs (this file, AGENTS.md/CLAUDE.md pointers).
 
 **Out (follow-ups, tracked as open tasks):**
-- Event subscriptions / `flash-agent watch` (doc-changed, selection-changed,
-  playhead notifications pushed to clients).
-- Packaged-Tauri transport (Rust WS server speaking the same protocol).
-- Multi-document / multi-editor routing (MVP: one editor; a second editor
-  registration replaces the first with a warning to clients).
-- Symbol-timeline edit context (entering a symbol and editing its timeline via RPC) —
-  until then, `jsfl.run` / `doc.load` are the workaround.
-- Auth beyond the optional shared token.
+- Resource subscriptions / change notifications (doc-changed with `rev`,
+  selection-changed, playhead).
+- Packaged-Tauri hosting (same MCP server without Vite).
+- Multi-document / multi-editor routing (MVP: one editor page; a second registration
+  replaces the first and in-flight calls fail with a clear error).
+- Symbol-timeline edit context (entering a symbol and editing its timeline) — until
+  then, `jsfl_run` / `doc_load` are the workaround.
+- MCP prompts (canned authoring recipes); auth beyond the optional bearer token.
 
 ## Implementation plan
 
-1. **`@flash/agent-protocol` + Vite relay plugin + editor-side client** — the
-   transport skeleton, `editor.ping`/`editor.info`/`doc.get`/`doc.summary` only.
-   Proves CLI-less round-trip via a raw `ws` test.
-2. **AgentCommandRegistry** — full method surface, sharing implementations with
-   `__flashTest`; unit tests per method against `@flash/core` fixtures.
-3. **`flash-agent` CLI** — commands, `--json`, exit codes, repl; e2e spec that starts
-   Vite, loads the editor page, runs real CLI invocations, asserts document state.
+1. **`@flash/agent-protocol` + Vite MCP plugin + editor-side bridge client** — the
+   transport skeleton: `/mcp` endpoint via `@modelcontextprotocol/sdk`, private
+   `/__agent` WS, registry with `editor_status`, `doc_get`, `doc_summary` only, plus
+   the `flash://document/summary` resource. Proves a stock MCP client round-trip.
+2. **AgentCommandRegistry** — full tool surface, sharing implementations with
+   `__flashTest`; zod schemas in `@flash/agent-protocol`; unit tests per tool group
+   against `@flash/core` fixtures.
+3. **`flash-agent` thin CLI + e2e** — generic `tools`/`call`/`read` + binary sugar;
+   e2e spec that starts Vite, loads the editor page, and drives real MCP calls
+   end-to-end, asserting document state.
 4. **JSFL expansion** (parallel) — grow the JSFL DOM (frames/layers CRUD,
    `convertToSymbol`, `setFrameScript`-equivalent, document property setters, library)
-   so `jsfl.run` is a genuinely useful escape hatch.
+   so `jsfl_run` is a genuinely useful escape hatch.
 
 Each step is a story-sized task in `.tasks/`; testing ships inside each story per
 AGENTS.md.
