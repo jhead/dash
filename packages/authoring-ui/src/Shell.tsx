@@ -84,6 +84,8 @@ import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
 import { PublishSettingsDialog } from "./PublishSettingsDialog";
 import type { PublishSettings } from "./PublishSettingsDialog";
 import { PanelGroup } from "./PanelGroup";
+import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
+import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
 
 // ---------------------------------------------------------------------------
 // Edit context
@@ -201,7 +203,15 @@ export function Shell(): React.ReactElement {
   // Single document owner — replaces scattered useState for timeline/library/etc.
   // ---------------------------------------------------------------------------
   const history = useHistory(_initialDoc);
-  const { doc, push: pushDoc, replace: replaceDoc, commitDrag, undo, redo, canUndo, canRedo } = history;
+  const { doc, push: _rawPushDoc, replace: replaceDoc, commitDrag, undo, redo, canUndo, canRedo } = history;
+  // Wrap push so we bump the agent rev counter on every document mutation.
+  const pushDoc = useCallback(
+    (nextDoc: Parameters<typeof _rawPushDoc>[0]) => {
+      bumpRev();
+      _rawPushDoc(nextDoc);
+    },
+    [_rawPushDoc]
+  );
 
   // Convenience: library, docProperties
   const library = doc.library;
@@ -2336,6 +2346,55 @@ export function Shell(): React.ReactElement {
     fullSceneGraph,
     docProperties,
   ]);
+
+  // ---------------------------------------------------------------------------
+  // Agent MCP bridge (DEV / VITE_FLASH_TEST=1 only)
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const metaEnv = (import.meta as any).env as Record<string, unknown> | undefined;
+    const isTestEnv = metaEnv?.["DEV"] === true || metaEnv?.["VITE_FLASH_TEST"] === "1";
+    if (!isTestEnv) return;
+
+    setAgentCallbacks({
+      getDoc: () => doc,
+      getSelectedIds: () => (selectedShapeId ? [selectedShapeId] : []),
+      getCurrentFrame: () => currentFrame,
+      getActiveLayerIndex: () => activeLayerIndex,
+      getActiveTool: () => toolState.activeTool,
+      getEditContext: () => editContext,
+      getActiveSceneIndex: () => activeSceneIndex,
+      getUndoDepth: () => history.undoDepth,
+    });
+
+    return () => {
+      clearAgentCallbacks();
+    };
+  }, [
+    doc,
+    selectedShapeId,
+    currentFrame,
+    activeLayerIndex,
+    toolState.activeTool,
+    editContext,
+    activeSceneIndex,
+    history.undoDepth,
+  ]);
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const metaEnv = (import.meta as any).env as Record<string, unknown> | undefined;
+    const isTestEnv = metaEnv?.["DEV"] === true || metaEnv?.["VITE_FLASH_TEST"] === "1";
+    if (!isTestEnv) return;
+
+    startAgentBridge();
+    return () => {
+      stopAgentBridge();
+    };
+    // Only run once on mount — the bridge reconnects internally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Tab button styles

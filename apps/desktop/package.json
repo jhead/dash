@@ -18,6 +18,8 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@flash/vite-plugin-agent-mcp": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@playwright/test": "^1.40.0",
     "@tauri-apps/cli": "^2.1.0",
     "@types/pixelmatch": "^5.2.6",

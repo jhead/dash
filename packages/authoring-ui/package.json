@@ -17,6 +17,7 @@
     "test": "node_modules/.bin/vitest run"
   },
   "dependencies": {
+    "@flash/agent-protocol": "workspace:*",
     "@flash/core": "workspace:*",
     "@flash/player": "workspace:*",
     "@flash/swf": "workspace:*",

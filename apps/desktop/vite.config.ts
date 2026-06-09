@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { agentMcpPlugin } from "@flash/vite-plugin-agent-mcp";
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [react(), agentMcpPlugin()],
 
   // Allow Vite to serve .wasm files from the public directory as static assets.
   assetsInclude: ["**/*.wasm"],
@@ -13,6 +14,10 @@ export default defineConfig(async () => ({
   // edits are reflected immediately without a manual `pnpm build` step.
   resolve: {
     alias: {
+      "@flash/agent-protocol": path.resolve(
+        __dirname,
+        "../../packages/agent-protocol/src/index.ts"
+      ),
       "@flash/core": path.resolve(
         __dirname,
         "../../packages/core/src/index.ts"
