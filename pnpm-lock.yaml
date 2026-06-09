@@ -83,6 +83,19 @@ importers:
         specifier: ^5.3.4
         version: 5.4.21(@types/node@25.9.2)
 
+  packages/agent-cli:
+    dependencies:
+      '@flash/agent-protocol':
+        specifier: workspace:*
+        version: link:../agent-protocol
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
+    devDependencies:
+      typescript:
+        specifier: ^5.5.3
+        version: 5.9.3
+
   packages/agent-protocol:
     dependencies:
       zod:

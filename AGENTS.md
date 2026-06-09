@@ -219,6 +219,28 @@ Use the CLI freely throughout a session — not only at the start.
 
 Commit new or updated task JSON files so other agents see the current backlog.
 
+## Controlling the editor (Agent MCP bridge)
+
+Connect Claude Code or any MCP client to the live editor:
+
+```bash
+claude mcp add --transport http flash-editor http://localhost:1420/mcp
+```
+
+Or use the `flash-agent` CLI (start the dev server first with `pnpm dev:browser`):
+
+```bash
+pnpm flash-agent tools                          # list tools with schemas
+pnpm flash-agent call editor_status            # check editor is alive
+pnpm flash-agent call doc_summary              # orient: scenes/layers/library
+pnpm flash-agent call stage_add_shape '{"kind":"rect","x1":10,"y1":10,"x2":100,"y2":50}'
+pnpm flash-agent screenshot -o stage.png       # write PNG to file
+pnpm flash-agent publish -o movie.swf          # compile and write SWF
+pnpm flash-agent repl                          # interactive session
+```
+
+See `docs/19-agent-interface.md` for the full tool surface.
+
 ## Project context
 
 - **Goal:** Pixel-accurate Flash Professional 8 clone (authoring + SWF v8 output + FLA I/O).

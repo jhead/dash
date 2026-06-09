@@ -9,7 +9,8 @@
     "build": "pnpm --filter './packages/**' build && pnpm --filter @flash/desktop build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "verify:swf": "pnpm --filter @flash/swf test"
+    "verify:swf": "pnpm --filter @flash/swf test",
+    "flash-agent": "node --experimental-strip-types packages/agent-cli/src/cli.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.3"

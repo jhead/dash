@@ -8,6 +8,27 @@
 - Use ruffle (cloned locally) for reference material e.g. SWF encoding, runtime, AS, etc.
 - Commit and push all changes to git when done
 
+## Controlling the editor (Agent MCP bridge)
+
+Connect Claude Code or any MCP client to the live editor:
+
+```bash
+claude mcp add --transport http flash-editor http://localhost:1420/mcp
+```
+
+Or use the `flash-agent` CLI (start the dev server first with `pnpm dev:browser`):
+
+```bash
+pnpm flash-agent tools                          # list tools with schemas
+pnpm flash-agent call editor_status            # check editor is alive
+pnpm flash-agent call doc_summary              # orient: scenes/layers/library
+pnpm flash-agent screenshot -o stage.png       # write PNG to file
+pnpm flash-agent publish -o movie.swf          # compile and write SWF
+pnpm flash-agent repl                          # interactive REPL session
+```
+
+See `docs/19-agent-interface.md` for the full tool surface.
+
 ## Running tests
 
 ```bash
