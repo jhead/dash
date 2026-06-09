@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
   duplicateLibraryItem,
-  renameLibraryItem,
+  renameLibraryItemInDoc as renameLibraryItem,
   deleteLibraryItem,
 } from "../library.js";
 import { createDocument } from "../../model/document.js";
