@@ -1,0 +1,8 @@
+{
+  "id": "0613-agent-bridge-mvp-protocol-package-vite-ws-relay-",
+  "title": "Agent bridge MVP: protocol package, Vite WS relay, editor-side client",
+  "description": "Foundation for the agent control interface (docs/19-agent-interface.md \u00a7Architecture, \u00a7Protocol, \u00a7Implementation plan step 1). Deliverables: (1) new workspace package packages/agent-protocol (@flash/agent-protocol) with JSON-RPC 2.0 envelope types, method param/result types for the MVP command surface, and error codes incl. relay-level -32000-range codes; (2) a vite-plugin-agent-bridge registered in apps/desktop/vite.config.ts that handles WS upgrades on /__agent and relays frames between one role=editor socket and N role=client sockets (tag requests with client ids, route responses back, emit 'no editor connected'/'editor disconnected' errors; optional FLASH_AGENT_TOKEN check); (3) editor-side client in packages/authoring-ui/src/agent/ that connects as role=editor when import.meta.env.DEV or VITE_FLASH_TEST=1, reconnects with backoff, and dispatches to a minimal registry implementing editor.ping, editor.info, doc.get (JSON-pointer path), doc.summary. Include a doc revision counter (rev) bumped on every pushDoc, returned by all methods. Tests: unit tests for relay routing + an e2e spec in apps/desktop/e2e that connects a raw 'ws' client to the running dev server and round-trips ping/info/doc.summary. See docs/19-agent-interface.md for exact semantics.",
+  "status": "open",
+  "created_at": "2026-06-09T22:29:29Z",
+  "updated_at": "2026-06-09T22:29:29Z"
+}

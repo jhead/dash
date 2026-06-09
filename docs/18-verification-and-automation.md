@@ -212,6 +212,11 @@ scripts instead of coordinate sequences.
 - Grow toward Flash 8's documented JSFL DOM as authoring features mature; `__flashTest`
   remains the low-level escape hatch.
 
+> **Out-of-process access:** layers 2 and 4 are in-page APIs reachable only via a
+> browser harness. `19-agent-interface.md` defines the `flash-agent` CLI and JSON-RPC
+> WebSocket bridge that expose the same command layer to agents over a socket — the
+> default surface for LLM agents doing live authoring work.
+
 ---
 
 ## Workflow & CI

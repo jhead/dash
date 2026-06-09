@@ -1,0 +1,8 @@
+{
+  "id": "0615-flash-agent-cli-terminal-client-for-the-live-edi",
+  "title": "flash-agent CLI: terminal client for the live editor",
+  "description": "Depends on 0613-agent-bridge-mvp-protocol-package-vite-ws-relay- and 0614-agent-command-registry-full-rpc-method-surface-o. New workspace package packages/agent-cli (@flash/agent-cli, bin flash-agent, Node>=18, deps minimal: ws + small arg parser). Implement the command set in docs/19-agent-interface.md \u00a7The flash-agent CLI: status; doc summary / doc get [pointer]; props set; undo/redo; add rect|oval|line|text; place; update; remove; select; layer add/rm/set; frame insert|keyframe|blank|rm; tween set; goto/play/stop; script list/get/set/check; lib list/create-symbol/convert; screenshot; publish; save/open; jsfl <file>|--eval; repl. Conventions: --url (default ws://localhost:1420/__agent), --json prints raw RPC result to stdout for agent consumption, binary outputs (png/swf/fla) written to files via -o, exit codes 0=ok 1=RPC error 2=transport error (transport errors must say whether the dev server or the editor page is missing and how to start them). Add a root package.json script alias so agents can run it easily. Tests: e2e spec in apps/desktop/e2e that drives the real CLI as a subprocess against the auto-started Vite server + editor page: add rect \u2192 frame keyframe \u2192 script set (assert diagnostics) \u2192 doc get assertion \u2192 screenshot file exists \u2192 publish bytes decode via @flash/swf round-trip. Update AGENTS.md and CLAUDE.md with a short 'controlling the editor' pointer to docs/19.",
+  "status": "open",
+  "created_at": "2026-06-09T22:29:52Z",
+  "updated_at": "2026-06-09T22:29:52Z"
+}
