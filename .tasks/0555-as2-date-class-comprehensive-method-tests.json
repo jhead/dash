@@ -1,0 +1,8 @@
+{
+  "id": "0555-as2-date-class-comprehensive-method-tests",
+  "title": "AS2 Date class comprehensive method tests",
+  "description": "Tests for AS2 Date class: new Date(), new Date(ms), new Date(yr,mo,day), getFullYear/Month/Date/Hours/Minutes/Seconds/Milliseconds, setters, getTime(), getDay(), getTimezoneOffset(), toString(), toLocaleString(), UTC methods.",
+  "status": "done",
+  "created_at": "2026-06-09T22:12:52Z",
+  "updated_at": "2026-06-09T22:14:35Z"
+}

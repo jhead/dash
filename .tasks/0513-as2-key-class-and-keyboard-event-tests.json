@@ -2,7 +2,7 @@
   "id": "0513-as2-key-class-and-keyboard-event-tests",
   "title": "AS2 Key class and keyboard event tests",
   "description": "Test Key.isDown(keyCode), Key.getCode(), Key.addListener(), Key.getAscii(), Key constants (Key.SPACE, Key.ENTER, Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT).",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T22:01:49Z",
-  "updated_at": "2026-06-09T22:02:58Z"
+  "updated_at": "2026-06-09T22:05:06Z"
 }

@@ -1,0 +1,8 @@
+{
+  "id": "0574-as2-mouse-class-show-hide-and-drag-tests",
+  "title": "AS2 Mouse class show hide and drag tests",
+  "description": "Tests for Mouse class: Mouse.show(), Mouse.hide(), Mouse.addListener, Mouse.removeListener, onMouseMove/onMouseDown/onMouseUp handlers, _xmouse/_ymouse, startDrag(mc, lockCenter, bounds), stopDrag().",
+  "status": "done",
+  "created_at": "2026-06-09T22:17:54Z",
+  "updated_at": "2026-06-09T22:19:14Z"
+}

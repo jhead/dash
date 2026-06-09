@@ -1,0 +1,8 @@
+{
+  "id": "0572-core-align-operations-tests",
+  "title": "Core align operations tests",
+  "description": "Tests for align utilities: alignLeft, alignRight, alignTop, alignBottom, alignHCenter, alignVCenter applied to multiple display objects. Also distributeHorizontally, distributeVertically. Verify coordinate math with bounding boxes.",
+  "status": "done",
+  "created_at": "2026-06-09T22:16:10Z",
+  "updated_at": "2026-06-09T22:21:56Z"
+}

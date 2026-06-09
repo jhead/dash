@@ -2,7 +2,7 @@
   "id": "0506-as2-sharedobject-local-storage-class-tests",
   "title": "AS2 SharedObject local storage class tests",
   "description": "Test SharedObject.getLocal('name'), so.data property, so.flush(), so.clear(). Also SharedObject.getRemote() usage. Compile-without-crash tests for Flash 8 local data persistence.",
-  "status": "in_progress",
+  "status": "done",
   "created_at": "2026-06-09T21:59:30Z",
-  "updated_at": "2026-06-09T22:00:29Z"
+  "updated_at": "2026-06-09T22:04:44Z"
 }

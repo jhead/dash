@@ -1,0 +1,8 @@
+{
+  "id": "0542-as2-externalinterface-call-and-callback-tests",
+  "title": "AS2 ExternalInterface call and callback tests",
+  "description": "Tests for flash.external.ExternalInterface: ExternalInterface.call(), ExternalInterface.addCallback(), ExternalInterface.available property. SWF-JavaScript bridge.",
+  "status": "done",
+  "created_at": "2026-06-09T22:09:40Z",
+  "updated_at": "2026-06-09T22:10:37Z"
+}

@@ -2,7 +2,7 @@
   "id": "0522-as2-mouse-class-and-cursor-control-tests",
   "title": "AS2 Mouse class and cursor control tests",
   "description": "Test Mouse.show(), Mouse.hide(), Mouse.addListener(listener), Mouse.removeListener(). Mouse listener onMouseDown/onMouseMove/onMouseUp handlers. Flash 8 mouse cursor API.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T22:03:05Z",
-  "updated_at": "2026-06-09T22:03:05Z"
+  "updated_at": "2026-06-09T22:04:46Z"
 }

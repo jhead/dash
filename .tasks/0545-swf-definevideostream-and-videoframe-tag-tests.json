@@ -1,0 +1,8 @@
+{
+  "id": "0545-swf-definevideostream-and-videoframe-tag-tests",
+  "title": "SWF DefineVideoStream and VideoFrame tag tests",
+  "description": "Tests for SWF video tag encoding: DefineVideoStream (tag 60) with codec=2 (Sorenson H.263), width/height; VideoFrame (tag 61) with streamId + frame data. Uses BitWriter/RecordBuilder pattern.",
+  "status": "done",
+  "created_at": "2026-06-09T22:09:40Z",
+  "updated_at": "2026-06-09T22:12:46Z"
+}

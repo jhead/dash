@@ -1,0 +1,8 @@
+{
+  "id": "0588-as2-color-class-transform-and-tint-tests",
+  "title": "AS2 Color class transform and tint tests",
+  "description": "Tests for legacy Color class: new Color(mc), c.setRGB(rgb), c.getRGB(), c.setTransform({ra,rb,ga,gb,ba,bb,aa,ab}), c.getTransform(). Also verify flash.geom.ColorTransform is the modern equivalent.",
+  "status": "open",
+  "created_at": "2026-06-09T22:21:59Z",
+  "updated_at": "2026-06-09T22:21:59Z"
+}

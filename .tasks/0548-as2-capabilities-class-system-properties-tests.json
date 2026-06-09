@@ -1,0 +1,8 @@
+{
+  "id": "0548-as2-capabilities-class-system-properties-tests",
+  "title": "AS2 Capabilities class system properties tests",
+  "description": "Tests for System.capabilities / flash.system.Capabilities: os, version, language, screenResolutionX/Y, screenDPI, hasAudio, hasMP3, playerType, hasVideoEncoder, manufacturer.",
+  "status": "done",
+  "created_at": "2026-06-09T22:09:40Z",
+  "updated_at": "2026-06-09T22:12:32Z"
+}

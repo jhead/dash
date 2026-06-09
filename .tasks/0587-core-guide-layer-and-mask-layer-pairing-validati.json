@@ -1,0 +1,8 @@
+{
+  "id": "0587-core-guide-layer-and-mask-layer-pairing-validati",
+  "title": "Core guide layer and mask layer pairing validation tests",
+  "description": "Tests for layer type pairing rules: guide layer must have at least one guided layer below, mask layer must have at least one masked layer, validateLayerPairing(timeline) returns issues array. isGuided(layer), isMasked(layer) predicates.",
+  "status": "open",
+  "created_at": "2026-06-09T22:21:59Z",
+  "updated_at": "2026-06-09T22:21:59Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0571-swf-doinitaction-and-sprite-initialization-tests",
+  "title": "SWF DoInitAction and sprite initialization tests",
+  "description": "Tests for DoInitAction (tag 59): emitted for symbols with exportForActionScript and non-empty script on frame 0. Body: SpriteId UI16 + ActionRecord bytes. Verify precedes PlaceObject in main timeline for exported symbols.",
+  "status": "done",
+  "created_at": "2026-06-09T22:16:10Z",
+  "updated_at": "2026-06-09T22:21:55Z"
+}

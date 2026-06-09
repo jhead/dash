@@ -2,7 +2,7 @@
   "id": "0524-as2-flash-geom-matrix-class-tests",
   "title": "AS2 flash.geom.Matrix class tests",
   "description": "Test import flash.geom.Matrix, new Matrix(a,b,c,d,tx,ty), matrix.translate(dx,dy), matrix.scale(sx,sy), matrix.rotate(angle), matrix.concat(m), matrix.identity(), matrix.invert().",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T22:03:05Z",
-  "updated_at": "2026-06-09T22:03:05Z"
+  "updated_at": "2026-06-09T22:06:37Z"
 }

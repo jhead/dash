@@ -1,0 +1,8 @@
+{
+  "id": "0558-swf-scriptlimits-and-protect-tag-encoding-tests",
+  "title": "SWF ScriptLimits and Protect tag encoding tests",
+  "description": "Tests for SWF auxiliary tags: ScriptLimits (tag 65) body = MaxRecursionDepth UI16 + ScriptTimeoutSeconds UI16; Protect (tag 24) body = empty or Password string0. Verify they appear in compiled SWF output.",
+  "status": "done",
+  "created_at": "2026-06-09T22:12:52Z",
+  "updated_at": "2026-06-09T22:17:13Z"
+}

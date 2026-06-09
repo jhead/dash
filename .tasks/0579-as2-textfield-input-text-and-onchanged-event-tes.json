@@ -1,0 +1,8 @@
+{
+  "id": "0579-as2-textfield-input-text-and-onchanged-event-tes",
+  "title": "AS2 TextField input text and onChanged event tests",
+  "description": "Tests for TextField input events: tf.onChanged handler, tf.onSetFocus/onKillFocus, tf.tabIndex, tf.tabEnabled, tf.focusRect. Also createTextField(name, depth, x, y, w, h), TextField._name, type='input'|'dynamic'.",
+  "status": "in_progress",
+  "created_at": "2026-06-09T22:19:55Z",
+  "updated_at": "2026-06-09T22:21:17Z"
+}

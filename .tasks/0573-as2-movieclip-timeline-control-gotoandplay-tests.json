@@ -1,0 +1,8 @@
+{
+  "id": "0573-as2-movieclip-timeline-control-gotoandplay-tests",
+  "title": "AS2 MovieClip timeline control gotoAndPlay tests",
+  "description": "Tests for MovieClip timeline control: gotoAndPlay(frame), gotoAndStop(frame), nextFrame(), prevFrame(), play(), stop(), _totalframes, _currentframe, _framesloaded. Both numeric and label-based navigation.",
+  "status": "done",
+  "created_at": "2026-06-09T22:17:54Z",
+  "updated_at": "2026-06-09T22:19:13Z"
+}

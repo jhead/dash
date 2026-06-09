@@ -2,7 +2,7 @@
   "id": "0523-as2-moviecliploader-and-progress-events-tests",
   "title": "AS2 MovieClipLoader and progress events tests",
   "description": "Test new MovieClipLoader(), mcl.loadClip('url', target), mcl.getProgress(target), mcl.onLoadStart/onLoadProgress/onLoadComplete/onLoadError handlers.",
-  "status": "open",
+  "status": "done",
   "created_at": "2026-06-09T22:03:05Z",
-  "updated_at": "2026-06-09T22:03:05Z"
+  "updated_at": "2026-06-09T22:04:47Z"
 }

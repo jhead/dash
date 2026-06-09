@@ -1,0 +1,8 @@
+{
+  "id": "0547-as2-key-class-isdown-and-event-tests",
+  "title": "AS2 Key class isDown and event tests",
+  "description": "Tests for Key class: Key.isDown(code), Key.getCode(), Key.getAscii(), Key.addListener, onKeyDown/onKeyUp handlers, Key constant values (Key.ENTER=13, Key.ESCAPE=27, Key.LEFT=37, etc.).",
+  "status": "done",
+  "created_at": "2026-06-09T22:09:40Z",
+  "updated_at": "2026-06-09T22:12:32Z"
+}
