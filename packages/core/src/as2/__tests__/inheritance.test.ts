@@ -1,0 +1,279 @@
+/**
+ * Tests for AS2 class inheritance: `extends` and `super()`.
+ *
+ * Verifies that `class Foo extends Bar` compiles to the correct AVM1 prototype
+ * chain setup, and that `super(...)` in a constructor emits the expected parent
+ * constructor call.
+ */
+
+import { describe, it, expect } from "vitest";
+import { compileAS2 } from "../compiler.js";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function compilesOk(source: string): boolean {
+  try {
+    compileAS2(source);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function containsString(bytes: Uint8Array, s: string): boolean {
+  const enc = new TextEncoder().encode(s);
+  outer: for (let i = 0; i <= bytes.length - enc.length; i++) {
+    for (let j = 0; j < enc.length; j++) {
+      if (bytes[i + j] !== enc[j]) continue outer;
+    }
+    if (bytes[i + enc.length] === 0) return true;
+  }
+  return false;
+}
+
+function hasOpcode(bytes: Uint8Array, opcode: number): boolean {
+  return Array.from(bytes).includes(opcode);
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("AS2 class inheritance: extends and super()", () => {
+  // -------------------------------------------------------------------------
+  // 1. Basic extends compiles without error
+  // -------------------------------------------------------------------------
+
+  it("1. class with empty extends compiles without error", () => {
+    expect(compilesOk("class Foo extends Bar {}")).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 2. extends emits ActionNew (0x4a) for prototype chain setup
+  // -------------------------------------------------------------------------
+
+  it("2. extends emits ActionNew for prototype chain setup", () => {
+    const bytes = compileAS2("class Foo extends Bar {}");
+
+    // ActionNew (0x4a) must appear: used for `new Bar()` in prototype setup
+    expect(hasOpcode(bytes, 0x4a)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 3. extends emits ActionSetMember (0x4e) to assign prototype
+  // -------------------------------------------------------------------------
+
+  it("3. extends emits ActionSetMember to assign Foo.prototype = new Bar()", () => {
+    const bytes = compileAS2("class Foo extends Bar {}");
+
+    // ActionSetMember (0x4e) must appear
+    expect(hasOpcode(bytes, 0x4e)).toBe(true);
+
+    // Both class names must be present as strings
+    expect(containsString(bytes, "Foo")).toBe(true);
+    expect(containsString(bytes, "Bar")).toBe(true);
+
+    // "prototype" string must be present
+    expect(containsString(bytes, "prototype")).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 4. extends restores Foo.prototype.constructor = Foo
+  // -------------------------------------------------------------------------
+
+  it("4. extends restores the constructor property on the prototype", () => {
+    const bytes = compileAS2("class Foo extends Bar {}");
+
+    // "constructor" string must appear to restore Foo.prototype.constructor = Foo
+    expect(containsString(bytes, "constructor")).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. super() in constructor compiles without error
+  // -------------------------------------------------------------------------
+
+  it("5. super() call in constructor compiles without error", () => {
+    expect(
+      compilesOk(`
+        class Foo extends Bar {
+          function Foo() {
+            super();
+          }
+        }
+      `)
+    ).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. super() emits a call to the parent constructor (ActionCallMethod 0x52)
+  // -------------------------------------------------------------------------
+
+  it("6. super() emits ActionCallMethod to invoke parent constructor", () => {
+    const bytes = compileAS2(`
+      class Foo extends Bar {
+        function Foo() {
+          super();
+        }
+      }
+    `);
+
+    // ActionCallMethod (0x52) must appear for SuperClass.call(this)
+    expect(hasOpcode(bytes, 0x52)).toBe(true);
+
+    // "call" string must appear since super() → Bar.call(this)
+    expect(containsString(bytes, "call")).toBe(true);
+
+    // Parent class name must appear in bytecode
+    expect(containsString(bytes, "Bar")).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. super(arg1, arg2) passes arguments to parent constructor
+  // -------------------------------------------------------------------------
+
+  it("7. super() with arguments compiles without error", () => {
+    expect(
+      compilesOk(`
+        class Cat extends Animal {
+          function Cat(name, age) {
+            super(name, age);
+          }
+        }
+      `)
+    ).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. Subclass with an inherited method compiles correctly
+  // -------------------------------------------------------------------------
+
+  it("8. subclass with inherited method body compiles without error", () => {
+    expect(
+      compilesOk(`
+        class Dog extends Animal {
+          function Dog(name) {
+            super(name);
+          }
+          function speak() {
+            return "woof";
+          }
+        }
+      `)
+    ).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 9. Multiple levels of inheritance compile without error
+  // -------------------------------------------------------------------------
+
+  it("9. multi-level inheritance compiles without error", () => {
+    expect(
+      compilesOk(`
+        class Animal {}
+        class Dog extends Animal {}
+        class GoldenRetriever extends Dog {}
+      `)
+    ).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 10. Subclass bytecode includes superclass name
+  // -------------------------------------------------------------------------
+
+  it("10. bytecode references the superclass by name", () => {
+    const bytes = compileAS2(`
+      class Cat extends Animal {
+        function Cat() {
+          super();
+        }
+      }
+    `);
+
+    expect(containsString(bytes, "Cat")).toBe(true);
+    expect(containsString(bytes, "Animal")).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. super.methodName() call in a method body compiles without error
+  // -------------------------------------------------------------------------
+
+  it("11. super.methodName() call in method body compiles without error", () => {
+    expect(
+      compilesOk(`
+        class Dog extends Animal {
+          function Dog(name) {
+            super(name);
+          }
+          function speak() {
+            return super.speak() + " woof";
+          }
+        }
+      `)
+    ).toBe(true);
+  });
+
+  it("11b. super.methodName() emits ActionCallMethod (0x52)", () => {
+    const bytes = compileAS2(`
+      class Dog extends Animal {
+        function Dog(name) {
+          super(name);
+        }
+        function speak() {
+          return super.speak();
+        }
+      }
+    `);
+    // ActionCallMethod (0x52) must appear for super.speak()
+    expect(hasOpcode(bytes, 0x52)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. Interface declaration is silently ignored (compiles without error)
+  // -------------------------------------------------------------------------
+
+  it("12. interface declaration is silently ignored — compiles without error", () => {
+    expect(
+      compilesOk(`
+        interface IAnimal { function speak():String; }
+        class Dog implements IAnimal { function speak():String { return "woof"; } }
+      `)
+    ).toBe(true);
+  });
+
+  it("12b. interface-only source emits no bytecode", () => {
+    const bytes = compileAS2("interface IAnimal { function speak():String; }");
+    expect(bytes.length).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // 13. Static class members compile
+  // -------------------------------------------------------------------------
+
+  it("13. static class members compile without error", () => {
+    expect(
+      compilesOk(`
+        class Counter {
+          static var count:Number = 0;
+          static function increment():Void { Counter.count++; }
+        }
+      `)
+    ).toBe(true);
+  });
+
+  it("13b. static members appear in bytecode and do not use prototype", () => {
+    const bytes = compileAS2(`
+      class Counter {
+        static var count:Number = 0;
+        static function increment():Void { Counter.count++; }
+      }
+    `);
+    // Class name and static member names appear
+    expect(containsString(bytes, "Counter")).toBe(true);
+    expect(containsString(bytes, "count")).toBe(true);
+    expect(containsString(bytes, "increment")).toBe(true);
+    // Static members are assigned directly on the constructor — no prototype
+    expect(containsString(bytes, "prototype")).toBe(false);
+  });
+});

@@ -1,0 +1,28 @@
+[package]
+name = "flash-desktop"
+version = "0.1.0"
+description = "Flash 8 authoring tool desktop shell"
+authors = []
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "flash_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.1", features = [] }
+tauri-plugin-dialog = "2.0"
+tauri-plugin-fs = "2.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

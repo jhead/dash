@@ -1,0 +1,4 @@
+If no task is in progress by you, pick a task and complete it. You may CRUD more tasks as needed. Do all work in
+subagent(s) to keep context clean. Your main loop should be orchestration only and keeping agents on track to complete tasks;
+you are a manager. You may parallelize where appropriate with background subagents. Push through any blockers to complete the
+tasks autonomously. Start by reading AGENTS.md

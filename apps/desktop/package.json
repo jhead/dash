@@ -1,0 +1,33 @@
+{
+  "name": "@flash/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "tauri": "tauri",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@flash/authoring-ui": "workspace:*",
+    "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/plugin-dialog": "^2.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@tauri-apps/cli": "^2.1.0",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.4",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "pixelmatch": "^5.3.0",
+    "pngjs": "^7.0.0",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4"
+  }
+}

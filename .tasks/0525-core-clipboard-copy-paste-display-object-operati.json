@@ -1,0 +1,8 @@
+{
+  "id": "0525-core-clipboard-copy-paste-display-object-operati",
+  "title": "Core clipboard copy/paste display object operations",
+  "description": "Test copyDisplayObjects(frame, ids): returns copies with new IDs. pasteDisplayObjects(frame, objects): adds to displayObjects array. cutDisplayObjects: copy + remove. All immutable.",
+  "status": "open",
+  "created_at": "2026-06-09T22:03:05Z",
+  "updated_at": "2026-06-09T22:03:05Z"
+}

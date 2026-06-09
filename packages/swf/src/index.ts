@@ -1,0 +1,17 @@
+/**
+ * @flash/swf — SWF v8 compiler
+ *
+ * Public API:
+ *  - compileDocument(doc): Uint8Array   Compile a FlashDocument → SWF binary
+ *  - SwfWriter                          Low-level SWF tag assembler
+ *  - BitWriter                          Bit-level binary writer
+ */
+export { compileDocument } from "./compile.js";
+export type { CompileOptions } from "./compile.js";
+export { exportSWF, triggerDownload } from "./export.js";
+export { SwfWriter } from "./writer.js";
+export { BitWriter } from "./bits.js";
+export { Tag } from "./tags.js";
+export type { TagCode } from "./tags.js";
+export { encodeDefineShape4, encodePlaceObject2 } from "./shapes.js";
+export { encodeDefineBitsLossless2 } from "./bitmaps.js";

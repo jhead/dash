@@ -1,0 +1,17 @@
+{
+  "name": "flash",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @flash/desktop tauri dev",
+    "dev:browser": "pnpm --filter @flash/desktop dev",
+    "build": "pnpm --filter './packages/**' build && pnpm --filter @flash/desktop build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "verify:swf": "pnpm --filter @flash/swf test"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.3"
+  }
+}

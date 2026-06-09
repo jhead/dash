@@ -1,0 +1,38 @@
+{
+  "name": "@flash/authoring-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node_modules/.bin/vitest run"
+  },
+  "dependencies": {
+    "@flash/core": "workspace:*",
+    "@flash/player": "workspace:*",
+    "@flash/swf": "workspace:*",
+    "@tauri-apps/plugin-dialog": "^2.0.3",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.3",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

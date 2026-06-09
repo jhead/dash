@@ -7,6 +7,13 @@ task files under `.tasks/` by hand.
 Agents may **create, update, and delete tasks at any time** as work evolves. The task
 list is not fixed — treat it as a living backlog you maintain while working.
 
+Agents may **spawn sub-agents at will** to parallelize work. Sub-agents must follow the
+same task rules: each sub-agent acquires a lock on its own task before starting
+implementation and releases it when done. Create the sub-tasks first (with `./task
+create`), then hand each task ID to a spawned sub-agent. Do not bypass the task system
+when splitting work across agents — locks prevent conflicts and the shared backlog keeps
+all agents coordinated.
+
 ## Task scope
 
 Tasks are **stories**: meaningful units of deliverable work, not checklist items.

@@ -1,0 +1,414 @@
+/**
+ * InstancePanel — Flash 8-style Properties panel for a selected SymbolInstance.
+ *
+ * Shows instance name, color effect, and (for graphic symbols) loop mode.
+ */
+
+import React, { useState, useEffect, useCallback } from "react";
+import type { ColorEffect, SymbolInstance } from "@flash/core";
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
+export interface InstancePanelProps {
+  instance: SymbolInstance;
+  symbolType: "movieclip" | "button" | "graphic";
+  onChange: (updates: Partial<SymbolInstance>) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Styles (matching PropertiesPanel style conventions)
+// ---------------------------------------------------------------------------
+
+const styles: Record<string, React.CSSProperties> = {
+  panel: {
+    display: "flex",
+    flexDirection: "column",
+    width: "200px",
+    flexShrink: 0,
+    background: "#2d2d2d",
+    overflowY: "auto",
+    borderTop: "1px solid #1a1a1a",
+  },
+  sectionHeader: {
+    display: "flex",
+    alignItems: "center",
+    height: "22px",
+    background: "#3a3a3a",
+    borderBottom: "1px solid #1a1a1a",
+    padding: "0 6px",
+    flexShrink: 0,
+    userSelect: "none",
+  },
+  sectionLabel: {
+    fontSize: "11px",
+    color: "#c0c0c0",
+    fontWeight: "bold",
+  },
+  sectionBody: {
+    padding: "6px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    borderBottom: "1px solid #1a1a1a",
+  },
+  row: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: "4px",
+  },
+  label: {
+    fontSize: "11px",
+    color: "#999",
+    width: "60px",
+    flexShrink: 0,
+  },
+  labelWide: {
+    fontSize: "11px",
+    color: "#999",
+    width: "80px",
+    flexShrink: 0,
+  },
+  input: {
+    fontSize: "11px",
+    background: "#222",
+    color: "#e0e0e0",
+    border: "1px solid #444",
+    padding: "1px 4px",
+    flex: 1,
+  },
+  inputSmall: {
+    fontSize: "11px",
+    background: "#222",
+    color: "#e0e0e0",
+    border: "1px solid #444",
+    padding: "1px 4px",
+    width: "52px",
+  },
+  select: {
+    fontSize: "11px",
+    background: "#222",
+    color: "#e0e0e0",
+    border: "1px solid #444",
+    padding: "1px 2px",
+    flex: 1,
+  },
+  colorSwatch: {
+    width: "22px",
+    height: "16px",
+    border: "1px solid #555",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  colorInput: {
+    fontSize: "11px",
+    background: "#222",
+    color: "#e0e0e0",
+    border: "1px solid #444",
+    padding: "1px 4px",
+    flex: 1,
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
+
+/** Numeric input that commits on blur or Enter, reverts on Escape. */
+function NumInput({
+  value,
+  min,
+  max,
+  step = 1,
+  onChange,
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (v: number) => void;
+}): React.ReactElement {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const commit = useCallback(() => {
+    const n = parseFloat(draft);
+    if (!isNaN(n)) {
+      const clamped = min !== undefined || max !== undefined
+        ? clamp(n, min ?? -Infinity, max ?? Infinity)
+        : n;
+      onChange(clamped);
+    } else {
+      setDraft(String(value));
+    }
+  }, [draft, value, min, max, onChange]);
+
+  return (
+    <input
+      type="number"
+      style={styles.inputSmall}
+      value={draft}
+      step={step}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { e.preventDefault(); commit(); }
+        if (e.key === "Escape") { e.preventDefault(); setDraft(String(value)); }
+      }}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// InstancePanel
+// ---------------------------------------------------------------------------
+
+export function InstancePanel({ instance, symbolType, onChange }: InstancePanelProps): React.ReactElement {
+  const effect: ColorEffect = instance.colorEffect ?? { type: "none" };
+
+  // --- Instance name ---
+  const [nameDraft, setNameDraft] = useState(instance.instanceName ?? "");
+  useEffect(() => {
+    setNameDraft(instance.instanceName ?? "");
+  }, [instance.instanceName, instance.id]);
+
+  const commitName = useCallback(() => {
+    onChange({ instanceName: nameDraft });
+  }, [nameDraft, onChange]);
+
+  // --- Color effect type ---
+  const handleEffectTypeChange = useCallback((type: ColorEffect["type"]) => {
+    const base: ColorEffect = { type };
+    if (type === "brightness") {
+      onChange({ colorEffect: { ...base, brightness: 0 } });
+    } else if (type === "tint") {
+      onChange({ colorEffect: { ...base, tintColor: "#ff0000", tintAmount: 100 } });
+    } else if (type === "alpha") {
+      onChange({ colorEffect: { ...base, alpha: 100 } });
+    } else if (type === "advanced") {
+      onChange({
+        colorEffect: {
+          ...base,
+          redMult: 100, greenMult: 100, blueMult: 100,
+          redOffset: 0, greenOffset: 0, blueOffset: 0,
+        },
+      });
+    } else {
+      onChange({ colorEffect: { type: "none" } });
+    }
+  }, [onChange]);
+
+  // --- Loop mode (graphic symbols only) ---
+  const loopMode = instance.loopMode ?? "loop";
+  // firstFrame is stored 0-based in the model; display as 1-based
+  const firstFrameDisplay = (instance.firstFrame ?? 0) + 1;
+
+  return (
+    <div style={styles.panel}>
+      {/* Instance Name */}
+      <div style={styles.sectionHeader}>
+        <span style={styles.sectionLabel}>Instance</span>
+      </div>
+      <div style={styles.sectionBody}>
+        <div style={styles.row}>
+          <span style={styles.label}>Name:</span>
+          <input
+            style={styles.input}
+            value={nameDraft}
+            placeholder="instance name"
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitName(); }
+              if (e.key === "Escape") { e.preventDefault(); setNameDraft(instance.instanceName ?? ""); }
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Color Effect */}
+      <div style={styles.sectionHeader}>
+        <span style={styles.sectionLabel}>Color Effect</span>
+      </div>
+      <div style={styles.sectionBody}>
+        <div style={styles.row}>
+          <span style={styles.label}>Style:</span>
+          <select
+            style={styles.select}
+            value={effect.type}
+            onChange={(e) => handleEffectTypeChange(e.target.value as ColorEffect["type"])}
+          >
+            <option value="none">None</option>
+            <option value="brightness">Brightness</option>
+            <option value="tint">Tint</option>
+            <option value="alpha">Alpha</option>
+            <option value="advanced">Advanced</option>
+          </select>
+        </div>
+
+        {/* Brightness */}
+        {effect.type === "brightness" && (
+          <div style={styles.row}>
+            <span style={styles.label}>Bright:</span>
+            <NumInput
+              value={effect.brightness ?? 0}
+              min={-100}
+              max={100}
+              onChange={(v) => onChange({ colorEffect: { ...effect, brightness: v } })}
+            />
+            <span style={{ fontSize: "11px", color: "#999" }}>%</span>
+          </div>
+        )}
+
+        {/* Tint */}
+        {effect.type === "tint" && (
+          <>
+            <div style={styles.row}>
+              <span style={styles.label}>Color:</span>
+              <input
+                type="color"
+                style={{ ...styles.colorSwatch, padding: 0 }}
+                value={effect.tintColor ?? "#ff0000"}
+                onChange={(e) => onChange({ colorEffect: { ...effect, tintColor: e.target.value } })}
+              />
+              <input
+                style={styles.colorInput}
+                value={effect.tintColor ?? "#ff0000"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (/^#[0-9a-fA-F]{0,6}$/.test(v)) {
+                    onChange({ colorEffect: { ...effect, tintColor: v } });
+                  }
+                }}
+              />
+            </div>
+            <div style={styles.row}>
+              <span style={styles.label}>Amount:</span>
+              <NumInput
+                value={effect.tintAmount ?? 100}
+                min={0}
+                max={100}
+                onChange={(v) => onChange({ colorEffect: { ...effect, tintAmount: v } })}
+              />
+              <span style={{ fontSize: "11px", color: "#999" }}>%</span>
+            </div>
+          </>
+        )}
+
+        {/* Alpha */}
+        {effect.type === "alpha" && (
+          <div style={styles.row}>
+            <span style={styles.label}>Alpha:</span>
+            <NumInput
+              value={effect.alpha ?? 100}
+              min={0}
+              max={100}
+              onChange={(v) => onChange({ colorEffect: { ...effect, alpha: v } })}
+            />
+            <span style={{ fontSize: "11px", color: "#999" }}>%</span>
+          </div>
+        )}
+
+        {/* Advanced */}
+        {effect.type === "advanced" && (
+          <>
+            <div style={styles.row}>
+              <span style={styles.labelWide}>Red ×:</span>
+              <NumInput
+                value={effect.redMult ?? 100}
+                min={-100}
+                max={100}
+                onChange={(v) => onChange({ colorEffect: { ...effect, redMult: v } })}
+              />
+            </div>
+            <div style={styles.row}>
+              <span style={styles.labelWide}>Red +:</span>
+              <NumInput
+                value={effect.redOffset ?? 0}
+                min={-255}
+                max={255}
+                onChange={(v) => onChange({ colorEffect: { ...effect, redOffset: v } })}
+              />
+            </div>
+            <div style={styles.row}>
+              <span style={styles.labelWide}>Green ×:</span>
+              <NumInput
+                value={effect.greenMult ?? 100}
+                min={-100}
+                max={100}
+                onChange={(v) => onChange({ colorEffect: { ...effect, greenMult: v } })}
+              />
+            </div>
+            <div style={styles.row}>
+              <span style={styles.labelWide}>Green +:</span>
+              <NumInput
+                value={effect.greenOffset ?? 0}
+                min={-255}
+                max={255}
+                onChange={(v) => onChange({ colorEffect: { ...effect, greenOffset: v } })}
+              />
+            </div>
+            <div style={styles.row}>
+              <span style={styles.labelWide}>Blue ×:</span>
+              <NumInput
+                value={effect.blueMult ?? 100}
+                min={-100}
+                max={100}
+                onChange={(v) => onChange({ colorEffect: { ...effect, blueMult: v } })}
+              />
+            </div>
+            <div style={styles.row}>
+              <span style={styles.labelWide}>Blue +:</span>
+              <NumInput
+                value={effect.blueOffset ?? 0}
+                min={-255}
+                max={255}
+                onChange={(v) => onChange({ colorEffect: { ...effect, blueOffset: v } })}
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Loop (graphic symbols only) */}
+      {symbolType === "graphic" && (
+        <>
+          <div style={styles.sectionHeader}>
+            <span style={styles.sectionLabel}>Loop</span>
+          </div>
+          <div style={styles.sectionBody}>
+            <div style={styles.row}>
+              <span style={styles.label}>Mode:</span>
+              <select
+                style={styles.select}
+                value={loopMode}
+                onChange={(e) => onChange({ loopMode: e.target.value as SymbolInstance["loopMode"] })}
+              >
+                <option value="loop">Loop</option>
+                <option value="play-once">Play Once</option>
+                <option value="single-frame">Single Frame</option>
+              </select>
+            </div>
+            <div style={styles.row}>
+              <span style={styles.label}>First:</span>
+              <NumInput
+                value={firstFrameDisplay}
+                min={1}
+                onChange={(v) => onChange({ firstFrame: Math.max(0, v - 1) })}
+              />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

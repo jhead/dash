@@ -1,0 +1,3283 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { ToolId } from "./tools/types";
+import type { PlacedInstance } from "./PropertiesPanel";
+import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel } from "@flash/core";
+import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe } from "@flash/core";
+import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
+
+// ---------------------------------------------------------------------------
+// Pencil tool helpers
+// ---------------------------------------------------------------------------
+
+let _drawShapeCounter = 0;
+function nextDrawId(): string {
+  return "draw-" + ++_drawShapeCounter + "-" + Date.now().toString(36);
+}
+
+function smoothPoints(points: Point[], passes: number): Point[] {
+  let pts = [...points];
+  for (let p = 0; p < passes; p++) {
+    const smoothed: Point[] = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+      smoothed.push({
+        x: (pts[i - 1].x + pts[i].x + pts[i + 1].x) / 3,
+        y: (pts[i - 1].y + pts[i].y + pts[i + 1].y) / 3,
+      });
+    }
+    smoothed.push(pts[pts.length - 1]);
+    pts = smoothed;
+  }
+  return pts;
+}
+
+function pencilPointsToShape(
+  points: Point[],
+  stroke: SolidStroke,
+  mode: "straighten" | "smooth" | "ink"
+): Shape {
+  if (points.length < 2) return { id: nextDrawId(), paths: [] };
+
+  let processedPoints = points;
+
+  if (mode === "smooth") {
+    processedPoints = smoothPoints(points, 3);
+  } else if (mode === "straighten") {
+    // Detect if roughly a line: just use first and last point
+    const dx = points[points.length - 1].x - points[0].x;
+    const dy = points[points.length - 1].y - points[0].y;
+    const len = Math.hypot(dx, dy);
+    // Compute max deviation from the line
+    let maxDev = 0;
+    for (const pt of points) {
+      const t = ((pt.x - points[0].x) * dx + (pt.y - points[0].y) * dy) / (len * len || 1);
+      const projX = points[0].x + t * dx;
+      const projY = points[0].y + t * dy;
+      maxDev = Math.max(maxDev, Math.hypot(pt.x - projX, pt.y - projY));
+    }
+    if (maxDev < 10) {
+      // Straighten to a line
+      processedPoints = [points[0], points[points.length - 1]];
+    } else {
+      // Apply light smoothing
+      processedPoints = smoothPoints(points, 1);
+    }
+  }
+
+  const path: ShapePath = {
+    start: processedPoints[0],
+    segments: processedPoints.slice(1).map((pt) => ({ type: "line" as const, to: pt })),
+    closed: false,
+    stroke,
+  };
+  return { id: nextDrawId(), paths: [path] };
+}
+
+function brushPointsToShape(
+  points: Point[],
+  brushSize: number,
+  fill: Fill
+): Shape {
+  if (points.length < 2) return { id: nextDrawId(), paths: [] };
+
+  const half = brushSize / 2;
+  const forward: Point[] = [];
+  const backward: Point[] = [];
+
+  for (let i = 0; i < points.length; i++) {
+    const curr = points[i];
+    // Compute tangent direction
+    const prev = points[Math.max(0, i - 1)];
+    const next = points[Math.min(points.length - 1, i + 1)];
+    const tx = next.x - prev.x;
+    const ty = next.y - prev.y;
+    const tlen = Math.hypot(tx, ty) || 1;
+    // Perpendicular to tangent
+    const nx = -ty / tlen;
+    const ny = tx / tlen;
+    forward.push({ x: curr.x + nx * half, y: curr.y + ny * half });
+    backward.unshift({ x: curr.x - nx * half, y: curr.y - ny * half });
+  }
+
+  // Build closed path: forward edge then backward edge
+  const allPoints = [...forward, ...backward];
+  const path: ShapePath = {
+    start: allPoints[0],
+    segments: allPoints.slice(1).map((pt) => ({ type: "line" as const, to: pt })),
+    closed: true,
+    fill,
+  };
+  return { id: nextDrawId(), paths: [path] };
+}
+
+// ---------------------------------------------------------------------------
+// Pen tool types
+// ---------------------------------------------------------------------------
+
+interface PenAnchor {
+  x: number;
+  y: number;
+  /** Outgoing Bézier control handle (used as control point for the segment TO the next anchor) */
+  handleOut?: { x: number; y: number };
+}
+
+interface PenState {
+  anchors: PenAnchor[];
+  /** Stage coords when pointer went down for current anchor (before up = drag determines handle) */
+  dragStart: { x: number; y: number } | null;
+  /** Current drag handle preview (while mouse is held) */
+  currentHandleOut: { x: number; y: number } | null;
+  /** Current cursor position (for rubber-band preview) */
+  cursorPos: { x: number; y: number } | null;
+}
+
+/** Convert pen anchors to a closed ShapePath using the existing fill/stroke */
+function anchorsToShapePath(
+  anchors: PenAnchor[],
+  fill: import("@flash/core").Fill | undefined,
+  stroke: import("@flash/core").SolidStroke | undefined,
+): ShapePath {
+  if (anchors.length < 1) {
+    return { start: { x: 0, y: 0 }, segments: [], closed: false };
+  }
+  const start = { x: anchors[0].x, y: anchors[0].y };
+  const segments: ShapePath["segments"][number][] = [];
+  for (let i = 1; i < anchors.length; i++) {
+    const prev = anchors[i - 1];
+    const curr = anchors[i];
+    if (prev.handleOut) {
+      segments.push({ type: "curve", control: prev.handleOut, to: { x: curr.x, y: curr.y } });
+    } else {
+      segments.push({ type: "line", to: { x: curr.x, y: curr.y } });
+    }
+  }
+  return {
+    start,
+    segments,
+    closed: true,
+    ...(fill !== undefined ? { fill } : {}),
+    ...(stroke !== undefined ? { stroke } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Lasso tool helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Point-in-polygon test using the ray-casting algorithm.
+ */
+function pointInPolygon(px: number, py: number, polygon: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    const intersect = ((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Given a closed lasso polygon, find the first ShapeDisplayObject whose center
+ * falls inside the polygon. Returns the shape id or null.
+ */
+function findShapeInLasso(polygon: Point[], objects: ShapeDisplayObject[]): string | null {
+  for (let i = objects.length - 1; i >= 0; i--) {
+    const obj = objects[i];
+    const bounds = transformedShapeBounds(obj);
+    const cx = bounds.x + bounds.width / 2;
+    const cy = bounds.y + bounds.height / 2;
+    if (pointInPolygon(cx, cy, polygon)) {
+      return obj.id;
+    }
+  }
+  return null;
+}
+
+export type ViewMode = "normal" | "outlines" | "antialias";
+
+// ---------------------------------------------------------------------------
+// Marquee selection helpers
+// ---------------------------------------------------------------------------
+
+function normalizeRect(a: { x: number; y: number }, b: { x: number; y: number }) {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    width: Math.abs(b.x - a.x),
+    height: Math.abs(b.y - a.y),
+  };
+}
+
+function boundsOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Motion path drawing
+// ---------------------------------------------------------------------------
+
+/**
+ * Draw dashed motion path overlays for all layers that have an active motion
+ * tween at the given frame. The canvas is drawn at 1:1 stage-space (zoom/pan
+ * is handled by the parent CSS transform), so no coordinate conversion needed.
+ */
+function drawMotionPaths(
+  ctx: CanvasRenderingContext2D,
+  layers: import("@flash/core").Layer[],
+  currentFrame: number
+): void {
+  for (const layer of layers) {
+    if (layer.type === "guide" || !layer.visible) continue;
+
+    // Find the governing keyframe at the current frame
+    const kf = getGoverningKeyframe(layer, currentFrame);
+    if (!kf || kf.tweenType !== "motion") continue;
+
+    const startIdx = kf.index;
+    // Find the next keyframe to determine the end of the tween span
+    const nextKf = layer.frames
+      .filter((f) => f.isKeyframe && f.index > startIdx)
+      .sort((a, b) => a.index - b.index)[0];
+    const endIdx = nextKf?.index ?? layer.frameCount - 1;
+
+    if (endIdx <= startIdx) continue;
+
+    // Sample the interpolated position at each frame in the tween span
+    const points: { x: number; y: number }[] = [];
+    for (let fi = startIdx; fi <= endIdx; fi++) {
+      const tweened = getTweenedFrame(layer, fi);
+      if (tweened && tweened.displayObjects[0]) {
+        const obj = tweened.displayObjects[0];
+        points.push({ x: obj.x, y: obj.y });
+      }
+    }
+
+    if (points.length < 2) continue;
+
+    // Draw the dashed motion path
+    ctx.save();
+    ctx.strokeStyle = "#0000cc";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.stroke();
+
+    // Draw keyframe diamonds at start and end positions
+    ctx.fillStyle = "#0000cc";
+    ctx.setLineDash([]);
+    for (const pt of [points[0], points[points.length - 1]]) {
+      const cx = pt.x;
+      const cy = pt.y;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 4);
+      ctx.lineTo(cx + 4, cy);
+      ctx.lineTo(cx, cy + 4);
+      ctx.lineTo(cx - 4, cy);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Onion skin types
+// ---------------------------------------------------------------------------
+
+export interface OnionFrame {
+  frameIndex: number;
+  opacity: number;
+  tint: "before" | "after";
+  sceneGraph: import("@flash/core").SceneGraph;
+}
+
+export interface StageAreaProps {
+  stageWidth?: number;
+  stageHeight?: number;
+  backgroundColor?: string;
+  zoom?: number;
+  panX?: number;
+  panY?: number;
+  showGrid?: boolean;
+  gridWidth?: number;
+  gridHeight?: number;
+  gridColor?: string;
+  snapToPixels?: boolean;
+  viewMode?: ViewMode;
+  activeTool?: ToolId;
+  instances?: PlacedInstance[];
+  instanceNames?: Record<string, string>; // id -> library item name
+  selectedInstanceId?: string | null;
+  onZoomChange?: (zoom: number) => void;
+  onPanChange?: (x: number, y: number) => void;
+  onDrop?: (libraryItemId: string, x: number, y: number) => void;
+  onInstanceSelect?: (id: string | null) => void;
+  // Drawing tool props
+  currentFrame?: number;
+  shapeDisplayObjects?: ShapeDisplayObject[];
+  onShapeCreated?: (shape: Shape, x: number, y: number) => void;
+  selectedShapeId?: string | null;
+  onShapeSelect?: (id: string | null) => void;
+  onShapeMove?: (id: string, dx: number, dy: number) => void;
+  /** Called once when a shape drag gesture finishes (mouse-up). Use to commit to undo history. */
+  onShapeMoveEnd?: () => void;
+  onShapeDelete?: (id: string) => void;
+  onShapeResize?: (id: string, newX: number, newY: number, scaleX: number, scaleY: number) => void;
+  onShapeRotate?: (id: string, newRotation: number) => void;
+  /** Called by pen tool when a new path is complete (uses onShapeCreated); by subselection when geometry changes */
+  onShapeUpdate?: (id: string, newShape: Shape) => void;
+  // Bitmap display objects
+  bitmapDisplayObjects?: BitmapDisplayObject[];
+  /** All BitmapItems from the library, used to load images into the renderer. */
+  bitmapLibraryItems?: BitmapItem[];
+  /** Called when the CanvasRenderer is initialized, so parent can call loadImage. */
+  onRendererReady?: (renderer: CanvasRenderer) => void;
+  // Guide props
+  guides?: readonly Guide[];
+  showGuides?: boolean;
+  snapToGuides?: boolean;
+  onGuideMove?: (id: string, newPosition: number) => void;
+  onGuideDelete?: (id: string) => void;
+  // Text tool props
+  textDisplayObjects?: TextDisplayObject[];
+  onTextCreated?: (textObj: Omit<TextDisplayObject, "id">) => void;
+  /**
+   * Called when the text tool clicks an empty area of the stage to immediately
+   * place a new TextDisplayObject. Shell creates the object and calls back with
+   * the assigned id so StageArea can open the inline textarea for that object.
+   */
+  onTextPlace?: (textObj: Omit<TextDisplayObject, "id">, onPlaced: (id: string) => void) => void;
+  editingTextId?: string | null;
+  onTextEdit?: (id: string, newText: string) => void;
+  onTextEditEnd?: () => void;
+  textFormat?: {
+    fontFamily: string;
+    fontSize: number;
+    bold: boolean;
+    italic: boolean;
+    align: TextDisplayObject["align"];
+    color: string;
+  };
+  // Draw tool options
+  pencilMode?: "straighten" | "smooth" | "ink";
+  brushSize?: number;
+  eraserSize?: number;
+  strokeColor?: string;
+  strokeWidth?: number;
+  /** Stroke opacity 0-100; 0 means no stroke */
+  strokeAlpha?: number;
+  fill?: Fill | null;
+  onEyedropperSample?: (shapeId: string) => void;
+  // Free Transform options
+  freeTransformMode?: FreeTransformMode;
+  /** Called when gradient transform tool drags a handle and updates the fill on a shape. */
+  onShapeGradientUpdate?: (id: string, newShape: Shape) => void;
+  // Lasso options
+  lassoPolygonMode?: boolean;
+  // PolyStar options
+  polyStarOptions?: PolyStarOptions;
+  /**
+   * Full multi-layer scene graph for rendering.  When provided, this overrides
+   * the synthetic single-layer SceneGraph that StageArea would otherwise build
+   * from `shapeDisplayObjects`/`textDisplayObjects`/`bitmapDisplayObjects`.
+   * The interaction props (shapeDisplayObjects etc.) still control hit-testing
+   * and selection — they should represent the active layer only.
+   */
+  sceneGraph?: SceneGraph;
+  /**
+   * Library for resolving symbol instance content in the CanvasRenderer.
+   */
+  library?: Library;
+  /** Called when F8 is pressed (Convert to Symbol). */
+  onConvertToSymbol?: () => void;
+  /** Called when user double-clicks a placed symbol instance (edit-in-place). */
+  onInstanceDoubleClick?: (instanceId: string) => void;
+  /**
+   * Symbol instances from the active layer at the current frame.
+   * Used for hit-testing double-clicks to enter symbol edit mode.
+   */
+  symbolInstanceDisplayObjects?: SymbolInstance[];
+  /**
+   * Called when user double-clicks a SymbolInstance on stage with the selection tool.
+   * Receives the instance id and symbolId.
+   */
+  onSymbolInstanceDoubleClick?: (instanceId: string, symbolId: string) => void;
+  /**
+   * Parent scene graph rendered dimmed behind the symbol contents when in symbol edit mode.
+   * When provided, this is rendered at reduced opacity before the main sceneGraph.
+   */
+  parentSceneGraph?: SceneGraph;
+  /**
+   * Called when user clicks on empty stage space while in symbol edit mode
+   * (i.e., when parentSceneGraph is provided and no object is hit).
+   * Shell uses this to exit symbol edit mode.
+   */
+  onExitSymbolEdit?: () => void;
+  /** Called when Ctrl+C is pressed (copy selected object). */
+  onCopy?: () => void;
+  /** Called when Ctrl+X is pressed (cut selected object). */
+  onCut?: () => void;
+  /** Called when Ctrl+V is pressed (paste with offset). */
+  onPaste?: () => void;
+  /** Called when Ctrl+Shift+V is pressed (paste in place). */
+  onPasteInPlace?: () => void;
+  /** Called when Ctrl+D is pressed (duplicate with offset). */
+  onDuplicate?: () => void;
+  /** Called when Ctrl+Shift+Up/Down/Up-plain/Down-plain are pressed (z-order). */
+  onArrange?: (direction: "front" | "back" | "forward" | "backward") => void;
+  /** Called when Ctrl+G is pressed (group). */
+  onGroup?: () => void;
+  /** Called when Ctrl+Shift+G is pressed (ungroup). */
+  onUngroup?: () => void;
+  /** Called when Space or Enter is pressed to toggle playback. */
+  onPlayToggle?: () => void;
+  /** Ghost frames for onion skinning. When provided, rendered before the main frame. */
+  onionFrames?: OnionFrame[];
+  /**
+   * Full timeline (with all layers) for drawing motion path overlays.
+   * When provided, dashed motion paths are drawn on the stage for layers
+   * that have an active motion tween at the current frame.
+   */
+  timeline?: TimelineModel;
+  /**
+   * Optional overlay rendered inside the stage container (in stage coordinate space,
+   * with CSS zoom/pan applied). Use this to render SVG overlays like transform handles.
+   */
+  stageOverlay?: React.ReactNode;
+}
+
+// Draw tools that create shapes via drag
+const SHAPE_DRAW_TOOLS: ReadonlySet<ToolId> = new Set(["oval", "rect", "line", "polystar"]);
+
+/** Returns the first gradient fill found in a shape's paths, or null. */
+function getShapeGradientFill(shape: Shape): import("@flash/core").LinearGradientFill | import("@flash/core").RadialGradientFill | null {
+  for (const path of shape.paths) {
+    if (path.fill && (path.fill.type === "linear-gradient" || path.fill.type === "radial-gradient")) {
+      return path.fill as import("@flash/core").LinearGradientFill | import("@flash/core").RadialGradientFill;
+    }
+  }
+  return null;
+}
+
+/** Returns the gradient transform handle positions in stage coords given shape bounds. */
+function getGradientHandlePositions(bounds: { x: number; y: number; width: number; height: number }, angle: number) {
+  const cx = bounds.x + bounds.width / 2;
+  const cy = bounds.y + bounds.height / 2;
+  // Scale handle: along gradient angle direction, half-width out from center
+  const rad = (angle * Math.PI) / 180;
+  const scaleHandleDist = bounds.width / 2;
+  const scaleX = cx + Math.cos(rad) * scaleHandleDist;
+  const scaleY = cy + Math.sin(rad) * scaleHandleDist;
+  // Rotate handle: perpendicular to gradient, half-height out from center
+  const rotHandleDist = bounds.height / 2 + 20;
+  const rotX = cx + Math.cos(rad - Math.PI / 2) * rotHandleDist;
+  const rotY = cy + Math.sin(rad - Math.PI / 2) * rotHandleDist;
+  return { cx, cy, scaleX, scaleY, rotX, rotY };
+}
+
+// ---------------------------------------------------------------------------
+// Transform handle types and helpers
+// ---------------------------------------------------------------------------
+
+type TransformHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "rotate";
+
+interface HandlePosition {
+  id: TransformHandle;
+  x: number;
+  y: number;
+}
+
+function getHandlePositions(b: { x: number; y: number; width: number; height: number }): HandlePosition[] {
+  const { x, y, width: w, height: h } = b;
+  return [
+    { id: "nw", x, y },
+    { id: "n", x: x + w / 2, y },
+    { id: "ne", x: x + w, y },
+    { id: "e", x: x + w, y: y + h / 2 },
+    { id: "se", x: x + w, y: y + h },
+    { id: "s", x: x + w / 2, y: y + h },
+    { id: "sw", x, y: y + h },
+    { id: "w", x, y: y + h / 2 },
+  ];
+}
+
+const HANDLE_CURSORS: Record<TransformHandle, React.CSSProperties["cursor"]> = {
+  nw: "nw-resize",
+  n: "n-resize",
+  ne: "ne-resize",
+  e: "e-resize",
+  se: "se-resize",
+  s: "s-resize",
+  sw: "sw-resize",
+  w: "w-resize",
+  rotate: "crosshair",
+};
+
+interface DrawPreview {
+  tool: "oval" | "rect" | "line" | "polystar";
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+// Preset zoom levels (as fractions, e.g. 1 = 100%)
+const ZOOM_LEVELS = [0.25, 0.5, 1.0, 1.5, 2.0, 4.0, 8.0];
+
+function clampZoom(z: number): number {
+  return Math.max(ZOOM_LEVELS[0], Math.min(ZOOM_LEVELS[ZOOM_LEVELS.length - 1], z));
+}
+
+function nearestZoomLevel(current: number, direction: 1 | -1): number {
+  if (direction === 1) {
+    const next = ZOOM_LEVELS.find((z) => z > current + 1e-9);
+    return next !== undefined ? next : current;
+  } else {
+    const prev = [...ZOOM_LEVELS].reverse().find((z) => z < current - 1e-9);
+    return prev !== undefined ? prev : current;
+  }
+}
+
+// Tools that should use crosshair cursor
+const DRAW_TOOLS: ReadonlySet<ToolId> = new Set([
+  "line", "oval", "rect", "polystar", "pencil", "brush", "pen", "fill", "ink-bottle", "eyedropper", "text", "lasso",
+]);
+
+function getToolCursor(
+  tool: ToolId | undefined,
+  spaceHeld: boolean
+): React.CSSProperties["cursor"] {
+  if (spaceHeld || tool === "hand") return "grab";
+  if (tool === "zoom") return "zoom-in";
+  if (tool === "eyedropper") return "cell";
+  // Eraser uses a custom circle cursor (cursor:none + overlay circle)
+  if (tool === "eraser") return "none";
+  if (tool && DRAW_TOOLS.has(tool)) return "crosshair";
+  return "default";
+}
+
+export function StageArea({
+  stageWidth = 550,
+  stageHeight = 400,
+  backgroundColor = "#ffffff",
+  zoom = 1,
+  panX = 0,
+  panY = 0,
+  showGrid = false,
+  gridWidth = 18,
+  gridHeight = 18,
+  gridColor = "#999999",
+  snapToPixels: _snapToPixels = false,
+  viewMode = "normal",
+  activeTool,
+  instances = [],
+  instanceNames: _instanceNames = {},
+  selectedInstanceId,
+  onZoomChange,
+  onPanChange,
+  onDrop,
+  onInstanceSelect,
+  currentFrame: _currentFrame = 0,
+  shapeDisplayObjects = [],
+  onShapeCreated,
+  selectedShapeId,
+  onShapeSelect,
+  onShapeMove,
+  onShapeMoveEnd,
+  onShapeDelete,
+  onShapeResize,
+  onShapeRotate,
+  onShapeUpdate,
+  guides = [],
+  showGuides = true,
+  snapToGuides = false,
+  onGuideMove,
+  onGuideDelete,
+  textDisplayObjects = [],
+  onTextCreated,
+  onTextPlace,
+  editingTextId: _editingTextId,
+  onTextEdit,
+  onTextEditEnd,
+  textFormat = {
+    fontFamily: "Arial",
+    fontSize: 12,
+    bold: false,
+    italic: false,
+    align: "left" as const,
+    color: "#000000",
+  },
+  bitmapDisplayObjects = [],
+  bitmapLibraryItems = [],
+  onRendererReady,
+  pencilMode = "ink",
+  brushSize = 8,
+  eraserSize = 16,
+  strokeColor: propStrokeColor = "#000000",
+  strokeWidth: propStrokeWidth = 1,
+  strokeAlpha: propStrokeAlpha = 100,
+  fill: propFill = null,
+  onEyedropperSample,
+  freeTransformMode = "rotate-scale",
+  lassoPolygonMode = false,
+  polyStarOptions = { shapeType: "polygon", sides: 5, pointSize: 0.5 },
+  onShapeGradientUpdate,
+  sceneGraph: propSceneGraph,
+  library,
+  onConvertToSymbol,
+  onInstanceDoubleClick,
+  symbolInstanceDisplayObjects = [],
+  onSymbolInstanceDoubleClick,
+  parentSceneGraph,
+  onExitSymbolEdit,
+  onCopy,
+  onCut,
+  onPaste,
+  onPasteInPlace,
+  onDuplicate,
+  onArrange,
+  onGroup,
+  onUngroup,
+  onPlayToggle,
+  onionFrames = [],
+  timeline,
+  stageOverlay,
+}: StageAreaProps): React.ReactElement {
+  const workAreaRef = useRef<HTMLDivElement>(null);
+  const gridCanvasRef = useRef<HTMLCanvasElement>(null);
+  const renderCanvasRef = useRef<HTMLCanvasElement>(null);
+  const rendererRef = useRef<CanvasRenderer | null>(null);
+
+  // Internal pan/zoom state — we manage locally and call callbacks
+  const [internalZoom, setInternalZoom] = useState(zoom);
+  const [internalPanX, setInternalPanX] = useState(panX);
+  const [internalPanY, setInternalPanY] = useState(panY);
+  // Ref mirrors internalZoom so event handlers can read current value without stale closures
+  const internalZoomRef = useRef(zoom);
+  useEffect(() => { internalZoomRef.current = internalZoom; }, [internalZoom]);
+
+  // Drawing tool state
+  const [drawPreview, setDrawPreview] = useState<DrawPreview | null>(null);
+  const drawStartRef = useRef<{ stageX: number; stageY: number } | null>(null);
+  const selectionDragRef = useRef<{
+    shapeId: string;
+    startMouseX: number;
+    startMouseY: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+
+  // Transform drag state (resize / rotate handles)
+  const transformDragRef = useRef<{
+    handle: TransformHandle;
+    shapeId: string;
+    startStageX: number;
+    startStageY: number;
+    origBounds: { x: number; y: number; width: number; height: number };
+    origX: number;
+    origY: number;
+    origScaleX: number;
+    origScaleY: number;
+    origRotation: number;
+    /** Angle (degrees) from shape center to mouse at drag start — used for rotate delta. */
+    startAngle?: number;
+  } | null>(null);
+  // Cursor to show when hovering over a handle
+  const [handleCursor, setHandleCursor] = useState<React.CSSProperties["cursor"]>(undefined);
+
+  // Gradient transform drag state
+  type GradientHandle = "center" | "scale" | "rotate";
+  const gradientDragRef = useRef<{
+    handle: GradientHandle;
+    shapeId: string;
+    startStageX: number;
+    startStageY: number;
+    /** Center of the shape bounds at drag start */
+    centerX: number;
+    centerY: number;
+    /** Original gradient angle (for linear) or focalPoint (for radial) */
+    origAngle: number;
+    origFocalPoint: number;
+    /** Angle from center to mouse at drag start (for rotation handle) */
+    startAngle: number;
+  } | null>(null);
+
+  // Guide drag state
+  const guideDragRef = useRef<{
+    guideId: string;
+    orientation: "horizontal" | "vertical";
+  } | null>(null);
+
+  // Text tool editing state
+  const [textEditState, setTextEditState] = useState<{
+    stageX: number;
+    stageY: number;
+    editingId: string | null; // null = creating new, non-null = editing existing
+    initialText: string;
+  } | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Pen tool state
+  const [penState, setPenState] = useState<PenState>({
+    anchors: [],
+    dragStart: null,
+    currentHandleOut: null,
+    cursorPos: null,
+  });
+
+  // Subselection tool state
+  const [subselState, setSubselState] = useState<{
+    selectedObjectId: string | null;
+    selectedAnchorIndex: number | null;
+  }>({ selectedObjectId: null, selectedAnchorIndex: null });
+  const subselDragRef = useRef<{
+    anchorIndex: number;
+    objectId: string;
+    startMouseX: number;
+    startMouseY: number;
+    origAnchorX: number;
+    origAnchorY: number;
+  } | null>(null);
+
+  // Pencil tool state
+  const pencilPointsRef = useRef<Point[]>([]);
+  const [pencilPreviewPoints, setPencilPreviewPoints] = useState<Point[]>([]);
+
+  // Brush tool state
+  const brushPointsRef = useRef<Point[]>([]);
+  const [brushPreviewPoints, setBrushPreviewPoints] = useState<Point[]>([]);
+
+  // Eraser tool state
+  const eraserPointsRef = useRef<Point[] | null>(null);
+  const [eraserPreview, setEraserPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Tracks erased object IDs during the current drag to avoid double-deleting
+  const erasedIdsRef = useRef<Set<string>>(new Set());
+  // Eraser cursor position in stage coords (for circle overlay)
+  const [eraserCursorPos, setEraserCursorPos] = useState<{ stageX: number; stageY: number } | null>(null);
+
+  // Lasso tool state
+  const [lassoPoints, setLassoPoints] = useState<Point[]>([]);
+  const lassoCapturingRef = useRef(false);
+  // Polygon lasso: vertices added per-click; close on double-click or near start
+  const [lassoPolyVertices, setLassoPolyVertices] = useState<Point[]>([]);
+  const lassoPolyLastClickRef = useRef<{ x: number; y: number; time: number } | null>(null);
+
+  // Free Transform marquee selection state
+  const [ftMarqueeStart, setFtMarqueeStart] = useState<{ x: number; y: number } | null>(null);
+  const [ftMarqueeEnd, setFtMarqueeEnd] = useState<{ x: number; y: number } | null>(null);
+  const [ftIsMarqueeSelecting, setFtIsMarqueeSelecting] = useState(false);
+
+  // Arrow (selection) tool marquee state
+  const [selMarqueeStart, setSelMarqueeStart] = useState<{ x: number; y: number } | null>(null);
+  const [selMarqueeEnd, setSelMarqueeEnd] = useState<{ x: number; y: number } | null>(null);
+  const [selIsMarqueeSelecting, setSelIsMarqueeSelecting] = useState(false);
+
+  // Keep internal state in sync with props when they change externally
+  useEffect(() => { setInternalZoom(zoom); }, [zoom]);
+  useEffect(() => { setInternalPanX(panX); }, [panX]);
+  useEffect(() => { setInternalPanY(panY); }, [panY]);
+
+  // Track whether spacebar is held for hand-tool pan
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef<{ mouseX: number; mouseY: number; panX: number; panY: number } | null>(null);
+
+  // Convert viewport (screen) coordinates to stage coordinates
+  const toStageCoords = useCallback(
+    (clientX: number, clientY: number): { stageX: number; stageY: number } => {
+      const workArea = workAreaRef.current;
+      if (!workArea) return { stageX: 0, stageY: 0 };
+      const rect = workArea.getBoundingClientRect();
+      const containerCenterX = rect.left + rect.width / 2;
+      const containerCenterY = rect.top + rect.height / 2;
+      const stageCenterScreenX = containerCenterX + internalPanX * internalZoom;
+      const stageCenterScreenY = containerCenterY + internalPanY * internalZoom;
+      const stageX = (clientX - stageCenterScreenX) / internalZoom + stageWidth / 2;
+      const stageY = (clientY - stageCenterScreenY) / internalZoom + stageHeight / 2;
+      return { stageX, stageY };
+    },
+    [internalPanX, internalPanY, internalZoom, stageWidth, stageHeight]
+  );
+
+  // Compute "fit" zoom so stage fits inside the work area
+  const computeFitZoom = useCallback((): number => {
+    const el = workAreaRef.current;
+    if (!el) return 1;
+    const containerW = el.clientWidth;
+    const containerH = el.clientHeight;
+    const margin = 40;
+    const fitZ = Math.min(
+      (containerW - margin) / stageWidth,
+      (containerH - margin) / stageHeight
+    );
+    return clampZoom(fitZ);
+  }, [stageWidth, stageHeight]);
+
+  // Handle keyboard shortcuts
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Only activate hand tool if not typing in an input
+        const target = e.target as HTMLElement;
+        if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
+          e.preventDefault();
+          setSpaceHeld(true);
+        }
+      }
+      const isModifier = e.ctrlKey || e.metaKey;
+      if (isModifier && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        // Read current zoom from ref to avoid stale closure; compute next outside updater
+        const next = nearestZoomLevel(internalZoomRef.current, 1);
+        setInternalZoom(next);
+        if (next !== internalZoomRef.current) onZoomChange?.(next);
+      }
+      if (isModifier && e.key === "-") {
+        e.preventDefault();
+        const next = nearestZoomLevel(internalZoomRef.current, -1);
+        setInternalZoom(next);
+        if (next !== internalZoomRef.current) onZoomChange?.(next);
+      }
+      if (isModifier && e.key === "0") {
+        e.preventDefault();
+        const fit = computeFitZoom();
+        setInternalZoom(fit);
+        setInternalPanX(0);
+        setInternalPanY(0);
+        onZoomChange?.(fit);
+        onPanChange?.(0, 0);
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        setSpaceHeld(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [computeFitZoom, onZoomChange, onPanChange]);
+
+  // Mouse wheel → zoom centered on cursor
+  const onWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setInternalZoom((prevZoom) => {
+        const direction: 1 | -1 = e.deltaY < 0 ? 1 : -1;
+        const nextZoom = nearestZoomLevel(prevZoom, direction);
+        if (nextZoom === prevZoom) return prevZoom;
+        return nextZoom;
+      });
+    },
+    []
+  );
+
+  // After wheel zoom, adjust pan to keep the cursor-point fixed and notify parent
+  const wheelCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const prevWheelZoomRef = useRef<number | null>(null);
+
+  const onWheelCapture = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      const workArea = workAreaRef.current;
+      if (!workArea) return;
+      const rect = workArea.getBoundingClientRect();
+      wheelCursorRef.current = {
+        x: e.clientX - rect.left - rect.width / 2,
+        y: e.clientY - rect.top - rect.height / 2,
+      };
+      prevWheelZoomRef.current = internalZoom;
+    },
+    [internalZoom]
+  );
+
+  useEffect(() => {
+    const cursor = wheelCursorRef.current;
+    const prevZoom = prevWheelZoomRef.current;
+    if (cursor === null || prevZoom === null || internalZoom === prevZoom) return;
+    wheelCursorRef.current = null;
+    prevWheelZoomRef.current = null;
+
+    const nextZoom = internalZoom;
+    const stageCoordX = (cursor.x - internalPanX * prevZoom) / prevZoom;
+    const newPanX = (cursor.x - stageCoordX * nextZoom) / nextZoom;
+    const stageCoordY = (cursor.y - internalPanY * prevZoom) / prevZoom;
+    const newPanY = (cursor.y - stageCoordY * nextZoom) / nextZoom;
+
+    setInternalPanX(newPanX);
+    setInternalPanY(newPanY);
+    onZoomChange?.(nextZoom);
+    onPanChange?.(newPanX, newPanY);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [internalZoom]);
+
+  // Mouse events for panning (middle mouse, space+drag, or hand tool drag)
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const isMiddle = e.button === 1;
+      const isSpaceDrag = e.button === 0 && spaceHeld;
+      const isHandTool = e.button === 0 && activeTool === "hand";
+
+      if (isMiddle || isSpaceDrag || isHandTool) {
+        e.preventDefault();
+        isPanningRef.current = true;
+        panStartRef.current = {
+          mouseX: e.clientX,
+          mouseY: e.clientY,
+          panX: internalPanX,
+          panY: internalPanY,
+        };
+        return;
+      }
+
+      // Drawing tools: start a draw gesture
+      if (e.button === 0 && activeTool && SHAPE_DRAW_TOOLS.has(activeTool as "oval" | "rect" | "line")) {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        drawStartRef.current = { stageX, stageY };
+        return;
+      }
+
+      // Pencil tool: start capturing freehand stroke
+      if (e.button === 0 && activeTool === "pencil") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        pencilPointsRef.current = [{ x: stageX, y: stageY }];
+        setPencilPreviewPoints([{ x: stageX, y: stageY }]);
+        return;
+      }
+
+      // Brush tool: start capturing brush stroke
+      if (e.button === 0 && activeTool === "brush") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        brushPointsRef.current = [{ x: stageX, y: stageY }];
+        setBrushPreviewPoints([{ x: stageX, y: stageY }]);
+        return;
+      }
+
+      // Eraser tool: start erase gesture
+      if (e.button === 0 && activeTool === "eraser") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        eraserPointsRef.current = [{ x: stageX, y: stageY }];
+        erasedIdsRef.current = new Set();
+        setEraserPreview({ x: stageX, y: stageY, w: 0, h: 0 });
+        return;
+      }
+
+      // Ink Bottle tool: click to apply stroke to a shape
+      if (e.button === 0 && activeTool === "ink-bottle") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        const hit = [...shapeDisplayObjects].reverse().find((obj) => {
+          const bounds = transformedShapeBounds(obj);
+          return (
+            stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+            stageY >= bounds.y && stageY <= bounds.y + bounds.height
+          );
+        });
+        if (hit && onShapeUpdate) {
+          // Stroke None: alpha 0 or width 0 removes stroke
+          const newStroke: SolidStroke | null = (propStrokeAlpha > 0 && propStrokeWidth > 0)
+            ? {
+                type: "solid",
+                color: hexToColor(propStrokeColor, Math.round((propStrokeAlpha / 100) * 255)),
+                width: propStrokeWidth,
+                caps: "round",
+                joints: "round",
+                miterLimit: 3,
+              }
+            : null;
+          const newPaths = hit.shape.paths.map((p) => ({ ...p, stroke: newStroke ?? undefined }));
+          onShapeUpdate(hit.id, { ...hit.shape, paths: newPaths });
+        }
+        return;
+      }
+
+      // Paint Bucket tool: click to apply fill to a shape
+      if (e.button === 0 && activeTool === "fill") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        const hit = [...shapeDisplayObjects].reverse().find((obj) => {
+          const bounds = transformedShapeBounds(obj);
+          return (
+            stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+            stageY >= bounds.y && stageY <= bounds.y + bounds.height
+          );
+        });
+        if (hit && onShapeUpdate && propFill) {
+          const newPaths = hit.shape.paths.map((p) => ({ ...p, fill: propFill }));
+          onShapeUpdate(hit.id, { ...hit.shape, paths: newPaths });
+        }
+        return;
+      }
+
+      // Eyedropper tool: click to sample fill/stroke from a shape
+      if (e.button === 0 && activeTool === "eyedropper") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        const hit = [...shapeDisplayObjects].reverse().find((obj) => {
+          const bounds = transformedShapeBounds(obj);
+          return (
+            stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+            stageY >= bounds.y && stageY <= bounds.y + bounds.height
+          );
+        });
+        if (hit) {
+          onEyedropperSample?.(hit.id);
+        }
+        return;
+      }
+
+      // Lasso tool: start/continue lasso selection
+      if (e.button === 0 && activeTool === "lasso") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        if (lassoPolygonMode) {
+          // Polygon mode: each click adds a vertex
+          const now = Date.now();
+          const last = lassoPolyLastClickRef.current;
+          // Double-click or near start → close polygon
+          if (last && now - last.time < 400 && Math.hypot(stageX - last.x, stageY - last.y) < 10 / internalZoom) {
+            // Close and select
+            const verts = lassoPolyVertices;
+            if (verts.length >= 3) {
+              const selectedId = findShapeInLasso([...verts, verts[0]], shapeDisplayObjects);
+              if (selectedId) onShapeSelect?.(selectedId);
+              else onShapeSelect?.(null);
+            }
+            setLassoPolyVertices([]);
+            lassoPolyLastClickRef.current = null;
+            return;
+          }
+          // Check if clicking near start to close
+          if (lassoPolyVertices.length >= 3) {
+            const first = lassoPolyVertices[0];
+            if (Math.hypot(stageX - first.x, stageY - first.y) <= 10 / internalZoom) {
+              const selectedId = findShapeInLasso([...lassoPolyVertices, lassoPolyVertices[0]], shapeDisplayObjects);
+              if (selectedId) onShapeSelect?.(selectedId);
+              else onShapeSelect?.(null);
+              setLassoPolyVertices([]);
+              lassoPolyLastClickRef.current = null;
+              return;
+            }
+          }
+          setLassoPolyVertices((prev) => [...prev, { x: stageX, y: stageY }]);
+          lassoPolyLastClickRef.current = { x: stageX, y: stageY, time: now };
+        } else {
+          // Freehand mode: start capturing
+          lassoCapturingRef.current = true;
+          setLassoPoints([{ x: stageX, y: stageY }]);
+        }
+        return;
+      }
+
+      // Text tool: click to create or edit text
+      if (e.button === 0 && activeTool === "text") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        // Check if clicking on an existing text object
+        const hitText = [...textDisplayObjects].reverse().find((obj) => {
+          return (
+            stageX >= obj.x &&
+            stageX <= obj.x + obj.width &&
+            stageY >= obj.y &&
+            stageY <= obj.y + obj.height
+          );
+        });
+        if (hitText) {
+          setTextEditState({
+            stageX: hitText.x,
+            stageY: hitText.y,
+            editingId: hitText.id,
+            initialText: hitText.text,
+          });
+          setTimeout(() => textareaRef.current?.focus(), 0);
+        } else if (onTextPlace) {
+          // Immediately place a new text object in the document, then open textarea
+          const newTextObj: Omit<TextDisplayObject, "id"> = {
+            type: "text",
+            x: stageX,
+            y: stageY,
+            width: 100,
+            height: 22,
+            text: "Text",
+            textType: "static",
+            fontFamily: textFormat.fontFamily,
+            fontSize: textFormat.fontSize,
+            bold: textFormat.bold,
+            italic: textFormat.italic,
+            color: hexToColor(textFormat.color),
+            align: textFormat.align,
+            multiline: false,
+            wordWrap: false,
+          };
+          onTextPlace(newTextObj, (id) => {
+            setTextEditState({
+              stageX,
+              stageY,
+              editingId: id,
+              initialText: "Text",
+            });
+            setTimeout(() => textareaRef.current?.focus(), 0);
+          });
+        } else {
+          // Fallback: open textarea without pre-creating (legacy behavior)
+          setTextEditState({
+            stageX,
+            stageY,
+            editingId: null,
+            initialText: "",
+          });
+          setTimeout(() => textareaRef.current?.focus(), 0);
+        }
+        return;
+      }
+
+      // Pen tool: click or click-drag to add anchor points, close path on first anchor
+      if (e.button === 0 && activeTool === "pen") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        // Check if clicking near the first anchor to close the path
+        if (penState.anchors.length >= 2) {
+          const first = penState.anchors[0];
+          const dist = Math.hypot(stageX - first.x, stageY - first.y);
+          if (dist <= 8 / internalZoom) {
+            // Close the path and create the shape
+            const anchors = penState.anchors;
+            const shapePath = anchorsToShapePath(anchors, undefined, undefined);
+            const shapeId = "shape-pen-" + Date.now();
+            const closedShape: Shape = {
+              id: shapeId,
+              paths: [shapePath],
+            };
+            onShapeCreated?.(closedShape, 0, 0);
+            setPenState({ anchors: [], dragStart: null, currentHandleOut: null, cursorPos: null });
+            return;
+          }
+        }
+        // Start a new anchor — record drag start; handleOut determined on mouseMove/mouseUp
+        setPenState((prev) => ({
+          ...prev,
+          dragStart: { x: stageX, y: stageY },
+          currentHandleOut: null,
+          cursorPos: { x: stageX, y: stageY },
+        }));
+        return;
+      }
+
+      // Subselection tool: click on shape or anchor point
+      if (e.button === 0 && activeTool === "subselect") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+
+        // Check if clicking on an anchor point of the selected object
+        if (subselState.selectedObjectId) {
+          const selObj = shapeDisplayObjects.find((o) => o.id === subselState.selectedObjectId);
+          if (selObj) {
+            // Build list of anchor points from shape path
+            const path = selObj.shape.paths[0];
+            if (path) {
+              const anchPoints = [
+                { x: selObj.x + path.start.x, y: selObj.y + path.start.y },
+                ...path.segments.map((s) => ({ x: selObj.x + s.to.x, y: selObj.y + s.to.y })),
+              ];
+              for (let i = 0; i < anchPoints.length; i++) {
+                const ap = anchPoints[i];
+                if (Math.hypot(stageX - ap.x, stageY - ap.y) <= 6 / internalZoom) {
+                  setSubselState((prev) => ({ ...prev, selectedAnchorIndex: i }));
+                  subselDragRef.current = {
+                    anchorIndex: i,
+                    objectId: subselState.selectedObjectId!,
+                    startMouseX: e.clientX,
+                    startMouseY: e.clientY,
+                    origAnchorX: ap.x - selObj.x,
+                    origAnchorY: ap.y - selObj.y,
+                  };
+                  return;
+                }
+              }
+            }
+          }
+        }
+
+        // Hit-test shapes
+        const hit = [...shapeDisplayObjects].reverse().find((obj) => {
+          const bounds = transformedShapeBounds(obj);
+          return (
+            stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+            stageY >= bounds.y && stageY <= bounds.y + bounds.height
+          );
+        });
+        if (hit) {
+          setSubselState({ selectedObjectId: hit.id, selectedAnchorIndex: null });
+        } else {
+          setSubselState({ selectedObjectId: null, selectedAnchorIndex: null });
+        }
+        return;
+      }
+
+      // Gradient Transform tool: drag handles to rotate/scale gradient fills
+      if (e.button === 0 && activeTool === "gradientTransform") {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+
+        if (selectedShapeId) {
+          const selObj = shapeDisplayObjects.find((o) => o.id === selectedShapeId);
+          if (selObj) {
+            const gradFill = getShapeGradientFill(selObj.shape);
+            if (gradFill) {
+              const bounds = transformedShapeBounds(selObj);
+              const angle = gradFill.type === "linear-gradient" ? gradFill.angle : 0;
+              const { cx, cy, scaleX, scaleY, rotX, rotY } = getGradientHandlePositions(bounds, angle);
+              const origAngle = gradFill.type === "linear-gradient" ? gradFill.angle : 0;
+              const origFocalPoint = gradFill.type === "radial-gradient" ? gradFill.focalPoint : 0;
+
+              // Check rotate handle
+              if (Math.hypot(stageX - rotX, stageY - rotY) <= 10) {
+                gradientDragRef.current = {
+                  handle: "rotate",
+                  shapeId: selectedShapeId,
+                  startStageX: stageX,
+                  startStageY: stageY,
+                  centerX: cx,
+                  centerY: cy,
+                  origAngle,
+                  origFocalPoint,
+                  startAngle: Math.atan2(stageY - cy, stageX - cx) * (180 / Math.PI),
+                };
+                return;
+              }
+
+              // Check scale handle
+              if (Math.hypot(stageX - scaleX, stageY - scaleY) <= 10) {
+                gradientDragRef.current = {
+                  handle: "scale",
+                  shapeId: selectedShapeId,
+                  startStageX: stageX,
+                  startStageY: stageY,
+                  centerX: cx,
+                  centerY: cy,
+                  origAngle,
+                  origFocalPoint,
+                  startAngle: 0,
+                };
+                return;
+              }
+
+              // Check center handle
+              if (Math.hypot(stageX - cx, stageY - cy) <= 10) {
+                gradientDragRef.current = {
+                  handle: "center",
+                  shapeId: selectedShapeId,
+                  startStageX: stageX,
+                  startStageY: stageY,
+                  centerX: cx,
+                  centerY: cy,
+                  origAngle,
+                  origFocalPoint,
+                  startAngle: 0,
+                };
+                return;
+              }
+            }
+          }
+        }
+
+        // Hit-test for shape selection
+        const hit = [...shapeDisplayObjects].reverse().find((obj) => {
+          const bounds = transformedShapeBounds(obj);
+          return (
+            stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+            stageY >= bounds.y && stageY <= bounds.y + bounds.height
+          );
+        });
+        if (hit) {
+          onShapeSelect?.(hit.id);
+        } else {
+          onShapeSelect?.(null);
+        }
+        return;
+      }
+
+      // Free Transform tool: select shape + allow resize/rotate/distort handles
+      if (e.button === 0 && activeTool === "free-transform") {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+
+        // Check transform handles first if a shape is selected
+        if (selectedShapeId) {
+          const selObj = shapeDisplayObjects.find((o) => o.id === selectedShapeId);
+          if (selObj) {
+            const bounds = transformedShapeBounds(selObj);
+
+            // For distort/envelope modes: check 4 corner handle positions
+            if (freeTransformMode === "distort" || freeTransformMode === "envelope") {
+              const corners: TransformHandle[] = ["nw", "ne", "se", "sw"];
+              const handles = getHandlePositions(bounds);
+              const cornerHandles = handles.filter((h) => corners.includes(h.id));
+              const hitCorner = cornerHandles.find(
+                (h) => Math.abs(stageX - h.x) <= 8 && Math.abs(stageY - h.y) <= 8
+              );
+              if (hitCorner) {
+                e.preventDefault();
+                transformDragRef.current = {
+                  handle: hitCorner.id,
+                  shapeId: selectedShapeId,
+                  startStageX: stageX,
+                  startStageY: stageY,
+                  origBounds: bounds,
+                  origX: selObj.x,
+                  origY: selObj.y,
+                  origScaleX: selObj.scaleX ?? 1,
+                  origScaleY: selObj.scaleY ?? 1,
+                  origRotation: selObj.rotation ?? 0,
+                };
+                return;
+              }
+            }
+
+            // Check rotation handle (rotate-scale mode)
+            if (freeTransformMode === "rotate-scale") {
+              const rotHandleX = bounds.x + bounds.width / 2;
+              const rotHandleY = bounds.y - 20;
+              const distToRot = Math.hypot(stageX - rotHandleX, stageY - rotHandleY);
+              if (distToRot <= 10) {
+                e.preventDefault();
+                const centerX = bounds.x + bounds.width / 2;
+                const centerY = bounds.y + bounds.height / 2;
+                transformDragRef.current = {
+                  handle: "rotate",
+                  shapeId: selectedShapeId,
+                  startStageX: stageX,
+                  startStageY: stageY,
+                  origBounds: bounds,
+                  origX: selObj.x,
+                  origY: selObj.y,
+                  origScaleX: selObj.scaleX ?? 1,
+                  origScaleY: selObj.scaleY ?? 1,
+                  origRotation: selObj.rotation ?? 0,
+                  startAngle: Math.atan2(stageY - centerY, stageX - centerX) * (180 / Math.PI),
+                };
+                return;
+              }
+
+              // Check 8 resize handles
+              const handles = getHandlePositions(bounds);
+              const hitHandle = handles.find(
+                (h) => Math.abs(stageX - h.x) <= 6 && Math.abs(stageY - h.y) <= 6
+              );
+              if (hitHandle) {
+                e.preventDefault();
+                transformDragRef.current = {
+                  handle: hitHandle.id,
+                  shapeId: selectedShapeId,
+                  startStageX: stageX,
+                  startStageY: stageY,
+                  origBounds: bounds,
+                  origX: selObj.x,
+                  origY: selObj.y,
+                  origScaleX: selObj.scaleX ?? 1,
+                  origScaleY: selObj.scaleY ?? 1,
+                  origRotation: selObj.rotation ?? 0,
+                };
+                return;
+              }
+            }
+          }
+        }
+
+        // Hit-test shapes for selection
+        const hit = [...shapeDisplayObjects].reverse().find((obj) => {
+          const bounds = transformedShapeBounds(obj);
+          return (
+            stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+            stageY >= bounds.y && stageY <= bounds.y + bounds.height
+          );
+        });
+        if (hit) {
+          e.preventDefault();
+          onShapeSelect?.(hit.id);
+          selectionDragRef.current = {
+            shapeId: hit.id,
+            startMouseX: e.clientX,
+            startMouseY: e.clientY,
+            startX: hit.x,
+            startY: hit.y,
+          };
+        } else {
+          // Start marquee selection on empty stage
+          e.preventDefault();
+          onShapeSelect?.(null);
+          setFtMarqueeStart({ x: stageX, y: stageY });
+          setFtMarqueeEnd({ x: stageX, y: stageY });
+          setFtIsMarqueeSelecting(true);
+        }
+        return;
+      }
+
+      // Selection tool: hit-test shapes for drag
+      if (e.button === 0 && activeTool === "selection") {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+
+        // --- Check transform handles first (only if a shape is selected) ---
+        if (selectedShapeId) {
+          const selObj = shapeDisplayObjects.find((o) => o.id === selectedShapeId);
+          if (selObj) {
+            const bounds = transformedShapeBounds(selObj);
+
+            // Check rotation handle
+            const rotHandleX = bounds.x + bounds.width / 2;
+            const rotHandleY = bounds.y - 20;
+            const distToRot = Math.hypot(stageX - rotHandleX, stageY - rotHandleY);
+            if (distToRot <= 10) {
+              e.preventDefault();
+              const centerX = bounds.x + bounds.width / 2;
+              const centerY = bounds.y + bounds.height / 2;
+              transformDragRef.current = {
+                handle: "rotate",
+                shapeId: selectedShapeId,
+                startStageX: stageX,
+                startStageY: stageY,
+                origBounds: bounds,
+                origX: selObj.x,
+                origY: selObj.y,
+                origScaleX: selObj.scaleX ?? 1,
+                origScaleY: selObj.scaleY ?? 1,
+                origRotation: selObj.rotation ?? 0,
+                startAngle: Math.atan2(stageY - centerY, stageX - centerX) * (180 / Math.PI),
+              };
+              return;
+            }
+
+            // Check 8 resize handles
+            const handles = getHandlePositions(bounds);
+            const hitHandle = handles.find(
+              (h) => Math.abs(stageX - h.x) <= 6 && Math.abs(stageY - h.y) <= 6
+            );
+            if (hitHandle) {
+              e.preventDefault();
+              transformDragRef.current = {
+                handle: hitHandle.id,
+                shapeId: selectedShapeId,
+                startStageX: stageX,
+                startStageY: stageY,
+                origBounds: bounds,
+                origX: selObj.x,
+                origY: selObj.y,
+                origScaleX: selObj.scaleX ?? 1,
+                origScaleY: selObj.scaleY ?? 1,
+                origRotation: selObj.rotation ?? 0,
+              };
+              return;
+            }
+          }
+        }
+
+        // --- Hit test shape bounding boxes (simple AABB) ---
+        const hit = [...shapeDisplayObjects].reverse().find((obj) => {
+          const bounds = transformedShapeBounds(obj);
+          return (
+            stageX >= bounds.x &&
+            stageX <= bounds.x + bounds.width &&
+            stageY >= bounds.y &&
+            stageY <= bounds.y + bounds.height
+          );
+        });
+        if (hit) {
+          e.preventDefault();
+          onShapeSelect?.(hit.id);
+          selectionDragRef.current = {
+            shapeId: hit.id,
+            startMouseX: e.clientX,
+            startMouseY: e.clientY,
+            startX: hit.x,
+            startY: hit.y,
+          };
+        } else {
+          // Start marquee selection on empty stage (arrow tool rubber-band)
+          e.preventDefault();
+          onShapeSelect?.(null);
+          // When in symbol edit mode and clicking empty space, exit edit mode.
+          if (parentSceneGraph && onExitSymbolEdit) {
+            onExitSymbolEdit();
+          }
+          setSelMarqueeStart({ x: stageX, y: stageY });
+          setSelMarqueeEnd({ x: stageX, y: stageY });
+          setSelIsMarqueeSelecting(true);
+        }
+      }
+    },
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit]
+  );
+
+  const onMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // Panning
+      if (isPanningRef.current && panStartRef.current) {
+        const dx = (e.clientX - panStartRef.current.mouseX) / internalZoom;
+        const dy = (e.clientY - panStartRef.current.mouseY) / internalZoom;
+        const newPanX = panStartRef.current.panX + dx;
+        const newPanY = panStartRef.current.panY + dy;
+        setInternalPanX(newPanX);
+        setInternalPanY(newPanY);
+        onPanChange?.(newPanX, newPanY);
+        return;
+      }
+
+      // Guide drag
+      if (guideDragRef.current) {
+        const { guideId, orientation } = guideDragRef.current;
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        const newPos = orientation === "horizontal" ? stageY : stageX;
+
+        // Check if dragged off the stage
+        const workArea = workAreaRef.current;
+        if (workArea) {
+          const rect = workArea.getBoundingClientRect();
+          const outside =
+            e.clientX < rect.left ||
+            e.clientX > rect.right ||
+            e.clientY < rect.top ||
+            e.clientY > rect.bottom;
+          if (outside) {
+            onGuideDelete?.(guideId);
+            guideDragRef.current = null;
+            return;
+          }
+        }
+        onGuideMove?.(guideId, Math.round(newPos));
+        return;
+      }
+
+      // Gradient Transform drag: update angle/focalPoint live
+      if (gradientDragRef.current && activeTool === "gradientTransform") {
+        const gd = gradientDragRef.current;
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        const selObj = shapeDisplayObjects.find((o) => o.id === gd.shapeId);
+        if (selObj) {
+          const gradFill = getShapeGradientFill(selObj.shape);
+          if (gradFill) {
+            if (gd.handle === "rotate" && gradFill.type === "linear-gradient") {
+              // Compute new angle from center to current mouse position
+              const currentAngle = Math.atan2(stageY - gd.centerY, stageX - gd.centerX) * (180 / Math.PI);
+              const newAngle = gd.origAngle + (currentAngle - gd.startAngle);
+              const newFill: Fill = { ...gradFill, angle: newAngle };
+              const newPaths = selObj.shape.paths.map((p) =>
+                p.fill?.type === "linear-gradient" ? { ...p, fill: newFill } : p
+              );
+              onShapeGradientUpdate?.(gd.shapeId, { ...selObj.shape, paths: newPaths });
+            } else if (gd.handle === "rotate" && gradFill.type === "radial-gradient") {
+              // For radial, rotate handle adjusts focal point
+              const dx = stageX - gd.centerX;
+              const bounds = transformedShapeBounds(selObj);
+              const newFocalPoint = Math.max(-1, Math.min(1, dx / (bounds.width / 2)));
+              const newFill: Fill = { ...gradFill, focalPoint: newFocalPoint };
+              const newPaths = selObj.shape.paths.map((p) =>
+                p.fill?.type === "radial-gradient" ? { ...p, fill: newFill } : p
+              );
+              onShapeGradientUpdate?.(gd.shapeId, { ...selObj.shape, paths: newPaths });
+            }
+            // center and scale handles: visual only in this implementation (no extra data fields)
+          }
+        }
+        return;
+      }
+
+      // Pencil tool: accumulate points
+      if (activeTool === "pencil" && pencilPointsRef.current.length > 0) {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        pencilPointsRef.current.push({ x: stageX, y: stageY });
+        // Update preview every few points to avoid excessive re-renders
+        if (pencilPointsRef.current.length % 3 === 0) {
+          setPencilPreviewPoints([...pencilPointsRef.current]);
+        }
+        return;
+      }
+
+      // Brush tool: accumulate points
+      if (activeTool === "brush" && brushPointsRef.current.length > 0) {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        brushPointsRef.current.push({ x: stageX, y: stageY });
+        if (brushPointsRef.current.length % 3 === 0) {
+          setBrushPreviewPoints([...brushPointsRef.current]);
+        }
+        return;
+      }
+
+      // Eraser tool: update cursor position and erase overlapping shapes in real-time
+      if (activeTool === "eraser") {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        setEraserCursorPos({ stageX, stageY });
+        if (eraserPointsRef.current) {
+          eraserPointsRef.current.push({ x: stageX, y: stageY });
+          const allPts = eraserPointsRef.current;
+          const minX = Math.min(...allPts.map((p) => p.x));
+          const minY = Math.min(...allPts.map((p) => p.y));
+          const maxX = Math.max(...allPts.map((p) => p.x));
+          const maxY = Math.max(...allPts.map((p) => p.y));
+          const half = eraserSize / 2;
+          setEraserPreview({ x: minX - half, y: minY - half, w: (maxX - minX) + eraserSize, h: (maxY - minY) + eraserSize });
+          // Erase shapes whose bounding box overlaps the eraser circle at the current position
+          if (onShapeDelete) {
+            const r = half;
+            for (const obj of shapeDisplayObjects) {
+              if (erasedIdsRef.current.has(obj.id)) continue;
+              const bounds = transformedShapeBounds(obj);
+              // Circle-AABB overlap: find the closest point on the AABB to the circle center,
+              // then check if the distance is within the radius.
+              const closestX = Math.max(bounds.x, Math.min(stageX, bounds.x + bounds.width));
+              const closestY = Math.max(bounds.y, Math.min(stageY, bounds.y + bounds.height));
+              const dist = Math.hypot(stageX - closestX, stageY - closestY);
+              if (dist <= r) {
+                erasedIdsRef.current.add(obj.id);
+                onShapeDelete(obj.id);
+              }
+            }
+          }
+        }
+        return;
+      }
+
+      // Lasso tool: accumulate freehand points
+      if (activeTool === "lasso" && !lassoPolygonMode && lassoCapturingRef.current) {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        setLassoPoints((prev) => [...prev, { x: stageX, y: stageY }]);
+        return;
+      }
+
+      // Pen tool: update drag handle or cursor position
+      if (activeTool === "pen") {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        if (penState.dragStart) {
+          // Dragging from an anchor to set handleOut
+          const dx = stageX - penState.dragStart.x;
+          const dy = stageY - penState.dragStart.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 2 / internalZoom) {
+            setPenState((prev) => ({
+              ...prev,
+              currentHandleOut: { x: stageX, y: stageY },
+              cursorPos: { x: stageX, y: stageY },
+            }));
+          }
+        } else {
+          // Just update rubber-band cursor
+          setPenState((prev) => ({ ...prev, cursorPos: { x: stageX, y: stageY } }));
+        }
+        return;
+      }
+
+      // Subselection: drag selected anchor
+      if (activeTool === "subselect" && subselDragRef.current) {
+        const drag = subselDragRef.current;
+        const dx = (e.clientX - drag.startMouseX) / internalZoom;
+        const dy = (e.clientY - drag.startMouseY) / internalZoom;
+        const newAnchorX = drag.origAnchorX + dx;
+        const newAnchorY = drag.origAnchorY + dy;
+
+        // Update the shape's path anchor point
+        const selObj = shapeDisplayObjects.find((o) => o.id === drag.objectId);
+        if (selObj && selObj.shape.paths[0]) {
+          const path = selObj.shape.paths[0];
+          const anchorIndex = drag.anchorIndex;
+          let newPath: ShapePath;
+          if (anchorIndex === 0) {
+            // Moving the start point
+            newPath = { ...path, start: { x: newAnchorX, y: newAnchorY } };
+          } else {
+            const newSegments = path.segments.map((seg, i) =>
+              i === anchorIndex - 1
+                ? { ...seg, to: { x: newAnchorX, y: newAnchorY } }
+                : seg
+            );
+            newPath = { ...path, segments: newSegments };
+          }
+          const newShape: Shape = { ...selObj.shape, paths: [newPath] };
+          onShapeUpdate?.(drag.objectId, newShape);
+        }
+        return;
+      }
+
+      // Arrow (selection) tool marquee: update end point while dragging
+      if (selIsMarqueeSelecting) {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        setSelMarqueeEnd({ x: stageX, y: stageY });
+        return;
+      }
+
+      // Free Transform marquee: update end point while dragging
+      if (ftIsMarqueeSelecting) {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        setFtMarqueeEnd({ x: stageX, y: stageY });
+        return;
+      }
+
+      // Draw gesture preview
+      if (drawStartRef.current && activeTool && SHAPE_DRAW_TOOLS.has(activeTool as "oval" | "rect" | "line" | "polystar")) {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        setDrawPreview({
+          tool: activeTool as "oval" | "rect" | "line" | "polystar",
+          x1: drawStartRef.current.stageX,
+          y1: drawStartRef.current.stageY,
+          x2: stageX,
+          y2: stageY,
+        });
+        return;
+      }
+
+      // Transform handle drag (resize / rotate)
+      if (transformDragRef.current) {
+        const td = transformDragRef.current;
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        const { handle, shapeId, origBounds, origX, origY, origScaleX, origScaleY } = td;
+
+        if (handle === "rotate") {
+          // Compute rotation delta from the stored start angle so dragging always
+          // feels relative to where the user grabbed the handle.
+          const cx = origBounds.x + origBounds.width / 2;
+          const cy = origBounds.y + origBounds.height / 2;
+          const currentAngle = Math.atan2(stageY - cy, stageX - cx) * (180 / Math.PI);
+          const startAngle = td.startAngle ?? (currentAngle - 90);
+          const newRotation = td.origRotation + (currentAngle - startAngle);
+          onShapeRotate?.(shapeId, newRotation);
+          return;
+        }
+
+        // Resize: scale about the shape's center so the center stays fixed.
+        //
+        // origBounds is the transformed (visual) AABB from drag start.
+        // The shape's visual center in stage coords:
+        const centerX = origBounds.x + origBounds.width / 2;
+        const centerY = origBounds.y + origBounds.height / 2;
+
+        // The raw (un-transformed) local-space half-extents:
+        // rawWidth / rawHeight are the original path extents before scale.
+        const rawWidth  = origBounds.width  / Math.max(0.0001, origScaleX);
+        const rawHeight = origBounds.height / Math.max(0.0001, origScaleY);
+
+        // Each handle only affects certain axes
+        const isNorth = handle === "nw" || handle === "n" || handle === "ne";
+        const isSouth = handle === "se" || handle === "s" || handle === "sw";
+        const isWest  = handle === "nw" || handle === "sw" || handle === "w";
+        const isEast  = handle === "ne" || handle === "e" || handle === "se";
+
+        let newScaleX = origScaleX;
+        let newScaleY = origScaleY;
+
+        // For handles that affect X: distance from center to mouse X determines new half-width
+        if (isEast || isWest) {
+          const halfW = Math.max(0.5, Math.abs(stageX - centerX));
+          newScaleX = (halfW * 2) / Math.max(0.0001, rawWidth);
+        }
+        // For handles that affect Y: distance from center to mouse Y determines new half-height
+        if (isNorth || isSouth) {
+          const halfH = Math.max(0.5, Math.abs(stageY - centerY));
+          newScaleY = (halfH * 2) / Math.max(0.0001, rawHeight);
+        }
+
+        // Adjust obj.x/obj.y so that the visual center stays fixed.
+        // Renderer applies: translate(obj.x, obj.y) → rotate → scale → draw at local coords.
+        // The local-space center of the raw shape (relative to obj.x, obj.y):
+        const localCenterX = centerX - origX;
+        const localCenterY = centerY - origY;
+        // After new scale, the rendered center would be at:
+        //   obj.x + localCenterX * newScaleX  (for rotation=0)
+        // To keep it at centerX: newObjX = centerX - localCenterX * newScaleX
+        // This is a simplified (rotation=0) formula but keeps the shape centered.
+        const newX = centerX - localCenterX * (newScaleX / origScaleX);
+        const newY = centerY - localCenterY * (newScaleY / origScaleY);
+
+        onShapeResize?.(shapeId, newX, newY, newScaleX, newScaleY);
+        return;
+      }
+
+      // Selection drag (move)
+      if (selectionDragRef.current && onShapeMove) {
+        const drag = selectionDragRef.current;
+        let dx = (e.clientX - drag.startMouseX) / internalZoom;
+        let dy = (e.clientY - drag.startMouseY) / internalZoom;
+
+        // Snap-to-guides: snap the dragged object's edges/center to nearby guides
+        if (snapToGuides && guides.length > 0) {
+          const selObj = shapeDisplayObjects.find((o) => o.id === drag.shapeId);
+          if (selObj) {
+            const bounds = transformedShapeBounds(selObj);
+            const snapThreshold = 5;
+
+            // Check horizontal guides (snap top, center, or bottom edge of object)
+            const candidateYs = [
+              bounds.y + dy,
+              bounds.y + bounds.height / 2 + dy,
+              bounds.y + bounds.height + dy,
+            ];
+            let bestSnapDY = Infinity;
+            for (const guide of guides) {
+              if (guide.orientation === "horizontal") {
+                for (const candY of candidateYs) {
+                  const diff = guide.position - candY;
+                  if (Math.abs(diff) < snapThreshold && Math.abs(diff) < Math.abs(bestSnapDY)) {
+                    bestSnapDY = diff;
+                  }
+                }
+              }
+            }
+            if (isFinite(bestSnapDY)) dy += bestSnapDY;
+
+            // Check vertical guides (snap left, center, or right edge of object)
+            const candidateXs = [
+              bounds.x + dx,
+              bounds.x + bounds.width / 2 + dx,
+              bounds.x + bounds.width + dx,
+            ];
+            let bestSnapDX = Infinity;
+            for (const guide of guides) {
+              if (guide.orientation === "vertical") {
+                for (const candX of candidateXs) {
+                  const diff = guide.position - candX;
+                  if (Math.abs(diff) < snapThreshold && Math.abs(diff) < Math.abs(bestSnapDX)) {
+                    bestSnapDX = diff;
+                  }
+                }
+              }
+            }
+            if (isFinite(bestSnapDX)) dx += bestSnapDX;
+          }
+        }
+
+        onShapeMove(drag.shapeId, dx, dy);
+        // Update start so next move is a delta from this position
+        selectionDragRef.current = { ...drag, startMouseX: e.clientX, startMouseY: e.clientY };
+        return;
+      }
+
+      // Update handle cursor based on mouse hover position
+      if (activeTool === "selection" && selectedShapeId) {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        const selObj = shapeDisplayObjects.find((o) => o.id === selectedShapeId);
+        if (selObj) {
+          const bounds = transformedShapeBounds(selObj);
+          // Check rotation handle
+          const rotHandleX = bounds.x + bounds.width / 2;
+          const rotHandleY = bounds.y - 20;
+          if (Math.hypot(stageX - rotHandleX, stageY - rotHandleY) <= 10) {
+            setHandleCursor("crosshair");
+            return;
+          }
+          // Check resize handles
+          const handles = getHandlePositions(bounds);
+          const hitHandle = handles.find(
+            (h) => Math.abs(stageX - h.x) <= 6 && Math.abs(stageY - h.y) <= 6
+          );
+          if (hitHandle) {
+            setHandleCursor(HANDLE_CURSORS[hitHandle.id]);
+            return;
+          }
+        }
+        setHandleCursor(undefined);
+      } else {
+        setHandleCursor(undefined);
+      }
+    },
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete]
+  );
+
+  const onMouseUp = useCallback(
+    (_e: React.MouseEvent<HTMLDivElement>) => {
+      isPanningRef.current = false;
+      panStartRef.current = null;
+      const wasShapeDrag = selectionDragRef.current !== null;
+      selectionDragRef.current = null;
+      transformDragRef.current = null;
+      guideDragRef.current = null;
+      gradientDragRef.current = null;
+      // Notify parent that a shape drag gesture just ended so it can commit to undo history
+      if (wasShapeDrag) {
+        onShapeMoveEnd?.();
+      }
+
+      // Finalize arrow (selection) tool marquee selection
+      if (selIsMarqueeSelecting && selMarqueeStart && selMarqueeEnd) {
+        const rect = normalizeRect(selMarqueeStart, selMarqueeEnd);
+        // Only select if the marquee has non-trivial size (more than 2px in each direction)
+        if (rect.width > 2 || rect.height > 2) {
+          const hit = [...shapeDisplayObjects].find((obj) =>
+            boundsOverlap(transformedShapeBounds(obj), rect)
+          );
+          if (hit) {
+            onShapeSelect?.(hit.id);
+          }
+        }
+        setSelIsMarqueeSelecting(false);
+        setSelMarqueeStart(null);
+        setSelMarqueeEnd(null);
+        return;
+      }
+      setSelIsMarqueeSelecting(false);
+      setSelMarqueeStart(null);
+      setSelMarqueeEnd(null);
+
+      // Finalize Free Transform marquee selection
+      if (ftIsMarqueeSelecting && ftMarqueeStart && ftMarqueeEnd) {
+        const rect = normalizeRect(ftMarqueeStart, ftMarqueeEnd);
+        const hit = [...shapeDisplayObjects].find((obj) =>
+          boundsOverlap(transformedShapeBounds(obj), rect)
+        );
+        if (hit) {
+          onShapeSelect?.(hit.id);
+        } else {
+          onShapeSelect?.(null);
+        }
+        setFtIsMarqueeSelecting(false);
+        setFtMarqueeStart(null);
+        setFtMarqueeEnd(null);
+        return;
+      }
+      setFtIsMarqueeSelecting(false);
+      setFtMarqueeStart(null);
+      setFtMarqueeEnd(null);
+
+      // Finalize subselection anchor drag
+      if (subselDragRef.current) {
+        subselDragRef.current = null;
+        return;
+      }
+
+      // Pen tool: finalize the current anchor on mouse up
+      if (activeTool === "pen" && penState.dragStart) {
+        const newAnchor: PenAnchor = {
+          x: penState.dragStart.x,
+          y: penState.dragStart.y,
+          handleOut: penState.currentHandleOut ?? undefined,
+        };
+        setPenState((prev) => ({
+          anchors: [...prev.anchors, newAnchor],
+          dragStart: null,
+          currentHandleOut: null,
+          cursorPos: prev.cursorPos,
+        }));
+        return;
+      }
+
+      // Pencil tool: finalize freehand stroke
+      if (activeTool === "pencil" && pencilPointsRef.current.length >= 2) {
+        const stroke: SolidStroke = {
+          type: "solid",
+          color: hexToColor(propStrokeColor),
+          width: propStrokeWidth,
+          caps: "round",
+          joints: "round",
+          miterLimit: 3,
+        };
+        const shape = pencilPointsToShape(pencilPointsRef.current, stroke, pencilMode);
+        if (shape.paths.length > 0) {
+          onShapeCreated?.(shape, 0, 0);
+        }
+        pencilPointsRef.current = [];
+        setPencilPreviewPoints([]);
+        return;
+      }
+      pencilPointsRef.current = [];
+      setPencilPreviewPoints([]);
+
+      // Brush tool: finalize brush stroke
+      if (activeTool === "brush" && brushPointsRef.current.length >= 2) {
+        const fillColor: Fill = propFill ?? { type: "solid", color: hexToColor(propStrokeColor) };
+        const shape = brushPointsToShape(brushPointsRef.current, brushSize, fillColor);
+        if (shape.paths.length > 0) {
+          onShapeCreated?.(shape, 0, 0);
+        }
+        brushPointsRef.current = [];
+        setBrushPreviewPoints([]);
+        return;
+      }
+      brushPointsRef.current = [];
+      setBrushPreviewPoints([]);
+
+      // Eraser tool: finalize erase gesture (shapes already deleted incrementally in onMouseMove)
+      if (activeTool === "eraser") {
+        eraserPointsRef.current = null;
+        erasedIdsRef.current = new Set();
+        setEraserPreview(null);
+        return;
+      }
+
+      // Finalize lasso freehand selection
+      if (activeTool === "lasso" && !lassoPolygonMode && lassoCapturingRef.current) {
+        lassoCapturingRef.current = false;
+        const pts = lassoPoints;
+        if (pts.length >= 3) {
+          const selectedId = findShapeInLasso([...pts, pts[0]], shapeDisplayObjects);
+          if (selectedId) onShapeSelect?.(selectedId);
+          else onShapeSelect?.(null);
+        }
+        setLassoPoints([]);
+        return;
+      }
+
+      // Finalise draw gesture
+      if (drawStartRef.current && drawPreview && onShapeCreated) {
+        const { x1, y1, x2, y2 } = drawPreview;
+        // Don't create zero-size shapes
+        if (Math.abs(x2 - x1) > 1 || Math.abs(y2 - y1) > 1) {
+          let shape: Shape;
+          if (drawPreview.tool === "oval") {
+            shape = createOvalShape(x1, y1, x2, y2, null, null);
+          } else if (drawPreview.tool === "rect") {
+            shape = createRectShape(x1, y1, x2, y2, null, null);
+          } else if (drawPreview.tool === "polystar") {
+            // Compute center and radius from the drag gesture
+            const cx = x1;
+            const cy = y1;
+            const radius = Math.hypot(x2 - x1, y2 - y1);
+            const { shapeType, sides, pointSize } = polyStarOptions;
+            if (shapeType === "star") {
+              shape = createStarShape(cx, cy, radius, sides, pointSize, null, null);
+            } else {
+              shape = createPolygonShape(cx, cy, radius, sides, null, null);
+            }
+          } else {
+            shape = createLineShape(x1, y1, x2, y2, {
+              type: "solid",
+              color: { r: 0, g: 0, b: 0, a: 255 },
+              width: 1,
+              caps: "round",
+              joints: "round",
+              miterLimit: 3,
+            });
+          }
+          // Shapes are placed at origin (0,0); their paths contain absolute coords
+          onShapeCreated(shape, 0, 0);
+        }
+      }
+      drawStartRef.current = null;
+      setDrawPreview(null);
+    },
+    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd]
+  );
+
+  // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (activeTool === "pen") {
+          setPenState({ anchors: [], dragStart: null, currentHandleOut: null, cursorPos: null });
+        }
+        if (activeTool === "lasso") {
+          lassoCapturingRef.current = false;
+          setLassoPoints([]);
+          setLassoPolyVertices([]);
+          lassoPolyLastClickRef.current = null;
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeTool]);
+
+  // Enter key → toggle playback
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA" && !target.isContentEditable) {
+          e.preventDefault();
+          onPlayToggle?.();
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onPlayToggle]);
+
+  // F8 → Convert to Symbol
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "F8") {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
+          e.preventDefault();
+          onConvertToSymbol?.();
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onConvertToSymbol]);
+
+  // Delete key → delete selected shape
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedShapeId) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
+          onShapeDelete?.(selectedShapeId);
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedShapeId, onShapeDelete]);
+
+  // Clipboard shortcuts: Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+Shift+V, Ctrl+D
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const isModifier = e.ctrlKey || e.metaKey;
+      if (!isModifier) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      switch (e.key.toLowerCase()) {
+        case "c":
+          e.preventDefault();
+          onCopy?.();
+          break;
+        case "x":
+          e.preventDefault();
+          onCut?.();
+          break;
+        case "v":
+          e.preventDefault();
+          if (e.shiftKey) onPasteInPlace?.();
+          else onPaste?.();
+          break;
+        case "d":
+          e.preventDefault();
+          onDuplicate?.();
+          break;
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCopy, onCut, onPaste, onPasteInPlace, onDuplicate]);
+
+  // Arrange and Group shortcuts
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const isModifier = e.ctrlKey || e.metaKey;
+      if (!isModifier) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      switch (e.key) {
+        case "ArrowUp":
+          if (e.shiftKey) { e.preventDefault(); onArrange?.("front"); }
+          else { e.preventDefault(); onArrange?.("forward"); }
+          break;
+        case "ArrowDown":
+          if (e.shiftKey) { e.preventDefault(); onArrange?.("back"); }
+          else { e.preventDefault(); onArrange?.("backward"); }
+          break;
+        case "g":
+        case "G":
+          if (e.shiftKey) { e.preventDefault(); onUngroup?.(); }
+          else { e.preventDefault(); onGroup?.(); }
+          break;
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onArrange, onGroup, onUngroup]);
+
+  // Draw grid on canvas whenever relevant props change
+  useEffect(() => {
+    const canvas = gridCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Apply HiDPI scaling so grid lines are sharp on Retina/HiDPI displays.
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(stageWidth * dpr);
+    canvas.height = Math.round(stageHeight * dpr);
+    canvas.style.width = `${stageWidth}px`;
+    canvas.style.height = `${stageHeight}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.clearRect(0, 0, stageWidth, stageHeight);
+    if (!showGrid) return;
+
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 1;
+
+    // Vertical lines
+    for (let x = gridWidth; x < stageWidth; x += gridWidth) {
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, stageHeight);
+      ctx.stroke();
+    }
+    // Horizontal lines
+    for (let y = gridHeight; y < stageHeight; y += gridHeight) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(stageWidth, y + 0.5);
+      ctx.stroke();
+    }
+  }, [showGrid, gridWidth, gridHeight, gridColor, stageWidth, stageHeight]);
+
+  // Initialize CanvasRenderer once the render canvas is mounted
+  useEffect(() => {
+    if (!renderCanvasRef.current) return;
+    const renderer = new CanvasRenderer(renderCanvasRef.current);
+    rendererRef.current = renderer;
+    onRendererReady?.(renderer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-render shapes on canvas whenever relevant state changes
+  useEffect(() => {
+    if (!rendererRef.current || !renderCanvasRef.current) return;
+
+    // HiDPI / Retina support: scale physical pixels by device pixel ratio.
+    const dpr = window.devicePixelRatio || 1;
+
+    // Resize the canvas buffer to match stage dimensions (with DPR scaling)
+    rendererRef.current.resize(stageWidth, stageHeight, dpr);
+
+    // Pre-load any bitmap images into renderer cache
+    for (const bitmapItem of bitmapLibraryItems) {
+      if (bitmapItem.dataUri) {
+        rendererRef.current.loadImage(bitmapItem.id, bitmapItem.dataUri);
+      }
+    }
+
+    // Build SceneGraph: use the multi-layer scene graph from the parent when provided,
+    // otherwise fall back to a synthetic single-layer graph from the flat prop arrays.
+    const sceneGraph: SceneGraph = propSceneGraph ?? {
+      layers: [
+        {
+          id: "main",
+          name: "Layer 1",
+          visible: true,
+          locked: false,
+          objects: [...shapeDisplayObjects, ...textDisplayObjects, ...bitmapDisplayObjects],
+        },
+      ],
+    };
+
+    // Viewport: no zoom/pan here — the parent div's CSS transform handles those.
+    // We render at 1:1 scale so the canvas stays sharp.
+    const viewport: Viewport = { x: 0, y: 0, zoom: 1 };
+
+    // Render onion skin ghost frames (sorted farthest-from-current first)
+    if (onionFrames.length > 0) {
+      const ctx = renderCanvasRef.current.getContext("2d")!;
+      // Render main scene (to establish the canvas) then we'll re-render on top
+      // First render ghost frames by drawing directly with globalAlpha + tint overlay
+      rendererRef.current.resize(stageWidth, stageHeight);
+      // Clear first
+      ctx.clearRect(0, 0, stageWidth, stageHeight);
+
+      // Sort: farthest from current frame first (lowest opacity first)
+      const sortedOnion = [...onionFrames].sort((a, b) => a.opacity - b.opacity);
+
+      for (const ghost of sortedOnion) {
+        // Render ghost scene to a temporary off-screen canvas (DPR-scaled).
+        const offscreen = document.createElement("canvas");
+        const ghostRenderer = new CanvasRenderer(offscreen);
+        ghostRenderer.resize(stageWidth, stageHeight, dpr);
+        // Copy image cache by loading bitmaps
+        for (const bitmapItem of bitmapLibraryItems) {
+          if (bitmapItem.dataUri) {
+            ghostRenderer.loadImage(bitmapItem.id, bitmapItem.dataUri);
+          }
+        }
+        ghostRenderer.render(ghost.sceneGraph, viewport, library);
+
+        // Draw the ghost frame onto main canvas with reduced opacity.
+        // Specify logical destination size so the DPR-scaled image maps correctly.
+        ctx.save();
+        ctx.globalAlpha = ghost.opacity;
+        ctx.drawImage(offscreen, 0, 0, stageWidth, stageHeight);
+
+        // Apply a subtle color tint overlay
+        const tintColor = ghost.tint === "before" ? "rgba(50,100,220,0.15)" : "rgba(50,180,80,0.15)";
+        ctx.globalCompositeOperation = "source-atop";
+        ctx.fillStyle = tintColor;
+        ctx.fillRect(0, 0, stageWidth, stageHeight);
+        ctx.restore();
+      }
+
+      // Now render the main frame on top at full opacity
+      rendererRef.current.render(sceneGraph, viewport, library);
+    } else if (parentSceneGraph) {
+      // Symbol edit mode: render parent scene dimmed, then symbol contents at full opacity.
+      const ctx = renderCanvasRef.current.getContext("2d")!;
+      ctx.clearRect(0, 0, stageWidth, stageHeight);
+
+      // Render parent scene to an offscreen canvas, then composite at 35% opacity.
+      const offscreen = document.createElement("canvas");
+      const parentRenderer = new CanvasRenderer(offscreen);
+      parentRenderer.resize(stageWidth, stageHeight, dpr);
+      for (const bitmapItem of bitmapLibraryItems) {
+        if (bitmapItem.dataUri) {
+          parentRenderer.loadImage(bitmapItem.id, bitmapItem.dataUri);
+        }
+      }
+      parentRenderer.render(parentSceneGraph, viewport, library);
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.drawImage(offscreen, 0, 0, stageWidth, stageHeight);
+      ctx.restore();
+
+      // Render the symbol's contents at full opacity on top.
+      rendererRef.current.render(sceneGraph, viewport, library);
+    } else {
+      rendererRef.current.render(sceneGraph, viewport, library);
+    }
+
+    // Draw selection + transform overlay on top of rendered shapes
+    if (selectedShapeId) {
+      const obj = shapeDisplayObjects.find((o) => o.id === selectedShapeId);
+      if (obj) {
+        const bounds = transformedShapeBounds(obj);
+        if (bounds.width > 0 || bounds.height > 0) {
+          const ctx = renderCanvasRef.current.getContext("2d")!;
+          ctx.save();
+
+          // Dashed bounding box
+          ctx.strokeStyle = "#0099ff";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 2]);
+          ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+          ctx.setLineDash([]);
+
+          // 8 resize handles (white squares with blue border)
+          const handles = getHandlePositions(bounds);
+          for (const h of handles) {
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "#0099ff";
+            ctx.lineWidth = 1;
+            ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
+            ctx.strokeRect(h.x - 4, h.y - 4, 8, 8);
+          }
+
+          // Rotation handle (circle above top-center)
+          const rotHandleX = bounds.x + bounds.width / 2;
+          const rotHandleY = bounds.y - 20;
+          // Line from top-center to rotation handle
+          ctx.beginPath();
+          ctx.moveTo(rotHandleX, bounds.y);
+          ctx.lineTo(rotHandleX, rotHandleY);
+          ctx.strokeStyle = "#0099ff";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          // Circle
+          ctx.beginPath();
+          ctx.arc(rotHandleX, rotHandleY, 5, 0, Math.PI * 2);
+          ctx.fillStyle = "white";
+          ctx.fill();
+          ctx.strokeStyle = "#0099ff";
+          ctx.stroke();
+
+          ctx.restore();
+        }
+      }
+    }
+
+    // Draw subselection anchor points overlay
+    if (activeTool === "subselect" && subselState.selectedObjectId) {
+      const selObj = shapeDisplayObjects.find((o) => o.id === subselState.selectedObjectId);
+      if (selObj && selObj.shape.paths[0]) {
+        const ctx = renderCanvasRef.current.getContext("2d")!;
+        ctx.save();
+        const path = selObj.shape.paths[0];
+        const anchPoints = [
+          { x: selObj.x + path.start.x, y: selObj.y + path.start.y },
+          ...path.segments.map((s) => ({ x: selObj.x + s.to.x, y: selObj.y + s.to.y })),
+        ];
+        for (let i = 0; i < anchPoints.length; i++) {
+          const ap = anchPoints[i];
+          const isSelected = subselState.selectedAnchorIndex === i;
+          ctx.fillStyle = isSelected ? "#0099ff" : "white";
+          ctx.strokeStyle = "#0099ff";
+          ctx.lineWidth = 1;
+          ctx.fillRect(ap.x - 4, ap.y - 4, 8, 8);
+          ctx.strokeRect(ap.x - 4, ap.y - 4, 8, 8);
+        }
+        ctx.restore();
+      }
+    }
+
+    // Draw pen path in-progress preview
+    if (activeTool === "pen") {
+      const { anchors, dragStart, currentHandleOut, cursorPos } = penState;
+      const ctx = renderCanvasRef.current.getContext("2d")!;
+      ctx.save();
+
+      // Draw the committed path segments so far
+      if (anchors.length >= 2) {
+        ctx.beginPath();
+        ctx.moveTo(anchors[0].x, anchors[0].y);
+        for (let i = 1; i < anchors.length; i++) {
+          const prev = anchors[i - 1];
+          const curr = anchors[i];
+          if (prev.handleOut) {
+            ctx.quadraticCurveTo(prev.handleOut.x, prev.handleOut.y, curr.x, curr.y);
+          } else {
+            ctx.lineTo(curr.x, curr.y);
+          }
+        }
+        ctx.strokeStyle = "#333333";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([]);
+        ctx.stroke();
+      }
+
+      // Draw rubber-band segment from last anchor to cursor
+      if (anchors.length >= 1 && cursorPos && !dragStart) {
+        const last = anchors[anchors.length - 1];
+        ctx.beginPath();
+        if (last.handleOut) {
+          ctx.moveTo(last.x, last.y);
+          ctx.quadraticCurveTo(last.handleOut.x, last.handleOut.y, cursorPos.x, cursorPos.y);
+        } else {
+          ctx.moveTo(last.x, last.y);
+          ctx.lineTo(cursorPos.x, cursorPos.y);
+        }
+        ctx.strokeStyle = "#333333";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 2]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Draw handle being dragged
+      if (dragStart && currentHandleOut) {
+        // Handle line from anchor to handle
+        ctx.beginPath();
+        ctx.moveTo(dragStart.x, dragStart.y);
+        ctx.lineTo(currentHandleOut.x, currentHandleOut.y);
+        ctx.strokeStyle = "#0099ff";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([]);
+        ctx.stroke();
+        // Handle circle
+        ctx.beginPath();
+        ctx.arc(currentHandleOut.x, currentHandleOut.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.strokeStyle = "#0099ff";
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // Draw anchor squares for placed anchors
+      for (let i = 0; i < anchors.length; i++) {
+        const anchor = anchors[i];
+        const isFirst = i === 0;
+        // First anchor: hollow square (close indicator)
+        const atCursor = cursorPos && Math.hypot(cursorPos.x - anchor.x, cursorPos.y - anchor.y) <= 8 && isFirst && anchors.length >= 2;
+        ctx.fillStyle = atCursor ? "rgba(0,153,255,0.3)" : "white";
+        ctx.strokeStyle = isFirst ? "#ff6600" : "#333333";
+        ctx.lineWidth = isFirst ? 2 : 1;
+        ctx.fillRect(anchor.x - 4, anchor.y - 4, 8, 8);
+        ctx.strokeRect(anchor.x - 4, anchor.y - 4, 8, 8);
+        // Draw handle for this anchor if it has one
+        if (anchor.handleOut) {
+          ctx.beginPath();
+          ctx.moveTo(anchor.x, anchor.y);
+          ctx.lineTo(anchor.handleOut.x, anchor.handleOut.y);
+          ctx.strokeStyle = "#0099ff";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(anchor.handleOut.x, anchor.handleOut.y, 3, 0, Math.PI * 2);
+          ctx.fillStyle = "white";
+          ctx.strokeStyle = "#0099ff";
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    // Draw lasso overlay (freehand or polygon mode)
+    if (activeTool === "lasso") {
+      const ctx = renderCanvasRef.current.getContext("2d")!;
+      ctx.save();
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+
+      if (!lassoPolygonMode && lassoPoints.length >= 2) {
+        // Freehand lasso
+        ctx.beginPath();
+        ctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+        for (let i = 1; i < lassoPoints.length; i++) {
+          ctx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
+        }
+        ctx.stroke();
+      } else if (lassoPolygonMode && lassoPolyVertices.length >= 1) {
+        // Polygon lasso
+        ctx.beginPath();
+        ctx.moveTo(lassoPolyVertices[0].x, lassoPolyVertices[0].y);
+        for (let i = 1; i < lassoPolyVertices.length; i++) {
+          ctx.lineTo(lassoPolyVertices[i].x, lassoPolyVertices[i].y);
+        }
+        ctx.stroke();
+        // Draw vertices as small circles
+        ctx.setLineDash([]);
+        for (const v of lassoPolyVertices) {
+          ctx.beginPath();
+          ctx.arc(v.x, v.y, 3, 0, Math.PI * 2);
+          ctx.fillStyle = "white";
+          ctx.strokeStyle = "#333";
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // Draw Free Transform distort/envelope handles (4 or 8 handles)
+    if (activeTool === "free-transform" && selectedShapeId && (freeTransformMode === "distort" || freeTransformMode === "envelope")) {
+      const obj = shapeDisplayObjects.find((o) => o.id === selectedShapeId);
+      if (obj) {
+        const bounds = transformedShapeBounds(obj);
+        const ctx = renderCanvasRef.current.getContext("2d")!;
+        ctx.save();
+        // Draw the 4 corner handles with orange color for distort mode
+        const corners = ["nw", "ne", "se", "sw"] as const;
+        const handles = getHandlePositions(bounds);
+        const cornerHandles = handles.filter((h) => corners.includes(h.id as typeof corners[number]));
+        ctx.strokeStyle = "#ff6600";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 2]);
+        ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+        ctx.setLineDash([]);
+        for (const h of cornerHandles) {
+          ctx.fillStyle = "white";
+          ctx.strokeStyle = "#ff6600";
+          ctx.fillRect(h.x - 5, h.y - 5, 10, 10);
+          ctx.strokeRect(h.x - 5, h.y - 5, 10, 10);
+        }
+        // For envelope mode also show edge midpoint handles
+        if (freeTransformMode === "envelope") {
+          const edgeMids = ["n", "e", "s", "w"] as const;
+          const edgeHandles = handles.filter((h) => edgeMids.includes(h.id as typeof edgeMids[number]));
+          for (const h of edgeHandles) {
+            ctx.beginPath();
+            ctx.arc(h.x, h.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "#ff6600";
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+    }
+
+    // Draw Gradient Transform handles (center circle, scale handle, rotate handle)
+    if (activeTool === "gradientTransform" && selectedShapeId && renderCanvasRef.current) {
+      const obj = shapeDisplayObjects.find((o) => o.id === selectedShapeId);
+      if (obj) {
+        const gradFill = getShapeGradientFill(obj.shape);
+        if (gradFill) {
+          const bounds = transformedShapeBounds(obj);
+          const angle = gradFill.type === "linear-gradient" ? gradFill.angle : 0;
+          const { cx, cy, scaleX, scaleY, rotX, rotY } = getGradientHandlePositions(bounds, angle);
+          const ctx = renderCanvasRef.current.getContext("2d")!;
+          ctx.save();
+
+          // Dashed outline showing gradient bounds
+          ctx.strokeStyle = "#00cc99";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 2]);
+          ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+          ctx.setLineDash([]);
+
+          // Line from center to scale handle
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(scaleX, scaleY);
+          ctx.strokeStyle = "#00cc99";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          // Line from center to rotate handle
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(rotX, rotY);
+          ctx.strokeStyle = "#00cc99";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 2]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Center circle
+          ctx.beginPath();
+          ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+          ctx.fillStyle = "white";
+          ctx.strokeStyle = "#00cc99";
+          ctx.lineWidth = 1.5;
+          ctx.fill();
+          ctx.stroke();
+
+          // Scale handle (square)
+          ctx.fillStyle = "white";
+          ctx.strokeStyle = "#00cc99";
+          ctx.lineWidth = 1;
+          ctx.fillRect(scaleX - 5, scaleY - 5, 10, 10);
+          ctx.strokeRect(scaleX - 5, scaleY - 5, 10, 10);
+
+          // Rotate handle (circle)
+          ctx.beginPath();
+          ctx.arc(rotX, rotY, 5, 0, Math.PI * 2);
+          ctx.fillStyle = "white";
+          ctx.strokeStyle = "#00cc99";
+          ctx.lineWidth = 1.5;
+          ctx.fill();
+          ctx.stroke();
+
+          // For radial gradient, also show focal point handle
+          if (gradFill.type === "radial-gradient") {
+            const fpX = cx + gradFill.focalPoint * bounds.width / 2;
+            const fpY = cy;
+            ctx.beginPath();
+            ctx.arc(fpX, fpY, 4, 0, Math.PI * 2);
+            ctx.fillStyle = "#00cc99";
+            ctx.fill();
+          }
+
+          ctx.restore();
+        }
+      }
+    }
+
+    // Draw motion path overlays for layers with active motion tweens
+    if (timeline && renderCanvasRef.current) {
+      const ctx = renderCanvasRef.current.getContext("2d");
+      if (ctx) {
+        drawMotionPaths(ctx, [...timeline.layers] as import("@flash/core").Layer[], _currentFrame);
+      }
+    }
+
+    // Draw Free Transform marquee selection rectangle
+    if (ftIsMarqueeSelecting && ftMarqueeStart && ftMarqueeEnd && renderCanvasRef.current) {
+      const ctx = renderCanvasRef.current.getContext("2d")!;
+      ctx.save();
+      ctx.strokeStyle = "#0066cc";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      const r = normalizeRect(ftMarqueeStart, ftMarqueeEnd);
+      ctx.strokeRect(r.x, r.y, r.width, r.height);
+      ctx.fillStyle = "rgba(0,102,204,0.05)";
+      ctx.fillRect(r.x, r.y, r.width, r.height);
+      ctx.restore();
+    }
+  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd]);
+
+  // CSS filter for view modes
+  const stageFilter =
+    viewMode === "antialias"
+      ? "none"
+      : viewMode === "outlines"
+      ? "contrast(100) invert(1) grayscale(1)"
+      : "none";
+
+  // The CSS transform positions the stage using pan + zoom
+  // We translate THEN scale so pan is in stage-space coordinates
+  const transform = `scale(${internalZoom}) translate(${internalPanX}px, ${internalPanY}px)`;
+
+  // Zoom tool: left-click = zoom in, alt+click or right-click = zoom out
+  const onZoomToolClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (activeTool !== "zoom") return;
+      e.preventDefault();
+      const zoomOut = e.altKey || e.button === 2;
+      setInternalZoom((z) => {
+        const next = nearestZoomLevel(z, zoomOut ? -1 : 1);
+        onZoomChange?.(next);
+        return next;
+      });
+    },
+    [activeTool, onZoomChange]
+  );
+
+  const workAreaStyle: React.CSSProperties = {
+    flex: 1,
+    background: "#808080",
+    overflow: "hidden",
+    position: "relative",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: handleCursor ?? getToolCursor(activeTool, spaceHeld),
+  };
+
+  const stageContainerStyle: React.CSSProperties = {
+    position: "relative",
+    boxShadow: "2px 2px 8px rgba(0,0,0,0.5)",
+    transformOrigin: "center center",
+    transform,
+    willChange: "transform",
+    flexShrink: 0,
+  };
+
+  const stageStyle: React.CSSProperties = {
+    display: "block",
+    width: `${stageWidth}px`,
+    height: `${stageHeight}px`,
+    background: backgroundColor,
+    position: "relative",
+    // Outlines mode: show only stroke outlines via filter (simplified approximation)
+    filter: viewMode === "outlines" ? "grayscale(1) contrast(999)" : "none",
+    // imageRendering for pixel grid at high zoom
+    imageRendering: internalZoom >= 2 ? "pixelated" : "auto",
+  };
+
+  // Handle drag-over and drop for library items
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes("application/flash-library-item")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      const itemId = e.dataTransfer.getData("application/flash-library-item");
+      if (!itemId || !onDrop) return;
+      e.preventDefault();
+
+      // Convert screen coordinates to stage coordinates
+      const workArea = workAreaRef.current;
+      if (!workArea) return;
+      const rect = workArea.getBoundingClientRect();
+      // The stage is centered in the workArea with transform: scale(zoom) translate(panX, panY)
+      const containerCenterX = rect.left + rect.width / 2;
+      const containerCenterY = rect.top + rect.height / 2;
+
+      // In screen space, the stage center is at containerCenter + (panX * zoom, panY * zoom)
+      // Stage coords: x_stage = (screenX - stageCenterScreenX) / zoom + stageWidth/2
+      const stageCenterScreenX = containerCenterX + internalPanX * internalZoom;
+      const stageCenterScreenY = containerCenterY + internalPanY * internalZoom;
+
+      const stageX = (e.clientX - stageCenterScreenX) / internalZoom + stageWidth / 2;
+      const stageY = (e.clientY - stageCenterScreenY) / internalZoom + stageHeight / 2;
+
+      onDrop(itemId, stageX, stageY);
+    },
+    [onDrop, internalPanX, internalPanY, internalZoom, stageWidth, stageHeight]
+  );
+
+  // Double-click on pen tool: finalize path as open
+  // Double-click on text object with selection tool: enter text edit mode
+  const onDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (activeTool === "pen") {
+        // Need at least 2 anchors to form an open path
+        const anchors = penState.anchors;
+        if (anchors.length < 2) {
+          // Not enough points — just cancel
+          setPenState({ anchors: [], dragStart: null, currentHandleOut: null, cursorPos: null });
+          return;
+        }
+        e.preventDefault();
+        // Build an open (unclosed) path
+        const shapePath = anchorsToShapePath(anchors, undefined, undefined);
+        const openPath = { ...shapePath, closed: false };
+        const shapeId = "shape-pen-" + Date.now();
+        const openShape: Shape = { id: shapeId, paths: [openPath] };
+        onShapeCreated?.(openShape, 0, 0);
+        setPenState({ anchors: [], dragStart: null, currentHandleOut: null, cursorPos: null });
+        return;
+      }
+
+      // Selection tool: double-click on a text object to enter inline edit mode,
+      // or double-click on a SymbolInstance to enter symbol edit mode.
+      if (activeTool === "selection") {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        const hitText = [...textDisplayObjects].reverse().find((obj) =>
+          stageX >= obj.x &&
+          stageX <= obj.x + obj.width &&
+          stageY >= obj.y &&
+          stageY <= obj.y + obj.height
+        );
+        if (hitText) {
+          e.preventDefault();
+          setTextEditState({
+            stageX: hitText.x,
+            stageY: hitText.y,
+            editingId: hitText.id,
+            initialText: hitText.text,
+          });
+          setTimeout(() => textareaRef.current?.focus(), 0);
+        } else if (onSymbolInstanceDoubleClick && symbolInstanceDisplayObjects.length > 0) {
+          // Hit-test symbol instances: use a proximity radius around the instance origin.
+          // Try a 40px hit radius (covers most instances without needing to resolve symbol bounds).
+          const HIT_RADIUS = 40;
+          const hitInst = [...symbolInstanceDisplayObjects].reverse().find((inst) => {
+            const dx = stageX - inst.x;
+            const dy = stageY - inst.y;
+            return Math.hypot(dx, dy) <= HIT_RADIUS;
+          });
+          if (hitInst) {
+            e.preventDefault();
+            onSymbolInstanceDoubleClick(hitInst.id, hitInst.symbolId);
+          }
+        }
+      }
+    },
+    [activeTool, penState, onShapeCreated, toStageCoords, textDisplayObjects, symbolInstanceDisplayObjects, onSymbolInstanceDoubleClick]
+  );
+
+  return (
+    <div
+      ref={workAreaRef}
+      style={workAreaStyle}
+      onWheelCapture={onWheelCapture}
+      onWheel={onWheel}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={(e) => { onMouseUp(e); setEraserCursorPos(null); }}
+      onClick={onZoomToolClick}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={activeTool === "zoom" ? onZoomToolClick : undefined}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      <div style={stageContainerStyle}>
+        <div style={stageStyle} onClick={() => onInstanceSelect?.(null)}>
+          {/* Grid overlay canvas */}
+          {showGrid && (
+            <canvas
+              ref={gridCanvasRef}
+              width={stageWidth}
+              height={stageHeight}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                pointerEvents: "none",
+                zIndex: 10,
+                filter: stageFilter,
+              }}
+            />
+          )}
+
+          {/* Placed instances — selection overlay only; rendering is done by CanvasRenderer */}
+          {instances.map((inst) => {
+            const w = 60 * inst.scaleX;
+            const h = 40 * inst.scaleY;
+            const isSelected = inst.id === selectedInstanceId;
+            const instStyle: React.CSSProperties = {
+              position: "absolute",
+              left: inst.x - w / 2,
+              top: inst.y - h / 2,
+              width: w,
+              height: h,
+              transform: `rotate(${inst.rotation}deg)`,
+              opacity: inst.alpha,
+              background: "transparent",
+              border: isSelected
+                ? "2px solid #4af"
+                : "1px dashed rgba(80,140,220,0.5)",
+              boxSizing: "border-box",
+              cursor: "pointer",
+              userSelect: "none",
+              zIndex: 5,
+            };
+            return (
+              <div
+                key={inst.id}
+                style={instStyle}
+                onClick={(e) => { e.stopPropagation(); onInstanceSelect?.(inst.id); }}
+                onDoubleClick={(e) => { e.stopPropagation(); onInstanceDoubleClick?.(inst.id); }}
+              />
+            );
+          })}
+
+          {/* Canvas renderer for shape display objects */}
+          <canvas
+            ref={renderCanvasRef}
+            data-testid="stage-canvas"
+            width={stageWidth}
+            height={stageHeight}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: stageWidth,
+              height: stageHeight,
+              pointerEvents: "none",
+              zIndex: 4,
+            }}
+          />
+
+          {/* Draw preview overlay */}
+          {drawPreview && (() => {
+            const left = Math.min(drawPreview.x1, drawPreview.x2);
+            const top = Math.min(drawPreview.y1, drawPreview.y2);
+            const width = Math.abs(drawPreview.x2 - drawPreview.x1);
+            const height = Math.abs(drawPreview.y2 - drawPreview.y1);
+            const isLine = drawPreview.tool === "line";
+            const isOval = drawPreview.tool === "oval";
+            const isPolystar = drawPreview.tool === "polystar";
+
+            if (isLine) {
+              // For line, draw an SVG overlay
+              const svgLeft = Math.min(drawPreview.x1, drawPreview.x2);
+              const svgTop = Math.min(drawPreview.y1, drawPreview.y2);
+              const svgW = Math.max(width, 1);
+              const svgH = Math.max(height, 1);
+              return (
+                <svg
+                  style={{
+                    position: "absolute",
+                    left: svgLeft,
+                    top: svgTop,
+                    pointerEvents: "none",
+                    zIndex: 20,
+                    overflow: "visible",
+                  }}
+                  width={svgW}
+                  height={svgH}
+                >
+                  <line
+                    x1={drawPreview.x1 - svgLeft}
+                    y1={drawPreview.y1 - svgTop}
+                    x2={drawPreview.x2 - svgLeft}
+                    y2={drawPreview.y2 - svgTop}
+                    stroke="#000"
+                    strokeWidth={1}
+                    strokeDasharray="4 2"
+                  />
+                </svg>
+              );
+            }
+
+            if (isPolystar) {
+              // Render polystar preview as SVG polygon
+              const cx = drawPreview.x1;
+              const cy = drawPreview.y1;
+              const radius = Math.hypot(drawPreview.x2 - cx, drawPreview.y2 - cy);
+              const { shapeType, sides, pointSize } = polyStarOptions;
+              const pts: string[] = [];
+              if (shapeType === "star") {
+                const innerR = radius * pointSize;
+                for (let i = 0; i < sides * 2; i++) {
+                  const angle = (i * Math.PI / sides) - Math.PI / 2;
+                  const r = i % 2 === 0 ? radius : innerR;
+                  pts.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+                }
+              } else {
+                for (let i = 0; i < sides; i++) {
+                  const angle = (i * 2 * Math.PI / sides) - Math.PI / 2;
+                  pts.push(`${cx + radius * Math.cos(angle)},${cy + radius * Math.sin(angle)}`);
+                }
+              }
+              return (
+                <svg
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: stageWidth,
+                    height: stageHeight,
+                    pointerEvents: "none",
+                    zIndex: 20,
+                    overflow: "visible",
+                  }}
+                >
+                  <polygon
+                    points={pts.join(" ")}
+                    fill="rgba(200,200,200,0.1)"
+                    stroke="#000"
+                    strokeWidth={1}
+                    strokeDasharray="4 2"
+                  />
+                </svg>
+              );
+            }
+
+            const previewStyle: React.CSSProperties = {
+              position: "absolute",
+              left,
+              top,
+              width,
+              height,
+              border: "1px dashed #000",
+              boxSizing: "border-box",
+              pointerEvents: "none",
+              zIndex: 20,
+              borderRadius: isOval ? "50%" : 0,
+              background: "rgba(200,200,200,0.1)",
+            };
+            return <div style={previewStyle} />;
+          })()}
+          {/* Pencil preview overlay */}
+          {pencilPreviewPoints.length >= 2 && (
+            <svg
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: stageWidth,
+                height: stageHeight,
+                pointerEvents: "none",
+                zIndex: 20,
+                overflow: "visible",
+              }}
+            >
+              <polyline
+                points={pencilPreviewPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                fill="none"
+                stroke={propStrokeColor}
+                strokeWidth={Math.max(1, propStrokeWidth)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.7}
+              />
+            </svg>
+          )}
+
+          {/* Brush preview overlay */}
+          {brushPreviewPoints.length >= 2 && (() => {
+            const half = brushSize / 2;
+            const forward: { x: number; y: number }[] = [];
+            const backward: { x: number; y: number }[] = [];
+            for (let i = 0; i < brushPreviewPoints.length; i++) {
+              const curr = brushPreviewPoints[i];
+              const prev2 = brushPreviewPoints[Math.max(0, i - 1)];
+              const next2 = brushPreviewPoints[Math.min(brushPreviewPoints.length - 1, i + 1)];
+              const tx = next2.x - prev2.x;
+              const ty = next2.y - prev2.y;
+              const tlen = Math.hypot(tx, ty) || 1;
+              const nx = -ty / tlen;
+              const ny = tx / tlen;
+              forward.push({ x: curr.x + nx * half, y: curr.y + ny * half });
+              backward.unshift({ x: curr.x - nx * half, y: curr.y - ny * half });
+            }
+            const allPts = [...forward, ...backward];
+            const fillCss = propFill?.type === "solid"
+              ? `rgba(${propFill.color.r},${propFill.color.g},${propFill.color.b},${propFill.color.a / 255})`
+              : propStrokeColor;
+            return (
+              <svg
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: stageWidth,
+                  height: stageHeight,
+                  pointerEvents: "none",
+                  zIndex: 20,
+                  overflow: "visible",
+                }}
+              >
+                <polygon
+                  points={allPts.map((p) => `${p.x},${p.y}`).join(" ")}
+                  fill={fillCss}
+                  opacity={0.6}
+                />
+              </svg>
+            );
+          })()}
+
+          {/* Eraser preview overlay (bounding rect of the full drag path) */}
+          {eraserPreview && (
+            <div
+              style={{
+                position: "absolute",
+                left: eraserPreview.x,
+                top: eraserPreview.y,
+                width: eraserPreview.w,
+                height: eraserPreview.h,
+                border: "1px dashed #ff6600",
+                boxSizing: "border-box",
+                background: "rgba(255,100,0,0.1)",
+                pointerEvents: "none",
+                zIndex: 20,
+              }}
+            />
+          )}
+          {/* Eraser cursor circle overlay — shown whenever eraser tool is active and cursor is over the stage */}
+          {activeTool === "eraser" && eraserCursorPos && (
+            <div
+              style={{
+                position: "absolute",
+                left: eraserCursorPos.stageX - eraserSize / 2,
+                top: eraserCursorPos.stageY - eraserSize / 2,
+                width: eraserSize,
+                height: eraserSize,
+                borderRadius: "50%",
+                border: "1.5px solid #333",
+                boxSizing: "border-box",
+                background: "rgba(255,255,255,0.15)",
+                pointerEvents: "none",
+                zIndex: 30,
+              }}
+            />
+          )}
+
+          {/* Arrow tool rubber-band marquee selection overlay */}
+          {selIsMarqueeSelecting && selMarqueeStart && selMarqueeEnd && (() => {
+            const r = normalizeRect(selMarqueeStart, selMarqueeEnd);
+            return (
+              <div
+                style={{
+                  position: "absolute",
+                  left: r.x,
+                  top: r.y,
+                  width: r.width,
+                  height: r.height,
+                  border: "1px dashed #0066ff",
+                  background: "rgba(0,102,255,0.08)",
+                  boxSizing: "border-box",
+                  pointerEvents: "none",
+                  zIndex: 25,
+                }}
+              />
+            );
+          })()}
+
+          {/* Text editing textarea overlay */}
+          {textEditState && (() => {
+            const fontStyle = textFormat.italic ? "italic " : "";
+            const fontWeight = textFormat.bold ? "bold " : "";
+            const font = `${fontStyle}${fontWeight}${textFormat.fontSize}px ${textFormat.fontFamily}`;
+            return (
+              <textarea
+                ref={textareaRef}
+                defaultValue={textEditState.initialText}
+                style={{
+                  position: "absolute",
+                  left: textEditState.stageX,
+                  top: textEditState.stageY,
+                  width: 200,
+                  height: 80,
+                  font,
+                  color: textFormat.color,
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px dashed #0099ff",
+                  outline: "none",
+                  resize: "both",
+                  zIndex: 50,
+                  padding: 2,
+                  boxSizing: "border-box",
+                  overflow: "hidden",
+                }}
+                onBlur={(e) => {
+                  const text = e.currentTarget.value;
+                  if (textEditState.editingId) {
+                    // Editing existing text object
+                    onTextEdit?.(textEditState.editingId, text);
+                    onTextEditEnd?.();
+                  } else if (text.trim()) {
+                    // Creating a new text object
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    onTextCreated?.({
+                      type: "text",
+                      x: textEditState.stageX,
+                      y: textEditState.stageY,
+                      width: e.currentTarget.offsetWidth || 200,
+                      height: e.currentTarget.offsetHeight || 80,
+                      text,
+                      textType: "static",
+                      fontFamily: textFormat.fontFamily,
+                      fontSize: textFormat.fontSize,
+                      bold: textFormat.bold,
+                      italic: textFormat.italic,
+                      color: hexToColor(textFormat.color),
+                      align: textFormat.align,
+                      multiline: true,
+                      wordWrap: true,
+                    });
+                    void rect;
+                  }
+                  setTextEditState(null);
+                }}
+                onKeyDown={(e) => {
+                  // Escape to cancel without saving
+                  if (e.key === "Escape") {
+                    setTextEditState(null);
+                  }
+                  e.stopPropagation();
+                }}
+              />
+            );
+          })()}
+
+          {/* Guide lines overlay */}
+          {showGuides && guides.map((guide) => {
+            const isHorizontal = guide.orientation === "horizontal";
+            const guideStyle: React.CSSProperties = isHorizontal
+              ? {
+                  position: "absolute",
+                  left: 0,
+                  top: guide.position,
+                  width: "100%",
+                  height: 1,
+                  background: "#00aaff",
+                  cursor: "row-resize",
+                  zIndex: 30,
+                  pointerEvents: "auto",
+                }
+              : {
+                  position: "absolute",
+                  top: 0,
+                  left: guide.position,
+                  width: 1,
+                  height: "100%",
+                  background: "#00aaff",
+                  cursor: "col-resize",
+                  zIndex: 30,
+                  pointerEvents: "auto",
+                };
+            return (
+              <div
+                key={guide.id}
+                style={guideStyle}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  guideDragRef.current = { guideId: guide.id, orientation: guide.orientation };
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  onGuideDelete?.(guide.id);
+                }}
+              />
+            );
+          })}
+          {/* Stage overlay slot — used for SVG overlays like transform handles */}
+          {stageOverlay}
+        </div>
+        {/* Outlines view mode overlay label */}
+        {viewMode === "outlines" && (
+          <div
+            style={{
+              position: "absolute",
+              top: 2,
+              right: 4,
+              fontSize: 9,
+              color: "#aaa",
+              pointerEvents: "none",
+              userSelect: "none",
+            }}
+          >
+            OUTLINES
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

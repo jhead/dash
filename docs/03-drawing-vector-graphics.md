@@ -1,5 +1,10 @@
 # 03 — Drawing & Vector Graphics
 
+> **Note:** The current implementation uses a single-fill-per-contour model (`ShapePath`).
+> This is an intentional MVP simplification. The full planar map required for byte-faithful
+> merge-drawing and SWF export uses per-edge `fill0`/`fill1` references. See
+> `docs/03-planar-fill-decision.md` for the design, migration plan, and deferral decision.
+
 Flash's vector engine and its two drawing models. This is the heart of authoring fidelity.
 
 ## Vector vs bitmap

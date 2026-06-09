@@ -2,7 +2,7 @@
   "id": "0514-swf-soundstreamhead2-mp3-parameters-encoding",
   "title": "SWF SoundStreamHead2 MP3 parameters encoding",
   "description": "Test SoundStreamHead (tag 18) body: bits 4-5=playback rate (0=5512,1=11025,2=22050,3=44100), bits 2-3=playback size, bit 1=stereo, bits 4-5 of byte 1=stream codec.",
-  "status": "open",
+  "status": "in_progress",
   "created_at": "2026-06-09T22:01:49Z",
-  "updated_at": "2026-06-09T22:01:49Z"
+  "updated_at": "2026-06-09T22:02:59Z"
 }

@@ -1,0 +1,41 @@
+/**
+ * SWF tag type constants.
+ */
+export const Tag = {
+  End: 0,
+  ShowFrame: 1,
+  DefineShape: 2,
+  SetBackgroundColor: 9,
+  DefineText: 11,
+  DoAction: 12,
+  DefineSound: 14,
+  StartSound: 15,
+  SoundStreamHead: 18,
+  SoundStreamBlock: 19,
+  DefineBitsJPEG2: 21,
+  Protect: 24,
+  PlaceObject2: 26,
+  RemoveObject2: 28,
+  DefineButton2: 34,
+  DefineBitsJPEG3: 35,
+  DefineBitsLossless2: 36,
+  DefineEditText: 37,
+  DefineSprite: 39,
+  FrameLabel: 43,
+  SoundStreamHead2: 45,
+  DefineMorphShape: 46,
+  DefineFont2: 48,
+  ExportAssets: 56,
+  DoInitAction: 59,
+  EnableDebugger2: 64,
+  FileAttributes: 69,
+  PlaceObject3: 70,
+  DefineFont3: 75,
+  Metadata: 77,
+  DefineScalingGrid: 78,
+  DefineShape4: 83,
+  DefineMorphShape2: 84,
+  SceneAndFrameLabelData: 86,
+} as const;
+
+export type TagCode = (typeof Tag)[keyof typeof Tag];
