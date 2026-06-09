@@ -186,10 +186,13 @@ describe("SoundStreamBlock encoding", () => {
     expect(Tag.SoundStreamBlock).toBe(19);
   });
 
-  it("SoundStreamBlock body contains the original audio bytes", () => {
+  it("SoundStreamBlock body starts with SeekSamples UI16 (0) followed by original audio bytes", () => {
     const audioChunk = new Uint8Array([0xaa, 0xbb, 0xcc, 0xdd]);
     const result = encodeSoundStreamBlock(audioChunk);
-    expect(Array.from(result)).toEqual(Array.from(audioChunk));
+    // Per SWF spec, body = SeekSamples UI16LE (2 bytes) + audio data
+    expect(result[0]).toBe(0); // SeekSamples low byte
+    expect(result[1]).toBe(0); // SeekSamples high byte
+    expect(Array.from(result.slice(2))).toEqual(Array.from(audioChunk));
   });
 });
 

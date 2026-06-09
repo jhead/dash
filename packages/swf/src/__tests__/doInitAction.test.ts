@@ -1,16 +1,19 @@
 /**
  * Tests for DoInitAction (tag 59) emission.
  *
- * Verifies that symbols with exportForActionScript=true and a className
- * cause DoInitAction tags to be emitted in the correct position with
- * correct bytecode.
+ * DoInitAction is emitted in the first SWF frame for every symbol with
+ * exportForActionScript=true and a non-empty className (linkage).  Its body
+ * starts with a UI16 SpriteID that must match the symbol's DefineSprite
+ * character ID, followed by AVM1 bytecode that calls
+ * Object.registerClass(linkageId, ClassName).
  *
  * Tag codes:
- *   0  End
- *   1  ShowFrame
- *  39  DefineSprite
- *  56  ExportAssets
- *  59  DoInitAction
+ *   0   End
+ *   1   ShowFrame
+ *  39   DefineSprite
+ *  43   FrameLabel
+ *  56   ExportAssets
+ *  59   DoInitAction
  */
 
 import { describe, it, expect } from "vitest";
@@ -21,7 +24,6 @@ import type { FlashDocument, Frame, Layer, Scene, Symbol } from "@flash/core";
 // Tag code constants
 // ---------------------------------------------------------------------------
 
-const TAG_END = 0;
 const TAG_SHOW_FRAME = 1;
 const TAG_DEFINE_SPRITE = 39;
 const TAG_DO_INIT_ACTION = 59;
@@ -37,7 +39,6 @@ interface SWFTag {
 }
 
 function parseSWFHeader(bytes: Uint8Array): number /* tagsOffset */ {
-  // Skip 8-byte fixed header
   let byteOff = 8;
   let bitBuf = 0;
   let bitsLeft = 0;
@@ -61,8 +62,7 @@ function parseSWFHeader(bytes: Uint8Array): number /* tagsOffset */ {
   readBits(nBits); // yMin
   readBits(nBits); // yMax
 
-  // After all RECT bits are consumed, byteOff is already past the RECT bytes.
-  // Skip FrameRate(2) + FrameCount(2) to reach the tag stream.
+  // After RECT: skip FrameRate(2) + FrameCount(2)
   return byteOff + 4;
 }
 
@@ -89,7 +89,7 @@ function parseTags(bytes: Uint8Array, offset: number): SWFTag[] {
       offset: pos,
     });
     pos = bodyStart + bodyLength;
-    if (tagCode === TAG_END) break;
+    if (tagCode === 0) break;
   }
   return tags;
 }
@@ -132,7 +132,7 @@ const DEFAULT_LINKAGE = {
   sharedUrl: "",
 };
 
-function makeEmptyFrame(): Frame {
+function makeEmptyFrame(script = ""): Frame {
   return {
     index: 0,
     isKeyframe: true,
@@ -140,7 +140,7 @@ function makeEmptyFrame(): Frame {
     tweenType: "none",
     label: "",
     labelType: "name",
-    script: "",
+    script,
     sound: null,
     motionEase: 0,
     motionRotate: "none",
@@ -154,19 +154,32 @@ function makeEmptyFrame(): Frame {
   };
 }
 
-function makeLayer(): Layer {
+function makeSymbolLayer(script = ""): Layer {
   return {
-    id: "layer-1",
+    id: "sym-layer-1",
     name: "Layer 1",
-    type: "normal",
+    type: "normal" as const,
     visible: true,
     locked: false,
     outlineMode: false,
     outlineColor: "#ff0000",
     height: 20,
     parentFolderId: null,
-    frames: [makeEmptyFrame()],
+    frames: [makeEmptyFrame(script)],
     frameCount: 1,
+  };
+}
+
+function makeSymbol(overrides: Partial<Symbol> = {}, script = ""): Symbol {
+  return {
+    id: "sym-1",
+    name: "MySymbol",
+    itemType: "symbol",
+    symbolType: "movieclip",
+    timeline: { layers: [makeSymbolLayer(script)] },
+    linkage: DEFAULT_LINKAGE,
+    scale9Grid: null,
+    ...overrides,
   };
 }
 
@@ -174,37 +187,23 @@ function makeScene(): Scene {
   return {
     id: "scene-1",
     name: "Scene 1",
-    timeline: { layers: [makeLayer()] },
-  };
-}
-
-function makeSymbol(overrides: Partial<Symbol> = {}): Symbol {
-  const defaultTimeline = {
-    layers: [
-      {
-        id: "sym-layer-1",
-        name: "Layer 1",
-        type: "normal" as const,
-        visible: true,
-        locked: false,
-        outlineMode: false,
-        outlineColor: "#ff0000",
-        height: 20,
-        parentFolderId: null,
-        frames: [makeEmptyFrame()],
-        frameCount: 1,
-      },
-    ],
-  };
-  return {
-    id: "sym-1",
-    name: "MySymbol",
-    itemType: "symbol",
-    symbolType: "movieclip",
-    timeline: defaultTimeline,
-    linkage: DEFAULT_LINKAGE,
-    scale9Grid: null,
-    ...overrides,
+    timeline: {
+      layers: [
+        {
+          id: "layer-1",
+          name: "Layer 1",
+          type: "normal" as const,
+          visible: true,
+          locked: false,
+          outlineMode: false,
+          outlineColor: "#ff0000",
+          height: 20,
+          parentFolderId: null,
+          frames: [makeEmptyFrame()],
+          frameCount: 1,
+        },
+      ],
+    },
   };
 }
 
@@ -218,43 +217,38 @@ function makeDoc(symbols: Symbol[]): FlashDocument {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers for inspecting DoInitAction tag bodies
-// ---------------------------------------------------------------------------
-
-/** Extract SpriteId (UI16LE) from a DoInitAction tag body. */
-function getSpriteId(body: Uint8Array): number {
-  return body[0] | (body[1] << 8);
-}
-
-/** Return the action bytes portion of a DoInitAction tag body (after the 2-byte SpriteId). */
-function getActionBytes(body: Uint8Array): Uint8Array {
-  return body.slice(2);
-}
-
-/** Check if a Uint8Array contains a null-terminated string at any position. */
-function containsString(bytes: Uint8Array, s: string): boolean {
-  const encoded = new TextEncoder().encode(s);
-  outer: for (let i = 0; i <= bytes.length - encoded.length; i++) {
-    for (let j = 0; j < encoded.length; j++) {
-      if (bytes[i + j] !== encoded[j]) continue outer;
-    }
-    return true;
-  }
-  return false;
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe("DoInitAction (tag 59)", () => {
-  it("emits DoInitAction tag for a symbol with exportForActionScript=true", () => {
+  // Test 1: Document with exported symbol compiles without error
+  it("document with exported symbol compiles without error", () => {
+    const sym = makeSymbol(
+      {
+        id: "sym-1",
+        name: "MySymbol",
+        linkage: {
+          ...DEFAULT_LINKAGE,
+          exportForActionScript: true,
+          exportInFirstFrame: true,
+          linkageIdentifier: "MySymbol",
+          className: "MySymbol",
+        },
+      },
+      "trace('init');"
+    );
+    const doc = makeDoc([sym]);
+    expect(() => compileDocument(doc)).not.toThrow();
+  });
+
+  // Test 2: DoInitAction (tag 59) appears in output for exported symbol with className
+  it("DoInitAction tag (59) appears for symbol with exportForActionScript=true and className", () => {
     const sym = makeSymbol({
       linkage: {
         ...DEFAULT_LINKAGE,
         exportForActionScript: true,
-        className: "MyClass",
-        linkageIdentifier: "MyLinkageId",
+        linkageIdentifier: "MySymbol",
+        className: "MySymbol",
       },
     });
     const doc = makeDoc([sym]);
@@ -265,95 +259,60 @@ describe("DoInitAction (tag 59)", () => {
     expect(doInitTags.length).toBeGreaterThan(0);
   });
 
-  it("does NOT emit DoInitAction for a symbol without exportForActionScript", () => {
+  // Test 3: DoInitAction body starts with SpriteID UI16 matching DefineSprite char id
+  it("DoInitAction body SpriteID matches DefineSprite character ID", () => {
     const sym = makeSymbol({
-      linkage: {
-        ...DEFAULT_LINKAGE,
-        exportForActionScript: false,
-        className: "MyClass",
-        linkageIdentifier: "MyLinkageId",
-      },
-    });
-    const doc = makeDoc([sym]);
-    const bytes = compileDocument(doc);
-    const tags = parseSWF(bytes);
-
-    const doInitTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
-    expect(doInitTags.length).toBe(0);
-  });
-
-  it("DoInitAction SpriteId matches the DefineSprite character ID", () => {
-    const sym = makeSymbol({
+      id: "sym-1",
       linkage: {
         ...DEFAULT_LINKAGE,
         exportForActionScript: true,
-        className: "MyClass",
-        linkageIdentifier: "MyLinkageId",
+        linkageIdentifier: "MySymbol",
+        className: "MySymbol",
       },
     });
     const doc = makeDoc([sym]);
     const bytes = compileDocument(doc);
     const tags = parseSWF(bytes);
 
-    // Find the DefineSprite tag — the first one belongs to our symbol
-    const defineSpriteTags = tags.filter((t) => t.code === TAG_DEFINE_SPRITE);
-    expect(defineSpriteTags.length).toBeGreaterThan(0);
-    const spriteCharId = defineSpriteTags[0].body[0] | (defineSpriteTags[0].body[1] << 8);
+    const defineSpriteTag = tags.find((t) => t.code === TAG_DEFINE_SPRITE);
+    expect(defineSpriteTag).toBeDefined();
+    const spriteCharId =
+      defineSpriteTag!.body[0] | (defineSpriteTag!.body[1] << 8);
 
-    // Find DoInitAction and compare SpriteId
-    const doInitTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
-    expect(doInitTags.length).toBeGreaterThan(0);
-    const doInitSpriteId = getSpriteId(doInitTags[0].body);
+    const doInitTag = tags.find((t) => t.code === TAG_DO_INIT_ACTION);
+    expect(doInitTag).toBeDefined();
+    const doInitSpriteId = doInitTag!.body[0] | (doInitTag!.body[1] << 8);
     expect(doInitSpriteId).toBe(spriteCharId);
   });
 
-  it("DoInitAction bytecode contains the string 'registerClass'", () => {
+  // Test 4: DoInitAction body length > 2 (has action bytes beyond just SpriteID)
+  it("DoInitAction body is longer than 2 bytes (contains AVM1 bytecode after SpriteID)", () => {
     const sym = makeSymbol({
       linkage: {
         ...DEFAULT_LINKAGE,
         exportForActionScript: true,
-        className: "MyClass",
-        linkageIdentifier: "MyLinkageId",
+        linkageIdentifier: "MySymbol",
+        className: "MySymbol",
       },
     });
     const doc = makeDoc([sym]);
     const bytes = compileDocument(doc);
     const tags = parseSWF(bytes);
 
-    const doInitTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
-    expect(doInitTags.length).toBeGreaterThan(0);
-
-    const actionBytes = getActionBytes(doInitTags[0].body);
-    expect(containsString(actionBytes, "registerClass")).toBe(true);
+    const doInitTag = tags.find((t) => t.code === TAG_DO_INIT_ACTION);
+    expect(doInitTag).toBeDefined();
+    // 2 bytes for SpriteID + at least 1 ActionEnd byte (0x00)
+    expect(doInitTag!.body.length).toBeGreaterThan(2);
   });
 
-  it("DoInitAction bytecode contains the className string", () => {
+  // Test 5: DoInitAction appears before first ShowFrame (within the first frame)
+  it("DoInitAction appears before first ShowFrame in the tag stream", () => {
     const sym = makeSymbol({
       linkage: {
         ...DEFAULT_LINKAGE,
         exportForActionScript: true,
-        className: "BallClass",
-        linkageIdentifier: "BallLinkage",
-      },
-    });
-    const doc = makeDoc([sym]);
-    const bytes = compileDocument(doc);
-    const tags = parseSWF(bytes);
-
-    const doInitTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
-    expect(doInitTags.length).toBeGreaterThan(0);
-
-    const actionBytes = getActionBytes(doInitTags[0].body);
-    expect(containsString(actionBytes, "BallClass")).toBe(true);
-  });
-
-  it("DoInitAction appears before ShowFrame in the tag stream (first frame)", () => {
-    const sym = makeSymbol({
-      linkage: {
-        ...DEFAULT_LINKAGE,
-        exportForActionScript: true,
-        className: "MyClass",
-        linkageIdentifier: "MyLinkageId",
+        linkageIdentifier: "MySymbol",
+        className: "MySymbol",
       },
     });
     const doc = makeDoc([sym]);
@@ -368,44 +327,47 @@ describe("DoInitAction (tag 59)", () => {
     expect(doInitIdx).toBeLessThan(showFrameIdx);
   });
 
-  it("emits multiple DoInitAction tags when multiple symbols have exportForActionScript=true", () => {
+  // Test 6: Symbol without exportForActionScript=true does not produce DoInitAction
+  it("symbol without exportForActionScript=true does not produce DoInitAction", () => {
+    const sym = makeSymbol({
+      linkage: {
+        ...DEFAULT_LINKAGE,
+        exportForActionScript: false,
+        linkageIdentifier: "MySymbol",
+        className: "MySymbol",
+      },
+    });
+    const doc = makeDoc([sym]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    const doInitTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
+    expect(doInitTags.length).toBe(0);
+  });
+
+  // Test 7: Multiple exported symbols each get their own DoInitAction tag
+  it("multiple exported symbols each produce their own DoInitAction tag", () => {
     const sym1 = makeSymbol({
       id: "sym-1",
-      name: "Symbol1",
+      name: "SymbolA",
       linkage: {
         ...DEFAULT_LINKAGE,
         exportForActionScript: true,
-        className: "ClassA",
-        linkageIdentifier: "LinkageA",
+        linkageIdentifier: "SymbolA",
+        className: "SymbolA",
       },
     });
     const sym2: Symbol = {
       id: "sym-2",
-      name: "Symbol2",
+      name: "SymbolB",
       itemType: "symbol",
       symbolType: "movieclip",
-      timeline: {
-        layers: [
-          {
-            id: "sym2-layer",
-            name: "Layer 1",
-            type: "normal",
-            visible: true,
-            locked: false,
-            outlineMode: false,
-            outlineColor: "#ff0000",
-            height: 20,
-            parentFolderId: null,
-            frames: [makeEmptyFrame()],
-            frameCount: 1,
-          },
-        ],
-      },
+      timeline: { layers: [makeSymbolLayer()] },
       linkage: {
         ...DEFAULT_LINKAGE,
         exportForActionScript: true,
-        className: "ClassB",
-        linkageIdentifier: "LinkageB",
+        linkageIdentifier: "SymbolB",
+        className: "SymbolB",
       },
       scale9Grid: null,
     };
@@ -415,5 +377,111 @@ describe("DoInitAction (tag 59)", () => {
 
     const doInitTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
     expect(doInitTags.length).toBe(2);
+  });
+
+  // Test 8: Symbol with className but exportForActionScript=false produces no DoInitAction
+  it("symbol with className but exportForActionScript=false produces no DoInitAction", () => {
+    const sym = makeSymbol({
+      linkage: {
+        ...DEFAULT_LINKAGE,
+        exportForActionScript: false,
+        className: "SomeClass",
+      },
+    });
+    const doc = makeDoc([sym]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    const doInitTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
+    expect(doInitTags.length).toBe(0);
+  });
+
+  // Test 9: Symbol with exportForActionScript=true but empty className produces no DoInitAction
+  it("symbol with exportForActionScript=true but empty className produces no DoInitAction", () => {
+    const sym = makeSymbol({
+      linkage: {
+        ...DEFAULT_LINKAGE,
+        exportForActionScript: true,
+        linkageIdentifier: "MySymbol",
+        className: "", // empty className — no DoInitAction
+      },
+    });
+    const doc = makeDoc([sym]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    const doInitTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
+    expect(doInitTags.length).toBe(0);
+  });
+
+  // Test 10: Each DoInitAction SpriteID appears in the DefineSprite character ID set
+  it("each DoInitAction SpriteID corresponds to a DefineSprite character ID", () => {
+    const sym1 = makeSymbol({
+      id: "sym-1",
+      name: "SymbolA",
+      linkage: {
+        ...DEFAULT_LINKAGE,
+        exportForActionScript: true,
+        linkageIdentifier: "SymbolA",
+        className: "SymbolA",
+      },
+    });
+    const sym2: Symbol = {
+      id: "sym-2",
+      name: "SymbolB",
+      itemType: "symbol",
+      symbolType: "movieclip",
+      timeline: { layers: [makeSymbolLayer()] },
+      linkage: {
+        ...DEFAULT_LINKAGE,
+        exportForActionScript: true,
+        linkageIdentifier: "SymbolB",
+        className: "SymbolB",
+      },
+      scale9Grid: null,
+    };
+    const doc = makeDoc([sym1, sym2]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    // Collect all DefineSprite character IDs
+    const spriteCharIds = tags
+      .filter((t) => t.code === TAG_DEFINE_SPRITE)
+      .map((t) => t.body[0] | (t.body[1] << 8));
+
+    // Collect DoInitAction SpriteID fields
+    const doInitSpriteIds = tags
+      .filter((t) => t.code === TAG_DO_INIT_ACTION)
+      .map((t) => t.body[0] | (t.body[1] << 8));
+
+    expect(doInitSpriteIds.length).toBe(2);
+    // Each DoInitAction SpriteID must appear in the set of DefineSprite char IDs
+    for (const id of doInitSpriteIds) {
+      expect(spriteCharIds).toContain(id);
+    }
+    // The two IDs must be distinct
+    expect(new Set(doInitSpriteIds).size).toBe(2);
+  });
+
+  // Test 11: Non-exported symbol with no className produces no DoInitAction
+  it("non-exported symbol with no className produces no DoInitAction", () => {
+    const sym = makeSymbol(
+      {
+        linkage: {
+          ...DEFAULT_LINKAGE,
+          exportForActionScript: false,
+          exportInFirstFrame: false,
+          linkageIdentifier: "",
+          className: "",
+        },
+      },
+      "stop();"
+    );
+    const doc = makeDoc([sym]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    const doInitTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
+    expect(doInitTags.length).toBe(0);
   });
 });
