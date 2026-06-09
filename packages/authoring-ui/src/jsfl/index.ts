@@ -7,6 +7,10 @@ export type {
   JsflDocument,
   JsflFl,
   JsflTimeline,
+  JsflLayer,
+  JsflFrame,
+  JsflLibrary,
+  JsflLibraryItem,
 } from "./runtime.js";
 
 export { runJsfl, buildJsflContext } from "./runtime.js";
