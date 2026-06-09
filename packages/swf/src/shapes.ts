@@ -101,8 +101,7 @@ function writeStyleChangeRecord(
   const stateNewStyles = 0;
   const stateFillStyle1 = 0;
 
-  // Type bits: 0, 0
-  bw.writeBits(0, 1);
+  // Type bit: 0 (non-edge record)
   bw.writeBits(0, 1);
   // State flags
   bw.writeBits(stateNewStyles, 1);
