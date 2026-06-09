@@ -1,0 +1,8 @@
+{
+  "id": "0122-freetransform-marquee-select",
+  "title": "Free Transform: rectangular marquee selection missing (no rubber band, no selection)",
+  "description": "User report: dragging on empty stage with Free Transform selects nothing and shows nothing. In Flash 8 the Free Transform tool (Q) supports marquee selection like the Selection tool: drag on empty canvas draws a rubber-band rectangle, on release everything intersecting is selected and the transform bounding box + handles appear around the combined selection. Also verify the Selection tool itself shows its rubber band. Implement the drag-rect visual in StageArea for the freetransform tool, hit-test shapes/text/instances on release, then enter transform mode on the result. 0030 was marked done but only covered Distort/Envelope scope. See docs/04-toolbox.md Free Transform.",
+  "status": "open",
+  "created_at": "2026-06-09T19:45:52Z",
+  "updated_at": "2026-06-09T19:45:52Z"
+}

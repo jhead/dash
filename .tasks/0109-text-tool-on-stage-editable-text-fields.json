@@ -1,0 +1,8 @@
+{
+  "id": "0109-text-tool-on-stage-editable-text-fields",
+  "title": "Text tool: on-stage editable text fields",
+  "description": "Full text tool parity with Flash 8: click to create a TextField instance, double-click existing text to enter edit mode. In edit mode: typed text updates the field, cursor blinking, selection highlight, backspace/delete, arrow keys. Support static/dynamic/input text types (set via Properties panel). Font family, size, bold, italic, alignment (left/center/right/justify), color via toolbar. TextField stored in FlashDocument as TextObject in DisplayObject union. Renderer draws text via ctx.fillText with font props. See docs/04-text-objects.md. INCLUDES user-reported bug: after typing in a text box, clicking OUTSIDE it with the Text tool MOVES the existing textbox to the click point \u2014 wrong. Flash 8 behavior: clicking outside commits the current edit and deselects the field; a further click with the Text tool starts a NEW empty text field at that point. It must never reposition the committed box.",
+  "status": "open",
+  "created_at": "2026-06-09T19:43:10Z",
+  "updated_at": "2026-06-09T19:45:52Z"
+}

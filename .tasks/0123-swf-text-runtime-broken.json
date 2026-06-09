@@ -1,0 +1,8 @@
+{
+  "id": "0123-swf-text-runtime-broken",
+  "title": "Published text broken in Ruffle: empty editable textbox instead of authored static text",
+  "description": "User report: text authored on stage shows at runtime (Ruffle) as an editable empty input box \u2014 no text content, and editable despite the author not making it an input field. Two failures in DefineEditText emission (packages/swf/src/text.ts): (1) content missing \u2014 HasText/InitialText not surviving (verify flag encoding post-0047 and that the string is written and the font reference resolves; 0093 added DefineFont2 \u2014 check FontID wiring and UseOutlines/device-font fallback); (2) editability \u2014 static text must publish as ReadOnly (and typically NoSelect); default text type in this app should map to Flash static text semantics. Note Flash 8 actually publishes static text as DefineText/DefineText2 with glyph indices, not DefineEditText \u2014 decide whether to fix DefineEditText flags (short term) or implement DefineText for static text (accurate). Add 0094 parse-back assertions (flags decoded: readOnly=1, hasText=1, initialText matches) plus a 0096 visual check. See docs/06-text-typography.md, docs/15.",
+  "status": "open",
+  "created_at": "2026-06-09T19:45:52Z",
+  "updated_at": "2026-06-09T19:45:52Z"
+}
