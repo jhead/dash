@@ -1,6 +1,7 @@
 // Types
 export type {
   BitmapItem,
+  ButtonAction,
   ComponentItem,
   DocumentProperties,
   FlashDocument,

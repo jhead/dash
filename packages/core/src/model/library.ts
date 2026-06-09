@@ -331,3 +331,23 @@ export function getLibraryItemsByType(
 ): LibraryItem[] {
   return library.items.filter((item) => item.itemType === itemType);
 }
+
+/**
+ * Convert the symbolType of a Symbol in the library.
+ * Returns a new Library (immutable). If the id is not found or does not refer
+ * to a symbol item, the library is returned unchanged.
+ */
+export function convertSymbolType(
+  library: Library,
+  symbolId: string,
+  newType: SymbolType
+): Library {
+  return {
+    ...library,
+    items: library.items.map((item) =>
+      item.id === symbolId && item.itemType === "symbol"
+        ? { ...item, symbolType: newType }
+        : item
+    ),
+  };
+}

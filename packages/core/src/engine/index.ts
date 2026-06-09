@@ -116,6 +116,9 @@ export { copyFrames, pasteFrames, cutFrames } from "./frameClipboard.js";
 export type { ObjectClipboard } from "./objectClipboard.js";
 export { copyObjects, pasteObjects, pasteObjectsInPlace } from "./objectClipboard.js";
 
+// Frame-level display object clipboard operations
+export { copyDisplayObjects, pasteDisplayObjects, cutDisplayObjects, deleteDisplayObjects } from "./clipboard.js";
+
 // Shape document operations
 export { mergeShapes as mergeShapesInDoc, breakApart, groupObjects, ungroupObjects } from "./shapeOps.js";
 

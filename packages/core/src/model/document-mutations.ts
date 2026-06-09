@@ -1,4 +1,4 @@
-import type { FlashDocument, Scene, DocumentProperties, GridSettings, Guide } from "./types.js";
+import type { FlashDocument, Scene, DocumentProperties, GridSettings, Guide, RulerUnits } from "./types.js";
 import { createScene } from "./scene.js";
 
 // ---------------------------------------------------------------------------
@@ -44,6 +44,15 @@ export function renameScene(doc: FlashDocument, sceneId: string, name: string): 
     ...doc,
     scenes: doc.scenes.map((s) => (s.id === sceneId ? { ...s, name } : s)),
   };
+}
+
+/**
+ * Move a scene (by id) to a new index (0-based). Clamps to valid range.
+ */
+export function moveScene(doc: FlashDocument, sceneId: string, newIndex: number): FlashDocument {
+  const fromIndex = doc.scenes.findIndex((s) => s.id === sceneId);
+  if (fromIndex === -1) return doc;
+  return reorderScenes(doc, fromIndex, newIndex);
 }
 
 /**
@@ -104,6 +113,41 @@ export function updateDocumentProperties(
     ...doc,
     properties: { ...doc.properties, ...updates },
   };
+}
+
+/**
+ * Set the document width.
+ */
+export function setDocumentWidth(doc: FlashDocument, width: number): FlashDocument {
+  return { ...doc, properties: { ...doc.properties, width } };
+}
+
+/**
+ * Set the document height.
+ */
+export function setDocumentHeight(doc: FlashDocument, height: number): FlashDocument {
+  return { ...doc, properties: { ...doc.properties, height } };
+}
+
+/**
+ * Set the document frame rate.
+ */
+export function setFrameRate(doc: FlashDocument, frameRate: number): FlashDocument {
+  return { ...doc, properties: { ...doc.properties, frameRate } };
+}
+
+/**
+ * Set the document background color.
+ */
+export function setBackgroundColor(doc: FlashDocument, backgroundColor: string): FlashDocument {
+  return { ...doc, properties: { ...doc.properties, backgroundColor } };
+}
+
+/**
+ * Set the document ruler units.
+ */
+export function setRulerUnits(doc: FlashDocument, rulerUnits: RulerUnits): FlashDocument {
+  return { ...doc, properties: { ...doc.properties, rulerUnits } };
 }
 
 /**

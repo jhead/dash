@@ -157,6 +157,28 @@ export interface SymbolLinkage {
   readonly sharedUrl: string;          // URL for runtime-shared assets
 }
 
+/**
+ * A single button event handler for an AS1-style `on(event){}` block.
+ *
+ * The `event` field matches the Flash button event names used in the
+ * SWF ButtonCondition bitfield:
+ *   "press"          → idleToOverDown   (bit 1)
+ *   "release"        → overDownToIdle   (bit 0)
+ *   "releaseOutside" → outDownToIdle    (bit 4)
+ *   "rollOut"        → overUpToIdle     (bit 5)
+ *   "rollOver"       → overUpToOverDown (bit 6)
+ *   "dragOut"        → overDownToOutDown (bit 2)
+ *   "dragOver"       → outDownToOverDown (bit 3)
+ *
+ * The `script` field contains the raw AS2 source code for the handler body
+ * (not wrapped in `on(event){}`). It is compiled to AVM1 bytecode and
+ * embedded as a BUTTONCONDACTION record in the DefineButton2 SWF tag.
+ */
+export interface ButtonAction {
+  readonly event: "press" | "release" | "releaseOutside" | "rollOut" | "rollOver" | "dragOut" | "dragOver";
+  readonly script: string;
+}
+
 export interface Symbol {
   readonly id: string;
   readonly name: string;
@@ -166,6 +188,13 @@ export interface Symbol {
   readonly linkage: SymbolLinkage;
   /** 9-slice grid in symbol-local coordinates, or null if not set */
   readonly scale9Grid: Scale9Grid | null;
+  /**
+   * Button event scripts (for symbolType === "button" only).
+   * Each entry is an AS1-style `on(event){}` handler attached directly
+   * to the button definition. Stored as compiled BUTTONCONDACTION records
+   * in the DefineButton2 SWF tag.
+   */
+  readonly buttonActions?: readonly ButtonAction[];
 }
 
 export interface Scale9Grid {

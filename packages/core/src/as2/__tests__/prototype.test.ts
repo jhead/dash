@@ -75,3 +75,110 @@ describe("AS2 prototype chain and property lookup", () => {
     `);
   });
 });
+
+// ---------------------------------------------------------------------------
+// AS2 Object and Function prototype chain — extended coverage
+// ---------------------------------------------------------------------------
+
+describe("AS2 Object and prototype chain", () => {
+  it("obj.hasOwnProperty() compiles", () => {
+    compilesOk(`
+      var obj = {a: 1};
+      var has = obj.hasOwnProperty("a");
+    `);
+  });
+
+  it("obj.isPrototypeOf() compiles", () => {
+    compilesOk(`
+      function Animal() {}
+      function Dog() {}
+      Dog.prototype = new Animal();
+      var d = new Dog();
+      var isProto = Animal.prototype.isPrototypeOf(d);
+    `);
+  });
+
+  it("obj.constructor compiles", () => {
+    compilesOk(`
+      function MyClass() {}
+      var obj = new MyClass();
+      var ctor = obj.constructor;
+    `);
+  });
+
+  it("typeof operator compiles", () => {
+    compilesOk(`
+      var x = 42;
+      var t = typeof x;
+      if (typeof x == "number") { trace("num"); }
+      if (typeof undefined == "undefined") { trace("undef"); }
+    `);
+  });
+
+  it("instanceof operator compiles", () => {
+    compilesOk(`
+      var a = [1, 2, 3];
+      var isArr = a instanceof Array;
+    `);
+  });
+
+  it("Function.prototype assignment compiles", () => {
+    compilesOk(`
+      function Animal(name) { this.name = name; }
+      Animal.prototype.speak = function() { trace(this.name); };
+      var a = new Animal("Cat");
+      a.speak();
+    `);
+  });
+
+  it("prototype chain inheritance compiles", () => {
+    compilesOk(`
+      function Shape() { this.color = "red"; }
+      Shape.prototype.getColor = function() { return this.color; };
+      function Circle(r) { Shape.call(this); this.radius = r; }
+      Circle.prototype = new Shape();
+      var c = new Circle(5);
+      trace(c.getColor());
+    `);
+  });
+
+  it("Object.registerClass() compiles", () => {
+    compilesOk(`
+      function MyMovieClip() {}
+      Object.registerClass("MyMovieClip", MyMovieClip);
+    `);
+  });
+
+  it("AsBroadcaster.initialize() pattern compiles", () => {
+    compilesOk(`
+      var events = {};
+      AsBroadcaster.initialize(events);
+      events.addListener({onMyEvent: function() {}});
+      events.broadcastMessage("onMyEvent");
+    `);
+  });
+
+  it("delete operator compiles", () => {
+    compilesOk(`
+      var obj = {a: 1, b: 2};
+      delete obj.a;
+    `);
+  });
+
+  it("for...in loop compiles", () => {
+    compilesOk(`
+      var obj = {x: 1, y: 2, z: 3};
+      for (var key in obj) {
+        trace(key + " = " + obj[key]);
+      }
+    `);
+  });
+
+  it("Object.prototype.__proto__ compiles", () => {
+    compilesOk(`
+      function Base() {}
+      function Child() {}
+      Child.prototype.__proto__ = Base.prototype;
+    `);
+  });
+});
