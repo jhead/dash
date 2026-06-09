@@ -6,6 +6,7 @@
 - Read **docs/README.md** and the relevant domain doc before touching any subsystem.
 - All task operations go through `./task` — never edit `.tasks/*.json` by hand.
 - Use ruffle (cloned locally) for reference material e.g. SWF encoding, runtime, AS, etc.
+- Commit and push all changes to git when done
 
 ## Running tests
 

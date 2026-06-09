@@ -32,3 +32,17 @@ apps/desktop/src-tauri/target/
 Thumbs.db
 
 ruffle/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Agent prompt files
+prompt
+prompt-manager
+prompt-oracle
+
+# Coverage
+coverage/
+
+# Turbo
+.turbo/
