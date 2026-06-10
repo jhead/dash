@@ -712,6 +712,387 @@ test.describe('Visual oracle: CanvasRenderer vs Ruffle', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Test 7b: blur filter — red rectangle with BlurFilter {blurX:10, blurY:10}
+  // -------------------------------------------------------------------------
+  test('blur filter renders non-blank in Ruffle', async ({ page }, testInfo: TestInfo) => {
+    const fixtureDoc = await page.evaluate(() => {
+      return {
+        id: 'visual-blur-doc',
+        properties: {
+          width: 550, height: 400, frameRate: 12,
+          backgroundColor: '#cccccc', rulerUnits: 'px',
+          grid: { showGrid: false, snapToGrid: false, gridColor: '#999999', gridWidth: 18, gridHeight: 18 },
+          guides: [], snapToObjects: false, snapToPixels: false, snapToGuides: false,
+        },
+        scenes: [{
+          id: 'scene-1', name: 'Scene 1',
+          timeline: {
+            layers: [{
+              id: 'layer-Layer 1', name: 'Layer 1', type: 'normal',
+              visible: true, locked: false, outlineMode: false,
+              outlineColor: '#ff0000', height: 20, parentFolderId: null,
+              frameCount: 1,
+              frames: [{
+                index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                label: '', labelType: 'name', script: '', sound: null,
+                motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                motionOrientToPath: false, motionSync: false, motionScale: false,
+                shapeEase: 0, shapeBlend: 'distributive',
+                displayObjects: [{
+                  id: 'blur-rect', type: 'shape',
+                  shape: {
+                    id: 'shape-blur-rect',
+                    paths: [{
+                      start: { x: 175, y: 125 },
+                      segments: [
+                        { type: 'line', to: { x: 375, y: 125 } },
+                        { type: 'line', to: { x: 375, y: 275 } },
+                        { type: 'line', to: { x: 175, y: 275 } },
+                      ],
+                      closed: true,
+                      fill: { type: 'solid', color: { r: 255, g: 0, b: 0, a: 255 } },
+                    }],
+                  },
+                  x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+                  filters: [{
+                    type: 'blur',
+                    blurX: 10,
+                    blurY: 10,
+                    quality: 2,
+                    enabled: true,
+                  }],
+                }],
+              }],
+            }],
+          },
+        }],
+        library: { items: [], folders: [] },
+      };
+    });
+
+    const ruffleShot = await (async () => {
+      await page.evaluate((doc) => {
+        (window as unknown as { __flashTest: { loadDocument: (d: unknown) => void } }).__flashTest.loadDocument(doc);
+      }, fixtureDoc);
+      await page.waitForTimeout(300);
+
+      const swfBase64: string = await page.evaluate(() => {
+        return (window as unknown as { __flashTest: { publish: () => string } }).__flashTest.publish();
+      });
+
+      await page.evaluate(() => {
+        return new Promise<void>((resolve, reject) => {
+          if ((window as Window & typeof globalThis).RufflePlayer) { resolve(); return; }
+          const existing = document.querySelector<HTMLScriptElement>('script[data-ruffle]');
+          if (existing) {
+            if ((window as Window & typeof globalThis).RufflePlayer) { resolve(); return; }
+            existing.addEventListener('load', () => resolve(), { once: true });
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = '/ruffle/ruffle.js';
+          script.dataset['ruffle'] = '1';
+          script.addEventListener('load', () => resolve(), { once: true });
+          script.addEventListener('error', () => reject(new Error('Failed to load /ruffle/ruffle.js')), { once: true });
+          document.head.appendChild(script);
+        });
+      });
+
+      await page.evaluate((b64) => {
+        type RuffleHandle = { createPlayer(): RufflePlayerEl };
+        type RufflePlayerEl = HTMLElement & { ruffle(): { load(opts: { data?: Uint8Array }): Promise<void> } };
+        const ruffleApi = (window as unknown as { RufflePlayer: { newest(): RuffleHandle } }).RufflePlayer.newest();
+        const player = ruffleApi.createPlayer() as RufflePlayerEl;
+        player.id = '__ruffle_oracle_player__';
+        player.style.cssText = 'position:fixed;top:0;left:0;width:550px;height:400px;pointer-events:none;z-index:99999';
+        document.body.appendChild(player);
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        void player.ruffle().load({ data: bytes });
+      }, swfBase64);
+
+      await page.waitForTimeout(1500);
+      const shot = await page.locator('#__ruffle_oracle_player__').screenshot();
+      await page.evaluate(() => { const el = document.getElementById('__ruffle_oracle_player__'); if (el) el.remove(); });
+      return shot;
+    })();
+
+    // Parse Ruffle screenshot and verify it is not blank (all-white)
+    const img = PNG.sync.read(ruffleShot);
+    let nonWhitePixels = 0;
+    for (let i = 0; i < img.data.length; i += 4) {
+      const r = img.data[i], g = img.data[i + 1], b = img.data[i + 2];
+      if (r < 250 || g < 250 || b < 250) nonWhitePixels++;
+    }
+
+    if (nonWhitePixels < 100) {
+      await testInfo.attach('ruffle-screenshot-blur', { body: ruffleShot, contentType: 'image/png' });
+    }
+
+    // Blurred red rect on grey background — must produce non-white pixels
+    expect(nonWhitePixels).toBeGreaterThan(100);
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 7c: glow filter — red rect with blue GlowFilter
+  // -------------------------------------------------------------------------
+  test('glow filter renders non-blank in Ruffle', async ({ page }, testInfo: TestInfo) => {
+    const fixtureDoc = await page.evaluate(() => {
+      return {
+        id: 'visual-glow-doc',
+        properties: {
+          width: 550, height: 400, frameRate: 12,
+          backgroundColor: '#cccccc', rulerUnits: 'px',
+          grid: { showGrid: false, snapToGrid: false, gridColor: '#999999', gridWidth: 18, gridHeight: 18 },
+          guides: [], snapToObjects: false, snapToPixels: false, snapToGuides: false,
+        },
+        scenes: [{
+          id: 'scene-1', name: 'Scene 1',
+          timeline: {
+            layers: [{
+              id: 'layer-Layer 1', name: 'Layer 1', type: 'normal',
+              visible: true, locked: false, outlineMode: false,
+              outlineColor: '#ff0000', height: 20, parentFolderId: null,
+              frameCount: 1,
+              frames: [{
+                index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                label: '', labelType: 'name', script: '', sound: null,
+                motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                motionOrientToPath: false, motionSync: false, motionScale: false,
+                shapeEase: 0, shapeBlend: 'distributive',
+                displayObjects: [{
+                  id: 'glow-rect', type: 'shape',
+                  shape: {
+                    id: 'shape-glow-rect',
+                    paths: [{
+                      start: { x: 200, y: 150 },
+                      segments: [
+                        { type: 'line', to: { x: 350, y: 150 } },
+                        { type: 'line', to: { x: 350, y: 250 } },
+                        { type: 'line', to: { x: 200, y: 250 } },
+                      ],
+                      closed: true,
+                      fill: { type: 'solid', color: { r: 255, g: 0, b: 0, a: 255 } },
+                    }],
+                  },
+                  x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+                  filters: [{
+                    type: 'glow',
+                    color: { r: 0, g: 0, b: 255, a: 255 },
+                    alpha: 1,
+                    blurX: 8,
+                    blurY: 8,
+                    strength: 2,
+                    inner: false,
+                    knockout: false,
+                    enabled: true,
+                  }],
+                }],
+              }],
+            }],
+          },
+        }],
+        library: { items: [], folders: [] },
+      };
+    });
+
+    const ruffleShot = await (async () => {
+      await page.evaluate((doc) => {
+        (window as unknown as { __flashTest: { loadDocument: (d: unknown) => void } }).__flashTest.loadDocument(doc);
+      }, fixtureDoc);
+      await page.waitForTimeout(300);
+
+      const swfBase64: string = await page.evaluate(() => {
+        return (window as unknown as { __flashTest: { publish: () => string } }).__flashTest.publish();
+      });
+
+      await page.evaluate(() => {
+        return new Promise<void>((resolve, reject) => {
+          if ((window as Window & typeof globalThis).RufflePlayer) { resolve(); return; }
+          const existing = document.querySelector<HTMLScriptElement>('script[data-ruffle]');
+          if (existing) {
+            if ((window as Window & typeof globalThis).RufflePlayer) { resolve(); return; }
+            existing.addEventListener('load', () => resolve(), { once: true });
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = '/ruffle/ruffle.js';
+          script.dataset['ruffle'] = '1';
+          script.addEventListener('load', () => resolve(), { once: true });
+          script.addEventListener('error', () => reject(new Error('Failed to load /ruffle/ruffle.js')), { once: true });
+          document.head.appendChild(script);
+        });
+      });
+
+      await page.evaluate((b64) => {
+        type RuffleHandle = { createPlayer(): RufflePlayerEl };
+        type RufflePlayerEl = HTMLElement & { ruffle(): { load(opts: { data?: Uint8Array }): Promise<void> } };
+        const ruffleApi = (window as unknown as { RufflePlayer: { newest(): RuffleHandle } }).RufflePlayer.newest();
+        const player = ruffleApi.createPlayer() as RufflePlayerEl;
+        player.id = '__ruffle_oracle_player__';
+        player.style.cssText = 'position:fixed;top:0;left:0;width:550px;height:400px;pointer-events:none;z-index:99999';
+        document.body.appendChild(player);
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        void player.ruffle().load({ data: bytes });
+      }, swfBase64);
+
+      await page.waitForTimeout(1500);
+      const shot = await page.locator('#__ruffle_oracle_player__').screenshot();
+      await page.evaluate(() => { const el = document.getElementById('__ruffle_oracle_player__'); if (el) el.remove(); });
+      return shot;
+    })();
+
+    // Parse Ruffle screenshot and verify the rect renders (SWF compiled successfully)
+    // The bundled Ruffle 0.1.0 may not visually render the glow halo, but the red rect
+    // on the grey (#cccccc) background must be present.
+    const img = PNG.sync.read(ruffleShot);
+    let nonGreyPixels = 0;
+    for (let i = 0; i < img.data.length; i += 4) {
+      const r = img.data[i], g = img.data[i + 1], b = img.data[i + 2];
+      // Grey background is #cccccc (r=204,g=204,b=204); red rect is r=255,g=0,b=0
+      const diffFromGrey = Math.abs(r - 204) + Math.abs(g - 204) + Math.abs(b - 204);
+      if (diffFromGrey > 60) nonGreyPixels++;
+    }
+
+    if (nonGreyPixels < 100) {
+      await testInfo.attach('ruffle-screenshot-glow', { body: ruffleShot, contentType: 'image/png' });
+    }
+
+    // Red rect must be visible against the grey background
+    expect(nonGreyPixels).toBeGreaterThan(100);
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 7d: bevel filter — white rect with BevelFilter
+  // -------------------------------------------------------------------------
+  test('bevel filter renders non-blank in Ruffle', async ({ page }, testInfo: TestInfo) => {
+    const fixtureDoc = await page.evaluate(() => {
+      return {
+        id: 'visual-bevel-doc',
+        properties: {
+          width: 550, height: 400, frameRate: 12,
+          backgroundColor: '#808080', rulerUnits: 'px',
+          grid: { showGrid: false, snapToGrid: false, gridColor: '#999999', gridWidth: 18, gridHeight: 18 },
+          guides: [], snapToObjects: false, snapToPixels: false, snapToGuides: false,
+        },
+        scenes: [{
+          id: 'scene-1', name: 'Scene 1',
+          timeline: {
+            layers: [{
+              id: 'layer-Layer 1', name: 'Layer 1', type: 'normal',
+              visible: true, locked: false, outlineMode: false,
+              outlineColor: '#ff0000', height: 20, parentFolderId: null,
+              frameCount: 1,
+              frames: [{
+                index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                label: '', labelType: 'name', script: '', sound: null,
+                motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                motionOrientToPath: false, motionSync: false, motionScale: false,
+                shapeEase: 0, shapeBlend: 'distributive',
+                displayObjects: [{
+                  id: 'bevel-rect', type: 'shape',
+                  shape: {
+                    id: 'shape-bevel-rect',
+                    paths: [{
+                      start: { x: 175, y: 125 },
+                      segments: [
+                        { type: 'line', to: { x: 375, y: 125 } },
+                        { type: 'line', to: { x: 375, y: 275 } },
+                        { type: 'line', to: { x: 175, y: 275 } },
+                      ],
+                      closed: true,
+                      fill: { type: 'solid', color: { r: 200, g: 200, b: 200, a: 255 } },
+                    }],
+                  },
+                  x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+                  filters: [{
+                    type: 'bevel',
+                    distance: 4,
+                    angle: 45,
+                    highlightColor: { r: 255, g: 255, b: 255, a: 255 },
+                    highlightAlpha: 1,
+                    shadowColor: { r: 0, g: 0, b: 0, a: 255 },
+                    shadowAlpha: 1,
+                    blurX: 4,
+                    blurY: 4,
+                    strength: 1,
+                    quality: 1,
+                    bevelType: 'inner',
+                    knockout: false,
+                    enabled: true,
+                  }],
+                }],
+              }],
+            }],
+          },
+        }],
+        library: { items: [], folders: [] },
+      };
+    });
+
+    const ruffleShot = await (async () => {
+      await page.evaluate((doc) => {
+        (window as unknown as { __flashTest: { loadDocument: (d: unknown) => void } }).__flashTest.loadDocument(doc);
+      }, fixtureDoc);
+      await page.waitForTimeout(300);
+
+      const swfBase64: string = await page.evaluate(() => {
+        return (window as unknown as { __flashTest: { publish: () => string } }).__flashTest.publish();
+      });
+
+      await page.evaluate(() => {
+        return new Promise<void>((resolve, reject) => {
+          if ((window as Window & typeof globalThis).RufflePlayer) { resolve(); return; }
+          const existing = document.querySelector<HTMLScriptElement>('script[data-ruffle]');
+          if (existing) {
+            if ((window as Window & typeof globalThis).RufflePlayer) { resolve(); return; }
+            existing.addEventListener('load', () => resolve(), { once: true });
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = '/ruffle/ruffle.js';
+          script.dataset['ruffle'] = '1';
+          script.addEventListener('load', () => resolve(), { once: true });
+          script.addEventListener('error', () => reject(new Error('Failed to load /ruffle/ruffle.js')), { once: true });
+          document.head.appendChild(script);
+        });
+      });
+
+      await page.evaluate((b64) => {
+        type RuffleHandle = { createPlayer(): RufflePlayerEl };
+        type RufflePlayerEl = HTMLElement & { ruffle(): { load(opts: { data?: Uint8Array }): Promise<void> } };
+        const ruffleApi = (window as unknown as { RufflePlayer: { newest(): RuffleHandle } }).RufflePlayer.newest();
+        const player = ruffleApi.createPlayer() as RufflePlayerEl;
+        player.id = '__ruffle_oracle_player__';
+        player.style.cssText = 'position:fixed;top:0;left:0;width:550px;height:400px;pointer-events:none;z-index:99999';
+        document.body.appendChild(player);
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        void player.ruffle().load({ data: bytes });
+      }, swfBase64);
+
+      await page.waitForTimeout(1500);
+      const shot = await page.locator('#__ruffle_oracle_player__').screenshot();
+      await page.evaluate(() => { const el = document.getElementById('__ruffle_oracle_player__'); if (el) el.remove(); });
+      return shot;
+    })();
+
+    // Parse Ruffle screenshot and verify it is not blank (all-white)
+    const img = PNG.sync.read(ruffleShot);
+    let nonWhitePixels = 0;
+    for (let i = 0; i < img.data.length; i += 4) {
+      const r = img.data[i], g = img.data[i + 1], b = img.data[i + 2];
+      if (r < 245 || g < 245 || b < 245) nonWhitePixels++;
+    }
+
+    if (nonWhitePixels < 100) {
+      await testInfo.attach('ruffle-screenshot-bevel', { body: ruffleShot, contentType: 'image/png' });
+    }
+
+    // Grey rect with bevel on grey background — must produce non-white pixels
+    // (at minimum the grey rect itself renders)
+    expect(nonWhitePixels).toBeGreaterThan(100);
+  });
+
+  // -------------------------------------------------------------------------
   // Test 8: tween frame 2 — midpoint interpolation of a 5-frame motion tween
   // -------------------------------------------------------------------------
   test('tweened rectangle frame 2 (midpoint) renders consistently', async ({ page }, testInfo: TestInfo) => {

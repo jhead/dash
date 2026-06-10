@@ -1,0 +1,10 @@
+{
+  "id": "0793-visual-oracle-e2e-for-blur-glow-and-bevel-filter",
+  "title": "Visual oracle E2E for Blur, Glow, and Bevel filters",
+  "description": "visual-oracle.spec.ts has only one filter test (Test 7: drop shadow at 20% mismatch threshold). Blur (ID=1), Glow (ID=2), and Bevel (ID=3) filters are fully encoded in packages/swf/src/filters.ts and accepted by FiltersPanel.tsx, but have no Ruffle visual oracle acceptance tests. Add three new test cases to visual-oracle.spec.ts: (1) Blur filter \u2014 white rect with blurX=8/blurY=8; (2) Glow filter \u2014 coloured rect with blurX=6/blurY=6, color=#ff0000, strength=2; (3) Bevel filter \u2014 rect with blurX=4/blurY=4. Each test must build a fixture doc inline, capture stageShot vs ruffleShot, and assert mismatch < 0.20. Also lower the drop-shadow threshold from 0.20 to 0.15 if it passes reliably.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T10:40:53Z",
+  "updated_at": "2026-06-10T10:46:40Z"
+}
