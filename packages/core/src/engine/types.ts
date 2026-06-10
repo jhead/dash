@@ -561,6 +561,8 @@ export interface BitmapDisplayObject {
   readonly rotation?: number;
   /** Opacity in range 0–1. Default: 1. */
   readonly alpha?: number;
+  /** Flash 8 filters applied to this object. */
+  readonly filters?: readonly FlashFilter[];
 }
 
 /**

@@ -1409,10 +1409,25 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               // Named text fields (dynamic/input) must carry the instance name
               // in PlaceObject2 so AS2 can address them (_root.<name>.text = ...).
               const textName = displayObj.instanceName;
-              const placeBody = textName && textName.length > 0
-                ? encodePlaceObject2WithName(charId, depth, x, y, textName)
-                : encodePlaceObject2ForText(charId, depth, x, y);
-              writer.writeTag(Tag.PlaceObject2, placeBody);
+              if (hasEnabledFilters(displayObj.filters)) {
+                // Filters require PlaceObject3 (tag 70). If the field also has
+                // a name, pass it so both HasName and HasFilterList are set.
+                const placeBody = encodePlaceObject3WithFilters(
+                  charId,
+                  depth,
+                  x,
+                  y,
+                  displayObj.filters!,
+                  undefined,
+                  textName && textName.length > 0 ? textName : undefined
+                );
+                writer.writeTag(Tag.PlaceObject3, placeBody);
+              } else {
+                const placeBody = textName && textName.length > 0
+                  ? encodePlaceObject2WithName(charId, depth, x, y, textName)
+                  : encodePlaceObject2ForText(charId, depth, x, y);
+                writer.writeTag(Tag.PlaceObject2, placeBody);
+              }
               // If the text field has non-zero letterSpacing and a named instance,
               // emit a DoAction that calls setTextFormat to apply the spacing at runtime.
               // DefineEditText has no letterSpacing field — it must be set via AS2.
@@ -1424,20 +1439,32 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
-              const hasAlpha =
-                displayObj.alpha !== undefined && displayObj.alpha !== 1;
-              if (hasAlpha) {
-                const placeBody = encodePlaceObject2WithAlpha(
+              if (hasEnabledFilters(displayObj.filters)) {
+                // Filters require PlaceObject3 (tag 70).
+                const placeBody = encodePlaceObject3WithFilters(
                   charId,
                   depth,
                   x,
                   y,
-                  displayObj.alpha!
+                  displayObj.filters!
                 );
-                writer.writeTag(Tag.PlaceObject2, placeBody);
+                writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
-                const placeBody = encodePlaceObject2(charId, depth, x, y);
-                writer.writeTag(Tag.PlaceObject2, placeBody);
+                const hasAlpha =
+                  displayObj.alpha !== undefined && displayObj.alpha !== 1;
+                if (hasAlpha) {
+                  const placeBody = encodePlaceObject2WithAlpha(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    displayObj.alpha!
+                  );
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                } else {
+                  const placeBody = encodePlaceObject2(charId, depth, x, y);
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                }
               }
             } else if (displayObj.type === "video") {
               const vdo = displayObj as VideoDisplayObject;

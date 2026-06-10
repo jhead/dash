@@ -627,7 +627,8 @@ function convertElement(
         ...(buttonHandlers.length > 0 ? { buttonHandlers } : {}),
       };
     }
-    case "text":
+    case "text": {
+      const textFilters = toFlashFilters(el.filters);
       return {
         type: "text",
         id: nextId("text"),
@@ -646,7 +647,9 @@ function convertElement(
         multiline: el.text.includes("\r") || el.text.includes("\n"),
         wordWrap: el.wordWrap,
         ...(el.instanceName ? { instanceName: el.instanceName } : {}),
+        ...(textFilters.length > 0 ? { filters: textFilters } : {}),
       };
+    }
     case "bitmap": {
       const libraryItemId = bitmapIdByIndex.get(el.mediaId);
       if (!libraryItemId) {
@@ -657,6 +660,7 @@ function convertElement(
       }
       const { scaleX, scaleY, rotation } = decompose(el.matrix);
       const size = bitmapSizeByIndex.get(el.mediaId) ?? { width: 1, height: 1 };
+      const bitmapFilters = toFlashFilters(el.filters);
       return {
         type: "bitmap",
         id: nextId("bitmap"),
@@ -668,6 +672,7 @@ function convertElement(
         scaleX,
         scaleY,
         rotation,
+        ...(bitmapFilters.length > 0 ? { filters: bitmapFilters } : {}),
       };
     }
   }

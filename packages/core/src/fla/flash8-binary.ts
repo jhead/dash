@@ -185,12 +185,16 @@ export interface Fla8Text {
   readonly instanceName: string;
   readonly textType: "static" | "dynamic" | "input";
   readonly wordWrap: boolean;
+  /** Flash 8+ filters (empty array when none). */
+  readonly filters: Fla8Filter[];
 }
 
 export interface Fla8BitmapRef {
   readonly type: "bitmap";
   readonly matrix: Fla8Matrix;
   readonly mediaId: number;
+  /** Flash 8+ filters (empty array when none). */
+  readonly filters: Fla8Filter[];
 }
 
 export type Fla8Element = Fla8Shape | Fla8Instance | Fla8Text | Fla8BitmapRef;
@@ -1504,22 +1508,29 @@ function readCPicBitmapRef(ctx: ParseCtx): Fla8BitmapRef {
   readCPicObjBase(ctx);
   let matrix: Fla8Matrix = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
   let mediaId = 0;
+  let filters: Fla8Filter[] = [];
   try {
     const schema = r.u8();
     matrix = readMatrix(r);
     mediaId = r.u16();
     if (schema >= 2) {
-      const filterFlag = r.u8();
-      if (filterFlag !== 0) {
-        warnOnce(ctx, "bitmap filters are not supported; skipping filter data");
-        skipToNextBoundary(ctx);
+      // filterCount byte: 0 = no filters; >0 = SWF-format filter records (same
+      // layout as symbol-instance filters).
+      const filterCount = r.u8();
+      if (filterCount > 0) {
+        try {
+          filters = readFilterList(r, filterCount);
+        } catch {
+          // Parse error inside filter data — skip to the record boundary.
+          skipToNextBoundary(ctx);
+        }
       }
     }
   } catch (err) {
     if (!(err instanceof FlaEofError)) throw err;
   }
   verifyBoundary(ctx);
-  return { type: "bitmap", matrix, mediaId };
+  return { type: "bitmap", matrix, mediaId, filters };
 }
 
 // --- CPicText ------------------------------------------------------------------
@@ -1640,6 +1651,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     warnOnce(ctx, "text record truncated; text content may be incomplete");
   }
   let instanceName = "";
+  let filters: Fla8Filter[] = [];
   try {
     if (ts >= 9) {
       const name = readCString(r);
@@ -1651,12 +1663,19 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
         readCString(r); // font embed ranges
       }
       if (ts >= 0x0d) {
-        const filterFlag = r.u8();
-        if (filterFlag !== 0) {
-          warnOnce(ctx, "text filters are not imported");
-          skipToNextBoundary(ctx);
+        // filterCount byte: 0 = no filters + 2 trailing bytes; >0 = SWF-format
+        // filter records (same layout as symbol-instance filters) + 2 trailing bytes.
+        const filterCount = r.u8();
+        if (filterCount > 0) {
+          try {
+            filters = readFilterList(r, filterCount);
+            r.skip(2); // 2 trailing bytes (blend mode hint + reserved)
+          } catch {
+            // Parse error inside filter data — skip to the record boundary.
+            skipToNextBoundary(ctx);
+          }
         } else {
-          r.skip(2);
+          r.skip(2); // 2 trailing bytes present even when no filters
         }
       }
     }
@@ -1681,6 +1700,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     instanceName,
     textType: (textFlags & 0x01) === 0 ? "static" : textFlags & 0x02 ? "dynamic" : "input",
     wordWrap: (textFlags & 0x08) !== 0,
+    filters,
   };
 }
 

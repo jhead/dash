@@ -406,6 +406,7 @@ function writeFilterList(bw: BitWriter, filters: readonly FlashFilter[]): void {
  * @param y          Y position in pixels
  * @param filters    Flash filters to embed in the tag
  * @param transform  Optional scale/rotation/skew (defaults to identity)
+ * @param name       Optional instance name (sets HasName flag; written before FILTERLIST)
  */
 export function encodePlaceObject3WithFilters(
   charId: number,
@@ -419,9 +420,11 @@ export function encodePlaceObject3WithFilters(
     rotation?: number;  // degrees
     skewX?: number;
     skewY?: number;
-  }
+  },
+  name?: string
 ): Uint8Array {
   const bw = new BitWriter();
+  const hasName = !!(name && name.length > 0);
 
   // ---------------------------------------------------------------------------
   // Flags1: UI8
@@ -430,13 +433,14 @@ export function encodePlaceObject3WithFilters(
   // bit 2: HasMatrix (1)
   // bit 3: HasColorTransform (0)
   // bit 4: HasRatio (0)
-  // bit 5: HasName (0)
+  // bit 5: HasName (1 if name provided)
   // bit 6: HasClipDepth (0)
   // bit 7: HasClipActions (0)
   // ---------------------------------------------------------------------------
   const flags1 =
     (1 << 1) | // HasCharacter
-    (1 << 2);  // HasMatrix
+    (1 << 2) | // HasMatrix
+    (hasName ? (1 << 5) : 0); // HasName
   bw.writeUI8(flags1);
 
   // ---------------------------------------------------------------------------
@@ -499,6 +503,11 @@ export function encodePlaceObject3WithFilters(
   }
 
   bw.flushBits();
+
+  // Name: null-terminated string (written after MATRIX, before FILTERLIST, per SWF spec)
+  if (hasName) {
+    bw.writeString(name!);
+  }
 
   // FILTERLIST (HasFilterList is set)
   if (enabledFilters.length > 0) {

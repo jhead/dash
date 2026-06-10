@@ -21,7 +21,7 @@ import { describe, it, expect } from "vitest";
 import { encodePlaceObject3WithFilters, hasEnabledFilters } from "../filters.js";
 import { compileDocument } from "../compile.js";
 import type { BlurFilter, GlowFilter, DropShadowFilter, GradientGlowFilter, GradientBevelFilter, AdjustColorFilter } from "@flash/core";
-import type { FlashDocument, Frame, Layer, Scene, Symbol } from "@flash/core";
+import type { FlashDocument, Frame, Layer, Scene, Symbol, BitmapItem, TextDisplayObject, BitmapDisplayObject } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Tag codes
@@ -926,5 +926,243 @@ describe("SWF filter encoding", () => {
     // Third byte of blurX=6 in Fixed16: 6 * 65536 = 0x00060000 → third byte = 0x06
     const blurXByte2 = body[filterListStart + 2 + 2];
     expect(blurXByte2).toBe(0x06);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Tests 17–20: TextDisplayObject and BitmapDisplayObject emit PlaceObject3
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Test 17: TextDisplayObject with an enabled glow filter uses PlaceObject3 (tag 70).
+   */
+  it("TextDisplayObject with enabled glow filter emits PlaceObject3 (tag 70)", () => {
+    const textObj: TextDisplayObject = {
+      id: "text-1",
+      type: "text",
+      x: 10,
+      y: 10,
+      width: 200,
+      height: 30,
+      text: "Hello",
+      textType: "static",
+      fontFamily: "Arial",
+      fontSize: 12,
+      bold: false,
+      italic: false,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      align: "left",
+      multiline: false,
+      wordWrap: false,
+      filters: [makeGlowFilter()],
+    };
+
+    const doc = makeDoc([makeScene([makeLayer("layer", [makeFrame([textObj])])])]);
+
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const placeObject3Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT3);
+    const placeObject2Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+
+    // Must use PlaceObject3, not PlaceObject2
+    expect(placeObject3Tags.length).toBeGreaterThan(0);
+    // No PlaceObject2 for the text field
+    expect(placeObject2Tags.length).toBe(0);
+
+    // Verify HasFilterList flag (bit 4 of Flags2, which is byte 1 of the body)
+    const body = placeObject3Tags[0].body;
+    expect(body[1] & 0x10).toBe(0x10);
+  });
+
+  /**
+   * Test 18: Named TextDisplayObject with filter has both HasName and HasFilterList set.
+   */
+  it("Named TextDisplayObject with filter sets HasName and HasFilterList in PlaceObject3", () => {
+    const textObj: TextDisplayObject = {
+      id: "text-2",
+      type: "text",
+      x: 10,
+      y: 10,
+      width: 200,
+      height: 30,
+      text: "Score: 0",
+      textType: "dynamic",
+      fontFamily: "Arial",
+      fontSize: 12,
+      bold: false,
+      italic: false,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      align: "left",
+      multiline: false,
+      wordWrap: false,
+      instanceName: "scoreText",
+      filters: [makeBlurFilter()],
+    };
+
+    const doc = makeDoc([makeScene([makeLayer("layer", [makeFrame([textObj])])])]);
+
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const placeObject3Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT3);
+    expect(placeObject3Tags.length).toBeGreaterThan(0);
+
+    const body = placeObject3Tags[0].body;
+    // Flags1 byte (bit 5 = HasName = 0x20)
+    expect(body[0] & 0x20).toBe(0x20);
+    // Flags2 byte (bit 4 = HasFilterList = 0x10)
+    expect(body[1] & 0x10).toBe(0x10);
+  });
+
+  /**
+   * Test 19: TextDisplayObject without filters still uses PlaceObject2 (tag 26).
+   */
+  it("TextDisplayObject without filters is placed with PlaceObject2 (tag 26)", () => {
+    const textObj: TextDisplayObject = {
+      id: "text-3",
+      type: "text",
+      x: 10,
+      y: 10,
+      width: 200,
+      height: 30,
+      text: "Hello",
+      textType: "static",
+      fontFamily: "Arial",
+      fontSize: 12,
+      bold: false,
+      italic: false,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      align: "left",
+      multiline: false,
+      wordWrap: false,
+      // no filters
+    };
+
+    const doc = makeDoc([makeScene([makeLayer("layer", [makeFrame([textObj])])])]);
+
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const placeObject2Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+    const placeObject3Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT3);
+
+    expect(placeObject2Tags.length).toBeGreaterThan(0);
+    expect(placeObject3Tags.length).toBe(0);
+  });
+
+  /**
+   * Test 20: BitmapDisplayObject with an enabled glow filter uses PlaceObject3 (tag 70).
+   */
+  it("BitmapDisplayObject with enabled glow filter emits PlaceObject3 (tag 70)", () => {
+    const bitmapItem: BitmapItem = {
+      id: "bitmap-1",
+      name: "test.png",
+      itemType: "bitmap",
+      dataUri: "",
+      originalWidth: 4,
+      originalHeight: 4,
+      allowSmoothing: false,
+      compressionType: "lossless",
+      quality: 100,
+    };
+
+    const bmpObj: BitmapDisplayObject = {
+      id: "bmp-obj-1",
+      type: "bitmap",
+      libraryItemId: "bitmap-1",
+      x: 0,
+      y: 0,
+      width: 4,
+      height: 4,
+      filters: [makeGlowFilter()],
+    };
+
+    const doc: FlashDocument = {
+      id: "doc-1",
+      properties: BASE_PROPS,
+      scenes: [makeScene([makeLayer("layer", [makeFrame([bmpObj])])])],
+      library: { items: [bitmapItem], folders: [] },
+    };
+
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const placeObject3Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT3);
+    const placeObject2Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+
+    expect(placeObject3Tags.length).toBeGreaterThan(0);
+    expect(placeObject2Tags.length).toBe(0);
+
+    // Verify HasFilterList flag (bit 4 of Flags2, byte 1 of body)
+    const body = placeObject3Tags[0].body;
+    expect(body[1] & 0x10).toBe(0x10);
+  });
+
+  /**
+   * Test 21: BitmapDisplayObject without filters still uses PlaceObject2 (tag 26).
+   */
+  it("BitmapDisplayObject without filters is placed with PlaceObject2 (tag 26)", () => {
+    const bitmapItem: BitmapItem = {
+      id: "bitmap-2",
+      name: "test2.png",
+      itemType: "bitmap",
+      dataUri: "",
+      originalWidth: 4,
+      originalHeight: 4,
+      allowSmoothing: false,
+      compressionType: "lossless",
+      quality: 100,
+    };
+
+    const bmpObj: BitmapDisplayObject = {
+      id: "bmp-obj-2",
+      type: "bitmap",
+      libraryItemId: "bitmap-2",
+      x: 0,
+      y: 0,
+      width: 4,
+      height: 4,
+      // no filters
+    };
+
+    const doc: FlashDocument = {
+      id: "doc-1",
+      properties: BASE_PROPS,
+      scenes: [makeScene([makeLayer("layer", [makeFrame([bmpObj])])])],
+      library: { items: [bitmapItem], folders: [] },
+    };
+
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const placeObject2Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+    const placeObject3Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT3);
+
+    expect(placeObject2Tags.length).toBeGreaterThan(0);
+    expect(placeObject3Tags.length).toBe(0);
+  });
+
+  /**
+   * Test 22: encodePlaceObject3WithFilters with name sets HasName in Flags1 (bit 5).
+   */
+  it("encodePlaceObject3WithFilters with name sets HasName flag (Flags1 bit 5)", () => {
+    const filter = makeBlurFilter();
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter], undefined, "myTextField");
+
+    // Flags1 byte (bit 5 = HasName = 0x20)
+    expect(body[0] & 0x20).toBe(0x20);
+    // Flags2 byte (bit 4 = HasFilterList = 0x10)
+    expect(body[1] & 0x10).toBe(0x10);
+  });
+
+  /**
+   * Test 23: encodePlaceObject3WithFilters without name leaves HasName unset.
+   */
+  it("encodePlaceObject3WithFilters without name leaves HasName clear (Flags1 bit 5 = 0)", () => {
+    const filter = makeBlurFilter();
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+
+    // Flags1 bit 5 (HasName) should be 0
+    expect(body[0] & 0x20).toBe(0);
   });
 });
