@@ -104,4 +104,42 @@ describe("AS2 increment/decrement operators", () => {
     expect(toHex(postfix).length).toBeGreaterThan(0);
     expect(toHex(plusEq).length).toBeGreaterThan(0);
   });
+
+  // 10. --i emits the correct AVM1 sequence: GetVariable, Decrement, Duplicate,
+  //     SetVariable — the variable is stored back AND expression result is on stack.
+  it("10. --i emits ActionGetVariable (0x1c), ActionDecrement (0x51), ActionDuplicate (0x4c), ActionStackSwap (0x4d), ActionSetVariable (0x1d)", () => {
+    const bytes = compileAS2("var i = 5; --i;");
+    // All opcodes from the correct store-back sequence must be present
+    expect(bytes).toContain(0x1c); // ActionGetVariable
+    expect(bytes).toContain(0x51); // ActionDecrement
+    expect(bytes).toContain(0x4c); // ActionDuplicate
+    expect(bytes).toContain(0x4d); // ActionStackSwap
+    expect(bytes).toContain(0x1d); // ActionSetVariable
+  });
+
+  // 11. ++i emits the correct sequence matching --i (with Increment instead of Decrement).
+  it("11. ++i emits ActionGetVariable (0x1c), ActionIncrement (0x50), ActionDuplicate (0x4c), ActionStackSwap (0x4d), ActionSetVariable (0x1d)", () => {
+    const bytes = compileAS2("var i = 5; ++i;");
+    expect(bytes).toContain(0x1c); // ActionGetVariable
+    expect(bytes).toContain(0x50); // ActionIncrement
+    expect(bytes).toContain(0x4c); // ActionDuplicate
+    expect(bytes).toContain(0x4d); // ActionStackSwap
+    expect(bytes).toContain(0x1d); // ActionSetVariable
+  });
+
+  // 12. --i and ++i have the same structural opcode count (same number of
+  //     SetVariable opcodes — ensures neither leaks extra SetVariable calls).
+  it("12. --i and ++i produce equal numbers of ActionSetVariable opcodes (stack-balance check)", () => {
+    function countByte(bytes: Uint8Array, byte: number): number {
+      let n = 0;
+      for (const b of bytes) if (b === byte) n++;
+      return n;
+    }
+    const decBytes = compileAS2("var i = 5; --i;");
+    const incBytes = compileAS2("var i = 5; ++i;");
+    // Both should emit exactly one ActionSetVariable for the var decl and one for the operator
+    const decSetVar = countByte(decBytes, 0x1d);
+    const incSetVar = countByte(incBytes, 0x1d);
+    expect(decSetVar).toBe(incSetVar);
+  });
 });

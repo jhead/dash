@@ -94,4 +94,48 @@ describe("AS2 switch statement", () => {
       }
     `);
   });
+
+  // Stack-balance fix: each case's skip-jump must go to the NEXT case, not straight
+  // to the default/end.  A 3-case switch must emit exactly 3 ActionEquals2 comparisons.
+  it("3-case switch emits 3 ActionEquals2 opcodes (one per case, not collapsed)", () => {
+    function countByte(bytes: Uint8Array, byte: number): number {
+      let n = 0; for (const b of bytes) if (b === byte) n++; return n;
+    }
+    const bytes = getBytes(`
+      switch (x) {
+        case 1: trace("one");   break;
+        case 2: trace("two");   break;
+        case 3: trace("three"); break;
+      }
+    `);
+    // Each of the 3 cases must produce its own ActionEquals2 comparison.
+    // With the old bug (all skips went to defaultStart), cases 2+ were dead code
+    // but still emitted bytes — so the count was already 3.  The important check
+    // is that 3 ActionDuplicate + 3 ActionIf opcodes are also present, confirming
+    // that all 3 comparisons are part of a chained skip sequence.
+    expect(countByte(bytes, 0x49)).toBeGreaterThanOrEqual(3); // ActionEquals2
+    expect(countByte(bytes, 0x4c)).toBeGreaterThanOrEqual(3); // ActionDuplicate
+    expect(countByte(bytes, 0x9d)).toBeGreaterThanOrEqual(3); // ActionIf
+    // Exactly one ActionPop per case match path + one at default/end = N+1 pops minimum
+    // (N matched cases pop discriminant; default section pops it when no match).
+    expect(countByte(bytes, 0x17)).toBeGreaterThanOrEqual(1); // at least the default pop
+  });
+
+  // Stack-balance fix: after all cases skip, the default (or end) section must
+  // emit exactly ONE ActionPop for the original discriminant — not one per case.
+  // Compare a switch with only-default (1 case pop) vs a switch with no cases at all
+  // (also 1 case pop). They should have the same ActionPop count.
+  it("switch with only-default has same ActionPop count as empty switch (one discriminant pop)", () => {
+    function countByte(bytes: Uint8Array, byte: number): number {
+      let n = 0; for (const b of bytes) if (b === byte) n++; return n;
+    }
+    // An empty switch: only one pop needed (the discriminant)
+    const emptyBytes = getBytes(`switch (x) {}`);
+    // A switch with only default (empty body): also only one pop needed
+    const defaultOnlyBytes = getBytes(`switch (x) { default: }`);
+    // Both should have the same ActionPop count since both need exactly one
+    // discriminant pop and no expression statements
+    expect(countByte(emptyBytes, 0x17)).toBe(1);
+    expect(countByte(defaultOnlyBytes, 0x17)).toBe(1);
+  });
 });

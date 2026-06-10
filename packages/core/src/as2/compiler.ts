@@ -519,19 +519,32 @@ class Compiler {
     const ctx: LoopContext = { breakPatches: [], continuePatches: [] };
     this.loopStack.push(ctx);
 
-    // Positions of ActionJump(end) that close each case body (for fall-through
-    // semantics: if the programmer didn't write break, they fall through; if they
-    // did, a break will already have emitted its own jump and we still emit this
-    // jump — that's fine, it just becomes dead code).
-    // Actually, to support fall-through correctly we DON'T emit an automatic jump
-    // at the end of each case body. The programmer must write break explicitly.
-    // We only need to backpatch jumps emitted by break statements and the
-    // not-equal skips.
+    // Per-case: position of the ActionIf offset field for skipping to next case.
+    // Each skip-jump must point to the START of the NEXT case comparison (not to
+    // defaultStart), so that each case is tested in sequence. Only the last case's
+    // skip-jump lands at defaultStart.
+    //
+    // Correct AVM1 switch pattern for each case:
+    //   ActionDuplicate       ; copy discriminant (original D stays below)
+    //   PUSH case_value
+    //   ActionEquals2         ; pops dup + case_value, pushes bool
+    //   ActionNot             ; invert for skip-when-not-equal
+    //   ActionIf(next_case)   ; skip to next case comparison if no match
+    //   ActionPop             ; match found — pop original discriminant
+    //   [case body]           ; break emits ActionJump(switchEnd)
+    //   // next_case: (next case's DUP starts here)
+    // After all cases:
+    //   ActionPop             ; no match — pop original discriminant
+    //   [default body]        ; (or nothing if no default)
 
-    // Per-case: position of the ActionIf offset field for skipping to next case
-    const nextCasePatches: number[] = [];
+    let prevSkipPatch: number | null = null;
 
     for (const c of valueCases) {
+      // Patch the previous case's skip-jump to land here (start of this case's DUP)
+      if (prevSkipPatch !== null) {
+        this.patchJump(prevSkipPatch, this.buf.length);
+      }
+
       // Duplicate the discriminant
       this.emit(0x4c); // ActionDuplicate
 
@@ -545,29 +558,31 @@ class Compiler {
       this.emit(0x12); // ActionNot
 
       // ActionIf — jump to next case when (not equal) is truthy
-      const skipPos = this.emitActionIf();
-      nextCasePatches.push(skipPos);
+      prevSkipPatch = this.emitActionIf();
 
-      // Matched: pop the duplicated discriminant
+      // Matched: pop the original discriminant (the dup was consumed by ActionEquals2)
       this.emit(0x17); // ActionPop
 
       // Compile case body
+      // break compiles as ActionJump(switchEnd) via the loopStack mechanism
       this.compileStatements(c.consequent);
-      // (No automatic jump inserted here — fall-through is allowed)
+      // (No automatic jump inserted — fall-through to next case's comparison is allowed)
     }
 
-    // Patch all "skip to next case" jumps to point to the default/end section
+    // defaultStart: all non-matching cases eventually land here.
+    // Patch the last case's skip-jump to point here.
     const defaultStart = this.buf.length;
-    for (const p of nextCasePatches) {
-      this.patchJump(p, defaultStart);
+    if (prevSkipPatch !== null) {
+      this.patchJump(prevSkipPatch, defaultStart);
     }
 
-    // Default case body (if any): pop dup'd discriminant first, then body
+    // No case matched: pop the original discriminant, then run default body (if any).
+    // Only one ActionPop is needed here — matched cases already popped on their own path.
     if (defaultCase !== null) {
-      this.emit(0x17); // ActionPop — discard the discriminant copy
+      this.emit(0x17); // ActionPop — discard discriminant before default body
       this.compileStatements(defaultCase.consequent);
     } else {
-      // No default: just pop the discriminant
+      // No default: just pop the discriminant and fall through to switchEnd
       this.emit(0x17); // ActionPop
     }
 
@@ -1289,38 +1304,47 @@ class Compiler {
         // Prefix increment — result is new value
         if (expr.operand.type === 'Identifier') {
           const name = (expr.operand as Identifier).name;
-          // Stack sequence:
-          //   push name (for SetVariable)
-          //   push name, GetVariable → current
-          //   Increment → newValue
-          //   Duplicate → [name, newValue, newValue-copy]
-          //   Swap       → [name, newValue-copy, newValue]
-          //   SetVariable (pops newValue and name)
-          //   [newValue-copy remains as expression result]
-          this.pushString(name);
+          // Correct AVM1 stack sequence for prefix ++x (returns newValue):
+          //   push name, GetVariable → [old]
+          //   Increment              → [new]
+          //   Duplicate              → [new, new-copy]
+          //   push name              → [new, new-copy, "name"]
+          //   Swap                   → [new, "name", new-copy]
+          //   SetVariable (pops new-copy as value, "name" as name)  → [new]
+          //   [new remains as expression result]
           this.pushString(name);
           this.emit(0x1c); // ActionGetVariable
           this.emit(0x50); // ActionIncrement
           this.emit(0x4c); // ActionDuplicate
+          this.pushString(name);
           this.emit(0x4d); // ActionStackSwap
           this.emit(0x1d); // ActionSetVariable
-          // expression result (newValue-copy) is now on top
+          // expression result (new value) is now on top
         } else {
           this.compileIncDecNonIdentifier(expr.operand, 0x50);
         }
         break;
 
       case '--':
-        // Prefix decrement
+        // Prefix decrement — result is new value
         if (expr.operand.type === 'Identifier') {
           const name = (expr.operand as Identifier).name;
+          // Correct AVM1 stack sequence for prefix --x (returns newValue):
+          //   push name, GetVariable → [old]
+          //   Decrement              → [new]
+          //   Duplicate              → [new, new-copy]
+          //   push name              → [new, new-copy, "name"]
+          //   Swap                   → [new, "name", new-copy]
+          //   SetVariable (pops new-copy as value, "name" as name)  → [new]
+          //   [new remains as expression result]
           this.pushString(name);
-          this.pushString(name);
-          this.emit(0x1c);
+          this.emit(0x1c); // ActionGetVariable
           this.emit(0x51); // ActionDecrement
-          this.emit(0x4c); // Duplicate
+          this.emit(0x4c); // ActionDuplicate
+          this.pushString(name);
           this.emit(0x4d); // ActionStackSwap
-          this.emit(0x1d); // SetVariable
+          this.emit(0x1d); // ActionSetVariable
+          // expression result (new value) is now on top
         } else {
           this.compileIncDecNonIdentifier(expr.operand, 0x51);
         }
