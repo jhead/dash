@@ -2087,18 +2087,24 @@ export function Shell(): React.ReactElement {
     // 1. The original layer keeps only the first object (objects[0]).
     // 2. For each remaining object, insert a new layer after the original layer.
 
+    const layerId = layer.id;
+    const kfIndex = kf.index;
+
     pushDoc(withTimeline((t) => {
+      const tLayer = t.layers.find((l) => l.id === layerId);
+      if (!tLayer) return t;
+
       // Update original layer's keyframe to hold only the first object
-      const updatedOriginalLayer: typeof layer = {
-        ...layer,
-        frames: layer.frames.map((f) => {
-          if (!f.isKeyframe || f.index !== kf.index) return f;
+      const updatedOriginalLayer = {
+        ...tLayer,
+        frames: tLayer.frames.map((f) => {
+          if (!f.isKeyframe || f.index !== kfIndex) return f;
           return { ...f, displayObjects: [objects[0]] };
         }),
       };
 
       // Create new layers for objects[1..n]
-      const newLayers: typeof layer[] = objects.slice(1).map((obj, i) => {
+      const newLayers = objects.slice(1).map((obj, i) => {
         const name = getObjectName(obj, layerIdx + i + 1);
         // createLayer gives us a fresh layer with a blank keyframe
         const freshLayer = createLayer(name);
@@ -2113,7 +2119,7 @@ export function Shell(): React.ReactElement {
 
       // Insert new layers right after the original layer in the layers array
       const layers = [...t.layers];
-      const origIdx = layers.findIndex((l) => l.id === layer.id);
+      const origIdx = layers.findIndex((l) => l.id === layerId);
       if (origIdx < 0) return t;
 
       layers[origIdx] = updatedOriginalLayer;
@@ -3737,6 +3743,17 @@ export function Shell(): React.ReactElement {
         onConfirm={handleConvertToSymbolConfirm}
         onClose={() => setConvertToSymbolOpen(false)}
       />
+
+      {/* Swap Symbol dialog (Modify > Swap Symbol...) */}
+      {swapSymbolOpen && selectedDisplayObject?.type === "instance" && (
+        <SwapSymbolDialog
+          open={swapSymbolOpen}
+          library={doc.library}
+          currentSymbolId={(selectedDisplayObject as SymbolInstance).symbolId}
+          onConfirm={handleSwapSymbolConfirm}
+          onClose={() => setSwapSymbolOpen(false)}
+        />
+      )}
 
       {/* Publish Settings dialog (File > Publish Settings, Ctrl+Shift+F12) */}
       <PublishSettingsDialog
