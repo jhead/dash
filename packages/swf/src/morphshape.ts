@@ -287,10 +287,12 @@ function writeMorphStyleChangeRecord(
   const stateFillStyle0 = options.fillStyle0 !== undefined ? 1 : 0;
   const stateLineStyle = options.lineStyle !== undefined ? 1 : 0;
 
-  // Type bits: 0, 0
-  bw.writeBits(0, 1);
-  bw.writeBits(0, 1);
-  // State flags
+  // Type bit: 0 = not-edge (StyleChangeRecord)
+  // Followed immediately by 5 flag bits, MSB-first:
+  //   bit4=stateNewStyles, bit3=stateLineStyle, bit2=stateFillStyle1,
+  //   bit1=stateFillStyle0, bit0=stateMoveTo
+  bw.writeBits(0, 1); // isEdge = 0
+  // State flags (5 bits, MSB-first)
   bw.writeBits(0, 1); // stateNewStyles
   bw.writeBits(stateLineStyle, 1);
   bw.writeBits(0, 1); // stateFillStyle1
@@ -389,13 +391,15 @@ function pathToVertices(path: ShapePath): Vertex[] {
  * @param pathStrokeIndex  1-based line style indices per path
  * @param numFillBits
  * @param numLineBits
+ * @param isEndShape  When true, omit fill/line style references (end shape uses 0-bit style fields)
  */
 function encodeMorphShapeEdges(
   vertexSets: Vertex[][],
   pathFillIndex: number[],
   pathStrokeIndex: number[],
   numFillBits: number,
-  numLineBits: number
+  numLineBits: number,
+  isEndShape = false
 ): Uint8Array {
   const bw = new BitWriter();
 
@@ -403,16 +407,18 @@ function encodeMorphShapeEdges(
     const verts = vertexSets[pi];
     if (verts.length === 0) continue;
 
-    const fillIdx = pathFillIndex[pi] ?? 0;
-    const strokeIdx = pathStrokeIndex[pi] ?? 0;
+    const fillIdx = isEndShape ? undefined : (pathFillIndex[pi] ?? 0);
+    const strokeIdx = isEndShape ? undefined : (pathStrokeIndex[pi] ?? 0);
 
     // StyleChangeRecord: moveTo + style refs
+    // For the end shape, omit fill/line style references entirely (0-bit style fields
+    // per SWF spec; Ruffle reads end shape with num_fill_bits=0 and num_line_bits=0).
     writeMorphStyleChangeRecord(bw, {
       moveTo: { x: verts[0].x, y: verts[0].y },
-      fillStyle0: fillIdx,
-      lineStyle: strokeIdx,
-      numFillBits,
-      numLineBits,
+      ...(fillIdx !== undefined ? { fillStyle0: fillIdx } : {}),
+      ...(strokeIdx !== undefined ? { lineStyle: strokeIdx } : {}),
+      numFillBits: isEndShape ? 0 : numFillBits,
+      numLineBits: isEndShape ? 0 : numLineBits,
     });
 
     // Straight edge records
@@ -502,35 +508,41 @@ export function encodeDefineMorphShape(
     endVertexSets.push(ev);
   }
 
-  // Encode start and end edge streams
+  // Encode start and end edge streams.
+  // The start shape uses the declared numFillBits/numLineBits for style references.
+  // The end shape uses 0-bit style fields per SWF spec: Ruffle reads the end shape
+  // with num_fill_bits=0 and num_line_bits=0, so StyleChangeRecords must not include
+  // fill or line style index bits. Pass isEndShape=true to omit them.
   const startEdgeBytes = encodeMorphShapeEdges(
     startVertexSets,
     pathFillIndex,
     pathStrokeIndex,
     numFillBits,
-    numLineBits
+    numLineBits,
+    false
   );
   const endEdgeBytes = encodeMorphShapeEdges(
     endVertexSets,
     pathFillIndex,
     pathStrokeIndex,
     numFillBits,
-    numLineBits
+    numLineBits,
+    true  // isEndShape: omit fill/line style bits
   );
 
   // Build fill/line style arrays in a temporary writer to get byte length
   const stylesBw = new BitWriter();
   writeMorphFillStyleArray(stylesBw, fills);
   writeMorphLineStyleArray(stylesBw, strokes);
-  // NumFillBits / NumLineBits packed nibbles
+  // NumFillBits / NumLineBits packed nibbles (for start shape only)
   stylesBw.writeBits(numFillBits, 4);
   stylesBw.writeBits(numLineBits, 4);
   const stylesBytes = stylesBw.getBytes();
 
-  // Offset = byte length of (styles + StartEdges)
+  // Offset = byte length of (styles + StartEdges + end-shape nibble byte).
   // The Offset field in DefineMorphShape is the byte offset from immediately
-  // after the Offset field to the start of EndEdges.
-  const offset = stylesBytes.length + startEdgeBytes.length;
+  // after the Offset field to the start of EndEdges (i.e. after the 0x00 nibble).
+  const offset = stylesBytes.length + startEdgeBytes.length + 1;
 
   // Assemble the final tag body
   const bw = new BitWriter();
@@ -547,13 +559,18 @@ export function encodeDefineMorphShape(
   // UI32 Offset (byte distance from here to EndEdges)
   bw.writeUI32LE(offset);
 
-  // MORPHFILLSTYLEARRAY + MORPHLINESTYLEARRAY + NumFillBits/NumLineBits
+  // MORPHFILLSTYLEARRAY + MORPHLINESTYLEARRAY + NumFillBits/NumLineBits (start shape)
   bw.writeBytes(stylesBytes);
 
   // StartEdges
   bw.writeBytes(startEdgeBytes);
 
-  // EndEdges
+  // End-shape NumFillBits/NumLineBits nibble — MUST be 0x00 per SWF spec.
+  // Ruffle reads this byte and discards it (hardcodes num_fill_bits=0 for end shape).
+  // Flash Player uses the offset field above to seek here directly.
+  bw.writeUI8(0x00);
+
+  // EndEdges (encoded with isEndShape=true: no fill/line style bits in StyleChangeRecords)
   bw.writeBytes(endEdgeBytes);
 
   return bw.getBytes();
@@ -621,33 +638,41 @@ export function encodeDefineMorphShape2(
     endVertexSets.push(ev);
   }
 
-  // Encode start and end edge streams
+  // Encode start and end edge streams.
+  // The start shape uses the declared numFillBits/numLineBits for style references.
+  // The end shape uses 0-bit style fields per SWF spec: Ruffle reads the end shape
+  // with num_fill_bits=0 and num_line_bits=0, so StyleChangeRecords must not include
+  // fill or line style index bits. Pass isEndShape=true to omit them.
   const startEdgeBytes = encodeMorphShapeEdges(
     startVertexSets,
     pathFillIndex,
     pathStrokeIndex,
     numFillBits,
-    numLineBits
+    numLineBits,
+    false
   );
   const endEdgeBytes = encodeMorphShapeEdges(
     endVertexSets,
     pathFillIndex,
     pathStrokeIndex,
     numFillBits,
-    numLineBits
+    numLineBits,
+    true  // isEndShape: omit fill/line style bits
   );
 
   // Build style arrays using MORPHLINESTYLE2 format
   const stylesBw = new BitWriter();
   writeMorphFillStyleArray(stylesBw, fills);
   writeMorphLineStyle2Array(stylesBw, strokes);
-  // NumFillBits / NumLineBits packed nibbles
+  // NumFillBits / NumLineBits packed nibbles (for start shape only)
   stylesBw.writeBits(numFillBits, 4);
   stylesBw.writeBits(numLineBits, 4);
   const stylesBytes = stylesBw.getBytes();
 
-  // Offset = byte length of (styles + StartEdges)
-  const offset = stylesBytes.length + startEdgeBytes.length;
+  // Offset = byte length of (styles + StartEdges + end-shape nibble byte).
+  // The Offset field points from after the Offset field to the start of EndEdges
+  // (i.e. after the 0x00 nibble byte that precedes the end shape records).
+  const offset = stylesBytes.length + startEdgeBytes.length + 1;
 
   // Assemble the final tag body
   const bw = new BitWriter();
@@ -671,16 +696,21 @@ export function encodeDefineMorphShape2(
   // Use bit 1 (UsesScalingStrokes) for standard strokes.
   bw.writeUI8(0x02);
 
-  // UI32 Offset (byte distance from here to EndEdges)
+  // UI32 Offset (byte distance from here to EndEdges, i.e. after the 0x00 nibble)
   bw.writeUI32LE(offset);
 
-  // MORPHFILLSTYLEARRAY + MORPHLINESTYLE2ARRAY + NumFillBits/NumLineBits
+  // MORPHFILLSTYLEARRAY + MORPHLINESTYLE2ARRAY + NumFillBits/NumLineBits (start shape)
   bw.writeBytes(stylesBytes);
 
   // StartEdges
   bw.writeBytes(startEdgeBytes);
 
-  // EndEdges
+  // End-shape NumFillBits/NumLineBits nibble — MUST be 0x00 per SWF spec.
+  // Ruffle reads this byte and discards it (hardcodes num_fill_bits=0 for end shape).
+  // Flash Player seeks to this position using the Offset field above.
+  bw.writeUI8(0x00);
+
+  // EndEdges (encoded with isEndShape=true: no fill/line style bits in StyleChangeRecords)
   bw.writeBytes(endEdgeBytes);
 
   return bw.getBytes();
