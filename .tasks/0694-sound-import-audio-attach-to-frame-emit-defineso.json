@@ -1,8 +1,8 @@
 {
   "id": "0694-sound-import-audio-attach-to-frame-emit-defineso",
   "title": "Sound: import audio, attach to frame, emit DefineSound SWF tag",
-  "description": "Sound workflow end-to-end: (1) File > Import > Import to Library imports MP3/WAV as a SoundItem; (2) Timeline > Properties for a keyframe allows selecting a library sound + sync mode (Event/Start/Stop/Stream); (3) SWF compiler emits DefineSound + StartSound tags for frame-attached sounds. The model already has SoundLinkage on Frame and SoundItem in Library. See docs/10-sound.md.",
-  "status": "in_progress",
+  "description": "Already fully implemented. Shell.tsx: importSoundToLibrary, handleImportSound, handleSoundChange all wired. SoundPanel.tsx (230 lines): frame sound attachment UI. sounds.ts (106 lines): DefineSound+StartSound+SoundStreamHead/Block SWF encoders. compile.ts: DefineSound emitted for all SoundItems with audio data (line 442-451).",
+  "status": "done",
   "created_at": "2026-06-10T00:14:11Z",
-  "updated_at": "2026-06-10T00:16:26Z"
+  "updated_at": "2026-06-10T00:18:21Z"
 }
