@@ -5,6 +5,12 @@ const isCI = Boolean((globalThis as any).process?.env?.CI);
 
 export default defineConfig({
   testDir: './e2e',
+  // The /__agent WebSocket bridge is a singleton: only one browser page can
+  // hold the bridge at a time.  Running multiple workers in parallel causes
+  // each worker's page.goto('/') to disconnect the previous worker's bridge,
+  // producing "Editor page disconnected before responding" errors.  Serialise
+  // the full suite so each test gets an uncontested bridge connection.
+  workers: 1,
   use: {
     baseURL: 'http://localhost:1420',
     // Disable background throttling so requestAnimationFrame fires at full rate
