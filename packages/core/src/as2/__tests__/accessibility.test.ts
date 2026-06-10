@@ -4,8 +4,8 @@
  * Verifies that Accessibility static method calls, AccessibilityProperties constructor
  * calls, and property writes compile without error and emit the correct AVM1 opcodes:
  *   - ActionCallMethod (0x52): method calls
- *   - ActionNew        (0x4a): constructor calls
- *   - ActionSetMember  (0x4e): property writes
+ *   - ActionNew        (0x40): constructor calls
+ *   - ActionSetMember  (0x4f): property writes
  */
 
 import { describe, it, expect } from "vitest";
@@ -44,8 +44,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // Accessibility.isActive()
@@ -108,7 +108,7 @@ describe("AccessibilityProperties constructor", () => {
     expect(compilesOk("new AccessibilityProperties();")).toBe(true);
   });
 
-  it("new AccessibilityProperties() emits ActionNew (0x4a)", () => {
+  it("new AccessibilityProperties() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new AccessibilityProperties();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "AccessibilityProperties")).toBe(true);
@@ -128,7 +128,7 @@ describe("mc.accessibilityProperties assignment", () => {
     ).toBe(true);
   });
 
-  it("mc.accessibilityProperties = new AccessibilityProperties() emits ActionSetMember (0x4e)", () => {
+  it("mc.accessibilityProperties = new AccessibilityProperties() emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       "var mc = _root; mc.accessibilityProperties = new AccessibilityProperties();"
     );
@@ -150,7 +150,7 @@ describe("AccessibilityProperties name property", () => {
     ).toBe(true);
   });
 
-  it('ap.name = "button" emits ActionSetMember (0x4e)', () => {
+  it('ap.name = "button" emits ActionSetMember (0x4f)', () => {
     const bytes = compileAS2(
       'var ap = new AccessibilityProperties(); ap.name = "button";'
     );
@@ -172,7 +172,7 @@ describe("AccessibilityProperties description property", () => {
     ).toBe(true);
   });
 
-  it('ap.description = "desc" emits ActionSetMember (0x4e)', () => {
+  it('ap.description = "desc" emits ActionSetMember (0x4f)', () => {
     const bytes = compileAS2(
       'var ap = new AccessibilityProperties(); ap.description = "desc";'
     );
@@ -194,7 +194,7 @@ describe("AccessibilityProperties silent property", () => {
     ).toBe(true);
   });
 
-  it("ap.silent = true emits ActionSetMember (0x4e)", () => {
+  it("ap.silent = true emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       "var ap = new AccessibilityProperties(); ap.silent = true;"
     );

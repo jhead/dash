@@ -5,10 +5,11 @@
  * produce the expected opcodes.
  *
  * Actual AVM1 opcodes used by the compiler:
- *   ActionEquals2  0x66  — a == b (abstract equality) and a === b (strict equality)
- *   ActionNot      0x14  — logical not (used for != and !==)
+ *   ActionEquals2      0x49 — a == b / a != b (abstract equality)
+ *   ActionStrictEquals 0x66 — a === b / a !== b (strict equality)
+ *   ActionNot      0x12  — logical not (used for != and !==)
  *
- * Note: The AS2 compiler maps both == and === to ActionEquals2 (0x66).
+ * Note: == maps to ActionEquals2 (0x49); === maps to ActionStrictEquals (0x66).
  * AVM1 has no separate strict-equality opcode in SWF6 mode; both equality
  * operators are lowered to the same bytecode instruction.
  */
@@ -45,7 +46,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Abstract equality  (a == b → ActionEquals2 0x66)
+// Abstract equality  (a == b → ActionEquals2 0x49)
 // ---------------------------------------------------------------------------
 
 describe("abstract equality operator ==", () => {
@@ -53,9 +54,9 @@ describe("abstract equality operator ==", () => {
     expect(compilesOk("a == b;")).toBe(true);
   });
 
-  it("a == b emits ActionEquals2 (0x66)", () => {
+  it("a == b emits ActionEquals2 (0x49)", () => {
     const bytes = compileAS2("a == b;");
-    expect(containsByte(bytes, 0x66)).toBe(true);
+    expect(containsByte(bytes, 0x49)).toBe(true);
   });
 
   it("operand names appear in bytecode for a == b", () => {
@@ -66,7 +67,7 @@ describe("abstract equality operator ==", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Abstract inequality  (a != b → ActionEquals2 0x66 + ActionNot 0x14)
+// Abstract inequality  (a != b → ActionEquals2 0x49 + ActionNot 0x12)
 // ---------------------------------------------------------------------------
 
 describe("abstract inequality operator !=", () => {
@@ -74,14 +75,14 @@ describe("abstract inequality operator !=", () => {
     expect(compilesOk("a != b;")).toBe(true);
   });
 
-  it("a != b emits ActionEquals2 (0x66)", () => {
+  it("a != b emits ActionEquals2 (0x49)", () => {
     const bytes = compileAS2("a != b;");
-    expect(containsByte(bytes, 0x66)).toBe(true);
+    expect(containsByte(bytes, 0x49)).toBe(true);
   });
 
-  it("a != b emits ActionNot (0x14) to negate result", () => {
+  it("a != b emits ActionNot (0x12) to negate result", () => {
     const bytes = compileAS2("a != b;");
-    expect(containsByte(bytes, 0x14)).toBe(true);
+    expect(containsByte(bytes, 0x12)).toBe(true);
   });
 
   it("operand names appear in bytecode for a != b", () => {
@@ -92,7 +93,7 @@ describe("abstract inequality operator !=", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Strict equality  (a === b → ActionEquals2 0x66)
+// Strict equality  (a === b → ActionStrictEquals 0x66)
 // ---------------------------------------------------------------------------
 
 describe("strict equality operator ===", () => {
@@ -100,7 +101,7 @@ describe("strict equality operator ===", () => {
     expect(compilesOk("a === b;")).toBe(true);
   });
 
-  it("a === b emits ActionEquals2 (0x66)", () => {
+  it("a === b emits ActionStrictEquals (0x66)", () => {
     const bytes = compileAS2("a === b;");
     expect(containsByte(bytes, 0x66)).toBe(true);
   });
@@ -113,7 +114,7 @@ describe("strict equality operator ===", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Strict inequality  (a !== b → ActionEquals2 0x66 + ActionNot 0x14)
+// Strict inequality  (a !== b → ActionStrictEquals 0x66 + ActionNot 0x12)
 // ---------------------------------------------------------------------------
 
 describe("strict inequality operator !==", () => {
@@ -121,14 +122,14 @@ describe("strict inequality operator !==", () => {
     expect(compilesOk("a !== b;")).toBe(true);
   });
 
-  it("a !== b emits ActionEquals2 (0x66)", () => {
+  it("a !== b emits ActionStrictEquals (0x66)", () => {
     const bytes = compileAS2("a !== b;");
     expect(containsByte(bytes, 0x66)).toBe(true);
   });
 
-  it("a !== b emits ActionNot (0x14) to negate result", () => {
+  it("a !== b emits ActionNot (0x12) to negate result", () => {
     const bytes = compileAS2("a !== b;");
-    expect(containsByte(bytes, 0x14)).toBe(true);
+    expect(containsByte(bytes, 0x12)).toBe(true);
   });
 
   it("operand names appear in bytecode for a !== b", () => {
@@ -147,9 +148,9 @@ describe("null == undefined abstract equality", () => {
     expect(compilesOk("null == undefined;")).toBe(true);
   });
 
-  it("null == undefined emits ActionEquals2 (0x66)", () => {
+  it("null == undefined emits ActionEquals2 (0x49)", () => {
     const bytes = compileAS2("null == undefined;");
-    expect(containsByte(bytes, 0x66)).toBe(true);
+    expect(containsByte(bytes, 0x49)).toBe(true);
   });
 });
 
@@ -177,9 +178,9 @@ describe("0 == false abstract equality", () => {
     expect(compilesOk("0 == false;")).toBe(true);
   });
 
-  it("0 == false emits ActionEquals2 (0x66)", () => {
+  it("0 == false emits ActionEquals2 (0x49)", () => {
     const bytes = compileAS2("0 == false;");
-    expect(containsByte(bytes, 0x66)).toBe(true);
+    expect(containsByte(bytes, 0x49)).toBe(true);
   });
 });
 
@@ -207,9 +208,9 @@ describe('"" == false abstract equality', () => {
     expect(compilesOk('"" == false;')).toBe(true);
   });
 
-  it('"" == false emits ActionEquals2 (0x66)', () => {
+  it('"" == false emits ActionEquals2 (0x49)', () => {
     const bytes = compileAS2('"" == false;');
-    expect(containsByte(bytes, 0x66)).toBe(true);
+    expect(containsByte(bytes, 0x49)).toBe(true);
   });
 });
 
@@ -222,8 +223,8 @@ describe("null == null self-equality", () => {
     expect(compilesOk("null == null;")).toBe(true);
   });
 
-  it("null == null emits ActionEquals2 (0x66)", () => {
+  it("null == null emits ActionEquals2 (0x49)", () => {
     const bytes = compileAS2("null == null;");
-    expect(containsByte(bytes, 0x66)).toBe(true);
+    expect(containsByte(bytes, 0x49)).toBe(true);
   });
 });

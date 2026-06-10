@@ -4,8 +4,8 @@
  * Verifies that System static property reads, writes, method calls, and
  * chained System.capabilities member accesses compile without error and emit
  * the correct AVM1 opcodes:
- *   - ActionGetMember  (0x4f): property reads
- *   - ActionSetMember  (0x4e): property writes
+ *   - ActionGetMember  (0x4e): property reads
+ *   - ActionSetMember  (0x4f): property writes
  *   - ActionCallMethod (0x52): method calls
  */
 
@@ -45,8 +45,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // System.useCodepage
@@ -57,7 +57,7 @@ describe("System.useCodepage", () => {
     expect(compilesOk("System.useCodepage;")).toBe(true);
   });
 
-  it("System.useCodepage emits ActionGetMember (0x4f)", () => {
+  it("System.useCodepage emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.useCodepage;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "useCodepage")).toBe(true);
@@ -73,7 +73,7 @@ describe("System.exactSettings", () => {
     expect(compilesOk("System.exactSettings = true;")).toBe(true);
   });
 
-  it("System.exactSettings = true emits ActionSetMember (0x4e)", () => {
+  it("System.exactSettings = true emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("System.exactSettings = true;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "exactSettings")).toBe(true);
@@ -121,7 +121,7 @@ describe("System.capabilities.os", () => {
     expect(compilesOk("System.capabilities.os;")).toBe(true);
   });
 
-  it("System.capabilities.os emits ActionGetMember (0x4f)", () => {
+  it("System.capabilities.os emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.os;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "capabilities")).toBe(true);
@@ -137,7 +137,7 @@ describe("System.capabilities.language", () => {
     expect(compilesOk("System.capabilities.language;")).toBe(true);
   });
 
-  it("System.capabilities.language emits ActionGetMember (0x4f)", () => {
+  it("System.capabilities.language emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.language;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "language")).toBe(true);
@@ -153,7 +153,7 @@ describe("System.capabilities.version", () => {
     expect(compilesOk("System.capabilities.version;")).toBe(true);
   });
 
-  it("System.capabilities.version emits ActionGetMember (0x4f)", () => {
+  it("System.capabilities.version emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.version;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "version")).toBe(true);
@@ -169,7 +169,7 @@ describe("System.capabilities.playerType", () => {
     expect(compilesOk("System.capabilities.playerType;")).toBe(true);
   });
 
-  it("System.capabilities.playerType emits ActionGetMember (0x4f)", () => {
+  it("System.capabilities.playerType emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.playerType;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "playerType")).toBe(true);
@@ -185,7 +185,7 @@ describe("System.capabilities.screenResolutionX", () => {
     expect(compilesOk("System.capabilities.screenResolutionX;")).toBe(true);
   });
 
-  it("System.capabilities.screenResolutionX emits ActionGetMember (0x4f)", () => {
+  it("System.capabilities.screenResolutionX emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.screenResolutionX;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "screenResolutionX")).toBe(true);
@@ -201,7 +201,7 @@ describe("System.capabilities.screenResolutionY", () => {
     expect(compilesOk("System.capabilities.screenResolutionY;")).toBe(true);
   });
 
-  it("System.capabilities.screenResolutionY emits ActionGetMember (0x4f)", () => {
+  it("System.capabilities.screenResolutionY emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.screenResolutionY;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "screenResolutionY")).toBe(true);

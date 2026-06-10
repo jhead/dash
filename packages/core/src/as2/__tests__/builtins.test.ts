@@ -5,8 +5,8 @@
  * calls, and static method calls on built-in types compile to the correct
  * AVM1 opcodes:
  *   - ActionCallMethod (0x52): method calls (obj.method(...))
- *   - ActionGetMember  (0x4f): property reads (obj.prop)
- *   - ActionNew        (0x4a): constructor calls (new Foo(...))
+ *   - ActionGetMember  (0x4e): property reads (obj.prop)
+ *   - ActionNew        (0x40): constructor calls (new Foo(...))
  */
 
 import { describe, it, expect } from "vitest";
@@ -45,8 +45,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 
 // ---------------------------------------------------------------------------
 // Array method calls
@@ -124,7 +124,7 @@ describe("Array method calls", () => {
     expect(containsString(bytes, "indexOf")).toBe(true);
   });
 
-  it("6. arr.length is a property access — emits ActionGetMember (0x4f), not ActionCallMethod", () => {
+  it("6. arr.length is a property access — emits ActionGetMember (0x4e), not ActionCallMethod", () => {
     const bytes = compileAS2("var n = arr.length;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "length")).toBe(true);
@@ -192,7 +192,7 @@ describe("String method calls", () => {
     expect(containsString(bytes, "substring")).toBe(true);
   });
 
-  it("11. str.length is a property access — emits ActionGetMember (0x4f), not ActionCallMethod", () => {
+  it("11. str.length is a property access — emits ActionGetMember (0x4e), not ActionCallMethod", () => {
     const bytes = compileAS2("var n = str.length;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "length")).toBe(true);
@@ -262,19 +262,19 @@ describe("Math static method calls", () => {
 // ---------------------------------------------------------------------------
 
 describe("Constructor calls", () => {
-  it("15. new Array() compiles and emits ActionNew (0x4a)", () => {
+  it("15. new Array() compiles and emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var a = new Array();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Array")).toBe(true);
   });
 
-  it("16. new Array(5) compiles and emits ActionNew (0x4a)", () => {
+  it("16. new Array(5) compiles and emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var a = new Array(5);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Array")).toBe(true);
   });
 
-  it("17. new Date() compiles and emits ActionNew (0x4a)", () => {
+  it("17. new Date() compiles and emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var d = new Date();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Date")).toBe(true);

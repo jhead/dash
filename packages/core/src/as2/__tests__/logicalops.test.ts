@@ -3,7 +3,7 @@
  *
  * AVM1 compiles logical operators using short-circuit evaluation via
  * ActionIf (0x9D) rather than the older ActionAnd (0x10) / ActionOr (0x11)
- * opcodes. ActionNot (0x14) is used for the ! operator and as a helper in
+ * opcodes. ActionNot (0x12) is used for the ! operator and as a helper in
  * short-circuit OR evaluation.
  */
 
@@ -46,10 +46,10 @@ describe("AS2 logical operators (&&, ||, !)", () => {
     expect(bytes).not.toContain(0x11);
   });
 
-  // 3. !a — emits ActionNot (0x14)
-  it("3. !a emits ActionNot (0x14)", () => {
+  // 3. !a — emits ActionNot (0x12)
+  it("3. !a emits ActionNot (0x12)", () => {
     const bytes = compileAS2("!a");
-    expect(bytes).toContain(0x14);
+    expect(bytes).toContain(0x12);
   });
 
   // 4. a && b && c — compiles (chained AND)
@@ -71,7 +71,7 @@ describe("AS2 logical operators (&&, ||, !)", () => {
     expect(compilesOk("!(a && b)")).toBe(true);
     const bytes = compileAS2("!(a && b)");
     // Both ActionNot and ActionIf should appear
-    expect(bytes).toContain(0x14);
+    expect(bytes).toContain(0x12);
     expect(bytes).toContain(0x9d);
   });
 

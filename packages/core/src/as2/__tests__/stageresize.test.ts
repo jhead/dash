@@ -5,9 +5,9 @@
  * handler, Stage.scaleMode assignment, Stage.align assignment,
  * Stage.width / Stage.height reads, and Stage.removeListener() compile without
  * error and emit the correct AVM1 opcodes:
- *   - ActionSetMember  (0x4e): property writes (Stage.onResize = ..., etc.)
+ *   - ActionSetMember  (0x4f): property writes (Stage.onResize = ..., etc.)
  *   - ActionCallMethod (0x52): method calls (Stage.addListener(), Stage.removeListener())
- *   - ActionGetMember  (0x4f): property reads (Stage.width, Stage.height)
+ *   - ActionGetMember  (0x4e): property reads (Stage.width, Stage.height)
  */
 
 import { describe, it, expect } from "vitest";
@@ -46,8 +46,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // Stage.onResize assignment
@@ -58,7 +58,7 @@ describe("Stage.onResize handler assignment", () => {
     expect(compilesOk("Stage.onResize = function() {};")).toBe(true);
   });
 
-  it("Stage.onResize = function() {} emits ActionSetMember (0x4e)", () => {
+  it("Stage.onResize = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("Stage.onResize = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onResize")).toBe(true);
@@ -92,7 +92,7 @@ describe('Stage.scaleMode = "noScale"', () => {
     expect(compilesOk('Stage.scaleMode = "noScale";')).toBe(true);
   });
 
-  it('Stage.scaleMode = "noScale" emits ActionSetMember (0x4e)', () => {
+  it('Stage.scaleMode = "noScale" emits ActionSetMember (0x4f)', () => {
     const bytes = compileAS2('Stage.scaleMode = "noScale";');
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "scaleMode")).toBe(true);
@@ -119,7 +119,7 @@ describe('Stage.align = "TL"', () => {
     expect(compilesOk('Stage.align = "TL";')).toBe(true);
   });
 
-  it('Stage.align = "TL" emits ActionSetMember (0x4e)', () => {
+  it('Stage.align = "TL" emits ActionSetMember (0x4f)', () => {
     const bytes = compileAS2('Stage.align = "TL";');
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "align")).toBe(true);
@@ -136,7 +136,7 @@ describe("Stage.width read", () => {
     expect(compilesOk("var w = Stage.width;")).toBe(true);
   });
 
-  it("Stage.width emits ActionGetMember (0x4f)", () => {
+  it("Stage.width emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var w = Stage.width;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "width")).toBe(true);
@@ -153,7 +153,7 @@ describe("Stage.height read", () => {
     expect(compilesOk("var h = Stage.height;")).toBe(true);
   });
 
-  it("Stage.height emits ActionGetMember (0x4f)", () => {
+  it("Stage.height emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var h = Stage.height;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "height")).toBe(true);
@@ -195,13 +195,13 @@ describe("Stage.displayState", () => {
     expect(compilesOk('Stage.displayState = "normal";')).toBe(true);
   });
 
-  it("Stage.displayState read emits ActionGetMember (0x4f)", () => {
+  it("Stage.displayState read emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var ds = Stage.displayState;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "displayState")).toBe(true);
   });
 
-  it("Stage.displayState write emits ActionSetMember (0x4e)", () => {
+  it("Stage.displayState write emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2('Stage.displayState = "fullScreen";');
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "displayState")).toBe(true);
@@ -233,7 +233,7 @@ describe("Key constants", () => {
     expect(compilesOk("var k = Key.TAB;")).toBe(true);
   });
 
-  it("Key.HOME emits ActionGetMember (0x4f)", () => {
+  it("Key.HOME emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.HOME;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "HOME")).toBe(true);

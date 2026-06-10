@@ -3,9 +3,9 @@
  *
  * Verifies that array method calls compile to correct AVM1 opcodes:
  *   - ActionCallMethod (0x52): method calls (arr.push(4), arr.pop(), etc.)
- *   - ActionGetMember  (0x4f): property reads (arr.length)
- *   - ActionNew        (0x4a): constructor calls (new Array(5))
- *   - ActionInitArray  (0x36): array literal ([1,2,3])
+ *   - ActionGetMember  (0x4e): property reads (arr.length)
+ *   - ActionNew        (0x40): constructor calls (new Array(5))
+ *   - ActionInitArray  (0x42): array literal ([1,2,3])
  */
 
 import { describe, it, expect } from "vitest";
@@ -44,9 +44,9 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
-const ACTION_INIT_ARRAY  = 0x36; // ActionInitArray  — array literal
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
+const ACTION_INIT_ARRAY  = 0x42; // ActionInitArray  — array literal
 
 // ---------------------------------------------------------------------------
 // Array declaration and push
@@ -206,7 +206,7 @@ describe("Array length property", () => {
     expect(compilesOk("var n = a.length;")).toBe(true);
   });
 
-  it("a.length emits ActionGetMember (0x4f), not ActionCallMethod", () => {
+  it("a.length emits ActionGetMember (0x4e), not ActionCallMethod", () => {
     const bytes = compileAS2("var n = a.length;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "length")).toBe(true);
@@ -224,7 +224,7 @@ describe("Array constructor", () => {
     expect(compilesOk("var a = new Array(5);")).toBe(true);
   });
 
-  it("new Array(5) emits ActionNew (0x4a)", () => {
+  it("new Array(5) emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var a = new Array(5);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Array")).toBe(true);
@@ -234,7 +234,7 @@ describe("Array constructor", () => {
     expect(compilesOk("var a = new Array();")).toBe(true);
   });
 
-  it("new Array() emits ActionNew (0x4a)", () => {
+  it("new Array() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var a = new Array();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Array")).toBe(true);
@@ -250,7 +250,7 @@ describe("Array literal", () => {
     expect(compilesOk("var a = [1,2,3];")).toBe(true);
   });
 
-  it("[1,2,3] emits ActionInitArray (0x36)", () => {
+  it("[1,2,3] emits ActionInitArray (0x42)", () => {
     const bytes = compileAS2("var a = [1,2,3];");
     expect(containsByte(bytes, ACTION_INIT_ARRAY)).toBe(true);
   });
@@ -259,7 +259,7 @@ describe("Array literal", () => {
     expect(compilesOk("var a = [];")).toBe(true);
   });
 
-  it("empty array literal [] emits ActionInitArray (0x36)", () => {
+  it("empty array literal [] emits ActionInitArray (0x42)", () => {
     const bytes = compileAS2("var a = [];");
     expect(containsByte(bytes, ACTION_INIT_ARRAY)).toBe(true);
   });

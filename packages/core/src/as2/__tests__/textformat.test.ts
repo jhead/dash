@@ -3,9 +3,9 @@
  *
  * Verifies that TextFormat construction, property assignments, and usage with
  * TextField compile correctly and emit the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new TextFormat())
- *   - ActionSetMember  (0x4e): property writes (fmt.font = ..., etc.)
- *   - ActionGetMember  (0x4f): property reads (var f = fmt.font)
+ *   - ActionNew        (0x40): constructor calls (new TextFormat())
+ *   - ActionSetMember  (0x4f): property writes (fmt.font = ..., etc.)
+ *   - ActionGetMember  (0x4e): property reads (var f = fmt.font)
  *   - ActionCallMethod (0x52): method calls (tf.setTextFormat(fmt))
  */
 
@@ -44,9 +44,9 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
 
 // ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ describe("TextFormat constructor", () => {
     expect(compilesOk("var fmt = new TextFormat();")).toBe(true);
   });
 
-  it("var fmt = new TextFormat() emits ActionNew (0x4a)", () => {
+  it("var fmt = new TextFormat() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var fmt = new TextFormat();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "TextFormat")).toBe(true);
@@ -74,7 +74,7 @@ describe("TextFormat font property", () => {
     expect(compilesOk('var fmt = new TextFormat(); fmt.font = "Arial";')).toBe(true);
   });
 
-  it('fmt.font = "Arial" emits ActionSetMember (0x4e)', () => {
+  it('fmt.font = "Arial" emits ActionSetMember (0x4f)', () => {
     const bytes = compileAS2('var fmt = new TextFormat(); fmt.font = "Arial";');
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "font")).toBe(true);
@@ -90,7 +90,7 @@ describe("TextFormat size property", () => {
     expect(compilesOk("var fmt = new TextFormat(); fmt.size = 12;")).toBe(true);
   });
 
-  it("fmt.size = 12 emits ActionSetMember (0x4e)", () => {
+  it("fmt.size = 12 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var fmt = new TextFormat(); fmt.size = 12;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "size")).toBe(true);
@@ -106,7 +106,7 @@ describe("TextFormat bold property", () => {
     expect(compilesOk("var fmt = new TextFormat(); fmt.bold = true;")).toBe(true);
   });
 
-  it("fmt.bold = true emits ActionSetMember (0x4e)", () => {
+  it("fmt.bold = true emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var fmt = new TextFormat(); fmt.bold = true;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "bold")).toBe(true);
@@ -122,7 +122,7 @@ describe("TextFormat italic property", () => {
     expect(compilesOk("var fmt = new TextFormat(); fmt.italic = false;")).toBe(true);
   });
 
-  it("fmt.italic = false emits ActionSetMember (0x4e)", () => {
+  it("fmt.italic = false emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var fmt = new TextFormat(); fmt.italic = false;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "italic")).toBe(true);
@@ -138,7 +138,7 @@ describe("TextFormat underline property", () => {
     expect(compilesOk("var fmt = new TextFormat(); fmt.underline = false;")).toBe(true);
   });
 
-  it("fmt.underline = false emits ActionSetMember (0x4e)", () => {
+  it("fmt.underline = false emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var fmt = new TextFormat(); fmt.underline = false;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "underline")).toBe(true);
@@ -154,7 +154,7 @@ describe("TextFormat color property", () => {
     expect(compilesOk("var fmt = new TextFormat(); fmt.color = 0x000000;")).toBe(true);
   });
 
-  it("fmt.color = 0x000000 emits ActionSetMember (0x4e)", () => {
+  it("fmt.color = 0x000000 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var fmt = new TextFormat(); fmt.color = 0x000000;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "color")).toBe(true);
@@ -170,7 +170,7 @@ describe("TextFormat align property", () => {
     expect(compilesOk('var fmt = new TextFormat(); fmt.align = "left";')).toBe(true);
   });
 
-  it('fmt.align = "left" emits ActionSetMember (0x4e)', () => {
+  it('fmt.align = "left" emits ActionSetMember (0x4f)', () => {
     const bytes = compileAS2('var fmt = new TextFormat(); fmt.align = "left";');
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "align")).toBe(true);
@@ -186,7 +186,7 @@ describe("TextFormat leftMargin property", () => {
     expect(compilesOk("var fmt = new TextFormat(); fmt.leftMargin = 5;")).toBe(true);
   });
 
-  it("fmt.leftMargin = 5 emits ActionSetMember (0x4e)", () => {
+  it("fmt.leftMargin = 5 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var fmt = new TextFormat(); fmt.leftMargin = 5;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "leftMargin")).toBe(true);
@@ -202,7 +202,7 @@ describe("TextFormat leading property", () => {
     expect(compilesOk("var fmt = new TextFormat(); fmt.leading = 2;")).toBe(true);
   });
 
-  it("fmt.leading = 2 emits ActionSetMember (0x4e)", () => {
+  it("fmt.leading = 2 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var fmt = new TextFormat(); fmt.leading = 2;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "leading")).toBe(true);
@@ -218,7 +218,7 @@ describe("TextFormat font property read", () => {
     expect(compilesOk('var fmt = new TextFormat(); fmt.font = "Arial"; var f = fmt.font;')).toBe(true);
   });
 
-  it("var f = fmt.font emits ActionGetMember (0x4f)", () => {
+  it("var f = fmt.font emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2('var fmt = new TextFormat(); fmt.font = "Arial"; var f = fmt.font;');
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "font")).toBe(true);
@@ -238,7 +238,7 @@ describe("TextFormat full usage pattern", () => {
     ).toBe(true);
   });
 
-  it("full pattern emits ActionNew (0x4a), ActionSetMember (0x4e), ActionCallMethod (0x52)", () => {
+  it("full pattern emits ActionNew (0x40), ActionSetMember (0x4f), ActionCallMethod (0x52)", () => {
     const bytes = compileAS2(
       'var tf = new Object(); var fmt = new TextFormat(); fmt.font = "Arial"; fmt.size = 14; tf.setTextFormat(fmt);'
     );

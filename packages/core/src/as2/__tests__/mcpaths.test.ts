@@ -42,7 +42,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_GET_VARIABLE = 0x1c; // ActionGetVariable
-const ACTION_GET_MEMBER   = 0x4f; // ActionGetMember
+const ACTION_GET_MEMBER   = 0x4e; // ActionGetMember
 const ACTION_PUSH         = 0x96; // ActionPush
 
 // ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ describe("AS2 _root.mc member access", () => {
     expect(compilesOk("var m = _root.mc;")).toBe(true);
   });
 
-  it("_root.mc emits ActionGetMember (0x4f)", () => {
+  it("_root.mc emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var m = _root.mc;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
@@ -141,7 +141,7 @@ describe("AS2 _parent.mc member access", () => {
     expect(compilesOk("var m = _parent.mc;")).toBe(true);
   });
 
-  it("_parent.mc emits ActionGetMember (0x4f)", () => {
+  it("_parent.mc emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var m = _parent.mc;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
@@ -162,7 +162,7 @@ describe("AS2 mc._name property access", () => {
     expect(compilesOk("var mc = _root.mc; var n = mc._name;")).toBe(true);
   });
 
-  it("mc._name emits ActionGetMember (0x4f)", () => {
+  it("mc._name emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var mc = _root.mc; var n = mc._name;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
@@ -182,7 +182,7 @@ describe("AS2 mc._target property access", () => {
     expect(compilesOk("var mc = _root.mc; var t = mc._target;")).toBe(true);
   });
 
-  it("mc._target emits ActionGetMember (0x4f)", () => {
+  it("mc._target emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var mc = _root.mc; var t = mc._target;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
@@ -202,7 +202,7 @@ describe("AS2 mc._url property access", () => {
     expect(compilesOk("var mc = _root.mc; var u = mc._url;")).toBe(true);
   });
 
-  it("mc._url emits ActionGetMember (0x4f)", () => {
+  it("mc._url emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var mc = _root.mc; var u = mc._url;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });

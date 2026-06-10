@@ -55,10 +55,10 @@ describe("anonymous function expression", () => {
     expect(containsString(bytes, "x")).toBe(true);
   });
 
-  it("var f = function(x) { return x * 2; } emits ActionDefineLocal (0x42) for var", () => {
+  it("var f = function(x) { return x * 2; } emits ActionDefineLocal (0x3c) for var", () => {
     const bytes = compileAS2("var f = function(x) { return x * 2; }");
-    // ActionDefineLocal (0x42) used to bind f
-    expect(containsByte(bytes, 0x42)).toBe(true);
+    // ActionDefineLocal (0x3c) used to bind f
+    expect(containsByte(bytes, 0x3c)).toBe(true);
   });
 });
 

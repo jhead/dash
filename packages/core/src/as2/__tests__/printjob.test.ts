@@ -4,9 +4,9 @@
  *
  * Verifies that PrintJob constructor calls, instance method calls, and
  * property reads compile without error and emit the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new PrintJob())
+ *   - ActionNew        (0x40): constructor calls (new PrintJob())
  *   - ActionCallMethod (0x52): method calls (pj.start(), pj.addPage(), pj.send())
- *   - ActionGetMember  (0x4f): property reads (pj.paperWidth, pj.paperHeight, pj.orientation)
+ *   - ActionGetMember  (0x4e): property reads (pj.paperWidth, pj.paperHeight, pj.orientation)
  */
 
 import { describe, it, expect } from "vitest";
@@ -44,9 +44,9 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 
 // ---------------------------------------------------------------------------
 // PrintJob constructor
@@ -57,7 +57,7 @@ describe("PrintJob constructor", () => {
     expect(compilesOk("new PrintJob();")).toBe(true);
   });
 
-  it("new PrintJob() emits ActionNew (0x4a)", () => {
+  it("new PrintJob() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new PrintJob();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "PrintJob")).toBe(true);
@@ -67,7 +67,7 @@ describe("PrintJob constructor", () => {
     expect(compilesOk("var pj = new PrintJob();")).toBe(true);
   });
 
-  it("var pj = new PrintJob() emits ActionNew (0x4a)", () => {
+  it("var pj = new PrintJob() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var pj = new PrintJob();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "PrintJob")).toBe(true);
@@ -135,7 +135,7 @@ describe("PrintJob paperWidth property", () => {
     expect(compilesOk("var pj = new PrintJob(); pj.paperWidth;")).toBe(true);
   });
 
-  it("pj.paperWidth emits ActionGetMember (0x4f)", () => {
+  it("pj.paperWidth emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var pj = new PrintJob(); pj.paperWidth;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "paperWidth")).toBe(true);
@@ -151,7 +151,7 @@ describe("PrintJob paperHeight property", () => {
     expect(compilesOk("var pj = new PrintJob(); pj.paperHeight;")).toBe(true);
   });
 
-  it("pj.paperHeight emits ActionGetMember (0x4f)", () => {
+  it("pj.paperHeight emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var pj = new PrintJob(); pj.paperHeight;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "paperHeight")).toBe(true);
@@ -167,7 +167,7 @@ describe("PrintJob orientation property", () => {
     expect(compilesOk("var pj = new PrintJob(); pj.orientation;")).toBe(true);
   });
 
-  it("pj.orientation emits ActionGetMember (0x4f)", () => {
+  it("pj.orientation emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var pj = new PrintJob(); pj.orientation;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "orientation")).toBe(true);

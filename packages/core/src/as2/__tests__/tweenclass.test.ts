@@ -9,10 +9,10 @@
  *   GetVariable("mx") → GetMember("transitions") → GetMember("Tween")
  *
  * Key opcodes verified:
- *   - ActionNew        (0x4a): constructor calls
+ *   - ActionNew        (0x40): constructor calls
  *   - ActionCallMethod (0x52): instance method calls (start, stop, rewind, fforward)
- *   - ActionGetMember  (0x4f): property reads (easing constants, namespace traversal)
- *   - ActionSetMember  (0x4e): callback assignment (onMotionFinished)
+ *   - ActionGetMember  (0x4e): property reads (easing constants, namespace traversal)
+ *   - ActionSetMember  (0x4f): callback assignment (onMotionFinished)
  */
 
 import { describe, it, expect } from "vitest";
@@ -50,10 +50,10 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property / member read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property / member write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property / member read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property / member write
 
 // ---------------------------------------------------------------------------
 // Setup helper: create a tween variable via the workaround form
@@ -76,12 +76,12 @@ describe("mx.transitions.Tween constructor", () => {
     expect(compilesOk(TWEEN_SETUP)).toBe(true);
   });
 
-  it("new mx.transitions.Tween(...) via alias emits ActionNew (0x4a)", () => {
+  it("new mx.transitions.Tween(...) via alias emits ActionNew (0x40)", () => {
     const bytes = compileAS2(TWEEN_SETUP);
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
   });
 
-  it("var Tween = mx.transitions.Tween emits ActionGetMember (0x4f) for namespace chain", () => {
+  it("var Tween = mx.transitions.Tween emits ActionGetMember (0x4e) for namespace chain", () => {
     const bytes = compileAS2("var Tween = mx.transitions.Tween;");
     // Must traverse: mx → .transitions → .Tween (two GetMember calls)
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
@@ -101,7 +101,7 @@ describe("mx.transitions.Tween constructor", () => {
     ).toBe(true);
   });
 
-  it("direct new mx.transitions.Tween(...) emits ActionNew (0x4a)", () => {
+  it("direct new mx.transitions.Tween(...) emits ActionNew (0x40)", () => {
     const bytes = compileAS2(
       `var obj = {};
        new mx.transitions.Tween(obj, "_x", mx.transitions.easing.Strong.easeOut, 0, 100, 1, true);`
@@ -185,7 +185,7 @@ describe("Tween onMotionFinished callback", () => {
     ).toBe(true);
   });
 
-  it("t.onMotionFinished = function() {} emits ActionSetMember (0x4e)", () => {
+  it("t.onMotionFinished = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(`${TWEEN_SETUP} t.onMotionFinished = function() {};`);
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onMotionFinished")).toBe(true);
@@ -201,7 +201,7 @@ describe("mx.transitions.easing.Strong.easeOut property access", () => {
     expect(compilesOk("var e = mx.transitions.easing.Strong.easeOut;")).toBe(true);
   });
 
-  it("emits ActionGetMember (0x4f) for each step in the chain", () => {
+  it("emits ActionGetMember (0x4e) for each step in the chain", () => {
     const bytes = compileAS2("var e = mx.transitions.easing.Strong.easeOut;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "mx")).toBe(true);
@@ -217,7 +217,7 @@ describe("mx.transitions.easing.Regular.easeIn property access", () => {
     expect(compilesOk("var e = mx.transitions.easing.Regular.easeIn;")).toBe(true);
   });
 
-  it("emits ActionGetMember (0x4f)", () => {
+  it("emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var e = mx.transitions.easing.Regular.easeIn;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "Regular")).toBe(true);
@@ -230,7 +230,7 @@ describe("mx.transitions.easing.Elastic.easeOut property access", () => {
     expect(compilesOk("var e = mx.transitions.easing.Elastic.easeOut;")).toBe(true);
   });
 
-  it("emits ActionGetMember (0x4f)", () => {
+  it("emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var e = mx.transitions.easing.Elastic.easeOut;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "Elastic")).toBe(true);

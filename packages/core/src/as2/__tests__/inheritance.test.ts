@@ -51,25 +51,25 @@ describe("AS2 class inheritance: extends and super()", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 2. extends emits ActionNew (0x4a) for prototype chain setup
+  // 2. extends emits ActionNew (0x40) for prototype chain setup
   // -------------------------------------------------------------------------
 
   it("2. extends emits ActionNew for prototype chain setup", () => {
     const bytes = compileAS2("class Foo extends Bar {}");
 
-    // ActionNew (0x4a) must appear: used for `new Bar()` in prototype setup
-    expect(hasOpcode(bytes, 0x4a)).toBe(true);
+    // ActionNew (0x40) must appear: used for `new Bar()` in prototype setup
+    expect(hasOpcode(bytes, 0x40)).toBe(true);
   });
 
   // -------------------------------------------------------------------------
-  // 3. extends emits ActionSetMember (0x4e) to assign prototype
+  // 3. extends emits ActionSetMember (0x4f) to assign prototype
   // -------------------------------------------------------------------------
 
   it("3. extends emits ActionSetMember to assign Foo.prototype = new Bar()", () => {
     const bytes = compileAS2("class Foo extends Bar {}");
 
-    // ActionSetMember (0x4e) must appear
-    expect(hasOpcode(bytes, 0x4e)).toBe(true);
+    // ActionSetMember (0x4f) must appear
+    expect(hasOpcode(bytes, 0x4f)).toBe(true);
 
     // Both class names must be present as strings
     expect(containsString(bytes, "Foo")).toBe(true);

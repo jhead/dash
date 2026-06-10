@@ -5,9 +5,9 @@
  * methods compile correctly to AVM1 bytecode.
  *
  * Key opcodes verified:
- *   - ActionNew        (0x4a): new Object()
+ *   - ActionNew        (0x40): new Object()
  *   - ActionCallMethod (0x52): method dispatch
- *   - ActionGetMember  (0x4f): property access (obj.constructor)
+ *   - ActionGetMember  (0x4e): property access (obj.constructor)
  */
 
 import { describe, it, expect } from "vitest";
@@ -45,9 +45,9 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property access
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property access
 
 // ---------------------------------------------------------------------------
 // 1. new Object()
@@ -58,7 +58,7 @@ describe("new Object()", () => {
     expect(compilesOk("var o = new Object();")).toBe(true);
   });
 
-  it("var o = new Object() emits ActionNew (0x4a)", () => {
+  it("var o = new Object() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var o = new Object();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
   });
@@ -173,7 +173,7 @@ describe("obj.constructor", () => {
     expect(compilesOk("var obj = {}; var ctor = obj.constructor;")).toBe(true);
   });
 
-  it("var ctor = obj.constructor emits ActionGetMember (0x4f)", () => {
+  it("var ctor = obj.constructor emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var obj = {}; var ctor = obj.constructor;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "constructor")).toBe(true);

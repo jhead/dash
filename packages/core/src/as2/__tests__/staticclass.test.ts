@@ -6,8 +6,8 @@
  * directly on the constructor function object (not on the prototype).
  *
  * Relevant AVM1 opcodes:
- *   0x4f  ActionGetMember   — reads a property from an object
- *   0x4e  ActionSetMember   — writes a property to an object
+ *   0x4e  ActionGetMember   — reads a property from an object
+ *   0x4f  ActionSetMember   — writes a property to an object
  *   0x1c  ActionGetVariable — pushes a named variable onto the stack
  *   0x52  ActionCallMethod  — calls a method on an object
  *   0x8e  ActionDefineFunction2 — defines a function with register optimisation
@@ -66,26 +66,26 @@ describe("AS2 static class members", () => {
     ).toBe(true);
   });
 
-  // 2. Counter.count access emits ActionGetMember (0x4f)
-  it("2. Counter.count access emits ActionGetMember (0x4f)", () => {
+  // 2. Counter.count access emits ActionGetMember (0x4e)
+  it("2. Counter.count access emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(`
       class Counter {
         static var count:Number = 0;
         static function fetchCount():Number { return Counter.count; }
       }
     `);
-    // ActionGetMember (0x4f) is used to read a property from an object
-    expect(bytes).toContain(0x4f);
+    // ActionGetMember (0x4e) is used to read a property from an object
+    expect(bytes).toContain(0x4e);
     expect(containsString(bytes, "count")).toBe(true);
   });
 
-  // 3. Counter.count = 5 assignment emits ActionSetMember (0x4e)
-  it("3. Counter.count = 5 assignment emits ActionSetMember (0x4e)", () => {
+  // 3. Counter.count = 5 assignment emits ActionSetMember (0x4f)
+  it("3. Counter.count = 5 assignment emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(`
       class Counter { static var count:Number = 0; }
     `);
-    // ActionSetMember (0x4e) assigns a property on an object
-    expect(bytes).toContain(0x4e);
+    // ActionSetMember (0x4f) assigns a property on an object
+    expect(bytes).toContain(0x4f);
     expect(containsString(bytes, "count")).toBe(true);
     expect(containsString(bytes, "Counter")).toBe(true);
   });

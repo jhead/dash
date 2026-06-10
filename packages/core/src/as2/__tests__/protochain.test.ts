@@ -41,8 +41,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_SET_MEMBER = 0x4e; // ActionSetMember — property write
-const ACTION_GET_MEMBER = 0x4f; // ActionGetMember — property read
+const ACTION_SET_MEMBER = 0x4f; // ActionSetMember — property write
+const ACTION_GET_MEMBER = 0x4e; // ActionGetMember — property read
 
 // ---------------------------------------------------------------------------
 // MyClass.prototype.greet = function() { return "hi"; }
@@ -58,7 +58,7 @@ describe("prototype method assignment", () => {
     ).toBe(true);
   });
 
-  it("MyClass.prototype.greet assignment emits ActionSetMember (0x4e)", () => {
+  it("MyClass.prototype.greet assignment emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       'function MyClass() {}\n' +
       'MyClass.prototype.greet = function() { return "hi"; };'
@@ -84,7 +84,7 @@ describe("prototype chain assignment", () => {
     ).toBe(true);
   });
 
-  it("prototype chain assignment emits ActionSetMember (0x4e)", () => {
+  it("prototype chain assignment emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       'function BaseClass() {}\n' +
       'function MyClass() {}\n' +
@@ -106,7 +106,7 @@ describe("__proto__ access", () => {
     ).toBe(true);
   });
 
-  it("obj.__proto__ emits ActionGetMember (0x4f)", () => {
+  it("obj.__proto__ emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2('var obj = {}; var p = obj.__proto__;');
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "__proto__")).toBe(true);
@@ -124,7 +124,7 @@ describe("chained member access: obj.constructor.prototype", () => {
     ).toBe(true);
   });
 
-  it("obj.constructor.prototype emits ActionGetMember (0x4f) twice", () => {
+  it("obj.constructor.prototype emits ActionGetMember (0x4e) twice", () => {
     const bytes = compileAS2('var obj = {}; var p = obj.constructor.prototype;');
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "constructor")).toBe(true);
@@ -143,7 +143,7 @@ describe("Object.prototype.toString", () => {
     ).toBe(true);
   });
 
-  it("Object.prototype.toString emits ActionGetMember (0x4f)", () => {
+  it("Object.prototype.toString emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2('var fn = Object.prototype.toString;');
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "Object")).toBe(true);
@@ -163,7 +163,7 @@ describe("Function.prototype.call", () => {
     ).toBe(true);
   });
 
-  it("Function.prototype.call emits ActionGetMember (0x4f)", () => {
+  it("Function.prototype.call emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2('var fn = Function.prototype.call;');
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "Function")).toBe(true);
@@ -231,7 +231,7 @@ describe("Full prototype inheritance setup (Animal / Dog)", () => {
     expect(compilesOk(ANIMAL_DOG_SOURCE)).toBe(true);
   });
 
-  it("full Animal/Dog setup emits ActionSetMember (0x4e) for prototype assignments", () => {
+  it("full Animal/Dog setup emits ActionSetMember (0x4f) for prototype assignments", () => {
     const bytes = compileAS2(ANIMAL_DOG_SOURCE);
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "prototype")).toBe(true);

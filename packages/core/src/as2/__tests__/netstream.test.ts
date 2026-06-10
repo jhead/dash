@@ -5,10 +5,10 @@
  * Verifies that NetConnection/NetStream constructor calls, instance method
  * calls, property accesses, and callback assignments compile without error and
  * emit the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new NetConnection(), new NetStream(...))
+ *   - ActionNew        (0x40): constructor calls (new NetConnection(), new NetStream(...))
  *   - ActionCallMethod (0x52): method calls (nc.connect(), ns.play(), etc.)
- *   - ActionGetMember  (0x4f): property reads (ns.bufferLength, ns.time, etc.)
- *   - ActionSetMember  (0x4e): property writes (nc.onStatus = ..., ns.onStatus = ...)
+ *   - ActionGetMember  (0x4e): property reads (ns.bufferLength, ns.time, etc.)
+ *   - ActionSetMember  (0x4f): property writes (nc.onStatus = ..., ns.onStatus = ...)
  */
 
 import { describe, it, expect } from "vitest";
@@ -46,10 +46,10 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // NetConnection constructor
@@ -60,7 +60,7 @@ describe("NetConnection constructor", () => {
     expect(compilesOk("new NetConnection();")).toBe(true);
   });
 
-  it("new NetConnection() emits ActionNew (0x4a)", () => {
+  it("new NetConnection() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new NetConnection();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "NetConnection")).toBe(true);
@@ -70,7 +70,7 @@ describe("NetConnection constructor", () => {
     expect(compilesOk("var nc = new NetConnection();")).toBe(true);
   });
 
-  it("var nc = new NetConnection() emits ActionNew (0x4a)", () => {
+  it("var nc = new NetConnection() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var nc = new NetConnection();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "NetConnection")).toBe(true);
@@ -126,7 +126,7 @@ describe("NetConnection onStatus callback", () => {
     ).toBe(true);
   });
 
-  it("nc.onStatus = function(info) {} emits ActionSetMember (0x4e)", () => {
+  it("nc.onStatus = function(info) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       "var nc = new NetConnection(); nc.onStatus = function(info) {};"
     );
@@ -146,7 +146,7 @@ describe("NetStream constructor", () => {
     ).toBe(true);
   });
 
-  it("new NetStream(nc) emits ActionNew (0x4a)", () => {
+  it("new NetStream(nc) emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var nc = new NetConnection(); new NetStream(nc);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "NetStream")).toBe(true);
@@ -158,7 +158,7 @@ describe("NetStream constructor", () => {
     ).toBe(true);
   });
 
-  it("var ns = new NetStream(nc) emits ActionNew (0x4a)", () => {
+  it("var ns = new NetStream(nc) emits ActionNew (0x40)", () => {
     const bytes = compileAS2(
       "var nc = new NetConnection(); var ns = new NetStream(nc);"
     );
@@ -290,7 +290,7 @@ describe("NetStream onStatus callback", () => {
     ).toBe(true);
   });
 
-  it("ns.onStatus = function(info) {} emits ActionSetMember (0x4e)", () => {
+  it("ns.onStatus = function(info) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       "var nc = new NetConnection(); var ns = new NetStream(nc); ns.onStatus = function(info) {};"
     );
@@ -312,7 +312,7 @@ describe("NetStream property reads", () => {
     ).toBe(true);
   });
 
-  it("ns.bufferLength emits ActionGetMember (0x4f)", () => {
+  it("ns.bufferLength emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(
       "var nc = new NetConnection(); var ns = new NetStream(nc); ns.bufferLength;"
     );
@@ -328,7 +328,7 @@ describe("NetStream property reads", () => {
     ).toBe(true);
   });
 
-  it("ns.time emits ActionGetMember (0x4f)", () => {
+  it("ns.time emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(
       "var nc = new NetConnection(); var ns = new NetStream(nc); ns.time;"
     );

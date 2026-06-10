@@ -48,8 +48,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_WITH        = 0x94; // ActionWith    — scope-chain push (with statement)
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember
 const ACTION_GET_VAR     = 0x1c; // ActionGetVariable
 const ACTION_SET_VAR     = 0x1d; // ActionSetVariable
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod
@@ -163,7 +163,7 @@ describe("_global property access", () => {
     expect(containsString(bytes, "_global")).toBe(true);
   });
 
-  it("18. _global.myVar = 5 emits ActionSetMember (0x4e)", () => {
+  it("18. _global.myVar = 5 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("_global.myVar = 5;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
   });
@@ -183,7 +183,7 @@ describe("_root special properties", () => {
     expect(compilesOk("var f = _root._currentframe;")).toBe(true);
   });
 
-  it("21. _root._currentframe access emits ActionGetMember (0x4f)", () => {
+  it("21. _root._currentframe access emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var f = _root._currentframe;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "_currentframe")).toBe(true);
@@ -199,7 +199,7 @@ describe("_root special properties", () => {
     expect(compilesOk("_root._x = 100;")).toBe(true);
   });
 
-  it("24. _root._x = 100 emits ActionSetMember (0x4e)", () => {
+  it("24. _root._x = 100 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("_root._x = 100;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "_x")).toBe(true);

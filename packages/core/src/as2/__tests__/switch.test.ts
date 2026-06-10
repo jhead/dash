@@ -7,7 +7,7 @@
  *
  * ActionEquals2 opcode = 0x49
  * ActionDuplicate opcode = 0x4c
- * ActionNot opcode = 0x14
+ * ActionNot opcode = 0x12
  * ActionIf opcode = 0x9d
  * ActionJump opcode = 0x99
  * ActionPop opcode = 0x17

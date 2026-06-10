@@ -9,9 +9,9 @@
  *   ActionBitOr       0x61  — a | b
  *   ActionBitXor      0x62  — a ^ b
  *   ActionBitNot      ~a compiled as a ^ -1 (XOR with -1) → 0x62
- *   ActionBitLShift   0x69  — a << b
- *   ActionBitRShift   0x6A  — a >> b
- *   ActionBitURShift  0x6B  — a >>> b
+ *   ActionBitLShift   0x63  — a << b
+ *   ActionBitRShift   0x64  — a >> b
+ *   ActionBitURShift  0x65  — a >>> b
  */
 
 import { describe, it, expect } from "vitest";
@@ -130,7 +130,7 @@ describe("bitwise NOT operator", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Left shift  (a << b → ActionBitLShift 0x69)
+// Left shift  (a << b → ActionBitLShift 0x63)
 // ---------------------------------------------------------------------------
 
 describe("left shift operator", () => {
@@ -138,9 +138,9 @@ describe("left shift operator", () => {
     expect(compilesOk("a << b;")).toBe(true);
   });
 
-  it("a << b emits ActionBitLShift (0x69)", () => {
+  it("a << b emits ActionBitLShift (0x63)", () => {
     const bytes = compileAS2("a << b;");
-    expect(containsByte(bytes, 0x69)).toBe(true);
+    expect(containsByte(bytes, 0x63)).toBe(true);
   });
 
   it("operand names appear in bytecode", () => {
@@ -151,7 +151,7 @@ describe("left shift operator", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Signed right shift  (a >> b → ActionBitRShift 0x6A)
+// Signed right shift  (a >> b → ActionBitRShift 0x64)
 // ---------------------------------------------------------------------------
 
 describe("signed right shift operator", () => {
@@ -159,9 +159,9 @@ describe("signed right shift operator", () => {
     expect(compilesOk("a >> b;")).toBe(true);
   });
 
-  it("a >> b emits ActionBitRShift (0x6A)", () => {
+  it("a >> b emits ActionBitRShift (0x64)", () => {
     const bytes = compileAS2("a >> b;");
-    expect(containsByte(bytes, 0x6a)).toBe(true);
+    expect(containsByte(bytes, 0x64)).toBe(true);
   });
 
   it("operand names appear in bytecode", () => {
@@ -172,7 +172,7 @@ describe("signed right shift operator", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Unsigned right shift  (a >>> b → ActionBitURShift 0x6B)
+// Unsigned right shift  (a >>> b → ActionBitURShift 0x65)
 // ---------------------------------------------------------------------------
 
 describe("unsigned right shift operator", () => {
@@ -180,9 +180,9 @@ describe("unsigned right shift operator", () => {
     expect(compilesOk("a >>> b;")).toBe(true);
   });
 
-  it("a >>> b emits ActionBitURShift (0x6B)", () => {
+  it("a >>> b emits ActionBitURShift (0x65)", () => {
     const bytes = compileAS2("a >>> b;");
-    expect(containsByte(bytes, 0x6b)).toBe(true);
+    expect(containsByte(bytes, 0x65)).toBe(true);
   });
 
   it("operand names appear in bytecode", () => {
@@ -211,9 +211,9 @@ describe("complex bitwise expression", () => {
     expect(containsByte(bytes, 0x61)).toBe(true);
   });
 
-  it("(x & 0xFF) | (y << 8) emits ActionBitLShift (0x69)", () => {
+  it("(x & 0xFF) | (y << 8) emits ActionBitLShift (0x63)", () => {
     const bytes = compileAS2("(x & 0xFF) | (y << 8);");
-    expect(containsByte(bytes, 0x69)).toBe(true);
+    expect(containsByte(bytes, 0x63)).toBe(true);
   });
 
   it("variable names x and y appear in bytecode", () => {

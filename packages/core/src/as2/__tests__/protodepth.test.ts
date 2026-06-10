@@ -42,8 +42,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // Deep prototype chain (4 levels: A -> B -> C -> D)
@@ -92,7 +92,7 @@ describe("Deep prototype chain (A->B->C->D)", () => {
     ).toBe(true);
   });
 
-  it("new D() compiles and emits ActionNew (0x4a)", () => {
+  it("new D() compiles and emits ActionNew (0x40)", () => {
     const source = DEEP_CHAIN_SOURCE + "\nvar d = new D();";
     expect(compilesOk(source)).toBe(true);
     const bytes = compileAS2(source);
@@ -136,7 +136,7 @@ describe("Prototype property assignment", () => {
     ).toBe(true);
   });
 
-  it("MyClass.prototype.newMethod assignment emits ActionSetMember (0x4e)", () => {
+  it("MyClass.prototype.newMethod assignment emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(`
       class MyClass { function MyClass() {} }
       MyClass.prototype.newMethod = function() {};
@@ -155,7 +155,7 @@ describe("Prototype property assignment", () => {
     ).toBe(true);
   });
 
-  it("MyClass.prototype.sharedProp assignment emits ActionSetMember (0x4e)", () => {
+  it("MyClass.prototype.sharedProp assignment emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(`
       class MyClass { function MyClass() {} }
       MyClass.prototype.sharedProp = 42;

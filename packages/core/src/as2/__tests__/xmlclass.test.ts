@@ -5,10 +5,10 @@
  * Verifies that XML/XMLNode constructor calls, instance method calls, property
  * accesses, and static property assignments compile without error and emit
  * the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new XML(), new XMLNode(...))
+ *   - ActionNew        (0x40): constructor calls (new XML(), new XMLNode(...))
  *   - ActionCallMethod (0x52): method calls (x.appendChild(), x.load(), etc.)
- *   - ActionGetMember  (0x4f): property reads (x.firstChild, x.childNodes, etc.)
- *   - ActionSetMember  (0x4e): static property assignment (XML.ignoreWhite = true)
+ *   - ActionGetMember  (0x4e): property reads (x.firstChild, x.childNodes, etc.)
+ *   - ActionSetMember  (0x4f): static property assignment (XML.ignoreWhite = true)
  */
 
 import { describe, it, expect } from "vitest";
@@ -46,10 +46,10 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // XML constructor
@@ -60,7 +60,7 @@ describe("XML constructor", () => {
     expect(compilesOk("new XML();")).toBe(true);
   });
 
-  it("new XML() emits ActionNew (0x4a)", () => {
+  it("new XML() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new XML();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "XML")).toBe(true);
@@ -70,7 +70,7 @@ describe("XML constructor", () => {
     expect(compilesOk("var x = new XML();")).toBe(true);
   });
 
-  it("var x = new XML() emits ActionNew (0x4a)", () => {
+  it("var x = new XML() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var x = new XML();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "XML")).toBe(true);
@@ -86,7 +86,7 @@ describe("XMLNode constructor", () => {
     expect(compilesOk('new XMLNode(1, "tag");')).toBe(true);
   });
 
-  it('new XMLNode(1, "tag") emits ActionNew (0x4a)', () => {
+  it('new XMLNode(1, "tag") emits ActionNew (0x40)', () => {
     const bytes = compileAS2('new XMLNode(1, "tag");');
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "XMLNode")).toBe(true);
@@ -106,7 +106,7 @@ describe("XML property reads", () => {
     expect(compilesOk("var x = new XML(); x.firstChild;")).toBe(true);
   });
 
-  it("x.firstChild emits ActionGetMember (0x4f)", () => {
+  it("x.firstChild emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var x = new XML(); x.firstChild;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "firstChild")).toBe(true);
@@ -116,7 +116,7 @@ describe("XML property reads", () => {
     expect(compilesOk("var x = new XML(); x.childNodes;")).toBe(true);
   });
 
-  it("x.childNodes emits ActionGetMember (0x4f)", () => {
+  it("x.childNodes emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var x = new XML(); x.childNodes;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "childNodes")).toBe(true);
@@ -126,7 +126,7 @@ describe("XML property reads", () => {
     expect(compilesOk("var x = new XML(); x.attributes;")).toBe(true);
   });
 
-  it("x.attributes emits ActionGetMember (0x4f)", () => {
+  it("x.attributes emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var x = new XML(); x.attributes;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "attributes")).toBe(true);
@@ -136,7 +136,7 @@ describe("XML property reads", () => {
     expect(compilesOk("var x = new XML(); x.nodeName;")).toBe(true);
   });
 
-  it("x.nodeName emits ActionGetMember (0x4f)", () => {
+  it("x.nodeName emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var x = new XML(); x.nodeName;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "nodeName")).toBe(true);
@@ -146,7 +146,7 @@ describe("XML property reads", () => {
     expect(compilesOk("var x = new XML(); x.nodeValue;")).toBe(true);
   });
 
-  it("x.nodeValue emits ActionGetMember (0x4f)", () => {
+  it("x.nodeValue emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var x = new XML(); x.nodeValue;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "nodeValue")).toBe(true);
@@ -198,7 +198,7 @@ describe("XML static property assignment", () => {
     expect(compilesOk("XML.ignoreWhite = true;")).toBe(true);
   });
 
-  it("XML.ignoreWhite = true emits ActionSetMember (0x4e)", () => {
+  it("XML.ignoreWhite = true emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("XML.ignoreWhite = true;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "ignoreWhite")).toBe(true);

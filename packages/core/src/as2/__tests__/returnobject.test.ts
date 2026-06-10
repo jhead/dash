@@ -3,8 +3,8 @@
  *
  * Verifies correct AVM1 bytecode generation for:
  *   - Returning object literals from functions (ActionInitObject 0x43)
- *   - Returning array literals from functions (ActionInitArray 0x36)
- *   - Accessing properties of returned objects (ActionGetMember 0x4f)
+ *   - Returning array literals from functions (ActionInitArray 0x42)
+ *   - Accessing properties of returned objects (ActionGetMember 0x4e)
  *   - Nested property access chains
  *
  * NOTE: AS2 does not support destructuring assignment (ES6+ syntax).
@@ -73,12 +73,12 @@ describe("AS2 multiple return values via object", () => {
     `);
     expect(bytes).toBeInstanceOf(Uint8Array);
     expect(bytes.length).toBeGreaterThan(0);
-    // ActionInitArray (0x36) should appear for the array literal
-    expect(bytes).toContain(0x36);
+    // ActionInitArray (0x42) should appear for the array literal
+    expect(bytes).toContain(0x42);
   });
 
-  // Test 3: access returned object property — emits ActionGetMember (0x4f)
-  it("3. property access on returned object emits ActionGetMember (0x4f)", () => {
+  // Test 3: access returned object property — emits ActionGetMember (0x4e)
+  it("3. property access on returned object emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(`
       function getCoords() {
         return {x: 10, y: 20};
@@ -87,14 +87,14 @@ describe("AS2 multiple return values via object", () => {
       var x = r.x;
     `);
     expect(bytes).toBeInstanceOf(Uint8Array);
-    // ActionGetMember 0x4f is emitted for r.x
-    expect(bytes).toContain(0x4f);
+    // ActionGetMember 0x4e is emitted for r.x
+    expect(bytes).toContain(0x4e);
     // The property name "x" should appear in bytecode
     expect(containsString(bytes, "x")).toBe(true);
   });
 
-  // Test 4: return array and access element by index — emits ActionGetMember (0x4f)
-  it("4. array element access on returned array emits ActionGetMember (0x4f)", () => {
+  // Test 4: return array and access element by index — emits ActionGetMember (0x4e)
+  it("4. array element access on returned array emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(`
       function getValues() {
         return [1, 2, 3];
@@ -102,12 +102,12 @@ describe("AS2 multiple return values via object", () => {
       var a = getValues();
       trace(a[0]);
     `);
-    // ActionGetMember 0x4f handles numeric index access as well
-    expect(bytes).toContain(0x4f);
+    // ActionGetMember 0x4e handles numeric index access as well
+    expect(bytes).toContain(0x4e);
   });
 
   // Test 5: nested property access — r.inner.value compiles and emits multiple GetMember
-  it("5. nested property access chain compiles and emits ActionGetMember (0x4f)", () => {
+  it("5. nested property access chain compiles and emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(`
       function getSomething() {
         return {inner: {value: 42}};
@@ -117,9 +117,9 @@ describe("AS2 multiple return values via object", () => {
     `);
     expect(bytes).toBeInstanceOf(Uint8Array);
     expect(bytes.length).toBeGreaterThan(0);
-    // Two member accesses: r.inner and .value → 0x4f appears at least twice
+    // Two member accesses: r.inner and .value → 0x4e appears at least twice
     let count = 0;
-    for (const b of bytes) if (b === 0x4f) count++;
+    for (const b of bytes) if (b === 0x4e) count++;
     expect(count).toBeGreaterThanOrEqual(2);
     // Property names "inner" and "value" should appear in bytecode
     expect(containsString(bytes, "inner")).toBe(true);
@@ -182,8 +182,8 @@ describe("AS2 multiple return values via object", () => {
     `);
     expect(bytes).toBeInstanceOf(Uint8Array);
     expect(bytes.length).toBeGreaterThan(0);
-    // ActionInitArray 0x36 for empty array
-    expect(bytes).toContain(0x36);
+    // ActionInitArray 0x42 for empty array
+    expect(bytes).toContain(0x42);
   });
 
   // Test 10: destructuring — AS2 does NOT support ES6+ destructuring syntax.
@@ -211,9 +211,9 @@ describe("AS2 multiple return values via object", () => {
       var x = r.x;
       var y = r.y;
     `);
-    // Two property accesses: r.x and r.y → at least 2 ActionGetMember (0x4f) bytes
+    // Two property accesses: r.x and r.y → at least 2 ActionGetMember (0x4e) bytes
     let getMemberCount = 0;
-    for (const b of bytes) if (b === 0x4f) getMemberCount++;
+    for (const b of bytes) if (b === 0x4e) getMemberCount++;
     expect(getMemberCount).toBeGreaterThanOrEqual(2);
   });
 });

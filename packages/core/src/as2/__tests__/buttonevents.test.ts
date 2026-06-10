@@ -5,7 +5,7 @@
  * (onPress, onRelease, onRollOver, onRollOut, onReleaseOutside, onDragOver,
  * onDragOut, onKeyDown, onKeyUp, enabled, useHandCursor) compiles without error
  * and emits the correct AVM1 opcode:
- *   - ActionSetMember (0x4e): property / handler assignment
+ *   - ActionSetMember (0x4f): property / handler assignment
  */
 
 import { describe, it, expect } from "vitest";
@@ -43,7 +43,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_SET_MEMBER = 0x4e; // ActionSetMember — property write
+const ACTION_SET_MEMBER = 0x4f; // ActionSetMember — property write
 
 // ---------------------------------------------------------------------------
 // btn.onPress
@@ -54,7 +54,7 @@ describe("btn.onPress handler assignment", () => {
     expect(compilesOk("var btn = {}; btn.onPress = function() {};")).toBe(true);
   });
 
-  it("btn.onPress = function() {} emits ActionSetMember (0x4e)", () => {
+  it("btn.onPress = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.onPress = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onPress")).toBe(true);
@@ -70,7 +70,7 @@ describe("btn.onRelease handler assignment", () => {
     expect(compilesOk("var btn = {}; btn.onRelease = function() {};")).toBe(true);
   });
 
-  it("btn.onRelease = function() {} emits ActionSetMember (0x4e)", () => {
+  it("btn.onRelease = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.onRelease = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onRelease")).toBe(true);
@@ -86,7 +86,7 @@ describe("btn.onRollOver handler assignment", () => {
     expect(compilesOk("var btn = {}; btn.onRollOver = function() {};")).toBe(true);
   });
 
-  it("btn.onRollOver = function() {} emits ActionSetMember (0x4e)", () => {
+  it("btn.onRollOver = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.onRollOver = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onRollOver")).toBe(true);
@@ -102,7 +102,7 @@ describe("btn.onRollOut handler assignment", () => {
     expect(compilesOk("var btn = {}; btn.onRollOut = function() {};")).toBe(true);
   });
 
-  it("btn.onRollOut = function() {} emits ActionSetMember (0x4e)", () => {
+  it("btn.onRollOut = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.onRollOut = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onRollOut")).toBe(true);
@@ -118,7 +118,7 @@ describe("btn.onReleaseOutside handler assignment", () => {
     expect(compilesOk("var btn = {}; btn.onReleaseOutside = function() {};")).toBe(true);
   });
 
-  it("btn.onReleaseOutside = function() {} emits ActionSetMember (0x4e)", () => {
+  it("btn.onReleaseOutside = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.onReleaseOutside = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onReleaseOutside")).toBe(true);
@@ -134,7 +134,7 @@ describe("btn.onDragOver handler assignment", () => {
     expect(compilesOk("var btn = {}; btn.onDragOver = function() {};")).toBe(true);
   });
 
-  it("btn.onDragOver = function() {} emits ActionSetMember (0x4e)", () => {
+  it("btn.onDragOver = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.onDragOver = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onDragOver")).toBe(true);
@@ -150,7 +150,7 @@ describe("btn.onDragOut handler assignment", () => {
     expect(compilesOk("var btn = {}; btn.onDragOut = function() {};")).toBe(true);
   });
 
-  it("btn.onDragOut = function() {} emits ActionSetMember (0x4e)", () => {
+  it("btn.onDragOut = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.onDragOut = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onDragOut")).toBe(true);
@@ -166,7 +166,7 @@ describe("btn.onKeyDown handler assignment", () => {
     expect(compilesOk("var btn = {}; btn.onKeyDown = function() {};")).toBe(true);
   });
 
-  it("btn.onKeyDown = function() {} emits ActionSetMember (0x4e)", () => {
+  it("btn.onKeyDown = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.onKeyDown = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onKeyDown")).toBe(true);
@@ -182,7 +182,7 @@ describe("btn.onKeyUp handler assignment", () => {
     expect(compilesOk("var btn = {}; btn.onKeyUp = function() {};")).toBe(true);
   });
 
-  it("btn.onKeyUp = function() {} emits ActionSetMember (0x4e)", () => {
+  it("btn.onKeyUp = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.onKeyUp = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onKeyUp")).toBe(true);
@@ -198,7 +198,7 @@ describe("btn.enabled property assignment", () => {
     expect(compilesOk("var btn = {}; btn.enabled = false;")).toBe(true);
   });
 
-  it("btn.enabled = false emits ActionSetMember (0x4e)", () => {
+  it("btn.enabled = false emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.enabled = false;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "enabled")).toBe(true);
@@ -214,7 +214,7 @@ describe("btn.useHandCursor property assignment", () => {
     expect(compilesOk("var btn = {}; btn.useHandCursor = true;")).toBe(true);
   });
 
-  it("btn.useHandCursor = true emits ActionSetMember (0x4e)", () => {
+  it("btn.useHandCursor = true emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var btn = {}; btn.useHandCursor = true;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "useHandCursor")).toBe(true);

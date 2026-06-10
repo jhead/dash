@@ -203,7 +203,7 @@ class Compiler {
         this.pushString(stmt.name);
         if (stmt.init !== null) {
           this.compileExpr(stmt.init);
-          this.emit(0x42); // ActionDefineLocal (pops name then value from stack)
+          this.emit(0x3c); // ActionDefineLocal (pops name then value from stack)
         } else {
           this.emit(0x41); // ActionDefineLocal2 (pops name, assigns undefined)
         }
@@ -319,7 +319,7 @@ class Compiler {
     // ActionNot inverts the condition.
     // ActionIf jumps when top-of-stack is truthy.
     // After ActionNot: truthy ↔ original test was false → we jump over the consequent.
-    this.emit(0x14); // ActionNot
+    this.emit(0x12); // ActionNot
     const ifOffsetPos = this.emitActionIf(); // jump to else/end when !test is truthy
 
     this.compileStmt(stmt.consequent);
@@ -340,7 +340,7 @@ class Compiler {
     this.loopStack.push(ctx);
 
     this.compileExpr(stmt.test);
-    this.emit(0x14); // ActionNot
+    this.emit(0x12); // ActionNot
     const exitJumpPos = this.emitActionIf(); // jump when test was false → exit loop
 
     this.compileStmt(stmt.body);
@@ -382,7 +382,7 @@ class Compiler {
         this.pushString(vd.name);
         if (vd.init !== null) {
           this.compileExpr(vd.init);
-          this.emit(0x42); // ActionDefineLocal
+          this.emit(0x3c); // ActionDefineLocal
         } else {
           this.emit(0x41); // ActionDefineLocal2
         }
@@ -400,7 +400,7 @@ class Compiler {
     let exitJumpPos = -1;
     if (stmt.test !== null) {
       this.compileExpr(stmt.test);
-      this.emit(0x14); // ActionNot
+      this.emit(0x12); // ActionNot
       exitJumpPos = this.emitActionIf(); // exit when test is false
     }
 
@@ -463,7 +463,7 @@ class Compiler {
     // Not undefined: the duplicate was consumed by ActionEquals2; the original key is on top.
     // Assign it to the loop variable. ActionSetVariable needs [name, value] with name below value.
     this.pushString(varName); // stack: [..., key, varName]
-    this.emit(0x2b);          // ActionStackSwap → [..., varName, key]
+    this.emit(0x4d);          // ActionStackSwap → [..., varName, key]
     this.emit(0x1d);          // ActionSetVariable → pops key (value) and varName (name), key popped from stack
 
     // Compile body
@@ -542,7 +542,7 @@ class Compiler {
       this.emit(0x49);
 
       // ActionNot — we want to skip forward when NOT equal
-      this.emit(0x14);
+      this.emit(0x12); // ActionNot
 
       // ActionIf — jump to next case when (not equal) is truthy
       const skipPos = this.emitActionIf();
@@ -808,7 +808,7 @@ class Compiler {
     this.labeledLoops.set(label, ctx);
 
     this.compileExpr(stmt.test);
-    this.emit(0x14); // ActionNot
+    this.emit(0x12); // ActionNot
     const exitJumpPos = this.emitActionIf();
 
     this.compileStmt(stmt.body);
@@ -853,9 +853,9 @@ class Compiler {
         this.pushString(vd.name);
         if (vd.init !== null) {
           this.compileExpr(vd.init);
-          this.emit(0x42);
+          this.emit(0x3c); // ActionDefineLocal
         } else {
-          this.emit(0x41);
+          this.emit(0x41); // ActionDefineLocal2
         }
       } else {
         this.compileExpr((stmt.init as ExprStmt).expression);
@@ -871,7 +871,7 @@ class Compiler {
     let exitJumpPos = -1;
     if (stmt.test !== null) {
       this.compileExpr(stmt.test);
-      this.emit(0x14);
+      this.emit(0x12); // ActionNot
       exitJumpPos = this.emitActionIf();
     }
 
@@ -918,7 +918,7 @@ class Compiler {
     const exitJumpPos = this.emitActionIf();
 
     this.pushString(varName);
-    this.emit(0x2b); // ActionStackSwap
+    this.emit(0x4d); // ActionStackSwap
     this.emit(0x1d); // ActionSetVariable
 
     this.compileStmt(stmt.body);
@@ -1011,7 +1011,7 @@ class Compiler {
     // arg[0] = pattern (pushed last, on top)
     this.pushString(expr.pattern);
 
-    this.emit(0x4a); // ActionNew
+    this.emit(0x40); // ActionNewObject
   }
 
   private compileIdentifier(expr: Identifier): void {
@@ -1047,13 +1047,27 @@ class Compiler {
         this.compileExpr(member.object);
         this.pushString(member.property);
         this.compileExpr(expr.right);
-        this.emit(0x4e); // ActionSetMember
+        this.emit(0x4f); // ActionSetMember
         this.pushUndefined(); // expression result
       } else {
-        // Compound member assignment is complex without registers — skip for MVP
+        // Compound member assignment: obj.prop OP= rhs
+        //   obj name           (for SetMember)
+        //   obj name           (for GetMember)
+        //   GetMember          → current value
+        //   rhs, arith op      → result
+        //   SetMember          (pops result, name, obj)
+        // The object expression is evaluated twice — acceptable for the
+        // common `mc._x += dx` / `_root.score.text += s` shapes.
+        const arithOp = op.slice(0, -1); // strip trailing '='
+        this.compileExpr(member.object);
+        this.pushString(member.property);
+        this.compileExpr(member.object);
+        this.pushString(member.property);
+        this.emit(0x4e); // ActionGetMember → current value
         this.compileExpr(expr.right);
-        this.emit(0x17); // Pop rhs (side effects only)
-        this.pushUndefined();
+        this.emitArithOp(arithOp);
+        this.emit(0x4f); // ActionSetMember
+        this.pushUndefined(); // expression result
       }
       return;
     }
@@ -1065,11 +1079,19 @@ class Compiler {
         this.compileExpr(idx.object);
         this.compileExpr(idx.index);
         this.compileExpr(expr.right);
-        this.emit(0x4e); // ActionSetMember
+        this.emit(0x4f); // ActionSetMember
         this.pushUndefined();
       } else {
+        // Compound indexed assignment: obj[i] OP= rhs (same shape as above)
+        const arithOp = op.slice(0, -1);
+        this.compileExpr(idx.object);
+        this.compileExpr(idx.index);
+        this.compileExpr(idx.object);
+        this.compileExpr(idx.index);
+        this.emit(0x4e); // ActionGetMember → current value
         this.compileExpr(expr.right);
-        this.emit(0x17);
+        this.emitArithOp(arithOp);
+        this.emit(0x4f); // ActionSetMember
         this.pushUndefined();
       }
       return;
@@ -1112,18 +1134,18 @@ class Compiler {
   /** Emit the arithmetic/bitwise opcode for a binary operator string. */
   private emitArithOp(op: string): void {
     switch (op) {
-      case '+':   this.emit(0x64); break; // ActionAdd2
+      case '+':   this.emit(0x47); break; // ActionAdd2
       case '-':   this.emit(0x0b); break; // ActionSubtract
       case '*':   this.emit(0x0c); break; // ActionMultiply
       case '/':   this.emit(0x0d); break; // ActionDivide
-      case '%':   this.emit(0x63); break; // ActionModulo
+      case '%':   this.emit(0x3f); break; // ActionModulo
       case '&':   this.emit(0x60); break; // ActionBitAnd
       case '|':   this.emit(0x61); break; // ActionBitOr
       case '^':   this.emit(0x62); break; // ActionBitXor
-      case '<<':  this.emit(0x69); break; // ActionBitLShift
-      case '>>':  this.emit(0x6a); break; // ActionBitRShift
-      case '>>>': this.emit(0x6b); break; // ActionBitURShift
-      default:    this.emit(0x64); break; // fallback: add
+      case '<<':  this.emit(0x63); break; // ActionBitLShift
+      case '>>':  this.emit(0x64); break; // ActionBitRShift
+      case '>>>': this.emit(0x65); break; // ActionBitURShift
+      default:    this.emit(0x47); break; // fallback: add
     }
   }
 
@@ -1150,25 +1172,25 @@ class Compiler {
     this.compileExpr(expr.right);
 
     switch (op) {
-      case '+':   this.emit(0x64); break; // ActionAdd2
+      case '+':   this.emit(0x47); break; // ActionAdd2
       case '-':   this.emit(0x0b); break; // ActionSubtract
       case '*':   this.emit(0x0c); break; // ActionMultiply
       case '/':   this.emit(0x0d); break; // ActionDivide
-      case '%':   this.emit(0x63); break; // ActionModulo
+      case '%':   this.emit(0x3f); break; // ActionModulo
       case '&':   this.emit(0x60); break; // ActionBitAnd
       case '|':   this.emit(0x61); break; // ActionBitOr
       case '^':   this.emit(0x62); break; // ActionBitXor
-      case '<<':  this.emit(0x69); break; // ActionBitLShift
-      case '>>':  this.emit(0x6a); break; // ActionBitRShift
-      case '>>>': this.emit(0x6b); break; // ActionBitURShift
-      case '==':
-      case '===': this.emit(0x66); break; // ActionEquals2
-      case '!=':
-      case '!==': this.emit(0x66); this.emit(0x14); break; // Equals2 + Not
-      case '<':   this.emit(0x65); break; // ActionLess2
+      case '<<':  this.emit(0x63); break; // ActionBitLShift
+      case '>>':  this.emit(0x64); break; // ActionBitRShift
+      case '>>>': this.emit(0x65); break; // ActionBitURShift
+      case '==':  this.emit(0x49); break; // ActionEquals2 (abstract equality)
+      case '===': this.emit(0x66); break; // ActionStrictEquals (SWF6+)
+      case '!=':  this.emit(0x49); this.emit(0x12); break; // Equals2 + Not
+      case '!==': this.emit(0x66); this.emit(0x12); break; // StrictEquals + Not
+      case '<':   this.emit(0x48); break; // ActionLess2
       case '>':   this.emit(0x67); break; // ActionGreater (SWF6+)
-      case '<=':  this.emit(0x67); this.emit(0x14); break; // !(left > right)
-      case '>=':  this.emit(0x65); this.emit(0x14); break; // !(left < right)
+      case '<=':  this.emit(0x67); this.emit(0x12); break; // !(left > right)
+      case '>=':  this.emit(0x48); this.emit(0x12); break; // !(left < right)
       case 'instanceof': this.emit(0x54); break; // ActionInstanceOf
       case 'as':
         // 'x as Type' is a compile-time type assertion — evaluates to x unchanged.
@@ -1188,7 +1210,7 @@ class Compiler {
     this.compileExpr(expr.left);
     this.emit(0x4c); // ActionDuplicate — keep a copy of left for the result
     // ActionNot: truthy when left was falsy → that's when we want to skip right
-    this.emit(0x14); // ActionNot
+    this.emit(0x12); // ActionNot
     const skipPos = this.emitActionIf(); // jump when !left is truthy (i.e., left was falsy)
     // Left was truthy: discard the kept copy, evaluate right as the result
     this.emit(0x17); // Pop the duplicate
@@ -1214,7 +1236,7 @@ class Compiler {
     switch (expr.operator) {
       case '!':
         this.compileExpr(expr.operand);
-        this.emit(0x14); // ActionNot
+        this.emit(0x12); // ActionNot
         break;
 
       case '-':
@@ -1277,14 +1299,13 @@ class Compiler {
           this.pushString(name);
           this.pushString(name);
           this.emit(0x1c); // ActionGetVariable
-          this.emit(0x47); // ActionIncrement
+          this.emit(0x50); // ActionIncrement
           this.emit(0x4c); // ActionDuplicate
-          this.emit(0x2b); // ActionStackSwap
+          this.emit(0x4d); // ActionStackSwap
           this.emit(0x1d); // ActionSetVariable
           // expression result (newValue-copy) is now on top
         } else {
-          this.compileExpr(expr.operand);
-          this.emit(0x47); // Increment (no store back)
+          this.compileIncDecNonIdentifier(expr.operand, 0x50);
         }
         break;
 
@@ -1295,19 +1316,56 @@ class Compiler {
           this.pushString(name);
           this.pushString(name);
           this.emit(0x1c);
-          this.emit(0x48); // ActionDecrement
+          this.emit(0x51); // ActionDecrement
           this.emit(0x4c); // Duplicate
-          this.emit(0x2b); // Swap
+          this.emit(0x4d); // ActionStackSwap
           this.emit(0x1d); // SetVariable
         } else {
-          this.compileExpr(expr.operand);
-          this.emit(0x48);
+          this.compileIncDecNonIdentifier(expr.operand, 0x51);
         }
         break;
 
       default:
         this.compileExpr(expr.operand);
         break;
+    }
+  }
+
+  /**
+   * Increment/decrement (`++` / `--`) on a non-Identifier target.
+   * For MemberExpr (`obj.prop++`) and IndexExpr (`arr[i]++`) the new value is
+   * stored back via ActionSetMember; the expression result (new value) is left
+   * on the stack. For anything else, fall back to inc/dec without store-back.
+   *
+   * `opcode` is 0x50 (ActionIncrement) or 0x51 (ActionDecrement).
+   */
+  private compileIncDecNonIdentifier(operand: Expression, opcode: number): void {
+    if (operand.type === 'MemberExpr' || operand.type === 'IndexExpr') {
+      // Compile (object, name) twice: once for the SetMember write-back, once
+      // for the GetMember read. (Object expression is evaluated twice; fine
+      // for the common `a.b++` / `_root.score++` shapes.)
+      const compileTarget = (): void => {
+        if (operand.type === 'MemberExpr') {
+          this.compileExpr((operand as MemberExpr).object);
+          this.pushString((operand as MemberExpr).property);
+        } else {
+          this.compileExpr((operand as IndexExpr).object);
+          this.compileExpr((operand as IndexExpr).index);
+        }
+      };
+      compileTarget();                     // [obj, name]              (for SetMember)
+      compileTarget();                     // [obj, name, obj, name]   (for GetMember)
+      this.emit(0x4e);                     // ActionGetMember → [obj, name, value]
+      this.emit(opcode);                   // Inc/Dec        → [obj, name, newValue]
+      // Keep the new value as the expression result: StoreRegister saves the
+      // top of stack WITHOUT popping, SetMember then consumes the triple, and
+      // a register-push restores the result.
+      this.emitWithPayload(0x87, [0]);     // ActionStoreRegister r0 (no pop)
+      this.emit(0x4f);                     // ActionSetMember (pops value, name, obj)
+      this.emitWithPayload(0x96, [4, 0]);  // ActionPush register r0 → newValue
+    } else {
+      this.compileExpr(operand);
+      this.emit(opcode);                   // inc/dec result on stack (no store-back)
     }
   }
 
@@ -1436,7 +1494,7 @@ class Compiler {
         // Push "_level" + level as a concatenated string via stack operations
         this.pushString('_level');
         this.compileExpr(expr.args[1] ?? { type: 'Literal', value: 0 } as any);
-        this.emit(0x64); // ActionAdd2 — concatenate "_level" + level
+        this.emit(0x47); // ActionAdd2 — concatenate "_level" + level
         // Now push the url
         this.compileExpr(expr.args[0] ?? { type: 'Literal', value: '' } as any);
         // ActionGetURL2: method=0x40 (load movie into target)
@@ -1475,25 +1533,25 @@ class Compiler {
     for (let i = expr.args.length - 1; i >= 0; i--) {
       this.compileExpr(expr.args[i]!);
     }
-    this.emit(0x4a); // ActionNew
+    this.emit(0x40); // ActionNewObject
   }
 
   private compileMemberExpr(expr: MemberExpr): void {
     this.compileExpr(expr.object);
     this.pushString(expr.property);
-    this.emit(0x4f); // ActionGetMember
+    this.emit(0x4e); // ActionGetMember
   }
 
   private compileIndexExpr(expr: IndexExpr): void {
     this.compileExpr(expr.object);
     this.compileExpr(expr.index);
-    this.emit(0x4f); // ActionGetMember (works for numeric indices too)
+    this.emit(0x4e); // ActionGetMember (works for numeric indices too)
   }
 
   private compileTernaryExpr(expr: TernaryExpr): void {
     // test ? consequent : alternate
     this.compileExpr(expr.test);
-    this.emit(0x14); // ActionNot → jump over consequent when test was false
+    this.emit(0x12); // ActionNot → jump over consequent when test was false
     const skipConsPos = this.emitActionIf();
 
     this.compileExpr(expr.consequent);
@@ -1510,7 +1568,7 @@ class Compiler {
     for (let i = expr.elements.length - 1; i >= 0; i--) {
       this.compileExpr(expr.elements[i]!);
     }
-    this.emit(0x36); // ActionInitArray
+    this.emit(0x42); // ActionInitArray
   }
 
   private compileObjectLiteral(expr: ObjectLiteral): void {
@@ -1679,10 +1737,10 @@ class Compiler {
       // new SuperClass(): push class name (string), push arg count 0, ActionNew
       this.pushString(superName);
       this.pushInt(0);
-      this.emit(0x4a); // ActionNew → new SuperClass() instance on top
+      this.emit(0x40); // ActionNewObject → new SuperClass() instance on top
 
       // ActionSetMember: pops value(new instance), name("prototype"), obj(ClassName)
-      this.emit(0x4e); // ActionSetMember
+      this.emit(0x4f); // ActionSetMember
 
       // Restore: ClassName.prototype.constructor = ClassName
       // ActionSetMember needs: obj | propName | value (obj deepest, value on top)
@@ -1690,7 +1748,7 @@ class Compiler {
       this.pushString(className);
       this.emit(0x1c); // ActionGetVariable → ClassName
       this.pushString('prototype');
-      this.emit(0x4f); // ActionGetMember → ClassName.prototype
+      this.emit(0x4e); // ActionGetMember → ClassName.prototype
 
       // propName = "constructor"
       this.pushString('constructor');
@@ -1699,7 +1757,7 @@ class Compiler {
       this.pushString(className);
       this.emit(0x1c); // ActionGetVariable → ClassName
 
-      this.emit(0x4e); // ActionSetMember: ClassName.prototype.constructor = ClassName
+      this.emit(0x4f); // ActionSetMember: ClassName.prototype.constructor = ClassName
     }
 
     // ---- 4. Separate getter/setter pairs from regular members ------------
@@ -1799,7 +1857,7 @@ class Compiler {
     this.pushString(className);
     this.emit(0x1c); // ActionGetVariable → ClassName
     this.pushString('prototype');
-    this.emit(0x4f); // ActionGetMember → ClassName.prototype
+    this.emit(0x4e); // ActionGetMember → ClassName.prototype
 
     // Push method name — top of stack, first popped by Ruffle
     this.pushString('addProperty');
@@ -1822,18 +1880,18 @@ class Compiler {
 
       this.pushString(methodName);
       this.emitDefineFunction2('', fn.params, fn.body.body, superClass);
-      this.emit(0x4e); // ActionSetMember
+      this.emit(0x4f); // ActionSetMember
     } else {
       // ClassName.prototype.methodName = function(...) { ... }
       // First get ClassName.prototype
       this.pushString(className);
       this.emit(0x1c); // ActionGetVariable → ClassName
       this.pushString('prototype');
-      this.emit(0x4f); // ActionGetMember → ClassName.prototype
+      this.emit(0x4e); // ActionGetMember → ClassName.prototype
 
       this.pushString(methodName);
       this.emitDefineFunction2('', fn.params, fn.body.body, superClass);
-      this.emit(0x4e); // ActionSetMember
+      this.emit(0x4f); // ActionSetMember
     }
   }
 
@@ -1850,13 +1908,13 @@ class Compiler {
       } else {
         this.pushUndefined();
       }
-      this.emit(0x4e); // ActionSetMember
+      this.emit(0x4f); // ActionSetMember
     } else {
       // ClassName.prototype.propName = initValue
       this.pushString(className);
       this.emit(0x1c); // ActionGetVariable → ClassName
       this.pushString('prototype');
-      this.emit(0x4f); // ActionGetMember → ClassName.prototype
+      this.emit(0x4e); // ActionGetMember → ClassName.prototype
 
       this.pushString(vd.name);
       if (init !== null) {
@@ -1864,7 +1922,7 @@ class Compiler {
       } else {
         this.pushUndefined();
       }
-      this.emit(0x4e); // ActionSetMember
+      this.emit(0x4f); // ActionSetMember
     }
   }
 }

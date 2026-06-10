@@ -2,7 +2,7 @@
  * Tests for AS2 parser + compiler: RegExp literal support.
  *
  * Verifies that /pattern/flags regex literals are parsed and compiled
- * to ActionNew (0x4a) calls on the "RegExp" constructor.
+ * to ActionNew (0x40) calls on the "RegExp" constructor.
  */
 
 import { describe, it, expect } from "vitest";
@@ -36,7 +36,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
   return false;
 }
 
-const ACTION_NEW = 0x4a; // ActionNew — used for RegExp construction
+const ACTION_NEW = 0x40; // ActionNew — used for RegExp construction
 
 // ---------------------------------------------------------------------------
 // Basic regex literals
@@ -51,7 +51,7 @@ describe("RegExp literal parsing", () => {
     expect(compilesOk("/hello/i;")).toBe(true);
   });
 
-  it("3. /hello/ emits ActionNew (0x4a) for RegExp construction", () => {
+  it("3. /hello/ emits ActionNew (0x40) for RegExp construction", () => {
     const bytes = compileAS2("/hello/;");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
   });
@@ -75,7 +75,7 @@ describe("RegExp literal parsing", () => {
     expect(compilesOk("/^[a-z]+$/g;")).toBe(true);
   });
 
-  it("8. /^[a-z]+$/g emits ActionNew (0x4a) and includes pattern and flags", () => {
+  it("8. /^[a-z]+$/g emits ActionNew (0x40) and includes pattern and flags", () => {
     const bytes = compileAS2("/^[a-z]+$/g;");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "RegExp")).toBe(true);
@@ -108,7 +108,7 @@ describe("RegExp in expressions", () => {
     expect(compilesOk("/foo/.test(str);")).toBe(true);
   });
 
-  it("14. var re = /foo/i; emits ActionNew (0x4a)", () => {
+  it("14. var re = /foo/i; emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var re = /foo/i;");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "RegExp")).toBe(true);

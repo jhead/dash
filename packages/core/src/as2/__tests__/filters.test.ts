@@ -10,9 +10,9 @@
  *   GetVariable("flash") → GetMember("filters") → GetMember("DropShadowFilter")
  *
  * Key opcodes verified:
- *   - ActionNew       (0x4a): constructor calls
- *   - ActionSetMember (0x4e): property assignments (mc.filters, mc.cacheAsBitmap)
- *   - ActionGetMember (0x4f): namespace traversal (flash.filters.*)
+ *   - ActionNew       (0x40): constructor calls
+ *   - ActionSetMember (0x4f): property assignments (mc.filters, mc.cacheAsBitmap)
+ *   - ActionGetMember (0x4e): namespace traversal (flash.filters.*)
  */
 
 import { describe, it, expect } from "vitest";
@@ -50,9 +50,9 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW        = 0x4a; // ActionNew        — constructor call
-const ACTION_SET_MEMBER = 0x4e; // ActionSetMember  — property write
-const ACTION_GET_MEMBER = 0x4f; // ActionGetMember  — property / member read
+const ACTION_NEW        = 0x40; // ActionNew        — constructor call
+const ACTION_SET_MEMBER = 0x4f; // ActionSetMember  — property write
+const ACTION_GET_MEMBER = 0x4e; // ActionGetMember  — property / member read
 
 // ---------------------------------------------------------------------------
 // flash.filters.DropShadowFilter
@@ -69,12 +69,12 @@ describe("flash.filters.DropShadowFilter constructor", () => {
     expect(compilesOk(DROP_SHADOW_SETUP)).toBe(true);
   });
 
-  it("new flash.filters.DropShadowFilter(...) via alias emits ActionNew (0x4a)", () => {
+  it("new flash.filters.DropShadowFilter(...) via alias emits ActionNew (0x40)", () => {
     const bytes = compileAS2(DROP_SHADOW_SETUP);
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
   });
 
-  it("var DropShadowFilter = flash.filters.DropShadowFilter emits ActionGetMember (0x4f) for namespace chain", () => {
+  it("var DropShadowFilter = flash.filters.DropShadowFilter emits ActionGetMember (0x4e) for namespace chain", () => {
     const bytes = compileAS2("var DropShadowFilter = flash.filters.DropShadowFilter;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "flash")).toBe(true);
@@ -88,7 +88,7 @@ describe("flash.filters.DropShadowFilter constructor", () => {
     ).toBe(true);
   });
 
-  it("direct new flash.filters.DropShadowFilter(...) emits ActionNew (0x4a)", () => {
+  it("direct new flash.filters.DropShadowFilter(...) emits ActionNew (0x40)", () => {
     const bytes = compileAS2(
       "new flash.filters.DropShadowFilter(4, 45, 0x000000, 0.5, 4, 4, 1, 1);"
     );
@@ -110,12 +110,12 @@ describe("flash.filters.BlurFilter constructor", () => {
     expect(compilesOk(BLUR_SETUP)).toBe(true);
   });
 
-  it("new flash.filters.BlurFilter(4, 4, 1) via alias emits ActionNew (0x4a)", () => {
+  it("new flash.filters.BlurFilter(4, 4, 1) via alias emits ActionNew (0x40)", () => {
     const bytes = compileAS2(BLUR_SETUP);
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
   });
 
-  it("var BlurFilter = flash.filters.BlurFilter emits ActionGetMember (0x4f)", () => {
+  it("var BlurFilter = flash.filters.BlurFilter emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var BlurFilter = flash.filters.BlurFilter;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "BlurFilter")).toBe(true);
@@ -125,7 +125,7 @@ describe("flash.filters.BlurFilter constructor", () => {
     expect(compilesOk("new flash.filters.BlurFilter(4, 4, 1);")).toBe(true);
   });
 
-  it("direct new flash.filters.BlurFilter(4, 4, 1) emits ActionNew (0x4a)", () => {
+  it("direct new flash.filters.BlurFilter(4, 4, 1) emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new flash.filters.BlurFilter(4, 4, 1);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
   });
@@ -145,12 +145,12 @@ describe("flash.filters.GlowFilter constructor", () => {
     expect(compilesOk(GLOW_SETUP)).toBe(true);
   });
 
-  it("new flash.filters.GlowFilter(...) via alias emits ActionNew (0x4a)", () => {
+  it("new flash.filters.GlowFilter(...) via alias emits ActionNew (0x40)", () => {
     const bytes = compileAS2(GLOW_SETUP);
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
   });
 
-  it("var GlowFilter = flash.filters.GlowFilter emits ActionGetMember (0x4f)", () => {
+  it("var GlowFilter = flash.filters.GlowFilter emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var GlowFilter = flash.filters.GlowFilter;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "GlowFilter")).toBe(true);
@@ -160,7 +160,7 @@ describe("flash.filters.GlowFilter constructor", () => {
     expect(compilesOk("new flash.filters.GlowFilter(0xFF0000, 0.8, 4, 4, 2, 1);")).toBe(true);
   });
 
-  it("direct new flash.filters.GlowFilter(...) emits ActionNew (0x4a)", () => {
+  it("direct new flash.filters.GlowFilter(...) emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new flash.filters.GlowFilter(0xFF0000, 0.8, 4, 4, 2, 1);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
   });
@@ -182,7 +182,7 @@ describe("mc.filters assignment", () => {
     ).toBe(true);
   });
 
-  it("mc.filters = [filter] emits ActionSetMember (0x4e)", () => {
+  it("mc.filters = [filter] emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(`
       var mc = {};
       var BlurFilter = flash.filters.BlurFilter;
@@ -203,7 +203,7 @@ describe("mc.cacheAsBitmap assignment", () => {
     expect(compilesOk("var mc = {}; mc.cacheAsBitmap = true;")).toBe(true);
   });
 
-  it("mc.cacheAsBitmap = true emits ActionSetMember (0x4e)", () => {
+  it("mc.cacheAsBitmap = true emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var mc = {}; mc.cacheAsBitmap = true;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "cacheAsBitmap")).toBe(true);

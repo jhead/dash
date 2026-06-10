@@ -5,10 +5,10 @@
  * Verifies that Sound constructor calls, instance method calls, property
  * reads and writes, and callback assignments compile without error and emit
  * the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new Sound())
+ *   - ActionNew        (0x40): constructor calls (new Sound())
  *   - ActionCallMethod (0x52): method calls (s.attachSound(), s.start(), etc.)
- *   - ActionGetMember  (0x4f): property reads (s.duration, s.position)
- *   - ActionSetMember  (0x4e): property writes (s.onSoundComplete = ...)
+ *   - ActionGetMember  (0x4e): property reads (s.duration, s.position)
+ *   - ActionSetMember  (0x4f): property writes (s.onSoundComplete = ...)
  */
 
 import { describe, it, expect } from "vitest";
@@ -46,10 +46,10 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // Sound constructor
@@ -60,7 +60,7 @@ describe("Sound constructor", () => {
     expect(compilesOk("new Sound();")).toBe(true);
   });
 
-  it("new Sound() emits ActionNew (0x4a)", () => {
+  it("new Sound() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new Sound();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Sound")).toBe(true);
@@ -70,7 +70,7 @@ describe("Sound constructor", () => {
     expect(compilesOk("var s = new Sound();")).toBe(true);
   });
 
-  it("var s = new Sound() emits ActionNew (0x4a)", () => {
+  it("var s = new Sound() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var s = new Sound();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Sound")).toBe(true);
@@ -184,7 +184,7 @@ describe("Sound onSoundComplete callback", () => {
     ).toBe(true);
   });
 
-  it("s.onSoundComplete = function() {} emits ActionSetMember (0x4e)", () => {
+  it("s.onSoundComplete = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       "var s = new Sound(); s.onSoundComplete = function() {};"
     );
@@ -202,7 +202,7 @@ describe("Sound duration property", () => {
     expect(compilesOk("var s = new Sound(); s.duration;")).toBe(true);
   });
 
-  it("s.duration emits ActionGetMember (0x4f)", () => {
+  it("s.duration emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var s = new Sound(); s.duration;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "duration")).toBe(true);
@@ -218,7 +218,7 @@ describe("Sound position property", () => {
     expect(compilesOk("var s = new Sound(); s.position;")).toBe(true);
   });
 
-  it("s.position emits ActionGetMember (0x4f)", () => {
+  it("s.position emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var s = new Sound(); s.position;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "position")).toBe(true);

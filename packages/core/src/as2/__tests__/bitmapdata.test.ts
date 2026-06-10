@@ -4,9 +4,9 @@
  *
  * Verifies that BitmapData constructor calls, instance method calls, property
  * reads compile without error and emit the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new BitmapData())
+ *   - ActionNew        (0x40): constructor calls (new BitmapData())
  *   - ActionCallMethod (0x52): method calls (bd.setPixel(), bd.getPixel(), etc.)
- *   - ActionGetMember  (0x4f): property reads (bd.width, bd.height)
+ *   - ActionGetMember  (0x4e): property reads (bd.width, bd.height)
  */
 
 import { describe, it, expect } from "vitest";
@@ -44,9 +44,9 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 
 // ---------------------------------------------------------------------------
 // BitmapData constructor
@@ -57,7 +57,7 @@ describe("BitmapData constructor", () => {
     expect(compilesOk("new BitmapData(100, 100, true, 0xFFFFFFFF);")).toBe(true);
   });
 
-  it("new BitmapData(100, 100, true, 0xFFFFFFFF) emits ActionNew (0x4a)", () => {
+  it("new BitmapData(100, 100, true, 0xFFFFFFFF) emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new BitmapData(100, 100, true, 0xFFFFFFFF);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "BitmapData")).toBe(true);
@@ -207,7 +207,7 @@ describe("BitmapData width property", () => {
     ).toBe(true);
   });
 
-  it("bd.width emits ActionGetMember (0x4f)", () => {
+  it("bd.width emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(
       "var bd = new BitmapData(100, 100, true, 0xFFFFFFFF); bd.width;"
     );
@@ -227,7 +227,7 @@ describe("BitmapData height property", () => {
     ).toBe(true);
   });
 
-  it("bd.height emits ActionGetMember (0x4f)", () => {
+  it("bd.height emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(
       "var bd = new BitmapData(100, 100, true, 0xFFFFFFFF); bd.height;"
     );

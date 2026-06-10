@@ -8,7 +8,7 @@
  * common keyboard-movement pattern compile without error and emit the correct
  * AVM1 opcodes:
  *   - ActionCallMethod (0x52): method calls (Key.isDown(), Key.getCode(), etc.)
- *   - ActionGetMember  (0x4f): property reads (Key.UP, Key.DOWN, etc.)
+ *   - ActionGetMember  (0x4e): property reads (Key.UP, Key.DOWN, etc.)
  */
 
 import { describe, it, expect } from "vitest";
@@ -47,7 +47,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 
 // ---------------------------------------------------------------------------
 // Key.isDown()
@@ -143,7 +143,7 @@ describe("Key.UP constant", () => {
     expect(compilesOk("var k = Key.UP;")).toBe(true);
   });
 
-  it("Key.UP emits ActionGetMember (0x4f)", () => {
+  it("Key.UP emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.UP;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "UP")).toBe(true);
@@ -156,7 +156,7 @@ describe("Key.DOWN constant", () => {
     expect(compilesOk("var k = Key.DOWN;")).toBe(true);
   });
 
-  it("Key.DOWN emits ActionGetMember (0x4f)", () => {
+  it("Key.DOWN emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.DOWN;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "DOWN")).toBe(true);
@@ -169,7 +169,7 @@ describe("Key.LEFT constant", () => {
     expect(compilesOk("var k = Key.LEFT;")).toBe(true);
   });
 
-  it("Key.LEFT emits ActionGetMember (0x4f)", () => {
+  it("Key.LEFT emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.LEFT;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "LEFT")).toBe(true);
@@ -182,7 +182,7 @@ describe("Key.RIGHT constant", () => {
     expect(compilesOk("var k = Key.RIGHT;")).toBe(true);
   });
 
-  it("Key.RIGHT emits ActionGetMember (0x4f)", () => {
+  it("Key.RIGHT emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.RIGHT;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "RIGHT")).toBe(true);
@@ -195,7 +195,7 @@ describe("Key.ENTER constant", () => {
     expect(compilesOk("var k = Key.ENTER;")).toBe(true);
   });
 
-  it("Key.ENTER emits ActionGetMember (0x4f)", () => {
+  it("Key.ENTER emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.ENTER;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "ENTER")).toBe(true);
@@ -208,7 +208,7 @@ describe("Key.SPACE constant", () => {
     expect(compilesOk("var k = Key.SPACE;")).toBe(true);
   });
 
-  it("Key.SPACE emits ActionGetMember (0x4f)", () => {
+  it("Key.SPACE emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.SPACE;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "SPACE")).toBe(true);
@@ -231,7 +231,7 @@ describe("Key movement pattern", () => {
     expect(containsString(bytes, "isDown")).toBe(true);
   });
 
-  it("movement pattern emits ActionGetMember (0x4f) for Key.LEFT", () => {
+  it("movement pattern emits ActionGetMember (0x4e) for Key.LEFT", () => {
     const bytes = compileAS2("if (Key.isDown(Key.LEFT)) { _x -= 5; }");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "LEFT")).toBe(true);

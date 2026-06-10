@@ -5,10 +5,10 @@
  * Verifies that ContextMenu/ContextMenuItem constructor calls, instance method
  * calls, property reads and writes compile without error and emit the correct
  * AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls
+ *   - ActionNew        (0x40): constructor calls
  *   - ActionCallMethod (0x52): method calls
- *   - ActionGetMember  (0x4f): property reads
- *   - ActionSetMember  (0x4e): property writes
+ *   - ActionGetMember  (0x4e): property reads
+ *   - ActionSetMember  (0x4f): property writes
  */
 
 import { describe, it, expect } from "vitest";
@@ -46,10 +46,10 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // ContextMenu constructor
@@ -60,7 +60,7 @@ describe("ContextMenu constructor", () => {
     expect(compilesOk("new ContextMenu();")).toBe(true);
   });
 
-  it("new ContextMenu() emits ActionNew (0x4a)", () => {
+  it("new ContextMenu() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new ContextMenu();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "ContextMenu")).toBe(true);
@@ -128,7 +128,7 @@ describe("ContextMenuItem constructor", () => {
     ).toBe(true);
   });
 
-  it('new ContextMenuItem("label", handler) emits ActionNew (0x4a)', () => {
+  it('new ContextMenuItem("label", handler) emits ActionNew (0x40)', () => {
     const bytes = compileAS2(
       'var handler = function() {}; new ContextMenuItem("label", handler);'
     );
@@ -150,7 +150,7 @@ describe("ContextMenuItem caption property", () => {
     ).toBe(true);
   });
 
-  it("item.caption emits ActionGetMember (0x4f)", () => {
+  it("item.caption emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(
       'var item = new ContextMenuItem("label", function() {}); item.caption;'
     );
@@ -173,7 +173,7 @@ describe("ContextMenuItem onSelect callback", () => {
     ).toBe(true);
   });
 
-  it("item.onSelect = function(obj, item) {} emits ActionSetMember (0x4e)", () => {
+  it("item.onSelect = function(obj, item) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       'var item = new ContextMenuItem("label", function() {}); ' +
       "item.onSelect = function(obj, item) {};"
@@ -194,7 +194,7 @@ describe("ContextMenu _root.menu assignment", () => {
     ).toBe(true);
   });
 
-  it("_root.menu = cm emits ActionSetMember (0x4e)", () => {
+  it("_root.menu = cm emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var cm = new ContextMenu(); _root.menu = cm;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "menu")).toBe(true);

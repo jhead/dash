@@ -4,8 +4,8 @@
  * Verifies that object literals and property access compile to the correct
  * AVM1 bytecode opcodes:
  *   - ActionInitObject (0x43): object literal syntax {}
- *   - ActionGetMember  (0x4f): property read (o.x)
- *   - ActionSetMember  (0x4e): property write (o.x = 5)
+ *   - ActionGetMember  (0x4e): property read (o.x)
+ *   - ActionSetMember  (0x4f): property write (o.x = 5)
  */
 
 import { describe, it, expect } from "vitest";
@@ -52,8 +52,8 @@ function countByte(bytes: Uint8Array, byte: number): number {
 // ---------------------------------------------------------------------------
 
 const ACTION_INIT_OBJECT = 0x43; // ActionInitObject — object literal
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // Test 1: var o = {} — empty object literal
@@ -103,7 +103,7 @@ describe("AS2 object literal and initialization", () => {
   // Test 5: o.x — property read
   // -------------------------------------------------------------------------
 
-  it("5. o.x emits ActionGetMember (0x4f)", () => {
+  it("5. o.x emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(`
       var o = {x: 1};
       var n = o.x;
@@ -116,7 +116,7 @@ describe("AS2 object literal and initialization", () => {
   // Test 6: o.x = 5 — property write
   // -------------------------------------------------------------------------
 
-  it("6. o.x = 5 emits ActionSetMember (0x4e)", () => {
+  it("6. o.x = 5 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(`
       var o = {};
       o.x = 5;

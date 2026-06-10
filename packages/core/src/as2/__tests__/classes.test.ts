@@ -100,11 +100,11 @@ describe("AS2 class declarations", () => {
     expect(containsString(bytes, "greet")).toBe(true);
     expect(containsString(bytes, "Greeter")).toBe(true);
 
-    // ActionGetMember (0x4f) to access .prototype
-    expect(bytes).toContain(0x4f);
-
-    // ActionSetMember (0x4e) to assign the method
+    // ActionGetMember (0x4e) to access .prototype
     expect(bytes).toContain(0x4e);
+
+    // ActionSetMember (0x4f) to assign the method
+    expect(bytes).toContain(0x4f);
   });
 
   // -------------------------------------------------------------------------
@@ -124,11 +124,11 @@ describe("AS2 class declarations", () => {
     expect(containsString(bytes, "square")).toBe(true);
 
     // Static methods do NOT need "prototype" access
-    // ActionGetVariable (0x1c) to get MathUtils, then ActionSetMember (0x4e)
+    // ActionGetVariable (0x1c) to get MathUtils, then ActionSetMember (0x4f)
     expect(bytes).toContain(0x1c);
-    expect(bytes).toContain(0x4e);
+    expect(bytes).toContain(0x4f);
 
-    // ActionGetMember (0x4f) should NOT appear for a class with only static members
+    // ActionGetMember (0x4e) should NOT appear for a class with only static members
     // (no prototype access needed for static methods)
     // Note: this is an optional structural check, not a hard requirement.
     const hex = toHex(bytes);
@@ -153,11 +153,11 @@ describe("AS2 class declarations", () => {
     // "prototype" must appear (for Dog.prototype = new Animal())
     expect(containsString(bytes, "prototype")).toBe(true);
 
-    // ActionNew (0x4a) to create new Animal()
-    expect(bytes).toContain(0x4a);
+    // ActionNew (0x40) to create new Animal()
+    expect(bytes).toContain(0x40);
 
-    // ActionSetMember (0x4e) to assign prototype
-    expect(bytes).toContain(0x4e);
+    // ActionSetMember (0x4f) to assign prototype
+    expect(bytes).toContain(0x4f);
   });
 
   // -------------------------------------------------------------------------
@@ -176,7 +176,7 @@ describe("AS2 class declarations", () => {
     expect(containsString(bytes, "prototype")).toBe(true);
 
     // ActionSetMember to assign the property
-    expect(bytes).toContain(0x4e);
+    expect(bytes).toContain(0x4f);
   });
 
   // -------------------------------------------------------------------------
@@ -194,7 +194,7 @@ describe("AS2 class declarations", () => {
     expect(containsString(bytes, "version")).toBe(true);
 
     // ActionSetMember to assign Config.version
-    expect(bytes).toContain(0x4e);
+    expect(bytes).toContain(0x4f);
   });
 
   // -------------------------------------------------------------------------

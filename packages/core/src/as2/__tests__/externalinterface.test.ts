@@ -3,7 +3,7 @@
  *
  * Verifies that ExternalInterface static property accesses and method calls
  * compile without error and emit the correct AVM1 opcodes:
- *   - ActionGetMember  (0x4f): property reads (ExternalInterface.available)
+ *   - ActionGetMember  (0x4e): property reads (ExternalInterface.available)
  *   - ActionCallMethod (0x52): method calls (ExternalInterface.call(), ExternalInterface.addCallback())
  */
 
@@ -43,7 +43,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 
 // ---------------------------------------------------------------------------
 // ExternalInterface.available property
@@ -54,7 +54,7 @@ describe("ExternalInterface available property", () => {
     expect(compilesOk("ExternalInterface.available;")).toBe(true);
   });
 
-  it("ExternalInterface.available emits ActionGetMember (0x4f)", () => {
+  it("ExternalInterface.available emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("ExternalInterface.available;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "available")).toBe(true);
@@ -134,7 +134,7 @@ describe("ExternalInterface objectID property", () => {
     expect(compilesOk("var id = ExternalInterface.objectID;")).toBe(true);
   });
 
-  it("ExternalInterface.objectID emits ActionGetMember (0x4f)", () => {
+  it("ExternalInterface.objectID emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var id = ExternalInterface.objectID;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "objectID")).toBe(true);

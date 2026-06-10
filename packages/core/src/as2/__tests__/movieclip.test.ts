@@ -4,8 +4,8 @@
  * Verifies that common MovieClip instance methods and property accesses
  * compile without error and emit the correct AVM1 opcodes:
  *   - ActionCallMethod (0x52): method calls (attachMovie, gotoAndPlay, etc.)
- *   - ActionSetMember  (0x4e): property writes (_x, _y, _alpha, _visible)
- *   - ActionGetMember  (0x4f): property reads (_y)
+ *   - ActionSetMember  (0x4f): property writes (_x, _y, _alpha, _visible)
+ *   - ActionGetMember  (0x4e): property reads (_y)
  *   - ActionPlay       (0x06): play() on this or a var
  *   - ActionStop       (0x07): stop() on this or a var
  */
@@ -46,8 +46,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 const ACTION_PLAY        = 0x06; // ActionPlay
 const ACTION_STOP        = 0x07; // ActionStop
 
@@ -158,11 +158,11 @@ describe("MovieClip removeMovieClip()", () => {
 });
 
 // ---------------------------------------------------------------------------
-// mc._x = 100 — emits ActionSetMember (0x4e)
+// mc._x = 100 — emits ActionSetMember (0x4f)
 // ---------------------------------------------------------------------------
 
 describe("MovieClip _x property write", () => {
-  it("mc._x = 100 emits ActionSetMember (0x4e)", () => {
+  it("mc._x = 100 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       'var mc = _root.createEmptyMovieClip("name", 1); mc._x = 100;'
     );
@@ -172,11 +172,11 @@ describe("MovieClip _x property write", () => {
 });
 
 // ---------------------------------------------------------------------------
-// var x = mc._y — emits ActionGetMember (0x4f)
+// var x = mc._y — emits ActionGetMember (0x4e)
 // ---------------------------------------------------------------------------
 
 describe("MovieClip _y property read", () => {
-  it("var x = mc._y emits ActionGetMember (0x4f)", () => {
+  it("var x = mc._y emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(
       'var mc = _root.createEmptyMovieClip("name", 1); var x = mc._y;'
     );
@@ -186,11 +186,11 @@ describe("MovieClip _y property read", () => {
 });
 
 // ---------------------------------------------------------------------------
-// mc._alpha = 50 — emits ActionSetMember (0x4e)
+// mc._alpha = 50 — emits ActionSetMember (0x4f)
 // ---------------------------------------------------------------------------
 
 describe("MovieClip _alpha property write", () => {
-  it("mc._alpha = 50 emits ActionSetMember (0x4e)", () => {
+  it("mc._alpha = 50 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       'var mc = _root.createEmptyMovieClip("name", 1); mc._alpha = 50;'
     );
@@ -200,11 +200,11 @@ describe("MovieClip _alpha property write", () => {
 });
 
 // ---------------------------------------------------------------------------
-// mc._visible = false — emits ActionSetMember (0x4e)
+// mc._visible = false — emits ActionSetMember (0x4f)
 // ---------------------------------------------------------------------------
 
 describe("MovieClip _visible property write", () => {
-  it("mc._visible = false emits ActionSetMember (0x4e)", () => {
+  it("mc._visible = false emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       'var mc = _root.createEmptyMovieClip("name", 1); mc._visible = false;'
     );

@@ -3,7 +3,7 @@
  *
  * Verifies that:
  * - _global.MyClass, _global.Array, _global.Object, _global.trace etc. compile
- *   and emit ActionGetMember (0x4f) or ActionGetVariable (0x1c) for member reads
+ *   and emit ActionGetMember (0x4e) or ActionGetVariable (0x1c) for member reads
  * - _global.someVar = 5 compiles (assignment to global namespace)
  * - Global registration patterns (_global.myListener = new Object(); etc.) compile
  */
@@ -40,9 +40,9 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 }
 
 // AVM1 opcodes
-const ACTION_GET_MEMBER   = 0x4f; // ActionGetMember
+const ACTION_GET_MEMBER   = 0x4e; // ActionGetMember
 const ACTION_GET_VARIABLE = 0x1c; // ActionGetVariable
-const ACTION_SET_MEMBER   = 0x4e; // ActionSetMember
+const ACTION_SET_MEMBER   = 0x4f; // ActionSetMember
 
 // ---------------------------------------------------------------------------
 // _global member reads
@@ -53,7 +53,7 @@ describe("_global member access reads", () => {
     expect(compilesOk("_global.MyClass;")).toBe(true);
   });
 
-  it("_global.MyClass — emits ActionGetMember (0x4f) or ActionGetVariable (0x1c)", () => {
+  it("_global.MyClass — emits ActionGetMember (0x4e) or ActionGetVariable (0x1c)", () => {
     const bytes = compileAS2("_global.MyClass;");
     const hasGetMember   = containsByte(bytes, ACTION_GET_MEMBER);
     const hasGetVariable = containsByte(bytes, ACTION_GET_VARIABLE);
@@ -65,7 +65,7 @@ describe("_global member access reads", () => {
     expect(compilesOk("_global.Array;")).toBe(true);
   });
 
-  it("_global.Array — emits ActionGetMember (0x4f) or ActionGetVariable (0x1c)", () => {
+  it("_global.Array — emits ActionGetMember (0x4e) or ActionGetVariable (0x1c)", () => {
     const bytes = compileAS2("_global.Array;");
     const hasGetMember   = containsByte(bytes, ACTION_GET_MEMBER);
     const hasGetVariable = containsByte(bytes, ACTION_GET_VARIABLE);
@@ -77,7 +77,7 @@ describe("_global member access reads", () => {
     expect(compilesOk("_global.Object;")).toBe(true);
   });
 
-  it("_global.Object — emits ActionGetMember (0x4f) or ActionGetVariable (0x1c)", () => {
+  it("_global.Object — emits ActionGetMember (0x4e) or ActionGetVariable (0x1c)", () => {
     const bytes = compileAS2("_global.Object;");
     const hasGetMember   = containsByte(bytes, ACTION_GET_MEMBER);
     const hasGetVariable = containsByte(bytes, ACTION_GET_VARIABLE);
@@ -89,7 +89,7 @@ describe("_global member access reads", () => {
     expect(compilesOk("_global.trace;")).toBe(true);
   });
 
-  it("_global.trace — emits ActionGetMember (0x4f) or ActionGetVariable (0x1c)", () => {
+  it("_global.trace — emits ActionGetMember (0x4e) or ActionGetVariable (0x1c)", () => {
     const bytes = compileAS2("_global.trace;");
     const hasGetMember   = containsByte(bytes, ACTION_GET_MEMBER);
     const hasGetVariable = containsByte(bytes, ACTION_GET_VARIABLE);
@@ -107,7 +107,7 @@ describe("_global member assignment", () => {
     expect(compilesOk("_global.someVar = 5;")).toBe(true);
   });
 
-  it("_global.someVar = 5 — emits ActionSetMember (0x4e)", () => {
+  it("_global.someVar = 5 — emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("_global.someVar = 5;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "_global")).toBe(true);
@@ -140,7 +140,7 @@ describe("global registration pattern", () => {
     expect(compilesOk(src)).toBe(true);
   });
 
-  it("full global registration pattern — emits ActionSetMember (0x4e) for assignments", () => {
+  it("full global registration pattern — emits ActionSetMember (0x4f) for assignments", () => {
     const src = `
       _global.myListener = new Object();
       _global.myListener.onStatus = function(info) {};

@@ -7,7 +7,7 @@
  *
  * Key opcodes verified:
  *   - ActionCallMethod (0x52): fn.call(), fn.apply(), fn.toString()
- *   - ActionGetMember  (0x4f): fn.length property access
+ *   - ActionGetMember  (0x4e): fn.length property access
  */
 
 import { describe, it, expect } from "vitest";
@@ -46,7 +46,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property access
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property access
 
 // ---------------------------------------------------------------------------
 // 1. fn.call()
@@ -99,7 +99,7 @@ describe("fn.length", () => {
     expect(compilesOk("var fn = function(a, b) {}; var len = fn.length;")).toBe(true);
   });
 
-  it('var len = fn.length emits ActionGetMember (0x4f) for "length"', () => {
+  it('var len = fn.length emits ActionGetMember (0x4e) for "length"', () => {
     const bytes = compileAS2("var fn = function(a, b) {}; var len = fn.length;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "length")).toBe(true);

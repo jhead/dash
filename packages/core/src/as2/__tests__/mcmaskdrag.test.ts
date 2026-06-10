@@ -3,7 +3,7 @@
  * _xmouse / _ymouse properties, hitArea, tabEnabled, focusEnabled.
  *
  * Verifies that method calls emit ActionCallMethod (0x52), property reads
- * emit ActionGetMember (0x4f), and property writes emit ActionSetMember (0x4e).
+ * emit ActionGetMember (0x4e), and property writes emit ActionSetMember (0x4f).
  */
 
 import { describe, it, expect } from "vitest";
@@ -42,8 +42,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // mc.setMask(maskClip)
@@ -134,7 +134,7 @@ describe("MovieClip _xmouse property read", () => {
     expect(compilesOk("var mc = _root.mc; mc._xmouse;")).toBe(true);
   });
 
-  it("mc._xmouse emits ActionGetMember (0x4f)", () => {
+  it("mc._xmouse emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var mc = _root.mc; mc._xmouse;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "_xmouse")).toBe(true);
@@ -150,7 +150,7 @@ describe("MovieClip _ymouse property read", () => {
     expect(compilesOk("var mc = _root.mc; mc._ymouse;")).toBe(true);
   });
 
-  it("mc._ymouse emits ActionGetMember (0x4f)", () => {
+  it("mc._ymouse emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var mc = _root.mc; mc._ymouse;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "_ymouse")).toBe(true);
@@ -166,7 +166,7 @@ describe("MovieClip hitArea property write", () => {
     expect(compilesOk("var mc = _root.mc; var hitClip = _root.hit; mc.hitArea = hitClip;")).toBe(true);
   });
 
-  it("mc.hitArea = hitClip emits ActionSetMember (0x4e)", () => {
+  it("mc.hitArea = hitClip emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var mc = _root.mc; var hitClip = _root.hit; mc.hitArea = hitClip;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "hitArea")).toBe(true);
@@ -182,7 +182,7 @@ describe("MovieClip tabEnabled property write", () => {
     expect(compilesOk("var mc = _root.mc; mc.tabEnabled = true;")).toBe(true);
   });
 
-  it("mc.tabEnabled = true emits ActionSetMember (0x4e)", () => {
+  it("mc.tabEnabled = true emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var mc = _root.mc; mc.tabEnabled = true;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "tabEnabled")).toBe(true);
@@ -198,7 +198,7 @@ describe("MovieClip focusEnabled property write", () => {
     expect(compilesOk("var mc = _root.mc; mc.focusEnabled = true;")).toBe(true);
   });
 
-  it("mc.focusEnabled = true emits ActionSetMember (0x4e)", () => {
+  it("mc.focusEnabled = true emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var mc = _root.mc; mc.focusEnabled = true;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "focusEnabled")).toBe(true);

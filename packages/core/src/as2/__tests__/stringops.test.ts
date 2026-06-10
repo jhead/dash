@@ -5,7 +5,7 @@
  * produce the expected opcodes.
  *
  * Actual AVM1 opcodes used by the compiler:
- *   ActionAdd2  0x64  — generic add / string concatenation
+ *   ActionAdd2  0x47  — generic add / string concatenation
  *   ActionPop   0x17  — pop stack value (used in void / compound ops)
  */
 
@@ -41,7 +41,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// String literal concatenation  ("hello" + " world" → ActionAdd2 0x64)
+// String literal concatenation  ("hello" + " world" → ActionAdd2 0x47)
 // ---------------------------------------------------------------------------
 
 describe("string literal concatenation", () => {
@@ -49,9 +49,9 @@ describe("string literal concatenation", () => {
     expect(compilesOk('var s = "hello" + " world";')).toBe(true);
   });
 
-  it('var s = "hello" + " world" emits ActionAdd2 (0x64)', () => {
+  it('var s = "hello" + " world" emits ActionAdd2 (0x47)', () => {
     const bytes = compileAS2('var s = "hello" + " world";');
-    expect(containsByte(bytes, 0x64)).toBe(true);
+    expect(containsByte(bytes, 0x47)).toBe(true);
   });
 
   it("string literals appear in bytecode", () => {
@@ -62,7 +62,7 @@ describe("string literal concatenation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Variable string concatenation  (str1 + str2 → ActionAdd2 0x64)
+// Variable string concatenation  (str1 + str2 → ActionAdd2 0x47)
 // ---------------------------------------------------------------------------
 
 describe("variable string concatenation", () => {
@@ -70,9 +70,9 @@ describe("variable string concatenation", () => {
     expect(compilesOk("var s = str1 + str2;")).toBe(true);
   });
 
-  it("var s = str1 + str2 emits ActionAdd2 (0x64)", () => {
+  it("var s = str1 + str2 emits ActionAdd2 (0x47)", () => {
     const bytes = compileAS2("var s = str1 + str2;");
-    expect(containsByte(bytes, 0x64)).toBe(true);
+    expect(containsByte(bytes, 0x47)).toBe(true);
   });
 
   it("variable names appear in bytecode", () => {
@@ -83,7 +83,7 @@ describe("variable string concatenation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// String + number coercion  ("val=" + n → ActionAdd2 0x64)
+// String + number coercion  ("val=" + n → ActionAdd2 0x47)
 // ---------------------------------------------------------------------------
 
 describe("string + number coercion", () => {
@@ -91,9 +91,9 @@ describe("string + number coercion", () => {
     expect(compilesOk('var s = "val=" + n;')).toBe(true);
   });
 
-  it('var s = "val=" + n emits ActionAdd2 (0x64)', () => {
+  it('var s = "val=" + n emits ActionAdd2 (0x47)', () => {
     const bytes = compileAS2('var s = "val=" + n;');
-    expect(containsByte(bytes, 0x64)).toBe(true);
+    expect(containsByte(bytes, 0x47)).toBe(true);
   });
 
   it("string literal and variable name appear in bytecode", () => {
@@ -104,7 +104,7 @@ describe("string + number coercion", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Multiple + operators  (a + b + c → two ActionAdd2 0x64)
+// Multiple + operators  (a + b + c → two ActionAdd2 0x47)
 // ---------------------------------------------------------------------------
 
 describe("multiple + operators", () => {
@@ -112,15 +112,15 @@ describe("multiple + operators", () => {
     expect(compilesOk("var s = a + b + c;")).toBe(true);
   });
 
-  it("var s = a + b + c emits ActionAdd2 (0x64)", () => {
+  it("var s = a + b + c emits ActionAdd2 (0x47)", () => {
     const bytes = compileAS2("var s = a + b + c;");
-    expect(containsByte(bytes, 0x64)).toBe(true);
+    expect(containsByte(bytes, 0x47)).toBe(true);
   });
 
   it("var s = a + b + c emits at least two ActionAdd2 opcodes", () => {
     const bytes = compileAS2("var s = a + b + c;");
     let count = 0;
-    for (const b of bytes) if (b === 0x64) count++;
+    for (const b of bytes) if (b === 0x47) count++;
     expect(count).toBeGreaterThanOrEqual(2);
   });
 
@@ -156,9 +156,9 @@ describe("compound string assignment", () => {
     expect(compilesOk('var str = "hello"; str += " more";')).toBe(true);
   });
 
-  it('str += " more" emits ActionAdd2 (0x64)', () => {
+  it('str += " more" emits ActionAdd2 (0x47)', () => {
     const bytes = compileAS2('var str = "hello"; str += " more";');
-    expect(containsByte(bytes, 0x64)).toBe(true);
+    expect(containsByte(bytes, 0x47)).toBe(true);
   });
 
   it("string literal appears in bytecode", () => {
@@ -176,9 +176,9 @@ describe("mixed concatenation pattern", () => {
     expect(compilesOk('var s = "" + x + "" + y;')).toBe(true);
   });
 
-  it('var s = "" + x + "" + y emits ActionAdd2 (0x64)', () => {
+  it('var s = "" + x + "" + y emits ActionAdd2 (0x47)', () => {
     const bytes = compileAS2('var s = "" + x + "" + y;');
-    expect(containsByte(bytes, 0x64)).toBe(true);
+    expect(containsByte(bytes, 0x47)).toBe(true);
   });
 
   it("variable names appear in bytecode", () => {
@@ -190,7 +190,7 @@ describe("mixed concatenation pattern", () => {
   it("emits multiple ActionAdd2 opcodes for chained concatenation", () => {
     const bytes = compileAS2('var s = "" + x + "" + y;');
     let count = 0;
-    for (const b of bytes) if (b === 0x64) count++;
+    for (const b of bytes) if (b === 0x47) count++;
     expect(count).toBeGreaterThanOrEqual(3);
   });
 });

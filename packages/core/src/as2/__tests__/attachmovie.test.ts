@@ -6,8 +6,8 @@
  * Verifies that all MovieClip management calls compile without error and emit
  * the correct AVM1 opcodes:
  *   - ActionCallMethod (0x52): method calls (attachMovie, createEmptyMovieClip, etc.)
- *   - ActionSetMember  (0x4e): property writes (_x, _y, _alpha)
- *   - ActionGetMember  (0x4f): property reads (_width, _height)
+ *   - ActionSetMember  (0x4f): property writes (_x, _y, _alpha)
+ *   - ActionGetMember  (0x4e): property reads (_width, _height)
  */
 
 import { describe, it, expect } from "vitest";
@@ -46,8 +46,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 
 // ---------------------------------------------------------------------------
 // _root.attachMovie()
@@ -180,7 +180,7 @@ describe("MovieClip _x property write", () => {
     ).toBe(true);
   });
 
-  it("mc._x = 100 emits ActionSetMember (0x4e)", () => {
+  it("mc._x = 100 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       'var mc = _root.createEmptyMovieClip("name", 1); mc._x = 100;'
     );
@@ -200,7 +200,7 @@ describe("MovieClip _y property write", () => {
     ).toBe(true);
   });
 
-  it("mc._y = 50 emits ActionSetMember (0x4e)", () => {
+  it("mc._y = 50 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       'var mc = _root.createEmptyMovieClip("name", 1); mc._y = 50;'
     );
@@ -220,7 +220,7 @@ describe("MovieClip _alpha property write", () => {
     ).toBe(true);
   });
 
-  it("mc._alpha = 80 emits ActionSetMember (0x4e)", () => {
+  it("mc._alpha = 80 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       'var mc = _root.createEmptyMovieClip("name", 1); mc._alpha = 80;'
     );
@@ -240,7 +240,7 @@ describe("MovieClip _width property read", () => {
     ).toBe(true);
   });
 
-  it("mc._width emits ActionGetMember (0x4f)", () => {
+  it("mc._width emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(
       'var mc = _root.createEmptyMovieClip("name", 1); mc._width;'
     );
@@ -260,7 +260,7 @@ describe("MovieClip _height property read", () => {
     ).toBe(true);
   });
 
-  it("mc._height emits ActionGetMember (0x4f)", () => {
+  it("mc._height emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(
       'var mc = _root.createEmptyMovieClip("name", 1); mc._height;'
     );

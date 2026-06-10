@@ -4,8 +4,8 @@
  * Verifies that Stage property reads, Stage property assignments, Stage method
  * calls, and Mouse method calls compile without error and emit the correct
  * AVM1 opcodes:
- *   - ActionGetMember  (0x4f): property reads (Stage.width, Stage.height, etc.)
- *   - ActionSetMember  (0x4e): property writes (Stage.showMenu = false)
+ *   - ActionGetMember  (0x4e): property reads (Stage.width, Stage.height, etc.)
+ *   - ActionSetMember  (0x4f): property writes (Stage.showMenu = false)
  *   - ActionCallMethod (0x52): method calls (Stage.addListener(), Mouse.hide(), etc.)
  */
 
@@ -45,8 +45,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // Stage.width
@@ -57,7 +57,7 @@ describe("Stage.width", () => {
     expect(compilesOk("Stage.width;")).toBe(true);
   });
 
-  it("Stage.width emits ActionGetMember (0x4f)", () => {
+  it("Stage.width emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("Stage.width;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "width")).toBe(true);
@@ -74,7 +74,7 @@ describe("Stage.height", () => {
     expect(compilesOk("Stage.height;")).toBe(true);
   });
 
-  it("Stage.height emits ActionGetMember (0x4f)", () => {
+  it("Stage.height emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("Stage.height;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "height")).toBe(true);
@@ -91,7 +91,7 @@ describe("Stage.align", () => {
     expect(compilesOk("Stage.align;")).toBe(true);
   });
 
-  it("Stage.align emits ActionGetMember (0x4f)", () => {
+  it("Stage.align emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("Stage.align;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "align")).toBe(true);
@@ -108,7 +108,7 @@ describe("Stage.scaleMode", () => {
     expect(compilesOk("Stage.scaleMode;")).toBe(true);
   });
 
-  it("Stage.scaleMode emits ActionGetMember (0x4f)", () => {
+  it("Stage.scaleMode emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("Stage.scaleMode;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "scaleMode")).toBe(true);
@@ -125,7 +125,7 @@ describe("Stage.showMenu assignment", () => {
     expect(compilesOk("Stage.showMenu = false;")).toBe(true);
   });
 
-  it("Stage.showMenu = false emits ActionSetMember (0x4e)", () => {
+  it("Stage.showMenu = false emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("Stage.showMenu = false;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "showMenu")).toBe(true);

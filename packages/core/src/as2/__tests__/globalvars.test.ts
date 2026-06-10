@@ -2,9 +2,9 @@
  * Tests for AS2 _global variable assignments and top-level var declarations.
  *
  * Verifies that:
- * - _global.foo = value compiles via ActionSetMember (0x4e) on the _global object
+ * - _global.foo = value compiles via ActionSetMember (0x4f) on the _global object
  * - _global is treated as an identifier that resolves via ActionGetVariable
- * - var x = 5 at the top level compiles to ActionDefineLocal (0x42)
+ * - var x = 5 at the top level compiles to ActionDefineLocal (0x3c)
  * - var x without initializer compiles to ActionDefineLocal2 (0x41)
  */
 
@@ -50,11 +50,11 @@ describe("_global variable assignments", () => {
     expect(compilesOk("_global.foo = 5;")).toBe(true);
   });
 
-  // Test 2: Compiled output contains ActionSetMember (0x4e) for _global assignment
-  it("_global.foo = 5 emits ActionSetMember (0x4e)", () => {
+  // Test 2: Compiled output contains ActionSetMember (0x4f) for _global assignment
+  it("_global.foo = 5 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("_global.foo = 5;");
-    // ActionSetMember (0x4e) should be present
-    expect(containsByte(bytes, 0x4e)).toBe(true);
+    // ActionSetMember (0x4f) should be present
+    expect(containsByte(bytes, 0x4f)).toBe(true);
   });
 
   // Test 3: _global is resolved via ActionGetVariable (0x1c) as a regular identifier
@@ -73,19 +73,19 @@ describe("_global variable assignments", () => {
   it('_global.version = "1.0" encodes the string value and ActionSetMember', () => {
     const bytes = compileAS2('_global.version = "1.0";');
     expect(containsString(bytes, "1.0")).toBe(true);
-    expect(containsByte(bytes, 0x4e)).toBe(true); // ActionSetMember
+    expect(containsByte(bytes, 0x4f)).toBe(true); // ActionSetMember
   });
 
-  // Test 5: trace(_global.foo) compiles — reads from _global via ActionGetMember (0x4f)
+  // Test 5: trace(_global.foo) compiles — reads from _global via ActionGetMember (0x4e)
   it("trace(_global.foo) compiles without error", () => {
     expect(compilesOk("trace(_global.foo);")).toBe(true);
   });
 
-  // Test 5b: trace(_global.foo) emits ActionGetMember (0x4f) to read from _global
-  it("trace(_global.foo) emits ActionGetMember (0x4f)", () => {
+  // Test 5b: trace(_global.foo) emits ActionGetMember (0x4e) to read from _global
+  it("trace(_global.foo) emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("trace(_global.foo);");
-    // ActionGetMember (0x4f) is used for member access reads
-    expect(containsByte(bytes, 0x4f)).toBe(true);
+    // ActionGetMember (0x4e) is used for member access reads
+    expect(containsByte(bytes, 0x4e)).toBe(true);
   });
 
   // Test 6: Multiple _global assignments in same script compile
@@ -105,10 +105,10 @@ describe("_global variable assignments", () => {
       _global.version = "1.0";
     `;
     const bytes = compileAS2(src);
-    // Count occurrences of ActionSetMember (0x4e)
+    // Count occurrences of ActionSetMember (0x4f)
     let count = 0;
     for (const b of bytes) {
-      if (b === 0x4e) count++;
+      if (b === 0x4f) count++;
     }
     // Each _global.x = y should emit one ActionSetMember
     expect(count).toBeGreaterThanOrEqual(2);
@@ -120,11 +120,11 @@ describe("_global variable assignments", () => {
 // ---------------------------------------------------------------------------
 
 describe("top-level var declarations", () => {
-  // Test 7: var x = 5 compiles to ActionDefineLocal (0x42)
-  it("var x = 5 compiles to ActionDefineLocal (0x42)", () => {
+  // Test 7: var x = 5 compiles to ActionDefineLocal (0x3c)
+  it("var x = 5 compiles to ActionDefineLocal (0x3c)", () => {
     const bytes = compileAS2("var x = 5;");
-    // ActionDefineLocal (0x42) should be present
-    expect(containsByte(bytes, 0x42)).toBe(true);
+    // ActionDefineLocal (0x3c) should be present
+    expect(containsByte(bytes, 0x3c)).toBe(true);
   });
 
   // Test 8: var x without init compiles to ActionDefineLocal2 (0x41)
@@ -140,13 +140,13 @@ describe("top-level var declarations", () => {
   });
 
   // Test 10: var declaration inside a function uses ActionDefineLocal
-  it("var y = 10 inside a function compiles to ActionDefineLocal (0x42)", () => {
+  it("var y = 10 inside a function compiles to ActionDefineLocal (0x3c)", () => {
     const src = `
       function init() {
         var y = 10;
       }
     `;
     const bytes = compileAS2(src);
-    expect(containsByte(bytes, 0x42)).toBe(true);
+    expect(containsByte(bytes, 0x3c)).toBe(true);
   });
 });

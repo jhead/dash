@@ -4,10 +4,10 @@
  * Verifies that XMLSocket and LoadVars constructor calls, instance method
  * calls, property accesses, and callbacks compile without error and emit
  * the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new XMLSocket(), new LoadVars())
+ *   - ActionNew        (0x40): constructor calls (new XMLSocket(), new LoadVars())
  *   - ActionCallMethod (0x52): method calls (xs.connect(), xs.send(), xs.close(), etc.)
- *   - ActionGetMember  (0x4f): property reads (lv.loaded)
- *   - ActionSetMember  (0x4e): property writes (xs.onConnect = ..., xs.onData = ..., lv.onLoad = ...)
+ *   - ActionGetMember  (0x4e): property reads (lv.loaded)
+ *   - ActionSetMember  (0x4f): property writes (xs.onConnect = ..., xs.onData = ..., lv.onLoad = ...)
  */
 
 import { describe, it, expect } from "vitest";
@@ -45,10 +45,10 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // XMLSocket constructor
@@ -59,7 +59,7 @@ describe("XMLSocket constructor", () => {
     expect(compilesOk("var xs = new XMLSocket();")).toBe(true);
   });
 
-  it("new XMLSocket() emits ActionNew (0x4a)", () => {
+  it("new XMLSocket() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var xs = new XMLSocket();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "XMLSocket")).toBe(true);
@@ -123,7 +123,7 @@ describe("XMLSocket.onConnect callback", () => {
     expect(compilesOk("var xs = new XMLSocket(); xs.onConnect = function(ok) { trace(ok); };")).toBe(true);
   });
 
-  it("xs.onConnect = function(ok) {} emits ActionSetMember (0x4e)", () => {
+  it("xs.onConnect = function(ok) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var xs = new XMLSocket(); xs.onConnect = function(ok) { trace(ok); };");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onConnect")).toBe(true);
@@ -139,7 +139,7 @@ describe("XMLSocket.onData callback", () => {
     expect(compilesOk("var xs = new XMLSocket(); xs.onData = function(s) { trace(s); };")).toBe(true);
   });
 
-  it("xs.onData = function(s) {} emits ActionSetMember (0x4e)", () => {
+  it("xs.onData = function(s) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var xs = new XMLSocket(); xs.onData = function(s) { trace(s); };");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onData")).toBe(true);
@@ -155,7 +155,7 @@ describe("LoadVars constructor (xmlsocket suite)", () => {
     expect(compilesOk("var lv = new LoadVars();")).toBe(true);
   });
 
-  it("new LoadVars() emits ActionNew (0x4a)", () => {
+  it("new LoadVars() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var lv = new LoadVars();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "LoadVars")).toBe(true);
@@ -203,7 +203,7 @@ describe("LoadVars.onLoad callback (xmlsocket suite)", () => {
     expect(compilesOk("var lv = new LoadVars(); lv.onLoad = function(ok) {};")).toBe(true);
   });
 
-  it("lv.onLoad = function(ok) {} emits ActionSetMember (0x4e)", () => {
+  it("lv.onLoad = function(ok) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var lv = new LoadVars(); lv.onLoad = function(ok) {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onLoad")).toBe(true);
@@ -219,7 +219,7 @@ describe("LoadVars.loaded property read (xmlsocket suite)", () => {
     expect(compilesOk("var lv = new LoadVars(); if (lv.loaded) {}")).toBe(true);
   });
 
-  it("if (lv.loaded) {} emits ActionGetMember (0x4f)", () => {
+  it("if (lv.loaded) {} emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var lv = new LoadVars(); if (lv.loaded) {}");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "loaded")).toBe(true);

@@ -77,7 +77,7 @@ describe("AS2 static members and methods", () => {
     expect(containsString(bytes, "getCount")).toBe(true);
 
     // Static methods must NOT go through prototype — the bytecode for
-    // a prototype assignment contains the string "prototype" with ActionGetMember (0x4f).
+    // a prototype assignment contains the string "prototype" with ActionGetMember (0x4e).
     // A class with ONLY static members (no instance methods, no instance props)
     // should produce no "prototype" string at all.
     // Note: the Counter constructor is an instance constructor (adds to count),
@@ -104,11 +104,11 @@ describe("AS2 static members and methods", () => {
       }
     `);
 
-    // ActionGetVariable (0x1c) fetches Util, ActionSetMember (0x4e) assigns helper
+    // ActionGetVariable (0x1c) fetches Util, ActionSetMember (0x4f) assigns helper
     expect(bytes).toContain(0x1c);
-    expect(bytes).toContain(0x4e);
+    expect(bytes).toContain(0x4f);
 
-    // No ActionGetMember (0x4f) needed for a purely-static class (no prototype access)
+    // No ActionGetMember (0x4e) needed for a purely-static class (no prototype access)
     const hex = toHex(bytes);
     expect(hex).not.toContain(" 4f ");
   });
@@ -128,7 +128,7 @@ describe("AS2 static members and methods", () => {
     expect(containsString(bytes, "count")).toBe(true);
 
     // ActionSetMember to assign Counter.count
-    expect(bytes).toContain(0x4e);
+    expect(bytes).toContain(0x4f);
   });
 
   // -------------------------------------------------------------------------
@@ -181,8 +181,8 @@ describe("AS2 static members and methods", () => {
     // ActionDefineFunction2 (0x8e) for the constructor + static methods
     expect(bytes).toContain(0x8e);
 
-    // ActionSetMember (0x4e) for static assignments
-    expect(bytes).toContain(0x4e);
+    // ActionSetMember (0x4f) for static assignments
+    expect(bytes).toContain(0x4f);
   });
 
   // -------------------------------------------------------------------------

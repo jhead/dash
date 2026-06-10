@@ -42,8 +42,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_GET_VARIABLE = 0x1c;
-const ACTION_SET_MEMBER   = 0x4e;
-const ACTION_GET_MEMBER   = 0x4f;
+const ACTION_SET_MEMBER   = 0x4f;
+const ACTION_GET_MEMBER   = 0x4e;
 const ACTION_WITH         = 0x94;
 
 // ---------------------------------------------------------------------------
@@ -67,11 +67,11 @@ describe("local variable resolution", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. this.x = 5 emits ActionSetMember (0x4e), not ActionSetVariable
+// 2. this.x = 5 emits ActionSetMember (0x4f), not ActionSetVariable
 // ---------------------------------------------------------------------------
 
 describe("this member assignment", () => {
-  it("2. this.x = 5 — emits ActionSetMember (0x4e)", () => {
+  it("2. this.x = 5 — emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("this.x = 5;");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
   });
@@ -119,7 +119,7 @@ describe("_global member access", () => {
     expect(containsByte(bytes, ACTION_GET_VARIABLE)).toBe(true);
   });
 
-  it("4b. _global.counter — emits ActionGetMember (0x4f) for the property", () => {
+  it("4b. _global.counter — emits ActionGetMember (0x4e) for the property", () => {
     const bytes = compileAS2("trace(_global.counter);");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
@@ -180,7 +180,7 @@ describe("variable vs member access opcodes", () => {
     expect(containsByte(bytes, ACTION_GET_VARIABLE)).toBe(true);
   });
 
-  it("7b. dot-access on object emits ActionGetMember (0x4f)", () => {
+  it("7b. dot-access on object emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("trace(obj.prop);");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
@@ -189,7 +189,7 @@ describe("variable vs member access opcodes", () => {
     expect(compilesOk("trace(obj.prop);")).toBe(true);
   });
 
-  it("7d. chained member access emits ActionGetMember (0x4f)", () => {
+  it("7d. chained member access emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("trace(a.b.c);");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });

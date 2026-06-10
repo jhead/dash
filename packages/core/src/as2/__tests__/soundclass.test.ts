@@ -4,9 +4,9 @@
  * Verifies that Sound constructor calls, method calls, property assignments,
  * and real-world patterns compile without error and emit the correct AVM1
  * opcodes:
- *   - ActionNew        (0x4a): new Sound() / new Sound(mc)
+ *   - ActionNew        (0x40): new Sound() / new Sound(mc)
  *   - ActionCallMethod (0x52): s.attachSound(), s.start(), s.stop(), etc.
- *   - ActionSetMember  (0x4e): s.onSoundComplete = function() { ... }
+ *   - ActionSetMember  (0x4f): s.onSoundComplete = function() { ... }
  */
 
 import { describe, it, expect } from "vitest";
@@ -44,12 +44,12 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
-// 1. var s = new Sound(mc) — emits ActionNew (0x4a)
+// 1. var s = new Sound(mc) — emits ActionNew (0x40)
 // ---------------------------------------------------------------------------
 
 describe("Sound class: new Sound(mc)", () => {
@@ -57,7 +57,7 @@ describe("Sound class: new Sound(mc)", () => {
     expect(compilesOk("var mc; var s = new Sound(mc);")).toBe(true);
   });
 
-  it("1b. var s = new Sound(mc) emits ActionNew (0x4a)", () => {
+  it("1b. var s = new Sound(mc) emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var mc; var s = new Sound(mc);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Sound")).toBe(true);
@@ -65,7 +65,7 @@ describe("Sound class: new Sound(mc)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. var s = new Sound() — emits ActionNew (0x4a)
+// 2. var s = new Sound() — emits ActionNew (0x40)
 // ---------------------------------------------------------------------------
 
 describe("Sound class: new Sound()", () => {
@@ -73,7 +73,7 @@ describe("Sound class: new Sound()", () => {
     expect(compilesOk("var s = new Sound();")).toBe(true);
   });
 
-  it("2b. var s = new Sound() emits ActionNew (0x4a)", () => {
+  it("2b. var s = new Sound() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var s = new Sound();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Sound")).toBe(true);
@@ -197,7 +197,7 @@ describe("Sound class: s.loadSound()", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. s.onSoundComplete = function() { trace("done"); } — emits ActionSetMember (0x4e)
+// 10. s.onSoundComplete = function() { trace("done"); } — emits ActionSetMember (0x4f)
 // ---------------------------------------------------------------------------
 
 describe("Sound class: s.onSoundComplete callback", () => {
@@ -207,7 +207,7 @@ describe("Sound class: s.onSoundComplete callback", () => {
     ).toBe(true);
   });
 
-  it('10b. s.onSoundComplete = function() {} emits ActionSetMember (0x4e)', () => {
+  it('10b. s.onSoundComplete = function() {} emits ActionSetMember (0x4f)', () => {
     const bytes = compileAS2(
       'var s = new Sound(); s.onSoundComplete = function() { trace("done"); };'
     );
@@ -229,7 +229,7 @@ describe("Sound class: full bgMusic pattern", () => {
     ).toBe(true);
   });
 
-  it("11b. bgMusic pattern emits ActionNew (0x4a)", () => {
+  it("11b. bgMusic pattern emits ActionNew (0x40)", () => {
     const bytes = compileAS2(
       'var bgMusic = new Sound(); bgMusic.attachSound("bgloop"); bgMusic.start(0, 99999);'
     );

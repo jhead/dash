@@ -3,7 +3,7 @@
  *
  * Verifies that Math method calls and Math property accesses compile without
  * error and emit the expected AVM1 opcodes:
- *   - ActionGetMember (0x4f): member/property access (Math.abs, Math.PI, etc.)
+ *   - ActionGetMember (0x4e): member/property access (Math.abs, Math.PI, etc.)
  *   - ActionCallMethod (0x52): method dispatch (Math.abs(x), etc.)
  */
 
@@ -32,7 +32,7 @@ function containsByte(bytes: Uint8Array, byte: number): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_GET_MEMBER = 0x4f; // ActionGetMember — property/member access
+const ACTION_GET_MEMBER = 0x4e; // ActionGetMember — property/member access
 
 // ---------------------------------------------------------------------------
 // Math single-argument methods
@@ -43,7 +43,7 @@ describe("Math.abs", () => {
     expect(compilesOk("Math.abs(-5);")).toBe(true);
   });
 
-  it.todo("Math.abs(-5) emits ActionGetMember (0x4f) for 'abs' on Math");
+  it.todo("Math.abs(-5) emits ActionGetMember (0x4e) for 'abs' on Math");
 });
 
 describe("Math.ceil", () => {
@@ -103,7 +103,7 @@ describe("Math.random", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Math properties — ActionGetMember (0x4f)
+// Math properties — ActionGetMember (0x4e)
 // ---------------------------------------------------------------------------
 
 describe("Math.PI", () => {
@@ -111,7 +111,7 @@ describe("Math.PI", () => {
     expect(compilesOk("var pi = Math.PI;")).toBe(true);
   });
 
-  it("var pi = Math.PI emits ActionGetMember (0x4f)", () => {
+  it("var pi = Math.PI emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var pi = Math.PI;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
@@ -154,7 +154,7 @@ describe("Math.E", () => {
     expect(compilesOk("Math.E;")).toBe(true);
   });
 
-  it("Math.E emits ActionGetMember (0x4f)", () => {
+  it("Math.E emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("Math.E;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });

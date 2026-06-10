@@ -5,9 +5,9 @@
  * Verifies that MovieClipLoader constructor calls, instance method calls,
  * and callback property assignments compile without error and emit the
  * correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new MovieClipLoader())
+ *   - ActionNew        (0x40): constructor calls (new MovieClipLoader())
  *   - ActionCallMethod (0x52): method calls (mcl.loadClip(), etc.)
- *   - ActionSetMember  (0x4e): property writes (mcl.onLoadStart = ..., etc.)
+ *   - ActionSetMember  (0x4f): property writes (mcl.onLoadStart = ..., etc.)
  */
 
 import { describe, it, expect } from "vitest";
@@ -45,9 +45,9 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // MovieClipLoader constructor
@@ -58,7 +58,7 @@ describe("MovieClipLoader constructor", () => {
     expect(compilesOk("new MovieClipLoader();")).toBe(true);
   });
 
-  it("new MovieClipLoader() emits ActionNew (0x4a)", () => {
+  it("new MovieClipLoader() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new MovieClipLoader();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "MovieClipLoader")).toBe(true);
@@ -68,7 +68,7 @@ describe("MovieClipLoader constructor", () => {
     expect(compilesOk("var mcl = new MovieClipLoader();")).toBe(true);
   });
 
-  it("var mcl = new MovieClipLoader() emits ActionNew (0x4a)", () => {
+  it("var mcl = new MovieClipLoader() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var mcl = new MovieClipLoader();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "MovieClipLoader")).toBe(true);
@@ -168,7 +168,7 @@ describe("MovieClipLoader onLoadStart callback", () => {
     ).toBe(true);
   });
 
-  it("mcl.onLoadStart = function() {} emits ActionSetMember (0x4e)", () => {
+  it("mcl.onLoadStart = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       "var mcl = new MovieClipLoader(); mcl.onLoadStart = function() {};"
     );
@@ -190,7 +190,7 @@ describe("MovieClipLoader onLoadProgress callback", () => {
     ).toBe(true);
   });
 
-  it("mcl.onLoadProgress = function(target, bytesLoaded, bytesTotal) {} emits ActionSetMember (0x4e)", () => {
+  it("mcl.onLoadProgress = function(target, bytesLoaded, bytesTotal) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       "var mcl = new MovieClipLoader(); mcl.onLoadProgress = function(target, bytesLoaded, bytesTotal) {};"
     );
@@ -212,7 +212,7 @@ describe("MovieClipLoader onLoadComplete callback", () => {
     ).toBe(true);
   });
 
-  it("mcl.onLoadComplete = function(target) {} emits ActionSetMember (0x4e)", () => {
+  it("mcl.onLoadComplete = function(target) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       "var mcl = new MovieClipLoader(); mcl.onLoadComplete = function(target) {};"
     );
@@ -234,7 +234,7 @@ describe("MovieClipLoader onLoadError callback", () => {
     ).toBe(true);
   });
 
-  it("mcl.onLoadError = function(target, errorCode) {} emits ActionSetMember (0x4e)", () => {
+  it("mcl.onLoadError = function(target, errorCode) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(
       "var mcl = new MovieClipLoader(); mcl.onLoadError = function(target, errorCode) {};"
     );

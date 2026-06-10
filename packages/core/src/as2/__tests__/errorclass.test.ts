@@ -2,8 +2,8 @@
  * Tests for AS2 parser + compiler: Error class and custom error classes.
  *
  * Verifies that:
- *  - new Error("msg") compiles and emits ActionNew (0x4a)
- *  - e.message and e.name emit ActionGetMember (0x4f)
+ *  - new Error("msg") compiles and emits ActionNew (0x40)
+ *  - e.message and e.name emit ActionGetMember (0x4e)
  *  - Custom classes extending Error compile without error
  *  - throw new MyError("oops") in a try/catch compiles
  */
@@ -35,8 +35,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
   return false;
 }
 
-const ACTION_NEW = 0x4a;        // ActionNew
-const ACTION_GET_MEMBER = 0x4f; // ActionGetMember
+const ACTION_NEW = 0x40;        // ActionNew
+const ACTION_GET_MEMBER = 0x4e; // ActionGetMember
 
 // ---------------------------------------------------------------------------
 // Basic Error construction
@@ -47,7 +47,7 @@ describe("AS2 Error class", () => {
     expect(compilesOk(`new Error("msg");`)).toBe(true);
   });
 
-  it("2. new Error('msg') emits ActionNew (0x4a)", () => {
+  it("2. new Error('msg') emits ActionNew (0x40)", () => {
     const bytes = compileAS2(`new Error("msg");`);
     expect(bytes).toContain(ACTION_NEW);
   });
@@ -69,7 +69,7 @@ describe("AS2 Error class", () => {
     expect(compilesOk(`var e = new Error("oops"); var m = e.message;`)).toBe(true);
   });
 
-  it("6. e.message emits ActionGetMember (0x4f)", () => {
+  it("6. e.message emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(`var e = new Error("oops"); var m = e.message;`);
     expect(bytes).toContain(ACTION_GET_MEMBER);
     expect(containsString(bytes, "message")).toBe(true);
@@ -79,7 +79,7 @@ describe("AS2 Error class", () => {
     expect(compilesOk(`var e = new Error("oops"); var n = e.name;`)).toBe(true);
   });
 
-  it("8. e.name emits ActionGetMember (0x4f)", () => {
+  it("8. e.name emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2(`var e = new Error("oops"); var n = e.name;`);
     expect(bytes).toContain(ACTION_GET_MEMBER);
     expect(containsString(bytes, "name")).toBe(true);
@@ -133,7 +133,7 @@ describe("AS2 Error class", () => {
     ).toBe(true);
   });
 
-  it("12. throw new Error emits ActionThrow (0x2a) and ActionNew (0x4a)", () => {
+  it("12. throw new Error emits ActionThrow (0x2a) and ActionNew (0x40)", () => {
     const bytes = compileAS2(`
       try {
         throw new Error("oops");

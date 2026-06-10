@@ -7,7 +7,7 @@
  *
  * Key opcodes:
  *   - ActionCallFunction (0x3D): global function calls e.g. Number(x), parseInt(…)
- *   - ActionGetMember    (0x4F): member access e.g. Number.MAX_VALUE
+ *   - ActionGetMember    (0x4e): member access e.g. Number.MAX_VALUE
  */
 
 import { describe, it, expect } from "vitest";
@@ -46,7 +46,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_FUNCTION = 0x3d; // ActionCallFunction — global function call
-const ACTION_GET_MEMBER    = 0x4f; // ActionGetMember    — property / member read
+const ACTION_GET_MEMBER    = 0x4e; // ActionGetMember    — property / member read
 
 // ---------------------------------------------------------------------------
 // Number() conversion
@@ -131,7 +131,7 @@ describe("Number static properties", () => {
     expect(compilesOk("var n = Number.MAX_VALUE;")).toBe(true);
   });
 
-  it("14. Number.MAX_VALUE emits ActionGetMember (0x4F)", () => {
+  it("14. Number.MAX_VALUE emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var n = Number.MAX_VALUE;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });

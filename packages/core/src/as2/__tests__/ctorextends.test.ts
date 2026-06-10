@@ -83,10 +83,10 @@ describe("AS2 class extends and multiple constructors", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 4. Instantiation new B() — emits ActionNew (0x4a)
+  // 4. Instantiation new B() — emits ActionNew (0x40)
   // -------------------------------------------------------------------------
 
-  it("4. class with extends emits ActionNew (0x4a) for prototype chain", () => {
+  it("4. class with extends emits ActionNew (0x40) for prototype chain", () => {
     const bytes = compileAS2(`
       class B extends A {
         function B() {
@@ -94,8 +94,8 @@ describe("AS2 class extends and multiple constructors", () => {
         }
       }
     `);
-    // ActionNew (0x4a) is used for `new A()` in prototype chain setup
-    expect(hasOpcode(bytes, 0x4a)).toBe(true);
+    // ActionNew (0x40) is used for `new A()` in prototype chain setup
+    expect(hasOpcode(bytes, 0x40)).toBe(true);
   });
 
   // -------------------------------------------------------------------------
@@ -185,6 +185,6 @@ describe("AS2 class extends and multiple constructors", () => {
     // prototype chain setup
     expect(containsString(bytes, "prototype")).toBe(true);
     // ActionNew for prototype setup
-    expect(hasOpcode(bytes, 0x4a)).toBe(true);
+    expect(hasOpcode(bytes, 0x40)).toBe(true);
   });
 });

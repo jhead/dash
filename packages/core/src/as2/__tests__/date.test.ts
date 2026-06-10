@@ -3,7 +3,7 @@
  *
  * Verifies that Date constructor calls and instance method calls compile
  * without error and emit the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new Date(...))
+ *   - ActionNew        (0x40): constructor calls (new Date(...))
  *   - ActionCallMethod (0x52): method calls (d.getFullYear(), d.setFullYear(), etc.)
  *
  * Notes:
@@ -48,7 +48,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
 
 // ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ describe("Date constructor", () => {
     expect(compilesOk("new Date();")).toBe(true);
   });
 
-  it("new Date() emits ActionNew (0x4a)", () => {
+  it("new Date() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new Date();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Date")).toBe(true);
@@ -70,7 +70,7 @@ describe("Date constructor", () => {
     expect(compilesOk("new Date(2024, 0, 1);")).toBe(true);
   });
 
-  it("new Date(2024, 0, 1) emits ActionNew (0x4a)", () => {
+  it("new Date(2024, 0, 1) emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new Date(2024, 0, 1);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Date")).toBe(true);

@@ -6,7 +6,7 @@
  *
  * Actual AVM1 opcodes:
  *   ActionInitObject  0x43  — { key: value, ... }
- *   ActionInitArray   0x36  — [ el0, el1, ... ]
+ *   ActionInitArray   0x42  — [ el0, el1, ... ]
  */
 
 import { describe, it, expect } from "vitest";
@@ -90,27 +90,27 @@ describe("array literal", () => {
     expect(compilesOk("var a = [1, 2, 3];")).toBe(true);
   });
 
-  it("var a = [1, 2, 3] emits ActionInitArray (0x36)", () => {
+  it("var a = [1, 2, 3] emits ActionInitArray (0x42)", () => {
     const bytes = compileAS2("var a = [1, 2, 3];");
-    expect(containsByte(bytes, 0x36)).toBe(true);
+    expect(containsByte(bytes, 0x42)).toBe(true);
   });
 
   it("var a = [] (empty array) compiles without error", () => {
     expect(compilesOk("var a = [];")).toBe(true);
   });
 
-  it("empty array emits ActionInitArray (0x36)", () => {
+  it("empty array emits ActionInitArray (0x42)", () => {
     const bytes = compileAS2("var a = [];");
-    expect(containsByte(bytes, 0x36)).toBe(true);
+    expect(containsByte(bytes, 0x42)).toBe(true);
   });
 
   it("array with string elements compiles", () => {
     expect(compilesOk('var a = ["hello", "world"];')).toBe(true);
   });
 
-  it("array with string elements emits ActionInitArray (0x36)", () => {
+  it("array with string elements emits ActionInitArray (0x42)", () => {
     const bytes = compileAS2('var a = ["hello", "world"];');
-    expect(containsByte(bytes, 0x36)).toBe(true);
+    expect(containsByte(bytes, 0x42)).toBe(true);
     expect(containsString(bytes, "hello")).toBe(true);
     expect(containsString(bytes, "world")).toBe(true);
   });
@@ -148,9 +148,9 @@ describe("mixed array of objects", () => {
     expect(compilesOk("var m = [{x:1}, {x:2}];")).toBe(true);
   });
 
-  it("mixed array emits ActionInitArray (0x36)", () => {
+  it("mixed array emits ActionInitArray (0x42)", () => {
     const bytes = compileAS2("var m = [{x:1}, {x:2}];");
-    expect(containsByte(bytes, 0x36)).toBe(true);
+    expect(containsByte(bytes, 0x42)).toBe(true);
   });
 
   it("mixed array emits ActionInitObject (0x43) for each element object", () => {

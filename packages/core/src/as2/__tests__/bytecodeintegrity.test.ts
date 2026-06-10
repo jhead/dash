@@ -26,10 +26,10 @@ describe("AVM1 bytecode integrity", () => {
     expect(bytes.includes(0x26)).toBe(true); // ActionTrace
   });
 
-  it("var x = 1 contains ActionDefineLocal (0x42 or 0x41)", () => {
+  it("var x = 1 contains ActionDefineLocal (0x3c or 0x41)", () => {
     const bytes = getBytes(`var x = 1;`);
-    // ActionDefineLocal = 0x42 or ActionDefineLocal2 = 0x41
-    const hasDefineLocal = bytes.includes(0x42) || bytes.includes(0x41);
+    // ActionDefineLocal = 0x3c or ActionDefineLocal2 = 0x41
+    const hasDefineLocal = bytes.includes(0x3c) || bytes.includes(0x41);
     expect(hasDefineLocal).toBe(true);
   });
 
@@ -53,9 +53,9 @@ describe("AVM1 bytecode integrity", () => {
     expect(bytes.includes(0x8e)).toBe(true); // ActionDefineFunction2
   });
 
-  it("new Foo() contains ActionNew (0x4a)", () => {
+  it("new Foo() contains ActionNew (0x40)", () => {
     const bytes = getBytes(`var f = new Foo();`);
-    expect(bytes.includes(0x4a)).toBe(true); // ActionNew
+    expect(bytes.includes(0x40)).toBe(true); // ActionNew
   });
 
   it("mc.play() contains ActionCallMethod (0x52)", () => {
@@ -63,14 +63,14 @@ describe("AVM1 bytecode integrity", () => {
     expect(bytes.includes(0x52)).toBe(true); // ActionCallMethod
   });
 
-  it("mc.x = 1 contains ActionSetMember (0x4e)", () => {
+  it("mc.x = 1 contains ActionSetMember (0x4f)", () => {
     const bytes = getBytes(`mc.x = 1;`);
-    expect(bytes.includes(0x4e)).toBe(true); // ActionSetMember
+    expect(bytes.includes(0x4f)).toBe(true); // ActionSetMember
   });
 
-  it("mc.x access contains ActionGetMember (0x4f)", () => {
+  it("mc.x access contains ActionGetMember (0x4e)", () => {
     const bytes = getBytes(`var x = mc.x;`);
-    expect(bytes.includes(0x4f)).toBe(true); // ActionGetMember
+    expect(bytes.includes(0x4e)).toBe(true); // ActionGetMember
   });
 
   it("output is non-empty Uint8Array", () => {

@@ -5,7 +5,7 @@
  * produce the expected opcodes.
  *
  * Relevant AVM1 opcodes:
- *   ActionNot      0x14  — logical NOT (!)
+ *   ActionNot      0x12  — logical NOT (!)
  *   ActionBitXor   0x62  — bitwise NOT (~x compiled as x ^ -1)
  *   ActionNegate   0x18  — unary minus (-)
  *   ActionTypeOf   0x44  — typeof
@@ -47,23 +47,23 @@ describe("logical NOT operator (!)", () => {
     expect(compilesOk("!x;")).toBe(true);
   });
 
-  it("!x emits ActionNot (0x14)", () => {
+  it("!x emits ActionNot (0x12)", () => {
     const bytes = compileAS2("!x;");
-    expect(containsByte(bytes, 0x14)).toBe(true); // ActionNot
+    expect(containsByte(bytes, 0x12)).toBe(true); // ActionNot
   });
 
-  it("!!x emits ActionNot twice (0x14, 0x14)", () => {
+  it("!!x emits ActionNot twice (0x12, 0x12)", () => {
     const bytes = compileAS2("!!x;");
-    expect(countByte(bytes, 0x14)).toBeGreaterThanOrEqual(2);
+    expect(countByte(bytes, 0x12)).toBeGreaterThanOrEqual(2);
   });
 
   it("!true compiles without error", () => {
     expect(compilesOk("!true;")).toBe(true);
   });
 
-  it("!true emits ActionNot (0x14)", () => {
+  it("!true emits ActionNot (0x12)", () => {
     const bytes = compileAS2("!true;");
-    expect(containsByte(bytes, 0x14)).toBe(true); // ActionNot
+    expect(containsByte(bytes, 0x12)).toBe(true); // ActionNot
   });
 });
 

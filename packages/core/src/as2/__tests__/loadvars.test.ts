@@ -4,10 +4,10 @@
  * Verifies that LoadVars and SharedObject constructor calls, instance method
  * calls, property accesses, and callbacks compile without error and emit
  * the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new LoadVars(), etc.)
+ *   - ActionNew        (0x40): constructor calls (new LoadVars(), etc.)
  *   - ActionCallMethod (0x52): method calls (lv.load(), lv.send(), etc.)
- *   - ActionGetMember  (0x4f): property reads (lv.getBytesLoaded, etc.)
- *   - ActionSetMember  (0x4e): property writes (lv.onLoad = ..., so.data.score = ...)
+ *   - ActionGetMember  (0x4e): property reads (lv.getBytesLoaded, etc.)
+ *   - ActionSetMember  (0x4f): property writes (lv.onLoad = ..., so.data.score = ...)
  */
 
 import { describe, it, expect } from "vitest";
@@ -45,10 +45,10 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // LoadVars constructor
@@ -59,7 +59,7 @@ describe("LoadVars constructor", () => {
     expect(compilesOk("var lv = new LoadVars();")).toBe(true);
   });
 
-  it("new LoadVars() emits ActionNew (0x4a)", () => {
+  it("new LoadVars() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var lv = new LoadVars();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "LoadVars")).toBe(true);
@@ -123,7 +123,7 @@ describe("LoadVars.onLoad callback", () => {
     expect(compilesOk('var lv = new LoadVars(); lv.onLoad = function(success) {};')).toBe(true);
   });
 
-  it("lv.onLoad = function(success) {} emits ActionSetMember (0x4e)", () => {
+  it("lv.onLoad = function(success) {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2('var lv = new LoadVars(); lv.onLoad = function(success) {};');
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onLoad")).toBe(true);
@@ -171,7 +171,7 @@ describe("SharedObject data property assignment", () => {
     expect(compilesOk('var so = SharedObject.getLocal("prefs"); so.data.score = 100;')).toBe(true);
   });
 
-  it("so.data.score = 100 emits ActionSetMember (0x4e)", () => {
+  it("so.data.score = 100 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2('var so = SharedObject.getLocal("prefs"); so.data.score = 100;');
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "score")).toBe(true);

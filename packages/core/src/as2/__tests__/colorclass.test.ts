@@ -3,7 +3,7 @@
  *
  * Verifies that Color constructor calls and instance method calls compile
  * without error and emit the correct AVM1 opcodes:
- *   - ActionNew        (0x4a): constructor calls (new Color(target))
+ *   - ActionNew        (0x40): constructor calls (new Color(target))
  *   - ActionCallMethod (0x52): method calls (c.setRGB(), c.getRGB(), etc.)
  */
 
@@ -42,7 +42,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
 
 // ---------------------------------------------------------------------------
@@ -54,7 +54,7 @@ describe("Color constructor", () => {
     expect(compilesOk("new Color(target);")).toBe(true);
   });
 
-  it("new Color(target) emits ActionNew (0x4a)", () => {
+  it("new Color(target) emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new Color(target);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Color")).toBe(true);
@@ -64,7 +64,7 @@ describe("Color constructor", () => {
     expect(compilesOk("var c = new Color(target);")).toBe(true);
   });
 
-  it("var c = new Color(target) emits ActionNew (0x4a)", () => {
+  it("var c = new Color(target) emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var c = new Color(target);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Color")).toBe(true);

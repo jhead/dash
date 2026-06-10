@@ -26,7 +26,7 @@ function containsByte(bytes: Uint8Array, byte: number): boolean {
 }
 
 const ACTION_INSTANCE_OF = 0x54; // ActionInstanceOf
-const ACTION_NEW = 0x4a; // ActionNew
+const ACTION_NEW = 0x40; // ActionNew
 
 // ---------------------------------------------------------------------------
 // instanceof with built-in types
@@ -77,7 +77,7 @@ describe("instanceof with built-in types", () => {
     expect(compilesOk("null instanceof Array;")).toBe(true);
   });
 
-  it("10. (new Array()) instanceof Array compiles and emits ActionInstanceOf (0x54) and ActionNew (0x4a)", () => {
+  it("10. (new Array()) instanceof Array compiles and emits ActionInstanceOf (0x54) and ActionNew (0x40)", () => {
     const bytes = compileAS2("(new Array()) instanceof Array;");
     expect(containsByte(bytes, ACTION_INSTANCE_OF)).toBe(true);
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);

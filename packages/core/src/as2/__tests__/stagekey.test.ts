@@ -4,8 +4,8 @@
  * Verifies that Stage property reads and writes, Stage method calls,
  * Key method calls and constant accesses, and Mouse method calls
  * compile without error and emit the correct AVM1 opcodes:
- *   - ActionGetMember  (0x4f): property reads (Stage.width, Key.UP, etc.)
- *   - ActionSetMember  (0x4e): property writes (Stage.align = "TL", etc.)
+ *   - ActionGetMember  (0x4e): property reads (Stage.width, Key.UP, etc.)
+ *   - ActionSetMember  (0x4f): property writes (Stage.align = "TL", etc.)
  *   - ActionCallMethod (0x52): method calls (Stage.addListener, Mouse.hide, etc.)
  *   - ActionGetVariable(0x1c): variable access (Stage, Key, etc.)
  */
@@ -46,8 +46,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_GET_VARIABLE = 0x1c; // ActionGetVariable — variable lookup
-const ACTION_GET_MEMBER   = 0x4f; // ActionGetMember  — property read
-const ACTION_SET_MEMBER   = 0x4e; // ActionSetMember  — property write
+const ACTION_GET_MEMBER   = 0x4e; // ActionGetMember  — property read
+const ACTION_SET_MEMBER   = 0x4f; // ActionSetMember  — property write
 const ACTION_CALL_METHOD  = 0x52; // ActionCallMethod — method dispatch
 
 // ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ describe("Stage.width", () => {
     expect(compilesOk("Stage.width;")).toBe(true);
   });
 
-  it("Stage.width emits ActionGetVariable (0x1c) and ActionGetMember (0x4f)", () => {
+  it("Stage.width emits ActionGetVariable (0x1c) and ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("Stage.width;");
     expect(containsByte(bytes, ACTION_GET_VARIABLE)).toBe(true);
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
@@ -77,7 +77,7 @@ describe("Stage.height", () => {
     expect(compilesOk("Stage.height;")).toBe(true);
   });
 
-  it("Stage.height emits ActionGetMember (0x4f)", () => {
+  it("Stage.height emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("Stage.height;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "height")).toBe(true);
@@ -94,7 +94,7 @@ describe('Stage.align = "TL"', () => {
     expect(compilesOk('Stage.align = "TL";')).toBe(true);
   });
 
-  it('Stage.align = "TL" emits ActionSetMember (0x4e)', () => {
+  it('Stage.align = "TL" emits ActionSetMember (0x4f)', () => {
     const bytes = compileAS2('Stage.align = "TL";');
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "align")).toBe(true);
@@ -111,7 +111,7 @@ describe('Stage.scaleMode = "noScale"', () => {
     expect(compilesOk('Stage.scaleMode = "noScale";')).toBe(true);
   });
 
-  it('Stage.scaleMode = "noScale" emits ActionSetMember (0x4e)', () => {
+  it('Stage.scaleMode = "noScale" emits ActionSetMember (0x4f)', () => {
     const bytes = compileAS2('Stage.scaleMode = "noScale";');
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "scaleMode")).toBe(true);
@@ -179,7 +179,7 @@ describe("Key.UP constant", () => {
     expect(compilesOk("var k = Key.UP;")).toBe(true);
   });
 
-  it("Key.UP emits ActionGetMember (0x4f)", () => {
+  it("Key.UP emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.UP;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "UP")).toBe(true);
@@ -196,7 +196,7 @@ describe("Key.ENTER constant", () => {
     expect(compilesOk("var k = Key.ENTER;")).toBe(true);
   });
 
-  it("Key.ENTER emits ActionGetMember (0x4f)", () => {
+  it("Key.ENTER emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.ENTER;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "ENTER")).toBe(true);
@@ -213,7 +213,7 @@ describe("Key.SPACE constant", () => {
     expect(compilesOk("var k = Key.SPACE;")).toBe(true);
   });
 
-  it("Key.SPACE emits ActionGetMember (0x4f)", () => {
+  it("Key.SPACE emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("var k = Key.SPACE;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "SPACE")).toBe(true);

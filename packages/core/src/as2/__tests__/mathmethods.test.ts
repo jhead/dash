@@ -4,7 +4,7 @@
  * Verifies that Math method calls and property accesses compile without error
  * and emit the correct AVM1 opcodes:
  *   - ActionCallMethod (0x52): method calls (Math.abs(x), Math.floor(x), etc.)
- *   - ActionGetMember  (0x4f): property reads (Math.PI, Math.E)
+ *   - ActionGetMember  (0x4e): property reads (Math.PI, Math.E)
  */
 
 import { describe, it, expect } from "vitest";
@@ -43,7 +43,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 
 // ---------------------------------------------------------------------------
 // Math single-argument methods
@@ -215,7 +215,7 @@ describe("Math properties", () => {
     expect(compilesOk("Math.PI;")).toBe(true);
   });
 
-  it("Math.PI emits ActionGetMember (0x4f)", () => {
+  it("Math.PI emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("Math.PI;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "PI")).toBe(true);
@@ -226,7 +226,7 @@ describe("Math properties", () => {
     expect(compilesOk("Math.E;")).toBe(true);
   });
 
-  it("Math.E emits ActionGetMember (0x4f)", () => {
+  it("Math.E emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("Math.E;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "E")).toBe(true);

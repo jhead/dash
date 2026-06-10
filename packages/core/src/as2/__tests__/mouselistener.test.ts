@@ -6,7 +6,7 @@
  * Mouse.show(), and listener handler assignments (onMouseDown, onMouseUp,
  * onMouseMove) compile without error and emit the correct AVM1 opcodes:
  *   - ActionCallMethod (0x52): method calls (Mouse.addListener(), etc.)
- *   - ActionSetMember  (0x4e): handler assignments (listener.onMouseDown = ...)
+ *   - ActionSetMember  (0x4f): handler assignments (listener.onMouseDown = ...)
  */
 
 import { describe, it, expect } from "vitest";
@@ -45,7 +45,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_SET_MEMBER  = 0x4e; // ActionSetMember  — property write
+const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property write
 
 // ---------------------------------------------------------------------------
 // Mouse.addListener()
@@ -124,7 +124,7 @@ describe("listener.onMouseDown handler assignment", () => {
     expect(compilesOk("var listener = {}; listener.onMouseDown = function() {};")).toBe(true);
   });
 
-  it("listener.onMouseDown = function() {} emits ActionSetMember (0x4e)", () => {
+  it("listener.onMouseDown = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var listener = {}; listener.onMouseDown = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onMouseDown")).toBe(true);
@@ -140,7 +140,7 @@ describe("listener.onMouseUp handler assignment", () => {
     expect(compilesOk("var listener = {}; listener.onMouseUp = function() {};")).toBe(true);
   });
 
-  it("listener.onMouseUp = function() {} emits ActionSetMember (0x4e)", () => {
+  it("listener.onMouseUp = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var listener = {}; listener.onMouseUp = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onMouseUp")).toBe(true);
@@ -156,7 +156,7 @@ describe("listener.onMouseMove handler assignment", () => {
     expect(compilesOk("var listener = {}; listener.onMouseMove = function() {};")).toBe(true);
   });
 
-  it("listener.onMouseMove = function() {} emits ActionSetMember (0x4e)", () => {
+  it("listener.onMouseMove = function() {} emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2("var listener = {}; listener.onMouseMove = function() {};");
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);
     expect(containsString(bytes, "onMouseMove")).toBe(true);

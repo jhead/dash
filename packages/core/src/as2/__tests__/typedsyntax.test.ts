@@ -83,9 +83,9 @@ describe("AS2 typed variable declarations", () => {
     expect(containsString(bytes, "x")).toBe(true);
   });
 
-  it("var x:Number = 5 emits ActionDefineLocal (0x42) for initialised var", () => {
+  it("var x:Number = 5 emits ActionDefineLocal (0x3c) for initialised var", () => {
     const bytes = compileAS2("var x:Number = 5;");
-    expect(containsByte(bytes, 0x42)).toBe(true); // ActionDefineLocal
+    expect(containsByte(bytes, 0x3c)).toBe(true); // ActionDefineLocal
   });
 
   it("var mc:MovieClip emits ActionDefineLocal2 (0x41) for uninitialised var", () => {

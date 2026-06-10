@@ -3,7 +3,7 @@
  *
  * Verifies that string method calls compile to correct AVM1 opcodes:
  *   - ActionCallMethod (0x52): method calls (str.charAt(0), str.indexOf("x"), etc.)
- *   - ActionGetMember  (0x4f): property reads (str.length)
+ *   - ActionGetMember  (0x4e): property reads (str.length)
  *   - ActionStringAdd  (0x21): string concatenation ("a" + "b")
  *   - ActionEquals2   (0x49): string comparison ("a" == "b")
  */
@@ -44,7 +44,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 
 // ---------------------------------------------------------------------------
 // charAt
@@ -215,7 +215,7 @@ describe("String length property", () => {
     expect(compilesOk('var str = "hello"; var n = str.length;')).toBe(true);
   });
 
-  it("str.length emits ActionGetMember (0x4f), not ActionCallMethod", () => {
+  it("str.length emits ActionGetMember (0x4e), not ActionCallMethod", () => {
     const bytes = compileAS2('var str = "hello"; var n = str.length;');
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "length")).toBe(true);

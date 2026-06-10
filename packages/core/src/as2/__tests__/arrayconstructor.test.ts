@@ -3,10 +3,10 @@
  *
  * Verifies that array construction and initialization compile to the correct
  * AVM1 bytecode opcodes:
- *   - ActionNew       (0x4a): new Array() constructor calls
- *   - ActionInitArray (0x36): array literal syntax []
- *   - ActionGetMember (0x4f): array element read and .length access
- *   - ActionSetMember (0x4e): array element assignment
+ *   - ActionNew       (0x40): new Array() constructor calls
+ *   - ActionInitArray (0x42): array literal syntax []
+ *   - ActionGetMember (0x4e): array element read and .length access
+ *   - ActionSetMember (0x4f): array element assignment
  */
 
 import { describe, it, expect } from "vitest";
@@ -44,17 +44,17 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW        = 0x4a; // ActionNew        — constructor call
-const ACTION_INIT_ARRAY = 0x36; // ActionInitArray  — array literal
-const ACTION_GET_MEMBER = 0x4f; // ActionGetMember  — property/element read
-const ACTION_SET_MEMBER = 0x4e; // ActionSetMember  — property/element write
+const ACTION_NEW        = 0x40; // ActionNew        — constructor call
+const ACTION_INIT_ARRAY = 0x42; // ActionInitArray  — array literal
+const ACTION_GET_MEMBER = 0x4e; // ActionGetMember  — property/element read
+const ACTION_SET_MEMBER = 0x4f; // ActionSetMember  — property/element write
 
 // ---------------------------------------------------------------------------
 // Test 1: new Array() — no-arg constructor
 // ---------------------------------------------------------------------------
 
 describe("AS2 Array constructor and initialization", () => {
-  it("1. new Array() emits ActionNew (0x4a)", () => {
+  it("1. new Array() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new Array();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Array")).toBe(true);
@@ -64,7 +64,7 @@ describe("AS2 Array constructor and initialization", () => {
   // Test 2: new Array(5) — single numeric argument
   // -------------------------------------------------------------------------
 
-  it("2. new Array(5) emits ActionNew (0x4a) with arg", () => {
+  it("2. new Array(5) emits ActionNew (0x40) with arg", () => {
     const bytes = compileAS2("new Array(5);");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Array")).toBe(true);
@@ -74,7 +74,7 @@ describe("AS2 Array constructor and initialization", () => {
   // Test 3: new Array('a','b','c') — multiple arguments
   // -------------------------------------------------------------------------
 
-  it("3. new Array('a','b','c') emits ActionNew (0x4a)", () => {
+  it("3. new Array('a','b','c') emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new Array('a', 'b', 'c');");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "Array")).toBe(true);
@@ -84,7 +84,7 @@ describe("AS2 Array constructor and initialization", () => {
   // Test 4: var arr = [] — empty array literal
   // -------------------------------------------------------------------------
 
-  it("4. var arr = [] emits ActionInitArray (0x36)", () => {
+  it("4. var arr = [] emits ActionInitArray (0x42)", () => {
     const bytes = compileAS2("var arr = [];");
     expect(containsByte(bytes, ACTION_INIT_ARRAY)).toBe(true);
   });
@@ -93,7 +93,7 @@ describe("AS2 Array constructor and initialization", () => {
   // Test 5: var arr = [1, 2, 3] — array literal with elements
   // -------------------------------------------------------------------------
 
-  it("5. var arr = [1, 2, 3] emits ActionInitArray (0x36)", () => {
+  it("5. var arr = [1, 2, 3] emits ActionInitArray (0x42)", () => {
     const bytes = compileAS2("var arr = [1, 2, 3];");
     expect(containsByte(bytes, ACTION_INIT_ARRAY)).toBe(true);
   });
@@ -102,7 +102,7 @@ describe("AS2 Array constructor and initialization", () => {
   // Test 6: var arr = [[1,2],[3,4]] — nested array literals
   // -------------------------------------------------------------------------
 
-  it("6. var arr = [[1,2],[3,4]] emits ActionInitArray (0x36) for nested arrays", () => {
+  it("6. var arr = [[1,2],[3,4]] emits ActionInitArray (0x42) for nested arrays", () => {
     const bytes = compileAS2("var arr = [[1, 2], [3, 4]];");
     expect(containsByte(bytes, ACTION_INIT_ARRAY)).toBe(true);
   });
@@ -111,12 +111,12 @@ describe("AS2 Array constructor and initialization", () => {
   // Test 7: arr[0] — bracket read access
   // -------------------------------------------------------------------------
 
-  it("7. arr[0] emits ActionGetMember (0x4f) or ActionGetVariable for bracket access", () => {
+  it("7. arr[0] emits ActionGetMember (0x4e) or ActionGetVariable for bracket access", () => {
     const bytes = compileAS2(`
       var arr = [1, 2, 3];
       var x = arr[0];
     `);
-    // Bracket access compiles to ActionGetMember (0x4f)
+    // Bracket access compiles to ActionGetMember (0x4e)
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
 
@@ -124,7 +124,7 @@ describe("AS2 Array constructor and initialization", () => {
   // Test 8: arr[0] = 5 — bracket write access
   // -------------------------------------------------------------------------
 
-  it("8. arr[0] = 5 emits ActionSetMember (0x4e)", () => {
+  it("8. arr[0] = 5 emits ActionSetMember (0x4f)", () => {
     const bytes = compileAS2(`
       var arr = [1, 2, 3];
       arr[0] = 5;
@@ -136,7 +136,7 @@ describe("AS2 Array constructor and initialization", () => {
   // Test 9: arr.length — property access
   // -------------------------------------------------------------------------
 
-  it("9. arr.length emits ActionGetMember (0x4f) for 'length'", () => {
+  it("9. arr.length emits ActionGetMember (0x4e) for 'length'", () => {
     const bytes = compileAS2(`
       var arr = [1, 2, 3];
       var n = arr.length;

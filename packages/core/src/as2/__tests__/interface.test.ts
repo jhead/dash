@@ -87,8 +87,8 @@ describe("AS2 interface keyword support", () => {
     // ActionDefineFunction2 (0x8e) for constructor + instance method
     expect(withImpl).toContain(0x8e);
 
-    // ActionSetMember (0x4e) to assign onto prototype
-    expect(withImpl).toContain(0x4e);
+    // ActionSetMember (0x4f) to assign onto prototype
+    expect(withImpl).toContain(0x4f);
 
     // The bytecode with implements should be identical to without implements
     const withoutImpl = compileAS2(`

@@ -10,19 +10,19 @@
  *   ActionPush          0x96 — push a typed constant onto the stack
  *   ActionGetVariable   0x1c — resolve a variable name to its value
  *   ActionSetVariable   0x1d — pop name + value, assign to variable
- *   ActionDefineLocal   0x42 — declare + initialise a local variable
+ *   ActionDefineLocal   0x3c — declare + initialise a local variable
  *   ActionDefineLocal2  0x41 — declare a local variable (undefined)
- *   ActionAdd2          0x64 — pop two values, push their sum
+ *   ActionAdd2          0x47 — pop two values, push their sum
  *   ActionSubtract      0x0b — pop two values, push difference
  *   ActionMultiply      0x0c — pop two values, push product
  *   ActionDivide        0x0d — pop two values, push quotient
- *   ActionModulo        0x63 — pop two values, push remainder
- *   ActionNot           0x14 — pop value, push logical NOT
- *   ActionEquals2       0x66 — pop two values, push true if equal
- *   ActionLess2         0x65 — pop two values, push true if left < right
+ *   ActionModulo        0x3f — pop two values, push remainder
+ *   ActionNot           0x12 — pop value, push logical NOT
+ *   ActionEquals2       0x49 — pop two values, push true if equal
+ *   ActionLess2         0x48 — pop two values, push true if left < right
  *   ActionGreater       0x67 — pop two values, push true if left > right
- *   ActionIncrement     0x47 — pop value, push value + 1
- *   ActionDecrement     0x48 — pop value, push value - 1
+ *   ActionIncrement     0x50 — pop value, push value + 1
+ *   ActionDecrement     0x51 — pop value, push value - 1
  *   ActionPop           0x17 — discard top of stack
  *   ActionIf            0x9d — conditional branch
  *   ActionJump          0x99 — unconditional branch
@@ -188,8 +188,8 @@ describe("AVM1 expression eval: ActionPush numeric constants", () => {
 // ---------------------------------------------------------------------------
 
 describe("AVM1 expression eval: variable declaration", () => {
-  it("var x = 5 emits ActionDefineLocal (0x42)", () => {
-    expect(hasByte(compile("var x = 5;"), 0x42)).toBe(true);
+  it("var x = 5 emits ActionDefineLocal (0x3c)", () => {
+    expect(hasByte(compile("var x = 5;"), 0x3c)).toBe(true);
   });
 
   it("var x = 5 pushes the variable name 'x' as a string before ActionDefineLocal", () => {
@@ -205,9 +205,9 @@ describe("AVM1 expression eval: variable declaration", () => {
     expect(ints).toContain(5);
   });
 
-  it("multiple var declarations emit ActionDefineLocal (0x42) for each initialised one", () => {
+  it("multiple var declarations emit ActionDefineLocal (0x3c) for each initialised one", () => {
     const bytes = compile("var a = 1; var b = 2;");
-    expect(countByte(bytes, 0x42)).toBeGreaterThanOrEqual(2);
+    expect(countByte(bytes, 0x3c)).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -236,9 +236,9 @@ describe("AVM1 expression eval: variable reads (ActionGetVariable)", () => {
 // 4. Arithmetic expressions
 // ---------------------------------------------------------------------------
 
-describe("AVM1 expression eval: addition (ActionAdd2 0x64)", () => {
-  it("a + b emits ActionAdd2 (0x64)", () => {
-    expect(hasByte(compile("var a = 1; var b = 2; a + b;"), 0x64)).toBe(true);
+describe("AVM1 expression eval: addition (ActionAdd2 0x47)", () => {
+  it("a + b emits ActionAdd2 (0x47)", () => {
+    expect(hasByte(compile("var a = 1; var b = 2; a + b;"), 0x47)).toBe(true);
   });
 
   it("1 + 2 compiles without error", () => {
@@ -269,7 +269,7 @@ describe("AVM1 expression eval: multiplication (ActionMultiply 0x0c)", () => {
   it("operator precedence: 2 + 3 * 4 emits both ActionMultiply and ActionAdd2", () => {
     const bytes = compile("2 + 3 * 4;");
     expect(hasByte(bytes, 0x0c)).toBe(true); // ActionMultiply
-    expect(hasByte(bytes, 0x64)).toBe(true); // ActionAdd2
+    expect(hasByte(bytes, 0x47)).toBe(true); // ActionAdd2
   });
 });
 
@@ -279,9 +279,9 @@ describe("AVM1 expression eval: division (ActionDivide 0x0d)", () => {
   });
 });
 
-describe("AVM1 expression eval: modulo (ActionModulo 0x63)", () => {
-  it("a % b emits ActionModulo (0x63)", () => {
-    expect(hasByte(compile("var a = 7; var b = 3; a % b;"), 0x63)).toBe(true);
+describe("AVM1 expression eval: modulo (ActionModulo 0x3f)", () => {
+  it("a % b emits ActionModulo (0x3f)", () => {
+    expect(hasByte(compile("var a = 7; var b = 3; a % b;"), 0x3f)).toBe(true);
   });
 });
 
@@ -289,25 +289,25 @@ describe("AVM1 expression eval: modulo (ActionModulo 0x63)", () => {
 // 5. Comparison expressions
 // ---------------------------------------------------------------------------
 
-describe("AVM1 expression eval: equality (ActionEquals2 0x66)", () => {
-  it("a == b emits ActionEquals2 (0x66)", () => {
-    expect(hasByte(compile("var a = 1; var b = 1; a == b;"), 0x66)).toBe(true);
+describe("AVM1 expression eval: equality (Equals2 0x49 / StrictEquals 0x66)", () => {
+  it("a == b emits ActionEquals2 (0x49)", () => {
+    expect(hasByte(compile("var a = 1; var b = 1; a == b;"), 0x49)).toBe(true);
   });
 
-  it("a === b emits ActionEquals2 (0x66)", () => {
+  it("a === b emits ActionStrictEquals (0x66)", () => {
     expect(hasByte(compile("var a = 1; var b = 1; a === b;"), 0x66)).toBe(true);
   });
 
-  it("a != b emits ActionEquals2 (0x66) followed by ActionNot (0x14)", () => {
+  it("a != b emits ActionEquals2 (0x49) followed by ActionNot (0x12)", () => {
     const bytes = compile("var a = 1; var b = 2; a != b;");
-    expect(hasByte(bytes, 0x66)).toBe(true);
-    expect(hasByte(bytes, 0x14)).toBe(true);
+    expect(hasByte(bytes, 0x49)).toBe(true);
+    expect(hasByte(bytes, 0x12)).toBe(true);
   });
 });
 
-describe("AVM1 expression eval: less-than (ActionLess2 0x65)", () => {
-  it("a < b emits ActionLess2 (0x65)", () => {
-    expect(hasByte(compile("var a = 1; var b = 2; a < b;"), 0x65)).toBe(true);
+describe("AVM1 expression eval: less-than (ActionLess2 0x48)", () => {
+  it("a < b emits ActionLess2 (0x48)", () => {
+    expect(hasByte(compile("var a = 1; var b = 2; a < b;"), 0x48)).toBe(true);
   });
 });
 
@@ -318,39 +318,39 @@ describe("AVM1 expression eval: greater-than (ActionGreater 0x67)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Logical NOT (ActionNot 0x14)
+// 6. Logical NOT (ActionNot 0x12)
 // ---------------------------------------------------------------------------
 
-describe("AVM1 expression eval: logical NOT (ActionNot 0x14)", () => {
-  it("!x emits ActionNot (0x14)", () => {
-    expect(hasByte(compile("var x = true; !x;"), 0x14)).toBe(true);
+describe("AVM1 expression eval: logical NOT (ActionNot 0x12)", () => {
+  it("!x emits ActionNot (0x12)", () => {
+    expect(hasByte(compile("var x = true; !x;"), 0x12)).toBe(true);
   });
 
   it("!!x emits ActionNot twice", () => {
     const bytes = compile("var x = true; !!x;");
-    expect(countByte(bytes, 0x14)).toBeGreaterThanOrEqual(2);
+    expect(countByte(bytes, 0x12)).toBeGreaterThanOrEqual(2);
   });
 
   it("!true emits ActionPush boolean type and ActionNot", () => {
     const bytes = compile("!true;");
     expect(hasByte(bytes, 0x96)).toBe(true); // ActionPush for boolean
-    expect(hasByte(bytes, 0x14)).toBe(true); // ActionNot
+    expect(hasByte(bytes, 0x12)).toBe(true); // ActionNot
   });
 });
 
 // ---------------------------------------------------------------------------
-// 7. Increment / Decrement (ActionIncrement 0x47, ActionDecrement 0x48)
+// 7. Increment / Decrement (ActionIncrement 0x50, ActionDecrement 0x51)
 // ---------------------------------------------------------------------------
 
-describe("AVM1 expression eval: prefix increment (ActionIncrement 0x47)", () => {
-  it("++x emits ActionIncrement (0x47)", () => {
-    expect(hasByte(compile("var x = 0; ++x;"), 0x47)).toBe(true);
+describe("AVM1 expression eval: prefix increment (ActionIncrement 0x50)", () => {
+  it("++x emits ActionIncrement (0x50)", () => {
+    expect(hasByte(compile("var x = 0; ++x;"), 0x50)).toBe(true);
   });
 });
 
-describe("AVM1 expression eval: prefix decrement (ActionDecrement 0x48)", () => {
-  it("--x emits ActionDecrement (0x48)", () => {
-    expect(hasByte(compile("var x = 5; --x;"), 0x48)).toBe(true);
+describe("AVM1 expression eval: prefix decrement (ActionDecrement 0x51)", () => {
+  it("--x emits ActionDecrement (0x51)", () => {
+    expect(hasByte(compile("var x = 5; --x;"), 0x51)).toBe(true);
   });
 });
 

@@ -118,7 +118,7 @@ describe("AS2 class access modifiers (public / private)", () => {
     expect(containsString(bytes, "getName")).toBe(true);
     // ActionDefineFunction2 (0x8e) for method definitions
     expect(bytes).toContain(0x8e);
-    // ActionSetMember (0x4e) for prototype assignments
-    expect(bytes).toContain(0x4e);
+    // ActionSetMember (0x4f) for prototype assignments
+    expect(bytes).toContain(0x4f);
   });
 });

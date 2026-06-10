@@ -41,11 +41,11 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_ADD2      = 0x64; // ActionAdd2
+const ACTION_ADD2      = 0x47; // ActionAdd2
 const ACTION_SUBTRACT  = 0x0b; // ActionSubtract
 const ACTION_MULTIPLY  = 0x0c; // ActionMultiply
 const ACTION_DIVIDE    = 0x0d; // ActionDivide
-const ACTION_MODULO    = 0x63; // ActionModulo
+const ACTION_MODULO    = 0x3f; // ActionModulo
 
 // ---------------------------------------------------------------------------
 // Chained assignment
@@ -80,7 +80,7 @@ describe("AS2 += compound assignment", () => {
     expect(compilesOk("var x = 0; x += 5;")).toBe(true);
   });
 
-  it("x += 5 emits ActionAdd2 (0x64)", () => {
+  it("x += 5 emits ActionAdd2 (0x47)", () => {
     const bytes = compileAS2("var x = 0; x += 5;");
     expect(containsByte(bytes, ACTION_ADD2)).toBe(true);
   });
@@ -145,7 +145,7 @@ describe("AS2 %= compound assignment", () => {
     expect(compilesOk("var x = 10; x %= 3;")).toBe(true);
   });
 
-  it("x %= 3 emits ActionModulo (0x63)", () => {
+  it("x %= 3 emits ActionModulo (0x3f)", () => {
     const bytes = compileAS2("var x = 10; x %= 3;");
     expect(containsByte(bytes, ACTION_MODULO)).toBe(true);
   });
@@ -160,7 +160,7 @@ describe("AS2 nested compound assignment", () => {
     expect(compilesOk("var x = 0; var y = 0; x += y += 5;")).toBe(true);
   });
 
-  it("x += y += 5 emits ActionAdd2 (0x64)", () => {
+  it("x += y += 5 emits ActionAdd2 (0x47)", () => {
     const bytes = compileAS2("var x = 0; var y = 0; x += y += 5;");
     expect(containsByte(bytes, ACTION_ADD2)).toBe(true);
   });

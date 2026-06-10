@@ -5,11 +5,11 @@
  * produce the expected opcodes.
  *
  * Actual AVM1 opcodes emitted by the compiler:
- *   ActionLess2   0x65  — a < b  (note: 0x65 in SWF6 = ActionLess2)
+ *   ActionLess2   0x48  — a < b  (note: 0x48 in SWF6 = ActionLess2)
  *   ActionGreater 0x67  — a > b
- *   ActionGreater 0x67  + ActionNot 0x14  — a <= b  (NOT greater-than)
- *   ActionLess2   0x65  + ActionNot 0x14  — a >= b  (NOT less-than)
- *   ActionNot     0x14  — logical not
+ *   ActionGreater 0x67  + ActionNot 0x12  — a <= b  (NOT greater-than)
+ *   ActionLess2   0x48  + ActionNot 0x12  — a >= b  (NOT less-than)
+ *   ActionNot     0x12  — logical not
  */
 
 import { describe, it, expect } from "vitest";
@@ -44,7 +44,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Less-than  (a < b → ActionLess2 0x48)
+// 1. Less-than  (a < b → ActionLess2 0x51)
 // ---------------------------------------------------------------------------
 
 describe("less-than operator (<)", () => {
@@ -52,9 +52,9 @@ describe("less-than operator (<)", () => {
     expect(compilesOk("a < b;")).toBe(true);
   });
 
-  it("1. a < b emits ActionLess2 (0x65)", () => {
+  it("1. a < b emits ActionLess2 (0x48)", () => {
     const bytes = compileAS2("a < b;");
-    expect(containsByte(bytes, 0x65)).toBe(true);
+    expect(containsByte(bytes, 0x48)).toBe(true);
   });
 
   it("1. operand names appear in bytecode for a < b", () => {
@@ -86,7 +86,7 @@ describe("greater-than operator (>)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. Less-than-or-equal  (a <= b → ActionGreater 0x67 + ActionNot 0x14)
+// 3. Less-than-or-equal  (a <= b → ActionGreater 0x67 + ActionNot 0x12)
 // ---------------------------------------------------------------------------
 
 describe("less-than-or-equal operator (<=)", () => {
@@ -99,9 +99,9 @@ describe("less-than-or-equal operator (<=)", () => {
     expect(containsByte(bytes, 0x67)).toBe(true);
   });
 
-  it("3. a <= b emits ActionNot (0x14)", () => {
+  it("3. a <= b emits ActionNot (0x12)", () => {
     const bytes = compileAS2("a <= b;");
-    expect(containsByte(bytes, 0x14)).toBe(true);
+    expect(containsByte(bytes, 0x12)).toBe(true);
   });
 
   it("3. operand names appear in bytecode for a <= b", () => {
@@ -112,7 +112,7 @@ describe("less-than-or-equal operator (<=)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. Greater-than-or-equal  (a >= b → ActionLess2 0x48 + ActionNot 0x14)
+// 4. Greater-than-or-equal  (a >= b → ActionLess2 0x51 + ActionNot 0x12)
 // ---------------------------------------------------------------------------
 
 describe("greater-than-or-equal operator (>=)", () => {
@@ -120,14 +120,14 @@ describe("greater-than-or-equal operator (>=)", () => {
     expect(compilesOk("a >= b;")).toBe(true);
   });
 
-  it("4. a >= b emits ActionLess2 (0x65)", () => {
+  it("4. a >= b emits ActionLess2 (0x48)", () => {
     const bytes = compileAS2("a >= b;");
-    expect(containsByte(bytes, 0x65)).toBe(true);
+    expect(containsByte(bytes, 0x48)).toBe(true);
   });
 
-  it("4. a >= b emits ActionNot (0x14)", () => {
+  it("4. a >= b emits ActionNot (0x12)", () => {
     const bytes = compileAS2("a >= b;");
-    expect(containsByte(bytes, 0x14)).toBe(true);
+    expect(containsByte(bytes, 0x12)).toBe(true);
   });
 
   it("4. operand names appear in bytecode for a >= b", () => {
@@ -138,7 +138,7 @@ describe("greater-than-or-equal operator (>=)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. String literal comparison  ("a" < "b" → ActionLess2 0x48)
+// 5. String literal comparison  ("a" < "b" → ActionLess2 0x51)
 // ---------------------------------------------------------------------------
 
 describe("string comparison", () => {
@@ -146,9 +146,9 @@ describe("string comparison", () => {
     expect(compilesOk('"a" < "b";')).toBe(true);
   });
 
-  it('5. "a" < "b" emits ActionLess2 (0x65)', () => {
+  it('5. "a" < "b" emits ActionLess2 (0x48)', () => {
     const bytes = compileAS2('"a" < "b";');
-    expect(containsByte(bytes, 0x65)).toBe(true);
+    expect(containsByte(bytes, 0x48)).toBe(true);
   });
 });
 
@@ -161,9 +161,9 @@ describe("numeric literal comparison", () => {
     expect(compilesOk("0 < x;")).toBe(true);
   });
 
-  it("6. 0 < x emits ActionLess2 (0x65)", () => {
+  it("6. 0 < x emits ActionLess2 (0x48)", () => {
     const bytes = compileAS2("0 < x;");
-    expect(containsByte(bytes, 0x65)).toBe(true);
+    expect(containsByte(bytes, 0x48)).toBe(true);
   });
 });
 
@@ -181,9 +181,9 @@ describe("compound comparison with &&", () => {
     expect(containsByte(bytes, 0x67)).toBe(true);
   });
 
-  it("7. x > 0 && x < 10 emits ActionLess2 (0x65)", () => {
+  it("7. x > 0 && x < 10 emits ActionLess2 (0x48)", () => {
     const bytes = compileAS2("x > 0 && x < 10;");
-    expect(containsByte(bytes, 0x65)).toBe(true);
+    expect(containsByte(bytes, 0x48)).toBe(true);
   });
 });
 
@@ -201,13 +201,13 @@ describe("compound comparison with ||", () => {
     expect(containsByte(bytes, 0x67)).toBe(true);
   });
 
-  it("8. x <= 0 || x >= 100 emits ActionLess2 (0x65) for >=", () => {
+  it("8. x <= 0 || x >= 100 emits ActionLess2 (0x48) for >=", () => {
     const bytes = compileAS2("x <= 0 || x >= 100;");
-    expect(containsByte(bytes, 0x65)).toBe(true);
+    expect(containsByte(bytes, 0x48)).toBe(true);
   });
 
-  it("8. x <= 0 || x >= 100 emits ActionNot (0x14)", () => {
+  it("8. x <= 0 || x >= 100 emits ActionNot (0x12)", () => {
     const bytes = compileAS2("x <= 0 || x >= 100;");
-    expect(containsByte(bytes, 0x14)).toBe(true);
+    expect(containsByte(bytes, 0x12)).toBe(true);
   });
 });

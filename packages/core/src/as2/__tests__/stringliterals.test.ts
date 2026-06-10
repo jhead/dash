@@ -3,8 +3,8 @@
  *
  * Verifies that escape sequences compile without error and that string
  * comparison operators produce the expected AVM1 opcodes:
- *   - ActionEquals2   (0x66): == equality comparison
- *   - ActionLess2     (0x65): < less-than comparison
+ *   - ActionEquals2   (0x49): == equality comparison
+ *   - ActionLess2     (0x48): < less-than comparison
  *   - ActionGreater   (0x67): > greater-than comparison
  */
 
@@ -102,28 +102,28 @@ describe("String comparison operators", () => {
     expect(compilesOk('"abc" == "abc";')).toBe(true);
   });
 
-  it('"abc" == "abc" emits ActionEquals2 (0x66)', () => {
+  it('"abc" == "abc" emits ActionEquals2 (0x49)', () => {
     const bytes = compileAS2('"abc" == "abc";');
-    expect(containsByte(bytes, 0x66)).toBe(true); // ActionEquals2
+    expect(containsByte(bytes, 0x49)).toBe(true); // ActionEquals2
   });
 
   it('"abc" != "def" compiles without error', () => {
     expect(compilesOk('"abc" != "def";')).toBe(true);
   });
 
-  it('"abc" != "def" emits ActionEquals2 (0x66) and ActionNot (0x14)', () => {
+  it('"abc" != "def" emits ActionEquals2 (0x49) and ActionNot (0x12)', () => {
     const bytes = compileAS2('"abc" != "def";');
-    expect(containsByte(bytes, 0x66)).toBe(true); // ActionEquals2
-    expect(containsByte(bytes, 0x14)).toBe(true); // ActionNot
+    expect(containsByte(bytes, 0x49)).toBe(true); // ActionEquals2
+    expect(containsByte(bytes, 0x12)).toBe(true); // ActionNot
   });
 
   it('"abc" < "def" compiles without error', () => {
     expect(compilesOk('"abc" < "def";')).toBe(true);
   });
 
-  it('"abc" < "def" emits ActionLess2 (0x65)', () => {
+  it('"abc" < "def" emits ActionLess2 (0x48)', () => {
     const bytes = compileAS2('"abc" < "def";');
-    expect(containsByte(bytes, 0x65)).toBe(true); // ActionLess2
+    expect(containsByte(bytes, 0x48)).toBe(true); // ActionLess2
   });
 
   it('"abc" > "def" compiles without error', () => {

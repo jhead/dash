@@ -3,7 +3,7 @@
  *
  * Verifies that System.capabilities property accesses and System method calls
  * compile without error and emit the correct AVM1 opcodes:
- *   - ActionGetMember  (0x4f): property reads
+ *   - ActionGetMember  (0x4e): property reads
  *   - ActionCallMethod (0x52): method calls
  */
 
@@ -43,10 +43,10 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
-const ACTION_GET_MEMBER  = 0x4f; // ActionGetMember  — property read
+const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property read
 
 // ---------------------------------------------------------------------------
-// 1. System.capabilities.os — compiles; emits ActionGetMember (0x4f)
+// 1. System.capabilities.os — compiles; emits ActionGetMember (0x4e)
 // ---------------------------------------------------------------------------
 
 describe("System.capabilities.os", () => {
@@ -54,7 +54,7 @@ describe("System.capabilities.os", () => {
     expect(compilesOk("System.capabilities.os;")).toBe(true);
   });
 
-  it("1. System.capabilities.os emits ActionGetMember (0x4f)", () => {
+  it("1. System.capabilities.os emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.os;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "capabilities")).toBe(true);
@@ -70,7 +70,7 @@ describe("System.capabilities.playerType", () => {
     expect(compilesOk("System.capabilities.playerType;")).toBe(true);
   });
 
-  it("2. System.capabilities.playerType emits ActionGetMember (0x4f)", () => {
+  it("2. System.capabilities.playerType emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.playerType;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "playerType")).toBe(true);
@@ -86,7 +86,7 @@ describe("System.capabilities.version", () => {
     expect(compilesOk("System.capabilities.version;")).toBe(true);
   });
 
-  it("3. System.capabilities.version emits ActionGetMember (0x4f)", () => {
+  it("3. System.capabilities.version emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.version;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "version")).toBe(true);
@@ -102,7 +102,7 @@ describe("System.capabilities.screenResolutionX", () => {
     expect(compilesOk("System.capabilities.screenResolutionX;")).toBe(true);
   });
 
-  it("4. System.capabilities.screenResolutionX emits ActionGetMember (0x4f)", () => {
+  it("4. System.capabilities.screenResolutionX emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.screenResolutionX;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "screenResolutionX")).toBe(true);
@@ -118,7 +118,7 @@ describe("System.capabilities.screenResolutionY", () => {
     expect(compilesOk("System.capabilities.screenResolutionY;")).toBe(true);
   });
 
-  it("5. System.capabilities.screenResolutionY emits ActionGetMember (0x4f)", () => {
+  it("5. System.capabilities.screenResolutionY emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.screenResolutionY;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "screenResolutionY")).toBe(true);
@@ -134,7 +134,7 @@ describe("System.capabilities.hasAudio", () => {
     expect(compilesOk("System.capabilities.hasAudio;")).toBe(true);
   });
 
-  it("6. System.capabilities.hasAudio emits ActionGetMember (0x4f)", () => {
+  it("6. System.capabilities.hasAudio emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.hasAudio;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "hasAudio")).toBe(true);
@@ -150,7 +150,7 @@ describe("System.capabilities.language", () => {
     expect(compilesOk("System.capabilities.language;")).toBe(true);
   });
 
-  it("7. System.capabilities.language emits ActionGetMember (0x4f)", () => {
+  it("7. System.capabilities.language emits ActionGetMember (0x4e)", () => {
     const bytes = compileAS2("System.capabilities.language;");
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
     expect(containsString(bytes, "language")).toBe(true);

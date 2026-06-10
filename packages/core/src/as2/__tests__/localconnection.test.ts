@@ -5,7 +5,7 @@
  * Verifies that LocalConnection constructor calls, instance method calls, and
  * domain-related API calls compile without error and emit the correct AVM1
  * opcodes:
- *   - ActionNew        (0x4a): constructor calls (new LocalConnection())
+ *   - ActionNew        (0x40): constructor calls (new LocalConnection())
  *   - ActionCallMethod (0x52): method calls (lc.connect(), lc.send(), etc.)
  */
 
@@ -44,7 +44,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x4a; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ describe("LocalConnection constructor", () => {
     expect(compilesOk("new LocalConnection();")).toBe(true);
   });
 
-  it("new LocalConnection() emits ActionNew (0x4a)", () => {
+  it("new LocalConnection() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("new LocalConnection();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "LocalConnection")).toBe(true);
@@ -66,7 +66,7 @@ describe("LocalConnection constructor", () => {
     expect(compilesOk("var lc = new LocalConnection();")).toBe(true);
   });
 
-  it("var lc = new LocalConnection() emits ActionNew (0x4a)", () => {
+  it("var lc = new LocalConnection() emits ActionNew (0x40)", () => {
     const bytes = compileAS2("var lc = new LocalConnection();");
     expect(containsByte(bytes, ACTION_NEW)).toBe(true);
     expect(containsString(bytes, "LocalConnection")).toBe(true);
