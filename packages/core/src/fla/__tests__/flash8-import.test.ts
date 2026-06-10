@@ -949,3 +949,125 @@ describe("parseButtonHandlers", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fill subtype 0x20 — task 0858
+//
+// Subtype 0x20 (bit 5 set, not gradient 0x10 or bitmap 0x40) was previously
+// returned as kind:"unknown" and rendered as solid gray.  After task 0858 it
+// is mapped to kind:"solid" using the base RGBA color that precedes the
+// subtype byte, consuming the 24-byte gradient transform matrix + 12 bytes
+// of trailer to keep the stream aligned.
+//
+// The synthetic stream below encodes a minimal CPicPage → CPicLayer →
+// CPicFrame containing a CPicShape child.  The CPicShape's shapeData carries
+// one fill with subtype 0x20 (color=red FF 00 00 FF) and one edge so that
+// the shape element is included in the parsed output.
+// ---------------------------------------------------------------------------
+
+describe("fill subtype 0x20 (task 0858)", () => {
+  // Build a synthetic Page stream testing fill subtype 0x20 via the CPicFrame's
+  // own inherited CPicShape body (not via a child CPicShape object).
+  //
+  // Structure: CPicPage → CPicLayer → CPicFrame (no children).
+  // The CPicFrame's own shape body carries one fill with subtype 0x20 (color=red)
+  // and one minimal edge so the shape is included in elements.
+  //
+  // Class table after parsing (each class occupies two slots):
+  //   slots 1+2 → CPicPage   (new class tag 0xFFFF)
+  //   slots 3+4 → CPicLayer  (new class tag 0xFFFF)
+  //   slots 5+6 → CPicFrame  (new class tag 0xFFFF)
+  //
+  // readMatrix identity = a=1.0 (0x00010000), b=0, c=0, d=1.0 (16.16 fixed), tx=ty=0
+  const IDENTITY_MATRIX = [
+    0x00, 0x00, 0x01, 0x00, // a = 1.0
+    0x00, 0x00, 0x00, 0x00, // b = 0
+    0x00, 0x00, 0x00, 0x00, // c = 0
+    0x00, 0x00, 0x01, 0x00, // d = 1.0
+    0x00, 0x00, 0x00, 0x00, // tx = 0
+    0x00, 0x00, 0x00, 0x00, // ty = 0
+  ] as const;
+
+  const pageBytes = new Uint8Array([
+    // Root marker
+    0x01,
+    // New class CPicPage (schema=1, name len=8, "CPicPage")
+    0xff, 0xff, 0x01, 0x00, 0x08, 0x00,
+    0x43, 0x50, 0x69, 0x63, 0x50, 0x61, 0x67, 0x65,
+    // CPicPage → readCPicObjBase: schema=4, flags=0
+    0x04, 0x00,
+    //   CPicPage's child: new class CPicLayer (schema=1, name len=9, "CPicLayer")
+    0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+    0x43, 0x50, 0x69, 0x63, 0x4c, 0x61, 0x79, 0x65, 0x72,
+    //   CPicLayer → readCPicObjBase: schema=4, flags=0
+    0x04, 0x00,
+    //     CPicLayer's child: new class CPicFrame (schema=1, name len=9, "CPicFrame")
+    0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+    0x43, 0x50, 0x69, 0x63, 0x46, 0x72, 0x61, 0x6d, 0x65,
+    //     CPicFrame → readCPicObjBase: schema=4, flags=0
+    0x04, 0x00,
+    //     CPicFrame has NO display-object children
+    0x00, 0x00,
+    //     schema>0: registration point (2 × INT_MIN sentinels, 8 bytes)
+    0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
+    //     schema>2: skip(1), schema>3: skip(1)
+    0x00, 0x00,
+    //   back in readCPicFrameNode: shapeSchema = 3 (> 2 → caps = true)
+    0x03,
+    //   readCPicFrameNode: readMatrix (identity, 24 bytes)
+    ...IDENTITY_MATRIX,
+    //   readShapeData(caps=true): shapeData schema byte = 3
+    0x03,
+    //   edge count hint (4 bytes, ignored)
+    0x01, 0x00, 0x00, 0x00,
+    //   fillCount = 1 (u16 LE)
+    0x01, 0x00,
+    //   readFillStyle(caps=true):
+    //     base color RGBA = FF 00 00 FF (opaque red)
+    0xff, 0x00, 0x00, 0xff,
+    //     subtype = 0x20  ← the case under test
+    0x20,
+    //     more_flags = 0x00
+    0x00,
+    //     readMatrix (24 bytes) consumed by the 0x20 branch
+    ...IDENTITY_MATRIX,
+    //     skip(12) — 4-byte + 8-byte trailer consumed by the 0x20 branch
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    //   lineCount = 0
+    0x00, 0x00,
+    //   edge loop (schema >= 2):
+    //     flags = 0xC1 = style-change (0x40) + no-selection (0x80) + t1=1 (s16 delta)
+    0xc1,
+    //     style-change (no-sel): line=0, fill0=1, fill1=0
+    0x00, 0x01, 0x00,
+    //     t1=1 → [dx1=s16(100), dy1=s16(0)]  → a minimal non-degenerate edge
+    0x64, 0x00, 0x00, 0x00,
+    //   edge loop end sentinel
+    0x00,
+    // Remaining reads (frame-specific fields, layer/page trailers) hit EOF → caught
+  ]);
+
+  it("parses fill subtype 0x20 as kind:'solid' with the base color", () => {
+    const timeline = parseFla8Timeline(pageBytes);
+    expect(timeline.layers).toHaveLength(1);
+    const frames = timeline.layers[0]!.frames;
+    expect(frames).toHaveLength(1);
+    const shapes = frames[0]!.elements.filter(
+      (e): e is Extract<typeof e, { type: "shape" }> => e.type === "shape"
+    );
+    expect(shapes).toHaveLength(1);
+    const fills = shapes[0]!.fills;
+    expect(fills).toHaveLength(1);
+    const fill = fills[0]!;
+    expect(fill.kind).toBe("solid");
+    // The base RGBA (red) must be preserved; the matrix and 12-byte trailer
+    // are consumed but do not change the fill color.
+    if (fill.kind === "solid") {
+      expect(fill.color.r).toBe(0xff);
+      expect(fill.color.g).toBe(0x00);
+      expect(fill.color.b).toBe(0x00);
+      expect(fill.color.a).toBe(0xff);
+    }
+  });
+});
