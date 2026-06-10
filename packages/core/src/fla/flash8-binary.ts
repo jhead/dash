@@ -219,6 +219,12 @@ export interface Fla8Frame {
   readonly soundSync: number;
   /** number of times to repeat (0 = loop indefinitely); -1 when not present */
   readonly soundLoop: number;
+  /** in-point sample offset (44100 Hz); undefined when not present */
+  readonly inPoint?: number;
+  /** out-point sample offset (44100 Hz); undefined when not present */
+  readonly outPoint?: number;
+  /** custom volume envelope points */
+  readonly envelopePoints?: Array<{ pos: number; leftLevel: number; rightLevel: number }>;
   readonly elements: Fla8Element[];
 }
 
@@ -1843,6 +1849,9 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let soundId = 0;
   let soundSync = -1;
   let soundLoop = -1;
+  let inPoint: number | undefined;
+  let outPoint: number | undefined;
+  let envelopePoints: Array<{ pos: number; leftLevel: number; rightLevel: number }> | undefined;
 
   try {
     const fs = r.u8();
@@ -1853,12 +1862,21 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     if (fs > 4) soundId = r.u16();
     if (fs > 5) {
       const cnt = r.u16();
-      if (cnt < 10000) r.skip(cnt * 8); // sound envelope points (u32 + u16 + u16)
+      if (cnt > 0 && cnt < 10000) {
+        envelopePoints = [];
+        for (let i = 0; i < cnt; i++) {
+          const pos = r.u32();
+          const leftLevel = r.u16();
+          const rightLevel = r.u16();
+          envelopePoints.push({ pos, leftLevel, rightLevel });
+        }
+      }
     }
     if (fs > 6) {
       soundLoop = r.u16();
       soundSync = r.u8();
-      r.skip(4 + 4); // inPoint44, outPoint44
+      inPoint = r.u32();   // inPoint44: sample offset at 44100 Hz
+      outPoint = r.u32();  // outPoint44: sample offset at 44100 Hz
     }
     if (fs > 7) r.skip(2); // soundZoomLevel
     if (fs > 8) {
@@ -1950,7 +1968,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     }
     return {
       cls: "CPicFrame",
-      frame: { duration, label, labelIsComment, script, keyMode, motionEase, motionRotate, motionRotateCount, motionOrientToPath, soundId, soundSync, soundLoop, elements },
+      frame: { duration, label, labelIsComment, script, keyMode, motionEase, motionRotate, motionRotateCount, motionOrientToPath, soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements },
     };
   }
 }

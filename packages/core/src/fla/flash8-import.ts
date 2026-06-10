@@ -798,7 +798,14 @@ function convertLayer(
         const syncMode: SoundLinkage["syncMode"] =
           f.soundSync >= 0 ? (SOUND_SYNC_MODES[f.soundSync] ?? "event") : "event";
         const repeatCount = f.soundLoop >= 0 ? f.soundLoop : 1;
-        sound = { libraryItemId, syncMode, repeatCount };
+        sound = {
+          libraryItemId,
+          syncMode,
+          repeatCount,
+          ...(f.inPoint !== undefined && f.inPoint > 0 ? { inPoint: f.inPoint } : {}),
+          ...(f.outPoint !== undefined && f.outPoint > 0 ? { outPoint: f.outPoint } : {}),
+          ...(f.envelopePoints && f.envelopePoints.length > 0 ? { customEnvelope: f.envelopePoints } : {}),
+        };
       } else {
         console.warn(`[FLA import] frame sound id ${f.soundId} not found in library; skipping`);
       }
