@@ -805,14 +805,23 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   //    the display list so each scene starts with a clean stage.
 
   /**
-   * Serialize a ColorEffect to a string key for change detection.
-   * Returns null when there is no active color effect.
+   * Serialize a ColorEffect (and standalone alpha) to a string key for change detection.
+   * Returns null when there is no active color effect and no non-default alpha.
    */
   function colorEffectKey(displayObj: DisplayObject): string | null {
     if (displayObj.type !== "instance" && displayObj.type !== "text") return null;
-    const ce = (displayObj as import("@flash/core").SymbolInstance | import("@flash/core").TextDisplayObject).colorEffect;
-    if (!ce || ce.type === "none") return null;
-    return JSON.stringify(ce);
+    const obj = displayObj as import("@flash/core").SymbolInstance | import("@flash/core").TextDisplayObject;
+    const ce = obj.colorEffect;
+    const hasColorEffect = ce && ce.type !== "none";
+    if (hasColorEffect) return JSON.stringify(ce);
+    // For SymbolInstance: also track standalone alpha (no colorEffect) for change detection
+    if (displayObj.type === "instance") {
+      const inst = displayObj as import("@flash/core").SymbolInstance;
+      if (inst.alpha !== undefined && inst.alpha !== 1) {
+        return `alpha:${inst.alpha}`;
+      }
+    }
+    return null;
   }
 
   // Per-depth: last placed state (objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio)
@@ -1866,10 +1875,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
-                  // Check for color effect (CXFormWithAlpha)
-                  const cxform = displayObj.colorEffect
+                  // Check for color effect (CXFormWithAlpha).
+                  // Also synthesize a CXForm from standalone alpha when colorEffect is absent.
+                  let cxform = displayObj.colorEffect
                     ? colorEffectToCXForm(displayObj.colorEffect)
                     : null;
+                  if (cxform === null && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
+                    cxform = {
+                      redMult: 256, greenMult: 256, blueMult: 256,
+                      alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256),
+                      redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0,
+                    };
+                  }
                   if (cxform !== null) {
                     const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
                       ? { scaleX, scaleY, rotation, skewX, skewY }
@@ -2057,9 +2074,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             } else if (displayObj.type === "instance") {
               const charId = charIdMap.get(displayObj.symbolId);
               if (charId !== undefined) {
-                const cxform = displayObj.colorEffect
+                // Check for color effect (CXFormWithAlpha).
+                // Also synthesize a CXForm from standalone alpha when colorEffect is absent.
+                let cxform = displayObj.colorEffect
                   ? colorEffectToCXForm(displayObj.colorEffect)
                   : null;
+                if (cxform === null && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
+                  cxform = {
+                    redMult: 256, greenMult: 256, blueMult: 256,
+                    alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256),
+                    redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0,
+                  };
+                }
                 if (cxform !== null) {
                   const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
                     ? { scaleX, scaleY, rotation, skewX, skewY }
