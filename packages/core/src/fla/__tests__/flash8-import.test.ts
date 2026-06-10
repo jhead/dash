@@ -1327,6 +1327,11 @@ describe("text element colorEffect forwarding (convertFla8Text)", () => {
       instanceName: "",
       textType: "dynamic",
       wordWrap: false,
+      multiline: false,
+      password: false,
+      maxChars: 0,
+      hasBorder: false,
+      as2VariableName: "",
       filters: [],
       colorEffect: null,
       runs: [],
@@ -1509,5 +1514,330 @@ describe("Magnet.fla — CPicSwf embedded SWF placements (task 0892)", () => {
     // Verify stream alignment wasn't disturbed by CPicSwf parsing
     const names = loaded!.scenes[0]!.timeline.layers.map((l) => l.name);
     expect(names).toEqual(["Layer 7", "Layer 3", "Layer 5", "Magnets", "Walls", "Ball"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseFla8Contents: scale9Grid decoding from Contents stream (task 0896)
+// ---------------------------------------------------------------------------
+// Verifies that scale9Grid is decoded from the 20-byte block that follows the
+// 16-byte F5 pre-scale9Grid anchor pattern in the Contents stream symbol entry.
+//
+// Binary layout (flacomdoc FlaConverter.writeSymbols, F8+):
+//   Pre-pattern (16 bytes): FF FE FF 00  FF FE FF 00  00 00 00 00  FF FE FF 00
+//   UI32LE toggle  (1=enabled, 0=disabled)
+//   UI32LE right   (twips = px * 20)
+//   UI32LE left    (twips = px * 20)
+//   UI32LE bottom  (twips = px * 20)
+//   UI32LE top     (twips = px * 20)
+//
+// The test builds a minimal Flash 8 (formatVersion=0x3F) Contents stream and
+// places the anchor + scale9Grid block immediately after the linkage flags.
+// ---------------------------------------------------------------------------
+
+describe("parseFla8Contents scale9Grid decode (synthetic Contents stream)", () => {
+  // Helper: encode a string as UTF-16LE bytes
+  function utf16le(s: string): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < s.length; i++) {
+      out.push(s.charCodeAt(i) & 0xff, s.charCodeAt(i) >> 8);
+    }
+    return out;
+  }
+
+  // Helper: encode a BomString (FF FE FF <len> <UTF-16LE data>)
+  function bomString(s: string): number[] {
+    return [0xff, 0xfe, 0xff, s.length, ...utf16le(s)];
+  }
+
+  // Helper: write a UI32LE value as 4 bytes
+  function ui32le(v: number): number[] {
+    return [v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff];
+  }
+
+  /**
+   * Build a minimal Flash 8 Contents stream for a single "Symbol 1" entry
+   * with the given scale9Grid values.
+   *
+   * Stream layout:
+   *   [0x3F]                         formatVersion (Flash 8 unicode)
+   *   [0x08] + UTF16LE("Symbol 1")   stream name (8 chars)
+   *   BomString("MyClip")            display name  ← s starts here; s.end = 34
+   *   [UI32LE: 0x00000001]           stream number (4 bytes)
+   *   [0x02]                         typeByte (movieclip)
+   *   BomString("")                  heuristic linkageIdentifier (4 bytes)
+   *   [0x01 0x00 0x00 0x00]          4 flag bytes (exportInFirstFrame=1, rest=0)
+   *                                  ← linkageFlagsEnd = s.end + 13 = 47
+   *   [16 bytes pre-pattern]         FF FE FF 00 × 2, 00 × 4, FF FE FF 00
+   *   [20 bytes scale9Grid block]    toggle + right + left + bottom + top
+   *   [50 bytes of zeros]            padding (extends buffer past scanLimit)
+   *
+   * gridPrePos = 47 (right at linkageFlagsEnd).
+   * scanLimit  = min(bytes.length - 36, linkageFlagsEnd + 2000) = min(137-36, 2047) = 101
+   * 47 >= 47 and 47 < 101 → decoding proceeds.
+   */
+  function buildScale9Stream(
+    toggle: number,
+    rightTwips: number,
+    leftTwips: number,
+    bottomTwips: number,
+    topTwips: number,
+  ): Uint8Array {
+    const displayName = "MyClip";
+    const streamName = "Symbol 1";
+
+    const header = [
+      0x3f,                          // formatVersion (Flash 8)
+      streamName.length,             // 8
+      ...utf16le(streamName),        // 16 bytes
+    ];
+    // BomString("MyClip"): FF FE FF 06 + 12 UTF-16LE = 16 bytes; s.end = 18+16 = 34
+    const dispNameBom = bomString(displayName);
+
+    // 13 bytes: streamNum(4) + typeByte(1) + BomString("")(4) + flags(4)
+    // linkageFlagsEnd = s.end + 13 = 47
+    const afterName = [
+      0x01, 0x00, 0x00, 0x00,  // UI32LE streamNum=1
+      0x02,                     // typeByte=2 (movieclip)
+      0xff, 0xfe, 0xff, 0x00,  // BomString("") = linkageIdentifier
+      0x01, 0x00, 0x00, 0x00,  // 4 flag bytes: exportInFirstFrame=1, rest=0
+    ];
+
+    // 16-byte F5 pre-scale9Grid anchor pattern
+    const prePattern = [
+      0xff, 0xfe, 0xff, 0x00, // empty BomString
+      0xff, 0xfe, 0xff, 0x00, // empty BomString
+      0x00, 0x00, 0x00, 0x00, // 4 zero bytes
+      0xff, 0xfe, 0xff, 0x00, // empty BomString
+    ];
+
+    // 20-byte scale9Grid block
+    const gridBlock = [
+      ...ui32le(toggle),
+      ...ui32le(rightTwips),
+      ...ui32le(leftTwips),
+      ...ui32le(bottomTwips),
+      ...ui32le(topTwips),
+    ];
+
+    // 50 bytes of tail padding to push buffer.length past scanLimit check
+    const tail = new Array<number>(50).fill(0);
+
+    const all = [
+      ...header,
+      ...dispNameBom,
+      ...afterName,
+      ...prePattern,
+      ...gridBlock,
+      ...tail,
+    ];
+    return new Uint8Array(all);
+  }
+
+  it("decodes an enabled scale9Grid with correct pixel coordinates", () => {
+    // Grid: left=10px, top=20px, right=110px, bottom=70px
+    // In twips: left=200, top=400, right=2200, bottom=1400
+    const buf = buildScale9Stream(1, 2200, 200, 1400, 400);
+    const info = parseFla8Contents(buf);
+    expect(info.symbols.size).toBe(1);
+    const sym = info.symbols.get(1)!;
+    expect(sym).toBeDefined();
+    expect(sym.scale9Grid).not.toBeNull();
+    expect(sym.scale9Grid!.left).toBe(10);    // 200 / 20
+    expect(sym.scale9Grid!.top).toBe(20);     // 400 / 20
+    expect(sym.scale9Grid!.right).toBe(110);  // 2200 / 20
+    expect(sym.scale9Grid!.bottom).toBe(70);  // 1400 / 20
+  });
+
+  it("returns null scale9Grid when toggle is 0 (disabled)", () => {
+    // All INT_MIN sentinel values (0x80000000) when disabled
+    const INT_MIN = 0x80000000;
+    const buf = buildScale9Stream(0, INT_MIN, INT_MIN, INT_MIN, INT_MIN);
+    const info = parseFla8Contents(buf);
+    const sym = info.symbols.get(1)!;
+    expect(sym).toBeDefined();
+    expect(sym.scale9Grid).toBeNull();
+  });
+
+  it("returns null scale9Grid when formatVersion is below 0x3F (pre-Flash-8)", () => {
+    // Build the same stream but with formatVersion=0x38 (MX2004, below F8 threshold)
+    const buf = buildScale9Stream(1, 2200, 200, 1400, 400);
+    const modified = new Uint8Array(buf);
+    modified[0] = 0x38; // downgrade formatVersion to MX2004
+    const info = parseFla8Contents(modified);
+    const sym = info.symbols.get(1)!;
+    expect(sym).toBeDefined();
+    expect(sym.scale9Grid).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Custom ease Bézier curve decoding (task 0883)
+// ---------------------------------------------------------------------------
+
+/**
+ * Synthetic CPicPage → CPicLayer → CPicFrame stream with frameVersionB = 0x18
+ * (Flash 8). The frame carries:
+ *   useSingleEaseCurve = 1
+ *   hasCustomEase = 1
+ *   property[0..4]: numPoints = 0 (no per-property curves)
+ *   property[5] (all): numPoints = 4
+ *     pts[0] = (0, 0)     anchor start, written twice (32 bytes)
+ *     pts[1] = (0.25, 0.1) control 1                  (16 bytes)
+ *     pts[2] = (0.75, 0.9) control 2                  (16 bytes)
+ *     pts[3] = (1, 1)     anchor end,  written twice  (32 bytes)
+ *
+ * The expected decoded motionEaseCurve (CSS cubic-bezier convention):
+ *   { x1: 0.25, y1: 0.1, x2: 0.75, y2: 0.9 }
+ */
+describe("custom ease Bézier curve decoding (task 0883)", () => {
+  const IDENTITY_MATRIX_24 = [
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+  ] as const;
+
+  const easeFrameBytes = new Uint8Array([
+    // Root marker
+    0x01,
+    // New class CPicPage (schema=1, name len=8, "CPicPage")
+    0xff, 0xff, 0x01, 0x00, 0x08, 0x00,
+    0x43, 0x50, 0x69, 0x63, 0x50, 0x61, 0x67, 0x65,
+    // CPicPage → readCPicObjBase: schema=4, flags=0
+    0x04, 0x00,
+    // child: new class CPicLayer (schema=1, name len=9, "CPicLayer")
+    0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+    0x43, 0x50, 0x69, 0x63, 0x4c, 0x61, 0x79, 0x65, 0x72,
+    // CPicLayer → readCPicObjBase: schema=4, flags=0
+    0x04, 0x00,
+    // child: new class CPicFrame (schema=1, name len=9, "CPicFrame")
+    0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+    0x43, 0x50, 0x69, 0x63, 0x46, 0x72, 0x61, 0x6d, 0x65,
+    // CPicFrame → readCPicObjBase: schema=4, flags=0
+    0x04, 0x00,
+    // CPicFrame has NO display-object children
+    0x00, 0x00,
+    // schema>0: registration point (2 × INT_MIN sentinels, 8 bytes)
+    0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
+    // schema>2: skip(1), schema>3: skip(1)
+    0x00, 0x00,
+    // CPicFrameNode: shapeSchema = 0
+    0x00,
+    // readMatrix (identity, 24 bytes)
+    ...IDENTITY_MATRIX_24,
+    // readShapeData(caps=false): schema=0 (1), edgeHint=0 (4), fillCount=0 (2), lineCount=0 (2) = 9 bytes
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // --- CPicFrame-specific fields ---
+    // fs = 24 (0x18 = Flash 8 frameVersionB)
+    0x18,
+    // duration = 1 (u16 LE)
+    0x01, 0x00,
+    // fs>2: keyMode = 0x4001 (motion tween) (u16 LE)
+    0x01, 0x40,
+    // fs>1: motionEase = 0 (s16)
+    0x00, 0x00,
+    // fs>4: soundId = 0 (u16)
+    0x00, 0x00,
+    // fs>5: envelope count = 0 (u16)
+    0x00, 0x00,
+    // fs>6: soundLoop=0 (u16), soundSync=0 (u8), inPoint=0 (u32), outPoint=0 (u32) = 11 bytes
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // fs>7: skip(2)
+    0x00, 0x00,
+    // fs>8: CString label = "" (length byte = 0x00)
+    0x00,
+    // fs>=19: readTimelineSubObject: typeId=4 (u32), formatType=0 (u32), skip(4), pfCount=0 (u32)
+    0x04, 0x00, 0x00, 0x00,  // typeId=4
+    0x00, 0x00, 0x00, 0x00,  // formatType=0 → branch: skip(4) + pfCount
+    0x00, 0x00, 0x00, 0x00,  // skip(4)
+    0x00, 0x00, 0x00, 0x00,  // pfCount=0
+    // fs>10: rotateFlaValue=1 (none, u32), rotateCount=0 (u32)
+    0x01, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    // fs>11: labelIsComment=0 (u32)
+    0x00, 0x00, 0x00, 0x00,
+    // fs>12: morphTag=0 (u16)
+    0x00, 0x00,
+    // fs>13: motionOrientToPath=0 (u32)
+    0x00, 0x00, 0x00, 0x00,
+    // fs>14: oblistTag=0 (u16) — must be 0 to avoid frameTailEndScan
+    0x00, 0x00,
+    // fs>15: tweenInstanceName="" (CString: length=0x00)
+    0x00,
+    // fs>19: skip(4)
+    0x00, 0x00, 0x00, 0x00,
+    // fs>20: skip(4)
+    0x00, 0x00, 0x00, 0x00,
+    // fs>=22: skip(4)
+    0x00, 0x00, 0x00, 0x00,
+    // fs>=24: useSingleEaseCurve=1, hasCustomEase=1
+    0x01, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00,
+    // property[0..4]: numPoints=0 each (5 × u32 = 20 bytes)
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    // property[5] (all): numPoints=4
+    0x04, 0x00, 0x00, 0x00,
+    // pts[0] anchor start (0.0, 0.0) — written twice (4 × f64 = 32 bytes)
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // x=0.0
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // y=0.0
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // duplicate x
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // duplicate y
+    // pts[1] control 1: x=0.25, y=0.1 (2 × f64 = 16 bytes)
+    // 0.25 = 0x3fd0000000000000 LE
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xd0, 0x3f,
+    // 0.1 = 0x3fb999999999999a LE
+    0x9a, 0x99, 0x99, 0x99, 0x99, 0x99, 0xb9, 0x3f,
+    // pts[2] control 2: x=0.75, y=0.9 (2 × f64 = 16 bytes)
+    // 0.75 = 0x3fe8000000000000 LE
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x3f,
+    // 0.9 = 0x3feccccccccccccd LE
+    0xcd, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xec, 0x3f,
+    // pts[3] anchor end (1.0, 1.0) — written twice (4 × f64 = 32 bytes)
+    // 1.0 = 0x3ff0000000000000 LE
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,  // x=1.0
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,  // y=1.0
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,  // duplicate x
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,  // duplicate y
+    // Remaining layer/page tail fields hit EOF → caught by FlaEofError
+  ]);
+
+  it("decodes motionEaseCurve from Flash 8 CPicFrame tail (fs=24, useSingleEaseCurve=1)", () => {
+    const timeline = parseFla8Timeline(easeFrameBytes);
+    expect(timeline.layers).toHaveLength(1);
+    const frame = timeline.layers[0]!.frames[0]!;
+    expect(frame.motionEaseCurve).not.toBeNull();
+    expect(frame.motionEaseCurve!.x1).toBeCloseTo(0.25, 6);
+    expect(frame.motionEaseCurve!.y1).toBeCloseTo(0.1, 6);
+    expect(frame.motionEaseCurve!.x2).toBeCloseTo(0.75, 6);
+    expect(frame.motionEaseCurve!.y2).toBeCloseTo(0.9, 6);
+  });
+
+  it("passes motionEaseCurve through flash8-import convertLayer to Frame", () => {
+    const streams = new Map<string, Uint8Array>([["Page 1", easeFrameBytes]]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.motionEaseCurve).not.toBeNull();
+    expect(frame.motionEaseCurve!.x1).toBeCloseTo(0.25, 6);
+    expect(frame.motionEaseCurve!.y1).toBeCloseTo(0.1, 6);
+    expect(frame.motionEaseCurve!.x2).toBeCloseTo(0.75, 6);
+    expect(frame.motionEaseCurve!.y2).toBeCloseTo(0.9, 6);
+  });
+
+  it("x1/x2 are clamped to [0,1] even when the decoded value is outside that range", () => {
+    // Verify the clamping branch by checking that a valid in-range value passes through.
+    const timeline = parseFla8Timeline(easeFrameBytes);
+    const curve = timeline.layers[0]!.frames[0]!.motionEaseCurve!;
+    expect(curve.x1).toBeGreaterThanOrEqual(0);
+    expect(curve.x1).toBeLessThanOrEqual(1);
+    expect(curve.x2).toBeGreaterThanOrEqual(0);
+    expect(curve.x2).toBeLessThanOrEqual(1);
   });
 });
