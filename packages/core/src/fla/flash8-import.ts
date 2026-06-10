@@ -743,6 +743,7 @@ function convertElement(
         ...(el.trackAsMenu ? { trackAsMenu: true } : {}),
         ...(el.loopMode !== 0 ? { loopMode: (["loop", "play-once", "single-frame"][el.loopMode] ?? "loop") as "loop" | "play-once" | "single-frame" } : {}),
         ...(el.firstFrame !== 0 ? { firstFrame: el.firstFrame } : {}),
+        ...(el.visible === false ? { visible: false } : {}),
       };
     }
     case "text": {

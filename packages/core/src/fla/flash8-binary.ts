@@ -184,6 +184,12 @@ export interface Fla8Instance {
    * Only meaningful for graphic symbols (kind === "graphic").
    */
   readonly loopMode: number;
+  /**
+   * Whether the instance is visible in the authoring tool.
+   * Decoded from the CPicObjBase flags byte (bit 0 = visible).
+   * Default: true. Only set to false when the object is explicitly hidden.
+   */
+  readonly visible?: boolean;
 }
 
 export interface Fla8TextRun {
@@ -1597,6 +1603,11 @@ interface SymbolBaseFields {
   firstFrame: number;
   /** How the graphic animates: 0=loop, 1=play-once, 2=single-frame. */
   loopMode: number;
+  /**
+   * Whether the instance is visible. Decoded from CPicObjBase flags bit 0
+   * (0x01 = visible, 0x00 = hidden). Default: true.
+   */
+  visible: boolean;
 }
 
 /**
@@ -1610,7 +1621,10 @@ interface SymbolBaseFields {
  */
 function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   const { r } = ctx;
-  readCPicObjBase(ctx);
+  const base = readCPicObjBase(ctx);
+  // CPicObjBase flags byte: bit 0 (0x01) = visible; 0x00 = hidden.
+  // When the flags byte is 0 the object was explicitly hidden in the authoring tool.
+  const visible = (base.flags & 0x01) !== 0;
   const symbolSchema = r.u8();
   const matrix = readMatrix(r);
   const firstFrame = r.u16(); // first frame (0-based)
@@ -1672,7 +1686,7 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   if (!filtersPresent && symbolSchema >= 0x16) {
     r.skip(102); // CS4 3D transform block
   }
-  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect, filters, blendMode, firstFrame, loopMode };
+  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect, filters, blendMode, firstFrame, loopMode, visible };
 }
 
 const DEFAULT_FIELDS: SymbolBaseFields = {
@@ -1685,6 +1699,7 @@ const DEFAULT_FIELDS: SymbolBaseFields = {
   blendMode: 0,
   firstFrame: 0,
   loopMode: 0,
+  visible: true,
 };
 
 function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8Instance {
@@ -1708,6 +1723,7 @@ function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8
     script: "",
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
+    ...(fields.visible ? {} : { visible: false }),
   };
 }
 
@@ -1758,6 +1774,7 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
     script,
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
+    ...(fields.visible ? {} : { visible: false }),
   };
 }
 
@@ -1798,6 +1815,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
     ...(trackAsMenu ? { trackAsMenu } : {}),
+    ...(fields.visible ? {} : { visible: false }),
   };
 }
 

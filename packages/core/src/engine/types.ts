@@ -469,6 +469,8 @@ export interface SymbolInstance {
   readonly accessibility?: ObjectAccessibility;
   /** Cache as bitmap for filter rendering. Default: false. */
   readonly cacheAsBitmap?: boolean;
+  /** Whether the instance is visible. Default: true. */
+  readonly visible?: boolean;
 }
 
 /**
