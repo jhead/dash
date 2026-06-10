@@ -30,6 +30,8 @@ import {
   pasteFrames,
   breakApart,
   createLayer,
+  simplifyPath,
+  smoothPath,
 } from "@flash/core";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts.js";
 import { TransformHandles } from "./TransformHandles";
@@ -1997,6 +1999,93 @@ export function Shell(): React.ReactElement {
   }, [selectedShapeId, editContext, timeline, safeActiveLayerIndex, currentFrame, doc, pushDoc, withTimeline, activeSceneIndex]);
 
   // ---------------------------------------------------------------------------
+  // Shape > Smooth / Optimize
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Extract the point sequence from a ShapePath (start + all segment endpoints).
+   */
+  function extractPathPoints(path: import("@flash/core").ShapePath): Array<{ x: number; y: number }> {
+    const pts: Array<{ x: number; y: number }> = [path.start];
+    for (const seg of path.segments) {
+      pts.push(seg.to);
+    }
+    return pts;
+  }
+
+  /**
+   * Modify > Shape > Smooth — re-fits each path in the selected ShapeDisplayObject
+   * using the midpoint Catmull-Rom → quadratic Bézier pipeline.
+   */
+  const handleSmooth = useCallback(() => {
+    if (!selectedShapeId) return;
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return;
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= currentFrame)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf) return;
+    const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
+    if (!obj || obj.type !== "shape") return;
+    const shapeObj = obj as import("@flash/core").ShapeDisplayObject;
+    const newPaths = shapeObj.shape.paths.map((path) => {
+      const pts = extractPathPoints(path);
+      if (pts.length < 2) return path;
+      const smoothed = smoothPath(pts, path.closed);
+      return {
+        ...smoothed,
+        ...(path.fill !== undefined ? { fill: path.fill } : {}),
+        ...(path.stroke !== undefined ? { stroke: path.stroke } : {}),
+      };
+    });
+    pushDoc(withTimeline((t) =>
+      updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
+        shape: { ...shapeObj.shape, paths: newPaths },
+      })
+    ));
+  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
+
+  /**
+   * Modify > Shape > Optimize — reduces point count in each path using
+   * Ramer-Douglas-Peucker (epsilon = 2.0) and rebuilds as straight-line segments.
+   */
+  const handleOptimize = useCallback(() => {
+    if (!selectedShapeId) return;
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return;
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= currentFrame)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf) return;
+    const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
+    if (!obj || obj.type !== "shape") return;
+    const shapeObj = obj as import("@flash/core").ShapeDisplayObject;
+    const newPaths = shapeObj.shape.paths.map((path) => {
+      const pts = extractPathPoints(path);
+      if (pts.length < 2) return path;
+      const simplified = simplifyPath(pts, 2.0);
+      if (simplified.length < 2) return path;
+      const [start, ...rest] = simplified;
+      return {
+        start,
+        segments: rest.map((pt) => ({ type: "line" as const, to: pt })),
+        closed: path.closed,
+        ...(path.fill !== undefined ? { fill: path.fill } : {}),
+        ...(path.stroke !== undefined ? { stroke: path.stroke } : {}),
+      };
+    });
+    pushDoc(withTimeline((t) =>
+      updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
+        shape: { ...shapeObj.shape, paths: newPaths },
+      })
+    ));
+  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
+
+  // ---------------------------------------------------------------------------
   // Swap Symbol
   // ---------------------------------------------------------------------------
 
@@ -3085,6 +3174,8 @@ export function Shell(): React.ReactElement {
         onGroup={handleGroup}
         onUngroup={handleUngroup}
         onBreakApart={handleBreakApart}
+        onSmooth={handleSmooth}
+        onOptimize={handleOptimize}
         onSwapSymbol={handleSwapSymbol}
         onDistributeToLayers={handleDistributeToLayers}
         onAlignPanelToggle={() => setAlignPanelVisible((v) => !v)}

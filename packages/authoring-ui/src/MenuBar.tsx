@@ -232,6 +232,10 @@ export interface MenuBarProps {
   onUngroup?: () => void;
   /** Called when Modify > Break Apart (Ctrl+B) is activated. */
   onBreakApart?: () => void;
+  /** Called when Modify > Shape > Smooth is activated. */
+  onSmooth?: () => void;
+  /** Called when Modify > Shape > Optimize is activated. */
+  onOptimize?: () => void;
   /** Called when Modify > Swap Symbol... is activated. */
   onSwapSymbol?: () => void;
   /** Called when Modify > Distribute to Layers is activated. */
@@ -280,6 +284,8 @@ export function MenuBar({
   onGroup,
   onUngroup,
   onBreakApart,
+  onSmooth,
+  onOptimize,
   onSwapSymbol,
   onDistributeToLayers,
   onAlignPanelToggle,
@@ -416,6 +422,15 @@ export function MenuBar({
         {
           label: "Break Apart  Ctrl+B",
           action: () => { onBreakApart?.(); },
+        },
+        {
+          label: "Shape: Smooth",
+          action: () => { onSmooth?.(); },
+          separator: true,
+        },
+        {
+          label: "Shape: Optimize",
+          action: () => { onOptimize?.(); },
         },
         {
           label: "Distribute to Layers",
