@@ -38,11 +38,38 @@ permission — use your judgment.
 Conversely, merge or delete tasks that turned out to be duplicates or too granular:
 `./task update` to refine, `./task delete` to remove.
 
+## Task fields: effort and priority
+
+Every task carries two optional scheduling fields:
+
+### `effort` — which model to use
+
+| Value     | Model             | When to use                                      |
+|-----------|-------------------|--------------------------------------------------|
+| `default` | claude-sonnet-4-6 | Most tasks; straightforward implementation       |
+| `high`    | claude-opus-4-8   | Challenging, complex, or architecturally tricky  |
+| `extreme` | claude-fable-5    | Most complex; deep reasoning required            |
+
+Set on create: `./task create --title "..." --effort high`
+Update later:   `./task update <id> --effort extreme`
+
+### `priority` — pick-up order
+
+| Value    | Pick-up order |
+|----------|---------------|
+| `high`   | First         |
+| `medium` | Second        |
+| `low`    | Last          |
+
+`./task list` always renders tasks sorted high → medium → low → unset.
+Set on create: `./task create --title "..." --priority high`
+Update later:  `./task update <id> --priority low`
+
 ## Prioritization — critical path first
 
 The backlog is not a buffet. Claim order:
 
-1. Tasks titled **CRITICAL:** — always claim these before anything else.
+1. Tasks titled **CRITICAL:** or with `priority: high` — always claim these first.
 2. MVP-gate work: the agent interface suite (0613–0616), the interactivity oracle
    (0518), and the capstone game (0519).
 3. Everything else.
@@ -126,10 +153,13 @@ export TASK_AGENT_ID="cursor-$(hostname)"
 
 ```bash
 ./task create  --title "..." [--description "..."] [--id slug-without-prefix]
+               [--effort default|high|extreme] [--priority low|medium|high]
 ./task migrate
-./task list    [--status open|in_progress|done|cancelled] [--json]
+./task list    [--status open|in_progress|done|cancelled]
+               [--priority low|medium|high] [--effort default|high|extreme] [--json]
 ./task show    <id> [--json]
 ./task update  <id> [--title "..."] [--description "..."] [--status STATUS]
+               [--effort default|high|extreme] [--priority low|medium|high]
 ./task delete  <id> [--force]
 ./task acquire <id> [--holder NAME] [--ttl SECONDS]
 ./task release <id> [--holder NAME] [--force]
@@ -163,6 +193,8 @@ Task JSON shape:
   "title": "Stage MVP",
   "description": "Minimal stage: canvas, zoom, pan. See docs/01-documents-stage-scenes.md",
   "status": "open",
+  "effort": "default",
+  "priority": "medium",
   "created_at": "2026-06-09T12:00:00Z",
   "updated_at": "2026-06-09T12:00:00Z"
 }

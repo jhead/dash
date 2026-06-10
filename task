@@ -25,6 +25,10 @@ DEFAULT_TTL = 3600
 ID_WIDTH = 4
 ID_PREFIX_RE = re.compile(r"^\d{" + str(ID_WIDTH) + r"}-")
 STATUSES = frozenset({"open", "in_progress", "done", "cancelled"})
+EFFORTS = frozenset({"default", "high", "extreme"})
+PRIORITIES = frozenset({"low", "medium", "high"})
+PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+EFFORT_MODELS = {"default": "claude-sonnet-4-6", "high": "claude-opus-4-8", "extreme": "claude-fable-5"}
 
 
 def die(message: str) -> None:
@@ -193,16 +197,22 @@ def cmd_create(args: argparse.Namespace) -> None:
         if path.exists():
             die(f"task already exists: {task_id}")
         ts = now_iso()
-        task = {
+        task: dict[str, Any] = {
             "id": task_id,
             "title": args.title,
             "description": args.description or "",
             "status": args.status,
+            "effort": args.effort,
+            "priority": args.priority,
             "created_at": ts,
             "updated_at": ts,
         }
         write_task(task)
     print(task_id)
+
+
+def priority_sort_key(task: dict[str, Any]) -> int:
+    return PRIORITY_ORDER.get(task.get("priority", ""), 3)
 
 
 def cmd_list(args: argparse.Namespace) -> None:
@@ -212,8 +222,14 @@ def cmd_list(args: argparse.Namespace) -> None:
         task = json.loads(path.read_text(encoding="utf-8"))
         if args.status and task.get("status") != args.status:
             continue
+        if args.priority and task.get("priority") != args.priority:
+            continue
+        if args.effort and task.get("effort") != args.effort:
+            continue
         task["lock"] = active_lock(task["id"])
         tasks.append(task)
+
+    tasks.sort(key=priority_sort_key)
 
     if args.json:
         print(json.dumps(tasks, indent=2))
@@ -223,13 +239,15 @@ def cmd_list(args: argparse.Namespace) -> None:
         print("No tasks.")
         return
 
-    print(f"{'ID':<40} {'STATUS':<12} {'LOCK':<24} TITLE")
-    print("-" * 98)
+    print(f"{'ID':<40} {'STATUS':<12} {'PRI':<8} {'EFFORT':<10} {'LOCK':<24} TITLE")
+    print("-" * 114)
     for task in tasks:
         lock = task.get("lock")
         lock_str = lock["holder"] if lock else "-"
         title = task.get("title", "")[:40]
-        print(f"{task['id']:<40} {task.get('status', ''):<12} {lock_str:<24} {title}")
+        pri = task.get("priority") or "-"
+        effort = task.get("effort") or "-"
+        print(f"{task['id']:<40} {task.get('status', ''):<12} {pri:<8} {effort:<10} {lock_str:<24} {title}")
 
 
 def cmd_show(args: argparse.Namespace) -> None:
@@ -242,6 +260,10 @@ def cmd_show(args: argparse.Namespace) -> None:
     print(f"ID:          {task['id']}")
     print(f"Title:       {task.get('title', '')}")
     print(f"Status:      {task.get('status', '')}")
+    effort = task.get("effort") or "default"
+    model = EFFORT_MODELS.get(effort, "")
+    print(f"Effort:      {effort}  ({model})")
+    print(f"Priority:    {task.get('priority') or '-'}")
     print(f"Created:     {task.get('created_at', '')}")
     print(f"Updated:     {task.get('updated_at', '')}")
     desc = task.get("description") or ""
@@ -255,7 +277,7 @@ def cmd_show(args: argparse.Namespace) -> None:
 
 
 def cmd_update(args: argparse.Namespace) -> None:
-    if not any([args.title, args.description is not None, args.status]):
+    if not any([args.title, args.description is not None, args.status, args.effort, args.priority]):
         die("update requires at least one field")
 
     with global_mutex():
@@ -266,6 +288,10 @@ def cmd_update(args: argparse.Namespace) -> None:
             task["description"] = args.description
         if args.status:
             task["status"] = args.status
+        if args.effort:
+            task["effort"] = args.effort
+        if args.priority:
+            task["priority"] = args.priority
         task["updated_at"] = now_iso()
         write_task(task)
     print(f"updated: {args.id}")
@@ -412,10 +438,16 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--description", default="")
     create.add_argument("--id", default="")
     create.add_argument("--status", default="open", choices=sorted(STATUSES))
+    create.add_argument("--effort", default="default", choices=sorted(EFFORTS),
+                        help="Complexity hint: default=sonnet, high=opus, extreme=fable")
+    create.add_argument("--priority", default="medium", choices=sorted(PRIORITIES),
+                        help="Scheduling priority: high tasks are picked up first")
     create.set_defaults(func=cmd_create)
 
     list_cmd = sub.add_parser("list", help="List tasks")
     list_cmd.add_argument("--status", choices=sorted(STATUSES))
+    list_cmd.add_argument("--priority", choices=sorted(PRIORITIES))
+    list_cmd.add_argument("--effort", choices=sorted(EFFORTS))
     list_cmd.add_argument("--json", action="store_true")
     list_cmd.set_defaults(func=cmd_list)
 
@@ -429,6 +461,8 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--title")
     update.add_argument("--description")
     update.add_argument("--status", choices=sorted(STATUSES))
+    update.add_argument("--effort", choices=sorted(EFFORTS))
+    update.add_argument("--priority", choices=sorted(PRIORITIES))
     update.set_defaults(func=cmd_update)
 
     delete = sub.add_parser("delete", help="Delete a task")
