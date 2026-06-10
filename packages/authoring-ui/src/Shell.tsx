@@ -1790,7 +1790,7 @@ export function Shell(): React.ReactElement {
   // Handlers — library
   // ---------------------------------------------------------------------------
 
-  const { importToLibrary, importSoundToLibrary } = useFileActions();
+  const { importToLibrary, importSoundToLibrary, importVideoToLibrary } = useFileActions();
 
   const handleImportToLibrary = useCallback(async () => {
     const result = await importToLibrary();
@@ -1809,6 +1809,13 @@ export function Shell(): React.ReactElement {
     const { item } = result;
     pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
   }, [importSoundToLibrary, pushDoc, withLibrary]);
+
+  const handleImportVideo = useCallback(async () => {
+    const result = await importVideoToLibrary();
+    if (!result) return;
+    const { item } = result;
+    pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
+  }, [importVideoToLibrary, pushDoc, withLibrary]);
 
   const handleCreateSymbol = useCallback((name: string, type: SymbolType) => {
     pushDoc(withLibrary((lib) => {
@@ -3607,6 +3614,7 @@ export function Shell(): React.ReactElement {
         showRulers={showRulers}
         onImportToLibrary={() => { void handleImportToLibrary(); }}
         onImportSound={() => { void handleImportSound(); }}
+        onImportVideo={() => { void handleImportVideo(); }}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}

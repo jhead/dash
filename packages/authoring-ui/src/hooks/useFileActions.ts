@@ -1,8 +1,8 @@
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { readFile, writeFile } from "@tauri-apps/plugin-fs";
-import { createDocument, createBitmap, createSound } from "@flash/core";
+import { createDocument, createBitmap, createSound, createVideo } from "@flash/core";
 import { saveFla, loadFla } from "@flash/core";
-import type { BitmapItem, SoundItem, FlashDocument } from "@flash/core";
+import type { BitmapItem, SoundItem, VideoItem, FlashDocument } from "@flash/core";
 
 const FLA_FILTERS = [{ name: "Dash Document", extensions: ["fla"] }];
 
@@ -369,5 +369,91 @@ export function useFileActions() {
     return { item, dataUri };
   }
 
-  return { newDocument, openDocument, saveDocument, saveDocumentAs, importToLibrary, importSoundToLibrary };
+  /**
+   * Open a native file-open dialog filtered to video files (FLV/MP4/AVI).
+   * Reads the selected file, converts to a data URI, and returns a VideoItem
+   * along with the data URI.
+   * Returns `null` if the user cancels the dialog.
+   *
+   * Throws a user-visible error if Tauri APIs are unavailable (browser mode).
+   */
+  async function importVideoToLibrary(): Promise<{ item: VideoItem; dataUri: string } | null> {
+    let selected: string | null;
+    try {
+      selected = await dialogOpen({
+        title: "Import Video to Library",
+        filters: [{ name: "Video Files", extensions: ["flv", "mp4", "avi"] }],
+        multiple: false,
+        directory: false,
+      });
+    } catch (err) {
+      const msg =
+        "File dialogs require the Tauri desktop app. " +
+        "Run `pnpm dev` (not `pnpm dev:browser`) to import files from disk.";
+      console.error("[useFileActions] importVideoToLibrary dialog failed:", err);
+      alert(msg);
+      return null;
+    }
+
+    if (!selected) return null;
+
+    const path = typeof selected === "string" ? selected : selected;
+    let bytes: Uint8Array;
+    try {
+      bytes = await readFile(path);
+    } catch (err) {
+      const msg = `Failed to read file "${path}". Make sure the Tauri app has file-system permissions.`;
+      console.error("[useFileActions] readFile failed:", err);
+      alert(msg);
+      return null;
+    }
+
+    // Derive MIME type from extension
+    const lowerPath = path.toLowerCase();
+    let mime = "video/x-flv";
+    if (lowerPath.endsWith(".mp4")) {
+      mime = "video/mp4";
+    } else if (lowerPath.endsWith(".avi")) {
+      mime = "video/x-msvideo";
+    }
+
+    // Convert bytes to base64 data URI
+    let binary = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.slice(i, i + chunkSize));
+    }
+    const dataUri = `data:${mime};base64,${btoa(binary)}`;
+
+    // Derive name from filename (last path segment, no extension)
+    const segments = path.replace(/\\/g, "/").split("/");
+    const fileName = segments[segments.length - 1] ?? "video";
+    const name = fileName.replace(/\.[^.]+$/, "");
+
+    // Try to parse FLV header for frame count; fall back to defaults
+    let frameCount = 1;
+    if (lowerPath.endsWith(".flv")) {
+      try {
+        const { demuxFlv } = await import("@flash/swf");
+        const stream = demuxFlv(bytes);
+        if (stream) {
+          frameCount = stream.frames.length || 1;
+        }
+      } catch {
+        // Non-critical: fall back to defaults
+      }
+    }
+
+    const item = createVideo(name, {
+      dataUri,
+      frameCount,
+      frameRate: 12,
+      width: 320,
+      height: 240,
+    });
+
+    return { item, dataUri };
+  }
+
+  return { newDocument, openDocument, saveDocument, saveDocumentAs, importToLibrary, importSoundToLibrary, importVideoToLibrary };
 }
