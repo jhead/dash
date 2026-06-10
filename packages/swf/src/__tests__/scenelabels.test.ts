@@ -385,7 +385,7 @@ describe('encodeSceneAndFrameLabelData', () => {
     expect(labelName).toBe('namedLabel');
   });
 
-  it('anchor-type labels are excluded from frame label data', () => {
+  it('anchor-type labels are INCLUDED in frame label data (required for cross-scene gotoAndPlay)', () => {
     const doc = makeDoc([
       makeScene('s1', 'Scene 1', [
         makeFrame(0),
@@ -406,9 +406,25 @@ describe('encodeSceneAndFrameLabelData', () => {
       pos += nr;
     }
 
-    // FrameLabelCount should be 1 (only the 'name' type label)
-    const { value: labelCount } = readU32(body, pos);
-    expect(labelCount).toBe(1);
+    // FrameLabelCount should be 2: both the 'anchor' and 'name' type labels are included
+    const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
+    expect(labelCount).toBe(2);
+    pos += lcr;
+
+    // Label 0: frame 1, name "anchorLabel" (anchor type, included)
+    const { value: fn0, bytesRead: fn0r } = readU32(body, pos);
+    expect(fn0).toBe(1);
+    pos += fn0r;
+    const { str: ln0, bytesRead: ln0r } = readNullString(body, pos);
+    expect(ln0).toBe('anchorLabel');
+    pos += ln0r;
+
+    // Label 1: frame 2, name "namedLabel"
+    const { value: fn1, bytesRead: fn1r } = readU32(body, pos);
+    expect(fn1).toBe(2);
+    pos += fn1r;
+    const { str: ln1 } = readNullString(body, pos);
+    expect(ln1).toBe('namedLabel');
   });
 
   it('tag code in header is 86', () => {
@@ -500,11 +516,11 @@ describe('hasAnyLabels', () => {
     expect(hasAnyLabels(doc)).toBe(false);
   });
 
-  it('returns false when only anchor-type labels exist', () => {
+  it('returns true when only anchor-type labels exist', () => {
     const doc = makeDoc([
       makeScene('s1', 'Scene 1', [makeFrame(0), makeFrame(1, 'anchor', 'anchor')]),
     ]);
-    expect(hasAnyLabels(doc)).toBe(false);
+    expect(hasAnyLabels(doc)).toBe(true);
   });
 });
 
@@ -601,5 +617,39 @@ describe('compileDocument SceneAndFrameLabelData integration', () => {
     pos += o1r;
     const { str: name1 } = readNullString(body, pos);
     expect(name1).toBe('Main');
+  });
+
+  it('single scene with an anchor label emits tag 86 with the anchor in the frame label list', () => {
+    const doc = makeDoc([
+      makeScene('s1', 'Scene 1', [makeFrame(0), makeFrame(1, 'myAnchor', 'anchor')]),
+    ]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const tag86 = tags.find((t) => t.code === 86);
+    expect(tag86).toBeDefined();
+
+    const body = tag86!.body;
+    let pos = 0;
+    // Skip scene count + scene data
+    const { value: sceneCount, bytesRead: scr } = readU32(body, pos);
+    pos += scr;
+    for (let i = 0; i < sceneCount; i++) {
+      const { bytesRead: or } = readU32(body, pos);
+      pos += or;
+      const { bytesRead: nr } = readNullString(body, pos);
+      pos += nr;
+    }
+
+    // FrameLabelCount = 1 (anchor is included)
+    const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
+    expect(labelCount).toBe(1);
+    pos += lcr;
+
+    // The label should be 'myAnchor' at frame 1
+    const { value: frameNum, bytesRead: fnr } = readU32(body, pos);
+    expect(frameNum).toBe(1);
+    pos += fnr;
+    const { str: labelName } = readNullString(body, pos);
+    expect(labelName).toBe('myAnchor');
   });
 });

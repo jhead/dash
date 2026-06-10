@@ -16,8 +16,10 @@
  *     EncodedU32  FrameNum       // 0-based absolute frame number across all scenes
  *     string      Name           // null-terminated UTF-8
  *
- * Only frames with label !== '' AND labelType === 'name' are included as frame labels.
- * Frames with labelType === 'comment' or labelType === 'anchor' are excluded.
+ * Frames with label !== '' AND labelType === 'name' or labelType === 'anchor' are included
+ * as frame labels. Frames with labelType === 'comment' are excluded.
+ * Anchor-type labels must appear in tag 86 so that cross-scene gotoAndPlay("anchorName")
+ * resolves correctly in Flash Player.
  */
 
 import type { FlashDocument } from '@flash/core';
@@ -131,13 +133,14 @@ function sceneFrameCount(scene: import('@flash/core').Scene): number {
 export const TAG_SCENE_AND_FRAME_LABEL_DATA = 86;
 
 /**
- * Check whether the document has any labeled frames (label !== '' and labelType === 'name').
+ * Check whether the document has any labeled frames
+ * (label !== '' and labelType === 'name' or 'anchor').
  */
 export function hasAnyLabels(doc: FlashDocument): boolean {
   for (const scene of doc.scenes) {
     for (const layer of scene.timeline.layers) {
       for (const frame of layer.frames) {
-        if (frame.label !== '' && frame.labelType === 'name') {
+        if (frame.label !== '' && (frame.labelType === 'name' || frame.labelType === 'anchor')) {
           return true;
         }
       }
@@ -165,7 +168,8 @@ export function encodeSceneAndFrameLabelData(doc: FlashDocument): Uint8Array {
     frameOffset += sceneFrameCount(scene);
   }
 
-  // Build frame label data: collect labeled frames (labelType === 'name' only)
+  // Build frame label data: collect labeled frames (labelType === 'name' or 'anchor')
+  // Anchor labels must be included so gotoAndPlay("anchorName") resolves across scenes.
   // Track absolute frame numbers across all scenes
   const labelParts: Uint8Array[] = [];
   let labelCount = 0;
@@ -180,7 +184,7 @@ export function encodeSceneAndFrameLabelData(doc: FlashDocument): Uint8Array {
         if (
           frame.isKeyframe &&
           frame.label !== '' &&
-          frame.labelType === 'name' &&
+          (frame.labelType === 'name' || frame.labelType === 'anchor') &&
           !seenFrameIndices.has(frame.index)
         ) {
           seenFrameIndices.add(frame.index);
