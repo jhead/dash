@@ -1,8 +1,8 @@
 # dash
 
-a Macromedia Flash 8 clone
+a Macromedia Flash 8 clone.
 
-**Try It** https://jhead.github.io/dash/
+**Try It:** https://jhead.github.io/dash/
 
 Author Flash content in your browser, publish to SWF, and run it with Ruffle.
 
