@@ -78,17 +78,19 @@ function parseSWFTags(bytes: Uint8Array): SWFTag[] {
 interface DecodedEditText {
   charId: number;
   flags: number;
-  /** true if HasText flag (bit 0) is set */
+  /** true if HasText flag (bit 7) is set */
   hasText: boolean;
-  /** true if ReadOnly flag (bit 4) is set */
+  /** true if ReadOnly flag (bit 3) is set */
   readOnly: boolean;
-  /** true if HasTextColor flag (bit 5) is set */
+  /** true if HasTextColor flag (bit 2) is set */
   hasTextColor: boolean;
-  /** true if HasFont flag (bit 7) is set */
+  /** true if HasFont flag (bit 0) is set — font ID + height present */
   hasFont: boolean;
-  /** true if NoSelect flag (bit 11) is set */
+  /** true if UseOutlines flag (bit 8) is set — embedded glyph outlines used */
+  useOutlines: boolean;
+  /** true if NoSelect flag (bit 12) is set */
   noSelect: boolean;
-  /** true if WasStatic flag (bit 14) is set */
+  /** true if WasStatic flag (bit 10) is set */
   wasStatic: boolean;
   /** initial text string if HasText is set, otherwise undefined */
   initialText: string | undefined;
@@ -147,6 +149,7 @@ function decodeDefineEditText(body: Uint8Array): DecodedEditText {
   const hasTextColor = (flags & (1 << 2)) !== 0;
   const readOnly = (flags & (1 << 3)) !== 0;
   const hasText = (flags & (1 << 7)) !== 0;
+  const useOutlines = (flags & (1 << 8)) !== 0;
   const wasStatic = (flags & (1 << 10)) !== 0;
   const noSelect = (flags & (1 << 12)) !== 0;
   const hasLayout = (flags & (1 << 13)) !== 0;
@@ -177,7 +180,7 @@ function decodeDefineEditText(body: Uint8Array): DecodedEditText {
     initialText = new TextDecoder().decode(body.slice(byteOff, end));
   }
 
-  return { charId, flags, hasText, readOnly, hasTextColor, hasFont, noSelect, wasStatic, initialText };
+  return { charId, flags, hasText, readOnly, hasTextColor, hasFont, useOutlines, noSelect, wasStatic, initialText };
 }
 
 // ---------------------------------------------------------------------------
@@ -294,66 +297,53 @@ function compileAndDecode(obj: TextDisplayObject): DecodedEditText {
 // Tests
 // ---------------------------------------------------------------------------
 
-// Static text now uses DefineText (tag 11), not DefineEditText (tag 37).
-// These tests verify the routing change.
-describe("Static text — emits DefineText (tag 11), not DefineEditText (tag 37)", () => {
-  it("static text: emits DefineText tag (code 11)", () => {
-    const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
-    const bytes = compileDocument(doc);
-    const tags = parseSWFTags(bytes);
-    const textTags = tags.filter((t) => t.code === TAG_DEFINE_TEXT);
-    expect(textTags.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("static text: does NOT emit DefineEditText tag (code 37)", () => {
+// All text types now use DefineEditText (tag 37) with device fonts (no embedded
+// font outlines). This makes static text render identically to MC text (both use
+// Ruffle's device-font path), fixing the "mangled" 5×7 pixel-art appearance that
+// occurred when UseOutlines + DefineFont3 was enabled.
+describe("Static text — emits DefineEditText (tag 37), device fonts", () => {
+  it("static text: emits DefineEditText tag (code 37)", () => {
     const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
     const editTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
-    expect(editTags.length).toBe(0);
+    expect(editTags.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("static text: DefineText body starts with correct charId (UI16 LE)", () => {
+  it("static text: does NOT emit DefineText tag (code 11)", () => {
     const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
-    const textTag = tags.find((t) => t.code === TAG_DEFINE_TEXT);
-    expect(textTag).toBeDefined();
-    const charId = textTag!.body[0] | (textTag!.body[1] << 8);
-    expect(charId).toBeGreaterThan(0);
+    const textTags = tags.filter((t) => t.code === TAG_DEFINE_TEXT);
+    expect(textTags.length).toBe(0);
   });
 
-  it("static text: DefineText body is non-trivially sized (contains RECT, MATRIX, glyph data)", () => {
-    const doc = makeDoc([makeText({ textType: "static", text: "Hi" })]);
+  it("static text: HasFont flag (bit 0) IS set (for size), UseOutlines (bit 8) is NOT set (device fonts)", () => {
+    const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
-    const textTag = tags.find((t) => t.code === TAG_DEFINE_TEXT);
-    expect(textTag).toBeDefined();
-    expect(textTag!.body.length).toBeGreaterThan(10);
+    const editTag = tags.find((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    expect(editTag).toBeDefined();
+    const decoded = decodeDefineEditText(editTag!.body);
+    // HasFont is set so Ruffle knows the font size; UseOutlines is NOT set so
+    // Ruffle renders with device fonts instead of the custom embedded glyphs.
+    expect(decoded.hasFont).toBe(true);
+    expect(decoded.useOutlines).toBe(false);
   });
 
-  it("static text: DefineText body ends with 0x00 (TEXTRECORD terminator)", () => {
-    const doc = makeDoc([makeText({ textType: "static", text: "Hi" })]);
-    const bytes = compileDocument(doc);
-    const tags = parseSWFTags(bytes);
-    const textTag = tags.find((t) => t.code === TAG_DEFINE_TEXT);
-    expect(textTag).toBeDefined();
-    const body = textTag!.body;
-    expect(body[body.length - 1]).toBe(0x00);
+  it("static text: WasStatic flag (bit 10) is set", () => {
+    const decoded = compileAndDecode(makeText({ textType: "static", text: "Hello" }));
+    expect(decoded.wasStatic).toBe(true);
   });
 
-  it("static text: longer text produces a larger DefineText body (more glyph entries)", () => {
-    const docShort = makeDoc([makeText({ textType: "static", text: "Hi" })]);
-    const docLong = makeDoc([makeText({ textType: "static", text: "Hello World!" })]);
-    const bytesShort = compileDocument(docShort);
-    const bytesLong = compileDocument(docLong);
-    const tagsShort = parseSWFTags(bytesShort);
-    const tagsLong = parseSWFTags(bytesLong);
-    const shortTag = tagsShort.find((t) => t.code === TAG_DEFINE_TEXT);
-    const longTag = tagsLong.find((t) => t.code === TAG_DEFINE_TEXT);
-    expect(shortTag).toBeDefined();
-    expect(longTag).toBeDefined();
-    expect(longTag!.body.length).toBeGreaterThan(shortTag!.body.length);
+  it("static text: NoSelect flag (bit 12) is set (not selectable)", () => {
+    const decoded = compileAndDecode(makeText({ textType: "static", text: "Hello" }));
+    expect(decoded.noSelect).toBe(true);
+  });
+
+  it("static text: initial text is encoded in DefineEditText body", () => {
+    const decoded = compileAndDecode(makeText({ textType: "static", text: "Hello World" }));
+    expect(decoded.initialText).toBe("Hello World");
   });
 });
 
@@ -424,11 +414,18 @@ describe("DefineEditText — HasTextColor always set", () => {
   });
 });
 
-describe("DefineEditText — HasFont wiring", () => {
-  it("dynamic text with embedded font: HasFont flag (bit 7) is set", () => {
-    // Static text uses DefineText (tag 11); use dynamic to test DefineEditText HasFont flag.
+describe("DefineEditText — UseOutlines NOT set (device fonts, correct size)", () => {
+  it("dynamic text: HasFont IS set (for size) but UseOutlines is NOT set (device font rendering)", () => {
+    // HasFont is set so Ruffle gets the font size. UseOutlines is NOT set so
+    // Ruffle renders with device fonts rather than the custom pixel-art embedded glyphs.
     const decoded = compileAndDecode(makeText({ textType: "dynamic" }));
-    // compileDocument always embeds fonts → HasFont should be set
     expect(decoded.hasFont).toBe(true);
+    expect(decoded.useOutlines).toBe(false);
+  });
+
+  it("static text: HasFont IS set (for size) but UseOutlines is NOT set (device font rendering)", () => {
+    const decoded = compileAndDecode(makeText({ textType: "static" }));
+    expect(decoded.hasFont).toBe(true);
+    expect(decoded.useOutlines).toBe(false);
   });
 });

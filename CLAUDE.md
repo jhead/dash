@@ -157,6 +157,16 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
     horizontal bars drop) even though the SWF is spec-correct. Decompose glyphs into
     maximal rectangles and grow thin strokes to ≥2 cells thick. The acceptance oracle is
     `apps/desktop/e2e/text-rendering.spec.ts` (counts dark pixels over white).
+  - **UseOutlines=1 makes text look "mangled" (task 0710)**: setting the UseOutlines
+    (bit 8) flag in DefineEditText forces Ruffle to render glyph outlines from the
+    embedded font — which is our custom 5×7 pixel-art font — instead of system device
+    fonts (real Arial etc.). The fix is to set `HasFont=1` (so Ruffle knows the font
+    SIZE from the FontHeight field) but leave `UseOutlines=0`. This gives correctly-sized
+    device-font rendering for ALL text types (static, dynamic, input) on the main
+    timeline, matching MC text behaviour (which never sets UseOutlines). Static text
+    now uses DefineEditText (tag 37) instead of DefineText (tag 11); glyph-indexed
+    DefineText is still emitted correctly by `encodeDefineText` but is not called from
+    the main compile path.
 - **`isEmpty: true` frames are skipped by the compiler** (`compile.ts`:
   `if (!frame.isKeyframe || frame.isEmpty) continue;`). Display objects listed on a
   frame marked `isEmpty` are silently dropped from the SWF — fixture builders must set

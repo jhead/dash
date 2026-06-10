@@ -550,10 +550,11 @@ describe("SWF export — integration", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 11: DefineText tag present for a static TextDisplayObject
-  // Static text uses DefineText (tag 11); dynamic/input text uses DefineEditText (tag 37).
+  // Test 11: DefineEditText tag present for a static TextDisplayObject
+  // All text types now use DefineEditText (tag 37) with device fonts,
+  // matching MC text behaviour and avoiding the custom pixel-art embedded glyphs.
   // -------------------------------------------------------------------------
-  it("doc with a static TextDisplayObject → DefineText tag (code 11) present", () => {
+  it("doc with a static TextDisplayObject → DefineEditText tag (code 37) present", () => {
     const textObj = makeText("Hello World");
     const doc = makeDoc({
       scenes: [makeScene("s1", "Scene 1", [makeFrame([textObj])])],
@@ -561,8 +562,9 @@ describe("SWF export — integration", () => {
     const bytes = compileDocument(doc);
     const { tags } = parseSWF(bytes);
 
-    const textTags = tags.filter((t) => t.code === TAG_DEFINE_TEXT);
-    expect(textTags.length).toBeGreaterThan(0);
+    const TAG_DEFINE_EDIT_TEXT = 37;
+    const editTextTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    expect(editTextTags.length).toBeGreaterThan(0);
   });
 
   // -------------------------------------------------------------------------

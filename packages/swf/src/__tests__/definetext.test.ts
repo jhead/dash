@@ -209,24 +209,27 @@ describe("encodeDefineText (tag 11)", () => {
 // Tests: compile.ts integration
 // ---------------------------------------------------------------------------
 
+// All text types (static, dynamic, input) now use DefineEditText (tag 37) with
+// device fonts (no UseOutlines / no embedded glyph outlines). This matches the
+// MC text behaviour and avoids the mangled 5×7 pixel-art font appearance.
 describe("compileDocument text tag routing", () => {
-  it("compiled doc with static text emits tag 11 (DefineText)", () => {
-    const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
-    const bytes = compileDocument(doc);
-    const tags = parseSWFTags(bytes);
-    const textTags = tags.filter((t) => t.code === TAG_DEFINE_TEXT);
-    expect(textTags.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("compiled doc with static text does NOT emit tag 37 (DefineEditText)", () => {
+  it("compiled doc with static text emits tag 37 (DefineEditText)", () => {
     const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
     const editTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
-    expect(editTags.length).toBe(0);
+    expect(editTags.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("compiled doc with dynamic text still emits tag 37 (DefineEditText)", () => {
+  it("compiled doc with static text does NOT emit tag 11 (DefineText)", () => {
+    const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const textTags = tags.filter((t) => t.code === TAG_DEFINE_TEXT);
+    expect(textTags.length).toBe(0);
+  });
+
+  it("compiled doc with dynamic text emits tag 37 (DefineEditText)", () => {
     const doc = makeDoc([makeText({ textType: "dynamic", text: "Score: 0" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
@@ -242,7 +245,7 @@ describe("compileDocument text tag routing", () => {
     expect(textTags.length).toBe(0);
   });
 
-  it("compiled doc with input text still emits tag 37 (DefineEditText)", () => {
+  it("compiled doc with input text emits tag 37 (DefineEditText)", () => {
     const doc = makeDoc([makeText({ textType: "input", text: "" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
@@ -250,14 +253,14 @@ describe("compileDocument text tag routing", () => {
     expect(editTags.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("static text DefineText tag body: charId matches first two bytes", () => {
+  it("static text DefineEditText tag body: charId matches first two bytes", () => {
     const doc = makeDoc([makeText({ textType: "static", text: "Hi" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
-    const textTag = tags.find((t) => t.code === TAG_DEFINE_TEXT);
-    expect(textTag).toBeDefined();
+    const editTag = tags.find((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    expect(editTag).toBeDefined();
     // charId should be a valid UI16 (positive small number)
-    const charId = textTag!.body[0] | (textTag!.body[1] << 8);
+    const charId = editTag!.body[0] | (editTag!.body[1] << 8);
     expect(charId).toBeGreaterThan(0);
   });
 });

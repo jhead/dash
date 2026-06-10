@@ -230,15 +230,16 @@ export function encodeDefineEditText(
   const hasText = isStatic || isDynamic || obj.text.length > 0;
 
   let flags = 0;
-  if (hasEmbeddedFont) flags |= 1 << 0;  // HasFont — reference embedded font
+  if (hasEmbeddedFont) flags |= 1 << 0;  // HasFont — provides FontID + FontHeight for size
   flags |= 1 << 2;                       // HasTextColor
   if (isReadOnly) flags |= 1 << 3;       // ReadOnly for static and dynamic text
   if (obj.multiline) flags |= 1 << 5;    // Multiline
   if (obj.wordWrap) flags |= 1 << 6;     // WordWrap
   if (hasText) flags |= 1 << 7;          // HasText
-  // UseOutlines: render using the embedded font's glyph outlines rather than a
-  // device font. Required for the embedded glyphs to actually be used.
-  if (hasEmbeddedFont) flags |= 1 << 8;  // UseOutlines
+  // NOTE: UseOutlines (bit 8) is intentionally NOT set. Setting it would force
+  // Ruffle to use our custom embedded 5×7 pixel-art glyphs instead of system
+  // device fonts, making the text look "mangled". With UseOutlines=0, Ruffle
+  // renders with device fonts (real Arial, etc.) at the size given by FontHeight.
   if (isStatic) flags |= 1 << 10;        // WasStatic — Flash 8+ static marker
   if (isStatic) flags |= 1 << 12;        // NoSelect for static text only
   flags |= 1 << 13;                      // HasLayout

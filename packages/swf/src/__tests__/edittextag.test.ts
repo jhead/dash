@@ -185,21 +185,21 @@ describe("DefineEditText (tag 37) encoding", () => {
     expect(editTextTags.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("SWF output does NOT contain DefineEditText (type 37) for static text", () => {
+  it("SWF output contains DefineEditText (type 37) for static text (device fonts)", () => {
     const doc = makeDoc([makeTextObject({ textType: "static", text: "Hi" })]);
     const bytes = compileDocument(doc);
     const tags = findTags(bytes);
     const editTextTags = tags.filter((t) => t.type === TAG_DEFINE_EDIT_TEXT);
-    // Static text goes through DefineText (tag 11), not DefineEditText
-    expect(editTextTags.length).toBe(0);
+    // Static text now uses DefineEditText with device fonts (matching MC text behaviour)
+    expect(editTextTags.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("static text emits DefineText (type 11) instead", () => {
+  it("static text does NOT emit DefineText (type 11) — uses DefineEditText instead", () => {
     const doc = makeDoc([makeTextObject({ textType: "static", text: "Hi" })]);
     const bytes = compileDocument(doc);
     const tags = findTags(bytes);
     const textTags = tags.filter((t) => t.type === TAG_DEFINE_TEXT);
-    expect(textTags.length).toBeGreaterThanOrEqual(1);
+    expect(textTags.length).toBe(0);
   });
 
   it("DefineEditText tag body begins with a valid CharacterId (UI16LE > 0)", () => {

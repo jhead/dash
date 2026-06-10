@@ -624,25 +624,13 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             objCharIdMap.set(obj.id, charId);
             const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
             const embeddedFontId = fontCharIdMap.get(key);
-            if (obj.textType === "static") {
-              // Static text: use DefineText (tag 11) with glyph-indexed rendering
-              const fontSizeTwips = Math.round(obj.fontSize * 20);
-              const colorHex = `#${obj.color.r.toString(16).padStart(2, "0")}${obj.color.g.toString(16).padStart(2, "0")}${obj.color.b.toString(16).padStart(2, "0")}`;
-              const textBody = encodeDefineText(
-                charId,
-                obj.text,
-                embeddedFontId ?? 0,
-                fontSizeTwips,
-                colorHex,
-                0,
-                fontSizeTwips // Y offset = font height so baseline is visible
-              );
-              writer.writeTag(Tag.DefineText, textBody);
-            } else {
-              // Dynamic and input text: use DefineEditText (tag 37)
-              const textBody = encodeDefineEditText(charId, obj, embeddedFontId);
-              writer.writeTag(Tag.DefineEditText, textBody);
-            }
+            // Use DefineEditText (tag 37) for ALL text types. Pass the embedded font
+            // ID so HasFont is set and Ruffle honours the font SIZE — but UseOutlines
+            // is deliberately NOT set, so Ruffle renders with device fonts (real Arial,
+            // etc.) rather than our custom 5×7 pixel-art embedded glyphs. This gives
+            // correctly-sized, legible text that matches MC text behaviour.
+            const textBody = encodeDefineEditText(charId, obj, embeddedFontId);
+            writer.writeTag(Tag.DefineEditText, textBody);
           } else if (obj.type === "bitmap") {
             // Look up the BitmapItem from the library
             const bitmapItem = doc.library.items.find(
