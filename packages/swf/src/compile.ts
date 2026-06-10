@@ -1350,6 +1350,14 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         //   var _tf=new TextFormat();_tf.letterSpacing=N;_root.name.setTextFormat(_tf);
         const letterSpacingActions: string[] = [];
 
+        // Collect tab-order DoAction scripts for instances with accessibility.tabIndex
+        // set. On scene 0 / frame 0, also emit the global _root.tabChildren = false when
+        // doc.accessibility.useCustomTabOrder is true.
+        const tabOrderActions: string[] = [];
+        if (sceneIdx === 0 && frameIdx === 0 && doc.accessibility?.useCustomTabOrder) {
+          tabOrderActions.push("_root.tabChildren = false;");
+        }
+
         // Video streams: placed once on scene 0 / frame 0, then advanced one
         // VideoFrame (tag 61) per ShowFrame. VideoFrame tags are emitted just
         // before this frame's ShowFrame (see below).
@@ -1764,6 +1772,27 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 }
               }
             }
+
+            // If this is a newly-placed instance with an accessibility.tabIndex,
+            // queue a DoAction to set tabEnabled and tabIndex via AS2.
+            // Requires an instanceName so AS2 can address the object (_root.name).
+            if (
+              displayObj.type === "instance" &&
+              displayObj.instanceName &&
+              displayObj.instanceName.length > 0 &&
+              displayObj.accessibility?.tabIndex != null
+            ) {
+              const name = displayObj.instanceName;
+              const idx = displayObj.accessibility.tabIndex;
+              // tabEnabled defaults to true for objects with a set tabIndex,
+              // but emit it explicitly so Flash Player custom tab order works.
+              const tabEnabled = displayObj.accessibility.enabled !== false;
+              tabOrderActions.push(
+                `_root.${name}.tabEnabled = ${tabEnabled};` +
+                `_root.${name}.tabIndex = ${idx};`
+              );
+            }
+
             depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
           } else if (posChanged) {
             // Object moved, scaled, rotated, or replaced — emit PlaceObject2+Move
@@ -2031,6 +2060,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         // Emit DoAction for any text fields with non-zero letterSpacing placed this frame.
         // Each script: var _tf=new TextFormat();_tf.letterSpacing=N;_root.name.setTextFormat(_tf);
         for (const script of letterSpacingActions) {
+          const actionBytes = compileAS2(script);
+          if (actionBytes.length > 0) {
+            const doActionBody = new Uint8Array(actionBytes.length + 1);
+            doActionBody.set(actionBytes);
+            // doActionBody[actionBytes.length] is already 0x00 (EndAction)
+            writer.writeTag(Tag.DoAction, doActionBody);
+          }
+        }
+
+        // Emit DoAction for tab-order scripts (accessibility.tabIndex / useCustomTabOrder).
+        // Global script (_root.tabChildren = false) is first, then per-object scripts.
+        for (const script of tabOrderActions) {
           const actionBytes = compileAS2(script);
           if (actionBytes.length > 0) {
             const doActionBody = new Uint8Array(actionBytes.length + 1);

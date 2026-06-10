@@ -6,6 +6,8 @@
  * - DocumentAccessibility fields have the expected shape
  * - ObjectAccessibility on SymbolInstance is optional
  * - A document with accessibility.enabled=true can be compiled without error
+ * - useCustomTabOrder=true emits a DoAction with _root.tabChildren=false
+ * - SymbolInstance with accessibility.tabIndex emits tabEnabled/tabIndex DoAction
  */
 
 import { describe, it, expect } from "vitest";
@@ -15,6 +17,7 @@ import type {
   Frame,
   Layer,
   Scene,
+  Symbol,
   SymbolInstance,
 } from "@flash/core";
 import type { DocumentAccessibility, ObjectAccessibility } from "@flash/core";
@@ -138,15 +141,120 @@ function makeScene(id: string, name: string, frameCount = 1): Scene {
 
 function makeDoc(
   scenes: Scene[],
-  accessibility?: DocumentAccessibility
+  accessibility?: DocumentAccessibility,
+  symbols: Symbol[] = []
 ): FlashDocument {
   return {
     id: "doc-1",
     properties: { ...BASE_PROPS },
     scenes,
-    library: { items: [], folders: [] },
+    library: { items: symbols, folders: [] },
     ...(accessibility !== undefined ? { accessibility } : {}),
   };
+}
+
+/** Build a minimal Symbol (movieclip) for SymbolInstance tests. */
+function makeSymbol(id: string): Symbol {
+  return {
+    id,
+    name: id,
+    itemType: "symbol",
+    symbolType: "movieclip",
+    linkage: {
+      exportForActionScript: false,
+      exportInFirstFrame: false,
+      linkageIdentifier: "",
+      className: "",
+      exportForRuntimeSharing: false,
+      importForRuntimeSharing: false,
+      sharedUrl: "",
+    },
+    scale9Grid: null,
+    timeline: {
+      layers: [
+        {
+          id: "layer",
+          name: "layer",
+          type: "normal",
+          visible: true,
+          locked: false,
+          outlineMode: false,
+          outlineColor: "#ff0000",
+          height: 20,
+          parentFolderId: null,
+          frames: [makeBlankFrame(0)],
+          frameCount: 1,
+        },
+      ],
+    },
+  };
+}
+
+/** Build a frame with the given display objects (non-empty keyframe). */
+function makeFrameWithObjects(index: number, displayObjects: Frame["displayObjects"]): Frame {
+  return {
+    index,
+    isKeyframe: true,
+    isEmpty: false,
+    tweenType: "none",
+    label: "",
+    labelType: "name",
+    script: "",
+    sound: null,
+    motionEase: 0,
+    motionRotate: "none",
+    motionRotateCount: 0,
+    motionOrientToPath: false,
+    motionSync: false,
+    motionScale: false,
+    shapeEase: 0,
+    shapeBlend: "distributive",
+    displayObjects,
+  };
+}
+
+/** Build a Scene with a single layer containing the given frames. */
+function makeSceneWithFrames(id: string, name: string, frames: Frame[]): Scene {
+  return {
+    id,
+    name,
+    timeline: {
+      layers: [
+        {
+          id: `${id}-layer`,
+          name: `${id}-layer`,
+          type: "normal",
+          visible: true,
+          locked: false,
+          outlineMode: false,
+          outlineColor: "#ff0000",
+          height: 20,
+          parentFolderId: null,
+          frames,
+          frameCount: frames.length,
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * Return true when any DoAction (tag 12) tag body contains a raw
+ * occurrence of the given ASCII substring.
+ */
+function doActionContains(tags: SwfTag[], needle: string): boolean {
+  const TAG_DO_ACTION = 12;
+  const doActions = tags.filter((t) => t.code === TAG_DO_ACTION);
+  const needleBytes = Array.from(needle).map((c) => c.charCodeAt(0));
+  for (const tag of doActions) {
+    outer: for (let i = 0; i <= tag.body.length - needleBytes.length; i++) {
+      for (let j = 0; j < needleBytes.length; j++) {
+        if (tag.body[i + j] !== needleBytes[j]) continue outer;
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,5 +378,147 @@ describe("AccessibilityPanel model — ObjectAccessibility on SymbolInstance", (
     };
     expect(inst.accessibility?.enabled).toBe(false);
     expect(inst.accessibility?.name).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: tab-order DoAction emission
+// ---------------------------------------------------------------------------
+
+describe("Tab-order DoAction emission", () => {
+  it("useCustomTabOrder=true emits a DoAction with tabChildren", () => {
+    const acc: DocumentAccessibility = {
+      enabled: true,
+      makeChildrenAccessible: true,
+      useCustomTabOrder: true,
+    };
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)], acc);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    // At least one DoAction (tag 12) must carry "tabChildren"
+    expect(doActionContains(tags, "tabChildren")).toBe(true);
+  });
+
+  it("useCustomTabOrder=false does NOT emit a tabChildren DoAction", () => {
+    const acc: DocumentAccessibility = {
+      enabled: true,
+      makeChildrenAccessible: true,
+      useCustomTabOrder: false,
+    };
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)], acc);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "tabChildren")).toBe(false);
+  });
+
+  it("accessibility=undefined does NOT emit tabChildren DoAction", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "tabChildren")).toBe(false);
+  });
+
+  it("SymbolInstance with tabIndex and instanceName emits tabIndex DoAction", () => {
+    const sym = makeSymbol("sym-tab");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-tab",
+      symbolId: "sym-tab",
+      x: 50,
+      y: 50,
+      instanceName: "myClip",
+      accessibility: {
+        enabled: true,
+        tabIndex: 3,
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    // DoAction body must contain "tabIndex" and "tabEnabled"
+    expect(doActionContains(tags, "tabIndex")).toBe(true);
+    expect(doActionContains(tags, "tabEnabled")).toBe(true);
+    // The instance name must appear in the DoAction
+    expect(doActionContains(tags, "myClip")).toBe(true);
+  });
+
+  it("SymbolInstance without instanceName does NOT emit tabIndex DoAction", () => {
+    const sym = makeSymbol("sym-noinst");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-noinst",
+      symbolId: "sym-noinst",
+      x: 0,
+      y: 0,
+      // no instanceName
+      accessibility: {
+        enabled: true,
+        tabIndex: 1,
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "tabIndex")).toBe(false);
+  });
+
+  it("SymbolInstance without accessibility.tabIndex does NOT emit tabIndex DoAction", () => {
+    const sym = makeSymbol("sym-noidx");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-noidx",
+      symbolId: "sym-noidx",
+      x: 0,
+      y: 0,
+      instanceName: "noTabClip",
+      accessibility: {
+        enabled: true,
+        // no tabIndex
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "tabIndex")).toBe(false);
+    expect(doActionContains(tags, "noTabClip")).toBe(false);
+  });
+
+  it("useCustomTabOrder=true combined with tabIndex instance emits both scripts", () => {
+    const acc: DocumentAccessibility = {
+      enabled: true,
+      makeChildrenAccessible: true,
+      useCustomTabOrder: true,
+    };
+    const sym = makeSymbol("sym-combo");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-combo",
+      symbolId: "sym-combo",
+      x: 0,
+      y: 0,
+      instanceName: "comboClip",
+      accessibility: {
+        enabled: true,
+        tabIndex: 2,
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], acc, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "tabChildren")).toBe(true);
+    expect(doActionContains(tags, "tabIndex")).toBe(true);
+    expect(doActionContains(tags, "comboClip")).toBe(true);
   });
 });
