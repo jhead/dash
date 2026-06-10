@@ -377,6 +377,81 @@ describe("LINESTYLE2 flags", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Degenerate path filtering
+// ---------------------------------------------------------------------------
+
+describe("DefineShape4 — degenerate path filtering", () => {
+  /**
+   * Regression test for task 0890: shapes imported from corrupt FLA binaries can
+   * contain paths with garbage coordinates (e.g. x=236829.45, y=-318545.7 pixels)
+   * that exceed the valid SWF range. These cause the shape bit stream to produce a
+   * spurious stateNewStyles=1 flag which Ruffle interprets as a new fill style array,
+   * triggering "Invalid fill style" errors.
+   *
+   * The encoder must silently drop such paths to prevent corrupt SWF output.
+   */
+  it("silently drops paths with out-of-range coordinates (>65535 px)", () => {
+    const shapeWithGarbage: Shape = {
+      id: "test",
+      paths: [
+        // Valid path
+        {
+          start: { x: 0, y: 0 },
+          segments: [
+            { type: "line", to: { x: 10, y: 0 } },
+            { type: "line", to: { x: 10, y: 10 } },
+            { type: "line", to: { x: 0, y: 10 } },
+          ],
+          closed: true,
+          fill: { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } },
+        },
+        // Garbage path from corrupt FLA import (coordinates > 65535 px)
+        {
+          start: { x: 236829.45, y: -318545.7 },
+          segments: [
+            { type: "line", to: { x: 236829.45, y: -658416.1 } },
+            { type: "line", to: { x: 402910.55, y: -658416.1 } },
+            { type: "line", to: { x: 402910.55, y: -318545.7 } },
+            { type: "line", to: { x: 236829.45, y: -318545.7 } },
+          ],
+          closed: false,
+          stroke: { type: "solid", color: { r: 0, g: 0, b: 0, a: 255 }, width: 1, caps: "round", joints: "round", miterLimit: 3 },
+        },
+      ],
+    };
+
+    // Encoding must not throw
+    const body = encodeDefineShape4(1, shapeWithGarbage);
+    expect(body).toBeInstanceOf(Uint8Array);
+    expect(body.length).toBeGreaterThan(10);
+
+    // The resulting body must match the encoding of the shape WITHOUT the garbage path
+    const shapeWithoutGarbage: Shape = {
+      id: "test",
+      paths: [shapeWithGarbage.paths[0]],
+    };
+    const cleanBody = encodeDefineShape4(1, shapeWithoutGarbage);
+    expect(body).toEqual(cleanBody);
+  });
+
+  it("does not filter valid paths with large-but-valid coordinates", () => {
+    const shape: Shape = {
+      id: "test",
+      paths: [
+        {
+          start: { x: 0, y: 0 },
+          segments: [{ type: "line", to: { x: 3000, y: 3000 } }],
+          closed: false,
+          stroke: { type: "solid", color: { r: 0, g: 0, b: 0, a: 255 }, width: 2, caps: "round", joints: "round", miterLimit: 3 },
+        },
+      ],
+    };
+    const body = encodeDefineShape4(1, shape);
+    expect(body.length).toBeGreaterThan(10);
+  });
+});
+
 // PlaceObject2
 // ---------------------------------------------------------------------------
 

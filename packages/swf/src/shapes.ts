@@ -285,6 +285,30 @@ function joinStyleBits(join: string): number {
  *                        the SWF character ID of the corresponding DefineBits tag.
  *                        Required for shapes that contain bitmap fills.
  */
+/**
+ * Maximum coordinate value (in pixels) that a valid SWF shape path point can have.
+ * SWF RECT fields use up to 17 signed bits → ±65,535 twips → ±3,276 pixels.
+ * Flash's maximum stage size is 2880×2880 px, so any coordinate outside ±65,535 px
+ * is clearly garbage (e.g. from a corrupt FLA binary import).
+ */
+const MAX_SHAPE_COORD_PX = 65535;
+
+/**
+ * Returns true if a path has any coordinate outside the valid SWF range.
+ * Such paths are silently dropped to prevent corrupt bit-stream output.
+ */
+function isDegenerate(path: ShapePath): boolean {
+  function badCoord(v: number): boolean {
+    return !isFinite(v) || Math.abs(v) > MAX_SHAPE_COORD_PX;
+  }
+  if (badCoord(path.start.x) || badCoord(path.start.y)) return true;
+  for (const seg of path.segments) {
+    if (badCoord(seg.to.x) || badCoord(seg.to.y)) return true;
+    if (seg.type === "curve" && (badCoord(seg.control.x) || badCoord(seg.control.y))) return true;
+  }
+  return false;
+}
+
 export function encodeDefineShape4(
   charId: number,
   shape: Shape,
@@ -292,11 +316,19 @@ export function encodeDefineShape4(
 ): Uint8Array {
   const bw = new BitWriter();
 
+  // Filter out paths with out-of-range coordinates (can arise from FLA binary import
+  // corruption). Such paths produce malformed bit streams that Ruffle rejects as
+  // "Invalid fill style" when it misinterprets the garbage bits as stateNewStyles=1.
+  const validPaths = shape.paths.filter((p) => !isDegenerate(p));
+  const filteredShape: Shape = validPaths.length === shape.paths.length
+    ? shape
+    : { ...shape, paths: validPaths };
+
   // --- UI16 character ID ---
   bw.writeUI16LE(charId);
 
   // --- Compute bounding box in twips ---
-  const bounds = computeBounds(shape.paths);
+  const bounds = computeBounds(filteredShape.paths);
   const xMinTwips = px(bounds.xMin);
   const xMaxTwips = px(bounds.xMax);
   const yMinTwips = px(bounds.yMin);
@@ -339,7 +371,7 @@ export function encodeDefineShape4(
   const pathFillIndex: number[] = [];
   const pathStrokeIndex: number[] = [];
 
-  for (const path of shape.paths) {
+  for (const path of filteredShape.paths) {
     // Fill — support solid, linear-gradient, radial-gradient, bitmap
     if (path.fill) {
       const fill = path.fill;
@@ -597,8 +629,8 @@ export function encodeDefineShape4(
 
   // --- Shape records ---
   // Emit one StyleChangeRecord + edge records per path.
-  for (let pi = 0; pi < shape.paths.length; pi++) {
-    const path = shape.paths[pi];
+  for (let pi = 0; pi < filteredShape.paths.length; pi++) {
+    const path = filteredShape.paths[pi];
     const fillIdx = pathFillIndex[pi];
     const strokeIdx = pathStrokeIndex[pi];
 

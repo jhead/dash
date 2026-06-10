@@ -436,6 +436,14 @@ export interface SymbolInstance {
    */
   readonly buttonHandlers?: readonly ButtonHandler[];
   /**
+   * When true, this button instance behaves as a menu item (Track As Menu Item).
+   * Pressing and dragging onto it activates it; releasing elsewhere still counts
+   * as a release. Maps to the TrackAsMenu bit in the per-instance DefineButton2
+   * tag emitted for this instance.
+   * Only meaningful when the referenced symbol is a button.
+   */
+  readonly trackAsMenu?: boolean;
+  /**
    * Accessibility properties for this instance (_accProps).
    * Surfaced in the Flash 8 Window > Accessibility panel.
    */
