@@ -59,6 +59,7 @@ export {
   clearKeyframe,
   setFrameLabel,
   setMotionTween,
+  updateMotionTweenProps,
   setShapeTween,
   clearTween,
   setFrameScript,

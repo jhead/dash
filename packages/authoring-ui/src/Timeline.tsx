@@ -27,6 +27,7 @@ import {
   setLayerType,
   setLayerVisible,
   setMotionTween,
+  updateMotionTweenProps,
   setShapeTween,
 } from "@flash/core";
 import { EaseCurveDialog } from "./EaseCurveDialog";
@@ -1803,6 +1804,131 @@ export function Timeline({
                     ✕
                   </button>
                 )}
+                {/* Rotate direction */}
+                <span style={{ fontSize: 10, color: "#aaa", marginLeft: 8 }}>Rotate:</span>
+                <select
+                  value={kf.motionRotate}
+                  onChange={(e) => {
+                    const newTimeline = updateMotionTweenProps(
+                      timeline,
+                      selectedKeyframe.layerId,
+                      selectedKeyframe.frameIndex,
+                      { motionRotate: e.target.value as "none" | "auto" | "cw" | "ccw" }
+                    );
+                    onTimelineChange(newTimeline);
+                  }}
+                  style={{
+                    fontSize: 10,
+                    background: "#1a1a1a",
+                    color: "#ffffff",
+                    border: "1px solid #555",
+                    padding: "1px 2px",
+                    borderRadius: 2,
+                    outline: "none",
+                  }}
+                  title="Rotation direction during tween"
+                >
+                  <option value="none">None</option>
+                  <option value="cw">CW</option>
+                  <option value="ccw">CCW</option>
+                  <option value="auto">Auto</option>
+                </select>
+                {/* Extra rotation turns — only visible when rotate is CW or CCW */}
+                {(kf.motionRotate === "cw" || kf.motionRotate === "ccw") && (
+                  <>
+                    <span style={{ fontSize: 10, color: "#aaa" }}>×</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={99}
+                      value={kf.motionRotateCount}
+                      onChange={(e) => {
+                        const count = Math.max(0, Math.min(99, Number(e.target.value) | 0));
+                        const newTimeline = updateMotionTweenProps(
+                          timeline,
+                          selectedKeyframe.layerId,
+                          selectedKeyframe.frameIndex,
+                          { motionRotateCount: count }
+                        );
+                        onTimelineChange(newTimeline);
+                      }}
+                      style={{
+                        width: 36,
+                        fontSize: 10,
+                        background: "#1a1a1a",
+                        color: "#ffffff",
+                        border: "1px solid #555",
+                        padding: "1px 4px",
+                        borderRadius: 2,
+                        outline: "none",
+                      }}
+                      title="Extra full rotations"
+                    />
+                  </>
+                )}
+                {/* Scale checkbox */}
+                <label
+                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#aaa", marginLeft: 8, cursor: "pointer" }}
+                  title="Interpolate scale during tween"
+                >
+                  <input
+                    type="checkbox"
+                    checked={kf.motionScale}
+                    onChange={(e) => {
+                      const newTimeline = updateMotionTweenProps(
+                        timeline,
+                        selectedKeyframe.layerId,
+                        selectedKeyframe.frameIndex,
+                        { motionScale: e.target.checked }
+                      );
+                      onTimelineChange(newTimeline);
+                    }}
+                    style={{ margin: 0 }}
+                  />
+                  Scale
+                </label>
+                {/* Orient to path checkbox */}
+                <label
+                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#aaa", cursor: "pointer" }}
+                  title="Orient symbol to motion path direction"
+                >
+                  <input
+                    type="checkbox"
+                    checked={kf.motionOrientToPath}
+                    onChange={(e) => {
+                      const newTimeline = updateMotionTweenProps(
+                        timeline,
+                        selectedKeyframe.layerId,
+                        selectedKeyframe.frameIndex,
+                        { motionOrientToPath: e.target.checked }
+                      );
+                      onTimelineChange(newTimeline);
+                    }}
+                    style={{ margin: 0 }}
+                  />
+                  Orient
+                </label>
+                {/* Sync checkbox */}
+                <label
+                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#aaa", cursor: "pointer" }}
+                  title="Sync symbol animation with parent timeline"
+                >
+                  <input
+                    type="checkbox"
+                    checked={kf.motionSync}
+                    onChange={(e) => {
+                      const newTimeline = updateMotionTweenProps(
+                        timeline,
+                        selectedKeyframe.layerId,
+                        selectedKeyframe.frameIndex,
+                        { motionSync: e.target.checked }
+                      );
+                      onTimelineChange(newTimeline);
+                    }}
+                    style={{ margin: 0 }}
+                  />
+                  Sync
+                </label>
               </>
             )}
             {/* Blend mode selector — only for shape tweens */}

@@ -504,6 +504,43 @@ export function setMotionTween(
 }
 
 /**
+ * Update motion tween properties (rotate, scale, orientToPath, sync) on a
+ * keyframe without changing its tweenType. Use setMotionTween to also change
+ * the ease value. Returns a new Timeline.
+ */
+export function updateMotionTweenProps(
+  timeline: Timeline,
+  layerId: string,
+  frameIndex: number,
+  props: {
+    motionRotate?: "none" | "auto" | "cw" | "ccw";
+    motionRotateCount?: number;
+    motionOrientToPath?: boolean;
+    motionSync?: boolean;
+    motionScale?: boolean;
+  }
+): Timeline {
+  return {
+    ...timeline,
+    layers: timeline.layers.map((layer) => {
+      if (layer.id !== layerId) return layer;
+      const newFrames = layer.frames.map((f) => {
+        if (f.index !== frameIndex || !f.isKeyframe) return f;
+        return {
+          ...f,
+          motionRotate: props.motionRotate !== undefined ? props.motionRotate : f.motionRotate,
+          motionRotateCount: props.motionRotateCount !== undefined ? props.motionRotateCount : f.motionRotateCount,
+          motionOrientToPath: props.motionOrientToPath !== undefined ? props.motionOrientToPath : f.motionOrientToPath,
+          motionSync: props.motionSync !== undefined ? props.motionSync : f.motionSync,
+          motionScale: props.motionScale !== undefined ? props.motionScale : f.motionScale,
+        };
+      });
+      return { ...layer, frames: newFrames };
+    }),
+  };
+}
+
+/**
  * Set shape tween on the keyframe at startFrameIndex in the given layer.
  * Optionally update ease (−100..100) and blend mode.
  * Returns a new Timeline.
