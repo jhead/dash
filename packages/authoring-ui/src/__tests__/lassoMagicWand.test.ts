@@ -435,14 +435,6 @@ describe("Magic Wand pipeline — flood-fill → bounding polygon", () => {
 // Keep in sync with the source.
 // ---------------------------------------------------------------------------
 
-function buildMask(pixels: Set<number>, width: number, height: number): Uint8Array {
-  const mask = new Uint8Array(width * height);
-  for (const idx of pixels) {
-    if (idx >= 0 && idx < width * height) mask[idx] = 1;
-  }
-  return mask;
-}
-
 function traceBoundary(mask: Uint8Array, width: number, height: number): Array<{x: number; y: number}> {
   const dirs: [number, number][] = [
     [0, -1], [1, -1], [1, 0], [1, 1],

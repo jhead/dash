@@ -217,6 +217,7 @@ function filterLabel(f: FlashFilter): string {
     case "gradientGlow": return "Gradient Glow";
     case "gradientBevel": return "Gradient Bevel";
     case "adjustColor": return "Adjust Color";
+    default: return "Filter";
   }
 }
 
@@ -759,6 +760,7 @@ export function FiltersPanel({
         case "gradientGlow":  newFilter = defaultGradientGlow(); break;
         case "gradientBevel": newFilter = defaultGradientBevel(); break;
         case "adjustColor":   newFilter = defaultAdjustColor();  break;
+        default: return;
       }
       const updated = [...filters, newFilter];
       onFiltersChange(updated as FlashFilter[]);

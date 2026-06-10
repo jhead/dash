@@ -138,6 +138,7 @@ function makeHandlers(): Required<KeyboardShortcutHandlers> {
     onTextTrackingReset: vi.fn(),
     onNudge: vi.fn(),
     onAddShapeHint: vi.fn(),
+    onFindReplace: vi.fn(),
   };
 }
 

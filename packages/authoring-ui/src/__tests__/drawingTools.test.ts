@@ -1088,8 +1088,8 @@ describe("Object Drawing mode", () => {
 
   it("same shape data is preserved regardless of objectDrawing flag", () => {
     const path = makeSimplePath(RED);
-    const obj1 = buildDisplayObject("s1", [path], 0, 0, false) as { shape: { paths: ShapePath[] } };
-    const obj2 = buildDisplayObject("s1", [path], 0, 0, true) as { shape: { paths: ShapePath[] } };
+    const obj1 = buildDisplayObject("s1", [path], 0, 0, false) as unknown as { shape: { paths: ShapePath[] } };
+    const obj2 = buildDisplayObject("s1", [path], 0, 0, true) as unknown as { shape: { paths: ShapePath[] } };
     expect(obj1.shape.paths[0]).toBe(path);
     expect(obj2.shape.paths[0]).toBe(path);
   });

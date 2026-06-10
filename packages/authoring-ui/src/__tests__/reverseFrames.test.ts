@@ -12,16 +12,6 @@ import { createTimeline, createLayer, createFrame, reverseFrames } from "@flash/
 // Pure model tests — mirrors the logic in Shell's handleReverseFrames
 // ---------------------------------------------------------------------------
 
-function makeTimelineWithLayer(frameCount: number) {
-  const layer = {
-    ...createLayer("Layer 1"),
-    frames: Array.from({ length: frameCount }, (_, i) =>
-      createFrame(i, { isKeyframe: true, isEmpty: false })
-    ),
-  };
-  return { ...createTimeline(), layers: [layer] };
-}
-
 describe("reverseFrames model", () => {
   it("swaps keyframe content for a two-frame range", () => {
     // Build a timeline with 2 keyframes carrying distinct display objects
@@ -88,12 +78,15 @@ describe("reverseFrames model", () => {
     const tl = { ...createTimeline(), layers: [{ ...layer, frames: [frame0, frame1] }] };
     const layerId = tl.layers[0].id;
 
-    // No frame range selected
-    const selectedFrameRange = null;
-    const currentFrame = 0;
+    // No frame range selected — simulate the Shell handleReverseFrames guard logic
+    // Use a typed helper to avoid TypeScript constant-folding `null` into `never`
+    type FrameRange = { layerId: string; start: number; end: number };
+    const getRange = (sfr: FrameRange | null, lid: string, cf: number) => ({
+      start: sfr?.layerId === lid ? sfr.start : cf,
+      end:   sfr?.layerId === lid ? sfr.end   : cf,
+    });
 
-    const rangeStart = selectedFrameRange?.layerId === layerId ? selectedFrameRange.start : currentFrame;
-    const rangeEnd = selectedFrameRange?.layerId === layerId ? selectedFrameRange.end : currentFrame;
+    const { start: rangeStart, end: rangeEnd } = getRange(null, layerId, 0);
 
     // Single-frame reverse should be a no-op
     expect(rangeStart).toBe(0);

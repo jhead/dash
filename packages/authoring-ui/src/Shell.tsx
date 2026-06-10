@@ -2566,7 +2566,7 @@ export function Shell(): React.ReactElement {
     }
 
     // Compute the true visual bounding box of the selection
-    const selectionBounds = getUnionBounds(objectsToConvert);
+    const selectionBounds = getUnionBounds(objectsToConvert as DisplayObject[]);
     const bx = selectionBounds?.x ?? 0;
     const by = selectionBounds?.y ?? 0;
     const bw = selectionBounds?.width ?? 0;

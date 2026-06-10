@@ -257,7 +257,7 @@ export function BandwidthProfilerPanel({
           ))}
 
           {/* Bars */}
-          {frameSizes.map((bytes, fi) => {
+          {frameSizes.map((bytes: number, fi: number) => {
             const barH = Math.max(1, bytes * yScale);
             const barX = AXIS_LEFT + fi * (barWidth + barGap);
             const barY = PLOT_H - barH;
@@ -308,7 +308,7 @@ export function BandwidthProfilerPanel({
           )}
 
           {/* X axis: frame number labels (every Nth frame) */}
-          {frameSizes.map((_, fi) => {
+          {frameSizes.map((_: number, fi: number) => {
             if (frameCount <= 20 || fi % Math.max(1, Math.round(frameCount / 10)) === 0) {
               const lx = AXIS_LEFT + fi * (barWidth + barGap) + barWidth / 2;
               return (

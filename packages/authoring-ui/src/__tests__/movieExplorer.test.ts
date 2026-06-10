@@ -66,6 +66,9 @@ function makeDoc(overrides: Partial<FlashDocument> = {}): FlashDocument {
       rulerUnits: "px",
       grid: { showGrid: false, snapToGrid: false, gridWidth: 18, gridHeight: 18, gridColor: "#cccccc" },
       guides: [],
+      snapToObjects: false,
+      snapToPixels: false,
+      snapToGuides: false,
     },
     scenes: [
       {

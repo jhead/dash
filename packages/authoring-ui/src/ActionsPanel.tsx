@@ -205,16 +205,7 @@ export function highlightLines(lines: string[]): React.ReactNode[] {
   return nodes;
 }
 
-// ---------------------------------------------------------------------------
-// highlightLine — single-line variant (no block-comment state threading)
-// Kept for backward compatibility; use highlightLines for multi-line code.
-// ---------------------------------------------------------------------------
 
-function highlightLine(line: string, key: number): React.ReactNode {
-  const { tokens } = tokenizeLine(line, false);
-  const parts = renderTokens(line, tokens);
-  return <span key={key}>{parts.length === 0 ? " " : parts}</span>;
-}
 
 // ---------------------------------------------------------------------------
 // Frame script snippets
@@ -252,6 +243,12 @@ const CLIP_EVENT_TYPES: Array<{ event: ClipAction["event"]; label: string }> = [
 // ---------------------------------------------------------------------------
 // Button event types (ordered as in Flash 8 Actions panel)
 // ---------------------------------------------------------------------------
+
+/** Convert a ButtonAction event to a display string (handles keyPress objects). */
+function buttonEventKey(event: ButtonAction["event"]): string {
+  if (typeof event === "string") return event;
+  return `keyPress:${event.keyPress}`;
+}
 
 const BUTTON_EVENT_TYPES: Array<{ event: ButtonAction["event"]; label: string }> = [
   { event: "press",          label: "press" },
@@ -1107,7 +1104,7 @@ export function ActionsPanel({
               const isSelected = selectedButtonEvent === event;
               return (
                 <button
-                  key={event}
+                  key={buttonEventKey(event)}
                   onClick={() => setSelectedButtonEvent(event)}
                   style={{
                     background: isSelected ? "#094771" : "transparent",
@@ -1147,7 +1144,7 @@ export function ActionsPanel({
         {/* Status bar */}
         <div style={statusBarStyle}>
           <span>ActionScript 2.0</span>
-          <span>on({selectedButtonEvent})</span>
+          <span>on({buttonEventKey(selectedButtonEvent)})</span>
           <span>Ln {cursorLine}, Col {cursorCol}</span>
           <span style={{ marginLeft: "auto", fontSize: "10px", opacity: 0.8 }}>F9 to close</span>
         </div>

@@ -358,7 +358,7 @@ describe("stage_add_video", () => {
       height: 120,
     });
     const objs = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects;
-    const placed = objs.find((o) => o.type === "video") as Record<string, unknown>;
+    const placed = objs.find((o) => o.type === "video") as unknown as Record<string, unknown>;
     expect(placed["width"]).toBe(160);
     expect(placed["height"]).toBe(120);
   });
