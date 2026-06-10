@@ -60,6 +60,8 @@ export interface DocumentProperties {
   readonly snapToObjects: boolean;
   readonly snapToPixels: boolean;
   readonly snapToGuides: boolean;
+  /** Render quality. "high" is the Flash Player default; omitting the field also means "high". */
+  readonly quality?: "low" | "medium" | "high" | "best";
 }
 
 // ---------------------------------------------------------------------------

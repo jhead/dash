@@ -1431,6 +1431,16 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           tabOrderActions.push("_root.tabChildren = false;");
         }
 
+        // Collect _quality initialization script for scene 0 / frame 0.
+        // Flash Player default is "HIGH"; only emit when explicitly set to something else.
+        const qualityActions: string[] = [];
+        if (sceneIdx === 0 && frameIdx === 0) {
+          const quality = doc.properties?.quality;
+          if (quality !== undefined && quality !== "high") {
+            qualityActions.push(`_quality = "${quality.toUpperCase()}";`);
+          }
+        }
+
         // Video streams: placed once on scene 0 / frame 0, then advanced one
         // VideoFrame (tag 61) per ShowFrame. VideoFrame tags are emitted just
         // before this frame's ShowFrame (see below).
@@ -2194,6 +2204,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         // Emit DoAction for tab-order scripts (accessibility.tabIndex / useCustomTabOrder).
         // Global script (_root.tabChildren = false) is first, then per-object scripts.
         for (const script of tabOrderActions) {
+          const actionBytes = compileAS2(script);
+          if (actionBytes.length > 0) {
+            const doActionBody = new Uint8Array(actionBytes.length + 1);
+            doActionBody.set(actionBytes);
+            // doActionBody[actionBytes.length] is already 0x00 (EndAction)
+            writer.writeTag(Tag.DoAction, doActionBody);
+          }
+        }
+
+        // Emit DoAction for _quality initialization on scene 0 / frame 0.
+        // Only emitted when quality is explicitly set to a non-default value (not "high").
+        for (const script of qualityActions) {
           const actionBytes = compileAS2(script);
           if (actionBytes.length > 0) {
             const doActionBody = new Uint8Array(actionBytes.length + 1);
