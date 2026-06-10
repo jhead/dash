@@ -13,6 +13,14 @@ export type RulerUnits = "px" | "inches" | "points" | "cm" | "mm";
 
 export type TweenType = "none" | "motion" | "shape";
 
+/**
+ * Tween ease direction decoded from binary FLA CPicFrame field_190 (acceleration).
+ * Distinct from the numeric ease strength stored in `motionEase` / `shapeEase`.
+ * XFL/binary sign (flacomdoc): negative = ease-out, positive = ease-in, zero = none;
+ * custom Bézier curves without a simple acceleration value use `inOut`.
+ */
+export type TweenEaseType = "none" | "in" | "out" | "inOut";
+
 export type LabelType = "name" | "comment" | "anchor";
 
 /**
@@ -150,6 +158,7 @@ export interface Frame {
   readonly sound: SoundLinkage | null;
   // Motion tween properties
   readonly motionEase: number;      // -100..100 (ignored when motionEaseCurve is set)
+  readonly motionEaseType: TweenEaseType; // ease direction; strength is |motionEase|
   readonly motionEaseCurve?: EaseCurve | null; // custom Bézier ease; null = use motionEase
   readonly motionRotate: "none" | "auto" | "cw" | "ccw";
   readonly motionRotateCount: number;
@@ -158,6 +167,7 @@ export interface Frame {
   readonly motionScale: boolean;
   // Shape tween
   readonly shapeEase: number;       // -100..100
+  readonly shapeEaseType: TweenEaseType; // ease direction; strength is |shapeEase|
   readonly shapeBlend: "distributive" | "angular";
   /**
    * Shape hints for this keyframe (shape tween start/end only).

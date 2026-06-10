@@ -46,6 +46,7 @@ export function createFrame(index: number, overrides?: Partial<Frame>): Frame {
     script: "",
     sound: null,
     motionEase: 0,
+    motionEaseType: "none",
     motionEaseCurve: null,
     motionRotate: "none",
     motionRotateCount: 0,
@@ -53,6 +54,7 @@ export function createFrame(index: number, overrides?: Partial<Frame>): Frame {
     motionSync: false,
     motionScale: true,
     shapeEase: 0,
+    shapeEaseType: "none",
     shapeBlend: "distributive",
     displayObjects: [],
     ...overrides,
@@ -866,6 +868,7 @@ export function reverseFrames(
         | "script"
         | "sound"
         | "motionEase"
+        | "motionEaseType"
         | "motionEaseCurve"
         | "motionRotate"
         | "motionRotateCount"
@@ -873,6 +876,7 @@ export function reverseFrames(
         | "motionSync"
         | "motionScale"
         | "shapeEase"
+        | "shapeEaseType"
         | "shapeBlend"
       >;
 
@@ -885,6 +889,7 @@ export function reverseFrames(
         script: f.script,
         sound: f.sound,
         motionEase: f.motionEase,
+        motionEaseType: f.motionEaseType,
         motionEaseCurve: f.motionEaseCurve,
         motionRotate: f.motionRotate,
         motionRotateCount: f.motionRotateCount,
@@ -892,6 +897,7 @@ export function reverseFrames(
         motionSync: f.motionSync,
         motionScale: f.motionScale,
         shapeEase: f.shapeEase,
+        shapeEaseType: f.shapeEaseType,
         shapeBlend: f.shapeBlend,
       });
 

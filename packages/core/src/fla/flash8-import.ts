@@ -1010,12 +1010,16 @@ function convertLayer(
         : (f.keyMode & 0x0002) !== 0
           ? "shape"
           : "none";
-    // The binary stores a single ease value (motionEase) regardless of tween type.
-    // For shape tweens, forward it as shapeEase; for motion tweens, forward as motionEase.
+    // field_190 stores signed acceleration (strength + direction). Forward
+    // strength as motionEase/shapeEase and direction as motionEaseType/shapeEaseType.
     const easeOverrides =
       tweenType === "shape"
-        ? { shapeEase: f.motionEase }
-        : { motionEase: f.motionEase, motionEaseCurve: f.motionEaseCurve };
+        ? { shapeEase: f.motionEase, shapeEaseType: f.easeType }
+        : {
+            motionEase: f.motionEase,
+            motionEaseType: f.easeType,
+            motionEaseCurve: f.motionEaseCurve,
+          };
     frames.push(
       createFrame(frameIndex, {
         label: f.label,

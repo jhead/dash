@@ -1838,6 +1838,15 @@ describe("parseFla8Contents scale9Grid decode (synthetic Contents stream)", () =
 // Custom ease Bézier curve decoding (task 0883)
 // ---------------------------------------------------------------------------
 
+const FLASH8_IDENTITY_MATRIX_24 = [
+  0x00, 0x00, 0x01, 0x00,
+  0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x01, 0x00,
+  0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,
+] as const;
+
 /**
  * Synthetic CPicPage → CPicLayer → CPicFrame stream with frameVersionB = 0x18
  * (Flash 8). The frame carries:
@@ -1853,17 +1862,7 @@ describe("parseFla8Contents scale9Grid decode (synthetic Contents stream)", () =
  * The expected decoded motionEaseCurve (CSS cubic-bezier convention):
  *   { x1: 0.25, y1: 0.1, x2: 0.75, y2: 0.9 }
  */
-describe("custom ease Bézier curve decoding (task 0883)", () => {
-  const IDENTITY_MATRIX_24 = [
-    0x00, 0x00, 0x01, 0x00,
-    0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x01, 0x00,
-    0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00,
-  ] as const;
-
-  const easeFrameBytes = new Uint8Array([
+const FLASH8_CUSTOM_EASE_FRAME_BYTES = new Uint8Array([
     // Root marker
     0x01,
     // New class CPicPage (schema=1, name len=8, "CPicPage")
@@ -1890,7 +1889,7 @@ describe("custom ease Bézier curve decoding (task 0883)", () => {
     // CPicFrameNode: shapeSchema = 0
     0x00,
     // readMatrix (identity, 24 bytes)
-    ...IDENTITY_MATRIX_24,
+    ...FLASH8_IDENTITY_MATRIX_24,
     // readShapeData(caps=false): schema=0 (1), edgeHint=0 (4), fillCount=0 (2), lineCount=0 (2) = 9 bytes
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     // --- CPicFrame-specific fields ---
@@ -1969,10 +1968,11 @@ describe("custom ease Bézier curve decoding (task 0883)", () => {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,  // duplicate x
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,  // duplicate y
     // Remaining layer/page tail fields hit EOF → caught by FlaEofError
-  ]);
+]);
 
+describe("custom ease Bézier curve decoding (task 0883)", () => {
   it("decodes motionEaseCurve from Flash 8 CPicFrame tail (fs=24, useSingleEaseCurve=1)", () => {
-    const timeline = parseFla8Timeline(easeFrameBytes);
+    const timeline = parseFla8Timeline(FLASH8_CUSTOM_EASE_FRAME_BYTES);
     expect(timeline.layers).toHaveLength(1);
     const frame = timeline.layers[0]!.frames[0]!;
     expect(frame.motionEaseCurve).not.toBeNull();
@@ -1983,7 +1983,7 @@ describe("custom ease Bézier curve decoding (task 0883)", () => {
   });
 
   it("passes motionEaseCurve through flash8-import convertLayer to Frame", () => {
-    const streams = new Map<string, Uint8Array>([["Page 1", easeFrameBytes]]);
+    const streams = new Map<string, Uint8Array>([["Page 1", FLASH8_CUSTOM_EASE_FRAME_BYTES]]);
     const doc = buildFla8Document(streams);
     expect(doc).not.toBeNull();
     const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
@@ -1996,7 +1996,7 @@ describe("custom ease Bézier curve decoding (task 0883)", () => {
 
   it("x1/x2 are clamped to [0,1] even when the decoded value is outside that range", () => {
     // Verify the clamping branch by checking that a valid in-range value passes through.
-    const timeline = parseFla8Timeline(easeFrameBytes);
+    const timeline = parseFla8Timeline(FLASH8_CUSTOM_EASE_FRAME_BYTES);
     const curve = timeline.layers[0]!.frames[0]!.motionEaseCurve!;
     expect(curve.x1).toBeGreaterThanOrEqual(0);
     expect(curve.x1).toBeLessThanOrEqual(1);
@@ -2086,10 +2086,11 @@ describe("shape-tween ease forwarding (task 0914)", () => {
     const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
     expect(frame.tweenType).toBe("shape");
     expect(frame.shapeEase).toBe(50);
+    expect(frame.shapeEaseType).toBe("in");
     expect(frame.motionEase).toBe(0); // must remain at default
   });
 
-  it("shape-tween frame: negative ease (ease-in) maps to shapeEase correctly", () => {
+  it("shape-tween frame: negative ease (ease-out) maps to shapeEase correctly", () => {
     // keyMode=0x0002 → shape tween; ease=-75 (stored as signed s16)
     const ease = -75;
     const easeU16 = ease & 0xffff; // two's complement: 0xFF85
@@ -2100,6 +2101,7 @@ describe("shape-tween ease forwarding (task 0914)", () => {
     const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
     expect(frame.tweenType).toBe("shape");
     expect(frame.shapeEase).toBe(-75);
+    expect(frame.shapeEaseType).toBe("out");
     expect(frame.motionEase).toBe(0);
   });
 
@@ -2112,6 +2114,7 @@ describe("shape-tween ease forwarding (task 0914)", () => {
     const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
     expect(frame.tweenType).toBe("motion");
     expect(frame.motionEase).toBe(75);
+    expect(frame.motionEaseType).toBe("in");
     expect(frame.shapeEase).toBe(0); // must remain at default
   });
 
@@ -2128,6 +2131,98 @@ describe("shape-tween ease forwarding (task 0914)", () => {
     expect(frame.shapeEase).toBe(0);
     // motionEase gets the raw binary value in the no-tween path (harmless, unused)
     expect(frame.motionEase).toBe(50);
+    expect(frame.motionEaseType).toBe("in");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Motion/shape tween ease direction decoding (task 0932)
+//
+// CPicFrame field_190 is a signed s16 acceleration (flacomdoc
+// TimelineConverter.writeUI16). Sign encodes direction; |value| is strength.
+// XFL convention (flacomdoc 0012_interpolation): negative = ease-out,
+// positive = ease-in, zero = none. Custom Bézier curves with zero
+// acceleration decode as ease-in-out.
+// ---------------------------------------------------------------------------
+
+describe("tween ease direction decoding (task 0932)", () => {
+  const IDENTITY_MATRIX_24 = [
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+  ] as const;
+
+  function makeEaseFrameStream(keyMode: number, easeS16: number): Uint8Array {
+    const easeBytes = [easeS16 & 0xff, (easeS16 >> 8) & 0xff];
+    return new Uint8Array([
+      0x01,
+      0xff, 0xff, 0x01, 0x00, 0x08, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x50, 0x61, 0x67, 0x65,
+      0x04, 0x00,
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x4c, 0x61, 0x79, 0x65, 0x72,
+      0x04, 0x00,
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x46, 0x72, 0x61, 0x6d, 0x65,
+      0x04, 0x00,
+      0x00, 0x00,
+      0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
+      0x00, 0x00,
+      0x00,
+      ...IDENTITY_MATRIX_24,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x03,
+      0x01, 0x00,
+      keyMode & 0xff, (keyMode >> 8) & 0xff,
+      ...easeBytes,
+    ]);
+  }
+
+  it.each([
+    [0, "none"],
+    [82, "in"],
+    [-63, "out"],
+  ] as const)("acceleration=%i decodes easeType=%s on Fla8Frame", (accel, expected) => {
+    const signed = accel < 0 ? (accel & 0xffff) : accel;
+    const timeline = parseFla8Timeline(makeEaseFrameStream(0x4001, signed));
+    const frame = timeline.layers[0]!.frames[0]!;
+    expect(frame.motionEase).toBe(accel);
+    expect(frame.easeType).toBe(expected);
+  });
+
+  it("forwards motionEaseType to Frame for motion tweens", () => {
+    const stream = makeEaseFrameStream(0x4001, (-63) & 0xffff);
+    const doc = buildFla8Document(new Map([["Page 1", stream]]));
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.tweenType).toBe("motion");
+    expect(frame.motionEase).toBe(-63);
+    expect(frame.motionEaseType).toBe("out");
+  });
+
+  it("forwards shapeEaseType to Frame for shape tweens", () => {
+    const stream = makeEaseFrameStream(0x0002, 25);
+    const doc = buildFla8Document(new Map([["Page 1", stream]]));
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.tweenType).toBe("shape");
+    expect(frame.shapeEase).toBe(25);
+    expect(frame.shapeEaseType).toBe("in");
+  });
+
+  it("custom ease curve with zero acceleration decodes as inOut", () => {
+    const timeline = parseFla8Timeline(FLASH8_CUSTOM_EASE_FRAME_BYTES);
+    const frame = timeline.layers[0]!.frames[0]!;
+    expect(frame.motionEase).toBe(0);
+    expect(frame.easeType).toBe("inOut");
+    expect(frame.motionEaseCurve).not.toBeNull();
+
+    const doc = buildFla8Document(
+      new Map([["Page 1", FLASH8_CUSTOM_EASE_FRAME_BYTES]]),
+    );
+    const modelFrame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(modelFrame.motionEaseType).toBe("inOut");
   });
 });
 

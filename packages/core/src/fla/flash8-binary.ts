@@ -50,6 +50,8 @@
  *  - shape edge coordinates: 8.8 fixed-point twips (1 px = 5120 units)
  */
 
+import type { TweenEaseType } from "../model/types.js";
+
 // ---------------------------------------------------------------------------
 // Parsed-data types (intermediate representation, converted to the document
 // model by ole.ts)
@@ -350,8 +352,14 @@ export interface Fla8Frame {
    * Decoded from the shapeTweenBlend byte in the CPicFrame tail (after CPicMorphShape).
    */
   readonly shapeBlend: number;
-  /** signed ease value: -100 (ease in, slow start) to +100 (ease out, fast start); 0 = linear */
+  /**
+   * Signed ease strength from field_190 (s16 acceleration per flacomdoc
+   * TimelineConverter.writeUI16). Absolute value is magnitude 0..100; sign
+   * encodes direction (XFL: negative = ease-out, positive = ease-in).
+   */
   readonly motionEase: number;
+  /** Ease direction decoded from field_190 sign (and custom curve when present). */
+  readonly easeType: TweenEaseType;
   /**
    * Custom cubic-Bézier ease curve (Flash 8+). null = use `motionEase` instead.
    * Decoded from `useSingleEaseCurve` + `hasCustomEase` + per-property point data
@@ -2245,6 +2253,21 @@ function readTimelineSubObject(r: Reader): { script: string } {
  * CPicShape body is read inline (rather than via readCPicShape) because the
  * children must be kept.
  */
+/**
+ * Decode tween ease direction from CPicFrame field_190 (s16 acceleration).
+ * flacomdoc writes this via TimelineConverter `writeUI16(acceleration)` from
+ * the XFL `acceleration` attribute: sign is direction, |value| is strength.
+ */
+function decodeEaseTypeFromAcceleration(
+  acceleration: number,
+  hasCustomEaseCurve: boolean,
+): TweenEaseType {
+  if (hasCustomEaseCurve && acceleration === 0) return "inOut";
+  if (acceleration === 0) return "none";
+  if (acceleration < 0) return "out";
+  return "in";
+}
+
 function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   const { r } = ctx;
   const base = readCPicObjBase(ctx);
@@ -2280,7 +2303,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
       // flacomdoc keyMode flags (classic tween 0x4001 base): 0x0800 = motionTweenSync
       motionSync = (keyMode & 0x0800) !== 0;
     } else r.skip(1);
-    if (fs > 1) motionEase = r.s16(); // signed ease value: -100 (ease in) to +100 (ease out)
+    if (fs > 1) motionEase = r.s16(); // field_190: signed acceleration (-100..100)
     if (fs > 4) soundId = r.u16();
     if (fs > 5) {
       const cnt = r.u16();
@@ -2451,7 +2474,13 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     }
     return {
       cls: "CPicFrame",
-      frame: { duration, label, labelIsComment, script, keyMode, shapeBlend, motionEase, motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, motionSync, soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements },
+      frame: {
+        duration, label, labelIsComment, script, keyMode, shapeBlend,
+        motionEase,
+        easeType: decodeEaseTypeFromAcceleration(motionEase, motionEaseCurve != null),
+        motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, motionSync,
+        soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements,
+      },
     };
   }
 }
