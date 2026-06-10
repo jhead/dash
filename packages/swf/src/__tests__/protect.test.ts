@@ -146,7 +146,27 @@ describe("SWF Protect and EnableDebugger2 tags", () => {
     expect(() => compileDocument(doc)).not.toThrow();
   });
 
-  it.todo("protect: true emits a Protect tag (type 24) — when CompileOptions.protect is added");
+  it("protect: true emits a Protect tag (type 24)", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const swf = compileDocument(doc, { protect: true });
+    const tags = findTags(swf);
+    const protectTag = tags.find((t) => t.type === 24);
+    expect(protectTag).toBeDefined();
+    expect(protectTag!.body.length).toBe(0);
+  });
 
-  it.todo("debugPassword option emits EnableDebugger2 tag (type 64) — when CompileOptions.debugPassword is added");
+  it("debugPassword option emits EnableDebugger2 tag (type 64)", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const swf = compileDocument(doc, { debugPassword: "secret" });
+    const tags = findTags(swf);
+    const debugTag = tags.find((t) => t.type === 64);
+    expect(debugTag).toBeDefined();
+    // Body: 2 reserved bytes + password bytes + null terminator
+    const body = debugTag!.body;
+    expect(body[0]).toBe(0); // reserved
+    expect(body[1]).toBe(0); // reserved
+    const pw = new TextDecoder().decode(body.slice(2, body.length - 1));
+    expect(pw).toBe("secret");
+    expect(body[body.length - 1]).toBe(0); // null terminator
+  });
 });
