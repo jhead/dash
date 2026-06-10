@@ -10,6 +10,7 @@ export const Tag = {
   DoAction: 12,
   DefineSound: 14,
   StartSound: 15,
+  DefineButtonSound: 17,
   SoundStreamHead: 18,
   SoundStreamBlock: 19,
   DefineBitsJPEG2: 21,

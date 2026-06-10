@@ -9,7 +9,7 @@
  *  - RemoveObject2 when objects leave the display list
  *  - ShowFrame per frame, End
  */
-import type { BitmapFill, BitmapItem, ButtonHandler, ClipAction, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoDisplayObject, VideoItem } from "@flash/core";
+import type { BitmapFill, BitmapItem, ButtonHandler, ButtonSounds, ClipAction, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoDisplayObject, VideoItem } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { deflateSync } from "fflate";
 import { Tag } from "./tags.js";
@@ -40,7 +40,7 @@ import { colorEffectToCXForm } from "./cxform.js";
 import { BitWriter } from "./bits.js";
 import { writeRect, px } from "./helpers.js";
 import { encodeDefineSprite } from "./sprite.js";
-import { encodeDefineButton2 } from "./buttons.js";
+import { encodeDefineButton2, encodeDefineButtonSound } from "./buttons.js";
 import {
   encodeDefineSound,
   encodeSoundStreamHead,
@@ -532,6 +532,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     charIdMap.set(sym.id, writer.nextCharId());
   }
 
+  // Collect pending DefineButtonSound emissions: { charId, sounds }.
+  // These must be emitted AFTER DefineSound tags (which build soundIdMap) so all
+  // SoundId references are valid. Populated during the symbol definition pass below.
+  const pendingButtonSounds: Array<{ charId: number; sounds: ButtonSounds }> = [];
+
   // Emit DefineSprite for each symbol (using the pre-assigned IDs).
   // encodeDefineSprite returns the tag *body* (SpriteID + FrameCount + inner tags);
   // writeTag wraps it with the DefineSprite record header.
@@ -561,6 +566,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       }
 
       writer.writeTag(Tag.DefineButton2, buttonBody);
+
+      // Collect for deferred DefineButtonSound emit (needs soundIdMap, built below)
+      if (sym.buttonSounds) {
+        pendingButtonSounds.push({ charId: symCharId, sounds: sym.buttonSounds });
+      }
     } else {
       const spriteBody = encodeDefineSprite(
         symCharId,
@@ -647,6 +657,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     soundIdMap.set(soundItem.id, soundId);
     const soundBody = encodeDefineSound(soundId, soundItem);
     writer.writeTag(Tag.DefineSound, soundBody);
+  }
+
+  // Emit deferred DefineButtonSound tags now that soundIdMap is populated.
+  for (const { charId, sounds } of pendingButtonSounds) {
+    const soundBody = encodeDefineButtonSound(charId, sounds, soundIdMap);
+    writer.writeTag(Tag.DefineButtonSound, soundBody);
   }
 
   // 3d. Emit DefineVideoStream (tag 60) for each VideoItem in the library.

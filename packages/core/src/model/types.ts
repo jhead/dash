@@ -259,6 +259,34 @@ export interface ButtonAction {
   readonly script: string;
 }
 
+/**
+ * A sound effect attached to a button state transition.
+ * Maps to a BUTTONSOUNDINFO record inside DefineButtonSound (tag 17).
+ */
+export interface ButtonStateSound {
+  /** Library item ID of the SoundItem to play. */
+  readonly soundId: string;
+  /** Optional loop count (0 = loop forever, undefined = play once). */
+  readonly loops?: number;
+}
+
+/**
+ * Per-state sound assignments for a button symbol.
+ * Encoded as a DefineButtonSound (tag 17) immediately after the DefineButton2 tag.
+ *
+ * SWF spec state order: overToUp, upToOver, overToDown, downToOver.
+ */
+export interface ButtonSounds {
+  /** Sound to play when the button transitions from Over to Up. */
+  readonly overToUp?: ButtonStateSound;
+  /** Sound to play when the button transitions from Up to Over. */
+  readonly upToOver?: ButtonStateSound;
+  /** Sound to play when the button transitions from Over to Down. */
+  readonly overToDown?: ButtonStateSound;
+  /** Sound to play when the button transitions from Down to Over. */
+  readonly downToOver?: ButtonStateSound;
+}
+
 export interface Symbol {
   readonly id: string;
   readonly name: string;
@@ -275,6 +303,12 @@ export interface Symbol {
    * in the DefineButton2 SWF tag.
    */
   readonly buttonActions?: readonly ButtonAction[];
+  /**
+   * Per-state sound assignments (for symbolType === "button" only).
+   * When present, a DefineButtonSound (tag 17) tag is emitted immediately
+   * after the DefineButton2 tag in the SWF.
+   */
+  readonly buttonSounds?: ButtonSounds;
 }
 
 export interface Scale9Grid {

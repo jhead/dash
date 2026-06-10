@@ -15,7 +15,7 @@
  *     each record: 1 byte flags, CharId UI16, Depth UI16, MATRIX, CXFORMWITHALPHA
  *   ButtonConditions (optional, none emitted for MVP)
  */
-import type { BitmapItem, ButtonHandler, FlashDocument, Symbol } from "@flash/core";
+import type { BitmapItem, ButtonHandler, ButtonSounds, FlashDocument, Symbol } from "@flash/core";
 import { compileAS2 } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import { encodeCxformWithAlpha } from "./cxform.js";
@@ -448,6 +448,78 @@ export function encodeDefineButton2(
     // No button actions — ActionOffset = 0
     bw.writeUI16LE(0);
     bw.writeBytes(recordsBytes);
+  }
+
+  return bw.getBytes();
+}
+
+// ---------------------------------------------------------------------------
+// DefineButtonSound (tag 17)
+// ---------------------------------------------------------------------------
+
+/**
+ * Encode a DefineButtonSound (tag 17) tag body.
+ *
+ * Associates sound effects with button state transitions. Must immediately
+ * follow the corresponding DefineButton2 tag in the SWF.
+ *
+ * Tag 17 body structure (SWF spec §12.12):
+ *   UI16  ButtonId
+ *   For each of 4 state slots (order: overToUp, upToOver, overToDown, downToOver):
+ *     UI16  SoundId (0 = no sound for this state)
+ *     if SoundId != 0:
+ *       SOUNDINFO flags byte:
+ *         bit 0: HasInPoint
+ *         bit 1: HasOutPoint
+ *         bit 2: HasLoops
+ *         bit 3: HasEnvelope
+ *         bit 4: NoMultiple
+ *         bit 5: Stop
+ *       if HasLoops: UI16 LoopCount
+ *
+ * @param buttonId  SWF character ID of the DefineButton2 tag
+ * @param sounds    Per-state sound assignments from the button symbol model
+ * @param soundIdMap  Maps library SoundItem.id → SWF character ID
+ * @returns         Raw bytes of the DefineButtonSound tag body
+ */
+export function encodeDefineButtonSound(
+  buttonId: number,
+  sounds: ButtonSounds,
+  soundIdMap: Map<string, number>
+): Uint8Array {
+  const bw = new BitWriter();
+
+  // ButtonId
+  bw.writeUI16LE(buttonId);
+
+  // 4 state slots in SWF spec order
+  const slots = [
+    sounds.overToUp,
+    sounds.upToOver,
+    sounds.overToDown,
+    sounds.downToOver,
+  ] as const;
+
+  for (const slot of slots) {
+    if (!slot) {
+      // No sound for this state: write SoundId = 0
+      bw.writeUI16LE(0);
+    } else {
+      const swfSoundId = soundIdMap.get(slot.soundId);
+      if (swfSoundId === undefined || swfSoundId === 0) {
+        // Sound not found or id 0 (treat as no sound)
+        bw.writeUI16LE(0);
+      } else {
+        bw.writeUI16LE(swfSoundId);
+        // SOUNDINFO flags byte
+        const hasLoops = slot.loops !== undefined && slot.loops > 0;
+        const flags = hasLoops ? 0x04 : 0x00; // bit 2 = HasLoops
+        bw.writeUI8(flags);
+        if (hasLoops) {
+          bw.writeUI16LE(slot.loops!);
+        }
+      }
+    }
   }
 
   return bw.getBytes();

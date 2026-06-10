@@ -2,6 +2,8 @@
 export type {
   BitmapItem,
   ButtonAction,
+  ButtonSounds,
+  ButtonStateSound,
   ComponentItem,
   DocumentAccessibility,
   DocumentProperties,
