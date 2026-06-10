@@ -185,7 +185,6 @@ describe("Edit Multiple Frames — onion frame opacity computation", () => {
     const editMultipleFrames = true;
     const onionBefore = 2;
     const onionAfter = 2;
-    const currentFrame = 5;
 
     const getOpacity = (i: number, isBefore: boolean) =>
       editMultipleFrames

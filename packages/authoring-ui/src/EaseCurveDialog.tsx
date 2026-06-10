@@ -71,19 +71,6 @@ function fromCanvas(cx: number, cy: number): [number, number] {
   return [nx, ny];
 }
 
-/** Evaluate a 1D cubic Bézier at parameter t, given four control values. */
-function bezier1D(p0: number, p1: number, p2: number, p3: number, t: number): number {
-  const mt = 1 - t;
-  return mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3;
-}
-
-/** Sample (x,y) along the cubic Bézier at parameter t. */
-function sampleCurve(curve: EaseCurve, t: number): [number, number] {
-  const x = bezier1D(0, curve.x1, curve.x2, 1, t);
-  const y = bezier1D(0, curve.y1, curve.y2, 1, t);
-  return [x, y];
-}
-
 /** Draw the ease curve onto the canvas. */
 function drawCurve(
   ctx: CanvasRenderingContext2D,

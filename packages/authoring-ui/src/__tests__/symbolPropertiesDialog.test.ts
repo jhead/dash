@@ -43,6 +43,9 @@ function buildSymbolPropertiesData(opts: {
       linkageIdentifier: "",
       className: "",
       exportInFirstFrame: false,
+      exportForRuntimeSharing: false,
+      importForRuntimeSharing: false,
+      sharedUrl: "",
     },
     scale9Grid,
   };

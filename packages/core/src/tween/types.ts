@@ -2,7 +2,8 @@
  * Types for Flash 8-style motion tween interpolation.
  */
 
-import type { ColorEffect, FlashFilter } from "../engine/types.js";
+import type { ColorEffect } from "../engine/types.js";
+import type { FlashFilter } from "../engine/filters.js";
 
 export interface TweenTarget {
   x: number;

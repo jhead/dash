@@ -487,7 +487,7 @@ const smallBtnStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 
 type EditTarget = "fill" | "stroke";
-type FillTypeId = "none" | "solid" | "linear-gradient" | "radial-gradient";
+type FillTypeId = "none" | "solid" | "linear-gradient" | "radial-gradient" | "bitmap";
 
 function fillToTypeId(fill: Fill | null): FillTypeId {
   if (!fill) return "none";

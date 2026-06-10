@@ -376,7 +376,8 @@ export function toFlashFilter(f: Fla8Filter): FlashFilter | null {
         angle: toDegrees(f.angle),
         distance: f.distance,
         strength: strengthToByte(f.strength),
-        inner: f.inner,
+        quality: passesToQuality(f.passes),
+        bevelType: f.inner ? "inner" : f.onTop ? "full" : "outer",
         knockout: f.knockout,
         enabled: true,
       };
