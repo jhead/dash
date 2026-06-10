@@ -520,7 +520,10 @@ export const LibrarySetLinkageParamsSchema = z.object({
   linkageId: z.string().optional().describe("attachMovie / new ClassName identifier"),
   exportForActionScript: z.boolean().optional().describe("Export this symbol for ActionScript (enables attachMovie / new ClassName)"),
   exportInFirstFrame: z.boolean().optional().describe("Export the symbol in the first frame of the SWF"),
-});
+}).refine(
+  (data) => data.linkageId !== undefined || data.exportForActionScript !== undefined || data.exportInFirstFrame !== undefined,
+  { message: "At least one of linkageId, exportForActionScript, or exportInFirstFrame must be provided" }
+);
 export type LibrarySetLinkageParams = z.infer<typeof LibrarySetLinkageParamsSchema>;
 
 export const LibrarySetLinkageResultSchema = z.object({
