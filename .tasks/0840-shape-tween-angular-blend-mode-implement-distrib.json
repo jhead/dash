@@ -1,0 +1,10 @@
+{
+  "id": "0840-shape-tween-angular-blend-mode-implement-distrib",
+  "title": "Shape tween angular blend mode \u2014 implement distributive vs angular morphing",
+  "description": "interpolateShapeTween has void blend; no-op for angular mode ('angular morphing not yet implemented'). Implement Flash 8's angular blend: rotate edge normals angularly rather than linearly. Currently both distributive and angular produce identical output.",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T13:51:09Z",
+  "updated_at": "2026-06-10T13:57:06Z"
+}

@@ -270,6 +270,21 @@ export interface Fla8SymbolInfo {
    */
   readonly linkageIdentifier: string;
   /**
+   * AS2 class name (for `new ClassName()` / `Object.registerClass()`).
+   * Decoded from the writeAsLinkage block in the Contents stream.
+   * The writeAsLinkage block starts at a fixed offset of 41 bytes after the
+   * end of the display-name BomString (s.end + 41) for MX2004+ unicode FLAs:
+   *   +0: UI32 zero prefix (00 00 00 00)
+   *   +4: asLinkageVersion byte (5 for MX2004, 7 for Flash 8/CS3)
+   *   +5: flags byte (exportForAS | importForRS)
+   *   +6: 3 zero bytes
+   *   +9: BomString(linkageIdentifier) [real, may differ from heuristic one]
+   *   after: BomString(linkageURL)
+   *   after: BomString(className)   ← this field
+   * Empty string when not set.
+   */
+  readonly className: string;
+  /**
    * Whether the symbol is exported for ActionScript (Export for ActionScript checkbox).
    * Stored as a UI8 boolean flag after the linkageIdentifier BomString.
    * The exact byte order in the Contents stream (observed from real Flash 8 binaries):
@@ -278,8 +293,6 @@ export interface Fla8SymbolInfo {
    *   UI8: exportForActionScript
    *   UI8: exportForRuntimeSharing
    *   UI8: importForRuntimeSharing
-   * NOTE: className (the AS2 class name) is NOT present in the Contents stream;
-   * it would be in the Symbol N stream's CPicPage afterData, which is not yet parsed.
    */
   readonly exportForActionScript: boolean;
   readonly exportInFirstFrame: boolean;
@@ -2297,8 +2310,16 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
   //   UI8: exportForActionScript (1 = exported for AS2 attachMovie/new ClassName)
   //   UI8: exportForRuntimeSharing
   //   UI8: importForRuntimeSharing
-  // NOTE: className (AS2 class name) is NOT in the Contents stream; it lives in
-  // the Symbol N stream's CPicPage afterData (not yet decoded).
+  // Then, at a fixed offset of 41 bytes after s.end (the end of the display-name
+  // BomString), the writeAsLinkage block begins:
+  //   s.end+41: UI32 zero prefix (00 00 00 00)
+  //   s.end+45: asLinkageVersion (1 byte: 5=MX2004, 7=Flash8/CS3)
+  //   s.end+46: flags byte (exportForAS | importForRS)
+  //   s.end+47: 3 zero bytes
+  //   s.end+50: BomString(linkageIdentifier) [real, authoritative copy]
+  //   after:    BomString(linkageURL)
+  //   after:    BomString(className)          ← AS2 class name
+  // (verified against flacomdoc FlaConverter.writeAsLinkage() and real fixtures)
   const symbols = new Map<number, Fla8SymbolInfo>();
   if (unicode) {
     for (const prefix of ["Symbol ", "S "]) {
@@ -2354,11 +2375,41 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
                 }
               }
 
+              // Read className from the writeAsLinkage block at s.end + 41.
+              // Layout (flacomdoc FlaConverter.writeAsLinkage, MX2004+ unicode):
+              //   [s.end+41..44]: 00 00 00 00 (zero prefix — validates the offset)
+              //   [s.end+45]:     asLinkageVersion (5 or 7)
+              //   [s.end+46]:     flags
+              //   [s.end+47..49]: 00 00 00
+              //   [s.end+50]:     BomString(linkageIdentifier)
+              //                   BomString(linkageURL)
+              //                   BomString(className)  ← target
+              let className = "";
+              const laStart = s.end + 41;
+              if (
+                laStart + 9 < bytes.length &&
+                bytes[laStart]!     === 0 &&
+                bytes[laStart + 1]! === 0 &&
+                bytes[laStart + 2]! === 0 &&
+                bytes[laStart + 3]! === 0
+              ) {
+                // skip 9-byte header: UI32 zero + version + flags + 3×zero
+                const laIdent = tryReadBomStringAt(bytes, laStart + 9);
+                if (laIdent !== null) {
+                  const laUrl = tryReadBomStringAt(bytes, laIdent.end);
+                  if (laUrl !== null) {
+                    const laCn = tryReadBomStringAt(bytes, laUrl.end);
+                    if (laCn !== null) className = laCn.value;
+                  }
+                }
+              }
+
               if (!symbols.has(num)) {
                 symbols.set(num, {
                   name,
                   typeByte,
                   linkageIdentifier,
+                  className,
                   exportForActionScript,
                   exportInFirstFrame,
                   exportForRuntimeSharing,

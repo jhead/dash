@@ -1,0 +1,10 @@
+{
+  "id": "0819-history-panel-scrollable-undo-redo-step-list-wit",
+  "title": "History panel \u2014 scrollable undo/redo step list with jump-to-step",
+  "description": "Add Window > History panel showing labeled past/future undo steps from HistoryState. Users can click a step to roll back/forward to that point. The undo/redo infrastructure (useHistory, Command type with label) already exists; this is purely the panel UI and step-selection logic.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T12:21:48Z",
+  "updated_at": "2026-06-10T12:26:28Z"
+}

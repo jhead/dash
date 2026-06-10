@@ -1,0 +1,10 @@
+{
+  "id": "0846-graphic-symbol-loopmode-firstframe-not-emitted-i",
+  "title": "Graphic symbol loopMode/firstFrame not emitted in SWF",
+  "description": "SymbolInstance.loopMode ('loop'|'play-once'|'single-frame') and firstFrame fields are parsed from FLA and respected by the authoring renderer (renderer.ts line 1012) but compile.ts never reads them \u2014 all graphic symbol instances always loop. Fix: in compile.ts symbol emit loop, emit a DoInitAction/PlaceObject with gotoAndStop(firstFrame) or stop() on the sprite based on loopMode. Affects packages/swf/src/compile.ts around the symbol-emit section.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T14:23:28Z",
+  "updated_at": "2026-06-10T14:30:03Z"
+}

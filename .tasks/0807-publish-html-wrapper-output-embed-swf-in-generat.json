@@ -1,0 +1,10 @@
+{
+  "id": "0807-publish-html-wrapper-output-embed-swf-in-generat",
+  "title": "Publish HTML wrapper output \u2014 embed SWF in generated HTML page",
+  "description": "Generate an HTML wrapper page embedding the SWF on File > Publish. Needs HTML tab in PublishSettingsDialog (dimensions, playback params, quality, scale, alignment), template system, and HTML generation in the publish pipeline. Currently only SWF is emitted; the HTML wrapper is the primary delivery vehicle for Flash content.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T11:36:11Z",
+  "updated_at": "2026-06-10T11:42:56Z"
+}

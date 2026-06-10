@@ -1,0 +1,10 @@
+{
+  "id": "0860-fla-import-motiontweenrotate-and-rotatetimes-sil",
+  "title": "FLA import: motionTweenRotate and rotateTimes silently skipped",
+  "description": "flash8-binary.ts lines 1800-1801 use r.skip(4) twice for motionTweenRotate (u32: 1=none,2=auto,3=CW,4=CCW) and rotateTimes (u32: extra full rotations). Model fields motionRotate and motionRotateCount exist and the tween interpolator uses them, but they never populate from FLA import. Spinning logo animations import with zero rotation. Fix: decode both u32 values and pass into createFrame.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T15:49:14Z",
+  "updated_at": "2026-06-10T15:51:33Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0805-flashtype-anti-alias-mode-csmtextsettings-and-de",
+  "title": "FlashType anti-alias mode \u2014 CSMTextSettings and DefineFontAlignZones",
+  "description": "Add antiAlias field to the text model (five modes: device, bitmap, animation, readability/FlashType, custom), surface it in PropertiesPanel, and emit CSMTextSettings + DefineFontAlignZones tags in the SWF compiler for the FlashType modes. Without this, all text compiles as animation anti-alias and Flash 8's crisp FlashType readability mode is unavailable.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T11:36:11Z",
+  "updated_at": "2026-06-10T11:39:42Z"
+}

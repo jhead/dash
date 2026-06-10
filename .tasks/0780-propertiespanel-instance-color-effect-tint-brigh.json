@@ -1,0 +1,10 @@
+{
+  "id": "0780-propertiespanel-instance-color-effect-tint-brigh",
+  "title": "PropertiesPanel: instance Color Effect (tint/brightness/alpha/advanced)",
+  "description": "The `ColorEffect` model is fully defined (`packages/core/src/engine/types.ts` line 257), interpolated in tweens, and compiled to SWF CXForm (`packages/swf/src/compile.ts`), but the SymbolInstance view in PropertiesPanel (`packages/authoring-ui/src/PropertiesPanel.tsx` line 669\u2013751) only shows Name and Blend Mode \u2014 no Color effect section.\n\nImplement the Color Effect subsection in `SymbolInstanceView`:\n- A dropdown: None / Brightness / Tint / Alpha / Advanced (matching Flash 8 Properties panel).\n- For Brightness: a single -100\u2026100 slider/input.\n- For Tint: a colour swatch + a 0\u2013100% amount input.\n- For Alpha: a 0\u2013100% input.\n- For Advanced: six inputs (R/G/B mult \u00d7 offset).\n- Each change calls `onUpdateObject(obj.id, { colorEffect: ... })`.\n\nAlso wire canvas-preview: `renderSymbolInstance` in `packages/core/src/engine/renderer.ts` currently ignores `obj.colorEffect`. Apply it using `ctx.filter` (for brightness) and CanvasRenderingContext2D compositing tricks (for tint/alpha) so the authoring canvas reflects the effect.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T09:44:44Z",
+  "updated_at": "2026-06-10T09:50:54Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0825-trace-bitmap-raster-to-vector-conversion-dialog",
+  "title": "Trace Bitmap \u2014 raster-to-vector conversion dialog",
+  "description": "Add Modify > Bitmap > Trace Bitmap dialog with color threshold, minimum area, curve fit, and corner threshold parameters. Auto-vectorize a selected bitmap instance into editable filled shape paths. Requires color quantization, region flood-fill, contour tracing, and B\u00e9zier fitting algorithm.",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T12:33:15Z",
+  "updated_at": "2026-06-10T12:45:38Z"
+}

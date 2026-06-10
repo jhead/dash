@@ -2,9 +2,9 @@
   "id": "0820-find-and-replace-document-wide-text-font-color-s",
   "title": "Find and Replace \u2014 document-wide text/font/color/symbol search",
   "description": "Add Edit > Find and Replace dialog that traverses stage objects, frame scripts, and library items to find and replace text strings, font faces, colors, or symbol references. Distinct from the ActionsPanel code editor's Ctrl+F. See docs/01-documents-stage-scenes.md.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T12:21:48Z",
-  "updated_at": "2026-06-10T12:22:38Z"
+  "updated_at": "2026-06-10T12:28:48Z"
 }

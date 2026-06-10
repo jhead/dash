@@ -1,0 +1,10 @@
+{
+  "id": "0791-timeline-double-click-a-keyframe-to-jump-the-act",
+  "title": "Timeline: double-click a keyframe to jump the Actions panel to that frame's script",
+  "description": "Flash 8 UX: double-clicking a keyframe dot in the Timeline opens the Actions panel and scrolls to that frame's script. Currently in the Flash clone:\n\n  - The Actions panel exists (packages/authoring-ui/src/ActionsPanel.tsx) and is rendered in Shell.tsx.\n  - The Timeline renders keyframe dots and handles right-click context menus, but double-clicking a frame only navigates the playhead \u2014 it does NOT open the Actions panel or indicate that a frame has a script attached.\n  - There is no visual indicator (e.g., small 'a' lowercase letter) on keyframes that carry a non-empty script.\n\nWork items:\n1. Render a small script indicator (the classic lowercase 'a' icon or a dot-overlay) on keyframe cells in the Timeline whenever frame.script is non-empty. This is the primary discoverability signal.\n2. Wire double-click on a keyframe to: (a) navigate the playhead to that frame, and (b) reveal the Actions panel (set actionsPanelVisible = true in Shell) focused on that layer/frame.\n3. Add a keyboard shortcut (F9 = Flash standard) to toggle the Actions panel visibility, same as the Window > Actions menu item.\n4. Unit-test the script-indicator rendering in Timeline: a layer with a keyframe.script should render the indicator element; a keyframe with empty script should not.\n\nAcceptance: double-clicking a keyframe that has a non-empty script opens the Actions panel to that frame. A keyframe with script shows the 'a' indicator in the timeline cell. F9 toggles the Actions panel.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T10:33:34Z",
+  "updated_at": "2026-06-10T10:36:49Z"
+}

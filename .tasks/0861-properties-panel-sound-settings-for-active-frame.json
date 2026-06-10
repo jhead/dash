@@ -1,0 +1,10 @@
+{
+  "id": "0861-properties-panel-sound-settings-for-active-frame",
+  "title": "Properties panel: sound settings for active frame (loop count, in/out points, effect)",
+  "description": "The Properties panel has no sound section. SoundLinkage.repeatCount, effect, customEnvelope, inPoint, and outPoint all exist in the model and work in the SoundPanel, but Flash 8 places these in the context-sensitive Properties panel for the selected frame. Add a sound subsection to PropertiesPanel.tsx that appears when the selected frame has a sound assigned.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T15:49:14Z",
+  "updated_at": "2026-06-10T15:52:02Z"
+}

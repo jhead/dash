@@ -1,0 +1,10 @@
+{
+  "id": "0810-gradient-spread-modes-linearrgb-overflow-bits-in",
+  "title": "Gradient spread modes + linearRGB \u2014 overflow bits in SWF and Color Mixer UI",
+  "description": "Add spreadMode (extend/reflect/repeat) and linearRGB flag to LinearGradientFill and RadialGradientFill model types. Wire through SWF DefineShape4 spread bits, Color Mixer UI dropdowns, and canvas renderer gradient params. Required for accurate Flash 8 gradient parity per docs/05.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T11:46:23Z",
+  "updated_at": "2026-06-10T11:53:17Z"
+}

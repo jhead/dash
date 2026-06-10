@@ -2,9 +2,9 @@
   "id": "0745-bitmap-fill-in-color-mixer-add-bitmap-fill-type-",
   "title": "Bitmap fill in Color Mixer: add bitmap fill type to Fill union, Color Mixer UI, and SWF encoding",
   "description": "Flash 8 allows any shape fill to be a tiled/clipped bitmap from the library (Paint Bucket with bitmap fill, Gradient Transform on bitmap fills). Currently the Fill union type in packages/core/src/engine/types.ts only has SolidFill | LinearGradientFill | RadialGradientFill \u2014 there is no BitmapFill variant. The ColorMixerPanel has no 'Bitmap' option in its fill-type selector. Scope: (1) add a BitmapFill interface to engine/types.ts: {type:'bitmap', bitmapId:string, matrix:FillMatrix, repeat:boolean} (or equivalent); update Fill = SolidFill | LinearGradientFill | RadialGradientFill | BitmapFill; (2) in ColorMixerPanel add a 'Bitmap' fill type option that shows a grid of library bitmap thumbnails to pick from; (3) update the canvas renderer to sample the bitmap texture using the fill matrix; (4) in packages/swf/src/shapes.ts, emit a BitmapFill fill style (FillStyle type 0x40/0x41/0x42/0x43) inside DefineShape4 when a path has a BitmapFill; re-use the already-present encodeDefineBitsJPEG2/encodeDefineBitsLossless2 encoders to emit the character def and reference it in the fill. Acceptance: import a PNG to the library, select a rectangle, open Color Mixer, choose Bitmap fill, select the imported image, publish SWF, Ruffle renders the rectangle tiled with the bitmap.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T06:50:24Z",
-  "updated_at": "2026-06-10T06:51:44Z"
+  "updated_at": "2026-06-10T06:59:32Z"
 }

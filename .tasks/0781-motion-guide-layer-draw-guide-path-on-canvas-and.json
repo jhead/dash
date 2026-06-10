@@ -2,9 +2,9 @@
   "id": "0781-motion-guide-layer-draw-guide-path-on-canvas-and",
   "title": "Motion guide layer: draw guide path on canvas and constrain tween",
   "description": "Guide layers (`type: 'guide'`) are supported in the model and the `layer-pairing.ts` / `timeline-query.ts` / `guidepath.ts` modules exist, but the authoring canvas completely skips them:\n\n1. **Guide path not visible**: `drawMotionPaths` in StageArea.tsx (line 300) and the CanvasRenderer both skip `layer.type === 'guide'` layers, so the author cannot see the spline they drew on the guide layer.\n2. **Tween does not follow the guide path**: `getTweenedFrame` calls `getGuideLayerPath`/`samplePath` (`timeline-query.ts` line 213\u2013222) to constrain the tween, but only when the guided layer is the *active* layer. The `fullSceneGraph` memo in Shell.tsx (line 3026\u20133041) doesn't pass guide-layer information into `getTweenedFrame`.\n\nTasks:\n- Render guide-layer shapes on the authoring canvas with a dashed green/teal stroke (not solid fill) at all times the guide layer is visible, skipping them in final SWF export (already done).\n- Confirm `getTweenedFrame` / `getGuideLayerPath` correctly snaps the guided object's (x,y) to the path sample at each frame of the tween span, and write a unit test (e.g. place a straight-line shape on a guide layer, add a motion tween on the guided layer from start to end, assert interpolated x/y lies on the line at t=0.5).\n- Make the guide layer visible but non-interactive (locked style, no selection) in StageArea when it is not the active layer.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T09:44:57Z",
-  "updated_at": "2026-06-10T09:46:06Z"
+  "updated_at": "2026-06-10T09:50:14Z"
 }

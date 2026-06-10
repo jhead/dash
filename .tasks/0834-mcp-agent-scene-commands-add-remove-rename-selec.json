@@ -1,0 +1,10 @@
+{
+  "id": "0834-mcp-agent-scene-commands-add-remove-rename-selec",
+  "title": "MCP agent scene commands \u2014 add/remove/rename/select active scene",
+  "description": "Add scene_add, scene_remove, scene_rename, scene_select tools to the agent protocol (zod schemas, ALL_COMMANDS, registry handlers). No new core mutations needed \u2014 addScene/removeScene/renameScene already exist. Enables agents to author multi-scene movies.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T13:16:14Z",
+  "updated_at": "2026-06-10T13:24:14Z"
+}

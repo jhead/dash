@@ -1,0 +1,10 @@
+{
+  "id": "0855-button-on-keypress-event-model-fla-import-swf-em",
+  "title": "Button on(keyPress) event \u2014 model, FLA import, SWF emit",
+  "description": "ButtonHandler event union has no keyPress variant; on(keyPress '<key>') handlers are silently dropped in flash8-import.ts; buttons.ts has no key-press condition bits in eventBitMap. Fix: add KeyPress variant to ButtonHandler, import it from FLA, and emit ButtonActionCondition KEY_PRESS bits (bits 9-15 = ASCII char) in DefineButton2. Ruffle supports this fully.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T15:17:24Z",
+  "updated_at": "2026-06-10T15:28:57Z"
+}

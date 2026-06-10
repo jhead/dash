@@ -1,0 +1,10 @@
+{
+  "id": "0843-as2-compiler-silent-fallback-opcodes-should-thro",
+  "title": "AS2 compiler: silent fallback opcodes should throw at compile time",
+  "description": "In compiler.ts, the default case in compileAssignValueOp emits 0x47 (Add2) for unrecognized compound-assignment operators, and compileBinaryExpr's default silently pushes undefined. Both should throw a compile-time error instead of producing wrong runtime behavior. Audit which operators reach the default and add the throw/warning.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T14:06:16Z",
+  "updated_at": "2026-06-10T14:09:00Z"
+}

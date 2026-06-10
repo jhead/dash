@@ -1,0 +1,10 @@
+{
+  "id": "0808-onion-skin-outlines-mode-ghost-frames-as-outline",
+  "title": "Onion skin outlines mode (ghost frames as outlines only)",
+  "description": "Add an Onion Skin Outlines toggle to the Timeline toolbar \u2014 renders ghost frames as stroke outlines only (no fill) via an outlineMode flag in the onionskin engine and StageArea renderer. Flash 8 standard workflow for comparing geometry across frames without fill noise.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T11:36:11Z",
+  "updated_at": "2026-06-10T11:41:08Z"
+}

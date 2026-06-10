@@ -1,0 +1,10 @@
+{
+  "id": "0866-convolution-filter-fla-parsed-but-no-model-type-",
+  "title": "Convolution filter: FLA parsed but no model type or SWF encoder",
+  "description": "Flash 8 ConvolutionFilter (type 5) is decoded from FLA binary and silently discarded (return null in flash8-binary.ts:1269). No model type, no UI, no SWF encoder. SWF spec defines FilterID=5 with a full matrix encoding. Full end-to-end gap: FLA import \u2192 model \u2192 SWF emit \u2192 Ruffle render.",
+  "status": "done",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-10T15:58:23Z",
+  "updated_at": "2026-06-10T16:11:39Z"
+}

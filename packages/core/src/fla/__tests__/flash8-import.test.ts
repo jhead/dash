@@ -1149,3 +1149,150 @@ describe("buildHtmlText — multi-run rich text HTML builder", () => {
     expect(html).toContain('face="Arial"');
   });
 });
+
+// ---------------------------------------------------------------------------
+// parseFla8Contents: className decoding from writeAsLinkage block (task 0874)
+// ---------------------------------------------------------------------------
+
+describe("parseFla8Contents className decode (synthetic Contents stream)", () => {
+  // Helper: encode a string as UTF-16LE bytes
+  function utf16le(s: string): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < s.length; i++) {
+      out.push(s.charCodeAt(i) & 0xff, s.charCodeAt(i) >> 8);
+    }
+    return out;
+  }
+
+  // Helper: encode a BomString (FF FE FF <len> <UTF-16LE data>)
+  function bomString(s: string): number[] {
+    return [0xff, 0xfe, 0xff, s.length, ...utf16le(s)];
+  }
+
+  /**
+   * Build a minimal unicode Contents stream for a single "Symbol 1" entry
+   * with the given className in the writeAsLinkage block.
+   *
+   * Stream layout:
+   *   [0x38]                         formatVersion (unicode mode)
+   *   [0x08] + UTF16LE("Symbol 1")   stream name (8 chars)
+   *   BomString("MyClip")            display name  ← s starts here, s.end after it
+   *   [UI32LE: 0x00000001]           stream number
+   *   [0x02]                         typeByte (movieclip)
+   *   BomString("")                  heuristic linkageIdentifier (empty)
+   *   [0x01 0x00 0x00 0x00]          4 flag bytes (exportInFirstFrame=1, rest=0)
+   *   --- 41 bytes after s.end: writeAsLinkage block starts ---
+   *   The gap (from s.end to writeAsLinkage) is exactly 41 bytes:
+   *     UI32LE(streamNum)=4 + typeByte=1 + BomString("")=4 + 4 flags=4
+   *     = 13 bytes from s.end to flagBase+4
+   *     Then we need 41 - 13 = 28 more "intermediate" bytes to reach laStart.
+   *
+   * Actually, the 41-byte offset was measured from s.end (the end of the
+   * display-name BomString) to the start of the 00 00 00 00 prefix.
+   * The heuristic BomString("") is at s.end + 5 (after UI32LE + typeByte).
+   * BomString("") = FF FE FF 00 = 4 bytes.  Then 4 flag bytes = 4 bytes.
+   * Total from s.end: 4 (streamNum) + 1 (typeByte) + 4 (BomString("")) + 4 (flags) = 13 bytes.
+   * The writeAsLinkage zero-prefix is at s.end + 41, so we need 28 bytes of
+   * intermediate data (spriteVersion / page-shape records etc.) between
+   * flagBase+4 and laStart.  We just pad with zeros here.
+   *
+   * writeAsLinkage block (starting at laStart = s.end + 41):
+   *   [00 00 00 00]            UI32 zero prefix
+   *   [0x07]                   asLinkageVersion (7 = Flash 8)
+   *   [0x00]                   flags
+   *   [00 00 00]               3 zero bytes
+   *   BomString("")            linkageIdentifier (real, empty)
+   *   BomString("")            linkageURL (empty)
+   *   BomString(className)     className ← the value under test
+   */
+  function buildContentsStream(className: string): Uint8Array {
+    const displayName = "MyClip";
+    const streamName = "Symbol 1";
+
+    // Build header: formatVersion + length-prefixed UTF-16LE stream name
+    const header = [
+      0x38,                          // formatVersion (unicode)
+      streamName.length,             // 8
+      ...utf16le(streamName),        // 16 bytes
+    ];
+
+    // Display name BomString — "s" in the parser code.
+    // s.end is right after this.
+    const dispNameBom = bomString(displayName); // 4 + 12 = 16 bytes
+
+    // Bytes s.end+0 to s.end+12 (13 bytes total):
+    //   [0..3]: UI32LE stream number = 1
+    //   [4]:    typeByte = 2 (movieclip)
+    //   [5..8]: BomString("") = FF FE FF 00  (heuristic linkageIdentifier)
+    //   [9..12]: 4 flag bytes = 01 00 00 00
+    const afterName = [
+      0x01, 0x00, 0x00, 0x00,  // UI32LE streamNum=1
+      0x02,                     // typeByte=2 (movieclip)
+      0xff, 0xfe, 0xff, 0x00,  // BomString("") = heuristic linkageIdentifier
+      0x01, 0x00, 0x00, 0x00,  // 4 flag bytes: exportInFirstFrame=1, rest=0
+    ]; // 13 bytes
+
+    // Pad from s.end+13 to s.end+41 = 28 bytes of zeros
+    const pad = new Array<number>(28).fill(0);
+
+    // writeAsLinkage block at s.end+41:
+    //   [0..3]: 00 00 00 00 (zero prefix)
+    //   [4]:    0x07 (asLinkageVersion=7)
+    //   [5]:    0x00 (flags)
+    //   [6..8]: 00 00 00
+    //   [9..]: BomString("") linkageIdentifier
+    //          BomString("") linkageURL
+    //          BomString(className)
+    const laBlock = [
+      0x00, 0x00, 0x00, 0x00,  // zero prefix
+      0x07,                     // asLinkageVersion=7 (Flash 8)
+      0x00,                     // flags
+      0x00, 0x00, 0x00,         // 3 zero bytes
+      ...bomString(""),          // BomString("") linkageIdentifier
+      ...bomString(""),          // BomString("") linkageURL
+      ...bomString(className),   // BomString(className) ← target
+    ];
+
+    const all = [
+      ...header,
+      ...dispNameBom,
+      ...afterName,
+      ...pad,
+      ...laBlock,
+    ];
+    return new Uint8Array(all);
+  }
+
+  it("decodes a non-empty className from the writeAsLinkage block", () => {
+    const buf = buildContentsStream("com.example.MyClip");
+    const info = parseFla8Contents(buf);
+    expect(info.symbols.size).toBe(1);
+    const sym = info.symbols.get(1)!;
+    expect(sym).toBeDefined();
+    expect(sym.name).toBe("MyClip");
+    expect(sym.typeByte).toBe(2);
+    expect(sym.className).toBe("com.example.MyClip");
+  });
+
+  it("leaves className as empty string when writeAsLinkage block has empty className", () => {
+    const buf = buildContentsStream("");
+    const info = parseFla8Contents(buf);
+    const sym = info.symbols.get(1)!;
+    expect(sym.className).toBe("");
+  });
+
+  it("leaves className as empty string when writeAsLinkage zero-prefix is absent", () => {
+    // Build the stream but corrupt the zero prefix at s.end+41 so the block
+    // is not recognized.
+    const buf = buildContentsStream("should.not.appear");
+    // The zero prefix is at s.end+41. Display name "MyClip"=6chars → BomString=4+12=16 bytes.
+    // Header = 1 + 1 + 16 = 18 bytes. So s starts at 18, s.end = 18+16=34.
+    // laStart = 34 + 41 = 75.
+    const corruptedBuf = new Uint8Array(buf);
+    corruptedBuf[75] = 0xff; // corrupt the first zero byte of the prefix
+    const info = parseFla8Contents(corruptedBuf);
+    const sym = info.symbols.get(1)!;
+    // With the prefix corrupted the block won't be recognized, className should be ""
+    expect(sym.className).toBe("");
+  });
+});

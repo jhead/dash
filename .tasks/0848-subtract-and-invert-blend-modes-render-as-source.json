@@ -1,0 +1,10 @@
+{
+  "id": "0848-subtract-and-invert-blend-modes-render-as-source",
+  "title": "subtract and invert blend modes render as source-over in authoring canvas",
+  "description": "In renderer.ts BLEND_MAP, subtract and invert have no Canvas2D equivalent and fall back to source-over. Fix: render the affected object to an offscreen canvas and apply pixel-level compositing via getImageData/putImageData. Subtract darkens by subtracting source RGB from destination; invert inverts destination pixels under the clip. SWF encoding already emits correct byte values.",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T14:23:28Z",
+  "updated_at": "2026-06-10T14:30:16Z"
+}

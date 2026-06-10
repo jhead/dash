@@ -1,0 +1,10 @@
+{
+  "id": "0794-actionspanel-find-ctrl-f-and-replace-ctrl-h-with",
+  "title": "ActionsPanel: Find (Ctrl+F) and Replace (Ctrl+H) within the active script",
+  "description": "Flash 8's Actions panel has a Find/Replace bar (Ctrl+F to open, Ctrl+H for replace mode). The current ScriptEditor in ActionsPanel.tsx has no search capability. Implement a collapsible find/replace bar at the top of the ScriptEditor that: (1) opens on Ctrl+F (find only) or Ctrl+H (find+replace mode); (2) highlights all matches in the syntax-highlight overlay with a yellow background; (3) supports Next/Previous match navigation (Enter / Shift+Enter); (4) Replace (replaces current match, advances) and Replace All; (5) closes on Escape; (6) is case-insensitive by default with an optional case-sensitive toggle. The bar must be internal to the ScriptEditor component so it works in all three ActionsPanel modes (frame, clip, button). Cover with unit tests for match counting and replace logic.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T10:41:01Z",
+  "updated_at": "2026-06-10T10:45:45Z"
+}

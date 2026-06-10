@@ -1,0 +1,10 @@
+{
+  "id": "0852-as2-compiler-iife-and-computed-call-expressions-",
+  "title": "AS2 compiler: IIFE and computed-call expressions silently return undefined",
+  "description": "In compiler.ts around line 1544, call expressions whose callee is not an Identifier or MemberExpr (e.g. IIFEs like (function(){})(), computed calls like arr[i]()) fall into a 'not supported in MVP; push undefined' branch and are never invoked. Fix: implement proper callee compilation for these forms \u2014 push the function object, push args, call.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T14:49:12Z",
+  "updated_at": "2026-06-10T14:53:31Z"
+}

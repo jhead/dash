@@ -1,10 +1,10 @@
 {
   "id": "0786-color-effect-tint-alpha-brightness-visual-oracle",
   "title": "Color effect (tint/alpha/brightness) visual oracle E2E",
-  "description": "The SWF compiler (cxform.ts + compile.ts), CanvasRenderer (renderer.ts applyColorEffectPre/renderSymbolWithColorEffect), and PropertiesPanel all support color effects (alpha, tint, brightness, advanced). But there is no E2E oracle test proving that compiled CXFormWithAlpha data actually renders correctly in Ruffle. The pattern in CLAUDE.md is explicit: 'byte-presence unit tests are not runtime proof' \u2014 the drop-shadow and bitmap oracles already exist, but color effects are missing. Scope: add a new spec (e.g. apps/desktop/e2e/color-effect.spec.ts) that builds a fixture with a symbol instance carrying a tint color effect (and optionally an alpha-only effect), compiles to SWF, loads in Ruffle, screenshots, and confirms the tinted pixels are present (dark-pixel count or CanvasRenderer vs Ruffle pixelmatch diff < threshold). Also add a CanvasRenderer-vs-Ruffle pair to visual-oracle.spec.ts if convenient. Acceptance: Playwright spec passes non-CI with pixelmatch ratio < 0.20 for tint and alpha effects; CI gets test.skip guard.",
-  "status": "in_progress",
+  "description": "Added color-effect.spec.ts. 3 tests: alpha (50%), tint (100% blue), brightness (-50%). All pass in local Ruffle (alpha: 10k non-white pixels; tint: 10k blue pixels; brightness: avg red=128.0). CI-skipped per visual oracle convention.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T10:21:39Z",
-  "updated_at": "2026-06-10T10:24:19Z"
+  "updated_at": "2026-06-10T10:25:38Z"
 }

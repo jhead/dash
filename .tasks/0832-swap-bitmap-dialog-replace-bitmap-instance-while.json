@@ -1,0 +1,10 @@
+{
+  "id": "0832-swap-bitmap-dialog-replace-bitmap-instance-while",
+  "title": "Swap Bitmap dialog \u2014 replace bitmap instance while preserving transform",
+  "description": "Implement the Swap Bitmap button in PropertiesPanel (currently wired to a console.log stub in Shell.tsx). Opens a picker showing other BitmapItems from the library; confirming replaces the libraryItemId on the selected BitmapDisplayObject while keeping position/scale/rotation.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T12:55:00Z",
+  "updated_at": "2026-06-10T13:01:17Z"
+}

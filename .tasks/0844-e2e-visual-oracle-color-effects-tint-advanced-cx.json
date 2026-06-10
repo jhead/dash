@@ -2,9 +2,9 @@
   "id": "0844-e2e-visual-oracle-color-effects-tint-advanced-cx",
   "title": "E2E visual oracle: color effects (tint/advanced CXForm) in published SWF",
   "description": "Add a Ruffle-based pixel-level acceptance test confirming tint and advanced color transform (CXFormWithAlpha) render correctly in a published SWF. The authoring canvas renderer handles these in renderer.ts lines 1078-1115 and compile.ts emits CXFormWithAlpha, but there is no e2e visual oracle verifying end-to-end fidelity through Ruffle.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T14:06:16Z",
-  "updated_at": "2026-06-10T14:07:04Z"
+  "updated_at": "2026-06-10T14:10:19Z"
 }

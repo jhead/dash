@@ -1,0 +1,10 @@
+{
+  "id": "0821-definefontalignzones-tag-73-flashtype-sub-pixel-",
+  "title": "DefineFontAlignZones tag 73 \u2014 FlashType sub-pixel hinting zones",
+  "description": "Emit DefineFontAlignZones (tag 73) after DefineFont3 for embedded fonts when antiAlias=readability. Compute per-glyph zone rectangles from NotoSans outlines (stem-width analysis or fixed approximation). CSMTextSettings tag 74 already exists; tag 73 is the companion TODO in text.ts.",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T12:21:49Z",
+  "updated_at": "2026-06-10T12:27:42Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0766-qa-persist-demo-fla-to-disk-save-restore-via-fil",
+  "title": "QA: persist demo FLA to disk \u2014 save/restore via file_save_fla/file_load_fla on reconnect",
+  "description": "Each time a new browser connects to the MCP bridge, the editor initializes with a blank document, losing the current QA demo. Fix: after building any QA demo, call file_save_fla and write the base64 to .qa/demo.fla.b64 on disk. At the start of each QA session, call file_load_fla with that file to restore context. This avoids rebuilding from scratch every session. Also investigate whether the editor should auto-persist document state to localStorage or a server-side file between sessions.",
+  "status": "cancelled",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T08:18:58Z",
+  "updated_at": "2026-06-10T08:21:02Z"
+}

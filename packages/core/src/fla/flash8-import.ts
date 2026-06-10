@@ -1071,10 +1071,11 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     const symbolType: SymbolType =
       meta?.typeByte != null ? (SYMBOL_TYPES[meta.typeByte] ?? "movieclip") : "movieclip";
     // Populate AS2 linkage from the Contents stream data.
-    // NOTE: className is not yet decoded from the Symbol N CPicPage stream;
-    // it is left as "" until that parsing is implemented.
+    // className is decoded from the writeAsLinkage block in the Contents stream
+    // (s.end + 41 offset, verified against flacomdoc FlaConverter.writeAsLinkage).
     const linkage = createSymbolLinkage({
       linkageIdentifier: meta?.linkageIdentifier ?? "",
+      className: meta?.className ?? "",
       exportForActionScript: meta?.exportForActionScript ?? false,
       exportInFirstFrame: meta?.exportInFirstFrame ?? false,
       exportForRuntimeSharing: meta?.exportForRuntimeSharing ?? false,

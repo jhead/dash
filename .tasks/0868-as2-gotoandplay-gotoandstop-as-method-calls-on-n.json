@@ -1,0 +1,10 @@
+{
+  "id": "0868-as2-gotoandplay-gotoandstop-as-method-calls-on-n",
+  "title": "AS2 gotoAndPlay/gotoAndStop as method calls on non-root timelines",
+  "description": "gotoAndPlay and gotoAndStop are hardcoded as free-function builtins emitting ActionGotoFrame2. When called as methods (myClip.gotoAndPlay(2) or _root.gotoAndPlay(2)), the builtin fast-path is bypassed and the generic CallMethod path runs instead. Verify _root.gotoAndPlay() resolves correctly via GetVariable('_root') + CallMethod in Ruffle, and fix any case where it produces wrong AVM1 output.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T16:20:23Z",
+  "updated_at": "2026-06-10T16:25:45Z"
+}

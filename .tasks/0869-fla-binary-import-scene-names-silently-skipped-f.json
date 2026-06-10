@@ -1,0 +1,10 @@
+{
+  "id": "0869-fla-binary-import-scene-names-silently-skipped-f",
+  "title": "FLA binary import: scene names silently skipped for pre-MX2004 FLAs",
+  "description": "flash8-binary.ts line 2208: Flash 5/MX FLAs (formatVersion < 0x38) use a bare ASCII string table in the Contents stream for scene names; the parser skips with warnOnce and imports all frames as a single unnamed scene. Fix: decode the ASCII string table and map scene names to the imported document's scenes array.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T16:20:23Z",
+  "updated_at": "2026-06-10T16:24:11Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0827-accessibility-panel-window-accessibility-with-ac",
+  "title": "Accessibility panel \u2014 Window > Accessibility with _accProps surface",
+  "description": "Add Window > Accessibility panel exposing _accProps (name, description, shortcut, tabIndex, forceSimple) for selected objects and a document-level 'Make movie accessible' checkbox. No panel, no Property Inspector surface, and no SWF EnableAccessibility tag emission currently exist.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T12:44:19Z",
+  "updated_at": "2026-06-10T12:53:50Z"
+}
