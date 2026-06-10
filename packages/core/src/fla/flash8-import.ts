@@ -35,7 +35,8 @@ import type { AdjustColorFilter, ConvolutionFilter, FlashFilter } from "../engin
 import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
-import { createSymbol, createSound, createBitmap, createVideo, createFont, createSymbolLinkage } from "../model/library.js";
+import { createSymbol, createSound, createBitmap, createVideo, createFont, createSymbolLinkage, createLibraryFolder } from "../model/library.js";
+import type { LibraryFolder } from "../model/types.js";
 import { decodeMediaAudio, decodeMediaBitmap, decodedBitmapToDataUri, bytesToBase64 } from "./media.js";
 import {
   parseFla8Contents,
@@ -1169,6 +1170,95 @@ export function assignFolderParents(layers: readonly Layer[]): Layer[] {
   return result;
 }
 
+/**
+ * Strip the trailing "!" from a folder segment name.
+ * In the binary FLA, folder names end with "!" to indicate the folder was
+ * expanded in Flash's library panel UI (e.g. "Assets!" → "Assets").
+ */
+function stripFolderExpanded(segmentName: string): string {
+  return segmentName.endsWith("!") ? segmentName.slice(0, -1) : segmentName;
+}
+
+/**
+ * Derive LibraryFolder objects and a symbol→folderId map from the full
+ * library paths stored in the Contents stream.
+ *
+ * Flash encodes the folder hierarchy in each symbol's full library path:
+ *   "FolderA!/NestedFolder!/SymbolName"
+ *
+ * The last path segment is the symbol display name; all preceding segments
+ * are folder names (ordered outermost to innermost). Folder names may end
+ * with "!" indicating the folder was expanded in the authoring UI — that
+ * suffix is stripped before becoming the folder's display name.
+ *
+ * @param symbolMeta  Map of symbol-stream-number → { name, fullPath }
+ * @returns { folders, symbolFolderIdByNum }
+ *   folders              — array of LibraryFolder objects (de-duplicated)
+ *   symbolFolderIdByNum  — Map<streamNum, folderId> for symbols in folders
+ */
+export function deriveFoldersFromPaths(
+  symbolMeta: Map<number, { name: string; fullPath: string }>,
+): { folders: LibraryFolder[]; symbolFolderIdByNum: Map<number, string> } {
+  // Map from canonical path key → LibraryFolder (de-duplicate across symbols)
+  // Key is the full folder path joined with "/" using the ORIGINAL segment names
+  // (including "!" if present) so we can look up by key consistently.
+  const folderByPath = new Map<string, LibraryFolder>();
+
+  // Helper: create-or-get a folder given its path segments (outermost first)
+  function getOrCreateFolder(segments: string[]): LibraryFolder {
+    const key = segments.join("/");
+    if (folderByPath.has(key)) return folderByPath.get(key)!;
+
+    let parentFolderId: string | null = null;
+    if (segments.length > 1) {
+      const parent = getOrCreateFolder(segments.slice(0, -1));
+      parentFolderId = parent.id;
+    }
+
+    const name = stripFolderExpanded(segments[segments.length - 1]!);
+    const folder = createLibraryFolder(name, parentFolderId);
+    folderByPath.set(key, folder);
+    return folder;
+  }
+
+  const symbolFolderIdByNum = new Map<number, string>();
+
+  for (const [num, meta] of symbolMeta) {
+    const path = meta.fullPath;
+    if (!path || !path.includes("/")) continue;
+
+    // Split into segments; the last segment is the symbol display name.
+    const segments = path.split("/");
+    if (segments.length < 2) continue;
+
+    const folderSegments = segments.slice(0, -1);
+    const folder = getOrCreateFolder(folderSegments);
+    symbolFolderIdByNum.set(num, folder.id);
+  }
+
+  // Return folders in stable order: parents before children
+  const folders: LibraryFolder[] = [];
+  const seen = new Set<string>();
+  function addFolderTree(key: string): void {
+    if (seen.has(key)) return;
+    seen.add(key);
+    const folder = folderByPath.get(key)!;
+    // Add parent first (if any)
+    const segs = key.split("/");
+    if (segs.length > 1) {
+      addFolderTree(segs.slice(0, -1).join("/"));
+    }
+    if (!folders.some((f) => f.id === folder.id)) {
+      folders.push(folder);
+    }
+  }
+  for (const key of folderByPath.keys()) {
+    addFolderTree(key);
+  }
+
+  return { folders, symbolFolderIdByNum };
+}
+
 // ---------------------------------------------------------------------------
 // Document assembly
 // ---------------------------------------------------------------------------
@@ -1364,6 +1454,21 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
       );
     }
   }
+
+  // Derive library folder structure from symbol full-path metadata.
+  // The fullPath field in Fla8SymbolInfo encodes the folder hierarchy as a
+  // slash-separated path (e.g. "Assets!/Enemies/Drone"). The last segment is
+  // the symbol display name; preceding segments are folder names (with "!"
+  // stripped). Symbols at the root have fullPath === "" or no "/".
+  const symbolMetaForFolders = new Map<number, { name: string; fullPath: string }>();
+  for (const s of symbolStreams) {
+    const meta = contents.symbols.get(s.num);
+    if (meta) {
+      symbolMetaForFolders.set(s.num, { name: meta.name, fullPath: meta.fullPath });
+    }
+  }
+  const { folders, symbolFolderIdByNum } = deriveFoldersFromPaths(symbolMetaForFolders);
+
   // shells
   const shells = new Map<number, ReturnType<typeof createSymbol>>();
   for (const s of symbolStreams) {
@@ -1395,7 +1500,10 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
         height: sg.bottom - sg.top,
       };
     }
-    const shell = createSymbol(name, symbolType, { linkage, scale9Grid });
+    // Assign folderId when this symbol lives inside a library folder.
+    const folderId = symbolFolderIdByNum.get(s.num) ?? null;
+    const folderOverride = folderId !== null ? { folderId } : {};
+    const shell = createSymbol(name, symbolType, { linkage, scale9Grid, ...folderOverride });
     shells.set(s.num, shell);
     symbolIdByIndex.set(s.num, shell.id);
   }
@@ -1445,6 +1553,6 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
   return createDocument({
     properties,
     scenes,
-    library: { items, folders: [] },
+    library: { items, folders },
   });
 }

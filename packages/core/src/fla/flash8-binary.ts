@@ -508,6 +508,21 @@ export interface Fla8SymbolInfo {
     readonly right: number;
     readonly bottom: number;
   } | null;
+  /**
+   * Full library path of the symbol, including folder hierarchy.
+   * Stored as a BomString immediately after the writeAsLinkage block tail:
+   *   className BomString end
+   *   + 1 byte (version indicator)
+   *   + UI32LE (observed value: 2)
+   *   + BomString(sourceFlaPath)  ← path of the originating .fla (may be empty)
+   *   + BomString(fullPath)       ← this field: "FolderA/FolderB/SymbolName"
+   *
+   * Folder names in the path may end with "!" (Flash's expanded-folder indicator;
+   * strip "!" before using as the folder display name).
+   * Empty string when the symbol is at the root of the library (no folder).
+   * When fullPath does not contain "/", the symbol is also at the root.
+   */
+  readonly fullPath: string;
 }
 
 export interface Fla8SoundInfo {
@@ -3278,6 +3293,7 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
               //                   BomString(linkageURL)
               //                   BomString(className)  ← target
               let className = "";
+              let fullPath = "";
               const laStart = s.end + 41;
               if (
                 laStart + 9 < bytes.length &&
@@ -3292,7 +3308,26 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
                   const laUrl = tryReadBomStringAt(bytes, laIdent.end);
                   if (laUrl !== null) {
                     const laCn = tryReadBomStringAt(bytes, laUrl.end);
-                    if (laCn !== null) className = laCn.value;
+                    if (laCn !== null) {
+                      className = laCn.value;
+                      // After className: 1 byte (version indicator) + UI32LE (4 bytes)
+                      // + BomString(sourceFlaPath) + BomString(fullLibraryPath).
+                      // The fullLibraryPath uses "/" as the folder separator and
+                      // folder names may end with "!" indicating expanded in the UI.
+                      // Observed layout from real MX2004/Flash 8 binaries:
+                      //   laCn.end+0: UI8 version indicator (0x00 or 0x05)
+                      //   laCn.end+1..4: UI32LE (observed value: 2)
+                      //   laCn.end+5: BomString(sourceFlaPath)
+                      //   after: BomString(fullLibraryPath)
+                      const afterCn = laCn.end + 5; // skip 1+4 bytes
+                      const srcPath = tryReadBomStringAt(bytes, afterCn);
+                      if (srcPath !== null) {
+                        const fp = tryReadBomStringAt(bytes, srcPath.end);
+                        if (fp !== null && fp.value.length > 0) {
+                          fullPath = fp.value;
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -3354,6 +3389,7 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
                   exportForRuntimeSharing,
                   importForRuntimeSharing,
                   scale9Grid,
+                  fullPath,
                 });
               }
             }
