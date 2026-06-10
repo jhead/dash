@@ -2567,7 +2567,7 @@ export function Shell(): React.ReactElement {
         sceneName={doc.scenes[Math.min(activeSceneIndex, doc.scenes.length - 1)]?.name ?? "Scene 1"}
         symbolName={editContext.mode === "symbol" ? editContext.symbolName : undefined}
         onExitSymbol={editContext.mode === "symbol" ? handleExitEditInPlace : undefined}
-        showTextControls={toolState.activeTool === "text"}
+        showTextControls={toolState.activeTool === "text" || editingTextId !== null}
         textFont={textFormat.fontFamily}
         textSize={textFormat.fontSize}
         textBold={textFormat.bold}

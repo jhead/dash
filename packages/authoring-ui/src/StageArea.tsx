@@ -2494,7 +2494,52 @@ export function StageArea({
 
           ctx.restore();
         }
+      } else {
+        // Check if the selected object is a text or bitmap display object
+        const textObj = textDisplayObjects.find((o) => o.id === selectedShapeId);
+        const bitmapObj = !textObj ? bitmapDisplayObjects.find((o) => o.id === selectedShapeId) : undefined;
+        const selectedGenericObj = textObj ?? bitmapObj;
+        if (selectedGenericObj && selectedGenericObj.width > 0 && selectedGenericObj.height > 0) {
+          const ctx = renderCanvasRef.current.getContext("2d")!;
+          ctx.save();
+
+          // Dashed bounding box
+          ctx.strokeStyle = "#0099ff";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 2]);
+          ctx.strokeRect(selectedGenericObj.x, selectedGenericObj.y, selectedGenericObj.width, selectedGenericObj.height);
+          ctx.setLineDash([]);
+
+          // Corner and mid-edge handles
+          const bounds = { x: selectedGenericObj.x, y: selectedGenericObj.y, width: selectedGenericObj.width, height: selectedGenericObj.height };
+          const handles = getHandlePositions(bounds);
+          for (const h of handles) {
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "#0099ff";
+            ctx.lineWidth = 1;
+            ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
+            ctx.strokeRect(h.x - 4, h.y - 4, 8, 8);
+          }
+
+          ctx.restore();
+        }
       }
+    }
+
+    // Draw unselected text field outlines (dashed blue border on all text objects)
+    if (textDisplayObjects.length > 0 && renderCanvasRef.current) {
+      const ctx = renderCanvasRef.current.getContext("2d")!;
+      ctx.save();
+      ctx.strokeStyle = "#0066cc";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      for (const tObj of textDisplayObjects) {
+        if (tObj.id !== selectedShapeId && tObj.width > 0 && tObj.height > 0) {
+          ctx.strokeRect(tObj.x, tObj.y, tObj.width, tObj.height);
+        }
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
     }
 
     // Draw subselection anchor points overlay
@@ -3259,9 +3304,23 @@ export function StageArea({
 
           {/* Text editing textarea overlay */}
           {textEditState && (() => {
-            const fontStyle = textFormat.italic ? "italic " : "";
-            const fontWeight = textFormat.bold ? "bold " : "";
-            const font = `${fontStyle}${fontWeight}${textFormat.fontSize}px ${textFormat.fontFamily}`;
+            // When editing an existing text object, use its own font properties.
+            // When creating a new one, fall back to the current textFormat state.
+            const existingObj = textEditState.editingId
+              ? textDisplayObjects.find((o) => o.id === textEditState.editingId)
+              : undefined;
+            const editFontItalic = existingObj ? existingObj.italic : textFormat.italic;
+            const editFontBold = existingObj ? existingObj.bold : textFormat.bold;
+            const editFontSize = existingObj ? existingObj.fontSize : textFormat.fontSize;
+            const editFontFamily = existingObj ? existingObj.fontFamily : textFormat.fontFamily;
+            const editColor = existingObj
+              ? `#${existingObj.color.r.toString(16).padStart(2, "0")}${existingObj.color.g.toString(16).padStart(2, "0")}${existingObj.color.b.toString(16).padStart(2, "0")}`
+              : textFormat.color;
+            const editWidth = existingObj ? existingObj.width : 200;
+            const editHeight = existingObj ? existingObj.height : 80;
+            const fontStyle = editFontItalic ? "italic " : "";
+            const fontWeight = editFontBold ? "bold " : "";
+            const font = `${fontStyle}${fontWeight}${editFontSize}px ${editFontFamily}`;
             return (
               <textarea
                 ref={textareaRef}
@@ -3270,10 +3329,10 @@ export function StageArea({
                   position: "absolute",
                   left: textEditState.stageX,
                   top: textEditState.stageY,
-                  width: 200,
-                  height: 80,
+                  width: editWidth,
+                  height: editHeight,
                   font,
-                  color: textFormat.color,
+                  color: editColor,
                   background: "rgba(255,255,255,0.1)",
                   border: "1px dashed #0099ff",
                   outline: "none",
