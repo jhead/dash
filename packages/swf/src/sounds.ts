@@ -188,3 +188,28 @@ export function encodeStartSound(
   bw.writeBytes(soundInfo);
   return bw.getBytes();
 }
+
+// ---------------------------------------------------------------------------
+// encodeStartSound2
+// ---------------------------------------------------------------------------
+
+/**
+ * Encode a StartSound2 (tag 89) body.
+ *
+ * Body layout (SWF spec §12.5):
+ *   SoundClassName (null-terminated string) — linkage class name of the sound
+ *   SoundInfo struct (from encodeSoundInfo)
+ *
+ * StartSound2 triggers a sound by its AS2 linkage class name rather than by
+ * SWF character ID, enabling attachSound() and new Sound() class patterns.
+ */
+export function encodeStartSound2(
+  soundClassName: string,
+  opts: SoundInfoOptions = {}
+): Uint8Array {
+  const soundInfo = encodeSoundInfo(opts);
+  const bw = new BitWriter();
+  bw.writeString(soundClassName); // null-terminated
+  bw.writeBytes(soundInfo);
+  return bw.getBytes();
+}

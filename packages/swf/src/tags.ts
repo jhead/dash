@@ -40,6 +40,7 @@ export const Tag = {
   DefineShape4: 83,
   DefineMorphShape2: 84,
   SceneAndFrameLabelData: 86,
+  StartSound2: 89,
   DefineFontAlignZones: 73,
   CSMTextSettings: 74,
 } as const;

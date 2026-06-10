@@ -48,7 +48,7 @@ import {
   soundFormat,
   soundRate,
 } from "./audio.js";
-import { encodeStartSound } from "./sounds.js";
+import { encodeStartSound, encodeStartSound2 } from "./sounds.js";
 import { dataUriToBytes, encodeDefineBitsLossless2, encodeDefineBitsJpeg3 } from "./bitmaps.js";
 import {
   encodeDefineVideoStream,
@@ -657,6 +657,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     soundIdMap.set(soundItem.id, soundId);
     const soundBody = encodeDefineSound(soundId, soundItem);
     writer.writeTag(Tag.DefineSound, soundBody);
+    // If the sound has an AS2 linkage identifier, add it to ExportAssets.
+    if (soundItem.exportForActionScript && soundItem.linkageIdentifier) {
+      exportEntries.push({ charId: soundId, name: soundItem.linkageIdentifier });
+    }
   }
 
   // Emit deferred DefineButtonSound tags now that soundIdMap is populated.
@@ -1818,7 +1822,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
 
         // Emit sound tags for any keyframes at exactly this frame index that have sound.
         // For stream mode: emit SoundStreamHead + SoundStreamBlock.
-        // For other modes (event/start/stop): emit StartSound.
+        // For sounds with a linkageIdentifier: emit StartSound2 (tag 89) by class name.
+        // For other modes (event/start/stop): emit StartSound (tag 15) by char ID.
         for (const layer of layers) {
           for (const frame of layer.frames) {
             if (
@@ -1879,7 +1884,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     writer.writeTag(Tag.SoundStreamBlock, streamBlockBody);
                   }
                 } else {
-                  const startSoundBody = encodeStartSound(soundId, {
+                  // Find the SoundItem to check for AS2 linkage class name.
+                  const soundItem = soundItems.find(
+                    (si) => si.id === frame.sound!.libraryItemId
+                  );
+                  const soundInfoOpts = {
                     loops: frame.sound.repeatCount,
                     stop: frame.sound.syncMode === "stop",
                     noMultiple: frame.sound.syncMode === "start",
@@ -1887,8 +1896,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     envelope: frame.sound.customEnvelope,
                     inPoint: frame.sound.inPoint,
                     outPoint: frame.sound.outPoint,
-                  });
-                  writer.writeTag(Tag.StartSound, startSoundBody);
+                  };
+                  if (soundItem?.linkageIdentifier) {
+                    // StartSound2 (tag 89): trigger by AS2 linkage class name.
+                    const startSound2Body = encodeStartSound2(
+                      soundItem.linkageIdentifier,
+                      soundInfoOpts
+                    );
+                    writer.writeTag(Tag.StartSound2, startSound2Body);
+                  } else {
+                    const startSoundBody = encodeStartSound(soundId, soundInfoOpts);
+                    writer.writeTag(Tag.StartSound, startSoundBody);
+                  }
                 }
               }
             }

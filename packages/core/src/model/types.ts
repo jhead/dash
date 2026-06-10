@@ -341,6 +341,10 @@ export interface SoundItem {
   readonly isStereo: boolean;
   readonly durationSeconds: number;
   readonly compressionType: "adpcm" | "mp3" | "raw" | "speech";
+  /** AS2 linkage class name for attachSound / new Sound() by class name. */
+  readonly linkageIdentifier?: string;
+  /** Whether this sound is exported for ActionScript (attachSound/class). */
+  readonly exportForActionScript?: boolean;
 }
 
 export interface VideoItem {
