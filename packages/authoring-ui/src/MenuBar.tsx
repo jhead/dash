@@ -270,6 +270,29 @@ export interface MenuBarProps {
   onColorMixerToggle?: () => void;
   /** Whether the Color Mixer panel is currently visible (for checkmark display). */
   colorMixerVisible?: boolean;
+  // Text menu callbacks
+  /** Called when Text > Style > Bold (Ctrl+Shift+B) is activated. */
+  onTextBold?: () => void;
+  /** Called when Text > Style > Italic (Ctrl+Shift+I) is activated. */
+  onTextItalic?: () => void;
+  /** Called when Text > Style > Underline (Ctrl+Shift+U) is activated. */
+  onTextUnderline?: () => void;
+  /** Called when Text > Align > Left (Ctrl+Shift+L) is activated. */
+  onTextAlignLeft?: () => void;
+  /** Called when Text > Align > Center (Ctrl+Shift+E) is activated. */
+  onTextAlignCenter?: () => void;
+  /** Called when Text > Align > Right (Ctrl+Shift+R) is activated. */
+  onTextAlignRight?: () => void;
+  /** Called when Text > Align > Justify (Ctrl+Shift+J) is activated. */
+  onTextAlignJustify?: () => void;
+  /** Called when Text > Tracking > Increase (Alt+Right) is activated. */
+  onTextTrackingIncrease?: () => void;
+  /** Called when Text > Tracking > Decrease (Alt+Left) is activated. */
+  onTextTrackingDecrease?: () => void;
+  /** Called when Text > Tracking > Reset (Ctrl+Alt+Right) is activated. */
+  onTextTrackingReset?: () => void;
+  /** Called when Text > Scrollable is activated (toggles scrollable flag). */
+  onTextScrollable?: () => void;
 }
 
 export function MenuBar({
@@ -321,6 +344,17 @@ export function MenuBar({
   scenePanelVisible = false,
   onColorMixerToggle,
   colorMixerVisible = false,
+  onTextBold,
+  onTextItalic,
+  onTextUnderline,
+  onTextAlignLeft,
+  onTextAlignCenter,
+  onTextAlignRight,
+  onTextAlignJustify,
+  onTextTrackingIncrease,
+  onTextTrackingDecrease,
+  onTextTrackingReset,
+  onTextScrollable,
 }: MenuBarProps = {}): React.ReactElement {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const { newDocument, openDocument, saveDocument, saveDocumentAs } =
@@ -512,7 +546,58 @@ export function MenuBar({
         },
       ],
     },
-    { name: "Text" },
+    {
+      name: "Text",
+      items: [
+        {
+          label: "Style: Bold  Ctrl+Shift+B",
+          action: () => { onTextBold?.(); },
+        },
+        {
+          label: "Style: Italic  Ctrl+Shift+I",
+          action: () => { onTextItalic?.(); },
+        },
+        {
+          label: "Style: Underline  Ctrl+Shift+U",
+          action: () => { onTextUnderline?.(); },
+        },
+        {
+          label: "Align: Left  Ctrl+Shift+L",
+          action: () => { onTextAlignLeft?.(); },
+          separator: true,
+        },
+        {
+          label: "Align: Center  Ctrl+Shift+E",
+          action: () => { onTextAlignCenter?.(); },
+        },
+        {
+          label: "Align: Right  Ctrl+Shift+R",
+          action: () => { onTextAlignRight?.(); },
+        },
+        {
+          label: "Align: Justify  Ctrl+Shift+J",
+          action: () => { onTextAlignJustify?.(); },
+        },
+        {
+          label: "Tracking: Increase  Alt+Right",
+          action: () => { onTextTrackingIncrease?.(); },
+          separator: true,
+        },
+        {
+          label: "Tracking: Decrease  Alt+Left",
+          action: () => { onTextTrackingDecrease?.(); },
+        },
+        {
+          label: "Tracking: Reset  Ctrl+Alt+Right",
+          action: () => { onTextTrackingReset?.(); },
+        },
+        {
+          label: "Scrollable",
+          action: () => { onTextScrollable?.(); },
+          separator: true,
+        },
+      ],
+    },
     {
       name: "Control",
       items: [

@@ -10,6 +10,16 @@ type DisplayObjectUpdates = Partial<
     width: number;
     height: number;
     filters: readonly FlashFilter[];
+    // Text-specific formatting fields
+    bold: boolean;
+    italic: boolean;
+    underline: boolean;
+    align: "left" | "center" | "right" | "justify";
+    letterSpacing: number;
+    scrollable: boolean;
+    textType: "static" | "dynamic" | "input";
+    fontFamily: string;
+    fontSize: number;
   }
 >;
 

@@ -1561,6 +1561,78 @@ export function Shell(): React.ReactElement {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------------------
+  // Handlers — Text menu (Style/Align/Tracking/Scrollable)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Apply a partial update to the currently selected TextDisplayObject.
+   * No-op if nothing is selected or the selection is not a text object.
+   */
+  const applyTextUpdate = useCallback(
+    (changes: Partial<TextDisplayObject>) => {
+      if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      pushDoc(withTimeline((t) =>
+        updateDisplayObject(t, layerId, currentFrame, selectedDisplayObject.id, changes)
+      ));
+    },
+    [selectedDisplayObject, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
+  );
+
+  const handleTextBold = useCallback(() => {
+    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
+    applyTextUpdate({ bold: !selectedDisplayObject.bold });
+  }, [selectedDisplayObject, applyTextUpdate]);
+
+  const handleTextItalic = useCallback(() => {
+    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
+    applyTextUpdate({ italic: !selectedDisplayObject.italic });
+  }, [selectedDisplayObject, applyTextUpdate]);
+
+  const handleTextUnderline = useCallback(() => {
+    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
+    applyTextUpdate({ underline: !(selectedDisplayObject.underline ?? false) });
+  }, [selectedDisplayObject, applyTextUpdate]);
+
+  const handleTextAlignLeft = useCallback(() => {
+    applyTextUpdate({ align: "left" });
+  }, [applyTextUpdate]);
+
+  const handleTextAlignCenter = useCallback(() => {
+    applyTextUpdate({ align: "center" });
+  }, [applyTextUpdate]);
+
+  const handleTextAlignRight = useCallback(() => {
+    applyTextUpdate({ align: "right" });
+  }, [applyTextUpdate]);
+
+  const handleTextAlignJustify = useCallback(() => {
+    applyTextUpdate({ align: "justify" });
+  }, [applyTextUpdate]);
+
+  const TRACKING_STEP = 2; // pixels per increment
+
+  const handleTextTrackingIncrease = useCallback(() => {
+    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
+    applyTextUpdate({ letterSpacing: (selectedDisplayObject.letterSpacing ?? 0) + TRACKING_STEP });
+  }, [selectedDisplayObject, applyTextUpdate]);
+
+  const handleTextTrackingDecrease = useCallback(() => {
+    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
+    applyTextUpdate({ letterSpacing: (selectedDisplayObject.letterSpacing ?? 0) - TRACKING_STEP });
+  }, [selectedDisplayObject, applyTextUpdate]);
+
+  const handleTextTrackingReset = useCallback(() => {
+    applyTextUpdate({ letterSpacing: 0 });
+  }, [applyTextUpdate]);
+
+  const handleTextScrollable = useCallback(() => {
+    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
+    applyTextUpdate({ scrollable: !(selectedDisplayObject.scrollable ?? false) });
+  }, [selectedDisplayObject, applyTextUpdate]);
+
+  // ---------------------------------------------------------------------------
   // Handlers — library
   // ---------------------------------------------------------------------------
 
@@ -2830,6 +2902,16 @@ export function Shell(): React.ReactElement {
     onInsertKeyframe: handleInsertKeyframe,
     onInsertBlankKeyframe: handleInsertBlankKeyframe,
     onPlay: handlePlayToggle,
+    onTextBold: handleTextBold,
+    onTextItalic: handleTextItalic,
+    onTextUnderline: handleTextUnderline,
+    onTextAlignLeft: handleTextAlignLeft,
+    onTextAlignCenter: handleTextAlignCenter,
+    onTextAlignRight: handleTextAlignRight,
+    onTextAlignJustify: handleTextAlignJustify,
+    onTextTrackingIncrease: handleTextTrackingIncrease,
+    onTextTrackingDecrease: handleTextTrackingDecrease,
+    onTextTrackingReset: handleTextTrackingReset,
   });
 
   // ---------------------------------------------------------------------------
@@ -3402,6 +3484,17 @@ export function Shell(): React.ReactElement {
         scenePanelVisible={scenePanelVisible}
         onColorMixerToggle={() => setColorMixerVisible((v) => !v)}
         colorMixerVisible={colorMixerVisible}
+        onTextBold={handleTextBold}
+        onTextItalic={handleTextItalic}
+        onTextUnderline={handleTextUnderline}
+        onTextAlignLeft={handleTextAlignLeft}
+        onTextAlignCenter={handleTextAlignCenter}
+        onTextAlignRight={handleTextAlignRight}
+        onTextAlignJustify={handleTextAlignJustify}
+        onTextTrackingIncrease={handleTextTrackingIncrease}
+        onTextTrackingDecrease={handleTextTrackingDecrease}
+        onTextTrackingReset={handleTextTrackingReset}
+        onTextScrollable={handleTextScrollable}
       />
       <EditBar
         documentName="Untitled-1"

@@ -36,6 +36,7 @@ function makeEvent(
     ctrlKey?: boolean;
     metaKey?: boolean;
     shiftKey?: boolean;
+    altKey?: boolean;
     targetTag?: string;
   } = {}
 ): KeyboardEvent {
@@ -48,6 +49,7 @@ function makeEvent(
     ctrlKey: options.ctrlKey ?? false,
     metaKey: options.metaKey ?? false,
     shiftKey: options.shiftKey ?? false,
+    altKey: options.altKey ?? false,
     target,
     preventDefault: vi.fn(),
   } as unknown as KeyboardEvent;
@@ -60,6 +62,7 @@ function dispatch(e: KeyboardEvent, h: KeyboardShortcutHandlers): void {
 
   const ctrl = e.ctrlKey || e.metaKey;
   const shift = e.shiftKey;
+  const alt = e.altKey;
 
   if (ctrl && !shift && e.key === "z") { e.preventDefault(); h.onUndo?.(); }
   else if (ctrl && shift && e.key === "z") { e.preventDefault(); h.onRedo?.(); }
@@ -78,6 +81,17 @@ function dispatch(e: KeyboardEvent, h: KeyboardShortcutHandlers): void {
   else if (e.key === "F6") { e.preventDefault(); h.onInsertKeyframe?.(); }
   else if (e.key === "F7") { e.preventDefault(); h.onInsertBlankKeyframe?.(); }
   else if (e.key === "Enter") { h.onPlay?.(); }
+  // Text menu shortcuts
+  else if (ctrl && shift && e.key === "b") { e.preventDefault(); h.onTextBold?.(); }
+  else if (ctrl && shift && e.key === "i") { e.preventDefault(); h.onTextItalic?.(); }
+  else if (ctrl && shift && e.key === "u") { e.preventDefault(); h.onTextUnderline?.(); }
+  else if (ctrl && shift && e.key === "l") { e.preventDefault(); h.onTextAlignLeft?.(); }
+  else if (ctrl && shift && e.key === "e") { e.preventDefault(); h.onTextAlignCenter?.(); }
+  else if (ctrl && shift && e.key === "r") { e.preventDefault(); h.onTextAlignRight?.(); }
+  else if (ctrl && shift && e.key === "j") { e.preventDefault(); h.onTextAlignJustify?.(); }
+  else if (!ctrl && alt && e.key === "ArrowRight") { e.preventDefault(); h.onTextTrackingIncrease?.(); }
+  else if (!ctrl && alt && e.key === "ArrowLeft") { e.preventDefault(); h.onTextTrackingDecrease?.(); }
+  else if (ctrl && alt && e.key === "ArrowRight") { e.preventDefault(); h.onTextTrackingReset?.(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +120,16 @@ function makeHandlers(): Required<KeyboardShortcutHandlers> {
     onInsertBlankKeyframe: vi.fn(),
     onPlay: vi.fn(),
     onStop: vi.fn(),
+    onTextBold: vi.fn(),
+    onTextItalic: vi.fn(),
+    onTextUnderline: vi.fn(),
+    onTextAlignLeft: vi.fn(),
+    onTextAlignCenter: vi.fn(),
+    onTextAlignRight: vi.fn(),
+    onTextAlignJustify: vi.fn(),
+    onTextTrackingIncrease: vi.fn(),
+    onTextTrackingDecrease: vi.fn(),
+    onTextTrackingReset: vi.fn(),
   };
 }
 
@@ -299,5 +323,77 @@ describe("useKeyboardShortcuts — break apart", () => {
     const h = makeHandlers();
     dispatch(makeEvent("b", { ctrlKey: true, shiftKey: true }), h);
     expect(h.onBreakApart).not.toHaveBeenCalled();
+  });
+});
+
+describe("useKeyboardShortcuts — Text menu style shortcuts", () => {
+  it("calls onTextBold for Ctrl+Shift+B", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("b", { ctrlKey: true, shiftKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextBold");
+  });
+
+  it("calls onTextItalic for Ctrl+Shift+I", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("i", { ctrlKey: true, shiftKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextItalic");
+  });
+
+  it("calls onTextUnderline for Ctrl+Shift+U", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("u", { ctrlKey: true, shiftKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextUnderline");
+  });
+});
+
+describe("useKeyboardShortcuts — Text menu align shortcuts", () => {
+  it("calls onTextAlignLeft for Ctrl+Shift+L", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("l", { ctrlKey: true, shiftKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextAlignLeft");
+  });
+
+  it("calls onTextAlignCenter for Ctrl+Shift+E", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("e", { ctrlKey: true, shiftKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextAlignCenter");
+  });
+
+  it("calls onTextAlignRight for Ctrl+Shift+R", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("r", { ctrlKey: true, shiftKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextAlignRight");
+  });
+
+  it("calls onTextAlignJustify for Ctrl+Shift+J", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("j", { ctrlKey: true, shiftKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextAlignJustify");
+  });
+});
+
+describe("useKeyboardShortcuts — Text menu tracking shortcuts", () => {
+  it("calls onTextTrackingIncrease for Alt+ArrowRight", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowRight", { altKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextTrackingIncrease");
+  });
+
+  it("calls onTextTrackingDecrease for Alt+ArrowLeft", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowLeft", { altKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextTrackingDecrease");
+  });
+
+  it("calls onTextTrackingReset for Ctrl+Alt+ArrowRight", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowRight", { ctrlKey: true, altKey: true }), h);
+    assertOnlyCalledOnce(h, "onTextTrackingReset");
+  });
+
+  it("does NOT call onTextTrackingIncrease for Ctrl+Alt+ArrowRight (reset takes priority)", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowRight", { ctrlKey: true, altKey: true }), h);
+    expect(h.onTextTrackingIncrease).not.toHaveBeenCalled();
   });
 });

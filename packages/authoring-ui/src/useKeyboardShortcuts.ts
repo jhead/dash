@@ -20,6 +20,17 @@ export interface KeyboardShortcutHandlers {
   onInsertBlankKeyframe?: () => void;
   onPlay?: () => void;   // Enter
   onStop?: () => void;   // Escape (when not in text edit)
+  // Text menu shortcuts
+  onTextBold?: () => void;           // Ctrl+Shift+B
+  onTextItalic?: () => void;         // Ctrl+Shift+I
+  onTextUnderline?: () => void;      // Ctrl+Shift+U
+  onTextAlignLeft?: () => void;      // Ctrl+Shift+L
+  onTextAlignCenter?: () => void;    // Ctrl+Shift+E
+  onTextAlignRight?: () => void;     // Ctrl+Shift+R
+  onTextAlignJustify?: () => void;   // Ctrl+Shift+J
+  onTextTrackingIncrease?: () => void; // Alt+Right
+  onTextTrackingDecrease?: () => void; // Alt+Left
+  onTextTrackingReset?: () => void;    // Ctrl+Alt+Right
 }
 
 export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
@@ -36,6 +47,8 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
 
       const ctrl = e.ctrlKey || e.metaKey;
       const shift = e.shiftKey;
+
+      const alt = e.altKey;
 
       if (ctrl && !shift && e.key === 'z') { e.preventDefault(); h.onUndo?.(); }
       else if (ctrl && shift && e.key === 'z') { e.preventDefault(); h.onRedo?.(); }
@@ -54,6 +67,17 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
       else if (e.key === 'F6') { e.preventDefault(); h.onInsertKeyframe?.(); }
       else if (e.key === 'F7') { e.preventDefault(); h.onInsertBlankKeyframe?.(); }
       else if (e.key === 'Enter') { h.onPlay?.(); }
+      // Text menu shortcuts
+      else if (ctrl && shift && e.key === 'b') { e.preventDefault(); h.onTextBold?.(); }
+      else if (ctrl && shift && e.key === 'i') { e.preventDefault(); h.onTextItalic?.(); }
+      else if (ctrl && shift && e.key === 'u') { e.preventDefault(); h.onTextUnderline?.(); }
+      else if (ctrl && shift && e.key === 'l') { e.preventDefault(); h.onTextAlignLeft?.(); }
+      else if (ctrl && shift && e.key === 'e') { e.preventDefault(); h.onTextAlignCenter?.(); }
+      else if (ctrl && shift && e.key === 'r') { e.preventDefault(); h.onTextAlignRight?.(); }
+      else if (ctrl && shift && e.key === 'j') { e.preventDefault(); h.onTextAlignJustify?.(); }
+      else if (!ctrl && alt && e.key === 'ArrowRight') { e.preventDefault(); h.onTextTrackingIncrease?.(); }
+      else if (!ctrl && alt && e.key === 'ArrowLeft') { e.preventDefault(); h.onTextTrackingDecrease?.(); }
+      else if (ctrl && alt && e.key === 'ArrowRight') { e.preventDefault(); h.onTextTrackingReset?.(); }
     };
 
     window.addEventListener('keydown', handleKeyDown);

@@ -360,10 +360,16 @@ export interface TextDisplayObject {
   readonly fontSize: number;     // pt
   readonly bold: boolean;
   readonly italic: boolean;
+  /** Underline style decoration. Default false. */
+  readonly underline?: boolean;
   readonly color: Color;
   readonly align: TextAlign;
   readonly multiline: boolean;
   readonly wordWrap: boolean;
+  /** Letter spacing / tracking in pixels. Default 0. */
+  readonly letterSpacing?: number;
+  /** Whether this text field is scrollable (dynamic/input text only). Default false. */
+  readonly scrollable?: boolean;
   /** AS2 instance name — makes the field accessible as _root.<name> in scripts. */
   readonly instanceName?: string;
   /** Flash 8 filters applied to this object. */
