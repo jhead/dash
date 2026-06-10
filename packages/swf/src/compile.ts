@@ -1749,7 +1749,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       x,
                       y,
                       cxform,
-                      transform
+                      transform,
+                      false,
+                      displayObj.instanceName ?? undefined
                     );
                     writer.writeTag(Tag.PlaceObject2, placeBody);
                   } else {

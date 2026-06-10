@@ -1058,8 +1058,12 @@ export function encodePlaceObject2WithAlpha(
 /**
  * Encode a PlaceObject2 tag body with a full CXFormWithAlpha color transform.
  *
- * Flags: PlaceFlagHasCharacter (0x02) | PlaceFlagHasMatrix (0x04) |
- *        PlaceFlagHasColorTransform (0x08)  → 0x0E
+ * When name is absent:
+ *   Flags: PlaceFlagHasCharacter (0x02) | PlaceFlagHasMatrix (0x04) |
+ *          PlaceFlagHasColorTransform (0x08)  → 0x0E
+ * When name is present:
+ *   Flags: PlaceFlagHasCharacter (0x02) | PlaceFlagHasMatrix (0x04) |
+ *          PlaceFlagHasColorTransform (0x08) | PlaceFlagHasName (0x20) → 0x2E
  *
  * @param charId    Character to place
  * @param depth     Display list depth
@@ -1067,6 +1071,8 @@ export function encodePlaceObject2WithAlpha(
  * @param y         Y position in pixels
  * @param cxform    Color transform to apply
  * @param transform Optional scale/rotation/skew
+ * @param move      If true, emit as PlaceFlagMove (update existing, no charId)
+ * @param name      Optional instance name (sets HasName flag)
  */
 export function encodePlaceObject2WithCXForm(
   charId: number,
@@ -1081,16 +1087,20 @@ export function encodePlaceObject2WithCXForm(
     skewX?: number;
     skewY?: number;
   },
-  move = false
+  move = false,
+  name?: string
 ): Uint8Array {
   const bw = new BitWriter();
+  const hasName = !!name && name.length > 0;
 
   if (move) {
-    // PlaceFlagMove (0x01) | PlaceFlagHasMatrix (0x04) | PlaceFlagHasColorTransform (0x08) = 0x0D
-    bw.writeUI8(0x0d);
+    // PlaceFlagMove (0x01) | PlaceFlagHasMatrix (0x04) | PlaceFlagHasColorTransform (0x08)
+    // + optional PlaceFlagHasName (0x20)
+    bw.writeUI8(0x0d | (hasName ? 0x20 : 0x00));
   } else {
-    // PlaceFlagHasCharacter (0x02) | PlaceFlagHasMatrix (0x04) | PlaceFlagHasColorTransform (0x08) = 0x0E
-    bw.writeUI8(0x0e);
+    // PlaceFlagHasCharacter (0x02) | PlaceFlagHasMatrix (0x04) | PlaceFlagHasColorTransform (0x08)
+    // + optional PlaceFlagHasName (0x20)
+    bw.writeUI8(0x0e | (hasName ? 0x20 : 0x00));
   }
 
   bw.writeUI16LE(depth);
@@ -1135,6 +1145,11 @@ export function encodePlaceObject2WithCXForm(
 
   // CXFORMWITHALPHA
   bw.writeBytes(encodeCXFormWithAlpha(cxform));
+
+  // Optional: instance name — written after CXFORM per SWF spec field order
+  if (hasName) {
+    bw.writeString(name!);
+  }
 
   return bw.getBytes();
 }

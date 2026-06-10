@@ -366,4 +366,78 @@ describe("compile: symbol instance with colorEffect", () => {
     const withCxform = placeTags.find((t) => (t.body[0] & 0x08) !== 0);
     expect(withCxform).toBeUndefined();
   });
+
+  it("instance with BOTH colorEffect AND instanceName sets HasColorTransform (0x08) AND HasName (0x20) flags", () => {
+    // Regression test for: colorEffect+instanceName combo silently dropped the
+    // instance name — HasName flag was never set and AS2 paths like _root.myClip
+    // resolved to undefined.
+    const sym = makeSymbol("sym-1", "Symbol 1");
+    const instance = {
+      type: "instance" as const,
+      id: "inst-1",
+      symbolId: "sym-1",
+      x: 10,
+      y: 20,
+      instanceName: "myClip",
+      colorEffect: { type: "alpha" as const, alpha: 50 },
+    };
+
+    const doc = makeDoc(
+      [makeScene([makeLayer("l1", [makeFrame([instance])])])],
+      [sym]
+    );
+
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const placeTags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+    expect(placeTags.length).toBeGreaterThan(0);
+
+    // Find the PlaceObject2 that has both HasColorTransform (0x08) and HasName (0x20)
+    const combinedTag = placeTags.find((t) => (t.body[0] & 0x28) === 0x28);
+    expect(combinedTag).toBeDefined();
+
+    // Flags byte must have all three: HasCharacter (0x02), HasMatrix (0x04),
+    // HasColorTransform (0x08), HasName (0x20) → 0x2E
+    expect(combinedTag!.body[0] & 0x2e).toBe(0x2e);
+
+    // Verify the name bytes appear in the body after the CXFORM.
+    // Encode "myClip\0" as ASCII and check it's present somewhere in the tag.
+    const nameBytes = Array.from("myClip\0").map((c) => c.charCodeAt(0));
+    const body = combinedTag!.body;
+    const bodyArr = Array.from(body);
+    let found = false;
+    for (let i = 0; i <= bodyArr.length - nameBytes.length; i++) {
+      if (nameBytes.every((b, j) => bodyArr[i + j] === b)) {
+        found = true;
+        break;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it("instance with colorEffect but NO instanceName still emits only HasColorTransform (not HasName)", () => {
+    const sym = makeSymbol("sym-1", "Symbol 1");
+    const instance = {
+      type: "instance" as const,
+      id: "inst-1",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      colorEffect: { type: "alpha" as const, alpha: 75 },
+    };
+
+    const doc = makeDoc(
+      [makeScene([makeLayer("l1", [makeFrame([instance])])])],
+      [sym]
+    );
+
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const placeTags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+    const withCxform = placeTags.find((t) => (t.body[0] & 0x08) !== 0);
+    expect(withCxform).toBeDefined();
+    // HasName (0x20) must NOT be set when there is no instanceName
+    expect(withCxform!.body[0] & 0x20).toBe(0);
+  });
 });

@@ -1,0 +1,10 @@
+{
+  "id": "0913-compile-ts-symbolinstance-with-coloreffect-insta",
+  "title": "compile.ts: SymbolInstance with colorEffect+instanceName drops the name from PlaceObject2",
+  "description": "In compile.ts ~line 1742, when a SymbolInstance has both colorEffect (non-null cxform) AND instanceName, the code calls encodePlaceObject2WithCXForm() which has no name parameter \u2014 HasName flag 0x20 is never set, instance name is silently dropped. Fix: add instanceName support to the CXForm PlaceObject2 path (set flag 0x2E when name is also present). Also audit the clip-actions+colorEffect combined case at ~line 1722. All AS2 references to color-effected named instances are silently broken.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T20:16:04Z",
+  "updated_at": "2026-06-10T20:16:08Z"
+}
