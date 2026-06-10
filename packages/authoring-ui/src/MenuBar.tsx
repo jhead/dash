@@ -202,6 +202,24 @@ export interface MenuBarProps {
   onRulersToggle?: () => void;
   /** Whether rulers are currently shown (for checkmark display). */
   showRulers?: boolean;
+  /** Called when View > Grid > Show Grid is toggled (Ctrl+'). */
+  onToggleShowGrid?: () => void;
+  /** Whether the grid is currently shown (for checkmark display). */
+  showGrid?: boolean;
+  /** Called when View > Grid > Edit Grid... is activated (Ctrl+Alt+G). */
+  onEditGrid?: () => void;
+  /** Called when View > Snapping > Snap to Grid is toggled (Ctrl+Shift+'). */
+  onToggleSnapToGrid?: () => void;
+  /** Whether snap to grid is currently active (for checkmark display). */
+  snapToGrid?: boolean;
+  /** Called when View > Snapping > Snap to Objects is toggled (Ctrl+Shift+/). */
+  onToggleSnapToObjects?: () => void;
+  /** Whether snap to objects is currently active (for checkmark display). */
+  snapToObjects?: boolean;
+  /** Called when View > Snapping > Snap to Guides is toggled (Ctrl+Shift+\). */
+  onToggleSnapToGuides?: () => void;
+  /** Whether snap to guides is currently active (for checkmark display). */
+  snapToGuides?: boolean;
   /** Called when File > Import > Import to Library... is activated. */
   onImportToLibrary?: () => void;
   /** Called when File > Import > Import Sound... is activated. */
@@ -312,6 +330,15 @@ export function MenuBar({
   onDocPropsOpen,
   onRulersToggle,
   showRulers = false,
+  onToggleShowGrid,
+  showGrid = false,
+  onEditGrid,
+  onToggleSnapToGrid,
+  snapToGrid = false,
+  onToggleSnapToObjects,
+  snapToObjects = false,
+  onToggleSnapToGuides,
+  snapToGuides = false,
   onImportToLibrary,
   onImportSound,
   onImportVideo,
@@ -456,6 +483,28 @@ export function MenuBar({
         {
           label: `${showRulers ? "+ " : "  "}Rulers  Ctrl+Alt+R`,
           action: () => { onRulersToggle?.(); },
+        },
+        {
+          label: `${showGrid ? "+ " : "  "}Show Grid  Ctrl+'`,
+          action: () => { onToggleShowGrid?.(); },
+          separator: true,
+        },
+        {
+          label: "Edit Grid...  Ctrl+Alt+G",
+          action: () => { onEditGrid?.(); },
+        },
+        {
+          label: `${snapToGrid ? "+ " : "  "}Snap to Grid  Ctrl+Shift+'`,
+          action: () => { onToggleSnapToGrid?.(); },
+          separator: true,
+        },
+        {
+          label: `${snapToObjects ? "+ " : "  "}Snap to Objects  Ctrl+Shift+/`,
+          action: () => { onToggleSnapToObjects?.(); },
+        },
+        {
+          label: `${snapToGuides ? "+ " : "  "}Snap to Guides  Ctrl+Shift+\\`,
+          action: () => { onToggleSnapToGuides?.(); },
         },
       ],
     },

@@ -94,6 +94,7 @@ import { useHistory } from "./hooks/useHistory";
 import { ActionsPanel } from "./ActionsPanel";
 import { OutputPanel } from "./OutputPanel";
 import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
+import { EditGridDialog } from "./EditGridDialog";
 import { FiltersPanel } from "./FiltersPanel";
 import { SoundPanel } from "./SoundPanel";
 import {
@@ -761,6 +762,9 @@ export function Shell(): React.ReactElement {
   // Document properties dialog
   const [docPropsOpen, setDocPropsOpen] = useState(false);
 
+  // Edit Grid dialog
+  const [editGridOpen, setEditGridOpen] = useState(false);
+
   // Convert to Symbol dialog
   const [convertToSymbolOpen, setConvertToSymbolOpen] = useState(false);
 
@@ -907,6 +911,42 @@ export function Shell(): React.ReactElement {
   const handleRulersToggle = useCallback(() => {
     setShowRulers((v) => !v);
   }, []);
+
+  const handleToggleShowGrid = useCallback(() => {
+    pushDoc(withProperties((p) => ({
+      ...p,
+      grid: { ...p.grid, showGrid: !p.grid.showGrid },
+    })));
+  }, [pushDoc, withProperties]);
+
+  const handleToggleSnapToGrid = useCallback(() => {
+    pushDoc(withProperties((p) => ({
+      ...p,
+      grid: { ...p.grid, snapToGrid: !p.grid.snapToGrid },
+    })));
+  }, [pushDoc, withProperties]);
+
+  const handleToggleSnapToObjects = useCallback(() => {
+    pushDoc(withProperties((p) => ({
+      ...p,
+      snapToObjects: !p.snapToObjects,
+    })));
+  }, [pushDoc, withProperties]);
+
+  const handleToggleSnapToGuides = useCallback(() => {
+    pushDoc(withProperties((p) => ({
+      ...p,
+      snapToGuides: !p.snapToGuides,
+    })));
+  }, [pushDoc, withProperties]);
+
+  const handleEditGridConfirm = useCallback((updatedGrid: import("@flash/core").GridSettings) => {
+    pushDoc(withProperties((p) => ({
+      ...p,
+      grid: updatedGrid,
+    })));
+    setEditGridOpen(false);
+  }, [pushDoc, withProperties]);
 
   const handleGuideCreate = useCallback((orientation: "horizontal" | "vertical", position: number) => {
     guideCounterRef.current += 1;
@@ -3536,13 +3576,34 @@ export function Shell(): React.ReactElement {
         handleRulersToggle();
         return;
       }
-      // Ctrl+' → toggle grid visibility
-      if (e.key === "'" && (e.ctrlKey || e.metaKey)) {
+      // Ctrl+' → toggle grid visibility (without shift)
+      if (e.key === "'" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
         e.preventDefault();
-        pushDoc(withProperties((p) => ({
-          ...p,
-          grid: { ...p.grid, showGrid: !p.grid.showGrid },
-        })));
+        handleToggleShowGrid();
+        return;
+      }
+      // Ctrl+Shift+' → toggle snap to grid
+      if (e.key === "'" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        handleToggleSnapToGrid();
+        return;
+      }
+      // Ctrl+Alt+G → Edit Grid dialog
+      if ((e.key === "g" || e.key === "G") && (e.ctrlKey || e.metaKey) && e.altKey) {
+        e.preventDefault();
+        setEditGridOpen(true);
+        return;
+      }
+      // Ctrl+Shift+/ → toggle snap to objects
+      if (e.key === "/" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        handleToggleSnapToObjects();
+        return;
+      }
+      // Ctrl+Shift+\ → toggle snap to guides
+      if (e.key === "\\" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        handleToggleSnapToGuides();
         return;
       }
       // Shift+F9 toggles the Color Mixer panel
@@ -3577,7 +3638,7 @@ export function Shell(): React.ReactElement {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleTestMovie, handleRulersToggle, editContext, handleExitEditInPlace, pushDoc, withProperties]);
+  }, [handleTestMovie, handleRulersToggle, handleToggleShowGrid, handleToggleSnapToGrid, handleToggleSnapToObjects, handleToggleSnapToGuides, editContext, handleExitEditInPlace, pushDoc, withProperties]);
 
   // ---------------------------------------------------------------------------
   // Automation bridge (DEV / VITE_FLASH_TEST=1 only)
@@ -3914,6 +3975,15 @@ export function Shell(): React.ReactElement {
         onDocPropsOpen={() => setDocPropsOpen(true)}
         onRulersToggle={handleRulersToggle}
         showRulers={showRulers}
+        onToggleShowGrid={handleToggleShowGrid}
+        showGrid={showGrid}
+        onEditGrid={() => setEditGridOpen(true)}
+        onToggleSnapToGrid={handleToggleSnapToGrid}
+        snapToGrid={docProperties.grid.snapToGrid}
+        onToggleSnapToObjects={handleToggleSnapToObjects}
+        snapToObjects={docProperties.snapToObjects}
+        onToggleSnapToGuides={handleToggleSnapToGuides}
+        snapToGuides={docProperties.snapToGuides}
         onImportToLibrary={() => { void handleImportToLibrary(); }}
         onImportSound={() => { void handleImportSound(); }}
         onImportVideo={() => { void handleImportVideo(); }}
@@ -4644,6 +4714,14 @@ export function Shell(): React.ReactElement {
         isOpen={docPropsOpen}
         onConfirm={handleDocPropsConfirm}
         onCancel={() => setDocPropsOpen(false)}
+      />
+
+      {/* Edit Grid dialog (View > Grid > Edit Grid..., Ctrl+Alt+G) */}
+      <EditGridDialog
+        grid={docProperties.grid}
+        isOpen={editGridOpen}
+        onConfirm={handleEditGridConfirm}
+        onCancel={() => setEditGridOpen(false)}
       />
 
       {/* Convert to Symbol dialog (Insert/Modify > Convert to Symbol, F8) */}
