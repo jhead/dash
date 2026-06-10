@@ -27,6 +27,8 @@ import {
   setLayerLocked,
   setLayerVisible,
   setLayerType,
+  moveLayer as coreMoveLayer,
+  duplicateLayer as coreDuplicateLayer,
   insertFrame,
   insertKeyframe as coreInsertKeyframe,
   insertBlankKeyframe as coreInsertBlankKeyframe,
@@ -429,6 +431,16 @@ export interface JsflTimeline {
    * The current layer is set to type "guided" to follow the new guide layer.
    */
   addMotionGuide(): void;
+  /**
+   * Move a layer from fromIndex to toIndex.
+   * numLayers is accepted for API compatibility but only 1 layer is moved.
+   */
+  moveLayer(fromIndex: number, toIndex: number, numLayers?: number): void;
+  /**
+   * Duplicate the layer at layerIndex (defaults to currentLayer).
+   * The copy is inserted immediately after the source layer.
+   */
+  duplicateLayer(layerIndex?: number): void;
 }
 
 function makeTimelineProxy(state: RuntimeState): JsflTimeline {
@@ -479,10 +491,34 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
       if (!scene) return [];
       return scene.timeline.layers.map((_, i) => makeLayerProxy(state, i));
     },
-    addNewLayer(name: string, _type?: string, _addAbove?: boolean) {
+    addNewLayer(name: string, type?: string, addAbove?: boolean) {
       const scene = getScene();
       if (!scene) return;
-      const newTimeline: TimelineModel = addLayer(scene.timeline, name);
+
+      // addLayer always prepends the new layer at index 0 (topmost).
+      let newTimeline: TimelineModel = addLayer(scene.timeline, name);
+
+      // Determine where the new layer should end up relative to the selected layer.
+      // Flash convention: addAbove defaults to true (insert above selected layer).
+      const shouldAddAbove = addAbove !== false;
+      const ci = state.currentLayerIndex;
+      // After prepending, the previously selected layer has shifted to ci+1.
+      // Target index: ci (above) or ci+1 (below).
+      const targetIndex = shouldAddAbove ? ci : ci + 1;
+      if (targetIndex > 0) {
+        // New layer is currently at index 0; move it to targetIndex.
+        const newLayerId = newTimeline.layers[0]!.id;
+        newTimeline = coreMoveLayer(newTimeline, newLayerId, targetIndex);
+      }
+
+      // Apply the requested layer type (default is "normal", which needs no change).
+      if (type && type !== "normal") {
+        const layerId = newTimeline.layers.find((l) => l.name === name)?.id;
+        if (layerId) {
+          newTimeline = setLayerType(newTimeline, layerId, type as LayerType);
+        }
+      }
+
       const newScenes = state.doc.scenes.map((s, i) =>
         i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
       );
@@ -699,6 +735,21 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
       // After insertion, currentLayerIndex now points at the guide layer.
       // Shift by 1 so the user's context stays on the guided layer.
       state.currentLayerIndex += 1;
+    },
+    moveLayer(fromIndex: number, toIndex: number, _numLayers?: number) {
+      const scene = getScene();
+      if (!scene) return;
+      const layer = scene.timeline.layers[fromIndex];
+      if (!layer) return;
+      mutateTimeline((tl) => coreMoveLayer(tl, layer.id, toIndex));
+    },
+    duplicateLayer(layerIndex?: number) {
+      const scene = getScene();
+      if (!scene) return;
+      const idx = layerIndex ?? state.currentLayerIndex;
+      const layer = scene.timeline.layers[idx];
+      if (!layer) return;
+      mutateTimeline((tl) => coreDuplicateLayer(tl, layer.id));
     },
   };
 }
