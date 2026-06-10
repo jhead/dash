@@ -71,7 +71,7 @@ import { LibraryPanel } from "./LibraryPanel";
 import { StatusBar } from "./StatusBar";
 import type { FreeTransformMode, PolyStarOptions, ToolId, ToolState } from "./tools/types";
 import { usePublish } from "./hooks/usePublish";
-import { useFileActions } from "./hooks/useFileActions";
+import { useFileActions, loadFlaFromBytes } from "./hooks/useFileActions";
 import { useHistory } from "./hooks/useHistory";
 import { ActionsPanel } from "./ActionsPanel";
 import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
@@ -113,6 +113,21 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     background: "#3c3c3c",
     overflow: "hidden",
+    position: "relative",
+  },
+  dropOverlay: {
+    position: "absolute",
+    inset: 0,
+    zIndex: 9999,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(0, 120, 215, 0.18)",
+    color: "#ffffff",
+    fontSize: "20px",
+    fontWeight: "bold",
+    pointerEvents: "none",
+    letterSpacing: "0.02em",
   },
   centerRegion: {
     display: "flex",
@@ -2337,6 +2352,43 @@ export function Shell(): React.ReactElement {
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Drag-and-drop — open .fla files dropped onto the editor window
+  // ---------------------------------------------------------------------------
+
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    // Only highlight when at least one dragged item looks like a file
+    const hasFile = Array.from(e.dataTransfer.types).includes("Files");
+    if (hasFile) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    // Only clear when leaving the shell entirely (not entering a child element)
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = Array.from(e.dataTransfer.files).find((f) =>
+      f.name.toLowerCase().endsWith(".fla")
+    );
+    if (!file) return;
+    const buffer = await file.arrayBuffer();
+    const newDoc = await loadFlaFromBytes(new Uint8Array(buffer), file.name);
+    if (newDoc) {
+      handleDocumentChange(newDoc, undefined);
+    }
+  }, [handleDocumentChange]);
+
+  // ---------------------------------------------------------------------------
   // Publish handlers
   // ---------------------------------------------------------------------------
 
@@ -2752,7 +2804,20 @@ export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
 
   return (
-    <div style={styles.shell}>
+    <div
+      style={{
+        ...styles.shell,
+        ...(isDragOver ? { outline: "2px dashed #0078d7", outlineOffset: "-2px" } : {}),
+      }}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={(e) => { void handleDrop(e); }}
+    >
+      {isDragOver && (
+        <div style={styles.dropOverlay}>
+          Drop .fla file to open
+        </div>
+      )}
       <MenuBar
         document={doc}
         filePath={filePath}

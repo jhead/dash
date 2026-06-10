@@ -37,6 +37,50 @@ function basenameOf(path: string | undefined, fallback = "untitled.fla"): string
 }
 
 /**
+ * Load an .fla document from raw bytes, with user-visible error handling.
+ * Returns the parsed FlashDocument, or null if parsing failed.
+ * @param bytes - The raw bytes of the .fla file.
+ * @param name - Filename used in error messages.
+ */
+export async function loadFlaFromBytes(
+  bytes: Uint8Array,
+  name: string
+): Promise<FlashDocument | null> {
+  try {
+    return loadFla(bytes);
+  } catch (err) {
+    const msg =
+      `"${name}" could not be opened: ${err instanceof Error ? err.message : String(err)}\n\n` +
+      "Note: only .fla files saved by this app can be opened — " +
+      "Macromedia Flash 8 .fla files are not yet supported.";
+    console.error("[useFileActions] loadFla failed:", err);
+    alert(msg);
+    return null;
+  }
+}
+
+/**
+ * Open a browser <input type="file"> picker restricted to .fla files.
+ * Returns the parsed document and original filename, or null if the user cancelled.
+ */
+export function openFlaViaBrowserPicker(): Promise<{ doc: FlashDocument; name: string } | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".fla";
+    input.addEventListener("cancel", () => resolve(null));
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) { resolve(null); return; }
+      const buffer = await file.arrayBuffer();
+      const doc = await loadFlaFromBytes(new Uint8Array(buffer), file.name);
+      resolve(doc ? { doc, name: file.name } : null);
+    };
+    input.click();
+  });
+}
+
+/**
  * Returns file-menu actions (New, Open, Save, Save As) backed by
  * Tauri native file dialogs and the FLA zip/JSON format.
  *
@@ -52,13 +96,17 @@ export function useFileActions() {
   }
 
   /**
-   * Open a native file-open dialog filtered to `.fla` files.
-   * Reads the selected file, deserializes it, and returns the document.
-   * Returns `null` if the user cancels the dialog.
-   *
-   * Throws a user-visible error if Tauri APIs are unavailable (browser mode).
+   * Open a file-open dialog filtered to `.fla` files.
+   * In the Tauri desktop app, uses the native system dialog.
+   * In the browser (pnpm dev:browser), uses an <input type="file"> picker.
+   * Returns the document, or null if the user cancels.
    */
   async function openDocument(): Promise<FlashDocument | null> {
+    if (!isTauri()) {
+      const result = await openFlaViaBrowserPicker();
+      return result ? result.doc : null;
+    }
+
     let selected: string | null;
     try {
       selected = await dialogOpen({
@@ -68,11 +116,7 @@ export function useFileActions() {
         directory: false,
       });
     } catch (err) {
-      const msg =
-        "File dialogs require the Tauri desktop app. " +
-        "Run `pnpm dev` (not `pnpm dev:browser`) to open files from disk.";
-      console.error("[useFileActions] openDocument failed:", err);
-      alert(msg);
+      console.error("[useFileActions] openDocument (Tauri) failed:", err);
       return null;
     }
 
@@ -88,17 +132,7 @@ export function useFileActions() {
       alert(msg);
       return null;
     }
-    try {
-      return loadFla(bytes);
-    } catch (err) {
-      const msg =
-        `"${path}" could not be opened: ${err instanceof Error ? err.message : String(err)}\n\n` +
-        "Note: only .fla files saved by this app can be opened — " +
-        "Macromedia Flash 8 .fla files are not yet supported.";
-      console.error("[useFileActions] loadFla failed:", err);
-      alert(msg);
-      return null;
-    }
+    return loadFlaFromBytes(bytes, basenameOf(path));
   }
 
   /**
