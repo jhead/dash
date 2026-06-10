@@ -2712,3 +2712,145 @@ describe("motion tween sync flag decoding (task 0934)", () => {
     expect(frame.tweenType).toBe("motion");
   });
 });
+// Symbol instance AccProps / accessibility decoding (task 0937)
+// ---------------------------------------------------------------------------
+
+describe("CPicSprite accessibility AccProps decoding (task 0937)", () => {
+  const IDENTITY_MATRIX = [
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+  ] as const;
+
+  function asciiCString(s: string): readonly number[] {
+    if (!s) return [0x00];
+    const chars = [...s].map((ch) => ch.charCodeAt(0));
+    return [chars.length, ...chars];
+  }
+
+  function accessibilityBlock(opts: {
+    silent?: boolean;
+    name?: string;
+    description?: string;
+    shortcut?: string;
+    tabIndex?: string;
+    forceSimple?: boolean;
+  }): readonly number[] {
+    const {
+      silent = false,
+      name = "",
+      description = "",
+      shortcut = "",
+      tabIndex = "0",
+      forceSimple = false,
+    } = opts;
+    return [
+      0x09, 0x00,
+      0x00, 0x00, silent ? 0x01 : 0x00, 0x00, 0x00, 0x00,
+      ...asciiCString(name),
+      ...asciiCString(description),
+      ...asciiCString(shortcut),
+      ...asciiCString(tabIndex),
+      0x00,
+      forceSimple ? 0x01 : 0x00,
+      0x00, 0x00, 0x00,
+    ];
+  }
+
+  function makeSpriteAccStream(accBytes: readonly number[], instanceName = "myBtn"): Uint8Array {
+    return new Uint8Array([
+      0x01,
+      0xff, 0xff, 0x01, 0x00, 0x08, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x50, 0x61, 0x67, 0x65,
+      0x04, 0x01,
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x4c, 0x61, 0x79, 0x65, 0x72,
+      0x04, 0x00,
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x46, 0x72, 0x61, 0x6d, 0x65,
+      0x04, 0x00,
+      0xff, 0xff, 0x01, 0x00, 0x0a, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x53, 0x70, 0x72, 0x69, 0x74, 0x65,
+      0x00, 0x01,
+      0x00, 0x00,
+      0x00,
+      ...IDENTITY_MATRIX,
+      0x00, 0x00,
+      0x00,
+      0x00,
+      0x01, 0x00,
+      0x00, 0x00,
+      0x08,
+      0x04, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      ...asciiCString(instanceName),
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ...accBytes,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00,
+      0x00, 0x00,
+      0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
+      0x00, 0x00,
+      0x00,
+      ...IDENTITY_MATRIX,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]);
+  }
+
+  it("decodes accName, description, shortcut, tabIndex, and forceSimple from CPicSprite trailer", () => {
+    const stream = makeSpriteAccStream(accessibilityBlock({
+      name: "Submit",
+      description: "Submit the form",
+      shortcut: "Alt+S",
+      tabIndex: "3",
+      forceSimple: true,
+    }));
+    const timeline = parseFla8Timeline(stream);
+    const inst = timeline.layers[0]!.frames[0]!.elements.find(
+      (e): e is Extract<typeof e, { type: "instance" }> => e.type === "instance",
+    );
+    expect(inst?.accessibility).toEqual({
+      enabled: true,
+      name: "Submit",
+      description: "Submit the form",
+      shortcut: "Alt+S",
+      tabIndex: 3,
+      forceSimple: true,
+    });
+  });
+
+  it("maps silent flag to enabled=false", () => {
+    const stream = makeSpriteAccStream(accessibilityBlock({ silent: true, name: "Hidden" }));
+    const timeline = parseFla8Timeline(stream);
+    const inst = timeline.layers[0]!.frames[0]!.elements.find(
+      (e): e is Extract<typeof e, { type: "instance" }> => e.type === "instance",
+    );
+    expect(inst?.accessibility?.enabled).toBe(false);
+    expect(inst?.accessibility?.name).toBe("Hidden");
+  });
+
+  it("toObjectAccessibility maps Fla8Accessibility to ObjectAccessibility", () => {
+    expect(toObjectAccessibility({
+      enabled: true,
+      name: "Play",
+      description: "Start playback",
+      tabIndex: 2,
+    })).toEqual({
+      enabled: true,
+      name: "Play",
+      description: "Start playback",
+      tabIndex: 2,
+    });
+    expect(toObjectAccessibility({ enabled: false, name: "Hidden" })).toEqual({
+      enabled: false,
+      name: "Hidden",
+    });
+    expect(toObjectAccessibility({ enabled: true })).toBeUndefined();
+  });
+});

@@ -41,7 +41,8 @@
  *  - bitmap and text-field filters (skipped; only symbol-instance filters are decoded)
  *  - convolution filters (no model type; silently dropped from the filter list)
  *  - sound attachments and envelopes
- *  - components, fonts library items, accessibility metadata
+ *  - components, fonts library items
+ *  - (symbol-instance accessibility AccProps are now decoded)
  *  - Flash 4-and-older frame scripts (stored as action records, not source)
  *
  * Units:
@@ -150,6 +151,17 @@ export interface Fla8ColorEffect {
   readonly aOff: number;
 }
 
+/** Per-instance accessibility metadata (writeAccessibleData in flacomdoc). */
+export interface Fla8Accessibility {
+  /** false when the "silent" flag is set (object excluded from a11y tree). */
+  readonly enabled: boolean;
+  readonly name?: string;
+  readonly description?: string;
+  readonly shortcut?: string;
+  readonly tabIndex?: number;
+  readonly forceSimple?: boolean;
+}
+
 export interface Fla8Instance {
   readonly type: "instance";
   readonly kind: "sprite" | "button" | "graphic" | "unknown";
@@ -196,6 +208,8 @@ export interface Fla8Instance {
    * Default: true. Only set to false when the object is explicitly hidden.
    */
   readonly visible?: boolean;
+  /** Accessibility properties (_accProps) when the instance carries AccProp data. */
+  readonly accessibility?: Fla8Accessibility;
 }
 
 /** Horizontal (default), vertical right-to-left, or vertical left-to-right. */
@@ -813,22 +827,43 @@ function verifyBoundary(ctx: ParseCtx): void {
 }
 
 /**
- * Optional accessibility block (writeAccessibleData): absent entirely when
- * the object has no accessibility data; otherwise starts with a nonzero
- * version byte.
+ * Optional accessibility block (writeAccessibleData / flacomdoc
+ * AbstractConverter): absent when the leading version byte is 0; otherwise
+ * carries accName, description, shortcut, tabIndex (MX2004+), forceSimple.
  */
-function readAccessibilityMaybe(ctx: ParseCtx, mx2004Plus: boolean): void {
+function readAccessibilityMaybe(ctx: ParseCtx, mx2004Plus: boolean): Fla8Accessibility | undefined {
   const { r } = ctx;
-  if (r.remaining() < 1 || r.buf[r.pos] === 0) return;
-  r.skip(8); // version, reserved, silent flag, reserved
-  readCString(r); // accName
-  readCString(r); // description
-  readCString(r); // shortcut
+  if (r.remaining() < 1 || r.buf[r.pos] === 0) return undefined;
+  r.u8(); // accessibilityVersion
+  r.u8(); // reserved
+  r.u8();
+  r.u8();
+  const silent = r.u8() !== 0;
+  r.u8();
+  r.u8();
+  r.u8();
+  const name = readCString(r);
+  const description = readCString(r);
+  const shortcut = readCString(r);
+  let tabIndex: number | undefined;
   if (mx2004Plus) {
-    readCString(r); // tabIndex
-    readCString(r);
+    const tabIndexStr = readCString(r);
+    readCString(r); // reserved empty BomString
+    if (tabIndexStr.length > 0) {
+      const parsed = Number.parseInt(tabIndexStr, 10);
+      if (!Number.isNaN(parsed)) tabIndex = parsed;
+    }
   }
-  r.skip(4); // forceSimple + reserved
+  const forceSimple = r.u8() !== 0;
+  r.skip(3); // reserved
+  return {
+    enabled: !silent,
+    ...(name ? { name } : {}),
+    ...(description ? { description } : {}),
+    ...(shortcut ? { shortcut } : {}),
+    ...(tabIndex != null ? { tabIndex } : {}),
+    ...(forceSimple ? { forceSimple: true } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1787,6 +1822,7 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
   let fields = DEFAULT_FIELDS;
   let instanceName = "";
   let script = "";
+  let accessibility: Fla8Accessibility | undefined;
   try {
     fields = readCPicSymbolFields(ctx);
     if (!fields.filtersPresent) {
@@ -1799,7 +1835,7 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
       if (plausibleName(name)) instanceName = name;
       if (g >= 6) {
         r.skip(9); // reserved block
-        readAccessibilityMaybe(ctx, g >= 8);
+        accessibility = readAccessibilityMaybe(ctx, g >= 8);
         r.skip(8);
         if (g >= 8) {
           r.skip(5);
@@ -1825,6 +1861,7 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
     script,
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
+    ...(accessibility ? { accessibility } : {}),
     ...hiddenElementProp(fields.visible),
   };
 }
@@ -1835,6 +1872,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
   let instanceName = "";
   let script = "";
   let trackAsMenu = false;
+  let accessibility: Fla8Accessibility | undefined;
   try {
     fields = readCPicSymbolFields(ctx);
     if (!fields.filtersPresent) {
@@ -1845,7 +1883,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
         trackAsMenu = r.u8() !== 0;
         const name = readCString(r);
         if (plausibleName(name)) instanceName = name;
-        if (b >= 8) readAccessibilityMaybe(ctx, b >= 0x0b);
+        if (b >= 8) accessibility = readAccessibilityMaybe(ctx, b >= 0x0b);
         r.skip(4);
       }
     }
@@ -1866,6 +1904,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
     ...(trackAsMenu ? { trackAsMenu } : {}),
+    ...(accessibility ? { accessibility } : {}),
     ...hiddenElementProp(fields.visible),
   };
 }

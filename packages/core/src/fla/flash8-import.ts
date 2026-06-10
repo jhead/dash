@@ -27,6 +27,7 @@ import type {
   ShapePath,
   Stroke,
   Color,
+  ObjectAccessibility,
   SymbolInstance,
   TextDisplayObject,
 } from "../engine/types.js";
@@ -39,6 +40,7 @@ import { decodeMediaAudio, decodeMediaBitmap, decodedBitmapToDataUri, bytesToBas
 import {
   parseFla8Contents,
   parseFla8Timeline,
+  type Fla8Accessibility,
   type Fla8Color,
   type Fla8ColorEffect,
   type Fla8Element,
@@ -716,6 +718,25 @@ function importVisible(el: { visible?: boolean }): { visible?: false } {
   return el.visible === false ? { visible: false } : {};
 }
 
+export function toObjectAccessibility(acc: Fla8Accessibility | undefined): ObjectAccessibility | undefined {
+  if (!acc) return undefined;
+  const hasExtra =
+    acc.name != null ||
+    acc.description != null ||
+    acc.shortcut != null ||
+    acc.tabIndex != null ||
+    acc.forceSimple === true;
+  if (acc.enabled && !hasExtra) return undefined;
+  return {
+    enabled: acc.enabled,
+    ...(acc.name ? { name: acc.name } : {}),
+    ...(acc.description ? { description: acc.description } : {}),
+    ...(acc.shortcut ? { shortcut: acc.shortcut } : {}),
+    ...(acc.tabIndex != null ? { tabIndex: acc.tabIndex } : {}),
+    ...(acc.forceSimple ? { forceSimple: true } : {}),
+  };
+}
+
 function convertElement(
   el: Fla8Element,
   symbolIdByIndex: Map<number, string>,
@@ -744,6 +765,7 @@ function convertElement(
       // handlers apply to button instances.
       const clipActions = el.kind === "sprite" && el.script ? parseClipActions(el.script) : [];
       const buttonHandlers = el.kind === "button" && el.script ? parseButtonHandlers(el.script) : [];
+      const accessibility = toObjectAccessibility(el.accessibility);
       return {
         type: "instance",
         id: nextId("inst"),
@@ -762,6 +784,7 @@ function convertElement(
         ...(clipActions.length > 0 ? { clipActions } : {}),
         ...(buttonHandlers.length > 0 ? { buttonHandlers } : {}),
         ...(el.trackAsMenu ? { trackAsMenu: true } : {}),
+        ...(accessibility ? { accessibility } : {}),
         ...(el.loopMode !== 0 ? { loopMode: (["loop", "play-once", "single-frame"][el.loopMode] ?? "loop") as "loop" | "play-once" | "single-frame" } : {}),
         ...(el.firstFrame !== 0 ? { firstFrame: el.firstFrame } : {}),
         ...importVisible(el),
