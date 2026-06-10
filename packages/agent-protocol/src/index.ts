@@ -515,6 +515,20 @@ export const LibraryRemoveParamsSchema = z.object({
 });
 export type LibraryRemoveParams = z.infer<typeof LibraryRemoveParamsSchema>;
 
+export const LibrarySetLinkageParamsSchema = z.object({
+  symbolId: z.string(),
+  linkageId: z.string().optional().describe("attachMovie / new ClassName identifier"),
+  exportForActionScript: z.boolean().optional().describe("Export this symbol for ActionScript (enables attachMovie / new ClassName)"),
+  exportInFirstFrame: z.boolean().optional().describe("Export the symbol in the first frame of the SWF"),
+});
+export type LibrarySetLinkageParams = z.infer<typeof LibrarySetLinkageParamsSchema>;
+
+export const LibrarySetLinkageResultSchema = z.object({
+  ok: z.literal(true),
+  rev: RevSchema,
+});
+export type LibrarySetLinkageResult = z.infer<typeof LibrarySetLinkageResultSchema>;
+
 // ---------------------------------------------------------------------------
 // Scene commands
 // ---------------------------------------------------------------------------
@@ -649,6 +663,7 @@ export const ALL_COMMANDS = [
   "library_remove",
   "library_import_bitmap",
   "library_import_sound",
+  "library_set_linkage",
   // output & escape hatches
   "jsfl_run",
   "stage_screenshot",

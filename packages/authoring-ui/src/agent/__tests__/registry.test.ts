@@ -309,6 +309,91 @@ describe("stage_place_instance", () => {
       dispatchAgentCommand("stage_place_instance", { symbolId: "no-such-sym", x: 0, y: 0 })
     ).rejects.toThrow(/symbolId/);
   });
+
+  it("places instance with scaleX, scaleY, and rotation", async () => {
+    const symResult = await dispatchAgentCommand("library_create_symbol", {
+      name: "Scaled",
+      symbolType: "movieclip",
+    }) as Record<string, unknown>;
+    const symbolId = symResult["symbolId"] as string;
+
+    await dispatchAgentCommand("stage_place_instance", {
+      symbolId,
+      x: 50,
+      y: 50,
+      scaleX: 2,
+      scaleY: 0.5,
+      rotation: 45,
+    });
+
+    const objs = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects;
+    const inst = objs.find((o) => o.type === "instance") as Record<string, unknown> | undefined;
+    expect(inst).toBeDefined();
+    expect(inst!["scaleX"]).toBe(2);
+    expect(inst!["scaleY"]).toBe(0.5);
+    expect(inst!["rotation"]).toBe(45);
+  });
+
+  it("places instance with blendMode and colorEffect", async () => {
+    const symResult = await dispatchAgentCommand("library_create_symbol", {
+      name: "Blended",
+      symbolType: "movieclip",
+    }) as Record<string, unknown>;
+    const symbolId = symResult["symbolId"] as string;
+
+    await dispatchAgentCommand("stage_place_instance", {
+      symbolId,
+      x: 0,
+      y: 0,
+      blendMode: "multiply",
+      colorEffect: { type: "brightness", brightness: 50 },
+    });
+
+    const objs = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects;
+    const inst = objs.find(
+      (o) => o.type === "instance" && (o as unknown as Record<string, unknown>)["blendMode"] === "multiply"
+    ) as unknown as Record<string, unknown> | undefined;
+    expect(inst).toBeDefined();
+    expect(inst!["blendMode"]).toBe("multiply");
+    expect((inst!["colorEffect"] as Record<string, unknown>)["type"]).toBe("brightness");
+    expect((inst!["colorEffect"] as Record<string, unknown>)["brightness"]).toBe(50);
+  });
+
+  it("places graphic instance with loopMode and firstFrame", async () => {
+    const symResult = await dispatchAgentCommand("library_create_symbol", {
+      name: "Graphic",
+      symbolType: "graphic",
+    }) as Record<string, unknown>;
+    const symbolId = symResult["symbolId"] as string;
+
+    await dispatchAgentCommand("stage_place_instance", {
+      symbolId,
+      x: 0,
+      y: 0,
+      loopMode: "single-frame",
+      firstFrame: 3,
+    });
+
+    const objs = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects;
+    const inst = objs.find(
+      (o) => o.type === "instance" && (o as unknown as Record<string, unknown>)["loopMode"] === "single-frame"
+    ) as unknown as Record<string, unknown> | undefined;
+    expect(inst).toBeDefined();
+    expect(inst!["loopMode"]).toBe("single-frame");
+    expect(inst!["firstFrame"]).toBe(3);
+  });
+
+  it("errors on invalid blendMode", async () => {
+    const symResult = await dispatchAgentCommand("library_create_symbol", {
+      name: "Bad",
+      symbolType: "movieclip",
+    }) as Record<string, unknown>;
+    const symbolId = symResult["symbolId"] as string;
+
+    await expect(
+      dispatchAgentCommand("stage_place_instance", { symbolId, x: 0, y: 0, blendMode: "not-a-mode" })
+    ).rejects.toThrow(/blendMode/);
+  });
 });
 
 describe("stage_add_video", () => {
@@ -781,6 +866,85 @@ describe("library_convert_to_symbol", () => {
       expect(local.x).toBeCloseTo(-200, 6);
       expect(local.y).toBeCloseTo(-150, 6);
     }
+  });
+});
+
+describe("library_set_linkage", () => {
+  it("sets linkageId and exportForActionScript on a symbol", async () => {
+    const { symbolId } = await dispatchAgentCommand("library_create_symbol", {
+      name: "Enemy",
+      symbolType: "movieclip",
+    }) as { symbolId: string };
+
+    const result = await dispatchAgentCommand("library_set_linkage", {
+      symbolId,
+      linkageId: "EnemyMC",
+      exportForActionScript: true,
+      exportInFirstFrame: true,
+    }) as Record<string, unknown>;
+
+    expect(result["ok"]).toBe(true);
+    const sym = state.doc.library.items.find((i) => i.id === symbolId);
+    expect(sym?.itemType).toBe("symbol");
+    if (sym?.itemType === "symbol") {
+      expect(sym.linkage.linkageIdentifier).toBe("EnemyMC");
+      expect(sym.linkage.exportForActionScript).toBe(true);
+      expect(sym.linkage.exportInFirstFrame).toBe(true);
+    }
+  });
+
+  it("partial update — only updates specified fields", async () => {
+    const { symbolId } = await dispatchAgentCommand("library_create_symbol", {
+      name: "Player",
+      symbolType: "movieclip",
+    }) as { symbolId: string };
+
+    // First set full linkage
+    await dispatchAgentCommand("library_set_linkage", {
+      symbolId,
+      linkageId: "PlayerMC",
+      exportForActionScript: true,
+      exportInFirstFrame: false,
+    });
+
+    // Then update only exportInFirstFrame
+    await dispatchAgentCommand("library_set_linkage", {
+      symbolId,
+      exportInFirstFrame: true,
+    });
+
+    const sym = state.doc.library.items.find((i) => i.id === symbolId);
+    if (sym?.itemType === "symbol") {
+      // linkageId and exportForActionScript must be unchanged
+      expect(sym.linkage.linkageIdentifier).toBe("PlayerMC");
+      expect(sym.linkage.exportForActionScript).toBe(true);
+      expect(sym.linkage.exportInFirstFrame).toBe(true);
+    }
+  });
+
+  it("errors on unknown symbolId", async () => {
+    await expect(
+      dispatchAgentCommand("library_set_linkage", {
+        symbolId: "no-such-symbol",
+        linkageId: "X",
+      })
+    ).rejects.toThrow(/symbolId/);
+  });
+
+  it("errors when item is not a symbol", async () => {
+    // Import a bitmap and try to set linkage on it
+    const importResult = await dispatchAgentCommand("library_import_bitmap", {
+      data: "iVBORw0KGgo=",
+      name: "bg.png",
+      mimeType: "image/png",
+    }) as { itemId: string };
+
+    await expect(
+      dispatchAgentCommand("library_set_linkage", {
+        symbolId: importResult.itemId,
+        linkageId: "bg",
+      })
+    ).rejects.toThrow(/symbol/);
   });
 });
 

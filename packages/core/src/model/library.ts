@@ -437,3 +437,51 @@ export function getLibraryItemCountByType(
 export function hasLibraryItem(library: Library, id: string): boolean {
   return library.items.some((item) => item.id === id);
 }
+
+// ---------------------------------------------------------------------------
+// Symbol linkage
+// ---------------------------------------------------------------------------
+
+/**
+ * Update the AS2 linkage settings for a Symbol in the library.
+ *
+ * Only `Symbol` items have a `linkage` property; passing the id of a non-symbol
+ * item returns the library unchanged.
+ *
+ * The `linkageId`, `exportForActionScript`, and `exportInFirstFrame` fields
+ * correspond to the Flash 8 "Linkage" dialog and to `SymbolLinkage` on the
+ * model. Unspecified fields are left at their current values.
+ */
+export function setSymbolLinkage(
+  library: Library,
+  symbolId: string,
+  linkageProps: {
+    linkageId?: string;
+    exportForActionScript?: boolean;
+    exportInFirstFrame?: boolean;
+  }
+): Library {
+  const item = library.items.find((i) => i.id === symbolId);
+  if (!item || item.itemType !== "symbol") {
+    // Not a symbol — return unchanged
+    return library;
+  }
+  const sym = item as Symbol;
+  const updatedLinkage: SymbolLinkage = {
+    ...sym.linkage,
+    ...(linkageProps.linkageId !== undefined
+      ? { linkageIdentifier: linkageProps.linkageId }
+      : {}),
+    ...(linkageProps.exportForActionScript !== undefined
+      ? { exportForActionScript: linkageProps.exportForActionScript }
+      : {}),
+    ...(linkageProps.exportInFirstFrame !== undefined
+      ? { exportInFirstFrame: linkageProps.exportInFirstFrame }
+      : {}),
+  };
+  const updatedSym: Symbol = { ...sym, linkage: updatedLinkage };
+  return {
+    ...library,
+    items: library.items.map((i) => (i.id === symbolId ? updatedSym : i)),
+  };
+}

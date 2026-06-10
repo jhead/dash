@@ -452,7 +452,10 @@ function createMcpServerForRequest(): McpServer {
     "stage_place_instance",
     {
       title: "Place Symbol Instance",
-      description: "Place a symbol from the library on the stage. Returns the new instance id and rev.",
+      description:
+        "Place a symbol from the library on the stage. " +
+        "Accepts optional creation-time visual properties (scale, rotation, blendMode, colorEffect, loopMode, firstFrame). " +
+        "Returns the new instance id and rev.",
       inputSchema: z.object({
         symbolId: z.string().describe("Library symbol id"),
         x: z.number(),
@@ -460,6 +463,45 @@ function createMcpServerForRequest(): McpServer {
         name: z.string().optional().describe("AS2 instance name"),
         layerId: z.string().optional(),
         frameIndex: z.number().int().nonnegative().optional(),
+        scaleX: z.number().optional().describe("Horizontal scale factor (1 = no scale, 2 = 200%)"),
+        scaleY: z.number().optional().describe("Vertical scale factor (1 = no scale, 2 = 200%)"),
+        rotation: z.number().optional().describe("Rotation in degrees (clockwise)"),
+        blendMode: z
+          .enum([
+            "normal", "layer", "multiply", "screen", "lighten", "darken",
+            "difference", "add", "subtract", "invert", "alpha", "erase",
+            "overlay", "hardlight",
+          ])
+          .optional()
+          .describe("Flash 8 blend mode"),
+        colorEffect: z
+          .object({
+            type: z.enum(["none", "brightness", "tint", "alpha", "advanced"]),
+            brightness: z.number().optional().describe("Brightness -100..100 (type=brightness)"),
+            tintColor: z.string().optional().describe("Tint color #RRGGBB (type=tint)"),
+            tintAmount: z.number().optional().describe("Tint amount 0..100 (type=tint)"),
+            alpha: z.number().optional().describe("Alpha 0..100 (type=alpha)"),
+            redMult: z.number().optional(),
+            greenMult: z.number().optional(),
+            blueMult: z.number().optional(),
+            redOffset: z.number().optional(),
+            greenOffset: z.number().optional(),
+            blueOffset: z.number().optional(),
+            alphaMult: z.number().optional(),
+            alphaOffset: z.number().optional(),
+          })
+          .optional()
+          .describe("Color effect applied to this instance"),
+        loopMode: z
+          .enum(["loop", "play-once", "single-frame"])
+          .optional()
+          .describe("Graphic symbol loop mode (loop | play-once | single-frame)"),
+        firstFrame: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe("Starting frame index for play-once or single-frame mode (0-based)"),
       }),
     },
     async (params) => callTool("stage_place_instance", params as Record<string, unknown>)
@@ -906,6 +948,25 @@ function createMcpServerForRequest(): McpServer {
       }),
     },
     async (params) => callTool("library_remove", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "library_set_linkage",
+    {
+      title: "Set Symbol AS2 Linkage",
+      description:
+        "Set the AS2 linkage properties on a library symbol, enabling `attachMovie()` / `new ClassName()` access at runtime. " +
+        "Pass `exportForActionScript: true` and a `linkageId` string to export the symbol. " +
+        "Pass `exportInFirstFrame: true` to include it in frame 1 (required for `attachMovie` from frame 1 scripts). " +
+        "Returns ok and rev.",
+      inputSchema: z.object({
+        symbolId: z.string().describe("Library symbol id"),
+        linkageId: z.string().optional().describe("Linkage identifier used in attachMovie() or new ClassName() calls"),
+        exportForActionScript: z.boolean().optional().describe("Export this symbol for ActionScript"),
+        exportInFirstFrame: z.boolean().optional().describe("Export in the first frame of the SWF"),
+      }),
+    },
+    async (params) => callTool("library_set_linkage", params as Record<string, unknown>)
   );
 
   server.registerTool(

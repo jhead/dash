@@ -14,6 +14,7 @@ import {
   editSymbol,
   getLibraryItemCountByType,
   hasLibraryItem,
+  setSymbolLinkage,
 } from "../library.js";
 import type { Library, Symbol } from "../types.js";
 
@@ -163,5 +164,80 @@ describe("hasLibraryItem", () => {
   it("returns false on an empty library", () => {
     const library = createLibrary();
     expect(hasLibraryItem(library, "any-id")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setSymbolLinkage
+// ---------------------------------------------------------------------------
+
+describe("setSymbolLinkage", () => {
+  it("sets linkageIdentifier on a symbol", () => {
+    const { library, symbol } = makeLibraryWithSymbol("Enemy");
+    const result = setSymbolLinkage(library, symbol.id, { linkageId: "EnemyMC" });
+    const updated = result.items.find((i) => i.id === symbol.id);
+    expect(updated?.itemType).toBe("symbol");
+    if (updated?.itemType === "symbol") {
+      expect(updated.linkage.linkageIdentifier).toBe("EnemyMC");
+    }
+  });
+
+  it("sets exportForActionScript on a symbol", () => {
+    const { library, symbol } = makeLibraryWithSymbol("Player");
+    const result = setSymbolLinkage(library, symbol.id, { exportForActionScript: true });
+    const updated = result.items.find((i) => i.id === symbol.id);
+    if (updated?.itemType === "symbol") {
+      expect(updated.linkage.exportForActionScript).toBe(true);
+    }
+  });
+
+  it("sets exportInFirstFrame on a symbol", () => {
+    const { library, symbol } = makeLibraryWithSymbol("Bullet");
+    const result = setSymbolLinkage(library, symbol.id, { exportInFirstFrame: true });
+    const updated = result.items.find((i) => i.id === symbol.id);
+    if (updated?.itemType === "symbol") {
+      expect(updated.linkage.exportInFirstFrame).toBe(true);
+    }
+  });
+
+  it("partial update — unspecified fields remain unchanged", () => {
+    const { library, symbol } = makeLibraryWithSymbol("Sprite");
+    // Set initial linkage
+    const lib1 = setSymbolLinkage(library, symbol.id, {
+      linkageId: "SpriteMC",
+      exportForActionScript: true,
+      exportInFirstFrame: false,
+    });
+    // Only update exportInFirstFrame
+    const lib2 = setSymbolLinkage(lib1, symbol.id, { exportInFirstFrame: true });
+    const updated = lib2.items.find((i) => i.id === symbol.id);
+    if (updated?.itemType === "symbol") {
+      expect(updated.linkage.linkageIdentifier).toBe("SpriteMC");
+      expect(updated.linkage.exportForActionScript).toBe(true);
+      expect(updated.linkage.exportInFirstFrame).toBe(true);
+    }
+  });
+
+  it("is immutable — original library is unchanged", () => {
+    const { library, symbol } = makeLibraryWithSymbol("Gem");
+    const result = setSymbolLinkage(library, symbol.id, { linkageId: "GemMC" });
+    expect(result).not.toBe(library);
+    const original = library.items.find((i) => i.id === symbol.id);
+    if (original?.itemType === "symbol") {
+      expect(original.linkage.linkageIdentifier).toBe("");
+    }
+  });
+
+  it("returns library unchanged when symbolId is unknown", () => {
+    const { library } = makeLibraryWithSymbol("Hero");
+    const result = setSymbolLinkage(library, "nonexistent-id", { linkageId: "X" });
+    expect(result).toBe(library);
+  });
+
+  it("returns library unchanged when id refers to a non-symbol item", () => {
+    const bitmap = createBitmap("Background");
+    const library = addLibraryItem(createLibrary(), bitmap);
+    const result = setSymbolLinkage(library, bitmap.id, { linkageId: "bg" });
+    expect(result).toBe(library);
   });
 });

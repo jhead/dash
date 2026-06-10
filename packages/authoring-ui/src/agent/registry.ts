@@ -37,6 +37,7 @@ import type {
   LibraryConvertToSymbolResult,
   LibraryImportBitmapResult,
   LibraryImportSoundResult,
+  LibrarySetLinkageResult,
   JsflRunResult,
   PublishSwfResult,
   FileSaveFlaResult,
@@ -75,6 +76,7 @@ import {
   createSound,
   addLibraryItem,
   removeLibraryItem,
+  setSymbolLinkage,
   saveFla,
   loadFla,
   getGoverningKeyframe,
@@ -92,6 +94,7 @@ import type {
   VideoDisplayObject,
   GroupObject,
   Color,
+  ColorEffect,
   Fill,
   SolidStroke,
   SoundLinkage,
@@ -665,6 +668,13 @@ const handlers: Record<string, AnyHandler> = {
     name?: string;
     layerId?: string;
     frameIndex?: number;
+    scaleX?: number;
+    scaleY?: number;
+    rotation?: number;
+    blendMode?: string;
+    colorEffect?: ColorEffect;
+    loopMode?: string;
+    firstFrame?: number;
   }): StagePlaceInstanceResult {
     const cb = requireCallbacks();
     const doc = cb.getDoc();
@@ -689,6 +699,40 @@ const handlers: Record<string, AnyHandler> = {
       ? computeSymbolNaturalSize(sym as { timeline: { layers: readonly { frames: readonly { displayObjects: readonly DisplayObject[] }[] }[] } })
       : { naturalWidth: 0, naturalHeight: 0 };
 
+    // Validate blendMode if provided
+    const validBlendModes = [
+      "normal", "layer", "multiply", "screen", "lighten", "darken",
+      "difference", "add", "subtract", "invert", "alpha", "erase",
+      "overlay", "hardlight",
+    ] as const;
+    type BlendModeName = typeof validBlendModes[number];
+    let blendMode: BlendModeName | undefined;
+    if (params.blendMode !== undefined) {
+      if (!validBlendModes.includes(params.blendMode as BlendModeName)) {
+        throw new Error(
+          `Invalid blendMode "${params.blendMode}". Valid values: ${validBlendModes.join(", ")}`
+        );
+      }
+      blendMode = params.blendMode as BlendModeName;
+    }
+
+    // Validate loopMode if provided
+    const validLoopModes = ["loop", "play-once", "single-frame"] as const;
+    type LoopModeName = typeof validLoopModes[number];
+    let loopMode: LoopModeName | undefined;
+    if (params.loopMode !== undefined) {
+      // Accept both "playOnce"/"singleFrame" (legacy) and "play-once"/"single-frame"
+      const normalized = params.loopMode === "playOnce" ? "play-once"
+        : params.loopMode === "singleFrame" ? "single-frame"
+        : params.loopMode;
+      if (!validLoopModes.includes(normalized as LoopModeName)) {
+        throw new Error(
+          `Invalid loopMode "${params.loopMode}". Valid values: loop, play-once, single-frame`
+        );
+      }
+      loopMode = normalized as LoopModeName;
+    }
+
     const obj: SymbolInstance = {
       type: "instance",
       id: nextAgentObjId("inst"),
@@ -698,6 +742,13 @@ const handlers: Record<string, AnyHandler> = {
       instanceName: params.name,
       ...(naturalWidth > 0 ? { naturalWidth } : {}),
       ...(naturalHeight > 0 ? { naturalHeight } : {}),
+      ...(params.scaleX !== undefined ? { scaleX: params.scaleX } : {}),
+      ...(params.scaleY !== undefined ? { scaleY: params.scaleY } : {}),
+      ...(params.rotation !== undefined ? { rotation: params.rotation } : {}),
+      ...(blendMode !== undefined ? { blendMode } : {}),
+      ...(params.colorEffect !== undefined ? { colorEffect: params.colorEffect } : {}),
+      ...(loopMode !== undefined ? { loopMode } : {}),
+      ...(params.firstFrame !== undefined ? { firstFrame: params.firstFrame } : {}),
     };
 
     const sceneIndex = cb.getActiveSceneIndex();
@@ -1515,6 +1566,35 @@ const handlers: Record<string, AnyHandler> = {
       );
     }
     const newLibrary = removeLibraryItem(doc.library, params.itemId);
+    cb.pushDoc({ ...doc, library: newLibrary });
+    return { ok: true, rev: _rev };
+  },
+
+  library_set_linkage(params: {
+    symbolId: string;
+    linkageId?: string;
+    exportForActionScript?: boolean;
+    exportInFirstFrame?: boolean;
+  }): LibrarySetLinkageResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    const item = doc.library.items.find((i) => i.id === params.symbolId);
+    if (!item) {
+      const known = doc.library.items.map((i) => i.id).join(", ");
+      throw new Error(
+        `Unknown symbolId "${params.symbolId}". Known: ${known || "(none)"}`
+      );
+    }
+    if (item.itemType !== "symbol") {
+      throw new Error(
+        `Item "${params.symbolId}" is a ${item.itemType}, not a symbol. Only symbols have AS2 linkage.`
+      );
+    }
+    const newLibrary = setSymbolLinkage(doc.library, params.symbolId, {
+      linkageId: params.linkageId,
+      exportForActionScript: params.exportForActionScript,
+      exportInFirstFrame: params.exportInFirstFrame,
+    });
     cb.pushDoc({ ...doc, library: newLibrary });
     return { ok: true, rev: _rev };
   },

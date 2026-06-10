@@ -195,6 +195,7 @@ export {
   getFoldersInFolder,
   findLibraryItem,
   getLibraryItemsByType,
+  setSymbolLinkage,
 } from "./library.js";
 
 // Find and Replace
