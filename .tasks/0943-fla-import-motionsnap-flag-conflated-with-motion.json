@@ -1,0 +1,10 @@
+{
+  "id": "0943-fla-import-motionsnap-flag-conflated-with-motion",
+  "title": "FLA import: motionSnap flag conflated with motionOrientToPath",
+  "description": "In flash8-binary.ts around line 2364, a bit from the frame flags is labeled in a comment as 'motionTweenSnap / orient-to-path flag' and stored as motionOrientToPath. These are two distinct flags in Flash 8: motionOrientToPath (rotate object to follow path) and motionSnap (snap to guide path). Fix: determine the correct bit positions for each from flacomdoc (FlaFormatVersion.java / CPicFrame fields), add separate motionSnap?: boolean and motionOrientToPath?: boolean fields to Fla8Frame, decode them from the correct bits, forward both through flash8-import.ts, and ensure the core Frame model has both fields.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:24:37Z",
+  "updated_at": "2026-06-10T21:39:03Z"
+}
