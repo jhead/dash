@@ -2,9 +2,9 @@
   "id": "0995-jsfl-addnewlayer-ignores-type-and-addabove-param",
   "title": "JSFL addNewLayer ignores type and addAbove parameters",
   "description": "In packages/authoring-ui/src/jsfl/runtime.ts line 482, addNewLayer(name, _type?, _addAbove?) ignores both the type parameter (guide, mask, normal) and the addAbove parameter. New layers always use normal type and always insert at a default position. Fix: (1) use the type param to set the layer type via setLayerType() after creating the layer; (2) use addAbove to determine insertion order \u2014 if true, insert above the current layer, else below.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T22:54:52Z",
-  "updated_at": "2026-06-10T22:55:00Z"
+  "updated_at": "2026-06-10T22:57:03Z"
 }
