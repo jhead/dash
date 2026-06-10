@@ -727,7 +727,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     return JSON.stringify(ce);
   }
 
-  // Per-depth: last placed state (objId, x, y, scaleX, scaleY, rotation, ratio)
+  // Per-depth: last placed state (objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio)
   interface DepthState {
     objId: string;
     x: number;
@@ -735,6 +735,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     scaleX: number;
     scaleY: number;
     rotation: number;
+    skewX: number;
+    skewY: number;
     /** Last placed morph ratio (0..65535); -1 if not a morph shape. */
     ratio: number;
     /** Serialized color effect key for change detection (null = no effect). */
@@ -1303,6 +1305,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           let scaleX = 1;
           let scaleY = 1;
           let rotation = 0;
+          let skewX = 0;
+          let skewY = 0;
           if ("x" in displayObj) x = (displayObj as { x: number }).x ?? 0;
           if ("y" in displayObj) y = (displayObj as { y: number }).y ?? 0;
           if ("scaleX" in displayObj)
@@ -1311,6 +1315,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             scaleY = (displayObj as { scaleY: number }).scaleY ?? 1;
           if ("rotation" in displayObj)
             rotation = (displayObj as { rotation: number }).rotation ?? 0;
+          if ("skewX" in displayObj)
+            skewX = (displayObj as { skewX: number }).skewX ?? 0;
+          if ("skewY" in displayObj)
+            skewY = (displayObj as { skewY: number }).skewY ?? 0;
 
           // Compute morph ratio if this is a morph shape object
           let morphRatio = -1;
@@ -1342,6 +1350,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               prev.scaleX !== scaleX ||
               prev.scaleY !== scaleY ||
               prev.rotation !== rotation ||
+              prev.skewX !== skewX ||
+              prev.skewY !== skewY ||
               prev.objId !== objId ||
               prev.ratio !== morphRatio ||
               prev.colorEffectKey !== thisColorEffectKey);
@@ -1569,8 +1579,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (hasClipActions) {
                   // Clip actions: encode CLIPACTIONRECORD block in PlaceObject2
-                  const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)
-                    ? { scaleX, scaleY, rotation }
+                  const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                    ? { scaleX, scaleY, rotation, skewX, skewY }
                     : undefined;
                   const placeBody = encodePlaceObject2WithClipActions(
                     charId,
@@ -1588,8 +1598,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     ? colorEffectToCXForm(displayObj.colorEffect)
                     : null;
                   if (cxform !== null) {
-                    const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)
-                      ? { scaleX, scaleY, rotation }
+                    const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                      ? { scaleX, scaleY, rotation, skewX, skewY }
                       : undefined;
                     const placeBody = encodePlaceObject2WithCXForm(
                       charId,
@@ -1602,24 +1612,28 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     writer.writeTag(Tag.PlaceObject2, placeBody);
                   } else {
                     const instanceName = displayObj.instanceName;
+                    const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                      ? { scaleX, scaleY, rotation, skewX, skewY }
+                      : undefined;
                     if (instanceName && instanceName.length > 0) {
                       const placeBody = encodePlaceObject2WithName(
                         charId,
                         depth,
                         x,
                         y,
-                        instanceName
+                        instanceName,
+                        instanceTransform
                       );
                       writer.writeTag(Tag.PlaceObject2, placeBody);
                     } else {
-                      const placeBody = encodePlaceObject2(charId, depth, x, y);
+                      const placeBody = encodePlaceObject2(charId, depth, x, y, instanceTransform);
                       writer.writeTag(Tag.PlaceObject2, placeBody);
                     }
                   }
                 }
               }
             }
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
           } else if (posChanged) {
             // Object moved, scaled, rotated, or replaced — emit PlaceObject2+Move
             if (
@@ -1638,7 +1652,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   true
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
-                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
+                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
                 continue; // skip the generic depthState.set below
               }
               const objTransform =
@@ -1751,8 +1765,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   ? colorEffectToCXForm(displayObj.colorEffect)
                   : null;
                 if (cxform !== null) {
-                  const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)
-                    ? { scaleX, scaleY, rotation }
+                  const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                    ? { scaleX, scaleY, rotation, skewX, skewY }
                     : undefined;
                   // Move + HasMatrix + HasColorTransform (no HasCharacter unless replacing)
                   const placeBody = encodePlaceObject2WithCXForm(
@@ -1766,19 +1780,22 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
+                  const moveTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                    ? { scaleX, scaleY, rotation, skewX, skewY }
+                    : undefined;
                   const placeBody = encodePlaceObject2Move(
                     charId,
                     depth,
                     x,
                     y,
-                    undefined,
+                    moveTransform,
                     prev!.objId !== objId
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 }
               }
             }
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
           }
           // else: unchanged — emit nothing
         }
