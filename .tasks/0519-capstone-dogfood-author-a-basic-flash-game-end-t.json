@@ -2,7 +2,7 @@
   "id": "0519-capstone-dogfood-author-a-basic-flash-game-end-t",
   "title": "CRITICAL: capstone dogfood \u2014 author a basic Flash game end-to-end and verify in Ruffle",
   "description": "REOPENED by Oracle: partially done \u2014 the toolchain proof is real and KEPT (interactivity.spec.ts:697 Dot Catcher: compile -> Ruffle -> click -> pixelDiff 10000, passes; commit 71522ce), but the closure skipped the core acceptance: the game must be AUTHORED THROUGH THE AGENT INTERFACE, not injected as an inline JS fixture via __flashTest.loadDocument(). Remaining scope: (1) author the game by invoking the MCP bridge tools / flash-agent CLI (stage_add_shape, library create/convert symbol, timeline layer+keyframe ops, script_set, publish_swf \u2014 see docs/19-agent-interface.md and CLAUDE.md 'Controlling the editor'), either as an e2e spec driving MCP tool calls or a flash-agent script checked into the repo; (2) the game must include the originally specified mechanics: onEnterFrame game loop, Key input, MovieClip.hitTest, score in a TextField, gotoAndStop game-over \u2014 the current Dot Catcher (button on(release){nextFrame()}) is a frame-flipper, not a game; (3) publish via the bridge and verify in Ruffle with synthesized input asserting state changes (score increments, game-over reachable). Every gap the bridge has for real authoring becomes a new task. This is the MVP exit criterion; close only with the run command + results pasted here.",
-  "status": "open",
+  "status": "in_progress",
   "created_at": "2026-06-09T22:02:20Z",
-  "updated_at": "2026-06-10T00:17:09Z"
+  "updated_at": "2026-06-10T00:28:22Z"
 }
