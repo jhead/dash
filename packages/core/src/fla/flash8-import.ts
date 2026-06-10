@@ -829,12 +829,22 @@ function convertElement(
       };
     }
     case "swf": {
-      // CPicSwf places an embedded SWF asset (imported via File > Import).
-      // The editor model has no dedicated display-object type for embedded SWF
-      // content yet, so we skip the placement with an informative message rather
-      // than silently dropping it under the "class not supported" catch-all.
+      // CPicSwf places an external SWF asset imported via File > Import.
+      // The binary parser extracts only the fixed header (placement matrix);
+      // the variable-length tail (instance name, AS2 clip-event scripts, source
+      // SWF filename, color transforms) is skipped by skipToNextBoundary() and
+      // is not decoded.  There is no library-symbol linkage id in the decoded
+      // record, so there is no existing model type to map this to — mapping to
+      // SymbolInstance would require a symbolId, and VideoDisplayObject requires
+      // a videoItemId.  A new dedicated model type would be needed for full
+      // support.  For now, emit a descriptive warning and drop the element.
+      const { scaleX, scaleY, rotation } = decompose(el.matrix);
       console.warn(
-        `[FLA import] CPicSwf placement at (${el.matrix.tx.toFixed(0)}, ${el.matrix.ty.toFixed(0)}) skipped — embedded SWF display objects are not yet supported`,
+        `[FLA import] CPicSwf skipped — embedded SWF display objects are not yet supported. ` +
+          `Placement: x=${el.matrix.tx.toFixed(0)}, y=${el.matrix.ty.toFixed(0)}, ` +
+          `scaleX=${scaleX.toFixed(3)}, scaleY=${scaleY.toFixed(3)}, ` +
+          `rotation=${rotation.toFixed(1)}°. ` +
+          `The source SWF filename and instance name are in the undecoded variable tail.`,
       );
       return null;
     }

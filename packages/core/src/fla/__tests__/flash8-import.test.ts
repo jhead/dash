@@ -1513,15 +1513,19 @@ describe("Magnet.fla — CPicSwf embedded SWF placements (task 0892)", () => {
     }
   });
 
-  it("emits an informative 'CPicSwf placement ... skipped' warning instead", () => {
+  it("emits an informative CPicSwf skipped warning with placement details", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const bytes = fixture("Magnet.fla");
       tryLoadRealFla(bytes);
       const messages = warnSpy.mock.calls.map((c) => c.join(" "));
-      const newWarnings = messages.filter((m) => m.includes("CPicSwf placement"));
+      const newWarnings = messages.filter((m) => m.includes("CPicSwf skipped"));
       // Magnet.fla has four CPicSwf instances; each emits one warning.
       expect(newWarnings.length).toBeGreaterThan(0);
+      // Warning should include placement matrix details.
+      expect(newWarnings[0]).toMatch(/x=\d+/);
+      expect(newWarnings[0]).toMatch(/scaleX=/);
+      expect(newWarnings[0]).toMatch(/rotation=/);
     } finally {
       warnSpy.mockRestore();
     }
