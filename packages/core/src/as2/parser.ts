@@ -517,10 +517,10 @@ class Parser {
     }
 
     // regular for
-    let init: VarDecl | ExprStmt | null = null;
+    let init: VarDecl | Block | ExprStmt | null = null;
     if (!this.check('punctuation', ';')) {
       if (this.check('keyword', 'var')) {
-        init = this.parseVarDecl(false, null);
+        init = this.parseVarDeclList(false, null) as VarDecl | Block;
         // varDecl already consumed optional semicolon via trySemicolon
         // but for-init uses ';' as separator, not terminator
         // if trySemicolon consumed it we're fine; otherwise eat it
@@ -703,7 +703,15 @@ class Parser {
   // ── Expressions ────────────────────────────────────────────────────────────
 
   private parseExpression(): Expression {
-    return this.parseAssignment();
+    let expr = this.parseAssignment();
+    if (!this.check('punctuation', ',')) {
+      return expr;
+    }
+    const expressions: Expression[] = [expr];
+    while (this.tryEat('punctuation', ',')) {
+      expressions.push(this.parseAssignment());
+    }
+    return { type: 'SequenceExpr', expressions, pos: expr.pos, line: expr.line };
   }
 
   private parseAssignment(): Expression {

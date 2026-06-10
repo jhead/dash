@@ -2,7 +2,7 @@ import { parse } from "./parser.js";
 import type {
   Program, Statement, Expression,
   IfStmt, ForStmt, ForInStmt, WhileStmt, DoWhileStmt,
-  ExprStmt, VarDecl, FunctionDecl, ClassDecl,
+  ExprStmt, VarDecl, FunctionDecl, ClassDecl, SequenceExpr, Block,
   BinaryExpr, UnaryExpr, AssignExpr, CallExpr, NewExpr,
   MemberExpr, IndexExpr, TernaryExpr, Literal, Identifier,
   ArrayLiteral, ObjectLiteral,
@@ -126,6 +126,8 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
           if (s.init.type === 'VarDecl') {
             add((s.init as VarDecl).name);
             if ((s.init as VarDecl).init !== null) scanExpr((s.init as VarDecl).init!);
+          } else if (s.init.type === 'Block') {
+            scanStmts((s.init as Block).body);
           } else {
             scanExpr((s.init as ExprStmt).expression);
           }
@@ -378,6 +380,9 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
         scanExpr(e.test);
         scanExpr(e.consequent);
         scanExpr(e.alternate);
+        break;
+      case 'SequenceExpr':
+        for (const sub of e.expressions) scanExpr(sub);
         break;
       case 'ArrayLiteral':
         for (const el of e.elements) scanExpr(el);
@@ -802,18 +807,24 @@ class Compiler {
     for (const p of ctx.continuePatches) this.patchJump(p, condStart);
   }
 
+  private compileForVarInit(init: VarDecl | Block): void {
+    const decls = init.type === 'VarDecl' ? [init] : init.body as VarDecl[];
+    for (const vd of decls) {
+      this.pushString(vd.name);
+      if (vd.init !== null) {
+        this.compileExpr(vd.init);
+        this.emit(0x3c); // ActionDefineLocal
+      } else {
+        this.emit(0x41); // ActionDefineLocal2
+      }
+    }
+  }
+
   private compileForStmt(stmt: ForStmt): void {
     // Init
     if (stmt.init !== null) {
-      if (stmt.init.type === 'VarDecl') {
-        const vd = stmt.init as VarDecl;
-        this.pushString(vd.name);
-        if (vd.init !== null) {
-          this.compileExpr(vd.init);
-          this.emit(0x3c); // ActionDefineLocal
-        } else {
-          this.emit(0x41); // ActionDefineLocal2
-        }
+      if (stmt.init.type === 'VarDecl' || stmt.init.type === 'Block') {
+        this.compileForVarInit(stmt.init);
       } else {
         // ExprStmt init
         this.compileExpr((stmt.init as ExprStmt).expression);
@@ -1295,15 +1306,8 @@ class Compiler {
   private compileLabeledForStmt(label: string, stmt: ForStmt): void {
     // Init
     if (stmt.init !== null) {
-      if (stmt.init.type === 'VarDecl') {
-        const vd = stmt.init as VarDecl;
-        this.pushString(vd.name);
-        if (vd.init !== null) {
-          this.compileExpr(vd.init);
-          this.emit(0x3c); // ActionDefineLocal
-        } else {
-          this.emit(0x41); // ActionDefineLocal2
-        }
+      if (stmt.init.type === 'VarDecl' || stmt.init.type === 'Block') {
+        this.compileForVarInit(stmt.init);
       } else {
         this.compileExpr((stmt.init as ExprStmt).expression);
         this.emit(0x17);
@@ -1398,6 +1402,7 @@ class Compiler {
       case 'MemberExpr':    this.compileMemberExpr(expr);    break;
       case 'IndexExpr':     this.compileIndexExpr(expr);     break;
       case 'TernaryExpr':   this.compileTernaryExpr(expr);   break;
+      case 'SequenceExpr':  this.compileSequenceExpr(expr);  break;
       case 'ArrayLiteral':  this.compileArrayLiteral(expr);  break;
       case 'ObjectLiteral': this.compileObjectLiteral(expr); break;
       case 'RegExpLiteral': this.compileRegExpLiteral(expr as RegExpLiteral); break;
@@ -2151,6 +2156,15 @@ class Compiler {
     this.emit(0x4e); // ActionGetMember (works for numeric indices too)
   }
 
+  private compileSequenceExpr(expr: SequenceExpr): void {
+    const last = expr.expressions.length - 1;
+    for (let i = 0; i < last; i++) {
+      this.compileExpr(expr.expressions[i]!);
+      this.emit(0x17); // ActionPop — discard intermediate results
+    }
+    this.compileExpr(expr.expressions[last]!);
+  }
+
   private compileTernaryExpr(expr: TernaryExpr): void {
     // test ? consequent : alternate
     this.compileExpr(expr.test);
@@ -2241,6 +2255,7 @@ class Compiler {
         case 'MemberExpr':    return scanExpr(e.object);
         case 'IndexExpr':     return scanExpr(e.object) || scanExpr(e.index);
         case 'TernaryExpr':   return scanExpr(e.test) || scanExpr(e.consequent) || scanExpr(e.alternate);
+        case 'SequenceExpr':  return e.expressions.some(scanExpr);
         case 'ArrayLiteral':  return e.elements.some(scanExpr);
         case 'ObjectLiteral': return e.properties.some(p => scanExpr(p.value));
         case 'FunctionDecl':  return false; // do NOT enter nested functions

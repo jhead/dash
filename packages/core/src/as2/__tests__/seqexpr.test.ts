@@ -1,12 +1,5 @@
 /**
  * Tests for AS2 comma operator and sequence expression support.
- *
- * Documents the current parser behavior for comma-separated constructs:
- * multi-variable declarations, for-loop multi-init/update, void expressions,
- * and the comma operator as a sequence expression.
- *
- * NOTE: Multi-variable var declarations ARE supported (var x = 1, y = 2).
- * The comma operator as a standalone expression is NOT supported.
  */
 
 import { describe, it, expect } from "vitest";
@@ -25,13 +18,11 @@ function compilesOk(source: string): boolean {
   }
 }
 
-function compileError(source: string): string | null {
-  try {
-    compileAS2(source);
-    return null;
-  } catch (e: unknown) {
-    return e instanceof Error ? e.message : String(e);
+function containsByte(bytes: Uint8Array, b: number): boolean {
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === b) return true;
   }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -40,7 +31,6 @@ function compileError(source: string): string | null {
 
 describe("multi-variable declaration (var x = 1, y = 2)", () => {
   it("var x = 1, y = 2, z = 3 — parser supports multi-var declarations", () => {
-    // The AS2 parser supports multiple comma-separated declarators per var statement.
     expect(compilesOk("var x = 1, y = 2, z = 3;")).toBe(true);
   });
 
@@ -58,10 +48,8 @@ describe("multi-variable declaration (var x = 1, y = 2)", () => {
 // ---------------------------------------------------------------------------
 
 describe("for loop multi-init (for (var i = 0, j = 0; ...))", () => {
-  it("for (var i = 0, j = 0; i < 10; i++) — parser does not support multi-init; throws parse error", () => {
-    const err = compileError("for (var i = 0, j = 0; i < 10; i++) {}");
-    expect(err).not.toBeNull();
-    expect(err).toMatch(/unexpected token.*,|expected.*got.*,/i);
+  it("for (var i = 0, j = 0; i < 10; i++) compiles", () => {
+    expect(compilesOk("for (var i = 0, j = 0; i < 10; i++) {}")).toBe(true);
   });
 
   it("for loop with single init var still compiles", () => {
@@ -74,10 +62,8 @@ describe("for loop multi-init (for (var i = 0, j = 0; ...))", () => {
 // ---------------------------------------------------------------------------
 
 describe("for loop comma in update (for (...; ...; i++, j++))", () => {
-  it("for (var i = 0; i < 10; i++, j++) — parser does not support comma in update; throws parse error", () => {
-    const err = compileError("for (var i = 0; i < 10; i++, j++) {}");
-    expect(err).not.toBeNull();
-    expect(err).toMatch(/expected.*\).*got.*,|unexpected.*,/i);
+  it("for (var i = 0; i < 10; i++, j++) compiles", () => {
+    expect(compilesOk("for (var i = 0; i < 10; i++, j++) {}")).toBe(true);
   });
 
   it("for loop with single update expression compiles fine", () => {
@@ -112,11 +98,13 @@ describe("void expression", () => {
 // ---------------------------------------------------------------------------
 
 describe("comma operator as sequence expression", () => {
-  it("(a++, b++, c) — parser does not support comma operator; throws parse error", () => {
-    // The comma operator is not supported in the AS2 parser expression grammar.
-    const err = compileError("(a++, b++, c);");
-    expect(err).not.toBeNull();
-    expect(err).toMatch(/expected.*\).*got.*,|unexpected.*,/i);
+  it("(a++, b++, c) compiles", () => {
+    expect(compilesOk("(a++, b++, c);")).toBe(true);
+  });
+
+  it("(a++, b++) emits ActionPop (0x17) to discard intermediate results", () => {
+    const bytes = compileAS2("(a++, b++);");
+    expect(containsByte(bytes, 0x17)).toBe(true);
   });
 
   it("simple comma-free expressions in parens compile fine", () => {

@@ -9,7 +9,7 @@ export type NodeType =
   | 'ExprStmt' | 'Block'
   | 'BinaryExpr' | 'UnaryExpr' | 'PostfixExpr'
   | 'CallExpr' | 'NewExpr' | 'MemberExpr' | 'IndexExpr'
-  | 'TernaryExpr'
+  | 'TernaryExpr' | 'SequenceExpr'
   | 'Literal' | 'Identifier' | 'ArrayLiteral' | 'ObjectLiteral'
   | 'PropertyDef'
   | 'RegExpLiteral';
@@ -76,7 +76,7 @@ export interface IfStmt extends NodeBase {
 
 export interface ForStmt extends NodeBase {
   readonly type: 'ForStmt';
-  readonly init: VarDecl | ExprStmt | null;
+  readonly init: VarDecl | Block | ExprStmt | null;
   readonly test: Expression | null;
   readonly update: Expression | null;
   readonly body: Statement;
@@ -208,6 +208,11 @@ export interface TernaryExpr extends NodeBase {
   readonly alternate: Expression;
 }
 
+export interface SequenceExpr extends NodeBase {
+  readonly type: 'SequenceExpr';
+  readonly expressions: Expression[];
+}
+
 export interface Literal extends NodeBase {
   readonly type: 'Literal';
   readonly value: string | number | boolean | null;
@@ -257,5 +262,5 @@ export interface RegExpLiteral extends NodeBase {
 
 export type Expression =
   | BinaryExpr | UnaryExpr | AssignExpr | CallExpr | NewExpr
-  | MemberExpr | IndexExpr | TernaryExpr | Literal | Identifier
+  | MemberExpr | IndexExpr | TernaryExpr | SequenceExpr | Literal | Identifier
   | FunctionDecl | ArrayLiteral | ObjectLiteral | RegExpLiteral;
