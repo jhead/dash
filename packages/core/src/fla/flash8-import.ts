@@ -32,7 +32,7 @@ import type { AdjustColorFilter, ConvolutionFilter, FlashFilter } from "../engin
 import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
-import { createSymbol, createSound, createBitmap } from "../model/library.js";
+import { createSymbol, createSound, createBitmap, createSymbolLinkage } from "../model/library.js";
 import { decodeMediaAudio, decodeMediaBitmap, decodedBitmapToDataUri } from "./media.js";
 import {
   parseFla8Contents,
@@ -1024,7 +1024,17 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     const name = meta?.name && meta.name.length > 0 ? meta.name : `Symbol ${s.num}`;
     const symbolType: SymbolType =
       meta?.typeByte != null ? (SYMBOL_TYPES[meta.typeByte] ?? "movieclip") : "movieclip";
-    const shell = createSymbol(name, symbolType);
+    // Populate AS2 linkage from the Contents stream data.
+    // NOTE: className is not yet decoded from the Symbol N CPicPage stream;
+    // it is left as "" until that parsing is implemented.
+    const linkage = createSymbolLinkage({
+      linkageIdentifier: meta?.linkageIdentifier ?? "",
+      exportForActionScript: meta?.exportForActionScript ?? false,
+      exportInFirstFrame: meta?.exportInFirstFrame ?? false,
+      exportForRuntimeSharing: meta?.exportForRuntimeSharing ?? false,
+      importForRuntimeSharing: meta?.importForRuntimeSharing ?? false,
+    });
+    const shell = createSymbol(name, symbolType, { linkage });
     shells.set(s.num, shell);
     symbolIdByIndex.set(s.num, shell.id);
   }

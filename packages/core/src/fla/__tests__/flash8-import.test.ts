@@ -170,6 +170,18 @@ describe("real Flash 8 .fla import (flash8-nested-textfields.fla)", () => {
     const target = symbols(doc).find((s) => s.id === instances[0]!.symbolId);
     expect(target?.symbolType).toBe("movieclip");
   });
+
+  it("symbols have SymbolLinkage populated (no linkage set = defaults)", () => {
+    // These symbols have no AS2 linkage set in Flash, so all linkage fields
+    // should be their defaults (empty strings, false booleans).
+    const syms = symbols(doc);
+    for (const sym of syms) {
+      expect(sym.linkage).toBeDefined();
+      // All symbols in this fixture have no linkage set:
+      expect(sym.linkage.linkageIdentifier).toBe("");
+      expect(sym.linkage.exportForActionScript).toBe(false);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

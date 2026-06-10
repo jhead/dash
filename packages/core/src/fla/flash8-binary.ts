@@ -240,6 +240,28 @@ export interface Fla8SymbolInfo {
   readonly name: string;
   /** 0=graphic 1=button 2=movieclip per observed Contents records */
   readonly typeByte: number | null;
+  /**
+   * AS2 linkage identifier (for attachMovie / ExportAssets).
+   * Stored as a BomString immediately after the typeByte in the Contents stream.
+   * Empty string when not set.
+   */
+  readonly linkageIdentifier: string;
+  /**
+   * Whether the symbol is exported for ActionScript (Export for ActionScript checkbox).
+   * Stored as a UI8 boolean flag after the linkageIdentifier BomString.
+   * The exact byte order in the Contents stream (observed from real Flash 8 binaries):
+   *   BomString: linkageIdentifier
+   *   UI8: exportInFirstFrame (defaults to 1; only meaningful when exportForActionScript=1)
+   *   UI8: exportForActionScript
+   *   UI8: exportForRuntimeSharing
+   *   UI8: importForRuntimeSharing
+   * NOTE: className (the AS2 class name) is NOT present in the Contents stream;
+   * it would be in the Symbol N stream's CPicPage afterData, which is not yet parsed.
+   */
+  readonly exportForActionScript: boolean;
+  readonly exportInFirstFrame: boolean;
+  readonly exportForRuntimeSharing: boolean;
+  readonly importForRuntimeSharing: boolean;
 }
 
 export interface Fla8SoundInfo {
@@ -2188,6 +2210,18 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
   }
 
   // -- symbol library table ---------------------------------------------------
+  // Contents stream layout for each symbol entry (unicode/MX2004+ format):
+  //   length-prefixed UTF-16 stream name ("Symbol N")
+  //   BomString: library display name
+  //   UI32LE: stream number (redundant cross-check)
+  //   UI8: symbol type (0=graphic, 1=button, 2=movieclip)
+  //   BomString: linkageIdentifier (empty when not set)
+  //   UI8: exportInFirstFrame (1 = export in first frame, Flash default)
+  //   UI8: exportForActionScript (1 = exported for AS2 attachMovie/new ClassName)
+  //   UI8: exportForRuntimeSharing
+  //   UI8: importForRuntimeSharing
+  // NOTE: className (AS2 class name) is NOT in the Contents stream; it lives in
+  // the Symbol N stream's CPicPage afterData (not yet decoded).
   const symbols = new Map<number, Fla8SymbolInfo>();
   if (unicode) {
     for (const prefix of ["Symbol ", "S "]) {
@@ -2214,9 +2248,46 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
           if (s) {
             const name = s.value;
             if (name.length > 0 && !name.includes("/") && !name.startsWith(".\\")) {
+              // s.end+0..3 = UI32LE stream number (skip — we already know num)
+              // s.end+4    = typeByte
               let typeByte: number | null = null;
               if (s.end + 5 <= bytes.length) typeByte = bytes[s.end + 4]!;
-              if (!symbols.has(num)) symbols.set(num, { name, typeByte });
+
+              // s.end+5: BomString linkageIdentifier (if present)
+              let linkageIdentifier = "";
+              let exportInFirstFrame = false;
+              let exportForActionScript = false;
+              let exportForRuntimeSharing = false;
+              let importForRuntimeSharing = false;
+              if (s.end + 5 < bytes.length) {
+                const lnk = tryReadBomStringAt(bytes, s.end + 5);
+                if (lnk !== null) {
+                  linkageIdentifier = lnk.value;
+                  // After linkageIdentifier: 4 boolean bytes
+                  // Observed layout from real Flash 8 binaries (no-linkage case):
+                  //   [0]=exportInFirstFrame(1=default), [1]=exportForActionScript(0),
+                  //   [2]=exportForRuntimeSharing(0),    [3]=importForRuntimeSharing(0)
+                  const flagBase = lnk.end;
+                  if (flagBase + 4 <= bytes.length) {
+                    exportInFirstFrame     = bytes[flagBase]!     !== 0;
+                    exportForActionScript  = bytes[flagBase + 1]! !== 0;
+                    exportForRuntimeSharing = bytes[flagBase + 2]! !== 0;
+                    importForRuntimeSharing = bytes[flagBase + 3]! !== 0;
+                  }
+                }
+              }
+
+              if (!symbols.has(num)) {
+                symbols.set(num, {
+                  name,
+                  typeByte,
+                  linkageIdentifier,
+                  exportForActionScript,
+                  exportInFirstFrame,
+                  exportForRuntimeSharing,
+                  importForRuntimeSharing,
+                });
+              }
             }
             break;
           }

@@ -109,6 +109,13 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   FAT yields garbage.
 - Versioning: every record starts with a per-version schema byte
   (`FlaFormatVersion.java` in flacomdoc has the full table); gate field reads on it.
+- **Symbol AS2 linkage lives in the Contents stream** (task 0863): immediately after the
+  typeByte for each symbol entry, the Contents stream carries:
+  `BomString(linkageIdentifier)` then 4 UI8 flags: `exportInFirstFrame`, `exportForActionScript`,
+  `exportForRuntimeSharing`, `importForRuntimeSharing`. The `className` (AS2 class name) is NOT
+  in the Contents stream; it likely lives in the Symbol N CPicPage afterData (not yet decoded).
+  Without a fixture FLA that has non-empty linkage, byte-order of the 4 flag bytes is best-effort
+  — verified only for the "no linkage" case where all flags read as expected (exportForAS=false).
 
 ### SWF encoding
 
