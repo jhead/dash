@@ -176,6 +176,7 @@ function FrameCell({
   state,
   tweenState,
   isPlayhead,
+  isSelected,
   isFirstInTweenSpan,
   label,
   onClick,
@@ -184,16 +185,20 @@ function FrameCell({
   state: FrameState;
   tweenState: TweenState;
   isPlayhead: boolean;
+  /** True if this frame is within the shift-selected range */
+  isSelected?: boolean;
   /** True for the start keyframe of a tween so we can render the arrow */
   isFirstInTweenSpan?: boolean;
   label?: string;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
   // Background color logic: tween state overrides normal span color
   let bg: string;
   if (isPlayhead) {
     bg = "rgba(255,40,40,0.55)";
+  } else if (isSelected) {
+    bg = "rgba(50,100,220,0.55)";  // Flash 8 blue highlight for selected frames
   } else if (tweenState === "motion-tween") {
     bg = "#3a4a70";  // blue-purple band for motion tween
   } else if (tweenState === "broken-tween") {
@@ -515,6 +520,14 @@ export function Timeline({
     layerId: string;
     frameIndex: number;
   } | null>(null);
+  // Track shift-selected frame range for bulk operations
+  const [selectedFrameRange, setSelectedFrameRange] = useState<{
+    layerId: string;
+    start: number;
+    end: number;
+  } | null>(null);
+  // Anchor frame for shift-click range selection (the frame first clicked without shift)
+  const anchorFrameRef = useRef<{ layerId: string; frame: number } | null>(null);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
@@ -764,18 +777,24 @@ export function Timeline({
           onTimelineChange(clearTween(timeline, _layerId, frameIndex));
           setSelectedKeyframe(null);
           break;
-        case "copy-frames":
-          onCopyFrames?.(frameIndex, frameIndex);
+        case "copy-frames": {
+          const rangeStart = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.start : frameIndex;
+          const rangeEnd = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.end : frameIndex;
+          onCopyFrames?.(rangeStart, rangeEnd);
           break;
-        case "cut-frames":
-          onCutFrames?.(frameIndex, frameIndex);
+        }
+        case "cut-frames": {
+          const rangeStart = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.start : frameIndex;
+          const rangeEnd = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.end : frameIndex;
+          onCutFrames?.(rangeStart, rangeEnd);
           break;
+        }
         case "paste-frames":
           onPasteFrames?.(frameIndex);
           break;
       }
     },
-    [contextMenu, timeline, onTimelineChange, onSetShapeTween, onCopyFrames, onCutFrames, onPasteFrames]
+    [contextMenu, timeline, onTimelineChange, onSetShapeTween, onCopyFrames, onCutFrames, onPasteFrames, selectedFrameRange]
   );
 
   // Layer rename
@@ -1179,21 +1198,41 @@ export function Timeline({
                   const isFirstInTweenSpan =
                     (tweenSt === "motion-tween" && kf?.tweenType === "motion") ||
                     (tweenSt === "shape-tween" && kf?.tweenType === "shape");
+                  // Determine if this frame is within the selected range
+                  const isSelected =
+                    selectedFrameRange !== null &&
+                    selectedFrameRange.layerId === layer.id &&
+                    fi >= selectedFrameRange.start &&
+                    fi <= selectedFrameRange.end;
                   return (
                     <FrameCell
                       key={fi}
                       state={state}
                       tweenState={tweenSt}
                       isPlayhead={fi === currentFrame}
+                      isSelected={isSelected}
                       isFirstInTweenSpan={isFirstInTweenSpan}
                       label={kf?.label || undefined}
-                      onClick={() => {
+                      onClick={(e) => {
                         onFrameChange(fi);
                         // Select keyframe for ease editing if it's a tween keyframe
                         if (kf?.tweenType === "motion" || kf?.tweenType === "shape") {
                           setSelectedKeyframe({ layerId: layer.id, frameIndex: fi });
                         } else {
                           setSelectedKeyframe(null);
+                        }
+                        // Shift-click: extend selection range from anchor
+                        if (e.shiftKey && anchorFrameRef.current && anchorFrameRef.current.layerId === layer.id) {
+                          const anchor = anchorFrameRef.current.frame;
+                          setSelectedFrameRange({
+                            layerId: layer.id,
+                            start: Math.min(anchor, fi),
+                            end: Math.max(anchor, fi),
+                          });
+                        } else {
+                          // Plain click: set anchor and single-frame selection
+                          anchorFrameRef.current = { layerId: layer.id, frame: fi };
+                          setSelectedFrameRange({ layerId: layer.id, start: fi, end: fi });
                         }
                       }}
                       onContextMenu={(e) => openContextMenu(e, layer.id, fi)}
