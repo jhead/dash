@@ -19,6 +19,9 @@ import type {
   TextDisplayObject,
   Fill,
   SolidStroke,
+  StrokeCap,
+  StrokeJoin,
+  StrokeStyleType,
   Color,
   TextAlign,
   TextType,
@@ -332,6 +335,35 @@ function DocumentView({
 // Shape view
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Stroke style option constants
+// ---------------------------------------------------------------------------
+
+const STROKE_LINE_STYLES: { value: StrokeStyleType; label: string }[] = [
+  { value: "solid", label: "Solid" },
+  { value: "dashed", label: "Dashed" },
+  { value: "dotted", label: "Dotted" },
+  { value: "ragged", label: "Ragged" },
+  { value: "stippled", label: "Stipple" },
+  { value: "hatched", label: "Hatched" },
+];
+
+const CAP_OPTIONS: { value: StrokeCap; label: string; title: string }[] = [
+  { value: "none", label: "⊓", title: "No cap (butt)" },
+  { value: "round", label: "◯", title: "Round cap" },
+  { value: "square", label: "□", title: "Square cap" },
+];
+
+const JOIN_OPTIONS: { value: StrokeJoin; label: string; title: string }[] = [
+  { value: "miter", label: "⌐", title: "Miter join" },
+  { value: "round", label: "◡", title: "Round join" },
+  { value: "bevel", label: "⌐̈", title: "Bevel join" },
+];
+
+// ---------------------------------------------------------------------------
+// ShapeView
+// ---------------------------------------------------------------------------
+
 function ShapeView({
   obj,
   onUpdateObject,
@@ -349,6 +381,10 @@ function ShapeView({
   const strokeHex = stroke ? colorToHex(stroke.color) : "#000000";
   const hasStroke = stroke !== null;
   const strokeWeight = stroke?.width ?? 1;
+  const strokeCaps: StrokeCap = stroke?.caps ?? "round";
+  const strokeJoints: StrokeJoin = stroke?.joints ?? "round";
+  const strokeMiterLimit = stroke?.miterLimit ?? 3;
+  const strokeLineStyle: StrokeStyleType = stroke?.style?.type ?? "solid";
 
   const updateAllPaths = useCallback(
     (patchFn: (f: Fill | undefined, s: SolidStroke | undefined) => { fill?: Fill | null; stroke?: SolidStroke | null }) => {
@@ -429,6 +465,35 @@ function ShapeView({
     }));
   }, [strokeHex, updateAllPaths]);
 
+  const handleStrokeLineStyleChange = useCallback((styleType: StrokeStyleType) => {
+    updateAllPaths((_f, s) => {
+      if (!s) return {};
+      let newStyle: SolidStroke["style"];
+      switch (styleType) {
+        case "solid":    newStyle = { type: "solid" }; break;
+        case "dashed":   newStyle = { type: "dashed", dashLength: 8, gapLength: 4 }; break;
+        case "dotted":   newStyle = { type: "dotted", dotSpacing: 6 }; break;
+        case "ragged":   newStyle = { type: "ragged", roughness: "normal", pattern: "simple", waveHeight: "wavy" }; break;
+        case "stippled": newStyle = { type: "stippled", dotSize: "medium", dotVariation: "oneSize", density: "dense" }; break;
+        case "hatched":  newStyle = { type: "hatched", hatchThickness: "thin", space: "close", jiggle: "none", rotate: "none", curve: "straight", length: "equal" }; break;
+        default:         newStyle = { type: "solid" };
+      }
+      return { stroke: { ...s, style: newStyle } };
+    });
+  }, [updateAllPaths]);
+
+  const handleStrokeCapChange = useCallback((cap: StrokeCap) => {
+    updateAllPaths((_f, s) => s ? { stroke: { ...s, caps: cap } } : {});
+  }, [updateAllPaths]);
+
+  const handleStrokeJoinChange = useCallback((join: StrokeJoin) => {
+    updateAllPaths((_f, s) => s ? { stroke: { ...s, joints: join } } : {});
+  }, [updateAllPaths]);
+
+  const handleMiterLimitChange = useCallback((v: number) => {
+    updateAllPaths((_f, s) => s ? { stroke: { ...s, miterLimit: v } } : {});
+  }, [updateAllPaths]);
+
   return (
     <div style={S.body}>
       {/* Fill */}
@@ -491,6 +556,82 @@ function ShapeView({
         />
         <span style={S.label}>px</span>
       </div>
+
+      {hasStroke && (
+        <>
+          <div style={S.separator} />
+
+          {/* Line style */}
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Style:</span>
+            <select
+              style={S.select}
+              value={strokeLineStyle}
+              onChange={(e) => handleStrokeLineStyleChange(e.target.value as StrokeStyleType)}
+            >
+              {STROKE_LINE_STYLES.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={S.separator} />
+
+          {/* Cap style */}
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Cap:</span>
+            {CAP_OPTIONS.map(({ value, label, title }) => (
+              <button
+                key={value}
+                style={{
+                  ...S.toggleBtn,
+                  background: strokeCaps === value ? "#1a6ea8" : "#333",
+                  color: strokeCaps === value ? "#fff" : "#999",
+                  fontFamily: "monospace",
+                }}
+                onClick={() => handleStrokeCapChange(value)}
+                title={title}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={S.separator} />
+
+          {/* Join style */}
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Join:</span>
+            {JOIN_OPTIONS.map(({ value, label, title }) => (
+              <button
+                key={value}
+                style={{
+                  ...S.toggleBtn,
+                  background: strokeJoints === value ? "#1a6ea8" : "#333",
+                  color: strokeJoints === value ? "#fff" : "#999",
+                  fontFamily: "monospace",
+                }}
+                onClick={() => handleStrokeJoinChange(value)}
+                title={title}
+              >
+                {label}
+              </button>
+            ))}
+            {strokeJoints === "miter" && (
+              <>
+                <span style={S.label}>Limit:</span>
+                <NumInput
+                  value={strokeMiterLimit}
+                  min={1}
+                  max={60}
+                  style={{ width: 36 }}
+                  onChange={handleMiterLimitChange}
+                />
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
