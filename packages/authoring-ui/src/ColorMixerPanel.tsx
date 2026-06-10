@@ -452,6 +452,18 @@ export function ColorMixerPanel({
     if (fill?.type === "radial-gradient") return fill.focalPoint;
     return 0;
   });
+  const [gradientSpreadMode, setGradientSpreadMode] = useState<"extend" | "reflect" | "repeat">(() => {
+    if (fill?.type === "linear-gradient" || fill?.type === "radial-gradient") {
+      return fill.spreadMode ?? "extend";
+    }
+    return "extend";
+  });
+  const [gradientInterpolation, setGradientInterpolation] = useState<"rgb" | "linearRGB">(() => {
+    if (fill?.type === "linear-gradient" || fill?.type === "radial-gradient") {
+      return fill.interpolation ?? "rgb";
+    }
+    return "rgb";
+  });
 
   // Bitmap fill state
   const [selectedBitmapId, setSelectedBitmapId] = useState<string | null>(() => {
@@ -475,6 +487,8 @@ export function ColorMixerPanel({
       setGradientStops([...fill.stops]);
       if (fill.type === "linear-gradient") setGradientAngle(fill.angle);
       if (fill.type === "radial-gradient") setFocalPoint(fill.focalPoint);
+      setGradientSpreadMode(fill.spreadMode ?? "extend");
+      setGradientInterpolation(fill.interpolation ?? "rgb");
     }
     if (fill?.type === "bitmap") {
       setSelectedBitmapId((fill as BitmapFill).bitmapId);
@@ -522,16 +536,18 @@ export function ColorMixerPanel({
       newStops: GradientColorStop[],
       newAngle: number,
       newFocalPoint: number,
-      type: ColorType
+      type: ColorType,
+      spreadMode: "extend" | "reflect" | "repeat" = gradientSpreadMode,
+      interpolation: "rgb" | "linearRGB" = gradientInterpolation,
     ) => {
       if (!onFillChange) return;
       if (type === "linearGradient") {
-        onFillChange({ type: "linear-gradient", stops: newStops, angle: newAngle });
+        onFillChange({ type: "linear-gradient", stops: newStops, angle: newAngle, spreadMode, interpolation });
       } else if (type === "radialGradient") {
-        onFillChange({ type: "radial-gradient", stops: newStops, focalPoint: newFocalPoint });
+        onFillChange({ type: "radial-gradient", stops: newStops, focalPoint: newFocalPoint, spreadMode, interpolation });
       }
     },
-    [onFillChange]
+    [onFillChange, gradientSpreadMode, gradientInterpolation]
   );
 
   const handleStopRatioChange = useCallback(
@@ -609,6 +625,22 @@ export function ColorMixerPanel({
       commitGradient(gradientStops, gradientAngle, fp, colorType);
     },
     [commitGradient, gradientStops, gradientAngle, colorType]
+  );
+
+  const handleSpreadModeChange = useCallback(
+    (mode: "extend" | "reflect" | "repeat") => {
+      setGradientSpreadMode(mode);
+      commitGradient(gradientStops, gradientAngle, focalPoint, colorType, mode, gradientInterpolation);
+    },
+    [commitGradient, gradientStops, gradientAngle, focalPoint, colorType, gradientInterpolation]
+  );
+
+  const handleInterpolationChange = useCallback(
+    (interp: "rgb" | "linearRGB") => {
+      setGradientInterpolation(interp);
+      commitGradient(gradientStops, gradientAngle, focalPoint, colorType, gradientSpreadMode, interp);
+    },
+    [commitGradient, gradientStops, gradientAngle, focalPoint, colorType, gradientSpreadMode]
   );
 
   // -------------------------------------------------------------------------
@@ -1218,6 +1250,41 @@ export function ColorMixerPanel({
               }
             />
           </div>
+        )}
+
+        {/* Gradient overflow (spread mode) and color space controls */}
+        {isGradient && activeTarget === "fill" && (
+          <>
+            <div style={{ ...rowStyle, marginTop: "4px" }}>
+              <span style={{ ...labelStyle, width: "auto", marginRight: "4px", color: "#aaa", fontSize: "11px" }}>
+                Overflow:
+              </span>
+              <select
+                style={{ ...selectStyle, flex: 1 }}
+                value={gradientSpreadMode}
+                onChange={(e) => handleSpreadModeChange(e.target.value as "extend" | "reflect" | "repeat")}
+                title="Gradient overflow / spread mode"
+              >
+                <option value="extend">Extend</option>
+                <option value="reflect">Reflect</option>
+                <option value="repeat">Repeat</option>
+              </select>
+            </div>
+            <div style={{ ...rowStyle, marginTop: "2px" }}>
+              <span style={{ ...labelStyle, width: "auto", marginRight: "4px", color: "#aaa", fontSize: "11px" }}>
+                Color space:
+              </span>
+              <select
+                style={{ ...selectStyle, flex: 1 }}
+                value={gradientInterpolation}
+                onChange={(e) => handleInterpolationChange(e.target.value as "rgb" | "linearRGB")}
+                title="Gradient color interpolation space"
+              >
+                <option value="rgb">Normal (sRGB)</option>
+                <option value="linearRGB">Linear RGB</option>
+              </select>
+            </div>
+          </>
         )}
       </div>
     </div>

@@ -55,6 +55,21 @@ export interface LinearGradientFill {
   readonly stops: readonly GradientColorStop[];
   /** Gradient angle in degrees (0 = left-to-right). */
   readonly angle: number;
+  /**
+   * Gradient spread mode — controls what happens outside the 0–255 ratio range.
+   *   "extend"  (default) — pad: extend the terminal stop colors.
+   *   "reflect" — mirror the gradient alternately.
+   *   "repeat"  — tile the gradient.
+   * Maps to the SWF GRADIENT SpreadMode bits[7:6]: 0=pad, 1=reflect, 2=repeat.
+   */
+  readonly spreadMode?: "extend" | "reflect" | "repeat";
+  /**
+   * Color interpolation mode for the gradient.
+   *   "rgb"       (default) — interpolate in sRGB space.
+   *   "linearRGB" — interpolate in linear RGB space.
+   * Maps to the SWF GRADIENT InterpolationMode bits[5:4]: 0=normal, 1=linearRGB.
+   */
+  readonly interpolation?: "rgb" | "linearRGB";
 }
 
 export interface RadialGradientFill {
@@ -62,6 +77,21 @@ export interface RadialGradientFill {
   readonly stops: readonly GradientColorStop[];
   /** Focal point offset: -1 to 1 along the x-axis of the gradient. */
   readonly focalPoint: number;
+  /**
+   * Gradient spread mode — controls what happens outside the 0–255 ratio range.
+   *   "extend"  (default) — pad: extend the terminal stop colors.
+   *   "reflect" — mirror the gradient alternately.
+   *   "repeat"  — tile the gradient.
+   * Maps to the SWF GRADIENT SpreadMode bits[7:6]: 0=pad, 1=reflect, 2=repeat.
+   */
+  readonly spreadMode?: "extend" | "reflect" | "repeat";
+  /**
+   * Color interpolation mode for the gradient.
+   *   "rgb"       (default) — interpolate in sRGB space.
+   *   "linearRGB" — interpolate in linear RGB space.
+   * Maps to the SWF GRADIENT InterpolationMode bits[5:4]: 0=normal, 1=linearRGB.
+   */
+  readonly interpolation?: "rgb" | "linearRGB";
 }
 
 export interface BitmapFill {

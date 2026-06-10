@@ -501,12 +501,18 @@ export function encodeDefineShape4(
       writeGradientMatrix(bw, a, b, c, d, tx, ty);
 
       // Write GRADIENT record
+      // SWF GRADIENT first byte layout (per SWF19 §2.4.2.4 and Ruffle read.rs):
+      //   bits[7:6] SpreadMode:        0=pad/extend, 1=reflect, 2=repeat
+      //   bits[5:4] InterpolationMode: 0=normal RGB, 1=linear RGB
+      //   bits[3:0] NumGradients
       const gradBw = new BitWriter();
-      const spreadMode = 0;        // pad
-      const interpolationMode = 0; // normal RGB
+      const spreadModeVal =
+        fill.spreadMode === "reflect" ? 1 :
+        fill.spreadMode === "repeat"  ? 2 : 0;
+      const interpolationModeVal = fill.interpolation === "linearRGB" ? 1 : 0;
       const numGradients = Math.min(fill.stops.length, 15);
-      gradBw.writeBits(spreadMode, 2);
-      gradBw.writeBits(interpolationMode, 2);
+      gradBw.writeBits(spreadModeVal, 2);
+      gradBw.writeBits(interpolationModeVal, 2);
       gradBw.writeBits(numGradients, 4);
       // Flush so stop bytes are byte-aligned
       gradBw.flushBits();

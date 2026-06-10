@@ -297,6 +297,12 @@ function renderShape(
       for (const stop of path.fill.stops) {
         grad.addColorStop(stop.ratio / 255, colorToCss(stop.color));
       }
+      // TODO(0810): spreadMode "reflect"/"repeat" require manual tiling via
+      // clipping + repeated gradient draws — Canvas 2D has no native equivalent.
+      // Currently renders as "extend" (pad) for all modes.
+      // TODO(0810): interpolation "linearRGB" requires the CSS Color Level 4
+      // `colorInterpolation` or `interpolateColorSpace` API, which is not yet
+      // widely supported. Currently renders in sRGB for both modes.
       ctx.fillStyle = grad;
       ctx.fill("nonzero");
     } else if (path.fill.type === "radial-gradient") {
@@ -315,6 +321,9 @@ function renderShape(
       for (const stop of path.fill.stops) {
         grad.addColorStop(stop.ratio / 255, colorToCss(stop.color));
       }
+      // TODO(0810): spreadMode "reflect"/"repeat" require manual tiling —
+      // Canvas 2D radialGradient has no native spread mode support.
+      // TODO(0810): interpolation "linearRGB" requires CSS interpolateColorSpace.
       ctx.fillStyle = grad;
       ctx.fill("nonzero");
     }
