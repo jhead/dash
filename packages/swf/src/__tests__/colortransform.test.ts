@@ -34,6 +34,7 @@ import type {
   Symbol,
   ShapeDisplayObject,
   SymbolInstance,
+  TextDisplayObject,
 } from "@flash/core";
 
 // ---------------------------------------------------------------------------
@@ -296,6 +297,69 @@ describe("PlaceObject2 HasColorTransform flag", () => {
       [makeScene([makeLayer([makeFrame([instance])])])],
       [sym]
     );
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const placeTags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+    const withCxform = placeTags.find(
+      (t) => (t.body[0] & FLAG_HAS_COLOR_TRANSFORM) !== 0
+    );
+    expect(withCxform).toBeUndefined();
+  });
+
+  it("text field with tint colorEffect emits CXFormWithAlpha (HasColorTransform) in PlaceObject2", () => {
+    const textObj: TextDisplayObject = {
+      type: "text",
+      id: "text-1",
+      x: 10,
+      y: 10,
+      width: 200,
+      height: 30,
+      text: "Hello",
+      textType: "static",
+      fontFamily: "Arial",
+      fontSize: 12,
+      bold: false,
+      italic: false,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      align: "left",
+      multiline: false,
+      wordWrap: false,
+      colorEffect: { type: "tint", tintColor: "#ff0000", tintAmount: 100 },
+    };
+    const doc = makeDoc([makeScene([makeLayer([makeFrame([textObj])])])]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const placeTags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+    expect(placeTags.length).toBeGreaterThan(0);
+    const withCxform = placeTags.find(
+      (t) => (t.body[0] & FLAG_HAS_COLOR_TRANSFORM) !== 0
+    );
+    expect(withCxform).toBeDefined();
+    // HasCharacter (0x02) and HasMatrix (0x04) should also be set
+    expect(withCxform!.body[0] & 0x06).toBe(0x06);
+  });
+
+  it("text field without colorEffect does NOT set HasColorTransform (0x08)", () => {
+    const textObj: TextDisplayObject = {
+      type: "text",
+      id: "text-2",
+      x: 10,
+      y: 10,
+      width: 200,
+      height: 30,
+      text: "Hello",
+      textType: "static",
+      fontFamily: "Arial",
+      fontSize: 12,
+      bold: false,
+      italic: false,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      align: "left",
+      multiline: false,
+      wordWrap: false,
+      // no colorEffect
+    };
+    const doc = makeDoc([makeScene([makeLayer([makeFrame([textObj])])])]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
     const placeTags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);

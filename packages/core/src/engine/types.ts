@@ -496,6 +496,11 @@ export interface TextDisplayObject {
   readonly scrollable?: boolean;
   /** AS2 instance name — makes the field accessible as _root.<name> in scripts. */
   readonly instanceName?: string;
+  /**
+   * Flash 8 color effect applied to this text field's placement.
+   * Encodes a CXFormWithAlpha in the PlaceObject2 tag.
+   */
+  readonly colorEffect?: ColorEffect;
   /** Flash 8 filters applied to this object. */
   readonly filters?: readonly FlashFilter[];
   /**

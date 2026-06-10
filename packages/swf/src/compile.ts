@@ -721,8 +721,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
    * Returns null when there is no active color effect.
    */
   function colorEffectKey(displayObj: DisplayObject): string | null {
-    if (displayObj.type !== "instance") return null;
-    const ce = (displayObj as import("@flash/core").SymbolInstance).colorEffect;
+    if (displayObj.type !== "instance" && displayObj.type !== "text") return null;
+    const ce = (displayObj as import("@flash/core").SymbolInstance | import("@flash/core").TextDisplayObject).colorEffect;
     if (!ce || ce.type === "none") return null;
     return JSON.stringify(ce);
   }
@@ -1423,10 +1423,25 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
-                const placeBody = textName && textName.length > 0
-                  ? encodePlaceObject2WithName(charId, depth, x, y, textName)
-                  : encodePlaceObject2ForText(charId, depth, x, y);
-                writer.writeTag(Tag.PlaceObject2, placeBody);
+                // Check for color effect (CXFormWithAlpha)
+                const cxform = displayObj.colorEffect
+                  ? colorEffectToCXForm(displayObj.colorEffect)
+                  : null;
+                if (cxform !== null) {
+                  const placeBody = encodePlaceObject2WithCXForm(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    cxform
+                  );
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                } else {
+                  const placeBody = textName && textName.length > 0
+                    ? encodePlaceObject2WithName(charId, depth, x, y, textName)
+                    : encodePlaceObject2ForText(charId, depth, x, y);
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                }
               }
               // If the text field has non-zero letterSpacing and a named instance,
               // emit a DoAction that calls setTextFormat to apply the spacing at runtime.
@@ -1661,15 +1676,32 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
             } else if (displayObj.type === "text") {
               const charId = objCharIdMap.get(objId)!;
-              const placeBody = encodePlaceObject2Move(
-                charId,
-                depth,
-                x,
-                y,
-                undefined,
-                prev!.objId !== objId
-              );
-              writer.writeTag(Tag.PlaceObject2, placeBody);
+              const cxform = displayObj.colorEffect
+                ? colorEffectToCXForm(displayObj.colorEffect)
+                : null;
+              if (cxform !== null) {
+                // Move + HasMatrix + HasColorTransform (no HasCharacter unless replacing)
+                const placeBody = encodePlaceObject2WithCXForm(
+                  charId,
+                  depth,
+                  x,
+                  y,
+                  cxform,
+                  undefined,
+                  true  // move = true
+                );
+                writer.writeTag(Tag.PlaceObject2, placeBody);
+              } else {
+                const placeBody = encodePlaceObject2Move(
+                  charId,
+                  depth,
+                  x,
+                  y,
+                  undefined,
+                  prev!.objId !== objId
+                );
+                writer.writeTag(Tag.PlaceObject2, placeBody);
+              }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
               const hasAlpha =
