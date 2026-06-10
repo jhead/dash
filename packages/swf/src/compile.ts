@@ -9,7 +9,7 @@
  *  - RemoveObject2 when objects leave the display list
  *  - ShowFrame per frame, End
  */
-import type { BitmapItem, DisplayObject, FlashDocument, FontItem, SoundItem, Symbol } from "@flash/core";
+import type { BitmapFill, BitmapItem, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans } from "@flash/core";
 import { deflateSync } from "fflate";
 import { Tag } from "./tags.js";
@@ -250,6 +250,90 @@ function topoSortSymbols(symbols: Symbol[]): Symbol[] {
 }
 
 // ---------------------------------------------------------------------------
+// Bitmap fill helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Collect all unique BitmapFill.bitmapId values referenced in a shape's paths.
+ */
+function collectBitmapFillIds(shape: Shape): string[] {
+  const ids = new Set<string>();
+  for (const path of shape.paths) {
+    if (path.fill?.type === "bitmap") {
+      ids.add((path.fill as BitmapFill).bitmapId);
+    }
+  }
+  return Array.from(ids);
+}
+
+/**
+ * For a shape that may contain BitmapFill paths, emit DefineBits tags for any
+ * referenced bitmaps not yet emitted, and return a map from library item id
+ * to SWF character ID.  Returns undefined if the shape has no bitmap fills.
+ */
+function emitBitmapFillTags(
+  shape: Shape,
+  doc: FlashDocument,
+  writer: SwfWriter,
+  emittedBitmapCharIds: Map<string, number>,
+  options?: CompileOptions
+): Map<string, number> | undefined {
+  const ids = collectBitmapFillIds(shape);
+  if (ids.length === 0) return undefined;
+
+  for (const bitmapId of ids) {
+    if (emittedBitmapCharIds.has(bitmapId)) continue;
+    const bitmapItem = doc.library.items.find(
+      (item): item is BitmapItem =>
+        item.itemType === "bitmap" && item.id === bitmapId
+    );
+    if (!bitmapItem) continue;
+
+    const pixelData = options?.bitmapPixels?.get(bitmapItem.id);
+    if (pixelData && bitmapItem.compressionType === "lossless") {
+      const charId = writer.nextCharId();
+      const losslessTag = encodeDefineBitsLossless2(
+        charId,
+        pixelData.width,
+        pixelData.height,
+        pixelData.pixels
+      );
+      writer.writeRaw(losslessTag);
+      emittedBitmapCharIds.set(bitmapId, charId);
+    } else if (bitmapItem.dataUri) {
+      const imageBytes = dataUriToBytes(bitmapItem.dataUri);
+      if (imageBytes.length > 0) {
+        const charId = writer.nextCharId();
+        const pixelDataForAlpha = options?.bitmapPixels?.get(bitmapItem.id);
+        const hasTransparency =
+          bitmapItem.compressionType === "photo" &&
+          pixelDataForAlpha !== undefined &&
+          pixelDataForAlpha.pixels.some((_, i) => i % 4 === 0 && pixelDataForAlpha.pixels[i] < 255);
+
+        if (hasTransparency && pixelDataForAlpha) {
+          const pixelCount = pixelDataForAlpha.width * pixelDataForAlpha.height;
+          const alphaBytes = new Uint8Array(pixelCount);
+          for (let i = 0; i < pixelCount; i++) {
+            alphaBytes[i] = pixelDataForAlpha.pixels[i * 4];
+          }
+          const jpeg3Tag = encodeDefineBitsJpeg3(charId, imageBytes, alphaBytes);
+          writer.writeRaw(jpeg3Tag);
+        } else {
+          const imgPayload = new Uint8Array(2 + imageBytes.length);
+          imgPayload[0] = charId & 0xff;
+          imgPayload[1] = (charId >> 8) & 0xff;
+          imgPayload.set(imageBytes, 2);
+          writer.writeTag(Tag.DefineBitsJPEG2, imgPayload);
+        }
+        emittedBitmapCharIds.set(bitmapId, charId);
+      }
+    }
+  }
+
+  return emittedBitmapCharIds;
+}
+
+// ---------------------------------------------------------------------------
 // Compile options
 // ---------------------------------------------------------------------------
 
@@ -480,6 +564,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   // Map from display-object id → stable SWF character ID (global across scenes)
   const objCharIdMap = new Map<string, number>();
 
+  // Map from BitmapFill.bitmapId (library item id) → SWF character ID.
+  // Tracks bitmaps that have already been emitted as DefineBits tags so we
+  // don't duplicate them when multiple shapes reference the same bitmap fill.
+  const emittedBitmapFillCharIds = new Map<string, number>();
+
   // Font pre-pass: collect all unique font faces from TextDisplayObjects across
   // all scenes and emit font definition tags before any DefineEditText tags that
   // reference them.  Key = fontKey(name, bold, italic) → SWF character ID.
@@ -615,9 +704,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         for (const obj of frame.displayObjects) {
           if (objCharIdMap.has(obj.id)) continue;
           if (obj.type === "shape" || obj.type === "drawing-object") {
+            // Emit DefineBits tags for any bitmap fills referenced by this shape
+            emitBitmapFillTags(obj.shape, doc, writer, emittedBitmapFillCharIds, options);
             const charId = writer.nextCharId();
             objCharIdMap.set(obj.id, charId);
-            const shapeBody = encodeDefineShape4(charId, obj.shape);
+            const shapeBody = encodeDefineShape4(
+              charId,
+              obj.shape,
+              emittedBitmapFillCharIds.size > 0 ? emittedBitmapFillCharIds : undefined
+            );
             writer.writeTag(Tag.DefineShape4, shapeBody);
           } else if (obj.type === "text") {
             const charId = writer.nextCharId();

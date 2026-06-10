@@ -279,10 +279,17 @@ function joinStyleBits(join: string): number {
  * The shape's coordinate space is pixel-relative; the shape is placed at the
  * origin for the character definition — placement is handled by PlaceObject2.
  *
- * @param charId   SWF character ID for this shape
- * @param shape    The vector shape to encode
+ * @param charId          SWF character ID for this shape
+ * @param shape           The vector shape to encode
+ * @param bitmapCharIdMap Optional map from BitmapFill.bitmapId (library item id) to
+ *                        the SWF character ID of the corresponding DefineBits tag.
+ *                        Required for shapes that contain bitmap fills.
  */
-export function encodeDefineShape4(charId: number, shape: Shape): Uint8Array {
+export function encodeDefineShape4(
+  charId: number,
+  shape: Shape,
+  bitmapCharIdMap?: Map<string, number>
+): Uint8Array {
   const bw = new BitWriter();
 
   // --- UI16 character ID ---
@@ -333,10 +340,11 @@ export function encodeDefineShape4(charId: number, shape: Shape): Uint8Array {
   const pathStrokeIndex: number[] = [];
 
   for (const path of shape.paths) {
-    // Fill — support solid, linear-gradient, radial-gradient
+    // Fill — support solid, linear-gradient, radial-gradient, bitmap
     if (path.fill) {
       const fill = path.fill;
-      // For deduplication: use JSON key for gradients, color-key for solid
+      // For deduplication: use JSON key for gradients, color-key for solid,
+      // bitmapId for bitmap fills
       let found: FillEntry | undefined;
       if (fill.type === "solid") {
         const c = fill.color;
@@ -347,6 +355,15 @@ export function encodeDefineShape4(charId: number, shape: Shape): Uint8Array {
             f.fill.color.g === c.g &&
             f.fill.color.b === c.b &&
             f.fill.color.a === c.a
+        );
+      } else if (fill.type === "bitmap") {
+        // Deduplicate bitmap fills by id + repeat + smooth
+        found = fills.find(
+          (f) =>
+            f.fill.type === "bitmap" &&
+            f.fill.bitmapId === fill.bitmapId &&
+            f.fill.repeat === fill.repeat &&
+            f.fill.smooth === fill.smooth
         );
       } else {
         // Gradient fills are not deduplicated (each path gets its own entry)
@@ -401,6 +418,25 @@ export function encodeDefineShape4(charId: number, shape: Shape): Uint8Array {
       bw.writeUI8(fill.color.g);
       bw.writeUI8(fill.color.b);
       bw.writeUI8(fill.color.a);
+    } else if (fill.type === "bitmap") {
+      // Bitmap fill types (SWF spec §2.4.2.2):
+      //   0x40 = repeating bitmap, no smoothing
+      //   0x41 = clipped bitmap, no smoothing
+      //   0x42 = repeating bitmap, smoothed
+      //   0x43 = clipped bitmap, smoothed
+      let fillTypeByte: number;
+      if (fill.repeat && fill.smooth) fillTypeByte = 0x42;
+      else if (fill.repeat && !fill.smooth) fillTypeByte = 0x40;
+      else if (!fill.repeat && fill.smooth) fillTypeByte = 0x43;
+      else fillTypeByte = 0x41;
+      bw.writeUI8(fillTypeByte);
+
+      // BitmapId: UI16 — the SWF character ID of the DefineBits tag
+      const bitmapCharId = bitmapCharIdMap?.get(fill.bitmapId) ?? 0xffff;
+      bw.writeUI16LE(bitmapCharId);
+
+      // BitmapMatrix: identity (bitmap pixel space = shape space at 1px = 20 twips)
+      writeBitmapMatrix(bw, 20, 0, 0);
     } else {
       // Gradient fill: linear (0x10) or radial (0x12) / focal radial (0x13)
       const isLinear = fill.type === "linear-gradient";

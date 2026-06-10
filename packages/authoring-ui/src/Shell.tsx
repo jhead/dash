@@ -4105,6 +4105,7 @@ export function Shell(): React.ReactElement {
           onFillColorChange={handleMixerFillColorChange}
           onStrokeColorChange={handleMixerStrokeColorChange}
           onFillChange={handleFillChange}
+          bitmapItems={bitmapLibraryItems}
           onClose={() => setColorMixerVisible(false)}
         />
       )}

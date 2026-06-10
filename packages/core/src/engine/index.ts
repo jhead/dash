@@ -1,6 +1,7 @@
 // Types
 export type {
   BitmapDisplayObject,
+  BitmapFill,
   ClipAction,
   Color,
   ColorEffect,

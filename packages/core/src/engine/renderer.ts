@@ -222,14 +222,16 @@ function traceShapePath(
  * Renders a Shape's paths.  Fills are drawn first (all paths), then strokes
  * (all paths), following Flash's compositing convention.
  *
- * @param offsetX  X translation for the shape's display-object position.
- * @param offsetY  Y translation for the shape's display-object position.
+ * @param offsetX    X translation for the shape's display-object position.
+ * @param offsetY    Y translation for the shape's display-object position.
+ * @param imageCache Optional cache for resolving BitmapFill images by library item id.
  */
 function renderShape(
   ctx: CanvasRenderingContext2D,
   shape: Shape,
   offsetX: number,
-  offsetY: number
+  offsetY: number,
+  imageCache?: Map<string, HTMLImageElement>
 ): void {
   ctx.save();
   ctx.translate(offsetX, offsetY);
@@ -246,6 +248,28 @@ function renderShape(
       // Use "nonzero" winding rule so that overlapping same-colour paths
       // rendered in merge-drawing mode unite naturally.
       ctx.fill("nonzero");
+    } else if (path.fill.type === "bitmap") {
+      // Bitmap fill — look up the image in the cache and use createPattern
+      const img = imageCache?.get(path.fill.bitmapId);
+      if (img && img.complete && img.naturalWidth > 0) {
+        const repeatMode = path.fill.repeat ? "repeat" : "no-repeat";
+        const pattern = ctx.createPattern(img, repeatMode);
+        if (pattern) {
+          if (path.fill.smooth) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+          } else {
+            ctx.imageSmoothingEnabled = false;
+          }
+          ctx.fillStyle = pattern;
+          ctx.fill("nonzero");
+          ctx.imageSmoothingEnabled = true; // restore default
+        }
+      } else {
+        // Image not loaded yet — fill with a checkerboard placeholder
+        ctx.fillStyle = "rgba(128,128,128,0.4)";
+        ctx.fill("nonzero");
+      }
     } else if (path.fill.type === "linear-gradient") {
       // Compute bounding box for gradient coordinates
       const pts = [path.start, ...path.segments.map((s) => s.to)];
@@ -603,10 +627,10 @@ function renderDisplayObject(
           ctx.translate(obj.x, obj.y);
           ctx.rotate((rotation * Math.PI) / 180);
           ctx.scale(scaleX, scaleY);
-          renderShape(ctx, obj.shape, 0, 0);
+          renderShape(ctx, obj.shape, 0, 0, imageCache);
           ctx.restore();
         } else {
-          renderShape(ctx, obj.shape, obj.x, obj.y);
+          renderShape(ctx, obj.shape, obj.x, obj.y, imageCache);
         }
       };
       if (filters.length > 0) {
@@ -619,7 +643,7 @@ function renderDisplayObject(
 
     case "drawing-object": {
       const filters = obj.filters ?? [];
-      const drawShape = () => renderShape(ctx, obj.shape, obj.x, obj.y);
+      const drawShape = () => renderShape(ctx, obj.shape, obj.x, obj.y, imageCache);
       if (filters.length > 0) {
         applyFilters(ctx, filters, drawShape);
       } else {

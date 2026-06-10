@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import type { Fill, GradientColorStop } from "@flash/core";
+import type { BitmapFill, BitmapItem, Fill, GradientColorStop } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -17,12 +17,14 @@ export interface ColorMixerPanelProps {
   strokeColor: string;      // CSS hex
   fillAlpha: number;        // 0-100
   strokeAlpha: number;      // 0-100
-  /** Full fill object — used to read/write gradient fills */
+  /** Full fill object — used to read/write gradient/bitmap fills */
   fill?: Fill | null;
   onFillColorChange: (color: string, alpha: number) => void;
   onStrokeColorChange: (color: string, alpha: number) => void;
-  /** Called when a gradient fill is created/updated */
+  /** Called when a gradient or bitmap fill is created/updated */
   onFillChange?: (fill: Fill | null) => void;
+  /** Library bitmap items available for bitmap fill selection */
+  bitmapItems?: readonly BitmapItem[];
   onClose: () => void;
 }
 
@@ -241,13 +243,14 @@ const modeBtnStyle = (active: boolean): React.CSSProperties => ({
 // ColorType derived from Fill
 // ---------------------------------------------------------------------------
 
-type ColorType = "solid" | "none" | "linearGradient" | "radialGradient";
+type ColorType = "solid" | "none" | "linearGradient" | "radialGradient" | "bitmap";
 
 function fillToColorType(fill: Fill | null | undefined): ColorType {
   if (!fill) return "none";
   if (fill.type === "solid") return "solid";
   if (fill.type === "linear-gradient") return "linearGradient";
   if (fill.type === "radial-gradient") return "radialGradient";
+  if (fill.type === "bitmap") return "bitmap";
   return "solid";
 }
 
@@ -423,6 +426,7 @@ export function ColorMixerPanel({
   onFillColorChange,
   onStrokeColorChange,
   onFillChange,
+  bitmapItems,
   onClose,
 }: ColorMixerPanelProps): React.ReactElement {
   // Which color target is active
@@ -449,6 +453,20 @@ export function ColorMixerPanel({
     return 0;
   });
 
+  // Bitmap fill state
+  const [selectedBitmapId, setSelectedBitmapId] = useState<string | null>(() => {
+    if (fill?.type === "bitmap") return (fill as BitmapFill).bitmapId;
+    return null;
+  });
+  const [bitmapRepeat, setBitmapRepeat] = useState<boolean>(() => {
+    if (fill?.type === "bitmap") return (fill as BitmapFill).repeat;
+    return true;
+  });
+  const [bitmapSmooth, setBitmapSmooth] = useState<boolean>(() => {
+    if (fill?.type === "bitmap") return (fill as BitmapFill).smooth;
+    return false;
+  });
+
   // Sync colorType when fill prop changes from outside
   useEffect(() => {
     const newType = fillToColorType(fill);
@@ -457,6 +475,11 @@ export function ColorMixerPanel({
       setGradientStops([...fill.stops]);
       if (fill.type === "linear-gradient") setGradientAngle(fill.angle);
       if (fill.type === "radial-gradient") setFocalPoint(fill.focalPoint);
+    }
+    if (fill?.type === "bitmap") {
+      setSelectedBitmapId((fill as BitmapFill).bitmapId);
+      setBitmapRepeat((fill as BitmapFill).repeat);
+      setBitmapSmooth((fill as BitmapFill).smooth);
     }
   }, [fill]);
 
@@ -739,8 +762,40 @@ export function ColorMixerPanel({
       }
       setSelectedStopIndex(0);
       commitGradient(initStops, gradientAngle, focalPoint, type);
+    } else if (type === "bitmap") {
+      // Pick the first available bitmap item if none selected yet
+      const initId = selectedBitmapId ?? bitmapItems?.[0]?.id ?? null;
+      setSelectedBitmapId(initId);
+      if (initId && onFillChange) {
+        onFillChange({ type: "bitmap", bitmapId: initId, repeat: bitmapRepeat, smooth: bitmapSmooth });
+      }
     }
   };
+
+  // -------------------------------------------------------------------------
+  // Bitmap fill helpers
+  // -------------------------------------------------------------------------
+
+  const handleBitmapSelect = useCallback((id: string) => {
+    setSelectedBitmapId(id);
+    if (onFillChange) {
+      onFillChange({ type: "bitmap", bitmapId: id, repeat: bitmapRepeat, smooth: bitmapSmooth });
+    }
+  }, [onFillChange, bitmapRepeat, bitmapSmooth]);
+
+  const handleBitmapRepeatChange = useCallback((repeat: boolean) => {
+    setBitmapRepeat(repeat);
+    if (selectedBitmapId && onFillChange) {
+      onFillChange({ type: "bitmap", bitmapId: selectedBitmapId, repeat, smooth: bitmapSmooth });
+    }
+  }, [onFillChange, selectedBitmapId, bitmapSmooth]);
+
+  const handleBitmapSmoothChange = useCallback((smooth: boolean) => {
+    setBitmapSmooth(smooth);
+    if (selectedBitmapId && onFillChange) {
+      onFillChange({ type: "bitmap", bitmapId: selectedBitmapId, repeat: bitmapRepeat, smooth });
+    }
+  }, [onFillChange, selectedBitmapId, bitmapRepeat]);
 
   // -------------------------------------------------------------------------
   // Color preview background (alpha checkerboard + color overlay)
@@ -875,10 +930,15 @@ export function ColorMixerPanel({
             <option value="none">None</option>
             <option value="linearGradient">Linear Gradient</option>
             <option value="radialGradient">Radial Gradient</option>
+            <option value="bitmap">Bitmap</option>
           </select>
-          {/* RGB/HSB toggle */}
-          <button style={modeBtnStyle(colorMode === "rgb")} onClick={() => setColorMode("rgb")}>R</button>
-          <button style={modeBtnStyle(colorMode === "hsb")} onClick={() => setColorMode("hsb")}>H</button>
+          {/* RGB/HSB toggle (hidden for bitmap) */}
+          {colorType !== "bitmap" && (
+            <>
+              <button style={modeBtnStyle(colorMode === "rgb")} onClick={() => setColorMode("rgb")}>R</button>
+              <button style={modeBtnStyle(colorMode === "hsb")} onClick={() => setColorMode("hsb")}>H</button>
+            </>
+          )}
         </div>
 
         {/* Gradient editor (shown for gradient types, fill target only) */}
@@ -891,6 +951,93 @@ export function ColorMixerPanel({
             onDeleteStop={handleDeleteStop}
             onStopRatioChange={handleStopRatioChange}
           />
+        )}
+
+        {/* Bitmap fill picker */}
+        {colorType === "bitmap" && activeTarget === "fill" && (
+          <div style={{ marginBottom: "6px" }}>
+            {/* Bitmap thumbnail grid */}
+            {bitmapItems && bitmapItems.length > 0 ? (
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: "4px",
+                maxHeight: "120px",
+                overflowY: "auto",
+                marginBottom: "6px",
+              }}>
+                {bitmapItems.map((item) => {
+                  const isSelected = item.id === selectedBitmapId;
+                  return (
+                    <div
+                      key={item.id}
+                      title={item.name}
+                      style={{
+                        border: isSelected ? "2px solid #1a6ea8" : "1px solid #555",
+                        borderRadius: "2px",
+                        cursor: "pointer",
+                        overflow: "hidden",
+                        background: "#1a1a1a",
+                        aspectRatio: "1",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                      onClick={() => handleBitmapSelect(item.id)}
+                    >
+                      {item.dataUri ? (
+                        <img
+                          src={item.dataUri}
+                          alt={item.name}
+                          style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: "9px", color: "#666", textAlign: "center", padding: "2px" }}>
+                          {item.name}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ color: "#888", fontSize: "11px", marginBottom: "6px" }}>
+                No bitmaps in library
+              </div>
+            )}
+            {/* Selected bitmap name */}
+            {selectedBitmapId && bitmapItems && (
+              <div style={{ fontSize: "10px", color: "#aaa", marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {bitmapItems.find((b) => b.id === selectedBitmapId)?.name ?? selectedBitmapId}
+              </div>
+            )}
+            {/* Repeat / Clip toggle */}
+            <div style={{ ...rowStyle, marginBottom: "4px" }}>
+              <span style={{ ...labelStyle, width: "auto", marginRight: "4px" }}>Tile</span>
+              <button
+                style={modeBtnStyle(bitmapRepeat)}
+                onClick={() => handleBitmapRepeatChange(true)}
+                title="Tiled (repeat)"
+              >
+                Tile
+              </button>
+              <button
+                style={modeBtnStyle(!bitmapRepeat)}
+                onClick={() => handleBitmapRepeatChange(false)}
+                title="Clipped (no repeat)"
+              >
+                Clip
+              </button>
+              <span style={{ ...labelStyle, width: "auto", marginLeft: "8px", marginRight: "4px" }}>Smooth</span>
+              <button
+                style={modeBtnStyle(bitmapSmooth)}
+                onClick={() => handleBitmapSmoothChange(!bitmapSmooth)}
+                title="Toggle smoothing"
+              >
+                {bitmapSmooth ? "On" : "Off"}
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Color sliders */}

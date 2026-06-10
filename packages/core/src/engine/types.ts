@@ -64,8 +64,24 @@ export interface RadialGradientFill {
   readonly focalPoint: number;
 }
 
+export interface BitmapFill {
+  readonly type: "bitmap";
+  /** Library item id of the BitmapItem to use. */
+  readonly bitmapId: string;
+  /**
+   * Whether the bitmap tiles (repeat) or is clipped (no-repeat).
+   * Corresponds to SWF fill types 0x40/0x42 (tiled) vs 0x41/0x43 (clipped).
+   */
+  readonly repeat: boolean;
+  /**
+   * Whether to use smoothed (bilinear) sampling.
+   * Corresponds to SWF fill types 0x42/0x43 (smoothed) vs 0x40/0x41 (aliased).
+   */
+  readonly smooth: boolean;
+}
+
 // Union for fill types
-export type Fill = SolidFill | LinearGradientFill | RadialGradientFill;
+export type Fill = SolidFill | LinearGradientFill | RadialGradientFill | BitmapFill;
 
 // ---------------------------------------------------------------------------
 // Strokes
