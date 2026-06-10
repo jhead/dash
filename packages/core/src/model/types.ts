@@ -247,7 +247,15 @@ export interface SymbolLinkage {
  * embedded as a BUTTONCONDACTION record in the DefineButton2 SWF tag.
  */
 export interface ButtonAction {
-  readonly event: "press" | "release" | "releaseOutside" | "rollOut" | "rollOver" | "dragOut" | "dragOver";
+  readonly event:
+    | "press"
+    | "release"
+    | "releaseOutside"
+    | "rollOut"
+    | "rollOver"
+    | "dragOut"
+    | "dragOver"
+    | { readonly keyPress: string };
   readonly script: string;
 }
 

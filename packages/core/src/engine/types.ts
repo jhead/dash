@@ -313,9 +313,21 @@ export interface ColorEffect {
  * Corresponds to an `on(event) {}` block in AS2.
  * Encoded as a BUTTONCONDACTION record in a per-instance DefineButton2 tag.
  * The same event vocabulary as the symbol-level ButtonAction in model/types.ts.
+ *
+ * The `event` field is either a plain event name string or `{ keyPress: key }`
+ * for `on(keyPress "<key>")` handlers. The key is stored as the character (e.g.
+ * `"a"`) or a named key string (e.g. `"<Left>"`, `"<Enter>"`).
  */
 export interface ButtonHandler {
-  readonly event: "press" | "release" | "releaseOutside" | "rollOut" | "rollOver" | "dragOut" | "dragOver";
+  readonly event:
+    | "press"
+    | "release"
+    | "releaseOutside"
+    | "rollOut"
+    | "rollOver"
+    | "dragOut"
+    | "dragOver"
+    | { readonly keyPress: string };
   /** AS2 source code for the handler body (not wrapped in on(){}). */
   readonly script: string;
 }

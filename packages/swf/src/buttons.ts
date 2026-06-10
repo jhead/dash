@@ -324,6 +324,12 @@ export function encodeDefineButton2(
   //   bit 4: releaseOutside   (outDownToIdle)
   //   bit 5: rollOut          (overUpToIdle)
   //   bit 6: rollOver         (overUpToOverDown / idleToOverUp)
+  //   bits 9-15: keyPress key code (0 = no key press condition)
+  //
+  // Key codes for named keys (matches Ruffle ButtonKeyCode enum):
+  //   Left=1, Right=2, Home=3, End=4, Insert=5, Delete=6, Backspace=8,
+  //   Return/Enter=13, Up=14, Down=15, PgUp=16, PgDown=17, Tab=18, Escape=19
+  //   Regular printable ASCII characters use their ASCII code (Space=32..~=126)
   // ---------------------------------------------------------------------------
   const eventBitMap: Record<string, number> = {
     release:        0x0001,
@@ -335,6 +341,64 @@ export function encodeDefineButton2(
     rollOver:       0x0040,
   };
 
+  /** Named key → SWF key code for on(keyPress '<Name>') handlers. */
+  const namedKeyCode: Record<string, number> = {
+    Left:      1,
+    Right:     2,
+    Home:      3,
+    End:       4,
+    Insert:    5,
+    Delete:    6,
+    Backspace: 8,
+    Enter:     13,
+    Return:    13,
+    Up:        14,
+    Down:      15,
+    PgUp:      16,
+    PageUp:    16,
+    PgDown:    17,
+    PageDown:  17,
+    Tab:       18,
+    Escape:    19,
+    Esc:       19,
+    Space:     32,
+  };
+
+  /**
+   * Convert a keyPress key string to the SWF ButtonKeyCode byte.
+   * Named keys are wrapped in angle brackets, e.g. '<Left>', '<Enter>'.
+   * Regular chars use their ASCII code directly.
+   * Returns 0 for unrecognized keys.
+   */
+  function keyPressKeyCode(key: string): number {
+    // Named key: '<Left>', '<Enter>', etc.
+    const namedMatch = key.match(/^<([^>]+)>$/);
+    if (namedMatch) {
+      return namedKeyCode[namedMatch[1]!] ?? 0;
+    }
+    // Single printable character
+    if (key.length === 1) {
+      const code = key.charCodeAt(0);
+      if (code >= 32 && code <= 126) return code;
+    }
+    return 0;
+  }
+
+  /**
+   * Compute the ConditionBits UI16 for a button handler event.
+   * For keyPress events, bits 9-15 hold the key code.
+   */
+  function conditionBitsForEvent(event: ButtonHandler["event"]): number {
+    if (typeof event === "object" && "keyPress" in event) {
+      const kc = keyPressKeyCode(event.keyPress);
+      if (kc === 0) return 0; // unrecognized key — skip
+      // Per SWF spec, keyPress condition fires with OVER_DOWN_TO_OVER_UP (bit 3) set
+      // plus the key code in bits 9-15. Ruffle checks: (kc << 9).
+      return (kc & 0x7f) << 9;
+    }
+    return eventBitMap[event as string] ?? 0;
+  }
+
   // Use instance-level overrides if provided, otherwise fall back to symbol-level actions.
   const actions = actionOverrides ?? symbol.buttonActions;
   const hasConditions = actions && actions.length > 0;
@@ -343,7 +407,7 @@ export function encodeDefineButton2(
     // Pre-compile all action bytecodes so we know sizes
     const compiledActions: Array<{ condBits: number; bytecode: Uint8Array }> = [];
     for (const action of actions!) {
-      const condBits = eventBitMap[action.event] ?? 0;
+      const condBits = conditionBitsForEvent(action.event);
       if (condBits === 0) continue; // unknown event — skip
       const bytecode = compileAS2(action.script);
       compiledActions.push({ condBits, bytecode });

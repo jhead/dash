@@ -188,11 +188,24 @@ function convertShape(el: Fla8Shape, bitmapIdByIndex: Map<number, string>): Disp
 // Matrix decomposition for symbol instances
 // ---------------------------------------------------------------------------
 
-function decompose(m: Fla8Matrix): { scaleX: number; scaleY: number; rotation: number } {
+function decompose(m: Fla8Matrix): { scaleX: number; scaleY: number; rotation: number; skewX: number; skewY: number } {
   const scaleX = Math.hypot(m.a, m.b) * (m.a < 0 && Math.abs(m.b) < EPS ? -1 : 1);
   const scaleY = Math.hypot(m.c, m.d) * (m.d < 0 && Math.abs(m.c) < EPS ? -1 : 1);
-  const rotation = (Math.atan2(m.b, m.a) * 180) / Math.PI;
-  return { scaleX: Math.abs(scaleX) < EPS ? 1 : scaleX, scaleY: Math.abs(scaleY) < EPS ? 1 : scaleY, rotation };
+  // skewY = rotation angle on the X-axis (how x-vector is rotated)
+  const skewYRad = Math.atan2(m.b, m.a);
+  // skewX = rotation angle on the Y-axis, independent of skewY
+  const skewXRad = Math.atan2(-m.c, m.d);
+  const rotation = (skewYRad * 180) / Math.PI;
+  // skewX in Flash convention: difference between the two axis angles (degrees)
+  const skewX = (skewXRad * 180) / Math.PI - rotation;
+  const skewY = 0; // skewY is baked into rotation; only delta (skewX) is extra
+  return {
+    scaleX: Math.abs(scaleX) < EPS ? 1 : scaleX,
+    scaleY: Math.abs(scaleY) < EPS ? 1 : scaleY,
+    rotation,
+    skewX: Math.abs(skewX) < EPS ? 0 : skewX,
+    skewY,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -248,8 +261,8 @@ export function parseClipActions(src: string): ClipAction[] {
   return actions;
 }
 
-/** FLA `on()` event keyword → ButtonHandler event name. */
-const BUTTON_EVENTS: Record<string, ButtonHandler["event"]> = {
+/** FLA `on()` plain event keyword → ButtonHandler event name (excluding keyPress). */
+const BUTTON_EVENTS: Record<string, Exclude<ButtonHandler["event"], { keyPress: string }>> = {
   press: "press",
   release: "release",
   releaseOutside: "releaseOutside",
@@ -260,18 +273,49 @@ const BUTTON_EVENTS: Record<string, ButtonHandler["event"]> = {
 };
 
 /**
+ * Map a single `on()` event token (which may be `keyPress '<key>'`) to a
+ * ButtonHandler event value. Returns `null` for unrecognized events.
+ *
+ * In the FLA the keyPress event is stored as two tokens: the identifier
+ * `keyPress` followed by a quoted string (single or double quotes), e.g.:
+ *   `keyPress '<Left>'`
+ *   `keyPress "a"`
+ * After the split(",") pass these arrive as a single string like
+ * `keyPress '<Left>'` because keyPress handlers are never comma-combined
+ * with other events in authoring tool output.
+ */
+function mapButtonEvent(ev: string): ButtonHandler["event"] | null {
+  // Check for keyPress '<key>' or keyPress "<key>"
+  const kpMatch = ev.match(/^keyPress\s+(['"])(.+)\1$/);
+  if (kpMatch) {
+    return { keyPress: kpMatch[2]! };
+  }
+  const mapped = BUTTON_EVENTS[ev];
+  return mapped ?? null;
+}
+
+/**
  * Parse the raw button instance script (concatenated `on(event){body}` blocks
  * that Flash stores verbatim in the FLA) into model ButtonHandler entries.
  * Brace-matching is used so handler bodies may contain nested blocks.
  * Multiple events on one block (`on(release,rollOver)`) are split into one
  * ButtonHandler per event. Unrecognized event keywords are skipped with a warning.
+ *
+ * Note: `on(keyPress '<key>')` handlers are never combined with other events
+ * (the Flash authoring tool always emits them as standalone blocks). The
+ * keyPress token and its string argument are captured together as one event
+ * token by the split-and-trim pass below.
  */
 export function parseButtonHandlers(src: string): ButtonHandler[] {
   const handlers: ButtonHandler[] = [];
+  // The regex captures everything inside on(...) including keyPress '<key>' strings.
+  // [^)']* won't work for keyPress since the key string contains quotes but not ')'.
+  // We use [^)]* (greedy, stops at first ')') which is correct because the key string
+  // uses '<' and '>' or regular chars — never an unquoted ')'.
   const re = /\bon\s*\(([^)]*)\)\s*\{/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
-    const events = m[1]!.split(",").map((e) => e.trim()).filter(Boolean);
+    const eventsStr = m[1]!;
     const bodyStart = re.lastIndex;
     // brace-match the body
     let depth = 1;
@@ -283,9 +327,23 @@ export function parseButtonHandlers(src: string): ButtonHandler[] {
     }
     const body = src.slice(bodyStart, i - 1).trim();
     re.lastIndex = i;
-    for (const ev of events) {
-      const mapped = BUTTON_EVENTS[ev];
-      if (!mapped) {
+
+    // Split on commas but be careful not to split inside a keyPress string.
+    // In practice, keyPress handlers are never comma-combined with other events,
+    // but we handle it defensively by treating the whole eventsStr as a single
+    // event token when it starts with 'keyPress'.
+    const trimmed = eventsStr.trim();
+    let eventTokens: string[];
+    if (/^keyPress\s+/.test(trimmed)) {
+      // Entire parenthetical content is a keyPress event — don't split on comma
+      eventTokens = [trimmed];
+    } else {
+      eventTokens = trimmed.split(",").map((e) => e.trim()).filter(Boolean);
+    }
+
+    for (const ev of eventTokens) {
+      const mapped = mapButtonEvent(ev);
+      if (mapped === null) {
         console.warn(`[FLA import] unknown on() button event "${ev}"; skipping handler`);
         continue;
       }
@@ -602,7 +660,7 @@ function convertElement(
         );
         return null;
       }
-      const { scaleX, scaleY, rotation } = decompose(el.matrix);
+      const { scaleX, scaleY, rotation, skewX, skewY } = decompose(el.matrix);
       const colorEffect = toColorEffect(el.colorEffect);
       const filters = toFlashFilters(el.filters);
       const blendMode = toBlendMode(el.blendMode);
@@ -619,6 +677,8 @@ function convertElement(
         scaleX,
         scaleY,
         rotation,
+        ...(skewX !== 0 ? { skewX } : {}),
+        ...(skewY !== 0 ? { skewY } : {}),
         ...(el.instanceName ? { instanceName: el.instanceName } : {}),
         ...(colorEffect ? { colorEffect } : {}),
         ...(filters.length > 0 ? { filters } : {}),
@@ -658,7 +718,7 @@ function convertElement(
         );
         return null;
       }
-      const { scaleX, scaleY, rotation } = decompose(el.matrix);
+      const { scaleX, scaleY, rotation, skewX: bitmapSkewX, skewY: bitmapSkewY } = decompose(el.matrix);
       const size = bitmapSizeByIndex.get(el.mediaId) ?? { width: 1, height: 1 };
       const bitmapFilters = toFlashFilters(el.filters);
       return {
@@ -672,6 +732,8 @@ function convertElement(
         scaleX,
         scaleY,
         rotation,
+        ...(bitmapSkewX !== 0 ? { skewX: bitmapSkewX } : {}),
+        ...(bitmapSkewY !== 0 ? { skewY: bitmapSkewY } : {}),
         ...(bitmapFilters.length > 0 ? { filters: bitmapFilters } : {}),
       };
     }
