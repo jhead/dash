@@ -1,5 +1,5 @@
 import type { Frame, Layer, Timeline } from "./types.js";
-import type { DisplayObject, ShapeDisplayObject } from "../engine/types.js";
+import type { DisplayObject, ShapeDisplayObject, SymbolInstance } from "../engine/types.js";
 import { interpolateTween, interpolateShapeTween } from "../tween/interpolate.js";
 import type { TweenTarget } from "../tween/types.js";
 import { layerFrameCount } from "./timeline.js";
@@ -132,6 +132,10 @@ export function findGuideLayerAbove(
  */
 function displayObjectToTweenTarget(obj: DisplayObject): TweenTarget {
   const shaped = obj as ShapeDisplayObject;
+  // Extract colorEffect from SymbolInstance if present
+  const colorEffect = (obj.type === "instance")
+    ? ((obj as SymbolInstance).colorEffect ?? null)
+    : null;
   return {
     x: shaped.x ?? 0,
     y: shaped.y ?? 0,
@@ -139,6 +143,7 @@ function displayObjectToTweenTarget(obj: DisplayObject): TweenTarget {
     scaleY: shaped.scaleY ?? 1,
     rotation: shaped.rotation ?? 0,
     alpha: 100,
+    colorEffect,
   };
 }
 
@@ -246,6 +251,11 @@ export function getTweenedFrame(
         }
       }
 
+      // Apply interpolated colorEffect back (only meaningful for SymbolInstance)
+      const interpolatedColorEffect = result.colorEffect !== undefined
+        ? result.colorEffect
+        : undefined;
+
       return {
         ...startObj,
         x,
@@ -253,6 +263,9 @@ export function getTweenedFrame(
         scaleX: result.scaleX,
         scaleY: result.scaleY,
         rotation,
+        ...(interpolatedColorEffect !== undefined
+          ? { colorEffect: interpolatedColorEffect ?? undefined }
+          : {}),
       } as DisplayObject;
     });
   } else {

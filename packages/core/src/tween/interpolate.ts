@@ -1,6 +1,7 @@
 import type { TweenConfig, TweenTarget } from "./types.js";
 import type {
   Color,
+  ColorEffect,
   CurveSegment,
   DisplayObject,
   Fill,
@@ -109,6 +110,141 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 /**
+ * Parse a CSS hex color string ("#rrggbb" or "#rrggbbaa") into {r, g, b} channels.
+ * Returns {r:0, g:0, b:0} for invalid/missing values.
+ */
+function parseHexColor(hex: string): { r: number; g: number; b: number } {
+  const clean = (hex ?? "#000000").replace(/^#/, "");
+  return {
+    r: parseInt(clean.slice(0, 2), 16) || 0,
+    g: parseInt(clean.slice(2, 4), 16) || 0,
+    b: parseInt(clean.slice(4, 6), 16) || 0,
+  };
+}
+
+/**
+ * Format {r, g, b} back into a CSS hex color string "#rrggbb".
+ */
+function toHexColor(r: number, g: number, b: number): string {
+  return "#" + [r, g, b]
+    .map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Interpolate between two ColorEffect values at normalized time t (0..1).
+ *
+ * Rules:
+ * - If both effects have the same type, interpolate the numeric fields.
+ * - If the types differ, or one side is null/undefined/"none":
+ *   - The "none" side is treated as the identity color effect for that type
+ *     (e.g., tintAmount=0, alpha=100, brightness=0, advanced at 100%/0).
+ *   - We interpolate toward/from the identity value.
+ * - Mismatched non-none types: snap to the "from" effect (no interpolation).
+ *
+ * Returns null (no effect) when the result is the identity transform.
+ */
+export function interpolateColorEffect(
+  from: ColorEffect | null | undefined,
+  to: ColorEffect | null | undefined,
+  t: number
+): ColorEffect | null {
+  // Normalize null/undefined/"none" to a sentinel
+  const fromType = (!from || from.type === "none") ? "none" : from.type;
+  const toType = (!to || to.type === "none") ? "none" : to.type;
+
+  // Both none → no color effect
+  if (fromType === "none" && toType === "none") return null;
+
+  // Determine the active effect type (at least one side is non-none)
+  const effectType = fromType !== "none" ? fromType : toType;
+
+  // If the types differ (and neither is none), snap to from — can't interpolate
+  if (fromType !== "none" && toType !== "none" && fromType !== toType) {
+    return from ?? null;
+  }
+
+  switch (effectType) {
+    case "brightness": {
+      const fromB = fromType === "brightness" ? (from!.brightness ?? 0) : 0;
+      const toB = toType === "brightness" ? (to!.brightness ?? 0) : 0;
+      const b = lerp(fromB, toB, t);
+      if (b === 0) return null;
+      return { type: "brightness", brightness: b };
+    }
+
+    case "tint": {
+      const fromP = fromType === "tint" ? (from!.tintAmount ?? 0) : 0;
+      const toP = toType === "tint" ? (to!.tintAmount ?? 0) : 0;
+      // Interpolate tintAmount
+      const p = lerp(fromP, toP, t);
+
+      // Interpolate tint color channels
+      const fromColor = fromType === "tint" ? parseHexColor(from!.tintColor ?? "#000000") : { r: 0, g: 0, b: 0 };
+      const toColor = toType === "tint" ? parseHexColor(to!.tintColor ?? "#000000") : { r: 0, g: 0, b: 0 };
+      const r = lerp(fromColor.r, toColor.r, t);
+      const g = lerp(fromColor.g, toColor.g, t);
+      const b = lerp(fromColor.b, toColor.b, t);
+
+      if (p === 0) return null;
+      return {
+        type: "tint",
+        tintAmount: p,
+        tintColor: toHexColor(r, g, b),
+      };
+    }
+
+    case "alpha": {
+      const fromA = fromType === "alpha" ? (from!.alpha ?? 100) : 100;
+      const toA = toType === "alpha" ? (to!.alpha ?? 100) : 100;
+      const a = lerp(fromA, toA, t);
+      // alpha=100 is identity, no transform needed
+      if (a >= 100) return null;
+      return { type: "alpha", alpha: a };
+    }
+
+    case "advanced": {
+      const fromRM = fromType === "advanced" ? (from!.redMult ?? 100) : 100;
+      const fromGM = fromType === "advanced" ? (from!.greenMult ?? 100) : 100;
+      const fromBM = fromType === "advanced" ? (from!.blueMult ?? 100) : 100;
+      const fromRO = fromType === "advanced" ? (from!.redOffset ?? 0) : 0;
+      const fromGO = fromType === "advanced" ? (from!.greenOffset ?? 0) : 0;
+      const fromBO = fromType === "advanced" ? (from!.blueOffset ?? 0) : 0;
+
+      const toRM = toType === "advanced" ? (to!.redMult ?? 100) : 100;
+      const toGM = toType === "advanced" ? (to!.greenMult ?? 100) : 100;
+      const toBM = toType === "advanced" ? (to!.blueMult ?? 100) : 100;
+      const toRO = toType === "advanced" ? (to!.redOffset ?? 0) : 0;
+      const toGO = toType === "advanced" ? (to!.greenOffset ?? 0) : 0;
+      const toBO = toType === "advanced" ? (to!.blueOffset ?? 0) : 0;
+
+      const rMult = lerp(fromRM, toRM, t);
+      const gMult = lerp(fromGM, toGM, t);
+      const bMult = lerp(fromBM, toBM, t);
+      const rOff = lerp(fromRO, toRO, t);
+      const gOff = lerp(fromGO, toGO, t);
+      const bOff = lerp(fromBO, toBO, t);
+
+      // Identity: mult=100, offset=0
+      if (rMult === 100 && gMult === 100 && bMult === 100 &&
+          rOff === 0 && gOff === 0 && bOff === 0) return null;
+      return {
+        type: "advanced",
+        redMult: rMult,
+        greenMult: gMult,
+        blueMult: bMult,
+        redOffset: rOff,
+        greenOffset: gOff,
+        blueOffset: bOff,
+      };
+    }
+
+    default:
+      return from ?? null;
+  }
+}
+
+/**
  * Interpolate between two keyframe states using Flash 8 easing.
  *
  * @param from         - Start keyframe TweenTarget
@@ -134,6 +270,8 @@ export function interpolateTween(
   const linearT = Math.max(0, Math.min(1, (frame - startFrame) / span));
   const t = applyEase(linearT, config.ease);
 
+  const colorEffect = interpolateColorEffect(from.colorEffect, to.colorEffect, t);
+
   return {
     x: lerp(from.x, to.x, t),
     y: lerp(from.y, to.y, t),
@@ -147,6 +285,7 @@ export function interpolateTween(
       config.motionRotateCount
     ),
     alpha: lerp(from.alpha, to.alpha, t),
+    colorEffect,
   };
 }
 

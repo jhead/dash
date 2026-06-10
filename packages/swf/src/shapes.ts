@@ -1042,15 +1042,23 @@ export function encodePlaceObject2WithCXForm(
     rotation?: number;
     skewX?: number;
     skewY?: number;
-  }
+  },
+  move = false
 ): Uint8Array {
   const bw = new BitWriter();
 
-  // PlaceFlagHasCharacter (0x02) | PlaceFlagHasMatrix (0x04) | PlaceFlagHasColorTransform (0x08) = 0x0E
-  bw.writeUI8(0x0e);
+  if (move) {
+    // PlaceFlagMove (0x01) | PlaceFlagHasMatrix (0x04) | PlaceFlagHasColorTransform (0x08) = 0x0D
+    bw.writeUI8(0x0d);
+  } else {
+    // PlaceFlagHasCharacter (0x02) | PlaceFlagHasMatrix (0x04) | PlaceFlagHasColorTransform (0x08) = 0x0E
+    bw.writeUI8(0x0e);
+  }
 
   bw.writeUI16LE(depth);
-  bw.writeUI16LE(charId);
+  if (!move) {
+    bw.writeUI16LE(charId);
+  }
 
   // Build matrix
   const m = composeMatrix({

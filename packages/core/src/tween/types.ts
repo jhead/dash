@@ -2,6 +2,8 @@
  * Types for Flash 8-style motion tween interpolation.
  */
 
+import type { ColorEffect } from "../engine/types.js";
+
 export interface TweenTarget {
   x: number;
   y: number;
@@ -9,7 +11,11 @@ export interface TweenTarget {
   scaleY: number;
   rotation: number;   // degrees
   alpha: number;      // 0–100
+  /** Optional color effect to interpolate (tint/brightness/alpha/advanced). */
+  colorEffect?: ColorEffect | null;
 }
+
+export type { ColorEffect };
 
 export interface TweenConfig {
   ease: number;        // −100 to 100 (Flash ease value)
