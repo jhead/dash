@@ -19,7 +19,8 @@ export type HistoryAction =
   | { type: "REPLACE"; nextDoc: FlashDocument }
   | { type: "COMMIT_DRAG"; preDragDoc: FlashDocument; finalDoc: FlashDocument }
   | { type: "UNDO" }
-  | { type: "REDO" };
+  | { type: "REDO" }
+  | { type: "CLEAR" };
 
 export function historyReducer(state: HistoryState, action: HistoryAction): HistoryState {
   switch (action.type) {
@@ -42,6 +43,9 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
       return historyUndo(state);
     case "REDO":
       return historyRedo(state);
+    case "CLEAR":
+      // Reset to initial state: keep present, clear past and future
+      return { past: [], present: state.present, future: [], maxSize: state.maxSize };
   }
 }
 
@@ -79,6 +83,12 @@ export interface UseHistoryResult {
   undoDepth: number;
   /** Number of entries in the redo stack (future snapshots). */
   redoDepth: number;
+  /** Past document snapshots (oldest first). Length equals undoDepth. */
+  past: readonly FlashDocument[];
+  /** Future document snapshots (next redo first). Length equals redoDepth. */
+  future: readonly FlashDocument[];
+  /** Clear all past and future history, keeping only the current document. */
+  clearHistory: () => void;
 }
 
 /**
@@ -109,6 +119,10 @@ export function useHistory(initial: FlashDocument): UseHistoryResult {
 
   const redoFn = useCallback(() => {
     dispatch({ type: "REDO" });
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    dispatch({ type: "CLEAR" });
   }, []);
 
   // Keyboard shortcut listener — bound to the DOM document.
@@ -145,5 +159,8 @@ export function useHistory(initial: FlashDocument): UseHistoryResult {
     canRedo: historyCanRedo(state),
     undoDepth: state.past.length,
     redoDepth: state.future.length,
+    past: state.past,
+    future: state.future,
+    clearHistory,
   };
 }

@@ -314,6 +314,10 @@ export interface MenuBarProps {
   movieExplorerVisible?: boolean;
   /** Called when View > Bandwidth Profiler (Ctrl+B) is activated. */
   onBandwidthProfiler?: () => void;
+  /** Called when Window > History (Ctrl+F10) is toggled. */
+  onHistoryPanelToggle?: () => void;
+  /** Whether the History panel is currently visible (for checkmark display). */
+  historyPanelVisible?: boolean;
   // Text menu callbacks
   /** Called when Text > Style > Bold (Ctrl+Shift+B) is activated. */
   onTextBold?: () => void;
@@ -410,6 +414,8 @@ export function MenuBar({
   onMovieExplorerToggle,
   movieExplorerVisible = false,
   onBandwidthProfiler,
+  onHistoryPanelToggle,
+  historyPanelVisible = false,
   onTextBold,
   onTextItalic,
   onTextUnderline,
@@ -766,6 +772,11 @@ export function MenuBar({
         {
           label: `${movieExplorerVisible ? "+ " : "  "}Movie Explorer  Ctrl+Alt+M`,
           action: () => { onMovieExplorerToggle?.(); },
+        },
+        {
+          label: `${historyPanelVisible ? "+ " : "  "}History  Ctrl+F10`,
+          action: () => { onHistoryPanelToggle?.(); },
+          separator: true,
         },
       ],
     },

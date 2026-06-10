@@ -125,10 +125,14 @@ import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
 import type { PublishSettings } from "./PublishSettingsDialog";
 import { BitmapPropertiesDialog } from "./BitmapPropertiesDialog";
+import { ExportGifDialog } from "./ExportGifDialog";
+import type { ExportGifOptions } from "./ExportGifDialog";
+import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import { generateHtmlWrapper, analyzeFrameSizes } from "@flash/swf";
 import type { FrameSizeReport } from "@flash/swf";
 import { BandwidthProfilerPanel } from "./BandwidthProfilerPanel";
 import { PanelGroup } from "./PanelGroup";
+import { HistoryPanel } from "./HistoryPanel";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
 import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
 
@@ -613,7 +617,7 @@ export function Shell(): React.ReactElement {
   // Single document owner — replaces scattered useState for timeline/library/etc.
   // ---------------------------------------------------------------------------
   const history = useHistory(_initialDoc);
-  const { doc, push: _rawPushDoc, replace: replaceDoc, commitDrag, undo, redo, canUndo, canRedo } = history;
+  const { doc, push: _rawPushDoc, replace: replaceDoc, commitDrag, undo, redo, canUndo, canRedo, past: historyPast, future: historyFuture, clearHistory } = history;
   // Track the latest doc in a ref so agent callbacks always see the most recent
   // value even before React re-renders after a pushDoc() call.
   const latestDocRef = useRef(doc);
@@ -909,6 +913,9 @@ export function Shell(): React.ReactElement {
   // Movie Explorer panel (Window > Movie Explorer, Ctrl+Alt+M)
   const [movieExplorerVisible, setMovieExplorerVisible] = useState(false);
 
+  // History panel (Window > History, Ctrl+F10)
+  const [historyPanelVisible, setHistoryPanelVisible] = useState(false);
+
   // Scene switcher inline panel (toggle near Timeline header)
   const [showScenes, setShowScenes] = useState(false);
 
@@ -961,6 +968,9 @@ export function Shell(): React.ReactElement {
 
   // Bitmap Properties dialog
   const [bitmapPropsItem, setBitmapPropsItem] = useState<BitmapItem | null>(null);
+
+  // Export GIF dialog
+  const [exportGifOpen, setExportGifOpen] = useState(false);
 
   // Bandwidth Profiler
   const [bandwidthProfilerVisible, setBandwidthProfilerVisible] = useState(false);
@@ -4116,6 +4126,37 @@ export function Shell(): React.ReactElement {
   }, [publishToBytes]);
 
   // ---------------------------------------------------------------------------
+  // History panel — jump to a specific step
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Jump to an arbitrary step in the history list.
+   * Index 0 = Initial State, index 1..past.length = past steps,
+   * index past.length = current state (no-op).
+   * Calls undo() or redo() as many times as needed.
+   */
+  const handleJumpToHistory = useCallback(
+    (targetIndex: number) => {
+      const currentIndex = historyPast.length;
+      if (targetIndex === currentIndex) return; // already there
+      if (targetIndex < currentIndex) {
+        // Need to undo (currentIndex - targetIndex) times
+        const steps = currentIndex - targetIndex;
+        for (let i = 0; i < steps; i++) {
+          undo();
+        }
+      } else {
+        // Need to redo (targetIndex - currentIndex) times
+        const steps = targetIndex - currentIndex;
+        for (let i = 0; i < steps; i++) {
+          redo();
+        }
+      }
+    },
+    [historyPast.length, undo, redo]
+  );
+
+  // ---------------------------------------------------------------------------
   // Export Image / Export Movie
   // ---------------------------------------------------------------------------
 
@@ -4191,12 +4232,18 @@ export function Shell(): React.ReactElement {
 
   /**
    * File > Export Movie...
-   * Exports all frames as a numbered PNG sequence (frame_0001.png, frame_0002.png, ...).
-   * TODO: Add animated GIF export via a GIF encoder library (e.g., gif.js or gifenc).
+   * Opens the ExportGifDialog to let the user choose format (PNG sequence or animated GIF).
    */
   const handleExportMovie = useCallback(() => {
-    // Compute total frame count across all layers
-    const maxFrame = Math.max(
+    setExportGifOpen(true);
+  }, []);
+
+  /**
+   * Compute the total frame count across all layers.
+   * Extracted helper used by both export paths.
+   */
+  const computeMaxFrame = useCallback((): number => {
+    return Math.max(
       ...timeline.layers.map((l) => {
         if (l.frames.length === 0) return 1;
         const lastKf = [...l.frames].sort((a, b) => b.index - a.index)[0];
@@ -4204,16 +4251,78 @@ export function Shell(): React.ReactElement {
       }),
       1
     );
-    for (let fi = 0; fi < maxFrame; fi++) {
-      const dataURL = renderFrameToDataURL(fi, "png");
-      const base64 = dataURL.replace(/^data:image\/png;base64,/, "");
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "image/png" });
-      downloadBlob(frameFilename(fi, "png"), blob);
-    }
-  }, [renderFrameToDataURL, timeline.layers, downloadBlob]);
+  }, [timeline.layers]);
+
+  /**
+   * Perform the actual export once the user confirms the ExportGifDialog.
+   */
+  const handleExportGifConfirm = useCallback(
+    (options: ExportGifOptions) => {
+      setExportGifOpen(false);
+      const maxFrame = computeMaxFrame();
+
+      if (options.format === "png-sequence") {
+        // Original PNG sequence path
+        for (let fi = 0; fi < maxFrame; fi++) {
+          const dataURL = renderFrameToDataURL(fi, "png");
+          const base64 = dataURL.replace(/^data:image\/png;base64,/, "");
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "image/png" });
+          downloadBlob(frameFilename(fi, "png"), blob);
+        }
+        return;
+      }
+
+      // Animated GIF path
+      void (async () => {
+        const w = docProperties.width;
+        const h = docProperties.height;
+        const gif = GIFEncoder();
+        // Repeat: 0 = loop forever; n > 0 = gifenc does not natively encode finite
+        // loop counts via NETSCAPE2.0 (it only writes the extension once on the first
+        // frame). We pass 0 for "loop forever" and -1 (no extension) otherwise.
+        const repeat = options.loopForever ? 0 : -1;
+
+        for (let fi = 0; fi < maxFrame; fi++) {
+          // Render the frame to a data URL and decode to RGBA bytes
+          const dataURL = renderFrameToDataURL(fi, "png");
+          const img = new Image();
+          img.src = dataURL;
+          await new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+          });
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(img, 0, 0);
+          const { data } = ctx.getImageData(0, 0, w, h);
+
+          const palette = quantize(data, options.maxColors);
+          const index = applyPalette(data, palette);
+
+          gif.writeFrame(index, w, h, {
+            palette,
+            delay: options.frameDelay,
+            repeat: fi === 0 ? repeat : undefined,
+          });
+        }
+
+        gif.finish();
+        const buffer = gif.bytes();
+        downloadBlob("movie.gif", new Blob([buffer], { type: "image/gif" }));
+      })();
+    },
+    [
+      computeMaxFrame,
+      renderFrameToDataURL,
+      downloadBlob,
+      docProperties.width,
+      docProperties.height,
+    ]
+  );
 
   const handleTestMovie = useCallback(() => {
     void (async () => {
@@ -4806,6 +4915,8 @@ export function Shell(): React.ReactElement {
         behaviorsPanelVisible={behaviorsPanelVisible}
         onMovieExplorerToggle={() => setMovieExplorerVisible((v) => !v)}
         movieExplorerVisible={movieExplorerVisible}
+        onHistoryPanelToggle={() => setHistoryPanelVisible((v) => !v)}
+        historyPanelVisible={historyPanelVisible}
         onBandwidthProfiler={handleBandwidthProfiler}
         onTextBold={handleTextBold}
         onTextItalic={handleTextItalic}
@@ -5622,6 +5733,26 @@ export function Shell(): React.ReactElement {
         />
       )}
 
+      {/* History panel (Window > History, Ctrl+F10) */}
+      {historyPanelVisible && (
+        <div
+          style={{
+            position: "fixed",
+            top: "60px",
+            right: "260px",
+            zIndex: 2000,
+          }}
+        >
+          <HistoryPanel
+            past={historyPast}
+            future={historyFuture}
+            onJumpTo={handleJumpToHistory}
+            onClear={clearHistory}
+            onClose={() => setHistoryPanelVisible(false)}
+          />
+        </div>
+      )}
+
       {/* Bandwidth Profiler panel */}
       {bandwidthProfilerVisible && bandwidthProfilerReport && (
         <BandwidthProfilerPanel
@@ -5630,6 +5761,14 @@ export function Shell(): React.ReactElement {
           onClose={() => setBandwidthProfilerVisible(false)}
         />
       )}
+
+      {/* Export GIF / Export Movie dialog (File > Export Movie) */}
+      <ExportGifDialog
+        open={exportGifOpen}
+        frameRate={docProperties.frameRate}
+        onConfirm={handleExportGifConfirm}
+        onClose={() => setExportGifOpen(false)}
+      />
 
       {/* Sound Envelope Edit dialog */}
       {envelopeDialogOpen && envelopeDialogTarget && (() => {
