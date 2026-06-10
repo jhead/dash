@@ -1,0 +1,10 @@
+{
+  "id": "0706-fix-as2-compiler-member-target-assignment-obj-pr",
+  "title": "Fix AS2 compiler: member-target assignment (obj.prop = v) emits ActionGetMember instead of ActionSetMember",
+  "description": "FIXED (commit 526d6f0). Root cause was far bigger than reported: the compiler's AVM1 opcode table had 15 values that did not match the SWF spec (verified against ruffle/swf/src/avm1/opcode.rs). SetMember/GetMember were SWAPPED (0x4E/0x4F), so every obj.prop write executed a read and vice versa. Also wrong: Add2 (0x64=BitRShift instead of 0x47), Not (0x14=StringLength instead of 0x12), Increment/Decrement (0x47/0x48=Add2/Less2 instead of 0x50/0x51), NewObject (0x4A=ToNumber instead of 0x40), DefineLocal (0x42=InitArray instead of 0x3C), InitArray (0x36), Modulo (0x63=BitLShift instead of 0x3F), Less2 (0x65), StackSwap (0x2B=CastOp instead of 0x4D), BitLShift/RShift/URShift (0x69/0x6A/0x6B instead of 0x63/0x64/0x65). == now emits Equals2 0x49; === emits StrictEquals 0x66. Also implemented previously-no-op compound member assignment (obj.prop += v), compound indexed assignment (arr[i] += v), and member inc/dec (obj.prop++) with StoreRegister-based store-back. ~700 byte-presence test assertions had codified the wrong opcodes; all remapped to spec values. New regression suite: packages/core/src/as2/__tests__/memberassign.test.ts (17 tests pinning the opcode table). Evidence: pnpm --filter @flash/core run test -- --run => 282 files / 4411 passed; swf 881 passed; authoring-ui 174 passed. Runtime proof in Ruffle delivered by capstone 0519 (keyboard-driven game with member writes, hitTest, score increment, gotoAndStop).",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T02:27:34Z",
+  "updated_at": "2026-06-10T02:44:31Z"
+}

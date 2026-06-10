@@ -1,0 +1,10 @@
+{
+  "id": "0707-critical-library-convert-to-symbol-coordinate-no",
+  "title": "CRITICAL: library_convert_to_symbol coordinate normalization (gates capstone granular authoring)",
+  "description": "Re-filing an untracked gap: capstone-0519.spec.ts's header cites 'task 0699' for this, but no such task file ever existed (number burned). The granular MCP authoring path (stage_add_shape -> library_convert_to_symbol -> place instance) is blocked because convert-to-symbol does not normalize coordinates correctly: converted objects keep stage-absolute coords (or the instance matrix double-applies the offset), so symbols render displaced/empty when instanced. Related prior fixes: registry.ts symbol first-frame population (7a98396), the original 0120 convert-to-symbol noop. Scope: make convert-to-symbol normalize member geometry to symbol-local space with the chosen registration point, set the instance matrix to compensate, ensure round-trip (convert, place, publish, render in Ruffle matches pre-conversion pixels). Acceptance: e2e proving stage_add_shape -> library_convert_to_symbol -> publish renders identically (pixel diff under threshold) to the unconverted original; this directly unblocks 0519 gate point 4. Evidence pasted here.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-10T02:47:48Z",
+  "updated_at": "2026-06-10T02:47:48Z"
+}
