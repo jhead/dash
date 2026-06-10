@@ -14,7 +14,7 @@
 import { describe, it, expect } from "vitest";
 import { createLayer } from "../../model/timeline.js";
 import { CanvasRenderer } from "../renderer.js";
-import type { SceneGraph, SceneLayer, ShapeDisplayObject } from "../types.js";
+import type { GroupObject, SceneGraph, SceneLayer, ShapeDisplayObject } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Property access — always-passing tests
@@ -291,5 +291,73 @@ describe("Renderer outline-mode rendering", () => {
 
     // The exact outlineColor string must be assigned to strokeStyle
     expect(strokeStyleSets).toContain(specificColor);
+  });
+
+  it("group children are visible in outline mode — stroke() is emitted for shapes inside a group", () => {
+    const childShape: ShapeDisplayObject = {
+      type: "shape",
+      id: "child-shape",
+      shape: {
+        id: "child-shape",
+        paths: [
+          {
+            start: { x: 0, y: 0 },
+            segments: [
+              { type: "line", to: { x: 5, y: 0 } },
+              { type: "line", to: { x: 5, y: 5 } },
+              { type: "line", to: { x: 0, y: 5 } },
+            ],
+            closed: true,
+            fill: { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } },
+          },
+        ],
+      },
+      x: 0,
+      y: 0,
+    };
+
+    const group: GroupObject = {
+      id: "grp-1",
+      type: "group",
+      x: 20,
+      y: 30,
+      children: [childShape],
+    };
+
+    const layer: SceneLayer = {
+      id: "layer-1",
+      name: "Layer 1",
+      type: "normal",
+      visible: true,
+      locked: false,
+      objects: [group],
+      outlineMode: true,
+      outlineColor: "#00ff00",
+    };
+
+    const ctx = makeMockCtx();
+    const renderer = makeRenderer(ctx);
+    renderer.render(makeScene(layer), { x: 0, y: 0, zoom: 1 });
+
+    const callTypes = ctx._calls.map((c) => c.type);
+
+    // The child shape's outline must produce a stroke() call
+    expect(callTypes).toContain("stroke");
+
+    // fill() must NOT be emitted (we are in outline mode)
+    expect(callTypes).not.toContain("fill");
+
+    // The group's translation must appear before the stroke
+    const translateCalls = ctx._calls.filter((c) => c.type === "translate");
+    const groupTranslate = translateCalls.find(
+      (c) => c.args[0] === 20 && c.args[1] === 30
+    );
+    expect(groupTranslate).toBeDefined();
+
+    // The outline color must have been applied as strokeStyle
+    const strokeStyleSets = ctx._calls
+      .filter((c) => c.type === "strokeStyleSet")
+      .map((c) => c.args[0] as string);
+    expect(strokeStyleSets).toContain("#00ff00");
   });
 });

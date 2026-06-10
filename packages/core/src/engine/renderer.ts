@@ -1526,12 +1526,22 @@ function renderDisplayObjectOutline(
     case "text":
     case "bitmap":
     case "video":
-    case "instance":
-    case "group": {
+    case "instance": {
       ctx.save();
       ctx.globalAlpha = (ctx.globalAlpha ?? 1) * 0.4;
       // No image cache or library needed here — we intentionally do not pass
       // them so instances render at reduced opacity without full recursion.
+      ctx.restore();
+      break;
+    }
+
+    // Groups: translate to the group origin and recursively outline each child.
+    case "group": {
+      ctx.save();
+      ctx.translate(obj.x, obj.y);
+      for (const child of obj.children) {
+        renderDisplayObjectOutline(ctx, child, color);
+      }
       ctx.restore();
       break;
     }
