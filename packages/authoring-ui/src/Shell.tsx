@@ -109,6 +109,7 @@ import { ScenePanel } from "./ScenePanel";
 import { SceneSwitcher } from "./SceneSwitcher";
 import { ColorMixerPanel } from "./ColorMixerPanel";
 import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
+import type { RegistrationPoint } from "./ConvertToSymbolDialog";
 import { SwapSymbolDialog } from "./SwapSymbolDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { PublishSettingsDialog } from "./PublishSettingsDialog";
@@ -1170,13 +1171,21 @@ export function Shell(): React.ReactElement {
         coloredShape = shape;
       }
 
-      const obj: ShapeDisplayObject = {
-        type: "shape",
-        id: coloredShape.id,
-        shape: coloredShape,
-        x,
-        y,
-      };
+      const obj: ShapeDisplayObject | DrawingObject = toolState.objectDrawing
+        ? {
+            type: "drawing-object",
+            id: coloredShape.id,
+            shape: coloredShape,
+            x,
+            y,
+          }
+        : {
+            type: "shape",
+            id: coloredShape.id,
+            shape: coloredShape,
+            x,
+            y,
+          };
       pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, obj)));
     },
     [timeline, currentFrame, activeLayerIndex, toolState, pushDoc, withTimeline]
@@ -1530,10 +1539,18 @@ export function Shell(): React.ReactElement {
    * Only available for ShapeDisplayObjects since transformedShapeBounds requires shape geometry.
    */
   const selectedBounds = useMemo(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "shape") return null;
-    const shapeObj = selectedDisplayObject as ShapeDisplayObject;
-    const b = transformedShapeBounds(shapeObj);
-    return { x: b.x, y: b.y, width: b.width, height: b.height, rotation: shapeObj.rotation ?? 0 };
+    if (!selectedDisplayObject) return null;
+    if (selectedDisplayObject.type === "shape") {
+      const shapeObj = selectedDisplayObject as ShapeDisplayObject;
+      const b = transformedShapeBounds(shapeObj);
+      return { x: b.x, y: b.y, width: b.width, height: b.height, rotation: shapeObj.rotation ?? 0 };
+    }
+    if (selectedDisplayObject.type === "drawing-object") {
+      const drawObj = selectedDisplayObject as DrawingObject;
+      const b = transformedShapeBounds(drawObj);
+      return { x: b.x, y: b.y, width: b.width, height: b.height, rotation: 0 };
+    }
+    return null;
   }, [selectedDisplayObject]);
 
   /** Handle scale from TransformHandles overlay. Applies relative scale to the selected object. */
@@ -2125,7 +2142,7 @@ export function Shell(): React.ReactElement {
   /**
    * Perform the actual conversion after the dialog is confirmed.
    */
-  const handleConvertToSymbolConfirm = useCallback((name: string, symbolType: SymbolType) => {
+  const handleConvertToSymbolConfirm = useCallback((name: string, symbolType: SymbolType, registration: RegistrationPoint = "center") => {
     const layerId = timeline.layers[safeActiveLayerIndex]?.id;
     if (!layerId) return;
 
@@ -2146,15 +2163,30 @@ export function Shell(): React.ReactElement {
       return;
     }
 
-    // Compute average position of the objects
-    const avgX = objectsToConvert.reduce((sum, o) => sum + o.x, 0) / objectsToConvert.length;
-    const avgY = objectsToConvert.reduce((sum, o) => sum + o.y, 0) / objectsToConvert.length;
+    // Compute the true visual bounding box of the selection
+    const selectionBounds = getUnionBounds(objectsToConvert);
+    const bx = selectionBounds?.x ?? 0;
+    const by = selectionBounds?.y ?? 0;
+    const bw = selectionBounds?.width ?? 0;
+    const bh = selectionBounds?.height ?? 0;
+
+    // Derive registration origin from the chosen anchor position
+    const originX = registration.includes("right")
+      ? bx + bw
+      : registration.includes("left")
+        ? bx
+        : bx + bw / 2;
+    const originY = registration.includes("bottom")
+      ? by + bh
+      : registration.includes("top")
+        ? by
+        : by + bh / 2;
 
     // Objects repositioned relative to the symbol's origin
     const symbolObjects = objectsToConvert.map((o) => ({
       ...o,
-      x: o.x - avgX,
-      y: o.y - avgY,
+      x: o.x - originX,
+      y: o.y - originY,
     }));
 
     // Pre-compute instId so we can select the new instance after pushDoc
@@ -2201,8 +2233,8 @@ export function Shell(): React.ReactElement {
         type: "instance",
         id: instId,
         symbolId: newSymbol.id,
-        x: avgX,
-        y: avgY,
+        x: originX,
+        y: originY,
         ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
         ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
       };

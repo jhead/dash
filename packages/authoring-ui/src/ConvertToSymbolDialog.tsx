@@ -5,16 +5,28 @@ import type { SymbolType } from "@flash/core";
 // Types
 // ---------------------------------------------------------------------------
 
+export type RegistrationPoint =
+  | "top-left" | "top-center" | "top-right"
+  | "middle-left" | "center" | "middle-right"
+  | "bottom-left" | "bottom-center" | "bottom-right";
+
 export interface ConvertToSymbolDialogProps {
   open: boolean;
   defaultName?: string;
-  onConfirm: (name: string, type: SymbolType) => void;
+  onConfirm: (name: string, type: SymbolType, registration: RegistrationPoint) => void;
   onClose: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
+
+// All 9 registration positions in grid order (row-major, top-left first)
+const REGISTRATION_POSITIONS: RegistrationPoint[] = [
+  "top-left",    "top-center",    "top-right",
+  "middle-left", "center",        "middle-right",
+  "bottom-left", "bottom-center", "bottom-right",
+];
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
@@ -134,6 +146,43 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     minWidth: "58px",
   },
+  registrationRow: {
+    display: "flex",
+    alignItems: "center",
+    marginBottom: "8px",
+  },
+  registrationGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 16px)",
+    gap: "2px",
+    marginLeft: "50px",
+  },
+  regBtn: {
+    width: "16px",
+    height: "16px",
+    padding: 0,
+    border: "1px solid #666",
+    background: "#444",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "10px",
+    lineHeight: 1,
+  },
+  regBtnActive: {
+    width: "16px",
+    height: "16px",
+    padding: 0,
+    border: "1px solid #4aa3e0",
+    background: "#1a6ea8",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "10px",
+    lineHeight: 1,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -148,6 +197,7 @@ export function ConvertToSymbolDialog({
 }: ConvertToSymbolDialogProps): React.ReactElement | null {
   const [name, setName] = useState(defaultName);
   const [type, setType] = useState<SymbolType>("movieclip");
+  const [registration, setRegistration] = useState<RegistrationPoint>("center");
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   // Reset state and focus name input each time the dialog opens
@@ -155,6 +205,7 @@ export function ConvertToSymbolDialog({
     if (open) {
       setName(defaultName);
       setType("movieclip");
+      setRegistration("center");
       // Defer focus so the input is mounted
       setTimeout(() => {
         nameInputRef.current?.select();
@@ -178,13 +229,13 @@ export function ConvertToSymbolDialog({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, name, type]);
+  }, [open, name, type, registration]);
 
   const handleOk = useCallback(() => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onConfirm(trimmed, type);
-  }, [name, type, onConfirm]);
+    onConfirm(trimmed, type, registration);
+  }, [name, type, registration, onConfirm]);
 
   if (!open) return null;
 
@@ -240,6 +291,23 @@ export function ConvertToSymbolDialog({
                 />
                 {label}
               </label>
+            ))}
+          </div>
+
+          <div style={styles.divider} />
+
+          {/* Registration point */}
+          <div style={{ marginBottom: "6px", fontSize: "11px", color: "#ccc" }}>Registration:</div>
+          <div style={styles.registrationGrid}>
+            {REGISTRATION_POSITIONS.map((pos) => (
+              <button
+                key={pos}
+                title={pos}
+                onClick={() => setRegistration(pos)}
+                style={registration === pos ? styles.regBtnActive : styles.regBtn}
+              >
+                {registration === pos ? "●" : "○"}
+              </button>
             ))}
           </div>
 
