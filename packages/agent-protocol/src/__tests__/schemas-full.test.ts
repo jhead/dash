@@ -36,7 +36,6 @@ import {
   // Code
   DiagnosticSchema,
   ScriptGetParamsSchema,
-  ScriptSetParamsSchema,
   ScriptSetResultSchema,
   ScriptCheckParamsSchema,
   ScriptListResultSchema,
@@ -51,9 +50,7 @@ import {
   JsflRunParamsSchema,
   JsflRunResultSchema,
   StageScreenshotParamsSchema,
-  PublishSwfParamsSchema,
   PublishSwfResultSchema,
-  FileSaveFlaParamsSchema,
   FileSaveFlaResultSchema,
   FileLoadFlaParamsSchema,
   // Bridge
