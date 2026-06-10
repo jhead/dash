@@ -467,6 +467,7 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
 export interface JsflLibraryItem {
   readonly name: string;
   readonly itemType: string;
+  readonly symbolType?: string;
 }
 
 export interface JsflLibrary {
@@ -492,10 +493,21 @@ function jsflSymbolType(jsflType: string): SymbolType {
 function makeLibraryProxy(state: RuntimeState): JsflLibrary {
   return {
     get items(): JsflLibraryItem[] {
-      return state.doc.library.items.map((item) => ({
-        name: item.name,
-        itemType: item.itemType,
-      }));
+      return state.doc.library.items.map((item) => {
+        const base: JsflLibraryItem = { name: item.name, itemType: item.itemType };
+        if (item.itemType === "symbol") {
+          const symTypeMap: Record<string, string> = {
+            movieclip: "movie clip",
+            button: "button",
+            graphic: "graphic",
+          };
+          return {
+            ...base,
+            symbolType: symTypeMap[(item as { symbolType: string }).symbolType] ?? item.itemType,
+          };
+        }
+        return base;
+      });
     },
     addNewItem(type: string, name: string) {
       const symType = jsflSymbolType(type);
@@ -543,7 +555,8 @@ export interface JsflDocument {
   frameRate: number;
   /** Background color as CSS hex string (get/set). */
   backgroundColor: string;
-  readonly selection: DisplayObject[];
+  selection: DisplayObject[];
+  readonly timeline: JsflTimeline;
   getTimeline(): JsflTimeline;
   get library(): JsflLibrary;
   addNewRectangle(bounds: { left: number; top: number; right: number; bottom: number }, cornerRadius: number): void;
@@ -630,7 +643,17 @@ function makeDocumentProxy(
       }
       return result;
     },
+    set selection(value: DisplayObject[]) {
+      if (!value || value.length === 0) {
+        state.selectedIds = [];
+      } else {
+        state.selectedIds = value.map((obj) => obj.id);
+      }
+    },
     getTimeline() {
+      return makeTimelineProxy(state);
+    },
+    get timeline(): JsflTimeline {
       return makeTimelineProxy(state);
     },
     get library(): JsflLibrary {
