@@ -257,6 +257,49 @@ describe("parseFla8Contents / parseFla8Timeline (low level)", () => {
       /root marker/,
     );
   });
+
+  it("tolerates an unrecognised class tag (0x204) without throwing", () => {
+    // Minimal synthetic stream that puts 0x0204 where a class tag is expected
+    // inside CPicLayer's children loop. Before this fix the bad tag was
+    // thrown as an unhandled Error that propagated all the way through
+    // parseFla8Timeline, causing the whole symbol to be discarded.
+    //
+    // Stream layout:
+    //   01            root marker
+    //   FFFF 0100 0800 "CPicPage"   new class CPicPage (schema 1)
+    //   04 00                       CPicPage CPicObjBase: schema=4, flags=0
+    //   FFFF 0100 0900 "CPicLayer"  new class CPicLayer (schema 1)
+    //   04 00                       CPicLayer CPicObjBase: schema=4, flags=0
+    //   04 02                       *** BAD class tag 0x0204 ***
+    //   (zeros pad the stream so skipToNextBoundary can run without EOF)
+    const stream = new Uint8Array([
+      0x01, // root marker
+      // New class: CPicPage
+      0xff, 0xff, 0x01, 0x00, 0x08, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x50, 0x61, 0x67, 0x65, // "CPicPage"
+      // CPicPage CPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // CPicPage first child: new class CPicLayer
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x4c, 0x61, 0x79, 0x65, 0x72, // "CPicLayer"
+      // CPicLayer CPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // *** Bad class tag 0x0204 in CPicLayer's children ***
+      0x04, 0x02,
+      // Padding zeros so skipToNextBoundary does not immediately hit EOF
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    // Must not throw — symbol should be importable (possibly empty/partial)
+    let result: ReturnType<typeof parseFla8Timeline> | null = null;
+    expect(() => {
+      result = parseFla8Timeline(stream);
+    }).not.toThrow();
+    expect(result).not.toBeNull();
+    // The timeline should have 0 or 1 layers depending on how much was recovered
+    expect(result!.layers.length).toBeGreaterThanOrEqual(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

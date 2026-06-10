@@ -331,7 +331,8 @@ function readCString(r: Reader): string {
 type ClassTag =
   | { kind: "null" }
   | { kind: "class"; name: string; schema: number }
-  | { kind: "object-backref" };
+  | { kind: "object-backref" }
+  | { kind: "bad"; tag: number };
 
 class ArchiveReader {
   /** combined class+object table: each new class occupies two slots */
@@ -387,7 +388,9 @@ class ArchiveReader {
       if (e && e.slot === "class") return { kind: "class", name: e.name, schema: 0 };
       return { kind: "object-backref" };
     }
-    throw new Error(`bad class tag 0x${tag.toString(16)} @ 0x${(this.r.pos - 2).toString(16)}`);
+    // Unrecognised tag value — not a known MFC CArchive sentinel. Return a
+    // "bad" marker so the caller can attempt recovery rather than throwing.
+    return { kind: "bad", tag };
   }
 }
 
@@ -577,18 +580,45 @@ function readCPicObjBase(ctx: ParseCtx): CPicObjBase {
   const schema = r.u8();
   const flags = r.u8();
   const children: ParsedNode[] = [];
+  let badTag = false;
   for (;;) {
-    const tag = ctx.ar.readClassTag();
+    let tag: ClassTag;
+    try {
+      tag = ctx.ar.readClassTag();
+    } catch (err) {
+      // EOF mid-children: treat as truncated stream (same as a premature null).
+      if (err instanceof FlaEofError) {
+        badTag = true;
+        break;
+      }
+      throw err;
+    }
     if (tag.kind === "null") break;
     if (tag.kind === "object-backref") {
       // Reuse of an existing object — rare; nothing to read for it.
       continue;
     }
+    if (tag.kind === "bad") {
+      // Unrecognised class tag — stream is misaligned or uses an unknown
+      // encoding variant (e.g. 0x204 seen in real Flash 8 FLAs). Re-sync
+      // to the next plausible object boundary. The post-loop registration-
+      // point skips are skipped so the caller can resume from wherever the
+      // re-sync landed.
+      warnOnce(
+        ctx,
+        `unrecognised class tag 0x${tag.tag.toString(16)} @ 0x${(r.pos - 2).toString(16)} — skipping remaining children`,
+      );
+      skipToNextBoundary(ctx);
+      badTag = true;
+      break;
+    }
     children.push(deserializeClass(tag.name, ctx));
   }
-  if (schema > 0) r.skip(8); // 2 x s32 registration point (often INT_MIN sentinel)
-  if (schema > 2) r.skip(1);
-  if (schema > 3) r.skip(1);
+  if (!badTag) {
+    if (schema > 0) r.skip(8); // 2 x s32 registration point (often INT_MIN sentinel)
+    if (schema > 2) r.skip(1);
+    if (schema > 3) r.skip(1);
+  }
   return { schema, flags, children };
 }
 
@@ -767,6 +797,9 @@ function readCPicShape(ctx: ParseCtx): ShapeReadResult {
   const shapeSchema = r.u8();
   const matrix = readMatrix(r);
   const { fills, strokes, edges } = readShapeData(ctx, shapeSchema > 2);
+  // Verify the reader is on a valid object boundary after shape data so that
+  // any leftover version-specific bytes do not misalign subsequent reads.
+  verifyBoundary(ctx);
   return { shape: { type: "shape", matrix, fills, strokes, edges }, shapeSchema };
 }
 
