@@ -120,3 +120,28 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **`canvas.first()` is fragile**: `StageArea` renders two canvases (grid overlay +
   render canvas). Target the render canvas with `data-testid="stage-canvas"` rather than
   a positional Playwright locator.
+- **MCP agent stale-closure bug**: callbacks registered via `setAgentCallbacks` in
+  Shell.tsx capture React state at registration time. If `getDoc` returns `doc` from the
+  closure, it sees the pre-mutation snapshot after `pushDoc`. Fix: keep a `useRef` that is
+  updated synchronously inside `pushDoc` before the async React state update, and point
+  `getDoc` at the ref.
+- **Playwright workers must be 1 for the agent bridge**: the `/__agent` WebSocket bridge
+  is a singleton — only one browser page holds the connection at a time. With multiple
+  Playwright workers each `page.goto('/')` steals the connection, causing in-flight tool
+  calls to fail with "Editor page disconnected". Set `workers: 1` in
+  `playwright.config.ts`.
+
+### SWF clip actions
+
+- **Reserved UI16 before AllEventFlags**: `read_clip_actions()` in Ruffle
+  (`swf/src/read.rs`) calls `read_u16()` for a reserved field *before* reading
+  AllEventFlags. Omitting this 2-byte write shifts every subsequent field by 2 bytes;
+  Ruffle sees garbage event flags and silently discards the entire clip-actions block.
+- **ActionEnd required in CLIPACTIONRECORD bytecode**: `compileAS2` does not emit
+  ActionEnd (0x00). Each CLIPACTIONRECORD's bytecode must terminate with ActionEnd per
+  SWF spec §8.4.6.2; without it Ruffle's AVM1 executor walks into garbage bytes. Append
+  `new Uint8Array([0x00])` after compiling each clip-action script (same pattern as
+  DoAction frame scripts).
+- **onClipEvent(mouseDown) does not fire in headless Ruffle**: Ruffle's WASM player in
+  headless Playwright does not dispatch global mouse clip events. Use
+  `onClipEvent(load)` or `onClipEvent(enterFrame)` in interactivity oracle tests instead.

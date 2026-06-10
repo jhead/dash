@@ -1,8 +1,8 @@
 {
   "id": "0686-fix-mcp-library-rename-command-returns-iserror-t",
   "title": "Fix MCP library_rename command: returns isError true instead of mutating library",
-  "description": "E2E test 'MCP agent server: library domain: create symbol \u2192 library_rename \u2192 doc_get assert round-trip' fails: library_rename returns isError:true.\n\nThe MCP command handler for library_rename is either not implemented or not finding the library item by ID. Check the command registry for library_rename and ensure it calls the JSFL renameItem equivalent on the document model and returns success.\n\nKey file: look for library_rename in the MCP command registry (packages/ or apps/desktop/src/)\nTest file: apps/desktop/e2e/agent-mcp.spec.ts (library domain section)\n\nRun: pnpm --filter @flash/desktop e2e --grep 'library_rename' 2>&1 | tail -20",
-  "status": "in_progress",
+  "description": "library_rename was already working correctly in the registry (inline rename without calling the renamed helper). The actual root issue was the same stale-closure getDoc() bug as 0684 \u2014 fixed by the latestDocRef change in Shell.tsx. All 22 agent-mcp E2E tests pass including the library domain rename round-trip.",
+  "status": "done",
   "created_at": "2026-06-10T00:02:24Z",
-  "updated_at": "2026-06-10T00:05:14Z"
+  "updated_at": "2026-06-10T00:07:26Z"
 }
