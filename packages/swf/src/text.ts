@@ -307,9 +307,9 @@ export function encodeDefineEditText(
  * For antiAlias === "readability": UseFlashType=1, GridFit=1, thickness=0, sharpness=0.
  * For antiAlias === "custom": UseFlashType=1, GridFit=1, thickness=csm.thickness, sharpness=csm.sharpness.
  *
- * Note: DefineFontAlignZones (tag 73) is NOT emitted here. Ruffle will still render
- * with the FlashType path enabled via CSMTextSettings alone (just without sub-pixel grid
- * zone hints). TODO: emit DefineFontAlignZones (tag 73) for full FlashType hinting.
+ * Note: DefineFontAlignZones (tag 73) is emitted in compile.ts immediately after
+ * each DefineFont3 tag (for all embedded fonts). This provides per-glyph stem-width
+ * hint zones and enables the full FlashType sub-pixel rendering path in Ruffle.
  *
  * @param textCharId  SWF character ID of the text field (DefineEditText charId)
  * @param thickness   Sub-pixel thickness hint (0.0 for readability mode)

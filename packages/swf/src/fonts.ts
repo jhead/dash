@@ -421,6 +421,88 @@ export function encodeDefineFont2(
 }
 
 // ---------------------------------------------------------------------------
+// DefineFontAlignZones (tag 73)
+// ---------------------------------------------------------------------------
+
+/**
+ * Cap height of 'H' (code 72) in NotoSans EM units.
+ *
+ * From the TTF-derived glyph data: the top of 'H' sits at y = -731 in SWF
+ * glyph space (+x right, -y up), so the cap height = 731 EM units.
+ * Used as the Y-axis alignment zone coordinate for DefineFontAlignZones.
+ */
+const CAP_HEIGHT_EM = 731;
+
+/**
+ * Encode a DefineFontAlignZones (tag 73) body for an embedded font.
+ *
+ * Tag 73 provides per-glyph stem-width hint zones that enable FlashType
+ * sub-pixel rendering in Ruffle / Flash Player. It is a companion tag to
+ * DefineFont3 and CSMTextSettings (tag 74).
+ *
+ * Format (per Ruffle swf/src/read.rs `read_define_font_align_zones` /
+ * swf/src/write.rs):
+ *   UI16   fontID        — must match the DefineFont3 character ID
+ *   UI8    thickness     — bits[7:6] = CSMTableHintType (0=thin, 1=medium, 2=thick)
+ *   For each glyph (glyphCount entries):
+ *     UI8    zoneCount = 2   (always 2 per Ruffle)
+ *     SI16   left            — X-zone position in font glyph units
+ *     SI16   width           — X-zone size (0 = no zone data for this axis)
+ *     SI16   bottom          — Y-zone position in font glyph units
+ *     SI16   height          — Y-zone size (0 = no zone data for this axis)
+ *     UI8    zoneMask = 0b00000011  (both X and Y zones active)
+ *
+ * The "simplified approximation" used here emits the same two zones for every
+ * glyph: a zero X-zone (baseline) and a Y-zone at the font's cap height.
+ * This is sufficient to enable the DefineFontAlignZones path in Ruffle without
+ * requiring per-glyph stem detection — matching what Flash exports for fonts
+ * it cannot fully analyse.
+ *
+ * @param fontCharId  SWF character ID of the DefineFont3 this accompanies
+ * @param glyphCount  Number of glyphs in the font (must match DefineFont3)
+ * @param coordScale  Glyph coordinate scale (20 for DefineFont3, 1 for DefineFont2)
+ * @param csmHint     CSMTableHint: 0=thin, 1=medium (default), 2=thick
+ */
+export function encodeDefineFontAlignZones(
+  fontCharId: number,
+  glyphCount: number,
+  coordScale: number,
+  csmHint: 0 | 1 | 2 = 1
+): Uint8Array {
+  const bw = new BitWriter();
+
+  // fontID: UI16 LE
+  bw.writeUI16LE(fontCharId);
+
+  // CSMTableHint: UI8 — bits[7:6] hold the hint type, bits[5:0] reserved = 0
+  bw.writeUI8((csmHint & 0x3) << 6);
+
+  // Cap height in scaled font glyph units.
+  // DefineFont3 stores coordinates in a 20480-unit EM square (20× the 1024-unit
+  // EM used in the TTF source), so scale the cap height accordingly.
+  const capHeightScaled = CAP_HEIGHT_EM * coordScale;
+
+  // Emit one 10-byte zone record per glyph (simplified: same zones for every glyph)
+  for (let i = 0; i < glyphCount; i++) {
+    // ZoneCount: UI8 = 2 (always 2 dimensions per Ruffle convention)
+    bw.writeUI8(2);
+
+    // X-zone: baseline at 0, range 0 (no horizontal stem hint)
+    bw.writeSI16LE(0);  // left = 0
+    bw.writeSI16LE(0);  // width = 0
+
+    // Y-zone: cap height position, range 0
+    bw.writeSI16LE(capHeightScaled);  // bottom = cap height in scaled units
+    bw.writeSI16LE(0);  // height = 0
+
+    // ZoneMask: UI8 = 0b00000011 — both X and Y zones active
+    bw.writeUI8(0x03);
+  }
+
+  return bw.getBytes();
+}
+
+// ---------------------------------------------------------------------------
 // Font key helper
 // ---------------------------------------------------------------------------
 

@@ -30,7 +30,7 @@ import {
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
 import { encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
-import { encodeDefineFont2, fontKey } from "./fonts.js";
+import { encodeDefineFont2, encodeDefineFontAlignZones, fontKey } from "./fonts.js";
 import {
   encodePlaceObject3WithFilters,
   encodePlaceObject3WithBlendMode,
@@ -832,6 +832,14 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           fontCharIdMap.set(key, fontId);
           const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale);
           writer.writeTag(fontTagCode, fontBody);
+          // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3
+          // for all embedded fonts. Provides per-glyph stem-width hint zones
+          // that enable the FlashType sub-pixel rendering path in Ruffle.
+          // Harmlessly ignored for non-FlashType anti-alias modes.
+          if (useFont3) {
+            const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
+            writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
+          }
         }
       }
     }
@@ -851,6 +859,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     fontCharIdMap.set(key, fontId);
     const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale);
     writer.writeTag(fontTagCode, fontBody);
+    // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3.
+    if (useFont3) {
+      const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
+      writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
+    }
   }
 
   // morphShapeObjIds: set of object IDs that have been encoded as DefineMorphShape.

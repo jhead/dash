@@ -756,3 +756,121 @@ describe("CSMTextSettings (tag 74) — anti-alias mode", () => {
     expect(csmTags.length).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// DefineFontAlignZones (tag 73) — per-glyph zone approximation
+// ---------------------------------------------------------------------------
+
+const TAG_DEFINE_FONT_ALIGN_ZONES = 73;
+const TAG_DEFINE_FONT3 = 75;
+
+describe("DefineFontAlignZones (tag 73) — emitted for all embedded fonts", () => {
+  it("emits a DefineFontAlignZones tag (code 73) when text is present", () => {
+    const doc = makeDoc([makeText()]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const alignTags = tags.filter((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    expect(alignTags.length).toBe(1);
+  });
+
+  it("DefineFontAlignZones body: fontID matches the DefineFont3 charId", () => {
+    const doc = makeDoc([makeText()]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const font3Tag = tags.find((t) => t.code === TAG_DEFINE_FONT3);
+    const alignTag = tags.find((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    expect(font3Tag).toBeDefined();
+    expect(alignTag).toBeDefined();
+    // fontID in DefineFont3 body is at bytes 0-1 (UI16LE)
+    const font3CharId = font3Tag!.body[0] | (font3Tag!.body[1] << 8);
+    // fontID in DefineFontAlignZones is at bytes 0-1 (UI16LE)
+    const alignFontId = alignTag!.body[0] | (alignTag!.body[1] << 8);
+    expect(alignFontId).toBe(font3CharId);
+  });
+
+  it("DefineFontAlignZones body: CSMTableHint byte (offset 2) is medium (0x40)", () => {
+    const doc = makeDoc([makeText()]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const alignTag = tags.find((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    expect(alignTag).toBeDefined();
+    // CSMTableHint: bits[7:6] = 1 (medium) → 0b01000000 = 0x40
+    expect(alignTag!.body[2]).toBe(0x40);
+  });
+
+  it("DefineFontAlignZones body: correct size (3 + 10 * 95 = 953 bytes)", () => {
+    const doc = makeDoc([makeText()]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const alignTag = tags.find((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    expect(alignTag).toBeDefined();
+    // 2 (fontID) + 1 (thickness) + 95 * 10 (zones) = 953 bytes
+    expect(alignTag!.body.length).toBe(953);
+  });
+
+  it("DefineFontAlignZones body: first glyph's zone has ZoneCount=2 at offset 3", () => {
+    const doc = makeDoc([makeText()]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const alignTag = tags.find((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    expect(alignTag).toBeDefined();
+    // First zone record starts at byte 3: ZoneCount = 2
+    expect(alignTag!.body[3]).toBe(2);
+  });
+
+  it("DefineFontAlignZones body: first glyph ZoneMask (last byte of first zone) = 0x03", () => {
+    const doc = makeDoc([makeText()]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const alignTag = tags.find((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    expect(alignTag).toBeDefined();
+    // ZoneMask at offset 3 + 1 + 8 = 12 (ZoneCount + 4×SI16)
+    expect(alignTag!.body[12]).toBe(0x03);
+  });
+
+  it("DefineFontAlignZones tag precedes CSMTextSettings (tag 74) in the stream", () => {
+    const doc = makeDoc([makeText({ antiAlias: "readability" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const alignIdx = tags.findIndex((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    const csmIdx = tags.findIndex((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(alignIdx).toBeGreaterThanOrEqual(0);
+    expect(csmIdx).toBeGreaterThanOrEqual(0);
+    // DefineFontAlignZones is emitted with the font definition (before text chars),
+    // CSMTextSettings is emitted with the DefineEditText — so align < csm
+    expect(alignIdx).toBeLessThan(csmIdx);
+  });
+
+  it("DefineFontAlignZones tag follows DefineFont3 (tag 75) in the stream", () => {
+    const doc = makeDoc([makeText()]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const font3Idx = tags.findIndex((t) => t.code === TAG_DEFINE_FONT3);
+    const alignIdx = tags.findIndex((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    expect(font3Idx).toBeGreaterThanOrEqual(0);
+    expect(alignIdx).toBeGreaterThanOrEqual(0);
+    expect(alignIdx).toBe(font3Idx + 1);
+  });
+
+  it("two distinct fonts produce two DefineFontAlignZones tags", () => {
+    const doc = makeDoc([
+      makeText({ id: "text-1", fontFamily: "Arial", bold: false, italic: false }),
+      makeText({ id: "text-2", fontFamily: "Times New Roman", bold: false, italic: false }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const alignTags = tags.filter((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    expect(alignTags.length).toBe(2);
+  });
+
+  it("same font used by multiple text fields produces only one DefineFontAlignZones tag", () => {
+    const doc = makeDoc([
+      makeText({ id: "text-1", fontFamily: "Arial" }),
+      makeText({ id: "text-2", fontFamily: "Arial" }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const alignTags = tags.filter((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
+    expect(alignTags.length).toBe(1);
+  });
+});
