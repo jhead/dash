@@ -2259,7 +2259,10 @@ function readTimelineSubObject(r: Reader): { script: string } {
       if (count > 0 && count < 10000) r.skip(count * 4);
     }
     if (typeId >= 5) r.skip(4); // CS3+: four extra reserved bytes
-    script = readCString(r);
+    const raw = readCString(r);
+    // Normalize Windows (CRLF) and old Mac (bare CR) line endings to Unix LF
+    // so AS2 scripts imported from Windows-authored FLAs display correctly.
+    script = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   } else if (formatType === 0) {
     r.skip(4);
     const pfCount = r.u32();

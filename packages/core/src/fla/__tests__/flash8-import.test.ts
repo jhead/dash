@@ -217,6 +217,21 @@ describe("MX 2004 binary .fla import (mx2004-frame-scripts.fla)", () => {
     expect(layer.frames.map((f) => f.index)).toEqual([0, 1, 2]);
   });
 
+  it("normalizes CRLF line endings in frame scripts (task 0950)", () => {
+    // mx2004-frame-scripts.fla was authored on Windows and contains CRLF
+    // (0x0d 0x0a) line endings in the UTF-16LE BomString script fields.
+    // After import all \r\n sequences must be collapsed to \n so multi-line
+    // scripts display correctly in the editor.
+    const layer = doc.scenes[0]!.timeline.layers[0]!;
+    for (const frame of layer.frames) {
+      expect(frame.script).not.toMatch(/\r/);
+    }
+    const childFrames = symbols(doc)[0]!.timeline.layers[0]!.frames;
+    for (const frame of childFrames) {
+      expect(frame.script).not.toMatch(/\r/);
+    }
+  });
+
   it("extracts the 'child' movieclip symbol with per-frame scripts", () => {
     const syms = symbols(doc);
     expect(syms.length).toBe(1);
