@@ -147,6 +147,22 @@ export interface ShapeHint {
   readonly y: number;
 }
 
+/**
+ * A single behavior row attached to a keyframe, as authored in the
+ * BehaviorsPanel. Stored on the Frame so that rows survive navigation
+ * (selecting a different frame and returning restores the list).
+ */
+export interface AttachedBehavior {
+  /** Unique row identifier (timestamp-based string). */
+  readonly id: string;
+  /** References a BEHAVIORS[*].id from the behaviors registry. */
+  readonly behaviorId: string;
+  /** Parameter values entered in the param form. */
+  readonly params: Readonly<Record<string, string>>;
+  /** Display label for the triggering event (e.g. "On Release"). */
+  readonly event: string;
+}
+
 export interface Frame {
   readonly index: number;           // 0-based frame index within the layer
   readonly isKeyframe: boolean;
@@ -189,6 +205,11 @@ export interface Frame {
   readonly shapeHints?: readonly ShapeHint[];
   // Display objects placed on this keyframe
   readonly displayObjects: readonly DisplayObject[];
+  /**
+   * Behavior rows attached to this keyframe via the BehaviorsPanel.
+   * Absent (undefined) on frames that have never had behaviors added.
+   */
+  readonly behaviors?: ReadonlyArray<AttachedBehavior>;
 }
 
 // ---------------------------------------------------------------------------

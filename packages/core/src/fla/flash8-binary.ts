@@ -2380,9 +2380,27 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     ...(run?.rightMargin ? { rightMargin: run.rightMargin / 20 } : {}),
     ...(run?.letterSpacing ? { letterSpacing: run.letterSpacing / 20 } : {}),
     filters,
-    // Instance color effect for text fields is not yet decoded from the binary
-    // (no confirmed fixture for the exact byte layout in CPicText). The field is
-    // populated by callers that construct Fla8Text directly (e.g. unit tests).
+    // Instance color effect for text fields: not yet decoded from the binary.
+    //
+    // In CPicSymbol, the color-effect block appears at a fixed position after
+    // matrix/loop data and is gated by `symbolSchema >= 4` (Flash 3+). The block
+    // is 24 bytes: 4×(u16 multiplier + s16 offset) for RGBA channels (16 bytes),
+    // then 2 bytes effect-type/reserved, 2 bytes percent, 4 bytes tint color.
+    // The alpha pair is only present for symbolSchema >= 6 (MX+).
+    //
+    // In CPicText, there is no confirmed fixture with a tinted text field to
+    // pin the equivalent byte position. The most plausible location (by analogy
+    // with CPicSymbol) is inside the `ts >= 9` block, between the instance-name
+    // string and the 8-byte scrollable block — but the existing scrollable-block
+    // skip would need to be split differently if a 24-byte colorEffect precedes
+    // it. Until a fixture FLA with a colored text instance is available to verify
+    // the exact byte offset, this field remains null.
+    //
+    // TODO(0985): acquire a Flash 8 FLA with a tinted text field, hex-dump the
+    // CPicText stream, and confirm whether the colorEffect block appears at
+    // ~(instanceName-end + accessibility-size) with the same 24-byte layout as
+    // CPicSymbol. If confirmed, add `let colorEffect: Fla8ColorEffect | null =
+    // null;` and decode it the same way as `readCPicSymbolFields` (lines 1857–1878).
     colorEffect: null,
     runs,
     ...hiddenElementProp(visible),

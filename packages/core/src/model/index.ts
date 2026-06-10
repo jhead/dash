@@ -1,5 +1,6 @@
 // Types
 export type {
+  AttachedBehavior,
   BitmapItem,
   ButtonAction,
   ButtonSounds,
@@ -75,6 +76,7 @@ export {
   clearShapeHints,
   clearTween,
   setFrameScript,
+  setFrameBehaviors,
   setSoundOnFrame,
   addDisplayObject,
   removeDisplayObject,

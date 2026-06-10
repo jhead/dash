@@ -814,6 +814,30 @@ export function setFrameScript(
   };
 }
 
+/**
+ * Set the behaviors list on the governing keyframe at or before frameIndex.
+ * Returns a new Timeline.
+ */
+export function setFrameBehaviors(
+  timeline: Timeline,
+  layerId: string,
+  frameIndex: number,
+  behaviors: ReadonlyArray<import("./types.js").AttachedBehavior>
+): Timeline {
+  return {
+    ...timeline,
+    layers: timeline.layers.map((layer) => {
+      if (layer.id !== layerId) return layer;
+      const kf = findGoverningKeyframe(layer, frameIndex);
+      if (!kf) return layer;
+      const newFrames = layer.frames.map((f) =>
+        f.index === kf.index ? { ...f, behaviors } : f
+      );
+      return { ...layer, frames: newFrames };
+    }),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Display object helpers (pure — return new Timeline)
 // ---------------------------------------------------------------------------

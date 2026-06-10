@@ -1,19 +1,14 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { BEHAVIORS, getBehaviorsByCategory } from "./behaviors.js";
 import type { Behavior } from "./behaviors.js";
+import type { AttachedBehavior, Frame } from "@flash/core";
+
+// Re-export so callers that imported AttachedBehavior from here continue to work.
+export type { AttachedBehavior };
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-/** A single behavior row attached to the current frame/instance. */
-export interface AttachedBehavior {
-  id: string;        // unique row id (timestamp-based)
-  behaviorId: string; // refers to BEHAVIORS[*].id
-  params: Record<string, string>;
-  /** e.g. "On Release" — display label only, not compiled */
-  event: string;
-}
 
 export interface BehaviorsPanelProps {
   /** Current frame script text (read-only; used to seed the editor). */
@@ -22,6 +17,17 @@ export interface BehaviorsPanelProps {
   onScriptChange: (script: string) => void;
   /** Called when the panel's close button is pressed. */
   onClose: () => void;
+  /**
+   * The currently selected keyframe. When provided, the panel seeds its rows
+   * from `selectedFrame.behaviors` and persists changes back via
+   * `onBehaviorsChange`.
+   */
+  selectedFrame?: Frame | null;
+  /**
+   * Called whenever the behaviors list changes (add/remove). The caller is
+   * responsible for persisting the new list to the document model.
+   */
+  onBehaviorsChange?: (behaviors: ReadonlyArray<AttachedBehavior>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,13 +300,24 @@ export function BehaviorsPanel({
   script,
   onScriptChange,
   onClose,
+  selectedFrame,
+  onBehaviorsChange,
 }: BehaviorsPanelProps): React.ReactElement {
-  const [rows, setRows] = useState<AttachedBehavior[]>([]);
+  const [rows, setRows] = useState<AttachedBehavior[]>(
+    () => (selectedFrame?.behaviors ? [...selectedFrame.behaviors] : [])
+  );
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
   const [pendingBehavior, setPendingBehavior] = useState<Behavior | null>(null);
 
   const addBtnRef = useRef<HTMLButtonElement>(null);
+
+  // Sync rows when the selected frame changes (e.g. user navigates to a
+  // different keyframe that already has behaviors persisted to the model).
+  useEffect(() => {
+    setRows(selectedFrame?.behaviors ? [...selectedFrame.behaviors] : []);
+    setSelectedRowId(null);
+  }, [selectedFrame]);
 
   // -------------------------------------------------------------------------
   // Handlers
@@ -321,7 +338,11 @@ export function BehaviorsPanel({
         params: {},
         event: "On Release",
       };
-      setRows((prev) => [...prev, newRow]);
+      setRows((prev) => {
+        const next = [...prev, newRow];
+        onBehaviorsChange?.(next);
+        return next;
+      });
       onScriptChange(
         script
           ? `${script}\n// [Behavior: ${behavior.id}]\n${code}`
@@ -330,7 +351,7 @@ export function BehaviorsPanel({
     } else {
       setPendingBehavior(behavior);
     }
-  }, [script, onScriptChange]);
+  }, [script, onScriptChange, onBehaviorsChange]);
 
   const handleParamConfirm = useCallback(
     (params: Record<string, string>) => {
@@ -342,7 +363,11 @@ export function BehaviorsPanel({
         params,
         event: "On Release",
       };
-      setRows((prev) => [...prev, newRow]);
+      setRows((prev) => {
+        const next = [...prev, newRow];
+        onBehaviorsChange?.(next);
+        return next;
+      });
       onScriptChange(
         script
           ? `${script}\n// [Behavior: ${pendingBehavior.id}]\n${code}`
@@ -350,7 +375,7 @@ export function BehaviorsPanel({
       );
       setPendingBehavior(null);
     },
-    [pendingBehavior, script, onScriptChange]
+    [pendingBehavior, script, onScriptChange, onBehaviorsChange]
   );
 
   const handleParamCancel = useCallback(() => {
@@ -359,11 +384,15 @@ export function BehaviorsPanel({
 
   const handleRemove = useCallback(() => {
     if (!selectedRowId) return;
-    setRows((prev) => prev.filter((r) => r.id !== selectedRowId));
+    setRows((prev) => {
+      const next = prev.filter((r) => r.id !== selectedRowId);
+      onBehaviorsChange?.(next);
+      return next;
+    });
     setSelectedRowId(null);
     // Note: we don't surgically remove from the script because the script
     // may have been manually edited; just remove the row tracking entry.
-  }, [selectedRowId]);
+  }, [selectedRowId, onBehaviorsChange]);
 
   // -------------------------------------------------------------------------
   // Styles

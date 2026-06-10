@@ -9,6 +9,7 @@ import {
   removeDisplayObject,
   updateDisplayObject,
   setFrameScript,
+  setFrameBehaviors,
   setSoundOnFrame,
   hexToColor,
   createOvalShape,
@@ -4266,6 +4267,15 @@ export function Shell(): React.ReactElement {
     return kf?.script ?? "";
   }, [timeline, currentFrame, safeActiveLayerIndex]);
 
+  /** The governing keyframe of the active layer at the current frame position. */
+  const currentKeyframe = useMemo<Frame | null>(() => {
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return null;
+    return [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= currentFrame)
+      .sort((a, b) => b.index - a.index)[0] ?? null;
+  }, [timeline, currentFrame, safeActiveLayerIndex]);
+
   const handleScriptChange = useCallback(
     (script: string) => {
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
@@ -4273,6 +4283,15 @@ export function Shell(): React.ReactElement {
       pushDoc(withTimeline((t) => setFrameScript(t, layerId, currentFrame, script)));
     },
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
+  );
+
+  const handleBehaviorsChange = useCallback(
+    (behaviors: ReadonlyArray<import("@flash/core").AttachedBehavior>) => {
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      pushDoc(withTimeline((t) => setFrameBehaviors(t, layerId, currentFrame, behaviors)));
+    },
+    [timeline, currentFrame, safeActiveLayerIndex, pushDoc, withTimeline]
   );
 
   const handleSoundChange = useCallback(
@@ -6175,6 +6194,8 @@ export function Shell(): React.ReactElement {
           script={currentScript}
           onScriptChange={handleScriptChange}
           onClose={() => setBehaviorsPanelVisible(false)}
+          selectedFrame={currentKeyframe}
+          onBehaviorsChange={handleBehaviorsChange}
         />
       )}
 
