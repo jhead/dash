@@ -10,6 +10,7 @@ import {
   addLayerFolder,
   clearTween,
   convertToKeyframes,
+  createLayer,
   deleteLayer,
   getLayerDepth,
   insertBlankKeyframe,
@@ -203,6 +204,7 @@ function FrameCell({
   isSelected,
   isFirstInTweenSpan,
   label,
+  labelType,
   hasScript,
   hasSound,
   onClick,
@@ -217,6 +219,8 @@ function FrameCell({
   /** True for the start keyframe of a tween so we can render the arrow */
   isFirstInTweenSpan?: boolean;
   label?: string;
+  /** Label type — controls the visual indicator shown when a label is present */
+  labelType?: "name" | "anchor" | "comment";
   /** True if this keyframe has a non-empty script attached */
   hasScript?: boolean;
   /** True if this keyframe has a sound attached */
@@ -285,6 +289,39 @@ function FrameCell({
           }}
         />
       )}
+      {/* Label type indicator (shown when a label is present) */}
+      {label && labelType === "name" && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: 0,
+            height: 0,
+            borderLeft: "5px solid #e03030",
+            borderBottom: "5px solid transparent",
+            pointerEvents: "none",
+            zIndex: 3,
+          }}
+        />
+      )}
+      {label && labelType === "anchor" && (
+        <span
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 1,
+            fontSize: 6,
+            color: "#40a0e0",
+            pointerEvents: "none",
+            zIndex: 3,
+            lineHeight: 1,
+          }}
+          title="Anchor"
+        >
+          #
+        </span>
+      )}
       {/* Frame label tag */}
       {label && (
         <div
@@ -293,7 +330,7 @@ function FrameCell({
             top: 1,
             left: 1,
             fontSize: 7,
-            color: "#f0c040",
+            color: labelType === "comment" ? "#60c060" : labelType === "anchor" ? "#40a0e0" : "#f0c040",
             whiteSpace: "nowrap",
             pointerEvents: "none",
             zIndex: 2,
@@ -890,6 +927,23 @@ export function Timeline({
   const handleSetLayerType = useCallback(
     (layerId: string, type: LayerType) => {
       onTimelineChange(setLayerType(timeline, layerId, type));
+      setLayerContextMenu(null);
+    },
+    [timeline, onTimelineChange]
+  );
+
+  const handleAddMotionGuide = useCallback(
+    (layerId: string, layerIndex: number) => {
+      // Insert a new guide layer directly above the current layer (at layerIndex),
+      // then mark the current layer as "guided".
+      const currentLayer = timeline.layers[layerIndex];
+      const guideName = `Guide: ${currentLayer?.name ?? "Layer"}`;
+      const guideLayer = createLayer(guideName, "guide");
+      const newLayers = [...timeline.layers];
+      newLayers.splice(layerIndex, 0, guideLayer);
+      // Mark the original layer (now at layerIndex + 1) as "guided"
+      newLayers[layerIndex + 1] = { ...newLayers[layerIndex + 1]!, type: "guided" };
+      onTimelineChange({ ...timeline, layers: newLayers });
       setLayerContextMenu(null);
     },
     [timeline, onTimelineChange]
@@ -1576,6 +1630,7 @@ export function Timeline({
                           isSelected={isSelected}
                           isFirstInTweenSpan={isFirstInTweenSpan}
                           label={kf?.label || undefined}
+                          labelType={kf?.labelType}
                           hasScript={hasScript}
                           hasSound={hasSound}
                           onClick={(e) => {
@@ -2002,6 +2057,27 @@ export function Timeline({
                   />
                   Sync
                 </label>
+                {/* Snap checkbox */}
+                <label
+                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#aaa", cursor: "pointer" }}
+                  title="Snap object registration point to motion guide path"
+                >
+                  <input
+                    type="checkbox"
+                    checked={kf.motionSnap}
+                    onChange={(e) => {
+                      const newTimeline = updateMotionTweenProps(
+                        timeline,
+                        selectedKeyframe.layerId,
+                        selectedKeyframe.frameIndex,
+                        { motionSnap: e.target.checked }
+                      );
+                      onTimelineChange(newTimeline);
+                    }}
+                    style={{ margin: 0 }}
+                  />
+                  Snap
+                </label>
               </>
             )}
             {/* Blend mode selector — only for shape tweens */}
@@ -2100,6 +2176,7 @@ export function Timeline({
           y={layerContextMenu.y}
           currentType={timeline.layers.find((l) => l.id === layerContextMenu.layerId)?.type ?? "normal"}
           onSetType={(type) => handleSetLayerType(layerContextMenu.layerId, type)}
+          onAddMotionGuide={() => handleAddMotionGuide(layerContextMenu.layerId, layerContextMenu.layerIndex)}
           onClose={() => setLayerContextMenu(null)}
         />
       )}
@@ -2383,12 +2460,14 @@ function LayerTypeMenuPopup({
   y,
   currentType,
   onSetType,
+  onAddMotionGuide,
   onClose,
 }: {
   x: number;
   y: number;
   currentType: LayerType;
   onSetType: (type: LayerType) => void;
+  onAddMotionGuide: () => void;
   onClose: () => void;
 }) {
   const types: { type: LayerType; label: string }[] = [
@@ -2410,7 +2489,7 @@ function LayerTypeMenuPopup({
         border: "1px solid #555",
         borderRadius: 3,
         zIndex: 9999,
-        minWidth: 140,
+        minWidth: 160,
         boxShadow: "2px 4px 12px rgba(0,0,0,0.5)",
         padding: "3px 0",
       }}
@@ -2425,6 +2504,29 @@ function LayerTypeMenuPopup({
         }}
       >
         Layer Type
+      </div>
+      {/* Add Motion Guide action */}
+      <div
+        onClick={() => { onAddMotionGuide(); onClose(); }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          padding: "4px 12px",
+          fontSize: 11,
+          color: "#ddd",
+          cursor: "pointer",
+          gap: 8,
+          borderBottom: "1px solid #444",
+          marginBottom: 3,
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLElement).style.background = "#4060a0";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLElement).style.background = "transparent";
+        }}
+      >
+        <span>Add Motion Guide</span>
       </div>
       {types.map(({ type, label }) => (
         <div

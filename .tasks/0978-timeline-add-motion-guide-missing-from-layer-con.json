@@ -1,0 +1,10 @@
+{
+  "id": "0978-timeline-add-motion-guide-missing-from-layer-con",
+  "title": "Timeline: Add Motion Guide missing from layer context menu",
+  "description": "The 'Add Motion Guide' command exists in jsfl/runtime.ts (addMotionGuide) but is never wired to any UI menu. In Timeline.tsx around the LayerTypeMenuPopup (line 2096), add an 'Add Motion Guide' menu item that inserts a guide layer above the selected layer and sets the selected layer type to 'guided'. The JSFL runtime already has the logic; wire the UI to call it via the dispatch mechanism.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T22:20:32Z",
+  "updated_at": "2026-06-10T22:24:40Z"
+}
