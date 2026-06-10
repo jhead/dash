@@ -653,17 +653,17 @@ class Compiler {
     // Compute payload length:
     // flags(1) + catchName(catchNameArr.length + 1 null) or 0 if no catch
     // + TrySize(2) + CatchSize(2) + FinallySize(2)
-    // + tryBytes + catchBytes + finallyBytes
+    // The try/catch/finally BODIES follow the record and are NOT included in
+    // the action's declared length (per the SWF spec and Ruffle's read_try,
+    // which adds try+catch+finally sizes to the action length after parsing
+    // the header). Including them desynchronizes the action stream.
     const catchNameFieldLen = hasCatch ? catchNameArr.length + 1 : 0;
     const payloadLen =
       1 +                 // flags
       catchNameFieldLen + // catch name (null-terminated) or nothing
       2 +                 // TrySize
       2 +                 // CatchSize
-      2 +                 // FinallySize
-      tryBytes.length +
-      catchBytes.length +
-      finallyBytes.length;
+      2;                  // FinallySize
 
     // Emit the record
     this.buf.write(0x8f); // ActionTry opcode
@@ -672,16 +672,17 @@ class Compiler {
     // flags
     this.buf.write(flags);
 
+    // TrySize, CatchSize, FinallySize — BEFORE the catch name (field order per
+    // the SWF spec / Ruffle's read_try: flags, sizes, then catch var).
+    this.buf.writeUI16(tryBytes.length);
+    this.buf.writeUI16(catchBytes.length);
+    this.buf.writeUI16(finallyBytes.length);
+
     // CatchName (null-terminated) — only when HasCatch && !CatchInRegister
     if (hasCatch) {
       for (const b of catchNameArr) this.buf.write(b);
       this.buf.write(0); // null terminator
     }
-
-    // TrySize, CatchSize, FinallySize
-    this.buf.writeUI16(tryBytes.length);
-    this.buf.writeUI16(catchBytes.length);
-    this.buf.writeUI16(finallyBytes.length);
 
     // Bodies — write byte-by-byte from number arrays
     for (const b of tryBytes)     this.buf.write(b);
@@ -1647,15 +1648,22 @@ class Compiler {
     // flags UI16 (2)
     // params (paramBytes.length)
     // codeSize UI16 (2)
-    // body (bodyBytes.length)
+    // body (bodyBytes.length) — NOT included in the action length!
+    //
+    // Per the SWF spec (and Ruffle's read_define_function_2), the function
+    // body FOLLOWS the DefineFunction2 record and is delimited by codeSize;
+    // the action's declared length covers only the header. Including the body
+    // makes Ruffle log "Length mismatch in AVM1 action: DefineFunction2" and
+    // re-sync PAST the actions following the record, silently corrupting the
+    // remainder of the action stream (e.g. the SetMember of
+    // `_root.onEnterFrame = function(){...}` never executes).
     const payloadSize =
       nameBytes.length + 1 + // name + null
       2 +                    // numParams
       1 +                    // registerCount
       2 +                    // flags
       paramBytes.length +    // params
-      2 +                    // codeSize
-      bodyBytes.length;      // body
+      2;                     // codeSize
 
     this.buf.write(0x8e); // ActionDefineFunction2
     this.buf.writeUI16(payloadSize);

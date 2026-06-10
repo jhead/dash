@@ -175,3 +175,110 @@ describe("opcode table sanity (SWF spec values)", () => {
     expect(opcodes(compileAS2("i--;"))).toContain(OP.Decrement);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Action length integrity (Ruffle read.rs parity)
+//
+// Per the SWF spec, the bodies of DefineFunction/DefineFunction2 (codeSize),
+// With (size), and Try (try/catch/finally sizes) FOLLOW the action record and
+// are NOT included in the action's declared UI16 length. Including them makes
+// Ruffle log "Length mismatch in AVM1 action" and re-sync PAST subsequent
+// actions, silently corrupting the stream (e.g. the SetMember of
+// `_root.onEnterFrame = function(){...}` was skipped, so the game loop never
+// ran — found by capstone task 0519).
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk the action stream exactly like Ruffle's read_action: consume each
+ * action's declared length, plus trailing body bytes for the spec'd opcodes.
+ * Returns true if the walk lands exactly on the end of the stream.
+ */
+function walkLikeRuffle(bytes: Uint8Array): boolean {
+  let i = 0;
+  const u16 = (p: number) => bytes[p]! | (bytes[p + 1]! << 8);
+  while (i < bytes.length) {
+    const code = bytes[i]!;
+    i += 1;
+    let len = 0;
+    if (code >= 0x80) {
+      len = u16(i);
+      i += 2;
+    }
+    const bodyStart = i;
+    if (code === 0x9b) {
+      // DefineFunction: name, numParams, params..., codeSize — codeSize bytes follow.
+      let p = bodyStart;
+      while (bytes[p] !== 0) p++;
+      p++; // name null
+      const numParams = u16(p); p += 2;
+      for (let k = 0; k < numParams; k++) { while (bytes[p] !== 0) p++; p++; }
+      const codeSize = u16(p); p += 2;
+      if (p - bodyStart !== len) return false;
+      i = p + codeSize;
+    } else if (code === 0x8e) {
+      // DefineFunction2 header, then codeSize bytes follow the record.
+      let p = bodyStart;
+      while (bytes[p] !== 0) p++;
+      p++; // name null
+      const numParams = u16(p); p += 2;
+      p += 1; // registerCount
+      p += 2; // flags
+      for (let k = 0; k < numParams; k++) { p += 1; while (bytes[p] !== 0) p++; p++; }
+      const codeSize = u16(p); p += 2;
+      if (p - bodyStart !== len) return false;
+      i = p + codeSize;
+    } else if (code === 0x94) {
+      // With: declared length covers only the UI16 size field.
+      const size = u16(bodyStart);
+      if (len !== 2) return false;
+      i = bodyStart + 2 + size;
+    } else if (code === 0x8f) {
+      // Try: flags, trySize, catchSize, finallySize, catchName/register; the
+      // three bodies follow the record.
+      let p = bodyStart;
+      const flags = bytes[p]!; p += 1;
+      const trySize = u16(p); p += 2;
+      const catchSize = u16(p); p += 2;
+      const finallySize = u16(p); p += 2;
+      if (flags & 0x04) { p += 1; } // CatchInRegister
+      else if (flags & 0x01) { while (bytes[p] !== 0) p++; p++; }
+      if (p - bodyStart !== len) return false;
+      i = p + trySize + catchSize + finallySize;
+    } else {
+      i = bodyStart + len;
+    }
+    if (i > bytes.length) return false;
+  }
+  return i === bytes.length;
+}
+
+describe("action length integrity (DefineFunction2 / With / Try)", () => {
+  it("_root.onEnterFrame = function(){...} parses cleanly with body outside the record length", () => {
+    const bytes = compileAS2(
+      '_root.onEnterFrame = function() { if (_root.player.hitTest(_root.coin)) { _root.score++; } };'
+    );
+    expect(walkLikeRuffle(bytes)).toBe(true);
+    // The SetMember that performs the onEnterFrame assignment must survive.
+    expect(opcodes(compileAS2('x = function() { trace("hi"); }; y = 1;'))).toContain(OP.SetVariable);
+  });
+
+  it("named function declaration parses cleanly", () => {
+    const bytes = compileAS2('function tick() { trace("t"); } tick();');
+    expect(walkLikeRuffle(bytes)).toBe(true);
+  });
+
+  it("with(){} parses cleanly", () => {
+    const bytes = compileAS2('with (obj) { x = 1; }');
+    expect(walkLikeRuffle(bytes)).toBe(true);
+  });
+
+  it("try/catch/finally parses cleanly with bodies outside the record length", () => {
+    const bytes = compileAS2('try { x = 1; } catch (e) { trace(e); } finally { y = 2; }');
+    expect(walkLikeRuffle(bytes)).toBe(true);
+  });
+
+  it("nested functions parse cleanly", () => {
+    const bytes = compileAS2('f = function() { g = function() { trace("inner"); }; g(); };');
+    expect(walkLikeRuffle(bytes)).toBe(true);
+  });
+});

@@ -161,6 +161,10 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   `if (!frame.isKeyframe || frame.isEmpty) continue;`). Display objects listed on a
   frame marked `isEmpty` are silently dropped from the SWF — fixture builders must set
   `isEmpty: false` on any frame that carries displayObjects.
+- **Named text fields need the name in PlaceObject2** (task 0519): for
+  `_root.scoreText.text = ...` to resolve, the EditText's PlaceObject2 must carry the
+  instance name (`encodePlaceObject2WithName`); DefineEditText's VariableName field is
+  not what gives the TextField its AS2 path.
 - **Blank-white Ruffle screenshots are ambiguous**: a failed player load and a frame
   with only invisible content both screenshot as pure white. E2E oracles should assert
   every screenshot is non-blank (diff vs a white reference > threshold) in addition to
@@ -173,6 +177,26 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   Reset all mutable state in `beforeEach` or use factory functions instead of singletons.
 - **do-while and static-class tests are the canary**: if AS2 compiler tests are flaky,
   start by checking for module-level mutable state.
+- **Verify every opcode against `ruffle/swf/src/avm1/opcode.rs`** — never trust a
+  comment. Tasks 0706/0519 found 15 wrong values in the compiler's opcode table,
+  including SetMember/GetMember SWAPPED (0x4E/0x4F), Add2 as 0x64 (actually BitRShift),
+  Not as 0x14 (actually StringLength), Increment as 0x47 (actually Add2). ~700
+  byte-presence test assertions had codified the wrong values, so "all unit tests
+  pass" proved nothing. `memberassign.test.ts` now pins the table to spec values.
+- **DefineFunction/DefineFunction2/With/Try action lengths exclude trailing bodies.**
+  The declared UI16 action length covers ONLY the header; the function body
+  (codeSize), with-block body (size), and try/catch/finally bodies follow the record.
+  Including them makes Ruffle log "Length mismatch in AVM1 action" and re-sync PAST
+  the following actions — e.g. the SetMember of `_root.onEnterFrame = function(){...}`
+  was silently skipped, so the game loop never ran. Also: ActionTry field order is
+  flags, then the three sizes, THEN the catch name (not name-before-sizes).
+- **Ruffle trace() output**: load the player with `logLevel: 'info'` in the load
+  config to see AVM1 `trace()` in the browser console — invaluable for runtime
+  debugging of published SWFs; the default log level hides traces.
+- **`_root.onEnterFrame = function(){...}` DOES run in headless Ruffle.** The earlier
+  claim that headless Ruffle "does not drive onEnterFrame game loops" was an artifact
+  of the broken SetMember opcode + DefineFunction2 length bug; with both fixed, the
+  capstone game loop runs every frame.
 
 ### Authoring UI
 

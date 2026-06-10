@@ -963,7 +963,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
             } else if (displayObj.type === "text") {
               const charId = objCharIdMap.get(objId)!;
-              const placeBody = encodePlaceObject2ForText(charId, depth, x, y);
+              // Named text fields (dynamic/input) must carry the instance name
+              // in PlaceObject2 so AS2 can address them (_root.<name>.text = ...).
+              const textName = displayObj.instanceName;
+              const placeBody = textName && textName.length > 0
+                ? encodePlaceObject2WithName(charId, depth, x, y, textName)
+                : encodePlaceObject2ForText(charId, depth, x, y);
               writer.writeTag(Tag.PlaceObject2, placeBody);
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
