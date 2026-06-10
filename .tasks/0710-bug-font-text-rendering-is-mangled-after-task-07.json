@@ -2,9 +2,9 @@
   "id": "0710-bug-font-text-rendering-is-mangled-after-task-07",
   "title": "Bug: font/text rendering is mangled after task 0702 glyph outline changes",
   "description": "Text rendering is completely mangled in the editor or published SWFs. Likely regressed by task 0702 changes to packages/swf/src/fonts.ts and packages/swf/src/text.ts (DefineFont3 EM scale fix, TEXTRECORD field order fix, DefineEditText flag bits). Need to triage: (1) is it broken in the editor canvas, in published SWF in Ruffle, or both? (2) which specific change in 0702 caused it. Cross-check against the text-rendering.spec.ts E2E test \u2014 if that still passes, the SWF encoding is correct and the issue is in the authoring UI renderer.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-10T03:20:00Z",
-  "updated_at": "2026-06-10T03:20:23Z"
+  "updated_at": "2026-06-10T03:36:07Z"
 }
