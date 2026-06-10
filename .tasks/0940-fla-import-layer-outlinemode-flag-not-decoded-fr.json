@@ -1,0 +1,11 @@
+{
+  "id": "0940-fla-import-layer-outlinemode-flag-not-decoded-fr",
+  "title": "FLA import: layer outlineMode flag not decoded from binary",
+  "description": "flash8-import.ts decodes locked and outlineColor for layers but does not set outlineMode (the boolean 'show layer as outlines' flag). The model type has outlineMode?: boolean on Layer. In flash8-binary.ts/flash8-import.ts, find where layer properties are read (CPicLayer) and decode the outline mode bit. outlineColor is already decoded; outlineMode should be nearby (it's the flag that controls whether the layer renders as colored outlines in the authoring tool). The SWF encoder doesn't need to emit this (it's authoring-only), but the model should preserve it for round-trip fidelity.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:09:42Z",
+  "updated_at": "2026-06-10T21:14:49Z",
+  "resolution": "In flash8-binary.ts: added outlineMode field to Fla8Layer interface; in readCPicLayer (F4+ branch) decode the showOutlines byte (r.u8() !== 0) instead of skipping it. In flash8-import.ts: forward l.outlineMode to createLayer overrides. All 4920 core tests pass."
+}
