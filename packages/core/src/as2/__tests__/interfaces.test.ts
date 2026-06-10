@@ -108,7 +108,7 @@ describe("AS2 interface declarations and implements keyword", () => {
   //         (same structure as a class without implements)
   // -------------------------------------------------------------------------
 
-  it("6. class with implements emits correct class bytecode", () => {
+  it("6. class with implements emits ActionImplementsOp and correct class bytecode", () => {
     const withImpl = compileAS2(`
       class Worker implements IRunnable {
         function Worker() {}
@@ -121,11 +121,18 @@ describe("AS2 interface declarations and implements keyword", () => {
       }
     `);
 
-    // Both should produce identical bytecode — implements is compile-time only
-    expect(withImpl).toEqual(withoutImpl);
+    // With implements must be longer (contains ActionImplementsOp extra bytes)
+    expect(withImpl.length).toBeGreaterThan(withoutImpl.length);
+
+    // ActionImplementsOp (0x2c) must appear in the implements variant
+    expect(withImpl).toContain(0x2c);
+    expect(withoutImpl).not.toContain(0x2c);
 
     // The class name should appear in the bytecode
     expect(containsString(withImpl, "Worker")).toBe(true);
+
+    // The interface name must appear in the implements bytecode
+    expect(containsString(withImpl, "IRunnable")).toBe(true);
 
     // ActionDefineFunction2 (0x8e) must be emitted for the constructor
     expect(withImpl).toContain(0x8e);

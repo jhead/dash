@@ -1681,6 +1681,64 @@ class Compiler {
   // ---- Function compilation ------------------------------------------------
 
   /**
+   * Walk an array of AST statements and return true if any Identifier with
+   * name === 'arguments' appears (excluding nested function bodies, which have
+   * their own `arguments` binding).
+   *
+   * Only the immediate function's body is scanned; inner DefineFunction2
+   * bodies are NOT entered because they capture their own `arguments`.
+   */
+  private static bodyUsesArguments(stmts: Statement[]): boolean {
+    function scanStmt(s: Statement): boolean {
+      switch (s.type) {
+        case 'Block':         return s.body.some(scanStmt);
+        case 'IfStmt':        return scanExpr(s.test) || scanStmt(s.consequent) || (s.alternate != null && scanStmt(s.alternate));
+        case 'ForStmt':
+          return (s.init != null && scanStmt(s.init))
+              || (s.test != null && scanExpr(s.test))
+              || (s.update != null && scanExpr(s.update))
+              || scanStmt(s.body);
+        case 'ForInStmt':     return scanExpr(s.right) || scanStmt(s.body);
+        case 'WhileStmt':     return scanExpr(s.test) || scanStmt(s.body);
+        case 'DoWhileStmt':   return scanStmt(s.body) || scanExpr(s.test);
+        case 'ReturnStmt':    return s.value != null && scanExpr(s.value);
+        case 'ThrowStmt':     return scanExpr(s.value);
+        case 'ExprStmt':      return scanExpr(s.expression);
+        case 'VarDecl':       return s.init != null && scanExpr(s.init);
+        case 'TryStmt':
+          return s.body.body.some(scanStmt)
+              || (s.catchClause != null && s.catchClause.body.body.some(scanStmt))
+              || (s.finallyBlock != null && s.finallyBlock.body.some(scanStmt));
+        case 'SwitchStmt':
+          return scanExpr(s.discriminant) || s.cases.some(c => (c.test != null && scanExpr(c.test)) || c.consequent.some(scanStmt));
+        case 'WithStmt':      return scanExpr(s.object) || scanStmt(s.body);
+        case 'LabeledStmt':   return scanStmt(s.body);
+        case 'FunctionDecl':  return false; // do NOT enter nested functions
+        case 'ClassDecl':     return false;
+        default:              return false;
+      }
+    }
+    function scanExpr(e: Expression): boolean {
+      switch (e.type) {
+        case 'Identifier':    return e.name === 'arguments';
+        case 'BinaryExpr':    return scanExpr(e.left) || scanExpr(e.right);
+        case 'UnaryExpr':     return scanExpr(e.operand);
+        case 'AssignExpr':    return scanExpr(e.left) || scanExpr(e.right);
+        case 'CallExpr':      return scanExpr(e.callee) || e.args.some(scanExpr);
+        case 'NewExpr':       return scanExpr(e.callee) || e.args.some(scanExpr);
+        case 'MemberExpr':    return scanExpr(e.object);
+        case 'IndexExpr':     return scanExpr(e.object) || scanExpr(e.index);
+        case 'TernaryExpr':   return scanExpr(e.test) || scanExpr(e.consequent) || scanExpr(e.alternate);
+        case 'ArrayLiteral':  return e.elements.some(scanExpr);
+        case 'ObjectLiteral': return e.properties.some(p => scanExpr(p.value));
+        case 'FunctionDecl':  return false; // do NOT enter nested functions
+        default:              return false;
+      }
+    }
+    return stmts.some(scanStmt);
+  }
+
+  /**
    * Compile a named function declaration statement.
    * Emits ActionDefineFunction2 which assigns the function to the named variable.
    */
@@ -1771,8 +1829,15 @@ class Compiler {
     this.buf.writeUI16(params.length);
     // registerCount (0 = auto)
     this.buf.write(0);
-    // flags (preload/suppress bits) — 0 for simplicity
-    this.buf.writeUI16(0);
+    // DefineFunction2 flags (SWF spec / ruffle FunctionFlags):
+    //   Bit 3: SUPPRESS_ARGUMENTS — omit the `arguments` object when the body
+    //          doesn't reference it. This is a pure optimisation that frees a
+    //          register and matches real Flash 8 output for most methods.
+    //          Safe: it only affects the implicit `arguments` binding; named
+    //          parameters still arrive as named locals (registerNumber = 0).
+    const suppressArgs = !Compiler.bodyUsesArguments(body);
+    const flags = suppressArgs ? 0x0008 : 0x0000;
+    this.buf.writeUI16(flags);
 
     // params: each is (UI8 register, C-string name)
     for (const b of paramBytes) this.buf.write(b);

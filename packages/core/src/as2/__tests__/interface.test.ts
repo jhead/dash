@@ -90,15 +90,11 @@ describe("AS2 interface keyword support", () => {
     // ActionSetMember (0x4f) to assign onto prototype
     expect(withImpl).toContain(0x4f);
 
-    // The bytecode with implements should be identical to without implements
-    const withoutImpl = compileAS2(`
-      class Dog {
-        var name:String;
-        function Dog(n:String) { this.name = n; }
-        function getName():String { return name; }
-      }
-    `);
-    expect(withImpl).toEqual(withoutImpl);
+    // ActionImplementsOp (0x2c) must be emitted when implements is present
+    expect(withImpl).toContain(0x2c);
+
+    // The interface name must appear in bytecode (as a GetVariable argument)
+    expect(containsString(withImpl, "IAnimal")).toBe(true);
   });
 
   // -------------------------------------------------------------------------
@@ -148,7 +144,7 @@ describe("AS2 interface keyword support", () => {
   // Test 7: Class implementing interface produces same bytecode as without
   // -------------------------------------------------------------------------
 
-  it("7. implements clause is purely compile-time — no extra bytecode", () => {
+  it("7. implements clause emits ActionImplementsOp (0x2c)", () => {
     const withImpl = compileAS2(`
       class Cat implements IAnimal {
         function Cat() {}
@@ -161,7 +157,16 @@ describe("AS2 interface keyword support", () => {
         function getName():String { return "Cat"; }
       }
     `);
-    expect(withImpl).toEqual(withoutImpl);
+
+    // With implements must contain ActionImplementsOp; without must not
+    expect(withImpl).toContain(0x2c);
+    expect(withoutImpl).not.toContain(0x2c);
+
+    // The interface name appears in the implements bytecode
+    expect(containsString(withImpl, "IAnimal")).toBe(true);
+
+    // Without implements, the interface name is absent
+    expect(containsString(withoutImpl, "IAnimal")).toBe(false);
   });
 
   // -------------------------------------------------------------------------
