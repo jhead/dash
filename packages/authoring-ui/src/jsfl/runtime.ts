@@ -48,6 +48,7 @@ import {
   pasteFramesDoc,
   cutFramesDoc,
   updateDisplayObject,
+  setSymbolLinkage,
 } from "@flash/core";
 import type {
   ShapeDisplayObject,
@@ -867,6 +868,17 @@ export interface JsflLibrary {
    * Only symbol items are supported; other item types are silently ignored.
    */
   addItemToDocument(itemName: string, x: number, y: number): void;
+  /**
+   * Get a property of a library item by name.
+   * Supported props: 'name', 'symbolType', 'linkageIdentifier',
+   * 'exportForActionScript', 'exportInFirstFrame', 'className'.
+   */
+  getItemProperty(name: string, prop: string): unknown;
+  /**
+   * Set a property of a library item by name.
+   * Supported props: 'linkageIdentifier', 'exportForActionScript', 'exportInFirstFrame'.
+   */
+  setItemProperty(name: string, prop: string, value: unknown): void;
 }
 
 function jsflSymbolType(jsflType: string): SymbolType {
@@ -951,6 +963,79 @@ function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCoun
         i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
       );
       state.doc = { ...state.doc, scenes: newScenes };
+    },
+    getItemProperty(name: string, prop: string): unknown {
+      const item = state.doc.library.items.find((i) => i.name === name);
+      if (!item) {
+        console.warn("[JSFL] library.getItemProperty: item not found:", name);
+        return undefined;
+      }
+      switch (prop) {
+        case "name":
+          return item.name;
+        case "symbolType": {
+          if (item.itemType !== "symbol") return undefined;
+          const symTypeMap: Record<string, string> = {
+            movieclip: "movie clip",
+            button: "button",
+            graphic: "graphic",
+          };
+          return symTypeMap[(item as { symbolType: string }).symbolType] ?? undefined;
+        }
+        case "linkageIdentifier": {
+          if (item.itemType !== "symbol") return undefined;
+          return (item as { linkage?: { linkageIdentifier?: string } }).linkage?.linkageIdentifier ?? undefined;
+        }
+        case "exportForActionScript": {
+          if (item.itemType !== "symbol") return undefined;
+          return (item as { linkage?: { exportForActionScript?: boolean } }).linkage?.exportForActionScript ?? undefined;
+        }
+        case "exportInFirstFrame": {
+          if (item.itemType !== "symbol") return undefined;
+          return (item as { linkage?: { exportInFirstFrame?: boolean } }).linkage?.exportInFirstFrame ?? undefined;
+        }
+        case "className":
+          // className is not modifiable through this runtime; return undefined
+          return undefined;
+        default:
+          return undefined;
+      }
+    },
+    setItemProperty(name: string, prop: string, value: unknown): void {
+      const item = state.doc.library.items.find((i) => i.name === name);
+      if (!item) {
+        console.warn("[JSFL] library.setItemProperty: item not found:", name);
+        return;
+      }
+      switch (prop) {
+        case "linkageIdentifier":
+          state.doc = {
+            ...state.doc,
+            library: setSymbolLinkage(state.doc.library, item.id, {
+              linkageId: String(value),
+            }),
+          };
+          break;
+        case "exportForActionScript":
+          state.doc = {
+            ...state.doc,
+            library: setSymbolLinkage(state.doc.library, item.id, {
+              exportForActionScript: Boolean(value),
+            }),
+          };
+          break;
+        case "exportInFirstFrame":
+          state.doc = {
+            ...state.doc,
+            library: setSymbolLinkage(state.doc.library, item.id, {
+              exportInFirstFrame: Boolean(value),
+            }),
+          };
+          break;
+        default:
+          console.warn("[JSFL] library.setItemProperty: unsupported property:", prop);
+          break;
+      }
     },
   };
 }
