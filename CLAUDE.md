@@ -83,6 +83,33 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   (`interactivity.spec.ts`, visual-oracle) are the acceptance truth; unit tests on
   encoded bytes are necessary but never sufficient.
 
+### Binary FLA import (Flash 5–CS4 OLE2 format)
+
+- **Authoritative format references**: JPEXS `flacomdoc` (github.com/jindrapetrik/flacomdoc,
+  an XFL→binary-FLA *writer* byte-verified against real Flash output — best source for
+  field order/semantics per version) and `eddiemoore/fla-decoder` (Ghidra reverse
+  engineering of flash.exe — best source for the MFC CArchive protocol and schema gates).
+  Clone these before guessing at bytes.
+- **Streams are MFC CArchive serializations** of CPicPage/CPicLayer/CPicFrame/CPicShape...
+  Class tags: `FFFF`=new class decl, `0x8000|combinedIdx`=backref (the combined table
+  allocates TWO slots per class), `0000`=null/end-of-children. Strings: `FF FE FF len`
+  BomString (unicode docs = MX2004+) vs bare `len`+chars.
+- **AS2 frame scripts are stored as plain source text** inside each CPicFrame (after
+  the frameVersionC block); no decompilation needed for Flash 5+.
+- **Shape edge coords are 8.8 fixed-point twips** (1 px = 5120 units), NOT SWF twips.
+  Verify any new geometry assumption against the SWF published from the same FLA.
+- **Edge style-change order is (stroke, fill0, fill1)** — not fill0/fill1/stroke.
+- **Pre-F8 strokes are 10 bytes** (RGBA+width+params); F8 adds caps/joins/miter and a
+  trailing full fill style. Gating is by the CPicShape schema byte (>2 = F8).
+- **Naive "end-marker" recovery scans are dangerous**: the `00 00 + INT_MIN point`
+  signature also appears at the START of sibling records whose registration point is
+  uninitialized; scan for the nearest plausible class tag instead.
+- **Mini-FAT matters**: OLE2 streams smaller than 4096 bytes (most Page streams) live
+  in 64-byte mini sectors inside the root entry's stream; reading them via the main
+  FAT yields garbage.
+- Versioning: every record starts with a per-version schema byte
+  (`FlaFormatVersion.java` in flacomdoc has the full table); gate field reads on it.
+
 ### SWF encoding
 
 - **LINESTYLE2 byte order**: `EndCap` bits and miter limit must be written in the exact

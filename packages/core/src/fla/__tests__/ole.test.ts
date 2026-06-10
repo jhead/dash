@@ -310,16 +310,29 @@ describe("tryLoadRealFla: crafted minimal OLE2", () => {
 // ---------------------------------------------------------------------------
 
 describe("tryLoadRealFla: stage dimension extraction", () => {
-  it("extracts plausible width=800, height=600 embedded in stream data", () => {
-    // Build a stream with 800 (0x0320) and 600 (0x0258) as LE UI16 at offset 0,
-    // followed by frame rate 24 at offset 4
+  it("extracts width=800, height=600, fps=24 from a Contents stream using the real Flash encoding", () => {
+    // The genuine Contents layout stores the stage size as u16 width*20,
+    // six zero bytes, u16 height*20, four zero bytes, shortly before a
+    // background/frame-rate block that ends with 03 B4 00 00 00.
     const streamPayload = new Uint8Array(512).fill(0);
-    // width = 800 = 0x0320
-    streamPayload[0] = 0x20; streamPayload[1] = 0x03;
-    // height = 600 = 0x0258
-    streamPayload[2] = 0x58; streamPayload[3] = 0x02;
-    // frame rate = 24 = 0x0018
-    streamPayload[4] = 0x18; streamPayload[5] = 0x00;
+    let p = 0x20;
+    // width*20 = 16000 = 0x3E80
+    streamPayload[p++] = 0x80; streamPayload[p++] = 0x3e;
+    p += 6; // six zero bytes
+    // height*20 = 12000 = 0x2EE0
+    streamPayload[p++] = 0xe0; streamPayload[p++] = 0x2e;
+    p += 4; // four zero bytes
+    // background/frame-rate block:
+    //   bgR bgG bgB FF gridR gridG gridB FF 00 fpsFrac fpsInt 00 00 00 03 B4 00 00 00
+    const block = [
+      0x33, 0x66, 0x99, 0xff,       // background color #336699
+      0xc0, 0xc0, 0xc0, 0xff,       // grid color
+      0x00,
+      0x00, 24,                     // frame rate 24.0
+      0x00, 0x00, 0x00,
+      0x03, 0xb4, 0x00, 0x00, 0x00, // anchor
+    ];
+    streamPayload.set(block, p);
 
     const ole2Bytes = buildMinimalOle2WithStream(streamPayload);
     const doc = tryLoadRealFla(ole2Bytes);
@@ -327,6 +340,7 @@ describe("tryLoadRealFla: stage dimension extraction", () => {
       expect(doc.properties.width).toBe(800);
       expect(doc.properties.height).toBe(600);
       expect(doc.properties.frameRate).toBe(24);
+      expect(doc.properties.backgroundColor).toBe("#336699");
     }
   });
 

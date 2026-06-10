@@ -1,17 +1,19 @@
 /**
- * Best-effort OLE2/CFB (Compound File Binary) parser for real Macromedia Flash 8 .fla files.
+ * OLE2/CFB (Compound File Binary) container parser for real Macromedia
+ * Flash .fla files (Flash 5 / MX / MX 2004 / 8 / CS-era binary format).
  *
- * Flash 8 stores its project data in an OLE2 container (magic: D0 CF 11 E0 A1 B1 1A E1).
- * The internal binary format is undocumented; this parser extracts what it can and logs
- * warnings for anything it cannot interpret.
+ * Flash stores its project data in an OLE2 container (magic: D0 CF 11 E0 A1
+ * B1 1A E1) holding "Contents", "Page N", "Symbol N" and "Media N" streams.
+ * The stream payloads are parsed by flash8-binary.ts / flash8-import.ts.
  *
  * Write-back to real FLA format is explicitly OUT OF SCOPE.
  */
 
 import type { FlashDocument, Scene } from "../model/types.js";
-import { createDocument, createDocumentProperties } from "../model/document.js";
+import { createDocument } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createLayer } from "../model/timeline.js";
+import { buildFla8Document } from "./flash8-import.js";
 
 // ---------------------------------------------------------------------------
 // OLE2 constants
@@ -41,6 +43,7 @@ interface Ole2Header {
   miniStreamCutoff: number;  // usually 4096
   firstMiniFatSector: number;
   miniFatSectorCount: number;
+  firstDifatSector: number;  // start of the extended DIFAT chain
   difatSectors: number[];    // first 109 DIFAT entries from header
 }
 
@@ -103,6 +106,7 @@ function parseHeader(bytes: Uint8Array): Ole2Header {
   const miniStreamCutoff = readU32LE(bytes, 56);
   const firstMiniFatSector = readU32LE(bytes, 60);
   const miniFatSectorCount = readU32LE(bytes, 64);
+  const firstDifatSector   = readU32LE(bytes, 68);
 
   // First 109 DIFAT entries at offset 76
   const difatSectors: number[] = [];
@@ -120,6 +124,7 @@ function parseHeader(bytes: Uint8Array): Ole2Header {
     miniStreamCutoff,
     firstMiniFatSector,
     miniFatSectorCount,
+    firstDifatSector,
     difatSectors,
   };
 }
@@ -134,11 +139,30 @@ function getSectorData(bytes: Uint8Array, sector: number, sectorSize: number): U
 }
 
 function buildFat(bytes: Uint8Array, header: Ole2Header): Uint32Array {
-  const { sectorSize, difatSectors } = header;
+  const { sectorSize } = header;
   const entriesPerSector = sectorSize / 4;
-  const fat = new Uint32Array(header.fatSectorCount * entriesPerSector);
-  let idx = 0;
 
+  // Collect all DIFAT entries: 109 from the header plus any extended DIFAT
+  // sectors (needed for files larger than ~6.8 MB).
+  const difatSectors = [...header.difatSectors];
+  let difatSector = header.firstDifatSector;
+  const seenDifat = new Set<number>();
+  while (
+    difatSector !== ENDOFCHAIN &&
+    difatSector !== FREESECT &&
+    !seenDifat.has(difatSector)
+  ) {
+    seenDifat.add(difatSector);
+    const data = getSectorData(bytes, difatSector, sectorSize);
+    for (let i = 0; i < entriesPerSector - 1; i++) {
+      const v = readU32LE(data, i * 4);
+      if (v !== FREESECT && v !== ENDOFCHAIN) difatSectors.push(v);
+    }
+    difatSector = readU32LE(data, (entriesPerSector - 1) * 4);
+  }
+
+  const fat = new Uint32Array(difatSectors.length * entriesPerSector);
+  let idx = 0;
   for (const fatSector of difatSectors) {
     const data = getSectorData(bytes, fatSector, sectorSize);
     for (let i = 0; i < entriesPerSector && idx < fat.length; i++, idx++) {
@@ -204,15 +228,18 @@ function parseDirectoryEntries(dirData: Uint8Array): DirectoryEntry[] {
   return entries;
 }
 
-function collectEntries(entries: DirectoryEntry[]): Map<string, DirectoryEntry> {
-  const map = new Map<string, DirectoryEntry>();
+/** Collect all stream entries reachable from the root, preserving names. */
+function collectStreamEntries(entries: DirectoryEntry[]): DirectoryEntry[] {
+  const out: DirectoryEntry[] = [];
+  const visited = new Set<number>();
 
   function visit(id: number): void {
-    if (id === NOSTREAM || id >= entries.length) return;
+    if (id === NOSTREAM || id >= entries.length || visited.has(id)) return;
+    visited.add(id);
     const e = entries[id];
     if (!e) return;
-    if (e.type === DE_STREAM || e.type === DE_STORAGE) {
-      map.set(e.name.toLowerCase(), e);
+    if (e.type === DE_STREAM) {
+      out.push(e);
     }
     visit(e.leftSiblingId);
     visit(e.rightSiblingId);
@@ -221,111 +248,60 @@ function collectEntries(entries: DirectoryEntry[]): Map<string, DirectoryEntry> 
     }
   }
 
-  // Start from root's child
   const root = entries[0];
   if (root) {
     visit(root.childId);
   }
-  return map;
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Flash 8 binary stream parser (best-effort)
+// Mini-FAT (streams smaller than the mini-stream cutoff, usually 4096 bytes,
+// live in 64-byte mini sectors carved out of the root entry's stream)
 // ---------------------------------------------------------------------------
 
-/**
- * Try to extract basic document properties from the raw Flash 8 binary stream.
- *
- * The Flash 8 internal format is undocumented. This function performs a
- * best-effort scan for recognizable patterns:
- *
- * - Stage dimensions (width, height) stored as 16-bit LE values
- * - Frame rate stored as a 16-bit or 32-bit LE value
- * - Background color as 3 consecutive bytes (RGB)
- * - Layer count and basic layer names
- *
- * Anything that cannot be parsed is skipped with a console.warn.
- */
-function parseFlash8Stream(stream: Uint8Array): Partial<FlashDocument> {
-  if (stream.length < 16) {
-    console.warn('[FLA import] Stream too short to parse Flash 8 properties');
-    return {};
+function buildMiniFat(bytes: Uint8Array, fat: Uint32Array, header: Ole2Header): Uint32Array {
+  if (
+    header.firstMiniFatSector === ENDOFCHAIN ||
+    header.firstMiniFatSector === FREESECT ||
+    header.miniFatSectorCount === 0
+  ) {
+    return new Uint32Array(0);
   }
-
-  // The Flash 8 binary FLA uses a record-based format. Without full
-  // documentation we scan for plausible stage dimensions.
-  //
-  // Known layout hints (from community reverse engineering of JPEXS FFDec):
-  // - Bytes 0-3: version/magic marker (varies)
-  // - Stage width/height often appear early as UI16 LE pairs
-  // - Frame rate as UI16 (value * 256 / 256) near the stage dimensions
-  //
-  // Strategy: scan the first 256 bytes for pairs of UI16 values that look
-  // like plausible stage dimensions (between 1 and 8192).
-
-  let width = 550;
-  let height = 400;
-  let frameRate = 12;
-  let backgroundColor = "#ffffff";
-
-  // Scan for plausible (width, height) pairs in the first 512 bytes
-  const scanLimit = Math.min(stream.length - 4, 512);
-  for (let i = 0; i < scanLimit; i += 2) {
-    const w = readU16LE(stream, i);
-    const h = readU16LE(stream, i + 2);
-    if (w >= 1 && w <= 8192 && h >= 1 && h <= 8192 && w !== h) {
-      // Check for a plausible frame rate nearby (1-120)
-      if (i + 4 < stream.length) {
-        const fps = readU16LE(stream, i + 4);
-        if (fps >= 1 && fps <= 120) {
-          width = w;
-          height = h;
-          frameRate = fps;
-          break;
-        }
-      } else {
-        width = w;
-        height = h;
-        break;
-      }
+  const chain = followChain(fat, header.firstMiniFatSector);
+  const entriesPerSector = header.sectorSize / 4;
+  const miniFat = new Uint32Array(chain.length * entriesPerSector);
+  let idx = 0;
+  for (const sector of chain) {
+    const data = getSectorData(bytes, sector, header.sectorSize);
+    for (let i = 0; i < entriesPerSector; i++, idx++) {
+      miniFat[idx] = readU32LE(data, i * 4);
     }
   }
+  return miniFat;
+}
 
-  // Scan for a background color (3 consecutive bytes that look like RGB)
-  // Background is often stored after dimension/fps data
-  for (let i = 6; i < Math.min(stream.length - 3, 128); i++) {
-    const r = stream[i]!;
-    const g = stream[i + 1]!;
-    const b = stream[i + 2]!;
-    // Skip obvious non-color patterns like 0x00 0x00 0x00 at start (null fields)
-    if (i > 8 && (r > 0 || g > 0 || b > 0)) {
-      backgroundColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-      break;
-    }
+function readMiniStream(
+  miniStream: Uint8Array,
+  miniFat: Uint32Array,
+  startSector: number,
+  size: number,
+  miniSectorSize: number,
+): Uint8Array {
+  const result = new Uint8Array(size);
+  let written = 0;
+  let cur = startSector;
+  const visited = new Set<number>();
+  while (cur !== ENDOFCHAIN && cur !== FREESECT && written < size) {
+    if (visited.has(cur)) break;
+    visited.add(cur);
+    const offset = cur * miniSectorSize;
+    const toCopy = Math.min(miniSectorSize, size - written);
+    result.set(miniStream.subarray(offset, offset + toCopy), written);
+    written += toCopy;
+    cur = miniFat[cur] ?? ENDOFCHAIN;
   }
-
-  console.warn('[FLA import] Best-effort parsed stage properties from Flash 8 binary stream. Layer structure and display objects are not extracted from this format version.');
-
-  const properties = createDocumentProperties({
-    width,
-    height,
-    frameRate,
-    backgroundColor,
-  });
-
-  // Build a minimal document with one scene and one empty layer
-  const layer = createLayer("Layer 1", "normal");
-  const scene = createScene("Scene 1");
-  const sceneWithLayer: Scene = {
-    ...scene,
-    timeline: { layers: [layer] },
-  };
-
-  return {
-    properties,
-    scenes: [sceneWithLayer],
-    library: { items: [], folders: [] },
-  };
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,12 +309,34 @@ function parseFlash8Stream(stream: Uint8Array): Partial<FlashDocument> {
 // ---------------------------------------------------------------------------
 
 /**
- * Try to parse a genuine Macromedia Flash 8 .fla file (OLE2/CFB format).
+ * Fallback skeleton returned when the container is readable but the Flash
+ * document payload cannot be parsed: default stage properties, one scene,
+ * one empty layer.
+ */
+function skeletonDocument(): FlashDocument {
+  const layer = createLayer("Layer 1", "normal");
+  const scene = createScene("Scene 1");
+  const sceneWithLayer: Scene = {
+    ...scene,
+    timeline: { layers: [layer] },
+  };
+  return createDocument({
+    scenes: [sceneWithLayer],
+    library: { items: [], folders: [] },
+  });
+}
+
+/**
+ * Try to parse a genuine Macromedia Flash binary .fla file (OLE2/CFB format,
+ * Flash 5 through CS4-era; Flash 8 is the primary target).
  *
  * Returns null if the bytes do not start with the OLE2 magic signature.
- * Returns a best-effort FlashDocument if the OLE2 container can be read.
- * Throws if the container is structurally corrupt beyond recovery.
+ * Returns a FlashDocument with real layers / frames / shapes / symbol
+ * instances / frame scripts extracted from the "Page N" and "Symbol N"
+ * streams. Falls back to a skeleton document (with a console.warn) when the
+ * container is readable but the payload is not.
  *
+ * Throws if the container is structurally corrupt beyond recovery.
  * Write-back to real FLA is explicitly out of scope; the returned document
  * should be treated as a read-only import.
  */
@@ -375,65 +373,51 @@ export function tryLoadRealFla(bytes: Uint8Array): FlashDocument | null {
     throw new Error(`FLA open error: OLE2 directory corrupt — ${String(err)}`);
   }
 
-  const entryMap = collectEntries(dirEntries);
+  const streamEntries = collectStreamEntries(dirEntries);
 
-  // Try known Flash 8 stream names (case-insensitive)
-  const candidateNames = [
-    'macromediaflash8\0',  // Flash 8
-    'macromediaflash mx 2004\0',
-    'macromediaflash mx\0',
-    'macromediaflash5\0',
-    'macromediaflash4\0',
-    'contents',            // older versions
-    'document',
-  ];
-
-  let flashStream: Uint8Array | null = null;
-  let usedStreamName = '';
-
-  for (const name of candidateNames) {
-    const entry = entryMap.get(name) ?? entryMap.get(name.replace('\0', ''));
-    if (entry && entry.type === DE_STREAM && entry.size > 0) {
-      try {
-        flashStream = readStream(bytes, fat, entry.startSector, entry.size, header.sectorSize);
-        usedStreamName = name;
-        break;
-      } catch {
-        // try next
-      }
+  // Mini-FAT setup (small streams live in mini sectors inside the root stream)
+  let miniFat: Uint32Array = new Uint32Array(0);
+  let miniStream: Uint8Array = new Uint8Array(0);
+  try {
+    miniFat = buildMiniFat(bytes, fat, header);
+    const root = dirEntries[0];
+    if (root && miniFat.length > 0) {
+      miniStream = readStream(bytes, fat, root.startSector, root.size, header.sectorSize);
     }
+  } catch (err) {
+    console.warn('[FLA import] Could not read mini-FAT (small streams may be unreadable):', err);
   }
 
-  // If no named stream found, try the first non-empty stream in the directory
-  if (!flashStream) {
-    for (const [name, entry] of entryMap) {
-      if (entry.type === DE_STREAM && entry.size > 64) {
-        try {
-          flashStream = readStream(bytes, fat, entry.startSector, entry.size, header.sectorSize);
-          usedStreamName = name;
-          console.warn(`[FLA import] No known Flash stream found; falling back to stream "${name}"`);
-          break;
-        } catch {
-          // skip
-        }
-      }
+  const readEntry = (entry: DirectoryEntry): Uint8Array => {
+    if (entry.size < header.miniStreamCutoff && miniStream.length > 0) {
+      return readMiniStream(miniStream, miniFat, entry.startSector, entry.size, header.miniSectorSize);
     }
-  }
-
-  if (!flashStream || flashStream.length === 0) {
-    console.warn('[FLA import] No readable Flash content stream found in OLE2 container');
-    // Return a default document rather than failing completely
-    return createDocument();
-  }
-
-  console.warn(`[FLA import] Reading Flash content from OLE2 stream "${usedStreamName}" (${flashStream.length} bytes)`);
-
-  // Parse the Flash binary stream (best-effort)
-  const partial = parseFlash8Stream(flashStream);
-
-  const base = createDocument();
-  return {
-    ...base,
-    ...partial,
+    return readStream(bytes, fat, entry.startSector, entry.size, header.sectorSize);
   };
+
+  // Read every stream into memory (FLA streams are small; Media streams for
+  // big projects are read but unused for now).
+  const streams = new Map<string, Uint8Array>();
+  for (const entry of streamEntries) {
+    if (entry.size === 0) continue;
+    const cleanName = entry.name.replace(/\0+$/, '');
+    try {
+      streams.set(cleanName, readEntry(entry));
+    } catch (err) {
+      console.warn(`[FLA import] Could not read stream "${cleanName}":`, err);
+    }
+  }
+
+  // Build the document from the Contents / Page / Symbol streams.
+  try {
+    const doc = buildFla8Document(streams);
+    if (doc) return doc;
+  } catch (err) {
+    console.warn('[FLA import] Flash document payload could not be parsed:', err);
+  }
+
+  console.warn(
+    '[FLA import] Falling back to a skeleton document (no timeline streams could be parsed)',
+  );
+  return skeletonDocument();
 }
