@@ -680,6 +680,14 @@ export interface BitmapDisplayObject {
   readonly rotation?: number;
   /** Opacity in range 0–1. Default: 1. */
   readonly alpha?: number;
+  /** Whether the object is visible. Default: true. */
+  readonly visible?: boolean;
+  /** Flash 8 blend mode applied to this object. Default: "normal". */
+  readonly blendMode?: 'normal' | 'layer' | 'multiply' | 'screen' | 'lighten' | 'darken' |
+                       'difference' | 'add' | 'subtract' | 'invert' | 'alpha' | 'erase' |
+                       'overlay' | 'hardlight';
+  /** Color effect applied to this bitmap (CXFormWithAlpha). */
+  readonly colorEffect?: ColorEffect;
   /** Flash 8 filters applied to this object. */
   readonly filters?: readonly FlashFilter[];
 }

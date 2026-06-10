@@ -45,6 +45,7 @@ import {
   copyFramesDoc,
   pasteFramesDoc,
   cutFramesDoc,
+  updateDisplayObject,
 } from "@flash/core";
 import type {
   ShapeDisplayObject,
@@ -216,10 +217,97 @@ function makeFrameProxy(
       return getKeyframe()?.tweenType ?? "none";
     },
     get elements(): DisplayObject[] {
+      const layer = getLayer();
       const kf = getKeyframe();
-      return kf ? [...kf.displayObjects] : [];
+      if (!kf || !layer) return [];
+      return kf.displayObjects.map((obj) =>
+        makeElementProxy(state, layer.id, kf.index, obj)
+      );
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Writable element Proxy
+// ---------------------------------------------------------------------------
+
+/**
+ * Property name mapping from JSFL names to DisplayObject model field names.
+ * JSFL uses `name` for instance name and direct field names for others.
+ */
+const JSFL_PROP_MAP: Record<string, string> = {
+  name: "instanceName",
+};
+
+/**
+ * Create a writable Proxy around a DisplayObject so that JSFL property
+ * assignments (e.g. `frame.elements[0].x = 100`) mutate the document model.
+ *
+ * Supported writable JSFL properties:
+ *   x, y          — position
+ *   width, height — bounding-box size (text objects; shape bounds updated directly)
+ *   rotation      — rotation in degrees
+ *   alpha         — opacity 0–1
+ *   name          — instance name (maps to `instanceName` on SymbolInstance)
+ *   visible       — visibility
+ *
+ * All other accesses fall through to the underlying object.
+ *
+ * The `get` trap re-reads from the live document so that reads after writes
+ * reflect the mutated state rather than the initial snapshot.
+ */
+function makeElementProxy(
+  state: RuntimeState,
+  layerId: string,
+  keyframeIndex: number,
+  obj: DisplayObject
+): DisplayObject {
+  /** Return the current (live) version of this object from the document state. */
+  function liveObj(): DisplayObject {
+    const scene = state.doc.scenes[state.sceneIndex];
+    if (!scene) return obj;
+    const layer = scene.timeline.layers.find((l) => l.id === layerId);
+    if (!layer) return obj;
+    // Find the keyframe at the stored keyframe index
+    const kf = layer.frames.find((f) => f.isKeyframe && f.index === keyframeIndex);
+    if (!kf) return obj;
+    return kf.displayObjects.find((o) => o.id === obj.id) ?? obj;
+  }
+
+  return new Proxy(obj, {
+    get(_target, prop, receiver) {
+      const current = liveObj();
+      // For JSFL `name` property, return `instanceName` from SymbolInstance
+      if (prop === "name") {
+        const t = current as { instanceName?: string };
+        return t.instanceName ?? "";
+      }
+      return Reflect.get(current, prop, receiver);
+    },
+    set(_target, prop, value) {
+      if (typeof prop !== "string") return true;
+      // Map JSFL property name to model field name
+      const modelProp = JSFL_PROP_MAP[prop] ?? prop;
+      // Build the update object
+      const updates: Record<string, unknown> = { [modelProp]: value };
+      // Apply mutation to the document via updateDisplayObject
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (scene) {
+        const newTimeline = updateDisplayObject(
+          scene.timeline,
+          layerId,
+          keyframeIndex,
+          obj.id,
+          updates as Parameters<typeof updateDisplayObject>[4]
+        );
+        const newScenes = state.doc.scenes.map((s, i) =>
+          i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+        );
+        state.doc = { ...state.doc, scenes: newScenes };
+      }
+      return true;
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------

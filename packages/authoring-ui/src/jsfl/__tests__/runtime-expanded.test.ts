@@ -701,3 +701,173 @@ describe("isolated state between builds", () => {
     expect(resultB.traces).toEqual(["0"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// frame.elements writable Proxy (task 0993)
+// ---------------------------------------------------------------------------
+
+describe("frame.elements writable Proxy", () => {
+  it("setting element.x mutates the document model", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:10, top:20, right:60, bottom:70}, 0);
+       var elem = doc.getTimeline().layers[0].frames[0].elements[0];
+       elem.x = 100;`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    expect(kf?.displayObjects[0].x).toBe(100);
+  });
+
+  it("setting element.y mutates the document model", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:10, top:20, right:60, bottom:70}, 0);
+       var elem = doc.getTimeline().layers[0].frames[0].elements[0];
+       elem.y = 200;`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    expect(kf?.displayObjects[0].y).toBe(200);
+  });
+
+  it("setting element.rotation mutates the document model", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       var elem = doc.getTimeline().layers[0].frames[0].elements[0];
+       elem.rotation = 45;`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    const obj = kf?.displayObjects[0] as { rotation?: number };
+    expect(obj?.rotation).toBe(45);
+  });
+
+  it("setting element.alpha mutates the document model", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       var elem = doc.getTimeline().layers[0].frames[0].elements[0];
+       elem.alpha = 0.5;`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    const obj = kf?.displayObjects[0] as { alpha?: number };
+    expect(obj?.alpha).toBe(0.5);
+  });
+
+  it("setting element.visible = false mutates the document model", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       var elem = doc.getTimeline().layers[0].frames[0].elements[0];
+       elem.visible = false;`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    const obj = kf?.displayObjects[0] as { visible?: boolean };
+    expect(obj?.visible).toBe(false);
+  });
+
+  it("setting element.name maps to instanceName on SymbolInstance", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       doc.selectAll();
+       doc.convertToSymbol("movie clip", "myClip");
+       // The element is now a SymbolInstance
+       var elem = doc.getTimeline().layers[0].frames[0].elements[0];
+       fl.trace(elem.type);
+       elem.name = "myInstance";`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["instance"]);
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    const inst = kf?.displayObjects[0] as { instanceName?: string };
+    expect(inst?.instanceName).toBe("myInstance");
+  });
+
+  it("element.name getter returns instanceName from SymbolInstance", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       doc.selectAll();
+       doc.convertToSymbol("movie clip", "mc");
+       var elem = doc.getTimeline().layers[0].frames[0].elements[0];
+       elem.name = "myMC";
+       fl.trace(elem.name);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["myMC"]);
+  });
+
+  it("setting element.x does not affect other elements", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:10, top:10, right:60, bottom:60}, 0);
+       doc.addNewOval({left:100, top:100, right:150, bottom:150});
+       var elems = doc.getTimeline().layers[0].frames[0].elements;
+       elems[0].x = 999;
+       fl.trace(elems[1].x);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    // Second element x should be unchanged (0, since shapes store offset separately)
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    expect(kf?.displayObjects[0].x).toBe(999);
+    // Second element should not have been changed
+    expect(kf?.displayObjects[1].x).not.toBe(999);
+  });
+
+  it("setting multiple properties in sequence works", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       var elem = doc.getTimeline().layers[0].frames[0].elements[0];
+       elem.x = 77;
+       elem.y = 88;
+       elem.rotation = 30;
+       fl.trace(elem.x + "," + elem.y);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    expect(kf?.displayObjects[0].x).toBe(77);
+    expect(kf?.displayObjects[0].y).toBe(88);
+    const obj = kf?.displayObjects[0] as { rotation?: number };
+    expect(obj?.rotation).toBe(30);
+  });
+});

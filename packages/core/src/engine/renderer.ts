@@ -585,23 +585,43 @@ function renderTextObject(
 /**
  * Renders a BitmapDisplayObject using ctx.drawImage.
  * Requires a pre-loaded HTMLImageElement from the image cache.
+ * Applies blendMode, colorEffect (alpha/brightness), and filters when set.
  */
 function renderBitmapObject(
   ctx: CanvasRenderingContext2D,
   obj: BitmapDisplayObject,
   img: HTMLImageElement
 ): void {
-  ctx.save();
-  ctx.globalAlpha = obj.alpha ?? 1;
-  if (obj.rotation) {
-    const cx = obj.x + obj.width / 2;
-    const cy = obj.y + obj.height / 2;
-    ctx.translate(cx, cy);
-    ctx.rotate((obj.rotation * Math.PI) / 180);
-    ctx.translate(-cx, -cy);
+  const filters = obj.filters ?? [];
+  const drawBitmap = () => {
+    ctx.save();
+    // Apply blend mode
+    if (obj.blendMode && obj.blendMode !== 'normal') {
+      ctx.globalCompositeOperation = BLEND_MAP[obj.blendMode] ?? 'source-over';
+    }
+    // Apply alpha (respecting visible=false)
+    const effectiveAlpha = obj.visible === false ? 0 : (obj.alpha ?? 1);
+    ctx.globalAlpha = effectiveAlpha;
+    // Apply colorEffect (alpha/brightness only; tint/advanced are not supported for bitmaps in authoring view)
+    const colorEffect = obj.colorEffect;
+    if (colorEffect && colorEffect.type !== 'none') {
+      applyColorEffectPre(ctx, colorEffect);
+    }
+    if (obj.rotation) {
+      const cx = obj.x + obj.width / 2;
+      const cy = obj.y + obj.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((obj.rotation * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
+    ctx.drawImage(img, obj.x, obj.y, obj.width, obj.height);
+    ctx.restore();
+  };
+  if (filters.length > 0) {
+    applyFilters(ctx, filters, drawBitmap);
+  } else {
+    drawBitmap();
   }
-  ctx.drawImage(img, obj.x, obj.y, obj.width, obj.height);
-  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------

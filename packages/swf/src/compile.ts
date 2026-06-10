@@ -817,16 +817,22 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     ) {
       return "visible:false";
     }
-    if (displayObj.type !== "instance" && displayObj.type !== "text") return null;
-    const obj = displayObj as import("@flash/core").SymbolInstance | import("@flash/core").TextDisplayObject;
-    const ce = obj.colorEffect;
+    if (displayObj.type !== "instance" && displayObj.type !== "text" && displayObj.type !== "bitmap") return null;
+    const obj = displayObj as import("@flash/core").SymbolInstance | import("@flash/core").TextDisplayObject | import("@flash/core").BitmapDisplayObject;
+    const ce = (obj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect;
     const hasColorEffect = ce && ce.type !== "none";
     if (hasColorEffect) return JSON.stringify(ce);
-    // For SymbolInstance: also track standalone alpha (no colorEffect) for change detection
+    // Track standalone alpha for instance and bitmap change detection
     if (displayObj.type === "instance") {
       const inst = displayObj as import("@flash/core").SymbolInstance;
       if (inst.alpha !== undefined && inst.alpha !== 1) {
         return `alpha:${inst.alpha}`;
+      }
+    }
+    if (displayObj.type === "bitmap") {
+      const bmp = displayObj as import("@flash/core").BitmapDisplayObject;
+      if (bmp.alpha !== undefined && bmp.alpha !== 1) {
+        return `alpha:${bmp.alpha}`;
       }
     }
     return null;
@@ -1809,28 +1815,44 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
-              if (hasEnabledFilters(displayObj.filters)) {
-                // Filters require PlaceObject3 (tag 70).
-                const placeBody = encodePlaceObject3WithFilters(
-                  charId,
-                  depth,
-                  x,
-                  y,
-                  displayObj.filters!
-                );
+              const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
+              if (hasBlend || hasEnabledFilters(displayObj.filters)) {
+                // blendMode or filters require PlaceObject3 (tag 70).
+                const placeBody = hasBlend
+                  ? encodePlaceObject3WithBlendMode(
+                      charId,
+                      depth,
+                      x,
+                      y,
+                      displayObj.blendMode!,
+                      displayObj.filters
+                    )
+                  : encodePlaceObject3WithFilters(
+                      charId,
+                      depth,
+                      x,
+                      y,
+                      displayObj.filters!
+                    );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
+                // Check for colorEffect or alpha (CXFormWithAlpha).
                 const isHidden = displayObj.visible === false;
-                const hasAlpha =
-                  (displayObj.alpha !== undefined && displayObj.alpha !== 1) || isHidden;
-                if (hasAlpha) {
-                  const placeBody = encodePlaceObject2WithAlpha(
-                    charId,
-                    depth,
-                    x,
-                    y,
-                    isHidden ? 0 : displayObj.alpha!
-                  );
+                let cxform = displayObj.colorEffect
+                  ? colorEffectToCXForm(displayObj.colorEffect)
+                  : null;
+                if (cxform === null && isHidden) {
+                  cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                }
+                if (cxform === null && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
+                  cxform = {
+                    redMult: 256, greenMult: 256, blueMult: 256,
+                    alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256),
+                    redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0,
+                  };
+                }
+                if (cxform !== null) {
+                  const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, cxform);
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
                   const placeBody = encodePlaceObject2(charId, depth, x, y);
