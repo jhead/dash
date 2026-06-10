@@ -66,12 +66,19 @@ function analyzeStroke(points: Point[]): StrokeAnalysis {
   const isClosed = endDist < 15;
 
   // Detect corners: direction changes > 60° using simplified tangent vectors.
-  // Downsample to avoid noise — use every Nth point.
+  // Downsample to avoid noise — use every Nth point, then deduplicate consecutive
+  // near-identical points (which would cause zero-length vectors and NaN angles).
   const step = Math.max(1, Math.floor(points.length / 40));
-  const sampled: Point[] = [];
-  for (let i = 0; i < points.length; i += step) sampled.push(points[i]);
-  if (sampled[sampled.length - 1] !== points[points.length - 1]) {
-    sampled.push(points[points.length - 1]);
+  const raw: Point[] = [];
+  for (let i = 0; i < points.length; i += step) raw.push(points[i]);
+  if (raw[raw.length - 1] !== points[points.length - 1]) {
+    raw.push(points[points.length - 1]);
+  }
+  const sampled: Point[] = [raw[0]];
+  for (let i = 1; i < raw.length; i++) {
+    if (Math.hypot(raw[i].x - raw[i - 1].x, raw[i].y - raw[i - 1].y) > 0.5) {
+      sampled.push(raw[i]);
+    }
   }
 
   let totalAngle = 0;
@@ -107,8 +114,8 @@ function recognizeShape(
   const absAngle = Math.abs(analysis.totalAngle);
   if (absAngle > Math.PI * 1.5) {
     // Closed loop — distinguish by corner count
-    if (analysis.cornerCount >= 3 && analysis.cornerCount <= 5) return "rect";
-    if (analysis.cornerCount === 2) return "triangle";
+    if (analysis.cornerCount === 3) return "triangle";
+    if (analysis.cornerCount >= 4 && analysis.cornerCount <= 6) return "rect";
     return "oval";
   }
   return "freehand";

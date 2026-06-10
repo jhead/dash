@@ -37,6 +37,149 @@ function smoothPoints(points: Point[], passes: number): Point[] {
   return pts;
 }
 
+// ---------------------------------------------------------------------------
+// Straighten mode — shape recognition helpers (inline copy from StageArea.tsx)
+// ---------------------------------------------------------------------------
+
+interface StrokeAnalysis {
+  isClosed: boolean;
+  aspectRatio: number;
+  cornerCount: number;
+  totalAngle: number;
+  bbox: { minX: number; minY: number; maxX: number; maxY: number };
+  corners: Point[];
+}
+
+function analyzeStroke(points: Point[]): StrokeAnalysis {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const pt of points) {
+    if (pt.x < minX) minX = pt.x;
+    if (pt.y < minY) minY = pt.y;
+    if (pt.x > maxX) maxX = pt.x;
+    if (pt.y > maxY) maxY = pt.y;
+  }
+  const bbox = { minX, minY, maxX, maxY };
+  const width = maxX - minX || 1;
+  const height = maxY - minY || 1;
+  const aspectRatio = width / height;
+  const endDist = Math.hypot(
+    points[points.length - 1].x - points[0].x,
+    points[points.length - 1].y - points[0].y
+  );
+  const isClosed = endDist < 15;
+  const step = Math.max(1, Math.floor(points.length / 40));
+  const raw: Point[] = [];
+  for (let i = 0; i < points.length; i += step) raw.push(points[i]);
+  if (raw[raw.length - 1] !== points[points.length - 1]) {
+    raw.push(points[points.length - 1]);
+  }
+  const sampled: Point[] = [raw[0]];
+  for (let i = 1; i < raw.length; i++) {
+    if (Math.hypot(raw[i].x - raw[i - 1].x, raw[i].y - raw[i - 1].y) > 0.5) {
+      sampled.push(raw[i]);
+    }
+  }
+  let totalAngle = 0;
+  let cornerCount = 0;
+  const corners: Point[] = [];
+  const CORNER_THRESH = Math.PI / 3;
+  for (let i = 1; i < sampled.length - 1; i++) {
+    const ax = sampled[i].x - sampled[i - 1].x;
+    const ay = sampled[i].y - sampled[i - 1].y;
+    const bx = sampled[i + 1].x - sampled[i].x;
+    const by = sampled[i + 1].y - sampled[i].y;
+    const la = Math.hypot(ax, ay);
+    const lb = Math.hypot(bx, by);
+    if (la < 1 || lb < 1) continue;
+    const dot = (ax * bx + ay * by) / (la * lb);
+    const cross = (ax * by - ay * bx) / (la * lb);
+    const angle = Math.atan2(cross, dot);
+    totalAngle += angle;
+    if (Math.abs(angle) > CORNER_THRESH) {
+      cornerCount++;
+      corners.push(sampled[i]);
+    }
+  }
+  return { isClosed, aspectRatio, cornerCount, totalAngle, bbox, corners };
+}
+
+function recognizeShape(
+  analysis: StrokeAnalysis
+): "line" | "rect" | "oval" | "triangle" | "freehand" {
+  if (!analysis.isClosed) return "line";
+  const absAngle = Math.abs(analysis.totalAngle);
+  if (absAngle > Math.PI * 1.5) {
+    if (analysis.cornerCount === 3) return "triangle";
+    if (analysis.cornerCount >= 4 && analysis.cornerCount <= 6) return "rect";
+    return "oval";
+  }
+  return "freehand";
+}
+
+function buildRectPath(
+  bbox: { minX: number; minY: number; maxX: number; maxY: number },
+  stroke: SolidStroke
+): ShapePath {
+  const { minX, minY, maxX, maxY } = bbox;
+  return {
+    start: { x: minX, y: minY },
+    segments: [
+      { type: "line", to: { x: maxX, y: minY } },
+      { type: "line", to: { x: maxX, y: maxY } },
+      { type: "line", to: { x: minX, y: maxY } },
+      { type: "line", to: { x: minX, y: minY } },
+    ],
+    closed: true,
+    stroke,
+  };
+}
+
+function buildOvalPath(
+  bbox: { minX: number; minY: number; maxX: number; maxY: number },
+  stroke: SolidStroke,
+  segments: number = 16
+): ShapePath {
+  const cx = (bbox.minX + bbox.maxX) / 2;
+  const cy = (bbox.minY + bbox.maxY) / 2;
+  const rx = (bbox.maxX - bbox.minX) / 2;
+  const ry = (bbox.maxY - bbox.minY) / 2;
+  const pts: Point[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const angle = (2 * Math.PI * i) / segments;
+    pts.push({ x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) });
+  }
+  return {
+    start: pts[0],
+    segments: pts.slice(1).map((pt) => ({ type: "line" as const, to: pt })),
+    closed: true,
+    stroke,
+  };
+}
+
+function buildTrianglePath(corners: Point[], stroke: SolidStroke): ShapePath {
+  if (corners.length < 3) return buildRectPath({ minX: 0, minY: 0, maxX: 0, maxY: 0 }, stroke);
+  const [a, b, c] = corners;
+  return {
+    start: a,
+    segments: [
+      { type: "line", to: b },
+      { type: "line", to: c },
+      { type: "line", to: a },
+    ],
+    closed: true,
+    stroke,
+  };
+}
+
+function buildLinePath(start: Point, end: Point, stroke: SolidStroke): ShapePath {
+  return {
+    start,
+    segments: [{ type: "line", to: end }],
+    closed: false,
+    stroke,
+  };
+}
+
 function pencilPointsToShape(
   points: Point[],
   stroke: SolidStroke,
@@ -47,21 +190,56 @@ function pencilPointsToShape(
   if (mode === "smooth") {
     processedPoints = smoothPoints(points, 3);
   } else if (mode === "straighten") {
-    const dx = points[points.length - 1].x - points[0].x;
-    const dy = points[points.length - 1].y - points[0].y;
-    const len = Math.hypot(dx, dy);
-    let maxDev = 0;
-    for (const pt of points) {
-      const t = ((pt.x - points[0].x) * dx + (pt.y - points[0].y) * dy) / (len * len || 1);
-      const projX = points[0].x + t * dx;
-      const projY = points[0].y + t * dy;
-      maxDev = Math.max(maxDev, Math.hypot(pt.x - projX, pt.y - projY));
+    const analysis = analyzeStroke(points);
+    const recognized = recognizeShape(analysis);
+
+    let path: ShapePath;
+    switch (recognized) {
+      case "rect":
+        path = buildRectPath(analysis.bbox, stroke);
+        break;
+      case "oval":
+        path = buildOvalPath(analysis.bbox, stroke);
+        break;
+      case "triangle": {
+        const triCorners =
+          analysis.corners.length >= 3
+            ? analysis.corners.slice(0, 3)
+            : [
+                { x: analysis.bbox.minX, y: analysis.bbox.maxY },
+                { x: (analysis.bbox.minX + analysis.bbox.maxX) / 2, y: analysis.bbox.minY },
+                { x: analysis.bbox.maxX, y: analysis.bbox.maxY },
+              ];
+        path = buildTrianglePath(triCorners, stroke);
+        break;
+      }
+      case "line":
+      default: {
+        const dx = points[points.length - 1].x - points[0].x;
+        const dy = points[points.length - 1].y - points[0].y;
+        const len = Math.hypot(dx, dy);
+        let maxDev = 0;
+        for (const pt of points) {
+          const t = ((pt.x - points[0].x) * dx + (pt.y - points[0].y) * dy) / (len * len || 1);
+          const projX = points[0].x + t * dx;
+          const projY = points[0].y + t * dy;
+          maxDev = Math.max(maxDev, Math.hypot(pt.x - projX, pt.y - projY));
+        }
+        if (maxDev < 10) {
+          path = buildLinePath(points[0], points[points.length - 1], stroke);
+        } else {
+          processedPoints = smoothPoints(points, 1);
+          path = {
+            start: processedPoints[0],
+            segments: processedPoints.slice(1).map((pt) => ({ type: "line" as const, to: pt })),
+            closed: false,
+            stroke,
+          };
+        }
+        break;
+      }
     }
-    if (maxDev < 10) {
-      processedPoints = [points[0], points[points.length - 1]];
-    } else {
-      processedPoints = smoothPoints(points, 1);
-    }
+    return { id: "draw-1", paths: [path] };
   }
   const path: ShapePath = {
     start: processedPoints[0],
@@ -291,6 +469,167 @@ describe("Pencil tool", () => {
     const pts = [{ x: 0, y: 0 }, { x: 10, y: 10 }];
     const shape = pencilPointsToShape(pts, semiStroke, "ink");
     expect(shape.paths[0].stroke?.color.a).toBe(128);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shape recognition — straighten mode geometric primitives
+// ---------------------------------------------------------------------------
+
+/** Build a dense rectangular stroke by walking the 4 sides with many points. */
+function makeRectStroke(
+  x0: number, y0: number, x1: number, y1: number, steps = 20
+): Point[] {
+  const pts: Point[] = [];
+  for (let i = 0; i <= steps; i++) pts.push({ x: x0 + (x1 - x0) * i / steps, y: y0 });
+  for (let i = 0; i <= steps; i++) pts.push({ x: x1, y: y0 + (y1 - y0) * i / steps });
+  for (let i = 0; i <= steps; i++) pts.push({ x: x1 + (x0 - x1) * i / steps, y: y1 });
+  for (let i = 0; i <= steps; i++) pts.push({ x: x0, y: y1 + (y0 - y1) * i / steps });
+  // Close to near start
+  pts.push({ x: x0 + 2, y: y0 + 2 });
+  return pts;
+}
+
+/** Build a dense circular stroke with N samples. */
+function makeCircleStroke(cx: number, cy: number, r: number, samples = 60): Point[] {
+  const pts: Point[] = [];
+  for (let i = 0; i <= samples; i++) {
+    const a = (2 * Math.PI * i) / samples;
+    pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+  }
+  // Close near start
+  pts.push({ x: cx + r + 2, y: cy + 2 });
+  return pts;
+}
+
+/** Build a dense triangle stroke. */
+function makeTriangleStroke(
+  ax: number, ay: number,
+  bx: number, by: number,
+  cx: number, cy: number,
+  steps = 15
+): Point[] {
+  const pts: Point[] = [];
+  for (let i = 0; i <= steps; i++) pts.push({ x: ax + (bx - ax) * i / steps, y: ay + (by - ay) * i / steps });
+  for (let i = 0; i <= steps; i++) pts.push({ x: bx + (cx - bx) * i / steps, y: by + (cy - by) * i / steps });
+  for (let i = 0; i <= steps; i++) pts.push({ x: cx + (ax - cx) * i / steps, y: cy + (ay - cy) * i / steps });
+  pts.push({ x: ax + 2, y: ay + 2 });
+  return pts;
+}
+
+describe("Pencil tool — straighten shape recognition", () => {
+  it("analyzeStroke detects closed stroke", () => {
+    const pts = makeRectStroke(0, 0, 100, 50);
+    const analysis = analyzeStroke(pts);
+    expect(analysis.isClosed).toBe(true);
+  });
+
+  it("analyzeStroke detects open (line) stroke", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 50, y: 10 }, { x: 100, y: 100 }];
+    const analysis = analyzeStroke(pts);
+    expect(analysis.isClosed).toBe(false);
+  });
+
+  it("recognizeShape returns 'line' for open stroke", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 50, y: 10 }, { x: 100, y: 100 }];
+    expect(recognizeShape(analyzeStroke(pts))).toBe("line");
+  });
+
+  it("recognizeShape returns 'rect' for rectangular stroke", () => {
+    const pts = makeRectStroke(0, 0, 100, 50);
+    const result = recognizeShape(analyzeStroke(pts));
+    expect(result).toBe("rect");
+  });
+
+  it("recognizeShape returns 'oval' for circular stroke", () => {
+    const pts = makeCircleStroke(50, 50, 40);
+    const result = recognizeShape(analyzeStroke(pts));
+    expect(result).toBe("oval");
+  });
+
+  it("straighten recognizes rectangle strokes and produces 4 corner segments", () => {
+    const pts = makeRectStroke(0, 0, 100, 50);
+    const shape = pencilPointsToShape(pts, STROKE_BLACK, "straighten");
+    expect(shape.paths).toHaveLength(1);
+    const path = shape.paths[0];
+    expect(path.closed).toBe(true);
+    // 4 corner segments: top-right, bottom-right, bottom-left, back to top-left
+    expect(path.segments).toHaveLength(4);
+  });
+
+  it("straighten rect path uses bounding box corners", () => {
+    const pts = makeRectStroke(10, 20, 110, 70);
+    const shape = pencilPointsToShape(pts, STROKE_BLACK, "straighten");
+    const path = shape.paths[0];
+    expect(path.start).toEqual({ x: 10, y: 20 });
+    // Last corner should close back to (10, 20)
+    const lastSeg = path.segments[path.segments.length - 1];
+    expect(lastSeg.to).toEqual({ x: 10, y: 20 });
+  });
+
+  it("straighten recognizes oval strokes and produces 16+ segments", () => {
+    const pts = makeCircleStroke(50, 50, 40);
+    const shape = pencilPointsToShape(pts, STROKE_BLACK, "straighten");
+    expect(shape.paths).toHaveLength(1);
+    const path = shape.paths[0];
+    expect(path.closed).toBe(true);
+    // 16 segments polygon for oval
+    expect(path.segments.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it("straighten recognizes triangle strokes and produces closed 3-corner shape", () => {
+    const pts = makeTriangleStroke(50, 0, 100, 100, 0, 100);
+    const shape = pencilPointsToShape(pts, STROKE_BLACK, "straighten");
+    expect(shape.paths).toHaveLength(1);
+    const path = shape.paths[0];
+    expect(path.closed).toBe(true);
+    expect(path.segments).toHaveLength(3);
+  });
+
+  it("buildRectPath creates correct bounding-box rectangle", () => {
+    const bbox = { minX: 5, minY: 10, maxX: 55, maxY: 35 };
+    const path = buildRectPath(bbox, STROKE_BLACK);
+    expect(path.start).toEqual({ x: 5, y: 10 });
+    expect(path.segments).toHaveLength(4);
+    expect(path.segments[0].to).toEqual({ x: 55, y: 10 }); // top-right
+    expect(path.segments[1].to).toEqual({ x: 55, y: 35 }); // bottom-right
+    expect(path.segments[2].to).toEqual({ x: 5, y: 35 });  // bottom-left
+    expect(path.segments[3].to).toEqual({ x: 5, y: 10 });  // back to start
+    expect(path.closed).toBe(true);
+  });
+
+  it("buildOvalPath creates closed polygon with correct center approximation", () => {
+    const bbox = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+    const path = buildOvalPath(bbox, STROKE_BLACK);
+    expect(path.closed).toBe(true);
+    // 16 segments by default (17 pts including wrap-around closing point)
+    expect(path.segments).toHaveLength(16);
+    // Start point should be on the right of the circle (angle 0)
+    expect(path.start.x).toBeCloseTo(100, 0); // cx + rx = 50 + 50
+    expect(path.start.y).toBeCloseTo(50, 0);  // cy
+  });
+
+  it("buildTrianglePath creates 3-sided closed shape", () => {
+    const corners: Point[] = [{ x: 50, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+    const path = buildTrianglePath(corners, STROKE_BLACK);
+    expect(path.start).toEqual({ x: 50, y: 0 });
+    expect(path.segments).toHaveLength(3);
+    expect(path.segments[0].to).toEqual({ x: 100, y: 100 });
+    expect(path.segments[1].to).toEqual({ x: 0, y: 100 });
+    expect(path.segments[2].to).toEqual({ x: 50, y: 0 }); // closes
+    expect(path.closed).toBe(true);
+  });
+
+  it("straighten stroke preserves stroke style on recognized rect", () => {
+    const pts = makeRectStroke(0, 0, 100, 50);
+    const shape = pencilPointsToShape(pts, STROKE_BLACK, "straighten");
+    expect(shape.paths[0].stroke).toBe(STROKE_BLACK);
+  });
+
+  it("straighten stroke preserves stroke style on recognized oval", () => {
+    const pts = makeCircleStroke(50, 50, 40);
+    const shape = pencilPointsToShape(pts, STROKE_BLACK, "straighten");
+    expect(shape.paths[0].stroke).toBe(STROKE_BLACK);
   });
 });
 
