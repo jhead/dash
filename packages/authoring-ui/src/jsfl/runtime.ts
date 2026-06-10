@@ -38,6 +38,9 @@ import {
   clearTween,
   createSymbolInLibrary,
   removeLibraryItem,
+  groupObjects,
+  ungroupObjects,
+  createDocument as coreCreateDocument,
 } from "@flash/core";
 import type {
   ShapeDisplayObject,
@@ -573,6 +576,10 @@ export interface JsflDocument {
    * registration: "topLeft" | "center" | etc. (ignored — always uses center)
    */
   convertToSymbol(type: string, name: string, registration?: string): void;
+  /** Group currently selected display objects into a GroupObject. */
+  group(): void;
+  /** Ungroup the selected GroupObject, restoring its children to the stage. */
+  ungroup(): void;
   /** Compile and return the SWF as a Uint8Array (browser-safe, no file I/O). */
   publish(): Uint8Array;
 }
@@ -917,6 +924,46 @@ function makeDocumentProxy(
       };
       state.selectedIds = [instId];
     },
+    group() {
+      if (state.selectedIds.length === 0) return;
+      const layerIndex = state.currentLayerIndex;
+      state.doc = groupObjects(
+        state.doc,
+        state.sceneIndex,
+        layerIndex,
+        state.frameIndex,
+        [...state.selectedIds]
+      );
+      // The newly created group is the single display object at the insertion point;
+      // find it by comparing before/after and update selection to the new group id.
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (scene) {
+        const layer = scene.timeline.layers[layerIndex];
+        if (layer) {
+          const kf = [...layer.frames]
+            .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+            .sort((a, b) => b.index - a.index)[0];
+          if (kf) {
+            const newGroup = kf.displayObjects.find((o) => o.type === "group");
+            state.selectedIds = newGroup ? [newGroup.id] : [];
+          }
+        }
+      }
+    },
+    ungroup() {
+      if (state.selectedIds.length === 0) return;
+      // Ungroup each selected group (usually one at a time)
+      for (const groupId of [...state.selectedIds]) {
+        state.doc = ungroupObjects(
+          state.doc,
+          state.sceneIndex,
+          state.currentLayerIndex,
+          state.frameIndex,
+          groupId
+        );
+      }
+      state.selectedIds = [];
+    },
     publish(): Uint8Array {
       // Lazy import to avoid pulling @flash/swf into unit test bundles that
       // don't need it.  In a browser/desktop context this is always available.
@@ -937,19 +984,44 @@ export interface JsflFl {
   readonly version: string;
   readonly documents: JsflDocument[];
   getDocumentDOM(): JsflDocument;
+  /**
+   * Create a new default document (550×400, 12fps, white background, empty library,
+   * one scene with one layer and one blank keyframe).  Resets the runtime state to
+   * the new document and returns its proxy.
+   * type is accepted for API compatibility but ignored (always "timeline").
+   */
+  createDocument(type?: string): JsflDocument;
   trace(msg: unknown): void;
 }
 
-function makeFlProxy(state: RuntimeState, docProxy: JsflDocument): JsflFl {
+function makeFlProxy(
+  state: RuntimeState,
+  ids: ReturnType<typeof makeIdCounters>,
+  docProxy: JsflDocument
+): JsflFl {
+  // Keep a mutable reference so createDocument() can swap it out.
+  let _docProxy = docProxy;
+
   return {
     get version() {
       return "8,0,0,0";
     },
     get documents() {
-      return [docProxy];
+      return [_docProxy];
     },
     getDocumentDOM() {
-      return docProxy;
+      return _docProxy;
+    },
+    createDocument(_type?: string): JsflDocument {
+      // Reset state to a fresh default document
+      state.doc = coreCreateDocument();
+      state.traces = [];
+      state.sceneIndex = 0;
+      state.frameIndex = 0;
+      state.currentLayerIndex = 0;
+      state.selectedIds = [];
+      _docProxy = makeDocumentProxy(state, ids);
+      return _docProxy;
     },
     trace(msg: unknown) {
       state.traces.push(String(msg));
@@ -993,7 +1065,7 @@ export function buildJsflContext(
   };
   const ids = makeIdCounters();
   const docProxy = makeDocumentProxy(state, ids);
-  const flProxy = makeFlProxy(state, docProxy);
+  const flProxy = makeFlProxy(state, ids, docProxy);
   const ctx: InternalContext = {
     doc: docProxy,
     fl: flProxy,
