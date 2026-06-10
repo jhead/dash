@@ -2,9 +2,9 @@
   "id": "0711-readme-github-pages-ci-action-to-publish-docs-si",
   "title": "README + GitHub Pages CI action to publish docs/site",
   "description": "Build and deploy the Flash 8 editor web app to GitHub Pages so users can open it in a browser. The app already has a browser build target (pnpm dev:browser runs it). Tasks: (1) check if there is a pnpm build:browser or similar production build script \u2014 if not, add one (Vite build targeting the browser, output to dist/); (2) create .github/workflows/pages.yml that on push to main: installs deps, builds the browser bundle, deploys dist/ to GitHub Pages using actions/upload-pages-artifact + actions/deploy-pages; (3) optionally add a top-level README.md with a link to the live app URL and a brief description. Check package.json scripts and vite.config files for the correct build command.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T03:44:05Z",
-  "updated_at": "2026-06-10T03:45:04Z"
+  "updated_at": "2026-06-10T03:46:47Z"
 }
