@@ -146,6 +146,33 @@ function buildSetBackgroundColor(hex: string): Uint8Array {
   return bw.getBytes();
 }
 
+/**
+ * ProductInfo (tag 41) — identifies the authoring tool that produced the SWF.
+ * Body layout (26 bytes):
+ *   UI32 productId    = 8  (Flash 8 authoring tool)
+ *   UI32 edition      = 0  (Standard)
+ *   UI8  majorVersion = 8
+ *   UI8  minorVersion = 0
+ *   UI64 buildNumber  = 0  (two UI32s LE)
+ *   UI64 compileTime  = 0  (milliseconds since 1 Jan 1970 UTC, two UI32s LE)
+ */
+function buildProductInfo(): Uint8Array {
+  // 4 + 4 + 1 + 1 + 8 + 8 = 26 bytes
+  const buf = new ArrayBuffer(26);
+  const view = new DataView(buf);
+  view.setUint32(0, 8, true);  // productId = 8 (Flash 8)
+  view.setUint32(4, 0, true);  // edition   = 0
+  view.setUint8(8, 8);         // majorVersion = 8
+  view.setUint8(9, 0);         // minorVersion = 0
+  // buildNumber UI64 @ offset 10 — low/high UI32, both zero
+  view.setUint32(10, 0, true);
+  view.setUint32(14, 0, true);
+  // compileTime UI64 @ offset 18 — low/high UI32, both zero
+  view.setUint32(18, 0, true);
+  view.setUint32(22, 0, true);
+  return new Uint8Array(buf);
+}
+
 // ---------------------------------------------------------------------------
 // Encode ExportAssets (tag 56)
 // ---------------------------------------------------------------------------
@@ -486,6 +513,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     writer.writeRaw(sceneData);
   }
 
+  // 1c-pre. ProductInfo (tag 41) — authoring tool identity; always emitted.
+  writer.writeTag(Tag.ProductInfo, buildProductInfo());
+
   // 1c. Protect tag (24) — marks SWF as password-protected (empty body).
   if (options?.protect) {
     writer.writeTag(Tag.Protect, new Uint8Array(0));
@@ -493,6 +523,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
 
   // 1d. EnableDebugger2 tag (64) — stores debugger password.
   //     Body: uint16 reserved=0, null-terminated password string.
+  //     DebugId (tag 63) — 16-byte UUID linking SWF to debug symbols; emitted
+  //     alongside EnableDebugger2 (zero UUID = no real debug session).
   if (options?.debugPassword) {
     const encoder = new TextEncoder();
     const pwBytes = encoder.encode(options.debugPassword);
@@ -501,6 +533,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     body.set(pwBytes, 2);
     // body[2 + pwBytes.length] is already 0x00 (null terminator)
     writer.writeTag(Tag.EnableDebugger2, body);
+    // DebugId (tag 63): 16-byte zero UUID
+    writer.writeTag(Tag.DebugId, new Uint8Array(16));
   }
 
   // 1e. Metadata tag (77) — emits XMP metadata when options.metadata is set.

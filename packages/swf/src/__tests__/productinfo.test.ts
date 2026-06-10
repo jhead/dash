@@ -183,7 +183,33 @@ describe("ProductInfo (tag 41) and DebugId (tag 63) optional tags", () => {
     }
   });
 
-  it.todo("ProductInfo (tag 41) should include Flash authoring tool version");
+  it("ProductInfo (tag 41) is always emitted with productId=8 and majorVersion=8", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const swf = compileDocument(doc);
+    const tags = findTags(swf);
+    const tag = tags.find((t) => t.type === TAG_PRODUCT_INFO);
+    expect(tag).toBeDefined();
+    // body must be at least 10 bytes (UI32 productId + UI32 edition + UI8 major + UI8 minor)
+    expect(tag!.body.length).toBeGreaterThanOrEqual(10);
+    // productId @ offset 0, LE UI32 = 8
+    const productId =
+      tag!.body[0] |
+      (tag!.body[1] << 8) |
+      (tag!.body[2] << 16) |
+      (tag!.body[3] << 24);
+    expect(productId).toBe(8);
+    // majorVersion @ offset 8
+    expect(tag!.body[8]).toBe(8);
+    // minorVersion @ offset 9
+    expect(tag!.body[9]).toBe(0);
+  });
 
-  it.todo("DebugId (tag 63) should be a 16-byte UUID when debug is enabled");
+  it("DebugId (tag 63) is a 16-byte UUID when debugPassword is supplied", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const swf = compileDocument(doc, { debugPassword: "test" });
+    const tags = findTags(swf);
+    const tag = tags.find((t) => t.type === TAG_DEBUG_ID);
+    expect(tag).toBeDefined();
+    expect(tag!.body.length).toBe(16);
+  });
 });
