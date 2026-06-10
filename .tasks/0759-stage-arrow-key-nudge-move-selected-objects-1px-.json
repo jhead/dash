@@ -1,0 +1,10 @@
+{
+  "id": "0759-stage-arrow-key-nudge-move-selected-objects-1px-",
+  "title": "Stage arrow-key nudge: move selected objects 1px (or 8px with Shift) via keyboard",
+  "description": "Flash 8 allows the user to move selected stage objects by 1 pixel using the Arrow keys (Up/Down/Left/Right), and by 8 pixels when Shift is held. This is a core authoring workflow feature used constantly. It is currently absent: the global `onKeyDown` handler in `Shell.tsx` (around line 3182) handles zoom, rulers, grid, panels, Escape, and Ctrl+Enter but has no arrow-key nudge logic.\n\n## What to implement\n\nIn the `onKeyDown` handler in `Shell.tsx`, add handling for:\n- `ArrowLeft / ArrowRight / ArrowUp / ArrowDown` (without any modifier) \u2192 move selected display objects by 1px in that direction\n- Same keys + Shift \u2192 move by 8px (Flash 8 default large-nudge)\n- Only fire when the active tool is the Arrow (Selection) tool, no modal dialog is open, and focus is not inside a text input, textarea, or the Actions panel editor\n\nThe move should:\n1. Apply to all currently selected objects (`selectedShapeId` or multi-selection if that state exists)\n2. Translate `x`/`y` on the matching `DisplayObject` in the active keyframe of the active layer\n3. Push the mutation via `pushDoc` so it is undoable\n4. Call `e.preventDefault()` to prevent the browser from scrolling\n\n## Files likely touched\n- `packages/authoring-ui/src/Shell.tsx` \u2014 add arrow-key cases to the keydown handler\n- `packages/core/src/engine/` \u2014 may need a `nudgeDisplayObject` helper or reuse the existing `withDisplayObjectUpdate` pattern\n\n## Acceptance\n- Select a shape or symbol instance with the Arrow tool, press ArrowRight \u2192 object moves 1px to the right\n- Hold Shift+ArrowDown \u2192 object moves 8px downward\n- Both moves are undo-able (Ctrl+Z restores previous position)\n- Works for shapes, text fields, and symbol instances",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T07:59:27Z",
+  "updated_at": "2026-06-10T08:00:41Z"
+}

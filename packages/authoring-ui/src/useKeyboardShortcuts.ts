@@ -31,6 +31,8 @@ export interface KeyboardShortcutHandlers {
   onTextTrackingIncrease?: () => void; // Alt+Right
   onTextTrackingDecrease?: () => void; // Alt+Left
   onTextTrackingReset?: () => void;    // Ctrl+Alt+Right
+  /** Arrow-key nudge — move selected object by (dx, dy) pixels. Shift = 8px, plain = 1px. */
+  onNudge?: (dx: number, dy: number) => void; // ArrowLeft/Right/Up/Down (no Alt/Ctrl)
 }
 
 export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
@@ -78,6 +80,11 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
       else if (!ctrl && alt && e.key === 'ArrowRight') { e.preventDefault(); h.onTextTrackingIncrease?.(); }
       else if (!ctrl && alt && e.key === 'ArrowLeft') { e.preventDefault(); h.onTextTrackingDecrease?.(); }
       else if (ctrl && alt && e.key === 'ArrowRight') { e.preventDefault(); h.onTextTrackingReset?.(); }
+      // Arrow-key nudge (plain or Shift; skip when Alt is held — those are text-tracking shortcuts)
+      else if (!ctrl && !alt && e.key === 'ArrowLeft')  { e.preventDefault(); h.onNudge?.(shift ? -8 : -1, 0); }
+      else if (!ctrl && !alt && e.key === 'ArrowRight') { e.preventDefault(); h.onNudge?.(shift ? 8 : 1, 0); }
+      else if (!ctrl && !alt && e.key === 'ArrowUp')    { e.preventDefault(); h.onNudge?.(0, shift ? -8 : -1); }
+      else if (!ctrl && !alt && e.key === 'ArrowDown')  { e.preventDefault(); h.onNudge?.(0, shift ? 8 : 1); }
     };
 
     window.addEventListener('keydown', handleKeyDown);

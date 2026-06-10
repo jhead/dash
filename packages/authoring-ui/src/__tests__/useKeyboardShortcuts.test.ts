@@ -92,6 +92,11 @@ function dispatch(e: KeyboardEvent, h: KeyboardShortcutHandlers): void {
   else if (!ctrl && alt && e.key === "ArrowRight") { e.preventDefault(); h.onTextTrackingIncrease?.(); }
   else if (!ctrl && alt && e.key === "ArrowLeft") { e.preventDefault(); h.onTextTrackingDecrease?.(); }
   else if (ctrl && alt && e.key === "ArrowRight") { e.preventDefault(); h.onTextTrackingReset?.(); }
+  // Arrow-key nudge (plain or Shift; skip when Alt is held — those are text-tracking shortcuts)
+  else if (!ctrl && !alt && e.key === "ArrowLeft")  { e.preventDefault(); h.onNudge?.(shift ? -8 : -1, 0); }
+  else if (!ctrl && !alt && e.key === "ArrowRight") { e.preventDefault(); h.onNudge?.(shift ? 8 : 1, 0); }
+  else if (!ctrl && !alt && e.key === "ArrowUp")    { e.preventDefault(); h.onNudge?.(0, shift ? -8 : -1); }
+  else if (!ctrl && !alt && e.key === "ArrowDown")  { e.preventDefault(); h.onNudge?.(0, shift ? 8 : 1); }
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +135,7 @@ function makeHandlers(): Required<KeyboardShortcutHandlers> {
     onTextTrackingIncrease: vi.fn(),
     onTextTrackingDecrease: vi.fn(),
     onTextTrackingReset: vi.fn(),
+    onNudge: vi.fn(),
   };
 }
 
@@ -395,5 +401,94 @@ describe("useKeyboardShortcuts — Text menu tracking shortcuts", () => {
     const h = makeHandlers();
     dispatch(makeEvent("ArrowRight", { ctrlKey: true, altKey: true }), h);
     expect(h.onTextTrackingIncrease).not.toHaveBeenCalled();
+  });
+});
+
+describe("useKeyboardShortcuts — arrow-key nudge", () => {
+  it("calls onNudge(-1, 0) for ArrowLeft", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowLeft"), h);
+    expect(h.onNudge).toHaveBeenCalledOnce();
+    expect(h.onNudge).toHaveBeenCalledWith(-1, 0);
+  });
+
+  it("calls onNudge(1, 0) for ArrowRight", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowRight"), h);
+    expect(h.onNudge).toHaveBeenCalledOnce();
+    expect(h.onNudge).toHaveBeenCalledWith(1, 0);
+  });
+
+  it("calls onNudge(0, -1) for ArrowUp", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowUp"), h);
+    expect(h.onNudge).toHaveBeenCalledOnce();
+    expect(h.onNudge).toHaveBeenCalledWith(0, -1);
+  });
+
+  it("calls onNudge(0, 1) for ArrowDown", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowDown"), h);
+    expect(h.onNudge).toHaveBeenCalledOnce();
+    expect(h.onNudge).toHaveBeenCalledWith(0, 1);
+  });
+
+  it("calls onNudge(-8, 0) for Shift+ArrowLeft", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowLeft", { shiftKey: true }), h);
+    expect(h.onNudge).toHaveBeenCalledOnce();
+    expect(h.onNudge).toHaveBeenCalledWith(-8, 0);
+  });
+
+  it("calls onNudge(8, 0) for Shift+ArrowRight", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowRight", { shiftKey: true }), h);
+    expect(h.onNudge).toHaveBeenCalledOnce();
+    expect(h.onNudge).toHaveBeenCalledWith(8, 0);
+  });
+
+  it("calls onNudge(0, -8) for Shift+ArrowUp", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowUp", { shiftKey: true }), h);
+    expect(h.onNudge).toHaveBeenCalledOnce();
+    expect(h.onNudge).toHaveBeenCalledWith(0, -8);
+  });
+
+  it("calls onNudge(0, 8) for Shift+ArrowDown", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowDown", { shiftKey: true }), h);
+    expect(h.onNudge).toHaveBeenCalledOnce();
+    expect(h.onNudge).toHaveBeenCalledWith(0, 8);
+  });
+
+  it("does NOT call onNudge for Alt+ArrowRight (text tracking takes priority)", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowRight", { altKey: true }), h);
+    expect(h.onNudge).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call onNudge for Alt+ArrowLeft (text tracking takes priority)", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowLeft", { altKey: true }), h);
+    expect(h.onNudge).not.toHaveBeenCalled();
+  });
+
+  it("calls preventDefault for ArrowLeft nudge", () => {
+    const h = makeHandlers();
+    const e = makeEvent("ArrowLeft");
+    dispatch(e, h);
+    expect(e.preventDefault).toHaveBeenCalled();
+  });
+
+  it("does NOT fire nudge when target is INPUT", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowLeft", { targetTag: "INPUT" }), h);
+    expect(h.onNudge).not.toHaveBeenCalled();
+  });
+
+  it("does NOT fire nudge when target is TEXTAREA", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("ArrowUp", { targetTag: "TEXTAREA" }), h);
+    expect(h.onNudge).not.toHaveBeenCalled();
   });
 });

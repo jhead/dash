@@ -1436,6 +1436,24 @@ export function Shell(): React.ReactElement {
     [selectedShapeId, selectedDisplayObject, timeline, safeActiveLayerIndex, currentFrame, replaceDoc, withTimeline]
   );
 
+  /** Arrow-key nudge: move the selected object by dx/dy pixels (1px plain, 8px with Shift). */
+  const handleNudge = useCallback(
+    (dx: number, dy: number) => {
+      if (!selectedShapeId || !selectedDisplayObject) return;
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      // Skip nudge when the user is actively editing text in a text field
+      if (editingTextId !== null) return;
+      pushDoc(withTimeline((t) =>
+        updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
+          x: selectedDisplayObject.x + dx,
+          y: selectedDisplayObject.y + dy,
+        })
+      ));
+    },
+    [selectedShapeId, selectedDisplayObject, editingTextId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
+  );
+
   const handleTransformObject = useCallback(
     (id: string, updates: TransformUpdates) => {
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
@@ -3048,6 +3066,7 @@ export function Shell(): React.ReactElement {
     onTextTrackingIncrease: handleTextTrackingIncrease,
     onTextTrackingDecrease: handleTextTrackingDecrease,
     onTextTrackingReset: handleTextTrackingReset,
+    onNudge: handleNudge,
   });
 
   // ---------------------------------------------------------------------------
