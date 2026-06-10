@@ -222,18 +222,61 @@ export function renameLayer(
 
 /**
  * Set the type of a layer (normal / guide / guided / mask / masked / folder).
+ *
+ * Auto-pairing rules (mirrors Flash 8 behaviour):
+ *   - Setting a layer to "guided": if the layer directly above it (li-1 in
+ *     top-to-bottom ordering where li=0 is the topmost layer) is type
+ *     "normal", that layer is automatically promoted to "guide".
+ *   - Changing a layer FROM "guided" to something else: if the layer above
+ *     was "guide" and has no other "guided" layers below it, revert it to
+ *     "normal".
+ *   - Changing a layer FROM "guide" to something else: change any immediately
+ *     adjacent "guided" layers (consecutive run below the guide) to "normal".
  */
 export function setLayerType(
   timeline: Timeline,
   layerId: string,
   type: LayerType
 ): Timeline {
-  return {
-    ...timeline,
-    layers: timeline.layers.map((l) =>
-      l.id === layerId ? { ...l, type } : l
-    ),
-  };
+  const layers = timeline.layers;
+  const li = layers.findIndex((l) => l.id === layerId);
+  if (li < 0) return timeline;
+
+  const oldType = layers[li]!.type;
+  // Build mutable copy
+  const newLayers: Layer[] = layers.map((l) => ({ ...l }));
+
+  // Apply the requested type change
+  newLayers[li]!.type = type;
+
+  if (type === "guided") {
+    // Promote the layer directly above to "guide" if it is currently "normal"
+    if (li > 0 && newLayers[li - 1]!.type === "normal") {
+      newLayers[li - 1]!.type = "guide";
+    }
+  } else if (oldType === "guided") {
+    // Reverting a guided layer: revert the guide above if it has no other
+    // guided layers directly below it (after applying the type change to li)
+    if (li > 0 && newLayers[li - 1]!.type === "guide") {
+      const guideIdx = li - 1;
+      // Any layer from guideIdx+1 onward that is still "guided"?
+      const anyGuided = newLayers.slice(guideIdx + 1).some((l) => l.type === "guided");
+      if (!anyGuided) {
+        newLayers[guideIdx]!.type = "normal";
+      }
+    }
+  } else if (oldType === "guide") {
+    // Reverting a guide layer: change immediately adjacent "guided" layers below to "normal"
+    for (let j = li + 1; j < newLayers.length; j++) {
+      if (newLayers[j]!.type === "guided") {
+        newLayers[j]!.type = "normal";
+      } else {
+        break; // stop at first non-guided layer
+      }
+    }
+  }
+
+  return { ...timeline, layers: newLayers };
 }
 
 // ---------------------------------------------------------------------------
