@@ -1338,6 +1338,20 @@ export interface JsflFl {
    * context (no filesystem access).
    */
   fileExists(fileURL: string): boolean;
+  /** Copy selected frames from doc to the application-level frame clipboard. */
+  clipCopyFrames(doc: JsflDocument): void;
+  /** Paste the application-level frame clipboard into doc at the current position. */
+  clipPasteFrames(doc: JsflDocument): void;
+  /**
+   * Open a file-picker dialog and return a file:// URL for the chosen file.
+   * Always returns null in a browser context (no native picker available).
+   */
+  browseForFileURL(description: string, fileType?: string): string | null;
+  /**
+   * Open a folder-picker dialog and return a file:// URL for the chosen folder.
+   * Always returns null in a browser context (no native picker available).
+   */
+  browseForFolderURL(description: string): string | null;
   /** Output panel — use trace() to append lines; clear() to wipe them. */
   outputPanel: { trace(msg: string): void; clear(): void };
 }
@@ -1411,6 +1425,22 @@ function makeFlProxy(
       // Browser context has no filesystem access; always return false.
       console.warn("[JSFL fl.fileExists] always returns false in browser context:", fileURL);
       return false;
+    },
+    clipCopyFrames(_doc: JsflDocument): void {
+      console.warn("[JSFL] fl.clipCopyFrames not fully implemented");
+      return undefined;
+    },
+    clipPasteFrames(_doc: JsflDocument): void {
+      console.warn("[JSFL] fl.clipPasteFrames not fully implemented");
+      return undefined;
+    },
+    browseForFileURL(_description: string, _fileType?: string): string | null {
+      console.warn("[JSFL] fl.browseForFileURL: browser file picker not available; returning null");
+      return null;
+    },
+    browseForFolderURL(_description: string): string | null {
+      console.warn("[JSFL] fl.browseForFolderURL: not available in browser; returning null");
+      return null;
     },
     outputPanel: {
       trace(msg: string): void {
