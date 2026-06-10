@@ -1,0 +1,10 @@
+{
+  "id": "0924-as2-compiler-new-array-new-object-constructor-ca",
+  "title": "AS2 compiler: new Array()/new Object() constructor calls use ActionNewObject instead of ActionInitArray/ActionInitObject",
+  "description": "In compiler.ts, compileNewExpr always emits ActionNewObject (0x40) by pushing the class name as a string. For the special cases 'new Array()' with no args or 'new Array(n)' the semantics are correct via ActionNewObject, but Flash Professional emits ActionInitArray (0x42) for 'new Array()' (zero args) and ActionInitObject (0x43) for 'new Object()'. While Ruffle handles both forms, matching Flash Pro output exactly avoids any potential compat issues. Low priority \u2014 only affects SWF output size/style, not correctness.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:32:09Z",
+  "updated_at": "2026-06-10T20:32:09Z"
+}

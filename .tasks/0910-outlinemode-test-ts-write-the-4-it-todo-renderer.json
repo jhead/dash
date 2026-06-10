@@ -1,10 +1,10 @@
 {
   "id": "0910-outlinemode-test-ts-write-the-4-it-todo-renderer",
   "title": "outlinemode.test.ts: write the 4 it.todo renderer outline-mode tests",
-  "description": "packages/core/src/engine/__tests__/outlinemode.test.ts has 4 it.todo cases (lines 75-89) documenting renderer outline-mode behavior. The implementation already exists in renderer.ts (renderLayer checks layer.outlineMode, calls renderShapeOutline / renderDisplayObjectOutline, uses layer.outlineColor). The tests just need to be written: (1) when outlineMode true, fill calls suppressed / only strokes emitted; (2) strokes use outlineColor not shape stroke color; (3) outlineMode false renders normally; (4) outlineColor is passed to canvas strokeStyle. Each test should construct a minimal SceneGraph with a SceneLayer carrying outlineMode/outlineColor, call CanvasRenderer, and inspect the canvas 2D mock context calls to verify fill vs stroke behavior.",
-  "status": "in_progress",
+  "description": "outlinemode.test.ts it.todo cases implemented with mock canvas draw-call inspection.",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-06-10T20:05:44Z",
-  "updated_at": "2026-06-10T20:06:25Z"
+  "updated_at": "2026-06-10T20:55:00Z"
 }

@@ -1,10 +1,10 @@
 {
   "id": "0913-compile-ts-symbolinstance-with-coloreffect-insta",
   "title": "compile.ts: SymbolInstance with colorEffect+instanceName drops the name from PlaceObject2",
-  "description": "Fixed in e586c44: encodePlaceObject2WithCXForm accepts optional name param (HasName 0x20, flags 0x2E); compile.ts passes displayObj.instanceName. Clip-actions audit: hasClipActions branch (line ~1812) already forwards instanceName via encodePlaceObject2WithClipActions; colorEffect is not combined with clip-actions (separate if-else \u2014 pre-existing limitation, out of scope). Tests: pnpm --filter @flash/swf run test -- --run \u2192 103 files, 1210 passed, 1 todo. cxform.test.ts regression tests pass (colorEffect+instanceName \u2192 0x2E + myClip\\0 in body).",
+  "description": "encodePlaceObject2WithCXForm accepts instanceName; initial placement and move paths pass displayObj.instanceName.",
   "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-10T20:16:04Z",
-  "updated_at": "2026-06-10T20:54:36Z"
+  "updated_at": "2026-06-10T20:55:00Z"
 }

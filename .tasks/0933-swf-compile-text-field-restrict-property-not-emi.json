@@ -1,0 +1,10 @@
+{
+  "id": "0933-swf-compile-text-field-restrict-property-not-emi",
+  "title": "SWF compile: text field restrict property not emitted",
+  "description": "The text field model may have a restrict property (limits character input e.g. '0-9A-Z'), but compile.ts and text.ts never emit it. In SWF, DefineEditText has no built-in restrict field \u2014 it must be set via AS2 initialization code: tf.restrict = '...' in a DoAction script. Fix: in compile.ts, after placing a text field with a restrict value, emit a DoAction with AS2: instanceName.restrict = restrictPattern. Requires the text field to have an instanceName set. Low priority \u2014 uncommon in typical Flash 8 content.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:50:02Z",
+  "updated_at": "2026-06-10T20:50:02Z"
+}

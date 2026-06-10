@@ -1,0 +1,10 @@
+{
+  "id": "0935-output-panel-silently-suppresses-ruffle-error-me",
+  "title": "Output panel silently suppresses Ruffle ERROR messages \u2014 critical SWF errors not visible to user",
+  "description": "The editor's Output tab does not display Ruffle ERROR-level messages. These errors are emitted via console.log with %cERROR%c CSS tokens by Ruffle, and the RufflePlayer.tsx interceptor apparently filters out ALL Ruffle internal messages regardless of severity.\n\nExample: 'Error running definition tag: ScriptLimits, got Couldn't read SWF: failed to fill whole buffer' (task 0934) appears only in the raw browser DevTools console at log level [LOG] but is completely absent from the Output panel.\n\nThe Output panel shows:\n- 'New Ruffle instance created (Version: 0.2.0 | ...)' \u2713\n- 'Loading SWF file blob:...' \u2713\n- ScriptLimits ERROR \u2717 (missing!)\n\nImpact: A developer using Control \u2192 Test Movie sees a clean Output tab with no errors, concludes the SWF compiled correctly, and has no way to know AS2 is completely broken without opening browser DevTools. This makes debugging impossible from within the editor.\n\nExpected: Ruffle ERROR and WARN severity messages should be passed through to the Output panel (not filtered). INFO-level messages (like device font warnings) can remain filtered. The distinction is: messages prefixed with %cERROR%c (color: red) should always appear.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T20:42:46Z",
+  "updated_at": "2026-06-10T20:42:46Z"
+}

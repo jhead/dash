@@ -1,0 +1,10 @@
+{
+  "id": "0932-fla-import-motion-tween-ease-direction-in-out-in",
+  "title": "FLA import: motion tween ease direction (in/out/inOut/none) not decoded from binary",
+  "description": "flash8-import.ts decodes only a single numeric motionEase value (-100..100) from the binary. Flash 8 stores ease direction separately from ease amount. The binary encodes an easeType/easeDirection byte that specifies whether the ease applies as ease-in, ease-out, ease-in-out, or no ease. This direction is distinct from the numeric strength. Fix: find and decode the ease direction byte from CPicFrame in flash8-binary.ts, add easeType to the motion tween model in model/types.ts, forward it through flash8-import.ts. Reference flacomdoc TimelineConverter.java for the binary field.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:41:14Z",
+  "updated_at": "2026-06-10T20:41:14Z"
+}

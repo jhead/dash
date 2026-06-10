@@ -1,0 +1,10 @@
+{
+  "id": "0935-test-movie-unmute-overlay",
+  "title": "Test Movie: Ruffle unmute overlay blocks clicks",
+  "description": "DONE via 0928 fix: cherry-picked 1b4b498 to main. RufflePlayer passes autoplay:on and unmuteOverlay:hidden.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T20:53:33Z",
+  "updated_at": "2026-06-10T20:53:33Z"
+}

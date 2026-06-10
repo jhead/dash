@@ -1,0 +1,10 @@
+{
+  "id": "0937-fla-import-symbol-instance-accprops-accessibilit",
+  "title": "FLA import: symbol instance AccProps (accessibility name/description, tabIndex, tabEnabled) not decoded",
+  "description": "flash8-import.ts does not decode AccProp fields from symbol instances: accessibilityName, accessibilityDescription, tabIndex, tabEnabled. These are stored in the binary CPicFrame/CPicSymbolInstance. The SWF encoder could emit AccessibilityInfo via DoAction if needed. Low priority \u2014 accessibility props rarely affect visual rendering. Fix: decode from binary, add to SymbolInstance model, optionally forward to SWF output via AS2 _accProps assignment.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:42:48Z",
+  "updated_at": "2026-06-10T20:42:48Z"
+}

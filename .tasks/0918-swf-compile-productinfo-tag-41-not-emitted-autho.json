@@ -1,10 +1,10 @@
 {
   "id": "0918-swf-compile-productinfo-tag-41-not-emitted-autho",
   "title": "SWF compile: ProductInfo (tag 41) not emitted \u2014 authoring tool metadata missing from published SWFs",
-  "description": "Tag 41 (ProductInfo) is never emitted by compile.ts and is not defined in tags.ts. Flash Professional always emits this tag to identify the authoring tool version. The tag body contains: product ID (UI32), edition (UI32), major/minor version (UI8), build (UI32), and compile date (UI64). For a Flash 8 clone, use product=8, edition=0, version=8.0.0.0. This is metadata only \u2014 no runtime behavior depends on it \u2014 but real FLA round-trip fidelity requires it.",
-  "status": "in_progress",
+  "description": "buildProductInfo() emits tag 41 in compile.ts; productinfo.test.ts passes.",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-06-10T20:17:20Z",
-  "updated_at": "2026-06-10T20:17:47Z"
+  "updated_at": "2026-06-10T20:55:00Z"
 }

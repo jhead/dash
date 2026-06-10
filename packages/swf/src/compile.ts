@@ -2031,7 +2031,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     y,
                     cxform,
                     transform,
-                    true  // move = true
+                    true,  // move = true
+                    displayObj.instanceName ?? undefined
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {

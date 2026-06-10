@@ -1,0 +1,10 @@
+{
+  "id": "0931-fla-import-hairline-stroke-width-0-clamped-to-0-",
+  "title": "FLA import: hairline stroke width (0) clamped to 0.05 instead of preserved as hairline semantic",
+  "description": "In flash8-import.ts line 169, resolveStroke uses Math.max(s.width, 0.05) \u2014 a width=0 hairline stroke gets clamped to 0.05px instead of being preserved as a hairline. Flash 8 hairline strokes (width=0) render as 1px regardless of zoom level. The SWF spec represents hairlines in LINESTYLE2 with width=0 and special flags. Fix: in the model, add strokeType: 'hairline' | 'solid' field to stroke types. In flash8-import.ts, when s.width===0, set strokeType='hairline' instead of clamping. In the SWF encoder (shapes.ts), when strokeType='hairline', emit width=0 in LINESTYLE2 with appropriate flags per SWF spec \u00a72.4.1.2.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:47:21Z",
+  "updated_at": "2026-06-10T20:47:21Z"
+}

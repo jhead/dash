@@ -1,10 +1,10 @@
 {
   "id": "0912-fix-buttons-ts-eventbitmap-release-press-rollove",
   "title": "Fix buttons.ts eventBitMap: release/press/rollOver bit values are all wrong",
-  "description": "The eventBitMap in packages/swf/src/buttons.ts has systematically wrong bit values. release=0x0001 (should be 0x0008), press=0x0002 (should be 0x0004), rollOver=0x0040 (should be 0x0001), rollOut=0x0020 (should be 0x0002), dragOut=0x0004 (should be 0x0010), dragOver=0x0008 (should be 0x0020), releaseOutside=0x0010 (should be 0x0040). Ruffle authoritative source: ruffle/swf/src/types.rs ButtonActionCondition. All affected unit tests asserting specific condBits values must be updated. E2e button-roundtrip.spec.ts comment needs update (test still passes but now fires for the correct reason).",
-  "status": "in_progress",
+  "description": "eventBitMap values corrected in buttons.ts (verified: rollOver=0x0001, press=0x0004, release=0x0008, etc). pnpm --filter @flash/swf run test -- --run: 1210 passed.",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-10T20:07:08Z",
-  "updated_at": "2026-06-10T20:07:10Z"
+  "updated_at": "2026-06-10T20:55:00Z"
 }
