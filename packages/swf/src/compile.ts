@@ -542,6 +542,17 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   //    Between scenes we emit RemoveObject2 for all occupied depths to reset
   //    the display list so each scene starts with a clean stage.
 
+  /**
+   * Serialize a ColorEffect to a string key for change detection.
+   * Returns null when there is no active color effect.
+   */
+  function colorEffectKey(displayObj: DisplayObject): string | null {
+    if (displayObj.type !== "instance") return null;
+    const ce = (displayObj as import("@flash/core").SymbolInstance).colorEffect;
+    if (!ce || ce.type === "none") return null;
+    return JSON.stringify(ce);
+  }
+
   // Per-depth: last placed state (objId, x, y, scaleX, scaleY, rotation, ratio)
   interface DepthState {
     objId: string;
@@ -552,6 +563,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     rotation: number;
     /** Last placed morph ratio (0..65535); -1 if not a morph shape. */
     ratio: number;
+    /** Serialized color effect key for change detection (null = no effect). */
+    colorEffectKey: string | null;
   }
   const depthState = new Map<number, DepthState>();
 
@@ -1030,6 +1043,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             }
           }
 
+          const thisColorEffectKey = colorEffectKey(displayObj);
+
           const isFirst = !prev;
           const posChanged =
             prev &&
@@ -1039,7 +1054,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               prev.scaleY !== scaleY ||
               prev.rotation !== rotation ||
               prev.objId !== objId ||
-              prev.ratio !== morphRatio);
+              prev.ratio !== morphRatio ||
+              prev.colorEffectKey !== thisColorEffectKey);
 
           if (isFirst) {
             // First placement at this depth
@@ -1169,12 +1185,16 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     ? colorEffectToCXForm(displayObj.colorEffect)
                     : null;
                   if (cxform !== null) {
+                    const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)
+                      ? { scaleX, scaleY, rotation }
+                      : undefined;
                     const placeBody = encodePlaceObject2WithCXForm(
                       charId,
                       depth,
                       x,
                       y,
-                      cxform
+                      cxform,
+                      transform
                     );
                     writer.writeTag(Tag.PlaceObject2, placeBody);
                   } else {
@@ -1196,7 +1216,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 }
               }
             }
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, ratio: morphRatio });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
           } else if (posChanged) {
             // Object moved, scaled, rotated, or replaced — emit PlaceObject2+Move
             if (
@@ -1215,7 +1235,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   true
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
-                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, ratio: morphRatio });
+                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
                 continue; // skip the generic depthState.set below
               }
               const objTransform =
@@ -1292,18 +1312,38 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             } else if (displayObj.type === "instance") {
               const charId = charIdMap.get(displayObj.symbolId);
               if (charId !== undefined) {
-                const placeBody = encodePlaceObject2Move(
-                  charId,
-                  depth,
-                  x,
-                  y,
-                  undefined,
-                  prev!.objId !== objId
-                );
-                writer.writeTag(Tag.PlaceObject2, placeBody);
+                const cxform = displayObj.colorEffect
+                  ? colorEffectToCXForm(displayObj.colorEffect)
+                  : null;
+                if (cxform !== null) {
+                  const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)
+                    ? { scaleX, scaleY, rotation }
+                    : undefined;
+                  // Move + HasMatrix + HasColorTransform (no HasCharacter unless replacing)
+                  const placeBody = encodePlaceObject2WithCXForm(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    cxform,
+                    transform,
+                    true  // move = true
+                  );
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                } else {
+                  const placeBody = encodePlaceObject2Move(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    undefined,
+                    prev!.objId !== objId
+                  );
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                }
               }
             }
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, ratio: morphRatio });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
           }
           // else: unchanged — emit nothing
         }
@@ -1375,6 +1415,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     loops: frame.sound.repeatCount,
                     stop: frame.sound.syncMode === "stop",
                     noMultiple: frame.sound.syncMode === "start",
+                    effect: frame.sound.effect,
                   });
                   writer.writeTag(Tag.StartSound, startSoundBody);
                 }

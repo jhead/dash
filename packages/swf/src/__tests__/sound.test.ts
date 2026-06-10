@@ -24,7 +24,8 @@
 
 import { describe, it, expect } from "vitest";
 import { compileDocument } from "../compile.js";
-import type { FlashDocument, SoundItem, SoundLinkage } from "@flash/core";
+import type { FlashDocument, SoundEffect, SoundItem, SoundLinkage } from "@flash/core";
+import { effectToEnvelope, encodeSoundInfo } from "../sounds.js";
 
 // ---------------------------------------------------------------------------
 // SWF tag parser helpers
@@ -114,9 +115,10 @@ function makeSoundItem(
 function makeSoundLinkage(
   libraryItemId: string,
   syncMode: SoundLinkage["syncMode"] = "event",
-  repeatCount = 1
+  repeatCount = 1,
+  effect?: SoundEffect
 ): SoundLinkage {
-  return { libraryItemId, syncMode, repeatCount };
+  return { libraryItemId, syncMode, repeatCount, effect };
 }
 
 /** Build a minimal FlashDocument with the given library items and optional frame sound. */
@@ -386,5 +388,178 @@ describe("SWF sound export — StartSound (tag 15)", () => {
     const showIdx = tags.findIndex((t) => t.code === 1 /* ShowFrame */);
     expect(startIdx).toBeGreaterThanOrEqual(0);
     expect(showIdx).toBeGreaterThan(startIdx);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: effectToEnvelope — preset expansion
+// ---------------------------------------------------------------------------
+
+describe("effectToEnvelope — preset expansion", () => {
+  it("returns null for 'none'", () => {
+    expect(effectToEnvelope("none")).toBeNull();
+  });
+
+  it("fadeIn: starts silent, ends at full volume on both channels", () => {
+    const pts = effectToEnvelope("fadeIn")!;
+    expect(pts.length).toBe(2);
+    expect(pts[0]).toMatchObject({ pos44: 0, leftLevel: 0, rightLevel: 0 });
+    expect(pts[1]).toMatchObject({ pos44: 44100, leftLevel: 32768, rightLevel: 32768 });
+  });
+
+  it("fadeOut: starts at full volume, ends silent", () => {
+    const pts = effectToEnvelope("fadeOut")!;
+    expect(pts.length).toBe(2);
+    expect(pts[0]).toMatchObject({ pos44: 0, leftLevel: 32768, rightLevel: 32768 });
+    expect(pts[1]).toMatchObject({ pos44: 44100, leftLevel: 0, rightLevel: 0 });
+  });
+
+  it("left: left channel at full, right at 0", () => {
+    const pts = effectToEnvelope("left")!;
+    expect(pts.length).toBe(2);
+    for (const pt of pts) {
+      expect(pt.leftLevel).toBe(32768);
+      expect(pt.rightLevel).toBe(0);
+    }
+  });
+
+  it("right: right channel at full, left at 0", () => {
+    const pts = effectToEnvelope("right")!;
+    expect(pts.length).toBe(2);
+    for (const pt of pts) {
+      expect(pt.leftLevel).toBe(0);
+      expect(pt.rightLevel).toBe(32768);
+    }
+  });
+
+  it("fadeLeftToRight: pans from left to right", () => {
+    const pts = effectToEnvelope("fadeLeftToRight")!;
+    expect(pts[0]).toMatchObject({ leftLevel: 32768, rightLevel: 0 });
+    expect(pts[1]).toMatchObject({ leftLevel: 0, rightLevel: 32768 });
+  });
+
+  it("fadeRightToLeft: pans from right to left", () => {
+    const pts = effectToEnvelope("fadeRightToLeft")!;
+    expect(pts[0]).toMatchObject({ leftLevel: 0, rightLevel: 32768 });
+    expect(pts[1]).toMatchObject({ leftLevel: 32768, rightLevel: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: encodeSoundInfo — envelope encoding
+// ---------------------------------------------------------------------------
+
+describe("encodeSoundInfo — envelope encoding", () => {
+  it("hasEnvelope bit (bit 3) is 0 when effect is 'none'", () => {
+    const bytes = encodeSoundInfo({ effect: "none" });
+    expect((bytes[0] >> 3) & 1).toBe(0);
+  });
+
+  it("hasEnvelope bit (bit 3) is 0 when no effect set", () => {
+    const bytes = encodeSoundInfo({});
+    expect((bytes[0] >> 3) & 1).toBe(0);
+  });
+
+  it("hasEnvelope bit (bit 3) is 1 when effect is 'fadeIn'", () => {
+    const bytes = encodeSoundInfo({ effect: "fadeIn" });
+    expect((bytes[0] >> 3) & 1).toBe(1);
+  });
+
+  it("fadeIn encodes EnvelopeCount=2 followed by two 8-byte envelope points", () => {
+    const bytes = encodeSoundInfo({ effect: "fadeIn" });
+    // flags (1 byte) + EnvelopeCount (1 byte) + 2×(UI32+UI16+UI16)=2×8=16 bytes
+    expect(bytes.length).toBe(18);
+    // EnvelopeCount
+    expect(bytes[1]).toBe(2);
+    // First point: pos44=0, leftLevel=0, rightLevel=0
+    const p0pos = bytes[2] | (bytes[3] << 8) | (bytes[4] << 16) | (bytes[5] << 24);
+    const p0l = bytes[6] | (bytes[7] << 8);
+    const p0r = bytes[8] | (bytes[9] << 8);
+    expect(p0pos).toBe(0);
+    expect(p0l).toBe(0);
+    expect(p0r).toBe(0);
+    // Second point: pos44=44100, leftLevel=32768, rightLevel=32768
+    const p1pos = bytes[10] | (bytes[11] << 8) | (bytes[12] << 16) | (bytes[13] << 24);
+    const p1l = bytes[14] | (bytes[15] << 8);
+    const p1r = bytes[16] | (bytes[17] << 8);
+    expect(p1pos).toBe(44100);
+    expect(p1l).toBe(32768);
+    expect(p1r).toBe(32768);
+  });
+
+  it("explicit envelope points override the effect field", () => {
+    const bytes = encodeSoundInfo({
+      effect: "fadeIn",
+      envelope: [{ pos44: 100, leftLevel: 100, rightLevel: 200 }],
+    });
+    // EnvelopeCount should be 1 (explicit envelope wins)
+    expect(bytes[1]).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: StartSound with effect — end-to-end via compileDocument
+// ---------------------------------------------------------------------------
+
+describe("SWF sound export — StartSound with envelope effect", () => {
+  it("HasEnvelope flag set in StartSound SoundInfo when effect is 'fadeIn'", () => {
+    const snd = makeSoundItem("snd-1");
+    const doc = makeDoc(
+      [snd],
+      [{ frameIdx: 0, sound: makeSoundLinkage("snd-1", "event", 1, "fadeIn") }]
+    );
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    // SoundInfo flags is at byte index 2 of StartSound body (after 2-byte soundId)
+    const infoFlags = startTag.body[2];
+    expect((infoFlags >> 3) & 1).toBe(1); // hasEnvelope
+  });
+
+  it("HasEnvelope flag NOT set when effect is 'none'", () => {
+    const snd = makeSoundItem("snd-1");
+    const doc = makeDoc(
+      [snd],
+      [{ frameIdx: 0, sound: makeSoundLinkage("snd-1", "event", 1, "none") }]
+    );
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    const infoFlags = startTag.body[2];
+    expect((infoFlags >> 3) & 1).toBe(0); // no envelope
+  });
+
+  it("HasEnvelope flag NOT set when effect is undefined", () => {
+    const snd = makeSoundItem("snd-1");
+    const doc = makeDoc(
+      [snd],
+      [{ frameIdx: 0, sound: makeSoundLinkage("snd-1") }]
+    );
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    const infoFlags = startTag.body[2];
+    expect((infoFlags >> 3) & 1).toBe(0);
+  });
+
+  it("'left' effect: envelope rightLevel=0 in StartSound body", () => {
+    // Use repeatCount=0 (no loops) to keep SoundInfo layout simple: no LoopCount bytes
+    const snd = makeSoundItem("snd-1");
+    const doc = makeDoc(
+      [snd],
+      [{ frameIdx: 0, sound: makeSoundLinkage("snd-1", "event", 0, "left") }]
+    );
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    // body[0..1]=soundId, body[2]=flags, body[3]=LoopCount_lo, body[4]=LoopCount_hi
+    // (repeatCount=0 still sets hasLoops, writing LoopCount=0), body[5]=EnvelopeCount
+    // body[6..9]=pos44, body[10..11]=leftLevel, body[12..13]=rightLevel
+    const infoFlags = startTag.body[2];
+    expect((infoFlags >> 3) & 1).toBe(1); // hasEnvelope set
+    const envCount = startTag.body[5];
+    expect(envCount).toBe(2);
+    const rightLevel0 = startTag.body[12] | (startTag.body[13] << 8);
+    expect(rightLevel0).toBe(0);
   });
 });

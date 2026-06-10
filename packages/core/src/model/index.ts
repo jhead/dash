@@ -20,6 +20,7 @@ export type {
   RulerUnits,
   Scale9Grid,
   Scene,
+  SoundEffect,
   SoundItem,
   SoundLinkage,
   Symbol,

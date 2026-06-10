@@ -66,10 +66,21 @@ export interface DocumentProperties {
 // Frame
 // ---------------------------------------------------------------------------
 
+/** Preset envelope effects for StartSound playback. */
+export type SoundEffect =
+  | "none"
+  | "left"            // Left Channel only
+  | "right"           // Right Channel only
+  | "fadeLeftToRight" // Pan left→right over full sound
+  | "fadeRightToLeft" // Pan right→left over full sound
+  | "fadeIn"          // Fade in from silence to full volume
+  | "fadeOut";        // Fade out from full volume to silence
+
 export interface SoundLinkage {
   readonly libraryItemId: string;   // ID of a Sound library item
   readonly syncMode: "event" | "start" | "stop" | "stream";
   readonly repeatCount: number;     // 0 = loop indefinitely
+  readonly effect?: SoundEffect;    // Envelope effect preset (default: "none")
 }
 
 /**

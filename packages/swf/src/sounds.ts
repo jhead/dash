@@ -22,11 +22,22 @@
  *   uint16  SoundId    — character ID of the sound
  *   SoundInfo struct
  */
+import type { SoundEffect } from "@flash/core";
 import { BitWriter } from "./bits.js";
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
+
+/** One SoundEnvelope point: sample position + left/right levels (0-32768). */
+export interface SoundEnvelopePoint {
+  /** Sample position in 44100 Hz units. */
+  pos44: number;
+  /** Left channel level (0-32768). */
+  leftLevel: number;
+  /** Right channel level (0-32768). */
+  rightLevel: number;
+}
 
 export interface SoundInfoOptions {
   /** Loop count: 0 = loop indefinitely, N = play N times. */
@@ -39,6 +50,65 @@ export interface SoundInfoOptions {
   noMultiple?: boolean;
   /** Stop the sound. */
   stop?: boolean;
+  /** Explicit envelope points. Mutually exclusive with `effect`. */
+  envelope?: SoundEnvelopePoint[];
+  /** Preset effect to expand into envelope points. Ignored if `envelope` is set. */
+  effect?: SoundEffect;
+}
+
+// ---------------------------------------------------------------------------
+// effectToEnvelope
+// ---------------------------------------------------------------------------
+
+/**
+ * Expand a SoundEffect preset into SoundEnvelope points.
+ * All positions are in 44100 Hz sample units, levels 0-32768.
+ *
+ * Flash standard presets (matches Flash authoring tool output):
+ *   fadeIn         : silence → full over ~44100 samples (1 s at 44 kHz)
+ *   fadeOut        : full → silence over ~44100 samples
+ *   left           : left channel at full, right channel at 0
+ *   right          : right channel at full, left channel at 0
+ *   fadeLeftToRight: left full→0, right 0→full
+ *   fadeRightToLeft: right full→0, left 0→full
+ */
+export function effectToEnvelope(effect: SoundEffect): SoundEnvelopePoint[] | null {
+  switch (effect) {
+    case "none":
+      return null;
+    case "fadeIn":
+      return [
+        { pos44: 0,     leftLevel: 0,     rightLevel: 0 },
+        { pos44: 44100, leftLevel: 32768, rightLevel: 32768 },
+      ];
+    case "fadeOut":
+      return [
+        { pos44: 0,     leftLevel: 32768, rightLevel: 32768 },
+        { pos44: 44100, leftLevel: 0,     rightLevel: 0 },
+      ];
+    case "left":
+      return [
+        { pos44: 0,     leftLevel: 32768, rightLevel: 0 },
+        { pos44: 44100, leftLevel: 32768, rightLevel: 0 },
+      ];
+    case "right":
+      return [
+        { pos44: 0,     leftLevel: 0,     rightLevel: 32768 },
+        { pos44: 44100, leftLevel: 0,     rightLevel: 32768 },
+      ];
+    case "fadeLeftToRight":
+      return [
+        { pos44: 0,     leftLevel: 32768, rightLevel: 0 },
+        { pos44: 44100, leftLevel: 0,     rightLevel: 32768 },
+      ];
+    case "fadeRightToLeft":
+      return [
+        { pos44: 0,     leftLevel: 0,     rightLevel: 32768 },
+        { pos44: 44100, leftLevel: 32768, rightLevel: 0 },
+      ];
+    default:
+      return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -57,11 +127,18 @@ export function encodeSoundInfo(opts: SoundInfoOptions = {}): Uint8Array {
   const noMultiple = opts.noMultiple ? 1 : 0;
   const stop = opts.stop ? 1 : 0;
 
+  // Resolve envelope: explicit points win; fall back to preset expansion
+  const envelopePoints: SoundEnvelopePoint[] =
+    opts.envelope && opts.envelope.length > 0
+      ? opts.envelope
+      : (opts.effect ? (effectToEnvelope(opts.effect) ?? []) : []);
+  const hasEnvelope = envelopePoints.length > 0 ? 1 : 0;
+
   const flags =
     hasInPoint |
     (hasOutPoint << 1) |
     (hasLoops << 2) |
-    // bit 3: hasEnvelope — always 0 for now
+    (hasEnvelope << 3) |
     (noMultiple << 4) |
     (stop << 5);
 
@@ -78,7 +155,14 @@ export function encodeSoundInfo(opts: SoundInfoOptions = {}): Uint8Array {
     // loops: 0 = infinite, N = play N times — maps directly to SWF LoopCount
     bw.writeUI16LE(opts.loops!);
   }
-  // hasEnvelope = 0, no envelope bytes written
+  if (hasEnvelope) {
+    bw.writeUI8(envelopePoints.length);
+    for (const pt of envelopePoints) {
+      bw.writeUI32LE(pt.pos44);
+      bw.writeUI16LE(pt.leftLevel);
+      bw.writeUI16LE(pt.rightLevel);
+    }
+  }
 
   return bw.getBytes();
 }

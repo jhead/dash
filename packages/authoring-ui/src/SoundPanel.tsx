@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import type { Frame, SoundItem, SoundLinkage } from "@flash/core";
+import type { Frame, SoundEffect, SoundItem, SoundLinkage } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,6 +21,7 @@ export interface SoundPanelProps {
 }
 
 type SyncMode = SoundLinkage["syncMode"];
+type EffectMode = SoundEffect;
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -106,6 +107,7 @@ export function SoundPanel({
   const selectedSoundId = sound?.libraryItemId ?? "";
   const syncMode: SyncMode = sound?.syncMode ?? "event";
   const repeatCount: number = sound?.repeatCount ?? 1;
+  const effectMode: EffectMode = sound?.effect ?? "none";
 
   const selectedSoundItem = sounds.find((s) => s.id === selectedSoundId) ?? null;
 
@@ -119,8 +121,20 @@ export function SoundPanel({
           libraryItemId: id,
           syncMode: sound?.syncMode ?? "event",
           repeatCount: sound?.repeatCount ?? 1,
+          effect: sound?.effect ?? "none",
         });
       }
+    },
+    [frameIndex, layerIndex, sound, onSoundChange]
+  );
+
+  const handleEffectChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      if (!sound) return;
+      onSoundChange(frameIndex, layerIndex, {
+        ...sound,
+        effect: e.target.value as EffectMode,
+      });
     },
     [frameIndex, layerIndex, sound, onSoundChange]
   );
@@ -182,7 +196,7 @@ export function SoundPanel({
       {sound && (
         <div style={rowStyle}>
           <span style={labelStyle}>Effect:</span>
-          <select style={selectStyle} defaultValue="none">
+          <select style={selectStyle} value={effectMode} onChange={handleEffectChange}>
             <option value="none">None</option>
             <option value="left">Left Channel</option>
             <option value="right">Right Channel</option>
