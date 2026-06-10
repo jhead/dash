@@ -146,6 +146,8 @@ import type { DocumentAccessibility } from "@flash/core";
 import type { ObjectAccessibility } from "@flash/core";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
 import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
+import { loadCommands, saveCommand, deleteCommand } from "./savedCommands.js";
+import type { SavedCommand } from "./savedCommands.js";
 
 // ---------------------------------------------------------------------------
 // Shape hint overlay
@@ -926,6 +928,12 @@ export function Shell(): React.ReactElement {
 
   // History panel (Window > History, Ctrl+F10)
   const [historyPanelVisible, setHistoryPanelVisible] = useState(false);
+
+  // Saved commands (Commands menu) — persisted in localStorage
+  const [savedCommands, setSavedCommands] = useState<SavedCommand[]>(() => loadCommands());
+
+  // Manage Commands dialog visibility
+  const [manageCommandsOpen, setManageCommandsOpen] = useState(false);
 
   // Accessibility panel (Window > Accessibility)
   const [accessibilityPanelVisible, setAccessibilityPanelVisible] = useState(false);
@@ -4614,6 +4622,61 @@ export function Shell(): React.ReactElement {
   );
 
   // ---------------------------------------------------------------------------
+  // Commands menu — Save as Command, Run Command, Delete Command
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Save selected past steps (or all past steps) as a named command.
+   * Called from HistoryPanel's "Save as Command..." button.
+   * @param name - user-supplied name
+   * @param stepIndices - 1-based past-step indices to save; empty = save all past steps
+   */
+  const handleSaveAsCommand = useCallback(
+    (name: string, stepIndices: number[]) => {
+      // Determine which snapshots to capture.
+      // historyPast[i] is the doc that was present BEFORE step i+1 was applied,
+      // so to replay step i+1 we push historyPast[i+1] (or doc for the current step).
+      // For simplicity, we store the "result" snapshots that follow each selected step.
+      // If stepIndices is empty we capture all past steps.
+      const indicesToUse =
+        stepIndices.length > 0 ? stepIndices : Array.from({ length: historyPast.length }, (_, i) => i + 1);
+
+      const steps = indicesToUse.map((idx) => {
+        // idx is 1-based; historyPast[idx-1] is the doc snapshot BEFORE that step.
+        // The result of applying step idx is historyPast[idx] if it exists, else doc (current).
+        return historyPast[idx] ?? doc;
+      });
+
+      setSavedCommands((prev) => saveCommand(name, steps, prev));
+    },
+    [historyPast, doc]
+  );
+
+  /**
+   * Replay a saved command by pushing each stored doc snapshot onto the history stack.
+   */
+  const handleRunCommand = useCallback(
+    (id: string) => {
+      const cmd = savedCommands.find((c) => c.id === id);
+      if (!cmd) return;
+      for (const step of cmd.steps) {
+        pushDoc(step);
+      }
+    },
+    [savedCommands, pushDoc]
+  );
+
+  /**
+   * Delete a saved command by id.
+   */
+  const handleDeleteCommand = useCallback(
+    (id: string) => {
+      setSavedCommands((prev) => deleteCommand(id, prev));
+    },
+    []
+  );
+
+  // ---------------------------------------------------------------------------
   // Export Image / Export Movie
   // ---------------------------------------------------------------------------
 
@@ -5409,6 +5472,13 @@ export function Shell(): React.ReactElement {
         onTextTrackingReset={handleTextTrackingReset}
         onTextScrollable={handleTextScrollable}
         onFindReplace={() => setFindReplaceVisible((v) => !v)}
+        savedCommands={savedCommands}
+        onSaveAsCommand={() => {
+          // Open the History panel so the user can select steps + click "Save as Command…"
+          setHistoryPanelVisible(true);
+        }}
+        onManageCommands={() => setManageCommandsOpen(true)}
+        onRunCommand={handleRunCommand}
       />
       <EditBar
         documentName="Untitled-1"
@@ -6255,7 +6325,171 @@ export function Shell(): React.ReactElement {
             onJumpTo={handleJumpToHistory}
             onClear={clearHistory}
             onClose={() => setHistoryPanelVisible(false)}
+            onSaveAsCommand={handleSaveAsCommand}
           />
+        </div>
+      )}
+
+      {/* Manage Saved Commands dialog */}
+      {manageCommandsOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 3000,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          onClick={() => setManageCommandsOpen(false)}
+        >
+          <div
+            style={{
+              background: "#2d2d2d",
+              border: "1px solid #1a1a1a",
+              boxShadow: "2px 4px 12px rgba(0,0,0,0.5)",
+              fontFamily: "system-ui, sans-serif",
+              fontSize: "12px",
+              color: "#e0e0e0",
+              minWidth: "280px",
+              maxWidth: "400px",
+              maxHeight: "480px",
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: "2px",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Title bar */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                height: "28px",
+                padding: "0 12px",
+                background: "#3c3c3c",
+                borderBottom: "1px solid #1a1a1a",
+                flexShrink: 0,
+                userSelect: "none",
+              }}
+            >
+              <span style={{ fontWeight: "bold", fontSize: "12px" }}>Manage Saved Commands</span>
+              <button
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#aaa",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  lineHeight: 1,
+                  padding: "0 2px",
+                }}
+                onClick={() => setManageCommandsOpen(false)}
+                title="Close"
+              >
+                x
+              </button>
+            </div>
+            {/* Command list */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "8px 0", minHeight: 0 }}>
+              {savedCommands.length === 0 ? (
+                <div
+                  style={{
+                    padding: "16px",
+                    color: "#777",
+                    textAlign: "center",
+                    fontStyle: "italic",
+                  }}
+                  data-testid="manage-commands-empty"
+                >
+                  No saved commands yet.
+                  <br />
+                  Use the History panel to save steps.
+                </div>
+              ) : (
+                savedCommands.map((cmd) => (
+                  <div
+                    key={cmd.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "4px 12px",
+                    }}
+                    data-testid={`manage-command-${cmd.id}`}
+                  >
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {cmd.name}
+                    </span>
+                    <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "8px" }}>
+                      <button
+                        style={{
+                          background: "#1a6ea8",
+                          border: "1px solid #0d5a8a",
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontSize: "11px",
+                          padding: "1px 6px",
+                          borderRadius: "2px",
+                        }}
+                        onClick={() => {
+                          setManageCommandsOpen(false);
+                          handleRunCommand(cmd.id);
+                        }}
+                        title={`Run "${cmd.name}"`}
+                        data-testid={`run-command-${cmd.id}`}
+                      >
+                        Run
+                      </button>
+                      <button
+                        style={{
+                          background: "#5a2020",
+                          border: "1px solid #8a0d0d",
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontSize: "11px",
+                          padding: "1px 6px",
+                          borderRadius: "2px",
+                        }}
+                        onClick={() => handleDeleteCommand(cmd.id)}
+                        title={`Delete "${cmd.name}"`}
+                        data-testid={`delete-command-${cmd.id}`}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            {/* Footer */}
+            <div
+              style={{
+                padding: "8px 12px",
+                borderTop: "1px solid #1a1a1a",
+                display: "flex",
+                justifyContent: "flex-end",
+                flexShrink: 0,
+              }}
+            >
+              <button
+                style={{
+                  background: "#3a3a3a",
+                  border: "1px solid #555",
+                  color: "#ccc",
+                  cursor: "pointer",
+                  fontSize: "11px",
+                  padding: "3px 12px",
+                  borderRadius: "2px",
+                }}
+                onClick={() => setManageCommandsOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

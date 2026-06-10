@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,6 +27,14 @@ export interface HistoryPanelProps {
   onClear?: () => void;
   /** Close the panel. */
   onClose?: () => void;
+  /**
+   * Called when the user clicks "Save as Command..." with a name and the
+   * selected step indices (1-based past-step indices). If no steps are
+   * selected the caller should save all past steps.
+   * @param name - user-supplied command name
+   * @param stepIndices - 1-based indices of selected past steps (may be empty = "all past")
+   */
+  onSaveAsCommand?: (name: string, stepIndices: number[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,10 +104,12 @@ const dividerStyle: React.CSSProperties = {
 
 const footerStyle: React.CSSProperties = {
   display: "flex",
-  justifyContent: "flex-end",
+  justifyContent: "space-between",
+  alignItems: "center",
   padding: "4px 8px",
   borderTop: "1px solid #1a1a1a",
   flexShrink: 0,
+  gap: "4px",
 };
 
 const clearBtnStyle: React.CSSProperties = {
@@ -110,6 +120,17 @@ const clearBtnStyle: React.CSSProperties = {
   fontSize: "11px",
   padding: "2px 8px",
   borderRadius: "2px",
+};
+
+const saveCommandBtnStyle: React.CSSProperties = {
+  background: "#1a6ea8",
+  border: "1px solid #0d5a8a",
+  color: "#fff",
+  cursor: "pointer",
+  fontSize: "11px",
+  padding: "2px 8px",
+  borderRadius: "2px",
+  whiteSpace: "nowrap",
 };
 
 // ---------------------------------------------------------------------------
@@ -136,6 +157,7 @@ export function HistoryPanel({
   onJumpTo,
   onClear,
   onClose,
+  onSaveAsCommand,
 }: HistoryPanelProps): React.ReactElement {
   // Auto-scroll to keep the current-state divider visible
   const dividerRef = useRef<HTMLDivElement>(null);
@@ -145,6 +167,31 @@ export function HistoryPanel({
 
   // currentIndex = index of the "present" in the full list
   const currentIndex = past.length;
+
+  // Multi-select: set of 1-based past step indices that are selected
+  const [selectedSteps, setSelectedSteps] = useState<Set<number>>(new Set());
+
+  const toggleStep = (stepIndex: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedSteps((prev) => {
+      const next = new Set(prev);
+      if (next.has(stepIndex)) {
+        next.delete(stepIndex);
+      } else {
+        next.add(stepIndex);
+      }
+      return next;
+    });
+  };
+
+  const handleSaveAsCommand = () => {
+    if (!onSaveAsCommand) return;
+    const name = window.prompt("Enter command name:");
+    if (!name || !name.trim()) return;
+    const indices = Array.from(selectedSteps).sort((a, b) => a - b);
+    onSaveAsCommand(name.trim(), indices);
+    setSelectedSteps(new Set());
+  };
 
   return (
     <div style={containerStyle} data-testid="history-panel">
@@ -179,17 +226,31 @@ export function HistoryPanel({
         {Array.from(past).map((_, i) => {
           const stepIndex = i + 1;
           const isCurrent = stepIndex === currentIndex;
+          const isSelected = selectedSteps.has(stepIndex);
           return (
             <div
               key={stepIndex}
               style={{
                 ...stepRowBaseStyle,
-                background: isCurrent ? "#1a6ea8" : i % 2 === 0 ? "#333" : "#2d2d2d",
-                color: isCurrent ? "#fff" : "#e0e0e0",
+                background: isSelected
+                  ? "#0d5a8a"
+                  : isCurrent
+                  ? "#1a6ea8"
+                  : i % 2 === 0
+                  ? "#333"
+                  : "#2d2d2d",
+                color: isCurrent || isSelected ? "#fff" : "#e0e0e0",
+                outline: isSelected ? "1px solid #4da6ff" : "none",
               }}
-              onClick={() => onJumpTo(stepIndex)}
+              onClick={(e) => {
+                if (onSaveAsCommand && e.shiftKey) {
+                  toggleStep(stepIndex, e);
+                } else {
+                  onJumpTo(stepIndex);
+                }
+              }}
               data-testid={`history-step-${stepIndex}`}
-              title={`Step ${stepIndex}`}
+              title={`Step ${stepIndex}${onSaveAsCommand ? " (Shift-click to select for Save as Command)" : ""}`}
             >
               Step {stepIndex}
             </div>
@@ -221,16 +282,32 @@ export function HistoryPanel({
       </div>
 
       {/* Footer */}
-      {onClear && (
+      {(onClear || onSaveAsCommand) && (
         <div style={footerStyle}>
-          <button
-            style={clearBtnStyle}
-            onClick={onClear}
-            title="Clear all history steps"
-            data-testid="history-clear-btn"
-          >
-            Clear History
-          </button>
+          {onSaveAsCommand && (
+            <button
+              style={saveCommandBtnStyle}
+              onClick={handleSaveAsCommand}
+              title={
+                selectedSteps.size > 0
+                  ? `Save ${selectedSteps.size} selected step(s) as a command`
+                  : "Save all past steps as a command"
+              }
+              data-testid="history-save-command-btn"
+            >
+              Save as Command…
+            </button>
+          )}
+          {onClear && (
+            <button
+              style={clearBtnStyle}
+              onClick={onClear}
+              title="Clear all history steps"
+              data-testid="history-clear-btn"
+            >
+              Clear History
+            </button>
+          )}
         </div>
       )}
     </div>

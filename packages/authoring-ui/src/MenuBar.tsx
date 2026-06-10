@@ -376,6 +376,17 @@ export interface MenuBarProps {
   onTextScrollable?: () => void;
   /** Called when Edit > Find and Replace... (Ctrl+H) is activated. */
   onFindReplace?: () => void;
+  /**
+   * List of saved commands to display in the Commands menu.
+   * Each command appears as a clickable menu item below the separator.
+   */
+  savedCommands?: Array<{ id: string; name: string }>;
+  /** Called when Commands > Save as Command... is activated. */
+  onSaveAsCommand?: () => void;
+  /** Called when Commands > Manage Saved Commands... is activated. */
+  onManageCommands?: () => void;
+  /** Called when a saved command item is clicked with the command's id. */
+  onRunCommand?: (id: string) => void;
 }
 
 export function MenuBar({
@@ -478,6 +489,10 @@ export function MenuBar({
   onTextTrackingReset,
   onTextScrollable,
   onFindReplace,
+  savedCommands = [],
+  onSaveAsCommand,
+  onManageCommands,
+  onRunCommand,
 }: MenuBarProps = {}): React.ReactElement {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const { newDocument, openDocument, saveDocument, saveDocumentAs } =
@@ -838,7 +853,26 @@ export function MenuBar({
         },
       ],
     },
-    { name: "Commands" },
+    {
+      name: "Commands",
+      items: [
+        {
+          label: "Save as Command...",
+          action: () => { onSaveAsCommand?.(); },
+        },
+        {
+          label: "Manage Saved Commands...",
+          action: () => { onManageCommands?.(); },
+          separator: false,
+        },
+        // Dynamic saved command items (separator before the first one)
+        ...savedCommands.map((cmd, i) => ({
+          label: cmd.name,
+          action: () => { onRunCommand?.(cmd.id); },
+          separator: i === 0,
+        })),
+      ],
+    },
     {
       name: "Window",
       items: [
