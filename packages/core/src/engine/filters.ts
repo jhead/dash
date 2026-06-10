@@ -188,6 +188,34 @@ export interface ConvolutionFilter {
 }
 
 // ---------------------------------------------------------------------------
+// Displacement Map
+// ---------------------------------------------------------------------------
+
+export interface DisplacementMapFilter {
+  readonly type: "displacementMap";
+  /** Character ID of the bitmap to use as the displacement map. Default: 0. */
+  readonly mapBitmapId?: number;
+  /** X,Y offset of the map relative to the filtered object. Default: {x:0, y:0}. */
+  readonly mapPoint?: { readonly x: number; readonly y: number };
+  /** Which color channel to use for X displacement (1=R, 2=G, 4=B, 8=A). Default: 1. */
+  readonly componentX?: number;
+  /** Which color channel to use for Y displacement (1=R, 2=G, 4=B, 8=A). Default: 2. */
+  readonly componentY?: number;
+  /** Scale factor for X displacement. Default: 0. */
+  readonly scaleX?: number;
+  /** Scale factor for Y displacement. Default: 0. */
+  readonly scaleY?: number;
+  /** Displacement mode. Default: "wrap". */
+  readonly mode?: "wrap" | "clamp" | "ignore" | "color";
+  /**
+   * Color used for out-of-bounds pixels when mode is "color".
+   * CSS hex string #RRGGBB or #RRGGBBAA. Default: "#00000000".
+   */
+  readonly color?: string;
+  readonly enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Union
 // ---------------------------------------------------------------------------
 
@@ -199,7 +227,8 @@ export type FlashFilter =
   | GradientGlowFilter
   | GradientBevelFilter
   | AdjustColorFilter
-  | ConvolutionFilter;
+  | ConvolutionFilter
+  | DisplacementMapFilter;
 
 // ---------------------------------------------------------------------------
 // Default factories
@@ -330,6 +359,21 @@ export function defaultConvolution(): ConvolutionFilter {
     defaultColor: { r: 0, g: 0, b: 0, a: 0 },
     clamp: true,
     preserveAlpha: false,
+    enabled: true,
+  };
+}
+
+export function defaultDisplacementMap(): DisplacementMapFilter {
+  return {
+    type: "displacementMap",
+    mapBitmapId: 0,
+    mapPoint: { x: 0, y: 0 },
+    componentX: 1, // Red channel
+    componentY: 2, // Green channel
+    scaleX: 0,
+    scaleY: 0,
+    mode: "wrap",
+    color: "#00000000",
     enabled: true,
   };
 }

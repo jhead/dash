@@ -5,7 +5,7 @@
  * Used for objects that have Flash 8 FlashFilter effects applied.
  */
 import { BitWriter } from "./bits.js";
-import type { FlashFilter, DropShadowFilter, GlowFilter, BlurFilter, BevelFilter, GradientGlowFilter, GradientBevelFilter, AdjustColorFilter, ConvolutionFilter } from "@flash/core";
+import type { FlashFilter, DropShadowFilter, GlowFilter, BlurFilter, BevelFilter, GradientGlowFilter, GradientBevelFilter, AdjustColorFilter, ConvolutionFilter, DisplacementMapFilter } from "@flash/core";
 import { toSWFMatrix, composeMatrix } from "@flash/core";
 import { edgeNumBits } from "./helpers.js";
 
@@ -372,6 +372,81 @@ function writeConvolutionFilter(bw: BitWriter, f: ConvolutionFilter): void {
   bw.writeUI8(flags);
 }
 
+/**
+ * Parse a CSS hex color string (#rrggbb, #rgb, or #rrggbbaa) into {r, g, b, a}.
+ */
+function hexToRGBA(hex: string): { r: number; g: number; b: number; a: number } {
+  const h = hex.replace("#", "");
+  if (h.length === 3) {
+    return {
+      r: parseInt(h[0] + h[0], 16),
+      g: parseInt(h[1] + h[1], 16),
+      b: parseInt(h[2] + h[2], 16),
+      a: 255,
+    };
+  }
+  if (h.length === 8) {
+    return {
+      r: parseInt(h.slice(0, 2), 16) || 0,
+      g: parseInt(h.slice(2, 4), 16) || 0,
+      b: parseInt(h.slice(4, 6), 16) || 0,
+      a: parseInt(h.slice(6, 8), 16) || 0,
+    };
+  }
+  return {
+    r: parseInt(h.slice(0, 2), 16) || 0,
+    g: parseInt(h.slice(2, 4), 16) || 0,
+    b: parseInt(h.slice(4, 6), 16) || 0,
+    a: 255,
+  };
+}
+
+/**
+ * Encode a DisplacementMapFilter (FilterID = 8).
+ *
+ * SWF layout (per SWF spec §23 DISPLACEMENTMAPFILTER):
+ *   UI16:   MapBitmapId — character ID of the map bitmap
+ *   FLOAT:  MapPoint.x  — x offset of the map (IEEE 754 LE)
+ *   FLOAT:  MapPoint.y  — y offset of the map (IEEE 754 LE)
+ *   UI8:    ComponentX  — color channel for X displacement (1=R, 2=G, 4=B, 8=A)
+ *   UI8:    ComponentY  — color channel for Y displacement
+ *   FLOAT:  ScaleX      — scale factor for X displacement
+ *   FLOAT:  ScaleY      — scale factor for Y displacement
+ *   UI8:    Mode        — 0=wrap, 1=clamp, 2=ignore, 3=color
+ *   RGBA:   Color       — 4 bytes, color for out-of-bounds pixels (mode=3)
+ *   UI8:    Clamp       — reserved, write 0
+ */
+function writeDisplacementMapFilter(bw: BitWriter, f: DisplacementMapFilter): void {
+  // MapBitmapId: UI16
+  bw.writeUI16LE(f.mapBitmapId ?? 0);
+
+  // MapPoint: two FLOAT32 values
+  bw.writeFloat(f.mapPoint?.x ?? 0);
+  bw.writeFloat(f.mapPoint?.y ?? 0);
+
+  // ComponentX, ComponentY: UI8
+  bw.writeUI8(f.componentX ?? 1);
+  bw.writeUI8(f.componentY ?? 2);
+
+  // ScaleX, ScaleY: FLOAT32
+  bw.writeFloat(f.scaleX ?? 0);
+  bw.writeFloat(f.scaleY ?? 0);
+
+  // Mode: UI8 (0=wrap, 1=clamp, 2=ignore, 3=color)
+  const modeMap: Record<string, number> = { wrap: 0, clamp: 1, ignore: 2, color: 3 };
+  bw.writeUI8(modeMap[f.mode ?? "wrap"] ?? 0);
+
+  // Color: RGBA (4 bytes)
+  const { r, g, b, a } = hexToRGBA(f.color ?? "#00000000");
+  bw.writeUI8(r);
+  bw.writeUI8(g);
+  bw.writeUI8(b);
+  bw.writeUI8(a);
+
+  // Clamp: UI8 (reserved, write 0)
+  bw.writeUI8(0);
+}
+
 // ---------------------------------------------------------------------------
 // FILTERLIST encoder
 // ---------------------------------------------------------------------------
@@ -417,6 +492,10 @@ function writeFilterList(bw: BitWriter, filters: readonly FlashFilter[]): void {
       case "convolution":
         bw.writeUI8(5); // FilterID
         writeConvolutionFilter(bw, f);
+        break;
+      case "displacementMap":
+        bw.writeUI8(8); // FilterID
+        writeDisplacementMapFilter(bw, f);
         break;
     }
   }
