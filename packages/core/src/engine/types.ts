@@ -108,6 +108,21 @@ export interface BitmapFill {
    * Corresponds to SWF fill types 0x42/0x43 (smoothed) vs 0x40/0x41 (aliased).
    */
   readonly smooth: boolean;
+  /**
+   * Optional fill transform matrix (in pixel space).
+   * Maps bitmap pixel coordinates to shape local pixel space.
+   * If absent, an identity transform is assumed (bitmap origin = shape origin,
+   * no scale/rotation beyond the standard pixel-to-twip mapping).
+   * Components a/b/c/d are dimensionless; tx/ty are in pixels.
+   */
+  readonly matrix?: {
+    readonly a: number;
+    readonly b: number;
+    readonly c: number;
+    readonly d: number;
+    readonly tx: number;
+    readonly ty: number;
+  };
 }
 
 // Union for fill types

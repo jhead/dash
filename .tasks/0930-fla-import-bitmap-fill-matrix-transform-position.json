@@ -1,0 +1,10 @@
+{
+  "id": "0930-fla-import-bitmap-fill-matrix-transform-position",
+  "title": "FLA import: bitmap fill matrix transform (position/scale/rotation) discarded during import",
+  "description": "In flash8-import.ts, toFill() handles bitmap fills by returning only { type, bitmapId, repeat, smooth } \u2014 the fill matrix (f.matrix) is silently discarded. Bitmap fills with non-identity matrix (offset, scaled, rotated pattern) import as if they have no transform. Fix: (1) decode the matrix from the binary fill record in flash8-binary.ts if not already done, (2) add a 'matrix' field to the BitmapFill type in model/types.ts or engine/types.ts, (3) forward f.matrix from toFill() into the returned fill object, (4) in the SWF encoder (shapes.ts or compile.ts), emit the MATRIX field in the FILLSTYLE record for bitmap fills per SWF spec \u00a72.4.1.1 FILLSTYLE.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T20:39:05Z",
+  "updated_at": "2026-06-10T20:42:38Z"
+}

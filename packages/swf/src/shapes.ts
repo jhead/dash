@@ -389,13 +389,21 @@ export function encodeDefineShape4(
             f.fill.color.a === c.a
         );
       } else if (fill.type === "bitmap") {
-        // Deduplicate bitmap fills by id + repeat + smooth
+        // Deduplicate bitmap fills by id + repeat + smooth + matrix
         found = fills.find(
-          (f) =>
-            f.fill.type === "bitmap" &&
-            f.fill.bitmapId === fill.bitmapId &&
-            f.fill.repeat === fill.repeat &&
-            f.fill.smooth === fill.smooth
+          (f) => {
+            if (f.fill.type !== "bitmap") return false;
+            if (f.fill.bitmapId !== fill.bitmapId) return false;
+            if (f.fill.repeat !== fill.repeat) return false;
+            if (f.fill.smooth !== fill.smooth) return false;
+            // Two fills with different matrices must not be deduplicated
+            const ma = f.fill.matrix;
+            const mb = fill.matrix;
+            if (!ma && !mb) return true;
+            if (!ma || !mb) return false;
+            return ma.a === mb.a && ma.b === mb.b && ma.c === mb.c && ma.d === mb.d &&
+              ma.tx === mb.tx && ma.ty === mb.ty;
+          }
         );
       } else {
         // Gradient fills are not deduplicated (each path gets its own entry)
@@ -467,8 +475,16 @@ export function encodeDefineShape4(
       const bitmapCharId = bitmapCharIdMap?.get(fill.bitmapId) ?? 0xffff;
       bw.writeUI16LE(bitmapCharId);
 
-      // BitmapMatrix: identity (bitmap pixel space = shape space at 1px = 20 twips)
-      writeBitmapMatrix(bw, 20, 0, 0);
+      // BitmapMatrix: maps bitmap pixel space to shape space (twips).
+      // The FLA fill matrix (if present) is in pixel space; multiply by 20 to convert to twips.
+      if (fill.matrix) {
+        const m = fill.matrix;
+        const TWIPS = 20;
+        writeBitmapFillMatrix(bw, m.a * TWIPS, m.b * TWIPS, m.c * TWIPS, m.d * TWIPS,
+          Math.round(m.tx * TWIPS), Math.round(m.ty * TWIPS));
+      } else {
+        writeBitmapMatrix(bw, 20, 0, 0);
+      }
     } else {
       // Gradient fill: linear (0x10) or radial (0x12) / focal radial (0x13)
       const isLinear = fill.type === "linear-gradient";
@@ -1414,6 +1430,56 @@ function writeBitmapMatrix(
   bw.writeBits(nTransBits, 5);
   bw.writeBits(tx, nTransBits);
   bw.writeBits(ty, nTransBits);
+
+  bw.flushBits();
+}
+
+/**
+ * Write a SWF MATRIX (bit-packed) for a bitmap fill with a full affine transform.
+ *
+ * All values are already in twips (16.16 fixed-point for a/b/c/d, integer twips for tx/ty).
+ * The matrix maps from bitmap pixel space to shape space (twips):
+ *   a, d  = scale components (twipsPerPx * scaleX/Y)
+ *   b, c  = rotation/skew components (twipsPerPx * rotation factor)
+ *   tx,ty = translation in twips
+ */
+function writeBitmapFillMatrix(
+  bw: BitWriter,
+  aTwips: number,
+  bTwips: number,
+  cTwips: number,
+  dTwips: number,
+  txTwips: number,
+  tyTwips: number
+): void {
+  // Convert a,b,c,d to 16.16 fixed-point integers
+  const aFixed = Math.round(aTwips * 65536);
+  const bFixed = Math.round(bTwips * 65536);
+  const cFixed = Math.round(cTwips * 65536);
+  const dFixed = Math.round(dTwips * 65536);
+
+  // hasScale = 1
+  bw.writeBits(1, 1);
+  const nScaleBits = Math.max(edgeNumBits([aFixed, dFixed]), 2);
+  bw.writeBits(nScaleBits, 5);
+  bw.writeBits(aFixed, nScaleBits); // scaleX
+  bw.writeBits(dFixed, nScaleBits); // scaleY
+
+  // hasRotate: write b and c if non-zero
+  const hasRotate = bFixed !== 0 || cFixed !== 0;
+  bw.writeBits(hasRotate ? 1 : 0, 1);
+  if (hasRotate) {
+    const nRotBits = Math.max(edgeNumBits([bFixed, cFixed]), 2);
+    bw.writeBits(nRotBits, 5);
+    bw.writeBits(bFixed, nRotBits); // rotateSkew0 (b)
+    bw.writeBits(cFixed, nRotBits); // rotateSkew1 (c)
+  }
+
+  // translate
+  const nTransBits = Math.max(edgeNumBits([txTwips, tyTwips]), 2);
+  bw.writeBits(nTransBits, 5);
+  bw.writeBits(txTwips, nTransBits);
+  bw.writeBits(tyTwips, nTransBits);
 
   bw.flushBits();
 }

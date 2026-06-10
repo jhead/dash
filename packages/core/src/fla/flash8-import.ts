@@ -126,7 +126,7 @@ function toFill(f: Fla8Fill, bitmapIdByIndex: Map<number, string>): Fill {
         );
         return { type: "solid", color: { r: 128, g: 128, b: 128, a: 255 } };
       }
-      return { type: "bitmap", bitmapId, repeat: f.repeat, smooth: f.smooth };
+      return { type: "bitmap", bitmapId, repeat: f.repeat, smooth: f.smooth, matrix: f.matrix };
     }
     case "unknown":
       return { type: "solid", color: { r: 128, g: 128, b: 128, a: 255 } };
