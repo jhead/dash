@@ -1251,6 +1251,55 @@ function TextView({
         </div>
       )}
 
+      {/* Input-only properties: password, maxChars, hasBorder, hasBackground */}
+      {obj.textType === "input" && (
+        <>
+          <div style={S.fieldGroup}>
+            <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={obj.password ?? false}
+                onChange={(e) => onUpdateObject(obj.id, { password: e.target.checked } as Partial<DisplayObject>)}
+              />
+              Password
+            </label>
+          </div>
+
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Max Chars:</span>
+            <NumInput
+              value={obj.maxChars ?? 0}
+              min={0}
+              max={65535}
+              style={{ width: 52 }}
+              onChange={(v) => onUpdateObject(obj.id, { maxChars: Math.max(0, Math.round(v)) } as Partial<DisplayObject>)}
+            />
+          </div>
+
+          <div style={S.fieldGroup}>
+            <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={obj.hasBorder ?? false}
+                onChange={(e) => onUpdateObject(obj.id, { hasBorder: e.target.checked } as Partial<DisplayObject>)}
+              />
+              Border
+            </label>
+          </div>
+
+          <div style={S.fieldGroup}>
+            <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={obj.hasBackground ?? false}
+                onChange={(e) => onUpdateObject(obj.id, { hasBackground: e.target.checked } as Partial<DisplayObject>)}
+              />
+              Background
+            </label>
+          </div>
+        </>
+      )}
+
       <div style={S.separator} />
 
       {/* Type */}

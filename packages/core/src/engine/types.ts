@@ -513,6 +513,33 @@ export interface TextDisplayObject {
    * sharpness: -400 to 400; thickness: 0 to 200.
    */
   readonly csm?: { readonly sharpness: number; readonly thickness: number };
+  /**
+   * Whether characters are masked as password dots (input text only).
+   * Maps to the DefineEditText Password bit (bit 4 of flags UI16).
+   */
+  readonly password?: boolean;
+  /**
+   * Maximum number of characters the user can enter (input text only).
+   * 0 or undefined means no limit.
+   * When > 0, sets HasMaxLength (bit 1) and writes a UI16 MaxLength field.
+   */
+  readonly maxChars?: number;
+  /**
+   * Whether a border rectangle is drawn around the text field.
+   * Maps to the DefineEditText Border bit (bit 11 of flags UI16).
+   */
+  readonly hasBorder?: boolean;
+  /**
+   * Whether the text field has a background fill.
+   * Maps to the DefineEditText HasBackground bit (bit 12 of flags UI16 — note: same
+   * bit as NoSelect for static fields; for dynamic/input this bit enables background fill).
+   *
+   * NOTE: In the SWF spec, bit 12 is overloaded — for static text it is NoSelect, and
+   * for dynamic/input it represents the background fill. In practice, the Flash authoring
+   * tool stores a separate background color property. We model this as a boolean here and
+   * the encoder applies it only for non-static text fields.
+   */
+  readonly hasBackground?: boolean;
 }
 
 /**

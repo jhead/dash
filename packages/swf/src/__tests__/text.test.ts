@@ -874,3 +874,164 @@ describe("DefineFontAlignZones (tag 73) — emitted for all embedded fonts", () 
     expect(alignTags.length).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Input text extra properties: password, maxChars, hasBorder
+// ---------------------------------------------------------------------------
+
+/**
+ * Extended decoder that also checks the Password, HasMaxLength, Border flags
+ * and reads the MaxLength field when present.
+ */
+interface ExtendedDecodedEditText extends DecodedEditText {
+  password: boolean;
+  hasMaxLength: boolean;
+  border: boolean;
+  maxLength?: number;
+}
+
+function decodeDefineEditTextExtended(body: Uint8Array): ExtendedDecodedEditText {
+  const base = decodeDefineEditText(body);
+
+  // Parse extra flags from the flags UI16
+  const password = (base.flags & (1 << 4)) !== 0;
+  const hasMaxLength = (base.flags & (1 << 1)) !== 0;
+  const border = (base.flags & (1 << 11)) !== 0;
+
+  // If hasMaxLength is set, find MaxLength in the body. Field order:
+  //   CharacterId (2) + RECT + flags (2) + [Font (4)] + [Color (4)] + [MaxLength (2)] + ...
+  // We need to skip to the right position.
+  let maxLength: number | undefined;
+  if (hasMaxLength) {
+    // Re-parse body to find MaxLength at the right offset
+    let byteOff = 2;
+    let bitBuf = 0;
+    let bitsLeft = 0;
+
+    function readBits2(n: number): number {
+      let result = 0;
+      for (let i = 0; i < n; i++) {
+        if (bitsLeft === 0) {
+          bitBuf = body[byteOff++];
+          bitsLeft = 8;
+        }
+        result = (result << 1) | ((bitBuf >> (bitsLeft - 1)) & 1);
+        bitsLeft--;
+      }
+      return result;
+    }
+
+    const nBits = readBits2(5);
+    readBits2(nBits); // xMin
+    readBits2(nBits); // xMax
+    readBits2(nBits); // yMin
+    readBits2(nBits); // yMax
+    bitsLeft = 0;
+
+    // flags
+    byteOff += 2;
+
+    // HasFont: skip FontID (2) + FontHeight (2)
+    if ((base.flags & (1 << 0)) !== 0) byteOff += 4;
+
+    // HasTextColor: skip RGBA (4)
+    if ((base.flags & (1 << 2)) !== 0) byteOff += 4;
+
+    // MaxLength is here
+    maxLength = body[byteOff] | (body[byteOff + 1] << 8);
+  }
+
+  return { ...base, password, hasMaxLength, border, maxLength };
+}
+
+function compileAndDecodeExtended(obj: TextDisplayObject): ExtendedDecodedEditText {
+  const doc = makeDoc([obj]);
+  const bytes = compileDocument(doc);
+  const tags = parseSWFTags(bytes);
+  const editTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+  expect(editTags.length).toBeGreaterThanOrEqual(1);
+  return decodeDefineEditTextExtended(editTags[0].body);
+}
+
+describe("DefineEditText — input text password/maxChars/hasBorder", () => {
+  it("input text with password=true: Password bit (bit 4) is set", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "input", text: "", password: true })
+    );
+    expect(decoded.password).toBe(true);
+  });
+
+  it("input text with password=false: Password bit (bit 4) is NOT set", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "input", text: "" })
+    );
+    expect(decoded.password).toBe(false);
+  });
+
+  it("static text with password=true: Password bit is NOT set (only applies to input)", () => {
+    // password is input-only; encoder guards on textType
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "static", text: "hello", password: true })
+    );
+    expect(decoded.password).toBe(false);
+  });
+
+  it("input text with maxChars=100: HasMaxLength bit (bit 1) is set", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "input", text: "", maxChars: 100 })
+    );
+    expect(decoded.hasMaxLength).toBe(true);
+  });
+
+  it("input text with maxChars=100: MaxLength field value is 100", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "input", text: "", maxChars: 100 })
+    );
+    expect(decoded.maxLength).toBe(100);
+  });
+
+  it("input text with maxChars=0: HasMaxLength bit is NOT set", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "input", text: "", maxChars: 0 })
+    );
+    expect(decoded.hasMaxLength).toBe(false);
+  });
+
+  it("input text with maxChars undefined: HasMaxLength bit is NOT set", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "input", text: "" })
+    );
+    expect(decoded.hasMaxLength).toBe(false);
+  });
+
+  it("input text with hasBorder=true: Border bit (bit 11) is set", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "input", text: "", hasBorder: true })
+    );
+    expect(decoded.border).toBe(true);
+  });
+
+  it("input text without hasBorder: Border bit (bit 11) is NOT set", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "input", text: "" })
+    );
+    expect(decoded.border).toBe(false);
+  });
+
+  it("dynamic text with hasBorder=true: Border bit is set", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "dynamic", hasBorder: true })
+    );
+    expect(decoded.border).toBe(true);
+  });
+
+  it("password + maxChars + hasBorder combined on input text", () => {
+    const decoded = compileAndDecodeExtended(
+      makeText({ textType: "input", text: "", password: true, maxChars: 50, hasBorder: true })
+    );
+    expect(decoded.password).toBe(true);
+    expect(decoded.hasMaxLength).toBe(true);
+    expect(decoded.maxLength).toBe(50);
+    expect(decoded.border).toBe(true);
+  });
+});

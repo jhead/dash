@@ -218,6 +218,7 @@ export function encodeDefineEditText(
 
   const isStatic = obj.textType === "static";
   const isDynamic = obj.textType === "dynamic";
+  const isInput = obj.textType === "input";
 
   // Static and dynamic text are read-only at runtime; input text is editable.
   const isReadOnly = isStatic || isDynamic;
@@ -228,10 +229,15 @@ export function encodeDefineEditText(
   // when there is a non-empty initial value.
   const hasText = isStatic || isDynamic || obj.text.length > 0;
 
+  // HasMaxLength: only meaningful for input text; set when maxChars > 0.
+  const hasMaxLength = isInput && obj.maxChars != null && obj.maxChars > 0;
+
   let flags = 0;
   if (hasEmbeddedFont) flags |= 1 << 0;  // HasFont — provides FontID + FontHeight for size
+  if (hasMaxLength) flags |= 1 << 1;     // HasMaxLength
   flags |= 1 << 2;                       // HasTextColor
   if (isReadOnly) flags |= 1 << 3;       // ReadOnly for static and dynamic text
+  if (isInput && obj.password) flags |= 1 << 4;  // Password — mask characters
   if (obj.multiline) flags |= 1 << 5;    // Multiline
   if (obj.wordWrap) flags |= 1 << 6;     // WordWrap
   if (hasText) flags |= 1 << 7;          // HasText
@@ -240,6 +246,7 @@ export function encodeDefineEditText(
   // device fonts, making the text look "mangled". With UseOutlines=0, Ruffle
   // renders with device fonts (real Arial, etc.) at the size given by FontHeight.
   if (isStatic) flags |= 1 << 10;        // WasStatic — Flash 8+ static marker
+  if (obj.hasBorder) flags |= 1 << 11;   // Border — draw border rectangle
   if (isStatic) flags |= 1 << 12;        // NoSelect for static text only
   flags |= 1 << 13;                      // HasLayout
 
@@ -256,6 +263,13 @@ export function encodeDefineEditText(
   bw.writeUI8(obj.color.g);
   bw.writeUI8(obj.color.b);
   bw.writeUI8(obj.color.a);
+
+  // MaxLength: UI16 (only present when HasMaxLength is set)
+  // Field order per Ruffle read.rs: HAS_MAX_LENGTH is read after HAS_TEXT_COLOR
+  // and before HAS_LAYOUT.
+  if (hasMaxLength) {
+    bw.writeUI16LE(obj.maxChars!);
+  }
 
   // HasLayout block: Align UI8, LeftMargin UI16, RightMargin UI16, Indent UI16, Leading SI16
   const alignMap: Record<string, number> = {
