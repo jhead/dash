@@ -1,10 +1,10 @@
 {
   "id": "0885-fla-import-unrecognised-class-tags-and-stream-tr",
   "title": "FLA import: unrecognised class tags and stream truncation cause Magnet.fla to render blank",
-  "description": "Loading fixtures/Magnet.fla produces 24 console warnings and results in a completely black stage and blank Test Movie output.\n\n## Symptoms observed\n- Stage canvas is solid black after loading Magnet.fla\n- Control \u2192 Test Movie opens Ruffle but shows blank light-blue canvas (no game content)\n- 24 browser console warnings on load, all from flash8-binary.ts:236 and flash8-import.ts:622\n\n## Console warnings (flash8-binary.ts:236)\nUnrecognised class tags causing 'skipping remaining children':\n- tag 0x2 (multiple offsets: 0x92a, 0x758, 0x24cb, 0x6e7, 0x7e3, 0x7bd, 0x7ed, 0x778, 0x1276f)\n- tag 0x102 (offsets: 0x43a, 0x2b23c)\n- tag 0x202 (offsets: 0x9b3, 0xa5e, 0x1734)\n- tag 0x204 (offset: 0x7c2)\n\nStream truncation errors:\n- 'stream truncated while reading CPicFrame: Error: need 1 bytes at 0x78d2, only 0 left'\n- 'stream truncated while reading CPicFrame: Error: need 1 bytes at 0x9b1d, only 0 left'\n- 'stream truncated while reading CPicFrame: Error: need 1 bytes at 0x72d0, only 0 left'\n- 'stream truncated while reading CPicFrame: Error: need 1 bytes at 0x127b, only 0 left'\n\n## Expected\nStage should display the first scene content (scene 'AA', 2 layers, 57 frames) and Test Movie should launch a playable game (Magnet is a claw-machine game with 6 scenes, 87 library items including 25 bitmaps).\n\n## FLA structure loaded\n6 scenes (AA, Scene 2, Scene 5, BA, AB, BB), 87 library items (25 bitmaps, 62 symbols including Claw.swft, Preloader, Progress bar, WW1/WW2/WW3 MCs).",
+  "description": "PARTIALLY FIXED as of 2026-06-10 QA run 2: The unrecognised class tag errors (0x2, 0x102, 0x202, 0x204) and stream truncation errors are gone. Stage still renders black \u2014 root cause has shifted to SWF encoding errors (see task 0890: DefineShape4 invalid fill style, and 0891: JPEG missing EOI). This task can be closed; remaining black-stage issue tracked under 0890.",
   "status": "open",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-10T17:47:45Z",
-  "updated_at": "2026-06-10T17:47:45Z"
+  "updated_at": "2026-06-10T17:54:57Z"
 }
