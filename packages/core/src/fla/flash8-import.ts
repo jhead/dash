@@ -88,6 +88,8 @@ export function buildHtmlText(runs: readonly Fla8TextRun[]): string {
       let inner = escapeHtml(r.text);
       if (r.italic) inner = `<i>${inner}</i>`;
       if (r.bold) inner = `<b>${inner}</b>`;
+      if (r.characterPosition === 1) inner = `<sup>${inner}</sup>`;
+      else if (r.characterPosition === 2) inner = `<sub>${inner}</sub>`;
       return `<font face="${face}" size="${size}" color="${color}">${inner}</font>`;
     })
     .join("");
@@ -983,6 +985,9 @@ export function convertFla8Text(el: Fla8Text): TextDisplayObject {
   const textColorEffect = toColorEffect(el.colorEffect);
   const isMultiRun = el.runs.length > 1;
   const htmlText = isMultiRun ? buildHtmlText(el.runs) : undefined;
+  // For a single-run field, forward characterPosition to the top-level model field.
+  const singleRunCharPos =
+    !isMultiRun && el.runs.length === 1 ? el.runs[0].characterPosition : undefined;
   return {
     type: "text",
     id: nextId("text"),
@@ -1011,6 +1016,7 @@ export function convertFla8Text(el: Fla8Text): TextDisplayObject {
     ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
     ...(textFilters.length > 0 ? { filters: textFilters } : {}),
     ...(isMultiRun ? { html: true, htmlText } : {}),
+    ...(singleRunCharPos ? { characterPosition: singleRunCharPos } : {}),
   };
 }
 

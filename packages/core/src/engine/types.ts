@@ -652,6 +652,13 @@ export interface TextDisplayObject {
    * Default: false.
    */
   readonly autoSize?: boolean;
+  /**
+   * Character baseline position: 0 = normal, 1 = superscript, 2 = subscript.
+   * Decoded from the charPos byte in the binary FLA text run fields.
+   * In SWF output, superscript/subscript are represented via HTML <sup>/<sub>
+   * tags in HTML text fields. Omitted when normal (0).
+   */
+  readonly characterPosition?: 0 | 1 | 2;
 }
 
 /**

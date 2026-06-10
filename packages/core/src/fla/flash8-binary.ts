@@ -252,6 +252,12 @@ export interface Fla8TextRun {
   readonly rightMargin?: number;
   /** Letter spacing in pixels (may be negative). Default 0. */
   readonly letterSpacing?: number;
+  /**
+   * Character position: 0 = normal, 1 = superscript, 2 = subscript.
+   * Decoded from the charPos byte in the CPicText run fields.
+   * Omitted when normal (0).
+   */
+  readonly characterPosition?: 0 | 1 | 2;
 }
 
 /** Map CPicText per-run vertical/rtl bytes to editor orientation (flacomdoc layout). */
@@ -2151,6 +2157,8 @@ interface TextRun {
   bold: boolean;
   italic: boolean;
   align: number;
+  /** 0=normal, 1=superscript, 2=subscript */
+  characterPosition: 0 | 1 | 2;
   vertical: boolean;
   rightToLeft: boolean;
   rotation: boolean;
@@ -2202,7 +2210,7 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
   const italic = r.u8() !== 0;
   r.skip(1);
   r.skip(1); // autoKern
-  r.skip(1); // character position
+  const characterPosition = r.u8() as 0 | 1 | 2; // 0=normal, 1=superscript, 2=subscript
   const align = r.u8();
   const leading = r.u16();      // line spacing (leading)
   const indent = r.u16();       // first-line indent
@@ -2229,7 +2237,7 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
     if (cs4) readCString(r);
     else readPlainString(r, unicode); // url (repeated)
   }
-  return { fontName, sizePt, color, bold, italic, align, vertical, rightToLeft, rotation, leading, indent, leftMargin, rightMargin, letterSpacing };
+  return { fontName, sizePt, color, bold, italic, align, characterPosition, vertical, rightToLeft, rotation, leading, indent, leftMargin, rightMargin, letterSpacing };
 }
 
 function readCPicText(ctx: ParseCtx): Fla8Text {
@@ -2291,6 +2299,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
           ...(thisRun.leftMargin !== 0 ? { leftMargin: thisRun.leftMargin / 20 } : {}),
           ...(thisRun.rightMargin !== 0 ? { rightMargin: thisRun.rightMargin / 20 } : {}),
           ...(thisRun.letterSpacing !== 0 ? { letterSpacing: thisRun.letterSpacing / 20 } : {}),
+          ...(thisRun.characterPosition !== 0 ? { characterPosition: thisRun.characterPosition } : {}),
         });
       }
     }
