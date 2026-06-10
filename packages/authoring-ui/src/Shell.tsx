@@ -24,7 +24,10 @@ import {
   insertFrame,
   insertKeyframe,
   insertBlankKeyframe,
+  removeFrame,
   transformedShapeBounds,
+  copyFrames,
+  pasteFrames,
 } from "@flash/core";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts.js";
 import { TransformHandles } from "./TransformHandles";
@@ -893,6 +896,75 @@ export function Shell(): React.ReactElement {
     handleCopy();
     handlePaste(false);
   }, [handleCopy, handlePaste]);
+
+  // ---------------------------------------------------------------------------
+  // Frame clipboard — copy/paste frames in the Timeline
+  // ---------------------------------------------------------------------------
+
+  /** Module-level frame clipboard so it survives re-renders without state churn. */
+  const frameClipboardRef = useRef<{
+    frames: readonly Frame[];
+  } | null>(null);
+  const [hasFrameClipboard, setHasFrameClipboard] = useState(false);
+
+  /**
+   * Called by Timeline's onCopyFrames (context-menu or Cmd+C).
+   * Copies [startFrame, endFrame] from the active layer.
+   */
+  const handleCopyFrames = useCallback(
+    (startFrame: number, endFrame: number) => {
+      const layer = timeline.layers[safeActiveLayerIndex];
+      if (!layer) return;
+      const copied = copyFrames(layer, startFrame, endFrame);
+      frameClipboardRef.current = { frames: copied };
+      setHasFrameClipboard(true);
+    },
+    [timeline, safeActiveLayerIndex],
+  );
+
+  /**
+   * Called by Timeline's onCutFrames (context-menu or Cmd+X).
+   * Copies [startFrame, endFrame] then removes those frames from the layer.
+   */
+  const handleCutFrames = useCallback(
+    (startFrame: number, endFrame: number) => {
+      const layer = timeline.layers[safeActiveLayerIndex];
+      if (!layer) return;
+      const copied = copyFrames(layer, startFrame, endFrame);
+      frameClipboardRef.current = { frames: copied };
+      setHasFrameClipboard(true);
+      // Remove the cut frames from the layer
+      const layerId = layer.id;
+      const count = endFrame - startFrame + 1;
+      let updatedTimeline = timeline;
+      for (let i = 0; i < count; i++) {
+        updatedTimeline = removeFrame(updatedTimeline, layerId, startFrame);
+      }
+      pushDoc(withTimeline(() => updatedTimeline));
+    },
+    [timeline, safeActiveLayerIndex, pushDoc, withTimeline],
+  );
+
+  /**
+   * Called by Timeline's onPasteFrames (context-menu or Cmd+V).
+   * Inserts clipboard frames starting at atFrame in the active layer.
+   */
+  const handlePasteFrames = useCallback(
+    (atFrame: number) => {
+      if (!frameClipboardRef.current) return;
+      const layer = timeline.layers[safeActiveLayerIndex];
+      if (!layer) return;
+      const updatedLayer = pasteFrames(layer, frameClipboardRef.current.frames, atFrame);
+      const layerId = layer.id;
+      pushDoc(
+        withTimeline((t) => ({
+          ...t,
+          layers: t.layers.map((l) => (l.id === layerId ? updatedLayer : l)),
+        })),
+      );
+    },
+    [timeline, safeActiveLayerIndex, pushDoc, withTimeline],
+  );
 
   const handleShapeResize = useCallback(
     (id: string, newX: number, newY: number, scaleX: number, scaleY: number) => {
@@ -2815,6 +2887,10 @@ export function Shell(): React.ReactElement {
               onionAfter={onionAfter}
               onToggleOnionSkin={handleToggleOnionSkin}
               onOnionRangeChange={handleOnionRangeChange}
+              onCopyFrames={handleCopyFrames}
+              onCutFrames={handleCutFrames}
+              onPasteFrames={handlePasteFrames}
+              hasFrameClipboard={hasFrameClipboard}
             />
             <SoundPanel
               frame={selectedKeyframeFrame}

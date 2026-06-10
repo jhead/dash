@@ -623,6 +623,30 @@ export function Timeline({
       } else if (e.key === "Enter") {
         e.preventDefault();
         onPlayingChange(!isPlaying);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "c" && onCopyFrames) {
+        // Cmd/Ctrl+C: copy selected frame range (or current frame)
+        e.preventDefault();
+        const rangeStart = selectedFrameRange?.layerId === selectedLayerId
+          ? selectedFrameRange.start
+          : currentFrame;
+        const rangeEnd = selectedFrameRange?.layerId === selectedLayerId
+          ? selectedFrameRange.end
+          : currentFrame;
+        onCopyFrames(rangeStart, rangeEnd);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "x" && onCutFrames) {
+        // Cmd/Ctrl+X: cut selected frame range (or current frame)
+        e.preventDefault();
+        const rangeStart = selectedFrameRange?.layerId === selectedLayerId
+          ? selectedFrameRange.start
+          : currentFrame;
+        const rangeEnd = selectedFrameRange?.layerId === selectedLayerId
+          ? selectedFrameRange.end
+          : currentFrame;
+        onCutFrames(rangeStart, rangeEnd);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "v" && onPasteFrames) {
+        // Cmd/Ctrl+V: paste clipboard frames at current frame position
+        e.preventDefault();
+        onPasteFrames(currentFrame);
       }
     };
     window.addEventListener("keydown", handler);
@@ -633,9 +657,13 @@ export function Timeline({
     isPlaying,
     frameCount,
     activeLayerIndex,
+    selectedFrameRange,
     onTimelineChange,
     onFrameChange,
     onPlayingChange,
+    onCopyFrames,
+    onCutFrames,
+    onPasteFrames,
   ]);
 
   // Ruler scrubbing
