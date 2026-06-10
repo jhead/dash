@@ -21,6 +21,8 @@ import type {
 import {
   createRectShape,
   createOvalShape,
+  createLineShape,
+  breakApart as coreBreakApart,
   addDisplayObject,
   addLayer,
   deleteLayer,
@@ -475,6 +477,8 @@ export interface JsflTimeline {
    * Stub: not fully supported; logs a warning and is a no-op.
    */
   setSelectedFrames(startFrame: number, endFrame: number, replaceCurrentSelection?: boolean): void;
+  /** The name of the scene this timeline belongs to. */
+  readonly name: string;
 }
 
 function makeTimelineProxy(state: RuntimeState): JsflTimeline {
@@ -902,6 +906,9 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
     setSelectedFrames(_startFrame: number, _endFrame: number, _replaceCurrentSelection?: boolean): void {
       console.warn('timeline.setSelectedFrames: not fully supported');
     },
+    get name(): string {
+      return state.doc.scenes[state.sceneIndex]?.name ?? 'Scene 1';
+    },
   };
 }
 
@@ -1327,6 +1334,40 @@ export interface JsflDocument {
    * Disable the filter at filterIndex on all selected display objects.
    */
   disableFilter(filterIndex: number): void;
+  /**
+   * Draw a line from startPoint to endPoint on the current layer/frame.
+   */
+  addNewLine(startPoint: { x: number; y: number }, endPoint: { x: number; y: number }): void;
+  /**
+   * Break apart the first selected object into its constituent display objects.
+   */
+  breakApart(): void;
+  /** Flatten selected objects. Not supported; stub. */
+  flatten(): void;
+  /** Smooth selected shape curves. Not supported; stub. */
+  smooth(): void;
+  /** Straighten selected shape segments. Not supported; stub. */
+  straighten(): void;
+  /** Crop operation on selected objects. Not supported; stub. */
+  crop(): void;
+  /** Intersect operation on selected objects. Not supported; stub. */
+  intersect(): void;
+  /** Punch operation on selected objects. Not supported; stub. */
+  punch(): void;
+  /** Union operation on selected objects. Not supported; stub. */
+  union(): void;
+  /** Copy selection to system clipboard. Not supported; use fl.clipCopyFrames. */
+  clipCopy(): void;
+  /** Cut selection to system clipboard. Not supported; stub. */
+  clipCut(): void;
+  /** Paste from system clipboard. Not supported; stub. */
+  clipPaste(bInPlace?: boolean): void;
+  /** Paste in place (same as clipPaste). Not supported; stub. */
+  paste(bInPlace?: boolean): void;
+  /** The name of the current publish profile. Always 'Default'. */
+  readonly currentPublishProfile: string;
+  /** The list of publish profile names. Always ['Default']. */
+  readonly publishProfiles: string[];
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -2478,6 +2519,85 @@ function makeDocumentProxy(
         };
       }
     },
+    addNewLine(startPoint: { x: number; y: number }, endPoint: { x: number; y: number }): void {
+      const layerId = getActiveLayerId(state);
+      if (!layerId) return;
+      const defaultStroke = {
+        type: "solid" as const,
+        color: { r: 0, g: 0, b: 0, a: 255 },
+        width: 1,
+        caps: "round" as const,
+        joints: "round" as const,
+        miterLimit: 3,
+      };
+      const shape = createLineShape(
+        startPoint.x,
+        startPoint.y,
+        endPoint.x,
+        endPoint.y,
+        defaultStroke
+      );
+      const obj: ShapeDisplayObject = {
+        type: "shape",
+        id: ids.nextShapeId(),
+        shape,
+        x: 0,
+        y: 0,
+      };
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      mutateTimeline((tl) => addDisplayObject(tl, layerId, state.frameIndex, obj));
+    },
+    breakApart(): void {
+      if (state.selectedIds.length === 0) return;
+      const objectId = state.selectedIds[0];
+      state.doc = coreBreakApart(
+        state.doc,
+        state.sceneIndex,
+        state.currentLayerIndex,
+        state.frameIndex,
+        objectId
+      );
+    },
+    flatten(): void {
+      console.warn('doc.flatten: not supported');
+    },
+    smooth(): void {
+      console.warn('doc.smooth: not supported');
+    },
+    straighten(): void {
+      console.warn('doc.straighten: not supported');
+    },
+    crop(): void {
+      console.warn('doc.crop: not supported');
+    },
+    intersect(): void {
+      console.warn('doc.intersect: not supported');
+    },
+    punch(): void {
+      console.warn('doc.punch: not supported');
+    },
+    union(): void {
+      console.warn('doc.union: not supported');
+    },
+    clipCopy(): void {
+      console.warn('doc.clipCopy: use fl.clipCopyFrames');
+    },
+    clipCut(): void {
+      console.warn('doc.clipCut: not supported');
+    },
+    clipPaste(_bInPlace?: boolean): void {
+      console.warn('doc.clipPaste: not supported');
+    },
+    paste(_bInPlace?: boolean): void {
+      console.warn('doc.paste: not supported');
+    },
+    get currentPublishProfile(): string {
+      return 'Default';
+    },
+    get publishProfiles(): string[] {
+      return ['Default'];
+    },
   };
 }
 
@@ -2554,6 +2674,8 @@ export interface JsflFl {
       point: { x: number; y: number }
     ): { x: number; y: number };
   };
+  /** The current clipboard contents. Always null in this runtime. */
+  readonly clipboardContents: any;
 }
 
 function makeFlProxy(
@@ -2690,6 +2812,9 @@ function makeFlProxy(
         return { x: m.a * p.x + m.c * p.y + m.tx, y: m.b * p.x + m.d * p.y + m.ty };
       },
     }),
+    get clipboardContents(): any {
+      return null;
+    },
   };
 }
 
