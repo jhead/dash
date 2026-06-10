@@ -1,0 +1,10 @@
+{
+  "id": "0992-bitmapdisplayobject-missing-blendmode-filters-co",
+  "title": "BitmapDisplayObject missing blendMode, filters, colorEffect fields",
+  "description": "BitmapDisplayObject in packages/core/src/engine/types.ts (lines ~667-685) lacks blendMode, filters, and colorEffect fields. Other placed display objects (SymbolInstance, ShapeDisplayObject) have these fields. Bitmaps placed on stage can never receive blend modes or filter effects. Fix: add optional blendMode, filters, and colorEffect fields to BitmapDisplayObject in types.ts. Then update the SWF compiler (compile.ts) to emit PlaceObject3 for bitmap instances when blendMode/filters/colorEffect are set, analogous to how SymbolInstance emits PO3.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T22:44:40Z",
+  "updated_at": "2026-06-10T22:51:03Z"
+}

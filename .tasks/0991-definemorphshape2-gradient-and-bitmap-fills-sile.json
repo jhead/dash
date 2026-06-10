@@ -1,0 +1,10 @@
+{
+  "id": "0991-definemorphshape2-gradient-and-bitmap-fills-sile",
+  "title": "DefineMorphShape2: gradient and bitmap fills silently dropped in shape tweens",
+  "description": "buildStyleMaps() in packages/swf/src/morphshape.ts (lines 14-16, 100-116) only handles fill.type === 'solid'. All gradient/bitmap fills get pathFillIndex=0 (transparent). The FillEntry interface pins both start/end to SolidFill. Fix: extend FillEntry to support GradientFill and BitmapFill; implement gradient fill encoding in morphshape.ts using the same gradient encoding used in shapes.ts (linear/radial gradient with color stops); implement bitmap fill encoding analogously. Both start and end fills need to be handled since morphshape needs to interpolate between them.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T22:44:37Z",
+  "updated_at": "2026-06-10T22:52:48Z"
+}

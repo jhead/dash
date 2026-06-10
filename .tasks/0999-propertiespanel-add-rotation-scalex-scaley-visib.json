@@ -1,0 +1,10 @@
+{
+  "id": "0999-propertiespanel-add-rotation-scalex-scaley-visib",
+  "title": "PropertiesPanel: add rotation, scaleX/scaleY, visible inputs to InstanceView",
+  "description": "packages/authoring-ui/src/PropertiesPanel.tsx InstanceView (lines 702-789) shows x, y, W/H, blendMode, colorEffect but NOT rotation, scaleX, scaleY, or visible. These are editable fields in Flash 8's properties panel. Fix: add numeric inputs for rotation (degrees), scaleX/scaleY (percentage or multiplier), and a visible checkbox. Wire them to the same model mutation callbacks used by x/y. Also: the free-transform drag handles in StageArea.tsx (lines 2751-2813) call onShapeResize/onShapeRotate but these are siloed from the properties panel inputs. Ensure that when free-transform changes rotation/scale, the PropertiesPanel numeric fields reflect the new values.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T23:00:30Z",
+  "updated_at": "2026-06-10T23:02:01Z"
+}

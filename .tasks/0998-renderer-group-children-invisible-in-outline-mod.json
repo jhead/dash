@@ -1,0 +1,10 @@
+{
+  "id": "0998-renderer-group-children-invisible-in-outline-mod",
+  "title": "Renderer: group children invisible in outline mode",
+  "description": "In packages/core/src/engine/renderer.ts lines 1526-1536, the 'group' case in outline mode saves context, sets globalAlpha to 0.4, then restores \u2014 but makes no render calls inside. Grouped objects are completely invisible when their layer has outlineMode: true. Fix: in the group case for outline mode, iterate the group's children and render each one with the outline color (same as how non-grouped objects are rendered in outline mode).",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T22:54:57Z",
+  "updated_at": "2026-06-10T22:56:55Z"
+}

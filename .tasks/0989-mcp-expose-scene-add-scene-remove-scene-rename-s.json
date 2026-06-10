@@ -1,0 +1,10 @@
+{
+  "id": "0989-mcp-expose-scene-add-scene-remove-scene-rename-s",
+  "title": "MCP: expose scene_add, scene_remove, scene_rename, scene_select tools",
+  "description": "All four scene tools (scene_add, scene_remove, scene_rename, scene_select) are fully implemented in packages/authoring-ui/src/agent/registry.ts (lines ~1632-1686) but none are registered as MCP tools in packages/vite-plugin-agent-mcp/src/index.ts. Agents cannot script multi-scene documents. Fix: add MCP tool registrations for these four tools in index.ts, following the same pattern as existing tools (schema definition + handler delegation to agent bridge).",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T22:44:26Z",
+  "updated_at": "2026-06-10T22:46:43Z"
+}

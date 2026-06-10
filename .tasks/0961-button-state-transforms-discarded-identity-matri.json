@@ -1,0 +1,10 @@
+{
+  "id": "0961-button-state-transforms-discarded-identity-matri",
+  "title": "Button state transforms discarded \u2014 identity MATRIX always emitted in ButtonRecord",
+  "description": "buildButtonRecord() in buttons.ts always emits an identity MATRIX regardless of the display object x/y/scaleX/scaleY/rotation. Fix: compute a SWF MATRIX from the display object transform fields and write it into the ButtonRecord MATRIX field (same encoding as PlaceObject2 matrix).",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T21:53:01Z",
+  "updated_at": "2026-06-10T21:58:19Z"
+}

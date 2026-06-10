@@ -2,9 +2,9 @@
   "id": "0996-as2-compiler-switch-fall-through-broken-wrong-av",
   "title": "AS2 compiler: switch fall-through broken \u2014 wrong AVM1 stack behavior",
   "description": "In packages/core/src/as2/compiler.ts lines 1008-1009, switch case fall-through is silently broken. When a case body does NOT end with break, execution falls through to the next case's comparison block (ActionDuplicate/push/ActionEquals2), but the discriminant was already popped when that case was entered. The comparison then operates on garbage. Fix: after each case body that falls through (no break), emit a jump that skips the next case's comparison block and goes directly to the next case's body. This matches AVM1 switch semantics.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T22:54:52Z",
-  "updated_at": "2026-06-10T22:55:00Z"
+  "updated_at": "2026-06-10T22:58:29Z"
 }

@@ -765,6 +765,51 @@ function InstanceView({
 
       <div style={S.separator} />
 
+      {/* Rotation */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Rot:</span>
+        <NumInput
+          value={obj.rotation ?? 0}
+          min={-180}
+          max={180}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { rotation: v } as Partial<DisplayObject>)}
+        />
+        <span style={{ ...S.label, marginLeft: 2, color: "#a0a0a0" }}>°</span>
+      </div>
+
+      {/* ScaleX / ScaleY */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>ScX:</span>
+        <NumInput
+          value={Math.round((obj.scaleX ?? 1) * 100)}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { scaleX: v / 100 } as Partial<DisplayObject>)}
+        />
+        <span style={{ ...S.label, marginLeft: 2, color: "#a0a0a0" }}>%</span>
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>ScY:</span>
+        <NumInput
+          value={Math.round((obj.scaleY ?? 1) * 100)}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { scaleY: v / 100 } as Partial<DisplayObject>)}
+        />
+        <span style={{ ...S.label, marginLeft: 2, color: "#a0a0a0" }}>%</span>
+      </div>
+
+      {/* Visible */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Visible:</span>
+        <input
+          type="checkbox"
+          checked={obj.visible !== false}
+          onChange={(e) => onUpdateObject(obj.id, { visible: e.target.checked } as Partial<DisplayObject>)}
+        />
+      </div>
+
+      <div style={S.separator} />
+
       {/* Blend mode */}
       <div style={S.fieldGroup}>
         <span style={S.label}>Blend:</span>

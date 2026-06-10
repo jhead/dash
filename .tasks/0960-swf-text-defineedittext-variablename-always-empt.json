@@ -1,0 +1,10 @@
+{
+  "id": "0960-swf-text-defineedittext-variablename-always-empt",
+  "title": "SWF text: DefineEditText VariableName always empty \u2014 as2VariableName ignored",
+  "description": "In text.ts, DefineEditText always writes the VariableName field as empty string (''), ignoring TextDisplayObject.as2VariableName. One-line fix: write obj.as2VariableName ?? '' instead of hardcoded ''.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:53:01Z",
+  "updated_at": "2026-06-10T21:54:46Z"
+}

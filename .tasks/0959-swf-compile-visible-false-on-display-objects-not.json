@@ -1,0 +1,10 @@
+{
+  "id": "0959-swf-compile-visible-false-on-display-objects-not",
+  "title": "SWF compile: visible=false on display objects not encoded",
+  "description": "SymbolInstance/ShapeDisplayObject/TextDisplayObject have a visible field that compile.ts never reads. PlaceObject3 (SWF8) has a HasVisible bit. Fix: when visible===false, emit PlaceObject3 with HasVisible=1 and Visible=0 byte set.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T21:53:01Z",
+  "updated_at": "2026-06-10T21:59:20Z"
+}

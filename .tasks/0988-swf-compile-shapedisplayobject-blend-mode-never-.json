@@ -1,0 +1,10 @@
+{
+  "id": "0988-swf-compile-shapedisplayobject-blend-mode-never-",
+  "title": "SWF compile: ShapeDisplayObject blend mode never encoded (always PlaceObject2)",
+  "description": "compile.ts handles ShapeDisplayObject in its own code path (lines ~1664-1735) but never checks the blendMode field and always emits PlaceObject2. SymbolInstance correctly emits PlaceObject3 when blendMode is set. Fix: in the ShapeDisplayObject emit path, check if blendMode is set (and non-default); if so, emit PlaceObject3 instead of PlaceObject2, encoding the blend mode byte in the same way as the SymbolInstance path. The ShapeDisplayObject blendMode field is already in types.ts (engine/types.ts lines ~309-312).",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T22:44:22Z",
+  "updated_at": "2026-06-10T22:46:25Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "1000-fix-bitmappixels-always-undefined-definebitsloss",
+  "title": "Fix bitmapPixels always undefined \u2014 DefineBitsLossless2 dead code in publish path",
+  "description": "In packages/authoring-ui/src/Shell.tsx line ~4556, usePublish is called with bitmapPixels: undefined hardcoded. The encodeDefineBitsLossless2 call in compile.ts (lines ~420-430 and ~1186-1196) is gated on options?.bitmapPixels?.get(...) so it is completely dead code. PNG bitmaps in the library never encode as DefineBitsLossless2 (tag 36) in published SWFs. Fix: implement bitmapPixels collection in Shell.tsx \u2014 iterate the library's bitmap items, read their pixel data (canvas or offscreen rendering), and pass the resulting Map<string, ImageData> to usePublish. This enables transparent PNG bitmaps to be correctly encoded with alpha channel preserved.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T23:00:30Z",
+  "updated_at": "2026-06-10T23:00:35Z"
+}
