@@ -522,6 +522,67 @@ function ShapeView({
 
   return (
     <div style={S.body}>
+      {/* X / Y position */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>X:</span>
+        <NumInput
+          value={obj.x}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { x: v } as Partial<DisplayObject>)}
+        />
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Y:</span>
+        <NumInput
+          value={obj.y}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { y: v } as Partial<DisplayObject>)}
+        />
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Rotation */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Rot:</span>
+        <NumInput
+          value={obj.rotation ?? 0}
+          min={-180}
+          max={180}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { rotation: v } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>°</span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Scale X / Scale Y */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>SX:</span>
+        <NumInput
+          value={(obj.scaleX ?? 1) * 100}
+          min={-9999}
+          max={9999}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { scaleX: v / 100 } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>%</span>
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>SY:</span>
+        <NumInput
+          value={(obj.scaleY ?? 1) * 100}
+          min={-9999}
+          max={9999}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { scaleY: v / 100 } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>%</span>
+      </div>
+
+      <div style={S.separator} />
+
       {/* Fill */}
       <div style={S.fieldGroup}>
         <div style={{ opacity: hasFill ? 1 : 0.4, pointerEvents: hasFill ? "auto" : "none" }}>
@@ -1545,6 +1606,47 @@ function BitmapView({
 
       <div style={S.separator} />
 
+      {/* Rotation */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Rot:</span>
+        <NumInput
+          value={obj.rotation ?? 0}
+          min={-180}
+          max={180}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { rotation: v } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>°</span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Scale X / Scale Y */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>SX:</span>
+        <NumInput
+          value={(obj.scaleX ?? 1) * 100}
+          min={-9999}
+          max={9999}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { scaleX: v / 100 } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>%</span>
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>SY:</span>
+        <NumInput
+          value={(obj.scaleY ?? 1) * 100}
+          min={-9999}
+          max={9999}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { scaleY: v / 100 } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>%</span>
+      </div>
+
+      <div style={S.separator} />
+
       {/* Swap Bitmap */}
       {onSwapBitmap && (
         <div style={S.fieldGroup}>
@@ -1658,6 +1760,47 @@ function VideoView({
         <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
           {Math.round(obj.height * (obj.scaleY ?? 1))}
         </span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Rotation */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Rot:</span>
+        <NumInput
+          value={obj.rotation ?? 0}
+          min={-180}
+          max={180}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { rotation: v } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>°</span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Scale X / Scale Y */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>SX:</span>
+        <NumInput
+          value={(obj.scaleX ?? 1) * 100}
+          min={-9999}
+          max={9999}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { scaleX: v / 100 } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>%</span>
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>SY:</span>
+        <NumInput
+          value={(obj.scaleY ?? 1) * 100}
+          min={-9999}
+          max={9999}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { scaleY: v / 100 } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>%</span>
       </div>
     </div>
   );
