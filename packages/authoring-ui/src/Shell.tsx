@@ -43,6 +43,8 @@ import {
   updateMotionTweenProps,
   saveFla,
   loadFla,
+  traceBitmap,
+  tracePathsToShape,
 } from "@flash/core";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts.js";
 import { TransformHandles } from "./TransformHandles";
@@ -76,6 +78,8 @@ import type {
   Timeline as TimelineModel,
   VideoDisplayObject,
   VideoItem,
+  TraceBitmapOptions,
+  ShapePath,
 } from "@flash/core";
 import { runJsfl, buildJsflContext } from "./jsfl/index.js";
 import { ColorPanel } from "./ColorPanel";
@@ -126,6 +130,7 @@ import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
 import type { PublishSettings } from "./PublishSettingsDialog";
 import { BitmapPropertiesDialog } from "./BitmapPropertiesDialog";
+import { TraceBitmapDialog } from "./TraceBitmapDialog";
 import { ExportGifDialog } from "./ExportGifDialog";
 import type { ExportGifOptions } from "./ExportGifDialog";
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
@@ -972,6 +977,9 @@ export function Shell(): React.ReactElement {
 
   // Bitmap Properties dialog
   const [bitmapPropsItem, setBitmapPropsItem] = useState<BitmapItem | null>(null);
+
+  // Trace Bitmap dialog
+  const [traceBitmapOpen, setTraceBitmapOpen] = useState(false);
 
   // Export GIF dialog
   const [exportGifOpen, setExportGifOpen] = useState(false);
@@ -3305,6 +3313,113 @@ export function Shell(): React.ReactElement {
   }, [selectedShapeId, editContext, timeline, safeActiveLayerIndex, currentFrame, doc, pushDoc, withTimeline, activeSceneIndex]);
 
   // ---------------------------------------------------------------------------
+  // Trace Bitmap
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Open the Trace Bitmap dialog if the selected display object is a BitmapDisplayObject.
+   */
+  const handleTraceBitmapOpen = useCallback(() => {
+    if (!selectedShapeId) return;
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= currentFrame)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf) return;
+    const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
+    if (!obj || obj.type !== "bitmap") return;
+    setTraceBitmapOpen(true);
+  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame]);
+
+  /**
+   * Execute the trace: load bitmap pixel data, run the algorithm, replace the
+   * BitmapDisplayObject with ShapeDisplayObjects on the active keyframe.
+   */
+  const handleTraceBitmapConfirm = useCallback(
+    (options: TraceBitmapOptions) => {
+      setTraceBitmapOpen(false);
+      if (!selectedShapeId) return;
+
+      const layer = timeline.layers[safeActiveLayerIndex];
+      if (!layer) return;
+      const kf = [...layer.frames]
+        .filter((f) => f.isKeyframe && f.index <= currentFrame)
+        .sort((a, b) => b.index - a.index)[0];
+      if (!kf) return;
+      const bitmapObj = kf.displayObjects.find((o) => o.id === selectedShapeId);
+      if (!bitmapObj || bitmapObj.type !== "bitmap") return;
+      const bmpDisp = bitmapObj as BitmapDisplayObject;
+
+      // Find the BitmapItem in the library to get the data URI
+      const libItem = doc.library.items.find(
+        (i) => i.id === bmpDisp.libraryItemId && i.itemType === "bitmap"
+      ) as BitmapItem | undefined;
+      if (!libItem || !libItem.dataUri) return;
+
+      // Load the image into an offscreen canvas to extract pixel data
+      const img = new window.Image();
+      img.onload = () => {
+        const w = img.naturalWidth || bmpDisp.width;
+        const h = img.naturalHeight || bmpDisp.height;
+        if (w === 0 || h === 0) return;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, w, h);
+        const imageData = ctx.getImageData(0, 0, w, h);
+
+        // Run the trace algorithm (pure, no DOM)
+        const paths: ShapePath[] = traceBitmap(imageData, options);
+        if (paths.length === 0) return;
+
+        // Build ShapeDisplayObjects, one per path
+        const newShapes: ShapeDisplayObject[] = paths.map((path) => {
+          const shapeData = tracePathsToShape([path]);
+          const shapeObj: ShapeDisplayObject = {
+            type: "shape",
+            id: shapeData.id,
+            shape: { id: shapeData.id, paths: shapeData.paths },
+            x: bmpDisp.x,
+            y: bmpDisp.y,
+          };
+          return shapeObj;
+        });
+
+        const layerId = layer.id;
+        pushDoc(
+          withTimeline((t) => {
+            // Remove the original bitmap display object
+            let updated = removeDisplayObject(t, layerId, currentFrame, selectedShapeId);
+            // Add each traced shape
+            for (const shapeObj of newShapes) {
+              updated = addDisplayObject(updated, layerId, currentFrame, shapeObj);
+            }
+            return updated;
+          })
+        );
+        // Select the last added shape so the user can see something was done
+        if (newShapes.length > 0) {
+          setSelectedShapeId(newShapes[newShapes.length - 1].id);
+        }
+      };
+      img.src = libItem.dataUri;
+    },
+    [
+      selectedShapeId,
+      timeline,
+      safeActiveLayerIndex,
+      currentFrame,
+      doc,
+      pushDoc,
+      withTimeline,
+    ]
+  );
+
+  // ---------------------------------------------------------------------------
   // Shape > Smooth / Optimize
   // ---------------------------------------------------------------------------
 
@@ -5107,6 +5222,7 @@ export function Shell(): React.ReactElement {
         onGroup={handleGroup}
         onUngroup={handleUngroup}
         onBreakApart={handleBreakApart}
+        onTraceBitmap={selectedDisplayObject?.type === "bitmap" ? handleTraceBitmapOpen : undefined}
         onSmooth={handleSmooth}
         onOptimize={handleOptimize}
         onAddShapeHint={handleAddShapeHint}
@@ -5957,6 +6073,13 @@ export function Shell(): React.ReactElement {
           onClose={() => setBitmapPropsItem(null)}
         />
       )}
+
+      {/* Trace Bitmap dialog (Modify > Bitmap > Trace Bitmap...) */}
+      <TraceBitmapDialog
+        open={traceBitmapOpen}
+        onConfirm={handleTraceBitmapConfirm}
+        onClose={() => setTraceBitmapOpen(false)}
+      />
 
       {/* History panel (Window > History, Ctrl+F10) */}
       {historyPanelVisible && (

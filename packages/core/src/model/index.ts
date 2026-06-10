@@ -216,3 +216,16 @@ export {
   addGuideLayerAbove,
   addMaskLayerAbove,
 } from "./layer-pairing.js";
+
+// Trace Bitmap
+export type {
+  TraceBitmapOptions,
+  ImageDataLike,
+  CurveFit,
+  CornerThreshold,
+} from "./traceBitmap.js";
+export {
+  traceBitmap,
+  tracePathsToShape,
+  DEFAULT_TRACE_OPTIONS,
+} from "./traceBitmap.js";

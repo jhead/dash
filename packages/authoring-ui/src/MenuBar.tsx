@@ -280,6 +280,11 @@ export interface MenuBarProps {
   onUngroup?: () => void;
   /** Called when Modify > Break Apart (Ctrl+B) is activated. */
   onBreakApart?: () => void;
+  /**
+   * Called when Modify > Bitmap > Trace Bitmap... is activated.
+   * Only provided when a bitmap display object is currently selected.
+   */
+  onTraceBitmap?: () => void;
   /** Called when Modify > Shape > Smooth is activated. */
   onSmooth?: () => void;
   /** Called when Modify > Shape > Optimize is activated. */
@@ -411,6 +416,7 @@ export function MenuBar({
   onGroup,
   onUngroup,
   onBreakApart,
+  onTraceBitmap,
   onSmooth,
   onOptimize,
   onAddShapeHint,
@@ -653,6 +659,11 @@ export function MenuBar({
         {
           label: "Break Apart  Ctrl+B",
           action: () => { onBreakApart?.(); },
+        },
+        {
+          label: "Bitmap: Trace Bitmap...",
+          action: () => { onTraceBitmap?.(); },
+          separator: true,
         },
         {
           label: "Shape: Smooth",
