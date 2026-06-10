@@ -25,6 +25,7 @@ import type {
   StrokeStyle,
   SymbolInstance,
   TextDisplayObject,
+  VideoDisplayObject,
   Viewport,
 } from "./types.js";
 import type {
@@ -454,6 +455,62 @@ function renderBitmapObject(
     ctx.translate(-cx, -cy);
   }
   ctx.drawImage(img, obj.x, obj.y, obj.width, obj.height);
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Video placeholder rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders a VideoDisplayObject placeholder: a dark rectangle with a "VIDEO"
+ * label, the library item name, and the placement dimensions. Embedded video
+ * cannot be decoded in the authoring canvas, so we draw a stand-in box.
+ */
+function renderVideoObject(
+  ctx: CanvasRenderingContext2D,
+  obj: VideoDisplayObject,
+  itemName?: string
+): void {
+  ctx.save();
+  ctx.globalAlpha = obj.alpha ?? 1;
+  if (obj.rotation) {
+    const cx = obj.x + obj.width / 2;
+    const cy = obj.y + obj.height / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate((obj.rotation * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+  }
+
+  // Dark placeholder rectangle with a light border.
+  ctx.fillStyle = "#1a1a1a";
+  ctx.fillRect(obj.x, obj.y, obj.width, obj.height);
+  ctx.strokeStyle = "#666666";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(obj.x + 0.5, obj.y + 0.5, obj.width - 1, obj.height - 1);
+
+  const cx = obj.x + obj.width / 2;
+  const cy = obj.y + obj.height / 2;
+  ctx.fillStyle = "#cccccc";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // "VIDEO" label centred in the box.
+  ctx.font = "bold 14px sans-serif";
+  ctx.fillText("VIDEO", cx, cy - 8);
+
+  // Library item name (if known) and the placement dimensions below it.
+  ctx.font = "10px sans-serif";
+  if (itemName) {
+    ctx.fillText(itemName, cx, cy + 8);
+  }
+  ctx.fillStyle = "#999999";
+  ctx.fillText(
+    `${Math.round(obj.width)} × ${Math.round(obj.height)}`,
+    cx,
+    cy + 22
+  );
+
   ctx.restore();
 }
 
@@ -970,6 +1027,14 @@ function renderDisplayObject(
       break;
     }
 
+    case "video": {
+      const item = library?.items.find(
+        (it) => it.id === obj.videoItemId && it.itemType === "video"
+      );
+      renderVideoObject(ctx, obj, item?.name);
+      break;
+    }
+
     case "group": {
       ctx.save();
       ctx.translate(obj.x, obj.y);
@@ -1051,6 +1116,7 @@ function renderDisplayObjectOutline(
     // distinguishable as being in outline mode while still showing content.
     case "text":
     case "bitmap":
+    case "video":
     case "instance":
     case "group": {
       ctx.save();

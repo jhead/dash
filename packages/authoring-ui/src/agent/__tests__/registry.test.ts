@@ -310,6 +310,65 @@ describe("stage_place_instance", () => {
   });
 });
 
+describe("stage_add_video", () => {
+  beforeEach(() => {
+    // Seed the document with a VideoItem in the library.
+    const doc = state.doc;
+    const video = {
+      id: "vid-1",
+      name: "clip.flv",
+      itemType: "video" as const,
+      dataUri: "",
+      frameCount: 30,
+      frameRate: 30,
+      width: 320,
+      height: 240,
+    };
+    state.doc = {
+      ...doc,
+      library: { ...doc.library, items: [...doc.library.items, video] },
+    };
+  });
+
+  it("places a video display object using native dimensions by default", async () => {
+    const result = (await dispatchAgentCommand("stage_add_video", {
+      videoItemId: "vid-1",
+      x: 50,
+      y: 60,
+    })) as Record<string, unknown>;
+    expect(typeof result["id"]).toBe("string");
+
+    const objs = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects;
+    const placed = objs.find((o) => o.type === "video") as Record<string, unknown> | undefined;
+    expect(placed).toBeDefined();
+    expect(placed!["videoItemId"]).toBe("vid-1");
+    expect(placed!["x"]).toBe(50);
+    expect(placed!["y"]).toBe(60);
+    expect(placed!["width"]).toBe(320);
+    expect(placed!["height"]).toBe(240);
+  });
+
+  it("honours explicit width/height overrides", async () => {
+    await dispatchAgentCommand("stage_add_video", {
+      videoItemId: "vid-1",
+      x: 0,
+      y: 0,
+      width: 160,
+      height: 120,
+    });
+    const objs = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects;
+    const placed = objs.find((o) => o.type === "video") as Record<string, unknown>;
+    expect(placed["width"]).toBe(160);
+    expect(placed["height"]).toBe(120);
+  });
+
+  it("errors on unknown videoItemId", async () => {
+    await expect(
+      dispatchAgentCommand("stage_add_video", { videoItemId: "no-such-vid", x: 0, y: 0 })
+    ).rejects.toThrow(/videoItemId/);
+  });
+});
+
 describe("stage_remove", () => {
   it("removes objects from stage", async () => {
     const layerId = state.doc.scenes[0].timeline.layers[0].id;

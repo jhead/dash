@@ -40,6 +40,7 @@ export type {
   TextAlign,
   TextDisplayObject,
   TextType,
+  VideoDisplayObject,
   Viewport,
 } from "./types.js";
 

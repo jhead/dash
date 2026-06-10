@@ -334,6 +334,115 @@ describe("SWF video tag support — pending implementation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Model-driven VideoDisplayObject placement (task 0768)
+// ---------------------------------------------------------------------------
+
+describe("VideoDisplayObject placement", () => {
+  /** Build a document with one VideoItem and a VideoDisplayObject placed on the timeline. */
+  function makeDocWithPlacedVideo(
+    videoOverrides: Partial<VideoItem> = {},
+    vdoOverrides: Record<string, unknown> = {}
+  ): FlashDocument {
+    const video = makeVideoItem({ dataUri: "data:video/x-flv;base64,AAAA", ...videoOverrides });
+    const vdo = {
+      type: "video" as const,
+      id: "vdo-1",
+      videoItemId: video.id,
+      x: 100,
+      y: 80,
+      width: video.width ?? 320,
+      height: video.height ?? 240,
+      ...vdoOverrides,
+    };
+    const layer = makeLayer("s1-layer", 1);
+    const frames = layer.frames.map((f) =>
+      f.index === 0 ? { ...f, isEmpty: false, displayObjects: [vdo] } : f
+    );
+    const scene: Scene = {
+      id: "s1",
+      name: "Scene 1",
+      timeline: { layers: [{ ...layer, frames }] },
+    };
+    return {
+      id: "doc-1",
+      properties: BASE_PROPS,
+      scenes: [scene],
+      library: { items: [video], folders: [] },
+    };
+  }
+
+  it("still emits exactly one DefineVideoStream when placed via a VideoDisplayObject", () => {
+    const doc = makeDocWithPlacedVideo();
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(tags.filter((t) => t.code === 60).length).toBe(1);
+  });
+
+  it("places the video stream at the VideoDisplayObject's model position, not depth 50000", () => {
+    const doc = makeDocWithPlacedVideo();
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    // The DefineVideoStream char id.
+    const streamTag = tags.find((t) => t.code === 60)!;
+    const streamCharId = streamTag.body[0] | (streamTag.body[1] << 8);
+    // Find a PlaceObject2 (tag 26) that references the stream char id at a
+    // model-driven (low) depth — not the legacy fixed base 50000.
+    const placeTags = tags.filter((t) => t.code === Tag.PlaceObject2);
+    const placedAtModelDepth = placeTags.some((t) => {
+      const flags = t.body[0];
+      const depth = t.body[1] | (t.body[2] << 8);
+      const hasCharacter = (flags & 0x02) !== 0;
+      if (!hasCharacter) return false;
+      const charId = t.body[3] | (t.body[4] << 8);
+      return charId === streamCharId && depth < 50000;
+    });
+    expect(placedAtModelDepth).toBe(true);
+    // And NO placement at the legacy fixed depth base.
+    const placedAtLegacyDepth = placeTags.some((t) => {
+      const depth = t.body[1] | (t.body[2] << 8);
+      return depth >= 50000;
+    });
+    expect(placedAtLegacyDepth).toBe(false);
+  });
+
+  it("still advances VideoFrame (tag 61) tags for a model-placed stream", () => {
+    const doc = makeDocWithPlacedVideo({ frameCount: 5 });
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(tags.filter((t) => t.code === 61).length).toBe(5);
+  });
+
+  it("compiles a mix of placed and unplaced library videos", () => {
+    const placedVideo = makeVideoItem({ id: "vid-placed", dataUri: "data:video/x-flv;base64,AAAA" });
+    const looseVideo = makeVideoItem({ id: "vid-loose", name: "loose.flv", dataUri: "data:video/x-flv;base64,AAAA" });
+    const vdo = {
+      type: "video" as const,
+      id: "vdo-1",
+      videoItemId: placedVideo.id,
+      x: 10,
+      y: 20,
+      width: 320,
+      height: 240,
+    };
+    const layer = makeLayer("s1-layer", 1);
+    const frames = layer.frames.map((f) =>
+      f.index === 0 ? { ...f, isEmpty: false, displayObjects: [vdo] } : f
+    );
+    const doc: FlashDocument = {
+      id: "doc-1",
+      properties: BASE_PROPS,
+      scenes: [{ id: "s1", name: "Scene 1", timeline: { layers: [{ ...layer, frames }] } }],
+      library: { items: [placedVideo, looseVideo], folders: [] },
+    };
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    // Two DefineVideoStream tags (one per VideoItem).
+    expect(tags.filter((t) => t.code === 60).length).toBe(2);
+    expect(tags[tags.length - 1].code).toBe(Tag.End);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Low-level encoder + FLV demuxer unit tests (synthetic data)
 // ---------------------------------------------------------------------------
 

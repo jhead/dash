@@ -149,6 +149,7 @@ bumped on every `pushDoc`); reads include the `rev` they observed.
 | `stage_add_shape` | `{ kind: "rect"\|"oval"\|"line", bounds/points, fill?, stroke?, layerId?, frameIndex? }` | `{ id, rev }` (defaults: active layer, current frame) |
 | `stage_add_text` | `{ x, y, width, height, text, textType?, fontFamily?, fontSize?, color?, ... }` | `{ id, rev }` |
 | `stage_place_instance` | `{ symbolId, x, y, name? }` | `{ id, rev }` |
+| `stage_add_video` | `{ videoItemId, x, y, width?, height?, layerId?, frameIndex? }` (defaults to the VideoItem's native size) | `{ id, rev }` |
 | `stage_update` | `{ id, updates }` (x/y/scale/rotation/alpha/name/filters/text props…) | `{ ok, rev }` |
 | `stage_remove` | `{ ids }` | `{ ok, rev }` |
 | `stage_arrange` | `{ ids, op: "front"\|"back"\|"forward"\|"backward" }` | `{ ok, rev }` |

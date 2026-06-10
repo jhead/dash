@@ -398,6 +398,25 @@ function createMcpServerForRequest(): McpServer {
   );
 
   server.registerTool(
+    "stage_add_video",
+    {
+      title: "Place Video On Stage",
+      description:
+        "Place a VideoItem from the library on the stage as a video display object. Defaults to the video's native dimensions when width/height are omitted. Returns the new object id and rev.",
+      inputSchema: z.object({
+        videoItemId: z.string().describe("Library VideoItem id"),
+        x: z.number(),
+        y: z.number(),
+        width: z.number().positive().optional().describe("Display width (defaults to native)"),
+        height: z.number().positive().optional().describe("Display height (defaults to native)"),
+        layerId: z.string().optional(),
+        frameIndex: z.number().int().nonnegative().optional(),
+      }),
+    },
+    async (params) => callTool("stage_add_video", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
     "stage_update",
     {
       title: "Update Stage Object",

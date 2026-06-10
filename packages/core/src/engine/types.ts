@@ -433,6 +433,29 @@ export interface BitmapDisplayObject {
 }
 
 /**
+ * An embedded video placed on a layer, referencing a VideoItem in the library.
+ * Renders as a placeholder in the authoring canvas and as a placed
+ * DefineVideoStream character in the published SWF.
+ */
+export interface VideoDisplayObject {
+  readonly type: "video";
+  readonly id: string;
+  /** References the VideoItem id in the library. */
+  readonly videoItemId: string;
+  readonly x: number;
+  readonly y: number;
+  /** Display width in pixels (may differ from the video's native width). */
+  readonly width: number;
+  /** Display height in pixels (may differ from the video's native height). */
+  readonly height: number;
+  readonly scaleX?: number;
+  readonly scaleY?: number;
+  readonly rotation?: number;
+  /** Opacity in range 0–1. Default: 1. */
+  readonly alpha?: number;
+}
+
+/**
  * A group of display objects treated as a single unit.
  * The group's (x, y) is the top-left of the bounding box of the grouped objects.
  * Children positions are relative to the group origin.
@@ -445,7 +468,7 @@ export interface GroupObject {
   readonly children: readonly DisplayObject[];
 }
 
-export type DisplayObject = ShapeDisplayObject | SymbolInstance | DrawingObject | TextDisplayObject | BitmapDisplayObject | GroupObject;
+export type DisplayObject = ShapeDisplayObject | SymbolInstance | DrawingObject | TextDisplayObject | BitmapDisplayObject | VideoDisplayObject | GroupObject;
 
 // ---------------------------------------------------------------------------
 // Scene graph

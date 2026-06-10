@@ -233,6 +233,23 @@ export const StagePlaceInstanceResultSchema = z.object({
 });
 export type StagePlaceInstanceResult = z.infer<typeof StagePlaceInstanceResultSchema>;
 
+export const StageAddVideoParamsSchema = z.object({
+  videoItemId: z.string(),
+  x: z.number(),
+  y: z.number(),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+  layerId: z.string().optional(),
+  frameIndex: z.number().int().nonnegative().optional(),
+});
+export type StageAddVideoParams = z.infer<typeof StageAddVideoParamsSchema>;
+
+export const StageAddVideoResultSchema = z.object({
+  id: z.string(),
+  rev: RevSchema,
+});
+export type StageAddVideoResult = z.infer<typeof StageAddVideoResultSchema>;
+
 export const StageUpdateParamsSchema = z.object({
   id: z.string(),
   layerId: z.string().optional(),
@@ -537,6 +554,7 @@ export const ALL_COMMANDS = [
   "stage_add_shape",
   "stage_add_text",
   "stage_place_instance",
+  "stage_add_video",
   "stage_update",
   "stage_remove",
   "stage_arrange",
