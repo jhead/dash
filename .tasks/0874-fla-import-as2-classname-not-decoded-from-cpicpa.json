@@ -2,9 +2,9 @@
   "id": "0874-fla-import-as2-classname-not-decoded-from-cpicpa",
   "title": "FLA import: AS2 className not decoded from CPicPage afterData",
   "description": "The className field (e.g. com.example.MyClip) stored in Symbol N stream CPicPage afterData is explicitly not yet decoded. Import always leaves it as empty string, silently losing AS2 class associations and breaking attachMovie/new ClassName() workflows. Find className in CPicPage afterData, wire through Fla8SymbolInfo, and set it in flash8-import.ts.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T16:32:12Z",
-  "updated_at": "2026-06-10T16:33:11Z"
+  "updated_at": "2026-06-10T16:53:26Z"
 }
