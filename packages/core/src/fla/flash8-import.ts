@@ -33,7 +33,7 @@ import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
 import { createSymbol, createSound, createBitmap } from "../model/library.js";
-import { decodeMediaBitmap, decodedBitmapToDataUri } from "./media.js";
+import { decodeMediaAudio, decodeMediaBitmap, decodedBitmapToDataUri } from "./media.js";
 import {
   parseFla8Contents,
   parseFla8Timeline,
@@ -798,31 +798,51 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
   // Build soundIdByIndex BEFORE processing symbol timelines so that symbols
   // containing frame sounds can look up the library ID correctly.
   // Create stub SoundItem entries for each sound referenced in the Contents
-  // stream. The actual audio data lives in "Media N" streams which we do not
-  // decode yet; the stub carries the display name and an empty dataUri so that
-  // the library and Frame.sound linkage are populated correctly.
+  // stream. The actual audio data lives in "Media N" streams; we decode those
+  // streams below and update each stub with a populated dataUri.
   const soundIdByIndex = new Map<number, string>();
   const items: LibraryItem[] = [];
+  // Keep mutable stubs keyed by media index so we can enrich them with audio
+  // data when we encounter the corresponding "Media N" stream.
+  const soundStubByIndex = new Map<number, import("../model/types.js").SoundItem>();
   for (const [num, info] of contents.sounds) {
     const soundItem = createSound(info.name);
     soundIdByIndex.set(num, soundItem.id);
-    items.push(soundItem);
+    soundStubByIndex.set(num, soundItem);
+    // items will be populated after audio streams are decoded below
   }
 
-  // --- library bitmaps -------------------------------------------------------
-  // Bitmap pixel data lives in "Media N" streams (the same N that a
-  // CPicBitmapRef record carries as mediaId). Decode each Media stream that
-  // looks like a bitmap (JPEG/PNG/Flash-lossless) into a BitmapItem and record
-  // the FLA media index -> library id mapping so bitmap placements resolve.
-  // Sound media indexes are already claimed above; Media streams that are not
-  // bitmaps (audio PCM/MP3, video) decode to null and are skipped here.
+  // --- library bitmaps + audio -----------------------------------------------
+  // "Media N" streams carry both bitmap and audio payloads. Try each stream as
+  // audio first (for media indexes that the Contents stream listed as sounds),
+  // then as a bitmap for all other indexes.
   const bitmapIdByIndex = new Map<number, string>();
   const bitmapSizeByIndex = new Map<number, { width: number; height: number }>();
-  const soundMediaIds = new Set<number>(contents.sounds.keys());
   for (const [name, bytes] of streams) {
     const mediaNum = streamNumber(MEDIA_RE, name);
     if (mediaNum === null) continue;
-    if (soundMediaIds.has(mediaNum)) continue; // audio media, handled as a stub sound
+
+    const soundStub = soundStubByIndex.get(mediaNum);
+    if (soundStub !== undefined) {
+      // This media stream belongs to a sound library item — attempt audio decode.
+      let decoded = null;
+      try {
+        decoded = decodeMediaAudio(bytes);
+      } catch (err) {
+        console.warn(`[FLA import] failed to decode audio stream "${name}": ${String(err)}`);
+      }
+      if (decoded) {
+        // Replace stub with an enriched SoundItem carrying the real dataUri.
+        soundStubByIndex.set(mediaNum, {
+          ...soundStub,
+          dataUri: decoded.dataUri,
+          compressionType: decoded.compressionType,
+        });
+      }
+      continue; // audio media — never treat as bitmap
+    }
+
+    // Non-sound media stream — try bitmap decode.
     let decoded;
     try {
       decoded = decodeMediaBitmap(bytes);
@@ -840,6 +860,11 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     bitmapIdByIndex.set(mediaNum, bitmapItem.id);
     bitmapSizeByIndex.set(mediaNum, { width: decoded.width, height: decoded.height });
     items.push(bitmapItem);
+  }
+
+  // Flush all sound items (stubs or audio-enriched) into the library.
+  for (const soundItem of soundStubByIndex.values()) {
+    items.push(soundItem);
   }
 
   // --- library symbols -------------------------------------------------------

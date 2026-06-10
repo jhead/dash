@@ -295,6 +295,104 @@ export function decodeMediaBitmap(data: Uint8Array): DecodedBitmap | null {
   return null;
 }
 
+export interface DecodedAudio {
+  /** Base64-encoded data URI ready to embed, e.g. "data:audio/mpeg;base64,..." */
+  readonly dataUri: string;
+  /** MIME type of the detected audio format. */
+  readonly mimeType: "audio/mpeg" | "audio/wav" | "audio/ogg" | "audio/aac";
+  /**
+   * Compression type mapped to SoundItem.compressionType.
+   * MP3 and AAC map to "mp3"; WAV and OGG map to "raw".
+   */
+  readonly compressionType: "mp3" | "raw";
+}
+
+// Magic byte sequences for common audio formats.
+// MP3 sync word variants (MPEG-1/2 layer-3) and ID3 tag header.
+const MP3_SYNC_FF_FB = [0xff, 0xfb];
+const MP3_SYNC_FF_F3 = [0xff, 0xf3];
+const MP3_SYNC_FF_F2 = [0xff, 0xf2];
+const MP3_SYNC_FF_FA = [0xff, 0xfa];
+const MP3_SYNC_FF_F9_LAYER3 = [0xff, 0xf9]; // treated as MPEG-2 layer3 (also AAC ADTS)
+const ID3_MAGIC = [0x49, 0x44, 0x33]; // "ID3"
+const WAV_MAGIC = [0x52, 0x49, 0x46, 0x46]; // "RIFF"
+const OGG_MAGIC = [0x4f, 0x67, 0x67, 0x53]; // "OggS"
+const AAC_SYNC_FF_F1 = [0xff, 0xf1]; // MPEG-4 AAC ADTS
+// NOTE: FF F9 can be AAC or MPEG-2 — we treat both as AAC (audio/aac) since
+// Flash typically stores MP3 (FF FB/F3/F2/FA) not raw AAC, so FF F9 => aac.
+
+/**
+ * Detect whether the raw bytes of a "Media N" stream contain audio data and,
+ * if so, return a data URI plus metadata needed to populate SoundItem.
+ *
+ * Supported formats: MP3, WAV, OGG, AAC/ADTS.
+ * Returns null for non-audio payloads (bitmaps, video, empty streams).
+ */
+export function decodeMediaAudio(data: Uint8Array): DecodedAudio | null {
+  if (data.length < 4) return null;
+
+  // MP3 with ID3v2 tag
+  if (startsWith(data, ID3_MAGIC)) {
+    return {
+      dataUri: `data:audio/mpeg;base64,${bytesToBase64(data)}`,
+      mimeType: "audio/mpeg",
+      compressionType: "mp3",
+    };
+  }
+
+  // Raw MP3 sync frames (no ID3 tag)
+  if (
+    startsWith(data, MP3_SYNC_FF_FB) ||
+    startsWith(data, MP3_SYNC_FF_F3) ||
+    startsWith(data, MP3_SYNC_FF_F2) ||
+    startsWith(data, MP3_SYNC_FF_FA)
+  ) {
+    return {
+      dataUri: `data:audio/mpeg;base64,${bytesToBase64(data)}`,
+      mimeType: "audio/mpeg",
+      compressionType: "mp3",
+    };
+  }
+
+  // WAV (RIFF container — check "WAVE" at offset 8 to avoid false-positives
+  // for other RIFF variants like AVI)
+  if (startsWith(data, WAV_MAGIC)) {
+    const isWave =
+      data.length >= 12 &&
+      data[8] === 0x57 && // 'W'
+      data[9] === 0x41 && // 'A'
+      data[10] === 0x56 && // 'V'
+      data[11] === 0x45;   // 'E'
+    if (isWave) {
+      return {
+        dataUri: `data:audio/wav;base64,${bytesToBase64(data)}`,
+        mimeType: "audio/wav",
+        compressionType: "raw",
+      };
+    }
+  }
+
+  // OGG (Vorbis, Opus, FLAC-in-Ogg…)
+  if (startsWith(data, OGG_MAGIC)) {
+    return {
+      dataUri: `data:audio/ogg;base64,${bytesToBase64(data)}`,
+      mimeType: "audio/ogg",
+      compressionType: "raw",
+    };
+  }
+
+  // AAC ADTS sync words (FF F1 = MPEG-4, FF F9 = MPEG-2)
+  if (startsWith(data, AAC_SYNC_FF_F1) || startsWith(data, MP3_SYNC_FF_F9_LAYER3)) {
+    return {
+      dataUri: `data:audio/aac;base64,${bytesToBase64(data)}`,
+      mimeType: "audio/aac",
+      compressionType: "mp3",
+    };
+  }
+
+  return null;
+}
+
 /** Encode raw bytes to a base64 string (browser-safe, no Buffer). */
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
