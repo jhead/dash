@@ -350,6 +350,11 @@ export interface Fla8Frame {
   readonly motionRotateCount: number;
   /** orient to path: rotate the object to follow the motion-guide path tangent */
   readonly motionOrientToPath: boolean;
+  /**
+   * Sync graphic symbols with the parent timeline (motionTweenSync).
+   * Decoded from keyMode bit 0x0800 (flacomdoc classic/motion tween flags).
+   */
+  readonly motionSync: boolean;
   readonly soundId: number;
   /** raw sync byte: 0=event, 1=start, 2=stop, 3=stream; -1 when not present */
   readonly soundSync: number;
@@ -2217,6 +2222,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let motionRotate: "none" | "auto" | "cw" | "ccw" = "none";
   let motionRotateCount = 0;
   let motionOrientToPath = false;
+  let motionSync = false;
   let soundId = 0;
   let soundSync = -1;
   let soundLoop = -1;
@@ -2227,8 +2233,11 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   try {
     const fs = r.u8();
     duration = Math.max(1, r.u16());
-    if (fs > 2) keyMode = r.u16();
-    else r.skip(1);
+    if (fs > 2) {
+      keyMode = r.u16();
+      // flacomdoc keyMode flags (classic tween 0x4001 base): 0x0800 = motionTweenSync
+      motionSync = (keyMode & 0x0800) !== 0;
+    } else r.skip(1);
     if (fs > 1) motionEase = r.s16(); // signed ease value: -100 (ease in) to +100 (ease out)
     if (fs > 4) soundId = r.u16();
     if (fs > 5) {
@@ -2400,7 +2409,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     }
     return {
       cls: "CPicFrame",
-      frame: { duration, label, labelIsComment, script, keyMode, shapeBlend, motionEase, motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements },
+      frame: { duration, label, labelIsComment, script, keyMode, shapeBlend, motionEase, motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, motionSync, soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements },
     };
   }
 }
