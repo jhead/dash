@@ -1096,12 +1096,20 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             objCharIdMap.set(startObj.id, morphCharId);
             morphShapeObjIds.add(startObj.id);
 
+            // Emit DefineBits tags for any bitmap fills in the morph shape paths.
+            // Both start and end shapes may reference bitmaps; emit once per unique id.
+            emitBitmapFillTags(startObj.shape, doc, writer, emittedBitmapFillCharIds, options);
+            emitBitmapFillTags(endObj.shape, doc, writer, emittedBitmapFillCharIds, options);
+
             // Emit DefineMorphShape2 tag (tag 84 — required for Flash 8 to
             // preserve LINESTYLE2 cap/join data via MORPHLINESTYLE2 records).
             const morphBody = encodeDefineMorphShape2(
               morphCharId,
               startObj.shape.paths,
-              endObj.shape.paths
+              endObj.shape.paths,
+              null,
+              null,
+              emittedBitmapFillCharIds.size > 0 ? emittedBitmapFillCharIds : undefined
             );
             writer.writeTag(Tag.DefineMorphShape2, morphBody);
           }

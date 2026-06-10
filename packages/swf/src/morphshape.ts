@@ -16,7 +16,16 @@
  * StartEdges and EndEdges are parallel (same record count).
  */
 import { BitWriter } from "./bits.js";
-import type { ShapePath, ShapeHint, SolidFill, SolidStroke } from "@flash/core";
+import type {
+  ShapePath,
+  ShapeHint,
+  SolidFill,
+  SolidStroke,
+  Fill,
+  LinearGradientFill,
+  RadialGradientFill,
+  BitmapFill,
+} from "@flash/core";
 import { px, edgeNumBits, writeRect } from "./helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -66,8 +75,8 @@ function computePathBounds(paths: readonly ShapePath[]): BoundingBox {
 // ---------------------------------------------------------------------------
 
 interface FillEntry {
-  startFill: SolidFill;
-  endFill: SolidFill;
+  startFill: Fill;
+  endFill: Fill;
 }
 
 interface StrokeEntry {
@@ -97,20 +106,13 @@ function collectStyles(
     // Safe fallback if end has fewer paths
     const ep = endPaths[i] ?? sp;
 
-    // Fill
-    if (
-      sp.fill?.type === "solid" &&
-      ep.fill?.type === "solid"
-    ) {
-      const sf = sp.fill as SolidFill;
-      const ef = ep.fill as SolidFill;
+    // Fill — support solid, linear-gradient, radial-gradient, bitmap
+    if (sp.fill) {
+      const sf = sp.fill;
+      // Use end fill of matching type; fall back to start fill if type mismatch
+      const ef = (ep.fill && ep.fill.type === sf.type) ? ep.fill : sf;
       fills.push({ startFill: sf, endFill: ef });
       pathFillIndex.push(fills.length); // 1-based
-    } else if (sp.fill?.type === "solid") {
-      // Only start has fill — use same color for both
-      const sf = sp.fill as SolidFill;
-      fills.push({ startFill: sf, endFill: sf });
-      pathFillIndex.push(fills.length);
     } else {
       pathFillIndex.push(0);
     }
@@ -140,9 +142,210 @@ function collectStyles(
 // MORPHFILLSTYLEARRAY / MORPHLINESTYLEARRAY
 // ---------------------------------------------------------------------------
 
+/**
+ * Write a SWF MATRIX for a gradient fill (bit-packed), replicating the
+ * helper from shapes.ts for use in morph fills.
+ */
+function writeGradientMatrix(
+  bw: BitWriter,
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+  tx: number,
+  ty: number
+): void {
+  bw.writeBits(1, 1); // hasScale = 1
+  const scaleBits = Math.max(edgeNumBits([a, d]), 2);
+  bw.writeBits(scaleBits, 5);
+  bw.writeBits(a, scaleBits);
+  bw.writeBits(d, scaleBits);
+
+  const hasRotate = b !== 0 || c !== 0;
+  bw.writeBits(hasRotate ? 1 : 0, 1);
+  if (hasRotate) {
+    const rotateBits = Math.max(edgeNumBits([b, c]), 2);
+    bw.writeBits(rotateBits, 5);
+    bw.writeBits(b, rotateBits);
+    bw.writeBits(c, rotateBits);
+  }
+
+  const transBits = Math.max(edgeNumBits([tx, ty]), 2);
+  bw.writeBits(transBits, 5);
+  bw.writeBits(tx, transBits);
+  bw.writeBits(ty, transBits);
+
+  bw.flushBits();
+}
+
+/**
+ * Write a bitmap fill matrix (bit-packed) for a morph bitmap fill.
+ * Handles both identity (no fill.matrix) and full affine transform cases.
+ */
+function writeBitmapFillMatrix(
+  bw: BitWriter,
+  fill: BitmapFill
+): void {
+  const TWIPS = 20;
+  if (fill.matrix) {
+    const m = fill.matrix;
+    const aFixed = Math.round(m.a * TWIPS * 65536);
+    const bFixed = Math.round(m.b * TWIPS * 65536);
+    const cFixed = Math.round(m.c * TWIPS * 65536);
+    const dFixed = Math.round(m.d * TWIPS * 65536);
+    const txTwips = Math.round(m.tx * TWIPS);
+    const tyTwips = Math.round(m.ty * TWIPS);
+
+    bw.writeBits(1, 1); // hasScale
+    const nScaleBits = Math.max(edgeNumBits([aFixed, dFixed]), 2);
+    bw.writeBits(nScaleBits, 5);
+    bw.writeBits(aFixed, nScaleBits);
+    bw.writeBits(dFixed, nScaleBits);
+
+    const hasRotate = bFixed !== 0 || cFixed !== 0;
+    bw.writeBits(hasRotate ? 1 : 0, 1);
+    if (hasRotate) {
+      const nRotBits = Math.max(edgeNumBits([bFixed, cFixed]), 2);
+      bw.writeBits(nRotBits, 5);
+      bw.writeBits(bFixed, nRotBits);
+      bw.writeBits(cFixed, nRotBits);
+    }
+
+    const nTransBits = Math.max(edgeNumBits([txTwips, tyTwips]), 2);
+    bw.writeBits(nTransBits, 5);
+    bw.writeBits(txTwips, nTransBits);
+    bw.writeBits(tyTwips, nTransBits);
+  } else {
+    // Identity: scale=20 twips/pixel, translate=(0,0)
+    const scaleFixed = Math.round(TWIPS * 65536);
+    bw.writeBits(1, 1); // hasScale
+    const nScaleBits = Math.max(edgeNumBits([scaleFixed]), 2);
+    bw.writeBits(nScaleBits, 5);
+    bw.writeBits(scaleFixed, nScaleBits);
+    bw.writeBits(scaleFixed, nScaleBits);
+
+    bw.writeBits(0, 1); // no rotate
+
+    const nTransBits = 2; // minimum
+    bw.writeBits(nTransBits, 5);
+    bw.writeBits(0, nTransBits);
+    bw.writeBits(0, nTransBits);
+  }
+
+  bw.flushBits();
+}
+
+/**
+ * Compute the gradient matrix components (a, b, c, d, tx, ty) in 16.16 fixed-point
+ * twips for a linear or radial gradient fill, given the bounding box of the shape.
+ *
+ * This mirrors the logic in shapes.ts encodeDefineShape4.
+ */
+function computeGradientMatrixComponents(
+  fill: LinearGradientFill | RadialGradientFill,
+  bounds: { xMin: number; xMax: number; yMin: number; yMax: number }
+): { a: number; b: number; c: number; d: number; tx: number; ty: number } {
+  const GRAD_HALF = 16384;
+  const cx = (bounds.xMin + bounds.xMax) / 2;
+  const cy = (bounds.yMin + bounds.yMax) / 2;
+  const halfW = (bounds.xMax - bounds.xMin) / 2;
+  const halfH = (bounds.yMax - bounds.yMin) / 2;
+
+  let a: number, b: number, c: number, d: number;
+  if (fill.type === "linear-gradient") {
+    const angleRad = ((fill.angle ?? 0) * Math.PI) / 180;
+    const cosA = Math.cos(angleRad);
+    const sinA = Math.sin(angleRad);
+    const scaleX = (Math.abs(cosA) * halfW + Math.abs(sinA) * halfH) / GRAD_HALF;
+    const scaleY = (Math.abs(sinA) * halfW + Math.abs(cosA) * halfH) / GRAD_HALF;
+    a = Math.round(cosA * scaleX * 65536);
+    b = Math.round(sinA * scaleX * 65536);
+    c = Math.round(-sinA * scaleY * 65536);
+    d = Math.round(cosA * scaleY * 65536);
+  } else {
+    // Radial
+    const radius = Math.max(halfW, halfH);
+    const scale = radius / GRAD_HALF;
+    a = Math.round(scale * 65536);
+    b = 0;
+    c = 0;
+    d = Math.round(scale * 65536);
+  }
+  const tx = Math.round(cx);
+  const ty = Math.round(cy);
+  return { a, b, c, d, tx, ty };
+}
+
+/**
+ * Write a MORPHGRADIENT record for a linear/radial gradient fill.
+ *
+ * Per SWF spec and Ruffle read.rs `read_morph_gradient`:
+ *   startMatrix (MATRIX)
+ *   endMatrix   (MATRIX)
+ *   gradientFlags byte: SpreadMode(2) | InterpolationMode(2) | NumGradients(4)
+ *   for each gradient stop:
+ *     startRatio  UI8
+ *     startColor  RGBA
+ *     endRatio    UI8
+ *     endColor    RGBA
+ *
+ * Bounding boxes are provided for start/end shapes so gradient matrices can be
+ * computed independently for each morph state.
+ */
+function writeMorphGradient(
+  bw: BitWriter,
+  startFill: LinearGradientFill | RadialGradientFill,
+  endFill: LinearGradientFill | RadialGradientFill,
+  startBounds: { xMin: number; xMax: number; yMin: number; yMax: number },
+  endBounds: { xMin: number; xMax: number; yMin: number; yMax: number }
+): void {
+  // Start matrix
+  const sm = computeGradientMatrixComponents(startFill, startBounds);
+  writeGradientMatrix(bw, sm.a, sm.b, sm.c, sm.d, sm.tx, sm.ty);
+
+  // End matrix
+  const em = computeGradientMatrixComponents(endFill, endBounds);
+  writeGradientMatrix(bw, em.a, em.b, em.c, em.d, em.tx, em.ty);
+
+  // Gradient flags byte + interleaved stops
+  const spreadModeVal =
+    startFill.spreadMode === "reflect" ? 1 :
+    startFill.spreadMode === "repeat"  ? 2 : 0;
+  const interpolationModeVal = startFill.interpolation === "linearRGB" ? 1 : 0;
+  const numStops = Math.min(
+    Math.max(startFill.stops.length, endFill.stops.length),
+    15
+  );
+
+  bw.writeBits(spreadModeVal, 2);
+  bw.writeBits(interpolationModeVal, 2);
+  bw.writeBits(numStops, 4);
+  bw.flushBits();
+
+  // Interleaved start/end records
+  for (let si = 0; si < numStops; si++) {
+    // If one gradient has fewer stops, repeat its last stop
+    const ss = startFill.stops[si] ?? startFill.stops[startFill.stops.length - 1]!;
+    const es = endFill.stops[si] ?? endFill.stops[endFill.stops.length - 1]!;
+    bw.writeUI8(ss.ratio);
+    bw.writeUI8(ss.color.r);
+    bw.writeUI8(ss.color.g);
+    bw.writeUI8(ss.color.b);
+    bw.writeUI8(ss.color.a);
+    bw.writeUI8(es.ratio);
+    bw.writeUI8(es.color.r);
+    bw.writeUI8(es.color.g);
+    bw.writeUI8(es.color.b);
+    bw.writeUI8(es.color.a);
+  }
+}
+
 function writeMorphFillStyleArray(
   bw: BitWriter,
-  fills: FillEntry[]
+  fills: FillEntry[],
+  startBounds: { xMin: number; xMax: number; yMin: number; yMax: number },
+  endBounds: { xMin: number; xMax: number; yMin: number; yMax: number },
+  bitmapCharIdMap?: Map<string, number>
 ): void {
   // Count
   if (fills.length >= 0xff) {
@@ -152,18 +355,73 @@ function writeMorphFillStyleArray(
     bw.writeUI8(fills.length);
   }
   for (const fe of fills) {
-    // MorphFillStyle type 0x00 = solid
-    bw.writeUI8(0x00);
-    // startColor RGBA
-    bw.writeUI8(fe.startFill.color.r);
-    bw.writeUI8(fe.startFill.color.g);
-    bw.writeUI8(fe.startFill.color.b);
-    bw.writeUI8(fe.startFill.color.a);
-    // endColor RGBA
-    bw.writeUI8(fe.endFill.color.r);
-    bw.writeUI8(fe.endFill.color.g);
-    bw.writeUI8(fe.endFill.color.b);
-    bw.writeUI8(fe.endFill.color.a);
+    const sf = fe.startFill;
+    const ef = fe.endFill;
+
+    if (sf.type === "solid") {
+      const startSolid = sf as SolidFill;
+      const endSolid = ef.type === "solid" ? ef as SolidFill : startSolid;
+      // MorphFillStyle type 0x00 = solid
+      bw.writeUI8(0x00);
+      // startColor RGBA
+      bw.writeUI8(startSolid.color.r);
+      bw.writeUI8(startSolid.color.g);
+      bw.writeUI8(startSolid.color.b);
+      bw.writeUI8(startSolid.color.a);
+      // endColor RGBA
+      bw.writeUI8(endSolid.color.r);
+      bw.writeUI8(endSolid.color.g);
+      bw.writeUI8(endSolid.color.b);
+      bw.writeUI8(endSolid.color.a);
+
+    } else if (sf.type === "linear-gradient" || sf.type === "radial-gradient") {
+      const startGrad = sf as LinearGradientFill | RadialGradientFill;
+      const endGrad = (ef.type === sf.type)
+        ? ef as LinearGradientFill | RadialGradientFill
+        : startGrad;
+
+      const isFocal =
+        sf.type === "radial-gradient" && (sf as RadialGradientFill).focalPoint !== 0;
+      const fillTypeByte = sf.type === "linear-gradient" ? 0x10 : isFocal ? 0x13 : 0x12;
+      bw.writeUI8(fillTypeByte);
+
+      writeMorphGradient(bw, startGrad, endGrad, startBounds, endBounds);
+
+      // Focal radial: write start and end focal point as FIXED8 (SI16LE 8.8)
+      if (isFocal && sf.type === "radial-gradient") {
+        const startFp = Math.round((sf as RadialGradientFill).focalPoint * 256);
+        const endFp = ef.type === "radial-gradient"
+          ? Math.round((ef as RadialGradientFill).focalPoint * 256)
+          : startFp;
+        bw.writeSI16LE(startFp);
+        bw.writeSI16LE(endFp);
+      }
+
+    } else if (sf.type === "bitmap") {
+      const startBitmap = sf as BitmapFill;
+      const endBitmap = ef.type === "bitmap" ? ef as BitmapFill : startBitmap;
+
+      // Bitmap fill type byte (same encoding as DefineShape4):
+      //   0x40 = repeating, no smoothing
+      //   0x41 = clipped, no smoothing
+      //   0x42 = repeating, smoothed
+      //   0x43 = clipped, smoothed
+      let fillTypeByte: number;
+      if (startBitmap.repeat && startBitmap.smooth) fillTypeByte = 0x42;
+      else if (startBitmap.repeat && !startBitmap.smooth) fillTypeByte = 0x40;
+      else if (!startBitmap.repeat && startBitmap.smooth) fillTypeByte = 0x43;
+      else fillTypeByte = 0x41;
+      bw.writeUI8(fillTypeByte);
+
+      // BitmapId: UI16 — the SWF character ID (shared for start/end)
+      const bitmapCharId = bitmapCharIdMap?.get(startBitmap.bitmapId) ?? 0xffff;
+      bw.writeUI16LE(bitmapCharId);
+
+      // Start matrix
+      writeBitmapFillMatrix(bw, startBitmap);
+      // End matrix
+      writeBitmapFillMatrix(bw, endBitmap);
+    }
   }
 }
 
@@ -651,7 +909,7 @@ export function encodeDefineMorphShape(
 
   // Build fill/line style arrays in a temporary writer to get byte length
   const stylesBw = new BitWriter();
-  writeMorphFillStyleArray(stylesBw, fills);
+  writeMorphFillStyleArray(stylesBw, fills, startBounds, endBounds);
   writeMorphLineStyleArray(stylesBw, strokes);
   // NumFillBits / NumLineBits packed nibbles (for start shape only)
   stylesBw.writeBits(numFillBits, 4);
@@ -718,7 +976,8 @@ export function encodeDefineMorphShape2(
   startPaths: readonly ShapePath[],
   endPaths: readonly ShapePath[],
   startHints?: readonly ShapeHint[] | null,
-  endHints?: readonly ShapeHint[] | null
+  endHints?: readonly ShapeHint[] | null,
+  bitmapCharIdMap?: Map<string, number>
 ): Uint8Array {
   // Compute bounding boxes in twips
   const sb = computePathBounds(startPaths);
@@ -796,7 +1055,7 @@ export function encodeDefineMorphShape2(
 
   // Build style arrays using MORPHLINESTYLE2 format
   const stylesBw = new BitWriter();
-  writeMorphFillStyleArray(stylesBw, fills);
+  writeMorphFillStyleArray(stylesBw, fills, startBounds, endBounds, bitmapCharIdMap);
   writeMorphLineStyle2Array(stylesBw, strokes);
   // NumFillBits / NumLineBits packed nibbles (for start shape only)
   stylesBw.writeBits(numFillBits, 4);
