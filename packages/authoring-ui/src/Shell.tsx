@@ -3373,16 +3373,37 @@ export function Shell(): React.ReactElement {
       // data URL (without the "data:image/png;base64," prefix) for pixel-exact
       // comparison in visual oracle tests.  Always renders at DPR=1 so the
       // output dimensions equal the stage dimensions in CSS pixels.
-      screenshotStage: (): string => {
+      // If frameIndex is provided, renders that frame instead of the current one.
+      screenshotStage: (frameIndex?: number): string => {
         const w = docProperties.width;
         const h = docProperties.height;
+        // Build a frame-specific scene graph when a frameIndex is requested;
+        // fall back to fullSceneGraph (current frame) when none is given.
+        const sceneGraph: SceneGraph =
+          frameIndex !== undefined
+            ? {
+                layers: timeline.layers.map((layer) => {
+                  const frame = getTweenedFrame(layer, frameIndex);
+                  const objects: DisplayObject[] = frame ? [...frame.displayObjects] : [];
+                  return {
+                    id: layer.id,
+                    name: layer.name,
+                    visible: layer.visible,
+                    locked: layer.locked,
+                    outlineMode: layer.outlineMode,
+                    outlineColor: layer.outlineColor,
+                    objects,
+                  };
+                }),
+              }
+            : fullSceneGraph;
         // Render onto a transparent offscreen canvas at DPR=1.
         const offscreen = document.createElement("canvas");
         offscreen.width = w;
         offscreen.height = h;
         const renderer = new CanvasRenderer(offscreen);
         renderer.resize(w, h, 1);
-        renderer.render(fullSceneGraph, { x: 0, y: 0, zoom: 1 }, doc.library);
+        renderer.render(sceneGraph, { x: 0, y: 0, zoom: 1 }, doc.library);
         // Composite onto a background-filled canvas so transparent pixels match
         // Ruffle's SetBackgroundColor rendering.  pixelmatch blends transparent
         // against white, so without this every background pixel mismatches when
@@ -3418,6 +3439,7 @@ export function Shell(): React.ReactElement {
     publishToBytes,
     fullSceneGraph,
     docProperties,
+    timeline,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -3480,15 +3502,35 @@ export function Shell(): React.ReactElement {
           rev: 0 as import("@flash/agent-protocol").Rev,
         };
       },
-      screenshotStage: (_frameIndex?: number): string => {
+      screenshotStage: (frameIndex?: number): string => {
         const w = docProperties.width;
         const h = docProperties.height;
+        // Build a frame-specific scene graph when a frameIndex is requested;
+        // fall back to fullSceneGraph (current frame) when none is given.
+        const sceneGraph: SceneGraph =
+          frameIndex !== undefined
+            ? {
+                layers: timeline.layers.map((layer) => {
+                  const frame = getTweenedFrame(layer, frameIndex);
+                  const objects: DisplayObject[] = frame ? [...frame.displayObjects] : [];
+                  return {
+                    id: layer.id,
+                    name: layer.name,
+                    visible: layer.visible,
+                    locked: layer.locked,
+                    outlineMode: layer.outlineMode,
+                    outlineColor: layer.outlineColor,
+                    objects,
+                  };
+                }),
+              }
+            : fullSceneGraph;
         const offscreen = document.createElement("canvas");
         offscreen.width = w;
         offscreen.height = h;
         const renderer = new CanvasRenderer(offscreen);
         renderer.resize(w, h, 1);
-        renderer.render(fullSceneGraph, { x: 0, y: 0, zoom: 1 }, doc.library);
+        renderer.render(sceneGraph, { x: 0, y: 0, zoom: 1 }, doc.library);
         const composite = document.createElement("canvas");
         composite.width = w;
         composite.height = h;

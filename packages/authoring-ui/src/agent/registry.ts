@@ -1394,11 +1394,10 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const doc = cb.getDoc();
 
-    // If a specific frame is requested, navigate to it
-    if (params.frameIndex !== undefined) {
-      cb.setCurrentFrame(params.frameIndex);
-    }
-
+    // Pass frameIndex directly to the renderer so it builds a scene graph for
+    // that frame without changing the editor's current-frame UI state.
+    // (setCurrentFrame is a React state update and would be async; calling it
+    // before screenshotStage would not take effect in time.)
     const pngBase64 = cb.screenshotStage(params.frameIndex);
     return {
       pngBase64,
