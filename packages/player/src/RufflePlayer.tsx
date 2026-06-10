@@ -30,7 +30,8 @@ export interface RufflePlayerProps {
 /**
  * Ruffle log prefixes that are internal to the runtime and should NOT be
  * forwarded as user trace() output.  The prefixes are matched case-insensitively
- * against the first word(s) of each console.log argument.
+ * against the first word(s) of each console.log argument (after stripping any
+ * %c format tokens).
  */
 const RUFFLE_INTERNAL_PREFIXES = [
   "debug",
@@ -43,9 +44,32 @@ const RUFFLE_INTERNAL_PREFIXES = [
   "avm",  // e.g. "AVM1:"
 ];
 
+/**
+ * Strip console CSS format tokens from a Ruffle log message.
+ *
+ * Ruffle emits styled log lines as:
+ *   console.warn('%cWARN%c core/src/library.rs:559%c message', style1, style2, style3)
+ *
+ * The first argument contains `%c` markers and the remaining arguments are CSS
+ * strings that should be dropped.  This function strips every `%c` occurrence
+ * from the first argument string and discards all subsequent (CSS) arguments so
+ * that the caller sees plain text like "WARN core/src/library.rs:559 message".
+ */
+function stripConsoleCssFormat(args: unknown[]): unknown[] {
+  if (args.length === 0) return args;
+  const first = String(args[0]);
+  if (!first.includes("%c")) return args;
+  // Strip all %c tokens from the format string; discard the CSS style args.
+  const stripped = first.replace(/%c/g, "").replace(/\s+/g, " ").trim();
+  return [stripped];
+}
+
 function isRuffleInternalLog(args: unknown[]): boolean {
   if (args.length === 0) return false;
-  const first = String(args[0]).trimStart().toLowerCase();
+  // Strip CSS format tokens before checking prefixes so that
+  // "%cWARN%c ..." is correctly identified as an internal warn log.
+  const cleaned = stripConsoleCssFormat(args);
+  const first = String(cleaned[0]).trimStart().toLowerCase();
   return RUFFLE_INTERNAL_PREFIXES.some((prefix) => first.startsWith(prefix));
 }
 
@@ -73,8 +97,9 @@ export function RufflePlayer({
   const onTraceRef = useRef(onTrace);
   useEffect(() => { onTraceRef.current = onTrace; }, [onTrace]);
 
-  // Holds the original console.log so we can restore it on unmount.
+  // Holds the original console methods so we can restore them on unmount.
   const origConsoleLogRef = useRef<(typeof console.log) | null>(null);
+  const origConsoleWarnRef = useRef<(typeof console.warn) | null>(null);
 
   /** Ensure the Ruffle script is injected and return a promise that resolves
    *  when window.RufflePlayer is available. */
@@ -157,21 +182,45 @@ export function RufflePlayer({
       container.appendChild(player);
       playerRef.current = player;
 
-      // Install a console.log interceptor to capture AS2 trace() output.
-      // Ruffle emits trace() via console.log when logLevel:'info' is set.
-      // We capture lines that are NOT Ruffle-internal debug/warn/error output.
-      // Restore the original on each new load (in case of reload).
+      // Install console interceptors to capture AS2 trace() output.
+      // Ruffle emits trace() via console.log when logLevel:'info' is set, and
+      // emits its own diagnostic messages (WARN, ERROR, INFO, etc.) via
+      // console.warn with CSS format tokens (%c).
+      // We forward lines that are NOT Ruffle-internal logs to onTrace, and strip
+      // any %c CSS format tokens from the text before displaying.
+      // Restore the originals on each new load (in case of reload).
       if (origConsoleLogRef.current) {
         console.log = origConsoleLogRef.current;
       }
+      if (origConsoleWarnRef.current) {
+        console.warn = origConsoleWarnRef.current;
+      }
       origConsoleLogRef.current = console.log;
+      origConsoleWarnRef.current = console.warn;
       const capturedOrigLog = console.log;
+      const capturedOrigWarn = console.warn;
+
+      /** Forward a console call to onTrace after stripping %c tokens. */
+      const forwardToTrace = (args: unknown[]) => {
+        if (!onTraceRef.current) return;
+        const cleaned = stripConsoleCssFormat(args);
+        if (isRuffleInternalLog(cleaned)) return;
+        const line = cleaned.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
+        onTraceRef.current(line);
+      };
+
       console.log = (...args: unknown[]) => {
         capturedOrigLog(...args);
-        if (onTraceRef.current && !isRuffleInternalLog(args)) {
-          const line = args.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
-          onTraceRef.current(line);
-        }
+        forwardToTrace(args);
+      };
+
+      // Intercept console.warn to catch Ruffle's styled diagnostic messages.
+      // Internal Ruffle warns (e.g. "WARN core/src/library.rs Unknown device font")
+      // are filtered out by isRuffleInternalLog so they never appear in the Output
+      // panel.  Non-internal warns are stripped of %c tokens and forwarded.
+      console.warn = (...args: unknown[]) => {
+        capturedOrigWarn(...args);
+        forwardToTrace(args);
       };
 
       // Load SWF from bytes via a Blob URL so we don't need a server
@@ -211,10 +260,14 @@ export function RufflePlayer({
         container.removeChild(player);
       }
       playerRef.current = null;
-      // Restore original console.log if we installed an interceptor.
+      // Restore original console methods if we installed interceptors.
       if (origConsoleLogRef.current) {
         console.log = origConsoleLogRef.current;
         origConsoleLogRef.current = null;
+      }
+      if (origConsoleWarnRef.current) {
+        console.warn = origConsoleWarnRef.current;
+        origConsoleWarnRef.current = null;
       }
     };
   }, []);
