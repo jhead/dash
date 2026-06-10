@@ -36,6 +36,11 @@ ruffle/
 # Playwright MCP artifacts
 .playwright-mcp/
 
+# Debug/test artifacts generated at repo root during E2E runs
+*.swf
+ruffle-*.png
+apps/desktop/public/ruffle/
+
 # Playwright run artifacts (evidence stays local; never commit stale results)
 apps/desktop/test-results/
 apps/desktop/playwright-report/
