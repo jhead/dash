@@ -1708,6 +1708,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     objTransform
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
+                } else if (displayObj.type === "shape" && displayObj.blendMode && displayObj.blendMode !== "normal") {
+                  // blend mode requires PlaceObject3 (tag 70) with HasBlendMode bit set.
+                  const placeBody = encodePlaceObject3WithBlendMode(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    displayObj.blendMode,
+                    displayObj.filters,
+                    objTransform
+                  );
+                  writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (displayObj.type === "shape" && displayObj.cacheAsBitmap) {
                   // cacheAsBitmap requires PlaceObject3 (tag 70) with HasCacheAsBitmap bit set.
                   const placeBody = encodePlaceObject3WithCacheAsBitmap(
