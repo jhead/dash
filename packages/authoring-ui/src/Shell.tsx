@@ -2596,7 +2596,17 @@ export function Shell(): React.ReactElement {
 
     // --- Build the symbol name -----------------------------------------
     timelineEffectCounterRef.current += 1;
-    const effectLabel = params.effect === "transform" ? "Transform" : "Transition";
+    const effectLabelMap: Record<string, string> = {
+      "transform": "Transform",
+      "transition": "Transition",
+      "blur": "Blur",
+      "drop-shadow": "DropShadow",
+      "expand": "Expand",
+      "explode": "Explode",
+      "copy-to-grid": "Grid",
+      "distributed-duplicate": "Duplicate",
+    };
+    const effectLabel = effectLabelMap[params.effect] ?? params.effect;
     const symbolName = `${effectLabel} ${timelineEffectCounterRef.current}`;
 
     // --- Compute bounding box of the selection -------------------------
@@ -2646,6 +2656,147 @@ export function Shell(): React.ReactElement {
     const symNatW = symbolUnionBounds?.width ?? 0;
     const symNatH = symbolUnionBounds?.height ?? 0;
 
+    // ---------------------------------------------------------------------------
+    // Copy to Grid — purely spatial, no tween
+    // ---------------------------------------------------------------------------
+    if (params.effect === "copy-to-grid") {
+      const { rows, columns, rowSpacing, columnSpacing } = params;
+      const convertedIds = new Set(objectsToConvert.map((o) => o.id));
+      const ts = Date.now().toString(36);
+      const newInstances: SymbolInstance[] = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < columns; c++) {
+          const gridInstId = `effect-inst-${ts}-${r}-${c}`;
+          const cellX = originX + c * ((symNatW > 0 ? symNatW : 0) + columnSpacing);
+          const cellY = originY + r * ((symNatH > 0 ? symNatH : 0) + rowSpacing);
+          newInstances.push({
+            type: "instance",
+            id: gridInstId,
+            symbolId: newSymbol.id,
+            x: cellX,
+            y: cellY,
+            ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
+            ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
+          });
+        }
+      }
+
+      const applyGridToTimeline = (t: TimelineModel): TimelineModel => ({
+        ...t,
+        layers: t.layers.map((l) => {
+          if (l.id !== layerId) return l;
+          return {
+            ...l,
+            frames: l.frames.map((f) => {
+              if (!f.isKeyframe || f.index !== kf.index) return f;
+              const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
+              return { ...f, displayObjects: [...remaining, ...newInstances] as readonly import("@flash/core").DisplayObject[], isEmpty: false };
+            }) as readonly import("@flash/core").Frame[],
+          };
+        }) as readonly import("@flash/core").Layer[],
+      });
+
+      let newDocGrid: FlashDocument;
+      if (editContext.mode === "symbol" && editContext.symbolId) {
+        const items = finalLib.items.map((item) => {
+          if (item.id === editContext.symbolId && item.itemType === "symbol") {
+            return { ...item, timeline: applyGridToTimeline(item.timeline) };
+          }
+          return item;
+        });
+        newDocGrid = { ...doc, library: { ...finalLib, items } };
+      } else {
+        const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
+        newDocGrid = {
+          ...doc,
+          scenes: doc.scenes.map((s, i) =>
+            i === sceneIdx ? { ...s, timeline: applyGridToTimeline(s.timeline) } : s
+          ),
+          library: finalLib,
+        };
+      }
+
+      pushDoc(newDocGrid);
+      setSelectedShapeId(newInstances[0]?.id ?? null);
+      setTimelineEffectOpen(false);
+      return;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Distributed Duplicate — no tween, progressive offset/scale/alpha
+    // ---------------------------------------------------------------------------
+    if (params.effect === "distributed-duplicate") {
+      const { count, offsetX, offsetY, scaleTo, alphaTo, rotateTo } = params;
+      const convertedIds = new Set(objectsToConvert.map((o) => o.id));
+      const ts = Date.now().toString(36);
+      const newInstances: SymbolInstance[] = [];
+      for (let i = 0; i < count; i++) {
+        const frac = count > 1 ? i / (count - 1) : 0;
+        const instIdDup = `effect-inst-${ts}-dup-${i}`;
+        const cx = originX + offsetX * i;
+        const cy = originY + offsetY * i;
+        const sc = 1 + (scaleTo / 100 - 1) * frac;
+        const al = 100 + (alphaTo - 100) * frac;
+        const rot = rotateTo * frac;
+        newInstances.push({
+          type: "instance",
+          id: instIdDup,
+          symbolId: newSymbol.id,
+          x: cx,
+          y: cy,
+          ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
+          ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
+          ...(sc !== 1 ? { scaleX: sc, scaleY: sc } : {}),
+          ...(al !== 100 ? { colorEffect: { type: "alpha" as const, alpha: al } } : {}),
+          ...(rot !== 0 ? { rotation: rot } : {}),
+        });
+      }
+
+      const applyDupToTimeline = (t: TimelineModel): TimelineModel => ({
+        ...t,
+        layers: t.layers.map((l) => {
+          if (l.id !== layerId) return l;
+          return {
+            ...l,
+            frames: l.frames.map((f) => {
+              if (!f.isKeyframe || f.index !== kf.index) return f;
+              const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
+              return { ...f, displayObjects: [...remaining, ...newInstances] as readonly import("@flash/core").DisplayObject[], isEmpty: false };
+            }) as readonly import("@flash/core").Frame[],
+          };
+        }) as readonly import("@flash/core").Layer[],
+      });
+
+      let newDocDup: FlashDocument;
+      if (editContext.mode === "symbol" && editContext.symbolId) {
+        const items = finalLib.items.map((item) => {
+          if (item.id === editContext.symbolId && item.itemType === "symbol") {
+            return { ...item, timeline: applyDupToTimeline(item.timeline) };
+          }
+          return item;
+        });
+        newDocDup = { ...doc, library: { ...finalLib, items } };
+      } else {
+        const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
+        newDocDup = {
+          ...doc,
+          scenes: doc.scenes.map((s, i) =>
+            i === sceneIdx ? { ...s, timeline: applyDupToTimeline(s.timeline) } : s
+          ),
+          library: finalLib,
+        };
+      }
+
+      pushDoc(newDocDup);
+      setSelectedShapeId(newInstances[0]?.id ?? null);
+      setTimelineEffectOpen(false);
+      return;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Tween-based effects: Transform, Transition, Blur, Drop Shadow, Expand, Explode
+    // ---------------------------------------------------------------------------
+
     // --- Build the START instance (frame 0 = currentFrame) ------------
     const instId = `effect-inst-${Date.now().toString(36)}`;
 
@@ -2688,16 +2839,56 @@ export function Shell(): React.ReactElement {
       if (params.alpha !== 100) {
         endUpdatesBuilder.colorEffect = { type: "alpha", alpha: params.alpha };
       }
-    } else {
-      // Transition
+    } else if (params.effect === "transition") {
       const endAlpha = params.direction === "out" ? 0 : 100;
       endUpdatesBuilder.colorEffect = { type: "alpha", alpha: endAlpha };
+    } else if (params.effect === "blur") {
+      // Blur: animate from full blur to 0 alpha (fade out while blurring)
+      endUpdatesBuilder.colorEffect = { type: "alpha", alpha: 0 };
+    } else if (params.effect === "drop-shadow") {
+      // Drop shadow: tween alpha to the specified end alpha
+      if (params.alpha !== 100) {
+        endUpdatesBuilder.colorEffect = { type: "alpha", alpha: params.alpha };
+      }
+    } else if (params.effect === "expand") {
+      // Expand: scale from 0 (contract) or to 0 (contract) depending on direction
+      if (params.direction === "expand") {
+        // Start small, end at natural size — set start instance to 0 scale
+        // We apply endUpdates as-is (natural size = no override needed)
+        // and the start instance needs scaleX=0,scaleY=0 — patch startInstance below
+      } else {
+        // Contract: start at natural size (default), end at scale 0
+        endUpdatesBuilder.scaleX = 0;
+        endUpdatesBuilder.scaleY = 0;
+      }
+      // Apply any position shift at end
+      if (params.shiftX !== 0 || params.shiftY !== 0) {
+        // shiftX/Y are stored separately; we'll apply them to the end instance via x/y override
+      }
+    } else if (params.effect === "explode") {
+      // Explode: scale up and fade out
+      endUpdatesBuilder.scaleX = 2;
+      endUpdatesBuilder.scaleY = 2;
+      endUpdatesBuilder.rotation = params.arcSize;
+      if (params.finalAlpha !== 100) {
+        endUpdatesBuilder.colorEffect = { type: "alpha", alpha: params.finalAlpha };
+      }
     }
     const endInstanceUpdates = endUpdatesBuilder as Partial<SymbolInstance>;
 
+    // For "expand" direction, we need to set start instance scale to near-0
+    const expandStart = params.effect === "expand" && params.direction === "expand";
+    const actualStartInstance: SymbolInstance = expandStart
+      ? { ...startInstance, scaleX: 0.01, scaleY: 0.01 }
+      : startInstance;
+
+    // For "expand" with shiftX/shiftY, the end instance needs a position offset
+    const expandShiftX = params.effect === "expand" ? params.shiftX : 0;
+    const expandShiftY = params.effect === "expand" ? params.shiftY : 0;
+
     // --- Build the updated document -----------------------------------
     const convertedIds = new Set(objectsToConvert.map((o) => o.id));
-    const ease = params.ease ?? 0;
+    const ease = (params as { ease?: number }).ease ?? 0;
 
     const applyToTimeline = (t: TimelineModel): TimelineModel => {
       // 1. Replace original objects with the start instance in the current keyframe
@@ -2708,7 +2899,7 @@ export function Shell(): React.ReactElement {
           const frames = l.frames.map((f) => {
             if (!f.isKeyframe || f.index !== kf.index) return f;
             const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
-            return { ...f, displayObjects: [...remaining, startInstance] as readonly import("@flash/core").DisplayObject[], isEmpty: false };
+            return { ...f, displayObjects: [...remaining, actualStartInstance] as readonly import("@flash/core").DisplayObject[], isEmpty: false };
           }) as readonly import("@flash/core").Frame[];
           return { ...l, frames };
         }) as readonly import("@flash/core").Layer[],
@@ -2726,9 +2917,16 @@ export function Shell(): React.ReactElement {
             ...l,
             frames: l.frames.map((f) => {
               if (!f.isKeyframe || f.index !== endFrameIndex) return f;
-              const newObjs: readonly import("@flash/core").DisplayObject[] = f.displayObjects.map((o) =>
-                o.id === instId ? ({ ...o, ...endInstanceUpdates } as import("@flash/core").DisplayObject) : o
-              );
+              const newObjs: readonly import("@flash/core").DisplayObject[] = f.displayObjects.map((o) => {
+                if (o.id !== instId) return o;
+                const updated: import("@flash/core").DisplayObject = {
+                  ...o,
+                  ...endInstanceUpdates,
+                  x: (o as SymbolInstance).x + expandShiftX,
+                  y: (o as SymbolInstance).y + expandShiftY,
+                } as import("@flash/core").DisplayObject;
+                return updated;
+              });
               return { ...f, displayObjects: newObjs };
             }),
           };
@@ -4891,6 +5089,12 @@ export function Shell(): React.ReactElement {
         onConvertToSymbol={handleConvertToSymbol}
         onTimelineEffectTransform={() => handleOpenTimelineEffect("transform")}
         onTimelineEffectTransition={() => handleOpenTimelineEffect("transition")}
+        onTimelineEffectBlur={() => handleOpenTimelineEffect("blur")}
+        onTimelineEffectDropShadow={() => handleOpenTimelineEffect("drop-shadow")}
+        onTimelineEffectExpand={() => handleOpenTimelineEffect("expand")}
+        onTimelineEffectExplode={() => handleOpenTimelineEffect("explode")}
+        onTimelineEffectCopyToGrid={() => handleOpenTimelineEffect("copy-to-grid")}
+        onTimelineEffectDistributedDuplicate={() => handleOpenTimelineEffect("distributed-duplicate")}
         onCopy={handleCopy}
         onCut={handleCut}
         onPaste={() => handlePaste(false)}

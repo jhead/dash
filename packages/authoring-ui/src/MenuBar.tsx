@@ -244,6 +244,18 @@ export interface MenuBarProps {
   onTimelineEffectTransform?: () => void;
   /** Called when Insert > Timeline Effects > Transition Effect... is activated. */
   onTimelineEffectTransition?: () => void;
+  /** Called when Insert > Timeline Effects > Blur Effect... is activated. */
+  onTimelineEffectBlur?: () => void;
+  /** Called when Insert > Timeline Effects > Drop Shadow Effect... is activated. */
+  onTimelineEffectDropShadow?: () => void;
+  /** Called when Insert > Timeline Effects > Expand Effect... is activated. */
+  onTimelineEffectExpand?: () => void;
+  /** Called when Insert > Timeline Effects > Explode Effect... is activated. */
+  onTimelineEffectExplode?: () => void;
+  /** Called when Insert > Timeline Effects > Copy to Grid Effect... is activated. */
+  onTimelineEffectCopyToGrid?: () => void;
+  /** Called when Insert > Timeline Effects > Distributed Duplicate Effect... is activated. */
+  onTimelineEffectDistributedDuplicate?: () => void;
   /** Called when Edit > Copy (Ctrl+C) is activated. */
   onCopy?: () => void;
   /** Called when Edit > Cut (Ctrl+X) is activated. */
@@ -381,6 +393,12 @@ export function MenuBar({
   onConvertToSymbol,
   onTimelineEffectTransform,
   onTimelineEffectTransition,
+  onTimelineEffectBlur,
+  onTimelineEffectDropShadow,
+  onTimelineEffectExpand,
+  onTimelineEffectExplode,
+  onTimelineEffectCopyToGrid,
+  onTimelineEffectDistributedDuplicate,
   onCopy,
   onCut,
   onPaste,
@@ -580,6 +598,30 @@ export function MenuBar({
         {
           label: "Timeline Effects: Transition...",
           action: () => { onTimelineEffectTransition?.(); },
+        },
+        {
+          label: "Timeline Effects: Blur...",
+          action: () => { onTimelineEffectBlur?.(); },
+        },
+        {
+          label: "Timeline Effects: Drop Shadow...",
+          action: () => { onTimelineEffectDropShadow?.(); },
+        },
+        {
+          label: "Timeline Effects: Expand...",
+          action: () => { onTimelineEffectExpand?.(); },
+        },
+        {
+          label: "Timeline Effects: Explode...",
+          action: () => { onTimelineEffectExplode?.(); },
+        },
+        {
+          label: "Timeline Effects: Copy to Grid...",
+          action: () => { onTimelineEffectCopyToGrid?.(); },
+        },
+        {
+          label: "Timeline Effects: Distributed Duplicate...",
+          action: () => { onTimelineEffectDistributedDuplicate?.(); },
         },
       ],
     },

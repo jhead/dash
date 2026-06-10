@@ -89,7 +89,56 @@ interface TransitionParams {
   ease: number;
 }
 
-type EffectParams = TransformParams | TransitionParams;
+interface BlurParams {
+  effect: "blur";
+  duration: number;
+  blurX: number;
+  blurY: number;
+  ease: number;
+}
+
+interface ExpandParams {
+  effect: "expand";
+  duration: number;
+  direction: "expand" | "contract";
+  shiftX: number;
+  shiftY: number;
+}
+
+interface ExplodeParams {
+  effect: "explode";
+  duration: number;
+  arcSize: number;
+  finalAlpha: number;
+  ease: number;
+}
+
+interface CopyToGridParams {
+  effect: "copy-to-grid";
+  rows: number;
+  columns: number;
+  rowSpacing: number;
+  columnSpacing: number;
+}
+
+interface DistributedDuplicateParams {
+  effect: "distributed-duplicate";
+  count: number;
+  offsetX: number;
+  offsetY: number;
+  scaleTo: number;
+  alphaTo: number;
+  rotateTo: number;
+}
+
+type EffectParams =
+  | TransformParams
+  | TransitionParams
+  | BlurParams
+  | ExpandParams
+  | ExplodeParams
+  | CopyToGridParams
+  | DistributedDuplicateParams;
 
 let effectCounter = 0;
 
@@ -122,7 +171,12 @@ function applyTimelineEffect(
   if (objectsToConvert.length === 0) return null;
 
   effectCounter += 1;
-  const effectLabel = params.effect === "transform" ? "Transform" : "Transition";
+  const effectLabelMap: Record<string, string> = {
+    "transform": "Transform", "transition": "Transition", "blur": "Blur",
+    "drop-shadow": "DropShadow", "expand": "Expand", "explode": "Explode",
+    "copy-to-grid": "Grid", "distributed-duplicate": "Duplicate",
+  };
+  const effectLabel = effectLabelMap[params.effect] ?? params.effect;
   const symbolName = `${effectLabel} ${effectCounter}`;
 
   const selectionBounds = getUnionBounds([...objectsToConvert]);
@@ -166,7 +220,105 @@ function applyTimelineEffect(
 
   const symNatW = selectionBounds?.width ?? 0;
   const symNatH = selectionBounds?.height ?? 0;
+  const convertedIds = new Set(objectsToConvert.map((o) => o.id));
+  const layerId = layer.id;
 
+  // ---------------------------------------------------------------------------
+  // Copy to Grid — no tween
+  // ---------------------------------------------------------------------------
+  if (params.effect === "copy-to-grid") {
+    const { rows, columns, rowSpacing, columnSpacing } = params;
+    const newInstances: SymbolInstance[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < columns; c++) {
+        const gridInstId = `effect-inst-${effectCounter}-${r}-${c}`;
+        const cellX = originX + c * ((symNatW > 0 ? symNatW : 0) + columnSpacing);
+        const cellY = originY + r * ((symNatH > 0 ? symNatH : 0) + rowSpacing);
+        newInstances.push({
+          type: "instance",
+          id: gridInstId,
+          symbolId: newSymbol.id,
+          x: cellX,
+          y: cellY,
+          ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
+          ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
+        });
+      }
+    }
+    const newTimeline: TimelineModel = {
+      ...tl,
+      layers: tl.layers.map((l) => {
+        if (l.id !== layerId) return l;
+        return {
+          ...l,
+          frames: l.frames.map((f) => {
+            if (!f.isKeyframe || f.index !== kf.index) return f;
+            const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
+            return { ...f, displayObjects: [...remaining, ...newInstances] as readonly FlashDisplayObject[], isEmpty: false };
+          }) as readonly FlashFrame[],
+        };
+      }) as readonly FlashLayer[],
+    };
+    const newDoc: FlashDocument = {
+      ...doc,
+      scenes: doc.scenes.map((s, i) => i === sceneIndex ? { ...s, timeline: newTimeline } : s),
+      library: finalLib,
+    };
+    return { doc: newDoc, instanceId: newInstances[0]?.id ?? "" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Distributed Duplicate — no tween
+  // ---------------------------------------------------------------------------
+  if (params.effect === "distributed-duplicate") {
+    const { count, offsetX, offsetY, scaleTo, alphaTo, rotateTo } = params;
+    const newInstances: SymbolInstance[] = [];
+    for (let i = 0; i < count; i++) {
+      const frac = count > 1 ? i / (count - 1) : 0;
+      const dupInstId = `effect-inst-${effectCounter}-dup-${i}`;
+      const cx = originX + offsetX * i;
+      const cy = originY + offsetY * i;
+      const sc = 1 + (scaleTo / 100 - 1) * frac;
+      const al = 100 + (alphaTo - 100) * frac;
+      const rot = rotateTo * frac;
+      newInstances.push({
+        type: "instance",
+        id: dupInstId,
+        symbolId: newSymbol.id,
+        x: cx,
+        y: cy,
+        ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
+        ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
+        ...(sc !== 1 ? { scaleX: sc, scaleY: sc } : {}),
+        ...(al !== 100 ? { colorEffect: { type: "alpha" as const, alpha: al } } : {}),
+        ...(rot !== 0 ? { rotation: rot } : {}),
+      });
+    }
+    const newTimeline: TimelineModel = {
+      ...tl,
+      layers: tl.layers.map((l) => {
+        if (l.id !== layerId) return l;
+        return {
+          ...l,
+          frames: l.frames.map((f) => {
+            if (!f.isKeyframe || f.index !== kf.index) return f;
+            const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
+            return { ...f, displayObjects: [...remaining, ...newInstances] as readonly FlashDisplayObject[], isEmpty: false };
+          }) as readonly FlashFrame[],
+        };
+      }) as readonly FlashLayer[],
+    };
+    const newDoc: FlashDocument = {
+      ...doc,
+      scenes: doc.scenes.map((s, i) => i === sceneIndex ? { ...s, timeline: newTimeline } : s),
+      library: finalLib,
+    };
+    return { doc: newDoc, instanceId: newInstances[0]?.id ?? "" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tween-based effects
+  // ---------------------------------------------------------------------------
   const instId = `effect-inst-${effectCounter}`;
 
   const startAlpha: number | undefined =
@@ -204,15 +356,27 @@ function applyTimelineEffect(
     if (params.alpha !== 100) {
       endUpdatesBuilder.colorEffect = { type: "alpha", alpha: params.alpha };
     }
-  } else {
+  } else if (params.effect === "transition") {
     const endAlpha = params.direction === "out" ? 0 : 100;
     endUpdatesBuilder.colorEffect = { type: "alpha", alpha: endAlpha };
+  } else if (params.effect === "blur") {
+    endUpdatesBuilder.colorEffect = { type: "alpha", alpha: 0 };
+  } else if (params.effect === "expand") {
+    if (params.direction === "contract") {
+      endUpdatesBuilder.scaleX = 0;
+      endUpdatesBuilder.scaleY = 0;
+    }
+  } else if (params.effect === "explode") {
+    endUpdatesBuilder.scaleX = 2;
+    endUpdatesBuilder.scaleY = 2;
+    endUpdatesBuilder.rotation = params.arcSize;
+    if (params.finalAlpha !== 100) {
+      endUpdatesBuilder.colorEffect = { type: "alpha", alpha: params.finalAlpha };
+    }
   }
   const endInstanceUpdates = endUpdatesBuilder as Partial<SymbolInstance>;
 
-  const convertedIds = new Set(objectsToConvert.map((o) => o.id));
-  const ease = params.ease ?? 0;
-  const layerId = layer.id;
+  const ease = (params as { ease?: number }).ease ?? 0;
 
   const applyToTimeline = (t: TimelineModel): TimelineModel => {
     // Replace originals with start instance
@@ -505,5 +669,211 @@ describe("applyTimelineEffect — Transition", () => {
     });
 
     expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Blur effect
+// ---------------------------------------------------------------------------
+
+describe("applyTimelineEffect — Blur", () => {
+  it("creates a motion tween spanning the specified duration", () => {
+    const shape = makeShapeObj("bShape1", 100, 100);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, "bShape1", {
+      effect: "blur",
+      duration: 15,
+      blurX: 20,
+      blurY: 20,
+      ease: 0,
+    });
+
+    expect(result).not.toBeNull();
+    const newTl = result!.doc.scenes[0].timeline;
+    const layer0 = newTl.layers[0];
+
+    // Start keyframe should have a motion tween
+    const kf0After = layer0.frames.find((f) => f.isKeyframe && f.index === 0);
+    expect(kf0After?.tweenType).toBe("motion");
+
+    // End keyframe (frame 14) should exist (duration 15: frames 0–14)
+    const kf14 = layer0.frames.find((f) => f.isKeyframe && f.index === 14);
+    expect(kf14).toBeDefined();
+  });
+
+  it("end keyframe instance has alpha=0 (fades out during blur)", () => {
+    const shape = makeShapeObj("bShape2", 50, 50);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, "bShape2", {
+      effect: "blur",
+      duration: 10,
+      blurX: 20,
+      blurY: 20,
+      ease: 0,
+    });
+
+    const endKf = getKfAtFrame(result!.doc, 0, 0, 9);
+    expect(endKf).toBeDefined();
+    const endInst = endKf!.displayObjects.find((o) => o.id === result!.instanceId) as SymbolInstance;
+    expect(endInst?.colorEffect?.alpha).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Copy to Grid effect
+// ---------------------------------------------------------------------------
+
+describe("applyTimelineEffect — Copy to Grid", () => {
+  it("3x2 grid places 6 instances on the current keyframe", () => {
+    const shape = makeShapeObj("gShape1", 50, 50);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, "gShape1", {
+      effect: "copy-to-grid",
+      rows: 3,
+      columns: 2,
+      rowSpacing: 10,
+      columnSpacing: 10,
+    });
+
+    expect(result).not.toBeNull();
+    const kf = getKfAtFrame(result!.doc, 0, 0, 0);
+    expect(kf).toBeDefined();
+    // 3 rows * 2 columns = 6 instances (original shape replaced by grid copies)
+    const instances = kf!.displayObjects.filter((o) => o.type === "instance");
+    expect(instances).toHaveLength(6);
+  });
+
+  it("instances are offset by spacing plus symbol natural size", () => {
+    const shape = makeShapeObj("gShape2", 0, 0);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, "gShape2", {
+      effect: "copy-to-grid",
+      rows: 1,
+      columns: 3,
+      rowSpacing: 0,
+      columnSpacing: 20,
+    });
+
+    expect(result).not.toBeNull();
+    const kf = getKfAtFrame(result!.doc, 0, 0, 0);
+    const instances = kf!.displayObjects.filter((o) => o.type === "instance") as SymbolInstance[];
+    expect(instances).toHaveLength(3);
+    // Second instance should be further right than the first
+    expect(instances[1].x).toBeGreaterThan(instances[0].x);
+  });
+
+  it("creates a symbol in the library", () => {
+    const shape = makeShapeObj("gShape3", 10, 10);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, null, {
+      effect: "copy-to-grid",
+      rows: 2,
+      columns: 2,
+      rowSpacing: 5,
+      columnSpacing: 5,
+    });
+
+    const newLib = result!.doc.library;
+    const newSymbol = newLib.items.find((i) => i.itemType === "symbol");
+    expect(newSymbol).toBeDefined();
+    expect(newSymbol?.name).toMatch(/^Grid/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Distributed Duplicate effect
+// ---------------------------------------------------------------------------
+
+describe("applyTimelineEffect — Distributed Duplicate", () => {
+  it("count=4 places 4 instances on the current keyframe", () => {
+    const shape = makeShapeObj("dShape1", 50, 50);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, "dShape1", {
+      effect: "distributed-duplicate",
+      count: 4,
+      offsetX: 30,
+      offsetY: 0,
+      scaleTo: 100,
+      alphaTo: 100,
+      rotateTo: 0,
+    });
+
+    expect(result).not.toBeNull();
+    const kf = getKfAtFrame(result!.doc, 0, 0, 0);
+    expect(kf).toBeDefined();
+    const instances = kf!.displayObjects.filter((o) => o.type === "instance");
+    expect(instances).toHaveLength(4);
+  });
+
+  it("each copy is progressively offset by offsetX along the x-axis", () => {
+    const shape = makeShapeObj("dShape2", 0, 0);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, "dShape2", {
+      effect: "distributed-duplicate",
+      count: 3,
+      offsetX: 50,
+      offsetY: 0,
+      scaleTo: 100,
+      alphaTo: 100,
+      rotateTo: 0,
+    });
+
+    const kf = getKfAtFrame(result!.doc, 0, 0, 0);
+    const instances = kf!.displayObjects.filter((o) => o.type === "instance") as SymbolInstance[];
+    expect(instances).toHaveLength(3);
+    // Each successive instance should be further right
+    expect(instances[1].x).toBeGreaterThan(instances[0].x);
+    expect(instances[2].x).toBeGreaterThan(instances[1].x);
+  });
+
+  it("creates a symbol in the library named Duplicate", () => {
+    const shape = makeShapeObj("dShape3", 10, 10);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, null, {
+      effect: "distributed-duplicate",
+      count: 3,
+      offsetX: 20,
+      offsetY: 0,
+      scaleTo: 100,
+      alphaTo: 100,
+      rotateTo: 0,
+    });
+
+    const newLib = result!.doc.library;
+    const newSymbol = newLib.items.find((i) => i.itemType === "symbol");
+    expect(newSymbol).toBeDefined();
+    expect(newSymbol?.name).toMatch(/^Duplicate/);
   });
 });
