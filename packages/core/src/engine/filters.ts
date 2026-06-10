@@ -52,6 +52,8 @@ export interface GlowFilter {
   readonly blurY: number;
   /** Strength (0–255). Default: 2. */
   readonly strength: number;
+  /** Quality (render passes). 1 = Low, 2 = Med, 3 = High. Default: 1. */
+  readonly quality?: 1 | 2 | 3;
   readonly inner: boolean;
   readonly knockout: boolean;
   readonly enabled: boolean;

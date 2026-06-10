@@ -76,7 +76,11 @@ function writeGlowFilter(bw: BitWriter, f: GlowFilter): void {
   bw.writeFixed8(f.strength);
 
   // Flags: UI8
-  let flags = 0;
+  // bits 7: InnerGlow, 6: Knockout, 5: CompositeSource, 4-0: Passes (quality)
+  // NOTE: Passes (bits 0-4) must be ≥ 1; 0 passes makes the blur impotent and
+  // the glow effect becomes invisible (see Ruffle BlurFilter::impotent()).
+  const passes = (f.quality ?? 1) & 0x1f;
+  let flags = passes;
   flags |= 1 << 5; // CompositeSource — always 1
   if (f.inner) flags |= 1 << 7;    // InnerGlow
   if (f.knockout) flags |= 1 << 6; // Knockout

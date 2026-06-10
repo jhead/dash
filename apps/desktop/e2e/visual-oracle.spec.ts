@@ -882,6 +882,7 @@ test.describe('Visual oracle: CanvasRenderer vs Ruffle', () => {
                     blurX: 8,
                     blurY: 8,
                     strength: 2,
+                    quality: 2,
                     inner: false,
                     knockout: false,
                     enabled: true,
