@@ -117,8 +117,9 @@ import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
 import type { RegistrationPoint } from "./ConvertToSymbolDialog";
 import { SwapSymbolDialog } from "./SwapSymbolDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
-import { PublishSettingsDialog } from "./PublishSettingsDialog";
+import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
 import type { PublishSettings } from "./PublishSettingsDialog";
+import { generateHtmlWrapper } from "@flash/swf";
 import { PanelGroup } from "./PanelGroup";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
 import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
@@ -913,6 +914,7 @@ export function Shell(): React.ReactElement {
     protect: false,
     debuggingPermitted: false,
     debugPassword: "",
+    html: DEFAULT_HTML_OPTIONS,
   });
 
   // ---------------------------------------------------------------------------
@@ -3748,14 +3750,43 @@ export function Shell(): React.ReactElement {
 
   const handlePublish = useCallback(() => {
     const bytes = publishToBytes();
-    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/x-shockwave-flash" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = publishSettings.filename || "movie.swf";
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [publishToBytes, publishSettings.filename]);
+    const swfFilename = publishSettings.filename || "movie.swf";
+
+    // Download the SWF
+    const swfBlob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/x-shockwave-flash" });
+    const swfUrl = URL.createObjectURL(swfBlob);
+    const swfLink = document.createElement("a");
+    swfLink.href = swfUrl;
+    swfLink.download = swfFilename;
+    swfLink.click();
+    URL.revokeObjectURL(swfUrl);
+
+    // Download the HTML wrapper when enabled
+    if (publishSettings.html?.publishHtml !== false) {
+      const htmlOpts = publishSettings.html ?? DEFAULT_HTML_OPTIONS;
+      const htmlStr = generateHtmlWrapper({
+        title: swfFilename.replace(/\.swf$/i, ""),
+        width: doc.properties.width,
+        height: doc.properties.height,
+        bgcolor: doc.properties.backgroundColor,
+        quality: htmlOpts.quality,
+        loop: htmlOpts.loop,
+        menu: htmlOpts.menu,
+        scale: htmlOpts.scale,
+        wmode: htmlOpts.wmode,
+        swfFilename,
+        flashVersion: 8,
+      });
+      const htmlFilename = swfFilename.replace(/\.swf$/i, "") + ".html";
+      const htmlBlob = new Blob([htmlStr], { type: "text/html" });
+      const htmlUrl = URL.createObjectURL(htmlBlob);
+      const htmlLink = document.createElement("a");
+      htmlLink.href = htmlUrl;
+      htmlLink.download = htmlFilename;
+      htmlLink.click();
+      URL.revokeObjectURL(htmlUrl);
+    }
+  }, [publishToBytes, publishSettings, doc.properties]);
 
   const handleTestMovie = useCallback(() => {
     void (async () => {

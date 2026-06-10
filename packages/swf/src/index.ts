@@ -8,6 +8,8 @@
  */
 export { compileDocument } from "./compile.js";
 export type { CompileOptions } from "./compile.js";
+export { generateHtmlWrapper } from "./html.js";
+export type { HtmlPublishSettings } from "./html.js";
 export { exportSWF, triggerDownload } from "./export.js";
 export { SwfWriter } from "./writer.js";
 export { BitWriter } from "./bits.js";

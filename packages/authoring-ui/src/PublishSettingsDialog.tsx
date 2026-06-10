@@ -6,6 +6,22 @@ import type { FlashDocument } from "@flash/core";
 // Types
 // ---------------------------------------------------------------------------
 
+/** HTML wrapper publish settings — corresponds to the HTML tab. */
+export interface HtmlPublishOptions {
+  /** Whether to emit the HTML file alongside the SWF. Default true. */
+  publishHtml: boolean;
+  /** Playback quality. Default "high". */
+  quality: "low" | "medium" | "high" | "best";
+  /** Window mode. Default "window". */
+  wmode: "window" | "opaque" | "transparent";
+  /** Scale mode. Default "showall". */
+  scale: "showall" | "noborder" | "exactfit" | "noscale";
+  /** Whether the movie loops. Default true. */
+  loop: boolean;
+  /** Whether the Flash context-menu is visible. Default true. */
+  menu: boolean;
+}
+
 /** Kept for backward compatibility with Shell.tsx publish-output state. */
 export interface PublishSettings {
   filename: string;
@@ -17,6 +33,8 @@ export interface PublishSettings {
   protect: boolean;
   debuggingPermitted: boolean;
   debugPassword: string;
+  /** HTML wrapper settings */
+  html: HtmlPublishOptions;
 }
 
 export interface PublishSettingsDialogProps {
@@ -96,6 +114,30 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 0,
     lineHeight: 1,
   },
+  tabBar: {
+    display: "flex",
+    borderBottom: "1px solid #555",
+    background: "#2e2e2e",
+  },
+  tab: {
+    padding: "5px 14px",
+    fontSize: "11px",
+    cursor: "pointer",
+    borderRight: "1px solid #555",
+    color: "#aaa",
+    userSelect: "none" as const,
+  },
+  tabActive: {
+    padding: "5px 14px",
+    fontSize: "11px",
+    cursor: "pointer",
+    borderRight: "1px solid #555",
+    color: "#e0e0e0",
+    background: "#3c3c3c",
+    borderBottom: "1px solid #3c3c3c",
+    marginBottom: "-1px",
+    userSelect: "none" as const,
+  },
   body: {
     padding: "10px 12px",
   },
@@ -111,6 +153,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ccc",
   },
   input: {
+    flex: 1,
+    background: "#1e1e1e",
+    border: "1px solid #555",
+    color: "#e0e0e0",
+    fontSize: "11px",
+    padding: "2px 4px",
+    outline: "none",
+  },
+  select: {
     flex: 1,
     background: "#1e1e1e",
     border: "1px solid #555",
@@ -165,6 +216,16 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
+/** Default HTML publish options. */
+export const DEFAULT_HTML_OPTIONS: HtmlPublishOptions = {
+  publishHtml: true,
+  quality: "high",
+  wmode: "window",
+  scale: "showall",
+  loop: true,
+  menu: true,
+};
+
 // ---------------------------------------------------------------------------
 // PublishSettingsDialog
 // ---------------------------------------------------------------------------
@@ -182,6 +243,9 @@ export function PublishSettingsDialog({
 
   const props = doc.properties;
 
+  // Active tab: "swf" | "html"
+  const [activeTab, setActiveTab] = useState<"swf" | "html">("swf");
+
   const [width, setWidth] = useState(props.width);
   const [height, setHeight] = useState(props.height);
   const [backgroundColor, setBackgroundColor] = useState(props.backgroundColor);
@@ -193,6 +257,14 @@ export function PublishSettingsDialog({
   const [debuggingPermitted, setDebuggingPermitted] = useState(settings?.debuggingPermitted ?? false);
   const [debugPassword, setDebugPassword] = useState(settings?.debugPassword ?? "");
   const [jpegQuality, setJpegQuality] = useState(settings?.jpegQuality ?? 80);
+
+  // HTML output options
+  const [publishHtml, setPublishHtml] = useState(settings?.html?.publishHtml ?? true);
+  const [htmlQuality, setHtmlQuality] = useState<HtmlPublishOptions["quality"]>(settings?.html?.quality ?? "high");
+  const [htmlWmode, setHtmlWmode] = useState<HtmlPublishOptions["wmode"]>(settings?.html?.wmode ?? "window");
+  const [htmlScale, setHtmlScale] = useState<HtmlPublishOptions["scale"]>(settings?.html?.scale ?? "showall");
+  const [htmlLoop, setHtmlLoop] = useState(settings?.html?.loop ?? true);
+  const [htmlMenu, setHtmlMenu] = useState(settings?.html?.menu ?? true);
 
   // Sync local state when dialog re-opens
   useEffect(() => {
@@ -206,6 +278,12 @@ export function PublishSettingsDialog({
       setDebuggingPermitted(settings?.debuggingPermitted ?? false);
       setDebugPassword(settings?.debugPassword ?? "");
       setJpegQuality(settings?.jpegQuality ?? 80);
+      setPublishHtml(settings?.html?.publishHtml ?? true);
+      setHtmlQuality(settings?.html?.quality ?? "high");
+      setHtmlWmode(settings?.html?.wmode ?? "window");
+      setHtmlScale(settings?.html?.scale ?? "showall");
+      setHtmlLoop(settings?.html?.loop ?? true);
+      setHtmlMenu(settings?.html?.menu ?? true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, doc.properties]);
@@ -229,10 +307,23 @@ export function PublishSettingsDialog({
         protect,
         debuggingPermitted,
         debugPassword,
+        html: {
+          publishHtml,
+          quality: htmlQuality,
+          wmode: htmlWmode,
+          scale: htmlScale,
+          loop: htmlLoop,
+          menu: htmlMenu,
+        },
       });
     }
     onClose();
-  }, [doc, width, height, backgroundColor, frameRate, props, pushDoc, onClose, onSave, settings, compress, protect, debuggingPermitted, debugPassword, jpegQuality]);
+  }, [
+    doc, width, height, backgroundColor, frameRate, props,
+    pushDoc, onClose, onSave, settings,
+    compress, protect, debuggingPermitted, debugPassword, jpegQuality,
+    publishHtml, htmlQuality, htmlWmode, htmlScale, htmlLoop, htmlMenu,
+  ]);
 
   // Keyboard: Enter = OK, Escape = Cancel
   useEffect(() => {
@@ -271,152 +362,271 @@ export function PublishSettingsDialog({
           </button>
         </div>
 
+        {/* Tab bar */}
+        <div style={styles.tabBar}>
+          <div
+            style={activeTab === "swf" ? styles.tabActive : styles.tab}
+            onClick={() => setActiveTab("swf")}
+          >
+            Flash (.swf)
+          </div>
+          <div
+            style={activeTab === "html" ? styles.tabActive : styles.tab}
+            onClick={() => setActiveTab("html")}
+          >
+            HTML (.html)
+          </div>
+        </div>
+
         {/* Body */}
         <div style={styles.body}>
-          {/* Version info (read-only) */}
-          <div style={styles.sectionTitle}>Target Version</div>
-          <div style={styles.row}>
-            <span style={styles.label}>SWF Version:</span>
-            <span style={styles.readOnlyValue}>SWF v8 (Flash Player 8)</span>
-          </div>
+          {activeTab === "swf" && (
+            <>
+              {/* Version info (read-only) */}
+              <div style={styles.sectionTitle}>Target Version</div>
+              <div style={styles.row}>
+                <span style={styles.label}>SWF Version:</span>
+                <span style={styles.readOnlyValue}>SWF v8 (Flash Player 8)</span>
+              </div>
 
-          <div style={styles.divider} />
+              <div style={styles.divider} />
 
-          {/* Document dimensions */}
-          <div style={styles.sectionTitle}>Document Properties</div>
+              {/* Document dimensions */}
+              <div style={styles.sectionTitle}>Document Properties</div>
 
-          <div style={styles.row}>
-            <span style={styles.label}>Width (px):</span>
-            <input
-              type="number"
-              min={1}
-              value={width}
-              onChange={(e) => setWidth(Number(e.target.value))}
-              style={styles.input}
-              autoFocus
-            />
-          </div>
+              <div style={styles.row}>
+                <span style={styles.label}>Width (px):</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={width}
+                  onChange={(e) => setWidth(Number(e.target.value))}
+                  style={styles.input}
+                  autoFocus
+                />
+              </div>
 
-          <div style={styles.row}>
-            <span style={styles.label}>Height (px):</span>
-            <input
-              type="number"
-              min={1}
-              value={height}
-              onChange={(e) => setHeight(Number(e.target.value))}
-              style={styles.input}
-            />
-          </div>
+              <div style={styles.row}>
+                <span style={styles.label}>Height (px):</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={height}
+                  onChange={(e) => setHeight(Number(e.target.value))}
+                  style={styles.input}
+                />
+              </div>
 
-          <div style={styles.row}>
-            <span style={styles.label}>Background Color:</span>
-            <div style={{ display: "flex", alignItems: "center", flex: 1, gap: 4 }}>
-              <input
-                type="color"
-                value={backgroundColor}
-                onChange={(e) => setBackgroundColor(e.target.value)}
-                style={{ width: 32, height: 22, padding: 0, border: "1px solid #555", cursor: "pointer", background: "none" }}
-              />
-              <input
-                type="text"
-                value={backgroundColor}
-                onChange={(e) => setBackgroundColor(e.target.value)}
-                style={{ ...styles.input, flex: 1 }}
-                spellCheck={false}
-                maxLength={7}
-              />
-            </div>
-          </div>
+              <div style={styles.row}>
+                <span style={styles.label}>Background Color:</span>
+                <div style={{ display: "flex", alignItems: "center", flex: 1, gap: 4 }}>
+                  <input
+                    type="color"
+                    value={backgroundColor}
+                    onChange={(e) => setBackgroundColor(e.target.value)}
+                    style={{ width: 32, height: 22, padding: 0, border: "1px solid #555", cursor: "pointer", background: "none" }}
+                  />
+                  <input
+                    type="text"
+                    value={backgroundColor}
+                    onChange={(e) => setBackgroundColor(e.target.value)}
+                    style={{ ...styles.input, flex: 1 }}
+                    spellCheck={false}
+                    maxLength={7}
+                  />
+                </div>
+              </div>
 
-          <div style={styles.row}>
-            <span style={styles.label}>Frame Rate (fps):</span>
-            <input
-              type="number"
-              min={0.01}
-              max={120}
-              step={1}
-              value={frameRate}
-              onChange={(e) => setFrameRate(Number(e.target.value))}
-              style={styles.input}
-            />
-          </div>
+              <div style={styles.row}>
+                <span style={styles.label}>Frame Rate (fps):</span>
+                <input
+                  type="number"
+                  min={0.01}
+                  max={120}
+                  step={1}
+                  value={frameRate}
+                  onChange={(e) => setFrameRate(Number(e.target.value))}
+                  style={styles.input}
+                />
+              </div>
 
-          <div style={styles.divider} />
+              <div style={styles.divider} />
 
-          {/* SWF Output Options */}
-          <div style={styles.sectionTitle}>Flash (.swf) Output</div>
+              {/* SWF Output Options */}
+              <div style={styles.sectionTitle}>Flash (.swf) Output</div>
 
-          <div style={styles.row}>
-            <span style={styles.label}>JPEG quality:</span>
-            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
-              <input
-                type="range"
-                min={1}
-                max={100}
-                value={jpegQuality}
-                onChange={(e) => setJpegQuality(Number(e.target.value))}
-                style={{ flex: 1 }}
-              />
-              <span style={{ fontSize: "11px", color: "#ccc", minWidth: "28px", textAlign: "right" }}>
-                {jpegQuality}
-              </span>
-            </div>
-          </div>
+              <div style={styles.row}>
+                <span style={styles.label}>JPEG quality:</span>
+                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="range"
+                    min={1}
+                    max={100}
+                    value={jpegQuality}
+                    onChange={(e) => setJpegQuality(Number(e.target.value))}
+                    style={{ flex: 1 }}
+                  />
+                  <span style={{ fontSize: "11px", color: "#ccc", minWidth: "28px", textAlign: "right" }}>
+                    {jpegQuality}
+                  </span>
+                </div>
+              </div>
 
-          <div style={checkboxRowStyle}>
-            <input
-              id="ps-compress"
-              type="checkbox"
-              checked={compress}
-              onChange={(e) => setCompress(e.target.checked)}
-              style={{ cursor: "pointer" }}
-            />
-            <label htmlFor="ps-compress" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
-              Compress movie
-            </label>
-          </div>
+              <div style={checkboxRowStyle}>
+                <input
+                  id="ps-compress"
+                  type="checkbox"
+                  checked={compress}
+                  onChange={(e) => setCompress(e.target.checked)}
+                  style={{ cursor: "pointer" }}
+                />
+                <label htmlFor="ps-compress" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+                  Compress movie
+                </label>
+              </div>
 
-          <div style={checkboxRowStyle}>
-            <input
-              id="ps-protect"
-              type="checkbox"
-              checked={protect}
-              onChange={(e) => setProtect(e.target.checked)}
-              style={{ cursor: "pointer" }}
-            />
-            <label htmlFor="ps-protect" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
-              Protect from import
-            </label>
-          </div>
+              <div style={checkboxRowStyle}>
+                <input
+                  id="ps-protect"
+                  type="checkbox"
+                  checked={protect}
+                  onChange={(e) => setProtect(e.target.checked)}
+                  style={{ cursor: "pointer" }}
+                />
+                <label htmlFor="ps-protect" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+                  Protect from import
+                </label>
+              </div>
 
-          <div style={checkboxRowStyle}>
-            <input
-              id="ps-debugging"
-              type="checkbox"
-              checked={debuggingPermitted}
-              onChange={(e) => setDebuggingPermitted(e.target.checked)}
-              style={{ cursor: "pointer" }}
-            />
-            <label htmlFor="ps-debugging" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
-              Debugging permitted
-            </label>
-          </div>
+              <div style={checkboxRowStyle}>
+                <input
+                  id="ps-debugging"
+                  type="checkbox"
+                  checked={debuggingPermitted}
+                  onChange={(e) => setDebuggingPermitted(e.target.checked)}
+                  style={{ cursor: "pointer" }}
+                />
+                <label htmlFor="ps-debugging" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+                  Debugging permitted
+                </label>
+              </div>
 
-          {debuggingPermitted && (
-            <div style={styles.row}>
-              <span style={styles.label}>Password:</span>
-              <input
-                type="password"
-                value={debugPassword}
-                onChange={(e) => setDebugPassword(e.target.value)}
-                style={styles.input}
-                placeholder="(optional)"
-                autoComplete="off"
-              />
-            </div>
+              {debuggingPermitted && (
+                <div style={styles.row}>
+                  <span style={styles.label}>Password:</span>
+                  <input
+                    type="password"
+                    value={debugPassword}
+                    onChange={(e) => setDebugPassword(e.target.value)}
+                    style={styles.input}
+                    placeholder="(optional)"
+                    autoComplete="off"
+                  />
+                </div>
+              )}
+            </>
           )}
 
-          {/* Buttons */}
+          {activeTab === "html" && (
+            <>
+              <div style={styles.sectionTitle}>HTML Wrapper Output</div>
+
+              <div style={checkboxRowStyle}>
+                <input
+                  id="ps-publish-html"
+                  type="checkbox"
+                  checked={publishHtml}
+                  onChange={(e) => setPublishHtml(e.target.checked)}
+                  style={{ cursor: "pointer" }}
+                />
+                <label htmlFor="ps-publish-html" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+                  Publish HTML file
+                </label>
+              </div>
+
+              <div style={styles.divider} />
+
+              <div style={styles.sectionTitle}>Playback</div>
+
+              <div style={checkboxRowStyle}>
+                <input
+                  id="ps-html-loop"
+                  type="checkbox"
+                  checked={htmlLoop}
+                  onChange={(e) => setHtmlLoop(e.target.checked)}
+                  style={{ cursor: "pointer" }}
+                  disabled={!publishHtml}
+                />
+                <label htmlFor="ps-html-loop" style={{ fontSize: "11px", color: publishHtml ? "#ccc" : "#666", cursor: "pointer" }}>
+                  Loop
+                </label>
+              </div>
+
+              <div style={checkboxRowStyle}>
+                <input
+                  id="ps-html-menu"
+                  type="checkbox"
+                  checked={htmlMenu}
+                  onChange={(e) => setHtmlMenu(e.target.checked)}
+                  style={{ cursor: "pointer" }}
+                  disabled={!publishHtml}
+                />
+                <label htmlFor="ps-html-menu" style={{ fontSize: "11px", color: publishHtml ? "#ccc" : "#666", cursor: "pointer" }}>
+                  Display menu
+                </label>
+              </div>
+
+              <div style={styles.divider} />
+
+              <div style={styles.sectionTitle}>Display</div>
+
+              <div style={styles.row}>
+                <span style={styles.label}>Quality:</span>
+                <select
+                  value={htmlQuality}
+                  onChange={(e) => setHtmlQuality(e.target.value as HtmlPublishOptions["quality"])}
+                  style={styles.select}
+                  disabled={!publishHtml}
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="best">Best</option>
+                </select>
+              </div>
+
+              <div style={styles.row}>
+                <span style={styles.label}>Window Mode:</span>
+                <select
+                  value={htmlWmode}
+                  onChange={(e) => setHtmlWmode(e.target.value as HtmlPublishOptions["wmode"])}
+                  style={styles.select}
+                  disabled={!publishHtml}
+                >
+                  <option value="window">Window</option>
+                  <option value="opaque">Opaque Windowless</option>
+                  <option value="transparent">Transparent Windowless</option>
+                </select>
+              </div>
+
+              <div style={styles.row}>
+                <span style={styles.label}>Scale:</span>
+                <select
+                  value={htmlScale}
+                  onChange={(e) => setHtmlScale(e.target.value as HtmlPublishOptions["scale"])}
+                  style={styles.select}
+                  disabled={!publishHtml}
+                >
+                  <option value="showall">Default (Show all)</option>
+                  <option value="noborder">No border</option>
+                  <option value="exactfit">Exact fit</option>
+                  <option value="noscale">No scale</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Buttons (always visible) */}
           <div style={styles.btnRow}>
             <button style={styles.btn} onClick={onClose}>
               Cancel
