@@ -1,10 +1,10 @@
 {
   "id": "0938-as2-compiler-comma-operator-sequence-expression-",
   "title": "AS2 compiler: comma operator (sequence expression) not supported",
-  "description": "Implemented AS2 comma operator (SequenceExpr): parser produces SequenceExpr for comma-separated expressions; compiler evaluates left-to-right, ActionPop on intermediates, keeps last value. For-loop multi-var init (var i=0,j=0) and comma update (i++,j++) also work.\n\nEvidence: pnpm --filter @flash/core run test -- --run src/as2/__tests__/seqexpr.test.ts \u2014 14 seqexpr tests pass; full @flash/core suite 4917 passed.",
+  "description": "Cherry-picked 11b6534 (e75778a). seqexpr.test.ts 14 passed; core suite passes.",
   "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-06-10T21:08:03Z",
-  "updated_at": "2026-06-10T21:11:13Z"
+  "updated_at": "2026-06-10T21:13:27Z"
 }
