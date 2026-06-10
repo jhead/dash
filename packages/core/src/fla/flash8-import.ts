@@ -14,6 +14,7 @@ import type {
   Timeline,
   LibraryItem,
   Frame,
+  SoundLinkage,
 } from "../model/types.js";
 import type {
   ClipAction,
@@ -30,7 +31,7 @@ import type { FlashFilter } from "../engine/filters.js";
 import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
-import { createSymbol } from "../model/library.js";
+import { createSymbol, createSound } from "../model/library.js";
 import {
   parseFla8Contents,
   parseFla8Timeline,
@@ -570,7 +571,19 @@ const LAYER_TYPES: Record<number, LayerType> = {
   5: "masked",
 };
 
-function convertLayer(l: Fla8Layer, index: number, symbolIdByIndex: Map<number, string>): Layer {
+const SOUND_SYNC_MODES: Record<number, SoundLinkage["syncMode"]> = {
+  0: "event",
+  1: "start",
+  2: "stop",
+  3: "stream",
+};
+
+function convertLayer(
+  l: Fla8Layer,
+  index: number,
+  symbolIdByIndex: Map<number, string>,
+  soundIdByIndex: Map<number, string>,
+): Layer {
   const frames: Frame[] = [];
   let frameIndex = 0;
   for (const f of l.frames) {
@@ -579,8 +592,17 @@ function convertLayer(l: Fla8Layer, index: number, symbolIdByIndex: Map<number, 
       const converted = convertElement(el, symbolIdByIndex);
       if (converted) displayObjects.push(converted);
     }
+    let sound: SoundLinkage | null = null;
     if (f.soundId > 0) {
-      console.warn("[FLA import] frame sound attachments are not imported");
+      const libraryItemId = soundIdByIndex.get(f.soundId);
+      if (libraryItemId) {
+        const syncMode: SoundLinkage["syncMode"] =
+          f.soundSync >= 0 ? (SOUND_SYNC_MODES[f.soundSync] ?? "event") : "event";
+        const repeatCount = f.soundLoop >= 0 ? f.soundLoop : 1;
+        sound = { libraryItemId, syncMode, repeatCount };
+      } else {
+        console.warn(`[FLA import] frame sound id ${f.soundId} not found in library; skipping`);
+      }
     }
     // keyMode bits (flacomdoc): 0x4001-based = classic/motion tween,
     // 0x..02 = shape tween.
@@ -598,6 +620,7 @@ function convertLayer(l: Fla8Layer, index: number, symbolIdByIndex: Map<number, 
         tweenType,
         displayObjects,
         isEmpty: displayObjects.length === 0,
+        sound,
       }),
     );
     frameIndex += f.duration;
@@ -612,8 +635,12 @@ function convertLayer(l: Fla8Layer, index: number, symbolIdByIndex: Map<number, 
   });
 }
 
-function convertTimeline(t: Fla8Timeline, symbolIdByIndex: Map<number, string>): Timeline {
-  const layers = t.layers.map((l, i) => convertLayer(l, i, symbolIdByIndex));
+function convertTimeline(
+  t: Fla8Timeline,
+  symbolIdByIndex: Map<number, string>,
+  soundIdByIndex: Map<number, string>,
+): Timeline {
+  const layers = t.layers.map((l, i) => convertLayer(l, i, symbolIdByIndex, soundIdByIndex));
   if (layers.length === 0) {
     return { layers: [createLayer("Layer 1", "normal")] };
   }
@@ -694,12 +721,26 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     });
   }
 
+  // --- library sounds --------------------------------------------------------
+  // Build soundIdByIndex BEFORE processing symbol timelines so that symbols
+  // containing frame sounds can look up the library ID correctly.
+  // Create stub SoundItem entries for each sound referenced in the Contents
+  // stream. The actual audio data lives in "Media N" streams which we do not
+  // decode yet; the stub carries the display name and an empty dataUri so that
+  // the library and Frame.sound linkage are populated correctly.
+  const soundIdByIndex = new Map<number, string>();
+  const items: LibraryItem[] = [];
+  for (const [num, info] of contents.sounds) {
+    const soundItem = createSound(info.name);
+    soundIdByIndex.set(num, soundItem.id);
+    items.push(soundItem);
+  }
+
   // --- library symbols -------------------------------------------------------
   // Two passes: create symbol shells first so instances can reference any
   // symbol regardless of ordering, then parse timelines.
   const symbolIdByIndex = new Map<number, string>();
   const parsedSymbolTimelines = new Map<number, Fla8Timeline>();
-  const items: LibraryItem[] = [];
 
   for (const s of symbolStreams) {
     try {
@@ -725,7 +766,9 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
   for (const s of symbolStreams) {
     const shell = shells.get(s.num)!;
     const parsed = parsedSymbolTimelines.get(s.num);
-    const timeline = parsed ? convertTimeline(parsed, symbolIdByIndex) : shell.timeline;
+    const timeline = parsed
+      ? convertTimeline(parsed, symbolIdByIndex, soundIdByIndex)
+      : shell.timeline;
     items.push({ ...shell, timeline });
   }
 
@@ -736,7 +779,7 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     const sceneName = contents.sceneNames.get(p.name) ?? `Scene ${i + 1}`;
     let timeline: Timeline;
     try {
-      timeline = convertTimeline(parseFla8Timeline(p.bytes), symbolIdByIndex);
+      timeline = convertTimeline(parseFla8Timeline(p.bytes), symbolIdByIndex, soundIdByIndex);
     } catch (err) {
       console.warn(
         `[FLA import] could not parse page stream "${p.name}": ${String(err)} — importing empty scene`,

@@ -195,6 +195,10 @@ export interface Fla8Frame {
   readonly script: string;
   readonly keyMode: number;
   readonly soundId: number;
+  /** raw sync byte: 0=event, 1=start, 2=stop, 3=stream; -1 when not present */
+  readonly soundSync: number;
+  /** number of times to repeat (0 = loop indefinitely); -1 when not present */
+  readonly soundLoop: number;
   readonly elements: Fla8Element[];
 }
 
@@ -218,6 +222,10 @@ export interface Fla8SymbolInfo {
   readonly typeByte: number | null;
 }
 
+export interface Fla8SoundInfo {
+  readonly name: string;
+}
+
 export interface Fla8ContentsInfo {
   readonly formatVersion: number;
   readonly width: number | null;
@@ -228,6 +236,8 @@ export interface Fla8ContentsInfo {
   readonly sceneNames: Map<string, string>;
   /** symbol stream number -> info */
   readonly symbols: Map<number, Fla8SymbolInfo>;
+  /** sound stream number -> info */
+  readonly sounds: Map<number, Fla8SoundInfo>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1710,6 +1720,8 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let labelIsComment = false;
   let script = "";
   let soundId = 0;
+  let soundSync = -1;
+  let soundLoop = -1;
 
   try {
     const fs = r.u8();
@@ -1722,7 +1734,11 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
       const cnt = r.u16();
       if (cnt < 10000) r.skip(cnt * 8); // sound envelope points (u32 + u16 + u16)
     }
-    if (fs > 6) r.skip(2 + 1 + 4 + 4); // soundLoop, soundSync, inPoint44, outPoint44
+    if (fs > 6) {
+      soundLoop = r.u16();
+      soundSync = r.u8();
+      r.skip(4 + 4); // inPoint44, outPoint44
+    }
     if (fs > 7) r.skip(2); // soundZoomLevel
     if (fs > 8) {
       label = readCString(r); // frame label ("name" in XFL)
@@ -1806,7 +1822,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     }
     return {
       cls: "CPicFrame",
-      frame: { duration, label, labelIsComment, script, keyMode, soundId, elements },
+      frame: { duration, label, labelIsComment, script, keyMode, soundId, soundSync, soundLoop, elements },
     };
   }
 }
@@ -2104,6 +2120,44 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     }
   }
 
+  // -- sound library table ----------------------------------------------------
+  // Sounds in the Contents stream appear as stream names like "Sound N" or
+  // short-form "So N N", followed by the display name as a BomString.
+  const sounds = new Map<number, Fla8SoundInfo>();
+  if (unicode) {
+    for (const prefix of ["Sound ", "So "]) {
+      const pat = utf16Pattern(prefix);
+      let pos = 0;
+      for (;;) {
+        const idx = findBytes(bytes, pat, pos);
+        if (idx < 0) break;
+        pos = idx + 1;
+        const lenByte = idx >= 1 ? bytes[idx - 1]! : 0;
+        if (lenByte < prefix.length || lenByte > 64) continue;
+        const end = idx + lenByte * 2;
+        if (end > bytes.length) continue;
+        const streamName = utf16le(bytes.subarray(idx, end));
+        const m = /^(?:Sound (\d+)|So (\d+) \d+)$/.exec(streamName);
+        if (!m) continue;
+        const num = parseInt(m[1] ?? m[2]!, 10);
+        // The library display name follows as the next BomString within a short window.
+        let search = end;
+        const windowEnd = Math.min(bytes.length - 2, end + 120);
+        while (search < windowEnd) {
+          const s = tryReadBomStringAt(bytes, search);
+          if (s) {
+            const name = s.value;
+            if (name.length > 0 && !name.includes("/") && !name.startsWith(".\\")) {
+              if (!sounds.has(num)) sounds.set(num, { name });
+            }
+            break;
+          }
+          search++;
+        }
+      }
+    }
+  }
+
   return {
     formatVersion,
     width: info.width,
@@ -2112,5 +2166,6 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     backgroundColor: info.backgroundColor,
     sceneNames,
     symbols,
+    sounds,
   };
 }

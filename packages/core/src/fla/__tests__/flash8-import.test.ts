@@ -28,10 +28,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isOle2, tryLoadRealFla } from "../ole.js";
 import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
-import { parseClipActions, toColorEffect, toFlashFilter } from "../flash8-import.js";
+import { parseClipActions, toColorEffect, toFlashFilter, buildFla8Document } from "../flash8-import.js";
 import { getTweenSpans } from "../../model/timeline-query.js";
 import type { Fla8ColorEffect, Fla8Filter } from "../flash8-binary.js";
-import type { FlashDocument, Symbol as SymbolItem } from "../../model/types.js";
+import type { FlashDocument, Symbol as SymbolItem, SoundItem } from "../../model/types.js";
 import type {
   ShapeDisplayObject,
   SymbolInstance,
@@ -322,6 +322,47 @@ describe("parseFla8Contents / parseFla8Timeline (low level)", () => {
     expect(empty.width).toBeNull();
     expect(empty.frameRate).toBeNull();
     expect(empty.symbols.size).toBe(0);
+    expect(empty.sounds.size).toBe(0);
+  });
+
+  it("parses a sound entry from a synthetic Contents stream", () => {
+    // Build a minimal unicode Contents stream (formatVersion 0x38) that
+    // contains a single sound library entry: stream name "Sound 3",
+    // display name "boom.mp3".
+    //
+    // Contents parser scans for UTF-16LE "Sound " preceded by the total
+    // stream-name length byte, then reads a BomString for the display name.
+    //
+    // Layout (all bytes):
+    //   [0x38]               formatVersion (>= 0x38 → unicode mode)
+    //   [0x07]               length of stream name "Sound 3" in chars (7)
+    //   "Sound 3" as UTF-16LE (14 bytes)
+    //   FF FE FF 08          BomString header: magic + length (8 chars)
+    //   "boom.mp3" as UTF-16LE (16 bytes)
+
+    function utf16le(s: string): number[] {
+      const out: number[] = [];
+      for (let i = 0; i < s.length; i++) {
+        out.push(s.charCodeAt(i) & 0xff, s.charCodeAt(i) >> 8);
+      }
+      return out;
+    }
+
+    const streamName = "Sound 3"; // 7 chars
+    const displayName = "boom.mp3"; // 8 chars
+    const buf = new Uint8Array([
+      0x38,                        // formatVersion
+      streamName.length,           // length byte before UTF-16LE stream name
+      ...utf16le(streamName),      // "Sound 3" in UTF-16LE
+      0xff, 0xfe, 0xff,            // BomString magic
+      displayName.length,          // BomString length (8 chars)
+      ...utf16le(displayName),     // "boom.mp3" in UTF-16LE
+    ]);
+
+    const info = parseFla8Contents(buf);
+    expect(info.sounds.size).toBe(1);
+    expect(info.sounds.get(3)).toBeDefined();
+    expect(info.sounds.get(3)!.name).toBe("boom.mp3");
   });
 
   it("rejects a non-timeline stream with a descriptive error", () => {
@@ -652,5 +693,48 @@ describe("instance filter mapping (toFlashFilter)", () => {
     const result = toFlashFilter(makeDropShadow({ angle: -Math.PI / 4 }));
     if (result!.type !== "drop-shadow") return;
     expect(result.angle).toBeCloseTo(45, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave-4: frame sound attachment wiring (task 0754)
+// ---------------------------------------------------------------------------
+
+describe("frame sound wiring (buildFla8Document)", () => {
+  it("creates a SoundItem in the library for each sound in the Contents stream", () => {
+    // Construct a synthetic unicode Contents stream (formatVersion 0x38) that
+    // declares one sound: stream name "Sound 3", display name "boom.mp3".
+    function utf16le(s: string): number[] {
+      const out: number[] = [];
+      for (let i = 0; i < s.length; i++) {
+        out.push(s.charCodeAt(i) & 0xff, s.charCodeAt(i) >> 8);
+      }
+      return out;
+    }
+    const contentsBytes = new Uint8Array([
+      0x38,                  // formatVersion (unicode)
+      0x07,                  // length of stream name "Sound 3" (7 chars)
+      ...utf16le("Sound 3"), // stream name in UTF-16LE
+      0xff, 0xfe, 0xff,      // BomString magic
+      0x08,                  // display name length (8 chars)
+      ...utf16le("boom.mp3"),// display name in UTF-16LE
+    ]);
+
+    // A trivially-invalid Page stream will cause parseFla8Timeline to throw
+    // (caught and warned), resulting in a fallback empty scene — but the sound
+    // library items are built before scene parsing so they appear in the output.
+    const streams = new Map<string, Uint8Array>([
+      ["Contents", contentsBytes],
+      ["Page 1", new Uint8Array([0x00])], // invalid; causes graceful fallback
+    ]);
+
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+
+    const soundItems = doc!.library.items.filter(
+      (i): i is SoundItem => i.itemType === "sound"
+    );
+    expect(soundItems.length).toBe(1);
+    expect(soundItems[0]!.name).toBe("boom.mp3");
   });
 });
