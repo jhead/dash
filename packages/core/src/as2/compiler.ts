@@ -1161,7 +1161,7 @@ class Compiler {
       case '<<':  this.emit(0x63); break; // ActionBitLShift
       case '>>':  this.emit(0x64); break; // ActionBitRShift
       case '>>>': this.emit(0x65); break; // ActionBitURShift
-      default:    this.emit(0x47); break; // fallback: add
+      default:    throw new Error(`Unsupported compound-assignment operator: ${op}`);
     }
   }
 
@@ -1214,8 +1214,7 @@ class Compiler {
         this.emit(0x17); // ActionPop — discard the right-hand type value
         break;
       default:
-        this.emit(0x17); this.emit(0x17); this.pushUndefined();
-        break;
+        throw new Error(`Unsupported binary operator: ${op}`);
     }
   }
 
