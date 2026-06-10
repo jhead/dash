@@ -29,7 +29,7 @@ import {
   encodeDefineMorphShape2,
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
-import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText } from "./text.js";
+import { encodeDefineEditText, encodePlaceObject2ForText } from "./text.js";
 import { encodeDefineFont2, fontKey } from "./fonts.js";
 import {
   encodePlaceObject3WithFilters,

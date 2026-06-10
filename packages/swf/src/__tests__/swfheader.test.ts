@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from "vitest";
 import { compileDocument } from "../compile.js";
-import type { FlashDocument, Frame, Layer, Scene } from "@flash/core";
+import type { FlashDocument } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Document factory helpers

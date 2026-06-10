@@ -71,16 +71,6 @@ const BASE_PROPS = {
   snapToGuides: false,
 };
 
-const DEFAULT_LINKAGE = {
-  exportForActionScript: false,
-  exportInFirstFrame: false,
-  linkageIdentifier: "",
-  className: "",
-  exportForRuntimeSharing: false,
-  importForRuntimeSharing: false,
-  sharedUrl: "",
-};
-
 function makeFrame(displayObjects: ShapeDisplayObject[]): Frame {
   return {
     index: 0,

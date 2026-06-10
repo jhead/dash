@@ -28,45 +28,9 @@ const TAG_START_SOUND = 15;
 // SWF tag parser helpers
 // ---------------------------------------------------------------------------
 
-function getTagStreamStart(bytes: Uint8Array): number {
-  const nBits = (bytes[8] >> 3) & 0x1f;
-  const rectBits = 5 + 4 * nBits;
-  const rectBytes = Math.ceil(rectBits / 8);
-  return 8 + rectBytes + 4;
-}
-
 interface TagRecord {
   code: number;
   body: Uint8Array;
-}
-
-function findAllTagsOfType(
-  bytes: Uint8Array,
-  tagId: number
-): Array<{ bodyStart: number; len: number }> {
-  const result: Array<{ bodyStart: number; len: number }> = [];
-  let i = getTagStreamStart(bytes);
-  while (i < bytes.length - 2) {
-    const hdr = bytes[i] | (bytes[i + 1] << 8);
-    const type = (hdr >> 6) & 0x3ff;
-    const slen = hdr & 0x3f;
-    let len: number, hlen: number;
-    if (slen === 63) {
-      len =
-        bytes[i + 2] |
-        (bytes[i + 3] << 8) |
-        (bytes[i + 4] << 16) |
-        (bytes[i + 5] << 24);
-      hlen = 6;
-    } else {
-      len = slen;
-      hlen = 2;
-    }
-    if (type === tagId) result.push({ bodyStart: i + hlen, len });
-    if (type === 0) break;
-    i += hlen + len;
-  }
-  return result;
 }
 
 function parseTags(swf: Uint8Array): TagRecord[] {

@@ -37,7 +37,6 @@ const TAG_SET_BACKGROUND_COLOR = 9;
 const TAG_DO_ACTION = 12;
 const TAG_DEFINE_SHAPE4 = 83;
 const TAG_PLACE_OBJECT2 = 26;
-const TAG_DEFINE_TEXT = 11;
 const TAG_DEFINE_SPRITE = 39;
 
 // ---------------------------------------------------------------------------

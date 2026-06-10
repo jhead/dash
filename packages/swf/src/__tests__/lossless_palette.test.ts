@@ -104,7 +104,7 @@ function makeBitmapItem(id: string, name = "bitmap.png") {
 
 function makeDocWithBitmapPixels(
   items: ReturnType<typeof makeBitmapItem>[],
-  bitmapPixels: Map<string, { width: number; height: number; pixels: Uint8Array }>
+  _bitmapPixels: Map<string, { width: number; height: number; pixels: Uint8Array }>
 ): any {
   return {
     id: "t",

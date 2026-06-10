@@ -67,37 +67,10 @@ function parseTags(bytes: Uint8Array): SWFTag[] {
   return tags;
 }
 
-/** Parse the inner tag stream from a DefineSprite body (starts at byte 4). */
-function parseSpriteInnerTags(spriteBody: Uint8Array): SWFTag[] {
-  let pos = 4; // skip spriteId (UI16) + frameCount (UI16)
-  const tags: SWFTag[] = [];
-  while (pos + 2 <= spriteBody.length) {
-    const hdr = spriteBody[pos] | (spriteBody[pos + 1] << 8);
-    const code = (hdr >> 6) & 0x3ff;
-    let len = hdr & 0x3f;
-    let hdrSize = 2;
-    if (len === 0x3f) {
-      len =
-        spriteBody[pos + 2] |
-        (spriteBody[pos + 3] << 8) |
-        (spriteBody[pos + 4] << 16) |
-        (spriteBody[pos + 5] << 24);
-      hdrSize = 6;
-    }
-    const bodyStart = pos + hdrSize;
-    tags.push({ code, body: spriteBody.slice(bodyStart, bodyStart + len) });
-    pos = bodyStart + len;
-    if (code === 0) break;
-  }
-  return tags;
-}
-
 // ---------------------------------------------------------------------------
 // Tag code constants
 // ---------------------------------------------------------------------------
 
-const TAG_END           = 0;
-const TAG_SHOW_FRAME    = 1;
 const TAG_DEFINE_SOUND  = 14;
 const TAG_START_SOUND   = 15;
 const TAG_DEFINE_SPRITE = 39;
