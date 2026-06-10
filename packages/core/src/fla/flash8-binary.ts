@@ -212,6 +212,8 @@ export interface Fla8Frame {
   readonly motionRotate: "none" | "auto" | "cw" | "ccw";
   /** extra full rotations beyond the shortest-path interpolation */
   readonly motionRotateCount: number;
+  /** orient to path: rotate the object to follow the motion-guide path tangent */
+  readonly motionOrientToPath: boolean;
   readonly soundId: number;
   /** raw sync byte: 0=event, 1=start, 2=stop, 3=stream; -1 when not present */
   readonly soundSync: number;
@@ -1777,6 +1779,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let motionEase = 0;
   let motionRotate: "none" | "auto" | "cw" | "ccw" = "none";
   let motionRotateCount = 0;
+  let motionOrientToPath = false;
   let soundId = 0;
   let soundSync = -1;
   let soundLoop = -1;
@@ -1834,7 +1837,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
               return finishFrame();
             }
           }
-          if (fs > 13) r.skip(4);
+          if (fs > 13) motionOrientToPath = r.u32() !== 0; // motionTweenSnap / orient-to-path flag
           if (fs > 14) {
             const oblistTag = r.u16();
             if (oblistTag !== 0) {
@@ -1887,7 +1890,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     }
     return {
       cls: "CPicFrame",
-      frame: { duration, label, labelIsComment, script, keyMode, motionEase, motionRotate, motionRotateCount, soundId, soundSync, soundLoop, elements },
+      frame: { duration, label, labelIsComment, script, keyMode, motionEase, motionRotate, motionRotateCount, motionOrientToPath, soundId, soundSync, soundLoop, elements },
     };
   }
 }
