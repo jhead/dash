@@ -1,0 +1,10 @@
+{
+  "id": "0981-library-libraryfolder-missing-collapsed-field-ex",
+  "title": "Library: LibraryFolder missing collapsed field \u2014 expand state lost on reload",
+  "description": "LibraryFolder in packages/core/src/model/types.ts (line 422) has no 'collapsed' field. The LibraryPanel (LibraryPanel.tsx line 471) tracks expand/collapse in local React state only \u2014 state resets when panel closes. Fix: (1) add 'collapsed?: boolean' to LibraryFolder in types.ts, (2) seed the LibraryPanel's expandedFolders Set from the model on mount, (3) write back to the model when folders are toggled. Also update FLA import (flash8-import.ts) to carry the collapsed field through if present.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T22:20:43Z",
+  "updated_at": "2026-06-10T22:23:50Z"
+}

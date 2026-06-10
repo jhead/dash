@@ -1,7 +1,7 @@
 import type { EaseCurve, Frame, Layer, Timeline } from "./types.js";
 import type { DisplayObject, ShapeDisplayObject, SymbolInstance } from "../engine/types.js";
 import type { FlashFilter } from "../engine/filters.js";
-import { interpolateTween, interpolateShapeTween } from "../tween/interpolate.js";
+import { interpolateTween, interpolateShapeTween, interpolateColorEffect } from "../tween/interpolate.js";
 import type { TweenTarget } from "../tween/types.js";
 import { layerFrameCount } from "./timeline.js";
 import { samplePath, getGuideLayerPath } from "../engine/guidepath.js";
@@ -311,7 +311,7 @@ export function getTweenedFrame(
         ? (frameIndex - span.startFrame) / (span.endFrame - span.startFrame + 1)
         : 0;
 
-    interpolatedObjects = interpolateShapeTween(
+    const shapeTweenObjects = interpolateShapeTween(
       startKf.displayObjects,
       endKf.displayObjects,
       linearT,
@@ -321,6 +321,26 @@ export function getTweenedFrame(
       startKf.shapeHints,
       endKf.shapeHints
     );
+
+    // Interpolate colorEffect for any display object that carries it
+    // (e.g. SymbolInstance, TextDisplayObject) — mirrors the motion tween path.
+    type WithColorEffect = { colorEffect?: import("../engine/types.js").ColorEffect | null };
+    interpolatedObjects = shapeTweenObjects.map((obj, i) => {
+      const startObj = startKf.displayObjects[i] as (DisplayObject & WithColorEffect) | undefined;
+      const endObj = endKf.displayObjects[i] as (DisplayObject & WithColorEffect) | undefined;
+      if (!startObj || !endObj) return obj;
+      const fromCE = startObj.colorEffect;
+      const toCE = endObj.colorEffect;
+      // Only apply when at least one side has a colorEffect defined
+      if (fromCE === undefined && toCE === undefined) return obj;
+      const interpolatedCE = interpolateColorEffect(fromCE ?? null, toCE ?? null, linearT);
+      return {
+        ...obj,
+        ...(interpolatedCE !== null
+          ? { colorEffect: interpolatedCE }
+          : { colorEffect: undefined }),
+      } as DisplayObject;
+    });
   }
 
   // Return a synthetic frame with interpolated objects

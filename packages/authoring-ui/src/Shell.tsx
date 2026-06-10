@@ -2463,6 +2463,15 @@ export function Shell(): React.ReactElement {
     })));
   }, [pushDoc, withLibrary]);
 
+  const handleUpdateFolder = useCallback((folderId: string, folderCollapsed: boolean) => {
+    pushDoc(withLibrary((lib) => ({
+      ...lib,
+      folders: lib.folders.map((f) =>
+        f.id === folderId ? { ...f, collapsed: folderCollapsed } : f
+      ),
+    })));
+  }, [pushDoc, withLibrary]);
+
   const handleSetLinkage = useCallback((id: string, linkage: import("@flash/core").SymbolLinkage) => {
     pushDoc(withLibrary((lib) => ({
       ...lib,
@@ -5991,6 +6000,7 @@ export function Shell(): React.ReactElement {
               onDuplicateItem={handleDuplicateLibraryItem}
               onAddFolder={handleAddFolder}
               onMoveItemToFolder={handleMoveItemToFolder}
+              onUpdateFolder={handleUpdateFolder}
               onSetLinkage={handleSetLinkage}
               onSetSymbolProperties={handleSetSymbolProperties}
               onBitmapDoubleClick={setBitmapPropsItem}

@@ -423,6 +423,7 @@ export interface LibraryFolder {
   readonly id: string;
   readonly name: string;
   readonly parentFolderId: string | null;
+  readonly collapsed?: boolean;
 }
 
 export interface Library {

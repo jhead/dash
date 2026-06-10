@@ -22,6 +22,8 @@ export interface LibraryPanelProps {
   onSetSymbolProperties?: (id: string, data: SymbolPropertiesData) => void;
   /** Called when a BitmapItem row is double-clicked (opens Bitmap Properties). */
   onBitmapDoubleClick?: (item: BitmapItem) => void;
+  /** Called when a folder's collapsed state changes — used to persist to the model. */
+  onUpdateFolder?: (folderId: string, collapsed: boolean) => void;
 }
 
 // ----------------------------------------------------------------------------
@@ -434,6 +436,7 @@ export function LibraryPanel({
   onSetLinkage,
   onSetSymbolProperties,
   onBitmapDoubleClick,
+  onUpdateFolder,
 }: LibraryPanelProps): React.ReactElement {
   const [collapsed, setCollapsed] = useState(false);
   const [showNewSymbolDialog, setShowNewSymbolDialog] = useState(false);
@@ -467,8 +470,10 @@ export function LibraryPanel({
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  // Folder expand/collapse
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  // Folder expand/collapse — seeded from model: collapsed !== true means expanded
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    () => new Set(library.folders.filter((f) => f.collapsed !== true).map((f) => f.id))
+  );
 
   // Compute use counts (only when doc is provided)
   const useCounts = useMemo<Map<string, number>>(() => {
@@ -623,12 +628,14 @@ export function LibraryPanel({
       const next = new Set(prev);
       if (next.has(folderId)) {
         next.delete(folderId);
+        onUpdateFolder?.(folderId, true);
       } else {
         next.add(folderId);
+        onUpdateFolder?.(folderId, false);
       }
       return next;
     });
-  }, []);
+  }, [onUpdateFolder]);
 
   const handleMoveToFolder = useCallback((itemId: string, folderId: string | null) => {
     onMoveItemToFolder?.(itemId, folderId);
