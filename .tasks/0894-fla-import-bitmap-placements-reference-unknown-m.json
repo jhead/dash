@@ -2,9 +2,9 @@
   "id": "0894-fla-import-bitmap-placements-reference-unknown-m",
   "title": "FLA import: bitmap placements reference unknown media IDs (12-15) \u2014 stage objects silently dropped",
   "description": "When loading Magnet.fla, flash8-import.ts:507 emits 4 warnings:\n\n  [FLA import] bitmap placement references unknown media #12; skipping\n  [FLA import] bitmap placement references unknown media #13; skipping\n  [FLA import] bitmap placement references unknown media #14; skipping\n  [FLA import] bitmap placement references unknown media #15; skipping\n\nObserved in QA run 3 console capture (console-run3.txt). The FLA contains bitmaps placed on stage that reference media indices 12\u201315, but these media entries were not decoded into the bitmap registry during FLA import. The bitmap placements are silently skipped, meaning those stage objects are absent from the published SWF.\n\nMagnet.fla library shows: Bitmap 1, 4, 6, 7, 8, 9, 10, 11, 31 (visible) plus CPicSwf entries (claw2.swft etc.). Media IDs 12\u201315 likely correspond to CPicBitmap or similar entries that share the media index space with CPicSwf entries and are not being decoded.\n\nExpected: all media IDs referenced by stage bitmap placements should resolve to a BitmapItem in the document library. Any unresolved media IDs should be diagnosed and either decoded or reported as a distinct import error.",
-  "status": "open",
+  "status": "in_progress",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T18:10:21Z",
-  "updated_at": "2026-06-10T18:10:21Z"
+  "updated_at": "2026-06-10T18:39:48Z"
 }

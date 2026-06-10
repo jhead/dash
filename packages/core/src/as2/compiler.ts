@@ -231,10 +231,10 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
     }
 
     // addProperty strings for getter/setter pairs
-    for (const propName of getsetPairs) {
+    for (const _propName of getsetPairs) {
       add('addProperty');
       add('prototype');
-      // propName already added in the member loop
+      // _propName already added in the member loop
     }
   }
 

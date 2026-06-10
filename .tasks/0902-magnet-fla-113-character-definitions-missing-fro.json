@@ -1,0 +1,10 @@
+{
+  "id": "0902-magnet-fla-113-character-definitions-missing-fro",
+  "title": "Magnet.fla: 113 character definitions missing from compiled SWF (charIds 630-1610)",
+  "description": "When publishing Magnet.fla, the compiled SWF contains PlaceObject2 tags referencing 113 charIds in the range 630-1610 that are never defined by any DefineShape/DefineSprite/etc. tag. These characters are placed on the main timeline but their definitions are absent.\n\nPattern: missing charIds are mostly spaced by 9 (630, 639, 648, ..., 1605, 1610). Defined chars immediately before the gap: 627, 628, 629. Defined chars just after: 1611, 1612, 1613. The gap spans Magnet.fla's later 5 scenes.\n\nObserved via SWF inspection of /tmp/magnet-test.swf after publishing Magnet.fla from fixtures/Magnet.fla. Ruffle silently ignores the missing definitions (no ERROR logged), so affected objects are simply invisible.\n\nInvestigation: these IDs likely correspond to bitmap fill shapes (DefineShape4 with bitmap fill) for each bitmap placed across the 6 scenes. The root cause may be in compile.ts's charId allocation or in how bitmap display objects are compiled for scene 2-6. The 'spaced by 9' pattern suggests a per-scene bitmap wrapper group of 9 characters (1 DefineBitsJPEG + shape + 7 motion variants?) is not being emitted.\n\nRelated open tasks: 0892 (CPicSwf dropped), 0894 (bitmap placements with unknown media IDs). May share root cause with 0894.\n\nAcceptance: publish Magnet.fla and verify all PlaceObject2 charIds have corresponding definitions; re-run the 0899 oracle to confirm the colored-pixel count increases (currently 72.2% colored, 27.8% dark, 0.1% white).",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T18:39:12Z",
+  "updated_at": "2026-06-10T18:40:58Z"
+}
