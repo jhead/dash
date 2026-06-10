@@ -217,10 +217,17 @@ def priority_sort_key(task: dict[str, Any]) -> int:
 
 def cmd_list(args: argparse.Namespace) -> None:
     ensure_dirs()
+    statuses: frozenset[str] | None = None
+    if args.status:
+        requested = {s.strip() for s in args.status.split(",")}
+        invalid = requested - STATUSES
+        if invalid:
+            die(f"invalid status(es): {', '.join(sorted(invalid))}. valid: {', '.join(sorted(STATUSES))}")
+        statuses = frozenset(requested)
     tasks = []
     for path in sorted(TASKS_DIR.glob("*.json")):
         task = json.loads(path.read_text(encoding="utf-8"))
-        if args.status and task.get("status") != args.status:
+        if statuses is not None and task.get("status") not in statuses:
             continue
         if args.priority and task.get("priority") != args.priority:
             continue
@@ -445,7 +452,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.set_defaults(func=cmd_create)
 
     list_cmd = sub.add_parser("list", help="List tasks")
-    list_cmd.add_argument("--status", choices=sorted(STATUSES))
+    list_cmd.add_argument("--status")
     list_cmd.add_argument("--priority", choices=sorted(PRIORITIES))
     list_cmd.add_argument("--effort", choices=sorted(EFFORTS))
     list_cmd.add_argument("--json", action="store_true")
