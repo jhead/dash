@@ -24,6 +24,7 @@ import {
   encodePlaceObject2WithCXForm,
   encodePlaceObject2WithClipDepth,
   encodePlaceObject2WithClipActions,
+  encodePlaceObject2MoveWithClipActions,
 } from "./shapes.js";
 import {
   encodeDefineMorphShape2,
@@ -1934,8 +1935,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 const hasCacheAsBitmap = !!displayObj.cacheAsBitmap;
                 // For play-once mode, add an enterFrame clip action that calls stop()
                 // when the instance reaches its last frame. Merge with any existing clipActions.
+                // This is synthesized unconditionally — the PO3 blend/filter path will emit
+                // a separate PlaceObject2 Move tag to attach these clip actions.
                 let effectiveClipActions = displayObj.clipActions ?? [];
-                if (loopMode === "play-once" && !hasBlend && !hasEnabledFilters(displayObj.filters)) {
+                if (loopMode === "play-once") {
                   const playOnceAction: ClipAction = {
                     event: "enterFrame",
                     script: "if (this._currentframe >= this._totalframes) { this.stop(); }",
@@ -1944,18 +1947,22 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 }
                 const hasClipActions = effectiveClipActions.length > 0;
 
-                // For single-frame mode, compute a PlaceObject2 ratio so the sprite
-                // is positioned at firstFrame. Ratio field: 0 = frame 1, 65535 = last frame.
-                // Only applies when the instance has no blend/filter (those use PO3).
-                if (loopMode === "single-frame" && !hasBlend && !hasEnabledFilters(displayObj.filters)) {
+                // Compute ratio for single-frame mode (applies to both PO2 and PO3 paths).
+                // Ratio field: 0 = frame 1, 65535 = last frame.
+                let singleFrameRatio: number | undefined;
+                if (loopMode === "single-frame") {
                   const sym = symbolById.get(displayObj.symbolId);
                   const totalFrames = sym ? sceneFrameCount(sym.timeline) : 1;
-                  const ratio = totalFrames <= 1
+                  singleFrameRatio = totalFrames <= 1
                     ? 0
                     : Math.round(instanceFirstFrame / (totalFrames - 1) * 65535);
-                  const placeBody = encodePlaceObject2WithRatio(charId, depth, x, y, ratio, false);
+                }
+
+                if (singleFrameRatio !== undefined && !hasBlend && !hasEnabledFilters(displayObj.filters)) {
+                  const placeBody = encodePlaceObject2WithRatio(charId, depth, x, y, singleFrameRatio, false);
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else if (hasBlend || hasEnabledFilters(displayObj.filters)) {
+                  // Blend/filter path: use PlaceObject3, passing ratio if single-frame mode.
                   const placeBody = hasBlend
                     ? encodePlaceObject3WithBlendMode(
                         charId,
@@ -1963,16 +1970,26 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         x,
                         y,
                         displayObj.blendMode!,
-                        displayObj.filters
+                        displayObj.filters,
+                        undefined,
+                        singleFrameRatio
                       )
                     : encodePlaceObject3WithFilters(
                         charId,
                         depth,
                         x,
                         y,
-                        displayObj.filters!
+                        displayObj.filters!,
+                        undefined,
+                        undefined,
+                        singleFrameRatio
                       );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
+                  // play-once clip actions: attach via a PlaceObject2 Move tag on the same depth.
+                  if (hasClipActions) {
+                    const moveBody = encodePlaceObject2MoveWithClipActions(depth, effectiveClipActions);
+                    writer.writeTag(Tag.PlaceObject2, moveBody);
+                  }
                 } else if (hasCacheAsBitmap) {
                   // cacheAsBitmap requires PlaceObject3 (tag 70) with HasCacheAsBitmap bit set.
                   const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)

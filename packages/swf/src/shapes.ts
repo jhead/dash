@@ -1455,6 +1455,74 @@ export function encodePlaceObject2WithClipActions(
   return bw.getBytes();
 }
 
+/**
+ * Encode a PlaceObject2 tag body that modifies an existing display-list entry
+ * by attaching clip actions (HasMove | HasClipActions, no CharacterId or Matrix).
+ *
+ * Use this when an object has already been placed via PlaceObject3 (e.g. with
+ * blend mode or filters) and clip actions need to be attached at the same depth
+ * in the same frame.  HasMove (0x01) tells the player to modify the existing
+ * object rather than place a new one; omitting HasCharacter / HasMatrix leaves
+ * those properties untouched.
+ *
+ * Structure:
+ *   flags    UI8   — HasMove (0x01) | HasClipActions (0x80) = 0x81
+ *   depth    UI16
+ *   Reserved UI16 = 0
+ *   AllEventFlags UI32
+ *   for each ClipAction:
+ *     ClipEventFlags UI32
+ *     ActionRecordSize UI32
+ *     ActionBytes UI8[]
+ *   Terminator UI32 = 0x00000000
+ */
+export function encodePlaceObject2MoveWithClipActions(
+  depth: number,
+  clipActions: readonly ClipAction[]
+): Uint8Array {
+  const bw = new BitWriter();
+
+  // HasMove (0x01) | HasClipActions (0x80)
+  bw.writeUI8(0x81);
+
+  // Depth: UI16
+  bw.writeUI16LE(depth);
+
+  // Compile each action and build records.
+  const records: Array<{ flags: number; bytecode: Uint8Array }> = [];
+  let allEventFlags = 0;
+  for (const action of clipActions) {
+    const eventFlag = CLIP_EVENT_FLAGS[action.event] ?? 0;
+    allEventFlags |= eventFlag;
+    const raw = compileAS2(action.script);
+    // Append ActionEnd (0x00) terminator — required by SWF spec and Ruffle's parser
+    const bytecode = new Uint8Array(raw.length + 1);
+    bytecode.set(raw);
+    records.push({ flags: eventFlag, bytecode });
+  }
+
+  // Reserved UI16 = 0 (required by SWF spec before AllEventFlags; Ruffle reads this)
+  bw.writeUI16LE(0);
+
+  // AllEventFlags: UI32 (union of all event flags in this record set)
+  bw.writeUI32LE(allEventFlags);
+
+  // Emit each CLIPACTIONRECORD
+  for (const record of records) {
+    // ClipEventFlags: UI32
+    bw.writeUI32LE(record.flags);
+    // ActionRecordSize: UI32 (byte count of bytecode including 0x00 ActionEnd)
+    bw.writeUI32LE(record.bytecode.length);
+    // Action bytes (including ActionEnd at the end)
+    bw.writeBytes(record.bytecode);
+  }
+
+  // Terminator: UI32 = 0x00000000
+  bw.writeUI32LE(0x00000000);
+
+  return bw.getBytes();
+}
+
 // ---------------------------------------------------------------------------
 // Bitmap fill shape
 // ---------------------------------------------------------------------------

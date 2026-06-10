@@ -532,10 +532,12 @@ export function encodePlaceObject3WithFilters(
     skewX?: number;
     skewY?: number;
   },
-  name?: string
+  name?: string,
+  ratio?: number
 ): Uint8Array {
   const bw = new BitWriter();
   const hasName = !!(name && name.length > 0);
+  const hasRatio = ratio !== undefined;
 
   // ---------------------------------------------------------------------------
   // Flags1: UI8
@@ -543,7 +545,7 @@ export function encodePlaceObject3WithFilters(
   // bit 1: HasCharacter (1)
   // bit 2: HasMatrix (1)
   // bit 3: HasColorTransform (0)
-  // bit 4: HasRatio (0)
+  // bit 4: HasRatio (1 if ratio provided)
   // bit 5: HasName (1 if name provided)
   // bit 6: HasClipDepth (0)
   // bit 7: HasClipActions (0)
@@ -551,6 +553,7 @@ export function encodePlaceObject3WithFilters(
   const flags1 =
     (1 << 1) | // HasCharacter
     (1 << 2) | // HasMatrix
+    (hasRatio ? (1 << 4) : 0) | // HasRatio
     (hasName ? (1 << 5) : 0); // HasName
   bw.writeUI8(flags1);
 
@@ -615,7 +618,12 @@ export function encodePlaceObject3WithFilters(
 
   bw.flushBits();
 
-  // Name: null-terminated string (written after MATRIX, before FILTERLIST, per SWF spec)
+  // Ratio: UI16 (written after MATRIX, before Name, per SWF spec field order)
+  if (hasRatio) {
+    bw.writeUI16LE(Math.max(0, Math.min(65535, Math.round(ratio!))));
+  }
+
+  // Name: null-terminated string (written after Ratio, before FILTERLIST, per SWF spec)
   if (hasName) {
     bw.writeString(name!);
   }
@@ -685,13 +693,16 @@ export function encodePlaceObject3WithBlendMode(
     rotation?: number;
     skewX?: number;
     skewY?: number;
-  }
+  },
+  ratio?: number
 ): Uint8Array {
   const bw = new BitWriter();
+  const hasRatio = ratio !== undefined;
 
   const flags1 =
     (1 << 1) | // HasCharacter
-    (1 << 2);  // HasMatrix
+    (1 << 2) | // HasMatrix
+    (hasRatio ? (1 << 4) : 0); // HasRatio
   bw.writeUI8(flags1);
 
   // Flags2:
@@ -746,6 +757,11 @@ export function encodePlaceObject3WithBlendMode(
   }
 
   bw.flushBits();
+
+  // Ratio: UI16 (written after MATRIX, before FilterList/BlendMode, per SWF spec field order)
+  if (hasRatio) {
+    bw.writeUI16LE(Math.max(0, Math.min(65535, Math.round(ratio!))));
+  }
 
   // FILTERLIST (HasFilterList is set when there are enabled filters)
   if (enabledFilters.length > 0) {
