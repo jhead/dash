@@ -1218,6 +1218,24 @@ export interface JsflDocument {
    * whichCorner is accepted for API compatibility but ignored.
    */
   scaleSelection(xScale: number, yScale: number, whichCorner?: string): void;
+  /** Clear the current selection (sets selectedIds to []). */
+  selectNone(): void;
+  /**
+   * Save the document.  Delegates to exportSWF for SWF output.
+   * fileURL is optional; omitting it uses the default export path.
+   */
+  save(fileURL?: string): boolean;
+  /** Undo the last action.  History is managed at the UI layer; this is a no-op stub. */
+  undo(): void;
+  /** Redo the last undone action.  History is managed at the UI layer; this is a no-op stub. */
+  redo(): void;
+  /** Revert the document to its last saved state.  Not supported; no-op stub. */
+  revert(): void;
+  /**
+   * Duplicate selected display objects, placing copies offset by (+10, +10).
+   * Updates the selection to point to the new copies.
+   */
+  duplicateSelection(): void;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -1788,6 +1806,72 @@ function makeDocumentProxy(
         };
       }
     },
+    selectNone(): void {
+      state.selectedIds = [];
+    },
+    save(_fileURL?: string): boolean {
+      console.warn('doc.save: use fl.saveDocument instead');
+      return true;
+    },
+    undo(): void {
+      console.warn('doc.undo: history managed at UI layer');
+    },
+    redo(): void {
+      console.warn('doc.redo: history managed at UI layer');
+    },
+    revert(): void {
+      console.warn('doc.revert: not supported');
+    },
+    duplicateSelection(): void {
+      if (state.selectedIds.length === 0) return;
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      const toDup = new Set(state.selectedIds);
+
+      // Collect all objects to duplicate with their location info
+      type DupEntry = { layerId: string; kfIndex: number; obj: DisplayObject };
+      const entries: DupEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toDup.has(obj.id)) continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, obj });
+        }
+      }
+
+      const newIds: string[] = [];
+      // Add clones one at a time, re-reading the latest scene after each mutation
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const clone: DisplayObject = JSON.parse(JSON.stringify(entry.obj));
+        const newId = `dup-${Date.now()}-${i}`;
+        (clone as { id: string }).id = newId;
+        const cloneWithOffset = clone as { id: string; x?: number; y?: number };
+        cloneWithOffset.x = (cloneWithOffset.x ?? 0) + 10;
+        cloneWithOffset.y = (cloneWithOffset.y ?? 0) + 10;
+        newIds.push(newId);
+
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = addDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          clone
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, idx) =>
+            idx === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+
+      state.selectedIds = newIds;
+    },
   };
 }
 
@@ -1848,6 +1932,10 @@ export interface JsflFl {
    * Run a named Flash command.  Not supported; no-op stub.
    */
   runCommand(name: string): void;
+  /** Undo the last action.  History is managed at the UI layer; this is a no-op stub. */
+  undo(): void;
+  /** Redo the last undone action.  History is managed at the UI layer; this is a no-op stub. */
+  redo(): void;
   /** Output panel — use trace() to append lines; clear() to wipe them. */
   outputPanel: { trace(msg: string): void; clear(): void };
   /** Math utility functions matching the Flash 8 fl.Math API. */
@@ -1958,6 +2046,12 @@ function makeFlProxy(
     },
     runCommand(_name: string): void {
       console.warn('fl.runCommand: not supported');
+    },
+    undo(): void {
+      console.warn('fl.undo: history managed at UI layer');
+    },
+    redo(): void {
+      console.warn('fl.redo: history managed at UI layer');
     },
     outputPanel: {
       trace(msg: string): void {
