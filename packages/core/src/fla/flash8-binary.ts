@@ -173,6 +173,17 @@ export interface Fla8Instance {
    * Maps to the TrackAsMenu bit in the DefineButton2 SWF tag.
    */
   readonly trackAsMenu?: boolean;
+  /**
+   * Which frame of the symbol to start on (0-based). Only meaningful for
+   * graphic symbols (kind === "graphic"). Default: 0.
+   */
+  readonly firstFrame: number;
+  /**
+   * How the graphic symbol animates on the parent timeline.
+   * 0 = loop, 1 = play-once, 2 = single-frame.
+   * Only meaningful for graphic symbols (kind === "graphic").
+   */
+  readonly loopMode: number;
 }
 
 export interface Fla8TextRun {
@@ -202,6 +213,16 @@ export interface Fla8Text {
   readonly instanceName: string;
   readonly textType: "static" | "dynamic" | "input";
   readonly wordWrap: boolean;
+  /** Whether this is a multiline text field (bit 0x10 of CPicText textFlags). */
+  readonly multiline: boolean;
+  /** Whether characters are masked as password dots (bit 0x04 of CPicText textFlags). */
+  readonly password: boolean;
+  /** Maximum number of characters the user can enter; 0 means unlimited. */
+  readonly maxChars: number;
+  /** Whether a border rectangle is drawn around the text field (bit 0x40 of CPicText textFlags). */
+  readonly hasBorder: boolean;
+  /** AS2 variable name bound to this text field (legacy ActionScript 1/2 binding). */
+  readonly as2VariableName: string;
   /** Flash 8+ filters (empty array when none). */
   readonly filters: Fla8Filter[];
   /**
@@ -234,7 +255,33 @@ export interface Fla8VideoRef {
   readonly mediaId: number;
 }
 
-export type Fla8Element = Fla8Shape | Fla8Instance | Fla8Text | Fla8BitmapRef | Fla8VideoRef;
+/**
+ * CPicSwf — a placed embedded-SWF element on the timeline.
+ *
+ * Flash authoring lets users embed external SWF files as library symbols via
+ * File > Import.  CPicSwf records the placement on stage.  The full byte layout
+ * is variable-length (AS2 clip-event scripts, color transforms, instance names)
+ * and not fully decoded; only the placement matrix is extracted.
+ */
+export interface Fla8SwfRef {
+  readonly type: "swf";
+  /** Approximate placement matrix extracted from the record header. */
+  readonly matrix: Fla8Matrix;
+}
+
+export type Fla8Element = Fla8Shape | Fla8Instance | Fla8Text | Fla8BitmapRef | Fla8VideoRef | Fla8SwfRef;
+
+/**
+ * Custom cubic-Bézier ease curve decoded from the CPicFrame binary tail
+ * (Flash 8+, frameVersionB >= 0x18). Coordinates follow the CSS cubic-bezier
+ * convention: x1/x2 ∈ [0,1] (time), y1/y2 unconstrained (value progress).
+ */
+export interface Fla8EaseCurve {
+  readonly x1: number;
+  readonly y1: number;
+  readonly x2: number;
+  readonly y2: number;
+}
 
 export interface Fla8Frame {
   /** span length in frames (>= 1) */
@@ -245,6 +292,12 @@ export interface Fla8Frame {
   readonly keyMode: number;
   /** signed ease value: -100 (ease in, slow start) to +100 (ease out, fast start); 0 = linear */
   readonly motionEase: number;
+  /**
+   * Custom cubic-Bézier ease curve (Flash 8+). null = use `motionEase` instead.
+   * Decoded from `useSingleEaseCurve` + `hasCustomEase` + per-property point data
+   * in the CPicFrame tail when frameVersionB >= 0x18 (24).
+   */
+  readonly motionEaseCurve: Fla8EaseCurve | null;
   /** rotation mode: "none" | "auto" | "cw" | "ccw" */
   readonly motionRotate: "none" | "auto" | "cw" | "ccw";
   /** extra full rotations beyond the shortest-path interpolation */
@@ -806,6 +859,8 @@ function deserializeClass(name: string, ctx: ParseCtx): ParsedNode {
         return { cls: "element", element: readCPicBitmapRef(ctx) };
       case "CPicVideo":
         return { cls: "element", element: readCPicVideo(ctx) };
+      case "CPicSwf":
+        return { cls: "element", element: readCPicSwf(ctx) };
       default: {
         // Unknown CPic*/CMorph* class: consume the CPicObj base if plausible,
         // then skip to the next object-tail signature.
@@ -1490,6 +1545,10 @@ interface SymbolBaseFields {
   filters: Fla8Filter[];
   /** Flash 8 blend mode byte (0–14); 0 and 1 both mean "normal" */
   blendMode: number;
+  /** Which frame of the symbol to start on (0-based). Default: 0. */
+  firstFrame: number;
+  /** How the graphic animates: 0=loop, 1=play-once, 2=single-frame. */
+  loopMode: number;
 }
 
 /**
@@ -1506,8 +1565,8 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   readCPicObjBase(ctx);
   const symbolSchema = r.u8();
   const matrix = readMatrix(r);
-  r.skip(2); // first frame
-  r.skip(1); // loop mode / kind byte
+  const firstFrame = r.u16(); // first frame (0-based)
+  const loopMode = r.u8(); // loop mode: 0=loop, 1=play-once, 2=single-frame
   r.skip(1);
   if (symbolSchema >= 7) r.skip(1);
   let colorEffect: Fla8ColorEffect | null = null;
@@ -1565,7 +1624,7 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   if (!filtersPresent && symbolSchema >= 0x16) {
     r.skip(102); // CS4 3D transform block
   }
-  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect, filters, blendMode };
+  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect, filters, blendMode, firstFrame, loopMode };
 }
 
 const DEFAULT_FIELDS: SymbolBaseFields = {
@@ -1576,6 +1635,8 @@ const DEFAULT_FIELDS: SymbolBaseFields = {
   colorEffect: null,
   filters: [],
   blendMode: 0,
+  firstFrame: 0,
+  loopMode: 0,
 };
 
 function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8Instance {
@@ -1748,6 +1809,37 @@ function readCPicVideo(ctx: ParseCtx): Fla8VideoRef {
   return { type: "video", matrix, mediaId };
 }
 
+// --- CPicSwf ------------------------------------------------------------------
+//
+// CPicSwf is a placed embedded-SWF element.  Flash authoring lets users embed
+// external SWF files as library symbols via File > Import; CPicSwf records the
+// placement on the timeline.
+//
+// Binary layout (CS2 FLA, verified against Magnet.fla which has four instances):
+//   CPicObjBase     (schema byte + flags byte + null child tag + registration point)
+//   UI8             symbolSchema (observed: 6 or 7 in CS2 FLAs)
+//   4×4 matrix      (16.16 fixed-point + tx/ty in twips, 24 bytes via readMatrix)
+//   <variable tail> AS2 clip-event scripts (BomStrings), color transforms,
+//                   instance name, loop/frame options — NOT fully decoded.
+//
+// The variable tail is 950-5500 bytes per instance (depending on embedded AS2
+// scripts).  skipToNextBoundary() re-syncs the reader after the fixed header.
+
+function readCPicSwf(ctx: ParseCtx): Fla8SwfRef {
+  const { r } = ctx;
+  let matrix: Fla8Matrix = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+  try {
+    readCPicObjBase(ctx);
+    r.skip(1); // symbolSchema version byte (observed: 6 or 7 in CS2 FLAs)
+    matrix = readMatrix(r);
+  } catch (err) {
+    if (!(err instanceof FlaEofError)) throw err;
+  }
+  // Skip the variable-length tail to re-sync at the next sibling element.
+  skipToNextBoundary(ctx);
+  return { type: "swf", matrix };
+}
+
 // --- CPicText ------------------------------------------------------------------
 
 interface TextRun {
@@ -1838,9 +1930,11 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     embedFlag = r.u8();
   }
   if (ts >= 5) r.skip(2); // selectable flags + reserved
+  let maxChars = 0;
+  let as2VariableName = "";
   if (ts >= 4) {
-    r.skip(2); // maxCharacters
-    readCString(r); // AS1/2 variable name
+    maxChars = r.u16(); // maxCharacters
+    as2VariableName = readCString(r); // AS1/2 variable name
   }
   if (embedFlag & 0x20) readCString(r); // embedded characters
   if (ts >= 0x0e) r.skip(1); // CS4 reserved
@@ -1925,6 +2019,11 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     instanceName,
     textType: (textFlags & 0x01) === 0 ? "static" : textFlags & 0x02 ? "dynamic" : "input",
     wordWrap: (textFlags & 0x08) !== 0,
+    multiline: (textFlags & 0x10) !== 0,
+    password: (textFlags & 0x04) !== 0,
+    maxChars,
+    hasBorder: (textFlags & 0x40) !== 0,
+    as2VariableName,
     filters,
     // Instance color effect for text fields is not yet decoded from the binary
     // (no confirmed fixture for the exact byte layout in CPicText). The field is
@@ -1983,6 +2082,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let labelIsComment = false;
   let script = "";
   let motionEase = 0;
+  let motionEaseCurve: Fla8EaseCurve | null = null;
   let motionRotate: "none" | "auto" | "cw" | "ccw" = "none";
   let motionRotateCount = 0;
   let motionOrientToPath = false;
@@ -2068,7 +2168,57 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
           if (fs > 19) r.skip(4);
           if (fs > 20) r.skip(4);
           if (fs >= 22) r.skip(4);
-          if (fs >= 24) r.skip(8);
+          if (fs >= 24) {
+            // Flash 8+ ease curve data: useSingleEaseCurve (u32) + hasCustomEase (u32)
+            // followed by 6 per-property point arrays when hasCustomEase != 0.
+            // Properties in order: position(0), rotation(1), scale(2), color(3),
+            // filters(4), all(5).
+            // Each point array: u32 numPoints, then for each point:
+            //   - if first or last: f64 x, f64 y, f64 x, f64 y  (32 bytes — written twice)
+            //   - otherwise:        f64 x, f64 y                 (16 bytes)
+            const useSingleEaseCurve = r.u32();
+            const hasCustomEase = r.u32();
+            if (hasCustomEase !== 0) {
+              const PROP_COUNT = 6;
+              const curves: Array<Fla8EaseCurve | null> = [];
+              for (let p = 0; p < PROP_COUNT; p++) {
+                const numPoints = r.u32();
+                if (numPoints === 0) {
+                  curves.push(null);
+                  continue;
+                }
+                const pts: Array<{ x: number; y: number }> = [];
+                for (let i = 0; i < numPoints; i++) {
+                  const x = r.f64();
+                  const y = r.f64();
+                  if (i === 0 || i === numPoints - 1) {
+                    // anchor endpoints are written twice; consume the duplicate
+                    r.f64();
+                    r.f64();
+                  }
+                  pts.push({ x, y });
+                }
+                // A 4-point bezier: pts[0]=(0,0), pts[1]=c1, pts[2]=c2, pts[3]=(1,1)
+                if (pts.length >= 4) {
+                  curves.push({
+                    x1: Math.max(0, Math.min(1, pts[1]!.x)),
+                    y1: pts[1]!.y,
+                    x2: Math.max(0, Math.min(1, pts[2]!.x)),
+                    y2: pts[2]!.y,
+                  });
+                } else {
+                  curves.push(null);
+                }
+              }
+              // When useSingleEaseCurve is set, the "all" property (index 5) applies
+              // to every property; otherwise use "position" (index 0) falling back to "all".
+              if (useSingleEaseCurve !== 0) {
+                motionEaseCurve = curves[5] ?? null;
+              } else {
+                motionEaseCurve = curves[0] ?? curves[5] ?? null;
+              }
+            }
+          }
         }
       } else {
         // Flash 5/MX-era frame tail (schemas 9..18) is only partially
@@ -2108,7 +2258,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     }
     return {
       cls: "CPicFrame",
-      frame: { duration, label, labelIsComment, script, keyMode, motionEase, motionRotate, motionRotateCount, motionOrientToPath, soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements },
+      frame: { duration, label, labelIsComment, script, keyMode, motionEase, motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements },
     };
   }
 }
@@ -2456,6 +2606,9 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
               let exportForActionScript = false;
               let exportForRuntimeSharing = false;
               let importForRuntimeSharing = false;
+              // linkageFlagsEnd: byte offset right after the 4 linkage flag bytes.
+              // Used below as the scan-start for the scale9Grid block.
+              let linkageFlagsEnd = s.end + 5;
               if (s.end + 5 < bytes.length) {
                 const lnk = tryReadBomStringAt(bytes, s.end + 5);
                 if (lnk !== null) {
@@ -2470,6 +2623,7 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
                     exportForActionScript  = bytes[flagBase + 1]! !== 0;
                     exportForRuntimeSharing = bytes[flagBase + 2]! !== 0;
                     importForRuntimeSharing = bytes[flagBase + 3]! !== 0;
+                    linkageFlagsEnd = flagBase + 4;
                   }
                 }
               }
@@ -2503,6 +2657,52 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
                 }
               }
 
+              // Decode the scale9Grid block (Flash 8+ only, formatVersion >= 0x3F).
+              //
+              // The block lives in the CDocumentPage symbol entry in the Contents
+              // stream, immediately after the F5 pre-scale9Grid anchor pattern:
+              //   [FF FE FF 00][FF FE FF 00][00 00 00 00][FF FE FF 00]  (16 bytes)
+              //     empty BomString  empty BomString  4 zeros  empty BomString
+              // Followed by 20 bytes (flacomdoc FlaConverter.writeSymbols, F8):
+              //   UI32 toggle  (1=enabled, 0=disabled)
+              //   UI32 right   (twips = px * 20)
+              //   UI32 left    (twips = px * 20)
+              //   UI32 bottom  (twips = px * 20)
+              //   UI32 top     (twips = px * 20)
+              // Disabled: toggle=0, all values=0x80000000 (INT_MIN sentinel).
+              let scale9Grid: Fla8SymbolInfo["scale9Grid"] = null;
+              if (formatVersion >= 0x3f) {
+                const prePattern = [
+                  0xff, 0xfe, 0xff, 0x00, // empty BomString
+                  0xff, 0xfe, 0xff, 0x00, // empty BomString
+                  0x00, 0x00, 0x00, 0x00, // 4 zero bytes (F5 padding)
+                  0xff, 0xfe, 0xff, 0x00, // empty BomString
+                ];
+                // Scan within a bounded window from after the linkage flag bytes.
+                // The scale9Grid block is typically 300-600 bytes past the flags.
+                const scanLimit = Math.min(bytes.length - 36, linkageFlagsEnd + 2000);
+                const gridPrePos = findBytes(bytes, prePattern, linkageFlagsEnd);
+                if (gridPrePos >= linkageFlagsEnd && gridPrePos < scanLimit) {
+                  const gridPos = gridPrePos + prePattern.length; // skip 16-byte anchor
+                  if (gridPos + 20 <= bytes.length) {
+                    const dv = new DataView(bytes.buffer, bytes.byteOffset + gridPos, 20);
+                    const toggle = dv.getUint32(0, true);
+                    const right  = dv.getUint32(4, true);
+                    const left   = dv.getUint32(8, true);
+                    const bottom = dv.getUint32(12, true);
+                    const top    = dv.getUint32(16, true);
+                    if (toggle === 1) {
+                      scale9Grid = {
+                        left:   left   / 20,
+                        top:    top    / 20,
+                        right:  right  / 20,
+                        bottom: bottom / 20,
+                      };
+                    }
+                  }
+                }
+              }
+
               if (!symbols.has(num)) {
                 symbols.set(num, {
                   name,
@@ -2513,6 +2713,7 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
                   exportInFirstFrame,
                   exportForRuntimeSharing,
                   importForRuntimeSharing,
+                  scale9Grid,
                 });
               }
             }

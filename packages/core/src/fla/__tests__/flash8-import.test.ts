@@ -1462,3 +1462,52 @@ describe("Magnet.fla — CS2 FLA layer names are readable strings (regression 08
     }
   });
 });
+
+// CPicSwf — embedded SWF placement (task 0892)
+//
+// Magnet.fla contains four CPicSwf placements (Claw.swft and claw2.swft
+// symbols placed on scene timelines).  Before this fix they produced:
+//   [FLA import] class "CPicSwf" is not supported; skipping its data
+// After this fix:
+//   * CPicSwf data is parsed correctly (no stream desync)
+//   * An informative "CPicSwf placement ... skipped" warning is emitted
+//   * The Magnet.fla layer names remain correct (stream alignment preserved)
+describe("Magnet.fla — CPicSwf embedded SWF placements (task 0892)", () => {
+  it("does NOT emit the 'class CPicSwf is not supported' warning", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const bytes = fixture("Magnet.fla");
+      tryLoadRealFla(bytes);
+      const messages = warnSpy.mock.calls.map((c) => c.join(" "));
+      const oldWarnings = messages.filter((m) =>
+        m.includes('class "CPicSwf" is not supported'),
+      );
+      expect(oldWarnings).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("emits an informative 'CPicSwf placement ... skipped' warning instead", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const bytes = fixture("Magnet.fla");
+      tryLoadRealFla(bytes);
+      const messages = warnSpy.mock.calls.map((c) => c.join(" "));
+      const newWarnings = messages.filter((m) => m.includes("CPicSwf placement"));
+      // Magnet.fla has four CPicSwf instances; each emits one warning.
+      expect(newWarnings.length).toBeGreaterThan(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("still imports 6 scenes and readable layer names after the CPicSwf fix", () => {
+    const loaded = tryLoadRealFla(fixture("Magnet.fla"));
+    expect(loaded).not.toBeNull();
+    expect(loaded!.scenes.length).toBe(6);
+    // Verify stream alignment wasn't disturbed by CPicSwf parsing
+    const names = loaded!.scenes[0]!.timeline.layers.map((l) => l.name);
+    expect(names).toEqual(["Layer 7", "Layer 3", "Layer 5", "Magnets", "Walls", "Ball"]);
+  });
+});

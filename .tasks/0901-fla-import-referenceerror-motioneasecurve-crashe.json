@@ -1,10 +1,10 @@
 {
   "id": "0901-fla-import-referenceerror-motioneasecurve-crashe",
   "title": "FLA import: ReferenceError motionEaseCurve crashes all symbol and scene stream parsing \u2014 entire doc blank",
-  "description": "CRITICAL. When loading Magnet.fla, every symbol stream and every scene (page) stream fails with:\n\n  ReferenceError: motionEaseCurve is not defined\n  at flash8-import.ts:795 (symbol parsing)\n  at flash8-import.ts:839 (scene/page parsing)\n\nEach failure is caught and logged as a warning, importing that stream as empty. ALL ~65 symbol streams and ALL 6 scene streams fail this way. The resulting document has:\n- 87 library items in 0 scenes \u00d7 0 objects (doc_summary confirms: all keyframes show objectCount: 0)\n- Test Movie renders a blank white SWF in Ruffle (no content at all)\n\nObserved in QA run 4 console (console-run4.txt). Exact log lines:\n  [FLA import] could not parse symbol stream \"Symbol 1\": ReferenceError: motionEaseCurve is not defined \u2014 importing as empty symbol\n  [FLA import] could not parse page stream \"Page 1\": ReferenceError: motionEaseCurve is not defined \u2014 importing empty scene\n  (\u00d7 ~65 symbols + \u00d7 6 scenes)\n\nThis is different from task 0883 (which tracks the Bezier curve data not being decoded). This bug causes a JavaScript ReferenceError during parsing \u2014 motionEaseCurve is used as a variable/function inside the symbol/page parsing try-block but is not defined in scope at that point.\n\nExpected: symbol and scene streams parse successfully; the Bezier ease data may be missing (0883) but parsing must not crash.\nResult: all content is blank; Magnet.fla is completely unplayable.",
-  "status": "open",
+  "description": "FIXED as of QA run 5 (2026-06-10). The motionEaseCurve ReferenceError is no longer present \u2014 symbol streams and most page streams now parse successfully. A new but related ReferenceError has appeared: \"readCPicSwf is not defined\" at flash8-import.ts:835, crashing pages 1/6/7/8. Tracked in new task 0902.",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-10T18:23:33Z",
-  "updated_at": "2026-06-10T18:23:33Z"
+  "updated_at": "2026-06-10T18:29:03Z"
 }

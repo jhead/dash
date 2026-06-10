@@ -9,6 +9,7 @@ import type {
   FlashDocument,
   Layer,
   LayerType,
+  Scale9Grid,
   Scene,
   SymbolType,
   Timeline,
@@ -763,9 +764,13 @@ function convertElement(
         italic: el.italic,
         color: toColor(el.color),
         align: el.align,
-        multiline: el.text.includes("\r") || el.text.includes("\n"),
+        multiline: el.multiline,
         wordWrap: el.wordWrap,
         ...(el.instanceName ? { instanceName: el.instanceName } : {}),
+        ...(el.password ? { password: true } : {}),
+        ...(el.maxChars > 0 ? { maxChars: el.maxChars } : {}),
+        ...(el.hasBorder ? { hasBorder: true } : {}),
+        ...(el.as2VariableName ? { as2VariableName: el.as2VariableName } : {}),
         ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
         ...(textFilters.length > 0 ? { filters: textFilters } : {}),
         ...(isMultiRun ? { html: true, htmlText } : {}),
@@ -821,6 +826,16 @@ function convertElement(
         rotation,
       };
     }
+    case "swf": {
+      // CPicSwf places an embedded SWF asset (imported via File > Import).
+      // The editor model has no dedicated display-object type for embedded SWF
+      // content yet, so we skip the placement with an informative message rather
+      // than silently dropping it under the "class not supported" catch-all.
+      console.warn(
+        `[FLA import] CPicSwf placement at (${el.matrix.tx.toFixed(0)}, ${el.matrix.ty.toFixed(0)}) skipped — embedded SWF display objects are not yet supported`,
+      );
+      return null;
+    }
   }
 }
 
@@ -853,9 +868,13 @@ export function convertFla8Text(el: Fla8Text): TextDisplayObject {
     italic: el.italic,
     color: toColor(el.color),
     align: el.align,
-    multiline: el.text.includes("\r") || el.text.includes("\n"),
+    multiline: el.multiline,
     wordWrap: el.wordWrap,
     ...(el.instanceName ? { instanceName: el.instanceName } : {}),
+    ...(el.password ? { password: true } : {}),
+    ...(el.maxChars > 0 ? { maxChars: el.maxChars } : {}),
+    ...(el.hasBorder ? { hasBorder: true } : {}),
+    ...(el.as2VariableName ? { as2VariableName: el.as2VariableName } : {}),
     ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
     ...(textFilters.length > 0 ? { filters: textFilters } : {}),
     ...(isMultiRun ? { html: true, htmlText } : {}),
@@ -934,6 +953,7 @@ function convertLayer(
         script: f.script,
         tweenType,
         motionEase: f.motionEase,
+        motionEaseCurve: f.motionEaseCurve,
         motionRotate: f.motionRotate,
         motionRotateCount: f.motionRotateCount,
         motionOrientToPath: f.motionOrientToPath,
@@ -1175,7 +1195,20 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
       exportForRuntimeSharing: meta?.exportForRuntimeSharing ?? false,
       importForRuntimeSharing: meta?.importForRuntimeSharing ?? false,
     });
-    const shell = createSymbol(name, symbolType, { linkage });
+    // Decode scale9Grid from the binary Contents stream, converting
+    // { left, top, right, bottom } (twips already converted to px) to
+    // the model's { x, y, width, height } format.
+    let scale9Grid: Scale9Grid | null = null;
+    if (meta?.scale9Grid != null) {
+      const sg = meta.scale9Grid;
+      scale9Grid = {
+        x: sg.left,
+        y: sg.top,
+        width: sg.right - sg.left,
+        height: sg.bottom - sg.top,
+      };
+    }
+    const shell = createSymbol(name, symbolType, { linkage, scale9Grid });
     shells.set(s.num, shell);
     symbolIdByIndex.set(s.num, shell.id);
   }
