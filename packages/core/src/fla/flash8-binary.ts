@@ -371,6 +371,17 @@ export interface Fla8SymbolInfo {
   readonly exportInFirstFrame: boolean;
   readonly exportForRuntimeSharing: boolean;
   readonly importForRuntimeSharing: boolean;
+  /**
+   * 9-slice scaling grid decoded from the Contents stream (Flash 8+).
+   * Coordinates are in pixels (twips already divided by 20).
+   * null when no scale9Grid is set for this symbol.
+   */
+  readonly scale9Grid: {
+    readonly left: number;
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+  } | null;
 }
 
 export interface Fla8SoundInfo {
@@ -448,6 +459,12 @@ class Reader {
     const v = this.buf.subarray(this.pos, this.pos + n);
     this.pos += n;
     return v;
+  }
+  f64(): number {
+    this.need(8);
+    const view = new DataView(this.buf.buffer, this.buf.byteOffset + this.pos, 8);
+    this.pos += 8;
+    return view.getFloat64(0, true /* little-endian */);
   }
   skip(n: number): void {
     this.need(n);
@@ -1658,6 +1675,8 @@ function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8
     filters: fields.filters,
     blendMode: fields.blendMode,
     script: "",
+    firstFrame: fields.firstFrame,
+    loopMode: fields.loopMode,
   };
 }
 
@@ -1706,6 +1725,8 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
     filters: fields.filters,
     blendMode: fields.blendMode,
     script,
+    firstFrame: fields.firstFrame,
+    loopMode: fields.loopMode,
   };
 }
 
@@ -1743,6 +1764,8 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
     filters: fields.filters,
     blendMode: fields.blendMode,
     script,
+    firstFrame: fields.firstFrame,
+    loopMode: fields.loopMode,
     ...(trackAsMenu ? { trackAsMenu } : {}),
   };
 }
@@ -2421,6 +2444,33 @@ function tryReadBomStringAt(buf: Uint8Array, pos: number): { value: string; end:
  * Extract document-level info from the "Contents" stream. All extraction is
  * best-effort: missing pieces come back as null/empty and are logged.
  */
+/**
+ * Attempt to read a CMediaSound object body at `bodyStart` in the Contents
+ * stream and register the sound in `out` if the body looks valid.
+ * Body layout: [schema u8][nameLen u8]["Media N" UTF-16 LE][BomString displayName]...
+ */
+function registerCMediaSoundObject(
+  bytes: Uint8Array,
+  bodyStart: number,
+  out: Map<number, Fla8SoundInfo>,
+): void {
+  if (bodyStart + 2 > bytes.length) return;
+  const nameLen = bytes[bodyStart + 1]!;
+  if (nameLen < 7 || nameLen > 14) return;
+  const nameEnd = bodyStart + 2 + nameLen * 2;
+  if (nameEnd > bytes.length) return;
+  const streamName = utf16le(bytes.subarray(bodyStart + 2, nameEnd));
+  const m = /^Media (\d+)$/.exec(streamName);
+  if (!m) return;
+  const num = parseInt(m[1]!, 10);
+  const s = tryReadBomStringAt(bytes, nameEnd);
+  if (!s) return;
+  const name = s.value;
+  if (name.length > 0 && !name.includes("/") && !name.startsWith(".\\")) {
+    if (!out.has(num)) out.set(num, { name });
+  }
+}
+
 export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
   const formatVersion = bytes.length > 0 ? bytes[0]! : 0;
   const unicode = formatVersion >= 0x38; // MX2004 and later store UTF-16 strings
@@ -2762,6 +2812,95 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
       }
     }
   }
+
+    // --- (b) CMediaSound objects referencing "Media N" stream names ---
+    // Flash 8/CS-era FLAs (like Magnet.fla) use CMediaSound class objects in the
+    // Contents stream instead of "Sound N" OLE stream names. Each CMedia body:
+    //   [schema u8][nameLen u8]["Media N" UTF-16 LE][BomString displayName]...
+    //
+    // We discover the CMediaSound CArchive class backref tag empirically:
+    //   1. Find the "CMediaSound" FFFF class declaration.
+    //   2. Register the first (inline) body that immediately follows.
+    //   3. Discover the CMediaBits backref: first backref-tagged "Media N" body
+    //      after the "CMediaBits" FFFF declaration.
+    //   4. Discover the CMediaSound backref: first backref-tagged "Media N" body
+    //      after the inline sound body whose tag != CMediaBits backref.
+    //   5. Scan all [cmsSoundBackref][schema=6][nameLen]["Media N"][BomString].
+    if (unicode) {
+      // Find a FFFF class declaration for the given ASCII class name.
+      const findCMediaClassDecl = (name: string): number => {
+        const nb = Array.from(name, (c) => c.charCodeAt(0));
+        const ffff = [0xff, 0xff];
+        let sp = 0;
+        for (;;) {
+          const idx = findBytes(bytes, ffff, sp);
+          if (idx < 0) break;
+          sp = idx + 1;
+          if (idx + 6 + nb.length > bytes.length) continue;
+          const nl = bytes[idx + 4]! | (bytes[idx + 5]! << 8);
+          if (nl !== nb.length) continue;
+          let ok = true;
+          for (let j = 0; j < nb.length; j++) {
+            if (bytes[idx + 6 + j] !== nb[j]) { ok = false; break; }
+          }
+          if (ok) return idx;
+        }
+        return -1;
+      };
+
+      // Find the first backref-tagged "Media N" body starting at `from`,
+      // skipping any entry whose tag == `exclude`.
+      const findFirstCMediaBackref = (from: number, exclude: number): number => {
+        const mediaPfx = utf16Pattern("Media ");
+        let sp = from;
+        for (;;) {
+          const idx = findBytes(bytes, mediaPfx, sp);
+          if (idx < 0) break;
+          sp = idx + 1;
+          if (idx < 4) continue;
+          const tag = bytes[idx - 4]! | (bytes[idx - 3]! << 8);
+          if ((tag & 0x8000) === 0 || tag === 0xffff) continue;
+          if (tag === exclude) continue;
+          const schema = bytes[idx - 2]!;
+          if (schema !== 6) continue;
+          const nameLen = bytes[idx - 1]!;
+          if (nameLen < 7 || nameLen > 14) continue;
+          const end = idx + nameLen * 2;
+          if (end > bytes.length) continue;
+          if (!/^Media \d+$/.test(utf16le(bytes.subarray(idx, end)))) continue;
+          return tag;
+        }
+        return -1;
+      };
+
+      const cmsDeclPos = findCMediaClassDecl("CMediaSound");
+      if (cmsDeclPos >= 0) {
+        // First object body is inlined right after: FFFF(2)+schema(2)+nameLen(2)+name(11)
+        const cmsBodyStart = cmsDeclPos + 6 + 11;
+        registerCMediaSoundObject(bytes, cmsBodyStart, sounds);
+
+        // Discover the CMediaBits (bitmap) backref to exclude it.
+        const cmBitsDeclPos = findCMediaClassDecl("CMediaBits");
+        const cmBitsBackref =
+          cmBitsDeclPos >= 0 ? findFirstCMediaBackref(cmBitsDeclPos + 6 + 10, -1) : -1;
+
+        // CMediaSound backref = first backref-tagged CMedia body after inline body
+        // that differs from the CMediaBits backref.
+        const cmsSoundBackref = findFirstCMediaBackref(cmsBodyStart, cmBitsBackref);
+
+        if (cmsSoundBackref >= 0) {
+          const cmsTag: number[] = [cmsSoundBackref & 0xff, (cmsSoundBackref >> 8) & 0xff];
+          let pos = cmsBodyStart;
+          for (;;) {
+            const idx = findBytes(bytes, cmsTag, pos);
+            if (idx < 0) break;
+            pos = idx + 1;
+            registerCMediaSoundObject(bytes, idx + 2, sounds);
+          }
+        }
+      }
+    }
+
 
   // -- video library table ----------------------------------------------------
   // Video items in the Contents stream appear as stream names "Video N" or
