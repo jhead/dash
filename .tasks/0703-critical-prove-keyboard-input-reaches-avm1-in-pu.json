@@ -2,9 +2,9 @@
   "id": "0703-critical-prove-keyboard-input-reaches-avm1-in-pu",
   "title": "CRITICAL: prove keyboard input reaches AVM1 in published SWFs (Key.isDown e2e)",
   "description": "Found by the 0519 capstone and sidestepped with an auto-chase workaround: no test anywhere proves that keyboard input drives game logic in our published SWFs. The closure claimed 'headless Ruffle does not reliably drive onEnterFrame with keyboard input' \u2014 asserted, never demonstrated, and suspect: Ruffle handles keyboard fine in browsers; the usual gotcha is FOCUS (the ruffle-player element must be clicked/focused before page.keyboard events reach it; also check tabindex and that the embed isn't in a cross-origin frame). Scope: minimal e2e \u2014 publish a movie whose script moves a clip with Key.isDown(Key.RIGHT) in onEnterFrame (or onClipEvent(enterFrame)); in Playwright, click the Ruffle player to focus it, hold/press ArrowRight via page.keyboard, assert the clip visibly moves (pixel diff region check). Triage Ruffle's key handling (ruffle clone: core/src/avm1 Key + desktop/web input plumbing) if focus alone doesn't fix it. This unblocks the 0519 capstone's real play-the-game acceptance. Evidence: command + pass summary pasted here.",
-  "status": "open",
+  "status": "in_progress",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-10T01:15:16Z",
-  "updated_at": "2026-06-10T01:15:16Z"
+  "updated_at": "2026-06-10T01:49:05Z"
 }
