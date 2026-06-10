@@ -843,7 +843,7 @@ function convertLayer(
           repeatCount,
           ...(f.inPoint !== undefined && f.inPoint > 0 ? { inPoint: f.inPoint } : {}),
           ...(f.outPoint !== undefined && f.outPoint > 0 ? { outPoint: f.outPoint } : {}),
-          ...(f.envelopePoints && f.envelopePoints.length > 0 ? { customEnvelope: f.envelopePoints } : {}),
+          ...(f.envelopePoints && f.envelopePoints.length > 0 ? { customEnvelope: f.envelopePoints.map(ep => ({ pos44: ep.pos, leftLevel: ep.leftLevel, rightLevel: ep.rightLevel })) } : {}),
         };
       } else {
         console.warn(`[FLA import] frame sound id ${f.soundId} not found in library; skipping`);
