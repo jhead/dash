@@ -45,6 +45,7 @@ import {
   encodeDefineSound,
   encodeSoundStreamHead,
   encodeSoundStreamBlock,
+  encodeSoundStreamBlockMp3,
   soundFormat,
   soundRate,
 } from "./audio.js";
@@ -1207,6 +1208,116 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           ? Math.max(sceneFrameCount(scene.timeline), maxVideoFrames)
           : sceneFrameCount(scene.timeline);
 
+      // Pre-compute per-frame stream sound chunks for this scene.
+      // SWF spec requires one SoundStreamBlock per ShowFrame, carrying only
+      // that frame's samples, interleaved: SoundStreamHead → (Block → ShowFrame)×N.
+      //
+      // Structure: for each stream sound found in this scene's layers, split
+      // the audio bytes into per-frame chunks and store the metadata needed to
+      // emit SoundStreamHead before the first block.
+      interface StreamSoundState {
+        startFrame: number;
+        chunks: Uint8Array[];       // one entry per frame starting at startFrame
+        samplesPerFrame: number;    // used in SoundStreamHead.streamSampleCount
+        isMP3: boolean;
+        // SoundStreamHead tag body — emitted once at the stream's start frame
+        headBody: Uint8Array;
+      }
+      const streamSounds: StreamSoundState[] = [];
+
+      for (const layer of layers) {
+        for (const frame of layer.frames) {
+          if (
+            frame.isKeyframe &&
+            frame.sound !== null &&
+            frame.sound.syncMode === "stream"
+          ) {
+            const soundItem = soundItems.find(
+              (si) => si.id === frame.sound!.libraryItemId
+            );
+            if (!soundItem) continue;
+
+            const fps = props.frameRate;
+            const samplesPerFrame = Math.floor(soundItem.sampleRate / fps);
+            const isMP3 = soundItem.compressionType === "mp3";
+            const audioBytes = dataUriToBytes(soundItem.dataUri);
+
+            // Estimate number of frames this sound spans. For raw PCM we can
+            // calculate exactly; for MP3 we estimate from durationSeconds.
+            let totalAudioFrames: number;
+            if (isMP3) {
+              // Estimate from declared duration; fall back to covering maxFrames
+              const estimatedFrames = soundItem.durationSeconds > 0
+                ? Math.ceil(soundItem.durationSeconds * fps)
+                : maxFrames - frame.index;
+              totalAudioFrames = Math.max(1, estimatedFrames);
+            } else {
+              // For raw PCM: exact calculation from byte count
+              const bytesPerSample = soundItem.sampleSize === 16 ? 2 : 1;
+              const channels = soundItem.isStereo ? 2 : 1;
+              const bytesPerFrame = samplesPerFrame * bytesPerSample * channels;
+              totalAudioFrames = bytesPerFrame > 0
+                ? Math.max(1, Math.ceil(audioBytes.length / bytesPerFrame))
+                : Math.max(1, maxFrames - frame.index);
+            }
+
+            // Split audio bytes into per-frame chunks.
+            const chunks: Uint8Array[] = [];
+            if (audioBytes.length === 0) {
+              // No audio data — emit one empty block per frame
+              for (let i = 0; i < totalAudioFrames; i++) {
+                chunks.push(new Uint8Array(0));
+              }
+            } else {
+              const bytesPerChunk = Math.max(
+                1,
+                Math.floor(audioBytes.length / totalAudioFrames)
+              );
+              let offset = 0;
+              for (let i = 0; i < totalAudioFrames; i++) {
+                const isLast = i === totalAudioFrames - 1;
+                const end = isLast
+                  ? audioBytes.length
+                  : Math.min(offset + bytesPerChunk, audioBytes.length);
+                chunks.push(audioBytes.slice(offset, end));
+                offset = end;
+                if (offset >= audioBytes.length) {
+                  // Remaining frames get empty blocks
+                  for (let j = i + 1; j < totalAudioFrames; j++) {
+                    chunks.push(new Uint8Array(0));
+                  }
+                  break;
+                }
+              }
+            }
+
+            // Build SoundStreamHead body — emitted at the stream's start frame
+            const fmt = soundFormat(soundItem.compressionType);
+            const rate = soundRate(soundItem.sampleRate);
+            const sizeBit = (soundItem.sampleSize === 16 ? 1 : 0) as 0 | 1;
+            const stereoBit = (soundItem.isStereo ? 1 : 0) as 0 | 1;
+            const headBody = encodeSoundStreamHead({
+              playbackRate: rate,
+              playbackSize: sizeBit,
+              playbackStereo: stereoBit,
+              streamFormat: fmt,
+              streamRate: rate,
+              streamSize: sizeBit,
+              streamStereo: stereoBit,
+              streamSampleCount: samplesPerFrame,
+            });
+
+            streamSounds.push({
+              startFrame: frame.index,
+              chunks,
+              samplesPerFrame,
+              isMP3,
+              headBody,
+            });
+          }
+        }
+      }
+
       // Emit FrameLabel (tag 43) for this scene at its first frame
       writer.writeTag(Tag.FrameLabel, encodeSceneLabel(scene.name));
 
@@ -1821,7 +1932,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         }
 
         // Emit sound tags for any keyframes at exactly this frame index that have sound.
-        // For stream mode: emit SoundStreamHead + SoundStreamBlock.
+        // For stream mode: SoundStreamHead + first SoundStreamBlock are handled by the
+        // streamSounds pre-computation above; per-frame blocks are emitted just before
+        // ShowFrame below. Here we only handle event/start/stop sounds.
         // For sounds with a linkageIdentifier: emit StartSound2 (tag 89) by class name.
         // For other modes (event/start/stop): emit StartSound (tag 15) by char ID.
         for (const layer of layers) {
@@ -1833,57 +1946,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             ) {
               const soundId = soundIdMap.get(frame.sound.libraryItemId);
               if (soundId !== undefined) {
-                if (frame.sound.syncMode === "stream") {
-                  // Find the SoundItem to get audio parameters
-                  const soundItem = soundItems.find(
-                    (si) => si.id === frame.sound!.libraryItemId
-                  );
-                  if (soundItem) {
-                    const fmt = soundFormat(soundItem.compressionType);
-                    const rate = soundRate(soundItem.sampleRate);
-                    const sizeBit = (soundItem.sampleSize === 16 ? 1 : 0) as 0 | 1;
-                    const stereoBit = (soundItem.isStereo ? 1 : 0) as 0 | 1;
-
-                    // Emit SoundStreamHead before first streaming block
-                    const streamHeadBody = encodeSoundStreamHead({
-                      playbackRate: rate,
-                      playbackSize: sizeBit,
-                      playbackStereo: stereoBit,
-                      streamFormat: fmt,
-                      streamRate: rate,
-                      streamSize: sizeBit,
-                      streamStereo: stereoBit,
-                      streamSampleCount: 0,
-                    });
-                    writer.writeTag(Tag.SoundStreamHead, streamHeadBody);
-
-                    // Emit SoundStreamBlock with all audio bytes
-                    // Import helper inline to decode data URI
-                    function dataUriToBytesLocal(dataUri: string): Uint8Array {
-                      const commaIdx = dataUri.indexOf(",");
-                      if (commaIdx === -1) return new Uint8Array(0);
-                      const meta = dataUri.slice(0, commaIdx);
-                      const data = dataUri.slice(commaIdx + 1);
-                      if (meta.includes(";base64")) {
-                        const binary = atob(data);
-                        const bytes = new Uint8Array(binary.length);
-                        for (let i = 0; i < binary.length; i++) {
-                          bytes[i] = binary.charCodeAt(i);
-                        }
-                        return bytes;
-                      }
-                      const decoded = decodeURIComponent(data);
-                      const bytes = new Uint8Array(decoded.length);
-                      for (let i = 0; i < decoded.length; i++) {
-                        bytes[i] = decoded.charCodeAt(i);
-                      }
-                      return bytes;
-                    }
-                    const audioBytes = dataUriToBytesLocal(soundItem.dataUri);
-                    const streamBlockBody = encodeSoundStreamBlock(audioBytes);
-                    writer.writeTag(Tag.SoundStreamBlock, streamBlockBody);
-                  }
-                } else {
+                if (frame.sound.syncMode !== "stream") {
                   // Find the SoundItem to check for AS2 linkage class name.
                   const soundItem = soundItems.find(
                     (si) => si.id === frame.sound!.libraryItemId
@@ -1989,6 +2052,31 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 encodeVideoFrame(v.charId, frameIdx, payload)
               );
             }
+          }
+        }
+
+        // Emit per-frame SoundStreamBlock tags for active stream sounds.
+        // SWF spec requires one SoundStreamBlock per ShowFrame, interleaved
+        // just before each ShowFrame tag. Each block carries only that frame's
+        // audio samples. SoundStreamHead is emitted once at the stream's start
+        // frame (chunkIdx===0), then one SoundStreamBlock per subsequent frame.
+        for (const ss of streamSounds) {
+          const chunkIdx = frameIdx - ss.startFrame;
+          if (chunkIdx === 0) {
+            // Emit SoundStreamHead just before the first SoundStreamBlock
+            writer.writeTag(Tag.SoundStreamHead, ss.headBody);
+          }
+          if (chunkIdx >= 0 && chunkIdx < ss.chunks.length) {
+            const chunk = ss.chunks[chunkIdx];
+            let blockBody: Uint8Array;
+            if (ss.isMP3) {
+              // MP3 SoundStreamBlock: SampleCount UI16 + SeekSamples SI16 + data
+              // SeekSamples is 0 for all blocks (no seek offset needed)
+              blockBody = encodeSoundStreamBlockMp3(ss.samplesPerFrame, 0, chunk);
+            } else {
+              blockBody = encodeSoundStreamBlock(chunk);
+            }
+            writer.writeTag(Tag.SoundStreamBlock, blockBody);
           }
         }
 

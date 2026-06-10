@@ -25,6 +25,7 @@ import { describe, it, expect } from "vitest";
 import {
   encodeSoundStreamHead,
   encodeSoundStreamBlock,
+  encodeSoundStreamBlockMp3,
   encodeDefineSound,
 } from "../audio.js";
 import { Tag } from "../tags.js";
@@ -186,13 +187,31 @@ describe("SoundStreamBlock encoding", () => {
     expect(Tag.SoundStreamBlock).toBe(19);
   });
 
-  it("SoundStreamBlock body starts with SeekSamples UI16 (0) followed by original audio bytes", () => {
+  it("encodeSoundStreamBlock (non-MP3) body contains the original audio bytes directly (no header)", () => {
+    // For non-MP3 streams, Ruffle reads the entire SoundStreamBlock body as raw
+    // audio data with no header prefix.
     const audioChunk = new Uint8Array([0xaa, 0xbb, 0xcc, 0xdd]);
     const result = encodeSoundStreamBlock(audioChunk);
-    // Per SWF spec, body = SeekSamples UI16LE (2 bytes) + audio data
-    expect(result[0]).toBe(0); // SeekSamples low byte
-    expect(result[1]).toBe(0); // SeekSamples high byte
-    expect(Array.from(result.slice(2))).toEqual(Array.from(audioChunk));
+    expect(result.length).toBe(audioChunk.length);
+    expect(Array.from(result)).toEqual(Array.from(audioChunk));
+  });
+
+  it("encodeSoundStreamBlockMp3 body has SampleCount UI16 + SeekSamples SI16 header", () => {
+    // Per SWF spec and Ruffle decoders.rs: MP3 SoundStreamBlock body =
+    // SampleCount UI16LE + SeekSamples SI16LE + raw MP3 bytes.
+    const audioChunk = new Uint8Array([0xff, 0xfb, 0x90, 0x00]);
+    const sampleCount = 1152;
+    const result = encodeSoundStreamBlockMp3(sampleCount, 0, audioChunk);
+    // Header: 2 bytes sampleCount + 2 bytes seekSamples
+    expect(result.length).toBe(4 + audioChunk.length);
+    // SampleCount UI16LE
+    const sc = result[0] | (result[1] << 8);
+    expect(sc).toBe(sampleCount);
+    // SeekSamples SI16LE (0)
+    const seek = result[2] | (result[3] << 8);
+    expect(seek).toBe(0);
+    // Audio data follows
+    expect(Array.from(result.slice(4))).toEqual(Array.from(audioChunk));
   });
 });
 

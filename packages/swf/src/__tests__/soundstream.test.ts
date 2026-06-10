@@ -359,3 +359,192 @@ describe("compileDocument — event sound (syncMode=event)", () => {
     expect(startSoundTags.length).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests: per-frame SoundStreamBlock interleaving (task 0865)
+// ---------------------------------------------------------------------------
+
+/**
+ * Make a multi-frame document with a stream sound starting at frame 0.
+ * The document has `numFrames` frames; the sound spans all of them.
+ */
+function makeMultiFrameDoc(
+  soundItems: SoundItem[],
+  numFrames: number,
+  frameSounds: Array<{ frameIdx: number; sound: SoundLinkage }> = []
+): FlashDocument {
+  const frameMap = new Map<number, SoundLinkage>();
+  for (const { frameIdx, sound } of frameSounds) {
+    frameMap.set(frameIdx, sound);
+  }
+
+  const frames = [];
+  for (let i = 0; i < numFrames; i++) {
+    frames.push({
+      index: i,
+      isKeyframe: i === 0,
+      isEmpty: true,
+      tweenType: "none" as const,
+      label: "",
+      labelType: "name" as const,
+      script: "",
+      sound: frameMap.get(i) ?? null,
+      motionEase: 0,
+      motionRotate: "none" as const,
+      motionRotateCount: 0,
+      motionOrientToPath: false,
+      motionSync: false,
+      motionScale: false,
+      shapeEase: 0,
+      shapeBlend: "distributive" as const,
+      displayObjects: [],
+    });
+  }
+
+  return {
+    id: "doc-multiframe",
+    properties: {
+      width: 550,
+      height: 400,
+      frameRate: 12,
+      backgroundColor: "#ffffff",
+      rulerUnits: "px",
+      grid: {
+        showGrid: false,
+        snapToGrid: false,
+        gridColor: "#999999",
+        gridWidth: 18,
+        gridHeight: 18,
+      },
+      guides: [],
+      snapToObjects: false,
+      snapToPixels: false,
+      snapToGuides: false,
+    },
+    scenes: [
+      {
+        id: "scene-1",
+        name: "Scene 1",
+        timeline: {
+          layers: [
+            {
+              id: "layer-1",
+              name: "Layer 1",
+              type: "normal",
+              visible: true,
+              locked: false,
+              outlineMode: false,
+              outlineColor: "#ff0000",
+              height: 20,
+              parentFolderId: null,
+              frames,
+              frameCount: frames.length,
+            },
+          ],
+        },
+      },
+    ],
+    library: {
+      items: soundItems,
+      folders: [],
+    },
+  };
+}
+
+const TAG_SHOW_FRAME = 1;
+
+describe("compileDocument — per-frame SoundStreamBlock interleaving (task 0865)", () => {
+  it("SoundStreamHead appears before the first ShowFrame for a stream sound", () => {
+    // 4 frames, stream sound starting at frame 0
+    const snd = makeSoundItem("snd-1");
+    const doc = makeMultiFrameDoc(
+      [snd],
+      4,
+      [{ frameIdx: 0, sound: makeSoundLinkage("snd-1", "stream") }]
+    );
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const headIdx  = tags.findIndex((t) => t.code === TAG_SOUND_STREAM_HEAD);
+    const firstShowIdx = tags.findIndex((t) => t.code === TAG_SHOW_FRAME);
+    expect(headIdx).toBeGreaterThanOrEqual(0);
+    expect(firstShowIdx).toBeGreaterThan(headIdx);
+  });
+
+  it("emits multiple SoundStreamBlock tags (one per frame) for a multi-frame stream sound", () => {
+    // 4 frames with 1 second of audio at 12fps = 12 stream frames; doc has 4
+    const snd = makeSoundItem("snd-1");
+    const doc = makeMultiFrameDoc(
+      [snd],
+      4,
+      [{ frameIdx: 0, sound: makeSoundLinkage("snd-1", "stream") }]
+    );
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const blockTags = tags.filter((t) => t.code === TAG_SOUND_STREAM_BLOCK);
+    // At least one block per frame: durationSeconds=1 at 12fps → 12 chunks,
+    // but the doc only has 4 frames so at most 4 blocks will precede ShowFrames.
+    // The chunks pre-computed are 12 total; 4 will be emitted (one per frame).
+    expect(blockTags.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("each SoundStreamBlock is followed immediately by ShowFrame (interleaved)", () => {
+    // Stream sound over a 3-frame doc with non-empty audio to ensure blocks are emitted
+    const audioPayload = new Uint8Array(36); // 36 bytes of fake audio
+    for (let i = 0; i < 36; i++) audioPayload[i] = i & 0xff;
+    const b64 = btoa(String.fromCharCode(...audioPayload));
+    const snd: SoundItem = {
+      id: "snd-audio",
+      name: "snd-audio.mp3",
+      itemType: "sound",
+      dataUri: `data:audio/mp3;base64,${b64}`,
+      compressionType: "mp3",
+      sampleRate: 44100,
+      sampleSize: 16,
+      isStereo: false,
+      durationSeconds: 0.25, // 0.25 * 12fps = 3 frames
+    };
+    const doc = makeMultiFrameDoc(
+      [snd],
+      3,
+      [{ frameIdx: 0, sound: makeSoundLinkage("snd-audio", "stream") }]
+    );
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    // Collect tag codes for the relevant range (after SoundStreamHead)
+    const headIdx = tags.findIndex((t) => t.code === TAG_SOUND_STREAM_HEAD);
+    expect(headIdx).toBeGreaterThanOrEqual(0);
+    const relevantTags = tags.slice(headIdx + 1).filter(
+      (t) => t.code === TAG_SOUND_STREAM_BLOCK || t.code === TAG_SHOW_FRAME
+    );
+
+    // Verify: every SoundStreamBlock is followed by ShowFrame (no two blocks
+    // in a row without an intervening ShowFrame)
+    for (let i = 0; i < relevantTags.length - 1; i++) {
+      if (relevantTags[i].code === TAG_SOUND_STREAM_BLOCK) {
+        expect(relevantTags[i + 1].code).toBe(TAG_SHOW_FRAME);
+      }
+    }
+    // There should be at least one SoundStreamBlock for the first frame
+    const blockCount = relevantTags.filter((t) => t.code === TAG_SOUND_STREAM_BLOCK).length;
+    expect(blockCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("SoundStreamHead body has correct samplesPerFrame (sampleRate / fps)", () => {
+    // 12fps, 44100Hz → samplesPerFrame = floor(44100/12) = 3675
+    const snd = makeSoundItem("snd-1");
+    const doc = makeMultiFrameDoc(
+      [snd],
+      3,
+      [{ frameIdx: 0, sound: makeSoundLinkage("snd-1", "stream") }]
+    );
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const headTag = tags.find((t) => t.code === TAG_SOUND_STREAM_HEAD)!;
+    expect(headTag).toBeDefined();
+    // bytes [2..3] = StreamSoundSampleCount UI16LE
+    const sampleCount = headTag.body[2] | (headTag.body[3] << 8);
+    // floor(44100 / 12) = 3675
+    expect(sampleCount).toBe(Math.floor(44100 / 12));
+  });
+});

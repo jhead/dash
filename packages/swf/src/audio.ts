@@ -176,22 +176,44 @@ export function encodeSoundStreamHead(opts: {
 // ---------------------------------------------------------------------------
 
 /**
- * Encode a SoundStreamBlock (tag 19) tag body.
+ * Encode a SoundStreamBlock (tag 19) tag body for non-MP3 formats.
  *
- * SWF spec layout (for all stream formats):
- *   SeekSamples: UI16  — number of samples to seek (usually 0)
- *   AudioData:   BYTE[] — compressed audio data
+ * SWF spec layout (for non-MP3 stream formats):
+ *   AudioData: BYTE[] — compressed audio data (no header)
  *
- * For MP3 stream blocks the SeekSamples field is mandatory per the SWF spec.
- * We always write it (value 0) so the block is always at least 2 bytes,
- * followed by the raw audio chunk bytes.
+ * For non-MP3 streams, Ruffle reads the entire tag body as raw audio data.
  */
 export function encodeSoundStreamBlock(audioChunk: Uint8Array): Uint8Array {
-  // Always prepend the 2-byte SeekSamples UI16LE header (value 0)
-  const body = new Uint8Array(2 + audioChunk.length);
-  body[0] = 0; // SeekSamples low byte
-  body[1] = 0; // SeekSamples high byte
-  body.set(audioChunk, 2);
+  // Non-MP3 streams: raw audio data with no header prefix
+  const body = new Uint8Array(audioChunk.length);
+  body.set(audioChunk, 0);
+  return body;
+}
+
+/**
+ * Encode a SoundStreamBlock (tag 19) tag body for MP3 streams.
+ *
+ * SWF spec layout for MP3 SoundStreamBlock (SWF19 p.184):
+ *   SampleCount: UI16LE — number of PCM samples represented in this block
+ *   SeekSamples: SI16LE — sample offset to seek on start (0 for continuation blocks)
+ *   AudioData:   BYTE[] — raw MP3 frame data
+ *
+ * Ruffle reads [b0,b1] as sampleCount and skips [b2,b3] (seekSamples) before
+ * passing the remaining bytes to the MP3 decoder.
+ */
+export function encodeSoundStreamBlockMp3(
+  sampleCount: number,
+  seekSamples: number,
+  audioChunk: Uint8Array
+): Uint8Array {
+  const body = new Uint8Array(4 + audioChunk.length);
+  // SampleCount UI16LE
+  body[0] = sampleCount & 0xff;
+  body[1] = (sampleCount >> 8) & 0xff;
+  // SeekSamples SI16LE
+  body[2] = seekSamples & 0xff;
+  body[3] = (seekSamples >> 8) & 0xff;
+  body.set(audioChunk, 4);
   return body;
 }
 
