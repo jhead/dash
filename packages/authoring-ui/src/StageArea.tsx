@@ -30,6 +30,158 @@ function smoothPoints(points: Point[], passes: number): Point[] {
   return pts;
 }
 
+// ---------------------------------------------------------------------------
+// Straighten mode — shape recognition helpers
+// ---------------------------------------------------------------------------
+
+interface StrokeAnalysis {
+  isClosed: boolean;
+  aspectRatio: number;
+  cornerCount: number;
+  totalAngle: number;
+  bbox: { minX: number; minY: number; maxX: number; maxY: number };
+  corners: Point[];
+}
+
+function analyzeStroke(points: Point[]): StrokeAnalysis {
+  // Bounding box
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const pt of points) {
+    if (pt.x < minX) minX = pt.x;
+    if (pt.y < minY) minY = pt.y;
+    if (pt.x > maxX) maxX = pt.x;
+    if (pt.y > maxY) maxY = pt.y;
+  }
+  const bbox = { minX, minY, maxX, maxY };
+
+  const width = maxX - minX || 1;
+  const height = maxY - minY || 1;
+  const aspectRatio = width / height;
+
+  // Closed: start and end within ~15px
+  const endDist = Math.hypot(
+    points[points.length - 1].x - points[0].x,
+    points[points.length - 1].y - points[0].y
+  );
+  const isClosed = endDist < 15;
+
+  // Detect corners: direction changes > 60° using simplified tangent vectors.
+  // Downsample to avoid noise — use every Nth point.
+  const step = Math.max(1, Math.floor(points.length / 40));
+  const sampled: Point[] = [];
+  for (let i = 0; i < points.length; i += step) sampled.push(points[i]);
+  if (sampled[sampled.length - 1] !== points[points.length - 1]) {
+    sampled.push(points[points.length - 1]);
+  }
+
+  let totalAngle = 0;
+  let cornerCount = 0;
+  const corners: Point[] = [];
+  const CORNER_THRESH = Math.PI / 3; // 60°
+
+  for (let i = 1; i < sampled.length - 1; i++) {
+    const ax = sampled[i].x - sampled[i - 1].x;
+    const ay = sampled[i].y - sampled[i - 1].y;
+    const bx = sampled[i + 1].x - sampled[i].x;
+    const by = sampled[i + 1].y - sampled[i].y;
+    const la = Math.hypot(ax, ay);
+    const lb = Math.hypot(bx, by);
+    if (la < 1 || lb < 1) continue;
+    const dot = (ax * bx + ay * by) / (la * lb);
+    const cross = (ax * by - ay * bx) / (la * lb);
+    const angle = Math.atan2(cross, dot);
+    totalAngle += angle;
+    if (Math.abs(angle) > CORNER_THRESH) {
+      cornerCount++;
+      corners.push(sampled[i]);
+    }
+  }
+
+  return { isClosed, aspectRatio, cornerCount, totalAngle, bbox, corners };
+}
+
+function recognizeShape(
+  analysis: StrokeAnalysis
+): "line" | "rect" | "oval" | "triangle" | "freehand" {
+  if (!analysis.isClosed) return "line";
+  const absAngle = Math.abs(analysis.totalAngle);
+  if (absAngle > Math.PI * 1.5) {
+    // Closed loop — distinguish by corner count
+    if (analysis.cornerCount >= 3 && analysis.cornerCount <= 5) return "rect";
+    if (analysis.cornerCount === 2) return "triangle";
+    return "oval";
+  }
+  return "freehand";
+}
+
+function buildRectPath(
+  bbox: { minX: number; minY: number; maxX: number; maxY: number },
+  stroke: SolidStroke
+): ShapePath {
+  const { minX, minY, maxX, maxY } = bbox;
+  return {
+    start: { x: minX, y: minY },
+    segments: [
+      { type: "line", to: { x: maxX, y: minY } },
+      { type: "line", to: { x: maxX, y: maxY } },
+      { type: "line", to: { x: minX, y: maxY } },
+      { type: "line", to: { x: minX, y: minY } },
+    ],
+    closed: true,
+    stroke,
+  };
+}
+
+function buildOvalPath(
+  bbox: { minX: number; minY: number; maxX: number; maxY: number },
+  stroke: SolidStroke,
+  segments: number = 16
+): ShapePath {
+  const cx = (bbox.minX + bbox.maxX) / 2;
+  const cy = (bbox.minY + bbox.maxY) / 2;
+  const rx = (bbox.maxX - bbox.minX) / 2;
+  const ry = (bbox.maxY - bbox.minY) / 2;
+  const pts: Point[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const angle = (2 * Math.PI * i) / segments;
+    pts.push({ x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) });
+  }
+  return {
+    start: pts[0],
+    segments: pts.slice(1).map((pt) => ({ type: "line" as const, to: pt })),
+    closed: true,
+    stroke,
+  };
+}
+
+function buildTrianglePath(corners: Point[], stroke: SolidStroke): ShapePath {
+  if (corners.length < 3) return buildRectPath({ minX: 0, minY: 0, maxX: 0, maxY: 0 }, stroke);
+  const [a, b, c] = corners;
+  return {
+    start: a,
+    segments: [
+      { type: "line", to: b },
+      { type: "line", to: c },
+      { type: "line", to: a },
+    ],
+    closed: true,
+    stroke,
+  };
+}
+
+function buildLinePath(start: Point, end: Point, stroke: SolidStroke): ShapePath {
+  return {
+    start,
+    segments: [{ type: "line", to: end }],
+    closed: false,
+    stroke,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Main pencil helper
+// ---------------------------------------------------------------------------
+
 function pencilPointsToShape(
   points: Point[],
   stroke: SolidStroke,
@@ -42,25 +194,59 @@ function pencilPointsToShape(
   if (mode === "smooth") {
     processedPoints = smoothPoints(points, 3);
   } else if (mode === "straighten") {
-    // Detect if roughly a line: just use first and last point
-    const dx = points[points.length - 1].x - points[0].x;
-    const dy = points[points.length - 1].y - points[0].y;
-    const len = Math.hypot(dx, dy);
-    // Compute max deviation from the line
-    let maxDev = 0;
-    for (const pt of points) {
-      const t = ((pt.x - points[0].x) * dx + (pt.y - points[0].y) * dy) / (len * len || 1);
-      const projX = points[0].x + t * dx;
-      const projY = points[0].y + t * dy;
-      maxDev = Math.max(maxDev, Math.hypot(pt.x - projX, pt.y - projY));
+    const analysis = analyzeStroke(points);
+    const recognized = recognizeShape(analysis);
+
+    let path: ShapePath;
+    switch (recognized) {
+      case "rect":
+        path = buildRectPath(analysis.bbox, stroke);
+        break;
+      case "oval":
+        path = buildOvalPath(analysis.bbox, stroke);
+        break;
+      case "triangle": {
+        // Pick the 3 most prominent corner points; fall back to bbox corners
+        const triCorners =
+          analysis.corners.length >= 3
+            ? analysis.corners.slice(0, 3)
+            : [
+                { x: analysis.bbox.minX, y: analysis.bbox.maxY },
+                { x: (analysis.bbox.minX + analysis.bbox.maxX) / 2, y: analysis.bbox.minY },
+                { x: analysis.bbox.maxX, y: analysis.bbox.maxY },
+              ];
+        path = buildTrianglePath(triCorners, stroke);
+        break;
+      }
+      case "line":
+      default: {
+        // Detect if roughly a straight line: use first and last point
+        const dx = points[points.length - 1].x - points[0].x;
+        const dy = points[points.length - 1].y - points[0].y;
+        const len = Math.hypot(dx, dy);
+        let maxDev = 0;
+        for (const pt of points) {
+          const t = ((pt.x - points[0].x) * dx + (pt.y - points[0].y) * dy) / (len * len || 1);
+          const projX = points[0].x + t * dx;
+          const projY = points[0].y + t * dy;
+          maxDev = Math.max(maxDev, Math.hypot(pt.x - projX, pt.y - projY));
+        }
+        if (maxDev < 10) {
+          path = buildLinePath(points[0], points[points.length - 1], stroke);
+        } else {
+          processedPoints = smoothPoints(points, 1);
+          path = {
+            start: processedPoints[0],
+            segments: processedPoints.slice(1).map((pt) => ({ type: "line" as const, to: pt })),
+            closed: false,
+            stroke,
+          };
+        }
+        break;
+      }
     }
-    if (maxDev < 10) {
-      // Straighten to a line
-      processedPoints = [points[0], points[points.length - 1]];
-    } else {
-      // Apply light smoothing
-      processedPoints = smoothPoints(points, 1);
-    }
+
+    return { id: nextDrawId(), paths: [path] };
   }
 
   const path: ShapePath = {
@@ -256,25 +442,195 @@ function floodFillPixels(
   return selected;
 }
 
+// ---------------------------------------------------------------------------
+// Contour tracing helpers (for magic wand rough/smooth modes)
+// ---------------------------------------------------------------------------
+
 /**
- * Convert a set of selected pixel indices to a bounding-box polygon
- * in stage coordinates. The polygon is a rectangle enclosing all selected pixels.
- *
- * Smoothing levels:
- *   "pixels"  — exact pixel-grid bounding box (no simplification)
- *   "rough"   — same as pixels (outline simplification placeholder)
- *   "normal"  — same as pixels
- *   "smooth"  — same as pixels (future: could apply polygon smoothing)
+ * Build a boolean mask (Uint8Array, 1=selected, 0=not) from a Set of pixel
+ * indices. The mask uses the same row-major index as the pixel set.
  */
-function selectedPixelsToBoundingPolygon(
+function buildMask(pixels: Set<number>, width: number, height: number): Uint8Array {
+  const mask = new Uint8Array(width * height);
+  for (const idx of pixels) {
+    if (idx >= 0 && idx < width * height) mask[idx] = 1;
+  }
+  return mask;
+}
+
+/**
+ * Moore-neighborhood boundary tracing (Jacob's stopping criterion).
+ *
+ * Traces the outer boundary of a binary mask as a sequence of pixel-corner
+ * points (half-pixel offset so corners align to pixel grid edges).
+ * Returns an array of {x, y} in pixel coordinates.
+ *
+ * The 8-directional Moore order starting "from the west":
+ *   7 0 1
+ *   6 * 2
+ *   5 4 3
+ */
+function traceBoundary(mask: Uint8Array, width: number, height: number): Array<{x: number; y: number}> {
+  // Moore neighborhood: 8 directions in clockwise order starting from "up"
+  // Each entry: [dx, dy]
+  const dirs: [number, number][] = [
+    [0, -1],   // 0: up
+    [1, -1],   // 1: up-right
+    [1,  0],   // 2: right
+    [1,  1],   // 3: down-right
+    [0,  1],   // 4: down
+    [-1,  1],  // 5: down-left
+    [-1,  0],  // 6: left
+    [-1, -1],  // 7: up-left
+  ];
+
+  // Find the starting pixel: topmost then leftmost selected pixel
+  let startIdx = -1;
+  outer:
+  for (let py = 0; py < height; py++) {
+    for (let px = 0; px < width; px++) {
+      if (mask[py * width + px] === 1) {
+        startIdx = py * width + px;
+        break outer;
+      }
+    }
+  }
+  if (startIdx < 0) return [];
+
+  const startX = startIdx % width;
+  const startY = Math.floor(startIdx / width);
+
+  // For single-pixel selections, return a square polygon around the pixel
+  if (mask.reduce((s, v) => s + v, 0) === 1) {
+    return [
+      { x: startX,     y: startY },
+      { x: startX + 1, y: startY },
+      { x: startX + 1, y: startY + 1 },
+      { x: startX,     y: startY + 1 },
+    ];
+  }
+
+  // Jacob's stopping criterion: stop when we revisit startPx with entry
+  // direction == startEntryDir
+  const boundary: Array<{x: number; y: number}> = [];
+
+  // Start: came from the left (dir=6), so entry direction was from left
+  const startEntryDir = 6;
+  let cx = startX;
+  let cy = startY;
+  let entryDir = startEntryDir;
+  let iterations = 0;
+  const maxIter = width * height * 2 + 8;
+
+  do {
+    boundary.push({ x: cx, y: cy });
+
+    // Rotate clockwise from the entry direction's "back" until we find a
+    // selected neighbor. "Back" = (entryDir + 4) % 8, then rotate clockwise
+    // from there.
+    const backDir = (entryDir + 4) % 8;
+    let found = false;
+    for (let r = 1; r <= 8; r++) {
+      const d = (backDir + r) % 8;
+      const nx = cx + dirs[d][0];
+      const ny = cy + dirs[d][1];
+      if (nx >= 0 && nx < width && ny >= 0 && ny < height && mask[ny * width + nx] === 1) {
+        // Move to this neighbor; entry direction = direction we came FROM
+        entryDir = (d + 4) % 8;
+        cx = nx;
+        cy = ny;
+        found = true;
+        break;
+      }
+    }
+    if (!found) break; // isolated pixel (should have been caught above)
+    iterations++;
+  } while (
+    iterations < maxIter &&
+    !(cx === startX && cy === startY && entryDir === startEntryDir)
+  );
+
+  // Convert pixel-center coordinates to pixel-edge coordinates.
+  // The polygon should enclose the pixels, not thread through their centers.
+  // We do this by offsetting the center-based trace to edge-based by walking
+  // the boundary at the top-left corner of each pixel cell.
+  // Simple approach: the traced pixel centers already form a valid polygon
+  // enclosing the region if we offset each point by 0.5 in the appropriate
+  // direction. Instead, we use a slightly different approach: expand each
+  // pixel boundary outward to get a proper cell-boundary polygon.
+  // For simplicity, return the pixel-center coords — callers apply sx/sy scale
+  // which effectively places points at pixel centers. Half-pixel offset is
+  // handled by adding 0.5 to each coordinate here.
+  return boundary.map(p => ({ x: p.x + 0.5, y: p.y + 0.5 }));
+}
+
+/**
+ * Douglas-Peucker polyline simplification (polygon variant: operates on
+ * closed path by treating it as an open polyline from pt[0] back to pt[0]).
+ */
+function douglasPeucker(points: Array<{x: number; y: number}>, epsilon: number): Array<{x: number; y: number}> {
+  if (points.length <= 2) return points;
+
+  function perpendicularDist(p: {x: number; y: number}, a: {x: number; y: number}, b: {x: number; y: number}): number {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (dx === 0 && dy === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+    const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+    const nearX = a.x + t * dx;
+    const nearY = a.y + t * dy;
+    return Math.hypot(p.x - nearX, p.y - nearY);
+  }
+
+  function rdp(pts: Array<{x: number; y: number}>, start: number, end: number, eps: number, keep: Set<number>): void {
+    if (end <= start + 1) return;
+    let maxDist = 0;
+    let maxIdx = start;
+    for (let i = start + 1; i < end; i++) {
+      const d = perpendicularDist(pts[i], pts[start], pts[end]);
+      if (d > maxDist) { maxDist = d; maxIdx = i; }
+    }
+    if (maxDist > eps) {
+      keep.add(maxIdx);
+      rdp(pts, start, maxIdx, eps, keep);
+      rdp(pts, maxIdx, end, eps, keep);
+    }
+  }
+
+  const keep = new Set<number>([0, points.length - 1]);
+  rdp(points, 0, points.length - 1, epsilon, keep);
+  return points.filter((_, i) => keep.has(i));
+}
+
+/**
+ * Chaikin corner-cutting smoothing.
+ * Each iteration replaces each edge with two new points at 1/4 and 3/4
+ * along the edge, resulting in a smoother closed polygon.
+ */
+function chaikin(points: Array<{x: number; y: number}>, iterations = 2): Array<{x: number; y: number}> {
+  let pts = points;
+  for (let i = 0; i < iterations; i++) {
+    const next: Array<{x: number; y: number}> = [];
+    for (let j = 0; j < pts.length; j++) {
+      const p0 = pts[j];
+      const p1 = pts[(j + 1) % pts.length];
+      next.push({ x: p0.x * 0.75 + p1.x * 0.25, y: p0.y * 0.75 + p1.y * 0.25 });
+      next.push({ x: p0.x * 0.25 + p1.x * 0.75, y: p0.y * 0.25 + p1.y * 0.75 });
+    }
+    pts = next;
+  }
+  return pts;
+}
+
+/**
+ * Compute AABB polygon (4 points) from a set of pixel indices.
+ */
+function aabbPolygon(
   pixels: Set<number>,
   imgWidth: number,
-  imgHeight: number,
-  bitmapObj: BitmapDisplayObject,
-  _smoothing: "pixels" | "rough" | "normal" | "smooth",
-): Point[] {
-  if (pixels.size === 0) return [];
-
+  bitmapObj: { x: number; y: number; width: number; height: number },
+  scaleX: number,
+  scaleY: number,
+): Array<{x: number; y: number}> {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const idx of pixels) {
     const px = idx % imgWidth;
@@ -284,17 +640,65 @@ function selectedPixelsToBoundingPolygon(
     if (py < minY) minY = py;
     if (py > maxY) maxY = py;
   }
+  return [
+    { x: bitmapObj.x + minX * scaleX,       y: bitmapObj.y + minY * scaleY },
+    { x: bitmapObj.x + (maxX + 1) * scaleX, y: bitmapObj.y + minY * scaleY },
+    { x: bitmapObj.x + (maxX + 1) * scaleX, y: bitmapObj.y + (maxY + 1) * scaleY },
+    { x: bitmapObj.x + minX * scaleX,       y: bitmapObj.y + (maxY + 1) * scaleY },
+  ];
+}
+
+/**
+ * Convert a set of selected pixel indices to a polygon in stage coordinates.
+ *
+ * Smoothing levels:
+ *   "pixels"  — exact AABB bounding box (no contour tracing)
+ *   "normal"  — exact AABB bounding box
+ *   "rough"   — Moore-neighborhood boundary trace → Douglas-Peucker simplification
+ *   "smooth"  — rough contour + Chaikin corner-cutting (2 iterations)
+ */
+function selectedPixelsToBoundingPolygon(
+  pixels: Set<number>,
+  imgWidth: number,
+  imgHeight: number,
+  bitmapObj: BitmapDisplayObject,
+  smoothing: "pixels" | "rough" | "normal" | "smooth",
+): Point[] {
+  if (pixels.size === 0) return [];
 
   // Scale pixel coords to stage coordinates
   const sx = bitmapObj.width / imgWidth;
   const sy = bitmapObj.height / imgHeight;
 
-  return [
-    { x: bitmapObj.x + minX * sx,       y: bitmapObj.y + minY * sy },
-    { x: bitmapObj.x + (maxX + 1) * sx, y: bitmapObj.y + minY * sy },
-    { x: bitmapObj.x + (maxX + 1) * sx, y: bitmapObj.y + (maxY + 1) * sy },
-    { x: bitmapObj.x + minX * sx,       y: bitmapObj.y + (maxY + 1) * sy },
-  ];
+  // For "pixels" and "normal" modes, return the simple AABB
+  if (smoothing === "pixels" || smoothing === "normal") {
+    return aabbPolygon(pixels, imgWidth, bitmapObj, sx, sy);
+  }
+
+  // For "rough" and "smooth": trace the pixel boundary contour
+  const mask = buildMask(pixels, imgWidth, imgHeight);
+  let contour = traceBoundary(mask, imgWidth, imgHeight);
+
+  // Fallback to AABB if tracing produced too few points
+  if (contour.length < 3) {
+    return aabbPolygon(pixels, imgWidth, bitmapObj, sx, sy);
+  }
+
+  // Simplify with Douglas-Peucker when there are many points (threshold: 0.5px)
+  if (contour.length > 100) {
+    contour = douglasPeucker(contour, 0.5);
+  }
+
+  if (smoothing === "smooth") {
+    // Apply Chaikin corner cutting for a smoother curve
+    contour = chaikin(contour, 2);
+  }
+
+  // Transform from pixel space to stage space
+  return contour.map(p => ({
+    x: bitmapObj.x + p.x * sx,
+    y: bitmapObj.y + p.y * sy,
+  }));
 }
 
 /**

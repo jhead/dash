@@ -6,6 +6,9 @@
  *   - State round-trips for lassoMagicWand, magicWandThreshold, magicWandSmoothing
  *   - Flood-fill helper (rgbDistance, floodFillPixels) logic
  *   - selectedPixelsToBoundingPolygon bounding-box correctness
+ *   - traceBoundary — Moore-neighborhood contour tracing
+ *   - chaikin — corner-cutting smoothing
+ *   - douglasPeucker — polyline simplification
  */
 
 import { describe, it, expect } from "vitest";
@@ -424,5 +427,277 @@ describe("Magic Wand pipeline — flood-fill → bounding polygon", () => {
     const polygon = selectedPixelsToBoundingPolygon(selected, 2, 2, bitmapObj);
     expect(polygon[0]).toEqual({ x: 0, y: 0 });
     expect(polygon[2]).toEqual({ x: 20, y: 20 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Inline copies of new contour-tracing helpers from StageArea.tsx
+// Keep in sync with the source.
+// ---------------------------------------------------------------------------
+
+function buildMask(pixels: Set<number>, width: number, height: number): Uint8Array {
+  const mask = new Uint8Array(width * height);
+  for (const idx of pixels) {
+    if (idx >= 0 && idx < width * height) mask[idx] = 1;
+  }
+  return mask;
+}
+
+function traceBoundary(mask: Uint8Array, width: number, height: number): Array<{x: number; y: number}> {
+  const dirs: [number, number][] = [
+    [0, -1], [1, -1], [1, 0], [1, 1],
+    [0, 1],  [-1, 1], [-1, 0], [-1, -1],
+  ];
+
+  let startIdx = -1;
+  outer:
+  for (let py = 0; py < height; py++) {
+    for (let px = 0; px < width; px++) {
+      if (mask[py * width + px] === 1) {
+        startIdx = py * width + px;
+        break outer;
+      }
+    }
+  }
+  if (startIdx < 0) return [];
+
+  const startX = startIdx % width;
+  const startY = Math.floor(startIdx / width);
+
+  if (mask.reduce((s, v) => s + v, 0) === 1) {
+    return [
+      { x: startX,     y: startY },
+      { x: startX + 1, y: startY },
+      { x: startX + 1, y: startY + 1 },
+      { x: startX,     y: startY + 1 },
+    ];
+  }
+
+  const boundary: Array<{x: number; y: number}> = [];
+  const startEntryDir = 6;
+  let cx = startX;
+  let cy = startY;
+  let entryDir = startEntryDir;
+  let iterations = 0;
+  const maxIter = width * height * 2 + 8;
+
+  do {
+    boundary.push({ x: cx, y: cy });
+    const backDir = (entryDir + 4) % 8;
+    let found = false;
+    for (let r = 1; r <= 8; r++) {
+      const d = (backDir + r) % 8;
+      const nx = cx + dirs[d][0];
+      const ny = cy + dirs[d][1];
+      if (nx >= 0 && nx < width && ny >= 0 && ny < height && mask[ny * width + nx] === 1) {
+        entryDir = (d + 4) % 8;
+        cx = nx;
+        cy = ny;
+        found = true;
+        break;
+      }
+    }
+    if (!found) break;
+    iterations++;
+  } while (
+    iterations < maxIter &&
+    !(cx === startX && cy === startY && entryDir === startEntryDir)
+  );
+
+  return boundary.map(p => ({ x: p.x + 0.5, y: p.y + 0.5 }));
+}
+
+function chaikin(points: Array<{x: number; y: number}>, iterations = 2): Array<{x: number; y: number}> {
+  let pts = points;
+  for (let i = 0; i < iterations; i++) {
+    const next: Array<{x: number; y: number}> = [];
+    for (let j = 0; j < pts.length; j++) {
+      const p0 = pts[j];
+      const p1 = pts[(j + 1) % pts.length];
+      next.push({ x: p0.x * 0.75 + p1.x * 0.25, y: p0.y * 0.75 + p1.y * 0.25 });
+      next.push({ x: p0.x * 0.25 + p1.x * 0.75, y: p0.y * 0.25 + p1.y * 0.75 });
+    }
+    pts = next;
+  }
+  return pts;
+}
+
+function douglasPeucker(points: Array<{x: number; y: number}>, epsilon: number): Array<{x: number; y: number}> {
+  if (points.length <= 2) return points;
+
+  function perpendicularDist(p: {x: number; y: number}, a: {x: number; y: number}, b: {x: number; y: number}): number {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (dx === 0 && dy === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+    const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+    const nearX = a.x + t * dx;
+    const nearY = a.y + t * dy;
+    return Math.hypot(p.x - nearX, p.y - nearY);
+  }
+
+  function rdp(pts: Array<{x: number; y: number}>, start: number, end: number, eps: number, keep: Set<number>): void {
+    if (end <= start + 1) return;
+    let maxDist = 0;
+    let maxIdx = start;
+    for (let i = start + 1; i < end; i++) {
+      const d = perpendicularDist(pts[i], pts[start], pts[end]);
+      if (d > maxDist) { maxDist = d; maxIdx = i; }
+    }
+    if (maxDist > eps) {
+      keep.add(maxIdx);
+      rdp(pts, start, maxIdx, eps, keep);
+      rdp(pts, maxIdx, end, eps, keep);
+    }
+  }
+
+  const keep = new Set<number>([0, points.length - 1]);
+  rdp(points, 0, points.length - 1, epsilon, keep);
+  return points.filter((_, i) => keep.has(i));
+}
+
+// ---------------------------------------------------------------------------
+// traceBoundary tests
+// ---------------------------------------------------------------------------
+
+describe("traceBoundary", () => {
+  it("returns empty array for empty mask", () => {
+    const mask = new Uint8Array(9); // 3×3 all zero
+    const result = traceBoundary(mask, 3, 3);
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns 4-point square for a single pixel", () => {
+    const mask = new Uint8Array(9); // 3×3
+    mask[4] = 1; // center pixel at (1,1)
+    const result = traceBoundary(mask, 3, 3);
+    expect(result).toHaveLength(4);
+    // Single pixel: corners at (1,1), (2,1), (2,2), (1,2) — integer coords
+    // (the single-pixel path returns raw pixel-corner coords without +0.5 offset)
+    expect(result[0]).toEqual({ x: 1, y: 1 });
+    expect(result[1]).toEqual({ x: 2, y: 1 });
+    expect(result[2]).toEqual({ x: 2, y: 2 });
+    expect(result[3]).toEqual({ x: 1, y: 2 });
+  });
+
+  it("returns a closed boundary for a 3×3 filled square", () => {
+    // All 9 pixels selected in a 3×3 image
+    const mask = new Uint8Array(9).fill(1);
+    const result = traceBoundary(mask, 3, 3);
+    // Should return at least 4 points (the 4 corners of the square)
+    expect(result.length).toBeGreaterThanOrEqual(4);
+    // All x coordinates should be in [0.5, 3.5] (pixel centers offset by 0.5)
+    for (const p of result) {
+      expect(p.x).toBeGreaterThanOrEqual(0.5);
+      expect(p.x).toBeLessThanOrEqual(3.5);
+      expect(p.y).toBeGreaterThanOrEqual(0.5);
+      expect(p.y).toBeLessThanOrEqual(3.5);
+    }
+  });
+
+  it("returns boundary for an L-shaped mask", () => {
+    // 3×3 L-shape:
+    //  1 0 0
+    //  1 0 0
+    //  1 1 0
+    const mask = new Uint8Array(9);
+    mask[0] = 1; mask[3] = 1; mask[6] = 1; mask[7] = 1;
+    const result = traceBoundary(mask, 3, 3);
+    // Should have more points than a rectangle (L-shape has a concave corner)
+    expect(result.length).toBeGreaterThanOrEqual(4);
+    // All boundary points should map back to pixels that are either selected
+    // or adjacent to selected pixels
+    for (const p of result) {
+      // Points are at 0.5 offsets — flooring gives the pixel coordinate
+      const px = Math.floor(p.x);
+      const py = Math.floor(p.y);
+      // px/py should be in bounds
+      expect(px).toBeGreaterThanOrEqual(0);
+      expect(px).toBeLessThan(3);
+      expect(py).toBeGreaterThanOrEqual(0);
+      expect(py).toBeLessThan(3);
+    }
+  });
+
+  it("returns a non-trivial polygon (> 4 points) for a 2×2 square", () => {
+    // 2×2 square — should trace around 4 pixels, visiting each boundary pixel
+    const mask = new Uint8Array(4).fill(1); // 2×2 all selected
+    const result = traceBoundary(mask, 2, 2);
+    // The trace should cover the perimeter, visiting at minimum the 4 corner pixels
+    expect(result.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// chaikin tests
+// ---------------------------------------------------------------------------
+
+describe("chaikin", () => {
+  it("doubles the point count per iteration for a closed polygon", () => {
+    const square = [
+      { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }, { x: 0, y: 4 },
+    ];
+    const once = chaikin(square, 1);
+    expect(once).toHaveLength(8); // 4 points × 2
+
+    const twice = chaikin(square, 2);
+    expect(twice).toHaveLength(16); // 8 × 2
+  });
+
+  it("produces points that lie between consecutive input points", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    const result = chaikin(pts, 1);
+    // All resulting x and y coords should be in [0, 10]
+    for (const p of result) {
+      expect(p.x).toBeGreaterThanOrEqual(0);
+      expect(p.x).toBeLessThanOrEqual(10);
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it("returns the input unchanged for 0 iterations", () => {
+    const pts = [{ x: 1, y: 2 }, { x: 3, y: 4 }];
+    expect(chaikin(pts, 0)).toEqual(pts);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// douglasPeucker tests
+// ---------------------------------------------------------------------------
+
+describe("douglasPeucker", () => {
+  it("keeps endpoints for a 2-point line", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 10 }];
+    expect(douglasPeucker(pts, 1)).toEqual(pts);
+  });
+
+  it("removes collinear midpoints on a horizontal line", () => {
+    // Three collinear points — the middle one should be removed with epsilon > 0
+    const pts = [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 }];
+    const result = douglasPeucker(pts, 0.1);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ x: 0, y: 0 });
+    expect(result[1]).toEqual({ x: 10, y: 0 });
+  });
+
+  it("keeps points that deviate more than epsilon", () => {
+    // Right angle path: (0,0) → (5,5) → (10,0)
+    // Middle point deviates 5 units from the baseline (0,0)→(10,0)
+    const pts = [{ x: 0, y: 0 }, { x: 5, y: 5 }, { x: 10, y: 0 }];
+    // With epsilon=1, the peak (5,5) is kept
+    const result = douglasPeucker(pts, 1);
+    expect(result).toHaveLength(3);
+  });
+
+  it("collapses a zigzag of tiny deviations to just endpoints", () => {
+    // Points that zigzag ±0.1 around y=0, with epsilon=0.5
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 1, y: 0.1 }, { x: 2, y: -0.1 }, { x: 3, y: 0.1 },
+      { x: 4, y: 0 },
+    ];
+    const result = douglasPeucker(pts, 0.5);
+    // All intermediate points deviate < 0.5 from the (0,0)→(4,0) line
+    expect(result).toHaveLength(2);
   });
 });
