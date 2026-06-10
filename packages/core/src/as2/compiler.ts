@@ -79,6 +79,8 @@ class Compiler {
   labeledLoops: Map<string, LoopContext> = new Map();
   /** Current superclass name, set when compiling class methods that have inheritance. */
   currentSuperClass: string | null = null;
+  /** Counter for generating unique temp variable names for complex callees. */
+  private callTmpCounter = 0;
 
   // ---- Low-level emitters --------------------------------------------------
 
@@ -1541,8 +1543,46 @@ class Compiler {
       return;
     }
 
-    // Complex callee — not supported in MVP; push undefined
-    this.pushUndefined();
+    // Complex callee (IIFE, computed call, double-call, etc.)
+    //
+    // For IndexExpr callees (arr[i](), obj["method"]()) we use ActionCallMethod
+    // (0x52) with the computed key — this preserves `this` context, matching how
+    // the static MemberExpr path works.
+    if (expr.callee.type === 'IndexExpr') {
+      const idx = expr.callee as IndexExpr;
+      // ActionCallMethod stack (top popped first by Ruffle):
+      //   method_name | object | numArgs | arg[0] | ... | arg[n-1]
+      for (let i = expr.args.length - 1; i >= 0; i--) {
+        this.compileExpr(expr.args[i]!);
+      }
+      this.pushInt(expr.args.length);
+      this.compileExpr(idx.object);
+      this.compileExpr(idx.index); // computed key (pushed as top = method_name slot)
+      this.emit(0x52); // ActionCallMethod
+      return;
+    }
+
+    // For all other complex callees (IIFEs, double-calls like factory()(), etc.)
+    // use the temp-var approach:
+    //   1. Store the computed function into a temp variable
+    //   2. Call it by name via ActionCallFunction (0x3D)
+    //
+    // ActionSetVariable pops value (top) then name (below), so sequence is:
+    //   push tempName
+    //   compile callee  → pushes fn on top
+    //   ActionSetVariable → stores fn into tempName, consumes both
+    //   push args (reverse), push argCount, push tempName
+    //   ActionCallFunction
+    const tmpName = `__callTmp${this.callTmpCounter++}`;
+    this.pushString(tmpName);
+    this.compileExpr(expr.callee); // function value on top
+    this.emit(0x1d); // ActionSetVariable — stores fn, leaves nothing on stack
+    for (let i = expr.args.length - 1; i >= 0; i--) {
+      this.compileExpr(expr.args[i]!);
+    }
+    this.pushInt(expr.args.length);
+    this.pushString(tmpName);
+    this.emit(0x3d); // ActionCallFunction
   }
 
   private compileNewExpr(expr: NewExpr): void {
