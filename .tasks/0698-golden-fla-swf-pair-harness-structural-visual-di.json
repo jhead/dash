@@ -4,5 +4,7 @@
   "description": "Use real Flash 8 golden pairs (a .fla authored in Flash 8 + the .swf it exported) as oracles. Byte-for-byte comparison is impossible (zlib freedom, Nbits choices, shape-record splits, ID assignment order, AS2 constant-pool ordering, media re-encoding, font subsetting) \u2014 compare SEMANTICALLY instead. Deliverables: (1) swf-dump tool: small Rust CLI in tools/swf-dump built on the local ruffle clone's swf crate (ruffle/swf/src/read.rs \u2014 full parser incl. CWS/LZMA decompression) that reads any SWF and emits a normalized JSON tag stream: character IDs renumbered in first-use order, shapes decoded to point/style lists, matrices as numbers, bytecode as mnemonics, Metadata/timestamp tags dropped; (2) harness: import the golden FLA (requires the real-FLA-import task), publish our SWF, swf-dump both, structural-diff the normalized JSON with twip-tolerance on coordinates and report per-tag mismatches; (3) visual layer: render golden SWF and our SWF side-by-side in Ruffle and pixel-diff frame-by-frame (reuse visual-oracle infra; deviceScaleFactor:1, on-screen player); (4) self-determinism test: compileDocument() twice on the same document must produce identical bytes (fixed zlib level, stable iteration orders) so our own snapshots are trustworthy regression baselines. Fixtures: needs user-supplied or community Flash 8 golden pairs committed under fixtures/golden/. Blocked by the real FLA import task for the import leg; the swf-dump tool and self-determinism test are NOT blocked and can start immediately.",
   "status": "open",
   "created_at": "2026-06-10T00:34:01Z",
-  "updated_at": "2026-06-10T00:34:01Z"
+  "updated_at": "2026-06-10T00:45:58Z",
+  "effort": "high",
+  "priority": "medium"
 }
