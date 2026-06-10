@@ -931,6 +931,11 @@ function TextView({
     setFontDraft(obj.fontFamily);
   }, [obj.fontFamily, obj.id]);
 
+  const [instanceNameDraft, setInstanceNameDraft] = useState(obj.instanceName ?? "");
+  useEffect(() => {
+    setInstanceNameDraft(obj.instanceName ?? "");
+  }, [obj.instanceName, obj.id]);
+
   const commitFont = useCallback(() => {
     if (fontDraft.trim()) {
       onUpdateObject(obj.id, { fontFamily: fontDraft.trim() } as Partial<DisplayObject>);
@@ -939,10 +944,36 @@ function TextView({
     }
   }, [obj.id, obj.fontFamily, fontDraft, onUpdateObject]);
 
+  const commitInstanceName = useCallback(() => {
+    onUpdateObject(obj.id, { instanceName: instanceNameDraft } as Partial<DisplayObject>);
+  }, [obj.id, instanceNameDraft, onUpdateObject]);
+
   const textColorHex = colorToHex(obj.color);
+  const isNotStatic = obj.textType !== "static";
 
   return (
     <div style={S.body}>
+      {/* Instance name (dynamic/input only) */}
+      {isNotStatic && (
+        <>
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Name:</span>
+            <input
+              style={S.inputWide}
+              value={instanceNameDraft}
+              placeholder="instance name"
+              onChange={(e) => setInstanceNameDraft(e.target.value)}
+              onBlur={commitInstanceName}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); commitInstanceName(); }
+                if (e.key === "Escape") { e.preventDefault(); setInstanceNameDraft(obj.instanceName ?? ""); }
+              }}
+            />
+          </div>
+          <div style={S.separator} />
+        </>
+      )}
+
       {/* Font family */}
       <div style={S.fieldGroup}>
         <span style={S.label}>Font:</span>
@@ -972,7 +1003,7 @@ function TextView({
 
       <div style={S.separator} />
 
-      {/* Bold / Italic */}
+      {/* Bold / Italic / Underline */}
       <div style={S.fieldGroup}>
         <button
           style={{
@@ -998,6 +1029,32 @@ function TextView({
         >
           I
         </button>
+        <button
+          style={{
+            ...S.toggleBtn,
+            textDecoration: "underline",
+            background: obj.underline ? "#1a6ea8" : "#333",
+            color: obj.underline ? "#fff" : "#999",
+          }}
+          onClick={() => onUpdateObject(obj.id, { underline: !obj.underline } as Partial<DisplayObject>)}
+          title="Underline"
+        >
+          U
+        </button>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Letter spacing */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Spacing:</span>
+        <NumInput
+          value={obj.letterSpacing ?? 0}
+          min={-60}
+          max={60}
+          style={{ width: 40 }}
+          onChange={(v) => onUpdateObject(obj.id, { letterSpacing: v } as Partial<DisplayObject>)}
+        />
       </div>
 
       <div style={S.separator} />
@@ -1033,6 +1090,48 @@ function TextView({
           </button>
         ))}
       </div>
+
+      <div style={S.separator} />
+
+      {/* Word Wrap */}
+      <div style={S.fieldGroup}>
+        <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={obj.wordWrap}
+            onChange={(e) => onUpdateObject(obj.id, { wordWrap: e.target.checked } as Partial<DisplayObject>)}
+          />
+          Wrap
+        </label>
+      </div>
+
+      {/* Multiline (dynamic/input only) */}
+      {isNotStatic && (
+        <div style={S.fieldGroup}>
+          <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={obj.multiline}
+              onChange={(e) => onUpdateObject(obj.id, { multiline: e.target.checked } as Partial<DisplayObject>)}
+            />
+            Multiline
+          </label>
+        </div>
+      )}
+
+      {/* Scrollable (dynamic/input only) */}
+      {isNotStatic && (
+        <div style={S.fieldGroup}>
+          <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={obj.scrollable ?? false}
+              onChange={(e) => onUpdateObject(obj.id, { scrollable: e.target.checked } as Partial<DisplayObject>)}
+            />
+            Scroll
+          </label>
+        </div>
+      )}
 
       <div style={S.separator} />
 
