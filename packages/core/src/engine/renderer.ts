@@ -867,6 +867,11 @@ function applyFilters(
 /**
  * Maps Flash 8 blend mode names to Canvas 2D globalCompositeOperation values.
  * Used when rendering SymbolInstance objects with a blendMode property.
+ *
+ * NOTE: 'subtract' and 'invert' have no Canvas 2D native equivalent.
+ * They are listed here for completeness (BLEND_MAP lookup) but are handled
+ * via pixel-level compositing in renderSymbolInstance; the 'source-over'
+ * values here are never actually used for those two modes.
  */
 export const BLEND_MAP: Record<string, GlobalCompositeOperation> = {
   'normal':     'source-over',
@@ -877,13 +882,111 @@ export const BLEND_MAP: Record<string, GlobalCompositeOperation> = {
   'darken':     'darken',
   'difference': 'difference',
   'add':        'lighter',       // closest canvas equivalent
-  'subtract':   'source-over',   // no direct equivalent, fallback
-  'invert':     'source-over',   // approximation
+  'subtract':   'source-over',   // handled by pixel compositing
+  'invert':     'source-over',   // handled by pixel compositing
   'alpha':      'source-atop',
   'erase':      'destination-out',
   'overlay':    'overlay',
   'hardlight':  'hard-light',
 };
+
+/**
+ * Set of Flash 8 blend modes that require pixel-level compositing because
+ * Canvas 2D has no native equivalent.
+ */
+export const PIXEL_BLEND_MODES = new Set(['subtract', 'invert']);
+
+/**
+ * Applies Flash 8 "subtract" blend:
+ *   dst.rgb = clamp(dst.rgb - src.rgb * src.a, 0, 255)
+ *
+ * @param dst  Destination (main canvas) pixel data — mutated in place.
+ * @param src  Source (offscreen render) pixel data — read only.
+ * @param i    Byte offset of the current pixel (must be a multiple of 4).
+ */
+export function applySubtractBlend(
+  dst: Uint8ClampedArray,
+  src: Uint8ClampedArray,
+  i: number
+): void {
+  const a = src[i + 3] / 255;
+  dst[i]     = Math.max(0, dst[i]     - src[i]     * a);
+  dst[i + 1] = Math.max(0, dst[i + 1] - src[i + 1] * a);
+  dst[i + 2] = Math.max(0, dst[i + 2] - src[i + 2] * a);
+  // alpha channel is left unchanged
+}
+
+/**
+ * Applies Flash 8 "invert" blend:
+ *   dst.rgb = (255 - dst.rgb) * src.a/255 + dst.rgb * (1 - src.a/255)
+ *
+ * @param dst  Destination (main canvas) pixel data — mutated in place.
+ * @param src  Source (offscreen render) pixel data — read only.
+ * @param i    Byte offset of the current pixel (must be a multiple of 4).
+ */
+export function applyInvertBlend(
+  dst: Uint8ClampedArray,
+  src: Uint8ClampedArray,
+  i: number
+): void {
+  const a = src[i + 3] / 255;
+  dst[i]     = Math.round((255 - dst[i])     * a + dst[i]     * (1 - a));
+  dst[i + 1] = Math.round((255 - dst[i + 1]) * a + dst[i + 1] * (1 - a));
+  dst[i + 2] = Math.round((255 - dst[i + 2]) * a + dst[i + 2] * (1 - a));
+  // alpha channel is left unchanged
+}
+
+/**
+ * Renders content to an offscreen canvas, then composites the result onto
+ * `ctx` using a pixel-level blend function.
+ *
+ * This is used for Flash 8 blend modes that Canvas 2D does not support
+ * natively (currently: subtract and invert).
+ *
+ * @param ctx          Main canvas rendering context.
+ * @param bounds       Bounding rectangle of the region to composite (canvas coords).
+ * @param blendFn      Pixel blend function: (dst, src, byteOffset) => void.
+ * @param renderContent Function that draws the object onto the supplied offscreen context.
+ */
+function renderWithPixelBlend(
+  ctx: CanvasRenderingContext2D,
+  bounds: { x: number; y: number; w: number; h: number },
+  blendFn: (dst: Uint8ClampedArray, src: Uint8ClampedArray, i: number) => void,
+  renderContent: (offscreen: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => void
+): void {
+  const { x, y, w, h } = bounds;
+  const iw = Math.max(1, Math.ceil(w));
+  const ih = Math.max(1, Math.ceil(h));
+
+  // Render the object to an offscreen canvas (transparent background)
+  const off = createOffscreenCanvas(iw, ih);
+  if (!off) {
+    // No offscreen canvas available — cannot do pixel compositing, skip silently.
+    return;
+  }
+  const octx = off.ctx;
+  // Translate so that the object's canvas-space origin maps to (0,0) in offscreen space.
+  octx.translate(-x, -y);
+  renderContent(octx);
+
+  // Read pixels from both canvases.
+  let dstData: ImageData;
+  let srcData: ImageData;
+  try {
+    dstData = ctx.getImageData(x, y, iw, ih);
+    srcData = (octx as CanvasRenderingContext2D).getImageData(0, 0, iw, ih);
+  } catch (_) {
+    // getImageData throws in cross-origin or tainted-canvas contexts — skip.
+    return;
+  }
+
+  // Apply blend function pixel by pixel.
+  for (let i = 0; i < dstData.data.length; i += 4) {
+    blendFn(dstData.data, srcData.data, i);
+  }
+
+  ctx.putImageData(dstData, x, y);
+}
 
 // ---------------------------------------------------------------------------
 // Symbol instance rendering
@@ -1155,6 +1258,46 @@ function renderSymbolInstance(
   const scaleX = obj.scaleX ?? 1;
   const scaleY = obj.scaleY ?? 1;
 
+  // --- Pixel-blend modes (subtract / invert) ---
+  // Canvas 2D has no native equivalent for these; use per-pixel compositing.
+  if (obj.blendMode && PIXEL_BLEND_MODES.has(obj.blendMode)) {
+    const blendFn = obj.blendMode === 'subtract' ? applySubtractBlend : applyInvertBlend;
+
+    // Determine the bounding rectangle in canvas space.
+    // We use naturalWidth/naturalHeight scaled by scaleX/scaleY; fall back to
+    // the full canvas extent when those properties are absent (correctness over perf).
+    const naturalW = (obj.naturalWidth ?? 0) * (obj.scaleX ?? 1);
+    const naturalH = (obj.naturalHeight ?? 0) * (obj.scaleY ?? 1);
+    const bounds = (naturalW > 0 && naturalH > 0)
+      ? { x: obj.x, y: obj.y, w: naturalW, h: naturalH }
+      : {
+          x: 0, y: 0,
+          w: (ctx.canvas && ctx.canvas.width) ? ctx.canvas.width : 550,
+          h: (ctx.canvas && ctx.canvas.height) ? ctx.canvas.height : 400,
+        };
+
+    const nextVisited = new Set(visitedSymbolIds);
+    nextVisited.add(obj.symbolId);
+
+    renderWithPixelBlend(ctx, bounds, blendFn, (octx) => {
+      // The offscreen ctx already has translate(-bounds.x, -bounds.y) applied
+      // by renderWithPixelBlend; we add the object's own translate on top.
+      octx.translate(obj.x, obj.y);
+      if (obj.rotation) {
+        octx.rotate((obj.rotation * Math.PI) / 180);
+      }
+      if (scaleX !== 1 || scaleY !== 1) {
+        octx.scale(scaleX, scaleY);
+      }
+      renderSymbolLayers(
+        octx as CanvasRenderingContext2D,
+        symbol, frame, imageCache, library, nextVisited
+      );
+    });
+    return; // pixel blend path is complete; skip the normal ctx.save/restore path
+  }
+
+  // --- Normal blend mode path ---
   ctx.save();
 
   // Apply blend mode if set (and not the default 'normal')
