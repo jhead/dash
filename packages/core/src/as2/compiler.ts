@@ -69,6 +69,374 @@ interface LoopContext {
 }
 
 // ---------------------------------------------------------------------------
+// String collection — first pass for constant pool construction
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk all statements and expressions in the AST, collecting every string
+ * that the compiler would emit via pushString().  Returns a Map from each
+ * string to the number of times it appears so the caller can decide which
+ * strings are worth pooling.
+ *
+ * Strings collected here must exactly match every site where the compiler
+ * calls pushString():
+ *   - string Literal values
+ *   - Identifier names (for GetVariable / SetVariable)
+ *   - MemberExpr / AssignExpr property names
+ *   - VarDecl names
+ *   - ForIn loop variable names
+ *   - ObjectLiteral property keys
+ *   - RegExpLiteral ("RegExp", pattern, flags)
+ *   - FunctionDecl / ClassDecl names, param names, method names, etc.
+ *   - Built-in call patterns (super "call", "hasOwnProperty", etc.)
+ */
+function collectStrings(stmts: Statement[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  function add(s: string): void {
+    counts.set(s, (counts.get(s) ?? 0) + 1);
+  }
+
+  function scanStmts(ss: Statement[]): void {
+    for (const s of ss) scanStmt(s);
+  }
+
+  function scanStmt(s: Statement): void {
+    switch (s.type) {
+      case 'Block':       scanStmts(s.body); break;
+      case 'ExprStmt':    scanExpr(s.expression); break;
+      case 'VarDecl':
+        add(s.name);
+        if (s.init !== null) scanExpr(s.init);
+        break;
+      case 'IfStmt':
+        scanExpr(s.test);
+        scanStmt(s.consequent);
+        if (s.alternate !== null) scanStmt(s.alternate);
+        break;
+      case 'WhileStmt':
+        scanExpr(s.test);
+        scanStmt(s.body);
+        break;
+      case 'DoWhileStmt':
+        scanStmt(s.body);
+        scanExpr(s.test);
+        break;
+      case 'ForStmt':
+        if (s.init !== null) {
+          if (s.init.type === 'VarDecl') {
+            add((s.init as VarDecl).name);
+            if ((s.init as VarDecl).init !== null) scanExpr((s.init as VarDecl).init!);
+          } else {
+            scanExpr((s.init as ExprStmt).expression);
+          }
+        }
+        if (s.test !== null) scanExpr(s.test);
+        if (s.update !== null) scanExpr(s.update);
+        scanStmt(s.body);
+        break;
+      case 'ForInStmt': {
+        const varName = s.left.type === 'VarDecl'
+          ? (s.left as VarDecl).name
+          : (s.left as Identifier).name;
+        add(varName);
+        scanExpr(s.right);
+        scanStmt(s.body);
+        break;
+      }
+      case 'ReturnStmt':
+        if (s.value !== null) scanExpr(s.value);
+        break;
+      case 'ThrowStmt':   scanExpr(s.value); break;
+      case 'TryStmt':
+        scanStmts(s.body.body);
+        if (s.catchClause !== null) {
+          // catch param is used as a string variable name
+          add(s.catchClause.param);
+          scanStmts(s.catchClause.body.body);
+        }
+        if (s.finallyBlock !== null) scanStmts(s.finallyBlock.body);
+        break;
+      case 'SwitchStmt':
+        scanExpr(s.discriminant);
+        for (const c of s.cases) {
+          if (c.test !== null) scanExpr(c.test);
+          scanStmts(c.consequent);
+        }
+        break;
+      case 'WithStmt':
+        scanExpr(s.object);
+        scanStmt(s.body);
+        break;
+      case 'LabeledStmt':
+        scanStmt(s.body);
+        break;
+      case 'FunctionDecl':
+        if (s.name !== null) add(s.name);
+        scanStmts(s.body.body);
+        break;
+      case 'ClassDecl':
+        scanClassDecl(s as ClassDecl);
+        break;
+      default: break;
+    }
+  }
+
+  function scanClassDecl(decl: ClassDecl): void {
+    add(decl.name);
+    if (decl.superClass !== null) {
+      add(decl.superClass);
+      add('prototype');
+      add('constructor');
+      // super.call pattern used in constructor body
+      add('call');
+    }
+    for (const iface of decl.interfaces) {
+      add(iface);
+    }
+
+    // Separate getter/setter pairs from regular members (mirrors compiler logic)
+    const getsetPairs = new Set<string>();
+    for (const member of decl.body) {
+      if (member.type === 'FunctionDecl') {
+        const fn = member as FunctionDecl;
+        if (fn.name === null) continue;
+        if (fn.isGetter || fn.isSetter) {
+          getsetPairs.add(fn.name);
+        }
+      }
+    }
+
+    for (const member of decl.body) {
+      if (member.type === 'FunctionDecl') {
+        const fn = member as FunctionDecl;
+        if (fn.name === null) continue;
+        add(fn.name); // method name or ctor name
+        if (!fn.isStatic && !fn.isGetter && !fn.isSetter) {
+          // Non-static method: pushes className + GetVariable + "prototype" + GetMember
+          add('prototype');
+        } else if (fn.isStatic) {
+          // Static method: pushes className + GetVariable
+          // (no extra strings beyond methodName which is already added)
+        }
+        scanStmts(fn.body.body);
+      } else if (member.type === 'VarDecl') {
+        const vd = member as VarDecl;
+        add(vd.name);
+        if (!vd.isStatic) {
+          // Instance property: pushes className + GetVariable + "prototype" + GetMember
+          add('prototype');
+        }
+        if (vd.init !== null) scanExpr(vd.init);
+      }
+    }
+
+    // addProperty strings for getter/setter pairs
+    for (const propName of getsetPairs) {
+      add('addProperty');
+      add('prototype');
+      // propName already added in the member loop
+    }
+  }
+
+  function scanExpr(e: Expression): void {
+    switch (e.type) {
+      case 'Literal':
+        if (typeof e.value === 'string') add(e.value);
+        break;
+      case 'Identifier':
+        switch (e.name) {
+          case 'undefined': case 'null': case 'true': case 'false':
+          case 'NaN': case 'Infinity': break; // these don't push a string
+          default: add(e.name); break;
+        }
+        break;
+      case 'AssignExpr':
+        if (e.left.type === 'MemberExpr') {
+          // pushString(property) × 1 or 2 depending on compound vs simple
+          const prop = (e.left as MemberExpr).property;
+          add(prop);
+          if (e.operator !== '=') add(prop); // compound: property pushed twice
+          scanExpr((e.left as MemberExpr).object);
+          if (e.operator !== '=') scanExpr((e.left as MemberExpr).object); // compound: object twice
+          scanExpr(e.right);
+        } else if (e.left.type === 'IndexExpr') {
+          scanExpr((e.left as IndexExpr).object);
+          scanExpr((e.left as IndexExpr).index);
+          if (e.operator !== '=') {
+            scanExpr((e.left as IndexExpr).object);
+            scanExpr((e.left as IndexExpr).index);
+          }
+          scanExpr(e.right);
+        } else if (e.left.type === 'Identifier') {
+          const name = (e.left as Identifier).name;
+          add(name);
+          if (e.operator !== '=') add(name); // compound: name pushed twice
+          scanExpr(e.right);
+        }
+        break;
+      case 'BinaryExpr':
+        if (e.operator === 'in') {
+          // hasOwnProperty call
+          add('hasOwnProperty');
+        }
+        scanExpr(e.left);
+        scanExpr(e.right);
+        break;
+      case 'UnaryExpr':
+        if ((e.operator === '++' || e.operator === '--') && e.operand.type === 'Identifier') {
+          add((e.operand as Identifier).name); // pushed twice (get + set)
+          add((e.operand as Identifier).name);
+        } else if (e.operator === 'delete') {
+          if (e.operand.type === 'MemberExpr') {
+            scanExpr((e.operand as MemberExpr).object);
+            add((e.operand as MemberExpr).property);
+          } else if (e.operand.type === 'Identifier') {
+            add((e.operand as Identifier).name);
+          }
+        } else {
+          scanExpr(e.operand);
+        }
+        break;
+      case 'CallExpr':
+        if (e.callee.type === 'MemberExpr') {
+          const member = e.callee as MemberExpr;
+          scanExpr(member.object);
+          add(member.property);
+          for (const a of e.args) scanExpr(a);
+        } else if (e.callee.type === 'Identifier') {
+          const name = (e.callee as Identifier).name;
+          if (name === 'super') {
+            // super(...) → SuperClass.call(this, ...)
+            add('this');
+            add('call');
+          } else if (!['stop', 'play', 'nextFrame', 'prevFrame'].includes(name)) {
+            add(name);
+          }
+          if (name === 'loadMovieNum') {
+            add('_level');
+          }
+          for (const a of e.args) scanExpr(a);
+        } else if (e.callee.type === 'IndexExpr') {
+          scanExpr((e.callee as IndexExpr).object);
+          scanExpr((e.callee as IndexExpr).index);
+          for (const a of e.args) scanExpr(a);
+        } else {
+          // complex callee — temp var name not known in advance, skip
+          scanExpr(e.callee);
+          for (const a of e.args) scanExpr(a);
+        }
+        break;
+      case 'NewExpr': {
+        // className string
+        function memberToStr(ex: Expression): string | null {
+          if (ex.type === 'Identifier') return (ex as Identifier).name;
+          if (ex.type === 'MemberExpr') {
+            const m = ex as MemberExpr;
+            const obj = memberToStr(m.object);
+            if (obj !== null) return `${obj}.${m.property}`;
+          }
+          return null;
+        }
+        const className = memberToStr(e.callee);
+        if (className !== null) add(className);
+        else scanExpr(e.callee);
+        for (const a of e.args) scanExpr(a);
+        break;
+      }
+      case 'MemberExpr':
+        scanExpr(e.object);
+        add(e.property);
+        break;
+      case 'IndexExpr':
+        scanExpr(e.object);
+        scanExpr(e.index);
+        break;
+      case 'TernaryExpr':
+        scanExpr(e.test);
+        scanExpr(e.consequent);
+        scanExpr(e.alternate);
+        break;
+      case 'ArrayLiteral':
+        for (const el of e.elements) scanExpr(el);
+        break;
+      case 'ObjectLiteral':
+        for (const p of e.properties) {
+          add(p.key);
+          scanExpr(p.value);
+        }
+        break;
+      case 'RegExpLiteral':
+        add('RegExp');
+        add(e.pattern);
+        if (e.flags.length > 0) add(e.flags);
+        break;
+      case 'FunctionDecl':
+        // anonymous function expression — compile body strings
+        scanStmts(e.body.body);
+        break;
+      default: break;
+    }
+  }
+
+  scanStmts(stmts);
+  return counts;
+}
+
+/**
+ * Build a constant pool from string-count map.
+ * All strings are pooled (matching real Flash 8 behavior).
+ * Returns a Map from string → pool index.
+ */
+function buildConstantPool(counts: Map<string, number>): Map<string, number> {
+  const pool = new Map<string, number>();
+  let idx = 0;
+  for (const [str] of counts) {
+    pool.set(str, idx++);
+  }
+  return pool;
+}
+
+/**
+ * Encode an ActionConstantPool (0x88) action block.
+ *
+ * Format: opcode(0x88) + UI16 length + UI16 count + NUL-terminated strings
+ */
+function encodeConstantPool(pool: Map<string, number>): Uint8Array {
+  // Sort pool entries by index
+  const strings: string[] = [];
+  for (const [str, idx] of pool) {
+    strings[idx] = str;
+  }
+
+  const enc = new TextEncoder();
+  let strByteLen = 0;
+  const encodedStrings: Uint8Array[] = [];
+  for (const s of strings) {
+    const b = enc.encode(s);
+    encodedStrings.push(b);
+    strByteLen += b.length + 1; // +1 for NUL terminator
+  }
+
+  // payload = UI16 count + NUL-terminated strings
+  const payloadLen = 2 + strByteLen;
+  // total = opcode(1) + UI16 length(2) + payload
+  const total = 1 + 2 + payloadLen;
+  const out = new Uint8Array(total);
+  let pos = 0;
+  out[pos++] = 0x88; // ActionConstantPool opcode
+  out[pos++] = payloadLen & 0xff;
+  out[pos++] = (payloadLen >> 8) & 0xff;
+  out[pos++] = strings.length & 0xff;
+  out[pos++] = (strings.length >> 8) & 0xff;
+  for (const b of encodedStrings) {
+    out.set(b, pos);
+    pos += b.length;
+    out[pos++] = 0; // NUL terminator
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Compiler
 // ---------------------------------------------------------------------------
 
@@ -81,6 +449,14 @@ class Compiler {
   currentSuperClass: string | null = null;
   /** Counter for generating unique temp variable names for complex callees. */
   private callTmpCounter = 0;
+  /**
+   * Constant pool: maps string → pool index.  When set, pushString() emits
+   * ActionPush type=8 (UI8 pool index) or type=9 (UI16 pool index) instead of
+   * type=0 (inline NUL-terminated string).  The pool header (ActionConstantPool
+   * 0x88) is emitted once by compileProgram(); sub-compilers inherit the pool
+   * from their parent so all references use the same indices.
+   */
+  constantPool: Map<string, number> | null = null;
 
   // ---- Low-level emitters --------------------------------------------------
 
@@ -100,6 +476,21 @@ class Compiler {
   // ---- ActionPush helpers --------------------------------------------------
 
   private pushString(s: string): void {
+    // If a constant pool is active, emit a pool-index reference instead of
+    // an inline string — saves bytes and matches real Flash 8 output.
+    if (this.constantPool !== null) {
+      const idx = this.constantPool.get(s);
+      if (idx !== undefined) {
+        if (idx < 256) {
+          // ActionPush type=8: UI8 pool index (2-byte payload)
+          this.emitWithPayload(0x96, [8, idx]);
+        } else {
+          // ActionPush type=9: UI16 pool index (3-byte payload)
+          this.emitWithPayload(0x96, [9, idx & 0xff, (idx >> 8) & 0xff]);
+        }
+        return;
+      }
+    }
     const strBytes = new TextEncoder().encode(s);
     // payload: type(1) + utf8 bytes + null terminator(1)
     const payload = new Uint8Array(1 + strBytes.length + 1);
@@ -179,6 +570,18 @@ class Compiler {
   // ---- Public entry point --------------------------------------------------
 
   compileProgram(program: Program): Uint8Array {
+    // Pass 1: collect all strings from the AST and build a constant pool.
+    // Emit ActionConstantPool (0x88) before the body actions when there is at
+    // least one string to pool.  The pool is shared with all sub-compilers so
+    // function bodies and try/catch blocks reference the same indices.
+    const counts = collectStrings(program.body);
+    if (counts.size > 0) {
+      this.constantPool = buildConstantPool(counts);
+      const poolBytes = encodeConstantPool(this.constantPool);
+      this.buf.writeBytes(poolBytes);
+    }
+
+    // Pass 2: compile the program body
     for (const stmt of program.body) {
       this.compileStmt(stmt);
     }
@@ -631,6 +1034,7 @@ class Compiler {
     trySubCompiler.currentSuperClass = this.currentSuperClass;
     trySubCompiler.loopStack = this.loopStack; // share break/continue context
     trySubCompiler.labeledLoops = this.labeledLoops; // share labeled loop context
+    trySubCompiler.constantPool = this.constantPool; // inherit parent's constant pool
     trySubCompiler.compileStatements(stmt.body.body);
     const tryBytes: number[] = Array.from(trySubCompiler.buf.getBytes());
 
@@ -642,6 +1046,7 @@ class Compiler {
       catchSubCompiler.currentSuperClass = this.currentSuperClass;
       catchSubCompiler.loopStack = this.loopStack;
       catchSubCompiler.labeledLoops = this.labeledLoops;
+      catchSubCompiler.constantPool = this.constantPool; // inherit parent's constant pool
       catchSubCompiler.compileStatements(stmt.catchClause!.body.body);
       catchBytes = Array.from(catchSubCompiler.buf.getBytes());
     }
@@ -652,6 +1057,7 @@ class Compiler {
       finallySubCompiler.currentSuperClass = this.currentSuperClass;
       finallySubCompiler.loopStack = this.loopStack;
       finallySubCompiler.labeledLoops = this.labeledLoops;
+      finallySubCompiler.constantPool = this.constantPool; // inherit parent's constant pool
       finallySubCompiler.compileStatements(stmt.finallyBlock!.body);
       finallyBytes = Array.from(finallySubCompiler.buf.getBytes());
     }
@@ -1781,6 +2187,7 @@ class Compiler {
     // Compile body into a sub-buffer so we know its size
     const subCompiler = new Compiler();
     subCompiler.currentSuperClass = superClass;
+    subCompiler.constantPool = this.constantPool; // inherit parent's constant pool
     subCompiler.compileStatements(body);
     const bodyBytes = subCompiler.buf.getBytes();
 
