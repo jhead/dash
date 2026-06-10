@@ -160,6 +160,16 @@ export interface Frame {
   readonly motionEase: number;      // -100..100 (ignored when motionEaseCurve is set)
   readonly motionEaseType: TweenEaseType; // ease direction; strength is |motionEase|
   readonly motionEaseCurve?: EaseCurve | null; // custom Bézier ease; null = use motionEase
+  /**
+   * Per-property ease curves (Flash 8+ only, when useSingleEaseCurve is false).
+   * When set, each property group uses its own Bézier curve instead of motionEaseCurve.
+   * null = fall back to motionEaseCurve / motionEase for that property.
+   */
+  readonly easeForPosition?: EaseCurve | null;
+  readonly easeForRotation?: EaseCurve | null;
+  readonly easeForScale?: EaseCurve | null;
+  readonly easeForColor?: EaseCurve | null;
+  readonly easeForFilters?: EaseCurve | null;
   readonly motionRotate: "none" | "auto" | "cw" | "ccw";
   readonly motionRotateCount: number;
   readonly motionOrientToPath: boolean;

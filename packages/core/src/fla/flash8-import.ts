@@ -148,6 +148,8 @@ export function strokeFromFla8(s: Fla8Stroke): Stroke {
       caps: s.cap,
       joints: s.join,
       miterLimit: s.miterLimit,
+      ...(s.pixelHinting ? { pixelHinting: true } : {}),
+      ...(s.scaleMode && s.scaleMode !== "normal" ? { strokeScaleMode: s.scaleMode } : {}),
     };
   }
   return {
@@ -158,6 +160,8 @@ export function strokeFromFla8(s: Fla8Stroke): Stroke {
     caps: s.cap,
     joints: s.join,
     miterLimit: s.miterLimit,
+    ...(s.pixelHinting ? { pixelHinting: true } : {}),
+    ...(s.scaleMode && s.scaleMode !== "normal" ? { strokeScaleMode: s.scaleMode } : {}),
   };
 }
 
@@ -1084,6 +1088,11 @@ function convertLayer(
             motionEase: f.motionEase,
             motionEaseType: f.easeType,
             motionEaseCurve: f.motionEaseCurve,
+            easeForPosition: f.easeForPosition,
+            easeForRotation: f.easeForRotation,
+            easeForScale: f.easeForScale,
+            easeForColor: f.easeForColor,
+            easeForFilters: f.easeForFilters,
           };
     frames.push(
       createFrame(frameIndex, {

@@ -107,6 +107,20 @@ export interface Fla8Stroke {
   readonly cap: "none" | "round" | "square";
   readonly join: "miter" | "round" | "bevel";
   readonly miterLimit: number;
+  /**
+   * Whether stroke coords snap to whole pixels (Flash 8+ "pixelHinting" property).
+   * Maps to SWF LINESTYLE2 PixelHintingFlag (bit 0 of the flags first byte).
+   */
+  readonly pixelHinting: boolean;
+  /**
+   * Stroke scaling behavior when the containing object is scaled.
+   * Flash binary encoding: 0=normal, 1=horizontal, 2=vertical, 3=none.
+   *   normal     — stroke scales on both axes (default)
+   *   horizontal — stroke scales only horizontally (NoVScale in SWF)
+   *   vertical   — stroke scales only vertically (NoHScale in SWF)
+   *   none       — stroke does not scale (NoHScale + NoVScale in SWF)
+   */
+  readonly scaleMode: "normal" | "horizontal" | "vertical" | "none";
 }
 
 export interface Fla8Edge {
@@ -402,8 +416,29 @@ export interface Fla8Frame {
    * Custom cubic-Bézier ease curve (Flash 8+). null = use `motionEase` instead.
    * Decoded from `useSingleEaseCurve` + `hasCustomEase` + per-property point data
    * in the CPicFrame tail when frameVersionB >= 0x18 (24).
+   *
+   * When `useSingleEaseCurve` is true this holds the single "all" curve (index 5).
+   * When false this holds the "position" curve (index 0), falling back to the "all" curve.
    */
   readonly motionEaseCurve: Fla8EaseCurve | null;
+  /**
+   * Per-property ease curves decoded when `hasCustomEase !== 0` and
+   * `useSingleEaseCurve === 0`.  Each entry is null when the property has no
+   * custom curve.  Undefined when the frame predates Flash 8 ease data (fs < 24)
+   * or when `useSingleEaseCurve` is true (use `motionEaseCurve` for all properties).
+   *
+   * Index mapping (same order as the binary):
+   *   0 = position   → easeForPosition
+   *   1 = rotation   → easeForRotation
+   *   2 = scale      → easeForScale
+   *   3 = color      → easeForColor
+   *   4 = filters    → easeForFilters
+   */
+  readonly easeForPosition: Fla8EaseCurve | null;
+  readonly easeForRotation: Fla8EaseCurve | null;
+  readonly easeForScale: Fla8EaseCurve | null;
+  readonly easeForColor: Fla8EaseCurve | null;
+  readonly easeForFilters: Fla8EaseCurve | null;
   /** rotation mode: "none" | "auto" | "cw" | "ccw" */
   readonly motionRotate: "none" | "auto" | "cw" | "ccw";
   /** extra full rotations beyond the shortest-path interpolation */
@@ -1329,11 +1364,16 @@ function readLineStyle(ctx: ParseCtx, caps: boolean): Fla8Stroke {
   let join: Fla8Stroke["join"] = "round";
   let miterLimit = 3;
   let finalColor = color;
+  let pixelHinting = false;
+  let scaleMode: Fla8Stroke["scaleMode"] = "normal";
   if (caps) {
     // F8+ extras: pixel hinting, scale mode, caps/joins, miter, then the
     // stroke's paint as a full fill style. Pre-F8 strokes stop at the params.
-    r.skip(1); // pixelHinting
-    r.skip(1); // scaleMode
+    pixelHinting = r.u8() !== 0;
+    const scaleModeRaw = r.u8();
+    // Flash binary scaleMode encoding: 0=normal, 1=horizontal, 2=vertical, 3=none
+    const SCALE_MODES = ["normal", "horizontal", "vertical", "none"] as const;
+    scaleMode = SCALE_MODES[scaleModeRaw] ?? "normal";
     const capStyle = r.u8();
     const joinStyle = r.u8();
     const miterFrac = r.u8();
@@ -1344,7 +1384,7 @@ function readLineStyle(ctx: ParseCtx, caps: boolean): Fla8Stroke {
     const fill = readFillStyle(ctx, caps);
     if (fill.kind === "solid") finalColor = fill.color;
   }
-  return { color: finalColor, width: widthTwips / 20, cap, join, miterLimit };
+  return { color: finalColor, width: widthTwips / 20, cap, join, miterLimit, pixelHinting, scaleMode };
 }
 
 function readCoordDelta(r: Reader, type: number): [number, number] {
@@ -2410,6 +2450,11 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let script = "";
   let motionEase = 0;
   let motionEaseCurve: Fla8EaseCurve | null = null;
+  let easeForPosition: Fla8EaseCurve | null = null;
+  let easeForRotation: Fla8EaseCurve | null = null;
+  let easeForScale: Fla8EaseCurve | null = null;
+  let easeForColor: Fla8EaseCurve | null = null;
+  let easeForFilters: Fla8EaseCurve | null = null;
   let motionRotate: "none" | "auto" | "cw" | "ccw" = "none";
   let motionRotateCount = 0;
   let motionOrientToPath = false;
@@ -2561,8 +2606,15 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
               // to every property; otherwise use "position" (index 0) falling back to "all".
               if (useSingleEaseCurve !== 0) {
                 motionEaseCurve = curves[5] ?? null;
+                // Per-property curves are irrelevant — single curve governs all
               } else {
                 motionEaseCurve = curves[0] ?? curves[5] ?? null;
+                // Store per-property curves for the interpolation engine
+                easeForPosition = curves[0] ?? null;
+                easeForRotation = curves[1] ?? null;
+                easeForScale    = curves[2] ?? null;
+                easeForColor    = curves[3] ?? null;
+                easeForFilters  = curves[4] ?? null;
               }
             }
           }
@@ -2619,7 +2671,9 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
         duration, label, labelIsComment, labelIsAnchor, script, keyMode, shapeBlend,
         motionEase,
         easeType: decodeEaseTypeFromAcceleration(motionEase, motionEaseCurve != null),
-        motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, motionSnap,
+        motionEaseCurve,
+        easeForPosition, easeForRotation, easeForScale, easeForColor, easeForFilters,
+        motionRotate, motionRotateCount, motionOrientToPath, motionSnap,
         motionSync, motionTweenScale,
         soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements,
       },

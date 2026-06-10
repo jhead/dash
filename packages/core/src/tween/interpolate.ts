@@ -549,24 +549,41 @@ export function interpolateTween(
 
   // Linear t in [0, 1]
   const linearT = Math.max(0, Math.min(1, (frame - startFrame) / span));
-  const t = applyEase(linearT, config.ease, config.easeCurve);
 
-  const colorEffect = interpolateColorEffect(from.colorEffect, to.colorEffect, t);
-  const filters = interpolateFilters(from.filters, to.filters, t);
+  /**
+   * Resolve the eased t for a specific property group.
+   *
+   * Priority (highest to lowest):
+   *   1. per-property curve (e.g. easeForRotation) — if set
+   *   2. single/position ease curve (config.easeCurve) — if set
+   *   3. integer ease value (config.ease)
+   */
+  function easedT(perPropertyCurve: typeof config.easeCurve): number {
+    return applyEase(linearT, config.ease, perPropertyCurve ?? config.easeCurve);
+  }
+
+  const tPosition = easedT(config.easeForPosition);
+  const tRotation = easedT(config.easeForRotation);
+  const tScale    = easedT(config.easeForScale);
+  const tColor    = easedT(config.easeForColor);
+  const tFilters  = easedT(config.easeForFilters);
+
+  const colorEffect = interpolateColorEffect(from.colorEffect, to.colorEffect, tColor);
+  const filters = interpolateFilters(from.filters, to.filters, tFilters);
 
   return {
-    x: lerp(from.x, to.x, t),
-    y: lerp(from.y, to.y, t),
-    scaleX: lerp(from.scaleX, to.scaleX, t),
-    scaleY: lerp(from.scaleY, to.scaleY, t),
+    x: lerp(from.x, to.x, tPosition),
+    y: lerp(from.y, to.y, tPosition),
+    scaleX: lerp(from.scaleX, to.scaleX, tScale),
+    scaleY: lerp(from.scaleY, to.scaleY, tScale),
     rotation: interpolateRotation(
       from.rotation,
       to.rotation,
-      t,
+      tRotation,
       config.motionRotate,
       config.motionRotateCount
     ),
-    alpha: lerp(from.alpha, to.alpha, t),
+    alpha: lerp(from.alpha, to.alpha, tColor),
     colorEffect,
     filters,
   };

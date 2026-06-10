@@ -110,6 +110,78 @@ describe("interpolateTween — motion tween display object interpolation", () =>
   });
 });
 
+describe("interpolateTween — per-property ease curves", () => {
+  const from: TweenTarget = {
+    x: 0,
+    y: 0,
+    scaleX: 1.0,
+    scaleY: 1.0,
+    rotation: 0,
+    alpha: 100,
+  };
+  const to: TweenTarget = {
+    x: 200,
+    y: 200,
+    scaleX: 2.0,
+    scaleY: 2.0,
+    rotation: 90,
+    alpha: 0,
+  };
+
+  it("per-property easeForRotation uses its own curve while position stays linear", () => {
+    // easeForRotation = strong ease-in (slow start for rotation)
+    // position/scale/color have no per-property curve → linear
+    const config: TweenConfig = {
+      ease: 0,
+      easeForRotation: { x1: 0.9, y1: 0, x2: 1, y2: 1 }, // very steep ease-in
+    };
+    const result = interpolateTween(from, to, 5, 0, 10, config);
+    // Position should be ~linear at midpoint → ~100
+    expect(result.x).toBeCloseTo(100, 0);
+    // Rotation should be much less than the linear 45° due to ease-in
+    expect(result.rotation).toBeLessThan(40);
+  });
+
+  it("per-property easeForScale uses its own curve independently of position", () => {
+    // scale gets a strong ease-out (fast start), position stays linear
+    const config: TweenConfig = {
+      ease: 0,
+      easeForScale: { x1: 0, y1: 1, x2: 0.1, y2: 1 }, // very steep ease-out
+    };
+    const result = interpolateTween(from, to, 5, 0, 10, config);
+    // Position should be ~linear at midpoint → ~100
+    expect(result.x).toBeCloseTo(100, 0);
+    // Scale should be much greater than linear 1.5 due to ease-out
+    expect(result.scaleX).toBeGreaterThan(1.7);
+  });
+
+  it("per-property easeForColor uses its own curve for alpha/colorEffect", () => {
+    // color gets ease-in (slow start), so alpha should be barely changed at midpoint
+    const config: TweenConfig = {
+      ease: 0,
+      easeForColor: { x1: 0.9, y1: 0, x2: 1, y2: 1 }, // steep ease-in
+    };
+    const result = interpolateTween(from, to, 5, 0, 10, config);
+    // Alpha linear midpoint = 50; with ease-in it should be much closer to 100
+    expect(result.alpha).toBeGreaterThan(70);
+  });
+
+  it("per-property ease falls back to easeCurve when per-property curve is null", () => {
+    // Strong global ease-out via easeCurve
+    const config: TweenConfig = {
+      ease: 100,
+      easeCurve: null, // use integer ease
+      easeForRotation: null, // explicitly null → fall back to global ease
+    };
+    const linearResult = interpolateTween(from, to, 5, 0, 10, { ease: 0 });
+    const easedResult  = interpolateTween(from, to, 5, 0, 10, config);
+    // With ease=100 (ease-out), midpoint x should be > linear midpoint
+    expect(easedResult.x).toBeGreaterThan(linearResult.x);
+    // Rotation should also follow the fallback ease-out curve
+    expect(easedResult.rotation).toBeGreaterThan(linearResult.rotation);
+  });
+});
+
 describe("applyEase — ease function sanity checks for tween", () => {
   it("ease=0 is linear (t=0.5 → 0.5)", () => {
     expect(applyEase(0.5, 0)).toBeCloseTo(0.5);

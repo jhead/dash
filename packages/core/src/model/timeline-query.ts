@@ -20,6 +20,16 @@ export interface TweenSpan {
   readonly ease: number;
   /** Custom cubic Bézier ease curve; overrides `ease` when present. */
   readonly easeCurve?: EaseCurve | null;
+  /**
+   * Per-property ease curves (Flash 8+, motion tween only).
+   * When set, each property group uses its own Bézier curve instead of `easeCurve`.
+   * null/undefined means fall back to `easeCurve` / `ease` for that property group.
+   */
+  readonly easeForPosition?: EaseCurve | null;
+  readonly easeForRotation?: EaseCurve | null;
+  readonly easeForScale?: EaseCurve | null;
+  readonly easeForColor?: EaseCurve | null;
+  readonly easeForFilters?: EaseCurve | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +113,13 @@ export function getTweenSpans(layer: Layer): TweenSpan[] {
         tweenType: kf.tweenType as "motion" | "shape",
         ease: kf.tweenType === "motion" ? kf.motionEase : kf.shapeEase,
         easeCurve: kf.tweenType === "motion" ? (kf.motionEaseCurve ?? null) : null,
+        ...(kf.tweenType === "motion" ? {
+          easeForPosition: kf.easeForPosition ?? null,
+          easeForRotation: kf.easeForRotation ?? null,
+          easeForScale:    kf.easeForScale    ?? null,
+          easeForColor:    kf.easeForColor    ?? null,
+          easeForFilters:  kf.easeForFilters  ?? null,
+        } : {}),
       });
     }
   }
@@ -241,6 +258,11 @@ export function getTweenedFrame(
         {
           ease: span.ease,
           easeCurve: span.easeCurve,
+          easeForPosition: span.easeForPosition,
+          easeForRotation: span.easeForRotation,
+          easeForScale:    span.easeForScale,
+          easeForColor:    span.easeForColor,
+          easeForFilters:  span.easeForFilters,
           motionRotate: startKf.motionRotate,
           motionRotateCount: startKf.motionRotateCount,
         }
