@@ -26,7 +26,7 @@ import {
   encodePlaceObject2WithClipActions,
 } from "./shapes.js";
 import {
-  encodeDefineMorphShape,
+  encodeDefineMorphShape2,
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
 import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText } from "./text.js";
@@ -580,13 +580,14 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             objCharIdMap.set(startObj.id, morphCharId);
             morphShapeObjIds.add(startObj.id);
 
-            // Emit DefineMorphShape tag
-            const morphBody = encodeDefineMorphShape(
+            // Emit DefineMorphShape2 tag (tag 84 — required for Flash 8 to
+            // preserve LINESTYLE2 cap/join data via MORPHLINESTYLE2 records).
+            const morphBody = encodeDefineMorphShape2(
               morphCharId,
               startObj.shape.paths,
               endObj.shape.paths
             );
-            writer.writeTag(Tag.DefineMorphShape, morphBody);
+            writer.writeTag(Tag.DefineMorphShape2, morphBody);
           }
 
           // Record span info for ratio computation during frame loop

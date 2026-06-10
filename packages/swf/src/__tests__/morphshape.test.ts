@@ -460,12 +460,17 @@ describe("Shape tween compilation", () => {
   // Test 6: Compiled shape-tween document has tag 46 (not just tag 32/83)
   // ---------------------------------------------------------------------------
 
-  it("emits DefineMorphShape (tag 46) for a shape tween layer", () => {
+  it("emits DefineMorphShape2 (tag 84) for a shape tween layer", () => {
     const doc = makeShapeTweenDoc();
     const swf = compileDocument(doc);
     const { tags } = parseSWF(swf);
 
-    const morphTags = tags.filter((t) => t.code === TAG_DEFINE_MORPH_SHAPE);
+    // Compiler now emits tag 84 (DefineMorphShape2) for Flash 8 targets so that
+    // LINESTYLE2 cap/join data is preserved via MORPHLINESTYLE2 records.
+    const TAG_DEFINE_MORPH_SHAPE2 = 84;
+    const morphTags = tags.filter(
+      (t) => t.code === TAG_DEFINE_MORPH_SHAPE || t.code === TAG_DEFINE_MORPH_SHAPE2
+    );
     expect(morphTags.length).toBeGreaterThanOrEqual(1);
   });
 

@@ -191,6 +191,79 @@ function writeMorphLineStyleArray(
   }
 }
 
+/** Map StrokeCap to SWF LineStyle2 cap bits (0=round, 1=none, 2=square). */
+function capStyleBits(cap: string): number {
+  if (cap === "none") return 1;
+  if (cap === "square") return 2;
+  return 0; // round (default)
+}
+
+/** Map StrokeJoin to SWF LineStyle2 join bits (0=round, 1=bevel, 2=miter). */
+function joinStyleBits(join: string): number {
+  if (join === "bevel") return 1;
+  if (join === "miter") return 2;
+  return 0; // round (default)
+}
+
+/**
+ * Write a MORPHLINESTYLE2 array for DefineMorphShape2 (tag 84).
+ *
+ * MORPHLINESTYLE2 format per SWF spec:
+ *   UI16  StartWidth (twips)
+ *   UI16  EndWidth (twips)
+ *   UI16  LineStyle2 flags (same bit layout as LINESTYLE2):
+ *           [15:14] StartCapStyle, [13:12] JoinStyle, [11] HasFill, [10] NoHScale,
+ *           [9] NoVScale, [8] PixelHinting, [7:6] reserved, [5] NoClose,
+ *           [4:3] EndCapStyle, [2:0] reserved
+ *   UI16  MiterLimitFactor (FLOAT16 = 8.8 fixed) — only present when JoinStyle=2
+ *   RGBA  StartColor
+ *   RGBA  EndColor
+ */
+function writeMorphLineStyle2Array(
+  bw: BitWriter,
+  strokes: StrokeEntry[]
+): void {
+  // Count
+  bw.writeUI8(strokes.length);
+  for (const se of strokes) {
+    // startWidth UI16LE in twips
+    bw.writeUI16LE(px(se.startStroke.width));
+    // endWidth UI16LE in twips
+    bw.writeUI16LE(px(se.endStroke.width));
+
+    // LineStyle2 flags UI16 (big-endian byte order as in DefineShape4)
+    const startCapBits = capStyleBits(se.startStroke.caps);
+    const endCapBits = capStyleBits(se.startStroke.caps);
+    const joinBits = joinStyleBits(se.startStroke.joints);
+    const hasMiter = se.startStroke.joints === "miter";
+    // Byte 1 (high): StartCap[7:6] | Join[5:4] | HasFill[3] | NoHScale[2] | NoVScale[1] | PixelHinting[0]
+    // Byte 2 (low):  Reserved[7:3] | NoClose[2] | EndCap[1:0]
+    const highByte =
+      ((startCapBits & 0x3) << 6) |
+      ((joinBits & 0x3) << 4);
+    const lowByte = (endCapBits & 0x3);
+    bw.writeUI8(highByte);
+    bw.writeUI8(lowByte);
+
+    // MiterLimitFactor (FLOAT16 = FIXED8 = 8.8 fixed point) only when JoinStyle=2 (miter)
+    if (hasMiter) {
+      const miterVal = Math.round(Math.max(1, se.startStroke.miterLimit) * 256);
+      bw.writeUI16LE(miterVal & 0xffff);
+    }
+
+    // startColor RGBA
+    bw.writeUI8(se.startStroke.color.r);
+    bw.writeUI8(se.startStroke.color.g);
+    bw.writeUI8(se.startStroke.color.b);
+    bw.writeUI8(se.startStroke.color.a);
+    // endColor RGBA
+    bw.writeUI8(se.endStroke.color.r);
+    bw.writeUI8(se.endStroke.color.g);
+    bw.writeUI8(se.endStroke.color.b);
+    bw.writeUI8(se.endStroke.color.a);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Shape records for morph shapes
 // ---------------------------------------------------------------------------
@@ -372,6 +445,9 @@ function encodeMorphShapeEdges(
  * @param startPaths  Shape paths for the start keyframe
  * @param endPaths    Shape paths for the end keyframe
  * @returns           Tag body bytes (without SWF record header)
+ *
+ * @deprecated Use encodeDefineMorphShape2 (tag 84) for Flash 8 targets, which
+ *   preserves LINESTYLE2 cap/join data.
  */
 export function encodeDefineMorphShape(
   charId: number,
@@ -472,6 +548,133 @@ export function encodeDefineMorphShape(
   bw.writeUI32LE(offset);
 
   // MORPHFILLSTYLEARRAY + MORPHLINESTYLEARRAY + NumFillBits/NumLineBits
+  bw.writeBytes(stylesBytes);
+
+  // StartEdges
+  bw.writeBytes(startEdgeBytes);
+
+  // EndEdges
+  bw.writeBytes(endEdgeBytes);
+
+  return bw.getBytes();
+}
+
+/**
+ * Encode a DefineMorphShape2 (tag 84) tag body.
+ *
+ * DefineMorphShape2 differs from DefineMorphShape (tag 46) in two ways:
+ *   1. Two extra RECT fields after EndBounds: StartEdgeBounds and EndEdgeBounds.
+ *   2. A UI8 flags field (UsesNonScalingStrokes bit 0, UsesScalingStrokes bit 1).
+ *   3. MORPHLINESTYLE2 records instead of MORPHLINESTYLE1, preserving cap/join data.
+ *
+ * Tag 84 is required for Flash 8 targets so LINESTYLE2 cap/join/miter data is
+ * not silently dropped by the player.
+ *
+ * @param charId      SWF character ID for this morph shape
+ * @param startPaths  Shape paths for the start keyframe
+ * @param endPaths    Shape paths for the end keyframe
+ * @returns           Tag body bytes (without SWF record header)
+ */
+export function encodeDefineMorphShape2(
+  charId: number,
+  startPaths: readonly ShapePath[],
+  endPaths: readonly ShapePath[]
+): Uint8Array {
+  // Compute bounding boxes in twips
+  const sb = computePathBounds(startPaths);
+  const eb = computePathBounds(endPaths);
+  const startBounds = {
+    xMin: px(sb.xMin), xMax: px(sb.xMax),
+    yMin: px(sb.yMin), yMax: px(sb.yMax),
+  };
+  const endBounds = {
+    xMin: px(eb.xMin), xMax: px(eb.xMax),
+    yMin: px(eb.yMin), yMax: px(eb.yMax),
+  };
+
+  // Collect style information from start/end paths
+  const { fills, strokes, pathFillIndex, pathStrokeIndex } = collectStyles(
+    startPaths,
+    endPaths
+  );
+
+  const numFillBits = fills.length > 0 ? Math.ceil(Math.log2(fills.length + 1)) : 1;
+  const numLineBits = strokes.length > 0 ? Math.ceil(Math.log2(strokes.length + 1)) : 1;
+
+  // Build parallel vertex sets
+  const pathCount = startPaths.length;
+  const startVertexSets: Vertex[][] = [];
+  const endVertexSets: Vertex[][] = [];
+
+  for (let i = 0; i < pathCount; i++) {
+    const sp = startPaths[i];
+    const ep = endPaths[i] ?? sp;
+
+    const sv = pathToVertices(sp);
+    const ev = pathToVertices(ep);
+
+    const maxLen = Math.max(sv.length, ev.length);
+    while (sv.length < maxLen) sv.push({ ...sv[sv.length - 1] });
+    while (ev.length < maxLen) ev.push({ ...ev[ev.length - 1] });
+
+    startVertexSets.push(sv);
+    endVertexSets.push(ev);
+  }
+
+  // Encode start and end edge streams
+  const startEdgeBytes = encodeMorphShapeEdges(
+    startVertexSets,
+    pathFillIndex,
+    pathStrokeIndex,
+    numFillBits,
+    numLineBits
+  );
+  const endEdgeBytes = encodeMorphShapeEdges(
+    endVertexSets,
+    pathFillIndex,
+    pathStrokeIndex,
+    numFillBits,
+    numLineBits
+  );
+
+  // Build style arrays using MORPHLINESTYLE2 format
+  const stylesBw = new BitWriter();
+  writeMorphFillStyleArray(stylesBw, fills);
+  writeMorphLineStyle2Array(stylesBw, strokes);
+  // NumFillBits / NumLineBits packed nibbles
+  stylesBw.writeBits(numFillBits, 4);
+  stylesBw.writeBits(numLineBits, 4);
+  const stylesBytes = stylesBw.getBytes();
+
+  // Offset = byte length of (styles + StartEdges)
+  const offset = stylesBytes.length + startEdgeBytes.length;
+
+  // Assemble the final tag body
+  const bw = new BitWriter();
+
+  // UI16 CharacterId
+  bw.writeUI16LE(charId);
+
+  // StartBounds RECT
+  writeRect(bw, startBounds.xMin, startBounds.xMax, startBounds.yMin, startBounds.yMax);
+
+  // EndBounds RECT
+  writeRect(bw, endBounds.xMin, endBounds.xMax, endBounds.yMin, endBounds.yMax);
+
+  // StartEdgeBounds RECT (same as StartBounds for simple shapes)
+  writeRect(bw, startBounds.xMin, startBounds.xMax, startBounds.yMin, startBounds.yMax);
+
+  // EndEdgeBounds RECT (same as EndBounds for simple shapes)
+  writeRect(bw, endBounds.xMin, endBounds.xMax, endBounds.yMin, endBounds.yMax);
+
+  // UI8 Flags (bit 0 = UsesNonScalingStrokes, bit 1 = UsesScalingStrokes)
+  // Use bit 1 (UsesScalingStrokes) for standard strokes.
+  bw.writeUI8(0x02);
+
+  // UI32 Offset (byte distance from here to EndEdges)
+  bw.writeUI32LE(offset);
+
+  // MORPHFILLSTYLEARRAY + MORPHLINESTYLE2ARRAY + NumFillBits/NumLineBits
   bw.writeBytes(stylesBytes);
 
   // StartEdges
