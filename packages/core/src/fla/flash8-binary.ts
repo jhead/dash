@@ -375,6 +375,8 @@ export interface Fla8Layer {
   readonly layerType: number;
   readonly hidden: boolean;
   readonly locked: boolean;
+  /** Whether the layer is shown as outlines in the authoring tool */
+  readonly outlineMode: boolean;
   readonly outlineColor: Fla8Color | null;
   readonly frames: Fla8Frame[];
 }
@@ -1017,6 +1019,7 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
   let layerType = 0;
   let hidden = false;
   let locked = false;
+  let outlineMode = false;
   let outlineColor: Fla8Color | null = null;
 
   try {
@@ -1036,7 +1039,7 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
       locked = r.u8() !== 0;
       r.skip(4); // 0xFFFFFFFF sentinel
       outlineColor = readColorRGBA(r);
-      r.skip(1); // showOutlines
+      outlineMode = r.u8() !== 0; // showOutlines flag
       r.skip(7); // 00 00 00 heightMultiplier 00 00 00
       layerType = r.u8();
     }
@@ -1056,7 +1059,7 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
   }
   return {
     cls: "CPicLayer",
-    layer: { name, layerType, hidden, locked, outlineColor, frames },
+    layer: { name, layerType, hidden, locked, outlineMode, outlineColor, frames },
   };
 }
 

@@ -1016,6 +1016,7 @@ function convertLayer(
   return createLayer(l.name || `Layer ${index + 1}`, LAYER_TYPES[l.layerType] ?? "normal", {
     visible: !l.hidden,
     locked: l.locked,
+    outlineMode: l.outlineMode,
     outlineColor: l.outlineColor ? toHex(l.outlineColor) : "#0000ff",
     frames: frames.length > 0 ? frames : [createFrame(0)],
     frameCount,

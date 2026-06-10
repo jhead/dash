@@ -2712,3 +2712,112 @@ describe("motion tween sync flag decoding (task 0934)", () => {
     expect(frame.tweenType).toBe("motion");
   });
 });
+
+// ---------------------------------------------------------------------------
+// parseFla8Contents: sharedUrl decoding from writeAsLinkage block (task 0939)
+//
+// The writeAsLinkage block layout (flacomdoc FlaConverter.writeAsLinkage):
+//   [9 byte header: UI32 zero + version + flags + 3×zero]
+//   BomString(linkageIdentifier)
+//   BomString(linkageURL)   ← sharedUrl
+//   BomString(className)
+//
+// Verifies that parseFla8Contents correctly populates Fla8SymbolInfo.sharedUrl
+// from the BomString(linkageURL) field, and that buildFla8Document forwards it
+// to LibrarySymbol.linkage.sharedUrl.
+// ---------------------------------------------------------------------------
+
+describe("parseFla8Contents sharedUrl decode (synthetic Contents stream)", () => {
+  // Helper: encode a string as UTF-16LE bytes
+  function utf16le(s: string): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < s.length; i++) {
+      out.push(s.charCodeAt(i) & 0xff, s.charCodeAt(i) >> 8);
+    }
+    return out;
+  }
+
+  // Helper: encode a BomString (FF FE FF <len> <UTF-16LE data>)
+  function bomString(s: string): number[] {
+    return [0xff, 0xfe, 0xff, s.length, ...utf16le(s)];
+  }
+
+  /**
+   * Build a minimal unicode Contents stream for a single "Symbol 1" entry
+   * with the given sharedUrl and className in the writeAsLinkage block.
+   *
+   * Stream layout (mirrors the className test helper):
+   *   header: formatVersion + UTF-16LE stream name
+   *   BomString("MyClip")      display name (s.end points after this)
+   *   UI32LE(1)                stream number
+   *   0x02                     typeByte (movieclip)
+   *   BomString("")            heuristic linkageIdentifier
+   *   [0x01 0x00 0x00 0x00]    4 flag bytes
+   *   28 zero bytes            padding to reach s.end+41
+   *   writeAsLinkage block:
+   *     [00 00 00 00]          zero prefix
+   *     [0x07]                 asLinkageVersion=7
+   *     [0x00]                 flags
+   *     [00 00 00]             3 zero bytes
+   *     BomString("")          linkageIdentifier
+   *     BomString(sharedUrl)   ← value under test
+   *     BomString(className)
+   */
+  function buildContentsStream(sharedUrl: string, className = ""): Uint8Array {
+    const displayName = "MyClip";
+    const streamName = "Symbol 1";
+
+    const header = [
+      0x38,
+      streamName.length,
+      ...utf16le(streamName),
+    ];
+
+    const dispNameBom = bomString(displayName);
+
+    const afterName = [
+      0x01, 0x00, 0x00, 0x00,  // UI32LE streamNum=1
+      0x02,                     // typeByte=2 (movieclip)
+      0xff, 0xfe, 0xff, 0x00,  // BomString("") heuristic linkageIdentifier
+      0x01, 0x00, 0x00, 0x00,  // 4 flag bytes: exportInFirstFrame=1, rest=0
+    ]; // 13 bytes from s.end
+
+    const pad = new Array<number>(28).fill(0); // reaches s.end+41
+
+    const laBlock = [
+      0x00, 0x00, 0x00, 0x00,  // zero prefix
+      0x07,                     // asLinkageVersion=7 (Flash 8)
+      0x00,                     // flags
+      0x00, 0x00, 0x00,         // 3 zero bytes
+      ...bomString(""),          // BomString("") linkageIdentifier
+      ...bomString(sharedUrl),   // BomString(sharedUrl) ← value under test
+      ...bomString(className),   // BomString(className)
+    ];
+
+    return new Uint8Array([...header, ...dispNameBom, ...afterName, ...pad, ...laBlock]);
+  }
+
+  it("decodes a non-empty sharedUrl from the writeAsLinkage block", () => {
+    const buf = buildContentsStream("http://example.com/shared.swf");
+    const info = parseFla8Contents(buf);
+    expect(info.symbols.size).toBe(1);
+    const sym = info.symbols.get(1)!;
+    expect(sym).toBeDefined();
+    expect(sym.sharedUrl).toBe("http://example.com/shared.swf");
+  });
+
+  it("leaves sharedUrl as empty string when linkageURL BomString is empty", () => {
+    const buf = buildContentsStream("");
+    const info = parseFla8Contents(buf);
+    const sym = info.symbols.get(1)!;
+    expect(sym.sharedUrl).toBe("");
+  });
+
+  it("decodes sharedUrl and className independently from the writeAsLinkage block", () => {
+    const buf = buildContentsStream("http://cdn.example.com/lib.swf", "com.example.Clip");
+    const info = parseFla8Contents(buf);
+    const sym = info.symbols.get(1)!;
+    expect(sym.sharedUrl).toBe("http://cdn.example.com/lib.swf");
+    expect(sym.className).toBe("com.example.Clip");
+  });
+});
