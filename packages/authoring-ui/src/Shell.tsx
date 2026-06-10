@@ -587,6 +587,21 @@ function useResize(
 }
 
 // ---------------------------------------------------------------------------
+// Export utilities (pure, exported for unit tests)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generates a zero-padded filename for a frame in an exported PNG sequence.
+ * @param frameIndex - 0-based frame index
+ * @param format - file extension ("png" | "jpeg")
+ * @returns e.g. "frame_0001.png" for frameIndex=0
+ */
+export function frameFilename(frameIndex: number, format: "png" | "jpeg"): string {
+  const n = String(frameIndex + 1).padStart(4, "0");
+  return `frame_${n}.${format}`;
+}
+
+// ---------------------------------------------------------------------------
 // Shell
 // ---------------------------------------------------------------------------
 
@@ -4083,6 +4098,106 @@ export function Shell(): React.ReactElement {
     }
   }, [publishToBytes, publishSettings, doc.properties]);
 
+  // ---------------------------------------------------------------------------
+  // Export Image / Export Movie
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Renders a given frame index to a composited canvas (background + content)
+   * and returns the data URL (with prefix).
+   * @param frameIndex - 0-based frame index to render
+   * @param format - "png" | "jpeg"
+   * @param quality - JPEG quality 0–1 (ignored for PNG)
+   */
+  const renderFrameToDataURL = useCallback(
+    (frameIndex: number, format: "png" | "jpeg" = "png", quality = 0.92): string => {
+      const w = docProperties.width;
+      const h = docProperties.height;
+      const sceneGraph: SceneGraph = {
+        layers: timeline.layers.map((layer) => {
+          const frame = getTweenedFrame(layer, frameIndex);
+          const objects: DisplayObject[] = frame ? [...frame.displayObjects] : [];
+          return {
+            id: layer.id,
+            name: layer.name,
+            visible: layer.visible,
+            locked: layer.locked,
+            outlineMode: layer.outlineMode,
+            outlineColor: layer.outlineColor,
+            objects,
+          };
+        }),
+      };
+      const offscreen = document.createElement("canvas");
+      offscreen.width = w;
+      offscreen.height = h;
+      const renderer = new CanvasRenderer(offscreen);
+      renderer.resize(w, h, 1);
+      renderer.render(sceneGraph, { x: 0, y: 0, zoom: 1 }, doc.library);
+      const composite = document.createElement("canvas");
+      composite.width = w;
+      composite.height = h;
+      const ctx = composite.getContext("2d")!;
+      ctx.fillStyle = docProperties.backgroundColor;
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(offscreen, 0, 0);
+      const mimeType = format === "jpeg" ? "image/jpeg" : "image/png";
+      return composite.toDataURL(mimeType, quality);
+    },
+    [docProperties, timeline, doc.library]
+  );
+
+  /** Trigger a browser download for arbitrary blob data. */
+  const downloadBlob = useCallback((filename: string, blob: Blob): void => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  /**
+   * File > Export Image...
+   * Exports the currently visible frame as a PNG.
+   */
+  const handleExportImage = useCallback(() => {
+    const dataURL = renderFrameToDataURL(currentFrame, "png");
+    // Strip the "data:image/png;base64," prefix to get raw bytes
+    const base64 = dataURL.replace(/^data:image\/png;base64,/, "");
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "image/png" });
+    downloadBlob("frame.png", blob);
+  }, [renderFrameToDataURL, currentFrame, downloadBlob]);
+
+  /**
+   * File > Export Movie...
+   * Exports all frames as a numbered PNG sequence (frame_0001.png, frame_0002.png, ...).
+   * TODO: Add animated GIF export via a GIF encoder library (e.g., gif.js or gifenc).
+   */
+  const handleExportMovie = useCallback(() => {
+    // Compute total frame count across all layers
+    const maxFrame = Math.max(
+      ...timeline.layers.map((l) => {
+        if (l.frames.length === 0) return 1;
+        const lastKf = [...l.frames].sort((a, b) => b.index - a.index)[0];
+        return lastKf.index + 1;
+      }),
+      1
+    );
+    for (let fi = 0; fi < maxFrame; fi++) {
+      const dataURL = renderFrameToDataURL(fi, "png");
+      const base64 = dataURL.replace(/^data:image\/png;base64,/, "");
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "image/png" });
+      downloadBlob(frameFilename(fi, "png"), blob);
+    }
+  }, [renderFrameToDataURL, timeline.layers, downloadBlob]);
+
   const handleTestMovie = useCallback(() => {
     void (async () => {
       const bytes = await testMovie();
@@ -4619,6 +4734,8 @@ export function Shell(): React.ReactElement {
         onImportToLibrary={() => { void handleImportToLibrary(); }}
         onImportSound={() => { void handleImportSound(); }}
         onImportVideo={() => { void handleImportVideo(); }}
+        onExportImage={handleExportImage}
+        onExportMovie={handleExportMovie}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}

@@ -226,6 +226,10 @@ export interface MenuBarProps {
   onImportSound?: () => void;
   /** Called when File > Import > Import Video... is activated. */
   onImportVideo?: () => void;
+  /** Called when File > Export Image... is activated. */
+  onExportImage?: () => void;
+  /** Called when File > Export Movie... is activated. */
+  onExportMovie?: () => void;
   /** Called when Edit > Undo is activated (Ctrl+Z). */
   onUndo?: () => void;
   /** Called when Edit > Redo is activated (Ctrl+Shift+Z). */
@@ -356,6 +360,8 @@ export function MenuBar({
   onImportToLibrary,
   onImportSound,
   onImportVideo,
+  onExportImage,
+  onExportMovie,
   onUndo,
   onRedo,
   canUndo = false,
@@ -448,6 +454,8 @@ export function MenuBar({
         { label: "Import to Library...", action: () => { onImportToLibrary?.(); }, separator: true },
         { label: "Import Sound...", action: () => { onImportSound?.(); } },
         { label: "Import Video...", action: () => { onImportVideo?.(); } },
+        { label: "Export Image...", action: () => { onExportImage?.(); }, separator: true },
+        { label: "Export Movie...", action: () => { onExportMovie?.(); } },
         { label: "Publish Settings...", action: () => { onPublishSettings?.(); }, separator: true },
         { label: "Publish  Ctrl+Shift+F12", action: () => { onPublish?.(); } },
       ],
