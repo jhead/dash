@@ -156,7 +156,7 @@ describe("AS2 getter/setter properties", () => {
   // Test 7: Getter-only (no setter) compiles — null is emitted for setter
   // -------------------------------------------------------------------------
 
-  it("7. getter-only compiles — null push (0x96 type=4) used for missing setter", () => {
+  it("7. getter-only compiles — null push (0x96 type=2) used for missing setter", () => {
     const bytes = compileAS2(`
       class ReadOnly {
         private var _val:Number = 42;
@@ -175,10 +175,11 @@ describe("AS2 getter/setter properties", () => {
       }
     `)).toBe(true);
 
-    // ActionPush (0x96) must appear, and the null type byte (4) should be in the stream
+    // ActionPush (0x96) must appear, and the null type byte (2) should be in the stream
     // This is a structural check that the null-setter path ran
+    // SWF ActionPush type 2 = Null (per SWF spec §8.4.1.3)
     expect(bytes).toContain(0x96); // ActionPush
-    expect(bytes).toContain(0x04); // null type in an ActionPush payload
+    expect(bytes).toContain(0x02); // null type in an ActionPush payload
   });
 
   // -------------------------------------------------------------------------

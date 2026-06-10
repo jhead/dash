@@ -545,7 +545,7 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
                     type: 'instance',
                     symbolId: 'sym-mc-0663',
                     x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
-                    clipActions: [{ event: 'load', script: '_root.gotoAndStop(2);' }],
+                    clipActions: [{ event: 'enterFrame', script: '_root.gotoAndStop(2);' }],
                   }],
                 },
                 {

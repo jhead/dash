@@ -80,7 +80,8 @@ function hasString(bytes: Uint8Array, s: string): boolean {
 
 /**
  * Extract all signed-32-bit integers stored inside ActionPush (0x96) records.
- * AVM1 integer push: 0x96 <length:UI16> 0x09 <value:SI32LE>
+ * AVM1 integer push: 0x96 <length:UI16> 0x07 <value:SI32LE>
+ * (SWF ActionPush type 7 = Integer/SI32)
  */
 function extractPushedInts(bytes: Uint8Array): number[] {
   const result: number[] = [];
@@ -91,7 +92,7 @@ function extractPushedInts(bytes: Uint8Array): number[] {
     if (opcode === 0x96 && i + 2 < bytes.length) {
       const len = view.getUint16(i + 1, true);
       const payloadStart = i + 3;
-      if (bytes[payloadStart] === 0x09 && payloadStart + 4 < bytes.length) {
+      if (bytes[payloadStart] === 0x07 && payloadStart + 4 < bytes.length) {
         result.push(view.getInt32(payloadStart + 1, true));
       }
       i = payloadStart + len;
@@ -112,7 +113,8 @@ function extractPushedInts(bytes: Uint8Array): number[] {
 
 /**
  * Extract all 64-bit IEEE 754 doubles stored inside ActionPush (0x96) records.
- * AVM1 double push: 0x96 <length:UI16> 0x08 <value:F64LE>
+ * AVM1 double push: 0x96 <length:UI16> 0x06 <value:F64LE>
+ * (SWF ActionPush type 6 = Double/F64)
  */
 function extractPushedDoubles(bytes: Uint8Array): number[] {
   const result: number[] = [];
@@ -123,7 +125,7 @@ function extractPushedDoubles(bytes: Uint8Array): number[] {
     if (opcode === 0x96 && i + 2 < bytes.length) {
       const len = view.getUint16(i + 1, true);
       const payloadStart = i + 3;
-      if (bytes[payloadStart] === 0x08 && payloadStart + 8 < bytes.length) {
+      if (bytes[payloadStart] === 0x06 && payloadStart + 8 < bytes.length) {
         result.push(view.getFloat64(payloadStart + 1, true));
       }
       i = payloadStart + len;

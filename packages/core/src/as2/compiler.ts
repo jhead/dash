@@ -109,28 +109,28 @@ class Compiler {
 
   private pushInt(n: number): void {
     const payload = new Uint8Array(5);
-    payload[0] = 9; // type = integer (SI32 LE)
+    payload[0] = 7; // type = integer (SI32 LE) — SWF ActionPush type 7
     new DataView(payload.buffer).setInt32(1, n, true);
     this.emitWithPayload(0x96, payload);
   }
 
   private pushNumber(n: number): void {
     const payload = new Uint8Array(9);
-    payload[0] = 8; // type = double (IEEE 754 64-bit LE)
+    payload[0] = 6; // type = double (IEEE 754 64-bit LE) — SWF ActionPush type 6
     new DataView(payload.buffer).setFloat64(1, n, true);
     this.emitWithPayload(0x96, payload);
   }
 
   private pushBool(b: boolean): void {
-    this.emitWithPayload(0x96, [7, b ? 1 : 0]); // type = boolean
+    this.emitWithPayload(0x96, [5, b ? 1 : 0]); // type = boolean — SWF ActionPush type 5
   }
 
   private pushUndefined(): void {
-    this.emitWithPayload(0x96, [5]); // type = undefined
+    this.emitWithPayload(0x96, [3]); // type = undefined — SWF ActionPush type 3
   }
 
   private pushNull(): void {
-    this.emitWithPayload(0x96, [4]); // type = null
+    this.emitWithPayload(0x96, [2]); // type = null — SWF ActionPush type 2
   }
 
   // ---- Control-flow jump helpers -------------------------------------------
