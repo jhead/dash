@@ -2453,3 +2453,136 @@ describe("motion tween rotateType and rotateCount decoding (task 0936)", () => {
     expect(frame.motionRotateCount).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// CPicObjBase flags: visible/hidden decoding (task 0932)
+//
+// CPicObjBase is the base of every display-object class in the binary FLA.
+// Its second byte (flags) has bit 0 = visible: 0x01 → visible, 0x00 → hidden.
+// readCPicSymbolFields now captures this flag and returns it as SymbolBaseFields.visible.
+// ---------------------------------------------------------------------------
+
+describe("CPicSprite visible/hidden flag decoding (task 0932)", () => {
+  //
+  // Builds a minimal synthetic Page stream:
+  //   CPicPage → CPicLayer → CPicFrame → CPicSprite (with given flags byte)
+  //
+  // CPicSprite body uses symbolSchema=0 (no color effect, no filters),
+  // identity matrix, libraryIndex=1, g=0 (simplest sprite trailer).
+  //
+  // Class table slots (each class = 2 slots):
+  //   1+2  → CPicPage
+  //   3+4  → CPicLayer
+  //   5+6  → CPicFrame
+  //   7+8  → CPicSprite
+  //
+  const IDENTITY_MATRIX = [
+    0x00, 0x00, 0x01, 0x00, // a = 1.0 (16.16 fixed)
+    0x00, 0x00, 0x00, 0x00, // b = 0
+    0x00, 0x00, 0x00, 0x00, // c = 0
+    0x00, 0x00, 0x01, 0x00, // d = 1.0
+    0x00, 0x00, 0x00, 0x00, // tx = 0
+    0x00, 0x00, 0x00, 0x00, // ty = 0
+  ] as const;
+
+  function makeSpriteStream(spriteFlags: number): Uint8Array {
+    return new Uint8Array([
+      // Root marker
+      0x01,
+      // --- New class CPicPage (schema=1, nameLen=8, "CPicPage") ---
+      0xff, 0xff, 0x01, 0x00, 0x08, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x50, 0x61, 0x67, 0x65, // "CPicPage"
+      // CPicPage CPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      //   -- CPicPage child: new class CPicLayer (schema=1, nameLen=9, "CPicLayer") --
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x4c, 0x61, 0x79, 0x65, 0x72, // "CPicLayer"
+      //   CPicLayer CPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      //     -- CPicLayer child: new class CPicFrame (schema=1, nameLen=9, "CPicFrame") --
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x46, 0x72, 0x61, 0x6d, 0x65, // "CPicFrame"
+      //     CPicFrame CPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      //       -- CPicFrame child: new class CPicSprite (schema=1, nameLen=10, "CPicSprite") --
+      0xff, 0xff, 0x01, 0x00, 0x0a, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x53, 0x70, 0x72, 0x69, 0x74, 0x65, // "CPicSprite"
+      //       CPicSprite CPicObjBase: schema=0, flags=spriteFlags ← THE BIT UNDER TEST
+      0x00, spriteFlags,
+      //       CPicSprite has no children → null terminator
+      0x00, 0x00,
+      //       (schema=0: no registration point skips)
+      //
+      //       === CPicSymbolFields body ===
+      //       symbolSchema = 0 (no color effect, no filters, no empty string)
+      0x00,
+      //       matrix (identity, 24 bytes)
+      ...IDENTITY_MATRIX,
+      //       firstFrame = 0 (u16 LE)
+      0x00, 0x00,
+      //       loopMode = 0 (u8)
+      0x00,
+      //       skip(1) — constant 0 after loopMode
+      0x00,
+      //       (symbolSchema < 7: no extra skip)
+      //       (symbolSchema < 4: no color effect block)
+      //       (symbolSchema < 6: no empty CString)
+      //       libraryIndex = 1 (u16 LE)
+      0x01, 0x00,
+      //       skip(2) — reserved bytes after libraryIndex
+      0x00, 0x00,
+      //       (symbolSchema < 0x0e: no 3-byte skip)
+      //       (symbolSchema < 0x13: no filters/blend block)
+      //
+      //       === CPicSprite trailer ===
+      //       g = 0 (pre-F5: no timeline sub-object, no skip blocks)
+      0x00,
+      //       instanceName = empty CString
+      0x00,
+      //       (g < 3: no reserved blocks)
+      //
+      //     Back in CPicFrame children loop: null terminator (end of children)
+      0x00, 0x00,
+      //     CPicFrame CPicObjBase post-loop (schema=4):
+      //       registration point (2 × INT_MIN sentinels, 8 bytes)
+      0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
+      //       schema>2: skip(1), schema>3: skip(1)
+      0x00, 0x00,
+      //
+      //     === CPicFrame-specific fields ===
+      //     shapeSchema = 0
+      0x00,
+      //     readMatrix (identity, 24 bytes) — frame's own transform
+      ...IDENTITY_MATRIX,
+      //     readShapeData(caps=false): schema=0(1), edgeHint=0(4), fillCount=0(2),
+      //       lineCount=0(2), edge-end sentinel(1)
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      //     Remaining CPicFrame-specific reads hit EOF → caught by FlaEofError
+    ]);
+  }
+
+  it("CPicSprite with flags=0x00 (hidden) decodes to Fla8Instance.visible === false", () => {
+    // flags=0x00: bit 0 is 0 → not visible → visible = false
+    const stream = makeSpriteStream(0x00);
+    const timeline = parseFla8Timeline(stream);
+    expect(timeline.layers).toHaveLength(1);
+    const frame = timeline.layers[0]!.frames[0]!;
+    const instances = frame.elements.filter(
+      (e): e is Extract<typeof e, { type: "instance" }> => e.type === "instance",
+    );
+    expect(instances).toHaveLength(1);
+    expect(instances[0]!.visible).toBe(false);
+  });
+
+  it("CPicSprite with flags=0x01 (visible) does not set visible field (default true)", () => {
+    // flags=0x01: bit 0 is 1 → visible → visible field is absent (default true)
+    const stream = makeSpriteStream(0x01);
+    const timeline = parseFla8Timeline(stream);
+    const frame = timeline.layers[0]!.frames[0]!;
+    const instances = frame.elements.filter(
+      (e): e is Extract<typeof e, { type: "instance" }> => e.type === "instance",
+    );
+    expect(instances).toHaveLength(1);
+    expect(instances[0]!.visible).toBeUndefined();
+  });
+});
