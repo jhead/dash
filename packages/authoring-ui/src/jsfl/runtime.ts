@@ -1328,6 +1328,18 @@ export interface JsflFl {
    */
   createDocument(type?: string): JsflDocument;
   trace(msg: unknown): void;
+  /**
+   * Save the document.  In a browser context this triggers a download of the FLA.
+   * fileURL is accepted for API compatibility but ignored in-browser.
+   */
+  saveDocument(doc: JsflDocument, fileURL?: string): void;
+  /**
+   * Returns whether the file at fileURL exists.  Always returns false in a browser
+   * context (no filesystem access).
+   */
+  fileExists(fileURL: string): boolean;
+  /** Output panel — use trace() to append lines; clear() to wipe them. */
+  outputPanel: { trace(msg: string): void; clear(): void };
 }
 
 function makeFlProxy(
@@ -1362,6 +1374,53 @@ function makeFlProxy(
     },
     trace(msg: unknown) {
       state.traces.push(String(msg));
+    },
+    saveDocument(_doc: JsflDocument, fileURL?: string): void {
+      // In a browser context we have no direct filesystem access.  Trigger a
+      // download of the current document serialised as FLA bytes when the
+      // @flash/core saveFla helper is available; otherwise log a notice.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { saveFla } = require("@flash/core") as {
+          saveFla(doc: FlashDocument): Uint8Array;
+        };
+        const bytes = saveFla(state.doc);
+        const filename = fileURL
+          ? (fileURL.split(/[\\/]/).pop() || "untitled.fla")
+          : "untitled.fla";
+        const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        try {
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          a.style.display = "none";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } finally {
+          setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        }
+      } catch {
+        // Running in a test environment or @flash/core is unavailable — log
+        // gracefully rather than throwing.
+        console.log("[JSFL fl.saveDocument] save requested (no-op in this context)", fileURL);
+      }
+    },
+    fileExists(fileURL: string): boolean {
+      // Browser context has no filesystem access; always return false.
+      console.warn("[JSFL fl.fileExists] always returns false in browser context:", fileURL);
+      return false;
+    },
+    outputPanel: {
+      trace(msg: string): void {
+        state.traces.push(String(msg));
+        console.log("[JSFL output]", msg);
+      },
+      clear(): void {
+        // No-op: the output panel state is managed outside the runtime.
+        // Callers wishing to clear the panel must do so via the UI.
+      },
     },
   };
 }
