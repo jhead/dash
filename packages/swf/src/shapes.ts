@@ -1243,13 +1243,19 @@ export function encodePlaceObject2WithClipActions(
     bw.writeString(instanceName);
   }
 
-  // Compile each action and build records
+  // Compile each action and build records.
+  // Each record's bytecode must end with ActionEnd (0x00) per SWF spec §8.4.6.2.
+  // compileAS2 does NOT emit ActionEnd, so we append it here (same as DoAction).
   const records: Array<{ flags: number; bytecode: Uint8Array }> = [];
   let allEventFlags = 0;
   for (const action of clipActions) {
     const eventFlag = CLIP_EVENT_FLAGS[action.event] ?? 0;
     allEventFlags |= eventFlag;
-    const bytecode = compileAS2(action.script);
+    const raw = compileAS2(action.script);
+    // Append ActionEnd (0x00) terminator — required by SWF spec and Ruffle's parser
+    const bytecode = new Uint8Array(raw.length + 1);
+    bytecode.set(raw);
+    // bytecode[raw.length] is already 0x00 (ActionEnd)
     records.push({ flags: eventFlag, bytecode });
   }
 
@@ -1263,9 +1269,9 @@ export function encodePlaceObject2WithClipActions(
   for (const record of records) {
     // ClipEventFlags: UI32
     bw.writeUI32LE(record.flags);
-    // ActionRecordSize: UI32 (byte count of bytecode; compileAS2 already includes 0x00 ActionEnd)
+    // ActionRecordSize: UI32 (byte count of bytecode including 0x00 ActionEnd)
     bw.writeUI32LE(record.bytecode.length);
-    // Action bytes
+    // Action bytes (including ActionEnd at the end)
     bw.writeBytes(record.bytecode);
   }
 
