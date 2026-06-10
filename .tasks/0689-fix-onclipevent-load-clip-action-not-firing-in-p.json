@@ -1,0 +1,8 @@
+{
+  "id": "0689-fix-onclipevent-load-clip-action-not-firing-in-p",
+  "title": "Fix onClipEvent(load) clip action not firing in published SWF (0663 was marked done prematurely)",
+  "description": "Superseded by commits cf33579 (append ActionEnd byte to clip-action bytecode) and 484d169 (onClipEvent(load) E2E test). The E2E test interactivity.spec.ts:479 passes \u2014 last run status: passed, no failed tests. Closing as resolved.",
+  "status": "done",
+  "created_at": "2026-06-10T00:12:32Z",
+  "updated_at": "2026-06-10T00:16:49Z"
+}

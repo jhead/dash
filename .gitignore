@@ -36,6 +36,10 @@ ruffle/
 # Playwright MCP artifacts
 .playwright-mcp/
 
+# Playwright run artifacts (evidence stays local; never commit stale results)
+apps/desktop/test-results/
+apps/desktop/playwright-report/
+
 # Agent prompt files
 prompt
 prompt-manager

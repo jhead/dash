@@ -1,0 +1,8 @@
+{
+  "id": "0693-text-field-editing-static-dynamic-input-text-on-",
+  "title": "Text field editing: Static/Dynamic/Input text on stage",
+  "description": "The Text tool (T) exists in the toolbar but text cannot be edited after placement. Implement the full text field lifecycle: (1) Text tool click creates a TextDisplayObject at the click position with a default string; (2) Double-click enters edit mode with an inline contenteditable or <textarea> overlay; (3) Properties panel shows font/size/color/style/alignment controls for the selected text object; (4) SWF compiler emits DefineText2 (static) or DefineEditText (dynamic/input). See docs/06-text-typography.md.",
+  "status": "in_progress",
+  "created_at": "2026-06-10T00:14:11Z",
+  "updated_at": "2026-06-10T00:17:09Z"
+}

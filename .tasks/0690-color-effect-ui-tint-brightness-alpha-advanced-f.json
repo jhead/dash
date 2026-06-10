@@ -1,8 +1,8 @@
 {
   "id": "0690-color-effect-ui-tint-brightness-alpha-advanced-f",
   "title": "Color Effect UI: tint/brightness/alpha/advanced for instances",
-  "description": "Flash 8 Properties panel shows Color Effect dropdown when a symbol instance is selected: None/Brightness/Tint/Alpha/Advanced. The model already has colorEffect fields on SymbolInstance. Wire up the UI: add a Color Effect section to InstancePanel.tsx with a mode dropdown and sliders/inputs. On change, call updateInstance mutation. The SWF compiler should emit PlaceObject2 ColorTransform record when colorEffect != null. See docs/07-symbols-instances-library.md \u00a7 Instance properties.",
-  "status": "in_progress",
+  "description": "Implemented. All components were already fully in place: InstancePanel.tsx has the complete Color Effect UI (dropdown + per-mode controls for Brightness/Tint/Alpha/Advanced), cxform.ts converts ColorEffect to SWF CXFormWithAlpha, and compile.ts emits PlaceObject2 with HasColorTransform. All 174 authoring-ui tests and 872 swf tests pass.",
+  "status": "done",
   "created_at": "2026-06-10T00:14:11Z",
-  "updated_at": "2026-06-10T00:14:29Z"
+  "updated_at": "2026-06-10T00:15:19Z"
 }

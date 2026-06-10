@@ -60,10 +60,13 @@ Rules:
   and verify it plays in Ruffle. If your task doesn't move toward that, question it.
 - **Ruffle is the sole ActionScript execution engine.** Never create AVM1
   interpreter/runtime tasks (see docs/12-actionscript.md, docs/16-player-runtime.md).
-- **Closing a task requires evidence.** A visual-oracle or e2e acceptance criterion means
-  the spec actually ran and passed; don't mark done on unit tests alone. When a task asks
-  for numbers or run output, paste them into the task (`./task update <id> --description`)
-  before closing. The Oracle reopens evidence-free closures.
+- **Closing a task requires evidence — and evidence must be reproducible.** A
+  visual-oracle or e2e acceptance criterion means the spec actually ran and passed;
+  don't mark done on unit tests alone. Paste the exact command and the pass/fail summary
+  into the task (`./task update <id> --description`) before closing, and **leave the
+  test-results artifacts in place** — do not delete them. Closure claims are audited
+  against disk and against fresh runs; a claim contradicted by either is treated as
+  fabricated and the task is reopened. This has happened; don't be the repeat case.
 - **A task is not done until its code is committed.** Commit your own scope (and only
   your own scope) before marking done; do not leave finished work sitting in the shared
   working tree, and do not sweep other agents' uncommitted files into your commit.
