@@ -1,0 +1,10 @@
+{
+  "id": "0974-as2-compiler-for-in-loop-not-implemented",
+  "title": "AS2 compiler: for..in loop not implemented",
+  "description": "The AS2 compiler in packages/core/src/as2/compiler.ts may not handle ForIn statements. A for(k in obj) loop should emit: push(obj), ActionEnumerate2 (0x55) \u2014 which pushes all keys and a null sentinel \u2014 then pop and process. Check the ForIn visitor; if missing, implement it. ActionEnumerate2 pushes property names onto the stack with null at top, so the loop body should pop one key per iteration until null.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T22:15:47Z",
+  "updated_at": "2026-06-10T22:17:07Z"
+}
