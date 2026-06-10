@@ -430,4 +430,94 @@ describe("multi-scene SWF compilation", () => {
     expect(parsed.scenes[2].frameOffset).toBe(7);
     expect(parsed.scenes[2].name).toBe("Outro");
   });
+
+  // Test 6: A frame label in scene 2 is encoded in tag 86 at the correct absolute frame number.
+  // This verifies that cross-scene gotoAndPlay("label") navigation works correctly.
+  // In Magnet.fla, scene 5 has a "menu" label at scene-relative frame 1; the title-screen
+  // Play button uses `_root.gotoAndPlay("menu")` to navigate there.
+  it("frame label in scene 2 is encoded in tag 86 at correct absolute frame number", () => {
+    // Build a 2-scene doc where scene 2, frame 1 has label "menu"
+    // Scene 1: 3 frames (offsets 0-2), Scene 2: 2 frames (offsets 3-4)
+    // "menu" label is at scene 2 frame 1 → absolute frame 4
+    const scene1 = makeScene("s1", "Title", 3);
+
+    const scene2Frame0: Frame = {
+      index: 0,
+      isKeyframe: true,
+      isEmpty: false,
+      tweenType: "none",
+      label: "",
+      labelType: "name",
+      script: "",
+      sound: null,
+      motionEase: 0,
+      motionRotate: "none",
+      motionRotateCount: 0,
+      motionOrientToPath: false,
+      motionSync: false,
+      motionScale: false,
+      shapeEase: 0,
+      shapeBlend: "distributive",
+      displayObjects: [],
+    };
+    const scene2Frame1: Frame = {
+      ...scene2Frame0,
+      index: 1,
+      label: "menu",
+      labelType: "name",
+    };
+    const scene2: Scene = {
+      id: "s2",
+      name: "Game",
+      timeline: {
+        layers: [
+          {
+            id: "s2-layer",
+            name: "Layer 1",
+            type: "normal",
+            visible: true,
+            locked: false,
+            outlineMode: false,
+            outlineColor: "#ff0000",
+            height: 20,
+            parentFolderId: null,
+            frames: [scene2Frame0, scene2Frame1],
+            frameCount: 2,
+          },
+        ],
+      },
+    };
+
+    const doc = makeDoc([scene1, scene2]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    // 1. Tag 86 must exist and encode "menu" at absolute frame 4 (3 + 1)
+    const tag86 = tags.find((t) => t.code === TAG_SCENE_AND_FRAME_LABEL_DATA);
+    expect(tag86).toBeDefined();
+    const parsed = parseSceneAndFrameLabelData(tag86!.body);
+
+    // Scene 1 starts at 0, Scene 2 starts at 3
+    expect(parsed.scenes[0].frameOffset).toBe(0);
+    expect(parsed.scenes[1].frameOffset).toBe(3);
+
+    // "menu" label at absolute frame 4
+    expect(parsed.frameLabels.length).toBe(1);
+    expect(parsed.frameLabels[0].name).toBe("menu");
+    expect(parsed.frameLabels[0].frameNum).toBe(4); // 3 (scene 1 frames) + 1 (scene 2 frame index)
+
+    // 2. A FrameLabel tag with "menu" must also appear in the tag stream
+    //    (Ruffle uses FrameLabel tags for within-scene navigation by label)
+    const TAG_FRAME_LABEL = 43;
+    const frameLabelTags = tags.filter((t) => t.code === TAG_FRAME_LABEL);
+    const decodeLabel = (body: Uint8Array): string => {
+      const nullIdx = body.indexOf(0);
+      return new TextDecoder().decode(body.slice(0, nullIdx < 0 ? body.length : nullIdx));
+    };
+    const labelNames = frameLabelTags.map((t) => decodeLabel(t.body));
+    // "menu" must be in the FrameLabel tags (as well as scene names "Title" and "Game")
+    expect(labelNames).toContain("menu");
+    expect(labelNames).toContain("Title");
+    expect(labelNames).toContain("Game");
+  });
 });
