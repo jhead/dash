@@ -31,7 +31,7 @@ import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
 import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText, convertFla8Text, assignFolderParents } from "../flash8-import.js";
 import { getTweenSpans } from "../../model/timeline-query.js";
 import type { Fla8ColorEffect, Fla8Filter, Fla8Text } from "../flash8-binary.js";
-import type { FlashDocument, Symbol as SymbolItem, SoundItem, Layer } from "../../model/types.js";
+import type { FlashDocument, Symbol as SymbolItem, SoundItem, FontItem, Layer } from "../../model/types.js";
 import type {
   ShapeDisplayObject,
   SymbolInstance,
@@ -2140,5 +2140,239 @@ describe("button symbol Up/Over/Down/Hit frame structure (task 0923)", () => {
       expect(frame.label).toBe("");
       expect(frame.labelType).toBe("name");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FontItem library entries from embedded font symbols (task 0926)
+//
+// Flash 8/CS2-era binary FLAs encode embedded font library entries as "Font N"
+// stream references in the Contents stream. Each entry carries the font family
+// name (e.g. "_sans") at a fixed byte offset after the stream-name BomString.
+// Before task 0926 these entries were silently skipped; after the fix each
+// "Font N" entry in the Contents stream is converted to a FontItem in
+// doc.library.
+//
+// Fixture: Magnet.fla (CS2 FLA) — contains one embedded font "_sans" (Font 1).
+// ---------------------------------------------------------------------------
+
+describe("FLA import: FontItem entries created for embedded fonts (task 0926)", () => {
+  let doc: FlashDocument;
+
+  beforeAll(() => {
+    const loaded = tryLoadRealFla(fixture("Magnet.fla"));
+    expect(loaded).not.toBeNull();
+    doc = loaded!;
+  });
+
+  it("library contains at least one FontItem", () => {
+    const fontItems = doc.library.items.filter((i): i is FontItem => i.itemType === "font");
+    expect(fontItems.length).toBeGreaterThan(0);
+  });
+
+  it("FontItem for '_sans' is present with correct fields", () => {
+    const fontItems = doc.library.items.filter((i): i is FontItem => i.itemType === "font");
+    const sans = fontItems.find((f) => f.fontName === "_sans");
+    expect(sans).toBeDefined();
+    expect(sans!.name).toBe("_sans");
+    expect(sans!.itemType).toBe("font");
+    expect(typeof sans!.id).toBe("string");
+    expect(sans!.id.length).toBeGreaterThan(0);
+  });
+
+  it("parseFla8Contents produces a fonts map with Font 1 entry", () => {
+    // Verify the binary-level parsing: parseFla8Contents must find the font
+    // in the Contents stream and populate the fonts Map correctly.
+    // We test this via a synthetic Contents stream that mimics the real layout.
+    //
+    // Synthetic Contents stream for "Font 1" -> "_sans":
+    //   FF FE FF 06 [Font 1 UTF-16LE] UI16(1) UI32(hash) UI16(schema) UI8(flag) UI8(5) [_sans UTF-16LE]
+    //
+    // Note: parseFla8Contents also needs a formatVersion >= 0x38 (unicode).
+    // We embed a fake framerate/bgColor anchor and dimensions so it doesn't warn.
+    function makeFontContentsStream(fontNum: number, fontFamily: string): Uint8Array {
+      // Encode "Font N" as BomString: FF FE FF [len] [UTF-16LE]
+      const streamName = `Font ${fontNum}`;
+      const nameUtf16: number[] = [];
+      for (const c of streamName) { nameUtf16.push(c.charCodeAt(0), 0); }
+      const bom = [0xff, 0xfe, 0xff, streamName.length, ...nameUtf16];
+
+      // Fixed-offset font data after BomString:
+      //   +0 UI16: stream number
+      //   +2..5: 4 skip bytes (hash)
+      //   +6..7: 2 skip bytes (schema)
+      //   +8: 1 skip byte (flag)
+      //   +9: UI8 fontNameLen
+      //   +10..end: UTF-16LE font family name
+      const fontUtf16: number[] = [];
+      for (const c of fontFamily) { fontUtf16.push(c.charCodeAt(0), 0); }
+      const fontData = [
+        fontNum & 0xff, (fontNum >> 8) & 0xff, // UI16 stream number
+        0x7e, 0x57, 0x8e, 0x42,                // 4 skip bytes (hash)
+        0x0a, 0x18,                             // 2 skip bytes (schema)
+        0x01,                                   // 1 skip byte (flag)
+        fontFamily.length,                      // UI8 fontNameLen
+        ...fontUtf16,                           // font family name UTF-16LE
+      ];
+
+      // Build a minimal valid Contents stream:
+      // Byte 0: formatVersion >= 0x38 (unicode)
+      // Then embed the font BomString + data somewhere in the stream.
+      // parseFla8Contents scans the entire byte array for patterns, so
+      // we just need the font entry to appear at a valid position.
+      const header = [0x3f]; // formatVersion = 0x3F (Flash 8)
+      const allBytes = [...header, ...bom, ...fontData];
+      return new Uint8Array(allBytes);
+    }
+
+    const stream = makeFontContentsStream(1, "_sans");
+    const contents = parseFla8Contents(stream);
+    expect(contents.fonts.size).toBe(1);
+    const fontInfo = contents.fonts.get(1);
+    expect(fontInfo).toBeDefined();
+    expect(fontInfo!.fontName).toBe("_sans");
+    expect(fontInfo!.name).toBe("_sans");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Motion tween rotateType and rotateCount decoding (task 0936)
+//
+// Flash stores rotation parameters in CPicFrame tween data (fs >= 19, fs > 10):
+//   motionTweenRotate (u32): 1=none, 2=auto, 3=CW, 4=CCW
+//   rotateTimes       (u32): extra full rotations (0, 1, 2, ...)
+//
+// The decoder maps the u32 value → string enum "none"|"auto"|"cw"|"ccw" and
+// forwards both fields through flash8-import to Frame.motionRotate and
+// Frame.motionRotateCount.
+//
+// Synthetic stream layout (CPicPage → CPicLayer → CPicFrame with fs=19):
+//   duration=1 (u16), keyMode=0x4001 motion-tween (u16, fs>2),
+//   motionEase=0 (s16, fs>1), soundId=0 (u16, fs>4),
+//   envCount=0 (u16, fs>5), soundLoop=0(u16) soundSync=0(u8) in=0(u32) out=0(u32) (fs>6),
+//   skip(2) (fs>7), label="" CString (fs>8),
+//   readTimelineSubObject: typeId=4 formatType=0 skip4=0 pfCount=0 (fs>=19),
+//   rotateFlaValue (u32, fs>10), rotateCount (u32, fs>10),
+//   remaining reads hit EOF — caught by try/catch.
+// ---------------------------------------------------------------------------
+
+describe("motion tween rotateType and rotateCount decoding (task 0936)", () => {
+  const IDENTITY_MATRIX_24_ROTATE = [
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+  ] as const;
+
+  /**
+   * Build a minimal synthetic CPicPage → CPicLayer → CPicFrame stream with
+   * fs=19 (0x13) to reach the rotateFlaValue / rotateCount fields.
+   *
+   * @param rotateFlaValue  binary value: 1=none, 2=auto, 3=CW, 4=CCW
+   * @param rotateCount     extra full rotations (u32)
+   */
+  function makeRotateFrameStream(rotateFlaValue: number, rotateCount: number): Uint8Array {
+    function u32le(v: number): number[] {
+      return [v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff];
+    }
+    return new Uint8Array([
+      // Root marker
+      0x01,
+      // New class CPicPage (schema=1, name len=8, "CPicPage")
+      0xff, 0xff, 0x01, 0x00, 0x08, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x50, 0x61, 0x67, 0x65,
+      // CPicPage → readCPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // child: new class CPicLayer (schema=1, name len=9, "CPicLayer")
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x4c, 0x61, 0x79, 0x65, 0x72,
+      // CPicLayer → readCPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // child: new class CPicFrame (schema=1, name len=9, "CPicFrame")
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x46, 0x72, 0x61, 0x6d, 0x65,
+      // CPicFrame → readCPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // CPicFrame has NO display-object children
+      0x00, 0x00,
+      // schema>0: registration point (2 × INT_MIN sentinels, 8 bytes)
+      0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
+      // schema>2: skip(1), schema>3: skip(1)
+      0x00, 0x00,
+      // CPicFrameNode: shapeSchema = 0
+      0x00,
+      // readMatrix (identity, 24 bytes)
+      ...IDENTITY_MATRIX_24_ROTATE,
+      // readShapeData(caps=false): schema=0(1), edgeHint=0(4), fillCount=0(2), lineCount=0(2)
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      // --- CPicFrame-specific fields (fs=19 = 0x13) ---
+      0x13,             // fs = 19 (>= 19 AND > 10 → rotation fields decoded)
+      0x01, 0x00,       // duration = 1 (u16)
+      0x01, 0x40,       // keyMode = 0x4001 (motion tween) (u16, fs>2)
+      0x00, 0x00,       // motionEase = 0 (s16, fs>1)
+      0x00, 0x00,       // soundId = 0 (u16, fs>4)
+      0x00, 0x00,       // envelope count = 0 (u16, fs>5)
+      // fs>6: soundLoop(u16) + soundSync(u8) + inPoint(u32) + outPoint(u32) = 11 bytes
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00,       // fs>7: skip(2)
+      0x00,             // fs>8: CString label = "" (length byte = 0)
+      // fs>=19: readTimelineSubObject: typeId=4 (u32), formatType=0 (u32), skip4, pfCount=0
+      0x04, 0x00, 0x00, 0x00,   // typeId = 4
+      0x00, 0x00, 0x00, 0x00,   // formatType = 0 → else if (formatType === 0) branch
+      0x00, 0x00, 0x00, 0x00,   // skip(4)
+      0x00, 0x00, 0x00, 0x00,   // pfCount = 0
+      // fs>10: rotateFlaValue (u32) and rotateCount (u32)
+      ...u32le(rotateFlaValue),
+      ...u32le(rotateCount),
+      // Remaining fs>11 / fs>12 / ... reads hit EOF — caught by FlaEofError
+    ]);
+  }
+
+  it.each([
+    [1, "none"],
+    [2, "auto"],
+    [3, "cw"],
+    [4, "ccw"],
+  ] as const)(
+    "rotateFlaValue=%i decodes to motionRotate='%s' in parseFla8Timeline",
+    (rotateFlaValue, expected) => {
+      const stream = makeRotateFrameStream(rotateFlaValue, 0);
+      const timeline = parseFla8Timeline(stream);
+      expect(timeline.layers).toHaveLength(1);
+      const frame = timeline.layers[0]!.frames[0]!;
+      expect(frame.motionRotate).toBe(expected);
+      expect(frame.motionRotateCount).toBe(0);
+    },
+  );
+
+  it("rotateCount is decoded correctly from the binary (extra full rotations)", () => {
+    // Encode CW rotation (rotateFlaValue=3) with rotateCount=2
+    const stream = makeRotateFrameStream(3, 2);
+    const timeline = parseFla8Timeline(stream);
+    const frame = timeline.layers[0]!.frames[0]!;
+    expect(frame.motionRotate).toBe("cw");
+    expect(frame.motionRotateCount).toBe(2);
+  });
+
+  it("motionRotate defaults to 'none' for unknown rotateFlaValue (0)", () => {
+    // 0 is not in the map (1..4 are valid); should fall back to 'none'
+    const stream = makeRotateFrameStream(0, 0);
+    const timeline = parseFla8Timeline(stream);
+    const frame = timeline.layers[0]!.frames[0]!;
+    expect(frame.motionRotate).toBe("none");
+  });
+
+  it("forwards motionRotate and motionRotateCount through buildFla8Document to Frame", () => {
+    // Use CCW (rotateFlaValue=4) with rotateCount=3 — verifies the flash8-import
+    // forwarding path (flash8-import.ts passes both fields to the model keyframe).
+    const stream = makeRotateFrameStream(4, 3);
+    const streams = new Map<string, Uint8Array>([["Page 1", stream]]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.motionRotate).toBe("ccw");
+    expect(frame.motionRotateCount).toBe(3);
   });
 });

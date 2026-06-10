@@ -401,6 +401,21 @@ export interface Fla8VideoInfo {
   readonly name: string;
 }
 
+export interface Fla8FontInfo {
+  /**
+   * Library display name of the font item (usually the font family name,
+   * e.g. "_sans", "Arial", "Times New Roman").
+   * Decoded from the fixed-offset font-name field in the Contents stream
+   * immediately after the "Font N" BomString stream reference.
+   */
+  readonly name: string;
+  /**
+   * Font family name as stored in the FLA (the actual typeface identifier).
+   * In most cases identical to `name`.
+   */
+  readonly fontName: string;
+}
+
 export interface Fla8ContentsInfo {
   readonly formatVersion: number;
   readonly width: number | null;
@@ -415,6 +430,8 @@ export interface Fla8ContentsInfo {
   readonly sounds: Map<number, Fla8SoundInfo>;
   /** video/media stream number -> info (for "Video N" or "Media N" FLV entries) */
   readonly videos: Map<number, Fla8VideoInfo>;
+  /** font stream number -> info (for "Font N" embedded font library entries) */
+  readonly fonts: Map<number, Fla8FontInfo>;
 }
 
 // ---------------------------------------------------------------------------
@@ -3232,6 +3249,56 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     }
   }
 
+  // -- font library table -----------------------------------------------------
+  // Font items in the Contents stream appear as stream references "Font N"
+  // encoded as a BomString (FF FE FF [len] [UTF-16LE chars]).
+  // Unlike Symbol/Sound/Video entries, the font family name is NOT encoded
+  // as a subsequent BomString. Instead, the data immediately following the
+  // "Font N" BomString has this fixed layout (observed from real Magnet.fla
+  // CS2 binary):
+  //   +0 UI16LE: stream number (redundant cross-check)
+  //   +2 UI32:   hash/timestamp (skip 4 bytes)
+  //   +6 UI16:   schema/flags (skip 2 bytes)
+  //   +8 UI8:    flag byte (skip 1 byte)
+  //   +9 UI8:    fontNameLen (number of UTF-16 chars in the font family name)
+  //   +10 [fontNameLen*2 bytes]: font family name in UTF-16LE
+  // The font family name (e.g. "_sans", "Arial") is used as the library
+  // display name and as the fontName field of the FontItem.
+  const fonts = new Map<number, Fla8FontInfo>();
+  if (unicode) {
+    const fontPat = utf16Pattern("Font ");
+    let pos = 0;
+    for (;;) {
+      const idx = findBytes(bytes, fontPat, pos);
+      if (idx < 0) break;
+      pos = idx + 1;
+      const lenByte = idx >= 1 ? bytes[idx - 1]! : 0;
+      if (lenByte < 6 || lenByte > 16) continue;
+      const end = idx + lenByte * 2;
+      if (end > bytes.length) continue;
+      const streamName = utf16le(bytes.subarray(idx, end));
+      const m = /^Font (\d+)$/.exec(streamName);
+      if (!m) continue;
+      const num = parseInt(m[1]!, 10);
+      if (fonts.has(num)) continue; // deduplicate
+      // Read the font family name at fixed offset +9 (length byte) and +10 (chars).
+      if (end + 10 > bytes.length) continue;
+      const fontNameLen = bytes[end + 9]!;
+      if (fontNameLen === 0 || fontNameLen > 64) continue;
+      if (end + 10 + fontNameLen * 2 > bytes.length) continue;
+      const fontChars: string[] = [];
+      for (let j = 0; j < fontNameLen; j++) {
+        fontChars.push(
+          String.fromCharCode(bytes[end + 10 + j * 2]! | (bytes[end + 10 + j * 2 + 1]! << 8)),
+        );
+      }
+      const fontName = fontChars.join("");
+      if (fontName.length > 0) {
+        fonts.set(num, { name: fontName, fontName });
+      }
+    }
+  }
+
   return {
     formatVersion,
     width: info.width,
@@ -3242,5 +3309,6 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     symbols,
     sounds,
     videos,
+    fonts,
   };
 }
