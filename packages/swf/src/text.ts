@@ -266,17 +266,19 @@ export function encodeDefineEditText(
   };
   bw.writeUI8(alignMap[obj.align] ?? 0);
 
-  // LeftMargin: UI16 (HasLayout)
-  bw.writeUI16LE(0);
+  // LeftMargin: UI16 (HasLayout) — convert px to twips (1px = 20 twips)
+  bw.writeUI16LE(obj.leftMargin != null ? Math.round(obj.leftMargin * 20) : 0);
 
-  // RightMargin: UI16 (HasLayout)
-  bw.writeUI16LE(0);
+  // RightMargin: UI16 (HasLayout) — convert px to twips
+  bw.writeUI16LE(obj.rightMargin != null ? Math.round(obj.rightMargin * 20) : 0);
 
-  // Indent: UI16 (HasLayout)
-  bw.writeUI16LE(0);
+  // Indent: UI16 (HasLayout) — convert px to twips
+  bw.writeUI16LE(obj.indent != null ? Math.round(obj.indent * 20) : 0);
 
-  // Leading: SI16 (HasLayout) — 2 twips default line spacing
-  bw.writeSI16LE(2);
+  // Leading: SI16 (HasLayout) — convert px to twips, default 0 (no extra spacing)
+  // NOTE: letterSpacing is a TextFormat runtime property, not a DefineEditText field.
+  // TODO: apply letterSpacing via DoInitAction TextFormat.setTextFormat after placement.
+  bw.writeSI16LE(obj.leading != null ? Math.round(obj.leading * 20) : 0);
 
   // VariableName: null-terminated string (empty for static/dynamic display)
   bw.writeString("");

@@ -1059,6 +1059,60 @@ function TextView({
 
       <div style={S.separator} />
 
+      {/* Leading */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Leading:</span>
+        <NumInput
+          value={obj.leading ?? 0}
+          min={0}
+          max={999}
+          style={{ width: 40 }}
+          onChange={(v) => onUpdateObject(obj.id, { leading: Math.round(v) } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>px</span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Left Margin / Right Margin */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>L Margin:</span>
+        <NumInput
+          value={obj.leftMargin ?? 0}
+          min={0}
+          max={720}
+          style={{ width: 40 }}
+          onChange={(v) => onUpdateObject(obj.id, { leftMargin: Math.round(v) } as Partial<DisplayObject>)}
+        />
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>R Margin:</span>
+        <NumInput
+          value={obj.rightMargin ?? 0}
+          min={0}
+          max={720}
+          style={{ width: 40 }}
+          onChange={(v) => onUpdateObject(obj.id, { rightMargin: Math.round(v) } as Partial<DisplayObject>)}
+        />
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Indent */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Indent:</span>
+        <NumInput
+          value={obj.indent ?? 0}
+          min={0}
+          max={720}
+          style={{ width: 40 }}
+          onChange={(v) => onUpdateObject(obj.id, { indent: Math.round(v) } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>px</span>
+      </div>
+
+      <div style={S.separator} />
+
       {/* Color */}
       <div style={S.fieldGroup}>
         <ColorPicker

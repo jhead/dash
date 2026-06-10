@@ -415,6 +415,26 @@ export interface TextDisplayObject {
   readonly wordWrap: boolean;
   /** Letter spacing / tracking in pixels. Default 0. */
   readonly letterSpacing?: number;
+  /**
+   * Extra line spacing in pixels (added between lines). Default 0.
+   * Maps to the DefineEditText HasLayout Leading field (SI16, in twips = px * 20).
+   */
+  readonly leading?: number;
+  /**
+   * Left paragraph margin in pixels. Default 0.
+   * Maps to the DefineEditText HasLayout LeftMargin field (UI16, in twips = px * 20).
+   */
+  readonly leftMargin?: number;
+  /**
+   * Right paragraph margin in pixels. Default 0.
+   * Maps to the DefineEditText HasLayout RightMargin field (UI16, in twips = px * 20).
+   */
+  readonly rightMargin?: number;
+  /**
+   * First-line indent in pixels. Default 0.
+   * Maps to the DefineEditText HasLayout Indent field (UI16, in twips = px * 20).
+   */
+  readonly indent?: number;
   /** Whether this text field is scrollable (dynamic/input text only). Default false. */
   readonly scrollable?: boolean;
   /** AS2 instance name — makes the field accessible as _root.<name> in scripts. */

@@ -94,6 +94,14 @@ interface DecodedEditText {
   wasStatic: boolean;
   /** initial text string if HasText is set, otherwise undefined */
   initialText: string | undefined;
+  /** HasLayout LeftMargin in twips (UI16) — undefined when HasLayout not set */
+  leftMarginTwips?: number;
+  /** HasLayout RightMargin in twips (UI16) — undefined when HasLayout not set */
+  rightMarginTwips?: number;
+  /** HasLayout Indent in twips (UI16) — undefined when HasLayout not set */
+  indentTwips?: number;
+  /** HasLayout Leading in twips (SI16) — undefined when HasLayout not set */
+  leadingTwips?: number;
 }
 
 /**
@@ -164,8 +172,24 @@ function decodeDefineEditText(body: Uint8Array): DecodedEditText {
   if (hasMaxLength) {
     byteOff += 2; // MaxLength UI16
   }
+
+  // HasLayout: Align UI8, LeftMargin UI16, RightMargin UI16, Indent UI16, Leading SI16
+  let leftMarginTwips: number | undefined;
+  let rightMarginTwips: number | undefined;
+  let indentTwips: number | undefined;
+  let leadingTwips: number | undefined;
   if (hasLayout) {
-    byteOff += 9; // Align UI8 + LeftMargin UI16 + RightMargin UI16 + Indent UI16 + Leading SI16
+    byteOff += 1; // Align UI8 (skip)
+    leftMarginTwips = body[byteOff] | (body[byteOff + 1] << 8);
+    byteOff += 2;
+    rightMarginTwips = body[byteOff] | (body[byteOff + 1] << 8);
+    byteOff += 2;
+    indentTwips = body[byteOff] | (body[byteOff + 1] << 8);
+    byteOff += 2;
+    // Leading: SI16 (sign-extend)
+    const rawLeading = body[byteOff] | (body[byteOff + 1] << 8);
+    leadingTwips = rawLeading >= 0x8000 ? rawLeading - 0x10000 : rawLeading;
+    byteOff += 2;
   }
 
   // VariableName: null-terminated string (skip it)
@@ -180,7 +204,7 @@ function decodeDefineEditText(body: Uint8Array): DecodedEditText {
     initialText = new TextDecoder().decode(body.slice(byteOff, end));
   }
 
-  return { charId, flags, hasText, readOnly, hasTextColor, hasFont, useOutlines, noSelect, wasStatic, initialText };
+  return { charId, flags, hasText, readOnly, hasTextColor, hasFont, useOutlines, noSelect, wasStatic, initialText, leftMarginTwips, rightMarginTwips, indentTwips, leadingTwips };
 }
 
 // ---------------------------------------------------------------------------
@@ -427,5 +451,64 @@ describe("DefineEditText — UseOutlines NOT set (device fonts, correct size)", 
     const decoded = compileAndDecode(makeText({ textType: "static" }));
     expect(decoded.hasFont).toBe(true);
     expect(decoded.useOutlines).toBe(false);
+  });
+});
+
+describe("DefineEditText — HasLayout paragraph fields (leading, margins, indent)", () => {
+  it("default text (no paragraph fields set): leading=0, leftMargin=0, rightMargin=0, indent=0 twips", () => {
+    const decoded = compileAndDecode(makeText());
+    expect(decoded.leadingTwips).toBe(0);
+    expect(decoded.leftMarginTwips).toBe(0);
+    expect(decoded.rightMarginTwips).toBe(0);
+    expect(decoded.indentTwips).toBe(0);
+  });
+
+  it("leading=20px → 400 twips in HasLayout Leading field", () => {
+    const decoded = compileAndDecode(makeText({ leading: 20 }));
+    expect(decoded.leadingTwips).toBe(400); // 20 * 20 = 400
+  });
+
+  it("leading=2px → 40 twips", () => {
+    const decoded = compileAndDecode(makeText({ leading: 2 }));
+    expect(decoded.leadingTwips).toBe(40); // 2 * 20 = 40
+  });
+
+  it("leftMargin=10px → 200 twips in HasLayout LeftMargin field", () => {
+    const decoded = compileAndDecode(makeText({ leftMargin: 10 }));
+    expect(decoded.leftMarginTwips).toBe(200); // 10 * 20 = 200
+  });
+
+  it("rightMargin=15px → 300 twips in HasLayout RightMargin field", () => {
+    const decoded = compileAndDecode(makeText({ rightMargin: 15 }));
+    expect(decoded.rightMarginTwips).toBe(300); // 15 * 20 = 300
+  });
+
+  it("indent=5px → 100 twips in HasLayout Indent field", () => {
+    const decoded = compileAndDecode(makeText({ indent: 5 }));
+    expect(decoded.indentTwips).toBe(100); // 5 * 20 = 100
+  });
+
+  it("all four paragraph fields combined", () => {
+    const decoded = compileAndDecode(makeText({
+      leading: 20,
+      leftMargin: 10,
+      rightMargin: 15,
+      indent: 5,
+    }));
+    expect(decoded.leadingTwips).toBe(400);
+    expect(decoded.leftMarginTwips).toBe(200);
+    expect(decoded.rightMarginTwips).toBe(300);
+    expect(decoded.indentTwips).toBe(100);
+  });
+
+  it("paragraph fields apply to all text types (dynamic)", () => {
+    const decoded = compileAndDecode(makeText({ textType: "dynamic", leading: 8, leftMargin: 4 }));
+    expect(decoded.leadingTwips).toBe(160); // 8 * 20
+    expect(decoded.leftMarginTwips).toBe(80); // 4 * 20
+  });
+
+  it("paragraph fields apply to all text types (input)", () => {
+    const decoded = compileAndDecode(makeText({ textType: "input", text: "", indent: 12 }));
+    expect(decoded.indentTwips).toBe(240); // 12 * 20
   });
 });
