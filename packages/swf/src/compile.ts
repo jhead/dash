@@ -1576,6 +1576,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           if ("skewY" in displayObj)
             skewY = (displayObj as { skewY: number }).skewY ?? 0;
 
+          // Apply registrationPoint offset for SymbolInstance: the registration
+          // point is the pivot around which transforms are applied. Subtract it
+          // from the placement position so rotation/scale happen around the
+          // symbol's registration point rather than (0,0).
+          if (displayObj.type === "instance" && displayObj.registrationPoint) {
+            x -= displayObj.registrationPoint.x;
+            y -= displayObj.registrationPoint.y;
+          }
+
           // Compute morph ratio if this is a morph shape object
           let morphRatio = -1;
           if (morphShapeObjIds.has(objId)) {
