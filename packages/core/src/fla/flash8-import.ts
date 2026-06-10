@@ -1004,13 +1004,44 @@ function convertTimeline(
   // The Flash 8 clone model convention (and compile.ts) expect layers stored top-to-bottom
   // (li=0 = topmost/frontmost, li=n-1 = bottommost/background).
   // Reverse the array so the frontmost layer ends up at index 0.
-  const layers = [...t.layers].reverse().map((l, i) =>
+  const reversedBinary = [...t.layers].reverse();
+  const layers = reversedBinary.map((l, i) =>
     convertLayer(l, i, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex, videoIdByIndex, videoSizeByIndex),
   );
   if (layers.length === 0) {
     return { layers: [createLayer("Layer 1", "normal")] };
   }
-  return { layers };
+
+  return { layers: assignFolderParents(layers) };
+}
+
+/**
+ * Assign `parentFolderId` to layers based on their positional order in the
+ * top-to-bottom list (post-reversal).
+ *
+ * Convention: a "folder" type layer immediately precedes its children in the
+ * list.  Each non-folder layer is assigned to the most recently seen folder
+ * layer.  A new folder layer resets the context so sibling folders are
+ * handled correctly.  Layers before any folder, or after a folder has been
+ * exhausted by more folders, keep `parentFolderId === null`.
+ *
+ * Exported for unit testing.
+ */
+export function assignFolderParents(layers: readonly Layer[]): Layer[] {
+  const result: Layer[] = [];
+  let currentFolderId: string | null = null;
+  for (const layer of layers) {
+    if (layer.type === "folder") {
+      // This layer IS a folder — it sits at the top level (no parent folder
+      // itself; nested-folder support would need explicit depth info).
+      currentFolderId = layer.id;
+      result.push(layer); // parentFolderId already null from createLayer
+    } else {
+      // Assign to the most recently seen folder, or null if none.
+      result.push(currentFolderId !== null ? { ...layer, parentFolderId: currentFolderId } : layer);
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

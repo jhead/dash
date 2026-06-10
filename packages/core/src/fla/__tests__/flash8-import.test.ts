@@ -28,10 +28,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isOle2, tryLoadRealFla } from "../ole.js";
 import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
-import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText, convertFla8Text } from "../flash8-import.js";
+import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText, convertFla8Text, assignFolderParents } from "../flash8-import.js";
 import { getTweenSpans } from "../../model/timeline-query.js";
 import type { Fla8ColorEffect, Fla8Filter, Fla8Text } from "../flash8-binary.js";
-import type { FlashDocument, Symbol as SymbolItem, SoundItem } from "../../model/types.js";
+import type { FlashDocument, Symbol as SymbolItem, SoundItem, Layer } from "../../model/types.js";
 import type {
   ShapeDisplayObject,
   SymbolInstance,
@@ -1990,5 +1990,82 @@ describe("shape-tween ease forwarding (task 0914)", () => {
     expect(frame.shapeEase).toBe(0);
     // motionEase gets the raw binary value in the no-tween path (harmless, unused)
     expect(frame.motionEase).toBe(50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assignFolderParents — folder layer parentFolderId reconstruction (task 0915)
+// ---------------------------------------------------------------------------
+
+describe("assignFolderParents (task 0915)", () => {
+  // Helper: build a minimal Layer stub with just enough fields for assignFolderParents.
+  function makeLayer(id: string, type: Layer["type"]): Layer {
+    return {
+      id,
+      name: id,
+      type,
+      visible: true,
+      locked: false,
+      outlineMode: false,
+      outlineColor: "#0000ff",
+      height: 20,
+      parentFolderId: null,
+      frames: [],
+      frameCount: 1,
+    };
+  }
+
+  it("leaves parentFolderId null for all layers when no folder is present", () => {
+    const layers = [makeLayer("a", "normal"), makeLayer("b", "normal")];
+    const result = assignFolderParents(layers);
+    expect(result).toHaveLength(2);
+    expect(result[0]!.parentFolderId).toBeNull();
+    expect(result[1]!.parentFolderId).toBeNull();
+  });
+
+  it("assigns non-folder layers after a folder to that folder's id", () => {
+    const folder = makeLayer("folder1", "folder");
+    const child1 = makeLayer("layer1", "normal");
+    const child2 = makeLayer("layer2", "normal");
+    const result = assignFolderParents([folder, child1, child2]);
+    expect(result).toHaveLength(3);
+    expect(result[0]!.parentFolderId).toBeNull();       // folder itself is top-level
+    expect(result[1]!.parentFolderId).toBe("folder1");  // child1 → folder1
+    expect(result[2]!.parentFolderId).toBe("folder1");  // child2 → folder1
+  });
+
+  it("does not assign parentFolderId to layers before the first folder", () => {
+    const top = makeLayer("top", "normal");
+    const folder = makeLayer("fold", "folder");
+    const child = makeLayer("child", "normal");
+    const result = assignFolderParents([top, folder, child]);
+    expect(result[0]!.parentFolderId).toBeNull();  // top comes before folder
+    expect(result[1]!.parentFolderId).toBeNull();  // folder itself is top-level
+    expect(result[2]!.parentFolderId).toBe("fold"); // child belongs to fold
+  });
+
+  it("handles sibling folders: each resets the current parent context", () => {
+    const folder1 = makeLayer("f1", "folder");
+    const child1  = makeLayer("c1", "normal");
+    const folder2 = makeLayer("f2", "folder");
+    const child2  = makeLayer("c2", "normal");
+    const result = assignFolderParents([folder1, child1, folder2, child2]);
+    expect(result[0]!.parentFolderId).toBeNull();   // f1 is top-level
+    expect(result[1]!.parentFolderId).toBe("f1");   // c1 → f1
+    expect(result[2]!.parentFolderId).toBeNull();   // f2 is top-level (sibling of f1)
+    expect(result[3]!.parentFolderId).toBe("f2");   // c2 → f2
+  });
+
+  it("assigns masked/guided/guide layer types to their enclosing folder", () => {
+    const folder = makeLayer("fold", "folder");
+    const mask   = makeLayer("m",    "mask");
+    const masked = makeLayer("md",   "masked");
+    const result = assignFolderParents([folder, mask, masked]);
+    expect(result[1]!.parentFolderId).toBe("fold");
+    expect(result[2]!.parentFolderId).toBe("fold");
+  });
+
+  it("returns an empty array unchanged", () => {
+    expect(assignFolderParents([])).toEqual([]);
   });
 });
