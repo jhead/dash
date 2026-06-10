@@ -417,6 +417,8 @@ export interface OnionFrame {
   opacity: number;
   tint: "before" | "after";
   sceneGraph: import("@flash/core").SceneGraph;
+  /** When true, render this ghost frame as stroke outlines only (no fill). */
+  outlineMode?: boolean;
 }
 
 export interface StageAreaProps {
@@ -2745,7 +2747,20 @@ export function StageArea({
             ghostRenderer.loadImage(bitmapItem.id, bitmapItem.dataUri);
           }
         }
-        ghostRenderer.render(ghost.sceneGraph, viewport, library);
+
+        // In outline mode, force all layers to outlineMode with a tint-matched color.
+        let renderGraph = ghost.sceneGraph;
+        if (ghost.outlineMode) {
+          const outlineColor = ghost.tint === "before" ? "#4466dd" : "#44bb55";
+          renderGraph = {
+            layers: ghost.sceneGraph.layers.map((layer) => ({
+              ...layer,
+              outlineMode: true,
+              outlineColor,
+            })),
+          };
+        }
+        ghostRenderer.render(renderGraph, viewport, library);
 
         // Draw the ghost frame onto main canvas with reduced opacity.
         // Specify logical destination size so the DPR-scaled image maps correctly.
@@ -2753,11 +2768,13 @@ export function StageArea({
         ctx.globalAlpha = ghost.opacity;
         ctx.drawImage(offscreen, 0, 0, stageWidth, stageHeight);
 
-        // Apply a subtle color tint overlay
-        const tintColor = ghost.tint === "before" ? "rgba(50,100,220,0.15)" : "rgba(50,180,80,0.15)";
-        ctx.globalCompositeOperation = "source-atop";
-        ctx.fillStyle = tintColor;
-        ctx.fillRect(0, 0, stageWidth, stageHeight);
+        // Apply a subtle color tint overlay (skip in outline mode — color is already baked in)
+        if (!ghost.outlineMode) {
+          const tintColor = ghost.tint === "before" ? "rgba(50,100,220,0.15)" : "rgba(50,180,80,0.15)";
+          ctx.globalCompositeOperation = "source-atop";
+          ctx.fillStyle = tintColor;
+          ctx.fillRect(0, 0, stageWidth, stageHeight);
+        }
         ctx.restore();
       }
 

@@ -64,9 +64,12 @@ export interface TimelineProps {
   onSetShapeTweenEase?: (layerId: string, frameIndex: number, ease: number, blend: "distributive" | "angular") => void;
   // Onion skin props
   onionSkinEnabled?: boolean;
+  /** When true, ghost frames are rendered as stroke outlines only (no fill). */
+  onionSkinOutlines?: boolean;
   onionBefore?: number;
   onionAfter?: number;
   onToggleOnionSkin?: () => void;
+  onToggleOnionSkinOutlines?: () => void;
   onOnionRangeChange?: (before: number, after: number) => void;
   // Edit Multiple Frames
   editMultipleFrames?: boolean;
@@ -557,9 +560,11 @@ export function Timeline({
   onSetShapeTween,
   onSetShapeTweenEase,
   onionSkinEnabled = false,
+  onionSkinOutlines = false,
   onionBefore = 2,
   onionAfter = 2,
   onToggleOnionSkin,
+  onToggleOnionSkinOutlines,
   onOnionRangeChange,
   editMultipleFrames = false,
   onToggleEditMultipleFrames,
@@ -1683,6 +1688,15 @@ export function Timeline({
               active={onionSkinEnabled}
             >
               OS
+            </PlayBtn>
+
+            {/* Onion Skin Outlines toggle */}
+            <PlayBtn
+              title={onionSkinOutlines ? "Onion Skin Outlines: on" : "Onion Skin Outlines: off"}
+              onClick={() => onToggleOnionSkinOutlines?.()}
+              active={onionSkinOutlines}
+            >
+              OSO
             </PlayBtn>
 
             {/* Edit Multiple Frames toggle */}

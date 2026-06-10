@@ -22,6 +22,7 @@ interface OnionFrame {
   opacity: number;
   tint: "before" | "after";
   sceneGraph: SceneGraph;
+  outlineMode?: boolean;
 }
 
 /**
@@ -215,5 +216,70 @@ describe("Edit Multiple Frames — onion frame opacity computation", () => {
     expect(getOpacity(1)).toBeCloseTo(0.3);
     // i=2 (farthest): 0.2 + 0.2*(2-2)/2 = 0.2 + 0 = 0.2
     expect(getOpacity(2)).toBeCloseTo(0.2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests for Onion Skin Outlines mode
+// ---------------------------------------------------------------------------
+
+describe("Onion Skin Outlines — outlineMode flag on ghost frames", () => {
+  /**
+   * Simulate building ghost frames as Shell.tsx does, with outlineMode toggled.
+   */
+  function buildGhostFrames(
+    currentFrame: number,
+    onionBefore: number,
+    onionAfter: number,
+    onionSkinOutlines: boolean
+  ): OnionFrame[] {
+    const maxFrame = 20;
+    const frames: OnionFrame[] = [];
+
+    const makeScene = (): OnionFrame["sceneGraph"] => ({
+      layers: [{ id: "l1", name: "Layer 1", visible: true, locked: false, objects: [] }],
+    });
+
+    for (let i = 1; i <= onionBefore; i++) {
+      const fi = currentFrame - i;
+      if (fi < 0) continue;
+      frames.push({ frameIndex: fi, opacity: 0.3, tint: "before", sceneGraph: makeScene(), outlineMode: onionSkinOutlines });
+    }
+    for (let i = 1; i <= onionAfter; i++) {
+      const fi = currentFrame + i;
+      if (fi >= maxFrame) continue;
+      frames.push({ frameIndex: fi, opacity: 0.3, tint: "after", sceneGraph: makeScene(), outlineMode: onionSkinOutlines });
+    }
+    return frames;
+  }
+
+  it("outlineMode is false on all ghost frames when onionSkinOutlines=false", () => {
+    const frames = buildGhostFrames(5, 2, 2, false);
+    expect(frames.length).toBeGreaterThan(0);
+    for (const f of frames) {
+      expect(f.outlineMode).toBe(false);
+    }
+  });
+
+  it("outlineMode is true on all ghost frames when onionSkinOutlines=true", () => {
+    const frames = buildGhostFrames(5, 2, 2, true);
+    expect(frames.length).toBeGreaterThan(0);
+    for (const f of frames) {
+      expect(f.outlineMode).toBe(true);
+    }
+  });
+
+  it("before/after tint is preserved regardless of outlineMode", () => {
+    const frames = buildGhostFrames(5, 2, 2, true);
+    const before = frames.filter((f) => f.tint === "before");
+    const after = frames.filter((f) => f.tint === "after");
+    expect(before.length).toBe(2);
+    expect(after.length).toBe(2);
+  });
+
+  it("toggling outlineMode does not affect ghost frame count", () => {
+    const framesOff = buildGhostFrames(5, 2, 2, false);
+    const framesOn  = buildGhostFrames(5, 2, 2, true);
+    expect(framesOn.length).toBe(framesOff.length);
   });
 });

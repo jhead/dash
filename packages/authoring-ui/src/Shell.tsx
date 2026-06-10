@@ -720,6 +720,7 @@ export function Shell(): React.ReactElement {
 
   // Onion skin state
   const [onionSkinEnabled, setOnionSkinEnabled] = useState(false);
+  const [onionSkinOutlines, setOnionSkinOutlines] = useState(false);
   const [onionBefore, setOnionBefore] = useState(2);
   const [onionAfter, setOnionAfter] = useState(2);
 
@@ -920,6 +921,10 @@ export function Shell(): React.ReactElement {
 
   const handleToggleOnionSkin = useCallback(() => {
     setOnionSkinEnabled((v) => !v);
+  }, []);
+
+  const handleToggleOnionSkinOutlines = useCallback(() => {
+    setOnionSkinOutlines((v) => !v);
   }, []);
 
   const handleOnionRangeChange = useCallback((before: number, after: number) => {
@@ -3384,16 +3389,16 @@ export function Shell(): React.ReactElement {
     for (let i = 1; i <= onionBefore; i++) {
       const fi = currentFrame - i;
       if (fi < 0) continue;
-      frames.push({ frameIndex: fi, opacity: beforeOpacity(i), tint: "before", sceneGraph: buildSceneGraph(fi) });
+      frames.push({ frameIndex: fi, opacity: beforeOpacity(i), tint: "before", sceneGraph: buildSceneGraph(fi), outlineMode: onionSkinOutlines });
     }
     // After frames (closer = higher opacity)
     for (let i = 1; i <= onionAfter; i++) {
       const fi = currentFrame + i;
       if (fi >= maxFrame) continue;
-      frames.push({ frameIndex: fi, opacity: afterOpacity(i), tint: "after", sceneGraph: buildSceneGraph(fi) });
+      frames.push({ frameIndex: fi, opacity: afterOpacity(i), tint: "after", sceneGraph: buildSceneGraph(fi), outlineMode: onionSkinOutlines });
     }
     return frames;
-  }, [onionSkinEnabled, editMultipleFrames, onionBefore, onionAfter, currentFrame, timeline, doc.library]);
+  }, [onionSkinEnabled, onionSkinOutlines, editMultipleFrames, onionBefore, onionAfter, currentFrame, timeline, doc.library]);
 
   // Derive selected keyframe frame object (from active layer, governing keyframe at currentFrame)
   const selectedKeyframeFrame = useMemo<Frame | null>(() => {
@@ -4404,9 +4409,11 @@ export function Shell(): React.ReactElement {
                   onFrameChange={handleFrameChange}
                   onPlayingChange={handlePlayingChange}
                   onionSkinEnabled={onionSkinEnabled}
+                  onionSkinOutlines={onionSkinOutlines}
                   onionBefore={onionBefore}
                   onionAfter={onionAfter}
                   onToggleOnionSkin={handleToggleOnionSkin}
+                  onToggleOnionSkinOutlines={handleToggleOnionSkinOutlines}
                   onOnionRangeChange={handleOnionRangeChange}
                   editMultipleFrames={editMultipleFrames}
                   onToggleEditMultipleFrames={handleToggleEditMultipleFrames}
