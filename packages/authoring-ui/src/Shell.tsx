@@ -26,6 +26,7 @@ import {
   insertBlankKeyframe,
   removeFrame,
   transformedShapeBounds,
+  shapeBounds,
   copyFrames,
   pasteFrames,
   breakApart,
@@ -42,6 +43,7 @@ import type {
   ClipAction,
   DisplayObject,
   DocumentProperties,
+  DrawingObject,
   EaseCurve,
   Fill,
   FlashDocument,
@@ -110,6 +112,99 @@ interface EditContext {
   symbolId?: string;
   symbolName?: string;
   symbolType?: SymbolType;
+}
+
+// ---------------------------------------------------------------------------
+// Info panel bounds helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the pixel width and height of any display object type.
+ * For shapes/drawing-objects: uses the shape's path geometry (AABB, with scale applied).
+ * For symbol instances: resolves to the symbol's first keyframe and sums all object bounds.
+ * For text: uses the stored width/height fields.
+ * For bitmaps: uses width * scaleX / height * scaleY.
+ * For groups: returns the bounding box of all children.
+ * Returns null when the size cannot be determined.
+ */
+function getDisplayObjectPixelSize(
+  obj: DisplayObject,
+  library: Library
+): { w: number; h: number } | null {
+  switch (obj.type) {
+    case "shape": {
+      const b = shapeBounds(obj.shape, 0, 0);
+      const scaleX = (obj as ShapeDisplayObject).scaleX ?? 1;
+      const scaleY = (obj as ShapeDisplayObject).scaleY ?? 1;
+      return { w: Math.round(b.width * Math.abs(scaleX)), h: Math.round(b.height * Math.abs(scaleY)) };
+    }
+    case "drawing-object": {
+      const b = shapeBounds((obj as DrawingObject).shape, 0, 0);
+      return { w: Math.round(b.width), h: Math.round(b.height) };
+    }
+    case "text": {
+      return { w: Math.round(obj.width ?? 0), h: Math.round(obj.height ?? 0) };
+    }
+    case "bitmap": {
+      const scaleX = (obj as BitmapDisplayObject).scaleX ?? 1;
+      const scaleY = (obj as BitmapDisplayObject).scaleY ?? 1;
+      return {
+        w: Math.round((obj.width ?? 0) * Math.abs(scaleX)),
+        h: Math.round((obj.height ?? 0) * Math.abs(scaleY)),
+      };
+    }
+    case "instance": {
+      const inst = obj as SymbolInstance;
+      const sym = library.items.find(
+        (i) => i.id === inst.symbolId && i.itemType === "symbol"
+      ) as Symbol | undefined;
+      if (!sym) return null;
+      // Gather all objects from the first keyframe of the symbol
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const layer of sym.timeline.layers) {
+        const kf = layer.frames.find((f) => f.isKeyframe && !f.isEmpty);
+        if (!kf) continue;
+        for (const child of kf.displayObjects) {
+          const childSize = getDisplayObjectPixelSize(child, library);
+          if (!childSize) continue;
+          const cx = child.x ?? 0;
+          const cy = child.y ?? 0;
+          if (cx < minX) minX = cx;
+          if (cy < minY) minY = cy;
+          const rx = cx + childSize.w;
+          const ry = cy + childSize.h;
+          if (rx > maxX) maxX = rx;
+          if (ry > maxY) maxY = ry;
+        }
+      }
+      if (!isFinite(minX)) return null;
+      const rawW = maxX - minX;
+      const rawH = maxY - minY;
+      const scaleX = inst.scaleX ?? 1;
+      const scaleY = inst.scaleY ?? 1;
+      return { w: Math.round(rawW * Math.abs(scaleX)), h: Math.round(rawH * Math.abs(scaleY)) };
+    }
+    case "group": {
+      // Compute bounding box of all children
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const child of obj.children) {
+        const childSize = getDisplayObjectPixelSize(child, library);
+        if (!childSize) continue;
+        const cx = child.x ?? 0;
+        const cy = child.y ?? 0;
+        if (cx < minX) minX = cx;
+        if (cy < minY) minY = cy;
+        const rx = cx + childSize.w;
+        const ry = cy + childSize.h;
+        if (rx > maxX) maxX = rx;
+        if (ry > maxY) maxY = ry;
+      }
+      if (!isFinite(minX)) return null;
+      return { w: Math.round(maxX - minX), h: Math.round(maxY - minY) };
+    }
+    default:
+      return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -550,6 +645,8 @@ export function Shell(): React.ReactElement {
   const [zoom, setZoom] = useState(1.0);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
+  // Stage-space cursor position (updated from StageArea onCursorMove)
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   // Grid settings are derived from doc.properties.grid (persisted in document state)
   const showGrid = docProperties.grid.showGrid;
   const gridWidth = docProperties.grid.gridWidth;
@@ -739,6 +836,10 @@ export function Shell(): React.ReactElement {
     setPanX(x);
     setPanY(y);
   };
+
+  const handleCursorMove = useCallback((x: number, y: number) => {
+    setCursorPos({ x, y });
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Handlers — rulers & guides
@@ -3649,6 +3750,7 @@ export function Shell(): React.ReactElement {
                 selectedInstanceId={selectedInstanceId}
                 onZoomChange={handleZoomChangeDirect}
                 onPanChange={handlePanChange}
+                onCursorMove={handleCursorMove}
                 onDrop={handleStageDrop}
                 onInstanceSelect={handleInstanceSelect}
                 currentFrame={currentFrame}
@@ -4059,20 +4161,17 @@ export function Shell(): React.ReactElement {
                         <span style={{ color: "#999", width: 16, marginLeft: 8 }}>Y:</span>
                         <span>{Math.round(selectedDisplayObject.y)}</span>
                       </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <span style={{ color: "#999", width: 16 }}>W:</span>
-                        <span>
-                          {selectedDisplayObject.type === "bitmap"
-                            ? Math.round((selectedDisplayObject.width ?? 0) * (selectedDisplayObject.scaleX ?? 1))
-                            : "—"}
-                        </span>
-                        <span style={{ color: "#999", width: 16, marginLeft: 8 }}>H:</span>
-                        <span>
-                          {selectedDisplayObject.type === "bitmap"
-                            ? Math.round((selectedDisplayObject.height ?? 0) * (selectedDisplayObject.scaleY ?? 1))
-                            : "—"}
-                        </span>
-                      </div>
+                      {(() => {
+                        const size = getDisplayObjectPixelSize(selectedDisplayObject, library);
+                        return (
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <span style={{ color: "#999", width: 16 }}>W:</span>
+                            <span>{size ? size.w : "—"}</span>
+                            <span style={{ color: "#999", width: 16, marginLeft: 8 }}>H:</span>
+                            <span>{size ? size.h : "—"}</span>
+                          </div>
+                        );
+                      })()}
                     </>
                   ) : (
                     <span style={{ color: "#666" }}>No selection</span>
@@ -4088,6 +4187,8 @@ export function Shell(): React.ReactElement {
         frameRate={docProperties.frameRate}
         currentFrame={currentFrame + 1}
         onZoomChange={handleZoomChange}
+        cursorX={cursorPos?.x ?? null}
+        cursorY={cursorPos?.y ?? null}
       />
 
       {/* Color panel overlay */}

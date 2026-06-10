@@ -511,6 +511,8 @@ export interface StageAreaProps {
   onBreakApart?: () => void;
   /** Called when Space or Enter is pressed to toggle playback. */
   onPlayToggle?: () => void;
+  /** Called on every mouse-move with the current stage-space cursor coordinates. */
+  onCursorMove?: (x: number, y: number) => void;
   /** Ghost frames for onion skinning. When provided, rendered before the main frame. */
   onionFrames?: OnionFrame[];
   /**
@@ -864,6 +866,7 @@ export function StageArea({
   stageOverlay,
   editMultipleFrames = false,
   onEditMultipleFrameClick,
+  onCursorMove,
 }: StageAreaProps): React.ReactElement {
   const workAreaRef = useRef<HTMLDivElement>(null);
   const gridCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1819,6 +1822,12 @@ export function StageArea({
 
   const onMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      // Always report stage-space cursor position to parent
+      if (onCursorMove) {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        onCursorMove(stageX, stageY);
+      }
+
       // Panning
       if (isPanningRef.current && panStartRef.current) {
         const dx = (e.clientX - panStartRef.current.mouseX) / internalZoom;
@@ -2212,7 +2221,7 @@ export function StageArea({
         setHandleCursor(undefined);
       }
     },
-    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete]
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove]
   );
 
   const onMouseUp = useCallback(

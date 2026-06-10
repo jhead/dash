@@ -5,6 +5,10 @@ export interface StatusBarProps {
   frameRate?: number;
   currentFrame?: number;
   onZoomChange?: (zoom: number) => void;
+  /** Stage-space cursor X in pixels, or null when cursor is outside the stage. */
+  cursorX?: number | null;
+  /** Stage-space cursor Y in pixels, or null when cursor is outside the stage. */
+  cursorY?: number | null;
 }
 
 // Preset zoom levels as percentages
@@ -52,6 +56,8 @@ export function StatusBar({
   frameRate = 12,
   currentFrame = 1,
   onZoomChange,
+  cursorX = null,
+  cursorY = null,
 }: StatusBarProps): React.ReactElement {
   // zoom prop is a percentage (100 = 100%)
   const zoomPct = Math.round(zoom);
@@ -68,6 +74,12 @@ export function StatusBar({
 
   return (
     <div style={styles.statusBar}>
+      <span style={styles.item}>
+        {cursorX != null && cursorY != null
+          ? `X: ${Math.round(cursorX)}  Y: ${Math.round(cursorY)}`
+          : "X: —  Y: —"}
+      </span>
+      <span style={styles.separator}>|</span>
       <span style={styles.item}>Frame: {currentFrame}</span>
       <span style={styles.separator}>|</span>
       <span style={styles.item}>{frameRate} fps</span>
