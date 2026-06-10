@@ -59,6 +59,7 @@ import {
   insertBlankKeyframe,
   removeFrame,
   setFrameLabel,
+  setSoundOnFrame,
   setMotionTween,
   updateMotionTweenProps,
   setShapeTween,
@@ -88,6 +89,7 @@ import type {
   Color,
   Fill,
   SolidStroke,
+  SoundLinkage,
 } from "@flash/core";
 
 // ---------------------------------------------------------------------------
@@ -594,6 +596,17 @@ const handlers: Record<string, AnyHandler> = {
     bold?: boolean;
     italic?: boolean;
     align?: "left" | "center" | "right" | "justify";
+    multiline?: boolean;
+    wordWrap?: boolean;
+    instanceName?: string;
+    password?: boolean;
+    maxChars?: number;
+    hasBorder?: boolean;
+    html?: boolean;
+    autoSize?: boolean;
+    letterSpacing?: number;
+    leading?: number;
+    restrict?: string;
     layerId?: string;
     frameIndex?: number;
   }): StageAddShapeResult {
@@ -618,8 +631,17 @@ const handlers: Record<string, AnyHandler> = {
       italic: params.italic ?? false,
       color: colorVal,
       align: params.align ?? "left",
-      multiline: false,
-      wordWrap: false,
+      multiline: params.multiline ?? false,
+      wordWrap: params.wordWrap ?? false,
+      ...(params.instanceName !== undefined && { instanceName: params.instanceName }),
+      ...(params.password !== undefined && { password: params.password }),
+      ...(params.maxChars !== undefined && { maxChars: params.maxChars }),
+      ...(params.hasBorder !== undefined && { hasBorder: params.hasBorder }),
+      ...(params.html !== undefined && { html: params.html }),
+      ...(params.autoSize !== undefined && { autoSize: params.autoSize }),
+      ...(params.letterSpacing !== undefined && { letterSpacing: params.letterSpacing }),
+      ...(params.leading !== undefined && { leading: params.leading }),
+      ...(params.restrict !== undefined && { restrict: params.restrict }),
     };
 
     const doc = cb.getDoc();
@@ -1146,6 +1168,34 @@ const handlers: Record<string, AnyHandler> = {
         };
       }
       return updated;
+    });
+    cb.pushDoc(newDoc);
+    return { ok: true, rev: _rev };
+  },
+
+  timeline_set_sound(params: {
+    layerId: string;
+    frameIndex: number;
+    libraryItemId: string | null;
+    syncMode?: "event" | "start" | "stop" | "stream";
+    repeatCount?: number;
+  }): OkRevResult {
+    const cb = requireCallbacks();
+    const layerId = resolveLayerId(cb, params.layerId);
+    const doc = cb.getDoc();
+    const sceneIndex = cb.getActiveSceneIndex();
+    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+      const layerIndex = t.layers.findIndex((l) => l.id === layerId);
+      if (layerIndex === -1) throw new Error(`Layer "${layerId}" not found`);
+      const sound: SoundLinkage | null =
+        params.libraryItemId === null
+          ? null
+          : {
+              libraryItemId: params.libraryItemId,
+              syncMode: params.syncMode ?? "event",
+              repeatCount: params.repeatCount ?? 1,
+            };
+      return setSoundOnFrame(t, layerIndex, params.frameIndex, sound);
     });
     cb.pushDoc(newDoc);
     return { ok: true, rev: _rev };

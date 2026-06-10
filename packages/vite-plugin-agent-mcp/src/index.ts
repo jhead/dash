@@ -373,6 +373,17 @@ function createMcpServerForRequest(): McpServer {
         bold: z.boolean().optional(),
         italic: z.boolean().optional(),
         align: z.enum(["left", "center", "right", "justify"]).optional(),
+        multiline: z.boolean().optional().describe("Allow multiple lines of text"),
+        wordWrap: z.boolean().optional().describe("Wrap text within the bounding box"),
+        instanceName: z.string().optional().describe("AS2 instance name for scripting (_root.<name>)"),
+        password: z.boolean().optional().describe("Mask characters as password dots (input text only)"),
+        maxChars: z.number().int().nonnegative().optional().describe("Maximum characters the user can enter (input text only; 0 = no limit)"),
+        hasBorder: z.boolean().optional().describe("Draw a border rectangle around the text field"),
+        html: z.boolean().optional().describe("Enable HTML markup in the text field"),
+        autoSize: z.boolean().optional().describe("Automatically resize the field to fit its content"),
+        letterSpacing: z.number().optional().describe("Letter spacing / tracking in pixels"),
+        leading: z.number().optional().describe("Extra line spacing in pixels"),
+        restrict: z.string().optional().describe("Character restriction pattern for input text (e.g. '0-9')"),
         layerId: z.string().optional(),
         frameIndex: z.number().int().nonnegative().optional(),
       }),
@@ -650,6 +661,22 @@ function createMcpServerForRequest(): McpServer {
       }),
     },
     async (params) => callTool("timeline_set_frame_label", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "timeline_set_sound",
+    {
+      title: "Set Frame Sound",
+      description: "Attach a sound library item to a keyframe, or pass libraryItemId=null to clear. Returns ok and rev.",
+      inputSchema: z.object({
+        layerId: z.string(),
+        frameIndex: z.number().int().nonnegative(),
+        libraryItemId: z.string().nullable().describe("Library SoundItem id, or null to clear the sound"),
+        syncMode: z.enum(["event", "start", "stop", "stream"]).optional().describe("Sync mode (default: event)"),
+        repeatCount: z.number().int().nonnegative().optional().describe("Number of times to repeat (0 = loop; default: 1)"),
+      }),
+    },
+    async (params) => callTool("timeline_set_sound", params as Record<string, unknown>)
   );
 
   server.registerTool(
