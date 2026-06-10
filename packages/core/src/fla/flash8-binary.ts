@@ -228,6 +228,16 @@ export interface Fla8TextRun {
   readonly color: Fla8Color;
   readonly bold: boolean;
   readonly italic: boolean;
+  /** Line spacing (leading) in pixels. Default 0. */
+  readonly leading?: number;
+  /** First-line indent in pixels. Default 0. */
+  readonly indent?: number;
+  /** Left margin in pixels. Default 0. */
+  readonly leftMargin?: number;
+  /** Right margin in pixels. Default 0. */
+  readonly rightMargin?: number;
+  /** Letter spacing in pixels (may be negative). Default 0. */
+  readonly letterSpacing?: number;
 }
 
 /** Map CPicText per-run vertical/rtl bytes to editor orientation (flacomdoc layout). */
@@ -299,6 +309,16 @@ export interface Fla8Text {
    * Default: false.
    */
   readonly autoExpand?: boolean;
+  /** Line spacing (leading) from the first text run, in pixels. Default 0. */
+  readonly leading?: number;
+  /** First-line indent from the first text run, in pixels. Default 0. */
+  readonly indent?: number;
+  /** Left margin from the first text run, in pixels. Default 0. */
+  readonly leftMargin?: number;
+  /** Right margin from the first text run, in pixels. Default 0. */
+  readonly rightMargin?: number;
+  /** Letter spacing from the first text run, in pixels. Default 0. */
+  readonly letterSpacing?: number;
   /**
    * Whether the text field is visible in the authoring tool.
    * Decoded from the CPicObjBase flags byte (bit 0 = visible).
@@ -2079,6 +2099,16 @@ interface TextRun {
   vertical: boolean;
   rightToLeft: boolean;
   rotation: boolean;
+  /** Line spacing (leading) in FLA units (divide by 20 for pixels). */
+  leading: number;
+  /** First-line indent in FLA units. */
+  indent: number;
+  /** Left margin in FLA units. */
+  leftMargin: number;
+  /** Right margin in FLA units. */
+  rightMargin: number;
+  /** Letter spacing in FLA units (s16). */
+  letterSpacing: number;
 }
 
 /** writeString: u8 length (with 0xFF/0xFFFF extensions) + chars, no BOM. */
@@ -2119,9 +2149,12 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
   r.skip(1); // autoKern
   r.skip(1); // character position
   const align = r.u8();
-  r.skip(8); // line spacing, indent, left margin, right margin
-  if (ts >= 5) r.skip(2); // letter spacing
-  else r.skip(1);
+  const leading = r.u16();      // line spacing (leading)
+  const indent = r.u16();       // first-line indent
+  const leftMargin = r.u16();   // left margin
+  const rightMargin = r.u16();  // right margin
+  const letterSpacing = ts >= 5 ? r.s16() : 0;
+  if (ts < 5) r.skip(1);        // pre-F5: 1 reserved byte in place of the s16
   if (cs4) readCString(r);
   else readPlainString(r, unicode); // url
   let vertical = false;
@@ -2141,7 +2174,7 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
     if (cs4) readCString(r);
     else readPlainString(r, unicode); // url (repeated)
   }
-  return { fontName, sizePt, color, bold, italic, align, vertical, rightToLeft, rotation };
+  return { fontName, sizePt, color, bold, italic, align, vertical, rightToLeft, rotation, leading, indent, leftMargin, rightMargin, letterSpacing };
 }
 
 function readCPicText(ctx: ParseCtx): Fla8Text {
@@ -2198,6 +2231,11 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
           color: thisRun.color,
           bold: thisRun.bold,
           italic: thisRun.italic,
+          ...(thisRun.leading !== 0 ? { leading: thisRun.leading / 20 } : {}),
+          ...(thisRun.indent !== 0 ? { indent: thisRun.indent / 20 } : {}),
+          ...(thisRun.leftMargin !== 0 ? { leftMargin: thisRun.leftMargin / 20 } : {}),
+          ...(thisRun.rightMargin !== 0 ? { rightMargin: thisRun.rightMargin / 20 } : {}),
+          ...(thisRun.letterSpacing !== 0 ? { letterSpacing: thisRun.letterSpacing / 20 } : {}),
         });
       }
     }
@@ -2272,6 +2310,11 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     as2VariableName,
     scrollable,
     ...(autoExpand ? { autoExpand } : {}),
+    ...(run?.leading ? { leading: run.leading / 20 } : {}),
+    ...(run?.indent ? { indent: run.indent / 20 } : {}),
+    ...(run?.leftMargin ? { leftMargin: run.leftMargin / 20 } : {}),
+    ...(run?.rightMargin ? { rightMargin: run.rightMargin / 20 } : {}),
+    ...(run?.letterSpacing ? { letterSpacing: run.letterSpacing / 20 } : {}),
     filters,
     // Instance color effect for text fields is not yet decoded from the binary
     // (no confirmed fixture for the exact byte layout in CPicText). The field is
