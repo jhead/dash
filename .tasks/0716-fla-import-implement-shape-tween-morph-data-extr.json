@@ -1,0 +1,10 @@
+{
+  "id": "0716-fla-import-implement-shape-tween-morph-data-extr",
+  "title": "FLA import: implement shape tween / morph data extraction",
+  "description": "flash8-binary.ts warns 'shape tween (morph) data is not imported'. Implement parsing of DefineMorphShape data from the FLA CPicFrame / shape tween records. The model has TweenType='shape' on frames and the SWF encoder emits DefineMorphShape2 (tag 84). Wire the FLA-side morph start/end shape extraction into the frame model so shape tweens round-trip through import \u2192 publish. Cross-reference ruffle/JPEXS for the binary layout.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T04:09:23Z",
+  "updated_at": "2026-06-10T04:09:23Z"
+}
