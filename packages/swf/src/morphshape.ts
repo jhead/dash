@@ -205,6 +205,24 @@ function joinStyleBits(join: string): number {
   return 0; // round (default)
 }
 
+function lineStyle2FlagBytes(s: SolidStroke): { highByte: number; lowByte: number } {
+  const startCapBits = capStyleBits(s.caps);
+  const endCapBits = capStyleBits(s.caps);
+  const joinBits = joinStyleBits(s.joints);
+  const isHairline = s.strokeType === "hairline";
+  const scaleFlags = isHairline ? 0x06 : 0;
+  const highByte =
+    ((startCapBits & 0x3) << 6) |
+    ((joinBits & 0x3) << 4) |
+    scaleFlags;
+  const lowByte = endCapBits & 0x3;
+  return { highByte, lowByte };
+}
+
+function strokeWidthTwips(s: SolidStroke): number {
+  return s.strokeType === "hairline" ? 0 : px(s.width);
+}
+
 /**
  * Write a MORPHLINESTYLE2 array for DefineMorphShape2 (tag 84).
  *
@@ -227,21 +245,13 @@ function writeMorphLineStyle2Array(
   bw.writeUI8(strokes.length);
   for (const se of strokes) {
     // startWidth UI16LE in twips
-    bw.writeUI16LE(px(se.startStroke.width));
+    bw.writeUI16LE(strokeWidthTwips(se.startStroke));
     // endWidth UI16LE in twips
-    bw.writeUI16LE(px(se.endStroke.width));
+    bw.writeUI16LE(strokeWidthTwips(se.endStroke));
 
     // LineStyle2 flags UI16 (big-endian byte order as in DefineShape4)
-    const startCapBits = capStyleBits(se.startStroke.caps);
-    const endCapBits = capStyleBits(se.startStroke.caps);
-    const joinBits = joinStyleBits(se.startStroke.joints);
     const hasMiter = se.startStroke.joints === "miter";
-    // Byte 1 (high): StartCap[7:6] | Join[5:4] | HasFill[3] | NoHScale[2] | NoVScale[1] | PixelHinting[0]
-    // Byte 2 (low):  Reserved[7:3] | NoClose[2] | EndCap[1:0]
-    const highByte =
-      ((startCapBits & 0x3) << 6) |
-      ((joinBits & 0x3) << 4);
-    const lowByte = (endCapBits & 0x3);
+    const { highByte, lowByte } = lineStyle2FlagBytes(se.startStroke);
     bw.writeUI8(highByte);
     bw.writeUI8(lowByte);
 

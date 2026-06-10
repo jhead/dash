@@ -197,10 +197,15 @@ export type StrokeStyle =
   | StrokeStyleStippled
   | StrokeStyleHatched;
 
+/** Width semantics for a stroke. Hairline (width 0) renders as 1px regardless of zoom. */
+export type StrokeWidthType = "solid" | "hairline";
+
 export interface SolidStroke {
   readonly type: "solid";
   readonly color: Color;
   readonly width: number;
+  /** Defaults to "solid" when omitted. Hairline strokes use width 0. */
+  readonly strokeType?: StrokeWidthType;
   readonly caps: StrokeCap;
   readonly joints: StrokeJoin;
   /** Miter limit ratio (only relevant when joints === 'miter'). Default 3. */

@@ -269,6 +269,26 @@ function joinStyleBits(join: string): number {
   return 0; // round (default)
 }
 
+/** LINESTYLE2 flag bytes for a model stroke (DefineShape4 / DefineMorphShape2). */
+function lineStyle2FlagBytes(s: SolidStroke): { highByte: number; lowByte: number } {
+  const startCapBits = capStyleBits(s.caps);
+  const endCapBits = capStyleBits(s.caps);
+  const joinBits = joinStyleBits(s.joints);
+  const isHairline = s.strokeType === "hairline";
+  // Hairline: width=0 twips + NoHScale + NoVScale so stroke stays 1px at any zoom.
+  const scaleFlags = isHairline ? 0x06 : 0;
+  const highByte =
+    ((startCapBits & 0x3) << 6) |
+    ((joinBits & 0x3) << 4) |
+    scaleFlags;
+  const lowByte = endCapBits & 0x3;
+  return { highByte, lowByte };
+}
+
+function strokeWidthTwips(s: SolidStroke): number {
+  return s.strokeType === "hairline" ? 0 : px(s.width);
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -429,6 +449,7 @@ export function encodeDefineShape4(
           st.stroke.color.b === c.b &&
           st.stroke.color.a === c.a &&
           st.stroke.width === s.width &&
+          (st.stroke.strokeType ?? "solid") === (s.strokeType ?? "solid") &&
           st.stroke.caps === s.caps &&
           st.stroke.joints === s.joints &&
           st.stroke.miterLimit === s.miterLimit
@@ -586,7 +607,7 @@ export function encodeDefineShape4(
   bw.writeUI8(strokes.length);
   for (const se of strokes) {
     const s = se.stroke;
-    bw.writeUI16LE(px(s.width)); // width in twips
+    bw.writeUI16LE(strokeWidthTwips(s)); // width in twips (0 = hairline)
 
     // LineStyle2 flags (UI16):
     //   bits 15-14: StartCapStyle  (0=round, 1=none, 2=square)
@@ -605,18 +626,9 @@ export function encodeDefineShape4(
     //   [15:14] StartCapStyle, [13:12] JoinStyle, [11] HasFill, [10] NoHScale,
     //   [9] NoVScale, [8] PixelHinting, [7:6] reserved, [5] NoClose,
     //   [4:3] EndCapStyle, [2:0] reserved
-    const startCapBits = capStyleBits(s.caps);
-    const endCapBits = capStyleBits(s.caps);
-    const joinBits = joinStyleBits(s.joints);
     const hasMiter = s.joints === "miter";
     // LINESTYLE2 flags — 16 bits MSB-first (NOT LE).
-    // Byte 1 (high): StartCap[7:6] | Join[5:4] | HasFill[3] | NoHScale[2] | NoVScale[1] | PixelHinting[0]
-    // Byte 2 (low):  Reserved[7:3] | NoClose[2] | EndCap[1:0]
-    const highByte =
-      ((startCapBits & 0x3) << 6) |
-      ((joinBits & 0x3) << 4) |
-      0; // HasFill=0, NoHScale=0, NoVScale=0, PixelHinting=0
-    const lowByte = (endCapBits & 0x3); // NoClose=0, Reserved=0
+    const { highByte, lowByte } = lineStyle2FlagBytes(s);
     bw.writeUI8(highByte); // high byte first (MSB)
     bw.writeUI8(lowByte);  // low byte second
 

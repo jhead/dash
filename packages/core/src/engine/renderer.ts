@@ -135,7 +135,7 @@ function applyStrokeDashStyle(
 
 function applyStrokeStyle(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
   ctx.strokeStyle = colorToCss(stroke.color);
-  ctx.lineWidth = stroke.width;
+  ctx.lineWidth = stroke.strokeType === "hairline" ? 1 : stroke.width;
 
   // Line caps
   switch (stroke.caps) {

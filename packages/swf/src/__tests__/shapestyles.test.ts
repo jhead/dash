@@ -179,6 +179,30 @@ function makeStrokeOnlyShape(id: string, x = 10, y = 10): ShapeDisplayObject {
   return { id, type: "shape", shape, x, y };
 }
 
+/** Build a ShapeDisplayObject with a hairline stroke (width 0, strokeType hairline). */
+function makeHairlineStrokeShape(id: string, x = 10, y = 10): ShapeDisplayObject {
+  const shape: Shape = {
+    id: `shape-${id}`,
+    paths: [
+      {
+        start: { x: 0, y: 0 },
+        segments: [{ type: "line", to: { x: 50, y: 0 } }],
+        closed: false,
+        stroke: {
+          type: "solid",
+          strokeType: "hairline",
+          color: { r: 0, g: 0, b: 0, a: 255 },
+          width: 0,
+          caps: "round",
+          joints: "round",
+          miterLimit: 3,
+        },
+      },
+    ],
+  };
+  return { id, type: "shape", shape, x, y };
+}
+
 /** Read charId (UI16LE) from the first two bytes of a tag body. */
 function readCharId(body: Uint8Array): number {
   return body[0] | (body[1] << 8);
@@ -268,5 +292,16 @@ describe("DefineShape4 (tag 83) fill and stroke styles", () => {
     expect(shape4Tags.length).toBeGreaterThan(0);
     const charId = readCharId(shape4Tags[0].body);
     expect(charId).toBeGreaterThanOrEqual(1);
+  });
+
+  it("7. Hairline stroke encodes LINESTYLE2 width=0 with NoHScale+NoVScale flags", () => {
+    const doc = makeDoc([makeHairlineStrokeShape("hairline")]);
+    const bytes = compileDocument(doc);
+    const tags = findTags(bytes);
+    const shape4Tags = tags.filter((t) => t.type === TAG_DEFINE_SHAPE4);
+    expect(shape4Tags.length).toBeGreaterThan(0);
+    const body = shape4Tags[0].body;
+    // LineStyleArray: count=1, width=0 twips, flags high=0x06 (NoHScale+NoVScale), black RGBA
+    expect(containsBytes(body, [0x01, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0xff])).toBe(true);
   });
 });

@@ -47,6 +47,7 @@ import {
   type Fla8Layer,
   type Fla8Matrix,
   type Fla8Shape,
+  type Fla8Stroke,
   type Fla8Text,
   type Fla8TextRun,
   type Fla8Timeline,
@@ -133,6 +134,30 @@ function toFill(f: Fla8Fill, bitmapIdByIndex: Map<number, string>): Fill {
   }
 }
 
+/** Map a parsed FLA stroke onto the editor model stroke type. */
+export function strokeFromFla8(s: Fla8Stroke): Stroke {
+  if (s.width === 0) {
+    return {
+      type: "solid",
+      strokeType: "hairline",
+      color: toColor(s.color),
+      width: 0,
+      caps: s.cap,
+      joints: s.join,
+      miterLimit: s.miterLimit,
+    };
+  }
+  return {
+    type: "solid",
+    strokeType: "solid",
+    color: toColor(s.color),
+    width: Math.max(s.width, 0.05),
+    caps: s.cap,
+    joints: s.join,
+    miterLimit: s.miterLimit,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Shape conversion: edge list -> ShapePath contours
 // ---------------------------------------------------------------------------
@@ -162,15 +187,7 @@ function convertShape(el: Fla8Shape, bitmapIdByIndex: Map<number, string>): Disp
   };
   const resolveStroke = (line: number): Stroke | undefined => {
     if (line <= 0 || line > el.strokes.length) return undefined;
-    const s = el.strokes[line - 1]!;
-    return {
-      type: "solid",
-      color: toColor(s.color),
-      width: Math.max(s.width, 0.05),
-      caps: s.cap,
-      joints: s.join,
-      miterLimit: s.miterLimit,
-    };
+    return strokeFromFla8(el.strokes[line - 1]!);
   };
 
   const flush = () => {
