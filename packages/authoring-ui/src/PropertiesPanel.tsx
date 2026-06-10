@@ -20,6 +20,8 @@ import type {
   Frame,
   LabelType,
   ShapeDisplayObject,
+  SoundItem,
+  SoundLinkage,
   SymbolInstance,
   TextDisplayObject,
   VideoDisplayObject,
@@ -79,6 +81,10 @@ export interface PropertiesPanelProps {
   onFrameUpdate?: (layerIndex: number, frameIndex: number, updates: Partial<Frame>) => void;
   /** Callback to swap the bitmap asset referenced by a BitmapDisplayObject. */
   onSwapBitmap?: (id: string) => void;
+  /** Available sound items from the library (for frame sound section). */
+  sounds?: SoundItem[];
+  /** Callback to update the sound linkage for the current frame. */
+  onSoundChange?: (frameIndex: number, layerIndex: number, sound: SoundLinkage | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1617,16 +1623,142 @@ const ROTATE_MODES: { value: "none" | "auto" | "cw" | "ccw"; label: string }[] =
 
 const DEFAULT_EASE_CURVE: EaseCurve = { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0 };
 
+// ---------------------------------------------------------------------------
+// Frame Sound Section
+// ---------------------------------------------------------------------------
+
+type SyncMode = SoundLinkage["syncMode"];
+
+const SYNC_MODES: { value: SyncMode; label: string }[] = [
+  { value: "event", label: "Event" },
+  { value: "start", label: "Start" },
+  { value: "stop", label: "Stop" },
+  { value: "stream", label: "Stream" },
+];
+
+function FrameSoundSection({
+  frame,
+  layerIndex,
+  frameIndex,
+  sounds,
+  onSoundChange,
+}: {
+  frame: Frame;
+  layerIndex: number;
+  frameIndex: number;
+  sounds: SoundItem[];
+  onSoundChange: (frameIndex: number, layerIndex: number, sound: SoundLinkage | null) => void;
+}): React.ReactElement {
+  const sound = frame.sound ?? null;
+  const selectedSoundId = sound?.libraryItemId ?? "";
+  const syncMode: SyncMode = sound?.syncMode ?? "event";
+  const repeatCount: number = sound?.repeatCount ?? 1;
+
+  const handleSoundSelect = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const id = e.target.value;
+      if (!id) {
+        onSoundChange(frameIndex, layerIndex, null);
+      } else {
+        onSoundChange(frameIndex, layerIndex, {
+          libraryItemId: id,
+          syncMode: sound?.syncMode ?? "event",
+          repeatCount: sound?.repeatCount ?? 1,
+          effect: sound?.effect ?? "none",
+        });
+      }
+    },
+    [frameIndex, layerIndex, sound, onSoundChange]
+  );
+
+  const handleSyncChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      if (!sound) return;
+      onSoundChange(frameIndex, layerIndex, { ...sound, syncMode: e.target.value as SyncMode });
+    },
+    [frameIndex, layerIndex, sound, onSoundChange]
+  );
+
+  const handleRepeatChange = useCallback(
+    (v: number) => {
+      if (!sound) return;
+      onSoundChange(frameIndex, layerIndex, { ...sound, repeatCount: Math.max(0, Math.round(v)) });
+    },
+    [frameIndex, layerIndex, sound, onSoundChange]
+  );
+
+  return (
+    <>
+      <div style={S.separator} />
+
+      {/* Sound name */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Sound:</span>
+        <select
+          style={{ ...S.select, minWidth: 90 }}
+          value={selectedSoundId}
+          onChange={handleSoundSelect}
+        >
+          <option value="">None</option>
+          {sounds.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Sync + repeat — only when a sound is selected */}
+      {sound && (
+        <>
+          <div style={S.separator} />
+
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Sync:</span>
+            <select
+              style={S.select}
+              value={syncMode}
+              onChange={handleSyncChange}
+            >
+              {SYNC_MODES.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={S.separator} />
+
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Repeat:</span>
+            <NumInput
+              value={repeatCount}
+              min={0}
+              max={9999}
+              style={{ width: 44 }}
+              onChange={handleRepeatChange}
+            />
+            <span style={{ ...S.label, fontSize: "10px" }}>0=loop</span>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 function FrameView({
   frame,
   layerIndex,
   frameIndex,
   onFrameUpdate,
+  sounds,
+  onSoundChange,
 }: {
   frame: Frame | null | undefined;
   layerIndex: number;
   frameIndex: number;
   onFrameUpdate?: (layerIndex: number, frameIndex: number, updates: Partial<Frame>) => void;
+  sounds?: SoundItem[];
+  onSoundChange?: (frameIndex: number, layerIndex: number, sound: SoundLinkage | null) => void;
 }): React.ReactElement {
   const label = frame?.label ?? "";
   const labelType: LabelType = frame?.labelType ?? "name";
@@ -1780,6 +1912,17 @@ function FrameView({
           onClose={() => setShowEaseCurveDialog(false)}
         />
       )}
+
+      {/* Sound section — always shown so user can assign/clear sounds */}
+      {sounds && onSoundChange && (
+        <FrameSoundSection
+          frame={frame}
+          layerIndex={layerIndex}
+          frameIndex={frameIndex}
+          sounds={sounds}
+          onSoundChange={onSoundChange}
+        />
+      )}
     </div>
   );
 }
@@ -1798,6 +1941,8 @@ export function PropertiesPanel({
   currentFrameIndex = 0,
   onFrameUpdate,
   onSwapBitmap,
+  sounds,
+  onSoundChange,
 }: PropertiesPanelProps): React.ReactElement {
   const view = getView(selectedObjects);
 
@@ -1823,6 +1968,8 @@ export function PropertiesPanel({
           layerIndex={currentLayerIndex}
           frameIndex={currentFrameIndex}
           onFrameUpdate={onFrameUpdate}
+          sounds={sounds}
+          onSoundChange={onSoundChange}
         />
       )}
 

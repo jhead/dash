@@ -5921,6 +5921,8 @@ export function Shell(): React.ReactElement {
                     currentFrameIndex={currentFrame}
                     onFrameUpdate={handleFrameUpdate}
                     onSwapBitmap={handleSwapBitmap}
+                    sounds={soundLibraryItems}
+                    onSoundChange={handleSoundChange}
                   />
                 )}
                 {bottomTab === "output" && (
