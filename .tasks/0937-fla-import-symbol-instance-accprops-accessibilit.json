@@ -1,10 +1,10 @@
 {
   "id": "0937-fla-import-symbol-instance-accprops-accessibilit",
   "title": "FLA import: symbol instance AccProps (accessibility name/description, tabIndex, tabEnabled) not decoded",
-  "description": "Decoded symbol-instance AccProps from binary CPicSprite/CPicButton trailers (writeAccessibleData layout per flacomdoc): enabled (inverted silent flag), name, description, shortcut, tabIndex, forceSimple. Forwarded via toObjectAccessibility() in flash8-import.ts to SymbolInstance.accessibility. SWF compile already emits tabEnabled/tabIndex DoAction when tabIndex is set.\n\nTests: pnpm --filter @flash/core run test -- --run src/fla/__tests__/flash8-import.test.ts -t 'task 0937' \u2014 3 passed.",
+  "description": "Cherry-picked f0451d3. 3 AccProps tests pass.",
   "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-06-10T20:42:48Z",
-  "updated_at": "2026-06-10T21:13:16Z"
+  "updated_at": "2026-06-10T21:19:40Z"
 }
