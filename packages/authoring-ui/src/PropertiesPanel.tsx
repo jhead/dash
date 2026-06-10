@@ -729,6 +729,26 @@ function InstanceView({
 
       <div style={S.separator} />
 
+      {/* X / Y position */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>X:</span>
+        <NumInput
+          value={obj.x ?? 0}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { x: v } as Partial<DisplayObject>)}
+        />
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Y:</span>
+        <NumInput
+          value={obj.y ?? 0}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { y: v } as Partial<DisplayObject>)}
+        />
+      </div>
+
+      <div style={S.separator} />
+
       {/* W/H dimensions (read-only, from naturalWidth/naturalHeight) */}
       {(obj.naturalWidth != null || obj.naturalHeight != null) && (
         <div style={S.fieldGroup}>
