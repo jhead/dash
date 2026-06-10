@@ -187,7 +187,7 @@ function makeShape(id: string): ShapeDisplayObject {
       id: "shape-obj-1",
       paths: [
         {
-          fill: { type: "solid", color: "#ff0000" },
+          fill: { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } },
           stroke: undefined,
           start: { x: 0, y: 0 },
           segments: [

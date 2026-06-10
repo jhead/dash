@@ -6,7 +6,7 @@
  * strings and converted to the internal Color representation.
  */
 
-import type { Color, GradientColorStop, LinearGradientFill, RadialGradientFill } from "./types.js";
+import type { GradientColorStop, LinearGradientFill, RadialGradientFill } from "./types.js";
 import { cssToColor } from "./color-utils.js";
 
 // ---------------------------------------------------------------------------

@@ -24,8 +24,6 @@ import type { FlashDocument, Frame, Layer, Scene, Symbol } from "@flash/core";
 // ---------------------------------------------------------------------------
 
 const TAG_END = 0;
-const TAG_SHOW_FRAME = 1;
-const TAG_DEFINE_SPRITE = 39;
 const TAG_EXPORT_ASSETS = 56;
 const TAG_IMPORT_ASSETS2 = 71;
 

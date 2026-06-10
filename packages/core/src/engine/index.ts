@@ -79,7 +79,7 @@ export { hexToColor, createRectShape, createOvalShape, createLineShape, createPo
 export { simplifyPath, smoothPath, createSimplifiedPencilShape } from "./simplify.js";
 
 // Snap utilities
-export type { SnapResult, SnapType, ObjectBounds, SnapConfig, SnapSettings } from "./snap.js";
+export type { SnapResult, SnapType, ObjectBounds, SnapConfig } from "./snap.js";
 export { snapPoint, snapToGrid, snapToPixels, snapToGuides, snapToObjects as snapPointToObjects, snapDistance } from "./snap.js";
 export { snapScalarToGrid, snapScalarToPixel, snapScalarToGuide, snapScalarX, snapScalarY } from "./snap.js";
 
@@ -140,7 +140,7 @@ export {
   deleteLayer as deleteLayerFromDoc,
   reorderLayer,
   renameLayer as renameLayerInDoc,
-  duplicateLayer,
+  duplicateLayer as duplicateLayerInDoc,
   setLayerCollapsed,
 } from "./layers.js";
 

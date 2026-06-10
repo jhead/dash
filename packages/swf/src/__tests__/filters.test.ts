@@ -223,20 +223,6 @@ function makeDropShadowFilter(overrides: Partial<DropShadowFilter> = {}): DropSh
   };
 }
 
-// ---------------------------------------------------------------------------
-// Helper: read a little-endian IEEE 754 float from bytes at offset
-// ---------------------------------------------------------------------------
-
-function readFloat32LE(bytes: Uint8Array, offset: number): number {
-  const buf = new ArrayBuffer(4);
-  const view = new DataView(buf);
-  view.setUint8(0, bytes[offset]);
-  view.setUint8(1, bytes[offset + 1]);
-  view.setUint8(2, bytes[offset + 2]);
-  view.setUint8(3, bytes[offset + 3]);
-  return view.getFloat32(0, true /* LE */);
-}
-
 /**
  * Read a SWF FIXED16 value (16.16 signed fixed-point, 4 bytes LE).
  * The integer is interpreted as round(value * 65536), so divide by 65536 to get the float.

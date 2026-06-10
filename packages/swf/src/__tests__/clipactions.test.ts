@@ -368,7 +368,7 @@ describe("PlaceObject2 clip actions — gap documentation", () => {
     // When this feature is added, SymbolInstance should gain a clipActions array
     // and compile.ts / sprite.ts should use encodePlaceObject2WithClipActions.
     const inst: SymbolInstance = makeInstance("inst-1", "sym-1", 0, 0);
-    expect((inst as Record<string, unknown>)["clipActions"]).toBeUndefined();
+    expect((inst as unknown as Record<string, unknown>)["clipActions"]).toBeUndefined();
   });
 
   it("encodePlaceObject2 does not accept a clip-actions parameter (API gap)", () => {

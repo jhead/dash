@@ -221,6 +221,16 @@ export interface ShapeDisplayObject {
   readonly skewX?: number;
   /** Vertical skew in degrees. Default: 0. */
   readonly skewY?: number;
+  /** Opacity in range 0–1. Default: 1. */
+  readonly alpha?: number;
+  /** Whether the object is visible. Default: true. */
+  readonly visible?: boolean;
+  /** Flash 8 blend mode. Default: "normal". */
+  readonly blendMode?: 'normal' | 'layer' | 'multiply' | 'screen' | 'lighten' | 'darken' |
+                       'difference' | 'add' | 'subtract' | 'invert' | 'alpha' | 'erase' |
+                       'overlay' | 'hardlight';
+  /** Cache as bitmap for filter rendering. Default: false. */
+  readonly cacheAsBitmap?: boolean;
   /** Flash 8 filters applied to this object. */
   readonly filters?: readonly FlashFilter[];
 }
