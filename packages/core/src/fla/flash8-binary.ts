@@ -206,6 +206,12 @@ export interface Fla8Frame {
   readonly labelIsComment: boolean;
   readonly script: string;
   readonly keyMode: number;
+  /** signed ease value: -100 (ease in, slow start) to +100 (ease out, fast start); 0 = linear */
+  readonly motionEase: number;
+  /** rotation mode: "none" | "auto" | "cw" | "ccw" */
+  readonly motionRotate: "none" | "auto" | "cw" | "ccw";
+  /** extra full rotations beyond the shortest-path interpolation */
+  readonly motionRotateCount: number;
   readonly soundId: number;
   /** raw sync byte: 0=event, 1=start, 2=stop, 3=stream; -1 when not present */
   readonly soundSync: number;
@@ -875,10 +881,26 @@ function readFillStyle(ctx: ParseCtx, caps: boolean): Fla8Fill {
     return { kind: "bitmap", matrix, bitmapId, repeat, smooth };
   }
   if (subtype & 0x20) {
-    warnOnce(ctx, "fill subtype 0x20 not supported; treating as unknown fill");
+    // Subtype 0x20 (bit 5 set, not a gradient (0x10) or bitmap (0x40)) is a
+    // Flash-internal fill variant with a fixed-size header:
+    //   gradient transform matrix (24 bytes via readMatrix) +
+    //   4 bytes (likely an internal object ID or paint parameters) +
+    //   8 bytes (likely F8 gradient extras or additional transform flags).
+    //
+    // Investigation (task 0858): this subtype appears in real Flash 8 FLA files
+    // as the paint fill of a stroke (inside readLineStyle), but not as a shape
+    // fill.  Analysis of worms.fla shows the 0x20 byte being encountered during
+    // misaligned stream reads (parser reads frame-script text bytes as shape
+    // data), so no confirmed binary specimen of a legitimately-stored 0x20 fill
+    // was found.  Without a reference specimen the exact semantics are unknown.
+    //
+    // Best-effort mapping: treat as a solid fill using the base color that was
+    // already read at the top of this function (the same color the authoring
+    // tool would display for an undefined fill type).  The matrix and 12-byte
+    // trailer are consumed to maintain stream alignment.
     readMatrix(r);
     r.skip(4 + 8);
-    return { kind: "unknown" };
+    return { kind: "solid", color };
   }
   return { kind: "solid", color };
 }
@@ -1752,6 +1774,9 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let label = "";
   let labelIsComment = false;
   let script = "";
+  let motionEase = 0;
+  let motionRotate: "none" | "auto" | "cw" | "ccw" = "none";
+  let motionRotateCount = 0;
   let soundId = 0;
   let soundSync = -1;
   let soundLoop = -1;
@@ -1761,7 +1786,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     duration = Math.max(1, r.u16());
     if (fs > 2) keyMode = r.u16();
     else r.skip(1);
-    if (fs > 1) r.skip(2); // acceleration / ease
+    if (fs > 1) motionEase = r.s16(); // signed ease value: -100 (ease in) to +100 (ease out)
     if (fs > 4) soundId = r.u16();
     if (fs > 5) {
       const cnt = r.u16();
@@ -1781,8 +1806,15 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
         // post-script fields (flacomdoc order): motionTweenRotate u32,
         // rotateTimes u32, comment flag u32, morph tag, ...
         if (fs > 10) {
-          r.skip(4); // motionTweenRotate + padding
-          r.skip(4); // rotateTimes + padding
+          const rotateFlaValue = r.u32(); // 1=none, 2=auto, 3=CW, 4=CCW
+          const rotateMap: Record<number, "none" | "auto" | "cw" | "ccw"> = {
+            1: "none",
+            2: "auto",
+            3: "cw",
+            4: "ccw",
+          };
+          motionRotate = rotateMap[rotateFlaValue] ?? "none";
+          motionRotateCount = r.u32(); // extra full rotations beyond normal interpolation
           if (fs > 11) {
             labelIsComment = r.u32() === 1;
           }
@@ -1855,7 +1887,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     }
     return {
       cls: "CPicFrame",
-      frame: { duration, label, labelIsComment, script, keyMode, soundId, soundSync, soundLoop, elements },
+      frame: { duration, label, labelIsComment, script, keyMode, motionEase, motionRotate, motionRotateCount, soundId, soundSync, soundLoop, elements },
     };
   }
 }
