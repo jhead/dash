@@ -1073,6 +1073,7 @@ export function StageArea({
       }
 
       // Paint Bucket tool: click to apply fill to a shape
+      // propFill === null means "No Color" — remove the fill from the shape
       if (e.button === 0 && activeTool === "fill") {
         e.preventDefault();
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
@@ -1083,9 +1084,19 @@ export function StageArea({
             stageY >= bounds.y && stageY <= bounds.y + bounds.height
           );
         });
-        if (hit && onShapeUpdate && propFill) {
-          const newPaths = hit.shape.paths.map((p) => ({ ...p, fill: propFill }));
-          onShapeUpdate(hit.id, { ...hit.shape, paths: newPaths });
+        if (hit && onShapeUpdate) {
+          if (propFill) {
+            // Apply the current fill to all paths
+            const newPaths = hit.shape.paths.map((p) => ({ ...p, fill: propFill }));
+            onShapeUpdate(hit.id, { ...hit.shape, paths: newPaths });
+          } else {
+            // No Color selected: remove fill from all paths
+            const newPaths = hit.shape.paths.map((p) => {
+              const { fill: _fill, ...rest } = p;
+              return rest as typeof p;
+            });
+            onShapeUpdate(hit.id, { ...hit.shape, paths: newPaths });
+          }
         }
         return;
       }
@@ -1631,7 +1642,7 @@ export function StageArea({
         setSelIsMarqueeSelecting(true);
       }
     },
-    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library]
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library]
   );
 
   const onMouseMove = useCallback(
@@ -2086,7 +2097,7 @@ export function StageArea({
       if (activeTool === "pencil" && pencilPointsRef.current.length >= 2) {
         const stroke: SolidStroke = {
           type: "solid",
-          color: hexToColor(propStrokeColor),
+          color: hexToColor(propStrokeColor, Math.round((propStrokeAlpha / 100) * 255)),
           width: propStrokeWidth,
           caps: "round",
           joints: "round",
@@ -2176,7 +2187,7 @@ export function StageArea({
       drawStartRef.current = null;
       setDrawPreview(null);
     },
-    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd]
+    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd]
   );
 
   // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place
