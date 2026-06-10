@@ -204,6 +204,7 @@ function FrameCell({
   isFirstInTweenSpan,
   label,
   hasScript,
+  hasSound,
   onClick,
   onDoubleClick,
   onContextMenu,
@@ -218,6 +219,8 @@ function FrameCell({
   label?: string;
   /** True if this keyframe has a non-empty script attached */
   hasScript?: boolean;
+  /** True if this keyframe has a sound attached */
+  hasSound?: boolean;
   onClick: (e: React.MouseEvent) => void;
   onDoubleClick?: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -315,6 +318,24 @@ function FrameCell({
           }}
         >
           a
+        </span>
+      )}
+      {/* Sound indicator — musical note on keyframes with attached sound */}
+      {hasSound && (state === "keyframe" || state === "blank-keyframe") && (
+        <span
+          style={{
+            fontSize: 7,
+            color: "#44aaff",
+            position: "absolute",
+            bottom: 0,
+            right: 1,
+            lineHeight: 1,
+            pointerEvents: "none",
+            zIndex: 2,
+          }}
+          title="Sound attached"
+        >
+          ♪
         </span>
       )}
       {/* Motion tween arrow — only on first cell of tween span */}
@@ -1545,6 +1566,7 @@ export function Timeline({
                         fi >= selectedFrameRange.start &&
                         fi <= selectedFrameRange.end;
                       const hasScript = !!(kf?.script && kf.script.trim().length > 0);
+                      const hasSound = !!(kf?.sound);
                       return (
                         <FrameCell
                           key={fi}
@@ -1555,6 +1577,7 @@ export function Timeline({
                           isFirstInTweenSpan={isFirstInTweenSpan}
                           label={kf?.label || undefined}
                           hasScript={hasScript}
+                          hasSound={hasSound}
                           onClick={(e) => {
                             onFrameChange(fi);
                             // Select keyframe for ease editing if it's a tween keyframe
