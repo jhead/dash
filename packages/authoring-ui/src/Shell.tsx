@@ -54,6 +54,7 @@ import type {
   Shape,
   ShapeDisplayObject,
   SolidStroke,
+  SoundEnvelopePoint,
   SoundItem,
   SoundLinkage,
   Symbol,
@@ -62,6 +63,8 @@ import type {
   TextAlign,
   TextDisplayObject,
   Timeline as TimelineModel,
+  VideoDisplayObject,
+  VideoItem,
 } from "@flash/core";
 import { runJsfl, buildJsflContext } from "./jsfl/index.js";
 import { ColorPanel } from "./ColorPanel";
@@ -87,6 +90,10 @@ import { OutputPanel } from "./OutputPanel";
 import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
 import { FiltersPanel } from "./FiltersPanel";
 import { SoundPanel } from "./SoundPanel";
+import {
+  SoundEnvelopeEditDialog,
+  defaultEnvelope,
+} from "./SoundEnvelopeEditDialog";
 import { TransformPanel } from "./TransformPanel";
 import type { TransformUpdates } from "./TransformPanel";
 import { InstancePanel } from "./InstancePanel";
@@ -381,6 +388,11 @@ function nextTextId() {
 let _bitmapObjCounter = 0;
 function nextBitmapId() {
   return `bmp-${++_bitmapObjCounter}-${Date.now().toString(36)}`;
+}
+
+let _videoObjCounter = 0;
+function nextVideoId() {
+  return `video-${++_videoObjCounter}-${Date.now().toString(36)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -714,6 +726,13 @@ export function Shell(): React.ReactElement {
 
   // Swap Symbol dialog
   const [swapSymbolOpen, setSwapSymbolOpen] = useState(false);
+
+  // Sound Envelope edit dialog
+  const [envelopeDialogOpen, setEnvelopeDialogOpen] = useState(false);
+  const [envelopeDialogTarget, setEnvelopeDialogTarget] = useState<{
+    frameIdx: number;
+    layerIdx: number;
+  } | null>(null);
 
   // Publish Settings dialog
   const [publishSettingsOpen, setPublishSettingsOpen] = useState(false);
@@ -2692,6 +2711,27 @@ export function Shell(): React.ReactElement {
         return;
       }
 
+      // VideoItem: place a VideoDisplayObject at the video's native dimensions
+      // (falling back to a default box when the item carries no size).
+      if (libItem && libItem.itemType === "video") {
+        const videoItem = libItem as VideoItem;
+        const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+        if (!layerId) return;
+        const w = videoItem.width > 0 ? videoItem.width : 320;
+        const h = videoItem.height > 0 ? videoItem.height : 240;
+        const obj: VideoDisplayObject = {
+          type: "video",
+          id: nextVideoId(),
+          videoItemId: libraryItemId,
+          x: x - w / 2,
+          y: y - h / 2,
+          width: w,
+          height: h,
+        };
+        pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, obj)));
+        return;
+      }
+
       // Non-bitmap items (symbols): place a SymbolInstance in the timeline
       // AND keep a PlacedInstance for selection/properties UI
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
@@ -3007,6 +3047,37 @@ export function Shell(): React.ReactElement {
     const audio = new Audio(dataUri);
     audio.play().catch(() => {});
   }, []);
+
+  const handleEditEnvelope = useCallback(
+    (frameIdx: number, layerIdx: number) => {
+      setEnvelopeDialogTarget({ frameIdx, layerIdx });
+      setEnvelopeDialogOpen(true);
+    },
+    [],
+  );
+
+  const handleEnvelopeConfirm = useCallback(
+    (result: { inPoint: number; outPoint: number; customEnvelope: SoundEnvelopePoint[] }) => {
+      if (!envelopeDialogTarget) return;
+      const { frameIdx, layerIdx } = envelopeDialogTarget;
+      pushDoc(
+        withTimeline((t) => {
+          const layer = t.layers[layerIdx];
+          if (!layer) return t;
+          const kf = getGoverningKeyframe(layer, frameIdx);
+          if (!kf || !kf.sound) return t;
+          const updatedSound: SoundLinkage = {
+            ...kf.sound,
+            inPoint: result.inPoint,
+            outPoint: result.outPoint > 0 ? result.outPoint : undefined,
+            customEnvelope: result.customEnvelope,
+          };
+          return setSoundOnFrame(t, layerIdx, kf.index, updatedSound);
+        }),
+      );
+    },
+    [envelopeDialogTarget, pushDoc, withTimeline],
+  );
 
   // ---------------------------------------------------------------------------
   // Keyboard shortcut handlers
@@ -4086,6 +4157,7 @@ export function Shell(): React.ReactElement {
                     sounds={soundLibraryItems}
                     onSoundChange={handleSoundChange}
                     onPreviewSound={previewSound}
+                    onEditEnvelope={handleEditEnvelope}
                   />
                 )}
                 {bottomTab === "properties" && (
@@ -4404,6 +4476,49 @@ export function Shell(): React.ReactElement {
         onSave={setPublishSettings}
         onClose={() => setPublishSettingsOpen(false)}
       />
+
+      {/* Sound Envelope Edit dialog */}
+      {envelopeDialogOpen && envelopeDialogTarget && (() => {
+        const { frameIdx, layerIdx } = envelopeDialogTarget;
+        const layer = timeline.layers[layerIdx];
+        const kf = layer ? getGoverningKeyframe(layer, frameIdx) : null;
+        const sound = kf?.sound ?? null;
+        const soundItem = sound
+          ? soundLibraryItems.find((s) => s.id === sound.libraryItemId)
+          : null;
+        const totalSamples = soundItem
+          ? Math.round(soundItem.durationSeconds * soundItem.sampleRate)
+          : 44100;
+        const initial = sound && (sound.inPoint !== undefined || sound.customEnvelope)
+          ? {
+              inPoint: sound.inPoint ?? 0,
+              outPoint: sound.outPoint ?? totalSamples,
+              leftNodes: sound.customEnvelope
+                ? sound.customEnvelope.map((p): [number, number] => [
+                    p.pos44 / totalSamples,
+                    p.leftLevel / 32768,
+                  ])
+                : [[0, 1] as [number, number], [1, 1] as [number, number]],
+              rightNodes: sound.customEnvelope
+                ? sound.customEnvelope.map((p): [number, number] => [
+                    p.pos44 / totalSamples,
+                    p.rightLevel / 32768,
+                  ])
+                : [[0, 1] as [number, number], [1, 1] as [number, number]],
+            }
+          : defaultEnvelope(totalSamples);
+        return (
+          <SoundEnvelopeEditDialog
+            totalSamples={totalSamples}
+            initial={initial}
+            onConfirm={handleEnvelopeConfirm}
+            onClose={() => {
+              setEnvelopeDialogOpen(false);
+              setEnvelopeDialogTarget(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

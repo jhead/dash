@@ -76,11 +76,30 @@ export type SoundEffect =
   | "fadeIn"          // Fade in from silence to full volume
   | "fadeOut";        // Fade out from full volume to silence
 
+/** One point on a custom sound volume envelope. Mirrors SWF SoundEnvelope. */
+export interface SoundEnvelopePoint {
+  /** Sample position at 44100 Hz. */
+  pos44: number;
+  /** Left channel level 0-32768. */
+  leftLevel: number;
+  /** Right channel level 0-32768. */
+  rightLevel: number;
+}
+
 export interface SoundLinkage {
   readonly libraryItemId: string;   // ID of a Sound library item
   readonly syncMode: "event" | "start" | "stop" | "stream";
   readonly repeatCount: number;     // 0 = loop indefinitely
   readonly effect?: SoundEffect;    // Envelope effect preset (default: "none")
+  /** In-point sample offset (sample index, 44100 Hz). 0 = start of sound. */
+  readonly inPoint?: number;
+  /** Out-point sample offset (sample index, 44100 Hz). undefined = end of sound. */
+  readonly outPoint?: number;
+  /**
+   * Custom volume envelope. When set, overrides `effect` for SWF encoding.
+   * Each point has a sample position and left/right levels (0-32768).
+   */
+  readonly customEnvelope?: SoundEnvelopePoint[];
 }
 
 /**

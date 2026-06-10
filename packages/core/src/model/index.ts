@@ -21,6 +21,7 @@ export type {
   Scale9Grid,
   Scene,
   SoundEffect,
+  SoundEnvelopePoint,
   SoundItem,
   SoundLinkage,
   Symbol,

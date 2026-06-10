@@ -9,7 +9,7 @@
  *  - RemoveObject2 when objects leave the display list
  *  - ShowFrame per frame, End
  */
-import type { BitmapFill, BitmapItem, ButtonHandler, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoItem } from "@flash/core";
+import type { BitmapFill, BitmapItem, ButtonHandler, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoDisplayObject, VideoItem } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans } from "@flash/core";
 import { deflateSync } from "fflate";
 import { Tag } from "./tags.js";
@@ -62,6 +62,35 @@ import { encodeDoInitAction } from "./doInitAction.js";
 import { encodeFrameLabel } from "./framelabel.js";
 import { encodeSceneAndFrameLabelData, hasAnyLabels } from "./scenelabels.js";
 import { buildXmpMetadata, type MetadataOptions } from "./metadata.js";
+
+// ---------------------------------------------------------------------------
+// Video placement helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Computes the PlaceObject2 transform for a VideoDisplayObject. The
+ * DefineVideoStream character has the stream's native pixel dimensions, so we
+ * scale it to the requested display width/height, then apply the object's own
+ * scaleX/scaleY/rotation on top. Returns `undefined` when the resulting
+ * transform is the identity (avoids emitting a redundant HasScale/HasRotate).
+ */
+function videoFitTransform(
+  vdo: VideoDisplayObject,
+  videoStreams: ReadonlyArray<{ itemId: string; width: number; height: number }>
+):
+  | { scaleX?: number; scaleY?: number; rotation?: number }
+  | undefined {
+  const stream = videoStreams.find((s) => s.itemId === vdo.videoItemId);
+  const nativeW = stream && stream.width > 0 ? stream.width : vdo.width;
+  const nativeH = stream && stream.height > 0 ? stream.height : vdo.height;
+  const fitX = nativeW > 0 ? vdo.width / nativeW : 1;
+  const fitY = nativeH > 0 ? vdo.height / nativeH : 1;
+  const scaleX = fitX * (vdo.scaleX ?? 1);
+  const scaleY = fitY * (vdo.scaleY ?? 1);
+  const rotation = vdo.rotation ?? 0;
+  if (scaleX === 1 && scaleY === 1 && rotation === 0) return undefined;
+  return { scaleX, scaleY, rotation };
+}
 
 // ---------------------------------------------------------------------------
 // Color helpers
@@ -553,6 +582,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   //     loop so they interleave with ShowFrame in playback order. Each video is
   //     placed on its own depth on the first SWF frame.
   interface VideoStreamInfo {
+    /** Library VideoItem id this stream was built from. */
+    itemId: string;
     charId: number;
     width: number;
     height: number;
@@ -563,6 +594,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     (item): item is VideoItem => item.itemType === "video"
   );
   const videoStreams: VideoStreamInfo[] = [];
+  // Map library VideoItem id → its DefineVideoStream character ID, so
+  // VideoDisplayObject placement can resolve the stream to place.
+  const videoCharIdMap = new Map<string, number>();
   for (const videoItem of videoItems) {
     // Attempt to demux the FLV payload from the data URI; fall back to an
     // empty stream so authoring still produces a valid character.
@@ -601,7 +635,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       Tag.DefineVideoStream,
       encodeDefineVideoStream(charId, numFrames, width, height, codecId)
     );
-    videoStreams.push({ charId, width, height, payloads });
+    videoCharIdMap.set(videoItem.id, charId);
+    videoStreams.push({ itemId: videoItem.id, charId, width, height, payloads });
   }
 
   // 4. Frames — iterate ALL scenes' timelines.
@@ -641,20 +676,49 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   const layerObjDepth = new Map<string, number>();
   let nextDepth = 1;
 
+  // Determine which library video streams are explicitly placed via a
+  // VideoDisplayObject on the timeline. Those are positioned model-driven
+  // through the normal per-layer depth/placement path below. Any stream NOT
+  // referenced keeps the legacy fixed placement so a bare library video still
+  // appears on the stage.
+  const referencedVideoItemIds = new Set<string>();
+  for (const scene of doc.scenes) {
+    for (const layer of scene.timeline.layers) {
+      for (const frame of layer.frames) {
+        for (const obj of frame.displayObjects) {
+          if (obj.type === "video") {
+            referencedVideoItemIds.add((obj as VideoDisplayObject).videoItemId);
+          }
+        }
+      }
+    }
+  }
+
   // Video streams are placed on high, dedicated depths (above any shape/text
   // depth) so they never collide with the per-layer depth assignment below.
-  // depth → { charId, frameIdx into the stream's frame list }
+  // Only streams NOT placed via a VideoDisplayObject get this legacy fixed
+  // placement; the rest are placed model-driven in the frame loop.
   const videoDepthBase = 50000;
-  const videoDepths = videoStreams.map((vs, i) => ({
-    depth: videoDepthBase + i,
+  const videoDepths = videoStreams
+    .filter((vs) => !referencedVideoItemIds.has(vs.itemId))
+    .map((vs, i) => ({
+      depth: videoDepthBase + i,
+      charId: vs.charId,
+      width: vs.width,
+      height: vs.height,
+      payloads: vs.payloads,
+    }));
+  // VideoFrame (tag 61) advancement applies to EVERY stream — both the
+  // legacy fixed-placed ones and those placed via a VideoDisplayObject — so
+  // each placed stream character receives its decoded frames.
+  const videoFrameAdvancers = videoStreams.map((vs) => ({
     charId: vs.charId,
-    width: vs.width,
-    height: vs.height,
     payloads: vs.payloads,
   }));
+
   // Longest video, in frames — the SWF must run at least this many frames so
   // every VideoFrame tag has a ShowFrame to land before.
-  const maxVideoFrames = videoDepths.reduce(
+  const maxVideoFrames = videoFrameAdvancers.reduce(
     (m, v) => Math.max(m, v.payloads.length),
     0
   );
@@ -1243,6 +1307,14 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 const placeBody = encodePlaceObject2(charId, depth, x, y);
                 writer.writeTag(Tag.PlaceObject2, placeBody);
               }
+            } else if (displayObj.type === "video") {
+              const vdo = displayObj as VideoDisplayObject;
+              const charId = videoCharIdMap.get(vdo.videoItemId);
+              if (charId !== undefined) {
+                const transform = videoFitTransform(vdo, videoStreams);
+                const placeBody = encodePlaceObject2(charId, depth, x, y, transform);
+                writer.writeTag(Tag.PlaceObject2, placeBody);
+              }
             } else if (displayObj.type === "instance") {
               let charId = charIdMap.get(displayObj.symbolId);
               if (charId !== undefined) {
@@ -1439,6 +1511,21 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
               }
+            } else if (displayObj.type === "video") {
+              const vdo = displayObj as VideoDisplayObject;
+              const charId = videoCharIdMap.get(vdo.videoItemId);
+              if (charId !== undefined) {
+                const transform = videoFitTransform(vdo, videoStreams);
+                const placeBody = encodePlaceObject2Move(
+                  charId,
+                  depth,
+                  x,
+                  y,
+                  transform,
+                  prev!.objId !== objId
+                );
+                writer.writeTag(Tag.PlaceObject2, placeBody);
+              }
             } else if (displayObj.type === "instance") {
               const charId = charIdMap.get(displayObj.symbolId);
               if (charId !== undefined) {
@@ -1545,7 +1632,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     loops: frame.sound.repeatCount,
                     stop: frame.sound.syncMode === "stop",
                     noMultiple: frame.sound.syncMode === "start",
-                    effect: frame.sound.effect,
+                    effect: frame.sound.customEnvelope ? undefined : frame.sound.effect,
+                    envelope: frame.sound.customEnvelope,
+                    inPoint: frame.sound.inPoint,
+                    outPoint: frame.sound.outPoint,
                   });
                   writer.writeTag(Tag.StartSound, startSoundBody);
                 }
@@ -1609,7 +1699,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         // advancing through the demuxed FLV frames. Only on scene 0 (videos are
         // global characters placed once on the first scene's timeline).
         if (sceneIdx === 0) {
-          for (const v of videoDepths) {
+          for (const v of videoFrameAdvancers) {
             const payload = v.payloads[frameIdx];
             if (payload !== undefined) {
               writer.writeTag(

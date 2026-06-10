@@ -386,4 +386,106 @@ describe("compileDocument — StartSound (tag 15) integration", () => {
     const flags = startTag.body[2];
     expect((flags >> 4) & 1).toBe(1); // noMultiple
   });
+
+  it("inPoint on SoundLinkage sets hasInPoint bit in SoundInfo", () => {
+    const doc = makeMinimalDoc({
+      libraryItemId: "snd-1",
+      syncMode: "event",
+      repeatCount: 1,
+      inPoint: 4410,
+    });
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    const flags = startTag.body[2];
+    expect(flags & 1).toBe(1); // hasInPoint
+    const inPoint =
+      startTag.body[3] |
+      (startTag.body[4] << 8) |
+      (startTag.body[5] << 16) |
+      (startTag.body[6] << 24);
+    expect(inPoint).toBe(4410);
+  });
+
+  it("outPoint on SoundLinkage sets hasOutPoint bit in SoundInfo", () => {
+    const doc = makeMinimalDoc({
+      libraryItemId: "snd-1",
+      syncMode: "event",
+      repeatCount: 1,
+      outPoint: 22050,
+    });
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    const flags = startTag.body[2];
+    expect((flags >> 1) & 1).toBe(1); // hasOutPoint
+    const outPoint =
+      startTag.body[3] |
+      (startTag.body[4] << 8) |
+      (startTag.body[5] << 16) |
+      (startTag.body[6] << 24);
+    expect(outPoint).toBe(22050);
+  });
+
+  it("customEnvelope on SoundLinkage sets hasEnvelope bit and encodes envelope points", () => {
+    const doc = makeMinimalDoc({
+      libraryItemId: "snd-1",
+      syncMode: "event",
+      repeatCount: 1,
+      customEnvelope: [
+        { pos44: 0,     leftLevel: 0,     rightLevel: 0 },
+        { pos44: 44100, leftLevel: 32768, rightLevel: 32768 },
+      ],
+    });
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    // body[2] = SoundInfo flags; hasEnvelope is bit 3
+    const flags = startTag.body[2];
+    expect((flags >> 3) & 1).toBe(1); // hasEnvelope
+    // compile.ts always passes loops=repeatCount, so hasLoops (bit 2) is also set.
+    // SoundInfo byte layout: [2]=flags, [3..4]=LoopCount, [5]=EnvelopeCount
+    expect((flags >> 2) & 1).toBe(1); // hasLoops (always set since repeatCount is passed)
+    expect(startTag.body[5]).toBe(2); // EnvelopeCount
+  });
+
+  it("customEnvelope overrides preset effect — leftLevel at pos44=0 reflects custom values", () => {
+    // When customEnvelope is set, the preset effect should be ignored.
+    const withPreset = makeMinimalDoc({
+      libraryItemId: "snd-1",
+      syncMode: "event",
+      repeatCount: 1,
+      effect: "fadeIn",
+    });
+    const withCustom = makeMinimalDoc({
+      libraryItemId: "snd-1",
+      syncMode: "event",
+      repeatCount: 1,
+      effect: "fadeIn",
+      customEnvelope: [
+        { pos44: 0,     leftLevel: 16384, rightLevel: 16384 },
+        { pos44: 44100, leftLevel: 16384, rightLevel: 16384 },
+      ],
+    });
+    const swfPreset = compileDocument(withPreset);
+    const swfCustom = compileDocument(withCustom);
+    const tagsPreset = parseTags(swfPreset);
+    const tagsCustom = parseTags(swfCustom);
+    const presetStart = tagsPreset.find((t) => t.code === TAG_START_SOUND)!;
+    const customStart = tagsCustom.find((t) => t.code === TAG_START_SOUND)!;
+    // Both have hasEnvelope set (bit 3)
+    expect((presetStart.body[2] >> 3) & 1).toBe(1);
+    expect((customStart.body[2] >> 3) & 1).toBe(1);
+    // SoundInfo byte layout (compile.ts always passes loops, so hasLoops is set):
+    //   body[2]     = flags  (hasLoops + hasEnvelope bits)
+    //   body[3..4]  = LoopCount (uint16 LE)
+    //   body[5]     = EnvelopeCount
+    //   body[6..9]  = first point pos44 (uint32 LE)
+    //   body[10..11] = first point leftLevel (uint16 LE)
+    //   body[12..13] = first point rightLevel (uint16 LE)
+    const customLeftAt0 = customStart.body[10] | (customStart.body[11] << 8);
+    expect(customLeftAt0).toBe(16384);
+    const presetLeftAt0 = presetStart.body[10] | (presetStart.body[11] << 8);
+    expect(presetLeftAt0).toBe(0); // fadeIn starts at silence (0)
+  });
 });

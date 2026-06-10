@@ -18,6 +18,8 @@ export interface SoundPanelProps {
   onSoundChange: (frameIdx: number, layerIdx: number, sound: SoundLinkage | null) => void;
   /** Called to preview a sound by dataUri. */
   onPreviewSound?: (dataUri: string) => void;
+  /** Called when the user clicks "Edit..." to open the envelope editor. */
+  onEditEnvelope?: (frameIdx: number, layerIdx: number) => void;
 }
 
 type SyncMode = SoundLinkage["syncMode"];
@@ -102,6 +104,7 @@ export function SoundPanel({
   sounds,
   onSoundChange,
   onPreviewSound,
+  onEditEnvelope,
 }: SoundPanelProps): React.ReactElement {
   const sound = frame?.sound ?? null;
   const selectedSoundId = sound?.libraryItemId ?? "";
@@ -205,7 +208,12 @@ export function SoundPanel({
             <option value="fadeIn">Fade In</option>
             <option value="fadeOut">Fade Out</option>
           </select>
-          <button style={btnStyle} title="Edit envelope (not yet implemented)">
+          <button
+            style={btnStyle}
+            title="Edit sound envelope"
+            onClick={() => onEditEnvelope?.(frameIndex, layerIndex)}
+            disabled={!onEditEnvelope}
+          >
             Edit...
           </button>
         </div>
