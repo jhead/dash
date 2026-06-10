@@ -1,4 +1,0 @@
-Read AGENTS.md. Check complete tasks to see what features are implemented. Check available test harnesses. Try to
-  e2e test features. Identify any MVP critical path gaps/issues and open new tasks for them. If no blocking issues, open no
-  new tasks. If the harness is broken, open tasks to fix it. Do everything with subagents and parallelize where appropriate.
-  Keep the main thread for orchestrating this process.

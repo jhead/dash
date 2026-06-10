@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build packages
+        run: pnpm --filter './packages/**' build
+
       - name: Build web app
         run: pnpm --filter @flash/desktop run build
         env:
