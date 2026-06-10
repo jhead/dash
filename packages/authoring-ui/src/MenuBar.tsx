@@ -308,6 +308,10 @@ export interface MenuBarProps {
   onBehaviorsPanelToggle?: () => void;
   /** Whether the Behaviors panel is currently visible (for checkmark display). */
   behaviorsPanelVisible?: boolean;
+  /** Called when Window > Movie Explorer (Ctrl+Alt+M) is toggled. */
+  onMovieExplorerToggle?: () => void;
+  /** Whether the Movie Explorer panel is currently visible (for checkmark display). */
+  movieExplorerVisible?: boolean;
   // Text menu callbacks
   /** Called when Text > Style > Bold (Ctrl+Shift+B) is activated. */
   onTextBold?: () => void;
@@ -401,6 +405,8 @@ export function MenuBar({
   swatchesPanelVisible = false,
   onBehaviorsPanelToggle,
   behaviorsPanelVisible = false,
+  onMovieExplorerToggle,
+  movieExplorerVisible = false,
   onTextBold,
   onTextItalic,
   onTextUnderline,
@@ -748,6 +754,10 @@ export function MenuBar({
         {
           label: `${behaviorsPanelVisible ? "+ " : "  "}Behaviors`,
           action: () => { onBehaviorsPanelToggle?.(); },
+        },
+        {
+          label: `${movieExplorerVisible ? "+ " : "  "}Movie Explorer  Ctrl+Alt+M`,
+          action: () => { onMovieExplorerToggle?.(); },
         },
       ],
     },

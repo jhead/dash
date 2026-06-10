@@ -115,6 +115,7 @@ import { SceneSwitcher } from "./SceneSwitcher";
 import { ColorMixerPanel } from "./ColorMixerPanel";
 import { SwatchesPanel, DEFAULT_SWATCHES } from "./SwatchesPanel";
 import { BehaviorsPanel } from "./BehaviorsPanel";
+import { MovieExplorerPanel } from "./MovieExplorerPanel";
 import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
 import type { RegistrationPoint } from "./ConvertToSymbolDialog";
 import { TimelineEffectDialog } from "./TimelineEffectDialog";
@@ -124,7 +125,9 @@ import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
 import type { PublishSettings } from "./PublishSettingsDialog";
 import { BitmapPropertiesDialog } from "./BitmapPropertiesDialog";
-import { generateHtmlWrapper } from "@flash/swf";
+import { generateHtmlWrapper, analyzeFrameSizes } from "@flash/swf";
+import type { FrameSizeReport } from "@flash/swf";
+import { BandwidthProfilerPanel } from "./BandwidthProfilerPanel";
 import { PanelGroup } from "./PanelGroup";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
 import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
@@ -903,6 +906,9 @@ export function Shell(): React.ReactElement {
   // Behaviors panel (Window > Behaviors)
   const [behaviorsPanelVisible, setBehaviorsPanelVisible] = useState(false);
 
+  // Movie Explorer panel (Window > Movie Explorer, Ctrl+Alt+M)
+  const [movieExplorerVisible, setMovieExplorerVisible] = useState(false);
+
   // Scene switcher inline panel (toggle near Timeline header)
   const [showScenes, setShowScenes] = useState(false);
 
@@ -955,6 +961,10 @@ export function Shell(): React.ReactElement {
 
   // Bitmap Properties dialog
   const [bitmapPropsItem, setBitmapPropsItem] = useState<BitmapItem | null>(null);
+
+  // Bandwidth Profiler
+  const [bandwidthProfilerVisible, setBandwidthProfilerVisible] = useState(false);
+  const [bandwidthProfilerReport, setBandwidthProfilerReport] = useState<FrameSizeReport | null>(null);
 
   // ---------------------------------------------------------------------------
   // Handlers — timeline / frame
@@ -4098,6 +4108,13 @@ export function Shell(): React.ReactElement {
     }
   }, [publishToBytes, publishSettings, doc.properties]);
 
+  const handleBandwidthProfiler = useCallback(() => {
+    const bytes = publishToBytes();
+    const report = analyzeFrameSizes(bytes);
+    setBandwidthProfilerReport(report);
+    setBandwidthProfilerVisible(true);
+  }, [publishToBytes]);
+
   // ---------------------------------------------------------------------------
   // Export Image / Export Movie
   // ---------------------------------------------------------------------------
@@ -4322,6 +4339,12 @@ export function Shell(): React.ReactElement {
       if ((e.key === "g" || e.key === "G") && (e.ctrlKey || e.metaKey) && e.altKey) {
         e.preventDefault();
         setEditGridOpen(true);
+        return;
+      }
+      // Ctrl+Alt+M → Movie Explorer
+      if ((e.key === "m" || e.key === "M") && (e.ctrlKey || e.metaKey) && e.altKey) {
+        e.preventDefault();
+        setMovieExplorerVisible((v) => !v);
         return;
       }
       // Ctrl+Shift+/ → toggle snap to objects
@@ -4775,6 +4798,9 @@ export function Shell(): React.ReactElement {
         swatchesPanelVisible={swatchesPanelVisible}
         onBehaviorsPanelToggle={() => setBehaviorsPanelVisible((v) => !v)}
         behaviorsPanelVisible={behaviorsPanelVisible}
+        onMovieExplorerToggle={() => setMovieExplorerVisible((v) => !v)}
+        movieExplorerVisible={movieExplorerVisible}
+        onBandwidthProfiler={handleBandwidthProfiler}
         onTextBold={handleTextBold}
         onTextItalic={handleTextItalic}
         onTextUnderline={handleTextUnderline}
@@ -5462,6 +5488,20 @@ export function Shell(): React.ReactElement {
         />
       )}
 
+      {/* Movie Explorer panel (Window > Movie Explorer, Ctrl+Alt+M) */}
+      {movieExplorerVisible && (
+        <MovieExplorerPanel
+          doc={doc}
+          onSelectItem={(item) => {
+            // If the item is a library item, select it in the library panel
+            if (item.type === "library-item") {
+              setSelectedLibraryItemId(item.item.id);
+            }
+          }}
+          onClose={() => setMovieExplorerVisible(false)}
+        />
+      )}
+
       {/* Scene panel (Window > Scene, Ctrl+Shift+S) */}
       {scenePanelVisible && (
         <ScenePanel
@@ -5573,6 +5613,15 @@ export function Shell(): React.ReactElement {
           item={bitmapPropsItem}
           onSave={handleBitmapPropsSave}
           onClose={() => setBitmapPropsItem(null)}
+        />
+      )}
+
+      {/* Bandwidth Profiler panel */}
+      {bandwidthProfilerVisible && bandwidthProfilerReport && (
+        <BandwidthProfilerPanel
+          report={bandwidthProfilerReport}
+          frameRate={doc.properties.frameRate}
+          onClose={() => setBandwidthProfilerVisible(false)}
         />
       )}
 
