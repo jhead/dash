@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { ClipAction, SymbolInstance } from "@flash/core";
+import type { ButtonAction, ClipAction, Symbol, SymbolInstance } from "@flash/core";
 import { parse as parseAS2 } from "@flash/core";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +61,20 @@ const CLIP_EVENT_TYPES: Array<{ event: ClipAction["event"]; label: string }> = [
   { event: "keyDown",    label: "keyDown" },
   { event: "keyUp",      label: "keyUp" },
   { event: "data",       label: "data" },
+];
+
+// ---------------------------------------------------------------------------
+// Button event types (ordered as in Flash 8 Actions panel)
+// ---------------------------------------------------------------------------
+
+const BUTTON_EVENT_TYPES: Array<{ event: ButtonAction["event"]; label: string }> = [
+  { event: "press",          label: "press" },
+  { event: "release",        label: "release" },
+  { event: "releaseOutside", label: "releaseOutside" },
+  { event: "rollOver",       label: "rollOver" },
+  { event: "rollOut",        label: "rollOut" },
+  { event: "dragOver",       label: "dragOver" },
+  { event: "dragOut",        label: "dragOut" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -318,6 +332,10 @@ export interface ActionsPanelProps {
   selectedInstance?: SymbolInstance | null;
   /** Called when clipActions on the selected movieclip instance should be updated. */
   onClipActionsChange?: (clipActions: readonly ClipAction[]) => void;
+  /** When set to a button Symbol, enables "Actions - Button" mode. */
+  selectedButtonSymbol?: Symbol | null;
+  /** Called when buttonActions on the selected button symbol should be updated. */
+  onButtonActionsChange?: (actions: readonly ButtonAction[]) => void;
   /**
    * Embedded mode: render inline (filling its container) as part of the bottom
    * docked panel instead of as a floating, fixed-position window. The title bar
@@ -339,16 +357,24 @@ export function ActionsPanel({
   onClose,
   selectedInstance,
   onClipActionsChange,
+  selectedButtonSymbol,
+  onButtonActionsChange,
   embedded = false,
 }: ActionsPanelProps): React.ReactElement | null {
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
   // Which onClipEvent handler is currently selected in Movie Clip mode
   const [selectedClipEvent, setSelectedClipEvent] = useState<ClipAction["event"]>("enterFrame");
+  // Which on(event) handler is currently selected in Button mode
+  const [selectedButtonEvent, setSelectedButtonEvent] = useState<ButtonAction["event"]>("press");
 
   // Determine if we're in Movie Clip mode
   // (only when a movieclip instance is selected AND clipActions callbacks are wired)
   const isMovieClipMode = !!(selectedInstance && onClipActionsChange);
+
+  // Determine if we're in Button mode
+  // (only when a button symbol is selected AND buttonActions callbacks are wired)
+  const isButtonMode = !!(selectedButtonSymbol && onButtonActionsChange);
 
   // Focus first textarea when panel opens
   const firstTextareaRef = useRef<HTMLDivElement>(null);
@@ -410,7 +436,7 @@ export function ActionsPanel({
         bottom: "40px",
         left: "50%",
         transform: "translateX(-50%)",
-        width: isMovieClipMode ? "760px" : "680px",
+        width: (isMovieClipMode || isButtonMode) ? "760px" : "680px",
         height: "320px",
         background: "#1e1e1e",
         border: "1px solid #444",
@@ -471,6 +497,31 @@ export function ActionsPanel({
     fontSize: "11px",
     color: "#fff",
     gap: "12px",
+  };
+
+  // ---------------------------------------------------------------------------
+  // Button actions helpers
+  // ---------------------------------------------------------------------------
+
+  const buttonActions = selectedButtonSymbol?.buttonActions ?? [];
+
+  const getButtonActionScript = (event: ButtonAction["event"]): string => {
+    return buttonActions.find((a) => a.event === event)?.script ?? "";
+  };
+
+  const handleButtonActionScriptChange = (event: ButtonAction["event"], newScript: string): void => {
+    if (!onButtonActionsChange) return;
+    const filtered = buttonActions.filter((a) => a.event !== event);
+    if (newScript.trim().length > 0) {
+      // Preserve order: insert at the canonical position
+      const idx = BUTTON_EVENT_TYPES.findIndex((t) => t.event === event);
+      const before = filtered.filter((a) => BUTTON_EVENT_TYPES.findIndex((t) => t.event === a.event) < idx);
+      const after = filtered.filter((a) => BUTTON_EVENT_TYPES.findIndex((t) => t.event === a.event) >= idx);
+      onButtonActionsChange([...before, { event, script: newScript }, ...after]);
+    } else {
+      // Remove empty handler
+      onButtonActionsChange(filtered);
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -569,6 +620,107 @@ export function ActionsPanel({
         <div style={statusBarStyle}>
           <span>ActionScript 2.0</span>
           <span>onClipEvent({selectedClipEvent})</span>
+          <span>Ln {cursorLine}, Col {cursorCol}</span>
+          <span style={{ marginLeft: "auto", fontSize: "10px", opacity: 0.8 }}>F9 to close</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Button mode: on(event) sidebar + editor for the selected event
+  // ---------------------------------------------------------------------------
+
+  if (isButtonMode) {
+    const symbolLabel = selectedButtonSymbol.name ? ` (${selectedButtonSymbol.name})` : "";
+    const currentButtonScript = getButtonActionScript(selectedButtonEvent);
+
+    return (
+      <div style={panelStyle}>
+        {/* Title bar */}
+        {!embedded && (
+          <div style={titleBarStyle}>
+            <span>Actions - Button{symbolLabel}</span>
+            <button
+              style={{ background: "transparent", border: "none", color: "#ccc", cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
+              onClick={onClose}
+              title="Close (F9)"
+            >
+              &#x2715;
+            </button>
+          </div>
+        )}
+
+        {/* Toolbar */}
+        <div style={toolbarStyle}>
+          <button style={toolBtnStyle} title="Add Statement">+</button>
+          <button style={toolBtnStyle} title="Find">&#128269;</button>
+          <button style={toolBtnStyle} title="Help">?</button>
+          <div style={{ width: "1px", height: "16px", background: "#555", margin: "0 4px" }} />
+          <span style={{ fontSize: "11px", color: "#888" }}>on</span>
+        </div>
+
+        {/* Two-column layout: event list + editor */}
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+          {/* Event list sidebar */}
+          <div style={{
+            width: "140px",
+            flexShrink: 0,
+            background: "#252526",
+            borderRight: "1px solid #333",
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+          }}>
+            <div style={{ padding: "4px 8px", fontSize: "10px", color: "#888", borderBottom: "1px solid #333", userSelect: "none" }}>
+              on
+            </div>
+            {BUTTON_EVENT_TYPES.map(({ event, label }) => {
+              const hasScript = getButtonActionScript(event).trim().length > 0;
+              const isSelected = selectedButtonEvent === event;
+              return (
+                <button
+                  key={event}
+                  onClick={() => setSelectedButtonEvent(event)}
+                  style={{
+                    background: isSelected ? "#094771" : "transparent",
+                    border: "none",
+                    borderBottom: "1px solid #2a2a2a",
+                    color: isSelected ? "#fff" : hasScript ? "#d4d4d4" : "#777",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    padding: "5px 8px",
+                    textAlign: "left",
+                    fontFamily: "'Consolas', 'Courier New', monospace",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  {hasScript && (
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4ec9b0", flexShrink: 0, display: "inline-block" }} />
+                  )}
+                  {!hasScript && <span style={{ width: "6px", flexShrink: 0, display: "inline-block" }} />}
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Script editor for selected event */}
+          <div ref={firstTextareaRef} style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+            <ScriptEditor
+              script={currentButtonScript}
+              onScriptChange={(s) => handleButtonActionScriptChange(selectedButtonEvent, s)}
+              onCursorChange={(l, c) => { setCursorLine(l); setCursorCol(c); }}
+            />
+          </div>
+        </div>
+
+        {/* Status bar */}
+        <div style={statusBarStyle}>
+          <span>ActionScript 2.0</span>
+          <span>on({selectedButtonEvent})</span>
           <span>Ln {cursorLine}, Col {cursorCol}</span>
           <span style={{ marginLeft: "auto", fontSize: "10px", opacity: 0.8 }}>F9 to close</span>
         </div>

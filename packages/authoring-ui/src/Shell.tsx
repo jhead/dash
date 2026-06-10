@@ -38,6 +38,7 @@ import { TransformHandles } from "./TransformHandles";
 import type {
   BitmapDisplayObject,
   BitmapItem,
+  ButtonAction,
   ClipAction,
   DisplayObject,
   DocumentProperties,
@@ -1385,6 +1386,40 @@ export function Shell(): React.ReactElement {
       handleUpdateInstance(selectedMovieClipInstance.id, { clipActions });
     },
     [selectedMovieClipInstance, handleUpdateInstance]
+  );
+
+  /**
+   * Returns the Symbol (from library) if the currently selected display object is a
+   * button instance, otherwise null. Used by ActionsPanel for "Actions - Button" mode.
+   */
+  const selectedButtonSymbol = useMemo<Symbol | null>(() => {
+    if (!selectedDisplayObject || selectedDisplayObject.type !== "instance") return null;
+    const inst = selectedDisplayObject as SymbolInstance;
+    const libItem = doc.library.items.find(
+      (i) => i.id === inst.symbolId && i.itemType === "symbol"
+    );
+    if (!libItem || libItem.itemType !== "symbol" || libItem.symbolType !== "button") return null;
+    return libItem;
+  }, [selectedDisplayObject, doc.library.items]);
+
+  /** Update buttonActions on the currently selected button symbol (library-level). */
+  const handleButtonActionsChange = useCallback(
+    (actions: readonly ButtonAction[]) => {
+      if (!selectedButtonSymbol) return;
+      const symId = selectedButtonSymbol.id;
+      pushDoc({
+        ...doc,
+        library: {
+          ...doc.library,
+          items: doc.library.items.map((item) =>
+            item.id === symId && item.itemType === "symbol"
+              ? { ...item, buttonActions: actions }
+              : item
+          ),
+        },
+      });
+    },
+    [selectedButtonSymbol, doc, pushDoc]
   );
 
   /** Generic display object updater used by PropertiesPanel. */
@@ -3868,6 +3903,8 @@ export function Shell(): React.ReactElement {
                     onClose={() => setBottomTab(null)}
                     selectedInstance={selectedMovieClipInstance}
                     onClipActionsChange={handleClipActionsChange}
+                    selectedButtonSymbol={selectedButtonSymbol}
+                    onButtonActionsChange={handleButtonActionsChange}
                   />
                 )}
                 {bottomTab === "sound" && (
