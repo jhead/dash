@@ -803,9 +803,16 @@ export function Timeline({
         case "clear-keyframe":
           onTimelineChange(clearKeyframe(timeline, _layerId, frameIndex));
           break;
-        case "remove-frame":
-          onTimelineChange(removeFrame(timeline, _layerId, frameIndex));
+        case "remove-frame": {
+          const rangeStart = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.start : frameIndex;
+          const rangeEnd = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.end : frameIndex;
+          if (onRemoveFrames) {
+            onRemoveFrames(rangeStart, rangeEnd);
+          } else {
+            onTimelineChange(removeFrame(timeline, _layerId, rangeStart));
+          }
           break;
+        }
         case "create-motion-tween":
           onTimelineChange(setMotionTween(timeline, _layerId, frameIndex));
           setSelectedKeyframe({ layerId: _layerId, frameIndex });
@@ -836,7 +843,7 @@ export function Timeline({
           break;
       }
     },
-    [contextMenu, timeline, onTimelineChange, onSetShapeTween, onCopyFrames, onCutFrames, onPasteFrames, selectedFrameRange]
+    [contextMenu, timeline, onTimelineChange, onSetShapeTween, onCopyFrames, onCutFrames, onPasteFrames, onRemoveFrames, selectedFrameRange]
   );
 
   // Layer rename
@@ -1507,6 +1514,7 @@ export function Timeline({
           timeline={timeline}
           layerId={contextMenu.layerId}
           frameIndex={contextMenu.frameIndex}
+          selectedFrameRange={selectedFrameRange}
           hasFrameClipboard={hasFrameClipboard}
           canCopyFrames={!!onCopyFrames}
           canCutFrames={!!onCutFrames}
@@ -1655,6 +1663,7 @@ function ContextMenuPopup({
   timeline,
   layerId,
   frameIndex,
+  selectedFrameRange = null,
   hasFrameClipboard = false,
   canCopyFrames = false,
   canCutFrames = false,
@@ -1667,6 +1676,7 @@ function ContextMenuPopup({
   timeline: TimelineModel;
   layerId: string;
   frameIndex: number;
+  selectedFrameRange?: { layerId: string; start: number; end: number } | null;
   hasFrameClipboard?: boolean;
   canCopyFrames?: boolean;
   canCutFrames?: boolean;
@@ -1677,6 +1687,11 @@ function ContextMenuPopup({
   const kf = layer?.frames.find((f) => f.index === frameIndex && f.isKeyframe);
   const hasTween = kf?.tweenType === "motion" || kf?.tweenType === "shape";
 
+  // Determine if a multi-frame range is selected on this layer
+  const isMultiFrameRange =
+    selectedFrameRange?.layerId === layerId &&
+    selectedFrameRange.end > selectedFrameRange.start;
+
   const items: { label: string; action: string; shortcut?: string; separator?: boolean; disabled?: boolean }[] = [
     { label: "Insert Frame", action: "insert-frame", shortcut: "F5" },
     { label: "Insert Keyframe", action: "insert-keyframe", shortcut: "F6" },
@@ -1686,7 +1701,7 @@ function ContextMenuPopup({
       shortcut: "F7",
     },
     { label: "Clear Keyframe", action: "clear-keyframe", shortcut: "⇧F6" },
-    { label: "Remove Frame", action: "remove-frame", shortcut: "⇧F5" },
+    { label: isMultiFrameRange ? "Remove Frames" : "Remove Frame", action: "remove-frame", shortcut: "⇧F5" },
     // Separator + tween items
     ...(kf
       ? [
