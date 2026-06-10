@@ -1444,15 +1444,16 @@ class Compiler {
       // Built-in: gotoAndPlay(frame) → push frame, ActionGotoFrame2 (0x9F) PlayFlag=1
       if (name === 'gotoAndPlay' && expr.args.length >= 1) {
         this.compileExpr(expr.args[0]!);
-        // ActionGotoFrame2: opcode 0x9F, length=1, flags byte: bit1=PlayFlag(1)=play after goto
-        this.emitWithPayload(0x9f, [0x02]); // flags = 0x02: PlayFlag=1
+        // ActionGotoFrame2: opcode 0x9F, length=1, flags byte: bit0=PlayFlag(1)=play after goto
+        // bit1=SceneBiasFlag (0 here); bit0=PlayFlag
+        this.emitWithPayload(0x9f, [0x01]); // flags = 0x01: PlayFlag=1
         this.pushUndefined();
         return;
       }
       // Built-in: gotoAndStop(frame) → push frame, ActionGotoFrame2 (0x9F) PlayFlag=0
       if (name === 'gotoAndStop' && expr.args.length >= 1) {
         this.compileExpr(expr.args[0]!);
-        // ActionGotoFrame2: opcode 0x9F, length=1, flags byte: bit1=PlayFlag=0 (stop after goto)
+        // ActionGotoFrame2: opcode 0x9F, length=1, flags byte: bit0=PlayFlag=0 (stop after goto)
         this.emitWithPayload(0x9f, [0x00]); // flags = 0x00: PlayFlag=0
         this.pushUndefined();
         return;

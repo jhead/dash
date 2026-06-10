@@ -233,6 +233,17 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   claim that headless Ruffle "does not drive onEnterFrame game loops" was an artifact
   of the broken SetMember opcode + DefineFunction2 length bug; with both fixed, the
   capstone game loop runs every frame.
+- **ActionGotoFrame2 (0x9F) PlayFlag is bit 0 (0x01), NOT bit 1 (0x02).** The flags
+  byte layout is: `Reserved(6) | SceneBiasFlag(1) | PlayFlag(1)`. Using 0x02 sets
+  SceneBiasFlag which tells Ruffle to read 2 more bytes for scene offset; since those
+  bytes aren't there Ruffle logs "Length mismatch in AVM1 action: GotoFrame2" and the
+  goto fails. Verified against `ruffle/swf/src/avm1/read.rs` `read_goto_frame_2`.
+- **SWF layer depth ordering: li=0 is the TOP (front) layer; it needs the HIGHEST
+  depth.** In `compile.ts`, depths must be pre-assigned bottom-to-top: iterate layers
+  from `li=n-1` (background, depth 1) to `li=0` (foreground, depth n). The old code
+  iterated forward (li=0 → depth 1) which put the background layer on top of everything
+  else in Ruffle, hiding all content. A pre-pass in `compile.ts` now seeds
+  `getOrAssignDepth` in the correct visual order before the frame loop runs.
 
 ### Authoring UI
 

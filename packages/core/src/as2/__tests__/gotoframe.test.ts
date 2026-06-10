@@ -60,7 +60,7 @@ describe("gotoAndPlay()", () => {
     expect(containsByte(bytes, ACTION_CALL_FUNC)).toBe(false);
   });
 
-  it("4. gotoAndPlay(5) ActionGotoFrame2 flags byte has PlayFlag=1 (0x02)", () => {
+  it("4. gotoAndPlay(5) ActionGotoFrame2 flags byte has PlayFlag=1 (0x01)", () => {
     const bytes = compileAS2("gotoAndPlay(5);");
     // Find 0x9F opcode and check the flags byte in the payload
     // Format: 0x9F | length_lo | length_hi | flags
@@ -69,8 +69,8 @@ describe("gotoAndPlay()", () => {
     // length field = 1 (two bytes LE), then flags byte
     // bytes[idx+1] = 0x01, bytes[idx+2] = 0x00 (length=1 LE), bytes[idx+3] = flags
     const flags = bytes[idx + 3];
-    // PlayFlag is bit 1 (0x02)
-    expect(flags! & 0x02).toBe(0x02);
+    // PlayFlag is bit 0 (0x01) per SWF spec; bit 1 is SceneBiasFlag
+    expect(flags! & 0x01).toBe(0x01);
   });
 
   it("5. gotoAndPlay('scene1') compiles — string label support", () => {
@@ -116,8 +116,8 @@ describe("gotoAndStop()", () => {
     const idx = bytes.indexOf(ACTION_GOTO_FRAME2);
     expect(idx).toBeGreaterThanOrEqual(0);
     const flags = bytes[idx + 3];
-    // PlayFlag (bit 1) must be 0
-    expect(flags! & 0x02).toBe(0x00);
+    // PlayFlag (bit 0) must be 0; bit 1 is SceneBiasFlag (also 0)
+    expect(flags! & 0x01).toBe(0x00);
   });
 
   it("13. gotoAndStop(1) compiles — frame 1", () => {
@@ -221,9 +221,9 @@ describe("PlayFlag distinction", () => {
     const playFlags = playBytes[playIdx + 3]!;
     const stopFlags = stopBytes[stopIdx + 3]!;
 
-    // gotoAndPlay: PlayFlag (bit 1) = 1
-    expect(playFlags & 0x02).toBe(0x02);
-    // gotoAndStop: PlayFlag (bit 1) = 0
-    expect(stopFlags & 0x02).toBe(0x00);
+    // gotoAndPlay: PlayFlag (bit 0) = 1; bit 1 is SceneBiasFlag (must stay 0)
+    expect(playFlags & 0x01).toBe(0x01);
+    // gotoAndStop: PlayFlag (bit 0) = 0
+    expect(stopFlags & 0x01).toBe(0x00);
   });
 });

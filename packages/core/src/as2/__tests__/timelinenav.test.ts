@@ -59,7 +59,8 @@ describe("gotoAndPlay(number)", () => {
     const idx = bytes.indexOf(ACTION_GOTO_FRAME2);
     expect(idx).toBeGreaterThanOrEqual(0);
     const flags = bytes[idx + 3]!;
-    expect(flags & 0x02).toBe(0x02);
+    // PlayFlag is bit 0 (0x01) per SWF spec; bit 1 is SceneBiasFlag
+    expect(flags & 0x01).toBe(0x01);
   });
 });
 
@@ -82,7 +83,7 @@ describe("gotoAndStop(number)", () => {
     const idx = bytes.indexOf(ACTION_GOTO_FRAME2);
     expect(idx).toBeGreaterThanOrEqual(0);
     const flags = bytes[idx + 3]!;
-    expect(flags & 0x02).toBe(0x00);
+    expect(flags & 0x01).toBe(0x00);
   });
 });
 
