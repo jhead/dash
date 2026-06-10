@@ -4228,12 +4228,12 @@ export function Shell(): React.ReactElement {
     [shapeDisplayObjects]
   );
 
-  // Filters for the currently selected shape (read from displayObject.filters)
+  // Filters for the currently selected display object (works for shapes, instances, text, drawing-objects)
   const selectedShapeFilters = useMemo<FlashFilter[]>(() => {
-    if (!selectedShapeId) return [];
-    const obj = shapeDisplayObjects.find((s) => s.id === selectedShapeId);
-    return obj?.filters ? [...obj.filters] : [];
-  }, [selectedShapeId, shapeDisplayObjects]);
+    if (!selectedDisplayObject) return [];
+    const obj = selectedDisplayObject as { filters?: readonly FlashFilter[] };
+    return obj.filters ? [...obj.filters] : [];
+  }, [selectedDisplayObject]);
 
   const handleFiltersChange = useCallback(
     (filters: FlashFilter[]) => {
