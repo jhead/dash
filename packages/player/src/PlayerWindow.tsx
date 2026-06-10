@@ -18,6 +18,10 @@ export interface PlayerWindowProps {
    * Defaults to "/ruffle" (relative to the app origin).
    */
   ruffleBaseUrl?: string;
+  /**
+   * Called with each AS2 trace() line emitted by the running SWF.
+   */
+  onTrace?: (line: string) => void;
 }
 
 /**
@@ -33,6 +37,7 @@ export function PlayerWindow({
   onClose,
   onError,
   ruffleBaseUrl,
+  onTrace,
 }: PlayerWindowProps): React.ReactElement | null {
   // Keyboard handler: Escape closes the window
   const handleKeyDown = useCallback(
@@ -138,6 +143,7 @@ export function PlayerWindow({
           height={stageHeight}
           onError={onError}
           ruffleBaseUrl={ruffleBaseUrl}
+          onTrace={onTrace}
         />
       </div>
     </div>

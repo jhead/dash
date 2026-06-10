@@ -192,6 +192,8 @@ export interface MenuBarProps {
   onColorPanelToggle?: () => void;
   /** Called when Window > Actions (F9) is activated. */
   onActionsToggle?: () => void;
+  /** Called when Window > Output (F2) is activated. */
+  onOutputToggle?: () => void;
   /** Called when Window > Filters is toggled. */
   onFiltersPanelToggle?: () => void;
   /** Called when Modify > Document (Ctrl+J) is activated. */
@@ -280,6 +282,7 @@ export function MenuBar({
   onPublishSettings,
   onColorPanelToggle,
   onActionsToggle,
+  onOutputToggle,
   onFiltersPanelToggle,
   onDocPropsOpen,
   onRulersToggle,
@@ -531,6 +534,10 @@ export function MenuBar({
         {
           label: "Actions  F9",
           action: () => { onActionsToggle?.(); },
+        },
+        {
+          label: "Output  F2",
+          action: () => { onOutputToggle?.(); },
         },
         {
           label: `${alignPanelVisible ? "+ " : "  "}Align  Ctrl+K`,

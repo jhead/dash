@@ -19,6 +19,34 @@ export interface RufflePlayerProps {
    * Use this to surface errors to the user.
    */
   onError?: (message: string) => void;
+  /**
+   * Called with each AS2 trace() line emitted by the running SWF.
+   * Lines are filtered to exclude Ruffle-internal debug/warn/error logs;
+   * only user trace() output is forwarded.
+   */
+  onTrace?: (line: string) => void;
+}
+
+/**
+ * Ruffle log prefixes that are internal to the runtime and should NOT be
+ * forwarded as user trace() output.  The prefixes are matched case-insensitively
+ * against the first word(s) of each console.log argument.
+ */
+const RUFFLE_INTERNAL_PREFIXES = [
+  "debug",
+  "warn",
+  "warning",
+  "error",
+  "[ruffle",
+  "ruffle:",
+  "info",
+  "avm",  // e.g. "AVM1:"
+];
+
+function isRuffleInternalLog(args: unknown[]): boolean {
+  if (args.length === 0) return false;
+  const first = String(args[0]).trimStart().toLowerCase();
+  return RUFFLE_INTERNAL_PREFIXES.some((prefix) => first.startsWith(prefix));
 }
 
 /**
@@ -33,14 +61,20 @@ export function RufflePlayer({
   height = 400,
   ruffleBaseUrl = "/ruffle",
   onError,
+  onTrace,
 }: RufflePlayerProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<RufflePlayerElement | null>(null);
   const ruffleLoadedRef = useRef(false);
-  // Keep onError in a ref so createAndLoad does not change identity when the
-  // parent re-renders with a new callback reference.
+  // Keep onError and onTrace in refs so createAndLoad does not change identity
+  // when the parent re-renders with a new callback reference.
   const onErrorRef = useRef(onError);
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  const onTraceRef = useRef(onTrace);
+  useEffect(() => { onTraceRef.current = onTrace; }, [onTrace]);
+
+  // Holds the original console.log so we can restore it on unmount.
+  const origConsoleLogRef = useRef<(typeof console.log) | null>(null);
 
   /** Ensure the Ruffle script is injected and return a promise that resolves
    *  when window.RufflePlayer is available. */
@@ -123,11 +157,30 @@ export function RufflePlayer({
       container.appendChild(player);
       playerRef.current = player;
 
+      // Install a console.log interceptor to capture AS2 trace() output.
+      // Ruffle emits trace() via console.log when logLevel:'info' is set.
+      // We capture lines that are NOT Ruffle-internal debug/warn/error output.
+      // Restore the original on each new load (in case of reload).
+      if (origConsoleLogRef.current) {
+        console.log = origConsoleLogRef.current;
+      }
+      origConsoleLogRef.current = console.log;
+      const capturedOrigLog = console.log;
+      console.log = (...args: unknown[]) => {
+        capturedOrigLog(...args);
+        if (onTraceRef.current && !isRuffleInternalLog(args)) {
+          const line = args.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
+          onTraceRef.current(line);
+        }
+      };
+
       // Load SWF from bytes via a Blob URL so we don't need a server
       const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/x-shockwave-flash" });
       const url = URL.createObjectURL(blob);
       try {
-        await player.ruffle().load({ url });
+        await (player.ruffle() as unknown as {
+          load(opts: Record<string, unknown>): Promise<void>;
+        }).load({ url, logLevel: "info" });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[RufflePlayer] SWF load failed:", msg);
@@ -149,7 +202,7 @@ export function RufflePlayer({
     void createAndLoad(swfBytes);
   }, [swfBytes, createAndLoad]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount: remove player element and restore console.log interceptor.
   useEffect(() => {
     return () => {
       const container = containerRef.current;
@@ -158,6 +211,11 @@ export function RufflePlayer({
         container.removeChild(player);
       }
       playerRef.current = null;
+      // Restore original console.log if we installed an interceptor.
+      if (origConsoleLogRef.current) {
+        console.log = origConsoleLogRef.current;
+        origConsoleLogRef.current = null;
+      }
     };
   }, []);
 

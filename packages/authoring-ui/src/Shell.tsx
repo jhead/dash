@@ -79,6 +79,7 @@ import { usePublish } from "./hooks/usePublish";
 import { useFileActions, loadFlaFromBytes } from "./hooks/useFileActions";
 import { useHistory } from "./hooks/useHistory";
 import { ActionsPanel } from "./ActionsPanel";
+import { OutputPanel } from "./OutputPanel";
 import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
 import { FiltersPanel } from "./FiltersPanel";
 import { SoundPanel } from "./SoundPanel";
@@ -211,11 +212,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-type BottomTab = "actions" | "sound" | "properties";
+type BottomTab = "actions" | "sound" | "properties" | "output";
 const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
   { id: "actions", label: "Actions" },
   { id: "sound", label: "Sound" },
   { id: "properties", label: "Properties" },
+  { id: "output", label: "Output" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -600,6 +602,9 @@ export function Shell(): React.ReactElement {
   const [playerOpen, setPlayerOpen] = useState(false);
   const [swfBytes, setSwfBytes] = useState<Uint8Array | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
+
+  // Output panel: collects AS2 trace() lines from Test Movie playback
+  const [outputMessages, setOutputMessages] = useState<string[]>([]);
 
   // Document properties dialog
   const [docPropsOpen, setDocPropsOpen] = useState(false);
@@ -2904,6 +2909,10 @@ export function Shell(): React.ReactElement {
       const bytes = await testMovie();
       setSwfBytes(bytes);
       setPlayerOpen(true);
+      // Clear output from previous run and switch to the Output tab so the user
+      // can see trace() messages as the movie plays.
+      setOutputMessages([]);
+      setBottomTab("output");
     })();
   }, [testMovie]);
 
@@ -2916,6 +2925,13 @@ export function Shell(): React.ReactElement {
 
   const handlePlayerError = useCallback((msg: string) => {
     setPlayerError(msg);
+  }, []);
+
+  // Called for each AS2 trace() line captured from the running SWF.
+  // Uses a functional setState update so the callback identity is stable and
+  // does not cause PlayerWindow / RufflePlayer to remount.
+  const handleTrace = useCallback((line: string) => {
+    setOutputMessages((prev) => [...prev, line]);
   }, []);
 
   // Ref to playerOpen so keyboard handler can read latest value without being
@@ -3028,6 +3044,11 @@ export function Shell(): React.ReactElement {
           e.preventDefault();
           handleBottomTabClick("actions");
         }
+      }
+      // F2 toggles the Output panel
+      if (e.key === "F2") {
+        e.preventDefault();
+        handleBottomTabClick("output");
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -3322,6 +3343,7 @@ export function Shell(): React.ReactElement {
         onPublishSettings={() => setPublishSettingsOpen(true)}
         onColorPanelToggle={() => setColorPanelVisible((v) => !v)}
         onActionsToggle={() => handleBottomTabClick("actions")}
+        onOutputToggle={() => handleBottomTabClick("output")}
         onFiltersPanelToggle={() => setFiltersPanelVisible((v) => !v)}
         onDocPropsOpen={() => setDocPropsOpen(true)}
         onRulersToggle={handleRulersToggle}
@@ -3752,6 +3774,12 @@ export function Shell(): React.ReactElement {
                     onUpdateObject={handleUpdateObject}
                   />
                 )}
+                {bottomTab === "output" && (
+                  <OutputPanel
+                    messages={outputMessages}
+                    onClear={() => setOutputMessages([])}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -4016,6 +4044,7 @@ export function Shell(): React.ReactElement {
         isOpen={playerOpen}
         onClose={handlePlayerClose}
         onError={handlePlayerError}
+        onTrace={handleTrace}
       />
 
       {/* Document Properties dialog (Modify > Document, Ctrl+J) */}
