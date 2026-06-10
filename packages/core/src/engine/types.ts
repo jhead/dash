@@ -354,6 +354,8 @@ export interface TextDisplayObject {
   readonly align: TextAlign;
   readonly multiline: boolean;
   readonly wordWrap: boolean;
+  /** AS2 instance name — makes the field accessible as _root.<name> in scripts. */
+  readonly instanceName?: string;
   /** Flash 8 filters applied to this object. */
   readonly filters?: readonly FlashFilter[];
 }

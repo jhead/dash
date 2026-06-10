@@ -1211,12 +1211,38 @@ const handlers: Record<string, AnyHandler> = {
     const originX = Math.min(...xs);
     const originY = Math.min(...ys);
 
-    // Create symbol with the objects in its timeline
+    // Create symbol and populate its first frame with the converted objects,
+    // normalized to the symbol's local coordinate space (origin = top-left of selection).
     const { library: newLib, item: sym } = createSymbolInLibrary(
       doc.library,
       params.name,
       params.symbolType
     );
+
+    // Normalize converted objects to symbol-local coordinates
+    const localObjects = toConvert.map((o) => {
+      const ox = "x" in o ? (o as { x: number }).x : 0;
+      const oy = "y" in o ? (o as { y: number }).y : 0;
+      return { ...o, x: ox - originX, y: oy - originY };
+    });
+
+    // Inject the objects into the symbol's first frame
+    const updatedSym = {
+      ...sym,
+      timeline: {
+        layers: [{
+          ...sym.timeline.layers[0],
+          frames: [{
+            ...sym.timeline.layers[0].frames[0],
+            displayObjects: localObjects,
+          }],
+        }],
+      },
+    };
+    const populatedLib = {
+      ...newLib,
+      items: newLib.items.map((item) => (item.id === sym.id ? updatedSym : item)),
+    };
 
     // Replace objects in frame with a single symbol instance
     const instance: SymbolInstance = {
@@ -1228,7 +1254,7 @@ const handlers: Record<string, AnyHandler> = {
     };
 
     const newDoc = withSceneTimeline(
-      { ...doc, library: newLib },
+      { ...doc, library: populatedLib },
       sceneIndex,
       (t) => {
         return {
