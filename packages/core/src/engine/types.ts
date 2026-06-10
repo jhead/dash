@@ -448,6 +448,8 @@ export interface SymbolInstance {
    * Surfaced in the Flash 8 Window > Accessibility panel.
    */
   readonly accessibility?: ObjectAccessibility;
+  /** Cache as bitmap for filter rendering. Default: false. */
+  readonly cacheAsBitmap?: boolean;
 }
 
 /**

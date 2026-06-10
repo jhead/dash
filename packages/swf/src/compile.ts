@@ -34,6 +34,7 @@ import { encodeDefineFont2, encodeDefineFontAlignZones, fontKey } from "./fonts.
 import {
   encodePlaceObject3WithFilters,
   encodePlaceObject3WithBlendMode,
+  encodePlaceObject3WithCacheAsBitmap,
   hasEnabledFilters,
 } from "./filters.js";
 import { colorEffectToCXForm } from "./cxform.js";
@@ -1583,6 +1584,16 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     objTransform
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
+                } else if (displayObj.type === "shape" && displayObj.cacheAsBitmap) {
+                  // cacheAsBitmap requires PlaceObject3 (tag 70) with HasCacheAsBitmap bit set.
+                  const placeBody = encodePlaceObject3WithCacheAsBitmap(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    objTransform
+                  );
+                  writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else {
                   const placeBody = encodePlaceObject2(
                     charId,
@@ -1717,6 +1728,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 const instanceFirstFrame = displayObj.firstFrame ?? 0;
 
                 const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
+                const hasCacheAsBitmap = !!displayObj.cacheAsBitmap;
                 // For play-once mode, add an enterFrame clip action that calls stop()
                 // when the instance reaches its last frame. Merge with any existing clipActions.
                 let effectiveClipActions = displayObj.clipActions ?? [];
@@ -1757,6 +1769,19 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         y,
                         displayObj.filters!
                       );
+                  writer.writeTag(Tag.PlaceObject3, placeBody);
+                } else if (hasCacheAsBitmap) {
+                  // cacheAsBitmap requires PlaceObject3 (tag 70) with HasCacheAsBitmap bit set.
+                  const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                    ? { scaleX, scaleY, rotation, skewX, skewY }
+                    : undefined;
+                  const placeBody = encodePlaceObject3WithCacheAsBitmap(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    instanceTransform
+                  );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (hasClipActions) {
                   // Clip actions: encode CLIPACTIONRECORD block in PlaceObject2

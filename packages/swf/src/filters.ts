@@ -758,3 +758,91 @@ export function encodePlaceObject3WithBlendMode(
 
   return bw.getBytes();
 }
+
+/**
+ * Encode a PlaceObject3 tag body (tag 70) for a character with cacheAsBitmap=true.
+ *
+ * Sets the HasCacheAsBitmap bit (bit 2 of flags2 = 0x04, i.e. bit 10 of the
+ * combined u16 PlaceFlag) and writes the required 'is_bitmap_cached' UI8 = 1.
+ *
+ * @param charId     Character ID to place
+ * @param depth      Display list depth (1-based)
+ * @param x          X position in pixels
+ * @param y          Y position in pixels
+ * @param transform  Optional scale/rotation/skew (defaults to identity)
+ */
+export function encodePlaceObject3WithCacheAsBitmap(
+  charId: number,
+  depth: number,
+  x: number,
+  y: number,
+  transform?: {
+    scaleX?: number;
+    scaleY?: number;
+    rotation?: number;
+    skewX?: number;
+    skewY?: number;
+  }
+): Uint8Array {
+  const bw = new BitWriter();
+
+  const flags1 =
+    (1 << 1) | // HasCharacter
+    (1 << 2);  // HasMatrix
+  bw.writeUI8(flags1);
+
+  // Flags2:
+  //   bit 2 (0x04): HasCacheAsBitmap — bit 10 of the combined u16 PlaceFlag
+  //   (HAS_CACHE_AS_BITMAP = 1 << 10 in Ruffle's PlaceFlag, high byte = 0x04)
+  bw.writeUI8(0x04); // HasCacheAsBitmap
+
+  // Depth: UI16
+  bw.writeUI16LE(depth);
+
+  // CharacterId: UI16 (HasCharacter)
+  bw.writeUI16LE(charId);
+
+  // MATRIX
+  const m = composeMatrix({
+    tx: x,
+    ty: y,
+    scaleX: transform?.scaleX ?? 1,
+    scaleY: transform?.scaleY ?? 1,
+    rotation: transform?.rotation ?? 0,
+    skewX: transform?.skewX ?? 0,
+    skewY: transform?.skewY ?? 0,
+  });
+  const swfM = toSWFMatrix(m);
+
+  const { hasScale, scaleX, scaleY, hasRotate, rotateSkew0, rotateSkew1, translateX, translateY } = swfM;
+
+  bw.writeBits(hasScale ? 1 : 0, 1);
+  if (hasScale) {
+    const nBits = Math.max(edgeNumBits([scaleX, scaleY]), 2);
+    bw.writeBits(nBits, 5);
+    bw.writeBits(scaleX, nBits);
+    bw.writeBits(scaleY, nBits);
+  }
+
+  bw.writeBits(hasRotate ? 1 : 0, 1);
+  if (hasRotate) {
+    const nBits = Math.max(edgeNumBits([rotateSkew0, rotateSkew1]), 2);
+    bw.writeBits(nBits, 5);
+    bw.writeBits(rotateSkew0, nBits);
+    bw.writeBits(rotateSkew1, nBits);
+  }
+
+  {
+    const nBits = Math.max(edgeNumBits([translateX, translateY]), 2);
+    bw.writeBits(nBits, 5);
+    bw.writeBits(translateX, nBits);
+    bw.writeBits(translateY, nBits);
+  }
+
+  bw.flushBits();
+
+  // is_bitmap_cached: UI8 = 1 (required when HasCacheAsBitmap is set)
+  bw.writeUI8(1);
+
+  return bw.getBytes();
+}

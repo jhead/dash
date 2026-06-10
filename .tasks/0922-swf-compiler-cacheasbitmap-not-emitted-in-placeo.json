@@ -1,0 +1,10 @@
+{
+  "id": "0922-swf-compiler-cacheasbitmap-not-emitted-in-placeo",
+  "title": "SWF compiler: cacheAsBitmap not emitted in PlaceObject3 HasCacheAsBitmap bit",
+  "description": "The model field 'cacheAsBitmap' exists in packages/core/src/engine/types.ts (line ~279) but compile.ts never reads it and never sets the HasCacheAsBitmap bit in PlaceObject3. When a display object has cacheAsBitmap=true, the SWF output should include a PlaceObject3 tag with the CacheAsBitmap bit set (bit 4 of the first flags byte, per SWF spec). This enables GPU-accelerated bitmap caching for complex movieclips in Flash Player / Ruffle.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T20:31:23Z",
+  "updated_at": "2026-06-10T20:39:12Z"
+}
