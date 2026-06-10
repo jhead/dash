@@ -300,6 +300,17 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
       case 'CallExpr':
         if (e.callee.type === 'MemberExpr') {
           const member = e.callee as MemberExpr;
+          // String.fromCharCode(n) is special-cased to ActionMBChr (0x63) —
+          // no strings added to the constant pool for this call.
+          if (
+            member.object.type === 'Identifier' &&
+            (member.object as Identifier).name === 'String' &&
+            member.property === 'fromCharCode' &&
+            e.args.length === 1
+          ) {
+            for (const a of e.args) scanExpr(a);
+            break;
+          }
           scanExpr(member.object);
           add(member.property);
           for (const a of e.args) scanExpr(a);
@@ -1808,6 +1819,20 @@ class Compiler {
   private compileCallExpr(expr: CallExpr): void {
     if (expr.callee.type === 'MemberExpr') {
       const member = expr.callee as MemberExpr;
+
+      // Built-in: String.fromCharCode(n) → push n, ActionMBChr (0x63)
+      // Flash Professional emits ActionMBChr instead of a generic method call.
+      if (
+        member.object.type === 'Identifier' &&
+        (member.object as Identifier).name === 'String' &&
+        member.property === 'fromCharCode' &&
+        expr.args.length === 1
+      ) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x63); // ActionMBChr
+        return;
+      }
+
       // ActionCallMethod stack layout (Ruffle pops top first):
       //   method_name | object | numArgs | arg[0] | ... | arg[n-1]
       //   (bottom to top: arg[n-1], ..., arg[0], numArgs, object, method_name)
@@ -1947,10 +1972,10 @@ class Compiler {
         return;
       }
 
-      // Built-in: Number(x) → push x, ActionToNumber (0x30)
+      // Built-in: Number(x) → push x, ActionToNumber (0x4A)
       if (name === 'Number' && expr.args.length === 1) {
         this.compileExpr(expr.args[0]!);
-        this.emit(0x30); // ActionToNumber
+        this.emit(0x4A); // ActionToNumber
         return;
       }
 
