@@ -118,11 +118,9 @@ describe("getTimer()", () => {
     expect(compilesOk("getTimer();")).toBe(true);
   });
 
-  it("10. getTimer() emits ActionGetVariable (0x1c) or ActionCallFunction (0x3D)", () => {
+  it("10. getTimer() emits ActionGetTime (0x34)", () => {
     const bytes = compileAS2("getTimer();");
-    const hasGetVariable   = containsByte(bytes, ACTION_GET_VARIABLE);
-    const hasCallFunction  = containsByte(bytes, ACTION_CALL_FUNCTION);
-    expect(hasGetVariable || hasCallFunction).toBe(true);
+    expect(containsByte(bytes, 0x34)).toBe(true); // ActionGetTime
   });
 });
 
@@ -135,11 +133,9 @@ describe("var elapsed = getTimer()", () => {
     expect(compilesOk("var elapsed = getTimer();")).toBe(true);
   });
 
-  it("12. var elapsed = getTimer() emits ActionGetVariable (0x1c) or ActionCallFunction (0x3D)", () => {
+  it("12. var elapsed = getTimer() emits ActionGetTime (0x34)", () => {
     const bytes = compileAS2("var elapsed = getTimer();");
-    const hasGetVariable   = containsByte(bytes, ACTION_GET_VARIABLE);
-    const hasCallFunction  = containsByte(bytes, ACTION_CALL_FUNCTION);
-    expect(hasGetVariable || hasCallFunction).toBe(true);
+    expect(containsByte(bytes, 0x34)).toBe(true); // ActionGetTime
   });
 });
 

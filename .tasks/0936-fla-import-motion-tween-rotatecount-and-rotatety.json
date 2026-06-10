@@ -1,0 +1,10 @@
+{
+  "id": "0936-fla-import-motion-tween-rotatecount-and-rotatety",
+  "title": "FLA import: motion tween rotateCount and rotateType (CW/CCW/auto) not decoded from binary",
+  "description": "flash8-import.ts does not decode rotateCount (number of additional full rotations) or rotateType (auto/clockwise/counterclockwise/none) from the binary CPicFrame for motion tweens. These values are present in the binary tween parameters. Without them, motion tweens that rotate objects (e.g., spinning symbols) will not rotate at all when imported from a real Flash 8 FLA. Fix: find and decode rotateCount and rotateType from the binary CPicFrame tween data in flash8-binary.ts (look at flacomdoc TimelineConverter for field positions), add to the tween model, forward through flash8-import.ts.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T20:42:48Z",
+  "updated_at": "2026-06-10T20:47:23Z"
+}

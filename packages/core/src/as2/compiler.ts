@@ -324,7 +324,9 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
                        'gotoAndPlay', 'gotoAndStop', 'trace',
                        'getURL', 'loadMovie', 'loadMovieNum'].includes(name)
                     && !(name === 'int' && e.args.length === 1)
-                    && !(name === 'Number' && e.args.length === 1)) {
+                    && !(name === 'Number' && e.args.length === 1)
+                    && !(name === 'getTimer' && e.args.length === 0)
+                    && !(name === 'random' && e.args.length === 1)) {
             add(name);
           }
           if (name === 'loadMovieNum') {
@@ -1976,6 +1978,19 @@ class Compiler {
       if (name === 'Number' && expr.args.length === 1) {
         this.compileExpr(expr.args[0]!);
         this.emit(0x4A); // ActionToNumber
+        return;
+      }
+
+      // Built-in: getTimer() → ActionGetTime (0x34) — no args, pushes elapsed ms
+      if (name === 'getTimer' && expr.args.length === 0) {
+        this.emit(0x34); // ActionGetTime
+        return;
+      }
+
+      // Built-in: random(n) → push n, ActionRandomNumber (0x30)
+      if (name === 'random' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x30); // ActionRandomNumber
         return;
       }
 

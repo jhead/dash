@@ -1,0 +1,10 @@
+{
+  "id": "0939-as2-compiler-random-n-should-emit-actionrandomnu",
+  "title": "AS2 compiler: random(n) should emit ActionRandomNumber (0x30) not ActionCallFunction",
+  "description": "In AVM1, the global random(n) function emits ActionRandomNumber (0x30) \u2014 it pops n from stack and pushes a random integer in [0, n). The AS2 compiler currently falls through to ActionCallFunction (0x3D). Fix: in compiler.ts compileCallExpr, detect Identifier('random') with exactly 1 arg, compile the arg, then emit opcode 0x30. Note: Math.random() does NOT have a special opcode and should remain as ActionCallFunction for the Math object's random method.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T20:44:27Z",
+  "updated_at": "2026-06-10T20:49:46Z"
+}
