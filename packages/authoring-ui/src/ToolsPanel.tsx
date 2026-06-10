@@ -432,6 +432,10 @@ function fillToCssBg(fill: Fill | null): string {
     });
     return `radial-gradient(circle, ${parts.join(", ")})`;
   }
+  if (fill.type === "bitmap") {
+    // Show a checkerboard pattern to indicate a bitmap fill is active
+    return "repeating-conic-gradient(#888 0% 25%, #aaa 0% 50%) 0 0 / 8px 8px";
+  }
   return "#ffffff";
 }
 

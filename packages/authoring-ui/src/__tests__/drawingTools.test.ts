@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { Fill, SolidStroke, ShapePath, ShapeDisplayObject, Point } from "@flash/core";
+import type { BitmapFill, Fill, SolidStroke, ShapePath, ShapeDisplayObject, Point } from "@flash/core";
 import { transformedShapeBounds } from "@flash/core";
 
 // ---------------------------------------------------------------------------
@@ -571,6 +571,140 @@ describe("Paint Bucket tool", () => {
     const result = paintBucketApply(shape, null);
     expect(result.paths[0].fill).toBeUndefined();
     expect(result.paths[1].fill).toBeUndefined();
+  });
+
+  it("applies a BitmapFill (tiled) to all paths", () => {
+    const bitmapFill: BitmapFill = {
+      type: "bitmap",
+      bitmapId: "img1",
+      repeat: true,
+      smooth: false,
+    };
+    const shape = { paths: [makeSimplePath(RED), makeSimplePath(BLUE)] };
+    const result = paintBucketApply(shape, bitmapFill);
+    expect(result.paths[0].fill).toStrictEqual(bitmapFill);
+    expect(result.paths[1].fill).toStrictEqual(bitmapFill);
+    // Type guard: confirm it's a bitmap fill
+    const f0 = result.paths[0].fill;
+    expect(f0?.type).toBe("bitmap");
+    if (f0?.type === "bitmap") {
+      expect(f0.bitmapId).toBe("img1");
+      expect(f0.repeat).toBe(true);
+      expect(f0.smooth).toBe(false);
+    }
+  });
+
+  it("applies a BitmapFill (clipped, smoothed) to a shape", () => {
+    const bitmapFill: BitmapFill = {
+      type: "bitmap",
+      bitmapId: "img2",
+      repeat: false,
+      smooth: true,
+    };
+    const shape = { paths: [makeSimplePath()] };
+    const result = paintBucketApply(shape, bitmapFill);
+    const f = result.paths[0].fill;
+    expect(f?.type).toBe("bitmap");
+    if (f?.type === "bitmap") {
+      expect(f.bitmapId).toBe("img2");
+      expect(f.repeat).toBe(false);
+      expect(f.smooth).toBe(true);
+    }
+  });
+
+  it("replaces an existing BitmapFill with a new BitmapFill", () => {
+    const oldBitmapFill: BitmapFill = { type: "bitmap", bitmapId: "old-img", repeat: true, smooth: false };
+    const newBitmapFill: BitmapFill = { type: "bitmap", bitmapId: "new-img", repeat: false, smooth: true };
+    const shape = { paths: [makeSimplePath(oldBitmapFill)] };
+    const result = paintBucketApply(shape, newBitmapFill);
+    const f = result.paths[0].fill;
+    expect(f?.type).toBe("bitmap");
+    if (f?.type === "bitmap") {
+      expect(f.bitmapId).toBe("new-img");
+    }
+  });
+
+  it("replaces a solid fill with a BitmapFill", () => {
+    const bitmapFill: BitmapFill = { type: "bitmap", bitmapId: "img1", repeat: true, smooth: false };
+    const shape = { paths: [makeSimplePath(RED)] };
+    const result = paintBucketApply(shape, bitmapFill);
+    expect(result.paths[0].fill?.type).toBe("bitmap");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bitmap Fill — Color Mixer selection logic
+// ---------------------------------------------------------------------------
+
+/**
+ * Simulate the ColorMixerPanel.handleBitmapSelect logic:
+ * selecting a bitmap from the thumbnail grid sets the fill to a BitmapFill
+ * with the chosen bitmapId.
+ */
+function colorMixerSelectBitmap(
+  bitmapId: string,
+  repeat: boolean,
+  smooth: boolean
+): BitmapFill {
+  return { type: "bitmap", bitmapId, repeat, smooth };
+}
+
+/**
+ * Simulate switching the Color Mixer type dropdown to "bitmap",
+ * which auto-picks the first available bitmap item if none is already selected.
+ */
+function colorMixerSwitchToBitmap(
+  firstAvailableId: string | null,
+  alreadySelectedId: string | null,
+  repeat: boolean,
+  smooth: boolean
+): BitmapFill | null {
+  const initId = alreadySelectedId ?? firstAvailableId;
+  if (!initId) return null;
+  return { type: "bitmap", bitmapId: initId, repeat, smooth };
+}
+
+describe("Bitmap Fill — Color Mixer selection", () => {
+  it("selecting a bitmap id produces a BitmapFill with correct id", () => {
+    const fill = colorMixerSelectBitmap("img1", true, false);
+    expect(fill.type).toBe("bitmap");
+    expect(fill.bitmapId).toBe("img1");
+    expect(fill.repeat).toBe(true);
+    expect(fill.smooth).toBe(false);
+  });
+
+  it("switching to bitmap type auto-picks the first available bitmap", () => {
+    const fill = colorMixerSwitchToBitmap("auto-img", null, true, false);
+    expect(fill).not.toBeNull();
+    expect(fill?.bitmapId).toBe("auto-img");
+  });
+
+  it("switching to bitmap type keeps already-selected bitmap", () => {
+    const fill = colorMixerSwitchToBitmap("other-img", "my-img", true, false);
+    expect(fill?.bitmapId).toBe("my-img");
+  });
+
+  it("switching to bitmap type returns null when no bitmaps are available", () => {
+    const fill = colorMixerSwitchToBitmap(null, null, true, false);
+    expect(fill).toBeNull();
+  });
+
+  it("BitmapFill → Paint Bucket: selecting bitmap then clicking shape sets bitmap fill", () => {
+    const bitmapFill: BitmapFill = colorMixerSelectBitmap("img1", true, false);
+    const shape = { paths: [makeSimplePath(RED)] };
+    const result = paintBucketApply(shape, bitmapFill);
+    expect(result.paths[0].fill?.type).toBe("bitmap");
+    if (result.paths[0].fill?.type === "bitmap") {
+      expect(result.paths[0].fill.bitmapId).toBe("img1");
+    }
+  });
+
+  it("BitmapFill is round-tripped through paintBucketApply without mutation", () => {
+    const bitmapFill: BitmapFill = { type: "bitmap", bitmapId: "img1", repeat: true, smooth: false };
+    const shape = { paths: [makeSimplePath()] };
+    const result = paintBucketApply(shape, bitmapFill);
+    // The fill object itself is preserved by reference (no cloning)
+    expect(result.paths[0].fill).toBe(bitmapFill);
   });
 });
 
