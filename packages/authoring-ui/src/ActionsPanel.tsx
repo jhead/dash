@@ -48,6 +48,23 @@ function highlightLine(line: string, key: number): React.ReactNode {
 }
 
 // ---------------------------------------------------------------------------
+// Frame script snippets
+// ---------------------------------------------------------------------------
+
+const FRAME_SNIPPETS: Array<{ label: string; code: string }> = [
+  { label: "stop()",                    code: "stop();\n" },
+  { label: "play()",                    code: "play();\n" },
+  { label: "nextFrame()",               code: "nextFrame();\n" },
+  { label: "prevFrame()",               code: "prevFrame();\n" },
+  { label: "gotoAndStop('label')",      code: "gotoAndStop('label');\n" },
+  { label: "gotoAndPlay('label')",      code: "gotoAndPlay('label');\n" },
+  { label: "gotoAndStop(1)",            code: "gotoAndStop(1);\n" },
+  { label: "gotoAndPlay(1)",            code: "gotoAndPlay(1);\n" },
+  { label: "trace('message')",          code: "trace('message');\n" },
+  { label: "stopAllSounds()",           code: "stopAllSounds();\n" },
+];
+
+// ---------------------------------------------------------------------------
 // Clip event types (ordered as in Flash 8 Actions panel)
 // ---------------------------------------------------------------------------
 
@@ -775,6 +792,30 @@ export function ActionsPanel({
         <span style={{ fontSize: "11px", color: "#888" }}>
           Script Assist
         </span>
+        <div style={{ width: "1px", height: "16px", background: "#555", margin: "0 4px" }} />
+        <select
+          title="Insert snippet"
+          style={{
+            background: "#2d2d2d",
+            border: "1px solid #555",
+            borderRadius: "3px",
+            color: "#ccc",
+            cursor: "pointer",
+            fontSize: "11px",
+            padding: "1px 4px",
+            lineHeight: "1",
+          }}
+          value=""
+          onChange={(e) => {
+            const snippet = FRAME_SNIPPETS.find((s) => s.label === e.target.value);
+            if (snippet) onScriptChange(script + snippet.code);
+          }}
+        >
+          <option value="" disabled>Insert snippet...</option>
+          {FRAME_SNIPPETS.map((s) => (
+            <option key={s.label} value={s.label}>{s.label}</option>
+          ))}
+        </select>
       </div>
 
       {/* Editor area */}
