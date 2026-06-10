@@ -307,8 +307,8 @@ export function encodeDefineEditText(
   // _tf.letterSpacing=N; _root.<instanceName>.setTextFormat(_tf);) for named fields.
   bw.writeSI16LE(obj.leading != null ? Math.round(obj.leading * 20) : 0);
 
-  // VariableName: null-terminated string (empty for static/dynamic display)
-  bw.writeString("");
+  // VariableName: null-terminated string (AS1/AS2 variable binding for this text field)
+  bw.writeString(obj.as2VariableName ?? "");
 
   // InitialText: null-terminated string (only present when HasText flag is set).
   // When html=true, emit the HTML-formatted string (htmlText) so Flash's HTML
