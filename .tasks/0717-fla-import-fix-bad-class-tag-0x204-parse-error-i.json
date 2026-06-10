@@ -2,9 +2,9 @@
   "id": "0717-fla-import-fix-bad-class-tag-0x204-parse-error-i",
   "title": "FLA import: fix bad class tag 0x204 parse error in symbol streams",
   "description": "flash8-import.ts warns 'could not parse symbol stream Symbol 1: Error: bad class tag 0x204 @ 0x6c3 \u2014 importing as empty symbol'. Class tag 0x204 = 0x0200 | 0x04 \u2014 this looks like a backref with combined index 4, but the parser is rejecting it. Investigate: (1) is 0x204 a valid MFC CArchive backref that the parser isn't handling? The combined table allocates TWO slots per class, so backref index 4 would refer to slot 4 in the combined table. (2) Is this a version-gated field being read on the wrong schema version? Fix the parser to handle this tag correctly. Evidence: the user hit this on a real FLA being imported.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-10T04:09:23Z",
-  "updated_at": "2026-06-10T04:09:52Z"
+  "updated_at": "2026-06-10T04:33:15Z"
 }
