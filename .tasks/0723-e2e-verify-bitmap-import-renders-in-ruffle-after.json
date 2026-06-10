@@ -2,9 +2,9 @@
   "id": "0723-e2e-verify-bitmap-import-renders-in-ruffle-after",
   "title": "E2E: verify bitmap import renders in Ruffle after publish",
   "description": "Bitmaps can be imported to the library and dragged to stage, but there is no Ruffle-based E2E test proving they render as visible pixels after publish. Task: write apps/desktop/e2e/bitmap-rendering.spec.ts that (1) imports a small PNG to the library via the MCP tool, (2) drags it onto the stage, (3) publishes the SWF, (4) screenshots Ruffle, (5) asserts the PNG pixels appear (non-white pixelDiff above threshold). Also verify DefineJpeg/DefineBitsLossless encoding in packages/swf/src/__tests__/ produces correct tags.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T05:08:28Z",
-  "updated_at": "2026-06-10T05:13:32Z"
+  "updated_at": "2026-06-10T05:17:36Z"
 }

@@ -1,0 +1,10 @@
+{
+  "id": "0724-e2e-verify-sound-plays-in-published-swf-via-ruff",
+  "title": "E2E: verify sound plays in published SWF via Ruffle",
+  "description": "Sound import exists (UI + SoundPanel), but no Ruffle-based E2E test proves audio actually plays. This is hard to assert pixel-wise, so the acceptance bar is: (1) publish a SWF with an event sound on frame 1, (2) load in headless Ruffle, (3) assert no console errors, (4) assert the SWF has StartSound tags (can check via swf-dump or unit test). Stretch: use Playwright Web Audio API stubs to assert AudioContext.decodeAudioData is called. Cross-ref packages/swf/src/__tests__/sound.test.ts to understand what's already tested.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T05:08:28Z",
+  "updated_at": "2026-06-10T05:14:20Z"
+}
