@@ -377,6 +377,12 @@ export interface Fla8Frame {
    * Decoded from keyMode bit 0x0800 (flacomdoc classic/motion tween flags).
    */
   readonly motionSync: boolean;
+  /**
+   * Whether to scale the tweened object during a motion tween.
+   * Decoded from keyMode bit 0x0400 (flacomdoc motionTweenScale flag).
+   * Default true in Flash 8 (scaling is on unless explicitly disabled).
+   */
+  readonly motionTweenScale: boolean;
   readonly soundId: number;
   /** raw sync byte: 0=event, 1=start, 2=stop, 3=stream; -1 when not present */
   readonly soundSync: number;
@@ -2288,6 +2294,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let motionRotateCount = 0;
   let motionOrientToPath = false;
   let motionSync = false;
+  let motionTweenScale = true; // default: scaling enabled (bit 0x0400 unset = scale on)
   let soundId = 0;
   let soundSync = -1;
   let soundLoop = -1;
@@ -2300,8 +2307,11 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     duration = Math.max(1, r.u16());
     if (fs > 2) {
       keyMode = r.u16();
-      // flacomdoc keyMode flags (classic tween 0x4001 base): 0x0800 = motionTweenSync
+      // flacomdoc keyMode flags (classic tween 0x4001 base):
+      //   0x0800 = motionTweenSync (sync graphic symbols to parent timeline)
+      //   0x0400 = motionTweenScale DISABLED (bit set = no scaling; absent = scale on)
       motionSync = (keyMode & 0x0800) !== 0;
+      motionTweenScale = (keyMode & 0x0400) === 0; // scale ON when bit is NOT set
     } else r.skip(1);
     if (fs > 1) motionEase = r.s16(); // field_190: signed acceleration (-100..100)
     if (fs > 4) soundId = r.u16();
@@ -2479,6 +2489,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
         motionEase,
         easeType: decodeEaseTypeFromAcceleration(motionEase, motionEaseCurve != null),
         motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, motionSync,
+        motionTweenScale,
         soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements,
       },
     };

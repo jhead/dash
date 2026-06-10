@@ -1032,6 +1032,7 @@ function convertLayer(
         motionRotateCount: f.motionRotateCount,
         motionOrientToPath: f.motionOrientToPath,
         motionSync: f.motionSync,
+        motionScale: f.motionTweenScale,
         displayObjects,
         isEmpty: displayObjects.length === 0,
         sound,
