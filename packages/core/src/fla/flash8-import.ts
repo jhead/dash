@@ -739,6 +739,8 @@ function convertElement(
         ...(clipActions.length > 0 ? { clipActions } : {}),
         ...(buttonHandlers.length > 0 ? { buttonHandlers } : {}),
         ...(el.trackAsMenu ? { trackAsMenu: true } : {}),
+        ...(el.loopMode !== 0 ? { loopMode: (["loop", "play-once", "single-frame"][el.loopMode] ?? "loop") as "loop" | "play-once" | "single-frame" } : {}),
+        ...(el.firstFrame !== 0 ? { firstFrame: el.firstFrame } : {}),
       };
     }
     case "text": {

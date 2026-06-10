@@ -517,6 +517,12 @@ export interface TextDisplayObject {
   /** AS2 instance name — makes the field accessible as _root.<name> in scripts. */
   readonly instanceName?: string;
   /**
+   * Legacy AS1/AS2 variable name bound to this text field.
+   * Maps to the DefineEditText VariableName field.
+   * When non-empty, the text field's value is kept in sync with this ActionScript variable.
+   */
+  readonly as2VariableName?: string;
+  /**
    * Flash 8 color effect applied to this text field's placement.
    * Encodes a CXFormWithAlpha in the PlaceObject2 tag.
    */
