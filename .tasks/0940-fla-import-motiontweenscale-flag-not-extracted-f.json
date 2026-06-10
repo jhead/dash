@@ -1,0 +1,10 @@
+{
+  "id": "0940-fla-import-motiontweenscale-flag-not-extracted-f",
+  "title": "FLA import: motionTweenScale flag not extracted from keyMode",
+  "description": "In flash8-binary.ts, keyMode is stored as a raw number but only motionSync (bit 0x0800) is extracted. The motionTweenScale flag (which controls whether scaling is tweened during a motion tween) is never extracted. Fix: extract motionTweenScale from keyMode (determine correct bit from Ruffle/flacomdoc reference), add it to Fla8Frame, forward it through flash8-import.ts convertFrame(), and add it to the core Frame model types if not already present. Also ensure it's forwarded in compile.ts or at least preserved as part of the frame data.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:24:24Z",
+  "updated_at": "2026-06-10T21:29:40Z"
+}
