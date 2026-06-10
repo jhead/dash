@@ -236,7 +236,7 @@ describe("FLA round-trip", () => {
             index: 0, isKeyframe: true, isEmpty: true, tweenType: "none" as const,
             label: "", labelType: "name" as const, script: "", sound: null,
             motionEase: 0, motionRotate: "none" as const, motionRotateCount: 0,
-            motionOrientToPath: false, motionSync: false, motionScale: false,
+            motionOrientToPath: false, motionSnap: false, motionSync: false, motionScale: false,
             shapeEase: 0, shapeBlend: "distributive" as const, displayObjects: [],
           }],
           frameCount: 1,
@@ -259,7 +259,7 @@ describe("FLA round-trip", () => {
       index: 0, isKeyframe: true, isEmpty: false, tweenType: "none" as const,
       label: "", labelType: "name" as const, script: "", sound: null,
       motionEase: 0, motionRotate: "none" as const, motionRotateCount: 0,
-      motionOrientToPath: false, motionSync: false, motionScale: false,
+      motionOrientToPath: false, motionSnap: false, motionSync: false, motionScale: false,
       shapeEase: 0, shapeBlend: "distributive" as const, displayObjects: [inst],
     };
 

@@ -5,6 +5,7 @@
 
 import type { DisplayObject } from "./types.js";
 import type { Frame, Layer, Scene, FlashDocument } from "../model/types.js";
+import { createFrame } from "../model/timeline.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -58,27 +59,7 @@ function buildNewScene(doc: FlashDocument, name?: string): Scene {
           height: 20,
           parentFolderId: null,
           frameCount: 1,
-          frames: [
-            {
-              index: 0,
-              isKeyframe: true,
-              isEmpty: true,
-              tweenType: "none",
-              label: "",
-              labelType: "name",
-              script: "",
-              sound: null,
-              motionEase: 0,
-              motionRotate: "none",
-              motionRotateCount: 0,
-              motionOrientToPath: false,
-              motionSync: false,
-              motionScale: true,
-              shapeEase: 0,
-              shapeBlend: "distributive",
-              displayObjects: [],
-            },
-          ],
+          frames: [createFrame(0)],
         },
       ],
     },

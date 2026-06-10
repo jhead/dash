@@ -381,6 +381,13 @@ export interface Fla8Frame {
   /** orient to path: rotate the object to follow the motion-guide path tangent */
   readonly motionOrientToPath: boolean;
   /**
+   * Snap the object's registration point to the motion-guide path.
+   * Decoded from bit 0x02 of the orient-to-path/snap u32 in the CPicFrame tail
+   * (fs > 13). Bit assignment is best-effort — no confirmed fixture available.
+   * bit 0x01 = orientToPath, bit 0x02 = snap (matches XFL attribute ordering).
+   */
+  readonly motionSnap: boolean;
+  /**
    * Sync graphic symbols with the parent timeline (motionTweenSync).
    * Decoded from keyMode bit 0x0800 (flacomdoc classic/motion tween flags).
    */
@@ -2311,6 +2318,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let motionRotate: "none" | "auto" | "cw" | "ccw" = "none";
   let motionRotateCount = 0;
   let motionOrientToPath = false;
+  let motionSnap = false;
   let motionSync = false;
   let motionTweenScale = true; // default: scaling enabled (bit 0x0400 unset = scale on)
   let soundId = 0;
@@ -2389,7 +2397,15 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
               return finishFrame();
             }
           }
-          if (fs > 13) motionOrientToPath = r.u32() !== 0; // motionTweenSnap / orient-to-path flag
+          if (fs > 13) {
+            // Orient-to-path / snap combined field (best-effort bit layout):
+            //   bit 0x01 = motionOrientToPath (rotate object to follow path tangent)
+            //   bit 0x02 = motionSnap (snap registration point to guide path)
+            // Bit assignment matches XFL attribute ordering; no confirmed fixture.
+            const orientSnapFlags = r.u32();
+            motionOrientToPath = (orientSnapFlags & 0x01) !== 0;
+            motionSnap = (orientSnapFlags & 0x02) !== 0;
+          }
           if (fs > 14) {
             const oblistTag = r.u16();
             if (oblistTag !== 0) {
@@ -2506,8 +2522,8 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
         duration, label, labelIsComment, script, keyMode, shapeBlend,
         motionEase,
         easeType: decodeEaseTypeFromAcceleration(motionEase, motionEaseCurve != null),
-        motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, motionSync,
-        motionTweenScale,
+        motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, motionSnap,
+        motionSync, motionTweenScale,
         soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements,
       },
     };

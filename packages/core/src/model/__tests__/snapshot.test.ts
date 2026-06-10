@@ -6,7 +6,7 @@ function makeFrame(index: number, overrides: Partial<Frame> = {}): Frame {
     index, isKeyframe: index === 0, isEmpty: false, tweenType: "none",
     label: "", labelType: "name", script: "", sound: null,
     motionEase: 0, motionRotate: "none", motionRotateCount: 0,
-    motionOrientToPath: false, motionSync: false, motionScale: true,
+    motionOrientToPath: false, motionSnap: false, motionSync: false, motionScale: true,
     shapeEase: 0, shapeBlend: "distributive", displayObjects: [],
     ...overrides,
   };

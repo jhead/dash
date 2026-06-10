@@ -163,6 +163,8 @@ export interface Frame {
   readonly motionRotate: "none" | "auto" | "cw" | "ccw";
   readonly motionRotateCount: number;
   readonly motionOrientToPath: boolean;
+  /** Snap the object's registration point to the motion guide path. */
+  readonly motionSnap: boolean;
   readonly motionSync: boolean;
   readonly motionScale: boolean;
   // Shape tween

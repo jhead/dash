@@ -1088,6 +1088,7 @@ function convertLayer(
         motionRotate: f.motionRotate,
         motionRotateCount: f.motionRotateCount,
         motionOrientToPath: f.motionOrientToPath,
+        motionSnap: f.motionSnap,
         motionSync: f.motionSync,
         motionScale: f.motionTweenScale,
         displayObjects,

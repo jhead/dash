@@ -51,6 +51,7 @@ export function createFrame(index: number, overrides?: Partial<Frame>): Frame {
     motionRotate: "none",
     motionRotateCount: 0,
     motionOrientToPath: false,
+    motionSnap: false,
     motionSync: false,
     motionScale: true,
     shapeEase: 0,
@@ -520,6 +521,7 @@ export function updateMotionTweenProps(
     motionRotate?: "none" | "auto" | "cw" | "ccw";
     motionRotateCount?: number;
     motionOrientToPath?: boolean;
+    motionSnap?: boolean;
     motionSync?: boolean;
     motionScale?: boolean;
   }
@@ -535,6 +537,7 @@ export function updateMotionTweenProps(
           motionRotate: props.motionRotate !== undefined ? props.motionRotate : f.motionRotate,
           motionRotateCount: props.motionRotateCount !== undefined ? props.motionRotateCount : f.motionRotateCount,
           motionOrientToPath: props.motionOrientToPath !== undefined ? props.motionOrientToPath : f.motionOrientToPath,
+          motionSnap: props.motionSnap !== undefined ? props.motionSnap : f.motionSnap,
           motionSync: props.motionSync !== undefined ? props.motionSync : f.motionSync,
           motionScale: props.motionScale !== undefined ? props.motionScale : f.motionScale,
         };
@@ -873,6 +876,7 @@ export function reverseFrames(
         | "motionRotate"
         | "motionRotateCount"
         | "motionOrientToPath"
+        | "motionSnap"
         | "motionSync"
         | "motionScale"
         | "shapeEase"
@@ -894,6 +898,7 @@ export function reverseFrames(
         motionRotate: f.motionRotate,
         motionRotateCount: f.motionRotateCount,
         motionOrientToPath: f.motionOrientToPath,
+        motionSnap: f.motionSnap,
         motionSync: f.motionSync,
         motionScale: f.motionScale,
         shapeEase: f.shapeEase,

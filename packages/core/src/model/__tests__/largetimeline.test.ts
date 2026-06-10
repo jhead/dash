@@ -7,7 +7,7 @@ function makeFrame(index: number, isKeyframe: boolean = false): Frame {
     index, isKeyframe, isEmpty: false, tweenType: "none",
     label: "", labelType: "name", script: "", sound: null,
     motionEase: 0, motionRotate: "none", motionRotateCount: 0,
-    motionOrientToPath: false, motionSync: false, motionScale: true,
+    motionOrientToPath: false, motionSnap: false, motionSync: false, motionScale: true,
     shapeEase: 0, shapeBlend: "distributive", displayObjects: [],
   };
 }
