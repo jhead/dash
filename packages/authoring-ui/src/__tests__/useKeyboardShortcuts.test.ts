@@ -73,6 +73,7 @@ function dispatch(e: KeyboardEvent, h: KeyboardShortcutHandlers): void {
   else if (e.key === "Escape") { h.onDeselect?.(); }
   else if (ctrl && !shift && e.key === "g") { e.preventDefault(); h.onGroup?.(); }
   else if (ctrl && shift && e.key === "g") { e.preventDefault(); h.onUngroup?.(); }
+  else if (ctrl && !shift && e.key === "b") { e.preventDefault(); h.onBreakApart?.(); }
   else if (e.key === "F5") { e.preventDefault(); h.onInsertFrame?.(); }
   else if (e.key === "F6") { e.preventDefault(); h.onInsertKeyframe?.(); }
   else if (e.key === "F7") { e.preventDefault(); h.onInsertBlankKeyframe?.(); }
@@ -97,6 +98,7 @@ function makeHandlers(): Required<KeyboardShortcutHandlers> {
     onDeselect: vi.fn(),
     onGroup: vi.fn(),
     onUngroup: vi.fn(),
+    onBreakApart: vi.fn(),
     onBringToFront: vi.fn(),
     onSendToBack: vi.fn(),
     onInsertFrame: vi.fn(),
@@ -277,5 +279,25 @@ describe("useKeyboardShortcuts — group/ungroup", () => {
     const h = makeHandlers();
     dispatch(makeEvent("g", { ctrlKey: true, shiftKey: true }), h);
     assertOnlyCalledOnce(h, "onUngroup");
+  });
+});
+
+describe("useKeyboardShortcuts — break apart", () => {
+  it("calls onBreakApart for Ctrl+B", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("b", { ctrlKey: true }), h);
+    assertOnlyCalledOnce(h, "onBreakApart");
+  });
+
+  it("calls onBreakApart for Cmd+B (macOS)", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("b", { metaKey: true }), h);
+    assertOnlyCalledOnce(h, "onBreakApart");
+  });
+
+  it("does NOT call onBreakApart for Ctrl+Shift+B", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("b", { ctrlKey: true, shiftKey: true }), h);
+    expect(h.onBreakApart).not.toHaveBeenCalled();
   });
 });

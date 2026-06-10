@@ -230,6 +230,12 @@ export interface MenuBarProps {
   onGroup?: () => void;
   /** Called when Modify > Ungroup (Ctrl+Shift+G) is activated. */
   onUngroup?: () => void;
+  /** Called when Modify > Break Apart (Ctrl+B) is activated. */
+  onBreakApart?: () => void;
+  /** Called when Modify > Swap Symbol... is activated. */
+  onSwapSymbol?: () => void;
+  /** Called when Modify > Distribute to Layers is activated. */
+  onDistributeToLayers?: () => void;
   /** Called when Window > Align (Ctrl+K) is toggled. */
   onAlignPanelToggle?: () => void;
   /** Whether the Align panel is currently visible (for checkmark display). */
@@ -273,6 +279,9 @@ export function MenuBar({
   onArrange,
   onGroup,
   onUngroup,
+  onBreakApart,
+  onSwapSymbol,
+  onDistributeToLayers,
   onAlignPanelToggle,
   alignPanelVisible = false,
   onScenePanelToggle,
@@ -389,6 +398,10 @@ export function MenuBar({
         {
           label: "Convert to Symbol...  F8",
           action: () => { onConvertToSymbol?.(); },
+        },
+        {
+          label: "Swap Symbol...",
+          action: () => { onSwapSymbol?.(); },
           separator: true,
         },
         {
@@ -399,6 +412,14 @@ export function MenuBar({
         {
           label: "Ungroup  Ctrl+Shift+G",
           action: () => { onUngroup?.(); },
+        },
+        {
+          label: "Break Apart  Ctrl+B",
+          action: () => { onBreakApart?.(); },
+        },
+        {
+          label: "Distribute to Layers",
+          action: () => { onDistributeToLayers?.(); },
         },
         {
           label: "Arrange: Bring to Front  Ctrl+Shift+Up",

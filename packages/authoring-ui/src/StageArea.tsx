@@ -507,6 +507,8 @@ export interface StageAreaProps {
   onGroup?: () => void;
   /** Called when Ctrl+Shift+G is pressed (ungroup). */
   onUngroup?: () => void;
+  /** Called when Ctrl+B is pressed (break apart). */
+  onBreakApart?: () => void;
   /** Called when Space or Enter is pressed to toggle playback. */
   onPlayToggle?: () => void;
   /** Ghost frames for onion skinning. When provided, rendered before the main frame. */
@@ -845,6 +847,7 @@ export function StageArea({
   onArrange,
   onGroup,
   onUngroup,
+  onBreakApart,
   onPlayToggle,
   onionFrames = [],
   timeline,
@@ -2464,11 +2467,15 @@ export function StageArea({
           if (e.shiftKey) { e.preventDefault(); onUngroup?.(); }
           else { e.preventDefault(); onGroup?.(); }
           break;
+        case "b":
+        case "B":
+          if (!e.shiftKey) { e.preventDefault(); onBreakApart?.(); }
+          break;
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onArrange, onGroup, onUngroup]);
+  }, [onArrange, onGroup, onUngroup, onBreakApart]);
 
   // Draw grid on canvas whenever relevant props change
   useEffect(() => {

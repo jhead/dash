@@ -12,6 +12,7 @@ export interface KeyboardShortcutHandlers {
   onDeselect?: () => void;
   onGroup?: () => void;
   onUngroup?: () => void;
+  onBreakApart?: () => void;
   onBringToFront?: () => void;
   onSendToBack?: () => void;
   onInsertFrame?: () => void;
@@ -48,6 +49,7 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
       else if (e.key === 'Escape') { h.onDeselect?.(); }
       else if (ctrl && !shift && e.key === 'g') { e.preventDefault(); h.onGroup?.(); }
       else if (ctrl && shift && e.key === 'g') { e.preventDefault(); h.onUngroup?.(); }
+      else if (ctrl && !shift && e.key === 'b') { e.preventDefault(); h.onBreakApart?.(); }
       else if (e.key === 'F5') { e.preventDefault(); h.onInsertFrame?.(); }
       else if (e.key === 'F6') { e.preventDefault(); h.onInsertKeyframe?.(); }
       else if (e.key === 'F7') { e.preventDefault(); h.onInsertBlankKeyframe?.(); }

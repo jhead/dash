@@ -28,6 +28,8 @@ import {
   transformedShapeBounds,
   copyFrames,
   pasteFrames,
+  breakApart,
+  createLayer,
 } from "@flash/core";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts.js";
 import { TransformHandles } from "./TransformHandles";
@@ -85,6 +87,7 @@ import { ScenePanel } from "./ScenePanel";
 import { SceneSwitcher } from "./SceneSwitcher";
 import { ColorMixerPanel } from "./ColorMixerPanel";
 import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
+import { SwapSymbolDialog } from "./SwapSymbolDialog";
 import { PublishSettingsDialog } from "./PublishSettingsDialog";
 import type { PublishSettings } from "./PublishSettingsDialog";
 import { PanelGroup } from "./PanelGroup";
@@ -575,6 +578,9 @@ export function Shell(): React.ReactElement {
 
   // Convert to Symbol dialog
   const [convertToSymbolOpen, setConvertToSymbolOpen] = useState(false);
+
+  // Swap Symbol dialog
+  const [swapSymbolOpen, setSwapSymbolOpen] = useState(false);
 
   // Publish Settings dialog
   const [publishSettingsOpen, setPublishSettingsOpen] = useState(false);
@@ -1924,6 +1930,204 @@ export function Shell(): React.ReactElement {
   }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, doc, withTimeline]);
 
   // ---------------------------------------------------------------------------
+  // Break Apart
+  // ---------------------------------------------------------------------------
+
+  const handleBreakApart = useCallback(() => {
+    if (!selectedShapeId) return;
+    if (editContext.mode === "symbol" && editContext.symbolId) {
+      // Symbol editing context: use withTimeline to update the symbol's timeline
+      const layer = timeline.layers[safeActiveLayerIndex];
+      if (!layer) return;
+      const kf = [...layer.frames]
+        .filter((f) => f.isKeyframe && f.index <= currentFrame)
+        .sort((a, b) => b.index - a.index)[0];
+      if (!kf) return;
+      const selected = kf.displayObjects.find((o) => o.id === selectedShapeId);
+      if (!selected || selected.type !== "instance") return;
+      const inst = selected as SymbolInstance;
+      const symbol = doc.library.items.find(
+        (i) => i.id === inst.symbolId && i.itemType === "symbol"
+      );
+      if (!symbol || symbol.itemType !== "symbol") return;
+      const symLayer = symbol.timeline.layers[0];
+      if (!symLayer) return;
+      const symKf = [...symLayer.frames]
+        .filter((f) => f.isKeyframe)
+        .sort((a, b) => a.index - b.index)[0];
+      if (!symKf) return;
+      const extracted: DisplayObject[] = symKf.displayObjects.map((o) => ({
+        ...o,
+        id: `breakapart-${o.id}-${Date.now().toString(36)}`,
+        x: o.x + inst.x,
+        y: o.y + inst.y,
+      }));
+      const layerId = layer.id;
+      pushDoc(withTimeline((t) => ({
+        ...t,
+        layers: t.layers.map((l) => {
+          if (l.id !== layerId) return l;
+          return {
+            ...l,
+            frames: l.frames.map((f) => {
+              if (!f.isKeyframe || f.index !== kf.index) return f;
+              const remaining = f.displayObjects.filter((o) => o.id !== inst.id);
+              return { ...f, displayObjects: [...remaining, ...extracted] };
+            }),
+          };
+        }),
+      })));
+      setSelectedShapeId(extracted.length > 0 ? extracted[extracted.length - 1].id : null);
+    } else {
+      // Document (scene) context: delegate to core breakApart
+      const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
+      const newDoc = breakApart(doc, sceneIdx, safeActiveLayerIndex, currentFrame, selectedShapeId);
+      if (newDoc !== doc) {
+        pushDoc(newDoc);
+        setSelectedShapeId(null);
+      }
+    }
+  }, [selectedShapeId, editContext, timeline, safeActiveLayerIndex, currentFrame, doc, pushDoc, withTimeline, activeSceneIndex]);
+
+  // ---------------------------------------------------------------------------
+  // Swap Symbol
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Open the Swap Symbol dialog (only when a single SymbolInstance is selected).
+   */
+  const handleSwapSymbol = useCallback(() => {
+    if (!selectedShapeId) return;
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= currentFrame)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf) return;
+    const selected = kf.displayObjects.find((o) => o.id === selectedShapeId);
+    if (!selected || selected.type !== "instance") return;
+    setSwapSymbolOpen(true);
+  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame]);
+
+  /**
+   * Perform the swap after the dialog is confirmed.
+   * Preserves position, transform, name, and all other properties — only symbolId changes.
+   */
+  const handleSwapSymbolConfirm = useCallback((newSymbolId: string) => {
+    if (!selectedShapeId) return;
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= currentFrame)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf) return;
+    const selected = kf.displayObjects.find((o) => o.id === selectedShapeId);
+    if (!selected || selected.type !== "instance") return;
+
+    pushDoc(withTimeline((t) => ({
+      ...t,
+      layers: t.layers.map((l) => {
+        if (l.id !== layer.id) return l;
+        return {
+          ...l,
+          frames: l.frames.map((f) => {
+            if (!f.isKeyframe || f.index !== kf.index) return f;
+            return {
+              ...f,
+              displayObjects: f.displayObjects.map((o) =>
+                o.id === selectedShapeId
+                  ? { ...(o as SymbolInstance), symbolId: newSymbolId }
+                  : o
+              ),
+            };
+          }),
+        };
+      }),
+    })));
+
+    setSwapSymbolOpen(false);
+  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
+
+  // ---------------------------------------------------------------------------
+  // Distribute to Layers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Flash 8 "Distribute to Layers": each selected display object on the current
+   * layer is moved to its own new layer. The first object stays on the original
+   * layer; subsequent objects each get a new layer inserted immediately after.
+   * Layer names are taken from the symbol name (for SymbolInstances) or "Layer N".
+   */
+  const handleDistributeToLayers = useCallback(() => {
+    const layerIdx = safeActiveLayerIndex;
+    const layer = timeline.layers[layerIdx];
+    if (!layer) return;
+
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= currentFrame)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf) return;
+
+    const objects = kf.displayObjects;
+    // Need at least 2 objects to distribute
+    if (objects.length < 2) return;
+
+    // Helper: get a display name for an object
+    const getObjectName = (o: DisplayObject, idx: number): string => {
+      if (o.type === "instance") {
+        const sym = doc.library.items.find(
+          (i) => i.id === (o as SymbolInstance).symbolId && i.itemType === "symbol"
+        );
+        if (sym) return sym.name;
+      }
+      return `Layer ${idx + 1}`;
+    };
+
+    // Build a new timeline:
+    // 1. The original layer keeps only the first object (objects[0]).
+    // 2. For each remaining object, insert a new layer after the original layer.
+
+    pushDoc(withTimeline((t) => {
+      // Update original layer's keyframe to hold only the first object
+      const updatedOriginalLayer: typeof layer = {
+        ...layer,
+        frames: layer.frames.map((f) => {
+          if (!f.isKeyframe || f.index !== kf.index) return f;
+          return { ...f, displayObjects: [objects[0]] };
+        }),
+      };
+
+      // Create new layers for objects[1..n]
+      const newLayers: typeof layer[] = objects.slice(1).map((obj, i) => {
+        const name = getObjectName(obj, layerIdx + i + 1);
+        // createLayer gives us a fresh layer with a blank keyframe
+        const freshLayer = createLayer(name);
+        // Replace the default frame with one that holds this object
+        const frame: Frame = {
+          ...freshLayer.frames[0],
+          displayObjects: [obj],
+          isEmpty: false,
+        };
+        return { ...freshLayer, frames: [frame] };
+      });
+
+      // Insert new layers right after the original layer in the layers array
+      const layers = [...t.layers];
+      const origIdx = layers.findIndex((l) => l.id === layer.id);
+      if (origIdx < 0) return t;
+
+      layers[origIdx] = updatedOriginalLayer;
+      // Insert new layers after the original layer (in order)
+      layers.splice(origIdx + 1, 0, ...newLayers);
+
+      return { ...t, layers };
+    }));
+
+    // Deselect (objects now live on different layers)
+    setSelectedShapeId(null);
+  }, [safeActiveLayerIndex, timeline, currentFrame, pushDoc, withTimeline, doc.library]);
+
+  // ---------------------------------------------------------------------------
   // Handlers — stage drop
   // ---------------------------------------------------------------------------
 
@@ -2321,6 +2525,7 @@ export function Shell(): React.ReactElement {
     onDeselect: handleDeselect,
     onGroup: handleGroup,
     onUngroup: handleUngroup,
+    onBreakApart: handleBreakApart,
     onBringToFront: () => handleArrange("front"),
     onSendToBack: () => handleArrange("back"),
     onInsertFrame: handleInsertFrame,
@@ -2856,6 +3061,9 @@ export function Shell(): React.ReactElement {
         onArrange={handleArrange}
         onGroup={handleGroup}
         onUngroup={handleUngroup}
+        onBreakApart={handleBreakApart}
+        onSwapSymbol={handleSwapSymbol}
+        onDistributeToLayers={handleDistributeToLayers}
         onAlignPanelToggle={() => setAlignPanelVisible((v) => !v)}
         alignPanelVisible={alignPanelVisible}
         onScenePanelToggle={() => setScenePanelVisible((v) => !v)}
@@ -3036,6 +3244,7 @@ export function Shell(): React.ReactElement {
                 onArrange={handleArrange}
                 onGroup={handleGroup}
                 onUngroup={handleUngroup}
+                onBreakApart={handleBreakApart}
                 onPlayToggle={handlePlayToggle}
                 onionFrames={onionFrames}
                 timeline={timeline}
