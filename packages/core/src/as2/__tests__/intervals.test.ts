@@ -3,8 +3,8 @@
  *
  * Verifies that interval/timer functions compile without error and emit the
  * correct AVM1 opcodes:
- *   - ActionCallFunction (0x3D): global function calls (setInterval, clearInterval, getTimer)
- *   - ActionGetVariable  (0x1c): variable reads (may be emitted for getTimer)
+ *   - ActionCallFunction (0x3D): global function calls (setInterval, clearInterval)
+ *   - ActionGetTime      (0x34): getTimer() native opcode
  */
 
 import { describe, it, expect } from "vitest";
@@ -120,7 +120,8 @@ describe("getTimer()", () => {
 
   it("10. getTimer() emits ActionGetTime (0x34)", () => {
     const bytes = compileAS2("getTimer();");
-    expect(containsByte(bytes, 0x34)).toBe(true); // ActionGetTime
+    expect(containsByte(bytes, 0x34)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 });
 
@@ -135,7 +136,8 @@ describe("var elapsed = getTimer()", () => {
 
   it("12. var elapsed = getTimer() emits ActionGetTime (0x34)", () => {
     const bytes = compileAS2("var elapsed = getTimer();");
-    expect(containsByte(bytes, 0x34)).toBe(true); // ActionGetTime
+    expect(containsByte(bytes, 0x34)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 });
 

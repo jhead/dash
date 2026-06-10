@@ -1969,6 +1969,19 @@ class Compiler {
         return;
       }
 
+      // Built-in: getTimer() → ActionGetTime (0x34)
+      if (name === 'getTimer' && expr.args.length === 0) {
+        this.emit(0x34); // ActionGetTime
+        return;
+      }
+
+      // Built-in: random(n) → push n, ActionRandomNumber (0x30)
+      if (name === 'random' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x30); // ActionRandomNumber
+        return;
+      }
+
       // Built-in: int(x) → push x, ActionToInteger (0x18)
       if (name === 'int' && expr.args.length === 1) {
         this.compileExpr(expr.args[0]!);
@@ -1980,19 +1993,6 @@ class Compiler {
       if (name === 'Number' && expr.args.length === 1) {
         this.compileExpr(expr.args[0]!);
         this.emit(0x4A); // ActionToNumber
-        return;
-      }
-
-      // Built-in: getTimer() → ActionGetTime (0x34) — no args, pushes elapsed ms
-      if (name === 'getTimer' && expr.args.length === 0) {
-        this.emit(0x34); // ActionGetTime
-        return;
-      }
-
-      // Built-in: random(n) → push n, ActionRandomNumber (0x30)
-      if (name === 'random' && expr.args.length === 1) {
-        this.compileExpr(expr.args[0]!);
-        this.emit(0x30); // ActionRandomNumber
         return;
       }
 
