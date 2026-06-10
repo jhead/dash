@@ -293,6 +293,59 @@ export function encodeDefineEditText(
 }
 
 /**
+ * Encode a CSMTextSettings tag body (tag 74) for a DefineEditText character.
+ *
+ * Tag 74 layout (SWF spec §12.12 / Ruffle swf/src/read.rs `read_csm_text_settings`):
+ *   UI16   textID         — character ID of the DefineEditText / DefineText
+ *   UB[3]  UseFlashType   — 0=normal renderer, 1=FlashType renderer
+ *   UB[3]  GridFit        — 0=none, 1=pixel, 2=subpixel
+ *   UB[2]  reserved = 0
+ *   FLOAT  thickness       — sub-pixel thickness hint (IEEE 754 32-bit, LE)
+ *   FLOAT  sharpness       — sub-pixel sharpness hint (IEEE 754 32-bit, LE)
+ *   UI8    reserved = 0
+ *
+ * For antiAlias === "readability": UseFlashType=1, GridFit=1, thickness=0, sharpness=0.
+ * For antiAlias === "custom": UseFlashType=1, GridFit=1, thickness=csm.thickness, sharpness=csm.sharpness.
+ *
+ * Note: DefineFontAlignZones (tag 73) is NOT emitted here. Ruffle will still render
+ * with the FlashType path enabled via CSMTextSettings alone (just without sub-pixel grid
+ * zone hints). TODO: emit DefineFontAlignZones (tag 73) for full FlashType hinting.
+ *
+ * @param textCharId  SWF character ID of the text field (DefineEditText charId)
+ * @param thickness   Sub-pixel thickness hint (0.0 for readability mode)
+ * @param sharpness   Sub-pixel sharpness hint (0.0 for readability mode)
+ */
+export function encodeCSMTextSettings(
+  textCharId: number,
+  thickness: number,
+  sharpness: number
+): Uint8Array {
+  // Total size: 2 (UI16 textID) + 1 (UB[8] flags) + 4 (FLOAT thickness) + 4 (FLOAT sharpness) + 1 (UI8 reserved) = 12 bytes
+  const buf = new Uint8Array(12);
+  const view = new DataView(buf.buffer);
+
+  // textID: UI16 LE
+  view.setUint16(0, textCharId, true /* LE */);
+
+  // Flags byte: UB[3] UseFlashType=1 | UB[3] GridFit=1 | UB[2] reserved=0
+  // Bits 7-5: UseFlashType (3 bits), bits 4-2: GridFit (3 bits), bits 1-0: reserved
+  // UseFlashType=1 → 0b001 << 5 = 0x20
+  // GridFit=1      → 0b001 << 2 = 0x04
+  buf[2] = 0x20 | 0x04; // 0x24
+
+  // thickness: FLOAT (IEEE 754 32-bit, little-endian)
+  view.setFloat32(3, thickness, true /* LE */);
+
+  // sharpness: FLOAT (IEEE 754 32-bit, little-endian)
+  view.setFloat32(7, sharpness, true /* LE */);
+
+  // reserved: UI8 = 0 (already 0 from Uint8Array init)
+  // buf[11] = 0;
+
+  return buf;
+}
+
+/**
  * Encode a PlaceObject2 tag body for a text display object.
  * Positions the text field at (x, y) pixels.
  */

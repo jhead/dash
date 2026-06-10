@@ -39,6 +39,8 @@ export const Tag = {
   DefineShape4: 83,
   DefineMorphShape2: 84,
   SceneAndFrameLabelData: 86,
+  DefineFontAlignZones: 73,
+  CSMTextSettings: 74,
 } as const;
 
 export type TagCode = (typeof Tag)[keyof typeof Tag];

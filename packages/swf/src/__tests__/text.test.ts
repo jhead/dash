@@ -648,3 +648,111 @@ describe("letterSpacing → DoAction setTextFormat", () => {
     expect(lsDoAction!.body[lsDoAction!.body.length - 1]).toBe(0x00);
   });
 });
+
+// ---------------------------------------------------------------------------
+// CSMTextSettings (tag 74) — FlashType anti-alias mode
+// ---------------------------------------------------------------------------
+
+const TAG_CSM_TEXT_SETTINGS = 74;
+
+describe("CSMTextSettings (tag 74) — anti-alias mode", () => {
+  it("antiAlias='readability': emits a CSMTextSettings tag (code 74)", () => {
+    const doc = makeDoc([makeText({ antiAlias: "readability" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTags = tags.filter((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(csmTags.length).toBe(1);
+  });
+
+  it("antiAlias='readability': CSMTextSettings body is 12 bytes", () => {
+    const doc = makeDoc([makeText({ antiAlias: "readability" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTag = tags.find((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(csmTag).toBeDefined();
+    expect(csmTag!.body.length).toBe(12);
+  });
+
+  it("antiAlias='readability': UseFlashType=1 and GridFit=1 in flags byte", () => {
+    const doc = makeDoc([makeText({ antiAlias: "readability" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTag = tags.find((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(csmTag).toBeDefined();
+    // flags byte at offset 2: UseFlashType=1 (bits 7-5 = 0b001 → 0x20) | GridFit=1 (bits 4-2 = 0b001 → 0x04)
+    expect(csmTag!.body[2]).toBe(0x24);
+  });
+
+  it("antiAlias='readability': thickness and sharpness are both 0.0", () => {
+    const doc = makeDoc([makeText({ antiAlias: "readability" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTag = tags.find((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(csmTag).toBeDefined();
+    const view = new DataView(csmTag!.body.buffer, csmTag!.body.byteOffset);
+    const thickness = view.getFloat32(3, true /* LE */);
+    const sharpness = view.getFloat32(7, true /* LE */);
+    expect(thickness).toBe(0);
+    expect(sharpness).toBe(0);
+  });
+
+  it("antiAlias='readability': CSMTextSettings textID matches the DefineEditText charId", () => {
+    const doc = makeDoc([makeText({ antiAlias: "readability" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const editTag = tags.find((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    const csmTag = tags.find((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(editTag).toBeDefined();
+    expect(csmTag).toBeDefined();
+    // charId from DefineEditText body
+    const editCharId = editTag!.body[0] | (editTag!.body[1] << 8);
+    // textID from CSMTextSettings body
+    const csmTextId = csmTag!.body[0] | (csmTag!.body[1] << 8);
+    expect(csmTextId).toBe(editCharId);
+  });
+
+  it("antiAlias='custom': emits CSMTextSettings with provided sharpness/thickness", () => {
+    const doc = makeDoc([makeText({ antiAlias: "custom", csm: { sharpness: 100, thickness: 50 } })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTag = tags.find((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(csmTag).toBeDefined();
+    const view = new DataView(csmTag!.body.buffer, csmTag!.body.byteOffset);
+    const thickness = view.getFloat32(3, true /* LE */);
+    const sharpness = view.getFloat32(7, true /* LE */);
+    expect(thickness).toBeCloseTo(50);
+    expect(sharpness).toBeCloseTo(100);
+  });
+
+  it("antiAlias='animation' (default): NO CSMTextSettings tag emitted", () => {
+    const doc = makeDoc([makeText({ antiAlias: "animation" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTags = tags.filter((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(csmTags.length).toBe(0);
+  });
+
+  it("antiAlias unset (default): NO CSMTextSettings tag emitted", () => {
+    const doc = makeDoc([makeText()]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTags = tags.filter((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(csmTags.length).toBe(0);
+  });
+
+  it("antiAlias='device': NO CSMTextSettings tag emitted", () => {
+    const doc = makeDoc([makeText({ antiAlias: "device" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTags = tags.filter((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(csmTags.length).toBe(0);
+  });
+
+  it("antiAlias='bitmap': NO CSMTextSettings tag emitted", () => {
+    const doc = makeDoc([makeText({ antiAlias: "bitmap" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTags = tags.filter((t) => t.code === TAG_CSM_TEXT_SETTINGS);
+    expect(csmTags.length).toBe(0);
+  });
+});

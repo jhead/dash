@@ -29,7 +29,7 @@ import {
   encodeDefineMorphShape2,
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
-import { encodeDefineEditText, encodePlaceObject2ForText } from "./text.js";
+import { encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
 import { encodeDefineFont2, fontKey } from "./fonts.js";
 import {
   encodePlaceObject3WithFilters,
@@ -972,6 +972,19 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             // correctly-sized, legible text that matches MC text behaviour.
             const textBody = encodeDefineEditText(charId, obj, embeddedFontId);
             writer.writeTag(Tag.DefineEditText, textBody);
+            // Emit CSMTextSettings (tag 74) immediately after DefineEditText for
+            // FlashType anti-alias modes (readability and custom).
+            // For "readability": UseFlashType=1, GridFit=1, thickness=0, sharpness=0.
+            // For "custom": UseFlashType=1, GridFit=1, with user-specified values.
+            // Other modes (device, bitmap, animation) do not need a CSMTextSettings tag.
+            const aa = obj.antiAlias;
+            if (aa === "readability") {
+              const csmBody = encodeCSMTextSettings(charId, 0, 0);
+              writer.writeTag(Tag.CSMTextSettings, csmBody);
+            } else if (aa === "custom" && obj.csm) {
+              const csmBody = encodeCSMTextSettings(charId, obj.csm.thickness, obj.csm.sharpness);
+              writer.writeTag(Tag.CSMTextSettings, csmBody);
+            }
           } else if (obj.type === "bitmap") {
             // Look up the BitmapItem from the library
             const bitmapItem = doc.library.items.find(

@@ -441,6 +441,21 @@ export interface TextDisplayObject {
   readonly instanceName?: string;
   /** Flash 8 filters applied to this object. */
   readonly filters?: readonly FlashFilter[];
+  /**
+   * Flash 8 text anti-alias mode. Controls the rendering quality of the text field.
+   *  - "device"       — use device fonts (no SWF embedding needed)
+   *  - "bitmap"       — bitmap no anti-alias (UseDeviceFont bit, no CSM)
+   *  - "animation"    — standard smoothing (default; no CSMTextSettings tag needed)
+   *  - "readability"  — FlashType anti-alias for readability (CSMTextSettings tag 74)
+   *  - "custom"       — custom sharpness/thickness (CSMTextSettings tag 74 with csm values)
+   * Default: "animation" (standard smoothing, no extra tag emitted).
+   */
+  readonly antiAlias?: "device" | "bitmap" | "animation" | "readability" | "custom";
+  /**
+   * Custom CSM sharpness/thickness values — only used when antiAlias === "custom".
+   * sharpness: -400 to 400; thickness: 0 to 200.
+   */
+  readonly csm?: { readonly sharpness: number; readonly thickness: number };
 }
 
 /**

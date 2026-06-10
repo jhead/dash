@@ -919,6 +919,16 @@ const TEXT_TYPES: TextType[] = ["static", "dynamic", "input"];
 const ALIGN_OPTIONS: TextAlign[] = ["left", "center", "right", "justify"];
 const ALIGN_LABELS: Record<TextAlign, string> = { left: "L", center: "C", right: "R", justify: "J" };
 
+type AntiAliasMode = "device" | "bitmap" | "animation" | "readability" | "custom";
+const ANTI_ALIAS_OPTIONS: AntiAliasMode[] = ["device", "bitmap", "animation", "readability", "custom"];
+const ANTI_ALIAS_LABELS: Record<AntiAliasMode, string> = {
+  device: "Use device fonts",
+  bitmap: "Bitmap (no anti-alias)",
+  animation: "Anti-alias for animation",
+  readability: "Anti-alias for readability",
+  custom: "Custom anti-alias",
+};
+
 function TextView({
   obj,
   onUpdateObject,
@@ -1206,6 +1216,60 @@ function TextView({
           ))}
         </select>
       </div>
+
+      <div style={S.separator} />
+
+      {/* Anti-alias mode */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Anti-alias:</span>
+        <select
+          style={{ ...S.select, maxWidth: 160 }}
+          value={obj.antiAlias ?? "animation"}
+          onChange={(e) =>
+            onUpdateObject(obj.id, { antiAlias: e.target.value as AntiAliasMode } as Partial<DisplayObject>)
+          }
+        >
+          {ANTI_ALIAS_OPTIONS.map((m) => (
+            <option key={m} value={m}>
+              {ANTI_ALIAS_LABELS[m]}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Custom CSM sharpness/thickness — only shown when antiAlias === "custom" */}
+      {(obj.antiAlias === "custom") && (
+        <>
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Sharpness:</span>
+            <NumInput
+              value={obj.csm?.sharpness ?? 0}
+              min={-400}
+              max={400}
+              style={{ width: 48 }}
+              onChange={(v) =>
+                onUpdateObject(obj.id, {
+                  csm: { sharpness: v, thickness: obj.csm?.thickness ?? 0 },
+                } as Partial<DisplayObject>)
+              }
+            />
+          </div>
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Thickness:</span>
+            <NumInput
+              value={obj.csm?.thickness ?? 0}
+              min={0}
+              max={200}
+              style={{ width: 48 }}
+              onChange={(v) =>
+                onUpdateObject(obj.id, {
+                  csm: { sharpness: obj.csm?.sharpness ?? 0, thickness: v },
+                } as Partial<DisplayObject>)
+              }
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
