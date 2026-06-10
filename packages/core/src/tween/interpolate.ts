@@ -26,9 +26,75 @@ import type {
 } from "../engine/filters.js";
 
 /**
+ * Solve a CSS cubic-bezier at input x=t, returning the output y value.
+ *
+ * CSS cubic-bezier convention:
+ *   P0 = (0, 0) — implicit start
+ *   P1 = (x1, y1) — first control point
+ *   P2 = (x2, y2) — second control point
+ *   P3 = (1, 1)   — implicit end
+ *
+ * The x component of the parametric curve gives time; we solve for the
+ * parameter s such that Bx(s) ≈ t using Newton-Raphson, then return By(s).
+ *
+ * @param t   Linear progress [0, 1]
+ * @param x1  First control point x  (typically 0..1)
+ * @param y1  First control point y  (unconstrained — allows overshoot)
+ * @param x2  Second control point x (typically 0..1)
+ * @param y2  Second control point y (unconstrained)
+ */
+function solveCubicBezier(
+  t: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): number {
+  // Clamp t to [0, 1] — boundary values map directly
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+
+  // Cubic Bézier coefficients for x (with P0x=0, P3x=1)
+  const ax = 3 * x1 - 3 * x2 + 1;
+  const bx = 3 * x2 - 6 * x1;
+  const cx = 3 * x1;
+
+  // Cubic Bézier coefficients for y (with P0y=0, P3y=1)
+  const ay = 3 * y1 - 3 * y2 + 1;
+  const by = 3 * y2 - 6 * y1;
+  const cy = 3 * y1;
+
+  /** Evaluate Bx(s) */
+  const bxAt = (s: number) => ((ax * s + bx) * s + cx) * s;
+  /** Derivative dBx/ds */
+  const bxPrime = (s: number) => (3 * ax * s + 2 * bx) * s + cx;
+  /** Evaluate By(s) */
+  const byAt = (s: number) => ((ay * s + by) * s + cy) * s;
+
+  // Newton-Raphson iteration: find s such that Bx(s) = t
+  // Use t as the initial guess (good for near-linear curves)
+  let s = t;
+  for (let i = 0; i < 8; i++) {
+    const xError = bxAt(s) - t;
+    if (Math.abs(xError) < 1e-7) break;
+    const d = bxPrime(s);
+    if (Math.abs(d) < 1e-12) break; // avoid division by zero near inflection
+    s -= xError / d;
+    // Keep s in [0, 1] to avoid divergence
+    if (s < 0) s = 0;
+    if (s > 1) s = 1;
+  }
+
+  return byAt(s);
+}
+
+/**
  * Apply Flash 8 ease to a linear t (0..1) → eased t.
  *
- * Flash 8 exponential ease formula:
+ * When `easeCurve` is provided, uses a CSS cubic-bezier solver instead of
+ * the integer ease formula.
+ *
+ * Flash 8 exponential ease formula (when easeCurve is null/undefined):
  *   ease > 0 (ease-out): eased_t = 1 - (1 - t)^(1 + (ease/100) * 3)
  *   ease < 0 (ease-in):  eased_t = t^(1 + (-ease/100) * 3)
  *   ease = 0:            eased_t = t  (linear)
@@ -44,7 +110,14 @@ import type {
  *   ease=100, t=0.5  → ~0.9375  (very strong ease-out)
  *   ease=-100, t=0.5 → ~0.0625  (very strong ease-in)
  */
-export function applyEase(t: number, ease: number): number {
+export function applyEase(
+  t: number,
+  ease: number,
+  easeCurve?: { x1: number; y1: number; x2: number; y2: number } | null
+): number {
+  if (easeCurve) {
+    return solveCubicBezier(t, easeCurve.x1, easeCurve.y1, easeCurve.x2, easeCurve.y2);
+  }
   if (ease === 0) return t;
   // Clamp t to [0, 1]
   const clamped = Math.max(0, Math.min(1, t));
@@ -475,7 +548,7 @@ export function interpolateTween(
 
   // Linear t in [0, 1]
   const linearT = Math.max(0, Math.min(1, (frame - startFrame) / span));
-  const t = applyEase(linearT, config.ease);
+  const t = applyEase(linearT, config.ease, config.easeCurve);
 
   const colorEffect = interpolateColorEffect(from.colorEffect, to.colorEffect, t);
   const filters = interpolateFilters(from.filters, to.filters, t);
@@ -672,6 +745,7 @@ function lerpShape(a: Shape, b: Shape, t: number): Shape {
  * @param t             - Normalized position between keyframes (0..1, pre-ease)
  * @param ease          - Flash ease value (−100..100)
  * @param blend         - Blend mode: 'distributive' | 'angular' (reserved for future use)
+ * @param easeCurve     - Optional custom cubic Bézier ease curve; overrides `ease` when set
  * @returns             New array of interpolated ShapeDisplayObject values
  */
 export function interpolateShapeTween(
@@ -679,12 +753,13 @@ export function interpolateShapeTween(
   endObjects: readonly DisplayObject[],
   t: number,
   ease: number,
-  blend: "distributive" | "angular"
+  blend: "distributive" | "angular",
+  easeCurve?: { x1: number; y1: number; x2: number; y2: number } | null
 ): DisplayObject[] {
   // Suppress unused-variable lint for blend (reserved for future hint-based morphing)
   void blend;
 
-  const easedT = applyEase(Math.max(0, Math.min(1, t)), ease);
+  const easedT = applyEase(Math.max(0, Math.min(1, t)), ease, easeCurve);
 
   // Only interpolate ShapeDisplayObjects; other types are passed through from start
   const result: DisplayObject[] = [];

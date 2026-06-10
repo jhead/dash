@@ -23,6 +23,8 @@ export type { ColorEffect, FlashFilter };
 export interface TweenConfig {
   ease: number;        // −100 to 100 (Flash ease value)
   // Flash 8 convention: positive = ease-out (fast start), negative = ease-in (slow start)
+  /** Custom cubic Bézier ease curve (CSS cubic-bezier convention). Overrides `ease` when set. */
+  easeCurve?: { x1: number; y1: number; x2: number; y2: number } | null;
   motionRotate?: "none" | "auto" | "cw" | "ccw";  // rotation mode
   motionRotateCount?: number;                       // extra full rotations to add
 }

@@ -1,4 +1,4 @@
-import type { Frame, Layer, Timeline } from "./types.js";
+import type { EaseCurve, Frame, Layer, Timeline } from "./types.js";
 import type { DisplayObject, ShapeDisplayObject, SymbolInstance } from "../engine/types.js";
 import type { FlashFilter } from "../engine/filters.js";
 import { interpolateTween, interpolateShapeTween } from "../tween/interpolate.js";
@@ -18,6 +18,8 @@ export interface TweenSpan {
   readonly endFrame: number;
   readonly tweenType: "motion" | "shape";
   readonly ease: number;
+  /** Custom cubic Bézier ease curve; overrides `ease` when present. */
+  readonly easeCurve?: EaseCurve | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +102,7 @@ export function getTweenSpans(layer: Layer): TweenSpan[] {
         endFrame: keyframeFrames[i + 1].index - 1,
         tweenType: kf.tweenType as "motion" | "shape",
         ease: kf.tweenType === "motion" ? kf.motionEase : kf.shapeEase,
+        easeCurve: kf.tweenType === "motion" ? (kf.motionEaseCurve ?? null) : null,
       });
     }
   }
@@ -237,6 +240,7 @@ export function getTweenedFrame(
         span.endFrame + 1,
         {
           ease: span.ease,
+          easeCurve: span.easeCurve,
           motionRotate: startKf.motionRotate,
           motionRotateCount: startKf.motionRotateCount,
         }
@@ -290,7 +294,8 @@ export function getTweenedFrame(
       endKf.displayObjects,
       linearT,
       span.ease,
-      startKf.shapeBlend
+      startKf.shapeBlend,
+      span.easeCurve
     );
   }
 

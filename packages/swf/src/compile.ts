@@ -10,7 +10,7 @@
  *  - ShowFrame per frame, End
  */
 import type { BitmapFill, BitmapItem, ButtonHandler, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoDisplayObject, VideoItem } from "@flash/core";
-import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans } from "@flash/core";
+import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { deflateSync } from "fflate";
 import { Tag } from "./tags.js";
 import { SwfWriter } from "./writer.js";
@@ -785,11 +785,17 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   // Used during the frame loop to detect morph shapes and use ratio-based placement.
   const morphShapeObjIds = new Set<string>();
 
-  // morphObjSpanInfo: maps objId → array of {startFrame, endFrame, spanLength} spans.
-  // Used during the frame loop to compute the morph ratio for a given frameIdx.
+  // morphObjSpanInfo: maps objId → array of span records used to compute the
+  // morph ratio (including ease) for each frame during the frame loop.
   const morphObjSpanInfo = new Map<
     string,
-    Array<{ startFrame: number; endFrame: number; spanLength: number }>
+    Array<{
+      startFrame: number;
+      endFrame: number;
+      spanLength: number;
+      ease: number;
+      easeCurve?: { x1: number; y1: number; x2: number; y2: number } | null;
+    }>
   >();
 
   // Character pre-pass: define all characters across ALL scenes' timelines.
@@ -849,7 +855,13 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           // Record span info for ratio computation during frame loop
           const spanLength = span.endFrame - span.startFrame + 1;
           const existing = morphObjSpanInfo.get(startObj.id) ?? [];
-          existing.push({ startFrame: span.startFrame, endFrame: span.endFrame, spanLength });
+          existing.push({
+            startFrame: span.startFrame,
+            endFrame: span.endFrame,
+            spanLength,
+            ease: span.ease,
+            easeCurve: span.easeCurve,
+          });
           morphObjSpanInfo.set(startObj.id, existing);
         }
       }
@@ -1198,9 +1210,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 if (frameIdx >= spanInfo.startFrame && frameIdx <= spanInfo.endFrame) {
                   const spanLen = spanInfo.endFrame - spanInfo.startFrame + 1;
                   const frameOffset = frameIdx - spanInfo.startFrame;
-                  morphRatio = spanLen <= 1
-                    ? 0
-                    : Math.round((frameOffset / (spanLen)) * 65535);
+                  const linearT = spanLen <= 1 ? 0 : frameOffset / spanLen;
+                  const easedT = applyEase(linearT, spanInfo.ease, spanInfo.easeCurve);
+                  morphRatio = Math.round(easedT * 65535);
                   break;
                 }
               }
