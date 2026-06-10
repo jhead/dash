@@ -22,28 +22,197 @@ const KEYWORD_RE = new RegExp(
 );
 
 // ---------------------------------------------------------------------------
-// Simple highlight: returns an array of React nodes with keyword spans
+// Token colours
 // ---------------------------------------------------------------------------
 
-function highlightLine(line: string, key: number): React.ReactNode {
+const COLOR_KEYWORD = "#569cd6";
+const COLOR_STRING  = "#CE9178";
+const COLOR_COMMENT = "#6A9955";
+const COLOR_NUMBER  = "#B5CEA8";
+
+// ---------------------------------------------------------------------------
+// Token type
+// ---------------------------------------------------------------------------
+
+interface Token {
+  start: number;
+  end: number;   // exclusive
+  color: string;
+  bold?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// tokenizeLine — returns sorted, non-overlapping tokens for one line of source.
+//
+// inBlockComment: whether this line starts inside a /* ... */ block comment.
+// Returns { tokens, endsInBlockComment } so the caller can thread state.
+// ---------------------------------------------------------------------------
+
+export function tokenizeLine(
+  line: string,
+  inBlockComment: boolean
+): { tokens: Token[]; endsInBlockComment: boolean } {
+  const tokens: Token[] = [];
+  let i = 0;
+
+  // Helper: push a token (skips zero-length)
+  const push = (start: number, end: number, color: string, bold = false) => {
+    if (end > start) tokens.push({ start, end, color, bold });
+  };
+
+  // If we start inside a block comment, scan for */
+  if (inBlockComment) {
+    const close = line.indexOf("*/");
+    if (close === -1) {
+      // Entire line is inside block comment
+      push(0, line.length, COLOR_COMMENT);
+      return { tokens, endsInBlockComment: true };
+    }
+    // Color up to and including */
+    push(0, close + 2, COLOR_COMMENT);
+    i = close + 2;
+    inBlockComment = false;
+  }
+
+  while (i < line.length) {
+    // Block comment open /*
+    if (line[i] === "/" && line[i + 1] === "*") {
+      const close = line.indexOf("*/", i + 2);
+      if (close === -1) {
+        // Runs to end of line
+        push(i, line.length, COLOR_COMMENT);
+        i = line.length;
+        inBlockComment = true;
+      } else {
+        push(i, close + 2, COLOR_COMMENT);
+        i = close + 2;
+      }
+      continue;
+    }
+
+    // Line comment //
+    if (line[i] === "/" && line[i + 1] === "/") {
+      push(i, line.length, COLOR_COMMENT);
+      i = line.length;
+      continue;
+    }
+
+    // String literals (single or double quote, handling \-escapes)
+    if (line[i] === '"' || line[i] === "'") {
+      const quote = line[i];
+      let j = i + 1;
+      while (j < line.length) {
+        if (line[j] === "\\") {
+          j += 2; // skip escape sequence
+        } else if (line[j] === quote) {
+          j += 1;
+          break;
+        } else {
+          j += 1;
+        }
+      }
+      push(i, j, COLOR_STRING);
+      i = j;
+      continue;
+    }
+
+    // Numeric literals: \b\d+(\.\d+)?\b (hex 0x... too)
+    // Only when starting a word boundary position
+    const prevChar = i > 0 ? line[i - 1] : null;
+    const isWordBoundary = prevChar === null || /\W/.test(prevChar);
+    if (isWordBoundary && /\d/.test(line[i])) {
+      // Consume 0x hex, or decimal with optional fractional part
+      let j = i;
+      if (line[j] === "0" && (line[j + 1] === "x" || line[j + 1] === "X")) {
+        j += 2;
+        while (j < line.length && /[0-9a-fA-F]/.test(line[j])) j++;
+      } else {
+        while (j < line.length && /\d/.test(line[j])) j++;
+        if (line[j] === "." && /\d/.test(line[j + 1] ?? "")) {
+          j++; // consume dot
+          while (j < line.length && /\d/.test(line[j])) j++;
+        }
+      }
+      // Ensure it ends at a word boundary
+      const nextChar = line[j] ?? null;
+      if (nextChar === null || /\W/.test(nextChar)) {
+        push(i, j, COLOR_NUMBER);
+        i = j;
+        continue;
+      }
+    }
+
+    // Keywords — scan at word boundary
+    if (isWordBoundary && /[a-zA-Z_$]/.test(line[i])) {
+      KEYWORD_RE.lastIndex = i;
+      const m = KEYWORD_RE.exec(line);
+      if (m && m.index === i) {
+        push(i, i + m[0].length, COLOR_KEYWORD, true);
+        i += m[0].length;
+        continue;
+      }
+    }
+
+    i++;
+  }
+
+  return { tokens, endsInBlockComment: inBlockComment };
+}
+
+// ---------------------------------------------------------------------------
+// renderTokens — turn a token list into an array of React nodes
+// ---------------------------------------------------------------------------
+
+function renderTokens(line: string, tokens: Token[]): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
   let last = 0;
-  let match: RegExpExecArray | null;
-  KEYWORD_RE.lastIndex = 0;
-  while ((match = KEYWORD_RE.exec(line)) !== null) {
-    if (match.index > last) {
-      parts.push(line.slice(last, match.index));
+  for (const tok of tokens) {
+    if (tok.start > last) {
+      parts.push(line.slice(last, tok.start));
     }
     parts.push(
-      <span key={`kw-${match.index}`} style={{ color: "#569cd6", fontWeight: "bold" }}>
-        {match[0]}
+      <span
+        key={`tok-${tok.start}`}
+        style={{ color: tok.color, ...(tok.bold ? { fontWeight: "bold" } : {}) }}
+      >
+        {line.slice(tok.start, tok.end)}
       </span>
     );
-    last = match.index + match[0].length;
+    last = tok.end;
   }
   if (last < line.length) {
     parts.push(line.slice(last));
   }
+  return parts;
+}
+
+// ---------------------------------------------------------------------------
+// highlightLines — stateful multi-line highlight (handles block comments)
+// Returns one React node per line.
+// ---------------------------------------------------------------------------
+
+export function highlightLines(lines: string[]): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let inBlockComment = false;
+  for (let i = 0; i < lines.length; i++) {
+    const { tokens, endsInBlockComment } = tokenizeLine(lines[i], inBlockComment);
+    inBlockComment = endsInBlockComment;
+    const parts = renderTokens(lines[i], tokens);
+    nodes.push(
+      <span key={i}>{parts.length === 0 ? " " : parts}</span>
+    );
+  }
+  return nodes;
+}
+
+// ---------------------------------------------------------------------------
+// highlightLine — single-line variant (no block-comment state threading)
+// Kept for backward compatibility; use highlightLines for multi-line code.
+// ---------------------------------------------------------------------------
+
+function highlightLine(line: string, key: number): React.ReactNode {
+  const { tokens } = tokenizeLine(line, false);
+  const parts = renderTokens(line, tokens);
   return <span key={key}>{parts.length === 0 ? " " : parts}</span>;
 }
 
@@ -268,10 +437,10 @@ function ScriptEditor({
           ))}
         </div>
         <div ref={overlayRef} style={overlayStyle}>
-          {lines.map((line, i) => (
+          {highlightLines(lines).map((node, i) => (
             <React.Fragment key={i}>
               {i > 0 && "\n"}
-              {highlightLine(line, i)}
+              {node}
             </React.Fragment>
           ))}
         </div>
