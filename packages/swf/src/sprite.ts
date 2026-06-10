@@ -19,7 +19,7 @@ import { BitWriter } from "./bits.js";
 import { encodeDefineShape4, encodeBitmapFillShape, encodePlaceObject2, encodePlaceObject2Move } from "./shapes.js";
 import { encodeDefineEditText, encodePlaceObject2ForText } from "./text.js";
 import { Tag } from "./tags.js";
-import { dataUriToBytes } from "./bitmaps.js";
+import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -126,7 +126,7 @@ export function encodeDefineSprite(
               item.itemType === "bitmap" && item.id === obj.libraryItemId
           );
           if (bitmapItem && bitmapItem.dataUri) {
-            const imageBytes = dataUriToBytes(bitmapItem.dataUri);
+            const imageBytes = ensureJpegEOI(dataUriToBytes(bitmapItem.dataUri));
             if (imageBytes.length > 0) {
               // Hoist DefineBitsJPEG2 to top level
               const bitmapCharId = nextCharId();

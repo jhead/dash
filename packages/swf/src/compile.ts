@@ -50,7 +50,7 @@ import {
   soundRate,
 } from "./audio.js";
 import { encodeStartSound, encodeStartSound2 } from "./sounds.js";
-import { dataUriToBytes, encodeDefineBitsLossless2, encodeDefineBitsJpeg3 } from "./bitmaps.js";
+import { dataUriToBytes, encodeDefineBitsLossless2, encodeDefineBitsJpeg3, ensureJpegEOI } from "./bitmaps.js";
 import {
   encodeDefineVideoStream,
   encodeVideoFrame,
@@ -388,7 +388,8 @@ function emitBitmapFillTags(
       writer.writeRaw(losslessTag);
       emittedBitmapCharIds.set(bitmapId, charId);
     } else if (bitmapItem.dataUri) {
-      const imageBytes = dataUriToBytes(bitmapItem.dataUri);
+      const rawBytes = dataUriToBytes(bitmapItem.dataUri);
+      const imageBytes = ensureJpegEOI(rawBytes);
       if (imageBytes.length > 0) {
         const charId = writer.nextCharId();
         const pixelDataForAlpha = options?.bitmapPixels?.get(bitmapItem.id);
@@ -1053,7 +1054,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 );
                 writer.writeTag(Tag.DefineShape4, shapeBody);
               } else if (bitmapItem.dataUri) {
-                const imageBytes = dataUriToBytes(bitmapItem.dataUri);
+                const rawBytes = dataUriToBytes(bitmapItem.dataUri);
+                const imageBytes = ensureJpegEOI(rawBytes);
                 if (imageBytes.length > 0) {
                   const bitmapCharId = writer.nextCharId();
 

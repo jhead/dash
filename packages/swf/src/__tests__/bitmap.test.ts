@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { encodeDefineBitsLossless2, encodeDefineBitsJpeg3 } from "../bitmaps.js";
+import { encodeDefineBitsLossless2, encodeDefineBitsJpeg3, ensureJpegEOI } from "../bitmaps.js";
 
 // ---------------------------------------------------------------------------
 // Helper: parse the tag record header from a standalone Uint8Array
@@ -79,6 +79,48 @@ describe("encodeDefineBitsLossless2", () => {
 // ---------------------------------------------------------------------------
 // DefineBitsJPEG3 tests
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// ensureJpegEOI tests
+// ---------------------------------------------------------------------------
+
+describe("ensureJpegEOI", () => {
+  it("appends EOI (0xFF 0xD9) to a JPEG missing it", () => {
+    // JPEG with SOI but no EOI
+    const input = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0xaa, 0xbb]);
+    const result = ensureJpegEOI(input);
+    expect(result.length).toBe(input.length + 2);
+    expect(result[result.length - 2]).toBe(0xff);
+    expect(result[result.length - 1]).toBe(0xd9);
+  });
+
+  it("does not duplicate EOI when already present", () => {
+    // JPEG with SOI and EOI
+    const input = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0xff, 0xd9]);
+    const result = ensureJpegEOI(input);
+    expect(result).toBe(input); // same reference — no copy made
+    expect(result.length).toBe(input.length);
+  });
+
+  it("returns non-JPEG data unchanged", () => {
+    // PNG magic bytes
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const result = ensureJpegEOI(png);
+    expect(result).toBe(png);
+  });
+
+  it("returns empty array unchanged", () => {
+    const empty = new Uint8Array(0);
+    const result = ensureJpegEOI(empty);
+    expect(result).toBe(empty);
+  });
+
+  it("handles a minimal JPEG (SOI only, no EOI)", () => {
+    const soi = new Uint8Array([0xff, 0xd8]);
+    const result = ensureJpegEOI(soi);
+    expect(result).toEqual(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]));
+  });
+});
 
 describe("encodeDefineBitsJpeg3", () => {
   // Minimal JPEG bytes (empty JPEG: SOI + EOI markers)

@@ -22,7 +22,7 @@ import { encodeCxformWithAlpha } from "./cxform.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "./shapes.js";
 import { encodeDefineEditText } from "./text.js";
 import { Tag } from "./tags.js";
-import { dataUriToBytes } from "./bitmaps.js";
+import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 
 // ---------------------------------------------------------------------------
 // Identity MATRIX helper
@@ -174,7 +174,7 @@ export function encodeDefineButton2(
               item.itemType === "bitmap" && item.id === obj.libraryItemId
           );
           if (bitmapItem && bitmapItem.dataUri) {
-            const imageBytes = dataUriToBytes(bitmapItem.dataUri);
+            const imageBytes = ensureJpegEOI(dataUriToBytes(bitmapItem.dataUri));
             if (imageBytes.length > 0) {
               const bitmapCid = nextCharId();
               const imgPayload = new Uint8Array(2 + imageBytes.length);

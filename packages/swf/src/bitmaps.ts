@@ -149,6 +149,35 @@ export function encodeDefineBitsLossless2(
 }
 
 // ---------------------------------------------------------------------------
+// JPEG EOI helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensure a JPEG byte stream ends with the End-Of-Image marker (0xFF 0xD9).
+ *
+ * Some JPEG encoders and FLA Media streams omit the trailing EOI marker.
+ * Ruffle (render/src/utils.rs) logs a warning and may fail to decode such
+ * streams. This function appends the 2-byte EOI if it is missing.
+ *
+ * Non-JPEG data (e.g. PNG, starting with 0x89) is returned unchanged.
+ */
+export function ensureJpegEOI(data: Uint8Array): Uint8Array {
+  // Only process JPEG data (SOI marker: 0xFF 0xD8)
+  if (data.length < 2 || data[0] !== 0xff || data[1] !== 0xd8) {
+    return data;
+  }
+  // Already has EOI marker
+  if (data.length >= 2 && data[data.length - 2] === 0xff && data[data.length - 1] === 0xd9) {
+    return data;
+  }
+  const result = new Uint8Array(data.length + 2);
+  result.set(data);
+  result[data.length] = 0xff;
+  result[data.length + 1] = 0xd9;
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Data URI helper
 // ---------------------------------------------------------------------------
 
