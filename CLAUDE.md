@@ -207,3 +207,31 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **onClipEvent(mouseDown) does not fire in headless Ruffle**: Ruffle's WASM player in
   headless Playwright does not dispatch global mouse clip events. Use
   `onClipEvent(load)` or `onClipEvent(enterFrame)` in interactivity oracle tests instead.
+- **Keyboard DOES reach AVM1 — focus is the gate; use onClipEvent(keyDown), not
+  Key.isDown (task 0703)**. Proven end-to-end in `apps/desktop/e2e/keyboard.spec.ts`:
+  publishing a SWF with `onClipEvent(keyDown){ _root.gotoAndStop(2); }`, clicking the
+  Ruffle player to focus it, then `page.keyboard.press('ArrowRight')` flips the stage
+  red→blue (pixelDiff 10000). The prior "headless Ruffle can't drive keyboard" claim was
+  false. Hard-won specifics:
+  - **FOCUS is load-bearing**: Ruffle registers its keydown handler on `window` but gates
+    it on an internal `has_focus` flag set via a `focusin` listener on the
+    `<ruffle-player>` host. Without a real `.click()` on the player the keypress reaches
+    `window` but is dropped. After a click, `document.hasFocus()` and
+    `document.activeElement === host` are both true and the key flows to AVM1.
+  - **autoplay gating**: with default `autoplay:'auto'` and no running AudioContext (the
+    headless case), Ruffle shows a play button and does NOT call `play()`, so clip ticks
+    never start. Pass `autoplay:'on'` (and `unmuteOverlay:'hidden'`) to `ruffle().load()`.
+  - **hardware-accel overlay**: headless Chromium has no GPU, so Ruffle injects a
+    "hardware acceleration disabled" message overlay with a dimming backdrop that ruins
+    screenshots. Recursively `display:none` any shadow-DOM element whose id/class matches
+    `modal|overlay|message|splash|play-button|panic` before screenshotting.
+  - **Key.isDown / Key.getCode are BROKEN in the bundled Ruffle 0.1.0 headless build**:
+    the `keyDown` clip EVENT fires, but `Key.isDown(39)` and `Key.getCode()` return
+    false/0 even *inside* the keyDown handler when the key is definitionally down. Do not
+    rely on Key-state polling for headless oracles; react to the keyDown event itself.
+    (Bundle in `apps/desktop/public/ruffle` is 0.1.0; the source clone is 0.2.0.)
+- **AS2 compiler bug — member-target assignment compiles as a READ (found during 0703)**:
+  `this._x = v` / `obj.prop = v` / `obj.prop += v` emit ActionGetMember (0x4e, read)
+  instead of ActionSetMember (0x4f, write), so the assignment silently does nothing. Bare
+  `_x = v` (ActionSetVariable) works. Any movement/property-set AS2 must currently use the
+  bare form. (Separate follow-up task territory; not fixed by 0703.)
