@@ -209,6 +209,78 @@ describe("timeline.addNewLayer / deleteLayer / setSelectedLayers", () => {
     expect(result.error).toBeUndefined();
     expect(result.traces).toEqual(["1"]);
   });
+
+  it("addNewLayer with type 'guide' sets layerType to guide", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var tl = fl.getDocumentDOM().getTimeline();
+       tl.addNewLayer("Guide 1", "guide");
+       fl.trace(tl.layers[0].layerType);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["guide"]);
+    expect(result.finalDocument!.scenes[0].timeline.layers[0].type).toBe("guide");
+  });
+
+  it("addNewLayer with type 'mask' sets layerType to mask", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var tl = fl.getDocumentDOM().getTimeline();
+       tl.addNewLayer("Mask 1", "mask");
+       fl.trace(tl.layers[0].layerType);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["mask"]);
+    expect(result.finalDocument!.scenes[0].timeline.layers[0].type).toBe("mask");
+  });
+
+  it("addNewLayer with addAbove=true inserts above selected layer", () => {
+    const ctx = makeCtx();
+    // Start with Layer 1 (index 0). Select it (already selected). Add above → new layer at 0.
+    const result = runJsfl(
+      `var tl = fl.getDocumentDOM().getTimeline();
+       tl.addNewLayer("A", "normal", true);
+       fl.trace(tl.layers[0].name);
+       fl.trace(tl.layers[1].name);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    // currentLayer=0 before add; addAbove=true → new layer goes to index 0
+    expect(result.traces).toEqual(["A", "Layer 1"]);
+  });
+
+  it("addNewLayer with addAbove=false inserts below selected layer", () => {
+    const ctx = makeCtx();
+    // Layer 1 is at index 0 (selected). addAbove=false → new layer goes below it at index 1.
+    const result = runJsfl(
+      `var tl = fl.getDocumentDOM().getTimeline();
+       tl.addNewLayer("B", "normal", false);
+       fl.trace(tl.layers[0].name);
+       fl.trace(tl.layers[1].name);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["Layer 1", "B"]);
+  });
+
+  it("addNewLayer respects addAbove when selected layer is not topmost", () => {
+    const ctx = makeCtx();
+    // Add two extra layers first, then select layer at index 1, add above → new at 1.
+    const result = runJsfl(
+      `var tl = fl.getDocumentDOM().getTimeline();
+       tl.addNewLayer("Layer 2");
+       tl.addNewLayer("Layer 3");
+       // layers: [Layer 3, Layer 2, Layer 1]
+       tl.setSelectedLayers(1);
+       tl.addNewLayer("Above2", "normal", true);
+       fl.trace(tl.layers[1].name);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["Above2"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
