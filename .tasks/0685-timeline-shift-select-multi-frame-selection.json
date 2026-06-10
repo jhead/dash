@@ -1,0 +1,8 @@
+{
+  "id": "0685-timeline-shift-select-multi-frame-selection",
+  "title": "Timeline shift-select: multi-frame selection",
+  "description": "Flash 8 behavior: clicking a frame on the timeline selects it; shift-clicking extends the selection to a range. Selected frames should be visually highlighted. Selection range should be usable for bulk operations (cut/copy/paste frames, apply tween to range, etc.). See docs/02-timeline-layers.md for timeline model.",
+  "status": "open",
+  "created_at": "2026-06-10T00:00:29Z",
+  "updated_at": "2026-06-10T00:00:29Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0684-fix-mcp-timeline-update-layer-layer-rename-lock-",
+  "title": "Fix MCP timeline_update_layer: layer rename/lock not persisting in doc_get",
+  "description": "E2E test 'MCP agent server: timeline domain: add layer \u2192 timeline_update_layer \u2192 doc_get assert round-trip' fails: after calling timeline_update_layer to rename layer to 'RenamedLayer' and lock it, doc_get still returns 'TestLayer'.\n\nThe mutation is not being applied or not being reflected in the document state. Check the MCP command registry handler for timeline_update_layer and ensure it mutates the document model correctly.\n\nRun: pnpm --filter @flash/desktop e2e --grep 'timeline_update_layer' 2>&1 | tail -20",
+  "status": "open",
+  "created_at": "2026-06-10T00:00:04Z",
+  "updated_at": "2026-06-10T00:00:04Z"
+}

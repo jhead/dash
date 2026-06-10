@@ -466,6 +466,215 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
   });
 
   // -------------------------------------------------------------------------
+  // Test 3b: onClipEvent(load) clip action fires in Ruffle (task 0663)
+  //
+  // SWF: 2-frame timeline. Frame 0: red rect + stop(). Frame 1: blue rect + stop().
+  // A MovieClip instance on frame 0 has: onClipEvent(load) { _root.gotoAndStop(2); }
+  //
+  // When Ruffle loads the SWF the MovieClip's load event fires immediately and
+  // calls _root.gotoAndStop(2), which advances the root timeline to frame 1.
+  // After a short wait the stage should show BLUE (not red), proving clip
+  // actions were encoded and dispatched correctly.
+  // -------------------------------------------------------------------------
+  test('onClipEvent(load) clip action fires and advances root frame (0663)', async ({ page }, testInfo: TestInfo) => {
+    // A tiny 1-frame MovieClip symbol with no visible content — it only carries
+    // the onClipEvent(load) clip action on its instance.
+    const mcSymbol = {
+      id: 'sym-mc-0663',
+      name: 'TriggerMC',
+      itemType: 'symbol',
+      symbolType: 'movieclip',
+      linkage: {
+        exportForActionScript: false,
+        exportInFirstFrame: false,
+        linkageIdentifier: '',
+        className: '',
+        exportForRuntimeSharing: false,
+        importForRuntimeSharing: false,
+        sharedUrl: '',
+      },
+      scale9Grid: null,
+      timeline: {
+        layers: [{
+          id: 'mc-layer-0663', name: 'Layer 1', type: 'normal',
+          visible: true, locked: false, outlineMode: false,
+          outlineColor: '#ff0000', height: 20, parentFolderId: null,
+          frameCount: 1,
+          frames: [{
+            index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+            label: '', labelType: 'name', script: '',
+            sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+            motionOrientToPath: false, motionSync: false, motionScale: false,
+            shapeEase: 0, shapeBlend: 'distributive',
+            displayObjects: [],
+          }],
+        }],
+      },
+    };
+
+    // Root timeline: 2 frames.
+    // Frame 0: red rect + stop() + the MC instance with onClipEvent(load).
+    // Frame 1: blue rect + stop().
+    const fixtureDoc = {
+      id: 'clipaction-load-doc',
+      properties: {
+        width: 550, height: 400, frameRate: 12,
+        backgroundColor: '#ffffff', rulerUnits: 'px',
+        grid: { showGrid: false, snapToGrid: false, gridColor: '#999999', gridWidth: 18, gridHeight: 18 },
+        guides: [], snapToObjects: false, snapToPixels: false, snapToGuides: false,
+      },
+      scenes: [{
+        id: 'scene-1', name: 'Scene 1',
+        timeline: {
+          layers: [
+            // MC layer — instance present only on frame 0
+            {
+              id: 'layer-mc-0663', name: 'MC', type: 'normal',
+              visible: true, locked: false, outlineMode: false,
+              outlineColor: '#00ff00', height: 20, parentFolderId: null,
+              frameCount: 2,
+              frames: [
+                {
+                  index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                  label: '', labelType: 'name', script: '',
+                  sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                  motionOrientToPath: false, motionSync: false, motionScale: false,
+                  shapeEase: 0, shapeBlend: 'distributive',
+                  displayObjects: [{
+                    id: 'mc-inst-0663',
+                    type: 'instance',
+                    symbolId: 'sym-mc-0663',
+                    x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+                    clipActions: [{ event: 'load', script: '_root.gotoAndStop(2);' }],
+                  }],
+                },
+                {
+                  index: 1, isKeyframe: true, isEmpty: true, tweenType: 'none',
+                  label: '', labelType: 'name', script: '',
+                  sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                  motionOrientToPath: false, motionSync: false, motionScale: false,
+                  shapeEase: 0, shapeBlend: 'distributive',
+                  displayObjects: [],
+                },
+              ],
+            },
+            // Background layer — red on frame 0, blue on frame 1
+            {
+              id: 'layer-bg-0663', name: 'Background', type: 'normal',
+              visible: true, locked: false, outlineMode: false,
+              outlineColor: '#0000ff', height: 20, parentFolderId: null,
+              frameCount: 2,
+              frames: [
+                {
+                  index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                  label: '', labelType: 'name', script: 'stop();',
+                  sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                  motionOrientToPath: false, motionSync: false, motionScale: false,
+                  shapeEase: 0, shapeBlend: 'distributive',
+                  displayObjects: [makeColorRect('red-rect-0663', 255, 0, 0)],
+                },
+                {
+                  index: 1, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                  label: '', labelType: 'name', script: 'stop();',
+                  sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                  motionOrientToPath: false, motionSync: false, motionScale: false,
+                  shapeEase: 0, shapeBlend: 'distributive',
+                  displayObjects: [makeColorRect('blue-rect-0663', 0, 0, 255)],
+                },
+              ],
+            },
+          ],
+        },
+      }],
+      library: { items: [mcSymbol], folders: [] },
+    };
+
+    await page.evaluate((doc) => {
+      (window as unknown as { __flashTest: { loadDocument: (d: unknown) => void } }).__flashTest.loadDocument(doc);
+    }, fixtureDoc);
+    await page.waitForTimeout(300);
+
+    const swfBase64: string = await page.evaluate(() => {
+      return (window as unknown as { __flashTest: { publish: () => string } }).__flashTest.publish();
+    });
+
+    const PLAYER_ID = '__ruffle_clipaction_player__';
+
+    await ensureRuffleLoaded(page);
+    await injectRufflePlayer(page, swfBase64, PLAYER_ID);
+
+    // Wait for Ruffle to fully initialize and run the first frame (load event fires)
+    await page.waitForTimeout(2500);
+
+    const shotAfterLoad = await page.locator(`#${PLAYER_ID}`).screenshot();
+
+    await removeRufflePlayer(page, PLAYER_ID);
+
+    // Build a reference "red" screenshot to compare against: load a second
+    // instance WITHOUT clip actions so it stays on frame 0 (red).
+    const fixtureDocNoClip = {
+      ...fixtureDoc,
+      id: 'clipaction-noclip-doc',
+      scenes: [{
+        ...fixtureDoc.scenes[0],
+        timeline: {
+          layers: [
+            {
+              ...fixtureDoc.scenes[0].timeline.layers[0],
+              frames: [
+                {
+                  ...fixtureDoc.scenes[0].timeline.layers[0].frames[0],
+                  displayObjects: [{
+                    id: 'mc-inst-noclip',
+                    type: 'instance',
+                    symbolId: 'sym-mc-0663',
+                    x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+                    // No clipActions — should stay on frame 0 (red)
+                  }],
+                },
+                fixtureDoc.scenes[0].timeline.layers[0].frames[1],
+              ],
+            },
+            fixtureDoc.scenes[0].timeline.layers[1],
+          ],
+        },
+      }],
+    };
+
+    await page.evaluate((doc) => {
+      (window as unknown as { __flashTest: { loadDocument: (d: unknown) => void } }).__flashTest.loadDocument(doc);
+    }, fixtureDocNoClip);
+    await page.waitForTimeout(300);
+
+    const swfBase64NoClip: string = await page.evaluate(() => {
+      return (window as unknown as { __flashTest: { publish: () => string } }).__flashTest.publish();
+    });
+
+    const PLAYER_NO_CLIP_ID = '__ruffle_clipaction_noclip_player__';
+    await injectRufflePlayer(page, swfBase64NoClip, PLAYER_NO_CLIP_ID);
+    await page.waitForTimeout(2500);
+
+    const shotNoClip = await page.locator(`#${PLAYER_NO_CLIP_ID}`).screenshot();
+    await removeRufflePlayer(page, PLAYER_NO_CLIP_ID);
+
+    const diffPixels = countDifferentPixels(shotNoClip, shotAfterLoad);
+
+    // Always attach screenshots for visibility
+    await testInfo.attach('shot-no-clip-action-red', { body: shotNoClip, contentType: 'image/png' });
+    await testInfo.attach('shot-with-clip-action-should-be-blue', { body: shotAfterLoad, contentType: 'image/png' });
+
+    if (diffPixels < 100) {
+      // Extra debug info on failure
+      await testInfo.attach('FAIL-shot-no-clip', { body: shotNoClip, contentType: 'image/png' });
+      await testInfo.attach('FAIL-shot-with-clip', { body: shotAfterLoad, contentType: 'image/png' });
+    }
+
+    // onClipEvent(load) advanced root to frame 1 (blue), while no-clip stayed on
+    // frame 0 (red). The 100x100 center rect is different => > 100 pixel diff.
+    expect(diffPixels).toBeGreaterThan(100);
+  });
+
+  // -------------------------------------------------------------------------
   // Test 3: button Over state — hovering changes visible color (red→blue)
   //
   // SWF: single-frame timeline with a button spanning the whole stage.

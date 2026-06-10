@@ -1,0 +1,8 @@
+{
+  "id": "0683-fix-flash-agent-cli-exit-code-1-mcp-transport-no",
+  "title": "Fix flash-agent CLI: exit code 1, MCP transport not connecting (0613-0617 follow-up)",
+  "description": "Agent bridge E2E tests added by tasks 0613-0617 are failing. 6 tests fail with exit code 1 (flash-agent CLI not connecting to MCP server). 2 tests fail because docId is undefined in document summary response.\n\nRoot cause areas to investigate:\n1. flash-agent CLI (packages/ or apps/): why does it return exit code 1 instead of 0?\n2. MCP /mcp endpoint: is it being served by the Vite dev server during E2E tests?\n3. document summary resource: why is docId missing from the response?\n\nKey test file: apps/desktop/e2e/agent-mcp.spec.ts\nKey impl files: check packages/ and apps/desktop/src/ for 'mcp', 'flash-agent', 'editor_status', 'doc_summary'\n\nRun: pnpm --filter @flash/desktop e2e --grep 'flash-agent|MCP agent' 2>&1 | tail -40\n\nAll 8 agent-mcp/flash-agent tests must pass.",
+  "status": "open",
+  "created_at": "2026-06-10T00:00:04Z",
+  "updated_at": "2026-06-10T00:00:04Z"
+}
