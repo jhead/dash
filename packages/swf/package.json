@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gen-glyphdata": "node scripts/gen-glyphdata.mjs",
     "test": "vitest run"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "fflate": "^0.8.3"
   },
   "devDependencies": {
+    "opentype.js": "^2.0.0",
     "typescript": "^5.5.3",
     "vitest": "^2.1.9"
   }

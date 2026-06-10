@@ -2,9 +2,9 @@
   "id": "0708-typography-polish-real-font-outlines-ttf-derived",
   "title": "Typography polish: real font outlines (TTF-derived) replacing the 5x7 bitmap-font stopgap",
   "description": "0702 made text visible in published SWFs via a 5x7 bitmap font decomposed into vector rects (packages/swf/src/glyphdata.ts) \u2014 functionally correct, visually crude vs Flash 8 (docs/06: FlashType-quality text is a fidelity pillar). Scope: derive DefineFont3 glyph outlines from a real font \u2014 embed an open-licensed TTF (or parse system fonts) with an opentype-style parser, convert quadratic outlines to SWF SHAPE records with proper EM-square scaling (1024 units/em x20 for DefineFont3), advance/kerning tables from the font metrics; keep the 5x7 path as fallback. Acceptance: text-rendering e2e still passes AND a new assertion that rendered text is anti-aliased glyph outlines (not blocky rects) \u2014 e.g. visual-oracle compare against Ruffle rendering a reference SWF using a real embedded font. Non-gating polish; do after CRITICAL queue is empty.",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "low",
   "created_at": "2026-06-10T02:47:56Z",
-  "updated_at": "2026-06-10T02:47:56Z"
+  "updated_at": "2026-06-10T03:44:48Z"
 }

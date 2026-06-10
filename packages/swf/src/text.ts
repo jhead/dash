@@ -7,15 +7,14 @@
 import { BitWriter } from "./bits.js";
 import type { TextDisplayObject } from "@flash/core";
 import { px, edgeNumBits, writeRect } from "./helpers.js";
-import { GLYPH_ADVANCE_EM, GLYPH_ADVANCE_SPACE_EM, FONT_EM } from "./fonts.js";
+import { GLYPH_ADVANCE_EM, FONT_EM, glyphAdvanceEm } from "./fonts.js";
 
 /**
  * Advance (in twips) for a glyph at the given text height (twips), derived from
- * the embedded font's EM-unit advance widths so spacing matches the outlines.
+ * the embedded font's real per-glyph EM advance so spacing matches the outlines.
  */
 function glyphAdvanceTwips(code: number, textHeightTwips: number): number {
-  const em = code === 32 ? GLYPH_ADVANCE_SPACE_EM : GLYPH_ADVANCE_EM;
-  return Math.round((em / FONT_EM) * textHeightTwips);
+  return Math.round((glyphAdvanceEm(code) / FONT_EM) * textHeightTwips);
 }
 
 // ---------------------------------------------------------------------------

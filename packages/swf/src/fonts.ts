@@ -4,10 +4,12 @@
  * Emits REAL vector glyph outlines for printable ASCII (codes 32–126 = 95
  * glyphs) so embedded text actually renders in Ruffle / Flash Player.
  *
- * The glyphs are generated from a compact built-in 5×7 bitmap font: each "on"
- * cell of a glyph becomes a small filled square contour in the glyph's SHAPE
- * record. This produces legible, pure-vector text without requiring a TTF
- * parser, bundled font file, or any DOM/canvas API.
+ * The glyphs are TTF-derived: `glyphdata.ts` is generated at build time from a
+ * bundled copy of NotoSans (SIL OFL) via opentype.js, giving each glyph a list
+ * of MoveTo / LineTo / QuadTo commands on a 1024-unit EM square. We translate
+ * those commands directly into SWF shape records (StraightEdge + CurvedEdge).
+ * For any code point that lacks a real outline we fall back to a compact 5×7
+ * bitmap glyph (each "on" cell → one filled square), so text always renders.
  *
  * Why this works in Ruffle: `swf_glyph_to_shape()` wraps each glyph's
  * shape-records in a Shape whose single fill style (index 1) is white, and the
@@ -16,7 +18,17 @@
  * StyleChangeRecord; the actual colour comes from the text field, not the glyph.
  */
 import { BitWriter } from "./bits.js";
-import { glyphCells, FONT_COLS, FONT_ROWS } from "./glyphdata.js";
+import {
+  glyphCells,
+  FONT_COLS,
+  FONT_ROWS,
+  glyphPath,
+  glyphAdvance,
+  GlyphOp,
+  GLYPH_EM,
+  GLYPH_ASCENT,
+  GLYPH_DESCENT,
+} from "./glyphdata.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -29,29 +41,30 @@ const LAST_CODE = 126;
 /** Total number of glyphs we embed (ASCII 32–126). */
 const GLYPH_COUNT = LAST_CODE - FIRST_CODE + 1; // 95
 
-/** EM square size in font units (Flash convention). */
-const EM = 1024;
+/** EM square size in font units — matches the TTF (NotoSans unitsPerEm). */
+const EM = GLYPH_EM; // 1024
 
-/** Font metrics in EM units. */
-const ASCENT = 800;
-const DESCENT = 200;
+/** Font metrics in EM units, taken from the embedded TTF. */
+const ASCENT = GLYPH_ASCENT; // 784
+const DESCENT = GLYPH_DESCENT; // 247
 const LEADING = 40;
 
 /**
- * Glyph layout within the EM box.
+ * 5×7 fallback-glyph layout within the EM box.
  *
- * The 5×7 cell grid is mapped into a box that sits above the baseline (y = 0,
- * with negative y pointing up the way SWF font glyphs are conventionally laid
- * out). We use a cap-height of ~720 units and a left side bearing so glyphs do
- * not touch.
+ * Only used for code points that have no real TTF outline. The cell grid is
+ * mapped into a box above the baseline (y = 0, negative y pointing up the way
+ * SWF font glyphs are conventionally laid out), with a left side bearing so the
+ * blocky fallback glyphs do not touch.
  */
 const CELL = 100; // size of each grid cell in EM units
 const GLYPH_LEFT = 80; // left side bearing
 const CAP_TOP = -720; // top of the glyph box (negative = above baseline)
-/** Advance width per glyph in EM units (cells span + bearings). */
-const ADVANCE_DEFAULT = GLYPH_LEFT + FONT_COLS * CELL + GLYPH_LEFT; // 80 + 500 + 80 = 660
-/** Advance width for the space character. */
-const ADVANCE_SPACE = 460;
+/** Advance width for a 5×7 fallback glyph (cells span + bearings). */
+const FALLBACK_ADVANCE = GLYPH_LEFT + FONT_COLS * CELL + GLYPH_LEFT; // 660
+/** Default/space advances used by the text encoder (real-font derived). */
+const ADVANCE_DEFAULT = Math.round(glyphAdvance(0x41)); // 'A'
+const ADVANCE_SPACE = Math.round(glyphAdvance(0x20)); // space
 
 // ---------------------------------------------------------------------------
 // Glyph SHAPE encoding
@@ -67,26 +80,142 @@ function numBitsFor(values: number[]): number {
   return max;
 }
 
+/** Number of fill bits used in every glyph SHAPE (fill index 0 or 1). */
+const NUM_FILL_BITS = 1;
+/** Number of line bits — glyphs have no strokes. */
+const NUM_LINE_BITS = 0;
+
 /**
- * Encode a single glyph's SHAPE body (the bytes that follow the per-glyph
- * NumFillBits/NumLineBits header byte is written here too).
+ * Emit a StyleChangeRecord that moves the pen to (x,y) and (optionally) selects
+ * fill style 1. `setFill` should be true on the first contour of a glyph; the
+ * fill persists for subsequent contours.
  *
- * Layout of the returned bytes:
- *   UI8  : NumFillBits(4) << 4 | NumLineBits(4)   — we use 1 fill bit, 0 line bits
- *   bits : shape records (StyleChange + StraightEdges …) then EndShape
+ * Returns nothing; updates the caller's pen via the returned coordinates.
+ */
+function writeGlyphMoveTo(
+  bw: BitWriter,
+  x: number,
+  y: number,
+  penX: number,
+  penY: number,
+  setFill: boolean
+): void {
+  const dx = x - penX;
+  const dy = y - penY;
+  bw.writeBits(0, 1); // type = 0 (non-edge)
+  bw.writeBits(0, 1); // stateNewStyles = 0
+  bw.writeBits(0, 1); // stateLineStyle = 0
+  bw.writeBits(setFill ? 1 : 0, 1); // stateFillStyle1
+  bw.writeBits(0, 1); // stateFillStyle0 = 0
+  bw.writeBits(1, 1); // stateMoveTo = 1
+  const moveBits = numBitsFor([dx, dy]);
+  bw.writeBits(moveBits, 5);
+  bw.writeBits(dx & ((1 << moveBits) - 1), moveBits);
+  bw.writeBits(dy & ((1 << moveBits) - 1), moveBits);
+  if (setFill) bw.writeBits(1, NUM_FILL_BITS); // FillStyle1 index = 1
+}
+
+/** Emit a StraightEdgeRecord for delta (dx,dy) (general line, both deltas). */
+function writeGlyphLine(bw: BitWriter, dx: number, dy: number): void {
+  const nBits = numBitsFor([dx, dy]);
+  bw.writeBits(1, 1); // edge record
+  bw.writeBits(1, 1); // straight edge
+  bw.writeBits(nBits - 2, 4); // numBits field (stored = actual - 2)
+  bw.writeBits(1, 1); // generalLineFlag (write both deltas)
+  bw.writeBits(dx & ((1 << nBits) - 1), nBits);
+  bw.writeBits(dy & ((1 << nBits) - 1), nBits);
+}
+
+/** Emit a CurvedEdgeRecord for control delta (cdx,cdy) + anchor delta (adx,ady). */
+function writeGlyphCurve(
+  bw: BitWriter,
+  cdx: number,
+  cdy: number,
+  adx: number,
+  ady: number
+): void {
+  const nBits = numBitsFor([cdx, cdy, adx, ady]);
+  bw.writeBits(1, 1); // edge record
+  bw.writeBits(0, 1); // curved edge
+  bw.writeBits(nBits - 2, 4); // numBits field (stored = actual - 2)
+  bw.writeBits(cdx & ((1 << nBits) - 1), nBits);
+  bw.writeBits(cdy & ((1 << nBits) - 1), nBits);
+  bw.writeBits(adx & ((1 << nBits) - 1), nBits);
+  bw.writeBits(ady & ((1 << nBits) - 1), nBits);
+}
+
+/**
+ * Encode a glyph SHAPE from a real TTF-derived outline (packed command array
+ * from glyphdata.ts). Returns null if the code point has no real outline.
  *
- * Each "on" cell is drawn as a closed square contour referencing fill style 1.
- * Movement between cells uses absolute MoveTo (SWF MoveTo deltas in a glyph are
- * relative to the glyph origin / current pen — we always emit an absolute-style
- * MoveTo by treating the pen as reset, which the spec permits because each
- * StyleChange MoveTo carries the full destination coordinate pair).
+ * The packed array uses absolute EM-unit coordinates. We convert each command
+ * to delta-based SWF edge records, scaling by `coordScale` (20 for DefineFont3,
+ * 1 for DefineFont2). MoveTo starts a new contour; the first MoveTo also selects
+ * fill style 1 (the fill Ruffle recolors with the text colour).
+ */
+function encodeRealGlyphShape(code: number, coordScale: number): Uint8Array | null {
+  const cmds = glyphPath(code);
+  if (cmds === undefined) return null;
+
+  const bw = new BitWriter();
+  bw.writeUI8((NUM_FILL_BITS << 4) | NUM_LINE_BITS);
+
+  const S = coordScale;
+  let penX = 0;
+  let penY = 0;
+  let firstContour = true;
+  // Empty outline (e.g. space): still a valid glyph, just no records.
+  let i = 0;
+  while (i < cmds.length) {
+    const op = cmds[i];
+    if (op === GlyphOp.MoveTo) {
+      const x = cmds[i + 1] * S;
+      const y = cmds[i + 2] * S;
+      writeGlyphMoveTo(bw, x, y, penX, penY, firstContour);
+      firstContour = false;
+      penX = x;
+      penY = y;
+      i += 3;
+    } else if (op === GlyphOp.LineTo) {
+      const x = cmds[i + 1] * S;
+      const y = cmds[i + 2] * S;
+      writeGlyphLine(bw, x - penX, y - penY);
+      penX = x;
+      penY = y;
+      i += 3;
+    } else {
+      // QuadTo: control (cx,cy) then anchor (x,y).
+      const cx = cmds[i + 1] * S;
+      const cy = cmds[i + 2] * S;
+      const x = cmds[i + 3] * S;
+      const y = cmds[i + 4] * S;
+      writeGlyphCurve(bw, cx - penX, cy - penY, x - cx, y - cy);
+      penX = x;
+      penY = y;
+      i += 5;
+    }
+  }
+
+  // EndShapeRecord: type bit 0 + 5 zero flag bits.
+  bw.writeBits(0, 6);
+  bw.flushBits();
+  return bw.getBytes();
+}
+
+/**
+ * Encode a single glyph's SHAPE body (including the leading
+ * NumFillBits/NumLineBits header byte).
+ *
+ * Prefers the real TTF-derived outline (glyphdata.ts). For any code point that
+ * lacks a real outline it falls back to a 5×7 bitmap glyph: each "on" cell is
+ * decomposed into maximal solid rectangles and emitted as filled contours
+ * referencing fill style 1.
  */
 function encodeGlyphShape(code: number, coordScale: number): Uint8Array {
-  const bw = new BitWriter();
+  const real = encodeRealGlyphShape(code, coordScale);
+  if (real !== null) return real;
 
-  // NumFillBits = 1 (we only ever reference fill index 0 or 1), NumLineBits = 0.
-  const NUM_FILL_BITS = 1;
-  const NUM_LINE_BITS = 0;
+  const bw = new BitWriter();
   bw.writeUI8((NUM_FILL_BITS << 4) | NUM_LINE_BITS);
 
   const cells = glyphCells(code);
@@ -99,26 +228,7 @@ function encodeGlyphShape(code: number, coordScale: number): Uint8Array {
 
   /** Emit one filled rectangle contour [x0,y0]→[x1,y1] (clockwise, Y-down). */
   function emitRect(x0: number, y0: number, x1: number, y1: number): void {
-    // StyleChangeRecord: MoveTo (x0,y0). Set fill style 1 = 1 only on the first
-    // contour — it persists for subsequent contours in the same shape.
-    //
-    // We use FILL STYLE 1 (the "right" fill, flushed without flipping by
-    // Ruffle's ShapeConverter). Ruffle's swf_glyph_to_shape() installs a single
-    // fill at index 1, and the text colour is applied by the text record.
-    const dx = x0 - penX;
-    const dy = y0 - penY;
-    const setFill = firstContour ? 1 : 0;
-    bw.writeBits(0, 1); // type = 0 (non-edge)
-    bw.writeBits(0, 1); // stateNewStyles = 0
-    bw.writeBits(0, 1); // stateLineStyle = 0
-    bw.writeBits(setFill, 1); // stateFillStyle1
-    bw.writeBits(0, 1); // stateFillStyle0 = 0
-    bw.writeBits(1, 1); // stateMoveTo = 1
-    const moveBits = numBitsFor([dx, dy]);
-    bw.writeBits(moveBits, 5);
-    bw.writeBits(dx & ((1 << moveBits) - 1), moveBits);
-    bw.writeBits(dy & ((1 << moveBits) - 1), moveBits);
-    if (setFill) bw.writeBits(1, NUM_FILL_BITS); // FillStyle1 index = 1
+    writeGlyphMoveTo(bw, x0, y0, penX, penY, firstContour);
     firstContour = false;
     penX = x0;
     penY = y0;
@@ -130,13 +240,7 @@ function encodeGlyphShape(code: number, coordScale: number): Uint8Array {
       [0, y0 - y1], // up
     ];
     for (const [edx, edy] of edges) {
-      const nBits = numBitsFor([edx, edy]);
-      bw.writeBits(1, 1); // edge record
-      bw.writeBits(1, 1); // straight edge
-      bw.writeBits(nBits - 2, 4); // numBits field (stored = actual - 2)
-      bw.writeBits(1, 1); // generalLineFlag (write both deltas)
-      bw.writeBits(edx & ((1 << nBits) - 1), nBits);
-      bw.writeBits(edy & ((1 << nBits) - 1), nBits);
+      writeGlyphLine(bw, edx, edy);
       penX += edx;
       penY += edy;
     }
@@ -293,10 +397,13 @@ export function encodeDefineFont2(
   bw.writeSI16LE(DESCENT * coordScale);
   bw.writeSI16LE(LEADING * coordScale);
 
-  // AdvanceTable (in the same EM units as the glyph coordinates).
+  // AdvanceTable (in the same EM units as the glyph coordinates). Real
+  // per-glyph advances come from the embedded TTF; glyphs without an outline
+  // fall back to the 5×7 box advance.
   for (let i = 0; i < GLYPH_COUNT; i++) {
     const codePoint = FIRST_CODE + i;
-    const advance = (codePoint === 32 ? ADVANCE_SPACE : ADVANCE_DEFAULT) * coordScale;
+    const emAdvance = glyphPath(codePoint) !== undefined ? glyphAdvance(codePoint) : FALLBACK_ADVANCE;
+    const advance = Math.round(emAdvance * coordScale);
     bw.writeSI16LE(advance);
   }
 
@@ -329,3 +436,12 @@ export function fontKey(name: string, bold: boolean, italic: boolean): string {
 export const GLYPH_ADVANCE_EM = ADVANCE_DEFAULT;
 export const GLYPH_ADVANCE_SPACE_EM = ADVANCE_SPACE;
 export const FONT_EM = EM;
+
+/**
+ * Real per-glyph advance width in EM units, matching the embedded glyph
+ * outline. Used by the text encoder so glyph spacing tracks the real outlines.
+ * Falls back to the default advance for code points without a real outline.
+ */
+export function glyphAdvanceEm(code: number): number {
+  return glyphPath(code) !== undefined ? glyphAdvance(code) : ADVANCE_DEFAULT;
+}
