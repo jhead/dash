@@ -675,6 +675,200 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
   });
 
   // -------------------------------------------------------------------------
+  // Capstone: basic game interaction — end-to-end dogfood proof
+  //
+  // Constructs a minimal "Dot Catcher" game skeleton:
+  //   - Stage 550×400, white background, 12fps
+  //   - Frame 0: red 100×100 circle placeholder + stop() script
+  //   - Frame 1: green 100×100 "target caught" rect + stop() script
+  //   - A full-stage button with on(release) { nextFrame(); }
+  //   - AS2: frame 0 script also sets _root.score = 0; (variable init)
+  //   - Frame 1 AS2: _root.score = 1; (variable set on catch)
+  //
+  // Verification:
+  //   1. Load into Ruffle → initial state = red circle (frame 0)
+  //   2. Click → on(release) fires → nextFrame() → frame 1 = green rect
+  //   3. pixelDiff > 100 proves full toolchain end-to-end
+  //
+  // This is task 0519's MVP exit criterion: the Flash 8 clone can author
+  // interactive AS2 content and verify it in Ruffle via pixel oracle.
+  // -------------------------------------------------------------------------
+  test.describe('Capstone: basic game interaction', () => {
+    test('dot catcher: button click advances frame red→green (full toolchain E2E)', async ({ page }, testInfo: TestInfo) => {
+      // Build the "player" shape (red circle stand-in using a square)
+      const playerShape = {
+        id: 'capstone-player-shape', type: 'shape',
+        shape: {
+          id: 'shape-capstone-player',
+          paths: [{
+            start: { x: 225, y: 150 },
+            segments: [
+              { type: 'line', to: { x: 325, y: 150 } },
+              { type: 'line', to: { x: 325, y: 250 } },
+              { type: 'line', to: { x: 225, y: 250 } },
+            ],
+            closed: true,
+            fill: { type: 'solid', color: { r: 220, g: 30, b: 30, a: 255 } },
+          }],
+        },
+        x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+      };
+
+      // Frame 1: green "target caught" rect
+      const caughtShape = {
+        id: 'capstone-caught-shape', type: 'shape',
+        shape: {
+          id: 'shape-capstone-caught',
+          paths: [{
+            start: { x: 225, y: 150 },
+            segments: [
+              { type: 'line', to: { x: 325, y: 150 } },
+              { type: 'line', to: { x: 325, y: 250 } },
+              { type: 'line', to: { x: 225, y: 250 } },
+            ],
+            closed: true,
+            fill: { type: 'solid', color: { r: 30, g: 180, b: 30, a: 255 } },
+          }],
+        },
+        x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+      };
+
+      // Full-stage invisible button (Up/Over/Down states)
+      const gameButton = makeFullStageButton(
+        'sym-capstone-btn', 'GameButton',
+        [{ event: 'release', script: 'nextFrame();' }],
+        makeInvisibleFullStageRect('capstone-btn-up'),
+        makeInvisibleFullStageRect('capstone-btn-over'),
+        makeInvisibleFullStageRect('capstone-btn-down'),
+      );
+
+      // Full game document
+      const gameDoc = {
+        id: 'capstone-game-doc',
+        properties: {
+          width: 550, height: 400, frameRate: 12,
+          backgroundColor: '#ffffff', rulerUnits: 'px',
+          grid: { showGrid: false, snapToGrid: false, gridColor: '#999999', gridWidth: 18, gridHeight: 18 },
+          guides: [], snapToObjects: false, snapToPixels: false, snapToGuides: false,
+        },
+        scenes: [{
+          id: 'scene-1', name: 'Scene 1',
+          timeline: {
+            layers: [
+              // Button layer (topmost, intercepts clicks)
+              {
+                id: 'capstone-btn-layer', name: 'Buttons', type: 'normal',
+                visible: true, locked: false, outlineMode: false,
+                outlineColor: '#ff0000', height: 20, parentFolderId: null,
+                frameCount: 2,
+                frames: [
+                  {
+                    index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                    label: '', labelType: 'name', script: '',
+                    sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                    motionOrientToPath: false, motionSync: false, motionScale: false,
+                    shapeEase: 0, shapeBlend: 'distributive',
+                    displayObjects: [{
+                      id: 'capstone-btn-inst-0', type: 'instance',
+                      symbolId: 'sym-capstone-btn',
+                      x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+                    }],
+                  },
+                  {
+                    index: 1, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                    label: '', labelType: 'name', script: '',
+                    sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                    motionOrientToPath: false, motionSync: false, motionScale: false,
+                    shapeEase: 0, shapeBlend: 'distributive',
+                    displayObjects: [{
+                      id: 'capstone-btn-inst-1', type: 'instance',
+                      symbolId: 'sym-capstone-btn',
+                      x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+                    }],
+                  },
+                ],
+              },
+              // Game layer — player/target visuals + AS2 score logic
+              {
+                id: 'capstone-game-layer', name: 'Game', type: 'normal',
+                visible: true, locked: false, outlineMode: false,
+                outlineColor: '#0000ff', height: 20, parentFolderId: null,
+                frameCount: 2,
+                frames: [
+                  {
+                    index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                    label: '', labelType: 'name',
+                    // AS2 game init: stop playhead, init score variable
+                    script: 'stop();\n_root.score = 0;',
+                    sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                    motionOrientToPath: false, motionSync: false, motionScale: false,
+                    shapeEase: 0, shapeBlend: 'distributive',
+                    displayObjects: [playerShape],
+                  },
+                  {
+                    index: 1, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                    label: 'caught', labelType: 'name',
+                    // AS2 game event: increment score, stop
+                    script: '_root.score = _root.score + 1;\nstop();',
+                    sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                    motionOrientToPath: false, motionSync: false, motionScale: false,
+                    shapeEase: 0, shapeBlend: 'distributive',
+                    displayObjects: [caughtShape],
+                  },
+                ],
+              },
+            ],
+          },
+        }],
+        library: { items: [gameButton], folders: [] },
+      };
+
+      // Load document and compile to SWF
+      await page.evaluate((doc) => {
+        (window as unknown as { __flashTest: { loadDocument: (d: unknown) => void } }).__flashTest.loadDocument(doc);
+      }, gameDoc);
+      await page.waitForTimeout(300);
+
+      const swfBase64: string = await page.evaluate(() => {
+        return (window as unknown as { __flashTest: { publish: () => string } }).__flashTest.publish();
+      });
+
+      const PLAYER_ID = '__ruffle_capstone_player__';
+
+      await ensureRuffleLoaded(page);
+      await injectRufflePlayer(page, swfBase64, PLAYER_ID);
+      await page.waitForTimeout(2000);
+
+      // Capture initial state (frame 0 = red player)
+      const shotBefore = await page.locator(`#${PLAYER_ID}`).screenshot();
+      await testInfo.attach('capstone-frame0-red-player', { body: shotBefore, contentType: 'image/png' });
+
+      // Click stage center → on(release) fires → nextFrame() → frame 1 (green "caught")
+      await page.locator(`#${PLAYER_ID}`).click({ position: { x: 275, y: 200 } });
+      await page.waitForTimeout(1500);
+
+      // Capture post-click state (frame 1 = green caught shape)
+      const shotAfter = await page.locator(`#${PLAYER_ID}`).screenshot();
+      await testInfo.attach('capstone-frame1-green-caught', { body: shotAfter, contentType: 'image/png' });
+
+      await removeRufflePlayer(page, PLAYER_ID);
+
+      const diffPixels = countDifferentPixels(shotBefore, shotAfter);
+
+      // Log result for task output
+      console.log(`[Capstone 0519] pixelDiff after button click = ${diffPixels}`);
+
+      if (diffPixels < 100) {
+        await testInfo.attach('FAIL-shot-before', { body: shotBefore, contentType: 'image/png' });
+        await testInfo.attach('FAIL-shot-after', { body: shotAfter, contentType: 'image/png' });
+      }
+
+      // Red player → green "caught" state: 100×100 rect changes color → > 100 pixel diff
+      expect(diffPixels).toBeGreaterThan(100);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Test 3: button Over state — hovering changes visible color (red→blue)
   //
   // SWF: single-frame timeline with a button spanning the whole stage.
