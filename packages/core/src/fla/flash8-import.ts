@@ -34,7 +34,7 @@ import type { AdjustColorFilter, ConvolutionFilter, FlashFilter } from "../engin
 import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
-import { createSymbol, createSound, createBitmap, createVideo, createSymbolLinkage } from "../model/library.js";
+import { createSymbol, createSound, createBitmap, createVideo, createFont, createSymbolLinkage } from "../model/library.js";
 import { decodeMediaAudio, decodeMediaBitmap, decodedBitmapToDataUri, bytesToBase64 } from "./media.js";
 import {
   parseFla8Contents,
@@ -424,9 +424,11 @@ export function toColorEffect(ce: Fla8ColorEffect | null): ColorEffect | undefin
     redMult: pct(ce.rMult),
     greenMult: pct(ce.gMult),
     blueMult: pct(ce.bMult),
+    alphaMult: pct(ce.aMult),
     redOffset: ce.rOff,
     greenOffset: ce.gOff,
     blueOffset: ce.bOff,
+    alphaOffset: ce.aOff,
   };
 }
 
@@ -1215,6 +1217,16 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
   // Flush all sound items (stubs or audio-enriched) into the library.
   for (const soundItem of soundStubByIndex.values()) {
     items.push(soundItem);
+  }
+
+  // --- library fonts ---------------------------------------------------------
+  // Create FontItem entries for each embedded font in the Contents stream.
+  // The Contents stream records "Font N" entries with a font family name
+  // (e.g. "_sans", "Arial"). We use the family name as both the library
+  // display name and the fontName.
+  for (const [, fontInfo] of contents.fonts) {
+    const fontItem = createFont(fontInfo.name, fontInfo.fontName);
+    items.push(fontItem);
   }
 
   // --- library symbols -------------------------------------------------------

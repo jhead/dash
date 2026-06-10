@@ -321,6 +321,10 @@ export interface ColorEffect {
   readonly greenOffset?: number;
   /** Blue channel offset: -255..255. Used when type === "advanced". */
   readonly blueOffset?: number;
+  /** Alpha channel multiplier: -100..100. Used when type === "advanced". */
+  readonly alphaMult?: number;
+  /** Alpha channel offset: -255..255. Used when type === "advanced". */
+  readonly alphaOffset?: number;
 }
 
 /**

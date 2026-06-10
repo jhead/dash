@@ -99,7 +99,7 @@ export function colorEffectToCXForm(effect: ColorEffect): CXForm | null {
     }
 
     case "advanced": {
-      // redMult/greenMult/blueMult: -100..100 → multiplier factor
+      // redMult/greenMult/blueMult/alphaMult: -100..100 → multiplier factor
       // Flash advanced: mult factor of 100 means "100% of original" = 1.0 = 256 in SWF
       //   so factor = value / 100, stored as round(factor * 256)
       const toMult = (v: number) => Math.round((v / 100) * 256);
@@ -107,11 +107,11 @@ export function colorEffectToCXForm(effect: ColorEffect): CXForm | null {
         redMult: toMult(effect.redMult ?? 100),
         greenMult: toMult(effect.greenMult ?? 100),
         blueMult: toMult(effect.blueMult ?? 100),
-        alphaMult: 256, // no alpha multiplier in this type
+        alphaMult: toMult(effect.alphaMult ?? 100),
         redAdd: effect.redOffset ?? 0,
         greenAdd: effect.greenOffset ?? 0,
         blueAdd: effect.blueOffset ?? 0,
-        alphaAdd: 0,
+        alphaAdd: effect.alphaOffset ?? 0,
       };
     }
   }
