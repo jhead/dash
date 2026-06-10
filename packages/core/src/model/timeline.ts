@@ -1,4 +1,4 @@
-import type { EaseCurve, Frame, Layer, LayerType, Timeline } from "./types.js";
+import type { EaseCurve, Frame, LabelType, Layer, LayerType, Timeline } from "./types.js";
 import type { DisplayObject, ObjectAccessibility, ShapeDisplayObject } from "../engine/types.js";
 
 import type { FlashFilter } from "../engine/filters.js";
@@ -502,15 +502,19 @@ export function setFrameLabel(
   timeline: Timeline,
   layerId: string,
   frameIndex: number,
-  label: string
+  label: string,
+  labelType?: LabelType
 ): Timeline {
   return {
     ...timeline,
     layers: timeline.layers.map((layer) => {
       if (layer.id !== layerId) return layer;
-      const newFrames = layer.frames.map((f) =>
-        f.index === frameIndex ? { ...f, label } : f
-      );
+      const newFrames = layer.frames.map((f) => {
+        if (f.index !== frameIndex) return f;
+        return labelType !== undefined
+          ? { ...f, label, labelType }
+          : { ...f, label };
+      });
       return { ...layer, frames: newFrames };
     }),
   };
