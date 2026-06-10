@@ -309,7 +309,9 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
             // super(...) → SuperClass.call(this, ...)
             add('this');
             add('call');
-          } else if (!['stop', 'play', 'nextFrame', 'prevFrame'].includes(name)) {
+          } else if (!['stop', 'play', 'nextFrame', 'prevFrame',
+                       'gotoAndPlay', 'gotoAndStop', 'trace',
+                       'getURL', 'loadMovie', 'loadMovieNum'].includes(name)) {
             add(name);
           }
           if (name === 'loadMovieNum') {

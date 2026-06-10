@@ -82,8 +82,9 @@ describe("AVM1 ActionConstantPool", () => {
     expect(pool).not.toBeNull();
     expect(pool).toContain("hello");
     expect(pool).toContain("world");
-    // "trace" is also an identifier that gets pooled
-    expect(pool).toContain("trace");
+    // "trace" is a built-in that compiles to ActionTrace opcode — its name is
+    // never pushed as a string, so it must NOT appear in the constant pool.
+    expect(pool).not.toContain("trace");
   });
 
   it("ActionPush uses pool index (type=8) instead of inline string", () => {
