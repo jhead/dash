@@ -33,6 +33,7 @@ export const Tag = {
   VideoFrame: 61,
   DebugId: 63,
   EnableDebugger2: 64,
+  StageScaleMode: 65,
   FileAttributes: 69,
   PlaceObject3: 70,
   ImportAssets2: 71,

@@ -550,6 +550,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     buildSetBackgroundColor(props.backgroundColor)
   );
 
+  // 2b. StageScaleMode (tag 65) — AllowScaling=1 (showAll), Alignment=0 (center).
+  //     Flash Professional always emits this tag; without it some players default to
+  //     "noScale" which breaks layouts.
+  writer.writeTag(Tag.StageScaleMode, new Uint8Array([1, 0]));
+
   // 3. Compile library symbols → DefineSprite tags
   //    Build charIdMap: symbolId → SWF character ID
   const rawSymbols = doc.library.items.filter(

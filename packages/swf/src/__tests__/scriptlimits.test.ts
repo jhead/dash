@@ -1,9 +1,10 @@
 /**
- * Tests for SWF ScriptLimits (tag 65) and Protect (tag 24) tag encoding.
+ * Tests for SWF ScriptLimits and Protect (tag 24) tag encoding.
  *
- * ScriptLimits (tag 65) is NOT yet emitted by compileDocument — these tests
- * document the current state and verify that a minimal doc still compiles
- * correctly without it.
+ * Note: tag 65 is StageScaleMode (NOT ScriptLimits). ScriptLimits is tag 65
+ * in some older references but per the SWF spec it is tag 65 = StageScaleMode.
+ * ScriptLimits is SWF tag 56 (ExportAssets) range — actually it is an unrelated
+ * tag not yet implemented.
  *
  * Protect (tag 24) IS implemented via the `protect` option in CompileOptions.
  */
@@ -156,7 +157,7 @@ function parseTags(swf: Uint8Array): SwfTag[] {
 
 // SWF tag IDs referenced in these tests
 const TAG_PROTECT = 24;
-const TAG_SCRIPT_LIMITS = 65;
+const TAG_STAGE_SCALE_MODE = 65; // StageScaleMode — previously mislabelled as ScriptLimits
 const TAG_END = 0;
 
 // ---------------------------------------------------------------------------
@@ -192,27 +193,25 @@ describe("SWF minimal doc compilation", () => {
   });
 });
 
-describe("SWF ScriptLimits tag (65) — not yet implemented", () => {
-  it("ScriptLimits tag is not present in default compilation output", () => {
-    // ScriptLimits (tag 65) is not yet emitted by compileDocument.
-    // This test documents the current state. When the tag is implemented,
-    // update this test to assert that the tag IS present with sensible defaults.
+describe("SWF StageScaleMode tag (65)", () => {
+  it("StageScaleMode tag is present in default compilation output", () => {
+    // StageScaleMode (tag 65) is emitted by compileDocument with AllowScaling=1
+    // (showAll) and Alignment=0 (center). Flash Professional always emits this tag.
     const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
     const buf = compileDocument(doc);
     const tags = parseTags(buf);
-    const scriptLimitsTag = tags.find((t) => t.code === TAG_SCRIPT_LIMITS);
-    expect(scriptLimitsTag).toBeUndefined();
+    const stageModeTag = tags.find((t) => t.code === TAG_STAGE_SCALE_MODE);
+    expect(stageModeTag).toBeDefined();
   });
 
-  it("SWF without ScriptLimits still emits all required structural tags", () => {
-    // Without ScriptLimits the SWF must still be parseable and contain at least
-    // FileAttributes (69), SetBackgroundColor (9), ShowFrame (1), and End (0).
+  it("SWF with StageScaleMode emits all required structural tags", () => {
     const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
     const buf = compileDocument(doc);
     const tags = parseTags(buf);
     const codes = tags.map((t) => t.code);
     expect(codes).toContain(69); // FileAttributes
     expect(codes).toContain(9);  // SetBackgroundColor
+    expect(codes).toContain(65); // StageScaleMode
     expect(codes).toContain(1);  // ShowFrame
     expect(codes).toContain(0);  // End
   });
