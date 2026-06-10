@@ -63,6 +63,8 @@ export interface TimelineProps {
   onCutFrames?: (startFrame: number, endFrame: number) => void;
   onPasteFrames?: (atFrame: number) => void;
   hasFrameClipboard?: boolean;
+  // Frame delete
+  onRemoveFrames?: (startFrame: number, endFrame: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -511,6 +513,7 @@ export function Timeline({
   onCutFrames,
   onPasteFrames,
   hasFrameClipboard = false,
+  onRemoveFrames,
 }: TimelineProps): React.ReactElement {
   const [loop, setLoop] = useState(true);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -647,6 +650,16 @@ export function Timeline({
         // Cmd/Ctrl+V: paste clipboard frames at current frame position
         e.preventDefault();
         onPasteFrames(currentFrame);
+      } else if ((e.key === "Delete" || e.key === "Backspace") && onRemoveFrames) {
+        // Delete/Backspace: remove selected frame range (or single current frame)
+        e.preventDefault();
+        const rangeStart = selectedFrameRange?.layerId === selectedLayerId
+          ? selectedFrameRange.start
+          : currentFrame;
+        const rangeEnd = selectedFrameRange?.layerId === selectedLayerId
+          ? selectedFrameRange.end
+          : currentFrame;
+        onRemoveFrames(rangeStart, rangeEnd);
       }
     };
     window.addEventListener("keydown", handler);
@@ -664,6 +677,7 @@ export function Timeline({
     onCopyFrames,
     onCutFrames,
     onPasteFrames,
+    onRemoveFrames,
   ]);
 
   // Ruler scrubbing

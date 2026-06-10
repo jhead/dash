@@ -946,6 +946,25 @@ export function Shell(): React.ReactElement {
   );
 
   /**
+   * Called by Timeline's onRemoveFrames (Delete/Backspace key).
+   * Removes [startFrame, endFrame] from the active layer, iterating from end
+   * to start to avoid index shifting.
+   */
+  const handleRemoveFrames = useCallback(
+    (startFrame: number, endFrame: number) => {
+      const layer = timeline.layers[safeActiveLayerIndex];
+      if (!layer) return;
+      const layerId = layer.id;
+      let updatedTimeline = timeline;
+      for (let i = endFrame; i >= startFrame; i--) {
+        updatedTimeline = removeFrame(updatedTimeline, layerId, i);
+      }
+      pushDoc(withTimeline(() => updatedTimeline));
+    },
+    [timeline, safeActiveLayerIndex, pushDoc, withTimeline],
+  );
+
+  /**
    * Called by Timeline's onPasteFrames (context-menu or Cmd+V).
    * Inserts clipboard frames starting at atFrame in the active layer.
    */
@@ -2891,6 +2910,7 @@ export function Shell(): React.ReactElement {
               onCutFrames={handleCutFrames}
               onPasteFrames={handlePasteFrames}
               hasFrameClipboard={hasFrameClipboard}
+              onRemoveFrames={handleRemoveFrames}
             />
             <SoundPanel
               frame={selectedKeyframeFrame}
