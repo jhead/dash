@@ -291,10 +291,19 @@ function ScriptEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const matchOverlayRef = useRef<HTMLDivElement>(null);
+  const findInputRef = useRef<HTMLInputElement>(null);
 
   // Debounced AS2 syntax check
   const [syntaxError, setSyntaxError] = useState<{ message: string; line: number | null } | null>(null);
   const [isValid, setIsValid] = useState<boolean | null>(null);
+
+  // Find/replace state
+  const [findOpen, setFindOpen] = useState(false);
+  const [findText, setFindText] = useState('');
+  const [replaceText, setReplaceText] = useState('');
+  const [findMode, setFindMode] = useState<'find' | 'replace'>('find');
+  const [matchIndex, setMatchIndex] = useState(0);
 
   useEffect(() => {
     if (script.trim() === "") {
@@ -316,12 +325,72 @@ function ScriptEditor({
     return () => clearTimeout(timeout);
   }, [script]);
 
+  // Auto-focus find input when bar opens
+  useEffect(() => {
+    if (findOpen) {
+      requestAnimationFrame(() => findInputRef.current?.focus());
+    }
+  }, [findOpen]);
+
+  // Compute all match positions in the script text
+  const getAllMatches = useCallback((): Array<{ start: number; end: number }> => {
+    if (!findText) return [];
+    const results: Array<{ start: number; end: number }> = [];
+    let from = 0;
+    while (true) {
+      const idx = script.indexOf(findText, from);
+      if (idx === -1) break;
+      results.push({ start: idx, end: idx + findText.length });
+      from = idx + findText.length;
+      if (findText.length === 0) break; // guard infinite loop on empty string
+    }
+    return results;
+  }, [script, findText]);
+
+  const matches = getAllMatches();
+  const matchCount = matches.length;
+  const currentMatchIndex = matchCount === 0 ? 0 : ((matchIndex % matchCount) + matchCount) % matchCount;
+
+  const findNext = useCallback(() => {
+    setMatchIndex((prev) => prev + 1);
+  }, []);
+
+  const findPrev = useCallback(() => {
+    setMatchIndex((prev) => prev - 1);
+  }, []);
+
+  const replaceOne = useCallback(() => {
+    if (!findText || matchCount === 0) return;
+    const m = matches[currentMatchIndex];
+    const newScript = script.slice(0, m.start) + replaceText + script.slice(m.end);
+    onScriptChange(newScript);
+  }, [findText, matchCount, matches, currentMatchIndex, replaceText, script, onScriptChange]);
+
+  const replaceAll = useCallback(() => {
+    if (!findText) return;
+    onScriptChange(script.split(findText).join(replaceText));
+  }, [findText, replaceText, script, onScriptChange]);
+
+  const openFind = useCallback((mode: 'find' | 'replace') => {
+    setFindMode(mode);
+    setMatchIndex(0);
+    setFindOpen(true);
+  }, []);
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    // Return focus to the textarea
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
   const handleScroll = useCallback(() => {
     const ta = textareaRef.current;
     const ln = lineNumRef.current;
     const ov = overlayRef.current;
+    const mo = matchOverlayRef.current;
     if (ta && ln) ln.scrollTop = ta.scrollTop;
-    if (ta && ov) ov.scrollTop = ta.scrollTop;
+    if (ta && ov) { ov.scrollTop = ta.scrollTop; ov.scrollLeft = ta.scrollLeft; }
+    if (ta && mo) { mo.scrollTop = ta.scrollTop; mo.scrollLeft = ta.scrollLeft; }
   }, []);
 
   const updateCursor = useCallback(() => {
@@ -342,7 +411,23 @@ function ScriptEditor({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Tab") {
+      // Find / Replace shortcuts
+      if (e.ctrlKey && e.key === 'f') {
+        e.preventDefault();
+        openFind('find');
+        return;
+      }
+      if (e.ctrlKey && e.key === 'h') {
+        e.preventDefault();
+        openFind('replace');
+        return;
+      }
+      if (e.key === 'Escape' && findOpen) {
+        e.preventDefault();
+        closeFind();
+        return;
+      }
+      if (e.key === 'Tab') {
         e.preventDefault();
         const ta = e.currentTarget;
         const start = ta.selectionStart;
@@ -357,11 +442,61 @@ function ScriptEditor({
         });
       }
     },
-    [onScriptChange]
+    [onScriptChange, findOpen, openFind, closeFind]
+  );
+
+  // Keydown handler for the find bar inputs
+  const handleFindKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeFind();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          findPrev();
+        } else {
+          findNext();
+        }
+      }
+    },
+    [closeFind, findNext, findPrev]
   );
 
   const lines = script.split("\n");
   const lineCount = lines.length;
+
+  // Compute highlight spans as a flat array of {start, end, isCurrent} sorted by start
+  const buildHighlightOverlay = useCallback((): React.ReactNode => {
+    if (!findText || matches.length === 0) return null;
+
+    const parts: React.ReactNode[] = [];
+    let cursor = 0;
+    for (let mi = 0; mi < matches.length; mi++) {
+      const m = matches[mi];
+      if (m.start > cursor) {
+        // Normal text before this match
+        parts.push(<span key={`pre-${mi}`}>{script.slice(cursor, m.start)}</span>);
+      }
+      const isCurrent = mi === currentMatchIndex;
+      parts.push(
+        <span
+          key={`match-${mi}`}
+          style={{
+            background: isCurrent ? "rgba(255,150,0,0.6)" : "rgba(255,200,0,0.3)",
+            borderRadius: "2px",
+          }}
+        >
+          {script.slice(m.start, m.end)}
+        </span>
+      );
+      cursor = m.end;
+    }
+    if (cursor < script.length) {
+      parts.push(<span key="post">{script.slice(cursor)}</span>);
+    }
+    return <>{parts}</>;
+  }, [findText, matches, currentMatchIndex, script]);
 
   const lineNumStyle: React.CSSProperties = {
     width: "40px",
@@ -419,8 +554,107 @@ function ScriptEditor({
     color: "#d4d4d4",
   };
 
+  const findBarInputStyle: React.CSSProperties = {
+    background: "#1e1e1e",
+    color: "#d4d4d4",
+    border: "1px solid #555",
+    borderRadius: "3px",
+    padding: "1px 4px",
+    fontSize: "12px",
+    fontFamily: "'Consolas', 'Courier New', monospace",
+    outline: "none",
+    flex: 1,
+    minWidth: 0,
+  };
+
+  const findBarBtnStyle: React.CSSProperties = {
+    background: "transparent",
+    border: "1px solid transparent",
+    borderRadius: "3px",
+    color: "#ccc",
+    cursor: "pointer",
+    fontSize: "12px",
+    padding: "1px 5px",
+    lineHeight: "1",
+    flexShrink: 0,
+    whiteSpace: "nowrap",
+  };
+
+  // Computed once: the highlight overlay content (whiteSpace:pre, covers entire script)
+  const highlightOverlayContent = buildHighlightOverlay();
+  const highlightOverlayStyle: React.CSSProperties = {
+    ...overlayStyle,
+    color: "transparent",
+    zIndex: 0,
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+      {/* Find/replace bar */}
+      {findOpen && (
+        <div
+          data-testid="find-bar"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            padding: "3px 4px",
+            borderBottom: "1px solid #444",
+            background: "#2d2d2d",
+            flexShrink: 0,
+          }}
+        >
+          {/* Find row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <input
+              data-testid="find-input"
+              ref={findInputRef}
+              value={findText}
+              onChange={(e) => { setFindText(e.target.value); setMatchIndex(0); }}
+              onKeyDown={handleFindKeyDown}
+              placeholder="Find..."
+              style={findBarInputStyle}
+            />
+            <button style={findBarBtnStyle} onClick={findPrev} title="Previous match (Shift+Enter)">&#x25B2;</button>
+            <button style={findBarBtnStyle} onClick={findNext} title="Next match (Enter)">&#x25BC;</button>
+            <span style={{ color: "#888", fontSize: 11, flexShrink: 0, minWidth: 60 }}>
+              {matchCount === 0 ? (findText ? "No matches" : "") : `${currentMatchIndex + 1}/${matchCount}`}
+            </span>
+            {findMode === 'find' && (
+              <button
+                style={{ ...findBarBtnStyle, color: "#888" }}
+                onClick={() => { setFindMode('replace'); }}
+                title="Switch to Replace (Ctrl+H)"
+              >
+                &#x21C4; Replace
+              </button>
+            )}
+            <button
+              style={{ ...findBarBtnStyle, marginLeft: "auto" }}
+              onClick={closeFind}
+              title="Close (Escape)"
+            >
+              &#x2715;
+            </button>
+          </div>
+          {/* Replace row */}
+          {findMode === 'replace' && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <input
+                data-testid="replace-input"
+                value={replaceText}
+                onChange={(e) => setReplaceText(e.target.value)}
+                onKeyDown={handleFindKeyDown}
+                placeholder="Replace..."
+                style={findBarInputStyle}
+              />
+              <button style={findBarBtnStyle} onClick={replaceOne} title="Replace current match">Replace</button>
+              <button style={findBarBtnStyle} onClick={replaceAll} title="Replace all matches">Replace All</button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
         <div ref={lineNumRef} style={lineNumStyle}>
           {Array.from({ length: lineCount }, (_, i) => (
@@ -436,6 +670,13 @@ function ScriptEditor({
             </div>
           ))}
         </div>
+        {/* Highlight overlay — behind syntax overlay, shows match backgrounds */}
+        {highlightOverlayContent && (
+          <div ref={matchOverlayRef} style={highlightOverlayStyle} aria-hidden>
+            {highlightOverlayContent}
+          </div>
+        )}
+        {/* Syntax highlight overlay */}
         <div ref={overlayRef} style={overlayStyle}>
           {highlightLines(lines).map((node, i) => (
             <React.Fragment key={i}>
