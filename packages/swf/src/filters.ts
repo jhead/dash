@@ -5,7 +5,7 @@
  * Used for objects that have Flash 8 FlashFilter effects applied.
  */
 import { BitWriter } from "./bits.js";
-import type { FlashFilter, DropShadowFilter, GlowFilter, BlurFilter, BevelFilter, GradientGlowFilter, GradientBevelFilter, AdjustColorFilter } from "@flash/core";
+import type { FlashFilter, DropShadowFilter, GlowFilter, BlurFilter, BevelFilter, GradientGlowFilter, GradientBevelFilter, AdjustColorFilter, ConvolutionFilter } from "@flash/core";
 import { toSWFMatrix, composeMatrix } from "@flash/core";
 import { edgeNumBits } from "./helpers.js";
 
@@ -344,6 +344,34 @@ function writeAdjustColorFilter(bw: BitWriter, f: AdjustColorFilter): void {
   }
 }
 
+/**
+ * Encode a ConvolutionFilter (FilterID = 5).
+ *
+ * SWF layout:
+ *   UI8:  matrixX (columns)
+ *   UI8:  matrixY (rows)
+ *   FLOAT: divisor
+ *   FLOAT: bias
+ *   matrixX*matrixY × FLOAT: matrix entries (row-major)
+ *   RGBA: defaultColor (4 bytes)
+ *   UI8:  flags (bit 0: clamp, bit 1: preserveAlpha)
+ */
+function writeConvolutionFilter(bw: BitWriter, f: ConvolutionFilter): void {
+  bw.writeUI8(f.matrixX);
+  bw.writeUI8(f.matrixY);
+  bw.writeFloat(f.divisor);
+  bw.writeFloat(f.bias);
+  for (const v of f.matrix) bw.writeFloat(v);
+  bw.writeUI8(f.defaultColor.r);
+  bw.writeUI8(f.defaultColor.g);
+  bw.writeUI8(f.defaultColor.b);
+  bw.writeUI8(f.defaultColor.a);
+  let flags = 0;
+  if (f.clamp) flags |= 1;
+  if (f.preserveAlpha) flags |= 2;
+  bw.writeUI8(flags);
+}
+
 // ---------------------------------------------------------------------------
 // FILTERLIST encoder
 // ---------------------------------------------------------------------------
@@ -385,6 +413,10 @@ function writeFilterList(bw: BitWriter, filters: readonly FlashFilter[]): void {
       case "gradientBevel":
         bw.writeUI8(7); // FilterID
         writeGradientBevelFilter(bw, f);
+        break;
+      case "convolution":
+        bw.writeUI8(5); // FilterID
+        writeConvolutionFilter(bw, f);
         break;
     }
   }

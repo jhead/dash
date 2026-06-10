@@ -1153,6 +1153,21 @@ export interface Fla8FilterColorMatrix {
   readonly matrix: readonly number[];
 }
 
+export interface Fla8FilterConvolution {
+  readonly kind: "convolution";
+  readonly matrixX: number;
+  readonly matrixY: number;
+  readonly matrix: readonly number[];
+  readonly divisor: number;
+  readonly bias: number;
+  readonly defaultR: number;
+  readonly defaultG: number;
+  readonly defaultB: number;
+  readonly defaultA: number;
+  readonly clamp: boolean;
+  readonly preserveAlpha: boolean;
+}
+
 export type Fla8Filter =
   | Fla8FilterDropShadow
   | Fla8FilterBlur
@@ -1160,7 +1175,8 @@ export type Fla8Filter =
   | Fla8FilterBevel
   | Fla8FilterGradientGlow
   | Fla8FilterGradientBevel
-  | Fla8FilterColorMatrix;
+  | Fla8FilterColorMatrix
+  | Fla8FilterConvolution;
 
 /** SWF/FLA Fixed16: i32 little-endian, value = bits / 65536 */
 function readFixed16(r: Reader): number {
@@ -1268,14 +1284,36 @@ function readOneFilter(r: Reader): Fla8Filter | null {
         ? { kind: "gradient-glow" as const, ...gf }
         : { kind: "gradient-bevel" as const, ...gf };
     }
-    case 5: { // Convolution — parse but discard (no model type for this)
-      const numCols = r.u8();
-      const numRows = r.u8();
-      r.skip(8); // f32 divisor + f32 bias
-      r.skip(numCols * numRows * 4); // f32 matrix entries
-      r.skip(4); // RGBA default color
-      r.skip(1); // flags
-      return null; // not representable in the editor model; silently drop
+    case 5: { // ConvolutionFilter
+      const matrixX = r.u8();
+      const matrixY = r.u8();
+      const readF32 = (): number => {
+        const b = r.bytes(4);
+        return new DataView(b.buffer, b.byteOffset, 4).getFloat32(0, true);
+      };
+      const divisor = readF32();
+      const bias = readF32();
+      const matrix: number[] = [];
+      for (let i = 0; i < matrixX * matrixY; i++) matrix.push(readF32());
+      const defaultR = r.u8();
+      const defaultG = r.u8();
+      const defaultB = r.u8();
+      const defaultA = r.u8();
+      const flags = r.u8();
+      return {
+        kind: "convolution" as const,
+        matrixX,
+        matrixY,
+        matrix,
+        divisor,
+        bias,
+        defaultR,
+        defaultG,
+        defaultB,
+        defaultA,
+        clamp: (flags & 0x01) !== 0,
+        preserveAlpha: (flags & 0x02) !== 0,
+      };
     }
     case 6: { // ColorMatrix
       const matrix: number[] = [];

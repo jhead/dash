@@ -28,7 +28,7 @@ import type {
   Color,
   SymbolInstance,
 } from "../engine/types.js";
-import type { AdjustColorFilter, FlashFilter } from "../engine/filters.js";
+import type { AdjustColorFilter, ConvolutionFilter, FlashFilter } from "../engine/filters.js";
 import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
@@ -536,6 +536,21 @@ export function toFlashFilter(f: Fla8Filter): FlashFilter | null {
       // ColorMatrix in FLA is a raw 4×5 matrix (20 floats) applied to
       // [R,G,B,A,1]. Decompose to best-effort brightness/contrast/saturation/hue.
       return decodeColorMatrix(f.matrix);
+    case "convolution": {
+      const cf: ConvolutionFilter = {
+        type: "convolution",
+        matrixX: f.matrixX,
+        matrixY: f.matrixY,
+        matrix: f.matrix,
+        divisor: f.divisor,
+        bias: f.bias,
+        defaultColor: { r: f.defaultR, g: f.defaultG, b: f.defaultB, a: f.defaultA },
+        clamp: f.clamp,
+        preserveAlpha: f.preserveAlpha,
+        enabled: true,
+      };
+      return cf;
+    }
   }
 }
 

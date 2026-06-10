@@ -160,6 +160,34 @@ export interface AdjustColorFilter {
 }
 
 // ---------------------------------------------------------------------------
+// Convolution
+// ---------------------------------------------------------------------------
+
+export interface ConvolutionFilter {
+  readonly type: "convolution";
+  /** Number of columns in the convolution matrix. Default: 3. */
+  readonly matrixX: number;
+  /** Number of rows in the convolution matrix. Default: 3. */
+  readonly matrixY: number;
+  /**
+   * Convolution matrix values in row-major order (matrixX * matrixY floats).
+   * Identity kernel: center element = 1, rest = 0.
+   */
+  readonly matrix: readonly number[];
+  /** Divisor applied to the convolution sum. Default: 1. */
+  readonly divisor: number;
+  /** Bias added after dividing. Default: 0. */
+  readonly bias: number;
+  /** Color used for pixels outside the source image when clamp = false. */
+  readonly defaultColor: { readonly r: number; readonly g: number; readonly b: number; readonly a: number };
+  /** When true, clamp out-of-bounds pixels to the nearest edge. Default: true. */
+  readonly clamp: boolean;
+  /** When true, the alpha channel is not affected by the filter. Default: false. */
+  readonly preserveAlpha: boolean;
+  readonly enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Union
 // ---------------------------------------------------------------------------
 
@@ -170,7 +198,8 @@ export type FlashFilter =
   | BevelFilter
   | GradientGlowFilter
   | GradientBevelFilter
-  | AdjustColorFilter;
+  | AdjustColorFilter
+  | ConvolutionFilter;
 
 // ---------------------------------------------------------------------------
 // Default factories
@@ -285,6 +314,22 @@ export function defaultAdjustColor(): AdjustColorFilter {
     contrast: 0,
     saturation: 0,
     hue: 0,
+    enabled: true,
+  };
+}
+
+export function defaultConvolution(): ConvolutionFilter {
+  // 3×3 identity kernel: center = 1, rest = 0.
+  return {
+    type: "convolution",
+    matrixX: 3,
+    matrixY: 3,
+    matrix: [0, 0, 0, 0, 1, 0, 0, 0, 0],
+    divisor: 1,
+    bias: 0,
+    defaultColor: { r: 0, g: 0, b: 0, a: 0 },
+    clamp: true,
+    preserveAlpha: false,
     enabled: true,
   };
 }
