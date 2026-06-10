@@ -103,6 +103,19 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **Multi-frame movies**: emit `RemoveObject2` when an object leaves the display list;
   set the `Move` flag on `PlaceObject2` for objects that persist across frames; hoist
   all character definitions before the first `ShowFrame`.
+- **Text renders invisibly in Ruffle**: the embedded-font encoder
+  (`packages/swf/src/fonts.ts`) emits placeholder EMPTY glyph shapes, so static
+  (DefineText) and dynamic (DefineEditText) text contribute zero visible pixels. Never
+  base a pixel-diff assertion on text content — put a shape on any frame that must be
+  visually distinguishable (see capstone-0519 game-over panel).
+- **`isEmpty: true` frames are skipped by the compiler** (`compile.ts`:
+  `if (!frame.isKeyframe || frame.isEmpty) continue;`). Display objects listed on a
+  frame marked `isEmpty` are silently dropped from the SWF — fixture builders must set
+  `isEmpty: false` on any frame that carries displayObjects.
+- **Blank-white Ruffle screenshots are ambiguous**: a failed player load and a frame
+  with only invisible content both screenshot as pure white. E2E oracles should assert
+  every screenshot is non-blank (diff vs a white reference > threshold) in addition to
+  comparing screenshots to each other.
 
 ### AS2 / AVM1 compiler
 
