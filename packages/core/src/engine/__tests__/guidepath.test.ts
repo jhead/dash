@@ -241,4 +241,78 @@ describe("getTweenedFrame with guide path", () => {
     // Horizontal path → angle = 0 rad → rotation = 0 degrees
     expect(obj.rotation ?? 0).toBeCloseTo(0);
   });
+
+  it("guide path overrides linear interpolation: position differs from linear lerp", () => {
+    // Build a curved guide path (non-straight) so the guide midpoint is distinct
+    // from the linear interpolation midpoint.
+    //
+    // Guide path: vertical line (0,0) → (0,100) — the midpoint is (0,50).
+    // Guided layer linear tween: start (0,0) → end (200,200).
+    // Linear interpolation midpoint: (100,100).
+    // Guide path midpoint: (0,50).
+    //
+    // With a timeline, the guided position should be (0,50) — not (100,100).
+    const verticalPath: import("../types.js").ShapePath = {
+      start: { x: 0, y: 0 },
+      segments: [{ type: "line", to: { x: 0, y: 100 } }],
+      closed: false,
+    };
+    const guideShapeObj: ShapeDisplayObject = {
+      type: "shape",
+      id: "gs-v",
+      shape: { id: "gsh-v", paths: [verticalPath] },
+      x: 0,
+      y: 0,
+    };
+    const guideFrame = createFrame(0, { displayObjects: [guideShapeObj] });
+    const guideLayer = createLayer("guide-v", "guide", {
+      frames: [guideFrame],
+      frameCount: 5,
+    });
+
+    const startObj: ShapeDisplayObject = {
+      type: "shape",
+      id: "obj-v",
+      shape: { id: "sh-v", paths: [] },
+      x: 0,
+      y: 0,
+    };
+    const endObj: ShapeDisplayObject = {
+      type: "shape",
+      id: "obj-v",
+      shape: { id: "sh-v", paths: [] },
+      x: 200,
+      y: 200,
+    };
+    const startKf = createFrame(0, { tweenType: "motion", displayObjects: [startObj] });
+    const endKf = createFrame(4, { displayObjects: [endObj] });
+    const guidedLayer = createLayer("guided-v", "guided", {
+      frames: [startKf, endKf],
+      frameCount: 5,
+    });
+
+    const timeline: import("../../model/types.js").Timeline = {
+      layers: [guideLayer, guidedLayer],
+    };
+
+    // Frame 2 of 5 — t = 2/4 = 0.5 along the path (0,0)→(0,100) → position (0,50)
+    const frame = getTweenedFrame(guidedLayer, 2, timeline);
+    expect(frame).not.toBeNull();
+    const obj = frame!.displayObjects[0] as ShapeDisplayObject;
+
+    // Guide path position at t=0.5: (0, 50)
+    expect(obj.x).toBeCloseTo(0);
+    expect(obj.y).toBeCloseTo(50);
+
+    // Confirm this differs from what linear interpolation would produce: (100, 100)
+    // (by checking the values are NOT 100,100)
+    const frameNoGuide = getTweenedFrame(guidedLayer, 2); // no timeline → linear
+    const objLinear = frameNoGuide!.displayObjects[0] as ShapeDisplayObject;
+    expect(objLinear.x).toBeCloseTo(100);
+    expect(objLinear.y).toBeCloseTo(100);
+
+    // Verify the guide path position is different from the linear position
+    expect(obj.x).not.toBeCloseTo(objLinear.x);
+    expect(obj.y).not.toBeCloseTo(objLinear.y);
+  });
 });

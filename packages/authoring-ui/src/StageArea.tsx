@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel } from "@flash/core";
-import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe } from "@flash/core";
+import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 
 // ---------------------------------------------------------------------------
@@ -290,14 +290,55 @@ function boundsOverlap(
  * Draw dashed motion path overlays for all layers that have an active motion
  * tween at the given frame. The canvas is drawn at 1:1 stage-space (zoom/pan
  * is handled by the parent CSS transform), so no coordinate conversion needed.
+ *
+ * Also draws guide layer paths as dashed cyan overlays so the author can see
+ * the motion guide while editing.
+ *
+ * @param timeline  Full timeline model — used both to find guide layers and to
+ *                  pass to getTweenedFrame so guided layers follow the path.
  */
 function drawMotionPaths(
   ctx: CanvasRenderingContext2D,
   layers: import("@flash/core").Layer[],
-  currentFrame: number
+  currentFrame: number,
+  timeline?: import("@flash/core").Timeline
 ): void {
   for (const layer of layers) {
-    if (layer.type === "guide" || !layer.visible) continue;
+    if (!layer.visible) continue;
+
+    // Guide layers: draw their shape path as a dashed cyan overlay.
+    if (layer.type === "guide") {
+      const guidePath = getGuideLayerPath(layer);
+      if (!guidePath) continue;
+
+      ctx.save();
+      ctx.strokeStyle = "#00AAFF";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(guidePath.start.x + (layer.frames[0]?.displayObjects[0]?.x ?? 0),
+                 guidePath.start.y + (layer.frames[0]?.displayObjects[0]?.y ?? 0));
+      // Draw the path segments with the display object's offset applied
+      const obj = layer.frames[0]?.displayObjects[0];
+      const ox = obj?.x ?? 0;
+      const oy = obj?.y ?? 0;
+      ctx.beginPath();
+      ctx.moveTo(guidePath.start.x + ox, guidePath.start.y + oy);
+      for (const seg of guidePath.segments) {
+        if (seg.type === "line") {
+          ctx.lineTo(seg.to.x + ox, seg.to.y + oy);
+        } else {
+          ctx.quadraticCurveTo(
+            seg.control.x + ox, seg.control.y + oy,
+            seg.to.x + ox, seg.to.y + oy
+          );
+        }
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      continue;
+    }
 
     // Find the governing keyframe at the current frame
     const kf = getGoverningKeyframe(layer, currentFrame);
@@ -312,10 +353,21 @@ function drawMotionPaths(
 
     if (endIdx <= startIdx) continue;
 
+    // For guided layers check if there's a guide layer whose path we should follow.
+    // When the guide layer path exists, sample from it directly for a smoother preview.
+    let guidePathForLayer: import("@flash/core").ShapePath | null = null;
+    if (layer.type === "guided" && timeline) {
+      const guideLayer = findGuideLayerAbove(timeline, layer);
+      if (guideLayer) {
+        guidePathForLayer = getGuideLayerPath(guideLayer);
+      }
+    }
+
     // Sample the interpolated position at each frame in the tween span
     const points: { x: number; y: number }[] = [];
     for (let fi = startIdx; fi <= endIdx; fi++) {
-      const tweened = getTweenedFrame(layer, fi);
+      // Pass timeline so that getTweenedFrame can apply guide-path following
+      const tweened = getTweenedFrame(layer, fi, timeline);
       if (tweened && tweened.displayObjects[0]) {
         const obj = tweened.displayObjects[0];
         points.push({ x: obj.x, y: obj.y });
@@ -326,7 +378,8 @@ function drawMotionPaths(
 
     // Draw the dashed motion path
     ctx.save();
-    ctx.strokeStyle = "#0000cc";
+    // Use a different color for guide-following layers to distinguish from free tweens
+    ctx.strokeStyle = guidePathForLayer ? "#0066cc" : "#0000cc";
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
@@ -337,7 +390,7 @@ function drawMotionPaths(
     ctx.stroke();
 
     // Draw keyframe diamonds at start and end positions
-    ctx.fillStyle = "#0000cc";
+    ctx.fillStyle = guidePathForLayer ? "#0066cc" : "#0000cc";
     ctx.setLineDash([]);
     for (const pt of [points[0], points[points.length - 1]]) {
       const cx = pt.x;
@@ -3101,7 +3154,7 @@ export function StageArea({
     if (timeline && renderCanvasRef.current) {
       const ctx = renderCanvasRef.current.getContext("2d");
       if (ctx) {
-        drawMotionPaths(ctx, [...timeline.layers] as import("@flash/core").Layer[], _currentFrame);
+        drawMotionPaths(ctx, [...timeline.layers] as import("@flash/core").Layer[], _currentFrame, timeline as import("@flash/core").Timeline);
       }
     }
 
