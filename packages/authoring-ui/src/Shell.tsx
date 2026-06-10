@@ -5302,6 +5302,8 @@ export function Shell(): React.ReactElement {
         movieExplorerVisible={movieExplorerVisible}
         onHistoryPanelToggle={() => setHistoryPanelVisible((v) => !v)}
         historyPanelVisible={historyPanelVisible}
+        onAccessibilityPanelToggle={() => setAccessibilityPanelVisible((v) => !v)}
+        accessibilityPanelVisible={accessibilityPanelVisible}
         onBandwidthProfiler={handleBandwidthProfiler}
         onTextBold={handleTextBold}
         onTextItalic={handleTextItalic}
@@ -6163,6 +6165,26 @@ export function Shell(): React.ReactElement {
           report={bandwidthProfilerReport}
           frameRate={doc.properties.frameRate}
           onClose={() => setBandwidthProfilerVisible(false)}
+        />
+      )}
+
+      {/* Accessibility panel (Window > Accessibility) */}
+      {accessibilityPanelVisible && (
+        <AccessibilityPanel
+          doc={doc}
+          selectedObjectId={
+            selectedDisplayObject?.type === "instance" || selectedDisplayObject?.type === "text"
+              ? selectedDisplayObject.id
+              : null
+          }
+          selectedObjectAccessibility={
+            selectedDisplayObject?.type === "instance"
+              ? (selectedDisplayObject as SymbolInstance).accessibility ?? null
+              : null
+          }
+          onDocChange={handleDocAccessibilityChange}
+          onObjectChange={handleObjectAccessibilityChange}
+          onClose={() => setAccessibilityPanelVisible(false)}
         />
       )}
 

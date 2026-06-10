@@ -321,6 +321,28 @@ export interface ButtonHandler {
 }
 
 /**
+ * Accessibility properties for a display object (_accProps in AS2/Flash).
+ * Exposed in the Flash 8 Window > Accessibility panel.
+ */
+export interface ObjectAccessibility {
+  /** Whether this object is included in the accessibility tree. Default: true. */
+  readonly enabled: boolean;
+  /** MSAA Name string for screen readers. */
+  readonly name?: string;
+  /** MSAA Description string for screen readers. */
+  readonly description?: string;
+  /** Keyboard shortcut hint string. */
+  readonly shortcut?: string;
+  /** Tab index in the focus order (integer). */
+  readonly tabIndex?: number;
+  /**
+   * When true, instructs Flash to expose this as a simple text object rather
+   * than a container, suppressing its children from the accessibility tree.
+   */
+  readonly forceSimple?: boolean;
+}
+
+/**
  * A clip event handler attached to a MovieClip instance.
  * Corresponds to an `onClipEvent(event) {}` block in AS2.
  * Encoded as a CLIPACTIONRECORD in the PlaceObject2/PlaceObject3 SWF tag.
@@ -401,6 +423,11 @@ export interface SymbolInstance {
    * Only meaningful when the referenced symbol is a button.
    */
   readonly buttonHandlers?: readonly ButtonHandler[];
+  /**
+   * Accessibility properties for this instance (_accProps).
+   * Surfaced in the Flash 8 Window > Accessibility panel.
+   */
+  readonly accessibility?: ObjectAccessibility;
 }
 
 /**

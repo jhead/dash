@@ -36,6 +36,7 @@ export type {
   StrokeStyleSolid,
   StrokeStyleStippled,
   StrokeStyleType,
+  ObjectAccessibility,
   SymbolInstance,
   TextAlign,
   TextDisplayObject,

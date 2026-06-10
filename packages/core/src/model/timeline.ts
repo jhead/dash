@@ -1,5 +1,5 @@
 import type { EaseCurve, Frame, Layer, LayerType, Timeline } from "./types.js";
-import type { DisplayObject, ShapeDisplayObject } from "../engine/types.js";
+import type { DisplayObject, ObjectAccessibility, ShapeDisplayObject } from "../engine/types.js";
 
 import type { FlashFilter } from "../engine/filters.js";
 
@@ -20,6 +20,8 @@ type DisplayObjectUpdates = Partial<
     textType: "static" | "dynamic" | "input";
     fontFamily: string;
     fontSize: number;
+    // Accessibility (_accProps) — instance-level accessibility override
+    accessibility: ObjectAccessibility;
   }
 >;
 

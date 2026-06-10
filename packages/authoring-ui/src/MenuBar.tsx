@@ -337,6 +337,10 @@ export interface MenuBarProps {
   onHistoryPanelToggle?: () => void;
   /** Whether the History panel is currently visible (for checkmark display). */
   historyPanelVisible?: boolean;
+  /** Called when Window > Accessibility is toggled. */
+  onAccessibilityPanelToggle?: () => void;
+  /** Whether the Accessibility panel is currently visible (for checkmark display). */
+  accessibilityPanelVisible?: boolean;
   // Text menu callbacks
   /** Called when Text > Style > Bold (Ctrl+Shift+B) is activated. */
   onTextBold?: () => void;
@@ -445,6 +449,8 @@ export function MenuBar({
   onBandwidthProfiler,
   onHistoryPanelToggle,
   historyPanelVisible = false,
+  onAccessibilityPanelToggle,
+  accessibilityPanelVisible = false,
   onTextBold,
   onTextItalic,
   onTextUnderline,
@@ -845,6 +851,10 @@ export function MenuBar({
           label: `${historyPanelVisible ? "+ " : "  "}History  Ctrl+F10`,
           action: () => { onHistoryPanelToggle?.(); },
           separator: true,
+        },
+        {
+          label: `${accessibilityPanelVisible ? "+ " : "  "}Accessibility`,
+          action: () => { onAccessibilityPanelToggle?.(); },
         },
       ],
     },

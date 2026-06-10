@@ -3,6 +3,7 @@ export type {
   BitmapItem,
   ButtonAction,
   ComponentItem,
+  DocumentAccessibility,
   DocumentProperties,
   EaseCurve,
   FlashDocument,

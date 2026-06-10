@@ -391,6 +391,19 @@ export interface PublishProfile {
 // Top-level document
 // ---------------------------------------------------------------------------
 
+/**
+ * Document-level accessibility settings (Window > Accessibility panel, doc section).
+ * When enabled, the published SWF will include accessibility metadata.
+ */
+export interface DocumentAccessibility {
+  /** Whether this movie is accessible (Flash 8 "Make movie accessible" checkbox). Default: false. */
+  readonly enabled: boolean;
+  /** Whether child objects are also made accessible. Default: true. */
+  readonly makeChildrenAccessible: boolean;
+  /** Whether a custom tab order is used (enables tab-index fields on objects). Default: false. */
+  readonly useCustomTabOrder: boolean;
+}
+
 export interface FlashDocument {
   readonly id: string;
   readonly properties: DocumentProperties;
@@ -400,4 +413,9 @@ export interface FlashDocument {
   readonly publishProfiles?: readonly PublishProfile[];
   /** Id of the currently selected publish profile. Falls back to the first profile. */
   readonly activePublishProfileId?: string;
+  /**
+   * Document-level accessibility settings (Window > Accessibility panel).
+   * When enabled the SWF includes EnableAccessibility flag metadata.
+   */
+  readonly accessibility?: DocumentAccessibility;
 }
