@@ -247,6 +247,7 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
         switch (e.name) {
           case 'undefined': case 'null': case 'true': case 'false':
           case 'NaN': case 'Infinity': break; // these don't push a string
+          case 'newline': add('\r'); break; // newline constant → pushes "\r"
           default: add(e.name); break;
         }
         break;
@@ -329,7 +330,9 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
                     && !(name === 'random' && e.args.length === 1)
                     && !(name === 'chr' && e.args.length === 1)
                     && !(name === 'ord' && e.args.length === 1)
-                    && !(name === 'eval' && e.args.length === 1)) {
+                    && !(name === 'eval' && e.args.length === 1)
+                    && !(name === 'length' && e.args.length === 1)
+                    && !(name === 'substring' && e.args.length === 3)) {
             add(name);
           }
           if (name === 'loadMovieNum') {

@@ -1095,3 +1095,97 @@ describe("DefineEditText — HTML flag (bit 9) for rich text", () => {
     expect(decoded.isHtml).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// restrict → DoAction (TextField.restrict = "pattern")
+// ---------------------------------------------------------------------------
+
+describe("restrict → DoAction", () => {
+  it("input text with instanceName and restrict='0-9' produces a DoAction tag", () => {
+    const doc = makeDoc([
+      makeText({ textType: "input", instanceName: "codeField", restrict: "0-9" }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    expect(doActionTags.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("DoAction body contains the restrict pattern string '0-9'", () => {
+    const doc = makeDoc([
+      makeText({ textType: "input", instanceName: "codeField", restrict: "0-9" }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasPattern = doActionTags.some((t) => bodyContainsString(t.body, "0-9"));
+    expect(hasPattern).toBe(true);
+  });
+
+  it("DoAction body contains 'restrict' string", () => {
+    const doc = makeDoc([
+      makeText({ textType: "input", instanceName: "codeField", restrict: "0-9" }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasRestrict = doActionTags.some((t) => bodyContainsString(t.body, "restrict"));
+    expect(hasRestrict).toBe(true);
+  });
+
+  it("DoAction body contains the instance name 'codeField'", () => {
+    const doc = makeDoc([
+      makeText({ textType: "input", instanceName: "codeField", restrict: "0-9" }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasName = doActionTags.some((t) => bodyContainsString(t.body, "codeField"));
+    expect(hasName).toBe(true);
+  });
+
+  it("restrict DoAction ends with ActionEnd (0x00)", () => {
+    const doc = makeDoc([
+      makeText({ textType: "input", instanceName: "codeField", restrict: "0-9" }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const restrictDoAction = doActionTags.find((t) => bodyContainsString(t.body, "restrict"));
+    expect(restrictDoAction).toBeDefined();
+    expect(restrictDoAction!.body[restrictDoAction!.body.length - 1]).toBe(0x00);
+  });
+
+  it("input text WITHOUT instanceName does NOT produce a restrict DoAction", () => {
+    const doc = makeDoc([
+      makeText({ textType: "input", restrict: "0-9" }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasRestrict = doActionTags.some((t) => bodyContainsString(t.body, "restrict"));
+    expect(hasRestrict).toBe(false);
+  });
+
+  it("input text with empty restrict string does NOT produce a restrict DoAction", () => {
+    const doc = makeDoc([
+      makeText({ textType: "input", instanceName: "codeField", restrict: "" }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasRestrict = doActionTags.some((t) => bodyContainsString(t.body, "restrict"));
+    expect(hasRestrict).toBe(false);
+  });
+
+  it("input text with undefined restrict does NOT produce a restrict DoAction", () => {
+    const doc = makeDoc([
+      makeText({ textType: "input", instanceName: "codeField" }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasRestrict = doActionTags.some((t) => bodyContainsString(t.body, "restrict"));
+    expect(hasRestrict).toBe(false);
+  });
+});

@@ -1418,6 +1418,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         //   var _tf=new TextFormat();_tf.letterSpacing=N;_root.name.setTextFormat(_tf);
         const letterSpacingActions: string[] = [];
 
+        // Collect restrict DoAction scripts for input text fields with a restrict pattern.
+        // Each entry is a compiled AS2 snippet: _root.name.restrict = "pattern";
+        // DefineEditText has no built-in restrict field — it must be set via AS2 at runtime.
+        const restrictActions: string[] = [];
+
         // Collect tab-order DoAction scripts for instances with accessibility.tabIndex
         // set. On scene 0 / frame 0, also emit the global _root.tabChildren = false when
         // doc.accessibility.useCustomTabOrder is true.
@@ -1678,6 +1683,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 letterSpacingActions.push(
                   `var _tf=new TextFormat();_tf.letterSpacing=${ls};_root.${textName}.setTextFormat(_tf);`
                 );
+              }
+              // If the input text field has a restrict pattern and a named instance,
+              // emit a DoAction to set TextField.restrict at runtime.
+              // DefineEditText has no built-in restrict field in the SWF spec.
+              const restrict = displayObj.restrict;
+              if (restrict != null && restrict.length > 0 && textName && textName.length > 0) {
+                // Escape backslashes and double quotes in the pattern string.
+                const escaped = restrict.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+                restrictActions.push(`_root.${textName}.restrict = "${escaped}";`);
               }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
@@ -2156,6 +2170,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         // Emit DoAction for any text fields with non-zero letterSpacing placed this frame.
         // Each script: var _tf=new TextFormat();_tf.letterSpacing=N;_root.name.setTextFormat(_tf);
         for (const script of letterSpacingActions) {
+          const actionBytes = compileAS2(script);
+          if (actionBytes.length > 0) {
+            const doActionBody = new Uint8Array(actionBytes.length + 1);
+            doActionBody.set(actionBytes);
+            // doActionBody[actionBytes.length] is already 0x00 (EndAction)
+            writer.writeTag(Tag.DoAction, doActionBody);
+          }
+        }
+
+        // Emit DoAction for any input text fields with a restrict pattern placed this frame.
+        // Each script: _root.name.restrict = "pattern";
+        for (const script of restrictActions) {
           const actionBytes = compileAS2(script);
           if (actionBytes.length > 0) {
             const doActionBody = new Uint8Array(actionBytes.length + 1);

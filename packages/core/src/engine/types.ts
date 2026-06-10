@@ -605,6 +605,16 @@ export interface TextDisplayObject {
    * Only used when `html` is true; otherwise `text` is the initial content.
    */
   readonly htmlText?: string;
+  /**
+   * Character restriction pattern for input text fields (input text only).
+   * Limits which characters the user can type, e.g. "0-9" (digits only) or
+   * "A-Za-z" (letters only). Follows the Flash TextField.restrict syntax.
+   * DefineEditText has no built-in restrict field in the SWF spec — this is
+   * emitted at runtime as a DoAction AS2 script:
+   *   _root.<instanceName>.restrict = "<pattern>";
+   * Requires instanceName to be set; ignored without a name.
+   */
+  readonly restrict?: string;
 }
 
 /**
