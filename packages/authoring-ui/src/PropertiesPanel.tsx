@@ -11,6 +11,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import type {
+  BitmapDisplayObject,
   ColorEffect,
   DisplayObject,
   DocumentProperties,
@@ -21,6 +22,7 @@ import type {
   ShapeDisplayObject,
   SymbolInstance,
   TextDisplayObject,
+  VideoDisplayObject,
   Fill,
   SolidStroke,
   StrokeCap,
@@ -75,13 +77,15 @@ export interface PropertiesPanelProps {
   currentFrameIndex?: number;
   /** Callback to update frame properties. */
   onFrameUpdate?: (layerIndex: number, frameIndex: number, updates: Partial<Frame>) => void;
+  /** Callback to swap the bitmap asset referenced by a BitmapDisplayObject. */
+  onSwapBitmap?: (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
 // View discriminator
 // ---------------------------------------------------------------------------
 
-type PanelView = "document" | "frame" | "shape" | "instance" | "text" | "mixed";
+type PanelView = "document" | "frame" | "shape" | "instance" | "text" | "bitmap" | "video" | "mixed";
 
 function getView(selectedObjects: DisplayObject[]): PanelView {
   if (selectedObjects.length === 0) return "frame";
@@ -90,6 +94,8 @@ function getView(selectedObjects: DisplayObject[]): PanelView {
   if (obj.type === "shape") return "shape";
   if (obj.type === "instance") return "instance";
   if (obj.type === "text") return "text";
+  if (obj.type === "bitmap") return "bitmap";
+  if (obj.type === "video") return "video";
   return "frame";
 }
 
@@ -1052,6 +1058,221 @@ function TextView({
 }
 
 // ---------------------------------------------------------------------------
+// Bitmap view
+// ---------------------------------------------------------------------------
+
+function BitmapView({
+  obj,
+  doc,
+  onUpdateObject,
+  onSwapBitmap,
+}: {
+  obj: BitmapDisplayObject;
+  doc: FlashDocument;
+  onUpdateObject: (id: string, changes: Partial<DisplayObject>) => void;
+  onSwapBitmap?: (id: string) => void;
+}): React.ReactElement {
+  const libItem = doc.library.items.find((i) => i.id === obj.libraryItemId && i.itemType === "bitmap");
+  const bitmapName = libItem?.name ?? obj.libraryItemId;
+
+  const [nameDraft, setNameDraft] = useState((obj as BitmapDisplayObject & { instanceName?: string }).instanceName ?? "");
+  useEffect(() => {
+    setNameDraft((obj as BitmapDisplayObject & { instanceName?: string }).instanceName ?? "");
+  }, [(obj as BitmapDisplayObject & { instanceName?: string }).instanceName, obj.id]);
+
+  const commitName = useCallback(() => {
+    onUpdateObject(obj.id, { instanceName: nameDraft } as Partial<DisplayObject>);
+  }, [obj.id, nameDraft, onUpdateObject]);
+
+  return (
+    <div style={S.body}>
+      {/* Bitmap name (read-only) */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Bitmap:</span>
+        <span
+          style={{ ...S.label, color: "#c0c0c0", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          title={bitmapName}
+        >
+          {bitmapName}
+        </span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Instance name */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Name:</span>
+        <input
+          style={S.inputWide}
+          value={nameDraft}
+          placeholder="instance name"
+          onChange={(e) => setNameDraft(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitName(); }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setNameDraft((obj as BitmapDisplayObject & { instanceName?: string }).instanceName ?? "");
+            }
+          }}
+        />
+      </div>
+
+      <div style={S.separator} />
+
+      {/* X / Y */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>X:</span>
+        <NumInput
+          value={obj.x}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { x: v } as Partial<DisplayObject>)}
+        />
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Y:</span>
+        <NumInput
+          value={obj.y}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { y: v } as Partial<DisplayObject>)}
+        />
+      </div>
+
+      <div style={S.separator} />
+
+      {/* W / H (read-only — display size) */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>W:</span>
+        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+          {Math.round(obj.width * (obj.scaleX ?? 1))}
+        </span>
+        <span style={{ ...S.label, marginLeft: 8 }}>H:</span>
+        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+          {Math.round(obj.height * (obj.scaleY ?? 1))}
+        </span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Swap Bitmap */}
+      {onSwapBitmap && (
+        <div style={S.fieldGroup}>
+          <button
+            style={{
+              ...S.toggleBtn,
+              background: "#333",
+              color: "#c0c0c0",
+              border: "1px solid #555",
+              padding: "2px 8px",
+            }}
+            onClick={() => onSwapBitmap(obj.id)}
+            title="Choose a different bitmap from the library"
+          >
+            Swap Bitmap…
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Video view
+// ---------------------------------------------------------------------------
+
+function VideoView({
+  obj,
+  doc,
+  onUpdateObject,
+}: {
+  obj: VideoDisplayObject;
+  doc: FlashDocument;
+  onUpdateObject: (id: string, changes: Partial<DisplayObject>) => void;
+}): React.ReactElement {
+  const libItem = doc.library.items.find((i) => i.id === obj.videoItemId && i.itemType === "video");
+  const videoName = libItem?.name ?? obj.videoItemId;
+
+  const [nameDraft, setNameDraft] = useState((obj as VideoDisplayObject & { instanceName?: string }).instanceName ?? "");
+  useEffect(() => {
+    setNameDraft((obj as VideoDisplayObject & { instanceName?: string }).instanceName ?? "");
+  }, [(obj as VideoDisplayObject & { instanceName?: string }).instanceName, obj.id]);
+
+  const commitName = useCallback(() => {
+    onUpdateObject(obj.id, { instanceName: nameDraft } as Partial<DisplayObject>);
+  }, [obj.id, nameDraft, onUpdateObject]);
+
+  return (
+    <div style={S.body}>
+      {/* Video name (read-only) */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Video:</span>
+        <span
+          style={{ ...S.label, color: "#c0c0c0", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          title={videoName}
+        >
+          {videoName}
+        </span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Instance name */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Name:</span>
+        <input
+          style={S.inputWide}
+          value={nameDraft}
+          placeholder="instance name"
+          onChange={(e) => setNameDraft(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitName(); }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setNameDraft((obj as VideoDisplayObject & { instanceName?: string }).instanceName ?? "");
+            }
+          }}
+        />
+      </div>
+
+      <div style={S.separator} />
+
+      {/* X / Y */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>X:</span>
+        <NumInput
+          value={obj.x}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { x: v } as Partial<DisplayObject>)}
+        />
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Y:</span>
+        <NumInput
+          value={obj.y}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { y: v } as Partial<DisplayObject>)}
+        />
+      </div>
+
+      <div style={S.separator} />
+
+      {/* W / H (read-only) */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>W:</span>
+        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+          {Math.round(obj.width * (obj.scaleX ?? 1))}
+        </span>
+        <span style={{ ...S.label, marginLeft: 8 }}>H:</span>
+        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+          {Math.round(obj.height * (obj.scaleY ?? 1))}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Frame view
 // ---------------------------------------------------------------------------
 
@@ -1256,6 +1477,7 @@ export function PropertiesPanel({
   currentLayerIndex = 0,
   currentFrameIndex = 0,
   onFrameUpdate,
+  onSwapBitmap,
 }: PropertiesPanelProps): React.ReactElement {
   const view = getView(selectedObjects);
 
@@ -1264,6 +1486,8 @@ export function PropertiesPanel({
   else if (view === "shape") typeLabel = "Shape";
   else if (view === "instance") typeLabel = "Symbol Instance";
   else if (view === "text") typeLabel = "Text Field";
+  else if (view === "bitmap") typeLabel = "Bitmap";
+  else if (view === "video") typeLabel = "Video";
   else if (view === "mixed") typeLabel = "Mixed";
 
   return (
@@ -1304,6 +1528,23 @@ export function PropertiesPanel({
       {view === "text" && (
         <TextView
           obj={selectedObjects[0] as TextDisplayObject}
+          onUpdateObject={onUpdateObject}
+        />
+      )}
+
+      {view === "bitmap" && (
+        <BitmapView
+          obj={selectedObjects[0] as BitmapDisplayObject}
+          doc={doc}
+          onUpdateObject={onUpdateObject}
+          onSwapBitmap={onSwapBitmap}
+        />
+      )}
+
+      {view === "video" && (
+        <VideoView
+          obj={selectedObjects[0] as VideoDisplayObject}
+          doc={doc}
           onUpdateObject={onUpdateObject}
         />
       )}

@@ -1740,6 +1740,11 @@ export function Shell(): React.ReactElement {
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
   );
 
+  /** Stub handler for swapping a bitmap asset — not yet implemented. */
+  const handleSwapBitmap = useCallback((id: string) => {
+    console.log("Swap bitmap not yet implemented for object:", id);
+  }, []);
+
   /** Single-element array of the currently selected display object (for PropertiesPanel). */
   const selectedObjects = useMemo<DisplayObject[]>(
     () => (selectedDisplayObject ? [selectedDisplayObject] : []),
@@ -4537,6 +4542,7 @@ export function Shell(): React.ReactElement {
                     currentLayerIndex={safeActiveLayerIndex}
                     currentFrameIndex={currentFrame}
                     onFrameUpdate={handleFrameUpdate}
+                    onSwapBitmap={handleSwapBitmap}
                   />
                 )}
                 {bottomTab === "output" && (
