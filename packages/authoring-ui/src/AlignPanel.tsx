@@ -55,8 +55,20 @@ function getObjectBounds(obj: DisplayObject): Bounds {
         height: obj.height * (obj.scaleY ?? 1),
       };
     case "instance":
-      // SymbolInstance: use x/y as origin with a 0-size bbox (best we can do without layout info)
-      return { x: obj.x, y: obj.y, width: 0, height: 0 };
+      // SymbolInstance: use naturalWidth/naturalHeight when available (populated at placement time)
+      return {
+        x: obj.x,
+        y: obj.y,
+        width: (obj.naturalWidth ?? 0) * (obj.scaleX ?? 1),
+        height: (obj.naturalHeight ?? 0) * (obj.scaleY ?? 1),
+      };
+    case "video":
+      return {
+        x: obj.x,
+        y: obj.y,
+        width: obj.width * (obj.scaleX ?? 1),
+        height: obj.height * (obj.scaleY ?? 1),
+      };
     case "group":
       // GroupObject: use x/y as origin with a 0-size bbox (full layout not computed here)
       return { x: obj.x, y: obj.y, width: 0, height: 0 };

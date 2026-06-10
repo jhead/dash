@@ -320,6 +320,18 @@ export interface SymbolInstance {
   readonly symbolId: string;
   readonly x: number;
   readonly y: number;
+  /**
+   * Natural (unscaled) width of the symbol in pixels, computed from the
+   * union bounds of the symbol's first frame at placement time.
+   * Used by the Align panel, Transform panel, and bounds helpers.
+   */
+  readonly naturalWidth?: number;
+  /**
+   * Natural (unscaled) height of the symbol in pixels, computed from the
+   * union bounds of the symbol's first frame at placement time.
+   * Used by the Align panel, Transform panel, and bounds helpers.
+   */
+  readonly naturalHeight?: number;
   /** Horizontal scale factor (1 = no scale). Default: 1. */
   readonly scaleX?: number;
   /** Vertical scale factor (1 = no scale). Default: 1. */

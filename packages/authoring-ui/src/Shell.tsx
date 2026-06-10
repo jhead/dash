@@ -27,6 +27,7 @@ import {
   removeFrame,
   transformedShapeBounds,
   shapeBounds,
+  getUnionBounds,
   copyFrames,
   pasteFrames,
   breakApart,
@@ -2025,6 +2026,11 @@ export function Shell(): React.ReactElement {
         items: updatedLib.items.map((i) => (i.id === newSymbol.id ? symbolWithObjects : i)),
       };
 
+      // Compute natural size from the symbol's local objects
+      const symbolUnionBounds = getUnionBounds([...symbolObjects]);
+      const symNatW = symbolUnionBounds?.width ?? 0;
+      const symNatH = symbolUnionBounds?.height ?? 0;
+
       // Create the SymbolInstance to replace the selection on the timeline
       const instance: SymbolInstance = {
         type: "instance",
@@ -2032,6 +2038,8 @@ export function Shell(): React.ReactElement {
         symbolId: newSymbol.id,
         x: avgX,
         y: avgY,
+        ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
+        ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
       };
 
       const convertedObjectIds = new Set(objectsToConvert.map((o) => o.id));
@@ -2194,12 +2202,17 @@ export function Shell(): React.ReactElement {
       };
 
       const instId = `group-inst-${Date.now().toString(36)}`;
+      const groupUnionBounds = getUnionBounds([...symbolObjects]);
+      const groupNatW = groupUnionBounds?.width ?? 0;
+      const groupNatH = groupUnionBounds?.height ?? 0;
       const instance: SymbolInstance = {
         type: "instance",
         id: instId,
         symbolId: newSymbol.id,
         x: centerX,
         y: centerY,
+        ...(groupNatW > 0 ? { naturalWidth: groupNatW } : {}),
+        ...(groupNatH > 0 ? { naturalHeight: groupNatH } : {}),
       };
 
       const groupedIds = new Set(objectsToGroup.map((o) => o.id));
@@ -2737,12 +2750,24 @@ export function Shell(): React.ReactElement {
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
       if (layerId) {
         const instId = nextInstanceId();
-        const symbolInst = {
-          type: "instance" as const,
+        // Compute natural size from the symbol's first-frame objects (if available)
+        const symLibItem = library.items.find((i) => i.id === libraryItemId && i.itemType === "symbol");
+        const symFirstFrameObjs: DisplayObject[] = symLibItem && symLibItem.itemType === "symbol"
+          ? symLibItem.timeline.layers.flatMap((l) =>
+              l.frames.length > 0 ? [...l.frames[0].displayObjects] : []
+            )
+          : [];
+        const symBounds = getUnionBounds(symFirstFrameObjs);
+        const symNatW = symBounds?.width ?? 0;
+        const symNatH = symBounds?.height ?? 0;
+        const symbolInst: SymbolInstance = {
+          type: "instance",
           id: instId,
           symbolId: libraryItemId,
           x,
           y,
+          ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
+          ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
         };
         pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, symbolInst)));
 

@@ -703,6 +703,22 @@ function InstanceView({
 
       <div style={S.separator} />
 
+      {/* W/H dimensions (read-only, from naturalWidth/naturalHeight) */}
+      {(obj.naturalWidth != null || obj.naturalHeight != null) && (
+        <div style={S.fieldGroup}>
+          <span style={S.label}>W:</span>
+          <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+            {Math.round((obj.naturalWidth ?? 0) * (obj.scaleX ?? 1))}
+          </span>
+          <span style={{ ...S.label, marginLeft: 8 }}>H:</span>
+          <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+            {Math.round((obj.naturalHeight ?? 0) * (obj.scaleY ?? 1))}
+          </span>
+        </div>
+      )}
+
+      <div style={S.separator} />
+
       {/* Blend mode */}
       <div style={S.fieldGroup}>
         <span style={S.label}>Blend:</span>

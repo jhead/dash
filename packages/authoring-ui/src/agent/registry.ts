@@ -46,6 +46,7 @@ import {
   createOvalShape,
   createLineShape,
   transformedShapeBounds,
+  getUnionBounds,
   addLayer,
   deleteLayer,
   renameLayer,
@@ -247,6 +248,27 @@ function withSceneTimeline(
 let _agentObjCounter = 0;
 function nextAgentObjId(prefix = "agent-obj"): string {
   return `${prefix}-${++_agentObjCounter}-${Date.now().toString(36)}`;
+}
+
+/**
+ * Compute the natural (unscaled) width and height of a library symbol from
+ * the union bounds of all display objects in its first keyframe.
+ * Returns { naturalWidth: 0, naturalHeight: 0 } when the symbol has no geometry.
+ */
+function computeSymbolNaturalSize(
+  sym: { timeline: { layers: readonly { frames: readonly { displayObjects: readonly DisplayObject[] }[] }[] } }
+): { naturalWidth: number; naturalHeight: number } {
+  const objects: DisplayObject[] = [];
+  for (const layer of sym.timeline.layers) {
+    if (layer.frames.length > 0) {
+      for (const obj of layer.frames[0].displayObjects) {
+        objects.push(obj);
+      }
+    }
+  }
+  const bounds = getUnionBounds(objects);
+  if (!bounds) return { naturalWidth: 0, naturalHeight: 0 };
+  return { naturalWidth: bounds.width, naturalHeight: bounds.height };
 }
 
 /**
@@ -630,6 +652,11 @@ const handlers: Record<string, AnyHandler> = {
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
 
+    // Compute natural size from the symbol's first-frame union bounds
+    const { naturalWidth, naturalHeight } = sym.itemType === "symbol"
+      ? computeSymbolNaturalSize(sym as { timeline: { layers: readonly { frames: readonly { displayObjects: readonly DisplayObject[] }[] }[] } })
+      : { naturalWidth: 0, naturalHeight: 0 };
+
     const obj: SymbolInstance = {
       type: "instance",
       id: nextAgentObjId("inst"),
@@ -637,6 +664,8 @@ const handlers: Record<string, AnyHandler> = {
       x: params.x,
       y: params.y,
       instanceName: params.name,
+      ...(naturalWidth > 0 ? { naturalWidth } : {}),
+      ...(naturalHeight > 0 ? { naturalHeight } : {}),
     };
 
     const sceneIndex = cb.getActiveSceneIndex();
@@ -1357,6 +1386,9 @@ const handlers: Record<string, AnyHandler> = {
       items: newLib.items.map((item) => (item.id === sym.id ? updatedSym : item)),
     };
 
+    // Compute the natural size from the normalized local objects
+    const { naturalWidth, naturalHeight } = computeSymbolNaturalSize(updatedSym);
+
     // Replace objects in frame with a single symbol instance
     const instance: SymbolInstance = {
       type: "instance",
@@ -1364,6 +1396,8 @@ const handlers: Record<string, AnyHandler> = {
       symbolId: sym.id,
       x: originX,
       y: originY,
+      ...(naturalWidth > 0 ? { naturalWidth } : {}),
+      ...(naturalHeight > 0 ? { naturalHeight } : {}),
     };
 
     const newDoc = withSceneTimeline(

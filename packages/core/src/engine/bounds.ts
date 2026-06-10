@@ -1,10 +1,28 @@
-import type { DisplayObject, Rect } from './types.js';
+import type { DisplayObject, Rect, SymbolInstance } from './types.js';
 
 export interface Bounds {
   x: number;       // left edge
   y: number;       // top edge
   width: number;
   height: number;
+}
+
+/** Return the effective width of a display object, using naturalWidth for SymbolInstance. */
+function effectiveWidth(obj: DisplayObject): number {
+  if (obj.type === 'instance') {
+    const inst = obj as SymbolInstance;
+    return (inst.naturalWidth ?? 0) * (inst.scaleX ?? 1);
+  }
+  return ('width' in obj ? (obj as any).width : 0) ?? 0;
+}
+
+/** Return the effective height of a display object, using naturalHeight for SymbolInstance. */
+function effectiveHeight(obj: DisplayObject): number {
+  if (obj.type === 'instance') {
+    const inst = obj as SymbolInstance;
+    return (inst.naturalHeight ?? 0) * (inst.scaleY ?? 1);
+  }
+  return ('height' in obj ? (obj as any).height : 0) ?? 0;
 }
 
 /**
@@ -15,8 +33,8 @@ export interface Bounds {
 export function getTransformedBounds(obj: DisplayObject): Bounds {
   const x = ('x' in obj ? (obj as any).x : 0) ?? 0;
   const y = ('y' in obj ? (obj as any).y : 0) ?? 0;
-  const w = ('width' in obj ? (obj as any).width : 0) ?? 0;
-  const h = ('height' in obj ? (obj as any).height : 0) ?? 0;
+  const w = effectiveWidth(obj);
+  const h = effectiveHeight(obj);
   const rotation = ('rotation' in obj ? (obj as any).rotation : 0) ?? 0;
   const scaleX = ('scaleX' in obj ? (obj as any).scaleX : 1) ?? 1;
   const scaleY = ('scaleY' in obj ? (obj as any).scaleY : 1) ?? 1;
@@ -80,8 +98,8 @@ export function getUnionBounds(objects: DisplayObject[]): Bounds | null {
 
 function getObjX(obj: DisplayObject): number { return (obj as any).x ?? 0; }
 function getObjY(obj: DisplayObject): number { return (obj as any).y ?? 0; }
-function getObjW(obj: DisplayObject): number { return (obj as any).width ?? 0; }
-function getObjH(obj: DisplayObject): number { return (obj as any).height ?? 0; }
+function getObjW(obj: DisplayObject): number { return effectiveWidth(obj); }
+function getObjH(obj: DisplayObject): number { return effectiveHeight(obj); }
 
 /**
  * Return the axis-aligned bounding box of a display object using its raw
