@@ -4553,54 +4553,57 @@ export function Shell(): React.ReactElement {
     debugPassword: publishSettings.debuggingPermitted && publishSettings.debugPassword
       ? publishSettings.debugPassword
       : undefined,
-    bitmapPixels: undefined,
   });
 
   const handlePublish = useCallback(() => {
-    const bytes = publishToBytes();
-    const swfFilename = publishSettings.filename || "movie.swf";
+    void (async () => {
+      const bytes = await publishToBytes();
+      const swfFilename = publishSettings.filename || "movie.swf";
 
-    // Download the SWF
-    const swfBlob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/x-shockwave-flash" });
-    const swfUrl = URL.createObjectURL(swfBlob);
-    const swfLink = document.createElement("a");
-    swfLink.href = swfUrl;
-    swfLink.download = swfFilename;
-    swfLink.click();
-    URL.revokeObjectURL(swfUrl);
+      // Download the SWF
+      const swfBlob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/x-shockwave-flash" });
+      const swfUrl = URL.createObjectURL(swfBlob);
+      const swfLink = document.createElement("a");
+      swfLink.href = swfUrl;
+      swfLink.download = swfFilename;
+      swfLink.click();
+      URL.revokeObjectURL(swfUrl);
 
-    // Download the HTML wrapper when enabled
-    if (publishSettings.html?.publishHtml !== false) {
-      const htmlOpts = publishSettings.html ?? DEFAULT_HTML_OPTIONS;
-      const htmlStr = generateHtmlWrapper({
-        title: swfFilename.replace(/\.swf$/i, ""),
-        width: doc.properties.width,
-        height: doc.properties.height,
-        bgcolor: doc.properties.backgroundColor,
-        quality: htmlOpts.quality,
-        loop: htmlOpts.loop,
-        menu: htmlOpts.menu,
-        scale: htmlOpts.scale,
-        wmode: htmlOpts.wmode,
-        swfFilename,
-        flashVersion: 8,
-      });
-      const htmlFilename = swfFilename.replace(/\.swf$/i, "") + ".html";
-      const htmlBlob = new Blob([htmlStr], { type: "text/html" });
-      const htmlUrl = URL.createObjectURL(htmlBlob);
-      const htmlLink = document.createElement("a");
-      htmlLink.href = htmlUrl;
-      htmlLink.download = htmlFilename;
-      htmlLink.click();
-      URL.revokeObjectURL(htmlUrl);
-    }
+      // Download the HTML wrapper when enabled
+      if (publishSettings.html?.publishHtml !== false) {
+        const htmlOpts = publishSettings.html ?? DEFAULT_HTML_OPTIONS;
+        const htmlStr = generateHtmlWrapper({
+          title: swfFilename.replace(/\.swf$/i, ""),
+          width: doc.properties.width,
+          height: doc.properties.height,
+          bgcolor: doc.properties.backgroundColor,
+          quality: htmlOpts.quality,
+          loop: htmlOpts.loop,
+          menu: htmlOpts.menu,
+          scale: htmlOpts.scale,
+          wmode: htmlOpts.wmode,
+          swfFilename,
+          flashVersion: 8,
+        });
+        const htmlFilename = swfFilename.replace(/\.swf$/i, "") + ".html";
+        const htmlBlob = new Blob([htmlStr], { type: "text/html" });
+        const htmlUrl = URL.createObjectURL(htmlBlob);
+        const htmlLink = document.createElement("a");
+        htmlLink.href = htmlUrl;
+        htmlLink.download = htmlFilename;
+        htmlLink.click();
+        URL.revokeObjectURL(htmlUrl);
+      }
+    })();
   }, [publishToBytes, publishSettings, doc.properties]);
 
   const handleBandwidthProfiler = useCallback(() => {
-    const bytes = publishToBytes();
-    const report = analyzeFrameSizes(bytes);
-    setBandwidthProfilerReport(report);
-    setBandwidthProfilerVisible(true);
+    void (async () => {
+      const bytes = await publishToBytes();
+      const report = analyzeFrameSizes(bytes);
+      setBandwidthProfilerReport(report);
+      setBandwidthProfilerVisible(true);
+    })();
   }, [publishToBytes]);
 
   // ---------------------------------------------------------------------------
@@ -5126,8 +5129,8 @@ export function Shell(): React.ReactElement {
       },
 
       // Export the current document as SWF and return it as a base64 string
-      publish: () => {
-        const bytes = publishToBytes();
+      publish: async () => {
+        const bytes = await publishToBytes();
         let binary = "";
         for (let i = 0; i < bytes.length; i++) {
           binary += String.fromCharCode(bytes[i]);

@@ -115,7 +115,7 @@ function makeHarness(initial?: FlashDocument) {
       rev: getRev(),
     }),
     screenshotStage: (_frameIndex?: number) => "fake-png-base64",
-    publishToBytes: () => new Uint8Array([0x46, 0x57, 0x53, 0x08]),
+    publishToBytes: () => Promise.resolve(new Uint8Array([0x46, 0x57, 0x53, 0x08])),
   });
 
   return state;

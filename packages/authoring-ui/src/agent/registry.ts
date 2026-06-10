@@ -172,7 +172,7 @@ interface AgentCallbacks {
   // Escape hatches
   runJSFL: (source: string) => JsflRunResult;
   screenshotStage: (frameIndex?: number) => string; // returns base64 PNG
-  publishToBytes: () => Uint8Array;
+  publishToBytes: () => Promise<Uint8Array>;
 }
 
 let _callbacks: AgentCallbacks | null = null;
@@ -1668,9 +1668,9 @@ const handlers: Record<string, AnyHandler> = {
     };
   },
 
-  publish_swf(): PublishSwfResult {
+  async publish_swf(): Promise<PublishSwfResult> {
     const cb = requireCallbacks();
-    const bytes = cb.publishToBytes();
+    const bytes = await cb.publishToBytes();
     // Convert to base64
     let binary = "";
     for (let i = 0; i < bytes.length; i++) {
