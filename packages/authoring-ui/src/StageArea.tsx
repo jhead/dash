@@ -3561,6 +3561,67 @@ export function StageArea({
       ctx.restore();
     }
 
+    // Draw Scale9Grid overlay when a single SymbolInstance with scale9Grid is selected
+    if (isSingleSelect && effectiveSelectedIds.length === 1 && renderCanvasRef.current && library) {
+      const selId = effectiveSelectedIds[0];
+      const instObj = symbolInstanceDisplayObjects.find((o) => o.id === selId);
+      if (instObj) {
+        const sym = library.items.find((i) => i.id === instObj.symbolId && i.itemType === "symbol") as FlashSymbol | undefined;
+        if (sym && sym.scale9Grid) {
+          const grid = sym.scale9Grid;
+          const scaleX = instObj.scaleX ?? 1;
+          const scaleY = instObj.scaleY ?? 1;
+          // Compute the symbol bounds in stage space for line extents
+          const symBounds = getSymbolInstanceBounds(instObj, library);
+          const instX = instObj.x;
+          const instY = instObj.y;
+          // The four grid line positions in stage space
+          const x1 = instX + grid.x * scaleX;
+          const x2 = instX + (grid.x + grid.width) * scaleX;
+          const y1 = instY + grid.y * scaleY;
+          const y2 = instY + (grid.y + grid.height) * scaleY;
+          // Extents: lines run across the full symbol bounds
+          const left = symBounds.x;
+          const right = symBounds.x + symBounds.width;
+          const top = symBounds.y;
+          const bottom = symBounds.y + symBounds.height;
+
+          const ctx = renderCanvasRef.current.getContext("2d")!;
+          ctx.save();
+          ctx.strokeStyle = "rgba(0, 170, 255, 0.85)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([5, 3]);
+
+          // Left vertical grid line
+          ctx.beginPath();
+          ctx.moveTo(x1 + 0.5, top);
+          ctx.lineTo(x1 + 0.5, bottom);
+          ctx.stroke();
+
+          // Right vertical grid line
+          ctx.beginPath();
+          ctx.moveTo(x2 + 0.5, top);
+          ctx.lineTo(x2 + 0.5, bottom);
+          ctx.stroke();
+
+          // Top horizontal grid line
+          ctx.beginPath();
+          ctx.moveTo(left, y1 + 0.5);
+          ctx.lineTo(right, y1 + 0.5);
+          ctx.stroke();
+
+          // Bottom horizontal grid line
+          ctx.beginPath();
+          ctx.moveTo(left, y2 + 0.5);
+          ctx.lineTo(right, y2 + 0.5);
+          ctx.stroke();
+
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+      }
+    }
+
     // Draw unselected text field outlines (dashed blue border on all text objects)
     if (textDisplayObjects.length > 0 && renderCanvasRef.current) {
       const ctx = renderCanvasRef.current.getContext("2d")!;
@@ -3869,7 +3930,7 @@ export function StageArea({
       ctx.fillRect(r.x, r.y, r.width, r.height);
       ctx.restore();
     }
-  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId]);
+  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId, symbolInstanceDisplayObjects]);
 
   // CSS filter for view modes
   const stageFilter =
