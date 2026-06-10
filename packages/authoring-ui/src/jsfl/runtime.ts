@@ -1701,6 +1701,93 @@ function makeDocumentProxy(
     transformSelection(_a: number, _b: number, _c: number, _d: number): void {
       console.warn('doc.transformSelection: not implemented');
     },
+    moveSelectionBy(delta: { x: number; y: number }): void {
+      if (state.selectedIds.length === 0) return;
+      const toMove = new Set(state.selectedIds);
+      // Collect all (layerId, keyframeIndex, objectId, currentX, currentY) tuples
+      // from a snapshot of the document before any mutations.
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type MoveEntry = { layerId: string; kfIndex: number; objId: string; newX: number; newY: number };
+      const entries: MoveEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toMove.has(obj.id)) continue;
+          const current = obj as { x?: number; y?: number };
+          entries.push({
+            layerId: layer.id,
+            kfIndex: kf.index,
+            objId: obj.id,
+            newX: (current.x ?? 0) + delta.x,
+            newY: (current.y ?? 0) + delta.y,
+          });
+        }
+      }
+      // Apply all mutations sequentially; each reads the latest state.doc
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { x: entry.newX, y: entry.newY }
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    scaleSelection(xScale: number, yScale: number, _whichCorner?: string): void {
+      if (state.selectedIds.length === 0) return;
+      const toScale = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type ScaleEntry = { layerId: string; kfIndex: number; objId: string; newScaleX: number; newScaleY: number };
+      const entries: ScaleEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toScale.has(obj.id)) continue;
+          const current = obj as { scaleX?: number; scaleY?: number };
+          entries.push({
+            layerId: layer.id,
+            kfIndex: kf.index,
+            objId: obj.id,
+            newScaleX: (current.scaleX ?? 1) * xScale,
+            newScaleY: (current.scaleY ?? 1) * yScale,
+          });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { scaleX: entry.newScaleX, scaleY: entry.newScaleY }
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
   };
 }
 
