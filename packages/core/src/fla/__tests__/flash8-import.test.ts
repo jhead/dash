@@ -678,14 +678,28 @@ describe("instance filter mapping (toFlashFilter)", () => {
     expect(result.enabled).toBe(true);
   });
 
-  it("maps a color-matrix filter to an identity AdjustColor with enabled=false", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const f: Fla8Filter = { kind: "color-matrix", matrix: new Array(20).fill(0) };
+  it("maps a color-matrix filter to an AdjustColor with enabled=true", () => {
+    const f: Fla8Filter = {
+      kind: "color-matrix",
+      matrix: [1, 0, 0, 0, 0,  0, 1, 0, 0, 0,  0, 0, 1, 0, 0,  0, 0, 0, 1, 0],
+    };
     const result = toFlashFilter(f);
     expect(result!.type).toBe("adjustColor");
     if (result!.type !== "adjustColor") return;
-    expect(result.enabled).toBe(false);
-    warn.mockRestore();
+    expect(result.enabled).toBe(true);
+    expect(result.brightness).toBe(0);
+    expect(result.contrast).toBe(0);
+  });
+
+  it("ColorMatrix filter import — brightness preserved from matrix offset", () => {
+    // Identity scale (diagonal=1) with RGB offset of +127.5 → +50% brightness
+    const matrix: number[] = [1, 0, 0, 0, 127.5,  0, 1, 0, 0, 127.5,  0, 0, 1, 0, 127.5,  0, 0, 0, 1, 0];
+    const f: Fla8Filter = { kind: "color-matrix", matrix };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("adjustColor");
+    if (result!.type !== "adjustColor") return;
+    expect(result.brightness).toBeCloseTo(50, 0);
+    expect(result.enabled).toBe(true);
   });
 
   it("converts -π/4 radians to 45° (Flash UI) correctly", () => {

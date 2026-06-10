@@ -28,7 +28,7 @@ import type {
   Color,
   SymbolInstance,
 } from "../engine/types.js";
-import type { FlashFilter } from "../engine/filters.js";
+import type { AdjustColorFilter, FlashFilter } from "../engine/filters.js";
 import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
@@ -475,22 +475,64 @@ export function toFlashFilter(f: Fla8Filter): FlashFilter | null {
         enabled: true,
       };
     case "color-matrix":
-      // ColorMatrix in FLA is the raw 20-element matrix. The editor's
-      // AdjustColorFilter stores brightness/contrast/saturation/hue which
-      // are non-trivially computed from the matrix; store it as an identity
-      // AdjustColor with enabled=false to preserve presence without decoding.
-      console.warn(
-        "[FLA import] ColorMatrix filter imported as identity AdjustColor (raw matrix not decoded)",
-      );
-      return {
-        type: "adjustColor",
-        brightness: 0,
-        contrast: 0,
-        saturation: 0,
-        hue: 0,
-        enabled: false,
-      };
+      // ColorMatrix in FLA is a raw 4×5 matrix (20 floats) applied to
+      // [R,G,B,A,1]. Decompose to best-effort brightness/contrast/saturation/hue.
+      return decodeColorMatrix(f.matrix);
   }
+}
+
+/**
+ * Decompose a Flash 8 ColorMatrix filter (4×5 row-major matrix, 20 floats)
+ * into brightness/contrast/saturation/hue values for AdjustColorFilter.
+ *
+ * Matrix row layout (applied to [R, G, B, A, 1]):
+ *   R' = m[0]*R + m[1]*G + m[2]*B + m[3]*A + m[4]
+ *   G' = m[5]*R + m[6]*G + m[7]*B + m[8]*A + m[9]
+ *   B' = m[10]*R + m[11]*G + m[12]*B + m[13]*A + m[14]
+ *   A' = m[15]*R + m[16]*G + m[17]*B + m[18]*A + m[19]
+ *
+ * Brightness: average RGB offset (m[4], m[9], m[14]) mapped to −100..100.
+ *   Flash's +100% brightness adds 255 to each channel, so scale by 100/255.
+ * Contrast: RGB diagonal average (m[0], m[6], m[12]) minus 1, scaled to −100..100.
+ *   Flash's +100 contrast sets diagonal ≈ 2 and offsets to re-center around 128.
+ * Saturation: approximated from the luminance weights in row 0 (desaturation
+ *   pushes m[0] toward the luminance weight ~0.299). s = (m[0] − 0.299) / (1 − 0.299).
+ *   Mapped to 0..100; partial desaturation gives 0..100; negative = hypersaturate.
+ * Hue: estimated from the rotation angle encoded in the R→G and G→R cross-terms
+ *   (m[1] and m[5]). For a pure hue rotation θ, m[1] ≈ sin(θ) (scaled). This is
+ *   a best-effort approximation — exact recovery requires full matrix decomposition.
+ *
+ * All values are clamped to their valid ranges before returning.
+ */
+function decodeColorMatrix(m: readonly number[]): AdjustColorFilter {
+  // Brightness: average of the RGB offset terms (m[4], m[9], m[14]), scaled to −100..100.
+  const rawBrightness = (m[4] + m[9] + m[14]) / 3;
+  const brightness = Math.round(rawBrightness * (100 / 255));
+
+  // Contrast: average of the RGB diagonal scale terms minus 1, scaled to −100..100.
+  // Identity diagonal = 1; +100 contrast ≈ diagonal 2 (after centering offset).
+  const rawContrast = ((m[0] + m[6] + m[12]) / 3 - 1);
+  const contrast = Math.round(rawContrast * 100);
+
+  // Saturation: for a fully desaturated matrix, each diagonal approaches
+  // the luminance weight (~0.299 for R). s=0 when m[0]≈0.299, s=1 when m[0]≈1.
+  // Formula: sat = (m[0] - 0.299) / (1 - 0.299) * 100  — clamped to −100..100.
+  const sat = (m[0] - 0.299) / (1 - 0.299) * 100;
+  const saturation = Math.round(Math.max(-100, Math.min(100, sat)));
+
+  // Hue: for a pure hue rotation of θ degrees in Flash's color space, the
+  // R→G cross-term m[1] encodes some portion of sin(θ). Best-effort extraction.
+  const hueRad = Math.asin(Math.max(-1, Math.min(1, m[1])));
+  const hue = Math.round(hueRad * (180 / Math.PI));
+
+  return {
+    type: "adjustColor",
+    brightness: Math.max(-100, Math.min(100, brightness)),
+    contrast: Math.max(-100, Math.min(100, contrast)),
+    saturation,
+    hue: Math.max(-180, Math.min(180, hue)),
+    enabled: true,
+  };
 }
 
 /**
