@@ -301,8 +301,7 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
     false/0 even *inside* the keyDown handler when the key is definitionally down. Do not
     rely on Key-state polling for headless oracles; react to the keyDown event itself.
     (Bundle in `apps/desktop/public/ruffle` is 0.1.0; the source clone is 0.2.0.)
-- **AS2 compiler bug — member-target assignment compiles as a READ (found during 0703)**:
-  `this._x = v` / `obj.prop = v` / `obj.prop += v` emit ActionGetMember (0x4e, read)
-  instead of ActionSetMember (0x4f, write), so the assignment silently does nothing. Bare
-  `_x = v` (ActionSetVariable) works. Any movement/property-set AS2 must currently use the
-  bare form. (Separate follow-up task territory; not fixed by 0703.)
+- **AS2 member assignment is fixed**: `obj.prop = v` and `this._x = v` correctly emit
+  ActionSetMember (0x4f). Chained forms like `_root.scoreText.text = "hello"` also work:
+  GetMember fetches the intermediate object, SetMember writes the property. Verified by
+  opcode inspection (QA loop, 2026-06-10).
