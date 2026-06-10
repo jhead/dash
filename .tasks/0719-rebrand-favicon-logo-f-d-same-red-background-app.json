@@ -1,0 +1,10 @@
+{
+  "id": "0719-rebrand-favicon-logo-f-d-same-red-background-app",
+  "title": "Rebrand favicon/logo: 'F' \u2192 'd' (same red background), app name 'dash'",
+  "description": "Change the app favicon and any logo/icon assets from 'F' (Flash) to 'd' (dash) with the same red background color. Find the existing favicon/icon files (likely in apps/desktop/public/ or src-tauri/icons/), update them. Also update any app title strings from 'Flash 8' or similar to 'Dash'. Check: apps/desktop/index.html (title tag, favicon link), apps/desktop/public/ (favicon.ico, icon.png etc), src-tauri/tauri.conf.json (productName), package.json workspace name if relevant.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T04:12:04Z",
+  "updated_at": "2026-06-10T04:12:25Z"
+}
