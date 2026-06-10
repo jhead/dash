@@ -14,6 +14,16 @@ import type {
   SolidFill,
   Stroke,
 } from "../engine/types.js";
+import type {
+  AdjustColorFilter,
+  BevelFilter,
+  BlurFilter,
+  DropShadowFilter,
+  FlashFilter,
+  GlowFilter,
+  GradientBevelFilter,
+  GradientGlowFilter,
+} from "../engine/filters.js";
 
 /**
  * Apply Flash 8 ease to a linear t (0..1) → eased t.
@@ -245,6 +255,203 @@ export function interpolateColorEffect(
 }
 
 /**
+ * Lerp a Color between two Color values (r, g, b, a channels).
+ */
+function lerpColorRGBA(a: Color, b: Color, t: number): Color {
+  return {
+    r: Math.round(lerp(a.r, b.r, t)),
+    g: Math.round(lerp(a.g, b.g, t)),
+    b: Math.round(lerp(a.b, b.b, t)),
+    a: Math.round(lerp(a.a, b.a, t)),
+  };
+}
+
+/**
+ * Interpolate a single pair of matching FlashFilters (same type) at t.
+ * Returns the from filter unchanged if types differ.
+ */
+function interpolateSingleFilter(
+  a: FlashFilter,
+  b: FlashFilter,
+  t: number
+): FlashFilter {
+  if (a.type !== b.type) return a;
+
+  switch (a.type) {
+    case "blur": {
+      const fb = b as BlurFilter;
+      const fa = a as BlurFilter;
+      return {
+        ...fa,
+        blurX: lerp(fa.blurX, fb.blurX, t),
+        blurY: lerp(fa.blurY, fb.blurY, t),
+      };
+    }
+    case "drop-shadow": {
+      const fa = a as DropShadowFilter;
+      const fb = b as DropShadowFilter;
+      return {
+        ...fa,
+        blurX: lerp(fa.blurX, fb.blurX, t),
+        blurY: lerp(fa.blurY, fb.blurY, t),
+        strength: lerp(fa.strength, fb.strength, t),
+        angle: lerp(fa.angle, fb.angle, t),
+        distance: lerp(fa.distance, fb.distance, t),
+        alpha: lerp(fa.alpha, fb.alpha, t),
+        color: lerpColorRGBA(fa.color, fb.color, t),
+      };
+    }
+    case "glow": {
+      const fa = a as GlowFilter;
+      const fb = b as GlowFilter;
+      return {
+        ...fa,
+        blurX: lerp(fa.blurX, fb.blurX, t),
+        blurY: lerp(fa.blurY, fb.blurY, t),
+        strength: lerp(fa.strength, fb.strength, t),
+        alpha: lerp(fa.alpha, fb.alpha, t),
+        color: lerpColorRGBA(fa.color, fb.color, t),
+      };
+    }
+    case "bevel": {
+      const fa = a as BevelFilter;
+      const fb = b as BevelFilter;
+      return {
+        ...fa,
+        blurX: lerp(fa.blurX, fb.blurX, t),
+        blurY: lerp(fa.blurY, fb.blurY, t),
+        strength: lerp(fa.strength, fb.strength, t),
+        angle: lerp(fa.angle, fb.angle, t),
+        distance: lerp(fa.distance, fb.distance, t),
+        highlightAlpha: lerp(fa.highlightAlpha, fb.highlightAlpha, t),
+        shadowAlpha: lerp(fa.shadowAlpha, fb.shadowAlpha, t),
+        highlightColor: lerpColorRGBA(fa.highlightColor, fb.highlightColor, t),
+        shadowColor: lerpColorRGBA(fa.shadowColor, fb.shadowColor, t),
+      };
+    }
+    case "gradientGlow": {
+      const fa = a as GradientGlowFilter;
+      const fb = b as GradientGlowFilter;
+      // Lerp gradient stops positionally; snap if lengths differ
+      const gradient =
+        fa.gradient.length === fb.gradient.length
+          ? fa.gradient.map((stop, i) => {
+              const stopB = fb.gradient[i];
+              const lerpedColor = lerpColorRGBA(
+                parseHexColorToRGBA(stop.color),
+                parseHexColorToRGBA(stopB.color),
+                t
+              );
+              return {
+                color: toHexColor(lerpedColor.r, lerpedColor.g, lerpedColor.b),
+                alpha: lerp(stop.alpha, stopB.alpha, t),
+                ratio: lerp(stop.ratio, stopB.ratio, t),
+              };
+            })
+          : fa.gradient;
+      return {
+        ...fa,
+        blurX: lerp(fa.blurX, fb.blurX, t),
+        blurY: lerp(fa.blurY, fb.blurY, t),
+        strength: lerp(fa.strength, fb.strength, t),
+        angle: lerp(fa.angle, fb.angle, t),
+        distance: lerp(fa.distance, fb.distance, t),
+        gradient,
+      };
+    }
+    case "gradientBevel": {
+      const fa = a as GradientBevelFilter;
+      const fb = b as GradientBevelFilter;
+      // Lerp gradient stops positionally; snap if lengths differ
+      const gradient =
+        fa.gradient.length === fb.gradient.length
+          ? fa.gradient.map((stop, i) => {
+              const stopB = fb.gradient[i];
+              const lerpedColor = lerpColorRGBA(
+                parseHexColorToRGBA(stop.color),
+                parseHexColorToRGBA(stopB.color),
+                t
+              );
+              return {
+                color: toHexColor(lerpedColor.r, lerpedColor.g, lerpedColor.b),
+                alpha: lerp(stop.alpha, stopB.alpha, t),
+                ratio: lerp(stop.ratio, stopB.ratio, t),
+              };
+            })
+          : fa.gradient;
+      return {
+        ...fa,
+        blurX: lerp(fa.blurX, fb.blurX, t),
+        blurY: lerp(fa.blurY, fb.blurY, t),
+        strength: lerp(fa.strength, fb.strength, t),
+        angle: lerp(fa.angle, fb.angle, t),
+        distance: lerp(fa.distance, fb.distance, t),
+        gradient,
+      };
+    }
+    case "adjustColor": {
+      const fa = a as AdjustColorFilter;
+      const fb = b as AdjustColorFilter;
+      return {
+        ...fa,
+        brightness: lerp(fa.brightness, fb.brightness, t),
+        contrast: lerp(fa.contrast, fb.contrast, t),
+        saturation: lerp(fa.saturation, fb.saturation, t),
+        hue: lerp(fa.hue, fb.hue, t),
+      };
+    }
+    default:
+      return a;
+  }
+}
+
+/**
+ * Parse a hex color string "#rrggbb" or "#rrggbbaa" into a Color {r,g,b,a}.
+ * Alpha defaults to 255 if not present in the string.
+ */
+function parseHexColorToRGBA(hex: string): Color {
+  const clean = (hex ?? "#000000").replace(/^#/, "");
+  return {
+    r: parseInt(clean.slice(0, 2), 16) || 0,
+    g: parseInt(clean.slice(2, 4), 16) || 0,
+    b: parseInt(clean.slice(4, 6), 16) || 0,
+    a: clean.length >= 8 ? (parseInt(clean.slice(6, 8), 16) || 0) : 255,
+  };
+}
+
+/**
+ * Interpolate two filter arrays at normalized time t (0..1).
+ *
+ * Rules:
+ * - Filters are matched by position (filter[0] ↔ filter[0], etc.).
+ * - If the lengths differ or types at a position don't match, snap to `from`
+ *   (no interpolation for that filter).
+ * - If both arrays are null/undefined, returns null.
+ *
+ * @param from  Filter array from start keyframe (may be null/undefined)
+ * @param to    Filter array from end keyframe (may be null/undefined)
+ * @param t     Normalized time (0..1, post-ease)
+ * @returns     Interpolated filter array, or null if both are empty/null
+ */
+export function interpolateFilters(
+  from: readonly FlashFilter[] | null | undefined,
+  to: readonly FlashFilter[] | null | undefined,
+  t: number
+): readonly FlashFilter[] | null {
+  const fromFilters = from ?? [];
+  const toFilters = to ?? [];
+
+  if (fromFilters.length === 0 && toFilters.length === 0) return null;
+
+  // If lengths differ, snap to from
+  if (fromFilters.length !== toFilters.length) {
+    return fromFilters.length > 0 ? fromFilters : null;
+  }
+
+  return fromFilters.map((f, i) => interpolateSingleFilter(f, toFilters[i], t));
+}
+
+/**
  * Interpolate between two keyframe states using Flash 8 easing.
  *
  * @param from         - Start keyframe TweenTarget
@@ -271,6 +478,7 @@ export function interpolateTween(
   const t = applyEase(linearT, config.ease);
 
   const colorEffect = interpolateColorEffect(from.colorEffect, to.colorEffect, t);
+  const filters = interpolateFilters(from.filters, to.filters, t);
 
   return {
     x: lerp(from.x, to.x, t),
@@ -286,6 +494,7 @@ export function interpolateTween(
     ),
     alpha: lerp(from.alpha, to.alpha, t),
     colorEffect,
+    filters,
   };
 }
 

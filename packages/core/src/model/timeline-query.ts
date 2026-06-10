@@ -1,5 +1,6 @@
 import type { Frame, Layer, Timeline } from "./types.js";
 import type { DisplayObject, ShapeDisplayObject, SymbolInstance } from "../engine/types.js";
+import type { FlashFilter } from "../engine/filters.js";
 import { interpolateTween, interpolateShapeTween } from "../tween/interpolate.js";
 import type { TweenTarget } from "../tween/types.js";
 import { layerFrameCount } from "./timeline.js";
@@ -136,6 +137,8 @@ function displayObjectToTweenTarget(obj: DisplayObject): TweenTarget {
   const colorEffect = (obj.type === "instance")
     ? ((obj as SymbolInstance).colorEffect ?? null)
     : null;
+  // Extract filters if present on the display object
+  const filters = (obj as { filters?: readonly FlashFilter[] }).filters ?? null;
   return {
     x: shaped.x ?? 0,
     y: shaped.y ?? 0,
@@ -144,6 +147,7 @@ function displayObjectToTweenTarget(obj: DisplayObject): TweenTarget {
     rotation: shaped.rotation ?? 0,
     alpha: 100,
     colorEffect,
+    filters,
   };
 }
 
@@ -256,6 +260,9 @@ export function getTweenedFrame(
         ? result.colorEffect
         : undefined;
 
+      // Apply interpolated filters back (present on all display object types that support them)
+      const interpolatedFilters = result.filters != null ? result.filters : undefined;
+
       return {
         ...startObj,
         x,
@@ -265,6 +272,9 @@ export function getTweenedFrame(
         rotation,
         ...(interpolatedColorEffect !== undefined
           ? { colorEffect: interpolatedColorEffect ?? undefined }
+          : {}),
+        ...(interpolatedFilters !== undefined
+          ? { filters: interpolatedFilters }
           : {}),
       } as DisplayObject;
     });
