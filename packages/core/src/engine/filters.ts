@@ -94,7 +94,10 @@ export interface BevelFilter {
   readonly blurY: number;
   /** Strength (0–255). Default: 1. */
   readonly strength: number;
-  readonly inner: boolean;
+  /** Quality (render passes). 1 = Low, 2 = Med, 3 = High. Default: 1. */
+  readonly quality: 1 | 2 | 3;
+  /** Bevel placement. "inner" = inside object, "outer" = outside, "full" = both sides. Default: "inner". */
+  readonly bevelType: "inner" | "outer" | "full";
   readonly knockout: boolean;
   readonly enabled: boolean;
 }
@@ -224,7 +227,8 @@ export function defaultBevel(): BevelFilter {
     blurX: 4,
     blurY: 4,
     strength: 1,
-    inner: false,
+    quality: 1,
+    bevelType: "inner",
     knockout: false,
     enabled: true,
   };

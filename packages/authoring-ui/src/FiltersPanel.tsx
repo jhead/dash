@@ -422,29 +422,53 @@ function BevelParams({
   onChange: (f: BevelFilter) => void;
 }) {
   const upd = (partial: Partial<BevelFilter>) => onChange({ ...filter, ...partial });
+  const qualityLabels: Record<1 | 2 | 3, string> = { 1: "Low", 2: "Medium", 3: "High" };
 
   return (
     <>
-      <NumField lbl="Blur X" value={filter.blurX} onChange={(v) => upd({ blurX: v })} min={0} />
-      <NumField lbl="Blur Y" value={filter.blurY} onChange={(v) => upd({ blurY: v })} min={0} />
-      <NumField lbl="Strength" value={filter.strength} onChange={(v) => upd({ strength: v })} min={0} max={255} />
-      <NumField lbl="Angle" value={filter.angle} onChange={(v) => upd({ angle: v })} />
-      <NumField lbl="Distance" value={filter.distance} onChange={(v) => upd({ distance: v })} min={0} />
+      <NumField lbl="Distance" value={filter.distance} onChange={(v) => upd({ distance: v })} min={0} max={100} />
+      <NumField lbl="Angle" value={filter.angle} onChange={(v) => upd({ angle: v })} min={0} max={360} />
       <ColorField
-        lbl="Highlight"
-        color={filter.highlightColor}
-        alpha={filter.highlightAlpha}
-        onColorChange={(c) => upd({ highlightColor: c })}
-        onAlphaChange={(a) => upd({ highlightAlpha: a })}
-      />
-      <ColorField
-        lbl="Shadow"
+        lbl="Shadow Color"
         color={filter.shadowColor}
         alpha={filter.shadowAlpha}
         onColorChange={(c) => upd({ shadowColor: c })}
         onAlphaChange={(a) => upd({ shadowAlpha: a })}
       />
-      <CheckField lbl="Inner" value={filter.inner} onChange={(v) => upd({ inner: v })} />
+      <ColorField
+        lbl="Highlight Color"
+        color={filter.highlightColor}
+        alpha={filter.highlightAlpha}
+        onColorChange={(c) => upd({ highlightColor: c })}
+        onAlphaChange={(a) => upd({ highlightAlpha: a })}
+      />
+      <NumField lbl="Blur X" value={filter.blurX} onChange={(v) => upd({ blurX: v })} min={0} />
+      <NumField lbl="Blur Y" value={filter.blurY} onChange={(v) => upd({ blurY: v })} min={0} />
+      <NumField lbl="Strength" value={filter.strength} onChange={(v) => upd({ strength: v })} min={0} max={1000} />
+      <div style={row}>
+        <span style={label}>Quality</span>
+        <select
+          style={selectStyle}
+          value={filter.quality}
+          onChange={(e) => upd({ quality: parseInt(e.target.value) as 1 | 2 | 3 })}
+        >
+          {([1, 2, 3] as const).map((q) => (
+            <option key={q} value={q}>{qualityLabels[q]}</option>
+          ))}
+        </select>
+      </div>
+      <div style={row}>
+        <span style={label}>Type</span>
+        <select
+          style={selectStyle}
+          value={filter.bevelType}
+          onChange={(e) => upd({ bevelType: e.target.value as "inner" | "outer" | "full" })}
+        >
+          <option value="inner">Inner</option>
+          <option value="outer">Outer</option>
+          <option value="full">Full</option>
+        </select>
+      </div>
       <CheckField lbl="Knockout" value={filter.knockout} onChange={(v) => upd({ knockout: v })} />
     </>
   );
@@ -458,17 +482,99 @@ function GradientGlowParams({
   onChange: (f: GradientGlowFilter) => void;
 }) {
   const upd = (partial: Partial<GradientGlowFilter>) => onChange({ ...filter, ...partial });
+  const qualityLabels: Record<1 | 2 | 3, string> = { 1: "Low", 2: "Medium", 3: "High" };
+
+  const updateStop = (
+    index: number,
+    partial: Partial<{ color: string; alpha: number; ratio: number }>
+  ) => {
+    const gradient = filter.gradient.map((s, i) =>
+      i === index ? { ...s, ...partial } : s
+    );
+    upd({ gradient });
+  };
+
+  const addStop = () => {
+    const last = filter.gradient[filter.gradient.length - 1];
+    const ratio = last ? Math.min(255, Math.round(last.ratio) + 32) : 128;
+    upd({ gradient: [...filter.gradient, { color: "#808080", alpha: 1, ratio }] });
+  };
+
+  const removeStop = (index: number) => {
+    if (filter.gradient.length <= 2) return;
+    upd({ gradient: filter.gradient.filter((_, i) => i !== index) });
+  };
 
   return (
     <>
+      <NumField lbl="Distance" value={filter.distance} onChange={(v) => upd({ distance: v })} min={0} max={100} />
+      <NumField lbl="Angle" value={filter.angle} onChange={(v) => upd({ angle: v })} min={0} max={360} />
       <NumField lbl="Blur X" value={filter.blurX} onChange={(v) => upd({ blurX: v })} min={0} />
       <NumField lbl="Blur Y" value={filter.blurY} onChange={(v) => upd({ blurY: v })} min={0} />
-      <NumField lbl="Strength" value={filter.strength} onChange={(v) => upd({ strength: v })} min={0} max={255} />
-      <NumField lbl="Angle" value={filter.angle} onChange={(v) => upd({ angle: v })} />
-      <NumField lbl="Distance" value={filter.distance} onChange={(v) => upd({ distance: v })} min={0} />
-      <NumField lbl="Quality" value={filter.quality} onChange={(v) => upd({ quality: v })} min={1} max={3} />
+      <NumField lbl="Strength" value={filter.strength} onChange={(v) => upd({ strength: v })} min={0} max={1000} />
+      <div style={row}>
+        <span style={label}>Quality</span>
+        <select
+          style={selectStyle}
+          value={filter.quality}
+          onChange={(e) => upd({ quality: parseInt(e.target.value) as 1 | 2 | 3 })}
+        >
+          {([1, 2, 3] as const).map((q) => (
+            <option key={q} value={q}>{qualityLabels[q]}</option>
+          ))}
+        </select>
+      </div>
       <CheckField lbl="Inner Glow" value={filter.inner} onChange={(v) => upd({ inner: v })} />
       <CheckField lbl="Knockout" value={filter.knockout} onChange={(v) => upd({ knockout: v })} />
+      {/* Gradient stops */}
+      <div style={{ marginTop: "6px", borderTop: "1px solid #444", paddingTop: "4px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+          <span style={{ color: "#999", fontSize: "11px" }}>Gradient Stops</span>
+          <button style={addBtnStyle} onClick={addStop} title="Add gradient stop">+</button>
+        </div>
+        {filter.gradient.map((stop, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "3px" }}>
+            <input
+              type="color"
+              style={colorInput}
+              value={stop.color.length === 7 ? stop.color : "#808080"}
+              onChange={(e) => updateStop(i, { color: e.target.value })}
+            />
+            <input
+              type="number"
+              style={{ ...numInput, width: "40px" }}
+              min={0}
+              max={100}
+              value={Math.round(stop.alpha * 100)}
+              title="Alpha %"
+              onChange={(e) => {
+                const n = parseFloat(e.target.value);
+                if (!isNaN(n)) updateStop(i, { alpha: Math.max(0, Math.min(1, n / 100)) });
+              }}
+            />
+            <input
+              type="number"
+              style={{ ...numInput, width: "40px" }}
+              min={0}
+              max={255}
+              value={Math.round(stop.ratio)}
+              title="Ratio (0–255)"
+              onChange={(e) => {
+                const n = parseFloat(e.target.value);
+                if (!isNaN(n)) updateStop(i, { ratio: Math.max(0, Math.min(255, n)) });
+              }}
+            />
+            <button
+              style={{ background: "transparent", border: "none", color: "#666", cursor: "pointer", fontSize: "11px", padding: "0 2px" }}
+              onClick={() => removeStop(i)}
+              disabled={filter.gradient.length <= 2}
+              title="Remove stop"
+            >
+              &#x2715;
+            </button>
+          </div>
+        ))}
+      </div>
     </>
   );
 }
@@ -481,17 +587,99 @@ function GradientBevelParams({
   onChange: (f: GradientBevelFilter) => void;
 }) {
   const upd = (partial: Partial<GradientBevelFilter>) => onChange({ ...filter, ...partial });
+  const qualityLabels: Record<1 | 2 | 3, string> = { 1: "Low", 2: "Medium", 3: "High" };
+
+  const updateStop = (
+    index: number,
+    partial: Partial<{ color: string; alpha: number; ratio: number }>
+  ) => {
+    const gradient = filter.gradient.map((s, i) =>
+      i === index ? { ...s, ...partial } : s
+    );
+    upd({ gradient });
+  };
+
+  const addStop = () => {
+    const last = filter.gradient[filter.gradient.length - 1];
+    const ratio = last ? Math.min(255, Math.round(last.ratio) + 32) : 128;
+    upd({ gradient: [...filter.gradient, { color: "#808080", alpha: 1, ratio }] });
+  };
+
+  const removeStop = (index: number) => {
+    if (filter.gradient.length <= 2) return;
+    upd({ gradient: filter.gradient.filter((_, i) => i !== index) });
+  };
 
   return (
     <>
+      <NumField lbl="Distance" value={filter.distance} onChange={(v) => upd({ distance: v })} min={0} max={100} />
+      <NumField lbl="Angle" value={filter.angle} onChange={(v) => upd({ angle: v })} min={0} max={360} />
       <NumField lbl="Blur X" value={filter.blurX} onChange={(v) => upd({ blurX: v })} min={0} />
       <NumField lbl="Blur Y" value={filter.blurY} onChange={(v) => upd({ blurY: v })} min={0} />
-      <NumField lbl="Strength" value={filter.strength} onChange={(v) => upd({ strength: v })} min={0} max={255} />
-      <NumField lbl="Angle" value={filter.angle} onChange={(v) => upd({ angle: v })} />
-      <NumField lbl="Distance" value={filter.distance} onChange={(v) => upd({ distance: v })} min={0} />
-      <NumField lbl="Quality" value={filter.quality} onChange={(v) => upd({ quality: v })} min={1} max={3} />
+      <NumField lbl="Strength" value={filter.strength} onChange={(v) => upd({ strength: v })} min={0} max={1000} />
+      <div style={row}>
+        <span style={label}>Quality</span>
+        <select
+          style={selectStyle}
+          value={filter.quality}
+          onChange={(e) => upd({ quality: parseInt(e.target.value) as 1 | 2 | 3 })}
+        >
+          {([1, 2, 3] as const).map((q) => (
+            <option key={q} value={q}>{qualityLabels[q]}</option>
+          ))}
+        </select>
+      </div>
       <CheckField lbl="Inner" value={filter.inner} onChange={(v) => upd({ inner: v })} />
       <CheckField lbl="Knockout" value={filter.knockout} onChange={(v) => upd({ knockout: v })} />
+      {/* Gradient stops */}
+      <div style={{ marginTop: "6px", borderTop: "1px solid #444", paddingTop: "4px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+          <span style={{ color: "#999", fontSize: "11px" }}>Gradient Stops</span>
+          <button style={addBtnStyle} onClick={addStop} title="Add gradient stop">+</button>
+        </div>
+        {filter.gradient.map((stop, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "3px" }}>
+            <input
+              type="color"
+              style={colorInput}
+              value={stop.color.length === 7 ? stop.color : "#808080"}
+              onChange={(e) => updateStop(i, { color: e.target.value })}
+            />
+            <input
+              type="number"
+              style={{ ...numInput, width: "40px" }}
+              min={0}
+              max={100}
+              value={Math.round(stop.alpha * 100)}
+              title="Alpha %"
+              onChange={(e) => {
+                const n = parseFloat(e.target.value);
+                if (!isNaN(n)) updateStop(i, { alpha: Math.max(0, Math.min(1, n / 100)) });
+              }}
+            />
+            <input
+              type="number"
+              style={{ ...numInput, width: "40px" }}
+              min={0}
+              max={255}
+              value={Math.round(stop.ratio)}
+              title="Ratio (0–255)"
+              onChange={(e) => {
+                const n = parseFloat(e.target.value);
+                if (!isNaN(n)) updateStop(i, { ratio: Math.max(0, Math.min(255, n)) });
+              }}
+            />
+            <button
+              style={{ background: "transparent", border: "none", color: "#666", cursor: "pointer", fontSize: "11px", padding: "0 2px" }}
+              onClick={() => removeStop(i)}
+              disabled={filter.gradient.length <= 2}
+              title="Remove stop"
+            >
+              &#x2715;
+            </button>
+          </div>
+        ))}
+      </div>
     </>
   );
 }

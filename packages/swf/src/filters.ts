@@ -129,11 +129,17 @@ function writeBevelFilter(bw: BitWriter, f: BevelFilter): void {
   bw.writeFixed8(f.strength);
 
   // Flags: UI8
+  // bit 7: InnerBevel (set for "inner" and "full")
+  // bit 6: Knockout
+  // bit 5: CompositeSource — always 1
+  // bit 4: OnTop (set for "full")
+  // bits 0-3: Passes (quality)
   let flags = 0;
   flags |= 1 << 5; // CompositeSource — always 1
-  if (f.inner) flags |= 1 << 7;    // InnerBevel
+  if (f.bevelType === "inner" || f.bevelType === "full") flags |= 1 << 7; // InnerBevel
+  if (f.bevelType === "full") flags |= 1 << 4; // OnTop
   if (f.knockout) flags |= 1 << 6; // Knockout
-  // bits 0-3: Passes = 0
+  flags |= (f.quality & 0x0f); // Passes
   bw.writeUI8(flags);
 }
 
