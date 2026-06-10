@@ -326,7 +326,9 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
                     && !(name === 'int' && e.args.length === 1)
                     && !(name === 'Number' && e.args.length === 1)
                     && !(name === 'getTimer' && e.args.length === 0)
-                    && !(name === 'random' && e.args.length === 1)) {
+                    && !(name === 'random' && e.args.length === 1)
+                    && !(name === 'chr' && e.args.length === 1)
+                    && !(name === 'ord' && e.args.length === 1)) {
             add(name);
           }
           if (name === 'loadMovieNum') {
@@ -1991,6 +1993,20 @@ class Compiler {
       if (name === 'random' && expr.args.length === 1) {
         this.compileExpr(expr.args[0]!);
         this.emit(0x30); // ActionRandomNumber
+        return;
+      }
+
+      // Built-in: chr(n) → push n, ActionChr (0x33)
+      if (name === 'chr' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x33); // ActionChr
+        return;
+      }
+
+      // Built-in: ord(s) → push s, ActionOrd (0x32)
+      if (name === 'ord' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x32); // ActionOrd
         return;
       }
 
