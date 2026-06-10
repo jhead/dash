@@ -2,9 +2,9 @@
   "id": "0738-output-panel-capture-ruffle-trace-output-during-",
   "title": "Output panel: capture Ruffle trace() output during Test Movie",
   "description": "In Flash 8, trace() calls in AS2 appear in the Output panel. Currently, Ruffle's trace() output only goes to the browser console (with logLevel: 'info'). Add an Output panel that: (1) captures Ruffle console output (trace messages) during Test Movie playback by intercepting Ruffle's log callbacks; (2) shows the output in a scrollable panel below the editor; (3) clears on each new Test Movie run. The CLAUDE.md note confirms Ruffle emits trace() at info log level \u2014 wire up a console interceptor or Ruffle's onTrace callback.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T06:18:16Z",
-  "updated_at": "2026-06-10T06:18:40Z"
+  "updated_at": "2026-06-10T06:23:12Z"
 }
