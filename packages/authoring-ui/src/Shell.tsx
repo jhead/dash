@@ -100,6 +100,7 @@ import { ActionsPanel } from "./ActionsPanel";
 import { OutputPanel } from "./OutputPanel";
 import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
 import { EditGridDialog } from "./EditGridDialog";
+import { FindReplaceDialog } from "./FindReplaceDialog";
 import { FiltersPanel } from "./FiltersPanel";
 import { SoundPanel } from "./SoundPanel";
 import {
@@ -929,6 +930,9 @@ export function Shell(): React.ReactElement {
 
   // Document properties dialog
   const [docPropsOpen, setDocPropsOpen] = useState(false);
+
+  // Find and Replace dialog
+  const [findReplaceVisible, setFindReplaceVisible] = useState(false);
 
   // Edit Grid dialog
   const [editGridOpen, setEditGridOpen] = useState(false);
@@ -4311,7 +4315,12 @@ export function Shell(): React.ReactElement {
         }
 
         gif.finish();
-        const buffer = gif.bytes();
+        const rawBytes = gif.bytes();
+        // Copy to a plain ArrayBuffer to satisfy Blob constructor's type constraint
+        const buffer = rawBytes.buffer.slice(
+          rawBytes.byteOffset,
+          rawBytes.byteOffset + rawBytes.byteLength
+        ) as ArrayBuffer;
         downloadBlob("movie.gif", new Blob([buffer], { type: "image/gif" }));
       })();
     },
@@ -4929,6 +4938,7 @@ export function Shell(): React.ReactElement {
         onTextTrackingDecrease={handleTextTrackingDecrease}
         onTextTrackingReset={handleTextTrackingReset}
         onTextScrollable={handleTextScrollable}
+        onFindReplace={() => setFindReplaceVisible((v) => !v)}
       />
       <EditBar
         documentName="Untitled-1"
