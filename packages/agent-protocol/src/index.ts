@@ -632,6 +632,7 @@ export const ALL_COMMANDS = [
   "timeline_remove_frame",
   "timeline_set_frame_label",
   "timeline_set_tween",
+  "timeline_set_sound",
   "timeline_goto_frame",
   "playback_play",
   "playback_stop",

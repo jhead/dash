@@ -328,6 +328,63 @@ function createMcpServerForRequest(): McpServer {
   );
 
   // =========================================================================
+  // Scene management
+  // =========================================================================
+
+  server.registerTool(
+    "scene_add",
+    {
+      title: "Add Scene",
+      description:
+        "Add a new scene to the document. The new scene is appended at the end. " +
+        "Returns sceneIndex, sceneName, and rev.",
+      inputSchema: z.object({
+        name: z.string().optional().describe("Scene name (auto-generated if omitted)"),
+      }),
+    },
+    async (params) => callTool("scene_add", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "scene_remove",
+    {
+      title: "Remove Scene",
+      description:
+        "Remove a scene by 0-based index. Cannot remove the only scene. " +
+        "Returns ok and rev.",
+      inputSchema: z.object({
+        index: z.number().int().nonnegative().describe("0-based scene index to remove"),
+      }),
+    },
+    async (params) => callTool("scene_remove", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "scene_rename",
+    {
+      title: "Rename Scene",
+      description: "Rename a scene by 0-based index. Returns ok and rev.",
+      inputSchema: z.object({
+        index: z.number().int().nonnegative().describe("0-based scene index"),
+        name: z.string().describe("New scene name"),
+      }),
+    },
+    async (params) => callTool("scene_rename", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "scene_select",
+    {
+      title: "Select Scene",
+      description: "Switch the active scene by 0-based index. Returns ok and rev.",
+      inputSchema: z.object({
+        index: z.number().int().nonnegative().describe("0-based scene index to activate"),
+      }),
+    },
+    async (params) => callTool("scene_select", params as Record<string, unknown>)
+  );
+
+  // =========================================================================
   // Stage & selection
   // =========================================================================
 
