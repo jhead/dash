@@ -1,0 +1,10 @@
+{
+  "id": "0880-as2-classdecl-implements-clause-parsed-but-actio",
+  "title": "AS2 ClassDecl: implements clause parsed but ActionImplementsOp (0x2b) never emitted",
+  "description": "Parser correctly populates ClassDecl.interfaces but compileClassDecl in compiler.ts ignores it entirely. AVM1 ActionImplementsOp (0x2b) is required for instanceof checks against interfaces. In packages/core/src/as2/compiler.ts compileClassDecl \u2014 decl.interfaces array is never read.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T17:13:38Z",
+  "updated_at": "2026-06-10T17:18:37Z"
+}

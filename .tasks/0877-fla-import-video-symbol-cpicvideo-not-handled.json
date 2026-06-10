@@ -2,9 +2,9 @@
   "id": "0877-fla-import-video-symbol-cpicvideo-not-handled",
   "title": "FLA import: video symbol (CPicVideo) not handled",
   "description": "No CPicVideo case in FLA element dispatch \u2014 Video symbol instance on stage hits generic not-supported fallback. SWF encoder already emits DefineVideoStream and VideoFrame from VideoItem model objects (compile.ts lines 673-730) but binary FLA round-trip never populates those items. Needs CPicVideo parser + flash8-import.ts wiring + verification against FLV Media stream.",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "low",
   "created_at": "2026-06-10T16:32:26Z",
-  "updated_at": "2026-06-10T16:32:26Z"
+  "updated_at": "2026-06-10T17:14:11Z"
 }

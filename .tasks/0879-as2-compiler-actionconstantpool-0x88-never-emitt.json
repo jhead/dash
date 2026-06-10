@@ -1,0 +1,10 @@
+{
+  "id": "0879-as2-compiler-actionconstantpool-0x88-never-emitt",
+  "title": "AS2 compiler: ActionConstantPool (0x88) never emitted \u2014 strings pushed inline",
+  "description": "All strings are pushed inline via ActionPush on every reference. Real Flash 8 deduplicates string literals into a leading ActionConstantPool block (0x88) and references by index, reducing bytecode size. Without it output diverges from Flash 8 and bloats published SWFs for scripts with repeated method names.",
+  "status": "open",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-10T17:13:35Z",
+  "updated_at": "2026-06-10T17:13:35Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0883-fla-import-custom-ease-bezier-curve-not-decoded-",
+  "title": "FLA import: custom ease Bezier curve not decoded from CPicPage afterData",
+  "description": "FLA binary stores motionEase as a signed integer (-100..100) for the classic ease dial but the custom ease curve (Bezier control points in a CPicPage afterData block) is never decoded. Frame.easeCurve is always null for imported FLAs, flattening any custom ease to integer approximation. Decode the CPicPage ease curve block referenced in flacomdoc.",
+  "status": "open",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-10T17:13:48Z",
+  "updated_at": "2026-06-10T17:13:48Z"
+}

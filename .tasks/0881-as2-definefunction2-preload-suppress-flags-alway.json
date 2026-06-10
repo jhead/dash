@@ -2,9 +2,9 @@
   "id": "0881-as2-definefunction2-preload-suppress-flags-alway",
   "title": "AS2 DefineFunction2 preload/suppress flags always 0x0000",
   "description": "DefineFunction2 preload/suppress bits (PreloadThis bit1, SuppressArguments bit7) are always written as zeros in compiler.ts line 1771. Setting these flags avoids slow scope-chain lookups for this/super in class methods and matches real Flash 8 output. Fixes register-slot allocation for arguments.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-06-10T17:13:41Z",
-  "updated_at": "2026-06-10T17:14:32Z"
+  "updated_at": "2026-06-10T17:20:13Z"
 }
