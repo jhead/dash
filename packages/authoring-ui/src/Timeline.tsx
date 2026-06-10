@@ -80,6 +80,8 @@ export interface TimelineProps {
   onRemoveFrames?: (startFrame: number, endFrame: number) => void;
   /** When editing a symbol, its type — used to switch to button-state view */
   symbolType?: SymbolType;
+  /** Called when the user double-clicks a keyframe cell */
+  onFrameDoubleClick?: (layerIndex: number, frameIndex: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +198,9 @@ function FrameCell({
   isSelected,
   isFirstInTweenSpan,
   label,
+  hasScript,
   onClick,
+  onDoubleClick,
   onContextMenu,
 }: {
   state: FrameState;
@@ -207,7 +211,10 @@ function FrameCell({
   /** True for the start keyframe of a tween so we can render the arrow */
   isFirstInTweenSpan?: boolean;
   label?: string;
+  /** True if this keyframe has a non-empty script attached */
+  hasScript?: boolean;
   onClick: (e: React.MouseEvent) => void;
+  onDoubleClick?: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
   // Background color logic: tween state overrides normal span color
@@ -239,6 +246,7 @@ function FrameCell({
   return (
     <div
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       style={{
         position: "relative",
@@ -286,6 +294,23 @@ function FrameCell({
         >
           {label}
         </div>
+      )}
+      {/* Script indicator — lowercase 'a' on keyframes with AS2 scripts */}
+      {hasScript && (state === "keyframe" || state === "blank-keyframe") && (
+        <span
+          style={{
+            fontSize: 8,
+            color: "#333",
+            position: "absolute",
+            bottom: 0,
+            left: 2,
+            lineHeight: 1,
+            pointerEvents: "none",
+            zIndex: 2,
+          }}
+        >
+          a
+        </span>
       )}
       {/* Motion tween arrow — only on first cell of tween span */}
       {tweenState === "motion-tween" && isFirstInTweenSpan && (
@@ -544,6 +569,7 @@ export function Timeline({
   hasFrameClipboard = false,
   onRemoveFrames,
   symbolType,
+  onFrameDoubleClick,
 }: TimelineProps): React.ReactElement {
   const [loop, setLoop] = useState(true);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -1510,6 +1536,7 @@ export function Timeline({
                         selectedFrameRange.layerId === layer.id &&
                         fi >= selectedFrameRange.start &&
                         fi <= selectedFrameRange.end;
+                      const hasScript = !!(kf?.script && kf.script.trim().length > 0);
                       return (
                         <FrameCell
                           key={fi}
@@ -1519,6 +1546,7 @@ export function Timeline({
                           isSelected={isSelected}
                           isFirstInTweenSpan={isFirstInTweenSpan}
                           label={kf?.label || undefined}
+                          hasScript={hasScript}
                           onClick={(e) => {
                             onFrameChange(fi);
                             // Select keyframe for ease editing if it's a tween keyframe
@@ -1541,6 +1569,7 @@ export function Timeline({
                               setSelectedFrameRange({ layerId: layer.id, start: fi, end: fi });
                             }
                           }}
+                          onDoubleClick={() => onFrameDoubleClick?.(idx, fi)}
                           onContextMenu={(e) => openContextMenu(e, layer.id, fi)}
                         />
                       );

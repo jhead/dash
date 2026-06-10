@@ -817,6 +817,17 @@ export function Shell(): React.ReactElement {
     setCurrentFrame(frame);
   }, []);
 
+  /**
+   * Called when the user double-clicks a keyframe cell in the Timeline.
+   * Navigates to that frame/layer and opens the Actions panel.
+   */
+  const handleFrameDoubleClick = useCallback((layerIndex: number, frameIndex: number) => {
+    setActiveLayerIndex(layerIndex);
+    setCurrentFrame(frameIndex);
+    setBottomTab("actions");
+    lastBottomTabRef.current = "actions";
+  }, []);
+
   const stopPlayback = useCallback(() => {
     isPlayingRef.current = false;
     setIsPlaying(false);
@@ -4224,6 +4235,7 @@ export function Shell(): React.ReactElement {
                   hasFrameClipboard={hasFrameClipboard}
                   onRemoveFrames={handleRemoveFrames}
                   symbolType={editContext.symbolType}
+                  onFrameDoubleClick={handleFrameDoubleClick}
                 />
               </div>
             )}
