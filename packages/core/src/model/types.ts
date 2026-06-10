@@ -309,6 +309,13 @@ export interface Symbol {
    * after the DefineButton2 tag in the SWF.
    */
   readonly buttonSounds?: ButtonSounds;
+  /**
+   * When true, the button behaves like a menu item (Track As Menu Item).
+   * Pressing and dragging onto it activates it; releasing elsewhere still
+   * counts as a release. Maps to the TrackAsMenu bit in DefineButton2 (tag 34).
+   * Only meaningful when symbolType === "button". Default: false.
+   */
+  readonly trackAsMenu?: boolean;
 }
 
 export interface Scale9Grid {

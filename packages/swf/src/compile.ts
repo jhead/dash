@@ -1661,7 +1661,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       charIdMap,
                       () => writer.nextCharId(),
                       instHoisted,
-                      displayObj.buttonHandlers as readonly ButtonHandler[]
+                      displayObj.buttonHandlers as readonly ButtonHandler[],
+                      displayObj.trackAsMenu
                     );
                     for (const def of instHoisted) {
                       writer.writeTag(def.tagType, def.body);

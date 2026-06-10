@@ -129,15 +129,19 @@ export function encodeDefineButton2(
   nextCharId: () => number,
   hoistedDefs: Array<{ tagType: number; body: Uint8Array }>,
   /** When set, replaces the symbol's own buttonActions with these instance-level on() handlers. */
-  actionOverrides?: readonly ButtonHandler[]
+  actionOverrides?: readonly ButtonHandler[],
+  /** When set, overrides the symbol's trackAsMenu flag for per-instance button definitions. */
+  trackAsMenuOverride?: boolean
 ): Uint8Array {
   const bw = new BitWriter();
 
   // ButtonId
   bw.writeUI16LE(buttonCharId);
 
-  // ReservedFlags[7] + TrackAsMenu[1] = 0x00 (normal button)
-  bw.writeUI8(0x00);
+  // ReservedFlags[7] + TrackAsMenu[1]
+  // TrackAsMenu bit (0x01): when set the button tracks as a menu item (press+drag activates)
+  const trackAsMenu = trackAsMenuOverride ?? symbol.trackAsMenu ?? false;
+  bw.writeUI8(trackAsMenu ? 0x01 : 0x00);
 
   const layers = symbol.timeline.layers;
 
