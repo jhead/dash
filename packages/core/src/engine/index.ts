@@ -112,7 +112,14 @@ export { samplePath, getGuideLayerPath } from "./guidepath.js";
 
 // Frame clipboard operations
 export type { FrameClipboard } from "./frameClipboard.js";
-export { copyFrames, pasteFrames, cutFrames } from "./frameClipboard.js";
+// All three are renamed to *Doc variants to avoid conflicting with the
+// layer-level copyFrames/pasteFrames in model/frame-utils.  Both reach the
+// public @flash/core barrel via "export *" and Vite rejects the ambiguity.
+export {
+  copyFrames as copyFramesDoc,
+  pasteFrames as pasteFramesDoc,
+  cutFrames as cutFramesDoc,
+} from "./frameClipboard.js";
 
 // Object clipboard operations
 export type { ObjectClipboard } from "./objectClipboard.js";
