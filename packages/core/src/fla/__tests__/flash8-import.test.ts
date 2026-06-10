@@ -32,7 +32,7 @@ import {
   parseFla8Timeline,
   textOrientationFromRunFields,
 } from "../flash8-binary.js";
-import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText, convertFla8Text, assignFolderParents } from "../flash8-import.js";
+import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText, convertFla8Text, assignFolderParents, toObjectAccessibility } from "../flash8-import.js";
 import { getTweenSpans } from "../../model/timeline-query.js";
 import type {
   Fla8ColorEffect,
