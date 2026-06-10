@@ -958,14 +958,19 @@ function convertLayer(
         : (f.keyMode & 0x0002) !== 0
           ? "shape"
           : "none";
+    // The binary stores a single ease value (motionEase) regardless of tween type.
+    // For shape tweens, forward it as shapeEase; for motion tweens, forward as motionEase.
+    const easeOverrides =
+      tweenType === "shape"
+        ? { shapeEase: f.motionEase }
+        : { motionEase: f.motionEase, motionEaseCurve: f.motionEaseCurve };
     frames.push(
       createFrame(frameIndex, {
         label: f.label,
         labelType: f.labelIsComment ? "comment" : "name",
         script: f.script,
         tweenType,
-        motionEase: f.motionEase,
-        motionEaseCurve: f.motionEaseCurve,
+        ...easeOverrides,
         motionRotate: f.motionRotate,
         motionRotateCount: f.motionRotateCount,
         motionOrientToPath: f.motionOrientToPath,

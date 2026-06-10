@@ -1866,3 +1866,129 @@ describe("custom ease Bézier curve decoding (task 0883)", () => {
     expect(curve.x2).toBeLessThanOrEqual(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Shape-tween ease forwarding (task 0914)
+//
+// The binary stores one ease value (motionEase s16) regardless of tween type.
+// For tweenType="shape" this value must land in Frame.shapeEase, not
+// Frame.motionEase.  The bug: flash8-import.ts always mapped f.motionEase to
+// motionEase, so shape tweens always imported as ease=0 (linear) even when
+// the Flash document had a non-zero ease.
+//
+// Synthetic stream layout (CPicPage → CPicLayer → CPicFrame with fs=3):
+//   fs=3 carries:  duration (u16), keyMode (u16, fs>2), motionEase (s16, fs>1).
+//   keyMode=0x0002 → shape tween.
+//   motionEase=50  → should map to shapeEase=50 (ease-in/out range: -100..100).
+//
+// We also verify the negative direction: for a motion-tween frame the same
+// binary ease value must appear in motionEase (not shapeEase).
+// ---------------------------------------------------------------------------
+
+describe("shape-tween ease forwarding (task 0914)", () => {
+  // Shared synthetic stream body for CPicPage → CPicLayer → CPicFrame header.
+  // The CPicFrame-specific bytes follow the shape data at the end.
+  const IDENTITY_MATRIX_24 = [
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+  ] as const;
+
+  function makeFrameStream(keyMode: number, ease: number): Uint8Array {
+    // ease is encoded as a signed 16-bit little-endian value
+    const easeBytes = [ease & 0xff, (ease >> 8) & 0xff];
+    return new Uint8Array([
+      // Root marker
+      0x01,
+      // New class CPicPage (schema=1, name len=8, "CPicPage")
+      0xff, 0xff, 0x01, 0x00, 0x08, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x50, 0x61, 0x67, 0x65,
+      // CPicPage → readCPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // child: new class CPicLayer (schema=1, name len=9, "CPicLayer")
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x4c, 0x61, 0x79, 0x65, 0x72,
+      // CPicLayer → readCPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // child: new class CPicFrame (schema=1, name len=9, "CPicFrame")
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x46, 0x72, 0x61, 0x6d, 0x65,
+      // CPicFrame → readCPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // CPicFrame has NO display-object children
+      0x00, 0x00,
+      // schema>0: registration point (2 × INT_MIN sentinels)
+      0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
+      // schema>2: skip(1), schema>3: skip(1)
+      0x00, 0x00,
+      // CPicFrameNode: shapeSchema = 0
+      0x00,
+      // readMatrix (identity, 24 bytes)
+      ...IDENTITY_MATRIX_24,
+      // readShapeData(caps=false): schema=0(1), edgeHint=0(4), fillCount=0(2), lineCount=0(2)
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      // --- CPicFrame-specific fields: fs=3 ---
+      0x03,                         // fs=3
+      0x01, 0x00,                   // duration=1 (u16 LE)
+      keyMode & 0xff, (keyMode >> 8) & 0xff,  // keyMode (u16 LE, fs>2)
+      ...easeBytes,                 // motionEase (s16 LE, fs>1)
+      // Remaining reads hit EOF — caught by FlaEofError try/catch
+    ]);
+  }
+
+  it("shape-tween frame: binary ease value maps to shapeEase, not motionEase", () => {
+    // keyMode=0x0002 → shape tween; ease=50
+    const stream = makeFrameStream(0x0002, 50);
+    const streams = new Map<string, Uint8Array>([["Page 1", stream]]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.tweenType).toBe("shape");
+    expect(frame.shapeEase).toBe(50);
+    expect(frame.motionEase).toBe(0); // must remain at default
+  });
+
+  it("shape-tween frame: negative ease (ease-in) maps to shapeEase correctly", () => {
+    // keyMode=0x0002 → shape tween; ease=-75 (stored as signed s16)
+    const ease = -75;
+    const easeU16 = ease & 0xffff; // two's complement: 0xFF85
+    const stream = makeFrameStream(0x0002, easeU16);
+    const streams = new Map<string, Uint8Array>([["Page 1", stream]]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.tweenType).toBe("shape");
+    expect(frame.shapeEase).toBe(-75);
+    expect(frame.motionEase).toBe(0);
+  });
+
+  it("motion-tween frame: binary ease value maps to motionEase, shapeEase stays 0", () => {
+    // keyMode=0x4001 → motion tween; ease=75
+    const stream = makeFrameStream(0x4001, 75);
+    const streams = new Map<string, Uint8Array>([["Page 1", stream]]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.tweenType).toBe("motion");
+    expect(frame.motionEase).toBe(75);
+    expect(frame.shapeEase).toBe(0); // must remain at default
+  });
+
+  it("no-tween frame: shapeEase stays 0 (ease value not routed to shapeEase)", () => {
+    // keyMode=0x0000 → no tween; ease=50 in the binary.
+    // The ease value is not meaningful for no-tween frames.  The important
+    // invariant is that shapeEase stays 0 (shape tween is not active).
+    const stream = makeFrameStream(0x0000, 50);
+    const streams = new Map<string, Uint8Array>([["Page 1", stream]]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.tweenType).toBe("none");
+    expect(frame.shapeEase).toBe(0);
+    // motionEase gets the raw binary value in the no-tween path (harmless, unused)
+    expect(frame.motionEase).toBe(50);
+  });
+});
