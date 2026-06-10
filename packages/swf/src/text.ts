@@ -252,7 +252,7 @@ export function encodeDefineEditText(
   // renders with device fonts (real Arial, etc.) at the size given by FontHeight.
   if (isHtml) flags |= 1 << 9;           // HTML — enables Flash HTML markup in text content
   if (isStatic) flags |= 1 << 10;        // WasStatic — Flash 8+ static marker
-  if (obj.hasBorder) flags |= 1 << 11;   // Border — draw border rectangle
+  if (obj.hasBorder || obj.hasBackground) flags |= 1 << 11;   // Border — draw border rectangle and/or background fill
   if (isStatic) flags |= 1 << 12;        // NoSelect for static text only
   flags |= 1 << 13;                      // HasLayout
 

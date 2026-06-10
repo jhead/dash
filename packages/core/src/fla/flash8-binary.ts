@@ -221,6 +221,8 @@ export interface Fla8Text {
   readonly maxChars: number;
   /** Whether a border rectangle is drawn around the text field (bit 0x40 of CPicText textFlags). */
   readonly hasBorder: boolean;
+  /** Whether a background fill is drawn behind the text field (bit 0x20 of CPicText textFlags). */
+  readonly hasBackground: boolean;
   /** AS2 variable name bound to this text field (legacy ActionScript 1/2 binding). */
   readonly as2VariableName: string;
   /** Flash 8+ filters (empty array when none). */
@@ -1960,7 +1962,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
   let embedFlag = 0;
   if (ts >= 4) {
     // bit 0x01 = editable (dynamic or input), 0x02 = dynamic, 0x04 = password,
-    // 0x08 = wrap, 0x10 = multiline, 0x40 = border
+    // 0x08 = wrap, 0x10 = multiline, 0x20 = background fill, 0x40 = border
     textFlags = r.u8();
     embedFlag = r.u8();
   }
@@ -2058,6 +2060,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     password: (textFlags & 0x04) !== 0,
     maxChars,
     hasBorder: (textFlags & 0x40) !== 0,
+    hasBackground: (textFlags & 0x20) !== 0,
     as2VariableName,
     filters,
     // Instance color effect for text fields is not yet decoded from the binary
