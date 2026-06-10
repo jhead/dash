@@ -31,6 +31,7 @@ import {
   getUnionBounds,
   copyFrames,
   pasteFrames,
+  reverseFrames,
   breakApart,
   createLayer,
   simplifyPath,
@@ -139,6 +140,9 @@ import type { FrameSizeReport } from "@flash/swf";
 import { BandwidthProfilerPanel } from "./BandwidthProfilerPanel";
 import { PanelGroup } from "./PanelGroup";
 import { HistoryPanel } from "./HistoryPanel";
+import { AccessibilityPanel } from "./AccessibilityPanel";
+import type { DocumentAccessibility } from "@flash/core";
+import type { ObjectAccessibility } from "@flash/core";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
 import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
 
@@ -922,6 +926,9 @@ export function Shell(): React.ReactElement {
   // History panel (Window > History, Ctrl+F10)
   const [historyPanelVisible, setHistoryPanelVisible] = useState(false);
 
+  // Accessibility panel (Window > Accessibility)
+  const [accessibilityPanelVisible, setAccessibilityPanelVisible] = useState(false);
+
   // Scene switcher inline panel (toggle near Timeline header)
   const [showScenes, setShowScenes] = useState(false);
 
@@ -1652,6 +1659,17 @@ export function Shell(): React.ReactElement {
   }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
 
   // ---------------------------------------------------------------------------
+  // Selected frame range — tracks shift-click selection in Timeline
+  // ---------------------------------------------------------------------------
+
+  /** Mirrors the Timeline's shift-selected frame range for menu-bar operations. */
+  const [selectedFrameRange, setSelectedFrameRange] = useState<{
+    layerId: string;
+    start: number;
+    end: number;
+  } | null>(null);
+
+  // ---------------------------------------------------------------------------
   // Frame clipboard — copy/paste frames in the Timeline
   // ---------------------------------------------------------------------------
 
@@ -1738,6 +1756,20 @@ export function Shell(): React.ReactElement {
     },
     [timeline, safeActiveLayerIndex, pushDoc, withTimeline],
   );
+
+  /**
+   * Called by Modify > Timeline > Reverse Frames.
+   * Reverses the selected frame range on the active layer.
+   * Falls back to the current frame (single frame) if no range is selected.
+   */
+  const handleReverseFrames = useCallback(() => {
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+    const layerId = layer.id;
+    const rangeStart = selectedFrameRange?.layerId === layerId ? selectedFrameRange.start : currentFrame;
+    const rangeEnd = selectedFrameRange?.layerId === layerId ? selectedFrameRange.end : currentFrame;
+    pushDoc(withTimeline((t) => reverseFrames(t, layerId, rangeStart, rangeEnd)));
+  }, [timeline, safeActiveLayerIndex, selectedFrameRange, currentFrame, pushDoc, withTimeline]);
 
   const handleShapeResize = useCallback(
     (id: string, newX: number, newY: number, scaleX: number, scaleY: number) => {
@@ -4444,6 +4476,28 @@ export function Shell(): React.ReactElement {
   }, [publishToBytes]);
 
   // ---------------------------------------------------------------------------
+  // Accessibility panel handlers
+  // ---------------------------------------------------------------------------
+
+  const handleDocAccessibilityChange = useCallback(
+    (a: DocumentAccessibility) => {
+      pushDoc({ ...doc, accessibility: a });
+    },
+    [doc, pushDoc]
+  );
+
+  const handleObjectAccessibilityChange = useCallback(
+    (id: string, a: ObjectAccessibility) => {
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      pushDoc(withTimeline((t) =>
+        updateDisplayObject(t, layerId, currentFrame, id, { accessibility: a })
+      ));
+    },
+    [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
+  );
+
+  // ---------------------------------------------------------------------------
   // History panel — jump to a specific step
   // ---------------------------------------------------------------------------
 
@@ -5233,6 +5287,7 @@ export function Shell(): React.ReactElement {
         onRotate180={handleRotate180}
         onSwapSymbol={handleSwapSymbol}
         onDistributeToLayers={handleDistributeToLayers}
+        onReverseFrames={handleReverseFrames}
         onAlignPanelToggle={() => setAlignPanelVisible((v) => !v)}
         alignPanelVisible={alignPanelVisible}
         onScenePanelToggle={() => setScenePanelVisible((v) => !v)}
@@ -5350,6 +5405,7 @@ export function Shell(): React.ReactElement {
                   onRemoveFrames={handleRemoveFrames}
                   symbolType={editContext.symbolType}
                   onFrameDoubleClick={handleFrameDoubleClick}
+                  onSelectedFrameRangeChange={setSelectedFrameRange}
                 />
               </div>
             )}

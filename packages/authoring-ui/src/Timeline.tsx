@@ -85,6 +85,8 @@ export interface TimelineProps {
   symbolType?: SymbolType;
   /** Called when the user double-clicks a keyframe cell */
   onFrameDoubleClick?: (layerIndex: number, frameIndex: number) => void;
+  /** Called whenever the frame selection range changes (for Shell to track) */
+  onSelectedFrameRangeChange?: (range: { layerId: string; start: number; end: number } | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +577,7 @@ export function Timeline({
   onRemoveFrames,
   symbolType,
   onFrameDoubleClick,
+  onSelectedFrameRangeChange,
 }: TimelineProps): React.ReactElement {
   const [loop, setLoop] = useState(true);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -1563,15 +1566,19 @@ export function Timeline({
                             // Shift-click: extend selection range from anchor
                             if (e.shiftKey && anchorFrameRef.current && anchorFrameRef.current.layerId === layer.id) {
                               const anchor = anchorFrameRef.current.frame;
-                              setSelectedFrameRange({
+                              const range = {
                                 layerId: layer.id,
                                 start: Math.min(anchor, fi),
                                 end: Math.max(anchor, fi),
-                              });
+                              };
+                              setSelectedFrameRange(range);
+                              onSelectedFrameRangeChange?.(range);
                             } else {
                               // Plain click: set anchor and single-frame selection
                               anchorFrameRef.current = { layerId: layer.id, frame: fi };
-                              setSelectedFrameRange({ layerId: layer.id, start: fi, end: fi });
+                              const range = { layerId: layer.id, start: fi, end: fi };
+                              setSelectedFrameRange(range);
+                              onSelectedFrameRangeChange?.(range);
                             }
                           }}
                           onDoubleClick={() => onFrameDoubleClick?.(idx, fi)}

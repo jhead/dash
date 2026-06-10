@@ -295,6 +295,8 @@ export interface MenuBarProps {
   onSwapSymbol?: () => void;
   /** Called when Modify > Distribute to Layers is activated. */
   onDistributeToLayers?: () => void;
+  /** Called when Modify > Timeline > Reverse Frames is activated. */
+  onReverseFrames?: () => void;
   /** Called when Modify > Transform > Flip Horizontal is activated. */
   onFlipHorizontal?: () => void;
   /** Called when Modify > Transform > Flip Vertical is activated. */
@@ -422,6 +424,7 @@ export function MenuBar({
   onAddShapeHint,
   onSwapSymbol,
   onDistributeToLayers,
+  onReverseFrames,
   onFlipHorizontal,
   onFlipVertical,
   onRotate90CW,
@@ -681,6 +684,10 @@ export function MenuBar({
         {
           label: "Distribute to Layers",
           action: () => { onDistributeToLayers?.(); },
+        },
+        {
+          label: "Timeline: Reverse Frames",
+          action: () => { onReverseFrames?.(); },
         },
         {
           label: "Arrange: Bring to Front  Ctrl+Shift+Up",
