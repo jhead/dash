@@ -418,6 +418,10 @@ export interface SceneLayer {
   readonly visible: boolean;
   readonly locked: boolean;
   readonly objects: readonly DisplayObject[];
+  /** When true, objects in this layer are rendered as outlines only. */
+  readonly outlineMode?: boolean;
+  /** CSS hex color for the outline when outlineMode is true. */
+  readonly outlineColor?: string;
 }
 
 export interface SceneGraph {

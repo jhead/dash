@@ -20,6 +20,7 @@ import {
   renameLayer,
   reverseFrames,
   setLayerLocked,
+  setLayerOutlineMode,
   setLayerType,
   setLayerVisible,
   setMotionTween,
@@ -1034,6 +1035,40 @@ export function Timeline({
                 >
                   {layer.locked ? "L" : "U"}
                 </button>
+                {/* Outline mode toggle (colored square) */}
+                <button
+                  title={layer.outlineMode ? "Exit outline mode" : "Show as outlines"}
+                  onClick={(e) => {
+                    const newMode = !layer.outlineMode;
+                    if (e.altKey || e.ctrlKey) {
+                      // Alt/Ctrl+click: toggle outline mode for all layers
+                      let t = timeline;
+                      for (const l of timeline.layers) {
+                        t = setLayerOutlineMode(t, l.id, newMode);
+                      }
+                      onTimelineChange(t);
+                    } else {
+                      onTimelineChange(
+                        setLayerOutlineMode(timeline, layer.id, newMode)
+                      );
+                    }
+                  }}
+                  style={{
+                    ...iconButtonStyle,
+                    padding: 0,
+                    width: 10,
+                    height: 10,
+                    minWidth: 10,
+                    flexShrink: 0,
+                    border: layer.outlineMode
+                      ? `2px solid ${layer.outlineColor ?? "#0000ff"}`
+                      : `1px solid ${layer.outlineColor ?? "#0000ff"}`,
+                    background: layer.outlineMode
+                      ? "transparent"
+                      : layer.outlineColor ?? "#0000ff",
+                    borderRadius: 0,
+                  }}
+                />
                 {/* Layer type indicator (non-normal types) */}
                 {layer.type !== "normal" && (
                   <span

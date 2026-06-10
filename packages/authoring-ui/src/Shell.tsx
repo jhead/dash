@@ -2591,6 +2591,8 @@ export function Shell(): React.ReactElement {
         name: layer.name,
         visible: layer.visible,
         locked: layer.locked,
+        outlineMode: layer.outlineMode,
+        outlineColor: layer.outlineColor,
         objects,
       };
     });
@@ -2611,6 +2613,8 @@ export function Shell(): React.ReactElement {
         name: layer.name,
         visible: layer.visible,
         locked: layer.locked,
+        outlineMode: layer.outlineMode,
+        outlineColor: layer.outlineColor,
         objects,
       };
     });
@@ -2637,6 +2641,8 @@ export function Shell(): React.ReactElement {
           name: layer.name,
           visible: layer.visible,
           locked: layer.locked,
+          outlineMode: layer.outlineMode,
+          outlineColor: layer.outlineColor,
           objects,
         };
       });

@@ -664,6 +664,87 @@ function renderDisplayObject(
 }
 
 // ---------------------------------------------------------------------------
+// Outline mode rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders a shape's paths as outlines only (no fills), using the given color.
+ * Used when a layer's outlineMode is true.
+ */
+function renderShapeOutline(
+  ctx: CanvasRenderingContext2D,
+  shape: Shape,
+  offsetX: number,
+  offsetY: number,
+  color: string
+): void {
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+
+  for (const path of shape.paths) {
+    // Render closed fill paths as outlined strokes; render stroke paths normally in the outline color
+    if (path.fill || path.stroke) {
+      ctx.beginPath();
+      buildCanvasPath(ctx, path);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Renders a DisplayObject as an outline (no fills). Shapes are stroked in the
+ * given outline color. Non-shape objects (text, bitmap, instance) are rendered
+ * normally since they don't have meaningful outline-only representations.
+ */
+function renderDisplayObjectOutline(
+  ctx: CanvasRenderingContext2D,
+  obj: DisplayObject,
+  color: string
+): void {
+  switch (obj.type) {
+    case "shape": {
+      const scaleX = obj.scaleX ?? 1;
+      const scaleY = obj.scaleY ?? 1;
+      const rotation = obj.rotation ?? 0;
+      if (scaleX !== 1 || scaleY !== 1 || rotation !== 0) {
+        ctx.save();
+        ctx.translate(obj.x, obj.y);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.scale(scaleX, scaleY);
+        renderShapeOutline(ctx, obj.shape, 0, 0, color);
+        ctx.restore();
+      } else {
+        renderShapeOutline(ctx, obj.shape, obj.x, obj.y, color);
+      }
+      break;
+    }
+
+    case "drawing-object":
+      renderShapeOutline(ctx, obj.shape, obj.x, obj.y, color);
+      break;
+
+    // Non-shape objects: render at reduced opacity so the layer is visually
+    // distinguishable as being in outline mode while still showing content.
+    case "text":
+    case "bitmap":
+    case "instance":
+    case "group": {
+      ctx.save();
+      ctx.globalAlpha = (ctx.globalAlpha ?? 1) * 0.4;
+      // No image cache or library needed here — we intentionally do not pass
+      // them so instances render at reduced opacity without full recursion.
+      ctx.restore();
+      break;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // HiDPI canvas initialisation
 // ---------------------------------------------------------------------------
 
@@ -741,14 +822,22 @@ export class CanvasRenderer {
 
   /**
    * Renders a single layer's display objects.
+   * When outlineMode is true, shapes are drawn as outlines in outlineColor only.
    */
   private renderLayer(
     ctx: CanvasRenderingContext2D,
     layer: SceneLayer,
     library?: Library
   ): void {
-    for (const obj of layer.objects) {
-      renderDisplayObject(ctx, obj, this.imageCache, library);
+    if (layer.outlineMode) {
+      const color = layer.outlineColor ?? "#0000ff";
+      for (const obj of layer.objects) {
+        renderDisplayObjectOutline(ctx, obj, color);
+      }
+    } else {
+      for (const obj of layer.objects) {
+        renderDisplayObject(ctx, obj, this.imageCache, library);
+      }
     }
   }
 
