@@ -296,6 +296,10 @@ export interface MenuBarProps {
   onColorMixerToggle?: () => void;
   /** Whether the Color Mixer panel is currently visible (for checkmark display). */
   colorMixerVisible?: boolean;
+  /** Called when Window > Color Swatches is toggled. */
+  onSwatchesPanelToggle?: () => void;
+  /** Whether the Color Swatches panel is currently visible (for checkmark display). */
+  swatchesPanelVisible?: boolean;
   // Text menu callbacks
   /** Called when Text > Style > Bold (Ctrl+Shift+B) is activated. */
   onTextBold?: () => void;
@@ -383,6 +387,8 @@ export function MenuBar({
   scenePanelVisible = false,
   onColorMixerToggle,
   colorMixerVisible = false,
+  onSwatchesPanelToggle,
+  swatchesPanelVisible = false,
   onTextBold,
   onTextItalic,
   onTextUnderline,
@@ -711,6 +717,10 @@ export function MenuBar({
         {
           label: `${colorMixerVisible ? "+ " : "  "}Color Mixer  Shift+F9`,
           action: () => { onColorMixerToggle?.(); },
+        },
+        {
+          label: `${swatchesPanelVisible ? "+ " : "  "}Color Swatches`,
+          action: () => { onSwatchesPanelToggle?.(); },
         },
         {
           label: "Filters",

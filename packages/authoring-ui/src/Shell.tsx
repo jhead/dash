@@ -113,6 +113,7 @@ import { AlignPanel } from "./AlignPanel";
 import { ScenePanel } from "./ScenePanel";
 import { SceneSwitcher } from "./SceneSwitcher";
 import { ColorMixerPanel } from "./ColorMixerPanel";
+import { SwatchesPanel, DEFAULT_SWATCHES } from "./SwatchesPanel";
 import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
 import type { RegistrationPoint } from "./ConvertToSymbolDialog";
 import { TimelineEffectDialog } from "./TimelineEffectDialog";
@@ -875,6 +876,10 @@ export function Shell(): React.ReactElement {
   // Scene panel (Window > Scene, Ctrl+Shift+S)
   const [scenePanelVisible, setScenePanelVisible] = useState(false);
 
+  // Color Swatches panel (Window > Color Swatches)
+  const [swatchesPanelVisible, setSwatchesPanelVisible] = useState(false);
+  const [swatches, setSwatches] = useState<string[]>(() => [...DEFAULT_SWATCHES]);
+
   // Scene switcher inline panel (toggle near Timeline header)
   const [showScenes, setShowScenes] = useState(false);
 
@@ -1198,6 +1203,24 @@ export function Shell(): React.ReactElement {
     setMixerFillAlpha(alpha);
     handleFillColorChange(alpha > 0 ? color : null);
   }, [handleFillColorChange]);
+
+  // Swatches panel handlers
+  /** Apply a swatch color as the current fill color */
+  const handleSelectSwatch = useCallback((color: string) => {
+    handleFillColorChange(color);
+  }, [handleFillColorChange]);
+
+  const handleAddSwatch = useCallback((color: string) => {
+    setSwatches((prev) => [...prev, color]);
+  }, []);
+
+  const handleRemoveSwatch = useCallback((index: number) => {
+    setSwatches((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleSwatchesLoad = useCallback((loaded: string[]) => {
+    setSwatches(loaded);
+  }, []);
 
   const handleMixerStrokeColorChange = useCallback((color: string, alpha: number) => {
     setMixerStrokeAlpha(alpha);
@@ -4593,6 +4616,8 @@ export function Shell(): React.ReactElement {
         scenePanelVisible={scenePanelVisible}
         onColorMixerToggle={() => setColorMixerVisible((v) => !v)}
         colorMixerVisible={colorMixerVisible}
+        onSwatchesPanelToggle={() => setSwatchesPanelVisible((v) => !v)}
+        swatchesPanelVisible={swatchesPanelVisible}
         onTextBold={handleTextBold}
         onTextItalic={handleTextItalic}
         onTextUnderline={handleTextUnderline}
@@ -5249,6 +5274,18 @@ export function Shell(): React.ReactElement {
           onFillChange={handleFillChange}
           bitmapItems={bitmapLibraryItems}
           onClose={() => setColorMixerVisible(false)}
+        />
+      )}
+
+      {/* Color Swatches panel (Window > Color Swatches) */}
+      {swatchesPanelVisible && (
+        <SwatchesPanel
+          swatches={swatches}
+          onSelectSwatch={handleSelectSwatch}
+          onAddSwatch={handleAddSwatch}
+          onRemoveSwatch={handleRemoveSwatch}
+          onSwatchesLoad={handleSwatchesLoad}
+          onClose={() => setSwatchesPanelVisible(false)}
         />
       )}
 
