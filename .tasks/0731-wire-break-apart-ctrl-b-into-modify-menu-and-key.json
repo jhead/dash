@@ -2,9 +2,9 @@
   "id": "0731-wire-break-apart-ctrl-b-into-modify-menu-and-key",
   "title": "Wire Break Apart (Ctrl+B) into Modify menu and keyboard shortcut",
   "description": "breakApart() is fully implemented in packages/core/src/engine/shapeOps.ts but is not wired in the UI. Flash 8: Modify > Break Apart (Ctrl+B) decomposes a selected SymbolInstance into its raw shapes on the current layer. When applied to text, it first breaks text into characters, then into shapes on second press. Wire it into: (1) Shell.tsx keyboard handler for Ctrl+B, (2) MenuBar.tsx Modify menu as 'Break Apart  Ctrl+B'. Call breakApart(doc, selection) and push the result via pushDoc.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T05:48:36Z",
-  "updated_at": "2026-06-10T05:48:56Z"
+  "updated_at": "2026-06-10T05:53:03Z"
 }

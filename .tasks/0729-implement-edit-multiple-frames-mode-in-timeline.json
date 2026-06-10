@@ -2,9 +2,9 @@
   "id": "0729-implement-edit-multiple-frames-mode-in-timeline",
   "title": "Implement Edit Multiple Frames mode in Timeline",
   "description": "Flash 8 had an 'Edit Multiple Frames' mode (button between onion-skin and lasso in the timeline) that let users select and move objects across multiple frames simultaneously. The onion skin range markers define the frame range. When active, all frames in the range are editable at once, and selection/transform operations apply changes to matching objects across all frames in the range. This is a complex but frequently-used Flash authoring feature.",
-  "status": "open",
+  "status": "in_progress",
   "effort": "high",
   "priority": "low",
   "created_at": "2026-06-10T05:40:34Z",
-  "updated_at": "2026-06-10T05:40:34Z"
+  "updated_at": "2026-06-10T05:53:36Z"
 }
