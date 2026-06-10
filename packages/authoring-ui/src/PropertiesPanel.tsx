@@ -13,6 +13,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import type {
   DisplayObject,
   DocumentProperties,
+  EaseCurve,
   FlashDocument,
   Frame,
   LabelType,
@@ -30,6 +31,7 @@ import type {
   TweenType,
 } from "@flash/core";
 import { ColorPicker } from "./ColorPicker";
+import { EaseCurveDialog } from "./EaseCurveDialog";
 
 // ---------------------------------------------------------------------------
 // Re-exported legacy types (kept for backward compatibility)
@@ -918,6 +920,8 @@ const ROTATE_MODES: { value: "none" | "auto" | "cw" | "ccw"; label: string }[] =
   { value: "none", label: "None" },
 ];
 
+const DEFAULT_EASE_CURVE: EaseCurve = { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0 };
+
 function FrameView({
   frame,
   layerIndex,
@@ -933,10 +937,12 @@ function FrameView({
   const labelType: LabelType = frame?.labelType ?? "name";
   const tweenType: TweenType = frame?.tweenType ?? "none";
   const motionEase = frame?.motionEase ?? 0;
+  const motionEaseCurve = frame?.motionEaseCurve ?? null;
   const motionRotate = frame?.motionRotate ?? "auto";
   const motionRotateCount = frame?.motionRotateCount ?? 0;
 
   const [labelDraft, setLabelDraft] = useState(label);
+  const [showEaseCurveDialog, setShowEaseCurveDialog] = useState(false);
   useEffect(() => {
     setLabelDraft(frame?.label ?? "");
   }, [frame?.label, layerIndex, frameIndex]);
@@ -1022,15 +1028,14 @@ function FrameView({
             <button
               style={{
                 ...S.toggleBtn,
-                background: "#333",
-                color: "#888",
+                background: motionEaseCurve ? "#225522" : "#333",
+                color: motionEaseCurve ? "#88ee88" : "#888",
                 fontSize: "10px",
                 padding: "1px 4px",
+                border: `1px solid ${motionEaseCurve ? "#44aa44" : "#444"}`,
               }}
-              onClick={() => {
-                // TODO: open custom ease curve dialog when implemented
-              }}
-              title="Custom ease curve (not yet implemented)"
+              onClick={() => setShowEaseCurveDialog(true)}
+              title="Open custom ease curve editor"
             >
               Custom…
             </button>
@@ -1068,6 +1073,17 @@ function FrameView({
             </div>
           )}
         </>
+      )}
+
+      {/* Custom ease curve dialog */}
+      {showEaseCurveDialog && (
+        <EaseCurveDialog
+          initialCurve={motionEaseCurve ?? DEFAULT_EASE_CURVE}
+          onConfirm={(curve) => {
+            onFrameUpdate?.(layerIndex, frameIndex, { motionEaseCurve: curve });
+          }}
+          onClose={() => setShowEaseCurveDialog(false)}
+        />
       )}
     </div>
   );
