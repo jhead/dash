@@ -122,6 +122,18 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   in the Contents stream; it likely lives in the Symbol N CPicPage afterData (not yet decoded).
   Without a fixture FLA that has non-empty linkage, byte-order of the 4 flag bytes is best-effort
   — verified only for the "no linkage" case where all flags read as expected (exportForAS=false).
+- **FLA binary layer ordering is BOTTOM-TO-TOP** (task 0903): CPicLayer objects in the
+  CPicPage stream are stored background-first, foreground-last (i.e., the bottommost layer
+  in the panel is at index 0 in the binary). The Flash 8 clone model convention (and
+  `compile.ts`) expects TOP-TO-BOTTOM (li=0 = frontmost/topmost). `flash8-import.ts`
+  `convertTimeline()` must `.reverse()` the `t.layers` array after reading from the
+  binary — `[...t.layers].reverse().map(...)` — so that li=0 is the foreground layer.
+  This applies to BOTH scene timelines (CPicPage) and symbol timelines (Symbol N CPicPage);
+  `convertTimeline` is the single function called for both, so the fix is uniform.
+  Mask/guide layer type assignments are intrinsic to each CPicLayer record (not index-based),
+  so they survive the reversal correctly: a mask at binary-index N is still type "mask"
+  after reversal, and the model's "mask is above its masked layers" invariant (`mask at
+  li=k`, `masked at li=k+1`) is preserved because the panel order is maintained.
 
 ### SWF encoding
 
