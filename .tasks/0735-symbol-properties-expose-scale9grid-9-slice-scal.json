@@ -1,0 +1,10 @@
+{
+  "id": "0735-symbol-properties-expose-scale9grid-9-slice-scal",
+  "title": "Symbol Properties: expose Scale9Grid (9-slice scaling) in Properties panel",
+  "description": "Scale9Grid is supported in the core model (types.ts) and SWF encoder (DefineScalingGrid tag 78) but there is no UI to set it. In Flash 8, this was accessible via Modify > Symbol Properties when a MovieClip was selected in the library, or via the Properties panel for a symbol. Add a '9-Slice Scaling' section to the symbol properties dialog or library panel. The UI should show a checkbox 'Enable guides for 9-slice scaling' and four number inputs (x, y, width, height) for the grid bounds.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T06:04:35Z",
+  "updated_at": "2026-06-10T06:08:51Z"
+}
