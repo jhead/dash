@@ -115,6 +115,8 @@ import { SceneSwitcher } from "./SceneSwitcher";
 import { ColorMixerPanel } from "./ColorMixerPanel";
 import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
 import type { RegistrationPoint } from "./ConvertToSymbolDialog";
+import { TimelineEffectDialog } from "./TimelineEffectDialog";
+import type { EffectParams, TimelineEffectType } from "./TimelineEffectDialog";
 import { SwapSymbolDialog } from "./SwapSymbolDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
@@ -895,6 +897,12 @@ export function Shell(): React.ReactElement {
 
   // Swap Symbol dialog
   const [swapSymbolOpen, setSwapSymbolOpen] = useState(false);
+
+  // Timeline Effects dialog (Insert > Timeline Effects)
+  const [timelineEffectOpen, setTimelineEffectOpen] = useState(false);
+  const [timelineEffectInitial, setTimelineEffectInitial] = useState<TimelineEffectType>("transform");
+  // Counter for auto-naming effect symbols ("Transform 1", "Transform 2", …)
+  const timelineEffectCounterRef = useRef(0);
 
   // Sound Envelope edit dialog
   const [envelopeDialogOpen, setEnvelopeDialogOpen] = useState(false);
@@ -2435,6 +2443,232 @@ export function Shell(): React.ReactElement {
     setSelectedShapeId(instId);
     setConvertToSymbolOpen(false);
   }, [timeline, safeActiveLayerIndex, currentFrame, selectedShapeId, pushDoc, doc, editContext, activeSceneIndex]);
+
+  // ---------------------------------------------------------------------------
+  // Timeline Effects (Insert > Timeline Effects > Transform / Transition)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Open the Timeline Effects dialog for the given effect type.
+   * A selection (or at least one object on the active keyframe) is required.
+   */
+  const handleOpenTimelineEffect = useCallback((effectType: TimelineEffectType) => {
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= currentFrame)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf || kf.displayObjects.length === 0) return;
+    setTimelineEffectInitial(effectType);
+    setTimelineEffectOpen(true);
+  }, [timeline, safeActiveLayerIndex, currentFrame]);
+
+  /**
+   * Apply a timeline effect macro to the active selection.
+   *
+   * Steps:
+   * 1. Wrap the selected (or all) objects in a new MovieClip symbol.
+   * 2. Place the symbol instance on the current layer at the current frame.
+   * 3. Add a new layer above, copy the instance there (or reuse the existing one).
+   * 4. Insert a keyframe at frame (current + duration - 1).
+   * 5. Set the end-keyframe transform / alpha.
+   * 6. Apply a motion tween between the two keyframes.
+   *
+   * For simplicity we use the CURRENT layer (same pattern as Flash 8):
+   * the effect modifies the selected objects in-place by wrapping them in a
+   * symbol and inserting a motion tween on the same layer.
+   */
+  const handleApplyTimelineEffect = useCallback((params: EffectParams) => {
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return;
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= currentFrame)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf) return;
+
+    const objectsToConvert = selectedShapeId
+      ? kf.displayObjects.filter((o) => o.id === selectedShapeId)
+      : kf.displayObjects;
+    if (objectsToConvert.length === 0) return;
+
+    // --- Build the symbol name -----------------------------------------
+    timelineEffectCounterRef.current += 1;
+    const effectLabel = params.effect === "transform" ? "Transform" : "Transition";
+    const symbolName = `${effectLabel} ${timelineEffectCounterRef.current}`;
+
+    // --- Compute bounding box of the selection -------------------------
+    const selectionBounds = getUnionBounds([...objectsToConvert]);
+    const originX = selectionBounds ? selectionBounds.x + selectionBounds.width / 2 : 0;
+    const originY = selectionBounds ? selectionBounds.y + selectionBounds.height / 2 : 0;
+
+    // Rebase objects relative to the symbol origin (center)
+    const symbolObjects = objectsToConvert.map((o) => ({
+      ...o,
+      x: o.x - originX,
+      y: o.y - originY,
+    }));
+
+    // --- Create the symbol in the library ------------------------------
+    const { library: libWithSym, item: newSymbol } = createSymbolInLibrary(
+      doc.library,
+      symbolName,
+      "movieclip"
+    );
+
+    const symbolWithObjects = {
+      ...newSymbol,
+      timeline: {
+        layers: [
+          {
+            ...newSymbol.timeline.layers[0],
+            frames: [
+              {
+                ...newSymbol.timeline.layers[0].frames[0],
+                displayObjects: symbolObjects,
+                isEmpty: false,
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const finalLib = {
+      ...libWithSym,
+      items: libWithSym.items.map((i) => (i.id === newSymbol.id ? symbolWithObjects : i)),
+    };
+
+    // --- Determine instance natural size -------------------------------
+    const symbolUnionBounds = getUnionBounds([...symbolObjects]);
+    const symNatW = symbolUnionBounds?.width ?? 0;
+    const symNatH = symbolUnionBounds?.height ?? 0;
+
+    // --- Build the START instance (frame 0 = currentFrame) ------------
+    const instId = `effect-inst-${Date.now().toString(36)}`;
+
+    // Start alpha: for Transition In, start at 0; for Transform & Transition Out, start at 1
+    const startAlpha: number | undefined = (() => {
+      if (params.effect === "transition" && params.direction === "in") return 0;
+      return undefined; // 1 (fully opaque) by default
+    })();
+
+    const startInstance: SymbolInstance = {
+      type: "instance",
+      id: instId,
+      symbolId: newSymbol.id,
+      x: originX,
+      y: originY,
+      ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
+      ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
+      ...(startAlpha !== undefined ? { colorEffect: { type: "alpha", alpha: startAlpha * 100 } } : {}),
+    };
+
+    // --- Build the END keyframe instance properties -------------------
+    const endFrameIndex = currentFrame + params.duration - 1;
+
+    // Build as a plain object then cast — SymbolInstance is all-readonly so we
+    // cannot assign to Partial<SymbolInstance> directly.
+    const endUpdatesBuilder: {
+      scaleX?: number;
+      scaleY?: number;
+      rotation?: number;
+      colorEffect?: import("@flash/core").ColorEffect;
+    } = {};
+    if (params.effect === "transform") {
+      if (params.scaleX !== 1 || params.scaleY !== 1) {
+        endUpdatesBuilder.scaleX = params.scaleX;
+        endUpdatesBuilder.scaleY = params.scaleY;
+      }
+      if (params.rotation !== 0) {
+        endUpdatesBuilder.rotation = params.rotation;
+      }
+      if (params.alpha !== 100) {
+        endUpdatesBuilder.colorEffect = { type: "alpha", alpha: params.alpha };
+      }
+    } else {
+      // Transition
+      const endAlpha = params.direction === "out" ? 0 : 100;
+      endUpdatesBuilder.colorEffect = { type: "alpha", alpha: endAlpha };
+    }
+    const endInstanceUpdates = endUpdatesBuilder as Partial<SymbolInstance>;
+
+    // --- Build the updated document -----------------------------------
+    const convertedIds = new Set(objectsToConvert.map((o) => o.id));
+    const ease = params.ease ?? 0;
+
+    const applyToTimeline = (t: TimelineModel): TimelineModel => {
+      // 1. Replace original objects with the start instance in the current keyframe
+      let result: TimelineModel = {
+        ...t,
+        layers: t.layers.map((l) => {
+          if (l.id !== layerId) return l;
+          const frames = l.frames.map((f) => {
+            if (!f.isKeyframe || f.index !== kf.index) return f;
+            const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
+            return { ...f, displayObjects: [...remaining, startInstance] as readonly import("@flash/core").DisplayObject[], isEmpty: false };
+          }) as readonly import("@flash/core").Frame[];
+          return { ...l, frames };
+        }) as readonly import("@flash/core").Layer[],
+      };
+
+      // 2. Insert a keyframe at endFrameIndex (copies content from start)
+      result = insertKeyframe(result, layerId, endFrameIndex);
+
+      // 3. Update the END keyframe with the effect's end properties
+      result = {
+        ...result,
+        layers: result.layers.map((l) => {
+          if (l.id !== layerId) return l;
+          return {
+            ...l,
+            frames: l.frames.map((f) => {
+              if (!f.isKeyframe || f.index !== endFrameIndex) return f;
+              const newObjs: readonly import("@flash/core").DisplayObject[] = f.displayObjects.map((o) =>
+                o.id === instId ? ({ ...o, ...endInstanceUpdates } as import("@flash/core").DisplayObject) : o
+              );
+              return { ...f, displayObjects: newObjs };
+            }),
+          };
+        }) as readonly import("@flash/core").Layer[],
+      };
+
+      // 4. Set motion tween on the START keyframe
+      result = setMotionTween(result, layerId, kf.index, ease);
+
+      return result;
+    };
+
+    // Apply to the right timeline context
+    let newDoc: FlashDocument;
+    if (editContext.mode === "symbol" && editContext.symbolId) {
+      const items = finalLib.items.map((item) => {
+        if (item.id === editContext.symbolId && item.itemType === "symbol") {
+          return { ...item, timeline: applyToTimeline(item.timeline) };
+        }
+        return item;
+      });
+      newDoc = { ...doc, library: { ...finalLib, items } };
+    } else {
+      const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
+      newDoc = {
+        ...doc,
+        scenes: doc.scenes.map((s, i) =>
+          i === sceneIdx ? { ...s, timeline: applyToTimeline(s.timeline) } : s
+        ),
+        library: finalLib,
+      };
+    }
+
+    pushDoc(newDoc);
+    setSelectedShapeId(instId);
+    setTimelineEffectOpen(false);
+  }, [
+    timeline, safeActiveLayerIndex, currentFrame, selectedShapeId,
+    doc, editContext, activeSceneIndex, pushDoc,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Arrange (z-order)
@@ -4329,6 +4563,8 @@ export function Shell(): React.ReactElement {
         canUndo={canUndo}
         canRedo={canRedo}
         onConvertToSymbol={handleConvertToSymbol}
+        onTimelineEffectTransform={() => handleOpenTimelineEffect("transform")}
+        onTimelineEffectTransition={() => handleOpenTimelineEffect("transition")}
         onCopy={handleCopy}
         onCut={handleCut}
         onPaste={() => handlePaste(false)}
@@ -5090,6 +5326,14 @@ export function Shell(): React.ReactElement {
         open={convertToSymbolOpen}
         onConfirm={handleConvertToSymbolConfirm}
         onClose={() => setConvertToSymbolOpen(false)}
+      />
+
+      {/* Timeline Effects dialog (Insert > Timeline Effects > Transform / Transition) */}
+      <TimelineEffectDialog
+        open={timelineEffectOpen}
+        initialEffect={timelineEffectInitial}
+        onApply={handleApplyTimelineEffect}
+        onClose={() => setTimelineEffectOpen(false)}
       />
 
       {/* Swap Symbol dialog (Modify > Swap Symbol...) */}

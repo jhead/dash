@@ -236,6 +236,10 @@ export interface MenuBarProps {
   canRedo?: boolean;
   /** Called when Insert/Modify > Convert to Symbol (F8) is activated. */
   onConvertToSymbol?: () => void;
+  /** Called when Insert > Timeline Effects > Transform Effect... is activated. */
+  onTimelineEffectTransform?: () => void;
+  /** Called when Insert > Timeline Effects > Transition Effect... is activated. */
+  onTimelineEffectTransition?: () => void;
   /** Called when Edit > Copy (Ctrl+C) is activated. */
   onCopy?: () => void;
   /** Called when Edit > Cut (Ctrl+X) is activated. */
@@ -349,6 +353,8 @@ export function MenuBar({
   canUndo = false,
   canRedo = false,
   onConvertToSymbol,
+  onTimelineEffectTransform,
+  onTimelineEffectTransition,
   onCopy,
   onCut,
   onPaste,
@@ -517,6 +523,15 @@ export function MenuBar({
         {
           label: "Convert to Symbol...  F8",
           action: () => { onConvertToSymbol?.(); },
+        },
+        {
+          label: "Timeline Effects: Transform...",
+          action: () => { onTimelineEffectTransform?.(); },
+          separator: true,
+        },
+        {
+          label: "Timeline Effects: Transition...",
+          action: () => { onTimelineEffectTransition?.(); },
         },
       ],
     },

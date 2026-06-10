@@ -1,0 +1,11 @@
+{
+  "id": "0809-timeline-effects-transform-transition-blur-explo",
+  "title": "Timeline Effects \u2014 Transform, Transition, Blur, Explode, etc.",
+  "description": "Implement Flash 8 built-in timeline effects (Insert > Timeline Effects): Transform, Transition (fade/wipe), Copy to Grid, Distributed Duplicate, Blur, Drop Shadow, Expand, Explode. Effects auto-generate symbols and tweens from a selected object with a re-editable parameters dialog. Zero implementation exists \u2014 no model, no UI, no macro expansion.",
+  "status": "in-progress",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T11:36:11Z",
+  "updated_at": "2026-06-10T11:36:11Z",
+  "holder": "agent-0809"
+}
