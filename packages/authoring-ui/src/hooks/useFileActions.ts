@@ -6,6 +6,36 @@ import type { BitmapItem, SoundItem, FlashDocument } from "@flash/core";
 
 const FLA_FILTERS = [{ name: "Flash Document", extensions: ["fla"] }];
 
+/** Returns true when running inside a Tauri desktop app. */
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/** Trigger a browser download of the given bytes. */
+function downloadFla(bytes: Uint8Array, filename: string): void {
+  // Copy into a plain ArrayBuffer to satisfy strict Blob typing (avoids SharedArrayBuffer ambiguity)
+  const copy = new Uint8Array(bytes.length);
+  copy.set(bytes);
+  const blob = new Blob([copy], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Derive a friendly .fla filename from a Tauri file path, or use the fallback.
+ * e.g. "/Users/foo/bar/my-movie.fla" → "my-movie.fla"
+ */
+function basenameOf(path: string | undefined, fallback = "untitled.fla"): string {
+  if (!path) return fallback;
+  const segments = path.replace(/\\/g, "/").split("/");
+  const last = segments[segments.length - 1] ?? fallback;
+  return last || fallback;
+}
+
 /**
  * Returns file-menu actions (New, Open, Save, Save As) backed by
  * Tauri native file dialogs and the FLA zip/JSON format.
@@ -73,12 +103,21 @@ export function useFileActions() {
 
   /**
    * Save the document to `path` if known, otherwise delegate to saveDocumentAs.
+   * In browser mode (non-Tauri), triggers a download using the basename of `path`
+   * (or "untitled.fla" if no path is set).
    * Returns the path that was written (useful for tracking the current file path).
    */
   async function saveDocument(
     doc: FlashDocument,
     path?: string
   ): Promise<string | null> {
+    if (!isTauri()) {
+      // Browser fallback: download the file directly
+      const bytes = saveFla(doc);
+      const filename = basenameOf(path);
+      downloadFla(bytes, filename);
+      return path ?? filename;
+    }
     if (path) {
       try {
         const bytes = saveFla(doc);
@@ -96,11 +135,25 @@ export function useFileActions() {
 
   /**
    * Open a native save dialog filtered to `.fla` files, then write the document.
-   * Returns the chosen path, or `null` if the user cancelled.
-   *
-   * Throws a user-visible error if Tauri APIs are unavailable (browser mode).
+   * In browser mode (non-Tauri), prompts for a filename and triggers a download.
+   * Returns the chosen path/name, or `null` if the user cancelled.
    */
-  async function saveDocumentAs(doc: FlashDocument): Promise<string | null> {
+  async function saveDocumentAs(
+    doc: FlashDocument,
+    currentPath?: string
+  ): Promise<string | null> {
+    if (!isTauri()) {
+      // Browser fallback: ask for a name, then trigger download
+      const currentName = basenameOf(currentPath);
+      const answer = window.prompt("Save As:", currentName);
+      if (answer === null) return null; // user cancelled
+      const filename = answer.trim() || currentName;
+      const filenameWithExt = filename.endsWith(".fla") ? filename : `${filename}.fla`;
+      const bytes = saveFla(doc);
+      downloadFla(bytes, filenameWithExt);
+      return filenameWithExt;
+    }
+
     let chosen: string | null;
     try {
       chosen = await dialogSave({

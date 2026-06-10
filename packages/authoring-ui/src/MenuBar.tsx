@@ -306,9 +306,9 @@ export function MenuBar({
 
   const handleSaveAs = useCallback(async () => {
     if (!document) return;
-    const savedPath = await saveDocumentAs(document);
+    const savedPath = await saveDocumentAs(document, filePath);
     if (savedPath) onFilePathChange?.(savedPath);
-  }, [document, saveDocumentAs, onFilePathChange]);
+  }, [document, filePath, saveDocumentAs, onFilePathChange]);
 
   const MENUS: MenuDefinition[] = [
     {
