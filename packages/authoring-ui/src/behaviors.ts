@@ -91,6 +91,79 @@ export const BEHAVIORS: Behavior[] = [
   },
 
   // -------------------------------------------------------------------------
+  // Embedded Video category
+  // -------------------------------------------------------------------------
+  {
+    id: "video-play",
+    category: "Embedded Video",
+    name: "Play Video",
+    description: "Plays the embedded video in a specified Video instance.",
+    params: [{ key: "target", label: "Video instance name", placeholder: "myVideo" }],
+    generate: ({ target }) => `${target || "myVideo"}.play();`,
+  },
+  {
+    id: "video-pause",
+    category: "Embedded Video",
+    name: "Pause Video",
+    description: "Pauses the embedded video in a specified Video instance.",
+    params: [{ key: "target", label: "Video instance name", placeholder: "myVideo" }],
+    generate: ({ target }) => `${target || "myVideo"}.pause();`,
+  },
+  {
+    id: "video-stop",
+    category: "Embedded Video",
+    name: "Stop Video",
+    description: "Stops and closes the embedded video in a specified Video instance.",
+    params: [{ key: "target", label: "Video instance name", placeholder: "myVideo" }],
+    generate: ({ target }) => `${target || "myVideo"}.close();`,
+  },
+  {
+    id: "video-seek",
+    category: "Embedded Video",
+    name: "Seek to Time",
+    description: "Seeks the embedded video to a specified time (in seconds).",
+    params: [
+      { key: "target", label: "Video instance name", placeholder: "myVideo" },
+      { key: "time", label: "Time (seconds)", placeholder: "0" },
+    ],
+    generate: ({ target, time }) => `${target || "myVideo"}.seek(${time || 0});`,
+  },
+  {
+    id: "video-fast-forward",
+    category: "Embedded Video",
+    name: "Fast Forward",
+    description: "Fast-forwards the embedded video by 5 seconds.",
+    params: [{ key: "target", label: "Video instance name", placeholder: "myVideo" }],
+    generate: ({ target }) => {
+      const t = target || "myVideo";
+      return `var _nc = ${t};\n_nc.seek(_nc.time + 5);`;
+    },
+  },
+  {
+    id: "video-rewind",
+    category: "Embedded Video",
+    name: "Rewind",
+    description: "Rewinds the embedded video by 5 seconds.",
+    params: [{ key: "target", label: "Video instance name", placeholder: "myVideo" }],
+    generate: ({ target }) => {
+      const t = target || "myVideo";
+      return `var _nc = ${t};\n_nc.seek(Math.max(0, _nc.time - 5));`;
+    },
+  },
+  {
+    id: "video-show",
+    category: "Embedded Video",
+    name: "Show/Hide Video",
+    description: "Shows or hides the Movie Clip containing the Video instance.",
+    params: [
+      { key: "target", label: "MC containing Video instance", placeholder: "myVideoMC" },
+      { key: "visible", label: "Visible (true/false)", placeholder: "true" },
+    ],
+    generate: ({ target, visible }) =>
+      `${target || "myVideoMC"}._visible = ${visible || "true"};`,
+  },
+
+  // -------------------------------------------------------------------------
   // Web category
   // -------------------------------------------------------------------------
   {
@@ -116,7 +189,13 @@ export const BEHAVIOR_CATEGORIES: Array<Behavior["category"]> = [
 ];
 
 /** Return behaviors grouped by category. */
-export function getBehaviorsByCategory(): Map<string, Behavior[]> {
+export function getBehaviorsByCategory(): Map<string, Behavior[]>;
+/** Return behaviors for a specific category. */
+export function getBehaviorsByCategory(category: string): Behavior[];
+export function getBehaviorsByCategory(category?: string): Map<string, Behavior[]> | Behavior[] {
+  if (category !== undefined) {
+    return BEHAVIORS.filter((b) => b.category === category);
+  }
   const map = new Map<string, Behavior[]>();
   for (const b of BEHAVIORS) {
     const arr = map.get(b.category) ?? [];

@@ -129,3 +129,40 @@ describe("getBehaviorsByCategory", () => {
     expect((map.get("Movie Clip") ?? []).length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe("Embedded Video behaviors", () => {
+  it("Embedded Video category has at least 5 behaviors", () => {
+    expect(getBehaviorsByCategory("Embedded Video").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("video-seek generates correct AS2", () => {
+    expect(BEHAVIORS.find(b => b.id === "video-seek")!.generate({ target: "v", time: "10" }))
+      .toBe("v.seek(10);");
+  });
+
+  it("video-play generates correct AS2", () => {
+    const b = BEHAVIORS.find(b => b.id === "video-play")!;
+    expect(b.generate({ target: "myVid" })).toBe("myVid.play();");
+    expect(b.generate({ target: "" })).toBe("myVideo.play();");
+  });
+
+  it("video-stop generates close() call", () => {
+    const b = BEHAVIORS.find(b => b.id === "video-stop")!;
+    expect(b.generate({ target: "vid" })).toBe("vid.close();");
+  });
+
+  it("video-show generates _visible assignment", () => {
+    const b = BEHAVIORS.find(b => b.id === "video-show")!;
+    expect(b.generate({ target: "mc", visible: "false" })).toBe("mc._visible = false;");
+  });
+
+  it("video-fast-forward generates seek with +5", () => {
+    const b = BEHAVIORS.find(b => b.id === "video-fast-forward")!;
+    expect(b.generate({ target: "v" })).toBe("var _nc = v;\n_nc.seek(_nc.time + 5);");
+  });
+
+  it("video-rewind generates seek with Math.max(0, time - 5)", () => {
+    const b = BEHAVIORS.find(b => b.id === "video-rewind")!;
+    expect(b.generate({ target: "v" })).toBe("var _nc = v;\n_nc.seek(Math.max(0, _nc.time - 5));");
+  });
+});
