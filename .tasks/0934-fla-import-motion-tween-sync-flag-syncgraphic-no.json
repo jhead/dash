@@ -1,10 +1,10 @@
 {
   "id": "0934-fla-import-motion-tween-sync-flag-syncgraphic-no",
   "title": "FLA import: motion tween sync flag (syncGraphic) not decoded from binary",
-  "description": "flash8-binary.ts decodes many tween fields (keyMode, motionEase, motionRotate, motionOrientToPath) but not tweenSync/syncGraphic. flash8-import.ts also has no tweenSync in its createFrame call \u2014 the flag is silently dropped. The sync flag makes a graphic symbol synchronize its timeline to the parent frame. Fix: find and decode the sync flag from CPicFrame binary in flash8-binary.ts, add sync to the tween model, forward through flash8-import.ts.",
-  "status": "open",
+  "description": "Cherry-picked d2c8dc1. motionSync from keyMode bit 0x0800; 4 sync tests pass.",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-06-10T20:51:47Z",
-  "updated_at": "2026-06-10T20:51:47Z"
+  "updated_at": "2026-06-10T21:12:17Z"
 }
