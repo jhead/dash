@@ -975,8 +975,8 @@ class Compiler {
         this.compileFunctionExpr(expr as FunctionDecl);
         break;
       default:
-        this.pushUndefined();
-        break;
+        throw new Error(`Unsupported expression node type: ${(expr as any).kind ?? JSON.stringify(expr)}`);
+
     }
   }
 
