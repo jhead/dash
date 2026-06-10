@@ -141,9 +141,11 @@ describe("explicit String() conversion", () => {
     expect(compilesOk("var s = String(n);")).toBe(true);
   });
 
-  it("String function name appears in bytecode", () => {
+  it("String(n) emits ActionToString (0x4B), NOT ActionCallFunction (0x3D)", () => {
     const bytes = compileAS2("var s = String(n);");
-    expect(containsString(bytes, "String")).toBe(true);
+    // ActionToString opcode: native coercion, no function name in bytecode
+    expect(containsByte(bytes, 0x4B)).toBe(true);
+    expect(containsByte(bytes, 0x3D)).toBe(false);
   });
 });
 

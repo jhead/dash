@@ -4,7 +4,8 @@
  * Verifies:
  *   - Number(x) compiles to ActionToNumber (0x4A), NOT ActionCallFunction (0x3D)
  *     (Flash Professional emits the native opcode for single-arg coercions).
- *   - String(x), Boolean(x) compile to ActionCallFunction (0x3D) — still generic calls.
+ *   - String(x) compiles to ActionToString (0x4B), NOT ActionCallFunction (0x3D).
+ *   - Boolean(x) compiles to ActionCallFunction (0x3D) — still a generic call.
  *   - `x as Type` (compile-time type assertion) compiles without error and
  *     evaluates the operand, discarding the type annotation.
  */
@@ -47,6 +48,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 const ACTION_CALL_FUNCTION = 0x3d; // ActionCallFunction — global function dispatch
 const ACTION_CALL_METHOD   = 0x52; // ActionCallMethod   — method dispatch (obj.method())
 const ACTION_TO_NUMBER     = 0x4A; // ActionToNumber     — native numeric coercion
+const ACTION_TO_STRING     = 0x4B; // ActionToString     — native string coercion
 
 // ---------------------------------------------------------------------------
 // Type casting global functions
@@ -60,10 +62,10 @@ describe("Type casting global functions", () => {
     expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
-  it("2. String(x) compiles to ActionCallFunction (0x3D)", () => {
+  it("2. String(x) emits ActionToString (0x4B), NOT ActionCallFunction (0x3D)", () => {
     const bytes = compileAS2("String(x);");
-    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
-    expect(containsString(bytes, "String")).toBe(true);
+    expect(containsByte(bytes, ACTION_TO_STRING)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
   it("3. Boolean(x) compiles to ActionCallFunction (0x3D)", () => {
@@ -85,10 +87,10 @@ describe("Type casting global functions", () => {
     expect(containsString(bytes, "42")).toBe(true);
   });
 
-  it("5b. String(42) with a number literal compiles correctly", () => {
+  it("5b. String(42) with a number literal emits ActionToString (0x4B)", () => {
     const bytes = compileAS2("String(42);");
-    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
-    expect(containsString(bytes, "String")).toBe(true);
+    expect(containsByte(bytes, ACTION_TO_STRING)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
   it("5c. Boolean(0) with a number literal compiles correctly", () => {

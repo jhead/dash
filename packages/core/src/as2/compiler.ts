@@ -328,6 +328,7 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
                        'getURL', 'loadMovie', 'loadMovieNum'].includes(name)
                     && !(name === 'int' && e.args.length === 1)
                     && !(name === 'Number' && e.args.length === 1)
+                    && !(name === 'String' && e.args.length === 1)
                     && !(name === 'getTimer' && e.args.length === 0)
                     && !(name === 'random' && e.args.length === 1)
                     && !(name === 'chr' && e.args.length === 1)
@@ -2004,6 +2005,13 @@ class Compiler {
       if (name === 'Number' && expr.args.length === 1) {
         this.compileExpr(expr.args[0]!);
         this.emit(0x4A); // ActionToNumber
+        return;
+      }
+
+      // Built-in: String(x) → push x, ActionToString (0x4B)
+      if (name === 'String' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x4B); // ActionToString
         return;
       }
 
