@@ -341,6 +341,8 @@ export interface MenuBarProps {
   onTextTrackingReset?: () => void;
   /** Called when Text > Scrollable is activated (toggles scrollable flag). */
   onTextScrollable?: () => void;
+  /** Called when Edit > Find and Replace... (Ctrl+H) is activated. */
+  onFindReplace?: () => void;
 }
 
 export function MenuBar({
@@ -427,6 +429,7 @@ export function MenuBar({
   onTextTrackingDecrease,
   onTextTrackingReset,
   onTextScrollable,
+  onFindReplace,
 }: MenuBarProps = {}): React.ReactElement {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const { newDocument, openDocument, saveDocument, saveDocumentAs } =
@@ -518,6 +521,11 @@ export function MenuBar({
         {
           label: hasMotionClipboard ? "Paste Motion" : "Paste Motion",
           action: () => { if (hasMotionClipboard) onPasteMotion?.(); },
+        },
+        {
+          label: "Find and Replace...  Ctrl+H",
+          action: () => { onFindReplace?.(); },
+          separator: true,
         },
       ],
     },

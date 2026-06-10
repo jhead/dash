@@ -3930,6 +3930,7 @@ export function Shell(): React.ReactElement {
     onTextTrackingReset: handleTextTrackingReset,
     onNudge: handleNudge,
     onAddShapeHint: handleAddShapeHint,
+    onFindReplace: () => setFindReplaceVisible((v) => !v),
   });
 
   // ---------------------------------------------------------------------------
@@ -5697,6 +5698,16 @@ export function Shell(): React.ReactElement {
         onConfirm={handleEditGridConfirm}
         onCancel={() => setEditGridOpen(false)}
       />
+
+      {/* Find and Replace dialog (Edit > Find and Replace..., Ctrl+H) */}
+      {findReplaceVisible && (
+        <FindReplaceDialog
+          doc={doc}
+          activeSceneIndex={activeSceneIndex}
+          pushDoc={pushDoc}
+          onClose={() => setFindReplaceVisible(false)}
+        />
+      )}
 
       {/* Convert to Symbol dialog (Insert/Modify > Convert to Symbol, F8) */}
       <ConvertToSymbolDialog

@@ -189,6 +189,19 @@ export {
   getLibraryItemsByType,
 } from "./library.js";
 
+// Find and Replace
+export type {
+  FindReplaceType,
+  FindReplaceCriteria,
+  FindReplaceReplacement,
+  MatchLocation,
+} from "./findReplace.js";
+export {
+  findInDocument,
+  replaceInDocument,
+  replaceAllInDocument,
+} from "./findReplace.js";
+
 // Layer pairing helpers
 export type { LayerPairingIssue } from "./layer-pairing.js";
 export {

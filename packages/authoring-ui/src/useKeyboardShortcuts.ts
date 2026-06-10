@@ -35,6 +35,8 @@ export interface KeyboardShortcutHandlers {
   onNudge?: (dx: number, dy: number) => void; // ArrowLeft/Right/Up/Down (no Alt/Ctrl)
   /** Add shape hint to current shape-tween keyframe (Ctrl+Shift+H). */
   onAddShapeHint?: () => void;
+  /** Open Find and Replace dialog (Ctrl+H). */
+  onFindReplace?: () => void;
 }
 
 export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
@@ -80,6 +82,7 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
       else if (ctrl && shift && e.key === 'r') { e.preventDefault(); h.onTextAlignRight?.(); }
       else if (ctrl && shift && e.key === 'j') { e.preventDefault(); h.onTextAlignJustify?.(); }
       else if (ctrl && shift && e.key === 'h') { e.preventDefault(); h.onAddShapeHint?.(); }
+      else if (ctrl && !shift && e.key === 'h') { e.preventDefault(); h.onFindReplace?.(); }
       else if (!ctrl && alt && e.key === 'ArrowRight') { e.preventDefault(); h.onTextTrackingIncrease?.(); }
       else if (!ctrl && alt && e.key === 'ArrowLeft') { e.preventDefault(); h.onTextTrackingDecrease?.(); }
       else if (ctrl && alt && e.key === 'ArrowRight') { e.preventDefault(); h.onTextTrackingReset?.(); }
