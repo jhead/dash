@@ -54,6 +54,12 @@ export interface ToolState {
   freeTransformMode?: FreeTransformMode;
   /** Lasso polygon mode toggle. Default false (freehand) */
   lassoPolygonMode?: boolean;
+  /** Lasso magic wand sub-mode. Default false */
+  lassoMagicWand?: boolean;
+  /** Magic wand color threshold 1–200. Default 20 */
+  magicWandThreshold?: number;
+  /** Magic wand smoothing mode. Default 'pixels' */
+  magicWandSmoothing?: "pixels" | "rough" | "normal" | "smooth";
   /** PolyStar tool options */
   polyStarOptions?: PolyStarOptions;
 }

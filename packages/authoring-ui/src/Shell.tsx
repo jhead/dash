@@ -4697,6 +4697,9 @@ export function Shell(): React.ReactElement {
             onEraserSizeChange={handleEraserSizeChange}
             onFreeTransformModeChange={handleFreeTransformModeChange}
             onLassoPolygonModeChange={handleLassoPolygonModeChange}
+            onLassoMagicWandChange={handleLassoMagicWandChange}
+            onMagicWandThresholdChange={handleMagicWandThresholdChange}
+            onMagicWandSmoothingChange={handleMagicWandSmoothingChange}
             onPolyStarOptionsChange={handlePolyStarOptionsChange}
           />
         </div>
@@ -4836,6 +4839,9 @@ export function Shell(): React.ReactElement {
                 onEyedropperSample={handleEyedropperSample}
                 freeTransformMode={toolState.freeTransformMode}
                 lassoPolygonMode={toolState.lassoPolygonMode}
+                lassoMagicWand={toolState.lassoMagicWand}
+                magicWandThreshold={toolState.magicWandThreshold}
+                magicWandSmoothing={toolState.magicWandSmoothing}
                 polyStarOptions={toolState.polyStarOptions}
                 sceneGraph={fullSceneGraph}
                 library={library}

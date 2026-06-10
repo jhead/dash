@@ -186,6 +186,9 @@ export interface ToolsPanelExtraProps {
   onEraserSizeChange?: (size: number) => void;
   onFreeTransformModeChange?: (mode: FreeTransformMode) => void;
   onLassoPolygonModeChange?: (polygonMode: boolean) => void;
+  onLassoMagicWandChange?: (magicWand: boolean) => void;
+  onMagicWandThresholdChange?: (threshold: number) => void;
+  onMagicWandSmoothingChange?: (smoothing: "pixels" | "rough" | "normal" | "smooth") => void;
   onPolyStarOptionsChange?: (opts: Partial<PolyStarOptions>) => void;
 }
 
@@ -200,6 +203,9 @@ export interface ToolsPanelProps {
   onEraserSizeChange?: (size: number) => void;
   onFreeTransformModeChange?: (mode: FreeTransformMode) => void;
   onLassoPolygonModeChange?: (polygonMode: boolean) => void;
+  onLassoMagicWandChange?: (magicWand: boolean) => void;
+  onMagicWandThresholdChange?: (threshold: number) => void;
+  onMagicWandSmoothingChange?: (smoothing: "pixels" | "rough" | "normal" | "smooth") => void;
   onPolyStarOptionsChange?: (opts: Partial<PolyStarOptions>) => void;
 }
 
@@ -468,6 +474,9 @@ export function ToolsPanel({
   onEraserSizeChange,
   onFreeTransformModeChange,
   onLassoPolygonModeChange,
+  onLassoMagicWandChange,
+  onMagicWandThresholdChange,
+  onMagicWandSmoothingChange,
   onPolyStarOptionsChange,
 }: ToolsPanelProps): React.ReactElement {
   const strokeInputRef = useRef<HTMLInputElement>(null);
@@ -661,7 +670,8 @@ export function ToolsPanel({
       {/* Lasso options */}
       {toolState.activeTool === "lasso" && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px", padding: "2px 0", width: "100%" }}>
-          {([false, true] as const).map((polyMode) => {
+          {/* Freehand / Polygon sub-modes (only shown when not in magic wand mode) */}
+          {!(toolState.lassoMagicWand ?? false) && ([false, true] as const).map((polyMode) => {
             const label = polyMode ? "Poly" : "Free";
             const active = (toolState.lassoPolygonMode ?? false) === polyMode;
             return (
@@ -680,13 +690,83 @@ export function ToolsPanel({
                   padding: 0,
                   lineHeight: 1,
                 }}
-                onClick={() => onLassoPolygonModeChange?.(polyMode)}
+                onClick={() => { onLassoPolygonModeChange?.(polyMode); onLassoMagicWandChange?.(false); }}
                 title={polyMode ? "Polygon Mode" : "Freehand Mode"}
               >
                 {label}
               </button>
             );
           })}
+          {/* Magic Wand sub-mode button */}
+          <button
+            type="button"
+            style={{
+              width: "26px",
+              height: "10px",
+              fontSize: "7px",
+              color: (toolState.lassoMagicWand ?? false) ? "#fff" : "#aaa",
+              background: (toolState.lassoMagicWand ?? false) ? "#5a5a5a" : "transparent",
+              border: (toolState.lassoMagicWand ?? false) ? "1px solid #888" : "1px solid transparent",
+              borderRadius: "1px",
+              cursor: "pointer",
+              padding: 0,
+              lineHeight: 1,
+            }}
+            onClick={() => onLassoMagicWandChange?.(!(toolState.lassoMagicWand ?? false))}
+            title="Magic Wand — select by color"
+          >
+            Wand
+          </button>
+        </div>
+      )}
+
+      {/* Magic Wand options (Threshold + Smoothing) */}
+      {toolState.activeTool === "lasso" && (toolState.lassoMagicWand ?? false) && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", padding: "2px 0", width: "100%" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+            <span style={{ fontSize: "6px", color: "#aaa" }}>Thr</span>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={toolState.magicWandThreshold ?? 20}
+              onChange={(e) => onMagicWandThresholdChange?.(Math.min(200, Math.max(1, parseInt(e.target.value) || 20)))}
+              title="Threshold (1–200)"
+              style={{
+                width: "28px",
+                height: "12px",
+                fontSize: "7px",
+                background: "#222",
+                color: "#ccc",
+                border: "1px solid #555",
+                borderRadius: "1px",
+                padding: "0 1px",
+                textAlign: "center",
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+            <span style={{ fontSize: "6px", color: "#aaa" }}>Smo</span>
+            <select
+              value={toolState.magicWandSmoothing ?? "pixels"}
+              onChange={(e) => onMagicWandSmoothingChange?.(e.target.value as "pixels" | "rough" | "normal" | "smooth")}
+              title="Smoothing"
+              style={{
+                height: "12px",
+                fontSize: "6px",
+                background: "#222",
+                color: "#ccc",
+                border: "1px solid #555",
+                borderRadius: "1px",
+                padding: "0 1px",
+              }}
+            >
+              <option value="pixels">Pixels</option>
+              <option value="rough">Rough</option>
+              <option value="normal">Normal</option>
+              <option value="smooth">Smooth</option>
+            </select>
+          </div>
         </div>
       )}
 

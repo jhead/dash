@@ -194,6 +194,156 @@ function findShapeInLasso(polygon: Point[], objects: ShapeDisplayObject[]): stri
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Magic Wand flood-fill helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the Euclidean RGB distance between two pixels (ignoring alpha).
+ */
+function rgbDistance(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number): number {
+  const dr = r1 - r2;
+  const dg = g1 - g2;
+  const db = b1 - b2;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+/**
+ * 4-connected flood fill on RGBA pixel data.
+ * Returns a Set of pixel indices (y * width + x) that belong to the selected region.
+ */
+function floodFillPixels(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  startX: number,
+  startY: number,
+  threshold: number,
+): Set<number> {
+  const selected = new Set<number>();
+  const sx = Math.round(startX);
+  const sy = Math.round(startY);
+  if (sx < 0 || sx >= width || sy < 0 || sy >= height) return selected;
+
+  const startIdx = (sy * width + sx) * 4;
+  const seedR = data[startIdx];
+  const seedG = data[startIdx + 1];
+  const seedB = data[startIdx + 2];
+
+  const queue: number[] = [sy * width + sx];
+  selected.add(sy * width + sx);
+
+  while (queue.length > 0) {
+    const pixelIdx = queue.pop()!;
+    const px = pixelIdx % width;
+    const py = Math.floor(pixelIdx / width);
+
+    const neighbors = [
+      [px - 1, py], [px + 1, py], [px, py - 1], [px, py + 1],
+    ];
+    for (const [nx, ny] of neighbors) {
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const ni = ny * width + nx;
+      if (selected.has(ni)) continue;
+      const nDataIdx = ni * 4;
+      const dist = rgbDistance(data[nDataIdx], data[nDataIdx + 1], data[nDataIdx + 2], seedR, seedG, seedB);
+      if (dist <= threshold) {
+        selected.add(ni);
+        queue.push(ni);
+      }
+    }
+  }
+  return selected;
+}
+
+/**
+ * Convert a set of selected pixel indices to a bounding-box polygon
+ * in stage coordinates. The polygon is a rectangle enclosing all selected pixels.
+ *
+ * Smoothing levels:
+ *   "pixels"  — exact pixel-grid bounding box (no simplification)
+ *   "rough"   — same as pixels (outline simplification placeholder)
+ *   "normal"  — same as pixels
+ *   "smooth"  — same as pixels (future: could apply polygon smoothing)
+ */
+function selectedPixelsToBoundingPolygon(
+  pixels: Set<number>,
+  imgWidth: number,
+  imgHeight: number,
+  bitmapObj: BitmapDisplayObject,
+  _smoothing: "pixels" | "rough" | "normal" | "smooth",
+): Point[] {
+  if (pixels.size === 0) return [];
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const idx of pixels) {
+    const px = idx % imgWidth;
+    const py = Math.floor(idx / imgWidth);
+    if (px < minX) minX = px;
+    if (px > maxX) maxX = px;
+    if (py < minY) minY = py;
+    if (py > maxY) maxY = py;
+  }
+
+  // Scale pixel coords to stage coordinates
+  const sx = bitmapObj.width / imgWidth;
+  const sy = bitmapObj.height / imgHeight;
+
+  return [
+    { x: bitmapObj.x + minX * sx,       y: bitmapObj.y + minY * sy },
+    { x: bitmapObj.x + (maxX + 1) * sx, y: bitmapObj.y + minY * sy },
+    { x: bitmapObj.x + (maxX + 1) * sx, y: bitmapObj.y + (maxY + 1) * sy },
+    { x: bitmapObj.x + minX * sx,       y: bitmapObj.y + (maxY + 1) * sy },
+  ];
+}
+
+/**
+ * Run magic wand selection on a BitmapDisplayObject.
+ * Draws the bitmap to an offscreen canvas, reads pixel data, runs flood fill,
+ * and returns the resulting lasso polygon in stage coordinates.
+ *
+ * Returns null if the bitmap cannot be loaded (e.g. no dataUri).
+ */
+function magicWandSelect(
+  bitmapObj: BitmapDisplayObject,
+  bitmapItem: BitmapItem,
+  stageX: number,
+  stageY: number,
+  threshold: number,
+  smoothing: "pixels" | "rough" | "normal" | "smooth",
+): Promise<Point[] | null> {
+  return new Promise((resolve) => {
+    if (!bitmapItem.dataUri) { resolve(null); return; }
+
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || bitmapObj.width;
+        const h = img.naturalHeight || bitmapObj.height;
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(null); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        const imageData = ctx.getImageData(0, 0, w, h);
+
+        // Convert stage click to bitmap-local pixel coordinates
+        const localX = ((stageX - bitmapObj.x) / bitmapObj.width) * w;
+        const localY = ((stageY - bitmapObj.y) / bitmapObj.height) * h;
+
+        const selected = floodFillPixels(imageData.data, w, h, localX, localY, threshold);
+        const polygon = selectedPixelsToBoundingPolygon(selected, w, h, bitmapObj, smoothing);
+        resolve(polygon);
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = bitmapItem.dataUri;
+  });
+}
+
 export type ViewMode = "normal" | "outlines" | "antialias";
 
 // ---------------------------------------------------------------------------
@@ -513,6 +663,9 @@ export interface StageAreaProps {
   onShapeGradientUpdate?: (id: string, newShape: Shape) => void;
   // Lasso options
   lassoPolygonMode?: boolean;
+  lassoMagicWand?: boolean;
+  magicWandThreshold?: number;
+  magicWandSmoothing?: "pixels" | "rough" | "normal" | "smooth";
   // PolyStar options
   polyStarOptions?: PolyStarOptions;
   /**
@@ -905,6 +1058,9 @@ export function StageArea({
   onEyedropperSample,
   freeTransformMode = "rotate-scale",
   lassoPolygonMode = false,
+  lassoMagicWand = false,
+  magicWandThreshold = 20,
+  magicWandSmoothing = "pixels" as const,
   polyStarOptions = { shapeType: "polygon", sides: 5, pointSize: 0.5 },
   onShapeGradientUpdate,
   sceneGraph: propSceneGraph,
@@ -1336,6 +1492,33 @@ export function StageArea({
       if (e.button === 0 && activeTool === "lasso") {
         e.preventDefault();
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+
+        // Magic Wand sub-mode: flood-fill selection on a bitmap instance
+        if (lassoMagicWand) {
+          const hitBitmap = [...bitmapDisplayObjects].reverse().find((obj) =>
+            stageX >= obj.x && stageX <= obj.x + obj.width &&
+            stageY >= obj.y && stageY <= obj.y + obj.height
+          );
+          if (hitBitmap) {
+            const bitmapItem = bitmapLibraryItems.find((item) => item.id === hitBitmap.libraryItemId);
+            if (bitmapItem) {
+              magicWandSelect(hitBitmap, bitmapItem, stageX, stageY, magicWandThreshold, magicWandSmoothing)
+                .then((polygon) => {
+                  if (polygon && polygon.length >= 3) {
+                    const selectedId = findShapeInLasso([...polygon, polygon[0]], shapeDisplayObjects);
+                    if (selectedId) onShapeSelect?.(selectedId);
+                    else onShapeSelect?.(null);
+                    setLassoPoints(polygon);
+                  }
+                });
+            } else {
+              // Bitmap item not found — log for debugging
+              console.warn("[magic wand] bitmap library item not found:", hitBitmap.libraryItemId);
+            }
+          }
+          return;
+        }
+
         if (lassoPolygonMode) {
           // Polygon mode: each click adds a vertex
           const now = Date.now();
@@ -1909,7 +2092,7 @@ export function StageArea({
         setSelIsMarqueeSelecting(true);
       }
     },
-    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick]
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoMagicWand, magicWandThreshold, magicWandSmoothing, bitmapDisplayObjects, bitmapLibraryItems, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick]
   );
 
   const onMouseMove = useCallback(
