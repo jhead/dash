@@ -119,6 +119,24 @@ export interface EaseCurve {
   readonly y2: number;  // unconstrained
 }
 
+/**
+ * A shape hint — a labeled point (letter 'a'–'z') placed on a shape-tween
+ * keyframe to guide morphing interpolation.
+ *
+ * Shape hints come in pairs: the same hint id ('a', 'b', …) exists on both
+ * the START keyframe and the END keyframe of a shape tween span.
+ * On the start keyframe the hint is rendered yellow; on the end keyframe green.
+ * They are authoring-time guidance only — not encoded in the SWF output.
+ */
+export interface ShapeHint {
+  /** Letter 'a'–'z' identifying the pair. */
+  readonly id: string;
+  /** X position in stage coordinates. */
+  readonly x: number;
+  /** Y position in stage coordinates. */
+  readonly y: number;
+}
+
 export interface Frame {
   readonly index: number;           // 0-based frame index within the layer
   readonly isKeyframe: boolean;
@@ -139,6 +157,12 @@ export interface Frame {
   // Shape tween
   readonly shapeEase: number;       // -100..100
   readonly shapeBlend: "distributive" | "angular";
+  /**
+   * Shape hints for this keyframe (shape tween start/end only).
+   * Each hint id ('a'–'z') should appear on both the start and end keyframe
+   * of the same shape tween span to form a pair.
+   */
+  readonly shapeHints?: readonly ShapeHint[];
   // Display objects placed on this keyframe
   readonly displayObjects: readonly DisplayObject[];
 }

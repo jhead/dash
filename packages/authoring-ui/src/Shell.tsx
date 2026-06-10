@@ -124,6 +124,123 @@ import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
 import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
 
 // ---------------------------------------------------------------------------
+// Shape hint overlay
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders draggable labeled circles for shape hints on the stage.
+ * Yellow circles = start keyframe; green circles = end keyframe (Flash 8 convention).
+ * Drag to reposition; calls onHintMove(id, x, y) on mouse-up.
+ */
+function ShapeHintOverlay({
+  hints,
+  isEndKeyframe = false,
+  onHintMove,
+}: {
+  hints: readonly ShapeHint[];
+  isEndKeyframe?: boolean;
+  onHintMove?: (id: string, x: number, y: number) => void;
+}): React.ReactElement {
+  const RADIUS = 8;
+  const fillColor = isEndKeyframe ? "#00cc44" : "#ffcc00";
+  const textColor = isEndKeyframe ? "#004400" : "#664400";
+
+  const [dragging, setDragging] = React.useState<{
+    id: string;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+  } | null>(null);
+  const [overrides, setOverrides] = React.useState<Record<string, { x: number; y: number }>>({});
+
+  // When hints change from outside (e.g. after a move commits), reset overrides
+  React.useEffect(() => {
+    setOverrides({});
+  }, [hints]);
+
+  const handleMouseDown = React.useCallback(
+    (e: React.MouseEvent<SVGCircleElement>, hint: ShapeHint) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragging({
+        id: hint.id,
+        startX: e.clientX,
+        startY: e.clientY,
+        origX: overrides[hint.id]?.x ?? hint.x,
+        origY: overrides[hint.id]?.y ?? hint.y,
+      });
+    },
+    [overrides]
+  );
+
+  React.useEffect(() => {
+    if (!dragging) return;
+    const onMouseMove = (e: MouseEvent) => {
+      const dx = e.clientX - dragging.startX;
+      const dy = e.clientY - dragging.startY;
+      setOverrides((prev) => ({
+        ...prev,
+        [dragging.id]: { x: dragging.origX + dx, y: dragging.origY + dy },
+      }));
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      const dx = e.clientX - dragging.startX;
+      const dy = e.clientY - dragging.startY;
+      const newX = Math.round(dragging.origX + dx);
+      const newY = Math.round(dragging.origY + dy);
+      onHintMove?.(dragging.id, newX, newY);
+      setDragging(null);
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [dragging, onHintMove]);
+
+  return (
+    <svg
+      style={{
+        position: "absolute",
+        inset: 0,
+        overflow: "visible",
+        pointerEvents: "none",
+        zIndex: 20,
+      }}
+    >
+      {hints.map((hint) => {
+        const pos = overrides[hint.id] ?? { x: hint.x, y: hint.y };
+        return (
+          <g key={hint.id} transform={`translate(${pos.x}, ${pos.y})`}>
+            <circle
+              r={RADIUS}
+              fill={fillColor}
+              stroke="#333"
+              strokeWidth={1.5}
+              style={{ pointerEvents: "all", cursor: "move" }}
+              onMouseDown={(e) => handleMouseDown(e, hint)}
+            />
+            <text
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={9}
+              fontFamily="sans-serif"
+              fontWeight="bold"
+              fill={textColor}
+              style={{ pointerEvents: "none", userSelect: "none" }}
+            >
+              {hint.id}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Edit context
 // ---------------------------------------------------------------------------
 

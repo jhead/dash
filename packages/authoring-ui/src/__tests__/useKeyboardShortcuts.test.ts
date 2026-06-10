@@ -89,6 +89,7 @@ function dispatch(e: KeyboardEvent, h: KeyboardShortcutHandlers): void {
   else if (ctrl && shift && e.key === "e") { e.preventDefault(); h.onTextAlignCenter?.(); }
   else if (ctrl && shift && e.key === "r") { e.preventDefault(); h.onTextAlignRight?.(); }
   else if (ctrl && shift && e.key === "j") { e.preventDefault(); h.onTextAlignJustify?.(); }
+  else if (ctrl && shift && e.key === "h") { e.preventDefault(); h.onAddShapeHint?.(); }
   else if (!ctrl && alt && e.key === "ArrowRight") { e.preventDefault(); h.onTextTrackingIncrease?.(); }
   else if (!ctrl && alt && e.key === "ArrowLeft") { e.preventDefault(); h.onTextTrackingDecrease?.(); }
   else if (ctrl && alt && e.key === "ArrowRight") { e.preventDefault(); h.onTextTrackingReset?.(); }
@@ -136,6 +137,7 @@ function makeHandlers(): Required<KeyboardShortcutHandlers> {
     onTextTrackingDecrease: vi.fn(),
     onTextTrackingReset: vi.fn(),
     onNudge: vi.fn(),
+    onAddShapeHint: vi.fn(),
   };
 }
 
@@ -490,5 +492,25 @@ describe("useKeyboardShortcuts — arrow-key nudge", () => {
     const h = makeHandlers();
     dispatch(makeEvent("ArrowUp", { targetTag: "TEXTAREA" }), h);
     expect(h.onNudge).not.toHaveBeenCalled();
+  });
+});
+
+describe("useKeyboardShortcuts — Ctrl+Shift+H fires onAddShapeHint", () => {
+  it("calls onAddShapeHint for Ctrl+Shift+H", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("h", { ctrlKey: true, shiftKey: true }), h);
+    assertOnlyCalledOnce(h, "onAddShapeHint");
+  });
+
+  it("calls onAddShapeHint for Cmd+Shift+H (macOS)", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("h", { metaKey: true, shiftKey: true }), h);
+    assertOnlyCalledOnce(h, "onAddShapeHint");
+  });
+
+  it("does NOT call onAddShapeHint for plain Ctrl+H (no shift)", () => {
+    const h = makeHandlers();
+    dispatch(makeEvent("h", { ctrlKey: true }), h);
+    expect(h.onAddShapeHint).not.toHaveBeenCalled();
   });
 });

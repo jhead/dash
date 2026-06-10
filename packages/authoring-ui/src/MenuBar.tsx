@@ -264,6 +264,8 @@ export interface MenuBarProps {
   onSmooth?: () => void;
   /** Called when Modify > Shape > Optimize is activated. */
   onOptimize?: () => void;
+  /** Called when Modify > Shape > Add Shape Hint (Ctrl+Shift+H) is activated. */
+  onAddShapeHint?: () => void;
   /** Called when Modify > Swap Symbol... is activated. */
   onSwapSymbol?: () => void;
   /** Called when Modify > Distribute to Layers is activated. */
@@ -361,6 +363,7 @@ export function MenuBar({
   onBreakApart,
   onSmooth,
   onOptimize,
+  onAddShapeHint,
   onSwapSymbol,
   onDistributeToLayers,
   onFlipHorizontal,
@@ -554,6 +557,10 @@ export function MenuBar({
         {
           label: "Shape: Optimize",
           action: () => { onOptimize?.(); },
+        },
+        {
+          label: "Shape: Add Shape Hint  Ctrl+Shift+H",
+          action: () => { onAddShapeHint?.(); },
         },
         {
           label: "Distribute to Layers",

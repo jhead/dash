@@ -569,6 +569,125 @@ export function setShapeTween(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Shape hint helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Add a shape hint to the governing keyframe at or before frameIndex in the
+ * given layer. The next available letter ('a'–'z') is chosen automatically.
+ * Returns the new Timeline, or the unchanged Timeline if all 26 letters are used
+ * or if there is no governing keyframe.
+ * The default placement is the centre of the stage (stageWidth/2, stageHeight/2)
+ * which callers can override via x/y.
+ */
+export function addShapeHint(
+  timeline: Timeline,
+  layerId: string,
+  frameIndex: number,
+  x = 0,
+  y = 0,
+): Timeline {
+  return {
+    ...timeline,
+    layers: timeline.layers.map((layer) => {
+      if (layer.id !== layerId) return layer;
+      const kf = findGoverningKeyframe(layer, frameIndex);
+      if (!kf) return layer;
+      const existing = kf.shapeHints ?? [];
+      // Find the first unused letter
+      const used = new Set(existing.map((h) => h.id));
+      const letters = "abcdefghijklmnopqrstuvwxyz";
+      const nextLetter = [...letters].find((l) => !used.has(l));
+      if (!nextLetter) return layer; // all 26 used
+      const newHint: import("./types.js").ShapeHint = { id: nextLetter, x, y };
+      const newFrames = layer.frames.map((f) =>
+        f === kf ? { ...f, shapeHints: [...existing, newHint] } : f
+      );
+      return { ...layer, frames: newFrames };
+    }),
+  };
+}
+
+/**
+ * Update the position of an existing shape hint on the governing keyframe.
+ * Returns the unchanged Timeline if the hint id is not found.
+ */
+export function updateShapeHint(
+  timeline: Timeline,
+  layerId: string,
+  frameIndex: number,
+  hintId: string,
+  x: number,
+  y: number,
+): Timeline {
+  return {
+    ...timeline,
+    layers: timeline.layers.map((layer) => {
+      if (layer.id !== layerId) return layer;
+      const kf = findGoverningKeyframe(layer, frameIndex);
+      if (!kf) return layer;
+      const existing = kf.shapeHints ?? [];
+      if (!existing.some((h) => h.id === hintId)) return layer;
+      const newHints = existing.map((h) =>
+        h.id === hintId ? { ...h, x, y } : h
+      );
+      const newFrames = layer.frames.map((f) =>
+        f === kf ? { ...f, shapeHints: newHints } : f
+      );
+      return { ...layer, frames: newFrames };
+    }),
+  };
+}
+
+/**
+ * Remove a single shape hint by id from the governing keyframe.
+ * Returns the unchanged Timeline if the hint id is not found.
+ */
+export function removeShapeHint(
+  timeline: Timeline,
+  layerId: string,
+  frameIndex: number,
+  hintId: string,
+): Timeline {
+  return {
+    ...timeline,
+    layers: timeline.layers.map((layer) => {
+      if (layer.id !== layerId) return layer;
+      const kf = findGoverningKeyframe(layer, frameIndex);
+      if (!kf) return layer;
+      const existing = kf.shapeHints ?? [];
+      const newHints = existing.filter((h) => h.id !== hintId);
+      const newFrames = layer.frames.map((f) =>
+        f === kf ? { ...f, shapeHints: newHints } : f
+      );
+      return { ...layer, frames: newFrames };
+    }),
+  };
+}
+
+/**
+ * Remove all shape hints from the governing keyframe (e.g. when clearing a tween).
+ */
+export function clearShapeHints(
+  timeline: Timeline,
+  layerId: string,
+  frameIndex: number,
+): Timeline {
+  return {
+    ...timeline,
+    layers: timeline.layers.map((layer) => {
+      if (layer.id !== layerId) return layer;
+      const kf = findGoverningKeyframe(layer, frameIndex);
+      if (!kf) return layer;
+      const newFrames = layer.frames.map((f) =>
+        f === kf ? { ...f, shapeHints: [] } : f
+      );
+      return { ...layer, frames: newFrames };
+    }),
+  };
+}
+
 /**
  * Clear any tween on the keyframe at frameIndex in the given layer.
  * Sets tweenType back to "none".
