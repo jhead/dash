@@ -15,10 +15,10 @@
  *     each record: 1 byte flags, CharId UI16, Depth UI16, MATRIX, CXFORMWITHALPHA
  *   ButtonConditions (optional, none emitted for MVP)
  */
-import type { BitmapItem, ButtonHandler, ButtonSounds, FlashDocument, Symbol } from "@flash/core";
+import type { BitmapItem, ButtonHandler, ButtonSounds, ColorEffect, FlashDocument, Symbol } from "@flash/core";
 import { compileAS2 } from "@flash/core";
 import { BitWriter } from "./bits.js";
-import { encodeCxformWithAlpha } from "./cxform.js";
+import { encodeCxformWithAlpha, colorEffectToCXForm, encodeCXFormWithAlpha } from "./cxform.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "./shapes.js";
 import { encodeDefineEditText } from "./text.js";
 import { Tag } from "./tags.js";
@@ -83,7 +83,8 @@ function buildButtonRecord(
   stateDown: boolean,
   stateHit: boolean,
   charId: number,
-  depth: number
+  depth: number,
+  colorEffect?: ColorEffect
 ): Uint8Array {
   const bw = new BitWriter();
 
@@ -97,7 +98,10 @@ function buildButtonRecord(
   bw.writeUI16LE(charId);
   bw.writeUI16LE(depth);
   bw.writeBytes(encodeIdentityMatrix());
-  bw.writeBytes(encodeIdentityCxform());
+
+  // Encode CXFORMWITHALPHA: use colorEffect if present, otherwise identity
+  const cx = colorEffect ? colorEffectToCXForm(colorEffect) : null;
+  bw.writeBytes(cx !== null ? encodeCXFormWithAlpha(cx) : encodeIdentityCxform());
 
   return bw.getBytes();
 }
@@ -231,6 +235,7 @@ export function encodeDefineButton2(
     stateHit: boolean;
     objCharId: number;
     depth: number;
+    colorEffect?: ColorEffect;
   }
 
   // Key: `${frameIndex}:${objId}` so the same obj in different states gets
@@ -268,6 +273,11 @@ export function encodeDefineButton2(
         }
         if (objCid === undefined) continue;
 
+        // Extract colorEffect from display objects that support it
+        const colorEffect = (obj.type === "instance" || obj.type === "text")
+          ? obj.colorEffect
+          : undefined;
+
         const key = `${stateIdx}:${obj.id}`;
         if (!recordMap.has(key)) {
           recordMap.set(key, {
@@ -277,6 +287,7 @@ export function encodeDefineButton2(
             stateHit: stateIdx === STATE_HIT,
             objCharId: objCid,
             depth: getDepth(obj.id),
+            colorEffect,
           });
         } else {
           const entry = recordMap.get(key)!;
@@ -302,7 +313,8 @@ export function encodeDefineButton2(
         entry.stateDown,
         entry.stateHit,
         entry.objCharId,
-        entry.depth
+        entry.depth,
+        entry.colorEffect
       )
     );
   }
