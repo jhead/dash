@@ -7,6 +7,7 @@
     "dev": "pnpm --filter @flash/desktop tauri dev",
     "dev:browser": "pnpm --filter @flash/desktop dev",
     "build": "pnpm --filter './packages/**' build && pnpm --filter @flash/desktop build",
+    "build:browser": "pnpm --filter @flash/desktop run build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "verify:swf": "pnpm --filter @flash/swf test",

@@ -7,6 +7,11 @@ import { agentMcpPlugin } from "@flash/vite-plugin-agent-mcp";
 export default defineConfig(async () => ({
   plugins: [react(), agentMcpPlugin()],
 
+  // GitHub Pages serves the app under a subdirectory matching the repo name.
+  // In production builds we set the base to "/dash/" so asset paths resolve
+  // correctly. During local dev the default "/" is used.
+  base: process.env.NODE_ENV === "production" ? "/dash/" : "/",
+
   // Allow Vite to serve .wasm files from the public directory as static assets.
   assetsInclude: ["**/*.wasm"],
 
