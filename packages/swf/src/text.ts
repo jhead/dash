@@ -260,6 +260,7 @@ export function encodeDefineEditText(
   if (obj.hasBorder || obj.hasBackground) flags |= 1 << 11;   // Border — draw border rectangle and/or background fill
   if (isStatic) flags |= 1 << 12;        // NoSelect for static text only
   flags |= 1 << 13;                      // HasLayout
+  if (obj.autoSize) flags |= 1 << 14;   // AutoSize — field resizes to fit content
 
   bw.writeUI16LE(flags);
 

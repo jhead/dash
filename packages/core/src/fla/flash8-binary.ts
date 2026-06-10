@@ -294,6 +294,12 @@ export interface Fla8Text {
    */
   readonly scrollable: boolean;
   /**
+   * Whether the text field auto-expands to fit its content.
+   * Maps to DefineEditText AutoSize bit (bit 14 of flags UI16).
+   * Default: false.
+   */
+  readonly autoExpand?: boolean;
+  /**
    * Whether the text field is visible in the authoring tool.
    * Decoded from the CPicObjBase flags byte (bit 0 = visible).
    * Default: true. Only set to false when the object is explicitly hidden.
@@ -2149,7 +2155,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
   const right = r.s32();
   const top = r.s32();
   const bottom = r.s32();
-  r.skip(1); // autoExpand
+  const autoExpand = r.u8() !== 0; // autoExpand: whether the field auto-sizes
   if (ts >= 4) r.skip(1); // reserved (F3+)
   let textFlags = 0;
   let embedFlag = 0;
@@ -2265,6 +2271,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     hasBackground: (textFlags & 0x20) !== 0,
     as2VariableName,
     scrollable,
+    ...(autoExpand ? { autoExpand } : {}),
     filters,
     // Instance color effect for text fields is not yet decoded from the binary
     // (no confirmed fixture for the exact byte layout in CPicText). The field is

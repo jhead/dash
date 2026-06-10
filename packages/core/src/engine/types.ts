@@ -631,6 +631,12 @@ export interface TextDisplayObject {
    * Requires instanceName to be set; ignored without a name.
    */
   readonly restrict?: string;
+  /**
+   * Whether the text field automatically resizes to fit its content.
+   * Maps to DefineEditText AutoSize bit (bit 14 of flags UI16).
+   * Default: false.
+   */
+  readonly autoSize?: boolean;
 }
 
 /**

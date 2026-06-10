@@ -878,6 +878,7 @@ function convertElement(
         ...(el.hasBackground ? { hasBackground: true } : {}),
         ...(el.as2VariableName ? { as2VariableName: el.as2VariableName } : {}),
         ...(el.scrollable ? { scrollable: true } : {}),
+        ...(el.autoExpand ? { autoSize: true } : {}),
         ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
         ...(textFilters.length > 0 ? { filters: textFilters } : {}),
         ...(isMultiRun ? { html: true, htmlText } : {}),
