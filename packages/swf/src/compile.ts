@@ -1801,6 +1801,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           }
         }
 
+        // Emit DoAction for any text fields with non-zero letterSpacing placed this frame.
+        // Each script: var _tf=new TextFormat();_tf.letterSpacing=N;_root.name.setTextFormat(_tf);
+        for (const script of letterSpacingActions) {
+          const actionBytes = compileAS2(script);
+          if (actionBytes.length > 0) {
+            const doActionBody = new Uint8Array(actionBytes.length + 1);
+            doActionBody.set(actionBytes);
+            // doActionBody[actionBytes.length] is already 0x00 (EndAction)
+            writer.writeTag(Tag.DoAction, doActionBody);
+          }
+        }
+
         // Emit one VideoFrame (tag 61) per video stream for this SWF frame,
         // advancing through the demuxed FLV frames. Only on scene 0 (videos are
         // global characters placed once on the first scene's timeline).

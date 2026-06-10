@@ -512,3 +512,139 @@ describe("DefineEditText — HasLayout paragraph fields (leading, margins, inden
     expect(decoded.indentTwips).toBe(240); // 12 * 20
   });
 });
+
+// ---------------------------------------------------------------------------
+// letterSpacing — DoAction emission tests
+// ---------------------------------------------------------------------------
+
+const TAG_DO_ACTION = 12;
+
+/** Check whether a byte array contains a given UTF-8 string as a substring. */
+function bodyContainsString(body: Uint8Array, str: string): boolean {
+  const needle = new TextEncoder().encode(str);
+  outer: for (let i = 0; i <= body.length - needle.length; i++) {
+    for (let j = 0; j < needle.length; j++) {
+      if (body[i + j] !== needle[j]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
+describe("letterSpacing → DoAction setTextFormat", () => {
+  it("text with instanceName and letterSpacing=5 produces a DoAction tag", () => {
+    const doc = makeDoc([
+      makeText({ textType: "dynamic", instanceName: "scoreText", letterSpacing: 5 }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    expect(doActionTags.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("DoAction body contains 'letterSpacing' string", () => {
+    const doc = makeDoc([
+      makeText({ textType: "dynamic", instanceName: "scoreText", letterSpacing: 5 }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasLetterSpacing = doActionTags.some((t) =>
+      bodyContainsString(t.body, "letterSpacing")
+    );
+    expect(hasLetterSpacing).toBe(true);
+  });
+
+  it("DoAction body contains 'setTextFormat' string", () => {
+    const doc = makeDoc([
+      makeText({ textType: "dynamic", instanceName: "scoreText", letterSpacing: 5 }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasSetTextFormat = doActionTags.some((t) =>
+      bodyContainsString(t.body, "setTextFormat")
+    );
+    expect(hasSetTextFormat).toBe(true);
+  });
+
+  it("DoAction body contains 'TextFormat' string (ActionNewObject class name)", () => {
+    const doc = makeDoc([
+      makeText({ textType: "dynamic", instanceName: "scoreText", letterSpacing: 5 }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasTextFormat = doActionTags.some((t) =>
+      bodyContainsString(t.body, "TextFormat")
+    );
+    expect(hasTextFormat).toBe(true);
+  });
+
+  it("DoAction body contains ActionNewObject opcode (0x40)", () => {
+    const doc = makeDoc([
+      makeText({ textType: "dynamic", instanceName: "scoreText", letterSpacing: 5 }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasNewObject = doActionTags.some((t) =>
+      Array.from(t.body).includes(0x40)
+    );
+    expect(hasNewObject).toBe(true);
+  });
+
+  it("DoAction body contains ActionSetMember opcode (0x4f)", () => {
+    const doc = makeDoc([
+      makeText({ textType: "dynamic", instanceName: "scoreText", letterSpacing: 5 }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasSetMember = doActionTags.some((t) =>
+      Array.from(t.body).includes(0x4f)
+    );
+    expect(hasSetMember).toBe(true);
+  });
+
+  it("text WITHOUT instanceName does NOT produce a letter-spacing DoAction", () => {
+    // Anonymous text fields can't be addressed by AS2, so no DoAction should be emitted.
+    const doc = makeDoc([
+      makeText({ textType: "dynamic", letterSpacing: 5 }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasLetterSpacing = doActionTags.some((t) =>
+      bodyContainsString(t.body, "letterSpacing")
+    );
+    expect(hasLetterSpacing).toBe(false);
+  });
+
+  it("text with letterSpacing=0 does NOT produce a letter-spacing DoAction", () => {
+    const doc = makeDoc([
+      makeText({ textType: "dynamic", instanceName: "scoreText", letterSpacing: 0 }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const hasLetterSpacing = doActionTags.some((t) =>
+      bodyContainsString(t.body, "letterSpacing")
+    );
+    expect(hasLetterSpacing).toBe(false);
+  });
+
+  it("DoAction ends with ActionEnd (0x00)", () => {
+    const doc = makeDoc([
+      makeText({ textType: "dynamic", instanceName: "scoreText", letterSpacing: 5 }),
+    ]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const doActionTags = tags.filter((t) => t.code === TAG_DO_ACTION);
+    const lsDoAction = doActionTags.find((t) =>
+      bodyContainsString(t.body, "letterSpacing")
+    );
+    expect(lsDoAction).toBeDefined();
+    expect(lsDoAction!.body[lsDoAction!.body.length - 1]).toBe(0x00);
+  });
+});

@@ -277,7 +277,8 @@ export function encodeDefineEditText(
 
   // Leading: SI16 (HasLayout) — convert px to twips, default 0 (no extra spacing)
   // NOTE: letterSpacing is a TextFormat runtime property, not a DefineEditText field.
-  // TODO: apply letterSpacing via DoInitAction TextFormat.setTextFormat after placement.
+  // It is applied via a DoAction tag in compile.ts (var _tf=new TextFormat();
+  // _tf.letterSpacing=N; _root.<instanceName>.setTextFormat(_tf);) for named fields.
   bw.writeSI16LE(obj.leading != null ? Math.round(obj.leading * 20) : 0);
 
   // VariableName: null-terminated string (empty for static/dynamic display)

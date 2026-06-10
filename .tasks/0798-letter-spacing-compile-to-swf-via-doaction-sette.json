@@ -1,0 +1,10 @@
+{
+  "id": "0798-letter-spacing-compile-to-swf-via-doaction-sette",
+  "title": "Letter spacing: compile to SWF via DoAction setTextFormat",
+  "description": "The `letterSpacing` property exists in the FlashDocument model (core/src/model/timeline.ts), is editable in PropertiesPanel, and is preserved in the document. However packages/swf/src/text.ts line 280 has an explicit TODO: it is never compiled to the SWF output. As a result, any text field with non-zero letter spacing renders with default spacing in Ruffle.\n\nFix: for each text DisplayObject that has a non-zero `letterSpacing` value, emit a DoAction tag on the same frame (after PlaceObject2) containing AVM1 bytecode that calls:\n  var tf = new TextFormat(); tf.letterSpacing = N; instanceName.setTextFormat(tf);\nThe AVM1 bytecode follows the same pattern as the existing compileAS2 pipeline (push strings, numbers, ActionNew, ActionSetMember, ActionCallMethod, etc.).\n\nAcceptance:\n1. Unit test: a compiled SWF for a dynamic text field with letterSpacing=5 contains a DoAction tag whose AVM1 bytecode includes the string 'letterSpacing', the value 5, and 'setTextFormat'.\n2. E2E oracle: a Ruffle-rendered screenshot of a text field with letterSpacing=10 differs non-trivially (pixelDiff > 500) from the same text at letterSpacing=0, proving Ruffle applied the spacing.\n\nFiles: packages/swf/src/text.ts (remove TODO, implement), packages/swf/src/compile.ts (plumb per-text DoAction emission), apps/desktop/e2e/text-rendering.spec.ts or a new spec.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T11:10:53Z",
+  "updated_at": "2026-06-10T11:12:06Z"
+}
