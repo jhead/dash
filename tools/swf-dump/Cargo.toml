@@ -1,0 +1,19 @@
+[package]
+name = "swf-dump"
+version = "0.1.0"
+edition = "2021"
+description = "Normalize an SWF into stable JSON for golden FLA/SWF structural diffing (task 0698)."
+
+# Standalone crate — intentionally NOT part of the ruffle workspace.
+# The `swf` path dependency is resolved within ruffle's own workspace, so its
+# `[lints] workspace = true` and inherited package fields still resolve.
+[workspace]
+
+[dependencies]
+swf = { path = "../../ruffle/swf" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bin]]
+name = "swf-dump"
+path = "src/main.rs"
