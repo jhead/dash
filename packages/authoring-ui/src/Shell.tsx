@@ -997,8 +997,37 @@ export function Shell(): React.ReactElement {
       const { r, g, b } = newFill.color;
       fillColor = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
     }
+    // Always update tool state so future-drawn shapes pick up the fill.
     setToolState((prev) => ({ ...prev, fill: newFill, fillColor }));
-  }, []);
+
+    // If a shape is selected, also apply the new fill to every path in that shape
+    // so the canvas updates immediately (gradient preview round-trip).
+    if (selectedShapeId) {
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (layerId) {
+        const layer = timeline.layers[safeActiveLayerIndex];
+        if (layer) {
+          const kf = [...layer.frames]
+            .filter((f) => f.isKeyframe && f.index <= currentFrame)
+            .sort((a, b) => b.index - a.index)[0];
+          if (kf) {
+            const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
+            if (obj && obj.type === "shape") {
+              const shapeObj = obj as ShapeDisplayObject;
+              const newPaths = shapeObj.shape.paths.map((path) =>
+                newFill !== null ? { ...path, fill: newFill } : { ...path, fill: undefined }
+              );
+              pushDoc(withTimeline((t) =>
+                updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
+                  shape: { ...shapeObj.shape, paths: newPaths },
+                })
+              ));
+            }
+          }
+        }
+      }
+    }
+  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
 
   const handleStrokeChangeFromPanel = useCallback((stroke: SolidStroke | null) => {
     if (stroke) {
