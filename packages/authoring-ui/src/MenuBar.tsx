@@ -224,6 +224,12 @@ export interface MenuBarProps {
   onPasteInPlace?: () => void;
   /** Called when Edit > Duplicate (Ctrl+D) is activated. */
   onDuplicate?: () => void;
+  /** Called when Edit > Copy Motion is activated. */
+  onCopyMotion?: () => void;
+  /** Called when Edit > Paste Motion is activated. */
+  onPasteMotion?: () => void;
+  /** Whether a motion clipboard exists (enables Paste Motion). */
+  hasMotionClipboard?: boolean;
   /** Called when Modify > Arrange > ... is activated. */
   onArrange?: (direction: "front" | "back" | "forward" | "backward") => void;
   /** Called when Modify > Group (Ctrl+G) is activated. */
@@ -280,6 +286,9 @@ export function MenuBar({
   onPaste,
   onPasteInPlace,
   onDuplicate,
+  onCopyMotion,
+  onPasteMotion,
+  hasMotionClipboard = false,
   onArrange,
   onGroup,
   onUngroup,
@@ -373,6 +382,15 @@ export function MenuBar({
           label: "Duplicate  Ctrl+D",
           action: () => { onDuplicate?.(); },
           separator: true,
+        },
+        {
+          label: "Copy Motion",
+          action: () => { onCopyMotion?.(); },
+          separator: true,
+        },
+        {
+          label: hasMotionClipboard ? "Paste Motion" : "Paste Motion",
+          action: () => { if (hasMotionClipboard) onPasteMotion?.(); },
         },
       ],
     },
