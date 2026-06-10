@@ -1277,6 +1277,26 @@ export interface JsflDocument {
    * is not found, this is a no-op (warns to the console).
    */
   swap(libraryItemName: string): void;
+  /**
+   * Set a brightness color effect on all selected display objects.
+   * brightness: -100 to 100.
+   */
+  setInstanceBrightness(brightness: number): void;
+  /**
+   * Set a tint color effect on all selected display objects.
+   * r, g, b: 0–255 each; strength: 0–100.
+   */
+  setInstanceTint(r: number, g: number, b: number, strength: number): void;
+  /**
+   * Set a text attribute on all selected text display objects.
+   * Common attributes: fontFamily, fontSize, bold, italic, underline, color,
+   * align, leading, letterSpacing, wordWrap, multiline.
+   */
+  setElementTextAttr(attrName: string, value: any): void;
+  /**
+   * Alias for setElementTextAttr — Flash JSFL exposes both at document level.
+   */
+  setTextAttr(attrName: string, value: any): void;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -2113,6 +2133,116 @@ function makeDocumentProxy(
       }
       console.warn("[JSFL] doc.swap: no SymbolInstance found in selection");
     },
+    setInstanceBrightness(brightness: number): void {
+      if (state.selectedIds.length === 0) return;
+      const toSet = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type Entry = { layerId: string; kfIndex: number; objId: string };
+      const entries: Entry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toSet.has(obj.id)) continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, objId: obj.id });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { colorEffect: { type: "brightness", brightness } } as Parameters<typeof updateDisplayObject>[4]
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    setInstanceTint(r: number, g: number, b: number, strength: number): void {
+      if (state.selectedIds.length === 0) return;
+      const toSet = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      const tintColor =
+        "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+      type Entry = { layerId: string; kfIndex: number; objId: string };
+      const entries: Entry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toSet.has(obj.id)) continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, objId: obj.id });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { colorEffect: { type: "tint", tintColor, tintAmount: strength } } as Parameters<typeof updateDisplayObject>[4]
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    setElementTextAttr(attrName: string, value: any): void {
+      if (state.selectedIds.length === 0) return;
+      const toSet = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type TextEntry = { layerId: string; kfIndex: number; objId: string };
+      const entries: TextEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toSet.has(obj.id) || obj.type !== "text") continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, objId: obj.id });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { [attrName]: value } as Parameters<typeof updateDisplayObject>[4]
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    setTextAttr(attrName: string, value: any): void {
+      this.setElementTextAttr(attrName, value);
+    },
   };
 }
 
@@ -2122,6 +2252,8 @@ function makeDocumentProxy(
 
 export interface JsflFl {
   readonly version: string;
+  /** Flash build number — always '0' in this runtime. */
+  readonly buildNumber: string;
   readonly documents: JsflDocument[];
   getDocumentDOM(): JsflDocument;
   /**
@@ -2200,6 +2332,9 @@ function makeFlProxy(
   return {
     get version() {
       return "8,0,0,0";
+    },
+    get buildNumber() {
+      return "0";
     },
     get documents() {
       return [_docProxy];
