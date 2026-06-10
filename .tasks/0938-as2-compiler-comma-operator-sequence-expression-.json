@@ -1,0 +1,10 @@
+{
+  "id": "0938-as2-compiler-comma-operator-sequence-expression-",
+  "title": "AS2 compiler: comma operator (sequence expression) not supported",
+  "description": "The AS2 compiler does not handle comma expressions. In Flash AS2, for(i=0,j=0;;) uses a SequenceExpr/CommaExpr. The parser may produce a comma-separated list as part of ExpressionStatement. Fix: in compiler.ts, if the parser has a SequenceExpr node (or ExprStmt with comma), compile each sub-expression left-to-right and pop intermediate results (ActionPop after each except the last). Check parser.ts first to see what AST node comma expressions produce.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:08:03Z",
+  "updated_at": "2026-06-10T21:08:03Z"
+}

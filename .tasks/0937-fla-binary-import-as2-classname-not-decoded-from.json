@@ -1,0 +1,10 @@
+{
+  "id": "0937-fla-binary-import-as2-classname-not-decoded-from",
+  "title": "FLA binary import: AS2 className not decoded from CPicPage afterData",
+  "description": "flash8-import.ts line 1260 writes className: meta?.className ?? '' but meta.className is always empty because flash8-binary.ts never decodes the className from the CPicPage afterData. For symbols with AS2 linkage (exportForActionScript=true), the className tells Flash which AS2 class to bind the symbol to at runtime (e.g. 'GameSprite'). CLAUDE.md notes: 'The className (AS2 class name) is NOT in the Contents stream; it likely lives in the Symbol N CPicPage afterData (not yet decoded).' Research the CPicPage afterData format for symbol className. Reference: flacomdoc CPicPage.java, eddiemoore/fla-decoder for the afterData schema. Decode and forward the className field.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:05:10Z",
+  "updated_at": "2026-06-10T21:05:10Z"
+}
