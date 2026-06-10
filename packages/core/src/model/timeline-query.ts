@@ -295,7 +295,9 @@ export function getTweenedFrame(
       linearT,
       span.ease,
       startKf.shapeBlend,
-      span.easeCurve
+      span.easeCurve,
+      startKf.shapeHints,
+      endKf.shapeHints
     );
   }
 

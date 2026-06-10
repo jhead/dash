@@ -16,7 +16,7 @@
  * StartEdges and EndEdges are parallel (same record count).
  */
 import { BitWriter } from "./bits.js";
-import type { ShapePath, SolidFill, SolidStroke } from "@flash/core";
+import type { ShapePath, ShapeHint, SolidFill, SolidStroke } from "@flash/core";
 import { px, edgeNumBits, writeRect } from "./helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -441,6 +441,115 @@ function encodeMorphShapeEdges(
 }
 
 // ---------------------------------------------------------------------------
+// Shape-hint vertex reordering
+// ---------------------------------------------------------------------------
+
+/**
+ * Euclidean distance squared between two twip-space coordinates.
+ */
+function twipDistSq(ax: number, ay: number, bx: number, by: number): number {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return dx * dx + dy * dy;
+}
+
+/**
+ * Find the index of the vertex in `verts` closest to the given position (in pixels).
+ */
+function closestVertexIdx(
+  hintX: number,
+  hintY: number,
+  verts: Vertex[]
+): number {
+  const hx = px(hintX);
+  const hy = px(hintY);
+  let best = 0;
+  let bestDist = twipDistSq(hx, hy, verts[0]!.x, verts[0]!.y);
+  for (let i = 1; i < verts.length; i++) {
+    const d = twipDistSq(hx, hy, verts[i]!.x, verts[i]!.y);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Rotate a Vertex array so that the element at `pivotIdx` becomes index 0.
+ * Assumes a closed path (the last vertex is a duplicate of the first after closing).
+ */
+function rotateVertices(verts: Vertex[], pivotIdx: number): Vertex[] {
+  if (pivotIdx === 0 || verts.length <= 1) return verts;
+  // For closed paths, vertex[0] and vertex[verts.length-1] are the same point.
+  // Rotate the interior vertices (0..n-2), then re-append the new first vertex as last.
+  const interior = verts.slice(0, verts.length - 1); // drop closing duplicate
+  const rotated = [...interior.slice(pivotIdx), ...interior.slice(0, pivotIdx)];
+  rotated.push({ ...rotated[0]! }); // re-close
+  return rotated;
+}
+
+/**
+ * Build hint correspondence pairs from start and end hint arrays (matched by id).
+ */
+function buildHintPairs(
+  startHints: readonly ShapeHint[],
+  endHints: readonly ShapeHint[]
+): Array<{ start: ShapeHint; end: ShapeHint }> {
+  const pairs: Array<{ start: ShapeHint; end: ShapeHint }> = [];
+  for (const sh of startHints) {
+    const eh = endHints.find((h) => h.id === sh.id);
+    if (eh) pairs.push({ start: sh, end: eh });
+  }
+  return pairs;
+}
+
+/**
+ * Reorder parallel vertex sets for a single path pair using the first matched
+ * hint pair as the rotation anchor.  Only applied to closed paths (where
+ * vertex rotation makes semantic sense); open paths are returned unchanged.
+ *
+ * Both `sv` and `ev` are mutated in-place (they are already local copies).
+ */
+function applyHintsToVertexSets(
+  sv: Vertex[],
+  ev: Vertex[],
+  isClosedPath: boolean,
+  pairs: Array<{ start: ShapeHint; end: ShapeHint }>
+): void {
+  if (!isClosedPath || pairs.length === 0 || sv.length <= 1) return;
+
+  const primary = pairs[0]!;
+
+  // Find the best-matching vertex index for the start and end hint positions
+  const startPivot = closestVertexIdx(primary.start.x, primary.start.y, sv);
+  const endPivot = closestVertexIdx(primary.end.x, primary.end.y, ev);
+
+  // Rotate both arrays so their pivot vertex lands at index 0
+  const rotatedSv = rotateVertices(sv, startPivot);
+  const rotatedEv = rotateVertices(ev, endPivot);
+
+  // After rotation the lengths may differ if padding happened; re-pad to same length
+  const maxLen = Math.max(rotatedSv.length, rotatedEv.length);
+  while (rotatedSv.length < maxLen) {
+    rotatedSv.push({ ...rotatedSv[rotatedSv.length - 1]! });
+  }
+  while (rotatedEv.length < maxLen) {
+    rotatedEv.push({ ...rotatedEv[rotatedEv.length - 1]! });
+  }
+
+  // Copy back into the original arrays (in-place replacement).
+  // Snapshot first in case rotatedSv/rotatedEv is the same array reference as sv/ev
+  // (which happens when pivotIdx === 0 and rotateVertices returns the original array).
+  const snapSv = rotatedSv.slice();
+  const snapEv = rotatedEv.slice();
+  sv.length = 0;
+  ev.length = 0;
+  for (const v of snapSv) sv.push(v);
+  for (const v of snapEv) ev.push(v);
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -590,12 +699,16 @@ export function encodeDefineMorphShape(
  * @param charId      SWF character ID for this morph shape
  * @param startPaths  Shape paths for the start keyframe
  * @param endPaths    Shape paths for the end keyframe
+ * @param startHints  Shape hints from the start keyframe (optional; used to reorder vertices)
+ * @param endHints    Shape hints from the end keyframe (optional; paired with startHints)
  * @returns           Tag body bytes (without SWF record header)
  */
 export function encodeDefineMorphShape2(
   charId: number,
   startPaths: readonly ShapePath[],
-  endPaths: readonly ShapePath[]
+  endPaths: readonly ShapePath[],
+  startHints?: readonly ShapeHint[] | null,
+  endHints?: readonly ShapeHint[] | null
 ): Uint8Array {
   // Compute bounding boxes in twips
   const sb = computePathBounds(startPaths);
@@ -623,16 +736,27 @@ export function encodeDefineMorphShape2(
   const startVertexSets: Vertex[][] = [];
   const endVertexSets: Vertex[][] = [];
 
+  // Compute hint pairs once (if any hints are present)
+  const hintPairs =
+    startHints && startHints.length > 0 && endHints && endHints.length > 0
+      ? buildHintPairs(startHints, endHints)
+      : [];
+
   for (let i = 0; i < pathCount; i++) {
-    const sp = startPaths[i];
+    const sp = startPaths[i]!;
     const ep = endPaths[i] ?? sp;
 
     const sv = pathToVertices(sp);
     const ev = pathToVertices(ep);
 
     const maxLen = Math.max(sv.length, ev.length);
-    while (sv.length < maxLen) sv.push({ ...sv[sv.length - 1] });
-    while (ev.length < maxLen) ev.push({ ...ev[ev.length - 1] });
+    while (sv.length < maxLen) sv.push({ ...sv[sv.length - 1]! });
+    while (ev.length < maxLen) ev.push({ ...ev[ev.length - 1]! });
+
+    // Apply hint-based vertex reordering when hints are available
+    if (hintPairs.length > 0) {
+      applyHintsToVertexSets(sv, ev, sp.closed, hintPairs);
+    }
 
     startVertexSets.push(sv);
     endVertexSets.push(ev);

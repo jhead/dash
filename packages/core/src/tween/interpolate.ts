@@ -14,6 +14,7 @@ import type {
   SolidFill,
   Stroke,
 } from "../engine/types.js";
+import type { ShapeHint } from "../model/types.js";
 import type {
   AdjustColorFilter,
   BevelFilter,
@@ -737,6 +738,134 @@ function lerpShape(a: Shape, b: Shape, t: number): Shape {
   return { ...a, paths };
 }
 
+// ---------------------------------------------------------------------------
+// Shape hint vertex correspondence
+// ---------------------------------------------------------------------------
+
+/**
+ * Euclidean distance squared between two points.
+ */
+function distSq(a: Point, b: Point): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+/**
+ * Find the index of the vertex in `verts` closest to `hint` position.
+ * `verts` is the flat list of all vertices from the path (start point + segment endpoints).
+ */
+function closestVertexIndex(
+  hint: { x: number; y: number },
+  verts: Point[]
+): number {
+  let best = 0;
+  let bestDist = distSq(hint, verts[0]!);
+  for (let i = 1; i < verts.length; i++) {
+    const d = distSq(hint, verts[i]!);
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Flatten a ShapePath into an ordered vertex array (start + segment endpoints).
+ * Only endpoints are returned (no control points).
+ */
+function pathVertices(path: ShapePath): Point[] {
+  const pts: Point[] = [{ ...path.start }];
+  for (const seg of path.segments) {
+    pts.push({ ...seg.to });
+  }
+  return pts;
+}
+
+/**
+ * Rotate an array so that element at `pivotIdx` becomes index 0.
+ * Works for both closed paths (rotation makes sense) and open paths (clamp pivot to 0).
+ */
+function rotateArray<T>(arr: T[], pivotIdx: number): T[] {
+  if (pivotIdx === 0 || arr.length === 0) return arr;
+  return [...arr.slice(pivotIdx), ...arr.slice(0, pivotIdx)];
+}
+
+/**
+ * Reorder a ShapePath's vertices so that the vertex closest to `anchorPt` comes first.
+ * Only meaningful for closed paths; for open paths returns the path unchanged.
+ *
+ * The path is reconstructed from the reordered vertex list as straight-line segments
+ * (control points from curve segments are not preserved — morphshape uses line segments
+ * anyway for SWF encoding).
+ */
+function reorderPathByAnchor(path: ShapePath, anchorPt: Point): ShapePath {
+  if (!path.closed) return path;
+
+  const verts = pathVertices(path);
+  if (verts.length <= 1) return path;
+
+  const pivotIdx = closestVertexIndex(anchorPt, verts);
+  if (pivotIdx === 0) return path;
+
+  const reordered = rotateArray(verts, pivotIdx);
+
+  // Reconstruct segments as line segments from the reordered vertices
+  const newStart = reordered[0]!;
+  const newSegments = reordered.slice(1).map((pt) => ({
+    type: "line" as const,
+    to: pt,
+  }));
+
+  return {
+    ...path,
+    start: newStart,
+    segments: newSegments,
+  };
+}
+
+/**
+ * Build matched hint pairs from start and end hint arrays.
+ * Only pairs with matching ids are returned.
+ */
+function matchHints(
+  startHints: readonly ShapeHint[],
+  endHints: readonly ShapeHint[]
+): Array<{ start: ShapeHint; end: ShapeHint }> {
+  const pairs: Array<{ start: ShapeHint; end: ShapeHint }> = [];
+  for (const sh of startHints) {
+    const eh = endHints.find((h) => h.id === sh.id);
+    if (eh) {
+      pairs.push({ start: sh, end: eh });
+    }
+  }
+  return pairs;
+}
+
+/**
+ * Apply shape hints to a single ShapePath pair, reordering vertices so that
+ * the hint-anchored vertex comes first.  For multiple hints we use the first
+ * matched pair as the primary anchor for reordering (closest vertex approach).
+ *
+ * This ensures that the vertex at index 0 of the start path corresponds to the
+ * vertex at index 0 of the end path — the key requirement for smooth morphing.
+ */
+function applyHintsToPath(
+  startPath: ShapePath,
+  endPath: ShapePath,
+  pairs: Array<{ start: ShapeHint; end: ShapeHint }>
+): [ShapePath, ShapePath] {
+  if (pairs.length === 0) return [startPath, endPath];
+
+  // Use the first hint pair as the primary anchor to align vertex 0
+  const primary = pairs[0]!;
+  const reorderedStart = reorderPathByAnchor(startPath, primary.start);
+  const reorderedEnd = reorderPathByAnchor(endPath, primary.end);
+
+  return [reorderedStart, reorderedEnd];
+}
+
 /**
  * Interpolate shape display objects for a shape tween.
  *
@@ -744,8 +873,10 @@ function lerpShape(a: Shape, b: Shape, t: number): Shape {
  * @param endObjects    - Display objects on the end keyframe
  * @param t             - Normalized position between keyframes (0..1, pre-ease)
  * @param ease          - Flash ease value (−100..100)
- * @param blend         - Blend mode: 'distributive' | 'angular' (reserved for future use)
+ * @param blend         - Blend mode: 'distributive' | 'angular'
  * @param easeCurve     - Optional custom cubic Bézier ease curve; overrides `ease` when set
+ * @param startHints    - Shape hints from the start keyframe (optional)
+ * @param endHints      - Shape hints from the end keyframe (optional)
  * @returns             New array of interpolated ShapeDisplayObject values
  */
 export function interpolateShapeTween(
@@ -754,9 +885,11 @@ export function interpolateShapeTween(
   t: number,
   ease: number,
   blend: "distributive" | "angular",
-  easeCurve?: { x1: number; y1: number; x2: number; y2: number } | null
+  easeCurve?: { x1: number; y1: number; x2: number; y2: number } | null,
+  startHints?: readonly ShapeHint[] | null,
+  endHints?: readonly ShapeHint[] | null
 ): DisplayObject[] {
-  // Suppress unused-variable lint for blend (reserved for future hint-based morphing)
+  // Suppress unused-variable lint for blend (angular morphing not yet implemented)
   void blend;
 
   const easedT = applyEase(Math.max(0, Math.min(1, t)), ease, easeCurve);
@@ -792,10 +925,42 @@ export function interpolateShapeTween(
     const s = startObj as ShapeDisplayObject;
     const e = endObj as ShapeDisplayObject;
 
+    // Apply shape hints to improve vertex correspondence if both keyframes have hints
+    let startShape = s.shape;
+    let endShape = e.shape;
+
+    if (startHints && startHints.length > 0 && endHints && endHints.length > 0) {
+      const hintPairs = matchHints(startHints, endHints);
+      if (hintPairs.length > 0) {
+        // Apply hint-based reordering to each path pair
+        const newStartPaths: ShapePath[] = [];
+        const newEndPaths: ShapePath[] = [];
+        const pathCount = Math.min(startShape.paths.length, endShape.paths.length);
+        for (let pi = 0; pi < pathCount; pi++) {
+          const [rsp, rep] = applyHintsToPath(
+            startShape.paths[pi]!,
+            endShape.paths[pi]!,
+            hintPairs
+          );
+          newStartPaths.push(rsp);
+          newEndPaths.push(rep);
+        }
+        // Preserve any extra paths from the longer shape
+        for (let pi = pathCount; pi < startShape.paths.length; pi++) {
+          newStartPaths.push(startShape.paths[pi]!);
+        }
+        for (let pi = pathCount; pi < endShape.paths.length; pi++) {
+          newEndPaths.push(endShape.paths[pi]!);
+        }
+        startShape = { ...startShape, paths: newStartPaths };
+        endShape = { ...endShape, paths: newEndPaths };
+      }
+    }
+
     const interpolated: ShapeDisplayObject = {
       type: "shape",
       id: s.id,
-      shape: lerpShape(s.shape, e.shape, easedT),
+      shape: lerpShape(startShape, endShape, easedT),
       x: lerp(s.x, e.x, easedT),
       y: lerp(s.y, e.y, easedT),
       scaleX: lerp(s.scaleX ?? 1, e.scaleX ?? 1, easedT),
