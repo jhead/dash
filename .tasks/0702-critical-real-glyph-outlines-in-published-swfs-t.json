@@ -1,0 +1,10 @@
+{
+  "id": "0702-critical-real-glyph-outlines-in-published-swfs-t",
+  "title": "CRITICAL: real glyph outlines in published SWFs \u2014 text is currently invisible in Ruffle",
+  "description": "Found by the 0519 capstone (recorded in CLAUDE.md Learnings but never tasked): packages/swf/src/fonts.ts emits DefineFont with EMPTY placeholder glyph shapes, so every DefineText/DefineEditText in a published SWF renders as nothing in Ruffle. Text is a core Flash 8 pillar (docs/06) and this blocked the capstone's score-TextField assertion. Scope: emit real vector glyph outlines \u2014 parse a real font (embed an open-licensed font, e.g. a metrically-sane sans, or parse system TTF via an opentype-style parser) and write DefineFont3 glyph SHAPE records + advance/layout tables (cross-check ruffle/swf/src/read.rs font parsing for exact record layout); ensure DefineEditText UseOutlines path and DefineText glyph indexing both work. Acceptance (runtime, not bytes): an e2e spec publishes a movie with a TextField containing known text and asserts it renders visibly in Ruffle (pixel diff vs blank > threshold), evidence pasted here.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-10T01:15:09Z",
+  "updated_at": "2026-06-10T01:15:09Z"
+}
