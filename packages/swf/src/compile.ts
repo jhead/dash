@@ -9,7 +9,7 @@
  *  - RemoveObject2 when objects leave the display list
  *  - ShowFrame per frame, End
  */
-import type { BitmapFill, BitmapItem, ButtonHandler, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoDisplayObject, VideoItem } from "@flash/core";
+import type { BitmapFill, BitmapItem, ButtonHandler, ClipAction, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoDisplayObject, VideoItem } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { deflateSync } from "fflate";
 import { Tag } from "./tags.js";
@@ -1478,9 +1478,36 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   }
                 }
 
+                // Resolve loopMode and firstFrame for graphic symbol instances.
+                // loopMode defaults to "loop" (no extra encoding needed).
+                const loopMode = displayObj.loopMode ?? "loop";
+                const instanceFirstFrame = displayObj.firstFrame ?? 0;
+
                 const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
-                const hasClipActions = !!displayObj.clipActions && displayObj.clipActions.length > 0;
-                if (hasBlend || hasEnabledFilters(displayObj.filters)) {
+                // For play-once mode, add an enterFrame clip action that calls stop()
+                // when the instance reaches its last frame. Merge with any existing clipActions.
+                let effectiveClipActions = displayObj.clipActions ?? [];
+                if (loopMode === "play-once" && !hasBlend && !hasEnabledFilters(displayObj.filters)) {
+                  const playOnceAction: ClipAction = {
+                    event: "enterFrame",
+                    script: "if (this._currentframe >= this._totalframes) { this.stop(); }",
+                  };
+                  effectiveClipActions = [...effectiveClipActions, playOnceAction];
+                }
+                const hasClipActions = effectiveClipActions.length > 0;
+
+                // For single-frame mode, compute a PlaceObject2 ratio so the sprite
+                // is positioned at firstFrame. Ratio field: 0 = frame 1, 65535 = last frame.
+                // Only applies when the instance has no blend/filter (those use PO3).
+                if (loopMode === "single-frame" && !hasBlend && !hasEnabledFilters(displayObj.filters)) {
+                  const sym = symbolById.get(displayObj.symbolId);
+                  const totalFrames = sym ? sceneFrameCount(sym.timeline) : 1;
+                  const ratio = totalFrames <= 1
+                    ? 0
+                    : Math.round(instanceFirstFrame / (totalFrames - 1) * 65535);
+                  const placeBody = encodePlaceObject2WithRatio(charId, depth, x, y, ratio, false);
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                } else if (hasBlend || hasEnabledFilters(displayObj.filters)) {
                   const placeBody = hasBlend
                     ? encodePlaceObject3WithBlendMode(
                         charId,
@@ -1508,7 +1535,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     depth,
                     x,
                     y,
-                    displayObj.clipActions!,
+                    effectiveClipActions,
                     transform,
                     displayObj.instanceName
                   );
