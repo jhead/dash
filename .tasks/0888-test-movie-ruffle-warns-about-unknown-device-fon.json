@@ -1,0 +1,10 @@
+{
+  "id": "0888-test-movie-ruffle-warns-about-unknown-device-fon",
+  "title": "Test Movie: Ruffle warns about unknown device fonts (Noto Sans, AppleGothic)",
+  "description": "After Control \u2192 Test Movie on Magnet.fla, the Ruffle Output tab shows repeated warnings:\n- '%cWARN%c core/src/library.rs:559%c Unknown device font \"Noto Sans\" (bold: true, italic: false)'\n- '%cWARN%c core/src/library.rs:559%c Unknown device font \"AppleGothic\" (bold: true, italic: false)'\n\nThe warnings include raw CSS format strings ('%c') appearing as literal text in the Output panel rather than being parsed as styled console output.\n\nTwo issues:\n1. The SWF references device fonts (Noto Sans, AppleGothic) that Ruffle cannot find \u2014 these fonts are specified in the FLA's text objects but not embedded. Text fields using these fonts will fall back to a substitute.\n2. The Output tab renders Ruffle's console.warn format strings literally ('%cWARN%c ...color: orange...') instead of filtering/formatting them. Expected: either strip the CSS format args or render them as styled text.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T17:48:09Z",
+  "updated_at": "2026-06-10T17:48:09Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0886-fla-import-layer-names-decoded-as-raw-binary-ins",
+  "title": "FLA import: layer names decoded as raw binary instead of strings",
+  "description": "After loading Magnet.fla, several layer names in the timeline contain raw binary bytes instead of readable text.\n\n## Observed\nLayer names such as: \"\\x01\\x00\\x00\\x06\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\u00ff\u00ff\u00ff?\u00ff\u00ff\"\nVisible in the timeline UI as garbled characters (e.g. 'yyy?yy').\nAffects layers across multiple scenes (AA scene layer-149, Scene 5 layer-156, BA scene layer-160, AB scene layer-163, BB scene layer-167).\n\n## Expected\nLayer names should be decoded as human-readable strings from the FLA CPicLayer stream.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T17:47:52Z",
+  "updated_at": "2026-06-10T17:47:52Z"
+}
