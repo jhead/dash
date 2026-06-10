@@ -1179,6 +1179,45 @@ export interface JsflDocument {
    * Not supported in this runtime; no-op stub.
    */
   addDataToDocument(name: string, type: string, data: any): void;
+  /**
+   * Enter symbol-editing mode.  Not supported in this runtime; no-op stub.
+   */
+  enterEditMode(editMode?: string): void;
+  /**
+   * Exit symbol-editing mode.  Not supported in this runtime; no-op stub.
+   */
+  exitEditMode(): void;
+  /**
+   * Set the transformation point for the current selection.  Not supported; no-op stub.
+   */
+  setTransformationPoint(point: { x: number; y: number }): void;
+  /**
+   * Align selected objects.  Not implemented; no-op stub.
+   */
+  align(alignMode: string, bUseDocumentBounds?: boolean): void;
+  /**
+   * Space selected objects evenly.  Not implemented; no-op stub.
+   */
+  space(direction: string): void;
+  /**
+   * Match the width and/or height of selected objects.  Not implemented; no-op stub.
+   */
+  match(bWidth: boolean, bHeight: boolean): void;
+  /**
+   * Apply a 2×2 transform matrix to the current selection.  Not implemented; no-op stub.
+   */
+  transformSelection(a: number, b: number, c: number, d: number): void;
+  /**
+   * Move all selected display objects by (delta.x, delta.y) pixels.
+   * Mutates x/y on each selected object in the current frame.
+   */
+  moveSelectionBy(delta: { x: number; y: number }): void;
+  /**
+   * Scale all selected display objects.
+   * Multiplies scaleX by xScale and scaleY by yScale for each selected object.
+   * whichCorner is accepted for API compatibility but ignored.
+   */
+  scaleSelection(xScale: number, yScale: number, whichCorner?: string): void;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -1641,6 +1680,27 @@ function makeDocumentProxy(
     addDataToDocument(_name: string, _type: string, _data: any): void {
       console.warn('doc.addDataToDocument: not supported');
     },
+    enterEditMode(_editMode?: string): void {
+      console.warn('doc.enterEditMode: symbol editing not supported');
+    },
+    exitEditMode(): void {
+      console.warn('doc.exitEditMode: not supported');
+    },
+    setTransformationPoint(_point: { x: number; y: number }): void {
+      console.warn('doc.setTransformationPoint: not supported');
+    },
+    align(_alignMode: string, _bUseDocumentBounds?: boolean): void {
+      console.warn('doc.align: not implemented');
+    },
+    space(_direction: string): void {
+      console.warn('doc.space: not implemented');
+    },
+    match(_bWidth: boolean, _bHeight: boolean): void {
+      console.warn('doc.match: not implemented');
+    },
+    transformSelection(_a: number, _b: number, _c: number, _d: number): void {
+      console.warn('doc.transformSelection: not implemented');
+    },
   };
 }
 
@@ -1693,6 +1753,14 @@ export interface JsflFl {
    * Always returns null in a browser context (no native picker available).
    */
   browseForFolderURL(description: string): string | null;
+  /**
+   * Run a JSFL script file by URI.  Not supported in browser context; no-op stub.
+   */
+  runScript(fileURI: string): void;
+  /**
+   * Run a named Flash command.  Not supported; no-op stub.
+   */
+  runCommand(name: string): void;
   /** Output panel — use trace() to append lines; clear() to wipe them. */
   outputPanel: { trace(msg: string): void; clear(): void };
   /** Math utility functions matching the Flash 8 fl.Math API. */
@@ -1797,6 +1865,12 @@ function makeFlProxy(
     browseForFolderURL(_description: string): string | null {
       console.warn("[JSFL] fl.browseForFolderURL: not available in browser; returning null");
       return null;
+    },
+    runScript(_fileURI: string): void {
+      console.warn('fl.runScript: not supported in browser context');
+    },
+    runCommand(_name: string): void {
+      console.warn('fl.runCommand: not supported');
     },
     outputPanel: {
       trace(msg: string): void {
