@@ -8,7 +8,17 @@ export interface RufflePlayerElement extends HTMLElement {
 }
 
 export interface RufflePlayerInstance {
-  load(options: { url?: string; data?: Uint8Array } | string): Promise<void>;
+  load(
+    options:
+      | {
+          url?: string;
+          data?: Uint8Array;
+          logLevel?: string;
+          autoplay?: string;
+          unmuteOverlay?: string;
+        }
+      | string
+  ): Promise<void>;
 }
 
 export interface RuffleHandle {

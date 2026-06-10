@@ -229,7 +229,15 @@ export function RufflePlayer({
       try {
         await (player.ruffle() as unknown as {
           load(opts: Record<string, unknown>): Promise<void>;
-        }).load({ url, logLevel: "info" });
+        }).load({
+          url,
+          logLevel: "info",
+          // autoplay:'on' starts playback without a user-gesture audio context.
+          // unmuteOverlay:'hidden' suppresses the "Click to unmute" overlay that
+          // otherwise intercepts all mouse clicks on the canvas.
+          autoplay: "on",
+          unmuteOverlay: "hidden",
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[RufflePlayer] SWF load failed:", msg);
