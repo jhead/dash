@@ -469,6 +469,141 @@ test.describe('Visual oracle: CanvasRenderer vs Ruffle', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Test 4b: radial gradient fill — red-center to blue-edge radial gradient
+  // -------------------------------------------------------------------------
+  test('radial gradient fill renders correctly in Ruffle', async ({ page }, testInfo: TestInfo) => {
+    // Shape: 200×200 square centered on the 550×400 stage (x=175..375, y=100..300)
+    const fixtureDoc = await page.evaluate(() => {
+      return {
+        id: 'visual-radial-gradient-doc',
+        properties: {
+          width: 550, height: 400, frameRate: 12,
+          backgroundColor: '#ffffff', rulerUnits: 'px',
+          grid: { showGrid: false, snapToGrid: false, gridColor: '#999999', gridWidth: 18, gridHeight: 18 },
+          guides: [], snapToObjects: false, snapToPixels: false, snapToGuides: false,
+        },
+        scenes: [{
+          id: 'scene-1', name: 'Scene 1',
+          timeline: {
+            layers: [{
+              id: 'layer-Layer 1', name: 'Layer 1', type: 'normal',
+              visible: true, locked: false, outlineMode: false,
+              outlineColor: '#ff0000', height: 20, parentFolderId: null,
+              frameCount: 1,
+              frames: [{
+                index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+                label: '', labelType: 'name', script: '', sound: null,
+                motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+                motionOrientToPath: false, motionSync: false, motionScale: false,
+                shapeEase: 0, shapeBlend: 'distributive',
+                displayObjects: [{
+                  id: 'radial-rect', type: 'shape',
+                  shape: {
+                    id: 'shape-radial-rect',
+                    paths: [{
+                      start: { x: 175, y: 100 },
+                      segments: [
+                        { type: 'line', to: { x: 375, y: 100 } },
+                        { type: 'line', to: { x: 375, y: 300 } },
+                        { type: 'line', to: { x: 175, y: 300 } },
+                      ],
+                      closed: true,
+                      fill: {
+                        type: 'radial-gradient',
+                        focalPoint: 0.3,
+                        stops: [
+                          { ratio: 0,   color: { r: 255, g: 0,   b: 0,   a: 255 } },
+                          { ratio: 255, color: { r: 0,   g: 0,   b: 255, a: 255 } },
+                        ],
+                      },
+                    }],
+                  },
+                  x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+                }],
+              }],
+            }],
+          },
+        }],
+        library: { items: [], folders: [] },
+      };
+    });
+
+    const stageShot = await captureStageScreenshot(page, fixtureDoc);
+    const ruffleShot = await captureRuffleScreenshot(page);
+
+    // --- Non-blank assertion: Ruffle rendered something ---
+    const ruffleImg = PNG.sync.read(ruffleShot);
+    const rw = ruffleImg.width;
+    const rh = ruffleImg.height;
+    let nonWhitePixels = 0;
+    for (let i = 0; i < ruffleImg.data.length; i += 4) {
+      const r = ruffleImg.data[i], g = ruffleImg.data[i + 1], b = ruffleImg.data[i + 2];
+      if (r < 250 || g < 250 || b < 250) nonWhitePixels++;
+    }
+    expect(nonWhitePixels, 'Ruffle rendered a blank (all-white) screenshot').toBeGreaterThan(500);
+
+    // --- Color assertions on the Ruffle screenshot ---
+    // The shape occupies x=175..375, y=100..300 on the 550×400 stage.
+    // Ruffle player is 550×400; scale these coords directly (no DPR adjustment here
+    // since the player is placed at exactly 550×400 CSS px and Playwright screenshots it).
+    //
+    // Sample a 20×20 box at the center of the shape (around x=275, y=200 in stage coords).
+    // With focalPoint=0.3 the gradient center is offset toward x=275+0.3*100≈305, but
+    // the absolute center (275,200) should still be in the red zone.
+    const stageCX = Math.round((275 / 550) * rw);
+    const stageCY = Math.round((200 / 400) * rh);
+    const BOX = 10; // half-size of sample box
+
+    let centerRedSum = 0, centerBlueSum = 0, centerCount = 0;
+    for (let py = stageCY - BOX; py <= stageCY + BOX; py++) {
+      for (let px = stageCX - BOX; px <= stageCX + BOX; px++) {
+        if (px < 0 || py < 0 || px >= rw || py >= rh) continue;
+        const idx = (py * rw + px) * 4;
+        centerRedSum  += ruffleImg.data[idx];
+        centerBlueSum += ruffleImg.data[idx + 2];
+        centerCount++;
+      }
+    }
+    const avgCenterRed  = centerRedSum  / centerCount;
+    const avgCenterBlue = centerBlueSum / centerCount;
+
+    // Near-corner of shape (top-left area): x=185, y=110 → edge = blue zone
+    const stageEX = Math.round((185 / 550) * rw);
+    const stageEY = Math.round((110 / 400) * rh);
+    let edgeRedSum = 0, edgeBlueSum = 0, edgeCount = 0;
+    for (let py = stageEY - BOX; py <= stageEY + BOX; py++) {
+      for (let px = stageEX - BOX; px <= stageEX + BOX; px++) {
+        if (px < 0 || py < 0 || px >= rw || py >= rh) continue;
+        const idx = (py * rw + px) * 4;
+        edgeRedSum  += ruffleImg.data[idx];
+        edgeBlueSum += ruffleImg.data[idx + 2];
+        edgeCount++;
+      }
+    }
+    const avgEdgeRed  = edgeRedSum  / edgeCount;
+    const avgEdgeBlue = edgeBlueSum / edgeCount;
+
+    if (nonWhitePixels < 500 || avgCenterRed < avgCenterBlue || avgEdgeBlue < avgEdgeRed) {
+      await testInfo.attach('ruffle-screenshot-radial', { body: ruffleShot, contentType: 'image/png' });
+      await testInfo.attach('stage-screenshot-radial',  { body: stageShot,  contentType: 'image/png' });
+    }
+
+    // Center should be reddish (red channel dominates over blue)
+    expect(avgCenterRed, `center region: red (${avgCenterRed.toFixed(1)}) should exceed blue (${avgCenterBlue.toFixed(1)})`).toBeGreaterThan(avgCenterBlue);
+
+    // Edge / corner should be bluish (blue channel dominates over red)
+    expect(avgEdgeBlue, `edge region: blue (${avgEdgeBlue.toFixed(1)}) should exceed red (${avgEdgeRed.toFixed(1)})`).toBeGreaterThan(avgEdgeRed);
+
+    // Also verify cross-renderer consistency (same rough shape in both)
+    const mismatchRatio = compareScreenshots(stageShot, ruffleShot);
+    if (mismatchRatio >= 0.20) {
+      await testInfo.attach('stage-screenshot', { body: stageShot, contentType: 'image/png' });
+      await testInfo.attach('ruffle-screenshot', { body: ruffleShot, contentType: 'image/png' });
+    }
+    expect(mismatchRatio).toBeLessThan(0.20);
+  });
+
+  // -------------------------------------------------------------------------
   // Test 5: static text — "Hello Flash 8" label at Arial 24px
   // -------------------------------------------------------------------------
   test('static text label renders consistently', async ({ page }, testInfo: TestInfo) => {

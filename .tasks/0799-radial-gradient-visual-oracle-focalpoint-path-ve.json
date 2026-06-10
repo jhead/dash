@@ -1,0 +1,10 @@
+{
+  "id": "0799-radial-gradient-visual-oracle-focalpoint-path-ve",
+  "title": "Radial gradient visual oracle \u2014 focalPoint path verified in Ruffle",
+  "description": "The visual-oracle.spec.ts suite has a linear gradient render-consistency test (test 4) but no radial gradient counterpart. The gradient-debug.spec.ts is a diagnostic save-to-disk helper, not a pass/fail oracle. The core model and SWF encoder support radial gradients with a focalPoint field, but there is no runtime proof that the full path (model \u2192 DefineShape4 GRADRECORD with FocalGradient \u2192 Ruffle render) produces correct output.\n\nAdd a radial gradient visual oracle E2E test following the established pattern (inject Ruffle, compile, screenshot, pixelmatch):\n\n  1. Build a FlashDocument with a 200\u00d7200 radial gradient rectangle (red center \u2192 blue edge, focalPoint=0.3).\n  2. Compile via __flashTest.publish().\n  3. Load in Ruffle, screenshot.\n  4. Assert non-blank (diff vs white > threshold).\n  5. Assert the center region is reddish and the edge region is bluish (channel-level pixel checks), proving the gradient direction is correct in the SWF and Ruffle renders it faithfully.\n  6. Optionally compare against the Flash canvas renderer screenshot (mismatch < 20%) to catch regressions in both renderers.\n\nFiles: apps/desktop/e2e/visual-oracle.spec.ts (add test 4b) or a new apps/desktop/e2e/gradient-oracle.spec.ts.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T11:11:05Z",
+  "updated_at": "2026-06-10T11:12:30Z"
+}
