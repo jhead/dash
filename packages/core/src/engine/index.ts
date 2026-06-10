@@ -40,6 +40,7 @@ export type {
   SymbolInstance,
   TextAlign,
   TextDisplayObject,
+  TextOrientation,
   TextType,
   VideoDisplayObject,
   Viewport,

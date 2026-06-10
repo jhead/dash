@@ -901,6 +901,7 @@ export function convertFla8Text(el: Fla8Text): TextDisplayObject {
     italic: el.italic,
     color: toColor(el.color),
     align: el.align,
+    ...(el.orientation !== "horizontal" ? { orientation: el.orientation } : {}),
     multiline: el.multiline,
     wordWrap: el.wordWrap,
     ...(el.instanceName ? { instanceName: el.instanceName } : {}),

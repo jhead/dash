@@ -215,6 +215,11 @@ export function encodeDefineEditText(
   // bit 13: HasLayout      — layout block follows the color
   // bit 14: AutoSize
   // bit 15: HasFontClass
+  //
+  // NOTE: DefineEditText has no vertical-orientation flag. Flash stores orientation
+  // in the binary FLA CPicText per-run vertical/rtl bytes; published SWF vertical
+  // text uses DefineText glyph layout or runtime TextField layout, not an EditText
+  // flag. obj.orientation is preserved in the model for import/re-export round-trips.
 
   const isStatic = obj.textType === "static";
   const isDynamic = obj.textType === "dynamic";

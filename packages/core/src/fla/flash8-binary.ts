@@ -192,6 +192,9 @@ export interface Fla8Instance {
   readonly visible?: boolean;
 }
 
+/** Horizontal (default), vertical right-to-left, or vertical left-to-right. */
+export type Fla8TextOrientation = "horizontal" | "vertical-rtl" | "vertical-ltr";
+
 export interface Fla8TextRun {
   readonly text: string;
   readonly fontName: string;
@@ -200,6 +203,15 @@ export interface Fla8TextRun {
   readonly color: Fla8Color;
   readonly bold: boolean;
   readonly italic: boolean;
+}
+
+/** Map CPicText per-run vertical/rtl bytes to editor orientation (flacomdoc layout). */
+export function textOrientationFromRunFields(
+  vertical: boolean,
+  rightToLeft: boolean,
+): Fla8TextOrientation {
+  if (!vertical) return "horizontal";
+  return rightToLeft ? "vertical-rtl" : "vertical-ltr";
 }
 
 export interface Fla8Text {
@@ -216,6 +228,8 @@ export interface Fla8Text {
   readonly bold: boolean;
   readonly italic: boolean;
   readonly align: "left" | "center" | "right" | "justify";
+  /** Field orientation from the first text run's vertical/rtl bytes. */
+  readonly orientation: Fla8TextOrientation;
   readonly instanceName: string;
   readonly textType: "static" | "dynamic" | "input";
   readonly wordWrap: boolean;
@@ -1921,6 +1935,9 @@ interface TextRun {
   bold: boolean;
   italic: boolean;
   align: number;
+  vertical: boolean;
+  rightToLeft: boolean;
+  rotation: boolean;
 }
 
 /** writeString: u8 length (with 0xFF/0xFFFF extensions) + chars, no BOM. */
@@ -1966,8 +1983,13 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
   else r.skip(1);
   if (cs4) readCString(r);
   else readPlainString(r, unicode); // url
+  let vertical = false;
+  let rightToLeft = false;
+  let rotation = false;
   if (ts >= 9) {
-    r.skip(3); // vertical, right-to-left, rotation
+    vertical = r.u8() !== 0;
+    rightToLeft = r.u8() !== 0;
+    rotation = r.u8() !== 0;
     if (ts >= 0x0c) r.skip(1); // bitmap-render flag
     if (cs4) readCString(r);
     else readPlainString(r, unicode); // link target
@@ -1978,7 +2000,7 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
     if (cs4) readCString(r);
     else readPlainString(r, unicode); // url (repeated)
   }
-  return { fontName, sizePt, color, bold, italic, align };
+  return { fontName, sizePt, color, bold, italic, align, vertical, rightToLeft, rotation };
 }
 
 function readCPicText(ctx: ParseCtx): Fla8Text {
@@ -2088,6 +2110,9 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     bold: run?.bold ?? false,
     italic: run?.italic ?? false,
     align: alignNames[run?.align ?? 0] ?? "left",
+    orientation: run
+      ? textOrientationFromRunFields(run.vertical, run.rightToLeft)
+      : "horizontal",
     instanceName,
     textType: (textFlags & 0x01) === 0 ? "static" : textFlags & 0x02 ? "dynamic" : "input",
     wordWrap: (textFlags & 0x08) !== 0,

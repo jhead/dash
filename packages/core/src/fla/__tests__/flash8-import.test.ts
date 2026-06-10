@@ -27,10 +27,19 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isOle2, tryLoadRealFla } from "../ole.js";
-import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
+import {
+  parseFla8Contents,
+  parseFla8Timeline,
+  textOrientationFromRunFields,
+} from "../flash8-binary.js";
 import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText, convertFla8Text, assignFolderParents } from "../flash8-import.js";
 import { getTweenSpans } from "../../model/timeline-query.js";
-import type { Fla8ColorEffect, Fla8Filter, Fla8Text } from "../flash8-binary.js";
+import type {
+  Fla8ColorEffect,
+  Fla8Filter,
+  Fla8Text,
+  Fla8TextOrientation,
+} from "../flash8-binary.js";
 import type { FlashDocument, Symbol as SymbolItem, SoundItem, FontItem, Layer } from "../../model/types.js";
 import type {
   ShapeDisplayObject,
@@ -1348,6 +1357,7 @@ describe("text element colorEffect forwarding (convertFla8Text)", () => {
       bold: false,
       italic: false,
       align: "left",
+      orientation: "horizontal",
       instanceName: "",
       textType: "dynamic",
       wordWrap: false,
@@ -1355,6 +1365,7 @@ describe("text element colorEffect forwarding (convertFla8Text)", () => {
       password: false,
       maxChars: 0,
       hasBorder: false,
+      hasBackground: false,
       as2VariableName: "",
       filters: [],
       colorEffect: null,
@@ -1435,6 +1446,72 @@ describe("text element colorEffect forwarding (convertFla8Text)", () => {
     expect(result.instanceName).toBe("myLabel");
     expect(result.colorEffect).toEqual({ type: "alpha", alpha: 50 });
   });
+});
+
+// ---------------------------------------------------------------------------
+// CPicText vertical/rtl byte → orientation mapping and import forwarding
+// ---------------------------------------------------------------------------
+
+describe("text orientation (CPicText vertical/rtl bytes)", () => {
+  /** Minimal valid Fla8Text for orientation conversion tests. */
+  function makeOrientFla8Text(overrides: Partial<Fla8Text> = {}): Fla8Text {
+    return {
+      type: "text",
+      matrix: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
+      width: 50,
+      height: 100,
+      text: "縦",
+      fontName: "Arial",
+      fontSize: 12,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      bold: false,
+      italic: false,
+      align: "left",
+      orientation: "horizontal",
+      instanceName: "",
+      textType: "static",
+      wordWrap: false,
+      multiline: false,
+      password: false,
+      maxChars: 0,
+      hasBorder: false,
+      hasBackground: false,
+      as2VariableName: "",
+      filters: [],
+      colorEffect: null,
+      runs: [],
+      ...overrides,
+    };
+  }
+
+  it.each([
+    [false, false, "horizontal"],
+    [true, true, "vertical-rtl"],
+    [true, false, "vertical-ltr"],
+  ] as const)(
+    "textOrientationFromRunFields(vertical=%s, rtl=%s) → %s",
+    (vertical, rightToLeft, expected) => {
+      expect(textOrientationFromRunFields(vertical, rightToLeft)).toBe(expected);
+    },
+  );
+
+  it.each([
+    ["horizontal", undefined],
+    ["vertical-rtl", "vertical-rtl"],
+    ["vertical-ltr", "vertical-ltr"],
+  ] as const)(
+    "convertFla8Text forwards orientation '%s'",
+    (orientation, expected) => {
+      const result = convertFla8Text(
+        makeOrientFla8Text({ orientation: orientation as Fla8TextOrientation }),
+      );
+      if (expected) {
+        expect(result.orientation).toBe(expected);
+      } else {
+        expect(result.orientation).toBeUndefined();
+      }
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

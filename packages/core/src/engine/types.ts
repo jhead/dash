@@ -494,6 +494,8 @@ export interface DrawingObject {
 
 export type TextType = "static" | "dynamic" | "input";
 export type TextAlign = "left" | "center" | "right" | "justify";
+/** Horizontal (default), vertical right-to-left, or vertical left-to-right. */
+export type TextOrientation = "horizontal" | "vertical-rtl" | "vertical-ltr";
 
 /**
  * A text display object placed on a layer.
@@ -516,6 +518,11 @@ export interface TextDisplayObject {
   readonly underline?: boolean;
   readonly color: Color;
   readonly align: TextAlign;
+  /**
+   * Layout orientation decoded from CPicText per-run vertical/rtl bytes.
+   * Default: "horizontal" (omitted on the object when horizontal).
+   */
+  readonly orientation?: TextOrientation;
   readonly multiline: boolean;
   readonly wordWrap: boolean;
   /** Letter spacing / tracking in pixels. Default 0. */
