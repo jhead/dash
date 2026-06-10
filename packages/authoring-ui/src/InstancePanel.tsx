@@ -169,6 +169,28 @@ function NumInput({
 }
 
 // ---------------------------------------------------------------------------
+// Blend mode constants
+// ---------------------------------------------------------------------------
+
+/** Flash 8's 14 blend modes: internal key → display label */
+const BLEND_MODES: Array<{ value: SymbolInstance["blendMode"] & string; label: string }> = [
+  { value: "normal",     label: "Normal" },
+  { value: "layer",      label: "Layer" },
+  { value: "darken",     label: "Darken" },
+  { value: "multiply",   label: "Multiply" },
+  { value: "lighten",    label: "Lighten" },
+  { value: "screen",     label: "Screen" },
+  { value: "overlay",    label: "Overlay" },
+  { value: "hardlight",  label: "Hard Light" },
+  { value: "add",        label: "Add" },
+  { value: "subtract",   label: "Subtract" },
+  { value: "difference", label: "Difference" },
+  { value: "invert",     label: "Invert" },
+  { value: "alpha",      label: "Alpha" },
+  { value: "erase",      label: "Erase" },
+];
+
+// ---------------------------------------------------------------------------
 // InstancePanel
 // ---------------------------------------------------------------------------
 
@@ -377,6 +399,25 @@ export function InstancePanel({ instance, symbolType, onChange }: InstancePanelP
             </div>
           </>
         )}
+      </div>
+
+      {/* Blend Mode */}
+      <div style={styles.sectionHeader}>
+        <span style={styles.sectionLabel}>Blend Mode</span>
+      </div>
+      <div style={styles.sectionBody}>
+        <div style={styles.row}>
+          <span style={styles.label}>Blend:</span>
+          <select
+            style={styles.select}
+            value={instance.blendMode ?? "normal"}
+            onChange={(e) => onChange({ blendMode: e.target.value as SymbolInstance["blendMode"] })}
+          >
+            {BLEND_MODES.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Loop (graphic symbols only) */}
