@@ -600,6 +600,15 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
         mutateTimeline((tl) =>
           setFrameLabel(tl, layerId, fi, String(value))
         );
+      } else if (property === "labelType") {
+        const lt = String(value);
+        if (lt === "name" || lt === "comment" || lt === "anchor") {
+          mutateTimeline((tl) => {
+            const layer = tl.layers.find((l) => l.id === layerId);
+            const frame = layer?.frames.find((f) => f.index === fi);
+            return setFrameLabel(tl, layerId, fi, frame?.label ?? "", lt);
+          });
+        }
       } else if (property === "actionScript" || property === "script") {
         mutateTimeline((tl) =>
           setFrameScript(tl, layerId, fi, String(value))
@@ -873,6 +882,14 @@ export interface JsflDocument {
   ungroup(): void;
   /** Compile and return the SWF as a Uint8Array (browser-safe, no file I/O). */
   publish(): Uint8Array;
+  /**
+   * Compile the document and trigger a browser download of the SWF to the
+   * given fileURL path.  In the browser environment the path is used only as
+   * the suggested filename for the download; actual file-system writes are not
+   * possible.  Returns void so JSFL scripts can call it without handling a
+   * return value.
+   */
+  exportSWF(fileURL: string): void;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -1263,6 +1280,34 @@ function makeDocumentProxy(
         compileDocument(doc: FlashDocument): Uint8Array;
       };
       return compileDocument(state.doc);
+    },
+    exportSWF(fileURL: string): void {
+      // Compile the document using the same pipeline as publish().
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { compileDocument } = require("@flash/swf") as {
+        compileDocument(doc: FlashDocument): Uint8Array;
+      };
+      const bytes = compileDocument(state.doc);
+
+      // In the browser we cannot write to the filesystem path given by fileURL.
+      // Extract just the filename portion to use as the download suggestion,
+      // then trigger a programmatic <a download> click.
+      const filename = fileURL.split(/[\\/]/).pop() || "movie.swf";
+      const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/x-shockwave-flash" });
+      const url = URL.createObjectURL(blob);
+      try {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } finally {
+        // Revoke asynchronously so the download can start before the object
+        // URL is cleaned up.
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      }
     },
   };
 }
