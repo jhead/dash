@@ -1467,12 +1467,15 @@ describe("Magnet.fla — CS2 FLA layer names are readable strings (regression 08
 
   it("scene 0 (AA) has the expected layer names", () => {
     const names = doc.scenes[0]!.timeline.layers.map((l) => l.name);
-    expect(names).toEqual(["Layer 7", "Layer 3", "Layer 5", "Magnets", "Walls", "Ball"]);
+    // Binary FLA stores layers bottom-to-top; import reverses to match Flash convention
+    // (li=0 = topmost/frontmost layer in panel = Ball; li=5 = background = Layer 7).
+    expect(names).toEqual(["Ball", "Walls", "Magnets", "Layer 5", "Layer 3", "Layer 7"]);
   });
 
   it("scene 2 (Scene 5) has readable layer names", () => {
     const names = doc.scenes[2]!.timeline.layers.map((l) => l.name);
-    expect(names).toEqual(["Layer 3", "Ball", "Layer 5", "Layer 5"]);
+    // Binary FLA stores layers bottom-to-top; reversed on import so frontmost is li=0.
+    expect(names).toEqual(["Layer 5", "Layer 5", "Ball", "Layer 3"]);
   });
 
   it("scenes 3–5 (BA, AB, BB) have readable layer names", () => {
@@ -1528,9 +1531,10 @@ describe("Magnet.fla — CPicSwf embedded SWF placements (task 0892)", () => {
     const loaded = tryLoadRealFla(fixture("Magnet.fla"));
     expect(loaded).not.toBeNull();
     expect(loaded!.scenes.length).toBe(6);
-    // Verify stream alignment wasn't disturbed by CPicSwf parsing
+    // Verify stream alignment wasn't disturbed by CPicSwf parsing.
+    // Binary FLA stores layers bottom-to-top; import reverses so li=0 is frontmost.
     const names = loaded!.scenes[0]!.timeline.layers.map((l) => l.name);
-    expect(names).toEqual(["Layer 7", "Layer 3", "Layer 5", "Magnets", "Walls", "Ball"]);
+    expect(names).toEqual(["Ball", "Walls", "Magnets", "Layer 5", "Layer 3", "Layer 7"]);
   });
 });
 

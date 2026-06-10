@@ -985,7 +985,11 @@ function convertTimeline(
   videoIdByIndex: Map<number, string>,
   videoSizeByIndex: Map<number, { width: number; height: number }>,
 ): Timeline {
-  const layers = t.layers.map((l, i) =>
+  // Flash binary FLA stores layers from bottom-to-top (background first, foreground last).
+  // The Flash 8 clone model convention (and compile.ts) expect layers stored top-to-bottom
+  // (li=0 = topmost/frontmost, li=n-1 = bottommost/background).
+  // Reverse the array so the frontmost layer ends up at index 0.
+  const layers = [...t.layers].reverse().map((l, i) =>
     convertLayer(l, i, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex, videoIdByIndex, videoSizeByIndex),
   );
   if (layers.length === 0) {
