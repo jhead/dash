@@ -1654,22 +1654,27 @@ class Compiler {
   }
 
   private compileArrayLiteral(expr: ArrayLiteral): void {
-    // ActionInitArray (0x36): pops count, then elements (element[0] on top) → pushes Array
-    this.pushInt(expr.elements.length);
+    // ActionInitArray (0x42): Ruffle pops count first, then pops each element.
+    // Element[0] must be on top (popped first after count), so push elements in
+    // reverse order (last element first, first element last), then push count on top.
     for (let i = expr.elements.length - 1; i >= 0; i--) {
       this.compileExpr(expr.elements[i]!);
     }
+    this.pushInt(expr.elements.length);
     this.emit(0x42); // ActionInitArray
   }
 
   private compileObjectLiteral(expr: ObjectLiteral): void {
-    // ActionInitObject (0x43): pops count, then (key, value) pairs (last pair on top) → pushes Object
-    this.pushInt(expr.properties.length);
+    // ActionInitObject (0x43): Ruffle pops count first, then for each property
+    // pops value then name. Push properties in reverse order (last prop first),
+    // with each prop's value pushed before key so key ends up below value.
+    // Then push count on top.
     for (let i = expr.properties.length - 1; i >= 0; i--) {
       const prop = expr.properties[i]!;
       this.pushString(prop.key);
       this.compileExpr(prop.value);
     }
+    this.pushInt(expr.properties.length);
     this.emit(0x43); // ActionInitObject
   }
 
@@ -1856,6 +1861,27 @@ class Compiler {
       this.emit(0x1c); // ActionGetVariable → ClassName
 
       this.emit(0x4f); // ActionSetMember: ClassName.prototype.constructor = ClassName
+    }
+
+    // ---- 3b. Emit ActionImplementsOp (0x2c) if the class has interfaces ----
+    //
+    // AVM1 ActionImplementsOp stack layout (top-first pop order):
+    //   constructor  ← popped first (the class function itself)
+    //   count        ← number of interfaces (integer)
+    //   iface[0]     ← first interface constructor (popped last)
+    //   ...
+    //   iface[n-1]   ← last interface constructor
+    //
+    // So we push in this order: iface[0], iface[1], ..., iface[n-1], count, constructor
+    if (decl.interfaces.length > 0) {
+      for (const iface of decl.interfaces) {
+        this.pushString(iface);
+        this.emit(0x1c); // ActionGetVariable → interface constructor function
+      }
+      this.pushInt(decl.interfaces.length);
+      this.pushString(className);
+      this.emit(0x1c); // ActionGetVariable → class constructor function
+      this.emit(0x2c); // ActionImplementsOp
     }
 
     // ---- 4. Separate getter/setter pairs from regular members ------------
