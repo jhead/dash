@@ -23,6 +23,7 @@ import { describe, it, expect } from "vitest";
 import { compileDocument } from "../compile.js";
 import type {
   ButtonAction,
+  ButtonHandler,
   FlashDocument,
   Frame,
   Layer,
@@ -469,7 +470,6 @@ describe("DefineButton2 — button action encoding", () => {
 // Instance-level buttonHandlers tests
 // ---------------------------------------------------------------------------
 
-import type { ButtonHandler, Scene } from "@flash/core";
 
 /**
  * Build a scene that places a button instance with optional buttonHandlers.
