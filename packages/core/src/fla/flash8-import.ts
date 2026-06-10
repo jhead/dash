@@ -25,6 +25,7 @@ import type {
   Stroke,
   Color,
 } from "../engine/types.js";
+import type { FlashFilter } from "../engine/filters.js";
 import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
@@ -36,6 +37,7 @@ import {
   type Fla8ColorEffect,
   type Fla8Element,
   type Fla8Fill,
+  type Fla8Filter,
   type Fla8Layer,
   type Fla8Matrix,
   type Fla8Shape,
@@ -277,6 +279,176 @@ export function toColorEffect(ce: Fla8ColorEffect | null): ColorEffect | undefin
 }
 
 // ---------------------------------------------------------------------------
+// Filter conversion (Flash 8 instance filter list -> FlashFilter[])
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a FLA-parsed Fla8Filter to the editor's FlashFilter model.
+ * Returns null for filter types that have no equivalent in the model.
+ *
+ * Angle storage note: SWF/FLA stores filter angles in RADIANS as Fixed16.
+ * The editor model uses DEGREES. SWF angles use the standard math convention
+ * (counter-clockwise from the positive x-axis), while Flash UI shows the angle
+ * clockwise from the right. Negating converts between them; then we normalise
+ * to 0..360°.
+ *
+ * Blur passes: SWF stores render quality as a pass count (1-15) in the flags
+ * byte. The editor model uses quality 1/2/3. We map: 1 → 1 (Low), 2 → 2 (Med),
+ * 3+ → 3 (High).
+ *
+ * Strength: SWF Fixed8 stores values like 1.0 = readFixed8 result of 1.0.
+ * The editor model stores strength as a 0–255 integer so we round and clamp.
+ */
+function toDegrees(radians: number): number {
+  // SWF uses math convention (CCW from +x); Flash UI uses CW from right.
+  // Negate to convert; normalise to 0..360.
+  const deg = (-radians * 180) / Math.PI;
+  return ((deg % 360) + 360) % 360;
+}
+
+function strengthToByte(s: number): number {
+  return Math.max(0, Math.min(255, Math.round(s)));
+}
+
+function passesToQuality(passes: number): 1 | 2 | 3 {
+  if (passes <= 1) return 1;
+  if (passes <= 2) return 2;
+  return 3;
+}
+
+function filterStopColor(r: number, g: number, b: number): string {
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
+/**
+ * Map a single parsed FLA filter to the editor's FlashFilter model.
+ * Returns null for filter types without a model equivalent (convolution).
+ */
+export function toFlashFilter(f: Fla8Filter): FlashFilter | null {
+  switch (f.kind) {
+    case "drop-shadow":
+      return {
+        type: "drop-shadow",
+        color: { r: f.r, g: f.g, b: f.b, a: 255 },
+        alpha: f.a / 255,
+        blurX: f.blurX,
+        blurY: f.blurY,
+        angle: toDegrees(f.angle),
+        distance: f.distance,
+        strength: strengthToByte(f.strength),
+        inner: f.inner,
+        knockout: f.knockout,
+        hideObject: f.hideObject,
+        enabled: true,
+      };
+    case "blur":
+      return {
+        type: "blur",
+        blurX: f.blurX,
+        blurY: f.blurY,
+        quality: passesToQuality(f.passes),
+        enabled: true,
+      };
+    case "glow":
+      return {
+        type: "glow",
+        color: { r: f.r, g: f.g, b: f.b, a: 255 },
+        alpha: f.a / 255,
+        blurX: f.blurX,
+        blurY: f.blurY,
+        strength: strengthToByte(f.strength),
+        inner: f.inner,
+        knockout: f.knockout,
+        enabled: true,
+      };
+    case "bevel":
+      return {
+        type: "bevel",
+        highlightColor: { r: f.highlightR, g: f.highlightG, b: f.highlightB, a: 255 },
+        highlightAlpha: f.highlightA / 255,
+        shadowColor: { r: f.shadowR, g: f.shadowG, b: f.shadowB, a: 255 },
+        shadowAlpha: f.shadowA / 255,
+        blurX: f.blurX,
+        blurY: f.blurY,
+        angle: toDegrees(f.angle),
+        distance: f.distance,
+        strength: strengthToByte(f.strength),
+        inner: f.inner,
+        knockout: f.knockout,
+        enabled: true,
+      };
+    case "gradient-glow":
+      return {
+        type: "gradientGlow",
+        distance: f.distance,
+        angle: toDegrees(f.angle),
+        gradient: f.stops.map((s) => ({
+          color: filterStopColor(s.r, s.g, s.b),
+          alpha: s.a / 255,
+          ratio: s.ratio,
+        })),
+        blurX: f.blurX,
+        blurY: f.blurY,
+        strength: strengthToByte(f.strength),
+        quality: passesToQuality(f.passes),
+        inner: f.inner,
+        knockout: f.knockout,
+        compositeSource: f.compositeSource,
+        enabled: true,
+      };
+    case "gradient-bevel":
+      return {
+        type: "gradientBevel",
+        distance: f.distance,
+        angle: toDegrees(f.angle),
+        gradient: f.stops.map((s) => ({
+          color: filterStopColor(s.r, s.g, s.b),
+          alpha: s.a / 255,
+          ratio: s.ratio,
+        })),
+        blurX: f.blurX,
+        blurY: f.blurY,
+        strength: strengthToByte(f.strength),
+        quality: passesToQuality(f.passes),
+        inner: f.inner,
+        knockout: f.knockout,
+        compositeSource: f.compositeSource,
+        enabled: true,
+      };
+    case "color-matrix":
+      // ColorMatrix in FLA is the raw 20-element matrix. The editor's
+      // AdjustColorFilter stores brightness/contrast/saturation/hue which
+      // are non-trivially computed from the matrix; store it as an identity
+      // AdjustColor with enabled=false to preserve presence without decoding.
+      console.warn(
+        "[FLA import] ColorMatrix filter imported as identity AdjustColor (raw matrix not decoded)",
+      );
+      return {
+        type: "adjustColor",
+        brightness: 0,
+        contrast: 0,
+        saturation: 0,
+        hue: 0,
+        enabled: false,
+      };
+  }
+}
+
+/**
+ * Map an array of parsed FLA filters to the editor's FlashFilter[].
+ * Null entries (unsupported filter types) are dropped.
+ */
+function toFlashFilters(flaFilters: Fla8Filter[]): FlashFilter[] {
+  if (flaFilters.length === 0) return [];
+  const result: FlashFilter[] = [];
+  for (const f of flaFilters) {
+    const mapped = toFlashFilter(f);
+    if (mapped !== null) result.push(mapped);
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Element conversion
 // ---------------------------------------------------------------------------
 
@@ -298,6 +470,7 @@ function convertElement(
       }
       const { scaleX, scaleY, rotation } = decompose(el.matrix);
       const colorEffect = toColorEffect(el.colorEffect);
+      const filters = toFlashFilters(el.filters);
       // onClipEvent handlers only apply to movieclip (sprite) instances; a
       // button instance's on() handlers have no instance-level model field yet,
       // so they are warned-and-skipped below.
@@ -318,6 +491,7 @@ function convertElement(
         rotation,
         ...(el.instanceName ? { instanceName: el.instanceName } : {}),
         ...(colorEffect ? { colorEffect } : {}),
+        ...(filters.length > 0 ? { filters } : {}),
         ...(clipActions.length > 0 ? { clipActions } : {}),
       };
     }

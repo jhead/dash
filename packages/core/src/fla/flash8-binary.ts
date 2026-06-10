@@ -26,8 +26,9 @@
  *  - shapes: solid/gradient fills, solid strokes (width/caps/joins/miter),
  *    full edge geometry (lines + quadratic curves) with per-edge styles
  *  - symbol instances (sprite/button/graphic): placement matrix, library
- *    reference, instance name, color transform (CXFORM), and — for movieclip
- *    instances — onClipEvent() handler ActionScript
+ *    reference, instance name, color transform (CXFORM), Flash 8 filter list
+ *    (drop-shadow/blur/glow/bevel/gradient-glow/gradient-bevel/color-matrix),
+ *    and — for movieclip instances — onClipEvent() handler ActionScript
  *  - text fields: static/dynamic/input, content, font, size, color,
  *    bold/italic, alignment, wrap, instance name
  *
@@ -35,7 +36,9 @@
  *  - Media N payloads (bitmaps, sounds, video) and bitmap placements
  *  - button instance on() handlers (no instance-level model field; the raw
  *    script is parsed but dropped by the mapper with a warning)
- *  - filters and blend modes on instances
+ *  - blend modes on instances (byte is consumed/skipped after the filter list)
+ *  - bitmap and text-field filters (skipped; only symbol-instance filters are decoded)
+ *  - convolution filters (no model type; silently dropped from the filter list)
  *  - shape tweens (morph data), sound attachments and envelopes
  *  - components, fonts library items, accessibility metadata
  *  - Flash 4-and-older frame scripts (stored as action records, not source)
@@ -141,6 +144,8 @@ export interface Fla8Instance {
   readonly instanceName: string;
   /** color transform applied to the instance, or null when identity/absent */
   readonly colorEffect: Fla8ColorEffect | null;
+  /** Flash 8+ filters applied to the instance (empty array when none) */
+  readonly filters: Fla8Filter[];
   /**
    * Raw instance ActionScript source. For a movieclip (sprite) instance this is
    * the concatenated `onClipEvent(...) { ... }` blocks; for a button instance
@@ -995,6 +1000,262 @@ function readShapeData(
   return { fills, strokes, edges };
 }
 
+// --- Filter list (Flash 8+) ---------------------------------------------------
+//
+// Filters in the FLA binary use the same wire encoding as SWF §23:
+//   u8 filterType, then filter-specific fields.
+// Fixed16 = i32 little-endian (value / 65536.0).
+// Fixed8  = i16 little-endian (value / 256.0).
+// Angles in the SWF filter format are in radians stored as Fixed16.
+
+export interface Fla8FilterDropShadow {
+  readonly kind: "drop-shadow";
+  readonly r: number; readonly g: number; readonly b: number; readonly a: number;
+  readonly blurX: number; readonly blurY: number;
+  /** radians */
+  readonly angle: number;
+  readonly distance: number;
+  readonly strength: number;
+  readonly inner: boolean;
+  readonly knockout: boolean;
+  readonly hideObject: boolean;
+  readonly passes: number;
+}
+
+export interface Fla8FilterBlur {
+  readonly kind: "blur";
+  readonly blurX: number; readonly blurY: number;
+  readonly passes: number;
+}
+
+export interface Fla8FilterGlow {
+  readonly kind: "glow";
+  readonly r: number; readonly g: number; readonly b: number; readonly a: number;
+  readonly blurX: number; readonly blurY: number;
+  readonly strength: number;
+  readonly inner: boolean;
+  readonly knockout: boolean;
+  readonly passes: number;
+}
+
+export interface Fla8FilterBevel {
+  readonly kind: "bevel";
+  readonly highlightR: number; readonly highlightG: number;
+  readonly highlightB: number; readonly highlightA: number;
+  readonly shadowR: number; readonly shadowG: number;
+  readonly shadowB: number; readonly shadowA: number;
+  readonly blurX: number; readonly blurY: number;
+  /** radians */
+  readonly angle: number;
+  readonly distance: number;
+  readonly strength: number;
+  readonly inner: boolean;
+  readonly knockout: boolean;
+  readonly onTop: boolean;
+  readonly passes: number;
+}
+
+export interface Fla8FilterGradientStop {
+  readonly r: number; readonly g: number; readonly b: number; readonly a: number;
+  readonly ratio: number;
+}
+
+export interface Fla8FilterGradientGlow {
+  readonly kind: "gradient-glow";
+  readonly stops: Fla8FilterGradientStop[];
+  readonly blurX: number; readonly blurY: number;
+  /** radians */
+  readonly angle: number;
+  readonly distance: number;
+  readonly strength: number;
+  readonly inner: boolean;
+  readonly knockout: boolean;
+  readonly onTop: boolean;
+  readonly compositeSource: boolean;
+  readonly passes: number;
+}
+
+export interface Fla8FilterGradientBevel {
+  readonly kind: "gradient-bevel";
+  readonly stops: Fla8FilterGradientStop[];
+  readonly blurX: number; readonly blurY: number;
+  /** radians */
+  readonly angle: number;
+  readonly distance: number;
+  readonly strength: number;
+  readonly inner: boolean;
+  readonly knockout: boolean;
+  readonly onTop: boolean;
+  readonly compositeSource: boolean;
+  readonly passes: number;
+}
+
+export interface Fla8FilterColorMatrix {
+  readonly kind: "color-matrix";
+  /** 20-element 4×5 color matrix in row-major order */
+  readonly matrix: readonly number[];
+}
+
+export type Fla8Filter =
+  | Fla8FilterDropShadow
+  | Fla8FilterBlur
+  | Fla8FilterGlow
+  | Fla8FilterBevel
+  | Fla8FilterGradientGlow
+  | Fla8FilterGradientBevel
+  | Fla8FilterColorMatrix;
+
+/** SWF/FLA Fixed16: i32 little-endian, value = bits / 65536 */
+function readFixed16(r: Reader): number {
+  return r.s32() / 65536;
+}
+
+/** SWF/FLA Fixed8: i16 little-endian, value = bits / 256 */
+function readFixed8(r: Reader): number {
+  return r.s16() / 256;
+}
+
+function readOneFilter(r: Reader): Fla8Filter | null {
+  const type = r.u8();
+  switch (type) {
+    case 0: { // DropShadow
+      const cr = r.u8(); const cg = r.u8(); const cb = r.u8(); const ca = r.u8();
+      const blurX = readFixed16(r);
+      const blurY = readFixed16(r);
+      const angle = readFixed16(r);
+      const distance = readFixed16(r);
+      const strength = readFixed8(r);
+      const flags = r.u8();
+      return {
+        kind: "drop-shadow",
+        r: cr, g: cg, b: cb, a: ca,
+        blurX, blurY, angle, distance, strength,
+        inner: (flags & 0x80) !== 0,
+        knockout: (flags & 0x40) !== 0,
+        hideObject: (flags & 0x20) === 0, // compositeSource=0x20 means "show" object; absent = hide
+        passes: flags & 0x1f,
+      };
+    }
+    case 1: { // Blur
+      const blurX = readFixed16(r);
+      const blurY = readFixed16(r);
+      const flags = r.u8();
+      return {
+        kind: "blur",
+        blurX, blurY,
+        passes: (flags & 0xf8) >> 3,
+      };
+    }
+    case 2: { // Glow
+      const cr = r.u8(); const cg = r.u8(); const cb = r.u8(); const ca = r.u8();
+      const blurX = readFixed16(r);
+      const blurY = readFixed16(r);
+      const strength = readFixed8(r);
+      const flags = r.u8();
+      return {
+        kind: "glow",
+        r: cr, g: cg, b: cb, a: ca,
+        blurX, blurY, strength,
+        inner: (flags & 0x80) !== 0,
+        knockout: (flags & 0x40) !== 0,
+        passes: flags & 0x1f,
+      };
+    }
+    case 3: { // Bevel — SWF wire order is highlight then shadow (spec note)
+      const hr = r.u8(); const hg = r.u8(); const hb = r.u8(); const ha = r.u8();
+      const sr = r.u8(); const sg = r.u8(); const sb = r.u8(); const sa = r.u8();
+      const blurX = readFixed16(r);
+      const blurY = readFixed16(r);
+      const angle = readFixed16(r);
+      const distance = readFixed16(r);
+      const strength = readFixed8(r);
+      const flags = r.u8();
+      return {
+        kind: "bevel",
+        highlightR: hr, highlightG: hg, highlightB: hb, highlightA: ha,
+        shadowR: sr, shadowG: sg, shadowB: sb, shadowA: sa,
+        blurX, blurY, angle, distance, strength,
+        inner: (flags & 0x80) !== 0,
+        knockout: (flags & 0x40) !== 0,
+        onTop: (flags & 0x10) !== 0,
+        passes: flags & 0x0f,
+      };
+    }
+    case 4: // GradientGlow
+    case 7: { // GradientBevel
+      const numColors = r.u8();
+      const colors: Array<{ r: number; g: number; b: number; a: number }> = [];
+      for (let i = 0; i < numColors; i++) {
+        colors.push({ r: r.u8(), g: r.u8(), b: r.u8(), a: r.u8() });
+      }
+      const stops: Fla8FilterGradientStop[] = [];
+      for (let i = 0; i < numColors; i++) {
+        const ratio = r.u8();
+        stops.push({ ...colors[i]!, ratio });
+      }
+      const blurX = readFixed16(r);
+      const blurY = readFixed16(r);
+      const angle = readFixed16(r);
+      const distance = readFixed16(r);
+      const strength = readFixed8(r);
+      const flags = r.u8();
+      const gf = {
+        stops, blurX, blurY, angle, distance, strength,
+        inner: (flags & 0x80) !== 0,
+        knockout: (flags & 0x40) !== 0,
+        compositeSource: (flags & 0x20) !== 0,
+        onTop: (flags & 0x10) !== 0,
+        passes: flags & 0x0f,
+      };
+      return type === 4
+        ? { kind: "gradient-glow" as const, ...gf }
+        : { kind: "gradient-bevel" as const, ...gf };
+    }
+    case 5: { // Convolution — parse but discard (no model type for this)
+      const numCols = r.u8();
+      const numRows = r.u8();
+      r.skip(8); // f32 divisor + f32 bias
+      r.skip(numCols * numRows * 4); // f32 matrix entries
+      r.skip(4); // RGBA default color
+      r.skip(1); // flags
+      return null; // not representable in the editor model; silently drop
+    }
+    case 6: { // ColorMatrix
+      const matrix: number[] = [];
+      for (let i = 0; i < 20; i++) {
+        const bytes = r.bytes(4);
+        const view = new DataView(bytes.buffer, bytes.byteOffset, 4);
+        matrix.push(view.getFloat32(0, true));
+      }
+      return { kind: "color-matrix", matrix };
+    }
+    default:
+      // Unknown filter type — cannot safely skip unknown-length data.
+      return null;
+  }
+}
+
+/**
+ * Read the SWF-format filter list. `filterCount` is passed in (already consumed
+ * by the caller). Returns the parsed filters; on a parse error the list is
+ * truncated and the reader is positioned at EOF to trigger recovery.
+ */
+function readFilterList(r: Reader, filterCount: number): Fla8Filter[] {
+  const filters: Fla8Filter[] = [];
+  for (let i = 0; i < filterCount; i++) {
+    if (r.eof()) break;
+    try {
+      const f = readOneFilter(r);
+      if (f !== null) filters.push(f);
+    } catch {
+      // Parse error inside a filter record — can't safely continue.
+      r.pos = r.buf.length;
+      break;
+    }
+  }
+  return filters;
+}
+
 // --- CPicSymbol / CPicSprite / CPicButton -------------------------------------
 
 interface SymbolBaseFields {
@@ -1002,10 +1263,15 @@ interface SymbolBaseFields {
   libraryIndex: number;
   /** symbol schema byte: 8=F5, 0x0A=MX, 0x0E=MX2004, 0x13=F8/CS3, 0x16=CS4 */
   symbolSchema: number;
-  /** when true the remaining instance fields cannot be located precisely */
+  /**
+   * When true a filter parse error occurred so the remaining instance fields
+   * (name, script, etc.) cannot be located reliably — callers should skip them.
+   */
   filtersPresent: boolean;
   /** decoded color transform, or null if absent / identity-only */
   colorEffect: Fla8ColorEffect | null;
+  /** Flash 8+ filters parsed from the filter list, or empty array */
+  filters: Fla8Filter[];
 }
 
 /**
@@ -1014,7 +1280,7 @@ interface SymbolBaseFields {
  *   u8 symbolSchema, matrix, u16 firstFrame, u8 loopMode, u8 0,
  *   (>=F4) u8 1, (>=F2) color-effect block, (>=F3) CString "",
  *   u16 libraryIndex, u16 0, (>=MX2004) 3 bytes,
- *   (>=F8) filter flag (+ filter data) + u8 blend + 2 bytes,
+ *   (>=F8) u8 filterCount (+ filterCount×filterRecord) + u8 blend + 2 bytes,
  *   (>=CS4) 3D matrix block (102 bytes)
  */
 function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
@@ -1054,11 +1320,23 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   r.skip(2);
   if (symbolSchema >= 0x0e) r.skip(3);
   let filtersPresent = false;
+  let filters: Fla8Filter[] = [];
   if (symbolSchema >= 0x13) {
-    const filterFlag = r.u8();
-    if (filterFlag !== 0) {
-      filtersPresent = true;
-      warnOnce(ctx, "instance filters are not imported");
+    // filterCount byte: 0 = no filters; >0 = that many SWF-format filter records.
+    const filterCount = r.u8();
+    if (filterCount > 0) {
+      const savedPos = r.pos;
+      try {
+        filters = readFilterList(r, filterCount);
+        // After filters: blend mode (u8) + 2 reserved bytes.
+        r.skip(3);
+        // If filterList parsing left the reader at EOF, recovery is needed.
+        if (r.eof() && savedPos < r.buf.length) {
+          filtersPresent = true; // signal that the trailer may be misaligned
+        }
+      } catch {
+        filtersPresent = true; // parse error; trailing fields unreliable
+      }
     } else {
       r.skip(3); // blend mode + 2 reserved bytes
     }
@@ -1066,7 +1344,7 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   if (!filtersPresent && symbolSchema >= 0x16) {
     r.skip(102); // CS4 3D transform block
   }
-  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect };
+  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect, filters };
 }
 
 const DEFAULT_FIELDS: SymbolBaseFields = {
@@ -1075,6 +1353,7 @@ const DEFAULT_FIELDS: SymbolBaseFields = {
   symbolSchema: 0,
   filtersPresent: false,
   colorEffect: null,
+  filters: [],
 };
 
 function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8Instance {
@@ -1093,6 +1372,7 @@ function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8
     libraryIndex: fields.libraryIndex,
     instanceName: "",
     colorEffect: fields.colorEffect,
+    filters: fields.filters,
     script: "",
   };
 }
@@ -1139,6 +1419,7 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
     libraryIndex: fields.libraryIndex,
     instanceName,
     colorEffect: fields.colorEffect,
+    filters: fields.filters,
     script,
   };
 }
@@ -1173,6 +1454,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
     libraryIndex: fields.libraryIndex,
     instanceName,
     colorEffect: fields.colorEffect,
+    filters: fields.filters,
     script,
   };
 }

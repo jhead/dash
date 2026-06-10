@@ -28,8 +28,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isOle2, tryLoadRealFla } from "../ole.js";
 import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
-import { parseClipActions, toColorEffect } from "../flash8-import.js";
-import type { Fla8ColorEffect } from "../flash8-binary.js";
+import { parseClipActions, toColorEffect, toFlashFilter } from "../flash8-import.js";
+import type { Fla8ColorEffect, Fla8Filter } from "../flash8-binary.js";
 import type { FlashDocument, Symbol as SymbolItem } from "../../model/types.js";
 import type {
   ShapeDisplayObject,
@@ -387,5 +387,198 @@ describe("instance color transform mapping (toColorEffect)", () => {
       greenOffset: -50,
       blueOffset: 255,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave-3: instance filter mapping (task 0715)
+// ---------------------------------------------------------------------------
+
+describe("instance filter mapping (toFlashFilter)", () => {
+  const makeDropShadow = (overrides: Partial<Fla8Filter & { kind: "drop-shadow" }> = {}): Fla8Filter => ({
+    kind: "drop-shadow",
+    r: 0,
+    g: 0,
+    b: 0,
+    a: 166,
+    blurX: 4,
+    blurY: 4,
+    angle: Math.PI / 4,
+    distance: 4,
+    strength: 1,
+    inner: false,
+    knockout: false,
+    hideObject: false,
+    passes: 1,
+    ...overrides,
+  });
+
+  it("maps a drop-shadow filter with all fields", () => {
+    const result = toFlashFilter(makeDropShadow());
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe("drop-shadow");
+    if (result!.type !== "drop-shadow") return;
+    expect(result.color).toEqual({ r: 0, g: 0, b: 0, a: 255 });
+    expect(result.alpha).toBeCloseTo(166 / 255, 3);
+    expect(result.blurX).toBe(4);
+    expect(result.blurY).toBe(4);
+    expect(result.angle).toBeCloseTo(315, 0); // π/4 rad → 315° after negate+normalise
+    expect(result.distance).toBe(4);
+    expect(result.strength).toBe(1);
+    expect(result.inner).toBe(false);
+    expect(result.knockout).toBe(false);
+    expect(result.hideObject).toBe(false);
+    expect(result.enabled).toBe(true);
+  });
+
+  it("maps inner=true and knockout=true on a drop-shadow filter", () => {
+    const result = toFlashFilter(makeDropShadow({ inner: true, knockout: true, hideObject: true }));
+    if (result!.type !== "drop-shadow") return;
+    expect(result.inner).toBe(true);
+    expect(result.knockout).toBe(true);
+    expect(result.hideObject).toBe(true);
+  });
+
+  it("maps a blur filter", () => {
+    const f: Fla8Filter = { kind: "blur", blurX: 8, blurY: 6, passes: 2 };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("blur");
+    if (result!.type !== "blur") return;
+    expect(result.blurX).toBe(8);
+    expect(result.blurY).toBe(6);
+    expect(result.quality).toBe(2);
+    expect(result.enabled).toBe(true);
+  });
+
+  it("maps blur passes to quality 3 for 6+ passes", () => {
+    const f: Fla8Filter = { kind: "blur", blurX: 4, blurY: 4, passes: 6 };
+    const result = toFlashFilter(f);
+    if (result!.type !== "blur") return;
+    expect(result.quality).toBe(3);
+  });
+
+  it("maps a glow filter", () => {
+    const f: Fla8Filter = {
+      kind: "glow",
+      r: 255,
+      g: 0,
+      b: 0,
+      a: 255,
+      blurX: 6,
+      blurY: 6,
+      strength: 2,
+      inner: false,
+      knockout: false,
+      passes: 1,
+    };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("glow");
+    if (result!.type !== "glow") return;
+    expect(result.color).toEqual({ r: 255, g: 0, b: 0, a: 255 });
+    expect(result.alpha).toBeCloseTo(1, 3);
+    expect(result.strength).toBe(2);
+    expect(result.inner).toBe(false);
+  });
+
+  it("maps a bevel filter with highlight and shadow colors", () => {
+    const f: Fla8Filter = {
+      kind: "bevel",
+      highlightR: 255,
+      highlightG: 255,
+      highlightB: 255,
+      highlightA: 255,
+      shadowR: 0,
+      shadowG: 0,
+      shadowB: 0,
+      shadowA: 255,
+      blurX: 4,
+      blurY: 4,
+      angle: 0.785398,
+      distance: 4,
+      strength: 1,
+      inner: false,
+      knockout: false,
+      onTop: false,
+      passes: 1,
+    };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("bevel");
+    if (result!.type !== "bevel") return;
+    expect(result.highlightColor).toEqual({ r: 255, g: 255, b: 255, a: 255 });
+    expect(result.shadowColor).toEqual({ r: 0, g: 0, b: 0, a: 255 });
+    expect(result.highlightAlpha).toBeCloseTo(1, 3);
+    expect(result.shadowAlpha).toBeCloseTo(1, 3);
+    expect(result.enabled).toBe(true);
+  });
+
+  it("maps a gradient-glow filter with stops", () => {
+    const f: Fla8Filter = {
+      kind: "gradient-glow",
+      stops: [
+        { r: 0, g: 0, b: 0, a: 0, ratio: 0 },
+        { r: 255, g: 0, b: 0, a: 255, ratio: 128 },
+        { r: 255, g: 255, b: 255, a: 255, ratio: 255 },
+      ],
+      blurX: 4,
+      blurY: 4,
+      angle: 0,
+      distance: 4,
+      strength: 1,
+      inner: false,
+      knockout: false,
+      compositeSource: true,
+      onTop: false,
+      passes: 1,
+    };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("gradientGlow");
+    if (result!.type !== "gradientGlow") return;
+    expect(result.gradient).toHaveLength(3);
+    expect(result.gradient[0]).toMatchObject({ color: "#000000", alpha: 0, ratio: 0 });
+    expect(result.gradient[1]).toMatchObject({ color: "#ff0000", alpha: 1, ratio: 128 });
+    expect(result.compositeSource).toBe(true);
+    expect(result.enabled).toBe(true);
+  });
+
+  it("maps a gradient-bevel filter", () => {
+    const f: Fla8Filter = {
+      kind: "gradient-bevel",
+      stops: [
+        { r: 0, g: 0, b: 0, a: 255, ratio: 0 },
+        { r: 255, g: 255, b: 255, a: 255, ratio: 255 },
+      ],
+      blurX: 4,
+      blurY: 4,
+      angle: 0,
+      distance: 4,
+      strength: 1,
+      inner: false,
+      knockout: false,
+      compositeSource: false,
+      onTop: true,
+      passes: 1,
+    };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("gradientBevel");
+    if (result!.type !== "gradientBevel") return;
+    expect(result.gradient).toHaveLength(2);
+    expect(result.enabled).toBe(true);
+  });
+
+  it("maps a color-matrix filter to an identity AdjustColor with enabled=false", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const f: Fla8Filter = { kind: "color-matrix", matrix: new Array(20).fill(0) };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("adjustColor");
+    if (result!.type !== "adjustColor") return;
+    expect(result.enabled).toBe(false);
+    warn.mockRestore();
+  });
+
+  it("converts -π/4 radians to 45° (Flash UI) correctly", () => {
+    // Flash UI 45° CW = -π/4 rad (math CCW). toDegrees(-π/4) = 45° after normalise.
+    const result = toFlashFilter(makeDropShadow({ angle: -Math.PI / 4 }));
+    if (result!.type !== "drop-shadow") return;
+    expect(result.angle).toBeCloseTo(45, 1);
   });
 });
