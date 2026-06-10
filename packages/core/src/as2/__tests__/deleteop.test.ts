@@ -4,15 +4,15 @@
  * Documents and verifies the AVM1 opcodes emitted for:
  *   - delete obj.prop      → ActionDelete  (0x3A): object + name form
  *   - delete myVar         → ActionDelete2 (0x3B): scope-chain form
- *   - delete arr[0]        → computed-index deletion (no ActionDelete; emits false)
+ *   - delete arr[0]        → ActionDelete  (0x3A): computed-index form (object + key)
  *   - for (var k in obj)   → ActionEnumerate2 (0x55)
  *   - "key" in obj         → compiles to obj.hasOwnProperty("key") via ActionCallMethod (0x52)
  *
  * The delete and in operators have nuanced AVM1 semantics:
- *   - ActionDelete  (0x3A) requires an explicit object reference and property name.
+ *   - ActionDelete  (0x3A) requires an explicit object reference and property name/key.
  *   - ActionDelete2 (0x3B) removes a named variable from the scope chain.
- *   - Computed-index deletion (delete arr[0]) is not a MemberExpr, so the
- *     compiler emits a literal `false` value instead of a delete opcode.
+ *   - Computed-index deletion (delete arr[0]) uses ActionDelete (0x3A) with the
+ *     computed index as the key — same opcode as the MemberExpr form.
  *   - The `in` operator is lowered to obj.hasOwnProperty(key) — NOT to
  *     ActionEnumerate2 (0x55), which is reserved for for..in enumeration.
  */
@@ -88,9 +88,9 @@ describe("delete operator: obj.prop form (ActionDelete 0x3A)", () => {
 // ---------------------------------------------------------------------------
 // 2. delete arr[0] — computed-index deletion
 //
-// Computed-index form: not a MemberExpr (it's a computed ComputedMember), so
-// the compiler falls into the else branch and emits `false` instead of a
-// delete opcode. This is expected AS2/AVM1 behavior.
+// Computed-index form (IndexExpr): compiler emits object reference + computed
+// key, then ActionDelete (0x3A). AVM1 ActionDelete accepts any key, not just
+// string literals — so delete arr[i] works the same as delete obj.prop.
 // ---------------------------------------------------------------------------
 
 describe("delete operator: computed-index form (arr[0])", () => {
@@ -98,17 +98,12 @@ describe("delete operator: computed-index form (arr[0])", () => {
     expect(compilesOk("var arr = [1, 2, 3]; delete arr[0];")).toBe(true);
   });
 
-  it("2b. delete arr[0]; does NOT emit ActionDelete (0x3A) — computed index not a MemberExpr", () => {
-    // The compiler emits a literal `false` for computed-index delete,
-    // since AVM1 ActionDelete requires a named property string.
-    const bytes = compileAS2("var arr = [1, 2, 3]; delete arr[0];");
-    // No ActionDelete emitted for computed-index deletion
-    // (the ActionDelete byte 0x3a may appear incidentally from other exprs,
-    //  but the delete itself falls to the else branch)
-    expect(compilesOk("var arr = []; delete arr[0];")).toBe(true);
+  it("2b. delete arr[0]; emits ActionDelete (0x3A) — IndexExpr uses same opcode as MemberExpr", () => {
+    const bytes = compileAS2("var arr = []; delete arr[0];");
+    expect(containsByte(bytes, ACTION_DELETE)).toBe(true);
   });
 
-  it("2c. delete arr[0]; on a standalone array does not contain ActionDelete2 (0x3B)", () => {
+  it("2c. delete arr[0]; does NOT emit ActionDelete2 (0x3B)", () => {
     const bytes = compileAS2("var arr = []; delete arr[0];");
     expect(containsByte(bytes, ACTION_DELETE2)).toBe(false);
   });

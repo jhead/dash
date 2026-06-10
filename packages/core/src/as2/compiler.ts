@@ -1729,6 +1729,11 @@ class Compiler {
           this.compileExpr((expr.operand as MemberExpr).object);
           this.pushString((expr.operand as MemberExpr).property);
           this.emit(0x3a); // ActionDelete
+        } else if (expr.operand.type === 'IndexExpr') {
+          // ActionDelete (0x3A) also handles computed keys: push object, push key, delete
+          this.compileExpr((expr.operand as IndexExpr).object);
+          this.compileExpr((expr.operand as IndexExpr).index);
+          this.emit(0x3a); // ActionDelete
         } else if (expr.operand.type === 'Identifier') {
           // ActionDelete2 (0x3B): pops name → deletes variable in scope chain
           this.pushString((expr.operand as Identifier).name);
@@ -1739,50 +1744,90 @@ class Compiler {
         break;
 
       case '++':
-        // Prefix increment — result is new value
         if (expr.operand.type === 'Identifier') {
           const name = (expr.operand as Identifier).name;
-          // Correct AVM1 stack sequence for prefix ++x (returns newValue):
-          //   push name, GetVariable → [old]
-          //   Increment              → [new]
-          //   Duplicate              → [new, new-copy]
-          //   push name              → [new, new-copy, "name"]
-          //   Swap                   → [new, "name", new-copy]
-          //   SetVariable (pops new-copy as value, "name" as name)  → [new]
-          //   [new remains as expression result]
-          this.pushString(name);
-          this.emit(0x1c); // ActionGetVariable
-          this.emit(0x50); // ActionIncrement
-          this.emit(0x4c); // ActionDuplicate
-          this.pushString(name);
-          this.emit(0x4d); // ActionStackSwap
-          this.emit(0x1d); // ActionSetVariable
-          // expression result (new value) is now on top
+          if (expr.prefix) {
+            // Prefix increment — result is new value
+            // AVM1 stack sequence for ++x (returns newValue):
+            //   push name, GetVariable → [old]
+            //   Increment              → [new]
+            //   Duplicate              → [new, new-copy]
+            //   push name              → [new, new-copy, "name"]
+            //   Swap                   → [new, "name", new-copy]
+            //   SetVariable (pops new-copy as value, "name" as name)  → [new]
+            //   [new remains as expression result]
+            this.pushString(name);
+            this.emit(0x1c); // ActionGetVariable
+            this.emit(0x50); // ActionIncrement
+            this.emit(0x4c); // ActionDuplicate
+            this.pushString(name);
+            this.emit(0x4d); // ActionStackSwap
+            this.emit(0x1d); // ActionSetVariable
+            // expression result (new value) is now on top
+          } else {
+            // Postfix increment — result is OLD value
+            // AVM1 stack sequence for x++ (returns oldValue):
+            //   push name, GetVariable → [old]
+            //   Duplicate              → [old, old-copy]
+            //   Increment              → [old, new]
+            //   push name              → [old, new, "name"]
+            //   Swap                   → [old, "name", new]
+            //   SetVariable (pops new as value, "name" as name)  → [old]
+            //   [old remains as expression result]
+            this.pushString(name);
+            this.emit(0x1c); // ActionGetVariable
+            this.emit(0x4c); // ActionDuplicate
+            this.emit(0x50); // ActionIncrement
+            this.pushString(name);
+            this.emit(0x4d); // ActionStackSwap
+            this.emit(0x1d); // ActionSetVariable
+            // expression result (old value) is now on top
+          }
         } else {
           this.compileIncDecNonIdentifier(expr.operand, 0x50);
         }
         break;
 
       case '--':
-        // Prefix decrement — result is new value
         if (expr.operand.type === 'Identifier') {
           const name = (expr.operand as Identifier).name;
-          // Correct AVM1 stack sequence for prefix --x (returns newValue):
-          //   push name, GetVariable → [old]
-          //   Decrement              → [new]
-          //   Duplicate              → [new, new-copy]
-          //   push name              → [new, new-copy, "name"]
-          //   Swap                   → [new, "name", new-copy]
-          //   SetVariable (pops new-copy as value, "name" as name)  → [new]
-          //   [new remains as expression result]
-          this.pushString(name);
-          this.emit(0x1c); // ActionGetVariable
-          this.emit(0x51); // ActionDecrement
-          this.emit(0x4c); // ActionDuplicate
-          this.pushString(name);
-          this.emit(0x4d); // ActionStackSwap
-          this.emit(0x1d); // ActionSetVariable
-          // expression result (new value) is now on top
+          if (expr.prefix) {
+            // Prefix decrement — result is new value
+            // AVM1 stack sequence for --x (returns newValue):
+            //   push name, GetVariable → [old]
+            //   Decrement              → [new]
+            //   Duplicate              → [new, new-copy]
+            //   push name              → [new, new-copy, "name"]
+            //   Swap                   → [new, "name", new-copy]
+            //   SetVariable (pops new-copy as value, "name" as name)  → [new]
+            //   [new remains as expression result]
+            this.pushString(name);
+            this.emit(0x1c); // ActionGetVariable
+            this.emit(0x51); // ActionDecrement
+            this.emit(0x4c); // ActionDuplicate
+            this.pushString(name);
+            this.emit(0x4d); // ActionStackSwap
+            this.emit(0x1d); // ActionSetVariable
+            // expression result (new value) is now on top
+          } else {
+            // Postfix decrement — result is OLD value
+            // AVM1 stack sequence for x-- (returns oldValue):
+            //   push name, GetVariable → [old]
+            //   Duplicate              → [old, old-copy]
+            //   Decrement              → [old, new]
+            //   push name              → [old, new, "name"]
+            //   Swap                   → [old, "name", new]
+            //   SetVariable (pops new as value, "name" as name)  → [old]
+            //   [old remains as expression result]
+            this.pushString(name);
+            this.emit(0x1c); // ActionGetVariable
+            this.emit(0x4c); // ActionDuplicate
+            this.emit(0x51); // ActionDecrement
+            this.pushString(name);
+            this.emit(0x4d); // ActionStackSwap
+            this.emit(0x1d); // ActionSetVariable
+            // expression result (old value) is now on top
+          }
         } else {
           this.compileIncDecNonIdentifier(expr.operand, 0x51);
         }
