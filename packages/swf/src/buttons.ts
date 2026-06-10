@@ -16,9 +16,10 @@
  *   ButtonConditions (optional, none emitted for MVP)
  */
 import type { BitmapItem, ButtonHandler, ButtonSounds, ColorEffect, FlashDocument, Symbol } from "@flash/core";
-import { compileAS2 } from "@flash/core";
+import { compileAS2, composeMatrix, toSWFMatrix } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import { encodeCxformWithAlpha, colorEffectToCXForm, encodeCXFormWithAlpha } from "./cxform.js";
+import { edgeNumBits } from "./helpers.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "./shapes.js";
 import { encodeDefineEditText } from "./text.js";
 import { Tag } from "./tags.js";
@@ -29,21 +30,47 @@ import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 // ---------------------------------------------------------------------------
 
 /**
- * Encode a SWF identity MATRIX (no scale, no rotate, translate (0,0)).
- * hasScale=0, hasRotate=0, nTranslateBits=1, translateX=0, translateY=0 → flushed.
+ * Encode a SWF MATRIX for a button state display object.
+ * Uses the same composeMatrix/toSWFMatrix encoding as PlaceObject2 in shapes.ts.
  */
-function encodeIdentityMatrix(): Uint8Array {
+function encodeButtonMatrix(
+  x: number,
+  y: number,
+  scaleX: number,
+  scaleY: number,
+  rotation: number,
+  skewX: number,
+  skewY: number
+): Uint8Array {
+  const m = composeMatrix({ tx: x, ty: y, scaleX, scaleY, rotation, skewX, skewY });
+  const swfM = toSWFMatrix(m);
+  const { hasScale, scaleX: sx, scaleY: sy, hasRotate, rotateSkew0, rotateSkew1, translateX, translateY } = swfM;
+
   const bw = new BitWriter();
-  // hasScale = 0
-  bw.writeBits(0, 1);
-  // hasRotate = 0
-  bw.writeBits(0, 1);
-  // nTranslateBits (UB[5]) = 1 (minimum)
-  bw.writeBits(1, 5);
-  // translateX = 0 (SB[1])
-  bw.writeBits(0, 1);
-  // translateY = 0 (SB[1])
-  bw.writeBits(0, 1);
+
+  bw.writeBits(hasScale ? 1 : 0, 1);
+  if (hasScale) {
+    const nBits = Math.max(edgeNumBits([sx, sy]), 2);
+    bw.writeBits(nBits, 5);
+    bw.writeBits(sx, nBits);
+    bw.writeBits(sy, nBits);
+  }
+
+  bw.writeBits(hasRotate ? 1 : 0, 1);
+  if (hasRotate) {
+    const nBits = Math.max(edgeNumBits([rotateSkew0, rotateSkew1]), 2);
+    bw.writeBits(nBits, 5);
+    bw.writeBits(rotateSkew0, nBits);
+    bw.writeBits(rotateSkew1, nBits);
+  }
+
+  {
+    const nBits = Math.max(edgeNumBits([translateX, translateY]), 2);
+    bw.writeBits(nBits, 5);
+    bw.writeBits(translateX, nBits);
+    bw.writeBits(translateY, nBits);
+  }
+
   bw.flushBits();
   return bw.getBytes();
 }
@@ -84,6 +111,13 @@ function buildButtonRecord(
   stateHit: boolean,
   charId: number,
   depth: number,
+  x: number,
+  y: number,
+  scaleX: number,
+  scaleY: number,
+  rotation: number,
+  skewX: number,
+  skewY: number,
   colorEffect?: ColorEffect
 ): Uint8Array {
   const bw = new BitWriter();
@@ -97,7 +131,7 @@ function buildButtonRecord(
 
   bw.writeUI16LE(charId);
   bw.writeUI16LE(depth);
-  bw.writeBytes(encodeIdentityMatrix());
+  bw.writeBytes(encodeButtonMatrix(x, y, scaleX, scaleY, rotation, skewX, skewY));
 
   // Encode CXFORMWITHALPHA: use colorEffect if present, otherwise identity
   const cx = colorEffect ? colorEffectToCXForm(colorEffect) : null;
@@ -235,6 +269,13 @@ export function encodeDefineButton2(
     stateHit: boolean;
     objCharId: number;
     depth: number;
+    x: number;
+    y: number;
+    scaleX: number;
+    scaleY: number;
+    rotation: number;
+    skewX: number;
+    skewY: number;
     colorEffect?: ColorEffect;
   }
 
@@ -273,7 +314,14 @@ export function encodeDefineButton2(
         }
         if (objCid === undefined) continue;
 
-        // Extract colorEffect from display objects that support it
+        // Extract transform and colorEffect from the display object
+        const x = obj.x;
+        const y = obj.y;
+        const scaleX = (obj as { scaleX?: number }).scaleX ?? 1;
+        const scaleY = (obj as { scaleY?: number }).scaleY ?? 1;
+        const rotation = (obj as { rotation?: number }).rotation ?? 0;
+        const skewX = (obj as { skewX?: number }).skewX ?? 0;
+        const skewY = (obj as { skewY?: number }).skewY ?? 0;
         const colorEffect = (obj.type === "instance" || obj.type === "text")
           ? obj.colorEffect
           : undefined;
@@ -287,6 +335,13 @@ export function encodeDefineButton2(
             stateHit: stateIdx === STATE_HIT,
             objCharId: objCid,
             depth: getDepth(obj.id),
+            x,
+            y,
+            scaleX,
+            scaleY,
+            rotation,
+            skewX,
+            skewY,
             colorEffect,
           });
         } else {
@@ -314,6 +369,13 @@ export function encodeDefineButton2(
         entry.stateHit,
         entry.objCharId,
         entry.depth,
+        entry.x,
+        entry.y,
+        entry.scaleX,
+        entry.scaleY,
+        entry.rotation,
+        entry.skewX,
+        entry.skewY,
         entry.colorEffect
       )
     );
