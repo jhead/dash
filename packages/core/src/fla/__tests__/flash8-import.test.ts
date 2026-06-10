@@ -336,6 +336,13 @@ describe("shape tween FLA import (morph-shape-tween-mx.fla)", () => {
       warnSpy.mockRestore();
     }
   });
+
+  it("shape-tween start keyframe defaults to shapeBlend=distributive (task 0916)", () => {
+    // The MX-era fixture doesn't carry an angular blend byte; decodeMorphData
+    // must default to "distributive" rather than returning undefined or "angular".
+    const layer = doc.scenes[0]!.timeline.layers[0]!;
+    expect(layer.frames[0]!.shapeBlend).toBe("distributive");
+  });
 });
 
 // ---------------------------------------------------------------------------

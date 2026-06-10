@@ -971,6 +971,7 @@ function convertLayer(
         script: f.script,
         tweenType,
         ...easeOverrides,
+        shapeBlend: f.shapeBlend === 1 ? "angular" : "distributive",
         motionRotate: f.motionRotate,
         motionRotateCount: f.motionRotateCount,
         motionOrientToPath: f.motionOrientToPath,

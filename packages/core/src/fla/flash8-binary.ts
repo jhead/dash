@@ -290,6 +290,12 @@ export interface Fla8Frame {
   readonly labelIsComment: boolean;
   readonly script: string;
   readonly keyMode: number;
+  /**
+   * Shape-tween blend mode: 0 = distributive (default), 1 = angular.
+   * Only meaningful when keyMode indicates a shape tween.
+   * Decoded from the shapeTweenBlend byte in the CPicFrame tail (after CPicMorphShape).
+   */
+  readonly shapeBlend: number;
   /** signed ease value: -100 (ease in, slow start) to +100 (ease out, fast start); 0 = linear */
   readonly motionEase: number;
   /**
@@ -2107,6 +2113,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
 
   let duration = 1;
   let keyMode = 0;
+  let shapeBlend = 0;
   let label = "";
   let labelIsComment = false;
   let script = "";
@@ -2181,7 +2188,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
               // tail fields, which would otherwise advance the reader past the
               // correctly-positioned next CPicFrame class tag.
               r.pos -= 2;
-              decodeMorphData(ctx, ownShape.fills, ownShape.strokes);
+              shapeBlend = decodeMorphData(ctx, ownShape.fills, ownShape.strokes);
               return finishFrame();
             }
           }
@@ -2296,7 +2303,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     }
     return {
       cls: "CPicFrame",
-      frame: { duration, label, labelIsComment, script, keyMode, motionEase, motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements },
+      frame: { duration, label, labelIsComment, script, keyMode, shapeBlend, motionEase, motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements },
     };
   }
 }
@@ -2352,11 +2359,43 @@ function frameTailEndScan(r: Reader): void {
  *
  * Falls back to the old forward-scan if decoding fails for any reason.
  */
+/**
+ * Skip one morph fill style entry (writeMorphFillStylePart format).
+ * Layout by subtype (stored as u16 at offset +4):
+ *   Solid/null (subtype=0):  4 (RGBA) + 2 (u16=0) = 6 bytes total
+ *   Gradient (0x10/0x12):   4 (RGBA) + 2 (type) + 24 (matrix) + 1 (count) + count×5
+ *   Bitmap (0x40+):         4 (RGBA) + 2 (type) + 24 (matrix) + 2 (bitmapId) = 32 bytes
+ */
+function skipMorphFillStyle(r: Reader): void {
+  r.skip(4); // RGBA
+  const subtype = r.u16();
+  if (subtype & 0x10) {
+    // Gradient (linear 0x10 or radial 0x12)
+    r.skip(24); // matrix (6×u32)
+    const count = r.u8();
+    r.skip(count * 5); // each entry: 1 ratio + 4 RGBA
+  } else if (subtype & 0x40) {
+    // Bitmap fill
+    r.skip(24); // matrix
+    r.skip(2);  // bitmapId (u16)
+  }
+  // subtype == 0: solid/null — already consumed the 2 bytes above, done
+}
+
+/**
+ * Decode the CPicMorphShape (and its CMorphSegment/CMorphCurve children) that
+ * follows the morph-tag field in a shape-tweened CPicFrame, producing the
+ * end-keyframe shape geometry.
+ *
+ * Returns the shapeTweenBlend byte (0=distributive, 1=angular) read from the
+ * frame tail immediately after the morph fill/stroke style tables.  Returns 0
+ * on any parse error (safe default: distributive).
+ */
 function decodeMorphData(
   ctx: ParseCtx,
   startFills: Fla8Fill[],
   startStrokes: Fla8Stroke[],
-): void {
+): number {
   const { r, ar } = ctx;
   const savedPos = r.pos;
 
@@ -2368,7 +2407,7 @@ function decodeMorphData(
       // Not a recognised class tag — fall back to position scan.
       r.pos = savedPos;
       skipMorphDataFallback(ctx);
-      return;
+      return 0;
     }
 
     // 2. Read CPicMorphShape's CPicObjBase. It always hits a "bad" internal
@@ -2513,15 +2552,49 @@ function decodeMorphData(
       ctx.pendingMorphEndShape = null;
     }
 
+    // 4.5. Attempt to read the morph fill/stroke style tables that follow the
+    //      segment list, then read the shapeTweenBlend byte (0=distributive,
+    //      1=angular).
+    //
+    //      Binary layout (flacomdoc TimelineConverter.java ~line 2983):
+    //        u16 fillCount; fillCount × morphFillStyle (variable size)
+    //        u16 strokeCount; strokeCount × morphStrokeStyle (10 bytes each)
+    //        u8 shapeTweenBlend
+    //
+    //      We save the position before attempting this parse.  On any error
+    //      the position is RESTORED so that the subsequent skipToNextCPicFrame
+    //      scan still starts from after the morph segment data, not mid-table.
+    let shapeTweenBlend = 0;
+    const posAfterSegments = r.pos;
+    try {
+      const fillCount = r.u16();
+      // Sanity cap: morph shapes rarely have more than 64 fill styles
+      if (fillCount <= 64) {
+        for (let i = 0; i < fillCount; i++) skipMorphFillStyle(r);
+        const strokeCount = r.u16();
+        // Sanity cap and size check before skipping
+        if (strokeCount <= 64 && r.pos + strokeCount * 10 < r.buf.length) {
+          r.skip(strokeCount * 10); // each morph stroke style is exactly 10 bytes
+          shapeTweenBlend = r.u8();
+        }
+      }
+    } catch {
+      // Parse error — restore position so skipToNextCPicFrame starts correctly.
+      r.pos = posAfterSegments;
+      shapeTweenBlend = 0;
+    }
+
     // 5. Re-position at the next CPicFrame backref or layer null terminator,
     //    matching the old skipMorphData behaviour so the caller's frame loop
     //    can continue normally.
     skipToNextCPicFrame(ctx);
+    return shapeTweenBlend;
   } catch {
     // Any parse error: revert to the fallback position scan.
     r.pos = savedPos;
     ctx.pendingMorphEndShape = null;
     skipMorphDataFallback(ctx);
+    return 0;
   }
 }
 
