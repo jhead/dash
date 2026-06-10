@@ -407,6 +407,10 @@ export interface JsflTimeline {
   readonly frameCount: number;
   readonly layerCount: number;
   readonly layers: JsflLayer[];
+  /** Whether the grid is visible (get/set). Backed by doc.properties.grid.showGrid. */
+  showGrid: boolean;
+  /** Whether guides are visible (get/set). Backed by doc.properties.snapToGuides. */
+  showGuides: boolean;
   addNewLayer(name: string, type?: string, addAbove?: boolean): void;
   deleteLayer(layerIndex: number): void;
   setSelectedLayers(layerIndex: number): void;
@@ -502,6 +506,27 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
       const scene = getScene();
       if (!scene) return [];
       return scene.timeline.layers.map((_, i) => makeLayerProxy(state, i));
+    },
+    get showGrid() {
+      return state.doc.properties.grid?.showGrid ?? false;
+    },
+    set showGrid(v: boolean) {
+      state.doc = {
+        ...state.doc,
+        properties: {
+          ...state.doc.properties,
+          grid: { ...state.doc.properties.grid, showGrid: v },
+        },
+      };
+    },
+    get showGuides() {
+      return state.doc.properties.snapToGuides ?? false;
+    },
+    set showGuides(v: boolean) {
+      state.doc = {
+        ...state.doc,
+        properties: { ...state.doc.properties, snapToGuides: v },
+      };
     },
     addNewLayer(name: string, type?: string, addAbove?: boolean) {
       const scene = getScene();
@@ -1061,6 +1086,8 @@ export interface JsflDocument {
   backgroundColor: string;
   selection: DisplayObject[];
   readonly timeline: JsflTimeline;
+  /** All scene timelines in this document (one per scene, read-only). */
+  readonly timelines: readonly JsflTimeline[];
   getTimeline(): JsflTimeline;
   get library(): JsflLibrary;
   addNewRectangle(bounds: { left: number; top: number; right: number; bottom: number }, cornerRadius: number): void;
@@ -1171,6 +1198,22 @@ function makeDocumentProxy(
     },
     get timeline(): JsflTimeline {
       return makeTimelineProxy(state);
+    },
+    get timelines(): readonly JsflTimeline[] {
+      return state.doc.scenes.map((_, sceneIdx) => {
+        // Build a temporary state snapshot pointing at the given scene so
+        // that the returned proxy reads/writes the correct scene timeline.
+        const sceneState: RuntimeState = new Proxy(state, {
+          get(target, prop) {
+            if (prop === "sceneIndex") return sceneIdx;
+            return Reflect.get(target, prop);
+          },
+          set(target, prop, value) {
+            return Reflect.set(target, prop, value);
+          },
+        });
+        return makeTimelineProxy(sceneState);
+      });
     },
     get library(): JsflLibrary {
       return makeLibraryProxy(state, ids);
@@ -1555,6 +1598,14 @@ export interface JsflFl {
   browseForFolderURL(description: string): string | null;
   /** Output panel — use trace() to append lines; clear() to wipe them. */
   outputPanel: { trace(msg: string): void; clear(): void };
+  /** Math utility functions matching the Flash 8 fl.Math API. */
+  readonly Math: {
+    pointDistance(p1: { x: number; y: number }, p2: { x: number; y: number }): number;
+    transformPoint(
+      matrix: { a: number; b: number; c: number; d: number; tx: number; ty: number },
+      point: { x: number; y: number }
+    ): { x: number; y: number };
+  };
 }
 
 function makeFlProxy(
@@ -1653,6 +1704,22 @@ function makeFlProxy(
         // Callers wishing to clear the panel must do so via the UI.
       },
     },
+    Math: Object.freeze({
+      pointDistance(
+        p1: { x: number; y: number },
+        p2: { x: number; y: number }
+      ): number {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        return globalThis.Math.sqrt(dx * dx + dy * dy);
+      },
+      transformPoint(
+        m: { a: number; b: number; c: number; d: number; tx: number; ty: number },
+        p: { x: number; y: number }
+      ): { x: number; y: number } {
+        return { x: m.a * p.x + m.c * p.y + m.tx, y: m.b * p.x + m.d * p.y + m.ty };
+      },
+    }),
   };
 }
 
