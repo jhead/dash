@@ -2,9 +2,9 @@
   "id": "0730-timeline-add-convert-to-keyframes-and-reverse-fr",
   "title": "Timeline: add Convert to Keyframes and Reverse Frames operations",
   "description": "Two common Flash 8 timeline operations are missing from the right-click context menu: (1) 'Convert to Keyframes' \u2014 converts each frame in the selected span to an individual keyframe with a copy of the first keyframe's content; (2) 'Reverse Frames' \u2014 reverses the order of frames/keyframes in the selected range. Both should be in the right-click context menu when a multi-frame range is selected. Add them to Timeline.tsx context menu + handleContextAction, implement the model mutations in packages/core/src/model/timeline.ts.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T05:44:21Z",
-  "updated_at": "2026-06-10T05:44:42Z"
+  "updated_at": "2026-06-10T05:47:34Z"
 }
