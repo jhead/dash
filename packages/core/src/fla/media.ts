@@ -32,6 +32,8 @@ export interface DecodedBitmap {
 
 const JPEG_MAGIC = [0xff, 0xd8, 0xff];
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+// GIF87a and GIF89a both start with "GIF8" (0x47 0x49 0x46 0x38).
+const GIF_MAGIC = [0x47, 0x49, 0x46, 0x38];
 
 function startsWith(data: Uint8Array, magic: number[]): boolean {
   if (data.length < magic.length) return false;
@@ -253,6 +255,26 @@ export function decodeMediaBitmap(data: Uint8Array): DecodedBitmap | null {
       bytes: data,
       mimeType: "image/png",
       ...pngDimensions(data),
+      compressionType: "lossless",
+    };
+  }
+
+  // (b2) GIF (no pure-JS decoder available; extract dimensions and return a
+  //      transparent-black PNG placeholder so the library item is not silently dropped).
+  //      GIF header layout: bytes 0-2 "GIF", 3-5 "87a"/"89a",
+  //      6-7 width (little-endian u16), 8-9 height (little-endian u16).
+  if (startsWith(data, GIF_MAGIC) && data.length >= 10) {
+    const w = data[6]! | (data[7]! << 8);
+    const h = data[8]! | (data[9]! << 8);
+    const width = w > 0 ? w : 1;
+    const height = h > 0 ? h : 1;
+    // Build a transparent RGBA pixel array and encode as PNG.
+    const rgba = new Uint8Array(width * height * 4); // all zeros = transparent black
+    return {
+      bytes: pngFromRgba(width, height, rgba),
+      mimeType: "image/png",
+      width,
+      height,
       compressionType: "lossless",
     };
   }
