@@ -374,6 +374,57 @@ async function cmdPublish(url: string, args: string[]): Promise<void> {
   }
 }
 
+async function cmdLoadFla(url: string, args: string[]): Promise<void> {
+  // Parse positional file path and optional -o / --output flag for response
+  let inputFile: string | null = null;
+  const filtered: string[] = [];
+  let i = 0;
+  while (i < args.length) {
+    if (args[i].startsWith("-")) {
+      filtered.push(args[i]);
+      i++;
+    } else if (!inputFile) {
+      inputFile = args[i];
+      i++;
+    } else {
+      filtered.push(args[i]);
+      i++;
+    }
+  }
+
+  if (!inputFile) {
+    console.error("Usage: flash-agent load-fla <file.fla>");
+    process.exit(1);
+  }
+
+  const absPath = path.resolve(inputFile);
+  if (!fs.existsSync(absPath)) {
+    console.error(`File not found: ${absPath}`);
+    process.exit(1);
+  }
+
+  const flaBase64 = fs.readFileSync(absPath).toString("base64");
+  console.error(`Loading ${absPath} (${Math.round(flaBase64.length * 0.75 / 1024)}KB)…`);
+
+  const client = await getClient(url);
+  try {
+    const result = await client.callTool({
+      name: "file_load_fla",
+      arguments: { flaBase64 },
+    }) as CallToolResult;
+
+    if (result.isError) {
+      console.error("Tool error:");
+      printToolResult(result);
+      process.exit(1);
+    }
+
+    printToolResult(result);
+  } finally {
+    await client.close();
+  }
+}
+
 async function cmdWatch(url: string): Promise<void> {
   const client = await getClient(url);
   console.error(
@@ -537,6 +588,7 @@ Commands:
   watch                          Stream doc-changed events as JSON lines
   screenshot [-o stage.png]      Take a screenshot (writes PNG)
   publish [-o out.swf]           Publish to SWF (writes binary)
+  load-fla <file.fla>            Load a FLA file into the editor
   repl                           Interactive REPL session
 
 Examples:
@@ -548,6 +600,7 @@ Examples:
   flash-agent watch
   flash-agent screenshot -o my-stage.png
   flash-agent publish -o movie.swf
+  flash-agent load-fla ./fixtures/Magnet.fla
   flash-agent --url http://localhost:1420/mcp repl
 
 Exit codes:
@@ -586,6 +639,10 @@ async function main(): Promise<void> {
 
     case "publish":
       await cmdPublish(url, args);
+      break;
+
+    case "load-fla":
+      await cmdLoadFla(url, args);
       break;
 
     case "repl":
