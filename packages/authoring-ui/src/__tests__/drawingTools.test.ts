@@ -323,6 +323,59 @@ describe("Brush tool", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Pen tool commit helpers — simulate the stroke-build logic from StageArea.tsx
+// ---------------------------------------------------------------------------
+
+function buildPenStroke(
+  strokeColor: string,
+  strokeAlpha: number,
+  strokeWidth: number
+): SolidStroke | undefined {
+  if (strokeAlpha <= 0 || strokeWidth <= 0) return undefined;
+  function hexToColorSimple(hex: string, alpha = 255) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b, a: alpha };
+  }
+  return {
+    type: "solid",
+    color: hexToColorSimple(strokeColor, Math.round((strokeAlpha / 100) * 255)),
+    width: strokeWidth,
+    caps: "round",
+    joints: "round",
+    miterLimit: 3,
+  };
+}
+
+/** Simulate the close-path commit: 3 anchors → closed shape. */
+function simulatePenClosePath(
+  anchors: { x: number; y: number; handleOut?: { x: number; y: number } }[],
+  fill: Fill | null,
+  strokeColor: string,
+  strokeAlpha: number,
+  strokeWidth: number
+): { id: string; paths: ShapePath[] } {
+  const penStroke = buildPenStroke(strokeColor, strokeAlpha, strokeWidth);
+  const shapePath = anchorsToShapePath(anchors, fill ?? undefined, penStroke);
+  return { id: "shape-pen-test", paths: [shapePath] };
+}
+
+/** Simulate the double-click commit: anchors → open shape. */
+function simulatePenDoubleClickCommit(
+  anchors: { x: number; y: number; handleOut?: { x: number; y: number } }[],
+  fill: Fill | null,
+  strokeColor: string,
+  strokeAlpha: number,
+  strokeWidth: number
+): { id: string; paths: ShapePath[] } {
+  const penStroke = buildPenStroke(strokeColor, strokeAlpha, strokeWidth);
+  const shapePath = anchorsToShapePath(anchors, fill ?? undefined, penStroke);
+  const openPath = { ...shapePath, closed: false };
+  return { id: "shape-pen-test", paths: [openPath] };
+}
+
 describe("Pen tool", () => {
   it("creates straight line segments when no handleOut", () => {
     const anchors = [
@@ -362,6 +415,59 @@ describe("Pen tool", () => {
     const path = anchorsToShapePath(anchors, RED, STROKE_BLACK);
     expect(path.fill).toBe(RED);
     expect(path.stroke).toBe(STROKE_BLACK);
+  });
+
+  it("close-path commit: 3 clicks produces closed shape with current stroke/fill", () => {
+    const anchors = [
+      { x: 10, y: 10 },
+      { x: 100, y: 10 },
+      { x: 55, y: 80 },
+    ];
+    const shape = simulatePenClosePath(anchors, RED, "#0000ff", 100, 2);
+    expect(shape.paths).toHaveLength(1);
+    const path = shape.paths[0];
+    expect(path.closed).toBe(true);
+    expect(path.segments).toHaveLength(2);
+    expect(path.start).toEqual({ x: 10, y: 10 });
+    expect(path.fill).toBe(RED);
+    expect(path.stroke).toBeDefined();
+    expect(path.stroke?.width).toBe(2);
+    expect(path.stroke?.color.b).toBe(255); // #0000ff
+  });
+
+  it("double-click commit: produces open (unclosed) path", () => {
+    const anchors = [
+      { x: 0, y: 0 },
+      { x: 50, y: 50 },
+      { x: 100, y: 0 },
+    ];
+    const shape = simulatePenDoubleClickCommit(anchors, null, "#000000", 100, 1);
+    expect(shape.paths).toHaveLength(1);
+    expect(shape.paths[0].closed).toBe(false);
+    expect(shape.paths[0].segments).toHaveLength(2);
+  });
+
+  it("close-path commit: no stroke when strokeAlpha is 0", () => {
+    const anchors = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 50, y: 100 }];
+    const shape = simulatePenClosePath(anchors, RED, "#000000", 0, 2);
+    expect(shape.paths[0].stroke).toBeUndefined();
+  });
+
+  it("close-path commit: no fill when fill is null (No Color)", () => {
+    const anchors = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 50, y: 100 }];
+    const shape = simulatePenClosePath(anchors, null, "#000000", 100, 1);
+    expect(shape.paths[0].fill).toBeUndefined();
+  });
+
+  it("close-path commit: curve segment preserved from handleOut", () => {
+    const anchors = [
+      { x: 0, y: 0, handleOut: { x: 50, y: -50 } },
+      { x: 100, y: 0 },
+      { x: 50, y: 100 },
+    ];
+    const shape = simulatePenClosePath(anchors, RED, "#000000", 100, 1);
+    expect(shape.paths[0].segments[0].type).toBe("curve");
+    expect((shape.paths[0].segments[0] as { type: "curve"; control: { x: number; y: number }; to: { x: number; y: number } }).control).toEqual({ x: 50, y: -50 });
   });
 });
 

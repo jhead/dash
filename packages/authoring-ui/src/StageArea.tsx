@@ -1444,9 +1444,19 @@ export function StageArea({
           const first = penState.anchors[0];
           const dist = Math.hypot(stageX - first.x, stageY - first.y);
           if (dist <= 8 / internalZoom) {
-            // Close the path and create the shape
+            // Close the path and create the shape using current stroke/fill settings
             const anchors = penState.anchors;
-            const shapePath = anchorsToShapePath(anchors, undefined, undefined);
+            const penStroke: SolidStroke | undefined = (propStrokeAlpha > 0 && propStrokeWidth > 0)
+              ? {
+                  type: "solid",
+                  color: hexToColor(propStrokeColor, Math.round((propStrokeAlpha / 100) * 255)),
+                  width: propStrokeWidth,
+                  caps: "round",
+                  joints: "round",
+                  miterLimit: 3,
+                }
+              : undefined;
+            const shapePath = anchorsToShapePath(anchors, propFill ?? undefined, penStroke);
             const shapeId = "shape-pen-" + Date.now();
             const closedShape: Shape = {
               id: shapeId,
@@ -3280,8 +3290,18 @@ export function StageArea({
           return;
         }
         e.preventDefault();
-        // Build an open (unclosed) path
-        const shapePath = anchorsToShapePath(anchors, undefined, undefined);
+        // Build an open (unclosed) path using current stroke/fill settings
+        const penStrokeForOpen: SolidStroke | undefined = (propStrokeAlpha > 0 && propStrokeWidth > 0)
+          ? {
+              type: "solid",
+              color: hexToColor(propStrokeColor, Math.round((propStrokeAlpha / 100) * 255)),
+              width: propStrokeWidth,
+              caps: "round",
+              joints: "round",
+              miterLimit: 3,
+            }
+          : undefined;
+        const shapePath = anchorsToShapePath(anchors, propFill ?? undefined, penStrokeForOpen);
         const openPath = { ...shapePath, closed: false };
         const shapeId = "shape-pen-" + Date.now();
         const openShape: Shape = { id: shapeId, paths: [openPath] };
@@ -3325,7 +3345,7 @@ export function StageArea({
         }
       }
     },
-    [activeTool, penState, onShapeCreated, toStageCoords, textDisplayObjects, symbolInstanceDisplayObjects, onSymbolInstanceDoubleClick]
+    [activeTool, penState, onShapeCreated, toStageCoords, textDisplayObjects, symbolInstanceDisplayObjects, onSymbolInstanceDoubleClick, propStrokeColor, propStrokeAlpha, propStrokeWidth, propFill]
   );
 
   return (
