@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { withProperties } from "@flash/core";
-import type { FlashDocument } from "@flash/core";
+import type { FlashDocument, PublishProfile, PublishProfileSettings } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,6 +51,75 @@ export interface PublishSettingsDialogProps {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Default HTML publish options. */
+export const DEFAULT_HTML_OPTIONS: HtmlPublishOptions = {
+  publishHtml: true,
+  quality: "high",
+  wmode: "window",
+  scale: "showall",
+  loop: true,
+  menu: true,
+};
+
+/** Default publish profile settings. */
+export const DEFAULT_PROFILE_SETTINGS: PublishProfileSettings = {
+  filename: "movie.swf",
+  jpegQuality: 80,
+  audioStreamFormat: "mp3",
+  audioEventFormat: "mp3",
+  compress: false,
+  protect: false,
+  debuggingPermitted: false,
+  debugPassword: "",
+  html: DEFAULT_HTML_OPTIONS,
+};
+
+/** The built-in default profile (always present as a fallback). */
+export const DEFAULT_PROFILE: PublishProfile = {
+  id: "default",
+  name: "Default",
+  settings: DEFAULT_PROFILE_SETTINGS,
+};
+
+/** Generate a simple unique ID for new profiles. */
+function newProfileId(): string {
+  return `profile-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+}
+
+/** Convert a PublishSettings (Shell legacy) → PublishProfileSettings. */
+function settingsToProfile(s: PublishSettings): PublishProfileSettings {
+  return {
+    filename: s.filename,
+    jpegQuality: s.jpegQuality,
+    audioStreamFormat: s.audioStreamFormat,
+    audioEventFormat: s.audioEventFormat,
+    compress: s.compress,
+    protect: s.protect,
+    debuggingPermitted: s.debuggingPermitted,
+    debugPassword: s.debugPassword,
+    html: { ...s.html },
+  };
+}
+
+/** Convert a PublishProfileSettings → PublishSettings (Shell legacy). */
+function profileToSettings(p: PublishProfileSettings): PublishSettings {
+  return {
+    filename: p.filename,
+    jpegQuality: p.jpegQuality,
+    audioStreamFormat: p.audioStreamFormat,
+    audioEventFormat: p.audioEventFormat,
+    compress: p.compress,
+    protect: p.protect,
+    debuggingPermitted: p.debuggingPermitted,
+    debugPassword: p.debugPassword,
+    html: { ...p.html },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Style helpers
 // ---------------------------------------------------------------------------
 
@@ -80,7 +149,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#3c3c3c",
     border: "1px solid #666",
     boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
-    minWidth: "360px",
+    minWidth: "380px",
     fontFamily: "Tahoma, Arial, sans-serif",
     fontSize: "11px",
     color: "#e0e0e0",
@@ -113,6 +182,38 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     padding: 0,
     lineHeight: 1,
+  },
+  profileBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "6px 10px",
+    borderBottom: "1px solid #555",
+    background: "#343434",
+  },
+  profileLabel: {
+    fontSize: "11px",
+    color: "#aaa",
+    flexShrink: 0,
+  },
+  profileSelect: {
+    flex: 1,
+    background: "#1e1e1e",
+    border: "1px solid #555",
+    color: "#e0e0e0",
+    fontSize: "11px",
+    padding: "2px 4px",
+    outline: "none",
+  },
+  profileBtn: {
+    background: "#555",
+    border: "1px solid #777",
+    color: "#e0e0e0",
+    fontSize: "11px",
+    padding: "2px 7px",
+    cursor: "pointer",
+    minWidth: "22px",
+    flexShrink: 0,
   },
   tabBar: {
     display: "flex",
@@ -216,16 +317,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-/** Default HTML publish options. */
-export const DEFAULT_HTML_OPTIONS: HtmlPublishOptions = {
-  publishHtml: true,
-  quality: "high",
-  wmode: "window",
-  scale: "showall",
-  loop: true,
-  menu: true,
-};
-
 // ---------------------------------------------------------------------------
 // PublishSettingsDialog
 // ---------------------------------------------------------------------------
@@ -246,25 +337,101 @@ export function PublishSettingsDialog({
   // Active tab: "swf" | "html"
   const [activeTab, setActiveTab] = useState<"swf" | "html">("swf");
 
+  // ---------------------------------------------------------------------------
+  // Profile state
+  // ---------------------------------------------------------------------------
+
+  /** Normalize doc.publishProfiles — always has at least the Default profile. */
+  const getDocProfiles = useCallback((): PublishProfile[] => {
+    const docProfiles = doc.publishProfiles;
+    if (!docProfiles || docProfiles.length === 0) {
+      return [DEFAULT_PROFILE];
+    }
+    return [...docProfiles];
+  }, [doc.publishProfiles]);
+
+  const [profiles, setProfiles] = useState<PublishProfile[]>(getDocProfiles);
+
+  /** The active profile id — prefer doc's stored id, else first profile. */
+  const getInitialActiveId = useCallback((): string => {
+    const ps = getDocProfiles();
+    const storedId = doc.activePublishProfileId;
+    if (storedId && ps.some((p) => p.id === storedId)) return storedId;
+    return ps[0].id;
+  }, [doc.activePublishProfileId, getDocProfiles]);
+
+  const [activeProfileId, setActiveProfileId] = useState<string>(getInitialActiveId);
+
+  /** The settings for the active profile (or legacy settings prop). */
+  const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0];
+  const activeSettings: PublishProfileSettings = activeProfile.settings;
+
+  // ---------------------------------------------------------------------------
+  // Per-field state (seeded from active profile)
+  // ---------------------------------------------------------------------------
+
   const [width, setWidth] = useState(props.width);
   const [height, setHeight] = useState(props.height);
   const [backgroundColor, setBackgroundColor] = useState(props.backgroundColor);
   const [frameRate, setFrameRate] = useState(props.frameRate);
 
-  // SWF output options — seeded from the settings prop when available
-  const [compress, setCompress] = useState(settings?.compress ?? false);
-  const [protect, setProtect] = useState(settings?.protect ?? false);
-  const [debuggingPermitted, setDebuggingPermitted] = useState(settings?.debuggingPermitted ?? false);
-  const [debugPassword, setDebugPassword] = useState(settings?.debugPassword ?? "");
-  const [jpegQuality, setJpegQuality] = useState(settings?.jpegQuality ?? 80);
+  const [compress, setCompress] = useState(activeSettings.compress);
+  const [protect, setProtect] = useState(activeSettings.protect);
+  const [debuggingPermitted, setDebuggingPermitted] = useState(activeSettings.debuggingPermitted);
+  const [debugPassword, setDebugPassword] = useState(activeSettings.debugPassword);
+  const [jpegQuality, setJpegQuality] = useState(activeSettings.jpegQuality);
 
-  // HTML output options
-  const [publishHtml, setPublishHtml] = useState(settings?.html?.publishHtml ?? true);
-  const [htmlQuality, setHtmlQuality] = useState<HtmlPublishOptions["quality"]>(settings?.html?.quality ?? "high");
-  const [htmlWmode, setHtmlWmode] = useState<HtmlPublishOptions["wmode"]>(settings?.html?.wmode ?? "window");
-  const [htmlScale, setHtmlScale] = useState<HtmlPublishOptions["scale"]>(settings?.html?.scale ?? "showall");
-  const [htmlLoop, setHtmlLoop] = useState(settings?.html?.loop ?? true);
-  const [htmlMenu, setHtmlMenu] = useState(settings?.html?.menu ?? true);
+  const [publishHtml, setPublishHtml] = useState(activeSettings.html.publishHtml);
+  const [htmlQuality, setHtmlQuality] = useState<HtmlPublishOptions["quality"]>(activeSettings.html.quality);
+  const [htmlWmode, setHtmlWmode] = useState<HtmlPublishOptions["wmode"]>(activeSettings.html.wmode);
+  const [htmlScale, setHtmlScale] = useState<HtmlPublishOptions["scale"]>(activeSettings.html.scale);
+  const [htmlLoop, setHtmlLoop] = useState(activeSettings.html.loop);
+  const [htmlMenu, setHtmlMenu] = useState(activeSettings.html.menu);
+
+  // ---------------------------------------------------------------------------
+  // Helpers: read current fields as PublishProfileSettings
+  // ---------------------------------------------------------------------------
+
+  const currentFieldsAsSettings = useCallback((): PublishProfileSettings => {
+    return {
+      filename: activeSettings.filename,
+      jpegQuality,
+      audioStreamFormat: activeSettings.audioStreamFormat,
+      audioEventFormat: activeSettings.audioEventFormat,
+      compress,
+      protect,
+      debuggingPermitted,
+      debugPassword,
+      html: {
+        publishHtml,
+        quality: htmlQuality,
+        wmode: htmlWmode,
+        scale: htmlScale,
+        loop: htmlLoop,
+        menu: htmlMenu,
+      },
+    };
+  }, [activeSettings.filename, activeSettings.audioStreamFormat, activeSettings.audioEventFormat,
+      jpegQuality, compress, protect, debuggingPermitted, debugPassword,
+      publishHtml, htmlQuality, htmlWmode, htmlScale, htmlLoop, htmlMenu]);
+
+  // ---------------------------------------------------------------------------
+  // Load fields from a profile's settings
+  // ---------------------------------------------------------------------------
+
+  const loadFieldsFromSettings = useCallback((s: PublishProfileSettings) => {
+    setCompress(s.compress);
+    setProtect(s.protect);
+    setDebuggingPermitted(s.debuggingPermitted);
+    setDebugPassword(s.debugPassword);
+    setJpegQuality(s.jpegQuality);
+    setPublishHtml(s.html.publishHtml);
+    setHtmlQuality(s.html.quality);
+    setHtmlWmode(s.html.wmode);
+    setHtmlScale(s.html.scale);
+    setHtmlLoop(s.html.loop);
+    setHtmlMenu(s.html.menu);
+  }, []);
 
   // Sync local state when dialog re-opens
   useEffect(() => {
@@ -273,56 +440,165 @@ export function PublishSettingsDialog({
       setHeight(doc.properties.height);
       setBackgroundColor(doc.properties.backgroundColor);
       setFrameRate(doc.properties.frameRate);
-      setCompress(settings?.compress ?? false);
-      setProtect(settings?.protect ?? false);
-      setDebuggingPermitted(settings?.debuggingPermitted ?? false);
-      setDebugPassword(settings?.debugPassword ?? "");
-      setJpegQuality(settings?.jpegQuality ?? 80);
-      setPublishHtml(settings?.html?.publishHtml ?? true);
-      setHtmlQuality(settings?.html?.quality ?? "high");
-      setHtmlWmode(settings?.html?.wmode ?? "window");
-      setHtmlScale(settings?.html?.scale ?? "showall");
-      setHtmlLoop(settings?.html?.loop ?? true);
-      setHtmlMenu(settings?.html?.menu ?? true);
+
+      const freshProfiles = getDocProfiles();
+      setProfiles(freshProfiles);
+      const freshActiveId = getInitialActiveId();
+      setActiveProfileId(freshActiveId);
+      const freshProfile = freshProfiles.find((p) => p.id === freshActiveId) ?? freshProfiles[0];
+
+      // Prefer legacy settings prop for backward compat (Shell.tsx drives it)
+      if (settings) {
+        loadFieldsFromSettings(settingsToProfile(settings));
+      } else {
+        loadFieldsFromSettings(freshProfile.settings);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, doc.properties]);
 
+  // ---------------------------------------------------------------------------
+  // Profile switcher
+  // ---------------------------------------------------------------------------
+
+  const handleProfileChange = useCallback((id: string) => {
+    // Save current field values back to the current profile first
+    setProfiles((prev) => prev.map((p) =>
+      p.id === activeProfileId ? { ...p, settings: currentFieldsAsSettings() } : p
+    ));
+    // Switch to the new profile and load its settings
+    setActiveProfileId(id);
+    const target = profiles.find((p) => p.id === id);
+    if (target) {
+      loadFieldsFromSettings(target.settings);
+    }
+  }, [activeProfileId, profiles, currentFieldsAsSettings, loadFieldsFromSettings]);
+
+  // ---------------------------------------------------------------------------
+  // Profile CRUD
+  // ---------------------------------------------------------------------------
+
+  const handleAddProfile = useCallback(() => {
+    const name = window.prompt("Profile name:", "New Profile");
+    if (!name || !name.trim()) return;
+    const newProfile: PublishProfile = {
+      id: newProfileId(),
+      name: name.trim(),
+      settings: currentFieldsAsSettings(),
+    };
+    setProfiles((prev) => [...prev, newProfile]);
+    setActiveProfileId(newProfile.id);
+  }, [currentFieldsAsSettings]);
+
+  const handleDuplicateProfile = useCallback(() => {
+    const source = profiles.find((p) => p.id === activeProfileId) ?? profiles[0];
+    const name = window.prompt("Profile name:", `${source.name} copy`);
+    if (!name || !name.trim()) return;
+    const dup: PublishProfile = {
+      id: newProfileId(),
+      name: name.trim(),
+      settings: currentFieldsAsSettings(),
+    };
+    setProfiles((prev) => [...prev, dup]);
+    setActiveProfileId(dup.id);
+  }, [profiles, activeProfileId, currentFieldsAsSettings]);
+
+  const handleDeleteProfile = useCallback(() => {
+    if (profiles.length <= 1) return; // never delete the last profile
+    const confirmed = window.confirm(`Delete profile "${activeProfile.name}"?`);
+    if (!confirmed) return;
+    const remaining = profiles.filter((p) => p.id !== activeProfileId);
+    setProfiles(remaining);
+    const newActiveId = remaining[0].id;
+    setActiveProfileId(newActiveId);
+    loadFieldsFromSettings(remaining[0].settings);
+  }, [profiles, activeProfileId, activeProfile.name, loadFieldsFromSettings]);
+
+  // ---------------------------------------------------------------------------
+  // Import / Export
+  // ---------------------------------------------------------------------------
+
+  const handleExportProfile = useCallback(() => {
+    const profileToExport: PublishProfile = {
+      ...activeProfile,
+      settings: currentFieldsAsSettings(),
+    };
+    const json = JSON.stringify(profileToExport, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${activeProfile.name.replace(/[^a-z0-9_-]/gi, "_")}.fcp`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [activeProfile, currentFieldsAsSettings]);
+
+  const handleImportProfile = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".fcp,.json";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.target?.result as string) as PublishProfile;
+          if (!parsed.id || !parsed.name || !parsed.settings) {
+            window.alert("Invalid publish profile file.");
+            return;
+          }
+          // Give it a fresh id to avoid collisions
+          const imported: PublishProfile = { ...parsed, id: newProfileId() };
+          setProfiles((prev) => [...prev, imported]);
+          setActiveProfileId(imported.id);
+          loadFieldsFromSettings(imported.settings);
+        } catch {
+          window.alert("Failed to parse publish profile file.");
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }, [loadFieldsFromSettings]);
+
+  // ---------------------------------------------------------------------------
+  // OK handler
+  // ---------------------------------------------------------------------------
+
   const handleOk = useCallback(() => {
+    const currentSettings = currentFieldsAsSettings();
+
+    // Update profiles — save current fields to the active profile
+    const updatedProfiles = profiles.map((p) =>
+      p.id === activeProfileId ? { ...p, settings: currentSettings } : p
+    );
+
     const updatedDoc = withProperties(doc, {
       width: Math.max(1, Math.round(Number(width) || props.width)),
       height: Math.max(1, Math.round(Number(height) || props.height)),
       backgroundColor: backgroundColor || props.backgroundColor,
       frameRate: Math.max(0.01, Number(frameRate) || props.frameRate),
     });
-    pushDoc(updatedDoc);
-    // Persist SWF output options back to Shell via onSave
+
+    // Persist profiles + activeProfileId into the doc
+    const docWithProfiles: FlashDocument = {
+      ...updatedDoc,
+      publishProfiles: updatedProfiles,
+      activePublishProfileId: activeProfileId,
+    };
+
+    pushDoc(docWithProfiles);
+
+    // Persist SWF output options back to Shell via onSave (legacy compat)
     if (onSave) {
-      onSave({
-        filename: settings?.filename ?? "movie.swf",
-        audioStreamFormat: settings?.audioStreamFormat ?? "mp3",
-        audioEventFormat: settings?.audioEventFormat ?? "mp3",
-        jpegQuality,
-        compress,
-        protect,
-        debuggingPermitted,
-        debugPassword,
-        html: {
-          publishHtml,
-          quality: htmlQuality,
-          wmode: htmlWmode,
-          scale: htmlScale,
-          loop: htmlLoop,
-          menu: htmlMenu,
-        },
-      });
+      onSave(profileToSettings(currentSettings));
     }
     onClose();
   }, [
     doc, width, height, backgroundColor, frameRate, props,
-    pushDoc, onClose, onSave, settings,
-    compress, protect, debuggingPermitted, debugPassword, jpegQuality,
-    publishHtml, htmlQuality, htmlWmode, htmlScale, htmlLoop, htmlMenu,
+    pushDoc, onClose, onSave,
+    profiles, activeProfileId, currentFieldsAsSettings,
   ]);
 
   // Keyboard: Enter = OK, Escape = Cancel
@@ -358,7 +634,59 @@ export function PublishSettingsDialog({
         <div style={styles.titleBar}>
           <span style={styles.titleText}>Publish Settings</span>
           <button style={styles.closeBtn} onClick={onClose} title="Close">
-            ×
+            x
+          </button>
+        </div>
+
+        {/* Profile management bar */}
+        <div style={styles.profileBar}>
+          <span style={styles.profileLabel}>Profile:</span>
+          <select
+            value={activeProfileId}
+            onChange={(e) => handleProfileChange(e.target.value)}
+            style={styles.profileSelect}
+          >
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button
+            style={styles.profileBtn}
+            onClick={handleAddProfile}
+            title="New profile (copies current settings)"
+          >
+            +
+          </button>
+          <button
+            style={styles.profileBtn}
+            onClick={handleDuplicateProfile}
+            title="Duplicate profile"
+          >
+            Dup
+          </button>
+          <button
+            style={{ ...styles.profileBtn, opacity: profiles.length <= 1 ? 0.4 : 1 }}
+            onClick={handleDeleteProfile}
+            disabled={profiles.length <= 1}
+            title="Delete selected profile"
+          >
+            Del
+          </button>
+          <button
+            style={styles.profileBtn}
+            onClick={handleImportProfile}
+            title="Import profile from .fcp / .json file"
+          >
+            Import...
+          </button>
+          <button
+            style={styles.profileBtn}
+            onClick={handleExportProfile}
+            title="Export profile to .fcp file"
+          >
+            Export...
           </button>
         </div>
 

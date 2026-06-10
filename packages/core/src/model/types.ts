@@ -354,6 +354,40 @@ export interface Library {
 }
 
 // ---------------------------------------------------------------------------
+// Publish profiles
+// ---------------------------------------------------------------------------
+
+/** HTML wrapper publish settings — kept in sync with PublishSettingsDialog. */
+export interface PublishHtmlOptions {
+  readonly publishHtml: boolean;
+  readonly quality: "low" | "medium" | "high" | "best";
+  readonly wmode: "window" | "opaque" | "transparent";
+  readonly scale: "showall" | "noborder" | "exactfit" | "noscale";
+  readonly loop: boolean;
+  readonly menu: boolean;
+}
+
+/** SWF + HTML output settings for a single named publish profile. */
+export interface PublishProfileSettings {
+  readonly filename: string;
+  readonly jpegQuality: number;
+  readonly audioStreamFormat: "mp3" | "adpcm";
+  readonly audioEventFormat: "mp3" | "adpcm";
+  readonly compress: boolean;
+  readonly protect: boolean;
+  readonly debuggingPermitted: boolean;
+  readonly debugPassword: string;
+  readonly html: PublishHtmlOptions;
+}
+
+/** A named publish configuration stored in the document. */
+export interface PublishProfile {
+  readonly id: string;
+  readonly name: string;
+  readonly settings: PublishProfileSettings;
+}
+
+// ---------------------------------------------------------------------------
 // Top-level document
 // ---------------------------------------------------------------------------
 
@@ -362,4 +396,8 @@ export interface FlashDocument {
   readonly properties: DocumentProperties;
   readonly scenes: readonly Scene[];
   readonly library: Library;
+  /** Named publish configurations. The active profile id is stored separately in the editor state. */
+  readonly publishProfiles?: readonly PublishProfile[];
+  /** Id of the currently selected publish profile. Falls back to the first profile. */
+  readonly activePublishProfileId?: string;
 }
