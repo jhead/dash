@@ -114,6 +114,7 @@ import { ScenePanel } from "./ScenePanel";
 import { SceneSwitcher } from "./SceneSwitcher";
 import { ColorMixerPanel } from "./ColorMixerPanel";
 import { SwatchesPanel, DEFAULT_SWATCHES } from "./SwatchesPanel";
+import { BehaviorsPanel } from "./BehaviorsPanel";
 import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
 import type { RegistrationPoint } from "./ConvertToSymbolDialog";
 import { TimelineEffectDialog } from "./TimelineEffectDialog";
@@ -479,6 +480,9 @@ const DEFAULT_TOOL_STATE: ToolState = {
   eraserSize: 16,
   freeTransformMode: "rotate-scale",
   lassoPolygonMode: false,
+  lassoMagicWand: false,
+  magicWandThreshold: 20,
+  magicWandSmoothing: "pixels",
   polyStarOptions: { shapeType: "polygon", sides: 5, pointSize: 0.5 },
 };
 
@@ -881,6 +885,9 @@ export function Shell(): React.ReactElement {
   const [swatchesPanelVisible, setSwatchesPanelVisible] = useState(false);
   const [swatches, setSwatches] = useState<string[]>(() => [...DEFAULT_SWATCHES]);
 
+  // Behaviors panel (Window > Behaviors)
+  const [behaviorsPanelVisible, setBehaviorsPanelVisible] = useState(false);
+
   // Scene switcher inline panel (toggle near Timeline header)
   const [showScenes, setShowScenes] = useState(false);
 
@@ -1257,6 +1264,18 @@ export function Shell(): React.ReactElement {
 
   const handleLassoPolygonModeChange = useCallback((polygonMode: boolean) => {
     setToolState((prev) => ({ ...prev, lassoPolygonMode: polygonMode }));
+  }, []);
+
+  const handleLassoMagicWandChange = useCallback((magicWand: boolean) => {
+    setToolState((prev) => ({ ...prev, lassoMagicWand: magicWand }));
+  }, []);
+
+  const handleMagicWandThresholdChange = useCallback((threshold: number) => {
+    setToolState((prev) => ({ ...prev, magicWandThreshold: threshold }));
+  }, []);
+
+  const handleMagicWandSmoothingChange = useCallback((smoothing: "pixels" | "rough" | "normal" | "smooth") => {
+    setToolState((prev) => ({ ...prev, magicWandSmoothing: smoothing }));
   }, []);
 
   const handlePolyStarOptionsChange = useCallback((opts: Partial<PolyStarOptions>) => {
@@ -4637,6 +4656,8 @@ export function Shell(): React.ReactElement {
         colorMixerVisible={colorMixerVisible}
         onSwatchesPanelToggle={() => setSwatchesPanelVisible((v) => !v)}
         swatchesPanelVisible={swatchesPanelVisible}
+        onBehaviorsPanelToggle={() => setBehaviorsPanelVisible((v) => !v)}
+        behaviorsPanelVisible={behaviorsPanelVisible}
         onTextBold={handleTextBold}
         onTextItalic={handleTextItalic}
         onTextUnderline={handleTextUnderline}
@@ -5306,6 +5327,15 @@ export function Shell(): React.ReactElement {
           onRemoveSwatch={handleRemoveSwatch}
           onSwatchesLoad={handleSwatchesLoad}
           onClose={() => setSwatchesPanelVisible(false)}
+        />
+      )}
+
+      {/* Behaviors panel (Window > Behaviors) */}
+      {behaviorsPanelVisible && (
+        <BehaviorsPanel
+          script={currentScript}
+          onScriptChange={handleScriptChange}
+          onClose={() => setBehaviorsPanelVisible(false)}
         />
       )}
 

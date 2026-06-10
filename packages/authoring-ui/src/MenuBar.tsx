@@ -300,6 +300,10 @@ export interface MenuBarProps {
   onSwatchesPanelToggle?: () => void;
   /** Whether the Color Swatches panel is currently visible (for checkmark display). */
   swatchesPanelVisible?: boolean;
+  /** Called when Window > Behaviors is toggled. */
+  onBehaviorsPanelToggle?: () => void;
+  /** Whether the Behaviors panel is currently visible (for checkmark display). */
+  behaviorsPanelVisible?: boolean;
   // Text menu callbacks
   /** Called when Text > Style > Bold (Ctrl+Shift+B) is activated. */
   onTextBold?: () => void;
@@ -389,6 +393,8 @@ export function MenuBar({
   colorMixerVisible = false,
   onSwatchesPanelToggle,
   swatchesPanelVisible = false,
+  onBehaviorsPanelToggle,
+  behaviorsPanelVisible = false,
   onTextBold,
   onTextItalic,
   onTextUnderline,
@@ -730,6 +736,10 @@ export function MenuBar({
           label: `${scenePanelVisible ? "+ " : "  "}Scene  Ctrl+Shift+S`,
           action: () => { onScenePanelToggle?.(); },
           separator: true,
+        },
+        {
+          label: `${behaviorsPanelVisible ? "+ " : "  "}Behaviors`,
+          action: () => { onBehaviorsPanelToggle?.(); },
         },
       ],
     },
