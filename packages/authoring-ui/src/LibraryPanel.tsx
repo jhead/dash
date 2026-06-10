@@ -608,10 +608,9 @@ export function LibraryPanel({
   const panelStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "column",
-    width: "200px",
-    flexShrink: 0,
+    flex: 1,
+    minWidth: 0,
     background: "#2d2d2d",
-    borderLeft: "1px solid #1a1a1a",
     position: "relative",
     overflow: "hidden",
   };
