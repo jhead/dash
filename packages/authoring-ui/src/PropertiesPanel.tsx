@@ -929,6 +929,53 @@ const ANTI_ALIAS_LABELS: Record<AntiAliasMode, string> = {
   custom: "Custom anti-alias",
 };
 
+/** Common Flash 8 / web-safe fonts used as fallbacks when no system fonts are available. */
+export const DEFAULT_FONTS: string[] = [
+  "Arial",
+  "Times New Roman",
+  "Courier New",
+  "Verdana",
+  "Georgia",
+  "Comic Sans MS",
+  "_sans",
+  "_serif",
+  "_typewriter",
+];
+
+/** Returns a sorted list of available font families from the browser/system. */
+export function useFontList(): string[] {
+  const [fonts, setFonts] = React.useState<string[]>([]);
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      setFonts(DEFAULT_FONTS);
+      return;
+    }
+    const families = new Set<string>();
+    try {
+      document.fonts.forEach((font) => families.add(font.family));
+    } catch {
+      // CSS Font Loading API not available
+    }
+    if ("queryLocalFonts" in window) {
+      (window as any)
+        .queryLocalFonts()
+        .then((localFonts: any[]) => {
+          localFonts.forEach((f) => families.add(f.family));
+          const all = Array.from(families).sort();
+          setFonts(all.length > 0 ? all : DEFAULT_FONTS);
+        })
+        .catch(() => {
+          const all = Array.from(families).sort();
+          setFonts(all.length > 0 ? all : DEFAULT_FONTS);
+        });
+    } else {
+      const all = Array.from(families).sort();
+      setFonts(all.length > 0 ? all : DEFAULT_FONTS);
+    }
+  }, []);
+  return fonts;
+}
+
 function TextView({
   obj,
   onUpdateObject,
@@ -940,6 +987,7 @@ function TextView({
   useEffect(() => {
     setFontDraft(obj.fontFamily);
   }, [obj.fontFamily, obj.id]);
+  const fontList = useFontList();
 
   const [instanceNameDraft, setInstanceNameDraft] = useState(obj.instanceName ?? "");
   useEffect(() => {
@@ -996,7 +1044,13 @@ function TextView({
             if (e.key === "Enter") { e.preventDefault(); commitFont(); }
             if (e.key === "Escape") { e.preventDefault(); setFontDraft(obj.fontFamily); }
           }}
+          list="font-list-datalist"
         />
+        <datalist id="font-list-datalist">
+          {fontList.map((f) => (
+            <option key={f} value={f} />
+          ))}
+        </datalist>
       </div>
 
       {/* Font size */}
