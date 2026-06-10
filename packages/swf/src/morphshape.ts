@@ -12,7 +12,7 @@
  *   SHAPE EndEdges
  *
  * This implementation supports solid fill and solid line styles only.
- * Curves are approximated as straight line sequences.
+ * Quadratic Bézier curves are emitted as CurvedEdge records (not linearized).
  * StartEdges and EndEdges are parallel (same record count).
  */
 import { BitWriter } from "./bits.js";
@@ -616,45 +616,111 @@ function writeMorphEndShapeRecord(bw: BitWriter): void {
 }
 
 // ---------------------------------------------------------------------------
-// Vertex list extraction (flatten curves to line segments)
+// Edge list extraction (preserving Bézier control points)
 // ---------------------------------------------------------------------------
 
+/**
+ * A point in twip space used as the start-of-path anchor.
+ * No edge type — just a position.
+ */
 interface Vertex {
   x: number; // twips
   y: number;
 }
 
 /**
- * Extract an ordered list of vertices from a ShapePath, approximating
- * curves as line segments (endpoint only, control point dropped).
- * Returns vertices in twips, including the start point.
+ * One edge in a morph shape path, in twip space.
+ *
+ * - `line`: straight edge — `to` is the anchor; `ctrl` is undefined.
+ * - `curve`: quadratic Bézier — `ctrl` is the control point delta
+ *   relative to the previous pen position, `to` is the anchor.
+ *
+ * `to` always carries the final pen position after this edge, which
+ * is used by hint-based vertex reordering (pivot matching).
  */
-function pathToVertices(path: ShapePath): Vertex[] {
-  const verts: Vertex[] = [];
-  verts.push({ x: px(path.start.x), y: px(path.start.y) });
+interface MorphEdge {
+  /** Anchor (end-point) of this edge, in twips. */
+  to: Vertex;
+  /** Control point for curve edges (in twips). Undefined for straight edges. */
+  ctrl?: Vertex;
+}
+
+/**
+ * Extract an ordered list of edges from a ShapePath.
+ * Curves retain their control point; straight lines have ctrl=undefined.
+ * The returned array starts with a synthetic "start" entry (ctrl=undefined, to=start).
+ */
+function pathToEdges(path: ShapePath): MorphEdge[] {
+  const edges: MorphEdge[] = [];
+  edges.push({ to: { x: px(path.start.x), y: px(path.start.y) } });
   for (const seg of path.segments) {
-    // Both line and curve: just take the endpoint in twips
-    verts.push({ x: px(seg.to.x), y: px(seg.to.y) });
-  }
-  if (path.closed) {
-    // Add closing line back to start if not already there
-    const last = verts[verts.length - 1];
-    const first = verts[0];
-    if (last.x !== first.x || last.y !== first.y) {
-      verts.push({ x: first.x, y: first.y });
+    if (seg.type === "line") {
+      edges.push({ to: { x: px(seg.to.x), y: px(seg.to.y) } });
+    } else {
+      // curve — preserve control point
+      edges.push({
+        to:   { x: px(seg.to.x),      y: px(seg.to.y) },
+        ctrl: { x: px(seg.control.x), y: px(seg.control.y) },
+      });
     }
   }
-  return verts;
+  if (path.closed) {
+    // Add closing straight edge back to start if not already there
+    const last = edges[edges.length - 1];
+    const first = edges[0];
+    if (last.to.x !== first.to.x || last.to.y !== first.to.y) {
+      edges.push({ to: { x: first.to.x, y: first.to.y } });
+    }
+  }
+  return edges;
+}
+
+// ---------------------------------------------------------------------------
+// Curved-edge writer for morph shapes
+// ---------------------------------------------------------------------------
+
+/**
+ * Write a CurvedEdgeRecord for a morph shape.
+ *
+ * Bit layout (identical to DefineShape CurvedEdgeRecord):
+ *   UB[1] = 1  (edge record)
+ *   UB[1] = 0  (curved edge)
+ *   UB[4] numBits (actual bits = numBits + 2)
+ *   SB[numBits+2] controlDeltaX
+ *   SB[numBits+2] controlDeltaY
+ *   SB[numBits+2] anchorDeltaX
+ *   SB[numBits+2] anchorDeltaY
+ *
+ * Deltas are pen-relative: controlDelta = ctrl − pen, anchorDelta = to − ctrl.
+ */
+function writeMorphCurvedEdge(
+  bw: BitWriter,
+  cdx: number,
+  cdy: number,
+  adx: number,
+  ady: number
+): void {
+  const numBits = edgeNumBits([cdx, cdy, adx, ady]);
+  const storedBits = numBits - 2;
+
+  bw.writeBits(1, 1); // edge record
+  bw.writeBits(0, 1); // curved edge
+
+  bw.writeBits(storedBits, 4);
+  bw.writeBits(cdx, numBits);
+  bw.writeBits(cdy, numBits);
+  bw.writeBits(adx, numBits);
+  bw.writeBits(ady, numBits);
 }
 
 /**
  * Encode a SHAPE edge stream for one side of a morph shape.
  *
- * Each path is encoded as: StyleChangeRecord (moveTo + style refs) + StraightEdge records.
+ * Each path is encoded as: StyleChangeRecord (moveTo + style refs) +
+ * StraightEdge / CurvedEdge records as appropriate.
  * The EndShapeRecord is emitted at the end.
  *
- * @param paths       The shape paths for this side
- * @param vertexSets  Pre-computed vertex arrays (one per path, padded to match the other side)
+ * @param edgeSets    Pre-computed edge arrays (one per path, padded to match the other side)
  * @param pathFillIndex  1-based fill style indices per path
  * @param pathStrokeIndex  1-based line style indices per path
  * @param numFillBits
@@ -662,7 +728,7 @@ function pathToVertices(path: ShapePath): Vertex[] {
  * @param isEndShape  When true, omit fill/line style references (end shape uses 0-bit style fields)
  */
 function encodeMorphShapeEdges(
-  vertexSets: Vertex[][],
+  edgeSets: MorphEdge[][],
   pathFillIndex: number[],
   pathStrokeIndex: number[],
   numFillBits: number,
@@ -671,9 +737,9 @@ function encodeMorphShapeEdges(
 ): Uint8Array {
   const bw = new BitWriter();
 
-  for (let pi = 0; pi < vertexSets.length; pi++) {
-    const verts = vertexSets[pi];
-    if (verts.length === 0) continue;
+  for (let pi = 0; pi < edgeSets.length; pi++) {
+    const edges = edgeSets[pi];
+    if (edges.length === 0) continue;
 
     const fillIdx = isEndShape ? undefined : (pathFillIndex[pi] ?? 0);
     const strokeIdx = isEndShape ? undefined : (pathStrokeIndex[pi] ?? 0);
@@ -682,25 +748,41 @@ function encodeMorphShapeEdges(
     // For the end shape, omit fill/line style references entirely (0-bit style fields
     // per SWF spec; Ruffle reads end shape with num_fill_bits=0 and num_line_bits=0).
     writeMorphStyleChangeRecord(bw, {
-      moveTo: { x: verts[0].x, y: verts[0].y },
+      moveTo: { x: edges[0].to.x, y: edges[0].to.y },
       ...(fillIdx !== undefined ? { fillStyle0: fillIdx } : {}),
       ...(strokeIdx !== undefined ? { lineStyle: strokeIdx } : {}),
       numFillBits: isEndShape ? 0 : numFillBits,
       numLineBits: isEndShape ? 0 : numLineBits,
     });
 
-    // Straight edge records
-    let curX = verts[0].x;
-    let curY = verts[0].y;
+    // Edge records (straight or curved)
+    let curX = edges[0].to.x;
+    let curY = edges[0].to.y;
 
-    for (let vi = 1; vi < verts.length; vi++) {
-      const dx = verts[vi].x - curX;
-      const dy = verts[vi].y - curY;
-      if (dx !== 0 || dy !== 0) {
-        writeMorphStraightEdge(bw, dx, dy);
+    for (let ei = 1; ei < edges.length; ei++) {
+      const edge = edges[ei];
+      const toX = edge.to.x;
+      const toY = edge.to.y;
+
+      if (edge.ctrl !== undefined) {
+        // Curved edge: emit CurvedEdgeRecord
+        const cdx = edge.ctrl.x - curX;
+        const cdy = edge.ctrl.y - curY;
+        const adx = toX - edge.ctrl.x;
+        const ady = toY - edge.ctrl.y;
+        if (cdx !== 0 || cdy !== 0 || adx !== 0 || ady !== 0) {
+          writeMorphCurvedEdge(bw, cdx, cdy, adx, ady);
+        }
+      } else {
+        // Straight edge
+        const dx = toX - curX;
+        const dy = toY - curY;
+        if (dx !== 0 || dy !== 0) {
+          writeMorphStraightEdge(bw, dx, dy);
+        }
       }
-      curX = verts[vi].x;
-      curY = verts[vi].y;
+      curX = toX;
+      curY = toY;
     }
   }
 
@@ -722,19 +804,20 @@ function twipDistSq(ax: number, ay: number, bx: number, by: number): number {
 }
 
 /**
- * Find the index of the vertex in `verts` closest to the given position (in pixels).
+ * Find the index of the edge in `edges` whose anchor (.to) is closest to the
+ * given position (in pixels).  Used for hint-based pivot matching.
  */
 function closestVertexIdx(
   hintX: number,
   hintY: number,
-  verts: Vertex[]
+  edges: MorphEdge[]
 ): number {
   const hx = px(hintX);
   const hy = px(hintY);
   let best = 0;
-  let bestDist = twipDistSq(hx, hy, verts[0]!.x, verts[0]!.y);
-  for (let i = 1; i < verts.length; i++) {
-    const d = twipDistSq(hx, hy, verts[i]!.x, verts[i]!.y);
+  let bestDist = twipDistSq(hx, hy, edges[0]!.to.x, edges[0]!.to.y);
+  for (let i = 1; i < edges.length; i++) {
+    const d = twipDistSq(hx, hy, edges[i]!.to.x, edges[i]!.to.y);
     if (d < bestDist) {
       bestDist = d;
       best = i;
@@ -744,16 +827,21 @@ function closestVertexIdx(
 }
 
 /**
- * Rotate a Vertex array so that the element at `pivotIdx` becomes index 0.
- * Assumes a closed path (the last vertex is a duplicate of the first after closing).
+ * Rotate a MorphEdge array so that the element at `pivotIdx` becomes index 0.
+ * Assumes a closed path (the last edge anchor is a duplicate of the first).
+ * The ctrl field of the new first element is cleared (it was a forward-reference
+ * from the previous segment; after rotation the start point has no incoming edge).
  */
-function rotateVertices(verts: Vertex[], pivotIdx: number): Vertex[] {
-  if (pivotIdx === 0 || verts.length <= 1) return verts;
-  // For closed paths, vertex[0] and vertex[verts.length-1] are the same point.
-  // Rotate the interior vertices (0..n-2), then re-append the new first vertex as last.
-  const interior = verts.slice(0, verts.length - 1); // drop closing duplicate
+function rotateEdges(edges: MorphEdge[], pivotIdx: number): MorphEdge[] {
+  if (pivotIdx === 0 || edges.length <= 1) return edges;
+  // For closed paths, edges[0] and edges[edges.length-1] share the same anchor.
+  // Rotate the interior entries (0..n-2), then re-append the new first anchor as last.
+  const interior = edges.slice(0, edges.length - 1); // drop closing duplicate
   const rotated = [...interior.slice(pivotIdx), ...interior.slice(0, pivotIdx)];
-  rotated.push({ ...rotated[0]! }); // re-close
+  // The new element at index 0 is now the start point — clear its ctrl so it is not
+  // treated as a curve-to from an imaginary prior pen position.
+  rotated[0] = { to: rotated[0]!.to };
+  rotated.push({ to: { ...rotated[0]!.to } }); // re-close (no ctrl on closing anchor)
   return rotated;
 }
 
@@ -773,15 +861,15 @@ function buildHintPairs(
 }
 
 /**
- * Reorder parallel vertex sets for a single path pair using the first matched
+ * Reorder parallel edge sets for a single path pair using the first matched
  * hint pair as the rotation anchor.  Only applied to closed paths (where
- * vertex rotation makes semantic sense); open paths are returned unchanged.
+ * edge rotation makes semantic sense); open paths are returned unchanged.
  *
  * Both `sv` and `ev` are mutated in-place (they are already local copies).
  */
 function applyHintsToVertexSets(
-  sv: Vertex[],
-  ev: Vertex[],
+  sv: MorphEdge[],
+  ev: MorphEdge[],
   isClosedPath: boolean,
   pairs: Array<{ start: ShapeHint; end: ShapeHint }>
 ): void {
@@ -789,32 +877,32 @@ function applyHintsToVertexSets(
 
   const primary = pairs[0]!;
 
-  // Find the best-matching vertex index for the start and end hint positions
+  // Find the best-matching edge index for the start and end hint positions
   const startPivot = closestVertexIdx(primary.start.x, primary.start.y, sv);
   const endPivot = closestVertexIdx(primary.end.x, primary.end.y, ev);
 
-  // Rotate both arrays so their pivot vertex lands at index 0
-  const rotatedSv = rotateVertices(sv, startPivot);
-  const rotatedEv = rotateVertices(ev, endPivot);
+  // Rotate both arrays so their pivot edge lands at index 0
+  const rotatedSv = rotateEdges(sv, startPivot);
+  const rotatedEv = rotateEdges(ev, endPivot);
 
   // After rotation the lengths may differ if padding happened; re-pad to same length
   const maxLen = Math.max(rotatedSv.length, rotatedEv.length);
   while (rotatedSv.length < maxLen) {
-    rotatedSv.push({ ...rotatedSv[rotatedSv.length - 1]! });
+    rotatedSv.push({ to: { ...rotatedSv[rotatedSv.length - 1]!.to } });
   }
   while (rotatedEv.length < maxLen) {
-    rotatedEv.push({ ...rotatedEv[rotatedEv.length - 1]! });
+    rotatedEv.push({ to: { ...rotatedEv[rotatedEv.length - 1]!.to } });
   }
 
   // Copy back into the original arrays (in-place replacement).
   // Snapshot first in case rotatedSv/rotatedEv is the same array reference as sv/ev
-  // (which happens when pivotIdx === 0 and rotateVertices returns the original array).
+  // (which happens when pivotIdx === 0 and rotateEdges returns the original array).
   const snapSv = rotatedSv.slice();
   const snapEv = rotatedEv.slice();
   sv.length = 0;
   ev.length = 0;
-  for (const v of snapSv) sv.push(v);
-  for (const v of snapEv) ev.push(v);
+  for (const e of snapSv) sv.push(e);
+  for (const e of snapEv) ev.push(e);
 }
 
 // ---------------------------------------------------------------------------
@@ -862,27 +950,27 @@ export function encodeDefineMorphShape(
   // We use the path count of startPaths as the canonical count.
   // For any missing end paths, we duplicate start paths (no-op morph).
   const pathCount = startPaths.length;
-  const startVertexSets: Vertex[][] = [];
-  const endVertexSets: Vertex[][] = [];
+  const startEdgeSets: MorphEdge[][] = [];
+  const endEdgeSets: MorphEdge[][] = [];
 
   for (let i = 0; i < pathCount; i++) {
     const sp = startPaths[i];
     const ep = endPaths[i] ?? sp;
 
-    const sv = pathToVertices(sp);
-    const ev = pathToVertices(ep);
+    const sv = pathToEdges(sp);
+    const ev = pathToEdges(ep);
 
-    // Pad the shorter set with zero-movement records (repeat last vertex)
+    // Pad the shorter set with zero-movement records (repeat last anchor, no ctrl)
     const maxLen = Math.max(sv.length, ev.length);
     while (sv.length < maxLen) {
-      sv.push({ ...sv[sv.length - 1] });
+      sv.push({ to: { ...sv[sv.length - 1]!.to } });
     }
     while (ev.length < maxLen) {
-      ev.push({ ...ev[ev.length - 1] });
+      ev.push({ to: { ...ev[ev.length - 1]!.to } });
     }
 
-    startVertexSets.push(sv);
-    endVertexSets.push(ev);
+    startEdgeSets.push(sv);
+    endEdgeSets.push(ev);
   }
 
   // Encode start and end edge streams.
@@ -891,7 +979,7 @@ export function encodeDefineMorphShape(
   // with num_fill_bits=0 and num_line_bits=0, so StyleChangeRecords must not include
   // fill or line style index bits. Pass isEndShape=true to omit them.
   const startEdgeBytes = encodeMorphShapeEdges(
-    startVertexSets,
+    startEdgeSets,
     pathFillIndex,
     pathStrokeIndex,
     numFillBits,
@@ -899,7 +987,7 @@ export function encodeDefineMorphShape(
     false
   );
   const endEdgeBytes = encodeMorphShapeEdges(
-    endVertexSets,
+    endEdgeSets,
     pathFillIndex,
     pathStrokeIndex,
     numFillBits,
@@ -1000,10 +1088,10 @@ export function encodeDefineMorphShape2(
   const numFillBits = fills.length > 0 ? Math.ceil(Math.log2(fills.length + 1)) : 1;
   const numLineBits = strokes.length > 0 ? Math.ceil(Math.log2(strokes.length + 1)) : 1;
 
-  // Build parallel vertex sets
+  // Build parallel edge sets
   const pathCount = startPaths.length;
-  const startVertexSets: Vertex[][] = [];
-  const endVertexSets: Vertex[][] = [];
+  const startEdgeSets: MorphEdge[][] = [];
+  const endEdgeSets: MorphEdge[][] = [];
 
   // Compute hint pairs once (if any hints are present)
   const hintPairs =
@@ -1015,20 +1103,20 @@ export function encodeDefineMorphShape2(
     const sp = startPaths[i]!;
     const ep = endPaths[i] ?? sp;
 
-    const sv = pathToVertices(sp);
-    const ev = pathToVertices(ep);
+    const sv = pathToEdges(sp);
+    const ev = pathToEdges(ep);
 
     const maxLen = Math.max(sv.length, ev.length);
-    while (sv.length < maxLen) sv.push({ ...sv[sv.length - 1]! });
-    while (ev.length < maxLen) ev.push({ ...ev[ev.length - 1]! });
+    while (sv.length < maxLen) sv.push({ to: { ...sv[sv.length - 1]!.to } });
+    while (ev.length < maxLen) ev.push({ to: { ...ev[ev.length - 1]!.to } });
 
-    // Apply hint-based vertex reordering when hints are available
+    // Apply hint-based edge reordering when hints are available
     if (hintPairs.length > 0) {
       applyHintsToVertexSets(sv, ev, sp.closed, hintPairs);
     }
 
-    startVertexSets.push(sv);
-    endVertexSets.push(ev);
+    startEdgeSets.push(sv);
+    endEdgeSets.push(ev);
   }
 
   // Encode start and end edge streams.
@@ -1037,7 +1125,7 @@ export function encodeDefineMorphShape2(
   // with num_fill_bits=0 and num_line_bits=0, so StyleChangeRecords must not include
   // fill or line style index bits. Pass isEndShape=true to omit them.
   const startEdgeBytes = encodeMorphShapeEdges(
-    startVertexSets,
+    startEdgeSets,
     pathFillIndex,
     pathStrokeIndex,
     numFillBits,
@@ -1045,7 +1133,7 @@ export function encodeDefineMorphShape2(
     false
   );
   const endEdgeBytes = encodeMorphShapeEdges(
-    endVertexSets,
+    endEdgeSets,
     pathFillIndex,
     pathStrokeIndex,
     numFillBits,
