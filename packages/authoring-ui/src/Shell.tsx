@@ -4287,6 +4287,12 @@ export function Shell(): React.ReactElement {
         setAlignPanelVisible((v) => !v);
         return;
       }
+      // Ctrl/Cmd+B → Bandwidth Profiler
+      if (e.key === "b" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleBandwidthProfiler();
+        return;
+      }
       // Ctrl/Cmd+Shift+S → Scene panel
       if (e.key === "s" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
         e.preventDefault();

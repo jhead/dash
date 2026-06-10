@@ -7,6 +7,8 @@
  *  - BitWriter                          Bit-level binary writer
  */
 export { compileDocument } from "./compile.js";
+export { analyzeFrameSizes } from "./profiler.js";
+export type { FrameSizeReport } from "./profiler.js";
 export type { CompileOptions } from "./compile.js";
 export { generateHtmlWrapper } from "./html.js";
 export type { HtmlPublishSettings } from "./html.js";

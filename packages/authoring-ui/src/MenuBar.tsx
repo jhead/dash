@@ -312,6 +312,8 @@ export interface MenuBarProps {
   onMovieExplorerToggle?: () => void;
   /** Whether the Movie Explorer panel is currently visible (for checkmark display). */
   movieExplorerVisible?: boolean;
+  /** Called when View > Bandwidth Profiler (Ctrl+B) is activated. */
+  onBandwidthProfiler?: () => void;
   // Text menu callbacks
   /** Called when Text > Style > Bold (Ctrl+Shift+B) is activated. */
   onTextBold?: () => void;
@@ -407,6 +409,7 @@ export function MenuBar({
   behaviorsPanelVisible = false,
   onMovieExplorerToggle,
   movieExplorerVisible = false,
+  onBandwidthProfiler,
   onTextBold,
   onTextItalic,
   onTextUnderline,
@@ -540,6 +543,11 @@ export function MenuBar({
         {
           label: `${snapToGuides ? "+ " : "  "}Snap to Guides  Ctrl+Shift+\\`,
           action: () => { onToggleSnapToGuides?.(); },
+        },
+        {
+          label: "Bandwidth Profiler  Ctrl+B",
+          action: () => { onBandwidthProfiler?.(); },
+          separator: true,
         },
       ],
     },
