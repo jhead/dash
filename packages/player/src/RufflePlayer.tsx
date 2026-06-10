@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import type { RufflePlayerElement } from "./ruffle.d.ts";
+import { shouldSuppressRuffleLog, stripConsoleCssFormat } from "./ruffleLogFilter.js";
 
 export interface RufflePlayerProps {
   /** SWF bytes to play; null = blank/idle screen */
@@ -20,57 +21,10 @@ export interface RufflePlayerProps {
    */
   onError?: (message: string) => void;
   /**
-   * Called with each AS2 trace() line emitted by the running SWF.
-   * Lines are filtered to exclude Ruffle-internal debug/warn/error logs;
-   * only user trace() output is forwarded.
+   * Called with each AS2 trace() line and Ruffle ERROR/WARN diagnostics.
+   * Low-severity Ruffle internal logs (DEBUG/INFO) are filtered out.
    */
   onTrace?: (line: string) => void;
-}
-
-/**
- * Ruffle log prefixes that are internal to the runtime and should NOT be
- * forwarded as user trace() output.  The prefixes are matched case-insensitively
- * against the first word(s) of each console.log argument (after stripping any
- * %c format tokens).
- */
-const RUFFLE_INTERNAL_PREFIXES = [
-  "debug",
-  "warn",
-  "warning",
-  "error",
-  "[ruffle",
-  "ruffle:",
-  "info",
-  "avm",  // e.g. "AVM1:"
-];
-
-/**
- * Strip console CSS format tokens from a Ruffle log message.
- *
- * Ruffle emits styled log lines as:
- *   console.warn('%cWARN%c core/src/library.rs:559%c message', style1, style2, style3)
- *
- * The first argument contains `%c` markers and the remaining arguments are CSS
- * strings that should be dropped.  This function strips every `%c` occurrence
- * from the first argument string and discards all subsequent (CSS) arguments so
- * that the caller sees plain text like "WARN core/src/library.rs:559 message".
- */
-function stripConsoleCssFormat(args: unknown[]): unknown[] {
-  if (args.length === 0) return args;
-  const first = String(args[0]);
-  if (!first.includes("%c")) return args;
-  // Strip all %c tokens from the format string; discard the CSS style args.
-  const stripped = first.replace(/%c/g, "").replace(/\s+/g, " ").trim();
-  return [stripped];
-}
-
-function isRuffleInternalLog(args: unknown[]): boolean {
-  if (args.length === 0) return false;
-  // Strip CSS format tokens before checking prefixes so that
-  // "%cWARN%c ..." is correctly identified as an internal warn log.
-  const cleaned = stripConsoleCssFormat(args);
-  const first = String(cleaned[0]).trimStart().toLowerCase();
-  return RUFFLE_INTERNAL_PREFIXES.some((prefix) => first.startsWith(prefix));
 }
 
 /**
@@ -186,8 +140,8 @@ export function RufflePlayer({
       // Ruffle emits trace() via console.log when logLevel:'info' is set, and
       // emits its own diagnostic messages (WARN, ERROR, INFO, etc.) via
       // console.warn with CSS format tokens (%c).
-      // We forward lines that are NOT Ruffle-internal logs to onTrace, and strip
-      // any %c CSS format tokens from the text before displaying.
+      // Forward AS2 trace() output and Ruffle ERROR/WARN diagnostics to onTrace.
+      // Low-severity Ruffle logs (DEBUG/INFO) are suppressed; %c tokens are stripped.
       // Restore the originals on each new load (in case of reload).
       if (origConsoleLogRef.current) {
         console.log = origConsoleLogRef.current;
@@ -204,7 +158,7 @@ export function RufflePlayer({
       const forwardToTrace = (args: unknown[]) => {
         if (!onTraceRef.current) return;
         const cleaned = stripConsoleCssFormat(args);
-        if (isRuffleInternalLog(cleaned)) return;
+        if (shouldSuppressRuffleLog(args)) return;
         const line = cleaned.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
         onTraceRef.current(line);
       };
@@ -215,9 +169,7 @@ export function RufflePlayer({
       };
 
       // Intercept console.warn to catch Ruffle's styled diagnostic messages.
-      // Internal Ruffle warns (e.g. "WARN core/src/library.rs Unknown device font")
-      // are filtered out by isRuffleInternalLog so they never appear in the Output
-      // panel.  Non-internal warns are stripped of %c tokens and forwarded.
+      // ERROR/WARN severity messages are forwarded; DEBUG/INFO spam is suppressed.
       console.warn = (...args: unknown[]) => {
         capturedOrigWarn(...args);
         forwardToTrace(args);
