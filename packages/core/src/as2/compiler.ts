@@ -328,7 +328,8 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
                     && !(name === 'getTimer' && e.args.length === 0)
                     && !(name === 'random' && e.args.length === 1)
                     && !(name === 'chr' && e.args.length === 1)
-                    && !(name === 'ord' && e.args.length === 1)) {
+                    && !(name === 'ord' && e.args.length === 1)
+                    && !(name === 'eval' && e.args.length === 1)) {
             add(name);
           }
           if (name === 'loadMovieNum') {
@@ -1466,6 +1467,8 @@ class Compiler {
       case 'false':     this.pushBool(false);       return;
       case 'NaN':       this.pushNumber(NaN);       return;
       case 'Infinity':  this.pushNumber(Infinity);  return;
+      // AVM1 global constant: newline === "\r" (carriage return)
+      case 'newline':   this.pushString('\r');      return;
       case 'super':
         // In AVM1, 'super' resolves to the superclass constructor.
         // If we know the current superclass, use it; otherwise fall back to variable lookup.
@@ -2007,6 +2010,32 @@ class Compiler {
       if (name === 'ord' && expr.args.length === 1) {
         this.compileExpr(expr.args[0]!);
         this.emit(0x32); // ActionOrd
+        return;
+      }
+
+      // Built-in: eval(str) → push str, ActionGetVariable (0x1C)
+      if (name === 'eval' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x1c); // ActionGetVariable
+        return;
+      }
+
+      // Built-in: length(s) → push s, ActionMBLength (0x31)
+      // AVM1 global function length(str) returns the number of characters.
+      if (name === 'length' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x31); // ActionMBLength
+        return;
+      }
+
+      // Built-in: substring(s, start, length) → ActionMBSubString (0x35)
+      // AVM1 stack convention (pops top first): count (top), start, string (bottom)
+      // Push order: arg0(s) deepest, arg1(start), arg2(length) on top, then emit 0x35
+      if (name === 'substring' && expr.args.length === 3) {
+        this.compileExpr(expr.args[0]!); // string (deepest)
+        this.compileExpr(expr.args[1]!); // start offset
+        this.compileExpr(expr.args[2]!); // count/length (top)
+        this.emit(0x35); // ActionMBSubString
         return;
       }
 
