@@ -98,30 +98,124 @@ export function encodeDefineBitsJpeg3(
 // ---------------------------------------------------------------------------
 
 /**
- * Encode a DefineBitsLossless2 tag (tag 36) — lossless ARGB bitmap.
+ * Options for palette-mode (BitmapFormat=3) encoding.
  *
- * Uses BitmapFormat 5 (32-bit ARGB). The pixel data is ZLIB-compressed before
- * writing.
+ * Provide this alongside `pixels` to encode as 8-bit indexed color.
+ * - `palette`: up to 256 colors, each 4 bytes RGBA.
+ * - `indices`: one byte per pixel (row-major), referencing a palette entry.
+ */
+export interface PaletteOptions {
+  /** RGBA color table: colorCount × 4 bytes. Must have 1–256 entries. */
+  palette: Uint8Array;
+  /** Pixel index data: one UI8 per pixel, width×height entries. */
+  indices: Uint8Array;
+}
+
+/**
+ * Encode a DefineBitsLossless2 tag (tag 36) — lossless bitmap.
  *
- * SWF spec layout:
+ * **Format 5 (32-bit ARGB):** Pass `pixels` only (no `paletteOpts`).
+ * The pixel data is ZLIB-compressed before writing.
+ *
+ * SWF spec layout (format 5):
  *   BitmapId      UI16  — SWF character ID
  *   BitmapFormat  UI8   — 5 = 32-bit ARGB
  *   BitmapWidth   UI16
  *   BitmapHeight  UI16
  *   ZlibBitmapData ZLIB-compressed pixel bytes (ARGB, 4 bytes per pixel)
  *
- * @param charId  SWF character ID for this bitmap
- * @param width   Bitmap width in pixels
- * @param height  Bitmap height in pixels
- * @param pixels  Raw ARGB pixel data (4 bytes per pixel, width×height pixels)
+ * **Format 3 (8-bit indexed):** Pass `paletteOpts` alongside `pixels` (which
+ * is ignored in this mode — only `paletteOpts.palette` and
+ * `paletteOpts.indices` are used).
+ *
+ * SWF spec layout (format 3):
+ *   BitmapId           UI16
+ *   BitmapFormat       UI8   — 3 = 8-bit indexed
+ *   BitmapWidth        UI16
+ *   BitmapHeight       UI16
+ *   BitmapColorTableSize UI8 — colorCount − 1 (e.g., 255 means 256 colors)
+ *   ZlibBitmapData = ZLIB( [colorCount × 4-byte RGBA entries]
+ *                        + [height rows of width indices, each row padded
+ *                           to a multiple of 4 bytes] )
+ *
+ * @param charId       SWF character ID for this bitmap
+ * @param width        Bitmap width in pixels
+ * @param height       Bitmap height in pixels
+ * @param pixels       Raw ARGB pixel data (format 5) — ignored when paletteOpts provided
+ * @param paletteOpts  Optional palette+indices for format 3 (8-bit indexed) encoding
  */
 export function encodeDefineBitsLossless2(
   charId: number,
   width: number,
   height: number,
-  pixels: Uint8Array
+  pixels: Uint8Array,
+  paletteOpts?: PaletteOptions
 ): Uint8Array {
   const DefineBitsLossless2 = 36;
+
+  if (paletteOpts) {
+    // -----------------------------------------------------------------------
+    // BitmapFormat = 3 (8-bit indexed / palette mode)
+    // -----------------------------------------------------------------------
+    const BitmapFormat8BitIndexed = 3;
+    const { palette, indices } = paletteOpts;
+    const colorCount = palette.length / 4;
+
+    if (colorCount < 1 || colorCount > 256 || Math.floor(colorCount) !== colorCount) {
+      throw new Error(
+        `encodeDefineBitsLossless2: palette must have 1–256 RGBA entries (got ${palette.length} bytes)`
+      );
+    }
+    if (indices.length !== width * height) {
+      throw new Error(
+        `encodeDefineBitsLossless2: indices.length (${indices.length}) must equal width×height (${width * height})`
+      );
+    }
+
+    // Each row of indices is padded to a multiple of 4 bytes.
+    const rowStride = Math.ceil(width / 4) * 4;
+    const uncompressedSize = palette.length + rowStride * height;
+    const uncompressed = new Uint8Array(uncompressedSize);
+
+    // Write palette entries
+    uncompressed.set(palette, 0);
+
+    // Write index rows with padding
+    for (let row = 0; row < height; row++) {
+      const srcOffset = row * width;
+      const dstOffset = palette.length + row * rowStride;
+      uncompressed.set(indices.subarray(srcOffset, srcOffset + width), dstOffset);
+      // Padding bytes remain 0 (already initialized)
+    }
+
+    const compressed = deflateSync(uncompressed);
+
+    // Tag body:
+    //   UI16 charId + UI8 format + UI16 width + UI16 height + UI8 colorTableSize + compressed
+    const headerSize = 2 + 1 + 2 + 2 + 1; // 8 bytes
+    const body = new Uint8Array(headerSize + compressed.length);
+    // BitmapId UI16 LE
+    body[0] = charId & 0xff;
+    body[1] = (charId >> 8) & 0xff;
+    // BitmapFormat UI8
+    body[2] = BitmapFormat8BitIndexed;
+    // BitmapWidth UI16 LE
+    body[3] = width & 0xff;
+    body[4] = (width >> 8) & 0xff;
+    // BitmapHeight UI16 LE
+    body[5] = height & 0xff;
+    body[6] = (height >> 8) & 0xff;
+    // BitmapColorTableSize UI8 = colorCount − 1
+    body[7] = (colorCount - 1) & 0xff;
+    // ZlibBitmapData
+    body.set(compressed, headerSize);
+
+    return encodeTagRecord(DefineBitsLossless2, body);
+  }
+
+  // -------------------------------------------------------------------------
+  // BitmapFormat = 5 (32-bit ARGB) — original path
+  // -------------------------------------------------------------------------
   const BitmapFormat32BitARGB = 5;
 
   // ZLIB-compress the pixel data

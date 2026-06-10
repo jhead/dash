@@ -4,16 +4,22 @@
  * SWF spec BitmapFormat values for DefineBitsLossless/DefineBitsLossless2:
  *   3 = 8-bit indexed (palette mode, up to 256 colors)
  *   4 = 15-bit RGB (not used in Flash 8)
- *   5 = 32-bit ARGB (the only format currently emitted by this compiler)
+ *   5 = 32-bit ARGB
  *
- * The compiler currently always emits BitmapFormat 5 (32-bit ARGB) for lossless
- * bitmaps. Palette mode (format 3) is not yet implemented. These tests document
- * that gap and verify the existing lossless path remains correct, including that
- * multiple bitmap items each get their own tag 36.
+ * Tag body layout for BitmapFormat=3:
+ *   UI16 charId
+ *   UI8  format = 3
+ *   UI16 width
+ *   UI16 height
+ *   UI8  colorTableSize = colorCount − 1
+ *   ZlibBitmapData = ZLIB([colorCount × 4-byte RGBA] + [height rows of indices,
+ *                          each row padded to multiple of 4 bytes])
  */
 
 import { describe, it, expect } from "vitest";
+import { decompressSync } from "fflate";
 import { compileDocument } from "../compile.js";
+import { encodeDefineBitsLossless2 } from "../bitmaps.js";
 
 // ---------------------------------------------------------------------------
 // Tag parsing helpers
@@ -170,7 +176,170 @@ function redPixels2x2(): Uint8Array {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("DefineBitsLossless2 — palette mode (BitmapFormat=3) coverage", () => {
+// ---------------------------------------------------------------------------
+// Helper: build a minimal palette (RGBA) + indexed pixel data
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a simple 2-color palette (black + red) and a width×height index grid.
+ * Even pixels → color 0 (black), odd pixels → color 1 (red).
+ */
+function makePaletteFixture(width: number, height: number) {
+  // 2 colors × 4 bytes each (RGBA)
+  const palette = new Uint8Array([
+    0, 0, 0, 255,       // color 0: opaque black
+    255, 0, 0, 255,     // color 1: opaque red
+  ]);
+  const indices = new Uint8Array(width * height);
+  for (let i = 0; i < indices.length; i++) {
+    indices[i] = i % 2; // alternating black/red
+  }
+  return { palette, indices };
+}
+
+/**
+ * Parse the raw tag record bytes produced by encodeDefineBitsLossless2 into
+ * { tagCode, body }.
+ */
+function parseTagRecord(tag: Uint8Array): { tagCode: number; body: Uint8Array } {
+  const recordHdr = tag[0] | (tag[1] << 8);
+  const tagCode = (recordHdr >> 6) & 0x3ff;
+  let hdrSize = 2;
+  let bodyLength = recordHdr & 0x3f;
+  if (bodyLength === 0x3f) {
+    bodyLength = tag[2] | (tag[3] << 8) | (tag[4] << 16) | (tag[5] << 24);
+    hdrSize = 6;
+  }
+  return { tagCode, body: tag.slice(hdrSize, hdrSize + bodyLength) };
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for encodeDefineBitsLossless2 palette mode (BitmapFormat=3)
+// ---------------------------------------------------------------------------
+
+describe("encodeDefineBitsLossless2 — BitmapFormat=3 (palette mode)", () => {
+  const WIDTH = 4;
+  const HEIGHT = 4;
+
+  it("sets BitmapFormat byte to 3 when paletteOpts are provided", () => {
+    const { palette, indices } = makePaletteFixture(WIDTH, HEIGHT);
+    const tag = encodeDefineBitsLossless2(1, WIDTH, HEIGHT, new Uint8Array(0), { palette, indices });
+    const { body } = parseTagRecord(tag);
+    // body[2] = BitmapFormat
+    expect(body[2]).toBe(BITMAP_FORMAT_8BIT_INDEXED);
+  });
+
+  it("sets BitmapColorTableSize = colorCount − 1", () => {
+    const { palette, indices } = makePaletteFixture(WIDTH, HEIGHT);
+    // 2-color palette → colorTableSize = 1
+    const tag = encodeDefineBitsLossless2(1, WIDTH, HEIGHT, new Uint8Array(0), { palette, indices });
+    const { body } = parseTagRecord(tag);
+    // body[7] = BitmapColorTableSize
+    expect(body[7]).toBe(1); // 2 colors − 1
+  });
+
+  it("sets BitmapColorTableSize = 255 for a full 256-color palette", () => {
+    const palette256 = new Uint8Array(256 * 4);
+    for (let i = 0; i < 256; i++) {
+      palette256[i * 4 + 0] = i;     // R
+      palette256[i * 4 + 1] = 0;     // G
+      palette256[i * 4 + 2] = 0;     // B
+      palette256[i * 4 + 3] = 255;   // A
+    }
+    const indices = new Uint8Array(WIDTH * HEIGHT); // all color 0
+    const tag = encodeDefineBitsLossless2(1, WIDTH, HEIGHT, new Uint8Array(0), {
+      palette: palette256,
+      indices,
+    });
+    const { body } = parseTagRecord(tag);
+    expect(body[7]).toBe(255); // 256 colors − 1
+  });
+
+  it("emits tag code 36 (DefineBitsLossless2)", () => {
+    const { palette, indices } = makePaletteFixture(WIDTH, HEIGHT);
+    const tag = encodeDefineBitsLossless2(1, WIDTH, HEIGHT, new Uint8Array(0), { palette, indices });
+    const { tagCode } = parseTagRecord(tag);
+    expect(tagCode).toBe(TAG_DEFINE_BITS_LOSSLESS2);
+  });
+
+  it("encodes width and height correctly in the header", () => {
+    const { palette, indices } = makePaletteFixture(WIDTH, HEIGHT);
+    const tag = encodeDefineBitsLossless2(1, WIDTH, HEIGHT, new Uint8Array(0), { palette, indices });
+    const { body } = parseTagRecord(tag);
+    const width  = body[3] | (body[4] << 8);
+    const height = body[5] | (body[6] << 8);
+    expect(width).toBe(WIDTH);
+    expect(height).toBe(HEIGHT);
+  });
+
+  it("encodes charId correctly in the body", () => {
+    const charId = 42;
+    const { palette, indices } = makePaletteFixture(WIDTH, HEIGHT);
+    const tag = encodeDefineBitsLossless2(charId, WIDTH, HEIGHT, new Uint8Array(0), { palette, indices });
+    const { body } = parseTagRecord(tag);
+    expect(body[0] | (body[1] << 8)).toBe(charId);
+  });
+
+  it("ZlibBitmapData decompresses to [palette bytes] + [padded index rows]", () => {
+    const { palette, indices } = makePaletteFixture(WIDTH, HEIGHT);
+    const tag = encodeDefineBitsLossless2(1, WIDTH, HEIGHT, new Uint8Array(0), { palette, indices });
+    const { body } = parseTagRecord(tag);
+
+    // format 3 header is 8 bytes; compressed data starts at body[8]
+    const compressed = body.slice(8);
+    const raw = decompressSync(compressed);
+
+    // Expected: 2×4 palette bytes + HEIGHT rows each padded to multiple of 4
+    const rowStride = Math.ceil(WIDTH / 4) * 4; // 4 for width=4
+    const expectedLen = palette.length + rowStride * HEIGHT;
+    expect(raw.length).toBe(expectedLen);
+
+    // First bytes are the palette
+    expect(raw.slice(0, palette.length)).toEqual(palette);
+
+    // Rows of indices follow; each row starts with actual indices then 0-padding
+    for (let row = 0; row < HEIGHT; row++) {
+      const dstOffset = palette.length + row * rowStride;
+      const rowData = raw.slice(dstOffset, dstOffset + WIDTH);
+      const expected = indices.slice(row * WIDTH, (row + 1) * WIDTH);
+      expect(rowData).toEqual(expected);
+    }
+  });
+
+  it("pads each row to a multiple of 4 bytes (non-multiple width)", () => {
+    const W = 3; // width 3 → padded to 4
+    const H = 2;
+    const { palette, indices } = makePaletteFixture(W, H);
+    const tag = encodeDefineBitsLossless2(1, W, H, new Uint8Array(0), { palette, indices });
+    const { body } = parseTagRecord(tag);
+    const raw = decompressSync(body.slice(8));
+    // Each row: 3 index bytes + 1 padding byte = 4 bytes
+    const expectedLen = palette.length + 4 * H;
+    expect(raw.length).toBe(expectedLen);
+  });
+
+  it("throws if palette length is not a multiple of 4", () => {
+    const badPalette = new Uint8Array(7); // not divisible by 4
+    const indices = new Uint8Array(4);
+    expect(() =>
+      encodeDefineBitsLossless2(1, 2, 2, new Uint8Array(0), { palette: badPalette, indices })
+    ).toThrow();
+  });
+
+  it("throws if indices.length does not match width × height", () => {
+    const { palette } = makePaletteFixture(2, 2);
+    const badIndices = new Uint8Array(3); // should be 4
+    expect(() =>
+      encodeDefineBitsLossless2(1, 2, 2, new Uint8Array(0), { palette, indices: badIndices })
+    ).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compile-path tests (BitmapFormat=5, existing behavior)
+// ---------------------------------------------------------------------------
+
+describe("DefineBitsLossless2 — BitmapFormat=5 compile-path coverage", () => {
 
   // Test 1: BitmapItem with compressionType:"lossless" compiles without error
   it("BitmapItem with compressionType lossless compiles without error", () => {
@@ -191,9 +360,8 @@ describe("DefineBitsLossless2 — palette mode (BitmapFormat=3) coverage", () =>
     expect(losslessTag).toBeDefined();
   });
 
-  // Test 3: palette mode (format 3) is NOT currently emitted — compiler uses format 5 (ARGB)
-  // This test documents the gap: palette mode is not yet implemented.
-  it("compiler currently emits BitmapFormat 5 (ARGB), not 3 (8bpp indexed palette)", () => {
+  // Test 3: compiler emits BitmapFormat 5 (ARGB) for the 32-bit path
+  it("compiler emits BitmapFormat 5 (ARGB) for the standard lossless path", () => {
     const item = makeBitmapItem("bmp1");
     const bitmapPixels = new Map([["bmp1", { width: 2, height: 2, pixels: redPixels2x2() }]]);
     const doc = makeDocWithBitmapPixels([item], bitmapPixels);
@@ -201,18 +369,13 @@ describe("DefineBitsLossless2 — palette mode (BitmapFormat=3) coverage", () =>
     const tags = parseTags(bytes);
     const losslessTag = tags.find((t) => t.code === TAG_DEFINE_BITS_LOSSLESS2);
     if (losslessTag) {
-      // body[2] is BitmapFormat; current implementation always uses 5 (32-bit ARGB)
       expect(losslessTag.body[2]).toBe(BITMAP_FORMAT_32BIT_ARGB);
-      // Document the gap: palette mode (3) is not produced
-      expect(losslessTag.body[2]).not.toBe(BITMAP_FORMAT_8BIT_INDEXED);
     } else {
-      // No lossless tag emitted — acceptable (JPEG path taken)
       expect(true).toBe(true);
     }
   });
 
-  // Test 4: ColorTableSize field — only present in BitmapFormat 3 (palette); not present in format 5
-  // Since format 5 is used, body[7] (where ColorTableSize would be) is compressed pixel data, not a color count.
+  // Test 4: no ColorTableSize byte in format 5 body
   it("DefineBitsLossless2 body has no ColorTableSize field when format is 5 (ARGB)", () => {
     const item = makeBitmapItem("bmp1");
     const bitmapPixels = new Map([["bmp1", { width: 2, height: 2, pixels: redPixels2x2() }]]);
@@ -221,11 +384,9 @@ describe("DefineBitsLossless2 — palette mode (BitmapFormat=3) coverage", () =>
     const tags = parseTags(bytes);
     const losslessTag = tags.find((t) => t.code === TAG_DEFINE_BITS_LOSSLESS2);
     if (losslessTag) {
-      // For format 5, header is: UI16 charId + UI8 format + UI16 width + UI16 height = 7 bytes
-      // No ColorTableSize byte follows for format 5
       const format = losslessTag.body[2];
       if (format === BITMAP_FORMAT_32BIT_ARGB) {
-        // Compressed data starts at offset 7
+        // Compressed data starts at offset 7 (no ColorTableSize)
         expect(losslessTag.body.length).toBeGreaterThan(7);
       }
     } else {
@@ -233,7 +394,7 @@ describe("DefineBitsLossless2 — palette mode (BitmapFormat=3) coverage", () =>
     }
   });
 
-  // Test 5: existing lossless path produces a valid tag 36 with correct structure
+  // Test 5: tag has valid charId, format, width, height fields
   it("DefineBitsLossless2 tag has valid charId, format, width, and height fields", () => {
     const item = makeBitmapItem("bmp1");
     const bitmapPixels = new Map([["bmp1", { width: 2, height: 2, pixels: redPixels2x2() }]]);
@@ -266,7 +427,6 @@ describe("DefineBitsLossless2 — palette mode (BitmapFormat=3) coverage", () =>
     const bytes = compileDocument(doc, { bitmapPixels });
     const tags = parseTags(bytes);
     const losslessTags = tags.filter((t) => t.code === TAG_DEFINE_BITS_LOSSLESS2);
-    // Each bitmap on stage should produce its own lossless tag
     expect(losslessTags.length).toBeGreaterThanOrEqual(2);
   });
 
