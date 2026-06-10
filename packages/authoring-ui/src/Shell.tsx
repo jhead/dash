@@ -2995,6 +2995,8 @@ export function Shell(): React.ReactElement {
                 guides={guides}
                 showGuides={true}
                 snapToGuides={docProperties.snapToGuides}
+                snapToGrid={docProperties.grid.snapToGrid}
+                snapToObjects={docProperties.snapToObjects}
                 onGuideMove={handleGuideMove}
                 onGuideDelete={handleGuideDelete}
                 textDisplayObjects={textDisplayObjects}

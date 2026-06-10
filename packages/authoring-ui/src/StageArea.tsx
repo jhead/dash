@@ -413,6 +413,9 @@ export interface StageAreaProps {
   snapToGuides?: boolean;
   onGuideMove?: (id: string, newPosition: number) => void;
   onGuideDelete?: (id: string) => void;
+  // Snap props
+  snapToGrid?: boolean;
+  snapToObjects?: boolean;
   // Text tool props
   textDisplayObjects?: TextDisplayObject[];
   onTextCreated?: (textObj: Omit<TextDisplayObject, "id">) => void;
@@ -596,6 +599,133 @@ interface DrawPreview {
   y2: number;
 }
 
+// ---------------------------------------------------------------------------
+// Snap helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Snap a value to the nearest grid line if it is within snapRadius pixels.
+ * Returns the snapped value when within range, otherwise the original value.
+ */
+function snapValueToGrid(val: number, gridSize: number, snapRadius: number = 5): number {
+  const snapped = Math.round(val / gridSize) * gridSize;
+  return Math.abs(val - snapped) < snapRadius ? snapped : val;
+}
+
+/**
+ * Snap-to-grid: adjust dx/dy so the dragged object's edges/center land on grid lines.
+ * We snap all three candidate X positions (left, center, right) and all three Y positions
+ * (top, center, bottom) and pick the closest snap in each axis.
+ */
+function applySnapToGrid(
+  dx: number,
+  dy: number,
+  bounds: { x: number; y: number; width: number; height: number },
+  gridWidth: number,
+  gridHeight: number,
+  snapRadius: number = 5
+): { dx: number; dy: number } {
+  // Candidate X positions (left, center, right edges of dragged object after dx)
+  const candidateXs = [
+    bounds.x + dx,
+    bounds.x + bounds.width / 2 + dx,
+    bounds.x + bounds.width + dx,
+  ];
+  // Candidate Y positions (top, center, bottom edges of dragged object after dy)
+  const candidateYs = [
+    bounds.y + dy,
+    bounds.y + bounds.height / 2 + dy,
+    bounds.y + bounds.height + dy,
+  ];
+
+  // Find the best (smallest) snap delta for X
+  let bestDX = 0;
+  let bestDXDist = Infinity;
+  for (const cx of candidateXs) {
+    const snapped = snapValueToGrid(cx, gridWidth, snapRadius);
+    const dist = Math.abs(cx - snapped);
+    if (dist < bestDXDist) {
+      bestDXDist = dist;
+      bestDX = snapped - cx;
+    }
+  }
+
+  // Find the best (smallest) snap delta for Y
+  let bestDY = 0;
+  let bestDYDist = Infinity;
+  for (const cy of candidateYs) {
+    const snapped = snapValueToGrid(cy, gridHeight, snapRadius);
+    const dist = Math.abs(cy - snapped);
+    if (dist < bestDYDist) {
+      bestDYDist = dist;
+      bestDY = snapped - cy;
+    }
+  }
+
+  // Only apply snap if within the snap radius
+  return {
+    dx: bestDXDist < snapRadius ? dx + bestDX : dx,
+    dy: bestDYDist < snapRadius ? dy + bestDY : dy,
+  };
+}
+
+/**
+ * Snap-to-objects: adjust dx/dy so the dragged object snaps to the edges/centers of
+ * nearby objects. Checks all 9 point pairs (3 X × 3 Y positions of dragged vs other objects).
+ */
+function applySnapToObjects(
+  dx: number,
+  dy: number,
+  draggedBounds: { x: number; y: number; width: number; height: number },
+  otherBounds: Array<{ x: number; y: number; width: number; height: number }>,
+  snapRadius: number = 5
+): { dx: number; dy: number } {
+  // The 3 candidate X coords of the dragged object after applying dx
+  const dragXs = [
+    draggedBounds.x + dx,
+    draggedBounds.x + draggedBounds.width / 2 + dx,
+    draggedBounds.x + draggedBounds.width + dx,
+  ];
+  // The 3 candidate Y coords of the dragged object after applying dy
+  const dragYs = [
+    draggedBounds.y + dy,
+    draggedBounds.y + draggedBounds.height / 2 + dy,
+    draggedBounds.y + draggedBounds.height + dy,
+  ];
+
+  let bestSnapDX = Infinity;
+  let bestSnapDY = Infinity;
+
+  for (const other of otherBounds) {
+    // The 3 snap targets on the other object (left, center, right / top, center, bottom)
+    const otherXs = [other.x, other.x + other.width / 2, other.x + other.width];
+    const otherYs = [other.y, other.y + other.height / 2, other.y + other.height];
+
+    for (const dragX of dragXs) {
+      for (const otherX of otherXs) {
+        const diff = otherX - dragX;
+        if (Math.abs(diff) < snapRadius && Math.abs(diff) < Math.abs(bestSnapDX)) {
+          bestSnapDX = diff;
+        }
+      }
+    }
+
+    for (const dragY of dragYs) {
+      for (const otherY of otherYs) {
+        const diff = otherY - dragY;
+        if (Math.abs(diff) < snapRadius && Math.abs(diff) < Math.abs(bestSnapDY)) {
+          bestSnapDY = diff;
+        }
+      }
+    }
+  }
+
+  return {
+    dx: isFinite(bestSnapDX) ? dx + bestSnapDX : dx,
+    dy: isFinite(bestSnapDY) ? dy + bestSnapDY : dy,
+  };
+}
+
 // Preset zoom levels (as fractions, e.g. 1 = 100%)
 const ZOOM_LEVELS = [0.25, 0.5, 1.0, 1.5, 2.0, 4.0, 8.0];
 
@@ -668,6 +798,8 @@ export function StageArea({
   snapToGuides = false,
   onGuideMove,
   onGuideDelete,
+  snapToGrid = false,
+  snapToObjects = false,
   textDisplayObjects = [],
   onTextCreated,
   onTextPlace,
@@ -1979,6 +2111,33 @@ export function StageArea({
           }
         }
 
+        // Snap-to-grid: quantize dragged object's edges/center to nearest grid line
+        if (snapToGrid && (gridWidth > 0 || gridHeight > 0)) {
+          const selObj = shapeDisplayObjects.find((o) => o.id === drag.shapeId);
+          if (selObj) {
+            const bounds = transformedShapeBounds(selObj);
+            const snapped = applySnapToGrid(dx, dy, bounds, gridWidth, gridHeight);
+            dx = snapped.dx;
+            dy = snapped.dy;
+          }
+        }
+
+        // Snap-to-objects: snap dragged object's edges/center to other objects' edges/centers
+        if (snapToObjects && shapeDisplayObjects.length > 1) {
+          const selObj = shapeDisplayObjects.find((o) => o.id === drag.shapeId);
+          if (selObj) {
+            const bounds = transformedShapeBounds(selObj);
+            const otherBounds = shapeDisplayObjects
+              .filter((o) => o.id !== drag.shapeId)
+              .map((o) => transformedShapeBounds(o));
+            if (otherBounds.length > 0) {
+              const snapped = applySnapToObjects(dx, dy, bounds, otherBounds);
+              dx = snapped.dx;
+              dy = snapped.dy;
+            }
+          }
+        }
+
         onShapeMove(drag.shapeId, dx, dy);
         // Update start so next move is a delta from this position
         selectionDragRef.current = { ...drag, startMouseX: e.clientX, startMouseY: e.clientY };
@@ -2013,7 +2172,7 @@ export function StageArea({
         setHandleCursor(undefined);
       }
     },
-    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete]
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete]
   );
 
   const onMouseUp = useCallback(
