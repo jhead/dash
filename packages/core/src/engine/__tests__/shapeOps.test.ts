@@ -10,6 +10,7 @@ import { createLibrary, createSymbol, addLibraryItem } from "../../model/library
 import type { FlashDocument, Frame, Layer, Scene } from "../../model/types.js";
 import type {
   DisplayObject,
+  DrawingObject,
   ShapeDisplayObject,
   ShapePath,
   SymbolInstance,
@@ -44,6 +45,16 @@ function makeShapePath(x = 0, y = 0): ShapePath {
 function makeShape(id: string, paths: ShapePath[], x = 0, y = 0): ShapeDisplayObject {
   return {
     type: "shape",
+    id,
+    shape: { id: uid(), paths },
+    x,
+    y,
+  };
+}
+
+function makeDrawingObject(id: string, paths: ShapePath[], x = 0, y = 0): DrawingObject {
+  return {
+    type: "drawing-object",
     id,
     shape: { id: uid(), paths },
     x,
@@ -368,5 +379,64 @@ describe("breakApart", () => {
     const result = breakApart(doc, 999, 0, 0, instanceId);
 
     expect(result).toBe(doc);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// breakApart DrawingObject tests
+// ---------------------------------------------------------------------------
+
+describe("breakApart DrawingObject", () => {
+  it("converts a drawing-object to a plain shape", () => {
+    const drawId = uid();
+    const drawObj = makeDrawingObject(drawId, [makeShapePath()], 10, 20);
+    const doc = makeDoc([drawObj]);
+
+    const result = breakApart(doc, 0, 0, 0, drawId);
+    const objects = getObjects(result);
+
+    expect(objects).toHaveLength(1);
+    expect(objects[0].type).toBe("shape");
+  });
+
+  it("preserves the id, x, y and shape when converting drawing-object", () => {
+    const drawId = uid();
+    const path = makeShapePath(5, 5);
+    const drawObj = makeDrawingObject(drawId, [path], 10, 20);
+    const doc = makeDoc([drawObj]);
+
+    const result = breakApart(doc, 0, 0, 0, drawId);
+    const converted = getObjects(result)[0] as ShapeDisplayObject;
+
+    expect(converted.id).toBe(drawId);
+    expect(converted.x).toBe(10);
+    expect(converted.y).toBe(20);
+    expect(converted.shape.paths).toContain(path);
+  });
+
+  it("returns a different document object (not same reference)", () => {
+    const drawId = uid();
+    const drawObj = makeDrawingObject(drawId, [makeShapePath()]);
+    const doc = makeDoc([drawObj]);
+
+    const result = breakApart(doc, 0, 0, 0, drawId);
+
+    expect(result).not.toBe(doc);
+  });
+
+  it("non-selected objects are unchanged after drawing-object break-apart", () => {
+    const drawId = uid();
+    const shapeId = uid();
+    const drawObj = makeDrawingObject(drawId, [makeShapePath()]);
+    const shape = makeShape(shapeId, [makeShapePath(50, 0)]);
+    const doc = makeDoc([drawObj, shape]);
+
+    const result = breakApart(doc, 0, 0, 0, drawId);
+    const objects = getObjects(result);
+
+    expect(objects).toHaveLength(2);
+    const remaining = objects.find((o) => o.id === shapeId);
+    expect(remaining).toBeDefined();
+    expect(remaining?.type).toBe("shape");
   });
 });

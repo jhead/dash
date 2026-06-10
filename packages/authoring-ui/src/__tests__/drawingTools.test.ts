@@ -467,3 +467,51 @@ describe("Paint Bucket tool", () => {
     expect(result.paths[1].fill).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Object Drawing mode — display-object type selection
+// ---------------------------------------------------------------------------
+
+/**
+ * Simulate the logic in handleShapeCreated that decides between
+ * type:"shape" and type:"drawing-object" based on toolState.objectDrawing.
+ */
+function buildDisplayObject(
+  shapeId: string,
+  paths: ShapePath[],
+  x: number,
+  y: number,
+  objectDrawing: boolean
+): { type: "shape" | "drawing-object"; id: string; x: number; y: number } {
+  const shape = { id: shapeId, paths };
+  if (objectDrawing) {
+    return { type: "drawing-object", id: shapeId, shape, x, y } as { type: "drawing-object"; id: string; x: number; y: number };
+  }
+  return { type: "shape", id: shapeId, shape, x, y } as { type: "shape"; id: string; x: number; y: number };
+}
+
+describe("Object Drawing mode", () => {
+  it("emits type:'shape' when objectDrawing is false", () => {
+    const obj = buildDisplayObject("s1", [makeSimplePath(RED)], 10, 20, false);
+    expect(obj.type).toBe("shape");
+    expect(obj.id).toBe("s1");
+    expect(obj.x).toBe(10);
+    expect(obj.y).toBe(20);
+  });
+
+  it("emits type:'drawing-object' when objectDrawing is true", () => {
+    const obj = buildDisplayObject("s1", [makeSimplePath(RED)], 10, 20, true);
+    expect(obj.type).toBe("drawing-object");
+    expect(obj.id).toBe("s1");
+    expect(obj.x).toBe(10);
+    expect(obj.y).toBe(20);
+  });
+
+  it("same shape data is preserved regardless of objectDrawing flag", () => {
+    const path = makeSimplePath(RED);
+    const obj1 = buildDisplayObject("s1", [path], 0, 0, false) as { shape: { paths: ShapePath[] } };
+    const obj2 = buildDisplayObject("s1", [path], 0, 0, true) as { shape: { paths: ShapePath[] } };
+    expect(obj1.shape.paths[0]).toBe(path);
+    expect(obj2.shape.paths[0]).toBe(path);
+  });
+});

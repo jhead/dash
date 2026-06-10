@@ -11,7 +11,7 @@
  */
 
 import type { FlashDocument, Frame, Layer, Scene, Symbol } from "../model/types.js";
-import type { DisplayObject, GroupObject, ShapeDisplayObject, SymbolInstance } from "./types.js";
+import type { DisplayObject, DrawingObject, GroupObject, ShapeDisplayObject, SymbolInstance } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // ID generation
@@ -192,8 +192,21 @@ export function breakApart(
   // ShapeDisplayObject is already atomic — no-op
   if (target.type === "shape") return doc;
 
-  // DrawingObject is also atomic — no-op
-  if (target.type === "drawing-object") return doc;
+  // DrawingObject: convert to a plain ShapeDisplayObject (strip the drawing-object container)
+  if (target.type === "drawing-object") {
+    const drawObj = target as DrawingObject;
+    const asShape: ShapeDisplayObject = {
+      type: "shape",
+      id: drawObj.id,
+      shape: drawObj.shape,
+      x: drawObj.x,
+      y: drawObj.y,
+    };
+    const newDisplayObjects: DisplayObject[] = keyframe.displayObjects.map((obj) =>
+      obj.id === objectId ? asShape : obj
+    );
+    return replaceDisplayObjects(doc, sceneIndex, layerIndex, keyframe, newDisplayObjects);
+  }
 
   // TextDisplayObject and BitmapDisplayObject — no-op
   if (target.type === "text" || target.type === "bitmap") return doc;

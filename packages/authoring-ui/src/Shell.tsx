@@ -2529,7 +2529,40 @@ export function Shell(): React.ReactElement {
         .sort((a, b) => b.index - a.index)[0];
       if (!kf) return;
       const selected = kf.displayObjects.find((o) => o.id === selectedShapeId);
-      if (!selected || selected.type !== "instance") return;
+      if (!selected) return;
+
+      // DrawingObject in symbol editing context: convert to plain ShapeDisplayObject
+      if (selected.type === "drawing-object") {
+        const drawObj = selected as DrawingObject;
+        const asShape: ShapeDisplayObject = {
+          type: "shape",
+          id: drawObj.id,
+          shape: drawObj.shape,
+          x: drawObj.x,
+          y: drawObj.y,
+        };
+        const layerId = layer.id;
+        pushDoc(withTimeline((t) => ({
+          ...t,
+          layers: t.layers.map((l) => {
+            if (l.id !== layerId) return l;
+            return {
+              ...l,
+              frames: l.frames.map((f) => {
+                if (!f.isKeyframe || f.index !== kf.index) return f;
+                return {
+                  ...f,
+                  displayObjects: f.displayObjects.map((o) => o.id === drawObj.id ? asShape : o),
+                };
+              }),
+            };
+          }),
+        })));
+        // Keep the same ID selected (now it's a shape)
+        return;
+      }
+
+      if (selected.type !== "instance") return;
       const inst = selected as SymbolInstance;
       const symbol = doc.library.items.find(
         (i) => i.id === inst.symbolId && i.itemType === "symbol"
@@ -2569,7 +2602,18 @@ export function Shell(): React.ReactElement {
       const newDoc = breakApart(doc, sceneIdx, safeActiveLayerIndex, currentFrame, selectedShapeId);
       if (newDoc !== doc) {
         pushDoc(newDoc);
-        setSelectedShapeId(null);
+        // For drawing-object→shape conversion the ID is preserved; keep it selected.
+        // For instance→children extraction the instance is gone; clear selection.
+        const wasDrawingObject = ((): boolean => {
+          const layer = timeline.layers[safeActiveLayerIndex];
+          if (!layer) return false;
+          const kf = [...layer.frames]
+            .filter((f) => f.isKeyframe && f.index <= currentFrame)
+            .sort((a, b) => b.index - a.index)[0];
+          if (!kf) return false;
+          return kf.displayObjects.find((o) => o.id === selectedShapeId)?.type === "drawing-object";
+        })();
+        if (!wasDrawingObject) setSelectedShapeId(null);
       }
     }
   }, [selectedShapeId, editContext, timeline, safeActiveLayerIndex, currentFrame, doc, pushDoc, withTimeline, activeSceneIndex]);
