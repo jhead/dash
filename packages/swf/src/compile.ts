@@ -30,7 +30,7 @@ import {
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
 import { encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
-import { encodeDefineFont2, encodeDefineFontAlignZones, fontKey } from "./fonts.js";
+import { encodeDefineFont2, encodeDefineFontAlignZones, encodeDefineFontInfo2, fontKey } from "./fonts.js";
 import {
   encodePlaceObject3WithFilters,
   encodePlaceObject3WithBlendMode,
@@ -930,6 +930,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
             writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
           }
+          // Emit DefineFontInfo2 (tag 62) to associate the embedded font's
+          // character ID with the device font name so Flash Player / Ruffle can
+          // do device-font fallback by name.
+          {
+            const codeTable: number[] = [];
+            for (let c = 32; c <= 126; c++) codeTable.push(c);
+            const fontInfo2Body = encodeDefineFontInfo2(fontId, obj.fontFamily, obj.bold, obj.italic, codeTable);
+            writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
+          }
         }
       }
     }
@@ -953,6 +962,14 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     if (useFont3) {
       const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
       writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
+    }
+    // Emit DefineFontInfo2 (tag 62) to associate the embedded font's
+    // character ID with the device font name.
+    {
+      const codeTable: number[] = [];
+      for (let c = 32; c <= 126; c++) codeTable.push(c);
+      const fontInfo2Body = encodeDefineFontInfo2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, codeTable);
+      writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
     }
   }
 

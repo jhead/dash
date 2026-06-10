@@ -283,6 +283,14 @@ export interface Fla8Text {
    */
   readonly runs: readonly Fla8TextRun[];
   /**
+   * Whether the text field can be scrolled by the user at runtime.
+   * Decoded from the scrollable byte in the CPicText tail (ts >= 9).
+   * Byte layout (best-effort, no confirmed fixture): 4 bytes reserved,
+   * 1 byte scrollable (0=no, 1=yes), 3 bytes reserved.
+   * Default: false.
+   */
+  readonly scrollable: boolean;
+  /**
    * Whether the text field is visible in the authoring tool.
    * Decoded from the CPicObjBase flags byte (bit 0 = visible).
    * Default: true. Only set to false when the object is explicitly hidden.
@@ -2156,13 +2164,19 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     warnOnce(ctx, "text record truncated; text content may be incomplete");
   }
   let instanceName = "";
+  let scrollable = false;
   let filters: Fla8Filter[] = [];
   try {
     if (ts >= 9) {
       const name = readCString(r);
       if (plausibleName(name)) instanceName = name;
       readAccessibilityMaybe(ctx, ts >= 0x0c);
-      r.skip(8); // reserved + scrollable flag + reserved
+      // 8-byte block: 4 reserved bytes, 1 scrollable flag (0=no, 1=yes), 3 reserved bytes.
+      // Layout is best-effort (no confirmed fixture); verified consistent with
+      // flacomdoc field ordering for the "no scrollable" case where byte reads 0.
+      r.skip(4); // reserved
+      scrollable = r.u8() !== 0; // scrollable flag
+      r.skip(3); // reserved
       if (ts >= 0x0c) {
         readCString(r); // reserved
         readCString(r); // font embed ranges
@@ -2214,6 +2228,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     hasBorder: (textFlags & 0x40) !== 0,
     hasBackground: (textFlags & 0x20) !== 0,
     as2VariableName,
+    scrollable,
     filters,
     // Instance color effect for text fields is not yet decoded from the binary
     // (no confirmed fixture for the exact byte layout in CPicText). The field is

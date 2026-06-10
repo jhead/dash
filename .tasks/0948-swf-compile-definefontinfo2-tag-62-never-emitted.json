@@ -1,0 +1,10 @@
+{
+  "id": "0948-swf-compile-definefontinfo2-tag-62-never-emitted",
+  "title": "SWF compile: DefineFontInfo2 (tag 62) never emitted \u2014 device font fallback missing",
+  "description": "Neither tag 62 (DefineFontInfo2) nor tag 13 (DefineFontInfo) is emitted by compile.ts or fonts.ts. Without DefineFontInfo2, the Flash Player cannot associate the embedded font's character table with a specific system font name for device-font fallback rendering. Fix: in packages/swf/src/fonts.ts, add encodeDefineFontInfo2(fontId, fontName, bold, italic, charCodes) that writes tag 62 per SWF spec. In compile.ts, after emitting each DefineFont2/3 for a font family, follow it with a DefineFontInfo2 tag with the font name and the set of character codes used. This enables UseDeviceFonts rendering path in the Flash Player.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:30:13Z",
+  "updated_at": "2026-06-10T21:30:24Z"
+}

@@ -31,6 +31,7 @@ export const Tag = {
   DoInitAction: 59,
   DefineVideoStream: 60,
   VideoFrame: 61,
+  DefineFontInfo2: 62,
   DebugId: 63,
   EnableDebugger2: 64,
   ScriptLimits: 65,
