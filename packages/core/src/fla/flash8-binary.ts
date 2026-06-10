@@ -127,6 +127,12 @@ export interface Fla8Shape {
   readonly fills: Fla8Fill[];
   readonly strokes: Fla8Stroke[];
   readonly edges: Fla8Edge[];
+  /**
+   * Whether the shape is visible in the authoring tool.
+   * Decoded from the CPicObjBase flags byte (bit 0 = visible).
+   * Default: true. Only set to false when the object is explicitly hidden.
+   */
+  readonly visible?: boolean;
 }
 
 /**
@@ -260,6 +266,12 @@ export interface Fla8Text {
    * fontName/fontSize/color/bold/italic fields.
    */
   readonly runs: readonly Fla8TextRun[];
+  /**
+   * Whether the text field is visible in the authoring tool.
+   * Decoded from the CPicObjBase flags byte (bit 0 = visible).
+   * Default: true. Only set to false when the object is explicitly hidden.
+   */
+  readonly visible?: boolean;
 }
 
 export interface Fla8BitmapRef {
@@ -268,6 +280,12 @@ export interface Fla8BitmapRef {
   readonly mediaId: number;
   /** Flash 8+ filters (empty array when none). */
   readonly filters: Fla8Filter[];
+  /**
+   * Whether the bitmap placement is visible in the authoring tool.
+   * Decoded from the CPicObjBase flags byte (bit 0 = visible).
+   * Default: true. Only set to false when the object is explicitly hidden.
+   */
+  readonly visible?: boolean;
 }
 
 export interface Fla8VideoRef {
@@ -903,6 +921,15 @@ function readCPicObjBase(ctx: ParseCtx): CPicObjBase {
   return { schema, flags, children };
 }
 
+/** CPicObjBase flags bit 0 (0x01) = visible; cleared = hidden in the authoring tool. */
+function visibleFromObjBaseFlags(flags: number): boolean {
+  return (flags & 0x01) !== 0;
+}
+
+function hiddenElementProp(visible: boolean): { visible?: false } {
+  return visible ? {} : { visible: false };
+}
+
 function deserializeClass(name: string, ctx: ParseCtx): ParsedNode {
   try {
     switch (name) {
@@ -1078,14 +1105,18 @@ interface ShapeReadResult {
 
 function readCPicShape(ctx: ParseCtx): ShapeReadResult {
   const { r } = ctx;
-  readCPicObjBase(ctx);
+  const base = readCPicObjBase(ctx);
   const shapeSchema = r.u8();
   const matrix = readMatrix(r);
   const { fills, strokes, edges } = readShapeData(ctx, shapeSchema > 2);
   // Verify the reader is on a valid object boundary after shape data so that
   // any leftover version-specific bytes do not misalign subsequent reads.
   verifyBoundary(ctx);
-  return { shape: { type: "shape", matrix, fills, strokes, edges }, shapeSchema };
+  const visible = visibleFromObjBaseFlags(base.flags);
+  return {
+    shape: { type: "shape", matrix, fills, strokes, edges, ...hiddenElementProp(visible) },
+    shapeSchema,
+  };
 }
 
 function readFillStyle(ctx: ParseCtx, caps: boolean): Fla8Fill {
@@ -1636,9 +1667,7 @@ interface SymbolBaseFields {
 function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   const { r } = ctx;
   const base = readCPicObjBase(ctx);
-  // CPicObjBase flags byte: bit 0 (0x01) = visible; 0x00 = hidden.
-  // When the flags byte is 0 the object was explicitly hidden in the authoring tool.
-  const visible = (base.flags & 0x01) !== 0;
+  const visible = visibleFromObjBaseFlags(base.flags);
   const symbolSchema = r.u8();
   const matrix = readMatrix(r);
   const firstFrame = r.u16(); // first frame (0-based)
@@ -1737,7 +1766,7 @@ function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8
     script: "",
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
-    ...(fields.visible ? {} : { visible: false }),
+    ...hiddenElementProp(fields.visible),
   };
 }
 
@@ -1788,7 +1817,7 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
     script,
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
-    ...(fields.visible ? {} : { visible: false }),
+    ...hiddenElementProp(fields.visible),
   };
 }
 
@@ -1829,7 +1858,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
     ...(trackAsMenu ? { trackAsMenu } : {}),
-    ...(fields.visible ? {} : { visible: false }),
+    ...hiddenElementProp(fields.visible),
   };
 }
 
@@ -1837,7 +1866,8 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
 
 function readCPicBitmapRef(ctx: ParseCtx): Fla8BitmapRef {
   const { r } = ctx;
-  readCPicObjBase(ctx);
+  const base = readCPicObjBase(ctx);
+  const visible = visibleFromObjBaseFlags(base.flags);
   let matrix: Fla8Matrix = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
   let mediaId = 0;
   let filters: Fla8Filter[] = [];
@@ -1862,7 +1892,7 @@ function readCPicBitmapRef(ctx: ParseCtx): Fla8BitmapRef {
     if (!(err instanceof FlaEofError)) throw err;
   }
   verifyBoundary(ctx);
-  return { type: "bitmap", matrix, mediaId, filters };
+  return { type: "bitmap", matrix, mediaId, filters, ...hiddenElementProp(visible) };
 }
 
 // --- CPicVideo ----------------------------------------------------------------
@@ -2005,7 +2035,8 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
 
 function readCPicText(ctx: ParseCtx): Fla8Text {
   const { r } = ctx;
-  readCPicObjBase(ctx);
+  const base = readCPicObjBase(ctx);
+  const visible = visibleFromObjBaseFlags(base.flags);
   const ts = r.u8(); // CPicText schema ("textVersion": 5=F5, 9=MX, 0xC=MX2004, 0xD=F8)
   const unicode = ts >= 0x0c;
   const matrix = readMatrix(r);
@@ -2128,6 +2159,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     // populated by callers that construct Fla8Text directly (e.g. unit tests).
     colorEffect: null,
     runs,
+    ...hiddenElementProp(visible),
   };
 }
 
@@ -2344,6 +2376,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     const elements: Fla8Element[] = [];
     // The frame's own shape body (merge-drawing strokes/fills drawn directly
     // on the stage live on the inherited CPicShape, not a child object).
+    const frameVisible = visibleFromObjBaseFlags(base.flags);
     if (ownShape.edges.length > 0) {
       elements.push({
         type: "shape",
@@ -2351,6 +2384,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
         fills: ownShape.fills,
         strokes: ownShape.strokes,
         edges: ownShape.edges,
+        ...hiddenElementProp(frameVisible),
       });
     }
     for (const c of base.children) {

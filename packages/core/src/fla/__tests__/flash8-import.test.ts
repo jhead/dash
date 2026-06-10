@@ -1117,6 +1117,60 @@ describe("fill subtype 0x20 (task 0858)", () => {
       expect(fill.color.a).toBe(0xff);
     }
   });
+
+  function makeFrameShapePageBytes(frameFlags: number): Uint8Array {
+    const bytes = new Uint8Array(pageBytes);
+    const frameName = [0x43, 0x50, 0x69, 0x63, 0x46, 0x72, 0x61, 0x6d, 0x65];
+    for (let i = 0; i <= bytes.length - frameName.length - 2; i++) {
+      if (frameName.every((b, j) => bytes[i + j] === b) && bytes[i + 9] === 0x04) {
+        bytes[i + 10] = frameFlags;
+        break;
+      }
+    }
+    return bytes;
+  }
+
+  it("decodes frame-inherited shape with flags=0 as visible:false (task 0932)", () => {
+    const timeline = parseFla8Timeline(makeFrameShapePageBytes(0x00));
+    const shape = timeline.layers[0]!.frames[0]!.elements.find((e) => e.type === "shape");
+    expect(shape).toBeDefined();
+    expect(shape!.type === "shape" && shape.visible).toBe(false);
+  });
+
+  it("decodes frame-inherited shape with flags=1 as visible (unset) (task 0932)", () => {
+    const timeline = parseFla8Timeline(makeFrameShapePageBytes(0x01));
+    const shape = timeline.layers[0]!.frames[0]!.elements.find((e) => e.type === "shape");
+    expect(shape).toBeDefined();
+    expect(shape!.type === "shape" && shape.visible).toBeUndefined();
+  });
+
+  it("forwards hidden frame shape through buildFla8Document as visible:false (task 0932)", () => {
+    const streams = new Map<string, Uint8Array>([
+      ["contents", new Uint8Array([0x3f])],
+      ["Page 1", makeFrameShapePageBytes(0x00)],
+    ]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const shape = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!.displayObjects.find(
+      (o): o is ShapeDisplayObject => o.type === "shape",
+    );
+    expect(shape).toBeDefined();
+    expect(shape!.visible).toBe(false);
+  });
+
+  it("forwards visible frame shape through buildFla8Document without visible:false (task 0932)", () => {
+    const streams = new Map<string, Uint8Array>([
+      ["contents", new Uint8Array([0x3f])],
+      ["Page 1", makeFrameShapePageBytes(0x01)],
+    ]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const shape = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!.displayObjects.find(
+      (o): o is ShapeDisplayObject => o.type === "shape",
+    );
+    expect(shape).toBeDefined();
+    expect(shape!.visible).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

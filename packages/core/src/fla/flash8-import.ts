@@ -712,6 +712,10 @@ function toFlashFilters(flaFilters: Fla8Filter[]): FlashFilter[] {
 // Element conversion
 // ---------------------------------------------------------------------------
 
+function importVisible(el: { visible?: boolean }): { visible?: false } {
+  return el.visible === false ? { visible: false } : {};
+}
+
 function convertElement(
   el: Fla8Element,
   symbolIdByIndex: Map<number, string>,
@@ -723,7 +727,7 @@ function convertElement(
   switch (el.type) {
     case "shape":
       if (el.edges.length === 0) return null;
-      return convertShape(el, bitmapIdByIndex);
+      return { ...convertShape(el, bitmapIdByIndex), ...importVisible(el) };
     case "instance": {
       const symbolId = symbolIdByIndex.get(el.libraryIndex);
       if (!symbolId) {
@@ -760,7 +764,7 @@ function convertElement(
         ...(el.trackAsMenu ? { trackAsMenu: true } : {}),
         ...(el.loopMode !== 0 ? { loopMode: (["loop", "play-once", "single-frame"][el.loopMode] ?? "loop") as "loop" | "play-once" | "single-frame" } : {}),
         ...(el.firstFrame !== 0 ? { firstFrame: el.firstFrame } : {}),
-        ...(el.visible === false ? { visible: false } : {}),
+        ...importVisible(el),
       };
     }
     case "text": {
@@ -797,6 +801,7 @@ function convertElement(
         ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
         ...(textFilters.length > 0 ? { filters: textFilters } : {}),
         ...(isMultiRun ? { html: true, htmlText } : {}),
+        ...importVisible(el),
       };
     }
     case "bitmap": {
@@ -824,6 +829,7 @@ function convertElement(
         ...(bitmapSkewX !== 0 ? { skewX: bitmapSkewX } : {}),
         ...(bitmapSkewY !== 0 ? { skewY: bitmapSkewY } : {}),
         ...(bitmapFilters.length > 0 ? { filters: bitmapFilters } : {}),
+        ...importVisible(el),
       };
     }
     case "video": {
