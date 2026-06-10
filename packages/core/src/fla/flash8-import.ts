@@ -16,6 +16,8 @@ import type {
   Frame,
 } from "../model/types.js";
 import type {
+  ClipAction,
+  ColorEffect,
   DisplayObject,
   Fill,
   PathSegment,
@@ -31,6 +33,7 @@ import {
   parseFla8Contents,
   parseFla8Timeline,
   type Fla8Color,
+  type Fla8ColorEffect,
   type Fla8Element,
   type Fla8Fill,
   type Fla8Layer,
@@ -180,6 +183,100 @@ function decompose(m: Fla8Matrix): { scaleX: number; scaleY: number; rotation: n
 }
 
 // ---------------------------------------------------------------------------
+// Instance ActionScript: onClipEvent(...) blocks -> ClipAction[]
+// ---------------------------------------------------------------------------
+
+/** FLA `onClipEvent` event keyword -> model ClipAction event name. */
+const CLIP_EVENTS: Record<string, ClipAction["event"]> = {
+  load: "load",
+  enterFrame: "enterFrame",
+  unload: "unload",
+  mouseMove: "mouseMove",
+  mouseDown: "mouseDown",
+  mouseUp: "mouseUp",
+  keyDown: "keyDown",
+  keyUp: "keyUp",
+  data: "data",
+};
+
+/**
+ * Parse the raw instance script (the concatenated `onClipEvent(event){body}`
+ * blocks Flash stores verbatim in the FLA) into model ClipAction entries.
+ * Brace-matching is used so handler bodies may contain nested blocks.
+ * Multiple events on one block (`onClipEvent(keyDown,keyUp)`) are split into one
+ * ClipAction per event. Unrecognized event keywords are skipped with a warning.
+ */
+export function parseClipActions(src: string): ClipAction[] {
+  const actions: ClipAction[] = [];
+  const re = /onClipEvent\s*\(([^)]*)\)\s*\{/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    const events = m[1]!.split(",").map((e) => e.trim()).filter(Boolean);
+    const bodyStart = re.lastIndex;
+    // brace-match the body
+    let depth = 1;
+    let i = bodyStart;
+    for (; i < src.length && depth > 0; i++) {
+      const ch = src[i]!;
+      if (ch === "{") depth++;
+      else if (ch === "}") depth--;
+    }
+    const body = src.slice(bodyStart, i - 1).trim();
+    re.lastIndex = i;
+    for (const ev of events) {
+      const mapped = CLIP_EVENTS[ev];
+      if (!mapped) {
+        console.warn(`[FLA import] unknown onClipEvent event "${ev}"; skipping handler`);
+        continue;
+      }
+      actions.push({ event: mapped, script: body });
+    }
+  }
+  return actions;
+}
+
+// ---------------------------------------------------------------------------
+// Instance color transform -> ColorEffect
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a decoded FLA color transform into the editor's ColorEffect model.
+ * Returns undefined for an identity transform (all multipliers 1.0, no offset)
+ * so identity placements stay clean. The general case is represented as the
+ * "advanced" effect (percent multipliers + 0..255 offsets), which is what the
+ * editor's CXFORM encoder understands.
+ */
+export function toColorEffect(ce: Fla8ColorEffect | null): ColorEffect | undefined {
+  if (!ce) return undefined;
+  const isIdentity =
+    ce.rMult === 256 && ce.gMult === 256 && ce.bMult === 256 && ce.aMult === 256 &&
+    ce.rOff === 0 && ce.gOff === 0 && ce.bOff === 0 && ce.aOff === 0;
+  if (isIdentity) return undefined;
+
+  // Pure-alpha case: only the alpha channel differs from identity, with no
+  // alpha offset -> represent as the simpler "alpha" effect (0..100%).
+  const colorIsIdentity =
+    ce.rMult === 256 && ce.gMult === 256 && ce.bMult === 256 &&
+    ce.rOff === 0 && ce.gOff === 0 && ce.bOff === 0;
+  if (colorIsIdentity && ce.aOff === 0) {
+    return { type: "alpha", alpha: Math.round((ce.aMult / 256) * 100) };
+  }
+
+  // General case -> advanced color transform. Multipliers map 256 (=1.0) to
+  // 100%; offsets are already in 0..255 scale.
+  const pct = (mult: number) => Math.round((mult / 256) * 100);
+  return {
+    type: "advanced",
+    redMult: pct(ce.rMult),
+    greenMult: pct(ce.gMult),
+    blueMult: pct(ce.bMult),
+    redOffset: ce.rOff,
+    greenOffset: ce.gOff,
+    blueOffset: ce.bOff,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Element conversion
 // ---------------------------------------------------------------------------
 
@@ -200,6 +297,16 @@ function convertElement(
         return null;
       }
       const { scaleX, scaleY, rotation } = decompose(el.matrix);
+      const colorEffect = toColorEffect(el.colorEffect);
+      // onClipEvent handlers only apply to movieclip (sprite) instances; a
+      // button instance's on() handlers have no instance-level model field yet,
+      // so they are warned-and-skipped below.
+      const clipActions = el.kind === "sprite" && el.script ? parseClipActions(el.script) : [];
+      if (el.kind === "button" && el.script) {
+        console.warn(
+          "[FLA import] button instance on() handlers are not imported (no instance-level model field); skipping",
+        );
+      }
       return {
         type: "instance",
         id: nextId("inst"),
@@ -210,6 +317,8 @@ function convertElement(
         scaleY,
         rotation,
         ...(el.instanceName ? { instanceName: el.instanceName } : {}),
+        ...(colorEffect ? { colorEffect } : {}),
+        ...(clipActions.length > 0 ? { clipActions } : {}),
       };
     }
     case "text":

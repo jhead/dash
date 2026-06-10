@@ -23,11 +23,13 @@
  * published from the same FLAs.
  */
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isOle2, tryLoadRealFla } from "../ole.js";
 import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
+import { parseClipActions, toColorEffect } from "../flash8-import.js";
+import type { Fla8ColorEffect } from "../flash8-binary.js";
 import type { FlashDocument, Symbol as SymbolItem } from "../../model/types.js";
 import type {
   ShapeDisplayObject,
@@ -254,5 +256,93 @@ describe("parseFla8Contents / parseFla8Timeline (low level)", () => {
     expect(() => parseFla8Timeline(new Uint8Array([0x42, 0x00, 0x00]))).toThrow(
       /root marker/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave-2: instance onClipEvent handlers + color transforms (task 0705)
+//
+// The two committed fixtures place plain instances (no clip handlers, identity
+// color transform), so these target the FLA-side parsing helpers directly with
+// the verbatim block syntax Flash stores in the binary FLA.
+// ---------------------------------------------------------------------------
+
+describe("instance onClipEvent extraction (parseClipActions)", () => {
+  it("parses a single load handler", () => {
+    const actions = parseClipActions('onClipEvent (load) {\n\ttrace("hi");\n}');
+    expect(actions).toEqual([{ event: "load", script: 'trace("hi");' }]);
+  });
+
+  it("parses multiple handler blocks in one script", () => {
+    const src =
+      "onClipEvent (load) {\n\tx = 0;\n}\nonClipEvent (enterFrame) {\n\tx += 1;\n}";
+    const actions = parseClipActions(src);
+    expect(actions.map((a) => a.event)).toEqual(["load", "enterFrame"]);
+    expect(actions[0]!.script).toBe("x = 0;");
+    expect(actions[1]!.script).toBe("x += 1;");
+  });
+
+  it("brace-matches bodies containing nested blocks", () => {
+    const src = "onClipEvent (enterFrame) {\n\tif (a) {\n\t\tb();\n\t}\n}";
+    const actions = parseClipActions(src);
+    expect(actions.length).toBe(1);
+    expect(actions[0]!.script).toBe("if (a) {\n\t\tb();\n\t}");
+  });
+
+  it("splits a comma-separated event list into one ClipAction per event", () => {
+    const actions = parseClipActions("onClipEvent (keyDown, keyUp) {\n\tk();\n}");
+    expect(actions.map((a) => a.event)).toEqual(["keyDown", "keyUp"]);
+    expect(actions.every((a) => a.script === "k();")).toBe(true);
+  });
+
+  it("skips unknown event keywords with a warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const actions = parseClipActions("onClipEvent (bogus) {\n\tz();\n}");
+    expect(actions).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("returns an empty array for a script with no handlers", () => {
+    expect(parseClipActions("stop();")).toEqual([]);
+  });
+});
+
+describe("instance color transform mapping (toColorEffect)", () => {
+  const identity: Fla8ColorEffect = {
+    rMult: 256, rOff: 0, gMult: 256, gOff: 0, bMult: 256, bOff: 0, aMult: 256, aOff: 0,
+  };
+
+  it("treats an identity transform as no effect", () => {
+    expect(toColorEffect(identity)).toBeUndefined();
+    expect(toColorEffect(null)).toBeUndefined();
+  });
+
+  it("maps a pure-alpha transform to an alpha effect (0..100%)", () => {
+    const half = toColorEffect({ ...identity, aMult: 128 });
+    expect(half).toEqual({ type: "alpha", alpha: 50 });
+  });
+
+  it("maps an RGB multiplier transform to an advanced effect (percent)", () => {
+    const eff = toColorEffect({ ...identity, rMult: 128, gMult: 64, bMult: 0 });
+    expect(eff).toMatchObject({
+      type: "advanced",
+      redMult: 50,
+      greenMult: 25,
+      blueMult: 0,
+      redOffset: 0,
+      greenOffset: 0,
+      blueOffset: 0,
+    });
+  });
+
+  it("carries channel offsets through on the advanced effect", () => {
+    const eff = toColorEffect({ ...identity, rOff: 100, gOff: -50, bOff: 255 });
+    expect(eff).toMatchObject({
+      type: "advanced",
+      redOffset: 100,
+      greenOffset: -50,
+      blueOffset: 255,
+    });
   });
 });

@@ -26,14 +26,16 @@
  *  - shapes: solid/gradient fills, solid strokes (width/caps/joins/miter),
  *    full edge geometry (lines + quadratic curves) with per-edge styles
  *  - symbol instances (sprite/button/graphic): placement matrix, library
- *    reference, instance name
+ *    reference, instance name, color transform (CXFORM), and — for movieclip
+ *    instances — onClipEvent() handler ActionScript
  *  - text fields: static/dynamic/input, content, font, size, color,
  *    bold/italic, alignment, wrap, instance name
  *
  * Explicitly NOT imported (warned at parse time):
  *  - Media N payloads (bitmaps, sounds, video) and bitmap placements
- *  - instance/button ActionScript handlers (onClipEvent / on() blocks)
- *  - filters, blend modes, color effects on instances
+ *  - button instance on() handlers (no instance-level model field; the raw
+ *    script is parsed but dropped by the mapper with a warning)
+ *  - filters and blend modes on instances
  *  - shape tweens (morph data), sound attachments and envelopes
  *  - components, fonts library items, accessibility metadata
  *  - Flash 4-and-older frame scripts (stored as action records, not source)
@@ -115,6 +117,21 @@ export interface Fla8Shape {
   readonly edges: Fla8Edge[];
 }
 
+/**
+ * Decoded CXFORM-style color transform from a symbol instance. Multipliers are
+ * 8.8 fixed point (256 = 1.0); offsets are signed 0..255-scale additions.
+ */
+export interface Fla8ColorEffect {
+  readonly rMult: number;
+  readonly rOff: number;
+  readonly gMult: number;
+  readonly gOff: number;
+  readonly bMult: number;
+  readonly bOff: number;
+  readonly aMult: number;
+  readonly aOff: number;
+}
+
 export interface Fla8Instance {
   readonly type: "instance";
   readonly kind: "sprite" | "button" | "graphic" | "unknown";
@@ -122,6 +139,14 @@ export interface Fla8Instance {
   /** 1-based "Symbol N" library stream number; 0 = unresolved */
   readonly libraryIndex: number;
   readonly instanceName: string;
+  /** color transform applied to the instance, or null when identity/absent */
+  readonly colorEffect: Fla8ColorEffect | null;
+  /**
+   * Raw instance ActionScript source. For a movieclip (sprite) instance this is
+   * the concatenated `onClipEvent(...) { ... }` blocks; for a button instance
+   * the `on(...) { ... }` blocks. Empty string when the instance has no handler.
+   */
+  readonly script: string;
 }
 
 export interface Fla8Text {
@@ -946,6 +971,8 @@ interface SymbolBaseFields {
   symbolSchema: number;
   /** when true the remaining instance fields cannot be located precisely */
   filtersPresent: boolean;
+  /** decoded color transform, or null if absent / identity-only */
+  colorEffect: Fla8ColorEffect | null;
 }
 
 /**
@@ -966,12 +993,28 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   r.skip(1); // loop mode / kind byte
   r.skip(1);
   if (symbolSchema >= 7) r.skip(1);
+  let colorEffect: Fla8ColorEffect | null = null;
   if (symbolSchema >= 4) {
-    if (symbolSchema >= 6) r.skip(4); // alpha multiplier + offset
-    r.skip(12); // r/g/b multiplier + offset
-    r.skip(2); // effect type + reserved
-    r.skip(2); // value percent
-    r.skip(4); // effect color
+    // Color transform block (flacomdoc CPicSymbol color xform). Per channel a
+    // u16 multiplier in 8.8 fixed point (0x0100 = 1.0) and an s16 offset
+    // (-255..255). Channel order: (alpha,) red, green, blue. The alpha pair is
+    // only present from schema 6 (MX) onward.
+    let aMult = 256;
+    let aOff = 0;
+    if (symbolSchema >= 6) {
+      aMult = r.u16();
+      aOff = r.s16();
+    }
+    const rMult = r.u16();
+    const rOff = r.s16();
+    const gMult = r.u16();
+    const gOff = r.s16();
+    const bMult = r.u16();
+    const bOff = r.s16();
+    r.skip(2); // effect type + reserved (UI mode hint, redundant with the xform)
+    r.skip(2); // value percent (UI slider value, redundant with the xform)
+    r.skip(4); // effect color (UI tint color, redundant with the xform)
+    colorEffect = { rMult, rOff, gMult, gOff, bMult, bOff, aMult, aOff };
   }
   if (symbolSchema >= 6) readCString(r); // always-empty string
   const libraryIndex = r.u16();
@@ -990,7 +1033,7 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   if (!filtersPresent && symbolSchema >= 0x16) {
     r.skip(102); // CS4 3D transform block
   }
-  return { matrix, libraryIndex, symbolSchema, filtersPresent };
+  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect };
 }
 
 const DEFAULT_FIELDS: SymbolBaseFields = {
@@ -998,6 +1041,7 @@ const DEFAULT_FIELDS: SymbolBaseFields = {
   libraryIndex: 0,
   symbolSchema: 0,
   filtersPresent: false,
+  colorEffect: null,
 };
 
 function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8Instance {
@@ -1009,7 +1053,15 @@ function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8
   }
   // Graphic instances end right after the symbol base fields.
   verifyBoundary(ctx);
-  return { type: "instance", kind, matrix: fields.matrix, libraryIndex: fields.libraryIndex, instanceName: "" };
+  return {
+    type: "instance",
+    kind,
+    matrix: fields.matrix,
+    libraryIndex: fields.libraryIndex,
+    instanceName: "",
+    colorEffect: fields.colorEffect,
+    script: "",
+  };
 }
 
 function plausibleName(name: string): boolean {
@@ -1020,15 +1072,14 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
   const { r } = ctx;
   let fields = DEFAULT_FIELDS;
   let instanceName = "";
+  let script = "";
   try {
     fields = readCPicSymbolFields(ctx);
     if (!fields.filtersPresent) {
       const g = r.u8(); // sprite trailer version (3=F5, 6=MX, 8=MX2004+)
       if (g >= 3) {
         const sub = readTimelineSubObject(r); // instance id block + script
-        if (sub.script) {
-          warnOnce(ctx, "instance ActionScript (onClipEvent handlers) is not imported");
-        }
+        if (sub.script) script = sub.script;
       }
       const name = readCString(r);
       if (plausibleName(name)) instanceName = name;
@@ -1054,6 +1105,8 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
     matrix: fields.matrix,
     libraryIndex: fields.libraryIndex,
     instanceName,
+    colorEffect: fields.colorEffect,
+    script,
   };
 }
 
@@ -1061,15 +1114,14 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
   const { r } = ctx;
   let fields = DEFAULT_FIELDS;
   let instanceName = "";
+  let script = "";
   try {
     fields = readCPicSymbolFields(ctx);
     if (!fields.filtersPresent) {
       const b = r.u8(); // button trailer version (5=F5, 8=MX, 0x0B=MX2004+)
       if (b >= 5) {
         const sub = readTimelineSubObject(r);
-        if (sub.script) {
-          warnOnce(ctx, "button instance ActionScript (on() handlers) is not imported");
-        }
+        if (sub.script) script = sub.script;
         r.skip(1); // trackAsMenu
         const name = readCString(r);
         if (plausibleName(name)) instanceName = name;
@@ -1087,6 +1139,8 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
     matrix: fields.matrix,
     libraryIndex: fields.libraryIndex,
     instanceName,
+    colorEffect: fields.colorEffect,
+    script,
   };
 }
 
