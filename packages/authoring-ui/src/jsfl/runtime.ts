@@ -452,6 +452,10 @@ export interface JsflTimeline {
    * Equivalent to assigning `currentLayer`.
    */
   setActiveLayer(layerIndex: number): void;
+  /**
+   * Return the JsflFrame proxy for the given layer and frame index.
+   */
+  getFrame(layerIndex: number, frameIndex: number): JsflFrame;
 }
 
 function makeTimelineProxy(state: RuntimeState): JsflTimeline {
@@ -870,6 +874,9 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
     setActiveLayer(layerIndex: number) {
       state.currentLayerIndex = layerIndex;
     },
+    getFrame(layerIndex: number, frameIndex: number): JsflFrame {
+      return makeFrameProxy(state, layerIndex, frameIndex);
+    },
   };
 }
 
@@ -1120,6 +1127,16 @@ export interface JsflDocument {
   group(): void;
   /** Ungroup the selected GroupObject, restoring its children to the stage. */
   ungroup(): void;
+  /**
+   * Place a library item on the stage at pos.  Delegates to library.addItemToDocument.
+   * item.name is the library item name to place.
+   */
+  addItem(pos: { x: number; y: number }, item: { name?: string }): void;
+  /**
+   * Whether to scale the content when the document dimensions change.
+   * Stub: getter always returns false; setter is a no-op.
+   */
+  scaleContent: boolean;
   /** Compile and return the SWF as a Uint8Array (browser-safe, no file I/O). */
   publish(): Uint8Array;
   /**
@@ -1531,6 +1548,16 @@ function makeDocumentProxy(
         );
       }
       state.selectedIds = [];
+    },
+    addItem(pos: { x: number; y: number }, item: { name?: string }): void {
+      const lib = makeLibraryProxy(state, ids);
+      lib.addItemToDocument(item.name ?? "", pos.x, pos.y);
+    },
+    get scaleContent(): boolean {
+      return false;
+    },
+    set scaleContent(_value: boolean) {
+      console.warn("doc.scaleContent: not supported");
     },
     publish(): Uint8Array {
       // Lazy import to avoid pulling @flash/swf into unit test bundles that
