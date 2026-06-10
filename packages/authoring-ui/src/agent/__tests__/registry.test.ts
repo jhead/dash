@@ -492,6 +492,31 @@ describe("timeline frame operations", () => {
     });
     expect(state.doc.scenes[0].timeline.layers[0].frames[0].tweenType).toBe("none");
   });
+
+  it("maps rotate, rotateCount, scale, orientToPath, sync props for motion tween", async () => {
+    const layerId = state.doc.scenes[0].timeline.layers[0].id;
+    await dispatchAgentCommand("timeline_set_tween", {
+      layerId,
+      frameIndex: 0,
+      kind: "motion",
+      props: {
+        ease: -25,
+        rotate: "cw",
+        rotateCount: 2,
+        scale: true,
+        orientToPath: true,
+        sync: false,
+      },
+    });
+    const kf = state.doc.scenes[0].timeline.layers[0].frames[0];
+    expect(kf.tweenType).toBe("motion");
+    expect(kf.motionEase).toBe(-25);
+    expect(kf.motionRotate).toBe("cw");
+    expect(kf.motionRotateCount).toBe(2);
+    expect(kf.motionScale).toBe(true);
+    expect(kf.motionOrientToPath).toBe(true);
+    expect(kf.motionSync).toBe(false);
+  });
 });
 
 describe("timeline_goto_frame / playback_play / playback_stop", () => {

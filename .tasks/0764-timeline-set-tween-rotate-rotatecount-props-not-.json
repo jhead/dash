@@ -1,0 +1,10 @@
+{
+  "id": "0764-timeline-set-tween-rotate-rotatecount-props-not-",
+  "title": "timeline_set_tween: rotate/rotateCount props not applied",
+  "description": "When calling timeline_set_tween with props={rotate:'cw', rotateCount:1}, the motionRotate field stays 'none' and motionRotateCount stays 0. Only 'ease' and 'scale' keys appear to be mapped. Expected: 'rotate' maps to motionRotate, 'rotateCount' maps to motionRotateCount. Reproduced in QA demo build (doc-84-mq7s6rll, Shapes layer frame 0).",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T08:17:49Z",
+  "updated_at": "2026-06-10T08:21:31Z"
+}

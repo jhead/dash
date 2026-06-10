@@ -642,7 +642,7 @@ function createMcpServerForRequest(): McpServer {
         layerId: z.string(),
         frameIndex: z.number().int().nonnegative(),
         kind: z.enum(["motion", "shape"]).nullable(),
-        props: z.record(z.string(), z.unknown()).optional().describe("Tween options (ease, blend, etc.)"),
+        props: z.record(z.string(), z.unknown()).optional().describe("Tween options. Motion: ease (-100..100), rotate ('none'|'cw'|'ccw'|'auto'), rotateCount (number), scale (boolean), orientToPath (boolean), sync (boolean). Shape: ease (-100..100), blend ('distributive'|'angular')."),
       }),
     },
     async (params) => callTool("timeline_set_tween", params as Record<string, unknown>)

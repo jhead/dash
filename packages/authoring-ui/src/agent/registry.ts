@@ -58,6 +58,7 @@ import {
   removeFrame,
   setFrameLabel,
   setMotionTween,
+  updateMotionTweenProps,
   setShapeTween,
   clearTween,
   setFrameScript,
@@ -1082,7 +1083,37 @@ const handlers: Record<string, AnyHandler> = {
         return clearTween(t, layerId, params.frameIndex);
       } else if (params.kind === "motion") {
         const ease = typeof params.props?.ease === "number" ? params.props.ease : undefined;
-        return setMotionTween(t, layerId, params.frameIndex, ease);
+        let updated = setMotionTween(t, layerId, params.frameIndex, ease);
+        // Map rotate/rotateCount/scale/orientToPath/sync props
+        const rotate = params.props?.rotate;
+        const rotateValues = ["none", "auto", "cw", "ccw"] as const;
+        const motionRotate = rotateValues.includes(rotate as typeof rotateValues[number])
+          ? (rotate as "none" | "auto" | "cw" | "ccw")
+          : undefined;
+        const motionRotateCount =
+          typeof params.props?.rotateCount === "number" ? params.props.rotateCount : undefined;
+        const motionScale =
+          typeof params.props?.scale === "boolean" ? params.props.scale : undefined;
+        const motionOrientToPath =
+          typeof params.props?.orientToPath === "boolean" ? params.props.orientToPath : undefined;
+        const motionSync =
+          typeof params.props?.sync === "boolean" ? params.props.sync : undefined;
+        if (
+          motionRotate !== undefined ||
+          motionRotateCount !== undefined ||
+          motionScale !== undefined ||
+          motionOrientToPath !== undefined ||
+          motionSync !== undefined
+        ) {
+          updated = updateMotionTweenProps(updated, layerId, params.frameIndex, {
+            motionRotate,
+            motionRotateCount,
+            motionScale,
+            motionOrientToPath,
+            motionSync,
+          });
+        }
+        return updated;
       } else {
         const ease = typeof params.props?.ease === "number" ? params.props.ease : undefined;
         const blend = params.props?.blend === "angular" ? "angular" as const : "distributive" as const;
