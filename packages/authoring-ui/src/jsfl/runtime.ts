@@ -456,6 +456,16 @@ export interface JsflTimeline {
    * Return the JsflFrame proxy for the given layer and frame index.
    */
   getFrame(layerIndex: number, frameIndex: number): JsflFrame;
+  /**
+   * Returns the currently selected frame indices as an array.
+   * Stub: returns a single-element array with the current frame index.
+   */
+  getSelectedFrames(): number[];
+  /**
+   * Set the selected frames in the timeline.
+   * Stub: not fully supported; logs a warning and is a no-op.
+   */
+  setSelectedFrames(startFrame: number, endFrame: number, replaceCurrentSelection?: boolean): void;
 }
 
 function makeTimelineProxy(state: RuntimeState): JsflTimeline {
@@ -877,6 +887,12 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
     getFrame(layerIndex: number, frameIndex: number): JsflFrame {
       return makeFrameProxy(state, layerIndex, frameIndex);
     },
+    getSelectedFrames(): number[] {
+      return [state.frameIndex];
+    },
+    setSelectedFrames(_startFrame: number, _endFrame: number, _replaceCurrentSelection?: boolean): void {
+      console.warn('timeline.setSelectedFrames: not fully supported');
+    },
   };
 }
 
@@ -1100,6 +1116,8 @@ export interface JsflDocument {
   backgroundColor: string;
   selection: DisplayObject[];
   readonly timeline: JsflTimeline;
+  /** Shortcut for `doc.timeline.layers` — the layers of the current timeline. */
+  readonly layers: JsflLayer[];
   /** All scene timelines in this document (one per scene, read-only). */
   readonly timelines: readonly JsflTimeline[];
   /**
@@ -1147,6 +1165,20 @@ export interface JsflDocument {
    * return value.
    */
   exportSWF(fileURL: string): void;
+  /**
+   * Import a file into the document.  Not supported in browser context; stub.
+   */
+  importFile(fileURL: string, importToLibrary?: boolean): void;
+  /**
+   * Retrieve persistent data stored on the document by name.
+   * Not supported in this runtime; always returns undefined.
+   */
+  getDataFromDocument(name: string): any;
+  /**
+   * Store persistent data on the document.
+   * Not supported in this runtime; no-op stub.
+   */
+  addDataToDocument(name: string, type: string, data: any): void;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -1227,6 +1259,9 @@ function makeDocumentProxy(
     },
     get timeline(): JsflTimeline {
       return makeTimelineProxy(state);
+    },
+    get layers(): JsflLayer[] {
+      return makeTimelineProxy(state).layers;
     },
     get timelines(): readonly JsflTimeline[] {
       return state.doc.scenes.map((_, sceneIdx) => {
@@ -1595,6 +1630,16 @@ function makeDocumentProxy(
         // URL is cleaned up.
         setTimeout(() => URL.revokeObjectURL(url), 10_000);
       }
+    },
+    importFile(_fileURL: string, _importToLibrary?: boolean): void {
+      console.warn('doc.importFile: not supported in browser context');
+    },
+    getDataFromDocument(_name: string): any {
+      console.warn('doc.getDataFromDocument: not supported');
+      return undefined;
+    },
+    addDataToDocument(_name: string, _type: string, _data: any): void {
+      console.warn('doc.addDataToDocument: not supported');
     },
   };
 }
