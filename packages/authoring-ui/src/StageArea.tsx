@@ -1000,7 +1000,7 @@ export function StageArea({
   gridWidth = 18,
   gridHeight = 18,
   gridColor = "#999999",
-  snapToPixels: _snapToPixels = false,
+  snapToPixels = false,
   viewMode = "normal",
   activeTool,
   instances = [],
@@ -2375,8 +2375,14 @@ export function StageArea({
         //   obj.x + localCenterX * newScaleX  (for rotation=0)
         // To keep it at centerX: newObjX = centerX - localCenterX * newScaleX
         // This is a simplified (rotation=0) formula but keeps the shape centered.
-        const newX = centerX - localCenterX * (newScaleX / origScaleX);
-        const newY = centerY - localCenterY * (newScaleY / origScaleY);
+        let newX = centerX - localCenterX * (newScaleX / origScaleX);
+        let newY = centerY - localCenterY * (newScaleY / origScaleY);
+
+        // Snap-to-pixels: round position to integer coords
+        if (snapToPixels) {
+          newX = Math.round(newX);
+          newY = Math.round(newY);
+        }
 
         onShapeResize?.(shapeId, newX, newY, newScaleX, newScaleY);
         return;
@@ -2462,6 +2468,17 @@ export function StageArea({
           }
         }
 
+        // Snap-to-pixels: round the deltas so the final position lands on integer coords
+        if (snapToPixels) {
+          const selObj = shapeDisplayObjects.find((o) => o.id === drag.shapeId);
+          if (selObj) {
+            const newX = Math.round(selObj.x + dx);
+            const newY = Math.round(selObj.y + dy);
+            dx = newX - selObj.x;
+            dy = newY - selObj.y;
+          }
+        }
+
         onShapeMove(drag.shapeId, dx, dy);
         // Update start so next move is a delta from this position
         selectionDragRef.current = { ...drag, startMouseX: e.clientX, startMouseY: e.clientY };
@@ -2496,7 +2513,7 @@ export function StageArea({
         setHandleCursor(undefined);
       }
     },
-    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove]
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove]
   );
 
   const onMouseUp = useCallback(

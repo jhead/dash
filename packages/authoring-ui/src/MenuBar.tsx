@@ -222,10 +222,20 @@ export interface MenuBarProps {
   snapToGuides?: boolean;
   /** Called when File > Import > Import to Library... is activated. */
   onImportToLibrary?: () => void;
+  /** Called when File > Import > Import to Stage... is activated. */
+  onImportToStage?: () => void;
   /** Called when File > Import > Import Sound... is activated. */
   onImportSound?: () => void;
   /** Called when File > Import > Import Video... is activated. */
   onImportVideo?: () => void;
+  /** Current view quality mode (for checkmark display). */
+  viewMode?: "normal" | "outlines" | "fast" | "antialias";
+  /** Called when View > Quality > ... is activated. */
+  onViewModeChange?: (mode: "normal" | "outlines" | "fast" | "antialias") => void;
+  /** Whether snap to pixels is currently active (for checkmark display). */
+  snapToPixels?: boolean;
+  /** Called when View > Snapping > Snap to Pixels is toggled. */
+  onToggleSnapToPixels?: () => void;
   /** Called when File > Export Image... is activated. */
   onExportImage?: () => void;
   /** Called when File > Export Movie... is activated. */
@@ -393,8 +403,13 @@ export function MenuBar({
   onToggleSnapToGuides,
   snapToGuides = false,
   onImportToLibrary,
+  onImportToStage,
   onImportSound,
   onImportVideo,
+  viewMode = "normal",
+  onViewModeChange,
+  snapToPixels = false,
+  onToggleSnapToPixels,
   onExportImage,
   onExportMovie,
   onUndo,
@@ -503,6 +518,7 @@ export function MenuBar({
         { label: "Save", action: () => { void handleSave(); }, separator: true },
         { label: "Save As...", action: () => { void handleSaveAs(); } },
         { label: "Import to Library...", action: () => { onImportToLibrary?.(); }, separator: true },
+        { label: "Import to Stage...", action: () => { onImportToStage?.(); } },
         { label: "Import Sound...", action: () => { onImportSound?.(); } },
         { label: "Import Video...", action: () => { onImportVideo?.(); } },
         { label: "Export Image...", action: () => { onExportImage?.(); }, separator: true },
@@ -590,6 +606,27 @@ export function MenuBar({
         {
           label: `${snapToGuides ? "+ " : "  "}Snap to Guides  Ctrl+Shift+\\`,
           action: () => { onToggleSnapToGuides?.(); },
+        },
+        {
+          label: `${snapToPixels ? "+ " : "  "}Snap to Pixels`,
+          action: () => { onToggleSnapToPixels?.(); },
+        },
+        {
+          label: `${viewMode === "normal" ? "+ " : "  "}Quality: Normal`,
+          action: () => { onViewModeChange?.("normal"); },
+          separator: true,
+        },
+        {
+          label: `${viewMode === "fast" ? "+ " : "  "}Quality: Fast`,
+          action: () => { onViewModeChange?.("fast"); },
+        },
+        {
+          label: `${viewMode === "antialias" ? "+ " : "  "}Quality: Anti-alias Text`,
+          action: () => { onViewModeChange?.("antialias"); },
+        },
+        {
+          label: `${viewMode === "outlines" ? "+ " : "  "}Quality: Outlines`,
+          action: () => { onViewModeChange?.("outlines"); },
         },
         {
           label: "Bandwidth Profiler  Ctrl+B",

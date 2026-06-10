@@ -131,6 +131,7 @@ import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
 import type { PublishSettings } from "./PublishSettingsDialog";
 import { BitmapPropertiesDialog } from "./BitmapPropertiesDialog";
+import { SwapBitmapDialog } from "./SwapBitmapDialog";
 import { TraceBitmapDialog } from "./TraceBitmapDialog";
 import { ExportGifDialog } from "./ExportGifDialog";
 import type { ExportGifOptions } from "./ExportGifDialog";
@@ -870,8 +871,8 @@ export function Shell(): React.ReactElement {
   const gridWidth = docProperties.grid.gridWidth;
   const gridHeight = docProperties.grid.gridHeight;
   const gridColor = docProperties.grid.gridColor;
-  const [snapToPixels] = useState(false);
-  const [viewMode] = useState<ViewMode>("normal");
+  const [snapToPixels, setSnapToPixels] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("normal");
 
   // Renderer ref (for loadImage calls)
   const rendererRef = useRef<import("@flash/core").CanvasRenderer | null>(null);
@@ -984,6 +985,10 @@ export function Shell(): React.ReactElement {
 
   // Bitmap Properties dialog
   const [bitmapPropsItem, setBitmapPropsItem] = useState<BitmapItem | null>(null);
+
+  // Swap Bitmap dialog
+  const [swapBitmapDialogOpen, setSwapBitmapDialogOpen] = useState(false);
+  const [swapBitmapTargetId, setSwapBitmapTargetId] = useState<string | null>(null);
 
   // Trace Bitmap dialog
   const [traceBitmapOpen, setTraceBitmapOpen] = useState(false);
@@ -1158,6 +1163,14 @@ export function Shell(): React.ReactElement {
       snapToGuides: !p.snapToGuides,
     })));
   }, [pushDoc, withProperties]);
+
+  const handleToggleSnapToPixels = useCallback(() => {
+    setSnapToPixels((v) => !v);
+  }, []);
+
+  const handleViewModeChange = useCallback((mode: "normal" | "outlines" | "fast" | "antialias") => {
+    setViewMode(mode as ViewMode);
+  }, []);
 
   const handleEditGridConfirm = useCallback((updatedGrid: import("@flash/core").GridSettings) => {
     pushDoc(withProperties((p) => ({
@@ -2013,10 +2026,25 @@ export function Shell(): React.ReactElement {
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
   );
 
-  /** Stub handler for swapping a bitmap asset — not yet implemented. */
+  /** Open the Swap Bitmap dialog for the given BitmapDisplayObject id. */
   const handleSwapBitmap = useCallback((id: string) => {
-    console.log("Swap bitmap not yet implemented for object:", id);
+    setSwapBitmapTargetId(id);
+    setSwapBitmapDialogOpen(true);
   }, []);
+
+  /** Called when the user confirms a bitmap swap from the dialog. */
+  const handleSwapBitmapConfirm = useCallback((newLibraryItemId: string) => {
+    setSwapBitmapDialogOpen(false);
+    if (!swapBitmapTargetId) return;
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return;
+    pushDoc(withTimeline((t) =>
+      updateDisplayObject(t, layerId, currentFrame, swapBitmapTargetId, {
+        libraryItemId: newLibraryItemId,
+      } as Partial<BitmapDisplayObject>)
+    ));
+    setSwapBitmapTargetId(null);
+  }, [swapBitmapTargetId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
 
   /** Single-element array of the currently selected display object (for PropertiesPanel). */
   const selectedObjects = useMemo<DisplayObject[]>(
@@ -2291,6 +2319,63 @@ export function Shell(): React.ReactElement {
       rendererRef.current.loadImage(item.id, dataUri);
     }
   }, [importToLibrary, pushDoc, withLibrary]);
+
+  const handleImportToStage = useCallback(async () => {
+    const result = await importToLibrary();
+    if (!result) return;
+    const { item, dataUri } = result;
+    // Pre-load image into renderer cache
+    if (rendererRef.current) {
+      rendererRef.current.loadImage(item.id, dataUri);
+    }
+    // Add to library and place on stage
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) {
+      pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
+      return;
+    }
+    const stageW = docProperties.width;
+    const stageH = docProperties.height;
+    const bmpW = item.originalWidth || 100;
+    const bmpH = item.originalHeight || 100;
+    const bmpObj: BitmapDisplayObject = {
+      type: "bitmap",
+      id: nextBitmapId(),
+      libraryItemId: item.id,
+      x: Math.round(stageW / 2 - bmpW / 2),
+      y: Math.round(stageH / 2 - bmpH / 2),
+      width: bmpW,
+      height: bmpH,
+      scaleX: 1,
+      scaleY: 1,
+    };
+    const newDoc = withLibrary((lib) => addLibraryItem(lib, item));
+    pushDoc({
+      ...newDoc,
+      ...(editContext.mode === "symbol" && editContext.symbolId
+        ? {
+            library: {
+              ...newDoc.library,
+              items: newDoc.library.items.map((libItem) => {
+                if (libItem.id === editContext.symbolId && libItem.itemType === "symbol") {
+                  return {
+                    ...libItem,
+                    timeline: addDisplayObject(libItem.timeline, layerId, currentFrame, bmpObj),
+                  };
+                }
+                return libItem;
+              }),
+            },
+          }
+        : (() => {
+            const idx = Math.min(activeSceneIndex, newDoc.scenes.length - 1);
+            const t = addDisplayObject(newDoc.scenes[idx].timeline, layerId, currentFrame, bmpObj);
+            return {
+              scenes: newDoc.scenes.map((s, i) => i === idx ? { ...s, timeline: t } : s),
+            };
+          })()),
+    });
+  }, [importToLibrary, pushDoc, withLibrary, timeline, safeActiveLayerIndex, docProperties, editContext, activeSceneIndex, currentFrame]);
 
   const handleImportSound = useCallback(async () => {
     const result = await importSoundToLibrary();
@@ -5247,8 +5332,13 @@ export function Shell(): React.ReactElement {
         onToggleSnapToGuides={handleToggleSnapToGuides}
         snapToGuides={docProperties.snapToGuides}
         onImportToLibrary={() => { void handleImportToLibrary(); }}
+        onImportToStage={() => { void handleImportToStage(); }}
         onImportSound={() => { void handleImportSound(); }}
         onImportVideo={() => { void handleImportVideo(); }}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
+        snapToPixels={snapToPixels}
+        onToggleSnapToPixels={handleToggleSnapToPixels}
         onExportImage={handleExportImage}
         onExportMovie={handleExportMovie}
         onUndo={undo}
@@ -6131,6 +6221,14 @@ export function Shell(): React.ReactElement {
           onClose={() => setBitmapPropsItem(null)}
         />
       )}
+
+      {/* Swap Bitmap dialog (Properties panel > Swap button) */}
+      <SwapBitmapDialog
+        open={swapBitmapDialogOpen}
+        bitmapItems={library.items.filter((i): i is BitmapItem => i.itemType === "bitmap")}
+        onConfirm={handleSwapBitmapConfirm}
+        onClose={() => { setSwapBitmapDialogOpen(false); setSwapBitmapTargetId(null); }}
+      />
 
       {/* Trace Bitmap dialog (Modify > Bitmap > Trace Bitmap...) */}
       <TraceBitmapDialog
