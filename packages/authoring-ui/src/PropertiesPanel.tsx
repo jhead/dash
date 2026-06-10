@@ -11,6 +11,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import type {
+  ColorEffect,
   DisplayObject,
   DocumentProperties,
   EaseCurve,
@@ -747,7 +748,160 @@ function InstanceView({
           ))}
         </select>
       </div>
+
+      <div style={S.separator} />
+
+      {/* Color Effect */}
+      <ColorEffectSection obj={obj} onUpdateObject={onUpdateObject} />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Color Effect section (used inside InstanceView)
+// ---------------------------------------------------------------------------
+
+type ColorEffectType = "none" | "brightness" | "tint" | "alpha" | "advanced";
+
+const COLOR_EFFECT_OPTIONS: { value: ColorEffectType; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "brightness", label: "Brightness" },
+  { value: "tint", label: "Tint" },
+  { value: "alpha", label: "Alpha" },
+  { value: "advanced", label: "Advanced" },
+];
+
+function ColorEffectSection({
+  obj,
+  onUpdateObject,
+}: {
+  obj: SymbolInstance;
+  onUpdateObject: (id: string, changes: Partial<DisplayObject>) => void;
+}): React.ReactElement {
+  const effectType: ColorEffectType = obj.colorEffect?.type ?? "none";
+
+  const handleTypeChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newType = e.target.value as ColorEffectType;
+    if (newType === "none") {
+      onUpdateObject(obj.id, { colorEffect: undefined } as Partial<DisplayObject>);
+    } else if (newType === "brightness") {
+      onUpdateObject(obj.id, { colorEffect: { type: "brightness", brightness: 0 } } as Partial<DisplayObject>);
+    } else if (newType === "tint") {
+      onUpdateObject(obj.id, { colorEffect: { type: "tint", tintColor: "#ff0000", tintAmount: 100 } } as Partial<DisplayObject>);
+    } else if (newType === "alpha") {
+      onUpdateObject(obj.id, { colorEffect: { type: "alpha", alpha: 100 } } as Partial<DisplayObject>);
+    } else if (newType === "advanced") {
+      onUpdateObject(obj.id, { colorEffect: { type: "advanced", redMult: 100, greenMult: 100, blueMult: 100, redOffset: 0, greenOffset: 0, blueOffset: 0 } } as Partial<DisplayObject>);
+    }
+  }, [obj.id, onUpdateObject]);
+
+  const updateEffect = useCallback((patch: Partial<ColorEffect>) => {
+    const current = obj.colorEffect ?? { type: effectType as ColorEffect["type"] };
+    onUpdateObject(obj.id, { colorEffect: { ...current, ...patch } } as Partial<DisplayObject>);
+  }, [obj.id, obj.colorEffect, effectType, onUpdateObject]);
+
+  return (
+    <>
+      {/* Color Effect type dropdown */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Color:</span>
+        <select
+          style={S.selectWide}
+          value={effectType}
+          onChange={handleTypeChange}
+        >
+          {COLOR_EFFECT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Brightness controls */}
+      {effectType === "brightness" && (
+        <div style={S.fieldGroup}>
+          <span style={S.label}>Bright:</span>
+          <NumInput
+            value={obj.colorEffect?.brightness ?? 0}
+            min={-100}
+            max={100}
+            style={{ width: 52 }}
+            onChange={(v) => updateEffect({ brightness: Math.round(v) })}
+          />
+          <span style={S.label}>%</span>
+        </div>
+      )}
+
+      {/* Tint controls */}
+      {effectType === "tint" && (
+        <>
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Tint:</span>
+            <input
+              type="color"
+              style={{ ...S.colorSwatch, width: 28, height: 18 }}
+              value={obj.colorEffect?.tintColor ?? "#ff0000"}
+              onChange={(e) => updateEffect({ tintColor: e.target.value })}
+            />
+          </div>
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Amt:</span>
+            <NumInput
+              value={obj.colorEffect?.tintAmount ?? 100}
+              min={0}
+              max={100}
+              style={{ width: 52 }}
+              onChange={(v) => updateEffect({ tintAmount: Math.round(v) })}
+            />
+            <span style={S.label}>%</span>
+          </div>
+        </>
+      )}
+
+      {/* Alpha controls */}
+      {effectType === "alpha" && (
+        <div style={S.fieldGroup}>
+          <span style={S.label}>Alpha:</span>
+          <NumInput
+            value={obj.colorEffect?.alpha ?? 100}
+            min={0}
+            max={100}
+            style={{ width: 52 }}
+            onChange={(v) => updateEffect({ alpha: Math.round(v) })}
+          />
+          <span style={S.label}>%</span>
+        </div>
+      )}
+
+      {/* Advanced controls */}
+      {effectType === "advanced" && (
+        <>
+          <div style={S.fieldGroup}>
+            <span style={S.label}>R×:</span>
+            <NumInput value={obj.colorEffect?.redMult ?? 100} min={-100} max={100} style={{ width: 44 }}
+              onChange={(v) => updateEffect({ redMult: Math.round(v) })} />
+            <span style={S.label}>R+:</span>
+            <NumInput value={obj.colorEffect?.redOffset ?? 0} min={-255} max={255} style={{ width: 44 }}
+              onChange={(v) => updateEffect({ redOffset: Math.round(v) })} />
+          </div>
+          <div style={S.fieldGroup}>
+            <span style={S.label}>G×:</span>
+            <NumInput value={obj.colorEffect?.greenMult ?? 100} min={-100} max={100} style={{ width: 44 }}
+              onChange={(v) => updateEffect({ greenMult: Math.round(v) })} />
+            <span style={S.label}>G+:</span>
+            <NumInput value={obj.colorEffect?.greenOffset ?? 0} min={-255} max={255} style={{ width: 44 }}
+              onChange={(v) => updateEffect({ greenOffset: Math.round(v) })} />
+          </div>
+          <div style={S.fieldGroup}>
+            <span style={S.label}>B×:</span>
+            <NumInput value={obj.colorEffect?.blueMult ?? 100} min={-100} max={100} style={{ width: 44 }}
+              onChange={(v) => updateEffect({ blueMult: Math.round(v) })} />
+            <span style={S.label}>B+:</span>
+            <NumInput value={obj.colorEffect?.blueOffset ?? 0} min={-255} max={255} style={{ width: 44 }}
+              onChange={(v) => updateEffect({ blueOffset: Math.round(v) })} />
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

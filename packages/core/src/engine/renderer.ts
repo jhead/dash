@@ -16,6 +16,7 @@
 import type {
   BitmapDisplayObject,
   Color,
+  ColorEffect,
   DisplayObject,
   SceneGraph,
   SceneLayer,
@@ -906,6 +907,92 @@ function renderSymbolWith9Slice(
  * When the symbol has a scale9Grid defined and the instance is scaled,
  * renders using 9-slice drawImage to preserve corner proportions.
  */
+/**
+ * Modifies ctx state before drawing to implement alpha and brightness color effects.
+ * Tint and advanced effects are handled by renderSymbolWithColorEffect instead.
+ */
+function applyColorEffectPre(
+  ctx: CanvasRenderingContext2D,
+  effect: ColorEffect
+): void {
+  if (effect.type === 'alpha') {
+    const a = (effect.alpha ?? 100) / 100;
+    ctx.globalAlpha = ctx.globalAlpha * Math.max(0, Math.min(1, a));
+  } else if (effect.type === 'brightness') {
+    const b = effect.brightness ?? 0;
+    // Flash -100..100 maps to CSS brightness 0..2 (1 = no change)
+    const cssB = 1 + b / 100;
+    ctx.filter = (ctx.filter && ctx.filter !== 'none')
+      ? `${ctx.filter} brightness(${cssB})`
+      : `brightness(${cssB})`;
+  }
+  // tint and advanced handled separately via renderSymbolWithColorEffect
+}
+
+/**
+ * Applies tint color effect compositing after symbol content has been drawn.
+ * Overlays a solid fill of the tint color at the given alpha (amount) using
+ * source-atop compositing so only pixels already drawn are tinted.
+ */
+function applyTintOverlay(
+  ctx: CanvasRenderingContext2D,
+  tintColor: string,
+  amount: number,
+  naturalW: number,
+  naturalH: number
+): void {
+  const savedGlobalAlpha = ctx.globalAlpha;
+  const savedComposite = ctx.globalCompositeOperation;
+
+  // source-atop: paint tint only over existing pixels
+  ctx.globalCompositeOperation = 'source-atop';
+  ctx.globalAlpha = savedGlobalAlpha * amount;
+  ctx.fillStyle = tintColor;
+  // The ctx already has translate(obj.x, obj.y) applied; fill around that origin.
+  const halfW = naturalW / 2;
+  const halfH = naturalH / 2;
+  ctx.fillRect(-halfW, -halfH, halfW * 2, halfH * 2);
+
+  ctx.globalAlpha = savedGlobalAlpha;
+  ctx.globalCompositeOperation = savedComposite;
+}
+
+function renderSymbolWithColorEffect(
+  ctx: CanvasRenderingContext2D,
+  obj: SymbolInstance,
+  effect: ColorEffect,
+  renderContent: () => void
+): void {
+  if (effect.type === 'tint') {
+    const tintColor = effect.tintColor ?? '#000000';
+    const amount = (effect.tintAmount ?? 100) / 100;
+    const naturalW = obj.naturalWidth ?? 200;
+    const naturalH = obj.naturalHeight ?? 200;
+
+    renderContent();
+    applyTintOverlay(ctx, tintColor, amount, naturalW, naturalH);
+    return;
+  }
+
+  if (effect.type === 'advanced') {
+    // Apply a brightness approximation from the channel multipliers, then render normally.
+    // A pixel-accurate CXForm would require reading back canvas pixels (expensive);
+    // this provides a visible authoring preview approximation.
+    const rMult = (effect.redMult ?? 100) / 100;
+    const gMult = (effect.greenMult ?? 100) / 100;
+    const bMult = (effect.blueMult ?? 100) / 100;
+    const avgMult = (rMult + gMult + bMult) / 3;
+    ctx.filter = (ctx.filter && ctx.filter !== 'none')
+      ? `${ctx.filter} brightness(${avgMult})`
+      : `brightness(${avgMult})`;
+    renderContent();
+    return;
+  }
+
+  // Fallback (shouldn't be reached for the types this function is called with)
+  renderContent();
+}
+
 function renderSymbolInstance(
   ctx: CanvasRenderingContext2D,
   obj: SymbolInstance,
@@ -939,18 +1026,32 @@ function renderSymbolInstance(
     ctx.globalAlpha = ctx.globalAlpha * obj.alpha;
   }
 
+  // Apply color effect (alpha and brightness modify ctx state; tint/advanced use compositing)
+  const colorEffect = obj.colorEffect;
+  if (colorEffect && colorEffect.type !== 'none') {
+    applyColorEffectPre(ctx, colorEffect);
+  }
+
   const nextVisited = new Set(visitedSymbolIds);
   nextVisited.add(obj.symbolId);
 
-  // 9-slice rendering when scale9Grid is set and the instance is actually scaled
-  if (symbol.scale9Grid != null && (scaleX !== 1 || scaleY !== 1)) {
-    renderSymbolWith9Slice(ctx, symbol, obj, imageCache, library, nextVisited);
-  } else {
-    // Normal rendering path: apply scale uniformly and recurse into layers
-    if (scaleX !== 1 || scaleY !== 1) {
-      ctx.scale(scaleX, scaleY);
+  const renderContent = () => {
+    // 9-slice rendering when scale9Grid is set and the instance is actually scaled
+    if (symbol.scale9Grid != null && (scaleX !== 1 || scaleY !== 1)) {
+      renderSymbolWith9Slice(ctx, symbol, obj, imageCache, library, nextVisited);
+    } else {
+      // Normal rendering path: apply scale uniformly and recurse into layers
+      if (scaleX !== 1 || scaleY !== 1) {
+        ctx.scale(scaleX, scaleY);
+      }
+      renderSymbolLayers(ctx, symbol, frame, imageCache, library, nextVisited);
     }
-    renderSymbolLayers(ctx, symbol, frame, imageCache, library, nextVisited);
+  };
+
+  if (colorEffect && (colorEffect.type === 'tint' || colorEffect.type === 'advanced')) {
+    renderSymbolWithColorEffect(ctx, obj, colorEffect, renderContent);
+  } else {
+    renderContent();
   }
 
   ctx.restore();
