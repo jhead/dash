@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo } from "react";
-import type { FlashDocument, Library, LibraryItem, LibraryFolder, SymbolType } from "@flash/core";
+import type { FlashDocument, Library, LibraryItem, LibraryFolder, Symbol, SymbolLinkage, SymbolType } from "@flash/core";
+import { SymbolLinkageDialog } from "./SymbolLinkageDialog";
 
 export interface LibraryPanelProps {
   library: Library;
@@ -15,6 +16,7 @@ export interface LibraryPanelProps {
   onDuplicateItem?: (id: string) => void;
   onAddFolder?: (name: string) => void;
   onMoveItemToFolder?: (itemId: string, folderId: string | null) => void;
+  onSetLinkage?: (id: string, linkage: SymbolLinkage) => void;
 }
 
 // ----------------------------------------------------------------------------
@@ -254,11 +256,12 @@ interface ContextMenuProps {
   onRename: (id: string) => void;
   onDuplicate: (id: string) => void;
   onMoveToFolder: (itemId: string, folderId: string | null) => void;
+  onLinkage?: (id: string) => void;
 }
 
 function ContextMenu({
   x, y, item, useCount, folders,
-  onClose, onDelete, onEditInPlace, onRename, onDuplicate, onMoveToFolder,
+  onClose, onDelete, onEditInPlace, onRename, onDuplicate, onMoveToFolder, onLinkage,
 }: ContextMenuProps): React.ReactElement {
   const menuStyle: React.CSSProperties = {
     position: "fixed",
@@ -336,6 +339,9 @@ function ContextMenu({
         )}
         {canEdit && (
           <MenuItemEl id="editInPlace" label="Edit in Place" onClick={() => onEditInPlace(item.id)} />
+        )}
+        {canEdit && onLinkage && (
+          <MenuItemEl id="linkage" label="Linkage..." onClick={() => onLinkage(item.id)} />
         )}
         {canEdit && <div style={separatorStyle} />}
         {/* Move to Folder submenu */}
@@ -416,6 +422,7 @@ export function LibraryPanel({
   onDuplicateItem,
   onAddFolder,
   onMoveItemToFolder,
+  onSetLinkage,
 }: LibraryPanelProps): React.ReactElement {
   const [collapsed, setCollapsed] = useState(false);
   const [showNewSymbolDialog, setShowNewSymbolDialog] = useState(false);
@@ -423,6 +430,11 @@ export function LibraryPanel({
     x: number;
     y: number;
     item: LibraryItem;
+  } | null>(null);
+
+  // Linkage dialog state
+  const [linkageDialog, setLinkageDialog] = useState<{
+    item: Symbol;
   } | null>(null);
 
   // Inline rename state: id of item being renamed, or null
@@ -600,6 +612,18 @@ export function LibraryPanel({
   const handleMoveToFolder = useCallback((itemId: string, folderId: string | null) => {
     onMoveItemToFolder?.(itemId, folderId);
   }, [onMoveItemToFolder]);
+
+  const handleOpenLinkage = useCallback((id: string) => {
+    const item = library.items.find((i) => i.id === id);
+    if (!item || item.itemType !== "symbol") return;
+    setLinkageDialog({ item: item as Symbol });
+  }, [library.items]);
+
+  const handleLinkageConfirm = useCallback((linkage: SymbolLinkage) => {
+    if (!linkageDialog) return;
+    onSetLinkage?.(linkageDialog.item.id, linkage);
+    setLinkageDialog(null);
+  }, [linkageDialog, onSetLinkage]);
 
   // ---------------------------------------------------------------------------
   // Styles
@@ -1057,6 +1081,18 @@ export function LibraryPanel({
           onRename={handleStartRename}
           onDuplicate={(id) => onDuplicateItem?.(id)}
           onMoveToFolder={handleMoveToFolder}
+          onLinkage={onSetLinkage ? handleOpenLinkage : undefined}
+        />
+      )}
+
+      {/* Symbol Linkage dialog */}
+      {linkageDialog && (
+        <SymbolLinkageDialog
+          open={true}
+          symbolName={linkageDialog.item.name}
+          linkage={linkageDialog.item.linkage}
+          onConfirm={handleLinkageConfirm}
+          onClose={() => setLinkageDialog(null)}
         />
       )}
     </div>

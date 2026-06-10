@@ -1524,6 +1524,15 @@ export function Shell(): React.ReactElement {
     })));
   }, [pushDoc, withLibrary]);
 
+  const handleSetLinkage = useCallback((id: string, linkage: import("@flash/core").SymbolLinkage) => {
+    pushDoc(withLibrary((lib) => ({
+      ...lib,
+      items: lib.items.map((item) =>
+        item.id === id && item.itemType === "symbol" ? { ...item, linkage } : item
+      ),
+    })));
+  }, [pushDoc, withLibrary]);
+
   const handleEditInPlace = useCallback((itemId: string, instanceId?: string) => {
     const item = library.items.find((i) => i.id === itemId);
     if (!item) return;
@@ -3298,6 +3307,7 @@ export function Shell(): React.ReactElement {
               onDuplicateItem={handleDuplicateLibraryItem}
               onAddFolder={handleAddFolder}
               onMoveItemToFolder={handleMoveItemToFolder}
+              onSetLinkage={handleSetLinkage}
             />
           ) : (
             <div
