@@ -64,6 +64,8 @@ export {
   addDisplayObject,
   removeDisplayObject,
   updateDisplayObject,
+  convertToKeyframes,
+  reverseFrames,
 } from "./timeline.js";
 
 // Document mutations

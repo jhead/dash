@@ -8,6 +8,7 @@ import type { EaseCurve, Layer, LayerType, Timeline as TimelineModel } from "@fl
 import {
   addLayer,
   clearTween,
+  convertToKeyframes,
   deleteLayer,
   insertBlankKeyframe,
   insertFrame,
@@ -17,6 +18,7 @@ import {
   removeFrame,
   clearKeyframe,
   renameLayer,
+  reverseFrames,
   setLayerLocked,
   setLayerType,
   setLayerVisible,
@@ -846,6 +848,18 @@ export function Timeline({
         case "paste-frames":
           onPasteFrames?.(frameIndex);
           break;
+        case "convert-to-keyframes": {
+          const rangeStart = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.start : frameIndex;
+          const rangeEnd = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.end : frameIndex;
+          onTimelineChange(convertToKeyframes(timeline, _layerId, rangeStart, rangeEnd));
+          break;
+        }
+        case "reverse-frames": {
+          const rangeStart = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.start : frameIndex;
+          const rangeEnd = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.end : frameIndex;
+          onTimelineChange(reverseFrames(timeline, _layerId, rangeStart, rangeEnd));
+          break;
+        }
       }
     },
     [contextMenu, timeline, onTimelineChange, onSetShapeTween, onCopyFrames, onCutFrames, onPasteFrames, selectedFrameRange]
@@ -1821,6 +1835,12 @@ function ContextMenuPopup({
             ? [{ label: "Paste Frames", action: "paste-frames", disabled: !hasFrameClipboard }]
             : []),
         ]
+      : []),
+    // Separator + frame conversion items (always shown)
+    { label: "---", action: "---convert", separator: true },
+    { label: "Convert to Keyframes", action: "convert-to-keyframes" },
+    ...(isMultiFrameRange
+      ? [{ label: "Reverse Frames", action: "reverse-frames" }]
       : []),
   ];
 

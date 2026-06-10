@@ -589,6 +589,149 @@ export function setFrameScript(
 // ---------------------------------------------------------------------------
 
 /**
+ * Convert all span frames in the range [start, end] (inclusive) to keyframes.
+ *
+ * Flash "Convert to Keyframes" semantics:
+ * - Each frame index in [start, end] that is not already a keyframe becomes one.
+ * - The new keyframe inherits a deep copy of the display objects from the
+ *   governing keyframe at or before that index (same as insertKeyframe / F6).
+ * - Frames that are already keyframes are left unchanged.
+ * - Frame indices and frameCount are not shifted.
+ */
+export function convertToKeyframes(
+  timeline: Timeline,
+  layerId: string,
+  start: number,
+  end: number
+): Timeline {
+  return {
+    ...timeline,
+    layers: timeline.layers.map((layer) => {
+      if (layer.id !== layerId) return layer;
+
+      let frames = [...layer.frames];
+      let newCount = layerFrameCount(layer);
+
+      for (let i = start; i <= end; i++) {
+        const existing = frames.find((f) => f.index === i);
+        if (existing?.isKeyframe) continue;
+
+        // Find governing keyframe among the current (mutating) frames
+        const governing = [...frames]
+          .filter((f) => f.isKeyframe && f.index <= i)
+          .sort((a, b) => b.index - a.index)[0];
+
+        const copiedObjects = governing
+          ? governing.displayObjects.map((o) => ({ ...o }))
+          : [];
+
+        const newKeyframe = createFrame(i, {
+          isKeyframe: true,
+          isEmpty: governing ? governing.isEmpty : true,
+          displayObjects: copiedObjects,
+        });
+
+        newCount = Math.max(newCount, i + 1);
+        frames = [...frames, newKeyframe].sort((a, b) => a.index - b.index);
+      }
+
+      return { ...layer, frames, frameCount: newCount };
+    }),
+  };
+}
+
+/**
+ * Reverse the keyframe content in the range [start, end] (inclusive).
+ *
+ * Flash "Reverse Frames" semantics:
+ * - First, all non-keyframe positions in [start, end] are promoted to
+ *   keyframes (same as convertToKeyframes).
+ * - Then the content (displayObjects, tweenType, label, script, sound,
+ *   isEmpty, and all tween properties) of the keyframes in [start, end]
+ *   is reversed: the first keyframe's content is swapped with the last,
+ *   the second with the second-to-last, and so on.
+ * - Frame indices remain stable — only frame content is swapped.
+ */
+export function reverseFrames(
+  timeline: Timeline,
+  layerId: string,
+  start: number,
+  end: number
+): Timeline {
+  // Step 1: promote all span frames in range to keyframes
+  const promoted = convertToKeyframes(timeline, layerId, start, end);
+
+  return {
+    ...promoted,
+    layers: promoted.layers.map((layer) => {
+      if (layer.id !== layerId) return layer;
+
+      // Collect keyframes in [start, end] sorted by index
+      const rangeKeyframes = layer.frames
+        .filter((f) => f.isKeyframe && f.index >= start && f.index <= end)
+        .sort((a, b) => a.index - b.index);
+
+      if (rangeKeyframes.length <= 1) return layer;
+
+      // Build a map: index -> reversed content
+      type FrameContent = Pick<
+        Frame,
+        | "displayObjects"
+        | "isEmpty"
+        | "tweenType"
+        | "label"
+        | "labelType"
+        | "script"
+        | "sound"
+        | "motionEase"
+        | "motionEaseCurve"
+        | "motionRotate"
+        | "motionRotateCount"
+        | "motionOrientToPath"
+        | "motionSync"
+        | "motionScale"
+        | "shapeEase"
+        | "shapeBlend"
+      >;
+
+      const contentOf = (f: Frame): FrameContent => ({
+        displayObjects: f.displayObjects,
+        isEmpty: f.isEmpty,
+        tweenType: f.tweenType,
+        label: f.label,
+        labelType: f.labelType,
+        script: f.script,
+        sound: f.sound,
+        motionEase: f.motionEase,
+        motionEaseCurve: f.motionEaseCurve,
+        motionRotate: f.motionRotate,
+        motionRotateCount: f.motionRotateCount,
+        motionOrientToPath: f.motionOrientToPath,
+        motionSync: f.motionSync,
+        motionScale: f.motionScale,
+        shapeEase: f.shapeEase,
+        shapeBlend: f.shapeBlend,
+      });
+
+      // Build index -> reversed content mapping
+      const reversedContents = rangeKeyframes.map((f) => contentOf(f)).reverse();
+      const contentMap = new Map<number, FrameContent>();
+      rangeKeyframes.forEach((f, i) => {
+        contentMap.set(f.index, reversedContents[i]!);
+      });
+
+      const newFrames = layer.frames.map((f) => {
+        const reversed = contentMap.get(f.index);
+        if (reversed === undefined) return f;
+        return { ...f, ...reversed };
+      });
+
+      return { ...layer, frames: newFrames };
+    }),
+  };
+}
+
+/**
  * Find the governing keyframe at or before frameIndex for the given layer.
  * Returns the keyframe or undefined.
  */

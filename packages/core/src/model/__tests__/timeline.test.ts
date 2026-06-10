@@ -8,6 +8,8 @@ import {
   removeFrame,
   layerFrameCount,
   createTimeline,
+  convertToKeyframes,
+  reverseFrames,
 } from "../timeline.js";
 import type { Timeline } from "../types.js";
 
@@ -269,5 +271,186 @@ describe("removeFrame (Shift+F5)", () => {
     // keyframe at 6 should shift to 5
     expect(indices).toContain(5);
     expect(indices).not.toContain(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// convertToKeyframes
+// ---------------------------------------------------------------------------
+
+describe("convertToKeyframes", () => {
+  it("converts span frames in range to keyframes", () => {
+    // Layer: keyframe at 0 and 5; span frames 1-4 are implicit
+    const layer = createLayer("L", "normal", {
+      frames: [createFrame(0), createFrame(5)],
+      frameCount: 8,
+    });
+    const tl = makeTimeline(layer);
+    const result = convertToKeyframes(tl, layer.id, 1, 3);
+    const resultLayer = result.layers[0]!;
+    const indices = resultLayer.frames.map((f) => f.index);
+    // Span frames 1, 2, 3 should now be keyframes
+    expect(indices).toContain(1);
+    expect(indices).toContain(2);
+    expect(indices).toContain(3);
+    // All should be keyframes
+    for (const i of [1, 2, 3]) {
+      const f = resultLayer.frames.find((fr) => fr.index === i);
+      expect(f?.isKeyframe).toBe(true);
+    }
+    // Existing keyframes unchanged
+    expect(indices).toContain(0);
+    expect(indices).toContain(5);
+  });
+
+  it("copies display objects from governing keyframe", () => {
+    const obj = { type: "shape" as const, id: "s1", shape: { id: "sh1", paths: [] }, x: 0, y: 0 };
+    const kf0 = createFrame(0, { displayObjects: [obj], isEmpty: false });
+    const layer = createLayer("L", "normal", {
+      frames: [kf0],
+      frameCount: 5,
+    });
+    const tl = makeTimeline(layer);
+    const result = convertToKeyframes(tl, layer.id, 2, 3);
+    const resultLayer = result.layers[0]!;
+    for (const i of [2, 3]) {
+      const f = resultLayer.frames.find((fr) => fr.index === i);
+      expect(f?.displayObjects).toHaveLength(1);
+      expect(f?.displayObjects[0]?.id).toBe("s1");
+    }
+  });
+
+  it("is a no-op for frames that are already keyframes", () => {
+    const layer = createLayer("L", "normal", {
+      frames: [createFrame(0), createFrame(1), createFrame(2)],
+      frameCount: 5,
+    });
+    const tl = makeTimeline(layer);
+    const result = convertToKeyframes(tl, layer.id, 0, 2);
+    const resultLayer = result.layers[0]!;
+    // Frame count should not change — all were already keyframes
+    expect(resultLayer.frames).toHaveLength(3);
+  });
+
+  it("does not affect frames outside the range", () => {
+    const layer = createLayer("L", "normal", {
+      frames: [createFrame(0), createFrame(5)],
+      frameCount: 8,
+    });
+    const tl = makeTimeline(layer);
+    const result = convertToKeyframes(tl, layer.id, 1, 2);
+    const resultLayer = result.layers[0]!;
+    // Frame 3 and 4 should still not be keyframes
+    const f3 = resultLayer.frames.find((f) => f.index === 3);
+    const f4 = resultLayer.frames.find((f) => f.index === 4);
+    expect(f3).toBeUndefined();
+    expect(f4).toBeUndefined();
+  });
+
+  it("does not shift frame indices or change frameCount for in-range conversion", () => {
+    const layer = createLayer("L", "normal", {
+      frames: [createFrame(0), createFrame(5)],
+      frameCount: 6,
+    });
+    const tl = makeTimeline(layer);
+    const result = convertToKeyframes(tl, layer.id, 2, 4);
+    const resultLayer = result.layers[0]!;
+    expect(layerFrameCount(resultLayer)).toBe(6);
+    // Frame 5 must not shift
+    const f5 = resultLayer.frames.find((f) => f.index === 5);
+    expect(f5?.isKeyframe).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reverseFrames
+// ---------------------------------------------------------------------------
+
+describe("reverseFrames", () => {
+  it("reverses display objects across a keyframe range", () => {
+    const obj1 = { type: "shape" as const, id: "a", shape: { id: "sh1", paths: [] }, x: 0, y: 0 };
+    const obj2 = { type: "shape" as const, id: "b", shape: { id: "sh2", paths: [] }, x: 1, y: 1 };
+    const kf0 = createFrame(0, { displayObjects: [obj1], isEmpty: false });
+    const kf2 = createFrame(2, { displayObjects: [obj2], isEmpty: false });
+    const layer = createLayer("L", "normal", {
+      frames: [kf0, kf2],
+      frameCount: 4,
+    });
+    const tl = makeTimeline(layer);
+    const result = reverseFrames(tl, layer.id, 0, 2);
+    const resultLayer = result.layers[0]!;
+    // After reversal: frame 0 should have obj2, frame 2 should have obj1
+    const f0 = resultLayer.frames.find((f) => f.index === 0);
+    const f2 = resultLayer.frames.find((f) => f.index === 2);
+    expect(f0?.displayObjects[0]?.id).toBe("b");
+    expect(f2?.displayObjects[0]?.id).toBe("a");
+  });
+
+  it("promotes span frames to keyframes before reversing", () => {
+    const obj = { type: "shape" as const, id: "x", shape: { id: "sh1", paths: [] }, x: 0, y: 0 };
+    const kf0 = createFrame(0, { displayObjects: [obj], isEmpty: false });
+    const layer = createLayer("L", "normal", {
+      frames: [kf0],
+      frameCount: 3,
+    });
+    const tl = makeTimeline(layer);
+    // Frame 1 and 2 are span frames. reverseFrames should promote them first.
+    const result = reverseFrames(tl, layer.id, 0, 2);
+    const resultLayer = result.layers[0]!;
+    // All three indices should be keyframes
+    for (const i of [0, 1, 2]) {
+      const f = resultLayer.frames.find((fr) => fr.index === i);
+      expect(f?.isKeyframe).toBe(true);
+    }
+  });
+
+  it("is a no-op for a single keyframe (nothing to reverse)", () => {
+    const obj = { type: "shape" as const, id: "z", shape: { id: "sh1", paths: [] }, x: 5, y: 5 };
+    const kf0 = createFrame(0, { displayObjects: [obj], isEmpty: false });
+    const layer = createLayer("L", "normal", {
+      frames: [kf0],
+      frameCount: 1,
+    });
+    const tl = makeTimeline(layer);
+    const result = reverseFrames(tl, layer.id, 0, 0);
+    const resultLayer = result.layers[0]!;
+    const f0 = resultLayer.frames.find((f) => f.index === 0);
+    expect(f0?.displayObjects[0]?.id).toBe("z");
+  });
+
+  it("does not affect frames outside the reversed range", () => {
+    const obj1 = { type: "shape" as const, id: "p", shape: { id: "sh1", paths: [] }, x: 0, y: 0 };
+    const obj2 = { type: "shape" as const, id: "q", shape: { id: "sh2", paths: [] }, x: 1, y: 1 };
+    const obj3 = { type: "shape" as const, id: "r", shape: { id: "sh3", paths: [] }, x: 2, y: 2 };
+    const kf0 = createFrame(0, { displayObjects: [obj1], isEmpty: false });
+    const kf2 = createFrame(2, { displayObjects: [obj2], isEmpty: false });
+    const kf4 = createFrame(4, { displayObjects: [obj3], isEmpty: false });
+    const layer = createLayer("L", "normal", {
+      frames: [kf0, kf2, kf4],
+      frameCount: 5,
+    });
+    const tl = makeTimeline(layer);
+    // Reverse only frames 0-2
+    const result = reverseFrames(tl, layer.id, 0, 2);
+    const resultLayer = result.layers[0]!;
+    // Frame 4 should be unchanged
+    const f4 = resultLayer.frames.find((f) => f.index === 4);
+    expect(f4?.displayObjects[0]?.id).toBe("r");
+  });
+
+  it("reverses tween type along with displayObjects", () => {
+    const kf0 = createFrame(0, { tweenType: "motion" });
+    const kf3 = createFrame(3, { tweenType: "none" });
+    const layer = createLayer("L", "normal", {
+      frames: [kf0, kf3],
+      frameCount: 4,
+    });
+    const tl = makeTimeline(layer);
+    const result = reverseFrames(tl, layer.id, 0, 3);
+    const resultLayer = result.layers[0]!;
+    const f0 = resultLayer.frames.find((f) => f.index === 0);
+    const f3 = resultLayer.frames.find((f) => f.index === 3);
+    expect(f0?.tweenType).toBe("none");
+    expect(f3?.tweenType).toBe("motion");
   });
 });
