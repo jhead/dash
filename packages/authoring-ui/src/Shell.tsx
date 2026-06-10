@@ -189,9 +189,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-type BottomTab = "timeline" | "actions" | "sound" | "properties";
+type BottomTab = "actions" | "sound" | "properties";
 const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
-  { id: "timeline", label: "Timeline" },
   { id: "actions", label: "Actions" },
   { id: "sound", label: "Sound" },
   { id: "properties", label: "Properties" },
@@ -255,7 +254,13 @@ function useResize(
   initial: number,
   min: number,
   max: number,
-  axis: "x" | "y"
+  axis: "x" | "y",
+  /**
+   * When false (default) the panel is docked toward the far edge (right/bottom)
+   * so dragging the handle toward the origin grows it. When true the panel is
+   * docked toward the near edge (top) so dragging away from the origin grows it.
+   */
+  invert = false
 ): { size: number; setSize: (n: number) => void; onMouseDown: (e: React.MouseEvent) => void } {
   const [size, setSize] = useState(initial);
   const sizeRef = useRef(size);
@@ -272,7 +277,7 @@ function useResize(
       document.body.style.cursor = axis === "x" ? "col-resize" : "row-resize";
       const onMove = (ev: MouseEvent) => {
         const cur = axis === "x" ? ev.clientX : ev.clientY;
-        const delta = start - cur; // dragging toward origin grows the panel
+        const delta = invert ? cur - start : start - cur;
         setSize(Math.max(min, Math.min(max, startSize + delta)));
       };
       const onUp = () => {
@@ -284,7 +289,7 @@ function useResize(
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
     },
-    [axis, min, max]
+    [axis, min, max, invert]
   );
 
   return { size, setSize, onMouseDown };
@@ -457,15 +462,19 @@ export function Shell(): React.ReactElement {
   // Right panel tab: "library" | "properties"
   const [rightTab, setRightTab] = useState<"library" | "properties">("library");
 
-  // Bottom dock: tabbed (Timeline | Actions | Sound | Properties) and collapsible.
+  // Bottom dock: tabbed (Actions | Sound | Properties) and collapsible.
   // `bottomTab === null` means the dock is collapsed to just its tab bar.
-  const [bottomTab, setBottomTab] = useState<BottomTab | null>("timeline");
+  const [bottomTab, setBottomTab] = useState<BottomTab | null>("properties");
   // Remember the last expanded tab so re-expanding restores it.
-  const lastBottomTabRef = useRef<BottomTab>("timeline");
+  const lastBottomTabRef = useRef<BottomTab>("properties");
 
-  // Resizable panes: right panel width and bottom dock height.
+  // Resizable panes: right panel width, top timeline height, bottom dock height.
   const rightResize = useResize(240, 160, 600, "x");
-  const bottomResize = useResize(220, 80, 600, "y");
+  const timelineResize = useResize(160, 60, 500, "y", true);
+  const bottomResize = useResize(180, 80, 600, "y");
+
+  // Top timeline dock collapse state.
+  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
 
   /**
    * Click a bottom tab. Clicking the active (expanded) tab collapses the dock;
@@ -2811,6 +2820,68 @@ export function Shell(): React.ReactElement {
           />
         </div>
         <div style={styles.mainColumn}>
+          {/* Top dock: Timeline (resizable + collapsible) */}
+          <div
+            style={{
+              ...styles.bottomPanel,
+              height: timelineCollapsed ? "auto" : timelineResize.size,
+            }}
+            data-testid="timeline-panel"
+          >
+            <div style={{ ...styles.bottomTabs, borderTop: "none" }} role="tablist">
+              <button
+                role="tab"
+                aria-selected={!timelineCollapsed}
+                style={bottomTabBtnStyle(!timelineCollapsed)}
+                onClick={() => setTimelineCollapsed((v) => !v)}
+                title={timelineCollapsed ? "Expand Timeline" : "Collapse Timeline"}
+              >
+                Timeline
+              </button>
+              <div style={{ flex: 1 }} />
+              <button
+                style={{ ...bottomTabBtnStyle(false), flex: "0 0 auto", width: 28, fontSize: 12 }}
+                onClick={() => setTimelineCollapsed((v) => !v)}
+                title={timelineCollapsed ? "Expand Timeline" : "Collapse Timeline"}
+              >
+                {timelineCollapsed ? "▾" : "▴"}
+              </button>
+            </div>
+            {!timelineCollapsed && (
+              <div style={styles.bottomContent}>
+                <Timeline
+                  timeline={timeline}
+                  currentFrame={currentFrame}
+                  isPlaying={isPlaying}
+                  frameRate={docProperties.frameRate}
+                  activeLayerIndex={safeActiveLayerIndex}
+                  onActiveLayerChange={setActiveLayerIndex}
+                  onTimelineChange={handleTimelineChange}
+                  onFrameChange={handleFrameChange}
+                  onPlayingChange={handlePlayingChange}
+                  onionSkinEnabled={onionSkinEnabled}
+                  onionBefore={onionBefore}
+                  onionAfter={onionAfter}
+                  onToggleOnionSkin={handleToggleOnionSkin}
+                  onOnionRangeChange={handleOnionRangeChange}
+                  onCopyFrames={handleCopyFrames}
+                  onCutFrames={handleCutFrames}
+                  onPasteFrames={handlePasteFrames}
+                  hasFrameClipboard={hasFrameClipboard}
+                  onRemoveFrames={handleRemoveFrames}
+                />
+              </div>
+            )}
+          </div>
+          {/* Resize handle between the Timeline dock and the stage */}
+          {!timelineCollapsed && (
+            <div
+              style={styles.hResizeHandle}
+              onMouseDown={timelineResize.onMouseDown}
+              title="Drag to resize"
+              data-testid="timeline-resize-handle"
+            />
+          )}
           <div style={styles.stageAndTimeline}>
             {/* Stage area with optional rulers overlay */}
             <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex" }}>
@@ -3071,29 +3142,6 @@ export function Shell(): React.ReactElement {
 
             {bottomTab !== null && (
               <div style={styles.bottomContent}>
-                {bottomTab === "timeline" && (
-                  <Timeline
-                    timeline={timeline}
-                    currentFrame={currentFrame}
-                    isPlaying={isPlaying}
-                    frameRate={docProperties.frameRate}
-                    activeLayerIndex={safeActiveLayerIndex}
-                    onActiveLayerChange={setActiveLayerIndex}
-                    onTimelineChange={handleTimelineChange}
-                    onFrameChange={handleFrameChange}
-                    onPlayingChange={handlePlayingChange}
-                    onionSkinEnabled={onionSkinEnabled}
-                    onionBefore={onionBefore}
-                    onionAfter={onionAfter}
-                    onToggleOnionSkin={handleToggleOnionSkin}
-                    onOnionRangeChange={handleOnionRangeChange}
-                    onCopyFrames={handleCopyFrames}
-                    onCutFrames={handleCutFrames}
-                    onPasteFrames={handlePasteFrames}
-                    hasFrameClipboard={hasFrameClipboard}
-                    onRemoveFrames={handleRemoveFrames}
-                  />
-                )}
                 {bottomTab === "actions" && (
                   <ActionsPanel
                     embedded
