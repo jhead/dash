@@ -14,7 +14,7 @@
 import { dispatchAgentCommand, setDocChangedCallback, getRev } from "./registry.js";
 import type { BridgeRequest, BridgeResponse, BridgeNotification } from "@flash/agent-protocol";
 
-const WS_URL = "ws://localhost:1420/__agent";
+const WS_URL = `ws://${window.location.host}/__agent`;
 const MAX_BACKOFF_MS = 30_000;
 
 let _ws: WebSocket | null = null;

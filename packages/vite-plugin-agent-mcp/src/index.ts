@@ -72,7 +72,7 @@ function forwardToEditor(
   if (!_editorSocket || _editorSocket.readyState !== WebSocket.OPEN) {
     return Promise.reject(
       new Error(
-        "Editor page not connected. Open http://localhost:1420 or run: pnpm --filter @flash/desktop dev"
+        "Editor page not connected. Open the dev server URL in a browser or run: pnpm --filter @flash/desktop dev"
       )
     );
   }
@@ -1444,11 +1444,12 @@ export function agentMcpPlugin(): Plugin {
         }
       );
 
+      const port = server.config.server.port ?? 1420;
       console.log(
-        "[agent-mcp] MCP server ready at http://localhost:1420/mcp"
+        `[agent-mcp] MCP server ready at http://localhost:${port}/mcp`
       );
       console.log(
-        "[agent-mcp] Editor bridge ready at ws://localhost:1420/__agent"
+        `[agent-mcp] Editor bridge ready at ws://localhost:${port}/__agent`
       );
     },
   };
