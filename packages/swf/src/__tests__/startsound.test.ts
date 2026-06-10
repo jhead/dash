@@ -236,6 +236,76 @@ describe("encodeSoundInfo — SoundInfo struct", () => {
     const op = info[1] | (info[2] << 8) | (info[3] << 16) | (info[4] << 24);
     expect(op).toBe(2000);
   });
+
+  it("inPoint + outPoint together set both bits and write both UI32LE values", () => {
+    const info = encodeSoundInfo({ inPoint: 100, outPoint: 5000 });
+    expect(info[0] & 1).toBe(1);        // hasInPoint
+    expect((info[0] >> 1) & 1).toBe(1); // hasOutPoint
+    expect(info.length).toBe(9); // 1 flags + 4 inPoint + 4 outPoint
+    const ip = info[1] | (info[2] << 8) | (info[3] << 16) | (info[4] << 24);
+    const op = info[5] | (info[6] << 8) | (info[7] << 16) | (info[8] << 24);
+    expect(ip).toBe(100);
+    expect(op).toBe(5000);
+  });
+
+  it("custom envelope points set HasEnvelope bit (bit 3) and encode each point", () => {
+    const pts = [
+      { pos44: 0,     leftLevel: 0,     rightLevel: 0 },
+      { pos44: 44100, leftLevel: 32768, rightLevel: 32768 },
+    ];
+    const info = encodeSoundInfo({ envelope: pts });
+    expect((info[0] >> 3) & 1).toBe(1); // HasEnvelope
+    // layout: 1 flags + 1 count + 2*(4+2+2) = 1+1+16 = 18 bytes
+    expect(info.length).toBe(18);
+    expect(info[1]).toBe(2); // EnvelopeCount = 2
+    // Point 0: pos44=0
+    const pos0 = info[2] | (info[3] << 8) | (info[4] << 16) | (info[5] << 24);
+    expect(pos0).toBe(0);
+    const left0 = info[6] | (info[7] << 8);
+    const right0 = info[8] | (info[9] << 8);
+    expect(left0).toBe(0);
+    expect(right0).toBe(0);
+    // Point 1: pos44=44100
+    const pos1 = info[10] | (info[11] << 8) | (info[12] << 16) | (info[13] << 24);
+    expect(pos1).toBe(44100);
+    const left1 = info[14] | (info[15] << 8);
+    const right1 = info[16] | (info[17] << 8);
+    expect(left1).toBe(32768);
+    expect(right1).toBe(32768);
+  });
+
+  it("effect='fadeIn' sets HasEnvelope bit and writes the correct two-point envelope", () => {
+    const info = encodeSoundInfo({ effect: "fadeIn" });
+    expect((info[0] >> 3) & 1).toBe(1); // HasEnvelope
+    expect(info[1]).toBe(2); // EnvelopeCount = 2
+    // Point 0: pos=0, left=0, right=0
+    const pos0 = info[2] | (info[3] << 8) | (info[4] << 16) | (info[5] << 24);
+    expect(pos0).toBe(0);
+    expect(info[6] | (info[7] << 8)).toBe(0);    // leftLevel
+    expect(info[8] | (info[9] << 8)).toBe(0);    // rightLevel
+    // Point 1: pos=44100, left=32768, right=32768
+    const pos1 = info[10] | (info[11] << 8) | (info[12] << 16) | (info[13] << 24);
+    expect(pos1).toBe(44100);
+    expect(info[14] | (info[15] << 8)).toBe(32768); // leftLevel
+    expect(info[16] | (info[17] << 8)).toBe(32768); // rightLevel
+  });
+
+  it("effect='none' does not set HasEnvelope bit", () => {
+    const info = encodeSoundInfo({ effect: "none" });
+    expect((info[0] >> 3) & 1).toBe(0); // HasEnvelope = 0
+    expect(info.length).toBe(1);
+  });
+
+  it("explicit envelope overrides effect preset", () => {
+    const customPts = [{ pos44: 100, leftLevel: 16384, rightLevel: 8192 }];
+    const info = encodeSoundInfo({ effect: "fadeIn", envelope: customPts });
+    expect((info[0] >> 3) & 1).toBe(1); // HasEnvelope
+    expect(info[1]).toBe(1); // Only 1 point (from explicit envelope, not fadeIn's 2)
+    const pos = info[2] | (info[3] << 8) | (info[4] << 16) | (info[5] << 24);
+    expect(pos).toBe(100);
+    expect(info[6] | (info[7] << 8)).toBe(16384);
+    expect(info[8] | (info[9] << 8)).toBe(8192);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -266,6 +336,38 @@ describe("encodeStartSound — tag 15 body", () => {
   it("stop flag propagates into SoundInfo flags byte", () => {
     const body = encodeStartSound(7, { stop: true });
     expect((body[2] >> 5) & 1).toBe(1);
+  });
+
+  it("inPoint propagates into SoundInfo (HasInPoint bit + UI32LE value)", () => {
+    const body = encodeStartSound(3, { inPoint: 8820 });
+    // body[0..1]=SoundId, body[2]=flags, body[3..6]=inPoint
+    expect(body[2] & 1).toBe(1); // hasInPoint
+    const ip = body[3] | (body[4] << 8) | (body[5] << 16) | (body[6] << 24);
+    expect(ip).toBe(8820);
+  });
+
+  it("outPoint propagates into SoundInfo (HasOutPoint bit + UI32LE value)", () => {
+    const body = encodeStartSound(3, { outPoint: 22050 });
+    expect((body[2] >> 1) & 1).toBe(1); // hasOutPoint
+    const op = body[3] | (body[4] << 8) | (body[5] << 16) | (body[6] << 24);
+    expect(op).toBe(22050);
+  });
+
+  it("envelope points propagate into SoundInfo (HasEnvelope bit + count + points)", () => {
+    const pts = [
+      { pos44: 0,     leftLevel: 0,     rightLevel: 0 },
+      { pos44: 44100, leftLevel: 32768, rightLevel: 32768 },
+    ];
+    const body = encodeStartSound(9, { envelope: pts });
+    // Layout: body[0..1]=SoundId, body[2]=flags, body[3]=EnvelopeCount,
+    //   body[4..7]=pos0, body[8..9]=left0, body[10..11]=right0,
+    //   body[12..15]=pos1, body[16..17]=left1, body[18..19]=right1
+    expect((body[2] >> 3) & 1).toBe(1); // HasEnvelope
+    expect(body[3]).toBe(2); // EnvelopeCount
+    const pos1 = body[12] | (body[13] << 8) | (body[14] << 16) | (body[15] << 24);
+    expect(pos1).toBe(44100);
+    expect(body[16] | (body[17] << 8)).toBe(32768); // leftLevel
+    expect(body[18] | (body[19] << 8)).toBe(32768); // rightLevel
   });
 });
 
@@ -355,5 +457,91 @@ describe("compileDocument — StartSound (tag 15) integration", () => {
     const tags = parseTags(swf);
     const defineTags = tags.filter((t) => t.code === TAG_DEFINE_SOUND);
     expect(defineTags.length).toBe(1);
+  });
+
+  it("inPoint on SoundLinkage is encoded in StartSound SoundInfo", () => {
+    const snd = makeSoundItem("snd1");
+    const linkage: SoundLinkage = {
+      libraryItemId: "snd1",
+      syncMode: "event",
+      repeatCount: 1,
+      inPoint: 4410,
+    };
+    const doc = makeDoc([snd], [{ frameIdx: 0, sound: linkage }]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    expect(startTag).toBeDefined();
+    const flags = startTag.body[2];
+    expect(flags & 1).toBe(1); // HasInPoint
+    const ip = startTag.body[3] | (startTag.body[4] << 8) | (startTag.body[5] << 16) | (startTag.body[6] << 24);
+    expect(ip).toBe(4410);
+  });
+
+  it("outPoint on SoundLinkage is encoded in StartSound SoundInfo", () => {
+    const snd = makeSoundItem("snd1");
+    const linkage: SoundLinkage = {
+      libraryItemId: "snd1",
+      syncMode: "event",
+      repeatCount: 1,
+      outPoint: 88200,
+    };
+    const doc = makeDoc([snd], [{ frameIdx: 0, sound: linkage }]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    expect(startTag).toBeDefined();
+    const flags = startTag.body[2];
+    expect((flags >> 1) & 1).toBe(1); // HasOutPoint
+    const op = startTag.body[3] | (startTag.body[4] << 8) | (startTag.body[5] << 16) | (startTag.body[6] << 24);
+    expect(op).toBe(88200);
+  });
+
+  it("customEnvelope on SoundLinkage produces HasEnvelope in StartSound SoundInfo", () => {
+    const snd = makeSoundItem("snd1");
+    const linkage: SoundLinkage = {
+      libraryItemId: "snd1",
+      syncMode: "event",
+      repeatCount: 1,
+      customEnvelope: [
+        { pos44: 0,     leftLevel: 0,     rightLevel: 0 },
+        { pos44: 44100, leftLevel: 32768, rightLevel: 32768 },
+      ],
+    };
+    const doc = makeDoc([snd], [{ frameIdx: 0, sound: linkage }]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    expect(startTag).toBeDefined();
+    // body[0..1]=SoundId, body[2]=flags
+    const flags = startTag.body[2];
+    expect((flags >> 3) & 1).toBe(1); // HasEnvelope
+    // compile.ts passes loops=repeatCount=1, so HasLoops is set and body[3..4]=LoopCount
+    // then body[5]=EnvelopeCount
+    const hasLoops = (flags >> 2) & 1;
+    const envCountOffset = 3 + (hasLoops ? 2 : 0);
+    expect(startTag.body[envCountOffset]).toBe(2); // EnvelopeCount = 2
+  });
+
+  it("effect='fadeIn' on SoundLinkage produces HasEnvelope in StartSound SoundInfo", () => {
+    const snd = makeSoundItem("snd1");
+    const linkage: SoundLinkage = {
+      libraryItemId: "snd1",
+      syncMode: "event",
+      repeatCount: 1,
+      effect: "fadeIn",
+    };
+    const doc = makeDoc([snd], [{ frameIdx: 0, sound: linkage }]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
+    expect(startTag).toBeDefined();
+    // body[0..1]=SoundId, body[2]=flags
+    const flags = startTag.body[2];
+    expect((flags >> 3) & 1).toBe(1); // HasEnvelope
+    // compile.ts passes loops=repeatCount=1, so HasLoops may be set
+    const hasLoops = (flags >> 2) & 1;
+    const envCountOffset = 3 + (hasLoops ? 2 : 0);
+    expect(startTag.body[envCountOffset]).toBe(2); // fadeIn = 2 envelope points
   });
 });

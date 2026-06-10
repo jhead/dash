@@ -1,0 +1,10 @@
+{
+  "id": "0907-swf-publish-startsound-envelope-in-point-out-poi",
+  "title": "SWF publish: StartSound envelope/in-point/out-point silently dropped",
+  "description": "encodeStartSound in packages/swf/src/audio.ts (line 237-242) hardcodes HasEnvelope=0, HasInPoint=0, HasOutPoint=0 as MVP stubs. The model fully supports SoundLinkage.inPoint, outPoint, effect (preset fades/pans), and customEnvelope (SoundEnvelopePoint[]). compile.ts (lines 1990-1993) passes these fields to encodeStartSound but they are silently discarded.\\n\\nAny FLA with sound in/out points, fade effects, or custom envelopes will play incorrectly (full sound, no fading, no panning, no trim).\\n\\nFix: implement the HasInPoint, HasOutPoint, and HasEnvelope fields in encodeStartSound per SWF spec \u00a77.5.2.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T19:38:02Z",
+  "updated_at": "2026-06-10T19:38:06Z"
+}
