@@ -1,0 +1,10 @@
+{
+  "id": "0728-implement-snap-to-grid-and-snap-to-objects-in-st",
+  "title": "Implement snap-to-grid and snap-to-objects in stage drag",
+  "description": "snapToGrid and snapToObjects flags exist in the document model but StageArea.tsx does not use them during drag operations. snapToGrid: during drag/move, quantize object position to the nearest grid cell (gridX x gridY spacing from docProperties). snapToObjects: during drag, snap object edges/center to nearby objects' edges/centers (within a ~5px snap radius). The snap-to-guides already works \u2014 use it as a reference for the implementation pattern.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T05:40:34Z",
+  "updated_at": "2026-06-10T05:43:22Z"
+}
