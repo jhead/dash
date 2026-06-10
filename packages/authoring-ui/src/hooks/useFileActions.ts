@@ -4,7 +4,7 @@ import { createDocument, createBitmap, createSound } from "@flash/core";
 import { saveFla, loadFla } from "@flash/core";
 import type { BitmapItem, SoundItem, FlashDocument } from "@flash/core";
 
-const FLA_FILTERS = [{ name: "Flash Document", extensions: ["fla"] }];
+const FLA_FILTERS = [{ name: "Dash Document", extensions: ["fla"] }];
 
 /** Returns true when running inside a Tauri desktop app. */
 function isTauri(): boolean {

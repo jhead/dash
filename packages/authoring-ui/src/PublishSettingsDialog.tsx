@@ -229,10 +229,10 @@ export function PublishSettingsDialog({
         {/* Body */}
         <div style={styles.body}>
           {/* Version info (read-only) */}
-          <div style={styles.sectionTitle}>Flash Version</div>
+          <div style={styles.sectionTitle}>Target Version</div>
           <div style={styles.row}>
             <span style={styles.label}>SWF Version:</span>
-            <span style={styles.readOnlyValue}>Flash Player 8 / SWF v8</span>
+            <span style={styles.readOnlyValue}>SWF v8 (Flash Player 8)</span>
           </div>
 
           <div style={styles.divider} />

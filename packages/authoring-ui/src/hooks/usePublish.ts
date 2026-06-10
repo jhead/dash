@@ -3,7 +3,7 @@ import { writeFile } from "@tauri-apps/plugin-fs";
 import { compileDocument } from "@flash/swf";
 import type { FlashDocument } from "@flash/core";
 
-const SWF_FILTERS = [{ name: "Flash Movie", extensions: ["swf"] }];
+const SWF_FILTERS = [{ name: "Dash Movie", extensions: ["swf"] }];
 
 /**
  * Publish actions: compile the document to SWF and optionally save to disk.
