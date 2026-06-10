@@ -214,7 +214,14 @@ export interface Fla8BitmapRef {
   readonly filters: Fla8Filter[];
 }
 
-export type Fla8Element = Fla8Shape | Fla8Instance | Fla8Text | Fla8BitmapRef;
+export interface Fla8VideoRef {
+  readonly type: "video";
+  readonly matrix: Fla8Matrix;
+  /** Index into the "Media N" stream that carries the FLV payload. */
+  readonly mediaId: number;
+}
+
+export type Fla8Element = Fla8Shape | Fla8Instance | Fla8Text | Fla8BitmapRef | Fla8VideoRef;
 
 export interface Fla8Frame {
   /** span length in frames (>= 1) */
@@ -304,6 +311,11 @@ export interface Fla8SoundInfo {
   readonly name: string;
 }
 
+export interface Fla8VideoInfo {
+  /** Library display name of the video item. */
+  readonly name: string;
+}
+
 export interface Fla8ContentsInfo {
   readonly formatVersion: number;
   readonly width: number | null;
@@ -316,6 +328,8 @@ export interface Fla8ContentsInfo {
   readonly symbols: Map<number, Fla8SymbolInfo>;
   /** sound stream number -> info */
   readonly sounds: Map<number, Fla8SoundInfo>;
+  /** video/media stream number -> info (for "Video N" or "Media N" FLV entries) */
+  readonly videos: Map<number, Fla8VideoInfo>;
 }
 
 // ---------------------------------------------------------------------------
@@ -743,6 +757,8 @@ function deserializeClass(name: string, ctx: ParseCtx): ParsedNode {
         return { cls: "element", element: readCPicText(ctx) };
       case "CPicBitmap":
         return { cls: "element", element: readCPicBitmapRef(ctx) };
+      case "CPicVideo":
+        return { cls: "element", element: readCPicVideo(ctx) };
       default: {
         // Unknown CPic*/CMorph* class: consume the CPicObj base if plausible,
         // then skip to the next object-tail signature.
@@ -1653,6 +1669,36 @@ function readCPicBitmapRef(ctx: ParseCtx): Fla8BitmapRef {
   return { type: "bitmap", matrix, mediaId, filters };
 }
 
+// --- CPicVideo ----------------------------------------------------------------
+//
+// CPicVideo is a video object placed on the timeline, analogous to CPicBitmap
+// for bitmap instances. The binary layout (inferred from flacomdoc and the
+// fla-decoder reference; no fixture FLA with video was available to verify):
+//
+//   CPicObjBase  (schema byte + flags byte + null child tag)
+//   UI8          schema  (version byte, same pattern as CPicBitmap)
+//   4×4 matrix   (16.16 fixed-point + tx/ty in twips)
+//   UI16         mediaId — matches the "Media N" OLE stream with the FLV payload
+//
+// No filter fields are documented for CPicVideo in Flash 8; if future evidence
+// shows otherwise, add filter parsing here (same as readCPicBitmapRef).
+
+function readCPicVideo(ctx: ParseCtx): Fla8VideoRef {
+  const { r } = ctx;
+  readCPicObjBase(ctx);
+  let matrix: Fla8Matrix = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+  let mediaId = 0;
+  try {
+    r.skip(1); // schema version byte
+    matrix = readMatrix(r);
+    mediaId = r.u16();
+  } catch (err) {
+    if (!(err instanceof FlaEofError)) throw err;
+  }
+  verifyBoundary(ctx);
+  return { type: "video", matrix, mediaId };
+}
+
 // --- CPicText ------------------------------------------------------------------
 
 interface TextRun {
@@ -2463,6 +2509,47 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     }
   }
 
+  // -- video library table ----------------------------------------------------
+  // Video items in the Contents stream appear as stream names "Video N" or
+  // short-form "Vi N N", followed by the library display name as a BomString.
+  // The media stream number in "Video N" matches the mediaId stored in each
+  // CPicVideo stage element and the corresponding "Media N" OLE stream that
+  // carries the FLV payload.
+  const videos = new Map<number, Fla8VideoInfo>();
+  if (unicode) {
+    for (const prefix of ["Video ", "Vi "]) {
+      const pat = utf16Pattern(prefix);
+      let pos = 0;
+      for (;;) {
+        const idx = findBytes(bytes, pat, pos);
+        if (idx < 0) break;
+        pos = idx + 1;
+        const lenByte = idx >= 1 ? bytes[idx - 1]! : 0;
+        if (lenByte < prefix.length || lenByte > 64) continue;
+        const end = idx + lenByte * 2;
+        if (end > bytes.length) continue;
+        const streamName = utf16le(bytes.subarray(idx, end));
+        const m = /^(?:Video (\d+)|Vi (\d+) \d+)$/.exec(streamName);
+        if (!m) continue;
+        const num = parseInt(m[1] ?? m[2]!, 10);
+        // The library display name follows as the next BomString within a short window.
+        let search = end;
+        const windowEnd = Math.min(bytes.length - 2, end + 120);
+        while (search < windowEnd) {
+          const s = tryReadBomStringAt(bytes, search);
+          if (s) {
+            const name = s.value;
+            if (name.length > 0 && !name.includes("/") && !name.startsWith(".\\")) {
+              if (!videos.has(num)) videos.set(num, { name });
+            }
+            break;
+          }
+          search++;
+        }
+      }
+    }
+  }
+
   return {
     formatVersion,
     width: info.width,
@@ -2472,5 +2559,6 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     sceneNames,
     symbols,
     sounds,
+    videos,
   };
 }

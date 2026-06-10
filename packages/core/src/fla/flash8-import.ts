@@ -32,8 +32,8 @@ import type { AdjustColorFilter, ConvolutionFilter, FlashFilter } from "../engin
 import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
-import { createSymbol, createSound, createBitmap, createSymbolLinkage } from "../model/library.js";
-import { decodeMediaAudio, decodeMediaBitmap, decodedBitmapToDataUri } from "./media.js";
+import { createSymbol, createSound, createBitmap, createVideo, createSymbolLinkage } from "../model/library.js";
+import { decodeMediaAudio, decodeMediaBitmap, decodedBitmapToDataUri, bytesToBase64 } from "./media.js";
 import {
   parseFla8Contents,
   parseFla8Timeline,
@@ -695,6 +695,8 @@ function convertElement(
   symbolIdByIndex: Map<number, string>,
   bitmapIdByIndex: Map<number, string>,
   bitmapSizeByIndex: Map<number, { width: number; height: number }>,
+  videoIdByIndex: Map<number, string>,
+  videoSizeByIndex: Map<number, { width: number; height: number }>,
 ): DisplayObject | null {
   switch (el.type) {
     case "shape":
@@ -791,6 +793,29 @@ function convertElement(
         ...(bitmapFilters.length > 0 ? { filters: bitmapFilters } : {}),
       };
     }
+    case "video": {
+      const videoItemId = videoIdByIndex.get(el.mediaId);
+      if (!videoItemId) {
+        console.warn(
+          `[FLA import] video placement references unknown media #${el.mediaId}; skipping`,
+        );
+        return null;
+      }
+      const { scaleX, scaleY, rotation } = decompose(el.matrix);
+      const size = videoSizeByIndex.get(el.mediaId) ?? { width: 320, height: 240 };
+      return {
+        type: "video",
+        id: nextId("video"),
+        videoItemId,
+        x: el.matrix.tx,
+        y: el.matrix.ty,
+        width: Math.max(size.width, 1),
+        height: Math.max(size.height, 1),
+        scaleX,
+        scaleY,
+        rotation,
+      };
+    }
   }
 }
 
@@ -821,13 +846,15 @@ function convertLayer(
   soundIdByIndex: Map<number, string>,
   bitmapIdByIndex: Map<number, string>,
   bitmapSizeByIndex: Map<number, { width: number; height: number }>,
+  videoIdByIndex: Map<number, string>,
+  videoSizeByIndex: Map<number, { width: number; height: number }>,
 ): Layer {
   const frames: Frame[] = [];
   let frameIndex = 0;
   for (const f of l.frames) {
     const displayObjects: DisplayObject[] = [];
     for (const el of f.elements) {
-      const converted = convertElement(el, symbolIdByIndex, bitmapIdByIndex, bitmapSizeByIndex);
+      const converted = convertElement(el, symbolIdByIndex, bitmapIdByIndex, bitmapSizeByIndex, videoIdByIndex, videoSizeByIndex);
       if (converted) displayObjects.push(converted);
     }
     let sound: SoundLinkage | null = null;
@@ -890,9 +917,11 @@ function convertTimeline(
   soundIdByIndex: Map<number, string>,
   bitmapIdByIndex: Map<number, string>,
   bitmapSizeByIndex: Map<number, { width: number; height: number }>,
+  videoIdByIndex: Map<number, string>,
+  videoSizeByIndex: Map<number, { width: number; height: number }>,
 ): Timeline {
   const layers = t.layers.map((l, i) =>
-    convertLayer(l, i, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex),
+    convertLayer(l, i, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex, videoIdByIndex, videoSizeByIndex),
   );
   if (layers.length === 0) {
     return { layers: [createLayer("Layer 1", "normal")] };
@@ -993,12 +1022,16 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     // items will be populated after audio streams are decoded below
   }
 
-  // --- library bitmaps + audio -----------------------------------------------
-  // "Media N" streams carry both bitmap and audio payloads. Try each stream as
-  // audio first (for media indexes that the Contents stream listed as sounds),
-  // then as a bitmap for all other indexes.
+  // --- library bitmaps + audio + video ----------------------------------------
+  // "Media N" streams carry bitmap, audio, and video (FLV) payloads. Process
+  // each stream in priority order:
+  //   1. Audio (for media indexes listed as sounds in the Contents stream)
+  //   2. Video (FLV magic "FLV" = 0x46 0x4C 0x56 at offset 0)
+  //   3. Bitmap fallback (JPEG / PNG / lossless)
   const bitmapIdByIndex = new Map<number, string>();
   const bitmapSizeByIndex = new Map<number, { width: number; height: number }>();
+  const videoIdByIndex = new Map<number, string>();
+  const videoSizeByIndex = new Map<number, { width: number; height: number }>();
   for (const [name, bytes] of streams) {
     const mediaNum = streamNumber(MEDIA_RE, name);
     if (mediaNum === null) continue;
@@ -1020,10 +1053,28 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
           compressionType: decoded.compressionType,
         });
       }
-      continue; // audio media — never treat as bitmap
+      continue; // audio media — never treat as bitmap or video
     }
 
-    // Non-sound media stream — try bitmap decode.
+    // Detect FLV video payload: magic bytes "FLV" (0x46 0x4C 0x56) at offset 0.
+    if (bytes.length >= 3 && bytes[0] === 0x46 && bytes[1] === 0x4c && bytes[2] === 0x56) {
+      // FLV stream — create a VideoItem. Use the Contents-stream display name if
+      // we know it, otherwise fall back to a generic "Video N" label.
+      const videoInfo = contents.videos.get(mediaNum);
+      const videoName = videoInfo?.name ?? `Video ${mediaNum}`;
+      const dataUri = `data:video/x-flv;base64,${bytesToBase64(bytes)}`;
+      // Extract dimensions from the first video frame if possible; default to
+      // a safe 320×240 stub so the SWF compiler always has valid dimensions.
+      let width = 320;
+      let height = 240;
+      const videoItem = createVideo(videoName, { dataUri, width, height });
+      videoIdByIndex.set(mediaNum, videoItem.id);
+      videoSizeByIndex.set(mediaNum, { width, height });
+      items.push(videoItem);
+      continue; // do not fall through to bitmap decode
+    }
+
+    // Non-sound, non-video media stream — try bitmap decode.
     let decoded;
     try {
       decoded = decodeMediaBitmap(bytes);
@@ -1090,7 +1141,7 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     const shell = shells.get(s.num)!;
     const parsed = parsedSymbolTimelines.get(s.num);
     const timeline = parsed
-      ? convertTimeline(parsed, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex)
+      ? convertTimeline(parsed, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex, videoIdByIndex, videoSizeByIndex)
       : shell.timeline;
     items.push({ ...shell, timeline });
   }
@@ -1108,6 +1159,8 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
         soundIdByIndex,
         bitmapIdByIndex,
         bitmapSizeByIndex,
+        videoIdByIndex,
+        videoSizeByIndex,
       );
     } catch (err) {
       console.warn(
