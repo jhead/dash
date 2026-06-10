@@ -1248,7 +1248,8 @@ export function encodePlaceObject2WithClipDepth(
   depth: number,
   x: number,
   y: number,
-  clipDepth: number
+  clipDepth: number,
+  transform?: { scaleX?: number; scaleY?: number; rotation?: number; skewX?: number; skewY?: number }
 ): Uint8Array {
   const bw = new BitWriter();
 
@@ -1261,8 +1262,16 @@ export function encodePlaceObject2WithClipDepth(
   // CharacterId: UI16
   bw.writeUI16LE(charId);
 
-  // MATRIX: translation-only
-  const m = composeMatrix({ tx: x, ty: y, scaleX: 1, scaleY: 1, rotation: 0, skewX: 0, skewY: 0 });
+  // MATRIX: translation + optional scale/rotation
+  const m = composeMatrix({
+    tx: x,
+    ty: y,
+    scaleX: transform?.scaleX ?? 1,
+    scaleY: transform?.scaleY ?? 1,
+    rotation: transform?.rotation ?? 0,
+    skewX: transform?.skewX ?? 0,
+    skewY: transform?.skewY ?? 0,
+  });
   const swfM = toSWFMatrix(m);
   const { hasScale, scaleX, scaleY, hasRotate, rotateSkew0, rotateSkew1, translateX, translateY } = swfM;
 

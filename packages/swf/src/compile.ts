@@ -1865,6 +1865,24 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   }
                 }
 
+                // Mask layer: symbol instance as mask — place with HasClipDepth.
+                if (clipDepth !== undefined) {
+                  const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                    ? { scaleX, scaleY, rotation, skewX, skewY }
+                    : undefined;
+                  const placeBody = encodePlaceObject2WithClipDepth(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    clipDepth,
+                    instanceTransform
+                  );
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                  depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey });
+                  continue;
+                }
+
                 // Resolve loopMode and firstFrame for graphic symbol instances.
                 // loopMode defaults to "loop" (no extra encoding needed).
                 const loopMode = displayObj.loopMode ?? "loop";

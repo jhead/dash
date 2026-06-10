@@ -1,0 +1,10 @@
+{
+  "id": "0976-swf-compile-mask-layers-not-encoded-as-clip-dept",
+  "title": "SWF compile: mask layers not encoded as clip depth",
+  "description": "In compile.ts, layers with type='mask' or type='masked' are not compiled to SWF clip depth instructions. In SWF, a masking layer requires: the mask symbol placed at some depth, then ActionSetMask or clip depth (for sprite masks use DefineSprite clip depth from PlaceObject2 clipDepth). Check compile.ts's layer loop to see if it handles type='mask' layers. If not, implement: layers typed 'mask' should use PlaceObject2 clipDepth field to define the clip region for the layers it masks.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T22:16:00Z",
+  "updated_at": "2026-06-10T22:20:40Z"
+}
