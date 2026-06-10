@@ -41,6 +41,7 @@ import type {
   ClipAction,
   DisplayObject,
   DocumentProperties,
+  EaseCurve,
   Fill,
   FlashDocument,
   FlashFilter,
@@ -90,6 +91,7 @@ import { SceneSwitcher } from "./SceneSwitcher";
 import { ColorMixerPanel } from "./ColorMixerPanel";
 import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
 import { SwapSymbolDialog } from "./SwapSymbolDialog";
+import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { PublishSettingsDialog } from "./PublishSettingsDialog";
 import type { PublishSettings } from "./PublishSettingsDialog";
 import { PanelGroup } from "./PanelGroup";
@@ -252,6 +254,24 @@ function nextGroupName() {
 // Module-level clipboard (avoids async navigator.clipboard complexity)
 // ---------------------------------------------------------------------------
 let _clipboardItems: DisplayObject[] = [];
+
+// ---------------------------------------------------------------------------
+// Motion clipboard — stores tween parameters for Copy/Paste Motion
+// ---------------------------------------------------------------------------
+interface MotionClipboard {
+  tweenType: "none" | "motion" | "shape";
+  motionEase: number;
+  motionEaseCurve?: EaseCurve | null;
+  motionRotate: "none" | "auto" | "cw" | "ccw";
+  motionRotateCount: number;
+  motionOrientToPath: boolean;
+  motionSync: boolean;
+  motionScale: boolean;
+  shapeEase: number;
+  shapeBlend: "distributive" | "angular";
+}
+
+let _motionClipboard: MotionClipboard | null = null;
 
 let _textObjCounter = 0;
 function nextTextId() {
@@ -463,6 +483,9 @@ export function Shell(): React.ReactElement {
 
   // Edit Multiple Frames state
   const [editMultipleFrames, setEditMultipleFrames] = useState(false);
+
+  // Motion clipboard — tracks whether _motionClipboard is populated (for menu state)
+  const [hasMotionClipboard, setHasMotionClipboard] = useState(false);
 
   // RAF playback refs
   const rafRef = useRef<number | null>(null);
@@ -1048,6 +1071,74 @@ export function Shell(): React.ReactElement {
   }, [handleCopy, handlePaste]);
 
   // ---------------------------------------------------------------------------
+  // Motion clipboard — Copy Motion / Paste Motion
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Copy Motion: snapshot the tween parameters of the governing keyframe at
+   * the current frame into the module-level motion clipboard.
+   */
+  const handleCopyMotion = useCallback(() => {
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+    const kf = getGoverningKeyframe(layer, currentFrame);
+    if (!kf) return;
+    _motionClipboard = {
+      tweenType: kf.tweenType,
+      motionEase: kf.motionEase,
+      motionEaseCurve: kf.motionEaseCurve ?? null,
+      motionRotate: kf.motionRotate,
+      motionRotateCount: kf.motionRotateCount,
+      motionOrientToPath: kf.motionOrientToPath,
+      motionSync: kf.motionSync,
+      motionScale: kf.motionScale,
+      shapeEase: kf.shapeEase,
+      shapeBlend: kf.shapeBlend,
+    };
+    setHasMotionClipboard(true);
+  }, [timeline, safeActiveLayerIndex, currentFrame]);
+
+  /**
+   * Paste Motion: apply the motion clipboard's tween parameters to the
+   * governing keyframe at the current frame.  Only tween parameters are
+   * updated — display objects are left untouched.
+   */
+  const handlePasteMotion = useCallback(() => {
+    if (!_motionClipboard) return;
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return;
+    const kf = getGoverningKeyframe(layer, currentFrame);
+    if (!kf) return;
+    const mc = _motionClipboard;
+    const newTimeline = {
+      ...timeline,
+      layers: timeline.layers.map((l) => {
+        if (l.id !== layer.id) return l;
+        return {
+          ...l,
+          frames: l.frames.map((f) => {
+            if (f.index !== kf.index || !f.isKeyframe) return f;
+            return {
+              ...f,
+              tweenType: mc.tweenType,
+              motionEase: mc.motionEase,
+              motionEaseCurve: mc.motionEaseCurve,
+              motionRotate: mc.motionRotate,
+              motionRotateCount: mc.motionRotateCount,
+              motionOrientToPath: mc.motionOrientToPath,
+              motionSync: mc.motionSync,
+              motionScale: mc.motionScale,
+              shapeEase: mc.shapeEase,
+              shapeBlend: mc.shapeBlend,
+            };
+          }),
+        };
+      }),
+    };
+    pushDoc(withTimeline(() => newTimeline));
+  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
+
+  // ---------------------------------------------------------------------------
   // Frame clipboard — copy/paste frames in the Timeline
   // ---------------------------------------------------------------------------
 
@@ -1544,6 +1635,17 @@ export function Shell(): React.ReactElement {
       ...lib,
       items: lib.items.map((item) =>
         item.id === id && item.itemType === "symbol" ? { ...item, linkage } : item
+      ),
+    })));
+  }, [pushDoc, withLibrary]);
+
+  const handleSetSymbolProperties = useCallback((id: string, data: SymbolPropertiesData) => {
+    pushDoc(withLibrary((lib) => ({
+      ...lib,
+      items: lib.items.map((item) =>
+        item.id === id && item.itemType === "symbol"
+          ? { ...item, name: data.name, symbolType: data.symbolType, scale9Grid: data.scale9Grid }
+          : item
       ),
     })));
   }, [pushDoc, withLibrary]);
@@ -3170,6 +3272,9 @@ export function Shell(): React.ReactElement {
         onPaste={() => handlePaste(false)}
         onPasteInPlace={handlePasteInPlace}
         onDuplicate={handleDuplicate}
+        onCopyMotion={handleCopyMotion}
+        onPasteMotion={handlePasteMotion}
+        hasMotionClipboard={hasMotionClipboard}
         onArrange={handleArrange}
         onGroup={handleGroup}
         onUngroup={handleUngroup}
@@ -3637,6 +3742,7 @@ export function Shell(): React.ReactElement {
               onAddFolder={handleAddFolder}
               onMoveItemToFolder={handleMoveItemToFolder}
               onSetLinkage={handleSetLinkage}
+              onSetSymbolProperties={handleSetSymbolProperties}
             />
           ) : (
             <div

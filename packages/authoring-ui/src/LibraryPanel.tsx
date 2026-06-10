@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useRef, useMemo } from "react";
 import type { FlashDocument, Library, LibraryItem, LibraryFolder, Symbol, SymbolLinkage, SymbolType } from "@flash/core";
 import { SymbolLinkageDialog } from "./SymbolLinkageDialog";
+import { SymbolPropertiesDialog } from "./SymbolPropertiesDialog";
+import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 
 export interface LibraryPanelProps {
   library: Library;
@@ -17,6 +19,7 @@ export interface LibraryPanelProps {
   onAddFolder?: (name: string) => void;
   onMoveItemToFolder?: (itemId: string, folderId: string | null) => void;
   onSetLinkage?: (id: string, linkage: SymbolLinkage) => void;
+  onSetSymbolProperties?: (id: string, data: SymbolPropertiesData) => void;
 }
 
 // ----------------------------------------------------------------------------
@@ -257,11 +260,12 @@ interface ContextMenuProps {
   onDuplicate: (id: string) => void;
   onMoveToFolder: (itemId: string, folderId: string | null) => void;
   onLinkage?: (id: string) => void;
+  onSymbolProperties?: (id: string) => void;
 }
 
 function ContextMenu({
   x, y, item, useCount, folders,
-  onClose, onDelete, onEditInPlace, onRename, onDuplicate, onMoveToFolder, onLinkage,
+  onClose, onDelete, onEditInPlace, onRename, onDuplicate, onMoveToFolder, onLinkage, onSymbolProperties,
 }: ContextMenuProps): React.ReactElement {
   const menuStyle: React.CSSProperties = {
     position: "fixed",
@@ -343,6 +347,9 @@ function ContextMenu({
         {canEdit && onLinkage && (
           <MenuItemEl id="linkage" label="Linkage..." onClick={() => onLinkage(item.id)} />
         )}
+        {canEdit && onSymbolProperties && (
+          <MenuItemEl id="symbolProperties" label="Symbol Properties..." onClick={() => onSymbolProperties(item.id)} />
+        )}
         {canEdit && <div style={separatorStyle} />}
         {/* Move to Folder submenu */}
         {folders.length > 0 && (
@@ -423,6 +430,7 @@ export function LibraryPanel({
   onAddFolder,
   onMoveItemToFolder,
   onSetLinkage,
+  onSetSymbolProperties,
 }: LibraryPanelProps): React.ReactElement {
   const [collapsed, setCollapsed] = useState(false);
   const [showNewSymbolDialog, setShowNewSymbolDialog] = useState(false);
@@ -434,6 +442,11 @@ export function LibraryPanel({
 
   // Linkage dialog state
   const [linkageDialog, setLinkageDialog] = useState<{
+    item: Symbol;
+  } | null>(null);
+
+  // Symbol Properties dialog state
+  const [symbolPropertiesDialog, setSymbolPropertiesDialog] = useState<{
     item: Symbol;
   } | null>(null);
 
@@ -624,6 +637,18 @@ export function LibraryPanel({
     onSetLinkage?.(linkageDialog.item.id, linkage);
     setLinkageDialog(null);
   }, [linkageDialog, onSetLinkage]);
+
+  const handleOpenSymbolProperties = useCallback((id: string) => {
+    const item = library.items.find((i) => i.id === id);
+    if (!item || item.itemType !== "symbol") return;
+    setSymbolPropertiesDialog({ item: item as Symbol });
+  }, [library.items]);
+
+  const handleSymbolPropertiesConfirm = useCallback((data: SymbolPropertiesData) => {
+    if (!symbolPropertiesDialog) return;
+    onSetSymbolProperties?.(symbolPropertiesDialog.item.id, data);
+    setSymbolPropertiesDialog(null);
+  }, [symbolPropertiesDialog, onSetSymbolProperties]);
 
   // ---------------------------------------------------------------------------
   // Styles
@@ -1082,6 +1107,7 @@ export function LibraryPanel({
           onDuplicate={(id) => onDuplicateItem?.(id)}
           onMoveToFolder={handleMoveToFolder}
           onLinkage={onSetLinkage ? handleOpenLinkage : undefined}
+          onSymbolProperties={onSetSymbolProperties ? handleOpenSymbolProperties : undefined}
         />
       )}
 
@@ -1093,6 +1119,21 @@ export function LibraryPanel({
           linkage={linkageDialog.item.linkage}
           onConfirm={handleLinkageConfirm}
           onClose={() => setLinkageDialog(null)}
+        />
+      )}
+
+      {/* Symbol Properties dialog */}
+      {symbolPropertiesDialog && (
+        <SymbolPropertiesDialog
+          open={true}
+          data={{
+            name: symbolPropertiesDialog.item.name,
+            symbolType: symbolPropertiesDialog.item.symbolType,
+            linkage: symbolPropertiesDialog.item.linkage,
+            scale9Grid: symbolPropertiesDialog.item.scale9Grid,
+          }}
+          onConfirm={handleSymbolPropertiesConfirm}
+          onClose={() => setSymbolPropertiesDialog(null)}
         />
       )}
     </div>
