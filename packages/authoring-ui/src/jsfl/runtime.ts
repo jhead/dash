@@ -405,6 +405,7 @@ export interface JsflTimeline {
   currentLayer: number;
   readonly currentFrame: number;
   readonly frameCount: number;
+  readonly layerCount: number;
   readonly layers: JsflLayer[];
   addNewLayer(name: string, type?: string, addAbove?: boolean): void;
   deleteLayer(layerIndex: number): void;
@@ -491,6 +492,11 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
         if (layer.frameCount > max) max = layer.frameCount;
       }
       return max;
+    },
+    get layerCount() {
+      const scene = getScene();
+      if (!scene) return 0;
+      return scene.timeline.layers.length;
     },
     get layers(): JsflLayer[] {
       const scene = getScene();
