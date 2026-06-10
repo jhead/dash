@@ -805,10 +805,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   //    the display list so each scene starts with a clean stage.
 
   /**
-   * Serialize a ColorEffect (and standalone alpha) to a string key for change detection.
-   * Returns null when there is no active color effect and no non-default alpha.
+   * Serialize a ColorEffect, standalone alpha, and visible=false to a string key for change detection.
+   * Returns null when there is no active color effect, no non-default alpha, and visible is not false.
    */
   function colorEffectKey(displayObj: DisplayObject): string | null {
+    // Track visible=false for all applicable display object types
+    if (
+      (displayObj.type === "instance" || displayObj.type === "shape" ||
+       displayObj.type === "text" || displayObj.type === "bitmap") &&
+      (displayObj as { visible?: boolean }).visible === false
+    ) {
+      return "visible:false";
+    }
     if (displayObj.type !== "instance" && displayObj.type !== "text") return null;
     const obj = displayObj as import("@flash/core").SymbolInstance | import("@flash/core").TextDisplayObject;
     const ce = obj.colorEffect;
@@ -1661,6 +1669,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     objTransform
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
+                } else if (displayObj.type === "shape" && displayObj.visible === false) {
+                  // visible=false: encode as zero-alpha CXForm (alphaMult=0)
+                  const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform);
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
                   const placeBody = encodePlaceObject2(
                     charId,
@@ -1691,10 +1704,14 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
-                // Check for color effect (CXFormWithAlpha)
-                const cxform = displayObj.colorEffect
+                // Check for color effect (CXFormWithAlpha).
+                // Also synthesize a zero-alpha CXForm when visible===false.
+                let cxform = displayObj.colorEffect
                   ? colorEffectToCXForm(displayObj.colorEffect)
                   : null;
+                if (cxform === null && displayObj.visible === false) {
+                  cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                }
                 if (cxform !== null) {
                   const placeBody = encodePlaceObject2WithCXForm(
                     charId,
@@ -1742,15 +1759,16 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
+                const isHidden = displayObj.visible === false;
                 const hasAlpha =
-                  displayObj.alpha !== undefined && displayObj.alpha !== 1;
+                  (displayObj.alpha !== undefined && displayObj.alpha !== 1) || isHidden;
                 if (hasAlpha) {
                   const placeBody = encodePlaceObject2WithAlpha(
                     charId,
                     depth,
                     x,
                     y,
-                    displayObj.alpha!
+                    isHidden ? 0 : displayObj.alpha!
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
@@ -1876,10 +1894,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
                   // Check for color effect (CXFormWithAlpha).
-                  // Also synthesize a CXForm from standalone alpha when colorEffect is absent.
+                  // Also synthesize a zero-alpha CXForm when visible===false, or from
+                  // standalone alpha when colorEffect is absent.
                   let cxform = displayObj.colorEffect
                     ? colorEffectToCXForm(displayObj.colorEffect)
                     : null;
+                  if (cxform === null && displayObj.visible === false) {
+                    // visible=false: synthesize a fully-transparent CXForm (alphaMult=0)
+                    cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
                   if (cxform === null && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
                     cxform = {
                       redMult: 256, greenMult: 256, blueMult: 256,
@@ -1987,6 +2010,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   objTransform
                 );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
+              } else if (displayObj.type === "shape" && displayObj.visible === false) {
+                // visible=false: encode as zero-alpha CXForm move
+                const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform, true);
+                writer.writeTag(Tag.PlaceObject2, placeBody);
               } else {
                 // Character changed at same depth — use Move+Character flags
                 const newCharId =
@@ -2003,9 +2031,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
             } else if (displayObj.type === "text") {
               const charId = objCharIdMap.get(objId)!;
-              const cxform = displayObj.colorEffect
+              let cxform = displayObj.colorEffect
                 ? colorEffectToCXForm(displayObj.colorEffect)
                 : null;
+              if (cxform === null && displayObj.visible === false) {
+                cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+              }
               if (cxform !== null) {
                 // Move + HasMatrix + HasColorTransform (no HasCharacter unless replacing)
                 const placeBody = encodePlaceObject2WithCXForm(
@@ -2031,8 +2062,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
+              const isHidden = displayObj.visible === false;
               const hasAlpha =
-                displayObj.alpha !== undefined && displayObj.alpha !== 1;
+                (displayObj.alpha !== undefined && displayObj.alpha !== 1) || isHidden;
               if (hasAlpha) {
                 // Move with color transform — emit Move+HasMatrix+HasColorTransform
                 const placeBody = encodePlaceObject2WithAlpha(
@@ -2040,7 +2072,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   depth,
                   x,
                   y,
-                  displayObj.alpha!,
+                  isHidden ? 0 : displayObj.alpha!,
                   undefined,
                   true
                 );
@@ -2075,10 +2107,14 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               const charId = charIdMap.get(displayObj.symbolId);
               if (charId !== undefined) {
                 // Check for color effect (CXFormWithAlpha).
-                // Also synthesize a CXForm from standalone alpha when colorEffect is absent.
+                // Also synthesize a zero-alpha CXForm when visible===false, or from
+                // standalone alpha when colorEffect is absent.
                 let cxform = displayObj.colorEffect
                   ? colorEffectToCXForm(displayObj.colorEffect)
                   : null;
+                if (cxform === null && displayObj.visible === false) {
+                  cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                }
                 if (cxform === null && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
                   cxform = {
                     redMult: 256, greenMult: 256, blueMult: 256,
