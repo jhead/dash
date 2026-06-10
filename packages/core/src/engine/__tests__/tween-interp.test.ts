@@ -120,9 +120,10 @@ describe("getTweenedFrame — motion tween interpolation", () => {
     expect(obj.y).toBeCloseTo(6.25, 1);
   });
 
-  it("motionEase=100 (ease-out) at midpoint has more progress than linear", () => {
-    // TODO: Flash 8 motion tween interpolation should use the motionEase value.
-    // With ease=100 (ease-out), applyEase(0.5, 100) ≈ 0.9375 → x ≈ 93.75
+  it("motionEase=100 (ease-out) at midpoint: applyEase(0.5, 100) ≈ 0.9375 → x ≈ 93.75", () => {
+    // ease=100 (ease-out): fast start, slow end.
+    // applyEase formula: 1 - (1 - t)^(1 + (ease/100)*3) = 1 - (0.5)^4 = 0.9375
+    // x: lerp(0, 100, 0.9375) = 93.75
     const layerEased = buildMotionTweenLayer(8, 100);
     const layerLinear = buildMotionTweenLayer(8, 0);
 
@@ -135,8 +136,30 @@ describe("getTweenedFrame — motion tween interpolation", () => {
     const easedX = (easedFrame!.displayObjects[0] as SymbolInstance).x;
     const linearX = (linearFrame!.displayObjects[0] as SymbolInstance).x;
 
-    // ease-out: at midpoint, animation is further along than linear
+    // ease-out: at midpoint, animation is much further along than linear (93.75 vs 50)
+    expect(easedX).toBeCloseTo(93.75, 1);
     expect(easedX).toBeGreaterThan(linearX);
+  });
+
+  it("motionEase=-100 (ease-in) at midpoint: applyEase(0.5, -100) ≈ 0.0625 → x ≈ 6.25", () => {
+    // ease=-100 (ease-in): slow start, fast end.
+    // applyEase formula: t^(1 + (100/100)*3) = (0.5)^4 = 0.0625
+    // x: lerp(0, 100, 0.0625) = 6.25
+    const layerEasedIn = buildMotionTweenLayer(8, -100);
+    const layerLinear = buildMotionTweenLayer(8, 0);
+
+    const easedFrame = getTweenedFrame(layerEasedIn, 4);
+    const linearFrame = getTweenedFrame(layerLinear, 4);
+
+    expect(easedFrame).not.toBeNull();
+    expect(linearFrame).not.toBeNull();
+
+    const easedX = (easedFrame!.displayObjects[0] as SymbolInstance).x;
+    const linearX = (linearFrame!.displayObjects[0] as SymbolInstance).x;
+
+    // ease-in: at midpoint, animation is much earlier than linear (6.25 vs 50)
+    expect(easedX).toBeCloseTo(6.25, 1);
+    expect(easedX).toBeLessThan(linearX);
   });
 
   it("returns null for out-of-range frame index", () => {
