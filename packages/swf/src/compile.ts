@@ -9,7 +9,7 @@
  *  - RemoveObject2 when objects leave the display list
  *  - ShowFrame per frame, End
  */
-import type { BitmapFill, BitmapItem, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol } from "@flash/core";
+import type { BitmapFill, BitmapItem, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoItem } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans } from "@flash/core";
 import { deflateSync } from "fflate";
 import { Tag } from "./tags.js";
@@ -50,6 +50,14 @@ import {
 } from "./audio.js";
 import { encodeStartSound } from "./sounds.js";
 import { dataUriToBytes, encodeDefineBitsLossless2, encodeDefineBitsJpeg3 } from "./bitmaps.js";
+import {
+  encodeDefineVideoStream,
+  encodeVideoFrame,
+  demuxFlv,
+  flvCodecToSwfCodec,
+  VideoCodec,
+  type FlvVideoFrame,
+} from "./video.js";
 import { encodeDoInitAction } from "./doInitAction.js";
 import { encodeFrameLabel } from "./framelabel.js";
 import { encodeSceneAndFrameLabelData, hasAnyLabels } from "./scenelabels.js";
@@ -537,6 +545,62 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     writer.writeTag(Tag.DefineSound, soundBody);
   }
 
+  // 3d. Emit DefineVideoStream (tag 60) for each VideoItem in the library.
+  //     The actual per-frame VideoFrame (tag 61) tags are emitted in the frame
+  //     loop so they interleave with ShowFrame in playback order. Each video is
+  //     placed on its own depth on the first SWF frame.
+  interface VideoStreamInfo {
+    charId: number;
+    width: number;
+    height: number;
+    /** Per-SWF-frame video payloads (one entry per VideoFrame tag to emit). */
+    payloads: Uint8Array[];
+  }
+  const videoItems = doc.library.items.filter(
+    (item): item is VideoItem => item.itemType === "video"
+  );
+  const videoStreams: VideoStreamInfo[] = [];
+  for (const videoItem of videoItems) {
+    // Attempt to demux the FLV payload from the data URI; fall back to an
+    // empty stream so authoring still produces a valid character.
+    let flvFrames: FlvVideoFrame[] = [];
+    let codecId: number = VideoCodec.H263;
+    if (videoItem.dataUri) {
+      try {
+        const bytes = dataUriToBytes(videoItem.dataUri);
+        const flv = demuxFlv(bytes);
+        if (flv) {
+          flvFrames = flv.frames;
+          codecId = flvCodecToSwfCodec(flv.codecId);
+        }
+      } catch {
+        // Malformed data URI — emit an empty stream so compile still succeeds.
+      }
+    }
+
+    // Build the per-frame payload list. With real demuxed FLV frames we use the
+    // decoded video payloads directly. When demux yields nothing (e.g. a stub
+    // data URI in authoring), fall back to driving `frameCount` empty-payload
+    // VideoFrame tags so the stream is still advanced one frame per ShowFrame.
+    let payloads: Uint8Array[];
+    if (flvFrames.length > 0) {
+      payloads = flvFrames.map((f) => f.data);
+    } else {
+      const n = Math.max(0, Math.floor(videoItem.frameCount));
+      payloads = Array.from({ length: n }, () => new Uint8Array(0));
+    }
+
+    const numFrames = payloads.length;
+    const charId = writer.nextCharId();
+    const width = Math.max(0, Math.round(videoItem.width));
+    const height = Math.max(0, Math.round(videoItem.height));
+    writer.writeTag(
+      Tag.DefineVideoStream,
+      encodeDefineVideoStream(charId, numFrames, width, height, codecId)
+    );
+    videoStreams.push({ charId, width, height, payloads });
+  }
+
   // 4. Frames — iterate ALL scenes' timelines.
   //    Each scene gets a FrameLabel tag (scene name) at its first frame.
   //    Between scenes we emit RemoveObject2 for all occupied depths to reset
@@ -573,6 +637,24 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   // Track the depth assigned to each (sceneIdx:layerIdx:objId) triple
   const layerObjDepth = new Map<string, number>();
   let nextDepth = 1;
+
+  // Video streams are placed on high, dedicated depths (above any shape/text
+  // depth) so they never collide with the per-layer depth assignment below.
+  // depth → { charId, frameIdx into the stream's frame list }
+  const videoDepthBase = 50000;
+  const videoDepths = videoStreams.map((vs, i) => ({
+    depth: videoDepthBase + i,
+    charId: vs.charId,
+    width: vs.width,
+    height: vs.height,
+    payloads: vs.payloads,
+  }));
+  // Longest video, in frames — the SWF must run at least this many frames so
+  // every VideoFrame tag has a ShowFrame to land before.
+  const maxVideoFrames = videoDepths.reduce(
+    (m, v) => Math.max(m, v.payloads.length),
+    0
+  );
 
   // Map from display-object id → stable SWF character ID (global across scenes)
   const objCharIdMap = new Map<string, number>();
@@ -919,7 +1001,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         depthState.clear();
       }
 
-      const maxFrames = sceneFrameCount(scene.timeline);
+      // Scene 0 must run long enough to deliver every video frame (one
+      // VideoFrame tag lands before each ShowFrame).
+      const maxFrames =
+        sceneIdx === 0
+          ? Math.max(sceneFrameCount(scene.timeline), maxVideoFrames)
+          : sceneFrameCount(scene.timeline);
 
       // Emit FrameLabel (tag 43) for this scene at its first frame
       writer.writeTag(Tag.FrameLabel, encodeSceneLabel(scene.name));
@@ -940,6 +1027,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       }
 
       for (let frameIdx = 0; frameIdx < maxFrames; frameIdx++) {
+        // Video streams: placed once on scene 0 / frame 0, then advanced one
+        // VideoFrame (tag 61) per ShowFrame. VideoFrame tags are emitted just
+        // before this frame's ShowFrame (see below).
+        if (sceneIdx === 0 && frameIdx === 0) {
+          for (const v of videoDepths) {
+            writer.writeTag(
+              Tag.PlaceObject2,
+              encodePlaceObject2(v.charId, v.depth, 0, 0)
+            );
+          }
+        }
+
         // Collect the set of (depth, displayObj) that should be on-screen this frame.
         // Use getTweenedFrame to get interpolated positions during tween spans.
         const thisFrameDepths = new Map<
@@ -1475,6 +1574,21 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           }
         }
 
+        // Emit one VideoFrame (tag 61) per video stream for this SWF frame,
+        // advancing through the demuxed FLV frames. Only on scene 0 (videos are
+        // global characters placed once on the first scene's timeline).
+        if (sceneIdx === 0) {
+          for (const v of videoDepths) {
+            const payload = v.payloads[frameIdx];
+            if (payload !== undefined) {
+              writer.writeTag(
+                Tag.VideoFrame,
+                encodeVideoFrame(v.charId, frameIdx, payload)
+              );
+            }
+          }
+        }
+
         writer.writeTag(Tag.ShowFrame, new Uint8Array(0));
       }
     }
@@ -1488,7 +1602,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   const frameCount =
     doc.scenes.length === 0
       ? 1
-      : doc.scenes.reduce((sum, s) => sum + sceneFrameCount(s.timeline), 0);
+      : doc.scenes.reduce((sum, s, i) => {
+          const sceneFrames = sceneFrameCount(s.timeline);
+          // Scene 0 is extended to cover the longest embedded video stream.
+          return sum + (i === 0 ? Math.max(sceneFrames, maxVideoFrames) : sceneFrames);
+        }, 0);
 
   const result = writer.assemble(
     props.frameRate,

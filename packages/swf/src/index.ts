@@ -15,3 +15,11 @@ export { Tag } from "./tags.js";
 export type { TagCode } from "./tags.js";
 export { encodeDefineShape4, encodePlaceObject2 } from "./shapes.js";
 export { encodeDefineBitsLossless2 } from "./bitmaps.js";
+export {
+  encodeDefineVideoStream,
+  encodeVideoFrame,
+  demuxFlv,
+  flvCodecToSwfCodec,
+  VideoCodec,
+} from "./video.js";
+export type { FlvVideoFrame, FlvVideoStream, VideoCodecId } from "./video.js";

@@ -218,25 +218,25 @@ describe("SWF video tag support — graceful behaviour", () => {
     expect(lastTag.code).toBe(Tag.End);
   });
 
-  // Test 7: No DefineVideoStream (tag 60) is emitted (not yet implemented).
-  it("does NOT emit DefineVideoStream (tag 60) — not yet implemented", () => {
+  // Test 7: One DefineVideoStream (tag 60) is emitted per VideoItem.
+  it("emits one DefineVideoStream (tag 60) per VideoItem with a dataUri", () => {
     const video = makeVideoItem({ dataUri: "data:video/x-flv;base64,AAAA" });
     const doc = makeDoc([video]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
     const videoStreamTags = tags.filter((t) => t.code === 60);
-    // Currently expected to be empty because the feature is unimplemented.
-    expect(videoStreamTags.length).toBe(0);
+    expect(videoStreamTags.length).toBe(1);
   });
 
-  // Test 8: No VideoFrame (tag 61) is emitted (not yet implemented).
-  it("does NOT emit VideoFrame (tag 61) — not yet implemented", () => {
-    const video = makeVideoItem({ dataUri: "data:video/x-flv;base64,AAAA" });
+  // Test 8: VideoFrame (tag 61) tags are emitted to drive the stream.
+  it("emits VideoFrame (tag 61) tags to drive the stream", () => {
+    const video = makeVideoItem({ dataUri: "data:video/x-flv;base64,AAAA", frameCount: 10 });
     const doc = makeDoc([video]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
     const videoFrameTags = tags.filter((t) => t.code === 61);
-    expect(videoFrameTags.length).toBe(0);
+    // With an undecodable FLV stub we synthesize frameCount empty frames.
+    expect(videoFrameTags.length).toBe(10);
   });
 });
 
@@ -249,7 +249,7 @@ describe("SWF video tag support — pending implementation", () => {
   // implemented.  They are skipped so they don't fail CI until the feature
   // is wired up.  Remove the `.skip` when adding the implementation.
 
-  it.skip("emits DefineVideoStream (tag 60) for each VideoItem with a dataUri", () => {
+  it("emits DefineVideoStream (tag 60) for each VideoItem with a dataUri", () => {
     // Expected: one tag-60 record whose body starts with:
     //   UI16  CharacterID      (≥ 1)
     //   UI16  NumFrames        (matches VideoItem.frameCount)
@@ -286,7 +286,7 @@ describe("SWF video tag support — pending implementation", () => {
     expect(body.length).toBeGreaterThanOrEqual(10);
   });
 
-  it.skip("emits one VideoFrame (tag 61) per decoded video frame in the dataUri", () => {
+  it("emits one VideoFrame (tag 61) per decoded video frame in the dataUri", () => {
     // Expected: N tag-61 records, each with body:
     //   UI16  StreamID   (matches the DefineVideoStream CharacterID)
     //   UI16  FrameNum   (0-based frame index)
@@ -307,7 +307,7 @@ describe("SWF video tag support — pending implementation", () => {
     }
   });
 
-  it.skip("DefineVideoStream StreamID matches the VideoFrame StreamID", () => {
+  it("DefineVideoStream StreamID matches the VideoFrame StreamID", () => {
     const video = makeVideoItem({ dataUri: "data:video/x-flv;base64,AAAA", frameCount: 1 });
     const doc = makeDoc([video]);
     const swf = compileDocument(doc);
@@ -323,12 +323,133 @@ describe("SWF video tag support — pending implementation", () => {
     expect(frameStreamId).toBe(streamCharId);
   });
 
-  it.skip("Tag.DefineVideoStream constant equals 60", () => {
+  it("Tag.DefineVideoStream constant equals 60", () => {
     // Once tags.ts is updated, this constant should exist.
     expect((Tag as Record<string, number>)["DefineVideoStream"]).toBe(60);
   });
 
-  it.skip("Tag.VideoFrame constant equals 61", () => {
+  it("Tag.VideoFrame constant equals 61", () => {
     expect((Tag as Record<string, number>)["VideoFrame"]).toBe(61);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Low-level encoder + FLV demuxer unit tests (synthetic data)
+// ---------------------------------------------------------------------------
+
+import {
+  encodeDefineVideoStream,
+  encodeVideoFrame,
+  demuxFlv,
+  VideoCodec,
+} from "../video.js";
+
+/** Build a minimal valid FLV with `n` video tags (H.263 codec, payload = i+1 bytes). */
+function makeFlv(n: number): Uint8Array {
+  const parts: number[] = [];
+  // Header: "FLV", version 1, flags (video only = 0x01), DataOffset = 9.
+  parts.push(0x46, 0x4c, 0x56, 0x01, 0x01, 0x00, 0x00, 0x00, 0x09);
+  // First PreviousTagSize.
+  parts.push(0x00, 0x00, 0x00, 0x00);
+  for (let i = 0; i < n; i++) {
+    const payloadLen = i + 1; // first byte is the frametype/codec nibble byte
+    parts.push(9); // TagType = video
+    // DataSize UI24-BE
+    parts.push((payloadLen >> 16) & 0xff, (payloadLen >> 8) & 0xff, payloadLen & 0xff);
+    // Timestamp UI24-BE + ext
+    parts.push(0, 0, 0, 0);
+    // StreamID UI24
+    parts.push(0, 0, 0);
+    // VIDEODATA: first byte = (frameType<<4)|codec. keyframe(1) for first, inter(2) after.
+    const frameType = i === 0 ? 1 : 2;
+    parts.push((frameType << 4) | 2 /* H.263 */);
+    for (let b = 1; b < payloadLen; b++) parts.push(0xaa);
+    // Trailing PreviousTagSize UI32-BE (11 + payloadLen)
+    parts.push(0, 0, 0, 11 + payloadLen);
+  }
+  return new Uint8Array(parts);
+}
+
+describe("video.ts — encoders", () => {
+  it("encodeDefineVideoStream produces the exact 10-byte SWF body layout", () => {
+    const body = encodeDefineVideoStream(7, 30, 320, 240, VideoCodec.Vp6, {
+      deblocking: 1,
+      smoothing: true,
+    });
+    expect(body.length).toBe(10);
+    const dv = new DataView(body.buffer);
+    expect(dv.getUint16(0, true)).toBe(7); // id
+    expect(dv.getUint16(2, true)).toBe(30); // numFrames
+    expect(dv.getUint16(4, true)).toBe(320); // width
+    expect(dv.getUint16(6, true)).toBe(240); // height
+    // flags = (deblocking << 1) | smoothing = (1<<1)|1 = 3
+    expect(body[8]).toBe(0b011);
+    expect(body[9]).toBe(VideoCodec.Vp6); // codecId = 4
+  });
+
+  it("encodeVideoFrame writes StreamID, FrameNum then payload", () => {
+    const payload = new Uint8Array([0x12, 0x34, 0x56]);
+    const body = encodeVideoFrame(7, 5, payload);
+    expect(body.length).toBe(4 + payload.length);
+    const dv = new DataView(body.buffer);
+    expect(dv.getUint16(0, true)).toBe(7); // streamId
+    expect(dv.getUint16(2, true)).toBe(5); // frameNum
+    expect(Array.from(body.slice(4))).toEqual([0x12, 0x34, 0x56]);
+  });
+});
+
+describe("video.ts — FLV demuxer", () => {
+  it("returns null for non-FLV input", () => {
+    expect(demuxFlv(new Uint8Array([0x00, 0x01, 0x02]))).toBeNull();
+    expect(demuxFlv(new Uint8Array(0))).toBeNull();
+  });
+
+  it("extracts every video frame with sequential frameNum and codec", () => {
+    const flv = makeFlv(4);
+    const result = demuxFlv(flv);
+    expect(result).not.toBeNull();
+    expect(result!.codecId).toBe(2); // H.263
+    expect(result!.frames.length).toBe(4);
+    result!.frames.forEach((f, i) => {
+      expect(f.frameNum).toBe(i);
+      expect(f.codecId).toBe(2);
+      expect(f.data.length).toBe(i + 1); // payload includes the nibble byte
+      expect(f.frameType).toBe(i === 0 ? 1 : 2);
+    });
+  });
+
+  it("compiles a real FLV data URI into matching tag-60/tag-61 payloads", () => {
+    const flv = makeFlv(3);
+    // Encode FLV bytes as a base64 data URI (Node Buffer available in vitest).
+    const b64 = Buffer.from(flv).toString("base64");
+    const video = makeVideoItem({
+      dataUri: `data:video/x-flv;base64,${b64}`,
+      frameCount: 99, // should be ignored — real demux yields 3 frames
+      width: 128,
+      height: 96,
+    });
+    const doc = makeDoc([video]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const streamTags = tags.filter((t) => t.code === 60);
+    expect(streamTags.length).toBe(1);
+    const sBody = streamTags[0].body;
+    const sdv = new DataView(sBody.buffer, sBody.byteOffset, sBody.byteLength);
+    expect(sdv.getUint16(2, true)).toBe(3); // numFrames = demuxed count, not 99
+    expect(sdv.getUint16(4, true)).toBe(128); // width
+    expect(sdv.getUint16(6, true)).toBe(96); // height
+    expect(sBody[9]).toBe(VideoCodec.H263); // codec mapped from FLV nibble 2
+
+    const frameTags = tags.filter((t) => t.code === 61);
+    expect(frameTags.length).toBe(3);
+    const streamId = sdv.getUint16(0, true);
+    frameTags.forEach((t, i) => {
+      const fdv = new DataView(t.body.buffer, t.body.byteOffset, t.body.byteLength);
+      expect(fdv.getUint16(0, true)).toBe(streamId); // streamId matches
+      expect(fdv.getUint16(2, true)).toBe(i); // frameNum
+      // payload length matches the FLV frame payload (i+1 bytes)
+      expect(t.body.length - 4).toBe(i + 1);
+    });
   });
 });

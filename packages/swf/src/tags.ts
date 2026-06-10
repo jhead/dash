@@ -27,6 +27,8 @@ export const Tag = {
   DefineFont2: 48,
   ExportAssets: 56,
   DoInitAction: 59,
+  DefineVideoStream: 60,
+  VideoFrame: 61,
   EnableDebugger2: 64,
   FileAttributes: 69,
   PlaceObject3: 70,
