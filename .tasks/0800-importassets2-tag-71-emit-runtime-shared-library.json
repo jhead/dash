@@ -1,0 +1,10 @@
+{
+  "id": "0800-importassets2-tag-71-emit-runtime-shared-library",
+  "title": "ImportAssets2 (tag 71): emit runtime-shared library imports in compiled SWF",
+  "description": "The FlashDocument Symbol model (packages/core/src/model/types.ts) carries `importForRuntimeSharing: boolean` and `sharedUrl: string` fields, which Flash 8 uses for runtime shared libraries (RSLs). The SWF spec defines ImportAssets2 (tag 71) to load those assets from a remote SWF. However packages/swf/src/compile.ts emits no ImportAssets2 tag \u2014 the fields are ignored during compilation, so RSL symbols silently fail to load at runtime.\n\nThe gap is documented in packages/swf/src/__tests__/importassets.test.ts which already contains a tag 71 parser and placeholders marked 'not yet implemented'.\n\nImplement:\n1. Add encodeImportAssets2(url: string, symbols: Array<{charId: number; name: string}>): Uint8Array in packages/swf/src/compile.ts or a new importassets.ts, following the tag 71 SWF spec format (tag code 71, reserved UI8=1, URL string, count UI16, [charId UI16 + name string] \u00d7 n).\n2. In compileDocument, collect symbols where importForRuntimeSharing=true and sharedUrl is non-empty. Group by sharedUrl and emit one ImportAssets2 tag per URL in the first frame, immediately after ExportAssets.\n3. Activate/fix the existing test assertions in packages/swf/src/__tests__/importassets.test.ts that are currently skipped ('not yet implemented').\n\nAcceptance:\n- The importassets.test.ts suite passes with no skipped tests for ImportAssets2 structure.\n- A compiled SWF for a document with an RSL symbol contains tag 71 with the correct URL and charId/name mapping (verified by the tag parser in the test file).",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T11:11:17Z",
+  "updated_at": "2026-06-10T11:11:17Z"
+}

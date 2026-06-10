@@ -32,6 +32,7 @@ export const Tag = {
   EnableDebugger2: 64,
   FileAttributes: 69,
   PlaceObject3: 70,
+  ImportAssets2: 71,
   DefineFont3: 75,
   Metadata: 77,
   DefineScalingGrid: 78,

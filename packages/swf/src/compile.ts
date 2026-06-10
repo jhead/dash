@@ -180,6 +180,55 @@ export function encodeExportAssets(symbols: Array<{ charId: number; name: string
 }
 
 // ---------------------------------------------------------------------------
+// Encode ImportAssets2 (tag 71) — runtime-shared library imports
+// ---------------------------------------------------------------------------
+
+/**
+ * Encode an ImportAssets2 (tag 71) tag body.
+ *
+ * Format (SWF spec):
+ *   STRING  URL (null-terminated)
+ *   UI8     Reserved = 1
+ *   UI8     Reserved = 0
+ *   UI16    Count
+ *   For each symbol:
+ *     UI16    CharacterId
+ *     STRING  Name (null-terminated UTF-8)
+ */
+export function encodeImportAssets2(url: string, symbols: Array<{ charId: number; name: string }>): Uint8Array {
+  // Calculate total byte length:
+  // url bytes + 1 (NUL) + 2 (reserved) + 2 (count) + per-symbol: 2 (UI16 charId) + name bytes + 1 (NUL)
+  let totalLen = url.length + 1 + 2 + 2;
+  for (const s of symbols) {
+    totalLen += 2 + s.name.length + 1;
+  }
+  const buf = new Uint8Array(totalLen);
+  const view = new DataView(buf.buffer);
+  let offset = 0;
+  // Write URL null-terminated
+  for (let i = 0; i < url.length; i++) {
+    buf[offset++] = url.charCodeAt(i);
+  }
+  buf[offset++] = 0; // NUL terminator
+  // Reserved bytes
+  buf[offset++] = 1;
+  buf[offset++] = 0;
+  // Count
+  view.setUint16(offset, symbols.length, true /* LE */);
+  offset += 2;
+  // Each symbol: charId + name
+  for (const s of symbols) {
+    view.setUint16(offset, s.charId, true /* LE */);
+    offset += 2;
+    for (let i = 0; i < s.name.length; i++) {
+      buf[offset++] = s.name.charCodeAt(i);
+    }
+    buf[offset++] = 0; // NUL terminator
+  }
+  return buf;
+}
+
+// ---------------------------------------------------------------------------
 // Encode DefineScalingGrid (tag 78) — 9-slice grid for a sprite character
 // ---------------------------------------------------------------------------
 
@@ -538,14 +587,37 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     }
   }
 
-  // 3b. Collect ExportAssets entries for symbols with exportForActionScript=true.
+  // 3b. Collect ExportAssets entries for symbols with exportForActionScript=true
+  // or exportForRuntimeSharing=true.
   // These will be emitted inside the first SWF frame (after FrameLabel, before DoInitAction).
   const exportEntries: { charId: number; name: string }[] = [];
   for (const sym of symbols) {
-    if (sym.linkage.exportForActionScript && sym.linkage.linkageIdentifier) {
+    const shouldExport =
+      (sym.linkage.exportForActionScript && sym.linkage.linkageIdentifier) ||
+      (sym.linkage.exportForRuntimeSharing && sym.linkage.linkageIdentifier);
+    if (shouldExport && sym.linkage.linkageIdentifier) {
       const charId = charIdMap.get(sym.id);
       if (charId !== undefined) {
         exportEntries.push({ charId, name: sym.linkage.linkageIdentifier });
+      }
+    }
+  }
+
+  // 3b2. Collect ImportAssets2 entries grouped by sharedUrl for symbols with
+  // importForRuntimeSharing=true and a non-empty sharedUrl and linkageIdentifier.
+  // These will be emitted in the first SWF frame, after ExportAssets.
+  const importsByUrl = new Map<string, Array<{ charId: number; name: string }>>();
+  for (const sym of symbols) {
+    if (
+      sym.linkage.importForRuntimeSharing &&
+      sym.linkage.sharedUrl &&
+      sym.linkage.linkageIdentifier
+    ) {
+      const charId = charIdMap.get(sym.id);
+      if (charId !== undefined) {
+        const group = importsByUrl.get(sym.linkage.sharedUrl) ?? [];
+        group.push({ charId, name: sym.linkage.linkageIdentifier });
+        importsByUrl.set(sym.linkage.sharedUrl, group);
       }
     }
   }
@@ -1097,6 +1169,14 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         writer.writeTag(Tag.ExportAssets, encodeExportAssets(exportEntries));
       }
 
+      // Emit ImportAssets2 (tag 71) in the first SWF frame, one tag per sharedUrl.
+      // These must appear after ExportAssets but before DoInitAction.
+      if (sceneIdx === 0 && importsByUrl.size > 0) {
+        for (const [url, entries] of importsByUrl) {
+          writer.writeTag(Tag.ImportAssets2, encodeImportAssets2(url, entries));
+        }
+      }
+
       // Emit DoInitAction tags at the start of the very first SWF frame (scene 0, frame 0).
       // These must appear before any PlaceObject tags in the frame.
       if (sceneIdx === 0 && doInitActionBodies.length > 0) {
@@ -1106,6 +1186,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       }
 
       for (let frameIdx = 0; frameIdx < maxFrames; frameIdx++) {
+        // Collect letterSpacing DoAction scripts for text fields placed this frame.
+        // Each entry is a compiled AS2 snippet:
+        //   var _tf=new TextFormat();_tf.letterSpacing=N;_root.name.setTextFormat(_tf);
+        const letterSpacingActions: string[] = [];
+
         // Video streams: placed once on scene 0 / frame 0, then advanced one
         // VideoFrame (tag 61) per ShowFrame. VideoFrame tags are emitted just
         // before this frame's ShowFrame (see below).
@@ -1302,6 +1387,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 ? encodePlaceObject2WithName(charId, depth, x, y, textName)
                 : encodePlaceObject2ForText(charId, depth, x, y);
               writer.writeTag(Tag.PlaceObject2, placeBody);
+              // If the text field has non-zero letterSpacing and a named instance,
+              // emit a DoAction that calls setTextFormat to apply the spacing at runtime.
+              // DefineEditText has no letterSpacing field — it must be set via AS2.
+              const ls = displayObj.letterSpacing;
+              if (ls != null && ls !== 0 && textName && textName.length > 0) {
+                letterSpacingActions.push(
+                  `var _tf=new TextFormat();_tf.letterSpacing=${ls};_root.${textName}.setTextFormat(_tf);`
+                );
+              }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
               const hasAlpha =
