@@ -148,6 +148,19 @@ function buildSetBackgroundColor(hex: string): Uint8Array {
 }
 
 /**
+ * ScriptLimits (tag 65) — 4 bytes: MaxRecursionDepth UI16 + ScriptTimeoutSeconds UI16.
+ */
+function buildScriptLimits(
+  maxRecursionDepth: number,
+  scriptTimeoutSeconds: number
+): Uint8Array {
+  const bw = new BitWriter();
+  bw.writeUI16LE(maxRecursionDepth);
+  bw.writeUI16LE(scriptTimeoutSeconds);
+  return bw.getBytes();
+}
+
+/**
  * ProductInfo (tag 41) — identifies the authoring tool that produced the SWF.
  * Body layout (26 bytes):
  *   UI32 productId    = 8  (Flash 8 authoring tool)
@@ -489,6 +502,14 @@ export interface CompileOptions {
    * Requires Flash Player 6 or later. Defaults to false.
    */
   compress?: boolean;
+  /**
+   * MaxRecursionDepth for ScriptLimits tag (65). Defaults to 256 (Flash Player default).
+   */
+  maxRecursionDepth?: number;
+  /**
+   * ScriptTimeoutSeconds for ScriptLimits tag (65). Defaults to 15 seconds.
+   */
+  scriptTimeoutSeconds?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -551,10 +572,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     buildSetBackgroundColor(props.backgroundColor)
   );
 
-  // 2b. StageScaleMode (tag 65) — AllowScaling=1 (showAll), Alignment=0 (center).
-  //     Flash Professional always emits this tag; without it some players default to
-  //     "noScale" which breaks layouts.
-  writer.writeTag(Tag.StageScaleMode, new Uint8Array([1, 0]));
+  // 2b. ScriptLimits (tag 65) — MaxRecursionDepth + ScriptTimeoutSeconds (4 bytes).
+  //     Flash Professional always emits this tag after SetBackgroundColor.
+  writer.writeTag(
+    Tag.ScriptLimits,
+    buildScriptLimits(
+      options?.maxRecursionDepth ?? 256,
+      options?.scriptTimeoutSeconds ?? 15
+    )
+  );
 
   // 3. Compile library symbols → DefineSprite tags
   //    Build charIdMap: symbolId → SWF character ID

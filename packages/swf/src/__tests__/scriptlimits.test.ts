@@ -1,12 +1,8 @@
 /**
- * Tests for SWF ScriptLimits and Protect (tag 24) tag encoding.
+ * Tests for SWF ScriptLimits (tag 65) and Protect (tag 24) tag encoding.
  *
- * Note: tag 65 is StageScaleMode (NOT ScriptLimits). ScriptLimits is tag 65
- * in some older references but per the SWF spec it is tag 65 = StageScaleMode.
- * ScriptLimits is SWF tag 56 (ExportAssets) range — actually it is an unrelated
- * tag not yet implemented.
- *
- * Protect (tag 24) IS implemented via the `protect` option in CompileOptions.
+ * ScriptLimits body = MaxRecursionDepth UI16 + ScriptTimeoutSeconds UI16 (4 bytes).
+ * Protect (tag 24) is emitted via the `protect` option in CompileOptions.
  */
 
 import { describe, it, expect } from "vitest";
@@ -109,26 +105,12 @@ interface SwfTag {
   body: Uint8Array;
 }
 
-/**
- * Parse the tag stream from a compiled SWF binary.
- * The SWF header is variable-length due to the RECT encoding;
- * we locate the end of the header by reading the Nbits field.
- *
- * SWF header layout:
- *   3 bytes signature ("FWS" or "CWS")
- *   1 byte  version
- *   4 bytes file length UI32LE
- *   RECT    variable — first 5 bits = Nbits, then 4*Nbits bits for xMin/xMax/yMin/yMax
- *   2 bytes FrameRate UI16LE
- *   2 bytes FrameCount UI16LE
- * Tags follow immediately after.
- */
 function parseTags(swf: Uint8Array): SwfTag[] {
-  const nBits = (swf[8] >> 3) & 0x1f; // high 5 bits of RECT's first byte
+  const nBits = (swf[8] >> 3) & 0x1f;
   const rectBits = 5 + 4 * nBits;
   const rectBytes = Math.ceil(rectBits / 8);
 
-  let pos = 8 + rectBytes + 4; // skip fixed header + RECT + FrameRate + FrameCount
+  let pos = 8 + rectBytes + 4;
 
   const tags: SwfTag[] = [];
   while (pos < swf.length) {
@@ -150,14 +132,19 @@ function parseTags(swf: Uint8Array): SwfTag[] {
       body: swf.slice(bodyStart, bodyStart + bodyLength),
     });
     pos = bodyStart + bodyLength;
-    if (tagCode === 0) break; // End tag
+    if (tagCode === 0) break;
   }
   return tags;
 }
 
-// SWF tag IDs referenced in these tests
+function readUI16LE(body: Uint8Array, offset: number): number {
+  return body[offset] | (body[offset + 1] << 8);
+}
+
 const TAG_PROTECT = 24;
-const TAG_STAGE_SCALE_MODE = 65; // StageScaleMode — previously mislabelled as ScriptLimits
+const TAG_SET_BACKGROUND_COLOR = 9;
+const TAG_SCRIPT_LIMITS = 65;
+const TAG_SHOW_FRAME = 1;
 const TAG_END = 0;
 
 // ---------------------------------------------------------------------------
@@ -173,9 +160,9 @@ describe("SWF minimal doc compilation", () => {
   it("output starts with FWS magic bytes", () => {
     const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
     const buf = compileDocument(doc);
-    expect(buf[0]).toBe(0x46); // 'F'
-    expect(buf[1]).toBe(0x57); // 'W'
-    expect(buf[2]).toBe(0x53); // 'S'
+    expect(buf[0]).toBe(0x46);
+    expect(buf[1]).toBe(0x57);
+    expect(buf[2]).toBe(0x53);
   });
 
   it("output version byte is 0x08 (Flash 8)", () => {
@@ -193,27 +180,100 @@ describe("SWF minimal doc compilation", () => {
   });
 });
 
-describe("SWF StageScaleMode tag (65)", () => {
-  it("StageScaleMode tag is present in default compilation output", () => {
-    // StageScaleMode (tag 65) is emitted by compileDocument with AllowScaling=1
-    // (showAll) and Alignment=0 (center). Flash Professional always emits this tag.
+describe("SWF ScriptLimits tag (65)", () => {
+  it("ScriptLimits tag is present in default compilation output", () => {
     const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
     const buf = compileDocument(doc);
     const tags = parseTags(buf);
-    const stageModeTag = tags.find((t) => t.code === TAG_STAGE_SCALE_MODE);
-    expect(stageModeTag).toBeDefined();
+    const scriptLimitsTag = tags.find((t) => t.code === TAG_SCRIPT_LIMITS);
+    expect(scriptLimitsTag).toBeDefined();
   });
 
-  it("SWF with StageScaleMode emits all required structural tags", () => {
+  it("ScriptLimits tag body is exactly 4 bytes", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const buf = compileDocument(doc);
+    const tags = parseTags(buf);
+    const scriptLimitsTag = tags.find((t) => t.code === TAG_SCRIPT_LIMITS);
+    expect(scriptLimitsTag).toBeDefined();
+    expect(scriptLimitsTag!.body.length).toBe(4);
+  });
+
+  it("ScriptLimits defaults: MaxRecursionDepth=256, ScriptTimeoutSeconds=15", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const buf = compileDocument(doc);
+    const tags = parseTags(buf);
+    const scriptLimitsTag = tags.find((t) => t.code === TAG_SCRIPT_LIMITS);
+    expect(scriptLimitsTag).toBeDefined();
+    expect(readUI16LE(scriptLimitsTag!.body, 0)).toBe(256);
+    expect(readUI16LE(scriptLimitsTag!.body, 2)).toBe(15);
+  });
+
+  it("ScriptLimits honors compile options", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const buf = compileDocument(doc, {
+      maxRecursionDepth: 512,
+      scriptTimeoutSeconds: 30,
+    });
+    const tags = parseTags(buf);
+    const scriptLimitsTag = tags.find((t) => t.code === TAG_SCRIPT_LIMITS);
+    expect(scriptLimitsTag).toBeDefined();
+    expect(readUI16LE(scriptLimitsTag!.body, 0)).toBe(512);
+    expect(readUI16LE(scriptLimitsTag!.body, 2)).toBe(30);
+  });
+
+  it("ScriptLimits appears immediately after SetBackgroundColor", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const buf = compileDocument(doc);
+    const tags = parseTags(buf);
+    const withIndices = tags.map((t, idx) => ({ ...t, idx }));
+    const bgColorIdx = withIndices.find(
+      (t) => t.code === TAG_SET_BACKGROUND_COLOR
+    )?.idx;
+    const scriptLimitsIdx = withIndices.find(
+      (t) => t.code === TAG_SCRIPT_LIMITS
+    )?.idx;
+    expect(bgColorIdx).toBeDefined();
+    expect(scriptLimitsIdx).toBeDefined();
+    expect(scriptLimitsIdx!).toBe(bgColorIdx! + 1);
+  });
+
+  it("ScriptLimits appears before the first ShowFrame", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 3)]);
+    const buf = compileDocument(doc);
+    const tags = parseTags(buf);
+    const withIndices = tags.map((t, idx) => ({ ...t, idx }));
+    const scriptLimitsIdx = withIndices.find(
+      (t) => t.code === TAG_SCRIPT_LIMITS
+    )?.idx;
+    const firstShowFrameIdx = withIndices.find(
+      (t) => t.code === TAG_SHOW_FRAME
+    )?.idx;
+    expect(scriptLimitsIdx).toBeDefined();
+    expect(firstShowFrameIdx).toBeDefined();
+    expect(scriptLimitsIdx!).toBeLessThan(firstShowFrameIdx!);
+  });
+
+  it("ScriptLimits appears exactly once in multi-scene SWF", () => {
+    const doc = makeDoc([
+      makeScene("s1", "Scene 1", 2),
+      makeScene("s2", "Scene 2", 2),
+    ]);
+    const buf = compileDocument(doc);
+    const tags = parseTags(buf);
+    const scriptLimitsTags = tags.filter((t) => t.code === TAG_SCRIPT_LIMITS);
+    expect(scriptLimitsTags.length).toBe(1);
+  });
+
+  it("SWF with ScriptLimits emits all required structural tags", () => {
     const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
     const buf = compileDocument(doc);
     const tags = parseTags(buf);
     const codes = tags.map((t) => t.code);
     expect(codes).toContain(69); // FileAttributes
-    expect(codes).toContain(9);  // SetBackgroundColor
-    expect(codes).toContain(65); // StageScaleMode
-    expect(codes).toContain(1);  // ShowFrame
-    expect(codes).toContain(0);  // End
+    expect(codes).toContain(9); // SetBackgroundColor
+    expect(codes).toContain(65); // ScriptLimits
+    expect(codes).toContain(1); // ShowFrame
+    expect(codes).toContain(0); // End
   });
 });
 
