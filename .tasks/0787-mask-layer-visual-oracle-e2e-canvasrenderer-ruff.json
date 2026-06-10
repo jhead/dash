@@ -1,0 +1,10 @@
+{
+  "id": "0787-mask-layer-visual-oracle-e2e-canvasrenderer-ruff",
+  "title": "Mask layer visual oracle E2E (CanvasRenderer + Ruffle)",
+  "description": "Mask layers are implemented end-to-end: the SWF compiler emits PlaceObject2 with HasClipDepth (compile.ts, encodePlaceObject2WithClipDepth), and CanvasRenderer uses ctx.save()/ctx.clip()/ctx.restore() for mask/masked layer pairs (renderer.ts). Unit tests pass in packages/core/src/engine/__tests__/mask-renderer.test.ts. But per CLAUDE.md learnings, byte-presence and unit tests are not runtime proof \u2014 a Ruffle-based oracle is needed. Scope: add apps/desktop/e2e/mask-layer.spec.ts. Build a fixture with a mask layer (circular or rectangular clip shape) and a masked layer (a colored rect), compile to SWF, load in Ruffle, screenshot, and assert: (1) pixels INSIDE the mask region are the expected color, (2) pixels OUTSIDE the mask region are the background color (the shape is clipped away). Also add a CanvasRenderer vs Ruffle pixelmatch comparison to visual-oracle.spec.ts. Acceptance: Playwright spec passes non-CI with pixelmatch ratio < 0.20 and explicit pixel-color spot-checks; CI gets test.skip guard.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T10:21:48Z",
+  "updated_at": "2026-06-10T10:22:50Z"
+}
