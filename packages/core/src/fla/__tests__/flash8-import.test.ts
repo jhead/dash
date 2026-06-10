@@ -2076,3 +2076,69 @@ describe("assignFolderParents (task 0915)", () => {
     expect(assignFolderParents([])).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Button symbol Up/Over/Down/Hit frame structure (task 0923)
+//
+// Flash binary FLA stores button symbols as CPicPage timelines with exactly
+// 4 frames corresponding to the Up, Over, Down, and Hit states (frame indices
+// 0, 1, 2, 3 respectively). The Flash authoring tool does NOT store textual
+// "Up"/"Over"/"Down"/"Hit" labels for these frames in the binary — the state
+// is implicit by frame position. The f.label forwarding path in
+// flash8-import.ts is exercised, and the labels survive as empty strings.
+//
+// Fixture: Magnet.fla — CS2 FLA with multiple button symbols (e.g. "Symbol 10",
+// "Symbol 11", "Symbol 13", "Symbol 34", "WW2", etc.) each storing exactly
+// 4 frames with empty labels.
+// ---------------------------------------------------------------------------
+
+describe("button symbol Up/Over/Down/Hit frame structure (task 0923)", () => {
+  let doc: FlashDocument;
+
+  beforeAll(() => {
+    const loaded = tryLoadRealFla(fixture("Magnet.fla"));
+    expect(loaded).not.toBeNull();
+    doc = loaded!;
+  });
+
+  it("all button symbols have exactly 4 frames (Up/Over/Down/Hit) in layer 0", () => {
+    const buttonSymbols = symbols(doc).filter((s) => s.symbolType === "button");
+    expect(buttonSymbols.length).toBeGreaterThan(0);
+    for (const sym of buttonSymbols) {
+      const layer0 = sym.timeline.layers[0]!;
+      expect(layer0.frames.length).toBe(4);
+      expect(layer0.frameCount).toBe(4);
+    }
+  });
+
+  it("button state frame indices are 0 (Up), 1 (Over), 2 (Down), 3 (Hit)", () => {
+    // Pick the first button symbol with a single layer as the canonical check.
+    const buttonSymbol = symbols(doc).find(
+      (s) => s.symbolType === "button" && s.timeline.layers.length >= 1,
+    )!;
+    expect(buttonSymbol).toBeDefined();
+    const frames = buttonSymbol.timeline.layers[0]!.frames;
+    expect(frames[0]!.index).toBe(0); // Up state
+    expect(frames[1]!.index).toBe(1); // Over state
+    expect(frames[2]!.index).toBe(2); // Down state
+    expect(frames[3]!.index).toBe(3); // Hit state
+  });
+
+  it("button state frame labels survive import — Flash stores empty labels for state frames", () => {
+    // Flash does NOT store textual "Up"/"Over"/"Down"/"Hit" labels in the
+    // binary FLA for button state frames; the state is positional.  The
+    // f.label field is forwarded through flash8-import.ts's convertLayer
+    // for button timelines just as for movieclip timelines.  Verify that
+    // all 4 state frames import with label="" (not undefined or null) and
+    // that labelType is "name" (the default when labelIsComment is false).
+    const buttonSymbol = symbols(doc).find(
+      (s) => s.symbolType === "button" && s.timeline.layers[0]!.frames.length === 4,
+    )!;
+    expect(buttonSymbol).toBeDefined();
+    const frames = buttonSymbol.timeline.layers[0]!.frames;
+    for (const frame of frames) {
+      expect(frame.label).toBe("");
+      expect(frame.labelType).toBe("name");
+    }
+  });
+});
