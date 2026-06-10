@@ -842,6 +842,7 @@ function convertElement(
         ...(accessibility ? { accessibility } : {}),
         ...(el.loopMode !== 0 ? { loopMode: (["loop", "play-once", "single-frame"][el.loopMode] ?? "loop") as "loop" | "play-once" | "single-frame" } : {}),
         ...(el.firstFrame !== 0 ? { firstFrame: el.firstFrame } : {}),
+        ...(el.registrationX !== 0 || el.registrationY !== 0 ? { registrationPoint: { x: el.registrationX / 20, y: el.registrationY / 20 } } : {}),
         ...importVisible(el),
       };
     }

@@ -476,6 +476,8 @@ export interface SymbolInstance {
   readonly cacheAsBitmap?: boolean;
   /** Whether the instance is visible. Default: true. */
   readonly visible?: boolean;
+  /** Registration point in pixels (relative to symbol origin). Absent when (0,0). */
+  readonly registrationPoint?: { x: number; y: number };
 }
 
 /**

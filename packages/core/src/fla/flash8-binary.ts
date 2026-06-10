@@ -212,6 +212,9 @@ export interface Fla8Instance {
   readonly visible?: boolean;
   /** Accessibility properties (_accProps) when the instance carries AccProp data. */
   readonly accessibility?: Fla8Accessibility;
+  /** Registration point in FLA twip units (divide by 20 for pixels). 0/0 when absent. */
+  readonly registrationX: number;
+  readonly registrationY: number;
 }
 
 /** Horizontal (default), vertical right-to-left, or vertical left-to-right. */
@@ -923,6 +926,9 @@ interface CPicObjBase {
   schema: number;
   flags: number;
   children: ParsedNode[];
+  /** Registration point in FLA twip units (1/20 px), or 0 when absent/sentinel. */
+  regX: number;
+  regY: number;
 }
 
 type ParsedNode =
@@ -985,12 +991,23 @@ function readCPicObjBase(ctx: ParseCtx): CPicObjBase {
     }
     children.push(deserializeClass(tag.name, ctx));
   }
+  let regX = 0;
+  let regY = 0;
   if (!badTag) {
-    if (schema > 0) r.skip(8); // 2 x s32 registration point (often INT_MIN sentinel)
+    if (schema > 0) {
+      const rawX = r.s32();
+      const rawY = r.s32();
+      // INT_MIN sentinel (0x80000000) means no registration point set
+      const INT_MIN = -2147483648;
+      if (rawX !== INT_MIN && rawY !== INT_MIN) {
+        regX = rawX;
+        regY = rawY;
+      }
+    }
     if (schema > 2) r.skip(1);
     if (schema > 3) r.skip(1);
   }
-  return { schema, flags, children };
+  return { schema, flags, children, regX, regY };
 }
 
 /** CPicObjBase flags bit 0 (0x01) = visible; cleared = hidden in the authoring tool. */
@@ -1726,6 +1743,9 @@ interface SymbolBaseFields {
    * (0x01 = visible, 0x00 = hidden). Default: true.
    */
   visible: boolean;
+  /** Registration point in FLA twip units, or 0/0 when absent. */
+  regX: number;
+  regY: number;
 }
 
 /**
@@ -1802,7 +1822,7 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   if (!filtersPresent && symbolSchema >= 0x16) {
     r.skip(102); // CS4 3D transform block
   }
-  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect, filters, blendMode, firstFrame, loopMode, visible };
+  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect, filters, blendMode, firstFrame, loopMode, visible, regX: base.regX, regY: base.regY };
 }
 
 const DEFAULT_FIELDS: SymbolBaseFields = {
@@ -1816,6 +1836,8 @@ const DEFAULT_FIELDS: SymbolBaseFields = {
   firstFrame: 0,
   loopMode: 0,
   visible: true,
+  regX: 0,
+  regY: 0,
 };
 
 function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8Instance {
@@ -1839,6 +1861,8 @@ function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8
     script: "",
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
+    registrationX: fields.regX,
+    registrationY: fields.regY,
     ...hiddenElementProp(fields.visible),
   };
 }
@@ -1891,6 +1915,8 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
     script,
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
+    registrationX: fields.regX,
+    registrationY: fields.regY,
     ...(accessibility ? { accessibility } : {}),
     ...hiddenElementProp(fields.visible),
   };
@@ -1933,6 +1959,8 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
     script,
     firstFrame: fields.firstFrame,
     loopMode: fields.loopMode,
+    registrationX: fields.regX,
+    registrationY: fields.regY,
     ...(trackAsMenu ? { trackAsMenu } : {}),
     ...(accessibility ? { accessibility } : {}),
     ...hiddenElementProp(fields.visible),
