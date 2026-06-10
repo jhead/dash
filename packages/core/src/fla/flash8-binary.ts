@@ -37,7 +37,7 @@
  *  - Media N payloads (bitmaps, sounds, video) and bitmap placements
  *  - button instance on() handlers (no instance-level model field; the raw
  *    script is parsed but dropped by the mapper with a warning)
- *  - blend modes on instances (byte is consumed/skipped after the filter list)
+ *  - (blend modes are now decoded from the byte after the filter list)
  *  - bitmap and text-field filters (skipped; only symbol-instance filters are decoded)
  *  - convolution filters (no model type; silently dropped from the filter list)
  *  - sound attachments and envelopes
@@ -147,6 +147,11 @@ export interface Fla8Instance {
   readonly colorEffect: Fla8ColorEffect | null;
   /** Flash 8+ filters applied to the instance (empty array when none) */
   readonly filters: Fla8Filter[];
+  /**
+   * Flash 8 blend mode raw byte value (0–14).
+   * 0 and 1 both mean "normal"; see BLEND_MODE_MAP in flash8-import.ts.
+   */
+  readonly blendMode: number;
   /**
    * Raw instance ActionScript source. For a movieclip (sprite) instance this is
    * the concatenated `onClipEvent(...) { ... }` blocks; for a button instance
@@ -1273,6 +1278,8 @@ interface SymbolBaseFields {
   colorEffect: Fla8ColorEffect | null;
   /** Flash 8+ filters parsed from the filter list, or empty array */
   filters: Fla8Filter[];
+  /** Flash 8 blend mode byte (0–14); 0 and 1 both mean "normal" */
+  blendMode: number;
 }
 
 /**
@@ -1322,6 +1329,7 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
   if (symbolSchema >= 0x0e) r.skip(3);
   let filtersPresent = false;
   let filters: Fla8Filter[] = [];
+  let blendMode = 0;
   if (symbolSchema >= 0x13) {
     // filterCount byte: 0 = no filters; >0 = that many SWF-format filter records.
     const filterCount = r.u8();
@@ -1330,7 +1338,8 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
       try {
         filters = readFilterList(r, filterCount);
         // After filters: blend mode (u8) + 2 reserved bytes.
-        r.skip(3);
+        blendMode = r.u8();
+        r.skip(2); // 2 reserved bytes
         // If filterList parsing left the reader at EOF, recovery is needed.
         if (r.eof() && savedPos < r.buf.length) {
           filtersPresent = true; // signal that the trailer may be misaligned
@@ -1339,13 +1348,14 @@ function readCPicSymbolFields(ctx: ParseCtx): SymbolBaseFields {
         filtersPresent = true; // parse error; trailing fields unreliable
       }
     } else {
-      r.skip(3); // blend mode + 2 reserved bytes
+      blendMode = r.u8(); // blend mode byte
+      r.skip(2); // 2 reserved bytes
     }
   }
   if (!filtersPresent && symbolSchema >= 0x16) {
     r.skip(102); // CS4 3D transform block
   }
-  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect, filters };
+  return { matrix, libraryIndex, symbolSchema, filtersPresent, colorEffect, filters, blendMode };
 }
 
 const DEFAULT_FIELDS: SymbolBaseFields = {
@@ -1355,6 +1365,7 @@ const DEFAULT_FIELDS: SymbolBaseFields = {
   filtersPresent: false,
   colorEffect: null,
   filters: [],
+  blendMode: 0,
 };
 
 function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8Instance {
@@ -1374,6 +1385,7 @@ function readCPicSymbolInstance(ctx: ParseCtx, kind: Fla8Instance["kind"]): Fla8
     instanceName: "",
     colorEffect: fields.colorEffect,
     filters: fields.filters,
+    blendMode: fields.blendMode,
     script: "",
   };
 }
@@ -1421,6 +1433,7 @@ function readCPicSprite(ctx: ParseCtx): Fla8Instance {
     instanceName,
     colorEffect: fields.colorEffect,
     filters: fields.filters,
+    blendMode: fields.blendMode,
     script,
   };
 }
@@ -1456,6 +1469,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
     instanceName,
     colorEffect: fields.colorEffect,
     filters: fields.filters,
+    blendMode: fields.blendMode,
     script,
   };
 }

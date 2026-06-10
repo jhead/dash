@@ -24,6 +24,7 @@ import type {
   ShapePath,
   Stroke,
   Color,
+  SymbolInstance,
 } from "../engine/types.js";
 import type { FlashFilter } from "../engine/filters.js";
 import { createDocument, createDocumentProperties } from "../model/document.js";
@@ -435,6 +436,37 @@ export function toFlashFilter(f: Fla8Filter): FlashFilter | null {
 }
 
 /**
+ * Map a Flash 8 binary blend mode byte to the engine's blend mode string.
+ * Values 0 and 1 both mean "normal". Unknown values fall back to "normal".
+ * Reference: SWF spec BLENDMODE enum (same values as the FLA binary byte).
+ */
+type BlendModeName = NonNullable<SymbolInstance["blendMode"]>;
+
+const BLEND_MODE_MAP: Record<number, BlendModeName> = {
+  0: "normal",
+  1: "normal",
+  2: "layer",
+  3: "multiply",
+  4: "screen",
+  5: "lighten",
+  6: "darken",
+  7: "difference",
+  8: "add",
+  9: "subtract",
+  10: "invert",
+  11: "alpha",
+  12: "erase",
+  13: "overlay",
+  14: "hardlight",
+};
+
+function toBlendMode(raw: number): BlendModeName | undefined {
+  const mode = BLEND_MODE_MAP[raw];
+  if (!mode || mode === "normal") return undefined; // omit default
+  return mode;
+}
+
+/**
  * Map an array of parsed FLA filters to the editor's FlashFilter[].
  * Null entries (unsupported filter types) are dropped.
  */
@@ -471,6 +503,7 @@ function convertElement(
       const { scaleX, scaleY, rotation } = decompose(el.matrix);
       const colorEffect = toColorEffect(el.colorEffect);
       const filters = toFlashFilters(el.filters);
+      const blendMode = toBlendMode(el.blendMode);
       // onClipEvent handlers only apply to movieclip (sprite) instances; a
       // button instance's on() handlers have no instance-level model field yet,
       // so they are warned-and-skipped below.
@@ -492,6 +525,7 @@ function convertElement(
         ...(el.instanceName ? { instanceName: el.instanceName } : {}),
         ...(colorEffect ? { colorEffect } : {}),
         ...(filters.length > 0 ? { filters } : {}),
+        ...(blendMode ? { blendMode } : {}),
         ...(clipActions.length > 0 ? { clipActions } : {}),
       };
     }
