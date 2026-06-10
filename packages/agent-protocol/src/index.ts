@@ -490,6 +490,38 @@ export const LibraryRemoveParamsSchema = z.object({
 export type LibraryRemoveParams = z.infer<typeof LibraryRemoveParamsSchema>;
 
 // ---------------------------------------------------------------------------
+// Scene commands
+// ---------------------------------------------------------------------------
+
+export const SceneAddParamsSchema = z.object({
+  name: z.string().optional(),
+});
+export type SceneAddParams = z.infer<typeof SceneAddParamsSchema>;
+
+export const SceneAddResultSchema = z.object({
+  sceneIndex: z.number().int().nonnegative(),
+  sceneName: z.string(),
+  rev: RevSchema,
+});
+export type SceneAddResult = z.infer<typeof SceneAddResultSchema>;
+
+export const SceneRemoveParamsSchema = z.object({
+  index: z.number().int().nonnegative(),
+});
+export type SceneRemoveParams = z.infer<typeof SceneRemoveParamsSchema>;
+
+export const SceneRenameParamsSchema = z.object({
+  index: z.number().int().nonnegative(),
+  name: z.string(),
+});
+export type SceneRenameParams = z.infer<typeof SceneRenameParamsSchema>;
+
+export const SceneSelectParamsSchema = z.object({
+  index: z.number().int().nonnegative(),
+});
+export type SceneSelectParams = z.infer<typeof SceneSelectParamsSchema>;
+
+// ---------------------------------------------------------------------------
 // Output & escape hatches
 // ---------------------------------------------------------------------------
 
@@ -594,6 +626,11 @@ export const ALL_COMMANDS = [
   "publish_swf",
   "file_save_fla",
   "file_load_fla",
+  // scene management
+  "scene_add",
+  "scene_remove",
+  "scene_rename",
+  "scene_select",
 ] as const;
 
 export type AgentCommand = (typeof ALL_COMMANDS)[number];

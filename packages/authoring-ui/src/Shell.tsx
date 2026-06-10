@@ -5154,6 +5154,7 @@ export function Shell(): React.ReactElement {
       selectTool: (toolId: string) => handleToolChange(toolId as import("./tools/types.js").ToolId),
       startPlayback,
       stopPlayback,
+      setActiveSceneIndex,
 
       // Escape hatches
       runJSFL: (source: string) => {
@@ -5234,6 +5235,7 @@ export function Shell(): React.ReactElement {
     handleToolChange,
     startPlayback,
     stopPlayback,
+    setActiveSceneIndex,
     buildJsflContext,
     runJsfl,
     publishToBytes,

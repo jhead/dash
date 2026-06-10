@@ -106,6 +106,7 @@ function makeHarness(initial?: FlashDocument) {
     selectTool: (toolId: string) => { state.activeTool = toolId; },
     startPlayback: () => { state.playing = true; },
     stopPlayback: () => { state.playing = false; },
+    setActiveSceneIndex: (index: number) => { state.activeSceneIndex = index; },
 
     runJSFL: (_source: string) => ({
       traces: ["jsfl-ran"],
@@ -846,5 +847,120 @@ describe("dispatch — unknown command", () => {
     await expect(
       dispatchAgentCommand("not_a_real_command", {})
     ).rejects.toThrow(/Unknown agent command/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scene commands — scene_add / scene_remove / scene_rename / scene_select
+// ---------------------------------------------------------------------------
+
+describe("scene_add", () => {
+  it("adds a scene and returns sceneIndex + sceneName", async () => {
+    const result = await dispatchAgentCommand("scene_add", {}) as {
+      sceneIndex: number;
+      sceneName: string;
+      rev: number;
+    };
+    expect(result.sceneIndex).toBe(1); // appended at index 1 (after the initial scene)
+    expect(typeof result.sceneName).toBe("string");
+    expect(state.doc.scenes.length).toBe(2);
+  });
+
+  it("adds a scene with a custom name", async () => {
+    const result = await dispatchAgentCommand("scene_add", { name: "Level 2" }) as {
+      sceneIndex: number;
+      sceneName: string;
+    };
+    expect(result.sceneName).toBe("Level 2");
+    expect(state.doc.scenes[result.sceneIndex].name).toBe("Level 2");
+  });
+
+  it("increments the rev counter", async () => {
+    const revBefore = state.undoHistory.length;
+    await dispatchAgentCommand("scene_add", {});
+    // pushDoc was called once so undoHistory grew
+    expect(state.undoHistory.length).toBe(revBefore + 1);
+  });
+
+  it("multiple scene_add calls accumulate scenes", async () => {
+    await dispatchAgentCommand("scene_add", { name: "Scene 2" });
+    await dispatchAgentCommand("scene_add", { name: "Scene 3" });
+    expect(state.doc.scenes.length).toBe(3);
+  });
+});
+
+describe("scene_remove", () => {
+  it("removes a scene by index", async () => {
+    await dispatchAgentCommand("scene_add", { name: "Extra Scene" });
+    expect(state.doc.scenes.length).toBe(2);
+    await dispatchAgentCommand("scene_remove", { index: 1 });
+    expect(state.doc.scenes.length).toBe(1);
+  });
+
+  it("throws when removing the only scene", async () => {
+    await expect(
+      dispatchAgentCommand("scene_remove", { index: 0 })
+    ).rejects.toThrow(/cannot remove the only scene/);
+  });
+
+  it("throws when index is out of bounds", async () => {
+    await expect(
+      dispatchAgentCommand("scene_remove", { index: 5 })
+    ).rejects.toThrow(/out of bounds/);
+  });
+
+  it("clamps activeSceneIndex after removal", async () => {
+    await dispatchAgentCommand("scene_add", { name: "Scene B" });
+    state.activeSceneIndex = 1; // manually set active to the second scene
+    await dispatchAgentCommand("scene_remove", { index: 1 });
+    // After removing index 1, active scene should be clamped to 0
+    expect(state.activeSceneIndex).toBe(0);
+  });
+});
+
+describe("scene_rename", () => {
+  it("renames a scene", async () => {
+    await dispatchAgentCommand("scene_rename", { index: 0, name: "Intro" });
+    expect(state.doc.scenes[0].name).toBe("Intro");
+  });
+
+  it("goes through history (pushDoc called)", async () => {
+    const histLen = state.undoHistory.length;
+    await dispatchAgentCommand("scene_rename", { index: 0, name: "My Scene" });
+    expect(state.undoHistory.length).toBe(histLen + 1);
+  });
+
+  it("throws when index is out of bounds", async () => {
+    await expect(
+      dispatchAgentCommand("scene_rename", { index: 99, name: "Bad" })
+    ).rejects.toThrow(/out of bounds/);
+  });
+});
+
+describe("scene_select", () => {
+  it("selects a scene by index", async () => {
+    await dispatchAgentCommand("scene_add", { name: "Scene 2" });
+    await dispatchAgentCommand("scene_select", { index: 1 });
+    expect(state.activeSceneIndex).toBe(1);
+  });
+
+  it("does NOT go through history (UI state only)", async () => {
+    await dispatchAgentCommand("scene_add", {});
+    const histLen = state.undoHistory.length;
+    await dispatchAgentCommand("scene_select", { index: 1 });
+    // setActiveSceneIndex is UI state — should NOT push to history
+    expect(state.undoHistory.length).toBe(histLen);
+  });
+
+  it("throws when index is out of bounds", async () => {
+    await expect(
+      dispatchAgentCommand("scene_select", { index: 5 })
+    ).rejects.toThrow(/out of bounds/);
+  });
+
+  it("selecting index 0 works on a fresh doc", async () => {
+    const result = await dispatchAgentCommand("scene_select", { index: 0 }) as { ok: boolean };
+    expect(result.ok).toBe(true);
+    expect(state.activeSceneIndex).toBe(0);
   });
 });

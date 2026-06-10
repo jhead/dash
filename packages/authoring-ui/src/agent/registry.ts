@@ -38,6 +38,7 @@ import type {
   JsflRunResult,
   PublishSwfResult,
   FileSaveFlaResult,
+  SceneAddResult,
 } from "@flash/agent-protocol";
 import type { FlashDocument, LayerType, SymbolType } from "@flash/core";
 import {
@@ -73,6 +74,9 @@ import {
   getGoverningKeyframe,
   compileAS2,
   parse as parseAS2,
+  addScene,
+  removeScene,
+  renameScene,
 } from "@flash/core";
 import type {
   DisplayObject,
@@ -153,6 +157,7 @@ interface AgentCallbacks {
   selectTool: (toolId: string) => void;
   startPlayback: () => void;
   stopPlayback: () => void;
+  setActiveSceneIndex: (index: number) => void;
 
   // Escape hatches
   runJSFL: (source: string) => JsflRunResult;
@@ -1523,6 +1528,66 @@ const handlers: Record<string, AnyHandler> = {
     }
     const doc = loadFla(bytes);
     cb.pushDoc(doc);
+    return { ok: true, rev: _rev };
+  },
+
+  // =========================================================================
+  // Scene management
+  // =========================================================================
+
+  scene_add(params: { name?: string }): SceneAddResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    const newDoc = addScene(doc, params.name);
+    cb.pushDoc(newDoc);
+    // The new scene is appended at the end
+    const newIndex = newDoc.scenes.length - 1;
+    return { sceneIndex: newIndex, sceneName: newDoc.scenes[newIndex].name, rev: _rev };
+  },
+
+  scene_remove(params: { index: number }): OkRevResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    if (params.index < 0 || params.index >= doc.scenes.length) {
+      throw new Error(
+        `scene_remove: index ${params.index} out of bounds (sceneCount=${doc.scenes.length})`
+      );
+    }
+    if (doc.scenes.length <= 1) {
+      throw new Error("scene_remove: cannot remove the only scene");
+    }
+    const scene = doc.scenes[params.index];
+    const newDoc = removeScene(doc, scene.id);
+    cb.pushDoc(newDoc);
+    // Clamp the active scene index so it stays within the new scene list
+    const newActiveIndex = Math.min(cb.getActiveSceneIndex(), newDoc.scenes.length - 1);
+    cb.setActiveSceneIndex(newActiveIndex);
+    return { ok: true, rev: _rev };
+  },
+
+  scene_rename(params: { index: number; name: string }): OkRevResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    if (params.index < 0 || params.index >= doc.scenes.length) {
+      throw new Error(
+        `scene_rename: index ${params.index} out of bounds (sceneCount=${doc.scenes.length})`
+      );
+    }
+    const scene = doc.scenes[params.index];
+    const newDoc = renameScene(doc, scene.id, params.name);
+    cb.pushDoc(newDoc);
+    return { ok: true, rev: _rev };
+  },
+
+  scene_select(params: { index: number }): OkRevResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    if (params.index < 0 || params.index >= doc.scenes.length) {
+      throw new Error(
+        `scene_select: index ${params.index} out of bounds (sceneCount=${doc.scenes.length})`
+      );
+    }
+    cb.setActiveSceneIndex(params.index);
     return { ok: true, rev: _rev };
   },
 };

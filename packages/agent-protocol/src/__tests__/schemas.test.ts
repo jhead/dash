@@ -12,6 +12,11 @@ import {
   DocSummaryResultSchema,
   BridgeRequestSchema,
   BridgeResponseSchema,
+  SceneAddParamsSchema,
+  SceneAddResultSchema,
+  SceneRemoveParamsSchema,
+  SceneRenameParamsSchema,
+  SceneSelectParamsSchema,
 } from "../index.js";
 
 describe("EditorStatusResultSchema", () => {
@@ -184,5 +189,92 @@ describe("BridgeResponseSchema", () => {
     if (!resp.ok) {
       expect(resp.error).toContain("not connected");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scene command schemas
+// ---------------------------------------------------------------------------
+
+describe("SceneAddParamsSchema", () => {
+  it("accepts an empty object (no name)", () => {
+    const result = SceneAddParamsSchema.parse({});
+    expect(result.name).toBeUndefined();
+  });
+
+  it("accepts a name string", () => {
+    const result = SceneAddParamsSchema.parse({ name: "Level 1" });
+    expect(result.name).toBe("Level 1");
+  });
+
+  it("rejects unknown extra fields via strict mode? (not strict, should pass through)", () => {
+    // SceneAddParamsSchema is not strict, so extra fields are stripped
+    const result = SceneAddParamsSchema.parse({ name: "X", extra: true });
+    expect(result.name).toBe("X");
+  });
+});
+
+describe("SceneAddResultSchema", () => {
+  it("parses a valid scene_add result", () => {
+    const result = SceneAddResultSchema.parse({
+      sceneIndex: 1,
+      sceneName: "Scene 2",
+      rev: 5,
+    });
+    expect(result.sceneIndex).toBe(1);
+    expect(result.sceneName).toBe("Scene 2");
+    expect(result.rev).toBe(5);
+  });
+
+  it("rejects negative sceneIndex", () => {
+    expect(() =>
+      SceneAddResultSchema.parse({ sceneIndex: -1, sceneName: "X", rev: 0 })
+    ).toThrow();
+  });
+});
+
+describe("SceneRemoveParamsSchema", () => {
+  it("accepts a valid index", () => {
+    const result = SceneRemoveParamsSchema.parse({ index: 2 });
+    expect(result.index).toBe(2);
+  });
+
+  it("rejects missing index", () => {
+    expect(() => SceneRemoveParamsSchema.parse({})).toThrow();
+  });
+
+  it("rejects negative index", () => {
+    expect(() => SceneRemoveParamsSchema.parse({ index: -1 })).toThrow();
+  });
+});
+
+describe("SceneRenameParamsSchema", () => {
+  it("accepts valid index + name", () => {
+    const result = SceneRenameParamsSchema.parse({ index: 0, name: "Intro" });
+    expect(result.index).toBe(0);
+    expect(result.name).toBe("Intro");
+  });
+
+  it("rejects missing name", () => {
+    expect(() => SceneRenameParamsSchema.parse({ index: 0 })).toThrow();
+  });
+
+  it("rejects missing index", () => {
+    expect(() => SceneRenameParamsSchema.parse({ name: "Intro" })).toThrow();
+  });
+});
+
+describe("SceneSelectParamsSchema", () => {
+  it("accepts a valid index", () => {
+    const result = SceneSelectParamsSchema.parse({ index: 0 });
+    expect(result.index).toBe(0);
+  });
+
+  it("rejects missing index", () => {
+    expect(() => SceneSelectParamsSchema.parse({})).toThrow();
+  });
+
+  it("rejects negative index", () => {
+    expect(() => SceneSelectParamsSchema.parse({ index: -1 })).toThrow();
   });
 });
