@@ -1368,6 +1368,18 @@ export interface JsflDocument {
   readonly currentPublishProfile: string;
   /** The list of publish profile names. Always ['Default']. */
   readonly publishProfiles: string[];
+  /**
+   * Return the topmost display object whose bounding box contains the point (x, y),
+   * searching layers from index 0 (front/top) to n-1 (back).
+   * Returns the element proxy for the first match, or null if nothing found.
+   */
+  getInstanceAtPoint(x: number, y: number): any;
+  /**
+   * Return the display object at [layerIndex][elementIndex] in the governing keyframe
+   * at or before frameIndex.
+   * Returns the element proxy, or null if out of bounds.
+   */
+  getElementByIndex(layerIndex: number, frameIndex: number, elementIndex: number): any;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -2597,6 +2609,46 @@ function makeDocumentProxy(
     },
     get publishProfiles(): string[] {
       return ['Default'];
+    },
+    getInstanceAtPoint(x: number, y: number): any {
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return null;
+      // Iterate layers from front (index 0) to back (index n-1)
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        // Last object in the layer wins if multiple objects overlap the point
+        let match: DisplayObject | null = null;
+        for (const obj of kf.displayObjects) {
+          const o = obj as { x?: number; y?: number; width?: number; height?: number };
+          const ox = o.x ?? 0;
+          const oy = o.y ?? 0;
+          const ow = o.width ?? 100;
+          const oh = o.height ?? 100;
+          if (x >= ox && x <= ox + ow && y >= oy && y <= oy + oh) {
+            match = obj;
+          }
+        }
+        if (match !== null) {
+          return makeElementProxy(state, layer.id, kf.index, match);
+        }
+      }
+      return null;
+    },
+    getElementByIndex(layerIndex: number, frameIndex: number, elementIndex: number): any {
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return null;
+      const layer = scene.timeline.layers[layerIndex];
+      if (!layer) return null;
+      const kf = [...layer.frames]
+        .filter((f) => f.isKeyframe && f.index <= frameIndex)
+        .sort((a, b) => b.index - a.index)[0];
+      if (!kf) return null;
+      const obj = kf.displayObjects[elementIndex];
+      if (!obj) return null;
+      return makeElementProxy(state, layer.id, kf.index, obj);
     },
   };
 }
