@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { isOle2, tryLoadRealFla } from "../ole.js";
 import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
 import { parseClipActions, toColorEffect, toFlashFilter } from "../flash8-import.js";
+import { getTweenSpans } from "../../model/timeline-query.js";
 import type { Fla8ColorEffect, Fla8Filter } from "../flash8-binary.js";
 import type { FlashDocument, Symbol as SymbolItem } from "../../model/types.js";
 import type {
@@ -234,6 +235,77 @@ describe("MX 2004 binary .fla import (mx2004-frame-scripts.fla)", () => {
     expect(sceneFrames.every((f) => f.isEmpty)).toBe(true);
     const childFrames = symbols(doc)[0]!.timeline.layers[0]!.frames;
     expect(childFrames.every((f) => !f.isEmpty)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shape tween (morph) import — task 0716
+// Fixture: ruffle/swf/tests/swfs/DefineMorphShape-MX.fla (MX-era binary FLA)
+// This FLA has a single layer with a 29-frame shape tween: a gradient-filled
+// quadrilateral morphs into a differently-shaped quadrilateral.
+// ---------------------------------------------------------------------------
+
+describe("shape tween FLA import (morph-shape-tween-mx.fla)", () => {
+  let doc: FlashDocument;
+
+  beforeAll(() => {
+    const bytes = fixture("morph-shape-tween-mx.fla");
+    expect(isOle2(bytes)).toBe(true);
+    const loaded = tryLoadRealFla(bytes);
+    expect(loaded).not.toBeNull();
+    doc = loaded!;
+  });
+
+  it("parses two keyframes from the shape tween layer", () => {
+    const layer = doc.scenes[0]!.timeline.layers[0]!;
+    // Duration 29 + end keyframe of duration 1 = frameCount 30
+    expect(layer.frameCount).toBe(30);
+    // Exactly two keyframes: start (tweenType=shape) + end (tweenType=none)
+    expect(layer.frames.length).toBe(2);
+    expect(layer.frames[0]!.index).toBe(0);
+    expect(layer.frames[1]!.index).toBe(29);
+  });
+
+  it("marks the start keyframe with tweenType=shape", () => {
+    const layer = doc.scenes[0]!.timeline.layers[0]!;
+    expect(layer.frames[0]!.tweenType).toBe("shape");
+    expect(layer.frames[1]!.tweenType).toBe("none");
+  });
+
+  it("produces a tween span from getTweenSpans", () => {
+    const layer = doc.scenes[0]!.timeline.layers[0]!;
+    const spans = getTweenSpans(layer);
+    expect(spans.length).toBe(1);
+    expect(spans[0]!.tweenType).toBe("shape");
+    expect(spans[0]!.startFrame).toBe(0);
+    expect(spans[0]!.endFrame).toBe(28);
+  });
+
+  it("extracts distinct start and end shape geometry", () => {
+    const layer = doc.scenes[0]!.timeline.layers[0]!;
+    const startKf = layer.frames[0]!;
+    const endKf = layer.frames[1]!;
+
+    expect(startKf.displayObjects.length).toBe(1);
+    expect(endKf.displayObjects.length).toBe(1);
+
+    const startShape = startKf.displayObjects[0] as ShapeDisplayObject;
+    const endShape = endKf.displayObjects[0] as ShapeDisplayObject;
+    expect(startShape.type).toBe("shape");
+    expect(endShape.type).toBe("shape");
+
+    // Both shapes are closed quadrilaterals (4 segments each).
+    expect(startShape.shape.paths[0]!.closed).toBe(true);
+    expect(startShape.shape.paths[0]!.segments.length).toBe(4);
+    expect(endShape.shape.paths[0]!.closed).toBe(true);
+    expect(endShape.shape.paths[0]!.segments.length).toBe(4);
+
+    // Start and end shapes must have different geometry (otherwise there's no morph).
+    const startPt = startShape.shape.paths[0]!.start;
+    const endPt = endShape.shape.paths[0]!.start;
+    const sameStart =
+      Math.abs(startPt.x - endPt.x) < 0.01 && Math.abs(startPt.y - endPt.y) < 0.01;
+    expect(sameStart).toBe(false);
   });
 });
 

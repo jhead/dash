@@ -22,7 +22,8 @@
  *  - layers: name, type (normal/guide/guided/folder/mask), visibility,
  *    lock state, outline color
  *  - frames: span durations, labels (+comment flag), AS2 frame scripts as
- *    source text, basic tween-kind detection from the key mode
+ *    source text, tween-kind detection (motion / shape) from the key mode,
+ *    shape tween start/end shapes extracted from the start and end keyframes
  *  - shapes: solid/gradient fills, solid strokes (width/caps/joins/miter),
  *    full edge geometry (lines + quadratic curves) with per-edge styles
  *  - symbol instances (sprite/button/graphic): placement matrix, library
@@ -39,7 +40,7 @@
  *  - blend modes on instances (byte is consumed/skipped after the filter list)
  *  - bitmap and text-field filters (skipped; only symbol-instance filters are decoded)
  *  - convolution filters (no model type; silently dropped from the filter list)
- *  - shape tweens (morph data), sound attachments and envelopes
+ *  - sound attachments and envelopes
  *  - components, fonts library items, accessibility metadata
  *  - Flash 4-and-older frame scripts (stored as action records, not source)
  *
@@ -1725,9 +1726,16 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
           if (fs > 12) {
             const morphTag = r.u16();
             if (morphTag !== 0) {
+              // Back up so skipMorphData can re-read the class tag, then skip
+              // the entire CPicMorphShape object (including CMorphSegment/
+              // CMorphCurve children). The reader is repositioned at the next
+              // sibling CPicFrame's class tag (end keyframe) or at the null
+              // terminator of the parent CPicLayer's children list.
+              // We return immediately rather than reading the remaining frame-
+              // tail fields, which would otherwise advance the reader past the
+              // correctly-positioned next CPicFrame class tag.
               r.pos -= 2;
-              warnOnce(ctx, "shape tween (morph) data is not imported");
-              frameTailEndScan(r);
+              skipMorphData(ctx);
               return finishFrame();
             }
           }
@@ -1807,6 +1815,74 @@ function frameTailEndScan(r: Reader): void {
     search = idx + 1;
   }
   r.pos = r.buf.length;
+}
+
+/**
+ * Skip the CPicMorphShape (and its CMorphSegment/CMorphCurve children) that
+ * follows the morph-tag field in a shape-tweened CPicFrame.
+ *
+ * The morph object is serialized inline in the CPicFrame tail — it is NOT a
+ * child of the CPicFrame in the CArchive children list. After skipping, the
+ * reader is positioned either:
+ *   - at the next sibling CPicFrame's CArchive class tag (the end keyframe),
+ *   - or at the null terminator that ends the parent CPicLayer's children list.
+ *
+ * Strategy: scan forward looking for a CPicFrame class backref (because the
+ * end keyframe is the next sibling), then fall back to `frameTailEndScan` if
+ * no such tag is found within a reasonable window.
+ *
+ * We also read the morph class tag properly (so the CArchive class table stays
+ * consistent for any subsequent backref resolution in this stream).
+ */
+function skipMorphData(ctx: ParseCtx): void {
+  const { r, ar } = ctx;
+  // Consume the class tag (NEWCLASS or backref) so the ArchiveReader class
+  // table is updated and subsequent class-tag reads remain consistent.
+  try {
+    const morphClassTag = ar.readClassTag();
+    if (morphClassTag.kind === "class") {
+      warnOnce(ctx, `shape tween morph data (${morphClassTag.name}) skipped — end keyframe will supply end shape`);
+    }
+  } catch {
+    // readClassTag can throw for malformed data; proceed with position scan.
+  }
+
+  // Look for the next CPicFrame class tag (sibling end keyframe) or a valid
+  // frame-boundary end marker within a generous lookahead window.
+  const cpicFrameTag = ar.classBackrefTag("CPicFrame");
+  const limit = Math.min(r.buf.length - 4, r.pos + 8192);
+  for (let i = r.pos; i < limit; i++) {
+    const lo = r.buf[i]!;
+    const hi = r.buf[i + 1]!;
+    const v = lo | (hi << 8);
+
+    // Check for CPicFrame class backref (sibling end keyframe).
+    if (cpicFrameTag !== null && v === cpicFrameTag) {
+      // Verify the byte after the class tag looks like a plausible CPicObjBase
+      // schema byte (0–10 is safe; values above 30 indicate a false positive).
+      const schemaByte = r.buf[i + 2]!;
+      if (schemaByte <= 10) {
+        r.pos = i;
+        return;
+      }
+    }
+
+    // Check for NULL class tag followed by the INT_MIN registration-point
+    // sentinel — this is the end of the parent CPicLayer's children list.
+    if (v === 0x0000 && i + END_MARKER.length <= r.buf.length) {
+      let matchEndMarker = true;
+      for (let j = 2; j < END_MARKER.length; j++) {
+        if (r.buf[i + j] !== END_MARKER[j]) { matchEndMarker = false; break; }
+      }
+      if (matchEndMarker) {
+        r.pos = i;
+        return;
+      }
+    }
+  }
+
+  // Final fallback: use the original end-marker scan.
+  frameTailEndScan(r);
 }
 
 // ---------------------------------------------------------------------------
