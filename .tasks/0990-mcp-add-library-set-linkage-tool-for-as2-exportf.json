@@ -1,0 +1,10 @@
+{
+  "id": "0990-mcp-add-library-set-linkage-tool-for-as2-exportf",
+  "title": "MCP: add library_set_linkage tool for AS2 exportForActionScript linkage",
+  "description": "There is no library_set_linkage tool in the MCP surface or agent registry. AS2 linkage (exportForActionScript, linkageIdentifier, exportInFirstFrame) is only settable through the SymbolLinkageDialog GUI. Agents cannot set _root.attachMovie() linkage IDs programmatically. Fix: (1) Add a setSymbolLinkage action handler in registry.ts that takes {symbolId, linkageId, exportForActionScript, exportInFirstFrame} and calls model.setSymbolLinkage(). (2) Implement model.setSymbolLinkage() in timeline.ts or library.ts to update the symbol's linkage fields. (3) Register it as an MCP tool in vite-plugin-agent-mcp/src/index.ts.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T22:44:30Z",
+  "updated_at": "2026-06-10T22:45:06Z"
+}
