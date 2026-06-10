@@ -2222,9 +2222,40 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
       }
     }
   } else {
-    console.warn(
-      "[FLA import] pre-MX2004 Contents stream: scene names not extracted (ASCII string table not supported)",
-    );
+    // Pre-MX2004: ASCII CString format (u8 len + chars). Scan for "Page N" or
+    // "P N N" stream names followed immediately by the scene display name as
+    // another ASCII CString. This matches the MFC CArchive CDocumentPage
+    // serialisation used by Flash 5 and MX.
+    for (const prefix of ["Page ", "P "]) {
+      const prefixBytes = Array.from(prefix).map((c) => c.charCodeAt(0));
+      let pos = 0;
+      for (;;) {
+        const idx = findBytes(bytes, prefixBytes, pos);
+        if (idx < 0) break;
+        pos = idx + 1;
+        // The length byte immediately precedes the string data
+        if (idx < 1) continue;
+        const lenByte = bytes[idx - 1]!;
+        if (lenByte < prefix.length || lenByte > 64) continue;
+        const end = idx + lenByte;
+        if (end > bytes.length) continue;
+        const streamName = ascii(bytes.subarray(idx, end));
+        if (!/^(Page \d+|P \d+ \d+)$/.test(streamName)) continue;
+        // Scene display name follows as the next ASCII CString
+        if (end >= bytes.length) continue;
+        const nameLen = bytes[end]!;
+        if (nameLen === 0 || nameLen >= 0xff) continue; // empty or long-form
+        const nameEnd = end + 1 + nameLen;
+        if (nameEnd > bytes.length) continue;
+        const sceneName = ascii(bytes.subarray(end + 1, nameEnd));
+        if (sceneName.length > 0 && sceneName.length < 128) {
+          // Normalise to "Page N" key (pre-MX uses full form in practice)
+          if (!sceneNames.has(streamName)) {
+            sceneNames.set(streamName, sceneName);
+          }
+        }
+      }
+    }
   }
 
   // -- symbol library table ---------------------------------------------------
