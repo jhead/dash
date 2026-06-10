@@ -86,7 +86,15 @@ export type Fla8Fill =
       stops: Fla8GradientStop[];
       focalRatio: number;
     }
-  | { kind: "bitmap"; matrix: Fla8Matrix; bitmapId: number }
+  | {
+      kind: "bitmap";
+      matrix: Fla8Matrix;
+      bitmapId: number;
+      /** true = tiled (repeating), false = clipped (no-repeat). SWF 0x40/0x42 = tiled, 0x41/0x43 = clipped. */
+      repeat: boolean;
+      /** true = smoothed (bilinear), false = aliased. SWF 0x42/0x43 = smoothed, 0x40/0x41 = aliased. */
+      smooth: boolean;
+    }
   | { kind: "unknown" };
 
 export interface Fla8Stroke {
@@ -855,7 +863,12 @@ function readFillStyle(ctx: ParseCtx, caps: boolean): Fla8Fill {
   if (subtype & 0x40) {
     const matrix = readMatrix(r);
     const bitmapId = r.u32();
-    return { kind: "bitmap", matrix, bitmapId };
+    // SWF bitmap fill subtypes: 0x40=tiled/aliased, 0x41=clipped/aliased,
+    // 0x42=tiled/smoothed, 0x43=clipped/smoothed.
+    // Bit 0 set → clipped (no-repeat); bit 1 set → smoothed.
+    const repeat = (subtype & 0x01) === 0;
+    const smooth = (subtype & 0x02) !== 0;
+    return { kind: "bitmap", matrix, bitmapId, repeat, smooth };
   }
   if (subtype & 0x20) {
     warnOnce(ctx, "fill subtype 0x20 not supported; treating as unknown fill");

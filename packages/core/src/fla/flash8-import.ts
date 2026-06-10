@@ -66,7 +66,7 @@ function toHex(c: Fla8Color): string {
   return `#${h(c.r)}${h(c.g)}${h(c.b)}`;
 }
 
-function toFill(f: Fla8Fill): Fill {
+function toFill(f: Fla8Fill, bitmapIdByIndex: Map<number, string>): Fill {
   switch (f.kind) {
     case "solid":
       return { type: "solid", color: toColor(f.color) };
@@ -82,9 +82,16 @@ function toFill(f: Fla8Fill): Fill {
         stops: f.stops.map((s) => ({ ratio: s.position, color: toColor(s.color) })),
         focalPoint: f.focalRatio,
       };
-    case "bitmap":
-      console.warn("[FLA import] bitmap fill not supported; substituting solid gray");
-      return { type: "solid", color: { r: 128, g: 128, b: 128, a: 255 } };
+    case "bitmap": {
+      const bitmapId = bitmapIdByIndex.get(f.bitmapId);
+      if (!bitmapId) {
+        console.warn(
+          `[FLA import] bitmap fill references unknown media #${f.bitmapId}; substituting solid gray`,
+        );
+        return { type: "solid", color: { r: 128, g: 128, b: 128, a: 255 } };
+      }
+      return { type: "bitmap", bitmapId, repeat: f.repeat, smooth: f.smooth };
+    }
     case "unknown":
       return { type: "solid", color: { r: 128, g: 128, b: 128, a: 255 } };
   }
@@ -96,7 +103,7 @@ function toFill(f: Fla8Fill): Fill {
 
 const EPS = 1e-6;
 
-function convertShape(el: Fla8Shape): DisplayObject {
+function convertShape(el: Fla8Shape, bitmapIdByIndex: Map<number, string>): DisplayObject {
   const { a, b, c, d } = el.matrix;
   const identityLinear =
     Math.abs(a - 1) < EPS && Math.abs(b) < EPS && Math.abs(c) < EPS && Math.abs(d - 1) < EPS;
@@ -115,7 +122,7 @@ function convertShape(el: Fla8Shape): DisplayObject {
   const resolveFill = (fill1: number, fill0: number): Fill | undefined => {
     const idx = fill1 > 0 ? fill1 : fill0;
     if (idx <= 0 || idx > el.fills.length) return undefined;
-    return toFill(el.fills[idx - 1]!);
+    return toFill(el.fills[idx - 1]!, bitmapIdByIndex);
   };
   const resolveStroke = (line: number): Stroke | undefined => {
     if (line <= 0 || line > el.strokes.length) return undefined;
@@ -544,7 +551,7 @@ function convertElement(
   switch (el.type) {
     case "shape":
       if (el.edges.length === 0) return null;
-      return convertShape(el);
+      return convertShape(el, bitmapIdByIndex);
     case "instance": {
       const symbolId = symbolIdByIndex.get(el.libraryIndex);
       if (!symbolId) {
