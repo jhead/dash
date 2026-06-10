@@ -1,0 +1,10 @@
+{
+  "id": "0964-mcp-library-import-bitmap-and-library-import-sou",
+  "title": "MCP: library_import_bitmap and library_import_sound tools missing",
+  "description": "There are no MCP tools for importing bitmaps or sounds into the library. An agent cannot add BitmapItem or SoundItem to doc.library without replacing the entire document via doc_load. Add tools: library_import_bitmap (accepts base64 image data + optional name) and library_import_sound (accepts base64 audio data + name, mimeType). These should call the existing addBitmapToLibrary / addSoundToLibrary model functions if they exist, or create the library items directly.",
+  "status": "in_progress",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T21:54:18Z",
+  "updated_at": "2026-06-10T21:59:12Z"
+}

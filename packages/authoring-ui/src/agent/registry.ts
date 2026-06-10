@@ -35,6 +35,8 @@ import type {
   LibraryListResult,
   LibraryCreateSymbolResult,
   LibraryConvertToSymbolResult,
+  LibraryImportBitmapResult,
+  LibraryImportSoundResult,
   JsflRunResult,
   PublishSwfResult,
   FileSaveFlaResult,
@@ -69,6 +71,9 @@ import {
   removeDisplayObject,
   updateDisplayObject,
   createSymbolInLibrary,
+  createBitmap,
+  createSound,
+  addLibraryItem,
   removeLibraryItem,
   saveFla,
   loadFla,
@@ -1512,6 +1517,45 @@ const handlers: Record<string, AnyHandler> = {
     const newLibrary = removeLibraryItem(doc.library, params.itemId);
     cb.pushDoc({ ...doc, library: newLibrary });
     return { ok: true, rev: _rev };
+  },
+
+  library_import_bitmap(params: {
+    data: string;
+    name?: string;
+    mimeType?: string;
+  }): LibraryImportBitmapResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    // Derive a default name from the mimeType or fall back to "Bitmap"
+    const ext = params.mimeType
+      ? params.mimeType.split("/")[1] ?? "png"
+      : "png";
+    const name = params.name ?? `Bitmap.${ext}`;
+    // Build the data URI from base64 + mimeType
+    const mimeType = params.mimeType ?? "image/png";
+    const dataUri = `data:${mimeType};base64,${params.data}`;
+    const item = createBitmap(name, { dataUri });
+    const newLibrary = addLibraryItem(doc.library, item);
+    cb.pushDoc({ ...doc, library: newLibrary });
+    return { itemId: item.id, rev: _rev };
+  },
+
+  library_import_sound(params: {
+    data: string;
+    name: string;
+    mimeType?: string;
+  }): LibraryImportSoundResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    // Derive compressionType from mimeType: audio/mp3 or audio/mpeg → mp3, else raw
+    const mimeType = params.mimeType ?? "audio/mp3";
+    const compressionType: "mp3" | "adpcm" | "raw" | "speech" =
+      mimeType.includes("mp3") || mimeType.includes("mpeg") ? "mp3" : "raw";
+    const dataUri = `data:${mimeType};base64,${params.data}`;
+    const item = createSound(params.name, { dataUri, compressionType });
+    const newLibrary = addLibraryItem(doc.library, item);
+    cb.pushDoc({ ...doc, library: newLibrary });
+    return { itemId: item.id, rev: _rev };
   },
 
   // =========================================================================

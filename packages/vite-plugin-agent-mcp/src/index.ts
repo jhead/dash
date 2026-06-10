@@ -851,6 +851,38 @@ function createMcpServerForRequest(): McpServer {
     async (params) => callTool("library_remove", params as Record<string, unknown>)
   );
 
+  server.registerTool(
+    "library_import_bitmap",
+    {
+      title: "Import Bitmap",
+      description:
+        "Add a bitmap image to the library from base64-encoded data. " +
+        "Returns itemId and rev.",
+      inputSchema: z.object({
+        data: z.string().describe("Base64-encoded image data (no data: URI prefix)"),
+        name: z.string().optional().describe("Library item name (auto-generated if omitted)"),
+        mimeType: z.string().optional().describe("MIME type e.g. image/png or image/jpeg"),
+      }),
+    },
+    async (params) => callTool("library_import_bitmap", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "library_import_sound",
+    {
+      title: "Import Sound",
+      description:
+        "Add a sound to the library from base64-encoded audio data. " +
+        "Returns itemId and rev.",
+      inputSchema: z.object({
+        data: z.string().describe("Base64-encoded audio data (no data: URI prefix)"),
+        name: z.string().describe("Library item name"),
+        mimeType: z.string().optional().describe("MIME type e.g. audio/mp3 or audio/wav"),
+      }),
+    },
+    async (params) => callTool("library_import_sound", params as Record<string, unknown>)
+  );
+
   // =========================================================================
   // Output & escape hatches
   // =========================================================================

@@ -478,6 +478,32 @@ export const LibraryConvertToSymbolResultSchema = z.object({
 });
 export type LibraryConvertToSymbolResult = z.infer<typeof LibraryConvertToSymbolResultSchema>;
 
+export const LibraryImportBitmapParamsSchema = z.object({
+  data: z.string().describe("Base64-encoded image data"),
+  name: z.string().optional().describe("Library item name (auto-generated if omitted)"),
+  mimeType: z.string().optional().describe("MIME type e.g. image/png or image/jpeg"),
+});
+export type LibraryImportBitmapParams = z.infer<typeof LibraryImportBitmapParamsSchema>;
+
+export const LibraryImportBitmapResultSchema = z.object({
+  itemId: z.string(),
+  rev: RevSchema,
+});
+export type LibraryImportBitmapResult = z.infer<typeof LibraryImportBitmapResultSchema>;
+
+export const LibraryImportSoundParamsSchema = z.object({
+  data: z.string().describe("Base64-encoded audio data"),
+  name: z.string().describe("Library item name"),
+  mimeType: z.string().optional().describe("MIME type e.g. audio/mp3 or audio/wav"),
+});
+export type LibraryImportSoundParams = z.infer<typeof LibraryImportSoundParamsSchema>;
+
+export const LibraryImportSoundResultSchema = z.object({
+  itemId: z.string(),
+  rev: RevSchema,
+});
+export type LibraryImportSoundResult = z.infer<typeof LibraryImportSoundResultSchema>;
+
 export const LibraryRenameParamsSchema = z.object({
   itemId: z.string(),
   name: z.string(),
@@ -620,6 +646,8 @@ export const ALL_COMMANDS = [
   "library_convert_to_symbol",
   "library_rename",
   "library_remove",
+  "library_import_bitmap",
+  "library_import_sound",
   // output & escape hatches
   "jsfl_run",
   "stage_screenshot",
