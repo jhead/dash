@@ -495,7 +495,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     for (const layer of s.timeline.layers) {
       if (layer.type === "guide") continue;
       for (const frame of layer.frames) {
-        if (!frame.isKeyframe || frame.isEmpty) continue;
+        // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
+        if (!frame.isKeyframe) continue;
         for (const obj of frame.displayObjects) {
           if (obj.type !== "text") continue;
           const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
@@ -605,7 +606,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       // Guide layers are authoring-only — skip in SWF pre-pass too
       if (layer.type === "guide") continue;
       for (const frame of layer.frames) {
-        if (!frame.isKeyframe || frame.isEmpty) continue;
+        // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
+        if (!frame.isKeyframe) continue;
         for (const obj of frame.displayObjects) {
           if (objCharIdMap.has(obj.id)) continue;
           if (obj.type === "shape" || obj.type === "drawing-object") {
@@ -798,7 +800,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           const layer = layers[li];
           if (layer.type === "guide") continue;
           const frame = getTweenedFrame(layer, frameIdx);
-          if (!frame || frame.isEmpty) continue;
+          // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
+          if (!frame || frame.displayObjects.length === 0) continue;
 
           for (const obj of frame.displayObjects) {
             const depth = getOrAssignDepth(sceneIdx, li, obj.id);
@@ -821,7 +824,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             const ml = layers[mli]!;
             if (ml.type !== "masked") break;
             const mFrame = getTweenedFrame(ml, frameIdx);
-            if (!mFrame || mFrame.isEmpty) continue;
+            // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
+            if (!mFrame || mFrame.displayObjects.length === 0) continue;
             for (const obj of mFrame.displayObjects) {
               // Depths already assigned in pass 1 — getOrAssignDepth is idempotent
               const d = getOrAssignDepth(sceneIdx, mli, obj.id);

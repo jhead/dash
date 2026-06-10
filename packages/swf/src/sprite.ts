@@ -105,7 +105,8 @@ export function encodeDefineSprite(
   // (Bug 3 fix) via hoistedDefs — never inside the sprite body.
   for (const layer of layers) {
     for (const frame of layer.frames) {
-      if (!frame.isKeyframe || frame.isEmpty) continue;
+      // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
+      if (!frame.isKeyframe) continue;
       for (const obj of frame.displayObjects) {
         if (objCharIdMap.has(obj.id)) continue;
         if (obj.type === "shape" || obj.type === "drawing-object") {
@@ -196,7 +197,8 @@ export function encodeDefineSprite(
     for (let li = 0; li < layers.length; li++) {
       const layer = layers[li];
       const keyframe = findGoverningKeyframe(layer, frameIdx);
-      if (!keyframe || keyframe.isEmpty) continue;
+      // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
+      if (!keyframe || keyframe.displayObjects.length === 0) continue;
 
       for (const obj of keyframe.displayObjects) {
         const depth = getOrAssignDepth(li, obj.id);
@@ -233,7 +235,8 @@ export function encodeDefineSprite(
       outer: for (let li = 0; li < layers.length; li++) {
         const layer = layers[li];
         const keyframe = findGoverningKeyframe(layer, frameIdx);
-        if (!keyframe || keyframe.isEmpty) continue;
+        // Do not skip on isEmpty — the flag can be stale; check displayObjects directly.
+        if (!keyframe || keyframe.displayObjects.length === 0) continue;
         for (const obj of keyframe.displayObjects) {
           if (obj.id === objId) {
             displayObj = obj;

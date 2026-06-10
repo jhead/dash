@@ -147,7 +147,8 @@ export function encodeDefineButton2(
 
   for (const layer of layers) {
     for (const frame of layer.frames) {
-      if (!frame.isKeyframe || frame.isEmpty) continue;
+      // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
+      if (!frame.isKeyframe) continue;
       for (const obj of frame.displayObjects) {
         if (objCharIdMap.has(obj.id)) continue;
 
@@ -246,7 +247,8 @@ export function encodeDefineButton2(
 
   for (const layer of layers) {
     for (const frame of layer.frames) {
-      if (!frame.isKeyframe || frame.isEmpty) continue;
+      // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
+      if (!frame.isKeyframe) continue;
 
       const stateIdx = frame.index;
       if (stateIdx > STATE_HIT) continue; // ignore frames beyond state 3
