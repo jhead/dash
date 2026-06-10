@@ -205,9 +205,14 @@ export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
   const history = useHistory(_initialDoc);
   const { doc, push: _rawPushDoc, replace: replaceDoc, commitDrag, undo, redo, canUndo, canRedo } = history;
+  // Track the latest doc in a ref so agent callbacks always see the most recent
+  // value even before React re-renders after a pushDoc() call.
+  const latestDocRef = useRef(doc);
+  latestDocRef.current = doc;
   // Wrap push so we bump the agent rev counter on every document mutation.
   const pushDoc = useCallback(
     (nextDoc: Parameters<typeof _rawPushDoc>[0]) => {
+      latestDocRef.current = nextDoc;
       bumpRev();
       _rawPushDoc(nextDoc);
     },
@@ -2383,7 +2388,9 @@ export function Shell(): React.ReactElement {
 
     setAgentCallbacks({
       // Readers
-      getDoc: () => doc,
+      // Read from latestDocRef so agent commands issued immediately after
+      // pushDoc() see the updated document before React re-renders.
+      getDoc: () => latestDocRef.current,
       getSelectedIds: () => (selectedShapeId ? [selectedShapeId] : []),
       getCurrentFrame: () => currentFrame,
       getActiveLayerIndex: () => activeLayerIndex,
