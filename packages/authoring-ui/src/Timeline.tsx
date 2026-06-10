@@ -7,9 +7,11 @@ import React, {
 import type { EaseCurve, Layer, LayerType, SymbolType, Timeline as TimelineModel } from "@flash/core";
 import {
   addLayer,
+  addLayerFolder,
   clearTween,
   convertToKeyframes,
   deleteLayer,
+  getLayerDepth,
   insertBlankKeyframe,
   insertFrame,
   insertKeyframe,
@@ -19,6 +21,7 @@ import {
   clearKeyframe,
   renameLayer,
   reverseFrames,
+  setFolderCollapsed,
   setLayerLocked,
   setLayerOutlineMode,
   setLayerType,
@@ -775,6 +778,35 @@ export function Timeline({
     onActiveLayerChange?.(0); // newly added layer is at index 0 (top)
   }, [timeline, onTimelineChange, onActiveLayerChange]);
 
+  // Add a new folder layer above the active layer
+  const handleAddLayerFolder = useCallback(() => {
+    const folderCount = timeline.layers.filter((l) => l.type === "folder").length;
+    const newName = `Folder ${folderCount + 1}`;
+    onTimelineChange(addLayerFolder(timeline, newName));
+    onActiveLayerChange?.(0); // newly added folder is at index 0 (top)
+  }, [timeline, onTimelineChange, onActiveLayerChange]);
+
+  // Toggle collapse/expand on a folder layer
+  const handleToggleFolderCollapsed = useCallback(
+    (folderId: string, collapsed: boolean) => {
+      onTimelineChange(setFolderCollapsed(timeline, folderId, collapsed));
+    },
+    [timeline, onTimelineChange]
+  );
+
+  // Compute visible layers: skip children of collapsed folders
+  const visibleLayers = React.useMemo(() => {
+    const collapsedFolderIds = new Set(
+      timeline.layers
+        .filter((l) => l.type === "folder" && l.collapsed)
+        .map((l) => l.id)
+    );
+    return timeline.layers.filter((layer) => {
+      if (layer.parentFolderId === null) return true;
+      return !collapsedFolderIds.has(layer.parentFolderId);
+    });
+  }, [timeline.layers]);
+
   // Delete the active layer (with content confirmation)
   const handleDeleteActiveLayer = useCallback(() => {
     if (timeline.layers.length <= 1) return; // can't delete last layer
@@ -1003,7 +1035,11 @@ export function Timeline({
               overflowX: "hidden",
             }}
           >
-            {timeline.layers.map((layer, idx) => (
+            {visibleLayers.map((layer) => {
+              const idx = timeline.layers.indexOf(layer);
+              const depth = getLayerDepth(timeline, layer.id);
+              const indentPx = depth * 12;
+              return (
               <div
                 key={layer.id}
                 draggable
@@ -1018,6 +1054,7 @@ export function Timeline({
                   display: "flex",
                   alignItems: "center",
                   padding: "0 4px",
+                  paddingLeft: 4 + indentPx,
                   borderBottom: "1px solid #1a1a1a",
                   fontSize: 10,
                   color: "#c0c0c0",
@@ -1032,14 +1069,34 @@ export function Timeline({
                   boxSizing: "border-box",
                 }}
               >
+                {/* Folder collapse/expand toggle */}
+                {layer.type === "folder" ? (
+                  <button
+                    title={layer.collapsed ? "Expand folder" : "Collapse folder"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleFolderCollapsed(layer.id, !layer.collapsed);
+                    }}
+                    style={{
+                      ...iconButtonStyle,
+                      fontSize: 8,
+                      color: "#c0c0c0",
+                    }}
+                  >
+                    {layer.collapsed ? "▶" : "▼"}
+                  </button>
+                ) : (
+                  <span style={{ width: 12, flexShrink: 0, display: "inline-block" }} />
+                )}
                 {/* Eye icon */}
                 <button
                   title={layer.visible ? "Hide layer" : "Show layer"}
-                  onClick={() =>
+                  onClick={(e) => {
+                    e.stopPropagation();
                     onTimelineChange(
                       setLayerVisible(timeline, layer.id, !layer.visible)
-                    )
-                  }
+                    );
+                  }}
                   style={iconButtonStyle}
                 >
                   {layer.visible ? "●" : "○"}
@@ -1047,11 +1104,12 @@ export function Timeline({
                 {/* Lock icon */}
                 <button
                   title={layer.locked ? "Unlock layer" : "Lock layer"}
-                  onClick={() =>
+                  onClick={(e) => {
+                    e.stopPropagation();
                     onTimelineChange(
                       setLayerLocked(timeline, layer.id, !layer.locked)
-                    )
-                  }
+                    );
+                  }}
                   style={iconButtonStyle}
                 >
                   {layer.locked ? "L" : "U"}
@@ -1060,6 +1118,7 @@ export function Timeline({
                 <button
                   title={layer.outlineMode ? "Exit outline mode" : "Show as outlines"}
                   onClick={(e) => {
+                    e.stopPropagation();
                     const newMode = !layer.outlineMode;
                     if (e.altKey || e.ctrlKey) {
                       // Alt/Ctrl+click: toggle outline mode for all layers
@@ -1090,8 +1149,8 @@ export function Timeline({
                     borderRadius: 0,
                   }}
                 />
-                {/* Layer type indicator (non-normal types) */}
-                {layer.type !== "normal" && (
+                {/* Layer type indicator (non-normal, non-folder types) */}
+                {layer.type !== "normal" && layer.type !== "folder" && (
                   <span
                     title={`Layer type: ${layer.type}`}
                     style={{
@@ -1110,7 +1169,6 @@ export function Timeline({
                       : layer.type === "guided" ? "gd"
                       : layer.type === "mask" ? "M"
                       : layer.type === "masked" ? "mk"
-                      : layer.type === "folder" ? "F"
                       : ""}
                   </span>
                 )}
@@ -1145,6 +1203,7 @@ export function Timeline({
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                       opacity: layer.visible ? 1 : 0.5,
+                      fontStyle: layer.type === "folder" ? "italic" : "normal",
                     }}
                   >
                     {layer.name}
@@ -1168,7 +1227,8 @@ export function Timeline({
                   X
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
           {/* Add / Delete Layer buttons (hidden in button-symbol editing mode) */}
           <div
@@ -1199,6 +1259,25 @@ export function Timeline({
               }}
             >
               +
+            </button>
+            )}
+            {!isButtonMode && (
+            <button
+              title="Add layer folder"
+              onClick={handleAddLayerFolder}
+              style={{
+                fontSize: 10,
+                background: "#444",
+                color: "#c0c0c0",
+                border: "1px solid #555",
+                borderRadius: 2,
+                padding: "0 4px",
+                cursor: "pointer",
+                lineHeight: "18px",
+                minWidth: 20,
+              }}
+            >
+              📁
             </button>
             )}
             {!isButtonMode && (
@@ -1356,7 +1435,9 @@ export function Timeline({
             </div>
 
             {/* Layer frame rows */}
-            {timeline.layers.map((layer, idx) => (
+            {visibleLayers.map((layer) => {
+              const idx = timeline.layers.indexOf(layer);
+              return (
               <div
                 key={layer.id}
                 style={{
@@ -1464,7 +1545,8 @@ export function Timeline({
                       );
                     })}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

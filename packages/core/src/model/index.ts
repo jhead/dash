@@ -42,6 +42,7 @@ export {
   createLayer,
   createFrame,
   addLayer,
+  addLayerFolder,
   deleteLayer,
   duplicateLayer,
   moveLayer,
@@ -67,6 +68,14 @@ export {
   convertToKeyframes,
   reverseFrames,
 } from "./timeline.js";
+
+// Layer folder helpers
+export {
+  getLayersInFolder,
+  getTopLevelLayers,
+  setFolderCollapsed,
+  getLayerDepth,
+} from "./layer-folder.js";
 
 // Document mutations
 export {

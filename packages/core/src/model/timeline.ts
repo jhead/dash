@@ -111,6 +111,20 @@ export function addLayer(timeline: Timeline, name?: string): Timeline {
 }
 
 /**
+ * Add a new folder layer to the timeline (appended at top, index 0 in Flash convention).
+ * Folder layers group child layers underneath them.
+ */
+export function addLayerFolder(timeline: Timeline, name?: string): Timeline {
+  const folderCount = timeline.layers.filter((l) => l.type === "folder").length;
+  const folderName = name ?? `Folder ${folderCount + 1}`;
+  const newFolder = createLayer(folderName, "folder", { collapsed: false });
+  return {
+    ...timeline,
+    layers: [newFolder, ...timeline.layers],
+  };
+}
+
+/**
  * Delete a layer by ID.
  */
 export function deleteLayer(timeline: Timeline, layerId: string): Timeline {
