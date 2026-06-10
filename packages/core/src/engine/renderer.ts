@@ -27,7 +27,13 @@ import type {
   TextDisplayObject,
   Viewport,
 } from "./types.js";
-import type { FlashFilter } from "./filters.js";
+import type {
+  FlashFilter,
+  BevelFilter,
+  GradientGlowFilter,
+  GradientBevelFilter,
+  AdjustColorFilter,
+} from "./filters.js";
 import type { Library } from "../model/types.js";
 import { getGoverningKeyframe } from "../model/timeline-query.js";
 
@@ -456,15 +462,89 @@ function renderBitmapObject(
 // ---------------------------------------------------------------------------
 
 /**
+ * Builds a CSS filter string for an AdjustColorFilter.
+ *
+ * Maps the -100..+100 (and -180..+180 for hue) Flash ranges to CSS filter
+ * equivalents.  Values at their zero-point produce no-op CSS tokens so they
+ * never break an otherwise-non-trivial filter string.
+ */
+function adjustColorToCSSFilter(f: AdjustColorFilter): string {
+  const parts: string[] = [];
+  // brightness: -100 → 0, 0 → 1, +100 → 2
+  if (f.brightness !== 0) {
+    const b = 1 + f.brightness / 100;
+    parts.push(`brightness(${b.toFixed(4)})`);
+  }
+  // contrast: -100 → 0, 0 → 1, +100 → 2
+  if (f.contrast !== 0) {
+    const c = 1 + f.contrast / 100;
+    parts.push(`contrast(${c.toFixed(4)})`);
+  }
+  // saturation: -100 → 0 (greyscale), 0 → 1, +100 → 2
+  if (f.saturation !== 0) {
+    const s = 1 + f.saturation / 100;
+    parts.push(`saturate(${s.toFixed(4)})`);
+  }
+  // hue: degrees, -180..+180
+  if (f.hue !== 0) {
+    parts.push(`hue-rotate(${f.hue}deg)`);
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Picks the most visually prominent (highest-alpha) stop from a gradient array
+ * and returns its color as a CSS rgba() string.  Falls back to opaque red if
+ * the gradient is empty.
+ */
+function gradientPrimaryColor(
+  gradient: ReadonlyArray<{ color: string; alpha: number; ratio: number }>
+): string {
+  if (gradient.length === 0) return "rgba(255,0,0,1)";
+  // Pick the stop with the highest alpha value.
+  const best = gradient.reduce((a, b) => (b.alpha > a.alpha ? b : a));
+  // best.color is a CSS hex string like "#rrggbb"; append alpha.
+  const hex = best.color.replace("#", "");
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${best.alpha.toFixed(4)})`;
+}
+
+/**
+ * Draws a single bevel pass: sets shadow state and calls drawFn, then clears
+ * the shadow so subsequent draws are not affected.
+ */
+function drawBevelPass(
+  ctx: CanvasRenderingContext2D,
+  color: string,
+  blurPx: number,
+  offsetX: number,
+  offsetY: number,
+  drawFn: () => void
+): void {
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blurPx;
+  ctx.shadowOffsetX = offsetX;
+  ctx.shadowOffsetY = offsetY;
+  drawFn();
+  ctx.restore();
+}
+
+/**
  * Applies enabled Flash filters to the canvas context, executes the draw
  * function, then resets filter state.
  *
  * Canvas 2D only supports a subset of Flash filters natively; this is an
- * approximate MVP implementation:
- *  - BlurFilter      → ctx.filter = blur()
- *  - DropShadowFilter → ctx.shadow* properties
- *  - GlowFilter      → ctx.shadow* properties with zero offset
- *  - BevelFilter     → not yet rendered (skipped silently)
+ * approximate preview implementation:
+ *  - BlurFilter           → ctx.filter = blur()
+ *  - DropShadowFilter     → ctx.shadow* properties
+ *  - GlowFilter           → ctx.shadow* properties with zero offset
+ *  - BevelFilter          → two shadow passes (highlight + shadow side)
+ *  - GradientGlowFilter   → glow approximation using the brightest gradient stop
+ *  - GradientBevelFilter  → bevel approximation using first/last gradient stops
+ *  - AdjustColorFilter    → CSS filter: brightness/contrast/saturate/hue-rotate
  *
  * Exact Flash fidelity requires off-screen render-to-texture passes (stretch goal).
  */
@@ -479,12 +559,29 @@ function applyFilters(
     return;
   }
 
-  ctx.save();
+  // Separate bevel/gradientBevel filters (require multi-pass draws) from the
+  // rest (single-pass state mutations).
+  const bevelFilters: Array<BevelFilter | GradientBevelFilter> = [];
+  const singlePassFilters: FlashFilter[] = [];
 
   for (const filter of active) {
+    if (filter.type === "bevel" || filter.type === "gradientBevel") {
+      bevelFilters.push(filter);
+    } else {
+      singlePassFilters.push(filter);
+    }
+  }
+
+  // ---------- single-pass filters ----------
+  // Collect all CSS filter parts so they can be composed into one string.
+  const cssFilterParts: string[] = [];
+
+  ctx.save();
+
+  for (const filter of singlePassFilters) {
     if (filter.type === "blur") {
       const blurPx = (filter.blurX + filter.blurY) / 2;
-      ctx.filter = `blur(${blurPx}px)`;
+      cssFilterParts.push(`blur(${blurPx}px)`);
     } else if (filter.type === "drop-shadow") {
       const dx = Math.cos((filter.angle * Math.PI) / 180) * filter.distance;
       const dy = Math.sin((filter.angle * Math.PI) / 180) * filter.distance;
@@ -497,10 +594,64 @@ function applyFilters(
       ctx.shadowBlur = (filter.blurX + filter.blurY) / 2;
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 0;
+    } else if (filter.type === "gradientGlow") {
+      // Approximate: use the highest-alpha gradient stop as the glow color.
+      const f = filter as GradientGlowFilter;
+      ctx.shadowColor = gradientPrimaryColor(f.gradient);
+      ctx.shadowBlur = (f.blurX + f.blurY) / 2;
+      const dx = Math.cos((f.angle * Math.PI) / 180) * f.distance;
+      const dy = Math.sin((f.angle * Math.PI) / 180) * f.distance;
+      ctx.shadowOffsetX = dx;
+      ctx.shadowOffsetY = dy;
+    } else if (filter.type === "adjustColor") {
+      const cssFilter = adjustColorToCSSFilter(filter as AdjustColorFilter);
+      if (cssFilter) cssFilterParts.push(cssFilter);
     }
-    // BevelFilter: not approximated with Canvas 2D primitives; skip silently.
+    // gradientBevel is handled in the bevel pass below.
   }
 
+  if (cssFilterParts.length > 0) {
+    ctx.filter = cssFilterParts.join(" ");
+  }
+
+  // Draw the bevel shadow passes BEFORE the main draw so they appear behind the
+  // object.  Each bevel filter contributes a highlight pass (opposite side) and
+  // a shadow pass (on the light side).
+  for (const filter of bevelFilters) {
+    const blurPx = (filter.blurX + filter.blurY) / 2;
+    const angleRad = (filter.angle * Math.PI) / 180;
+    const dx = Math.cos(angleRad) * filter.distance;
+    const dy = Math.sin(angleRad) * filter.distance;
+
+    let highlightColor: string;
+    let shadowColor: string;
+
+    if (filter.type === "bevel") {
+      const f = filter as BevelFilter;
+      highlightColor = colorToCSSWithAlpha(f.highlightColor, f.highlightAlpha);
+      shadowColor = colorToCSSWithAlpha(f.shadowColor, f.shadowAlpha);
+    } else {
+      // gradientBevel: first stop = shadow side, last stop = highlight side
+      // (conventional gradient bevel layout).
+      const f = filter as GradientBevelFilter;
+      const g = f.gradient;
+      if (g.length === 0) continue;
+      // Use last stop as highlight, first stop as shadow.
+      const hlStop = g[g.length - 1];
+      const shStop = g[0];
+      const hlHex = hlStop.color.replace("#", "");
+      const shHex = shStop.color.replace("#", "");
+      highlightColor = `rgba(${parseInt(hlHex.substring(0, 2), 16)},${parseInt(hlHex.substring(2, 4), 16)},${parseInt(hlHex.substring(4, 6), 16)},${hlStop.alpha.toFixed(4)})`;
+      shadowColor = `rgba(${parseInt(shHex.substring(0, 2), 16)},${parseInt(shHex.substring(2, 4), 16)},${parseInt(shHex.substring(4, 6), 16)},${shStop.alpha.toFixed(4)})`;
+    }
+
+    // Highlight: offset at the opposite (light-source) side.
+    drawBevelPass(ctx, highlightColor, blurPx, -dx, -dy, drawFn);
+    // Shadow: offset at the shadow side.
+    drawBevelPass(ctx, shadowColor, blurPx, dx, dy, drawFn);
+  }
+
+  // Main draw (the actual object, on top of bevel shadows).
   drawFn();
 
   ctx.restore();
