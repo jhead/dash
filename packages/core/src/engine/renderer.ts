@@ -687,13 +687,167 @@ export const BLEND_MAP: Record<string, GlobalCompositeOperation> = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Creates a small offscreen canvas for intermediate rendering.
+ * Falls back to document.createElement('canvas') in environments where
+ * OffscreenCanvas is not available (e.g. jsdom in tests).
+ */
+function createOffscreenCanvas(width: number, height: number): { canvas: HTMLCanvasElement | OffscreenCanvas; ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D } | null {
+  const w = Math.max(1, Math.ceil(width));
+  const h = Math.max(1, Math.ceil(height));
+  try {
+    if (typeof OffscreenCanvas !== 'undefined') {
+      const canvas = new OffscreenCanvas(w, h);
+      const offCtx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | null;
+      if (offCtx) return { canvas, ctx: offCtx };
+    }
+  } catch (_) {
+    // OffscreenCanvas not supported — fall through
+  }
+  try {
+    if (typeof document !== 'undefined') {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const offCtx = canvas.getContext('2d') as CanvasRenderingContext2D | null;
+      if (offCtx) return { canvas, ctx: offCtx };
+    }
+  } catch (_) {
+    // No DOM available
+  }
+  return null;
+}
+
+/**
+ * Renders the content layers of a symbol onto the given context at 1:1 scale
+ * (no instance transform applied — callers position via translate before calling).
+ */
+function renderSymbolLayers(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  symbol: import('../model/types.js').Symbol,
+  frame: number,
+  imageCache: Map<string, HTMLImageElement>,
+  library: Library,
+  visitedSymbolIds: Set<string>
+): void {
+  const layers = [...symbol.timeline.layers].reverse(); // bottom-to-top
+  for (const layer of layers) {
+    if (!layer.visible) continue;
+    const kf = getGoverningKeyframe(layer, frame);
+    if (!kf) continue;
+    for (const childObj of kf.displayObjects) {
+      renderDisplayObject(ctx as CanvasRenderingContext2D, childObj, imageCache, library, visitedSymbolIds);
+    }
+  }
+}
+
+/**
+ * Performs full 9-slice (scale9Grid) rendering of a SymbolInstance.
+ *
+ * Algorithm:
+ *   1. Estimate the symbol's natural size from the grid definition.
+ *   2. Render the symbol at 1:1 scale onto an offscreen canvas.
+ *   3. Divide both the source (natural) and destination (scaled) into 9 sectors
+ *      using the 4 grid lines: left=x, right=x+w, top=y, bottom=y+h.
+ *   4. Blit each sector with ctx.drawImage(offscreen, sx,sy,sw,sh, dx,dy,dw,dh):
+ *      - Corners: rendered at natural size (no scaling).
+ *      - Horizontal edges (top/bottom center): stretched horizontally only.
+ *      - Vertical edges (left/right center): stretched vertically only.
+ *      - Center: stretched in both axes.
+ *
+ * The instance position transform (translate + rotation) is applied before
+ * calling this function via ctx.save()/translate/rotate. The scale is NOT
+ * applied via ctx.scale() — instead the 9-slice drawImage calls provide the
+ * scaling for each sector individually.
+ */
+function renderSymbolWith9Slice(
+  ctx: CanvasRenderingContext2D,
+  symbol: import('../model/types.js').Symbol,
+  obj: SymbolInstance,
+  imageCache: Map<string, HTMLImageElement>,
+  library: Library,
+  visitedSymbolIds: Set<string>
+): void {
+  const grid = symbol.scale9Grid!; // caller ensures this is non-null
+  const scaleX = obj.scaleX ?? 1;
+  const scaleY = obj.scaleY ?? 1;
+
+  // Estimate natural symbol size from the grid.
+  // The grid's right/bottom edges (grid.x + grid.width, grid.y + grid.height) must
+  // lie within the symbol bounds. We assume the right border equals the left border
+  // and the bottom border equals the top border (symmetric design — the common case).
+  // Minimum natural size is the grid itself plus a 1-pixel border so sectors are valid.
+  const rightBorder = Math.max(1, grid.x);
+  const bottomBorder = Math.max(1, grid.y);
+  const naturalW = grid.x + grid.width + rightBorder;
+  const naturalH = grid.y + grid.height + bottomBorder;
+
+  // Destination (scaled) dimensions
+  const destW = naturalW * scaleX;
+  const destH = naturalH * scaleY;
+
+  // Grid column/row boundaries in source space
+  const srcLeft = grid.x;
+  const srcRight = grid.x + grid.width;
+  const srcTop = grid.y;
+  const srcBottom = grid.y + grid.height;
+
+  // Widths and heights of the 3 columns / 3 rows in source space
+  const srcColW = [srcLeft, grid.width, naturalW - srcRight] as const;
+  const srcRowH = [srcTop, grid.height, naturalH - srcBottom] as const;
+
+  // Widths and heights of the 3 columns / 3 rows in destination space
+  // Corners keep natural size; edges and center are scaled to fill remaining space
+  const dstMidW = destW - srcColW[0] - srcColW[2];
+  const dstMidH = destH - srcRowH[0] - srcRowH[2];
+  const dstColW = [srcColW[0], Math.max(0, dstMidW), srcColW[2]] as const;
+  const dstRowH = [srcRowH[0], Math.max(0, dstMidH), srcRowH[2]] as const;
+
+  // Render the symbol at natural size onto an offscreen canvas
+  const off = createOffscreenCanvas(naturalW, naturalH);
+  if (!off) {
+    // Fallback: render normally (no 9-slice)
+    renderSymbolLayers(ctx, symbol, obj.firstFrame ?? 0, imageCache, library, visitedSymbolIds);
+    return;
+  }
+
+  const offCtx = off.ctx;
+  renderSymbolLayers(offCtx, symbol, obj.firstFrame ?? 0, imageCache, library, visitedSymbolIds);
+
+  // Source X offsets for each column
+  const srcX = [0, srcLeft, srcRight] as const;
+  // Source Y offsets for each row
+  const srcY = [0, srcTop, srcBottom] as const;
+
+  // Destination X offsets for each column
+  const dstX = [0, dstColW[0], dstColW[0] + dstColW[1]] as const;
+  // Destination Y offsets for each row
+  const dstY = [0, dstRowH[0], dstRowH[0] + dstRowH[1]] as const;
+
+  // Draw 9 slices
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const sw = srcColW[col];
+      const sh = srcRowH[row];
+      const dw = dstColW[col];
+      const dh = dstRowH[row];
+      // Skip zero-size sectors
+      if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) continue;
+      ctx.drawImage(
+        off.canvas as CanvasImageSource,
+        srcX[col], srcY[row], sw, sh,
+        dstX[col], dstY[row], dw, dh
+      );
+    }
+  }
+}
+
+/**
  * Renders a SymbolInstance by looking up the symbol in the library and
  * recursively rendering its timeline layers at the appropriate frame.
  * Guards against infinite recursion by tracking visited symbol IDs.
  *
- * When the symbol has a scale9Grid defined, the instance is rendered using
- * standard scaling for now — full 9-slice canvas rendering is deferred.
- * TODO: implement full 9-slice drawImage-based rendering when scale9Grid is set.
+ * When the symbol has a scale9Grid defined and the instance is scaled,
+ * renders using 9-slice drawImage to preserve corner proportions.
  */
 function renderSymbolInstance(
   ctx: CanvasRenderingContext2D,
@@ -709,15 +863,8 @@ function renderSymbolInstance(
   if (!symbol || symbol.itemType !== "symbol") return;
 
   const frame = obj.firstFrame ?? 0;
-
-  // Detect 9-slice grid on the symbol definition.
-  // Full 9-slice rendering (ctx.drawImage per slice) is a future stretch goal.
-  // For now we render normally so the common case (no scale9Grid) is correct
-  // and instances with scale9Grid do not crash.
-  // TODO: when scale9Grid is set, render via 9-slice drawImage slices instead of
-  //       a uniform ctx.scale(), to avoid distorting the corners of the symbol.
-  const has9Slice = symbol.scale9Grid != null;
-  void has9Slice; // acknowledged — full implementation deferred
+  const scaleX = obj.scaleX ?? 1;
+  const scaleY = obj.scaleY ?? 1;
 
   ctx.save();
 
@@ -726,30 +873,27 @@ function renderSymbolInstance(
     ctx.globalCompositeOperation = BLEND_MAP[obj.blendMode] ?? 'source-over';
   }
 
-  // Apply instance transform
+  // Apply position and rotation (not scale — 9-slice handles scaling itself)
   ctx.translate(obj.x, obj.y);
   if (obj.rotation) {
     ctx.rotate((obj.rotation * Math.PI) / 180);
-  }
-  if ((obj.scaleX !== undefined && obj.scaleX !== 1) || (obj.scaleY !== undefined && obj.scaleY !== 1)) {
-    ctx.scale(obj.scaleX ?? 1, obj.scaleY ?? 1);
   }
   if (obj.alpha !== undefined && obj.alpha < 1) {
     ctx.globalAlpha = ctx.globalAlpha * obj.alpha;
   }
 
-  // Recurse into the symbol's layers (bottom-to-top like the scene renderer)
   const nextVisited = new Set(visitedSymbolIds);
   nextVisited.add(obj.symbolId);
 
-  const layers = [...symbol.timeline.layers].reverse(); // bottom-to-top
-  for (const layer of layers) {
-    if (!layer.visible) continue;
-    const kf = getGoverningKeyframe(layer, frame);
-    if (!kf) continue;
-    for (const childObj of kf.displayObjects) {
-      renderDisplayObject(ctx, childObj, imageCache, library, nextVisited);
+  // 9-slice rendering when scale9Grid is set and the instance is actually scaled
+  if (symbol.scale9Grid != null && (scaleX !== 1 || scaleY !== 1)) {
+    renderSymbolWith9Slice(ctx, symbol, obj, imageCache, library, nextVisited);
+  } else {
+    // Normal rendering path: apply scale uniformly and recurse into layers
+    if (scaleX !== 1 || scaleY !== 1) {
+      ctx.scale(scaleX, scaleY);
     }
+    renderSymbolLayers(ctx, symbol, frame, imageCache, library, nextVisited);
   }
 
   ctx.restore();

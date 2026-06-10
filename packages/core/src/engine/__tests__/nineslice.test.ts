@@ -11,7 +11,8 @@
 
 import { describe, it, expect, vi } from "vitest";
 import type { SymbolInstance, SceneGraph } from "../types.js";
-import type { Library, Symbol, Scale9Grid } from "../../model/types.js";
+import type { Library, Symbol, Scale9Grid, Frame, Layer } from "../../model/types.js";
+import { CanvasRenderer } from "../renderer.js";
 
 // ---------------------------------------------------------------------------
 // Mock CanvasRenderingContext2D
@@ -277,5 +278,314 @@ describe("9-slice scaling (scale9Grid) in symbol instance renderer", () => {
 
     expect(() => simulateRenderInstance(ctx, inst, lib)).not.toThrow();
     expect(ctx.save).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Real CanvasRenderer integration tests for 9-slice rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a full HTMLCanvasElement mock that satisfies CanvasRenderer's
+ * constructor (needs getContext('2d') to return a context object).
+ */
+function makeRendererCanvas() {
+  const drawImageCalls: unknown[][] = [];
+
+  const ctx = {
+    save: vi.fn(),
+    restore: vi.fn(),
+    scale: vi.fn(),
+    translate: vi.fn(),
+    rotate: vi.fn(),
+    clearRect: vi.fn(),
+    beginPath: vi.fn(),
+    clip: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    quadraticCurveTo: vi.fn(),
+    closePath: vi.fn(),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    fillText: vi.fn(),
+    setLineDash: vi.fn(),
+    measureText: vi.fn(() => ({ width: 0 })),
+    drawImage: vi.fn((...args: unknown[]) => drawImageCalls.push(args)),
+    rect: vi.fn(),
+    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    globalAlpha: 1,
+    globalCompositeOperation: "source-over" as string,
+    filter: "",
+    shadowColor: "",
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    shadowBlur: 0,
+    fillStyle: "",
+    strokeStyle: "",
+    lineWidth: 1,
+    lineCap: "butt" as CanvasLineCap,
+    lineJoin: "miter" as CanvasLineJoin,
+    miterLimit: 10,
+    font: "",
+    textAlign: "left" as CanvasTextAlign,
+    textBaseline: "top" as CanvasTextBaseline,
+    canvas: {} as HTMLCanvasElement,
+  } as unknown as CanvasRenderingContext2D;
+
+  const canvas = {
+    width: 550,
+    height: 400,
+    getContext: (_id: string) => ctx,
+  } as unknown as HTMLCanvasElement;
+
+  return { canvas, ctx, drawImageCalls };
+}
+
+/**
+ * Build a minimal symbol with the given scale9Grid for renderer integration tests.
+ */
+function makeSymbolForRenderer(id: string, grid: Scale9Grid | null): Symbol {
+  const frame: Frame = {
+    index: 0,
+    isKeyframe: true,
+    isEmpty: false,
+    tweenType: "none",
+    label: "",
+    labelType: "name",
+    script: "",
+    sound: null,
+    motionEase: 0,
+    motionRotate: "none",
+    motionRotateCount: 0,
+    motionOrientToPath: false,
+    motionSync: false,
+    motionScale: false,
+    shapeEase: 0,
+    shapeBlend: "distributive",
+    displayObjects: [],
+  };
+  const layer: Layer = {
+    id: "layer-1",
+    name: "Layer 1",
+    type: "normal",
+    visible: true,
+    locked: false,
+    outlineMode: false,
+    outlineColor: "#ff0000",
+    height: 20,
+    parentFolderId: null,
+    frameCount: 1,
+    frames: [frame],
+  };
+  return {
+    id,
+    name: id,
+    itemType: "symbol",
+    symbolType: "movieclip",
+    scale9Grid: grid,
+    linkage: {
+      exportForActionScript: false,
+      exportInFirstFrame: false,
+      linkageIdentifier: "",
+      className: "",
+      exportForRuntimeSharing: false,
+      importForRuntimeSharing: false,
+      sharedUrl: "",
+    },
+    timeline: { layers: [layer] },
+  };
+}
+
+/**
+ * Install a mock OffscreenCanvas into the global scope for tests running in
+ * the Node environment (which has no native OffscreenCanvas or DOM canvas).
+ * Returns a cleanup function to restore the original value.
+ */
+function installMockOffscreenCanvas(): () => void {
+  const offCtxMock = {
+    save: vi.fn(),
+    restore: vi.fn(),
+    scale: vi.fn(),
+    translate: vi.fn(),
+    rotate: vi.fn(),
+    clearRect: vi.fn(),
+    beginPath: vi.fn(),
+    clip: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    quadraticCurveTo: vi.fn(),
+    closePath: vi.fn(),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    fillText: vi.fn(),
+    setLineDash: vi.fn(),
+    measureText: vi.fn(() => ({ width: 0 })),
+    drawImage: vi.fn(),
+    rect: vi.fn(),
+    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    globalAlpha: 1,
+    globalCompositeOperation: "source-over",
+    filter: "",
+    fillStyle: "",
+    strokeStyle: "",
+    lineWidth: 1,
+    lineCap: "butt",
+    lineJoin: "miter",
+    miterLimit: 10,
+    font: "",
+    textAlign: "left",
+    textBaseline: "top",
+  };
+
+  class MockOffscreenCanvas {
+    width: number;
+    height: number;
+    constructor(w: number, h: number) {
+      this.width = w;
+      this.height = h;
+    }
+    getContext(_id: string) {
+      return offCtxMock;
+    }
+  }
+
+  const prev = (globalThis as Record<string, unknown>)["OffscreenCanvas"];
+  (globalThis as Record<string, unknown>)["OffscreenCanvas"] = MockOffscreenCanvas;
+  return () => {
+    if (prev === undefined) {
+      delete (globalThis as Record<string, unknown>)["OffscreenCanvas"];
+    } else {
+      (globalThis as Record<string, unknown>)["OffscreenCanvas"] = prev;
+    }
+  };
+}
+
+describe("CanvasRenderer 9-slice integration", () => {
+  /**
+   * Test 7: When a symbol has scale9Grid and the instance is scaled,
+   * the renderer calls ctx.drawImage exactly 9 times (once per slice).
+   *
+   * We install a mock OffscreenCanvas so the renderer can create an
+   * intermediate canvas in the Node test environment.
+   */
+  it("7. CanvasRenderer calls drawImage 9 times for a scaled symbol with scale9Grid", () => {
+    const cleanup = installMockOffscreenCanvas();
+    try {
+      const grid: Scale9Grid = { x: 10, y: 10, width: 80, height: 80 };
+      const sym = makeSymbolForRenderer("sym-9slice", grid);
+      const lib: Library = { items: [sym], folders: [] };
+
+      const { canvas, drawImageCalls } = makeRendererCanvas();
+      const renderer = new CanvasRenderer(canvas);
+
+      const sceneGraph: SceneGraph = {
+        layers: [
+          {
+            id: "layer-main",
+            name: "Main",
+            visible: true,
+            locked: false,
+            objects: [
+              {
+                type: "instance",
+                id: "inst-scaled",
+                symbolId: "sym-9slice",
+                x: 0,
+                y: 0,
+                scaleX: 2,
+                scaleY: 1.5,
+              } as SymbolInstance,
+            ],
+          },
+        ],
+      };
+
+      renderer.render(sceneGraph, { x: 0, y: 0, zoom: 1 }, lib);
+
+      // Each of the 9 sectors produces one drawImage call
+      expect(drawImageCalls.length).toBe(9);
+    } finally {
+      cleanup();
+    }
+  });
+
+  /**
+   * Test 8: When a symbol has scale9Grid but the instance is NOT scaled (scaleX=1,
+   * scaleY=1), the renderer uses normal rendering (no drawImage calls for 9-slice).
+   */
+  it("8. CanvasRenderer does NOT use 9-slice when scaleX=1 and scaleY=1", () => {
+    const grid: Scale9Grid = { x: 10, y: 10, width: 80, height: 80 };
+    const sym = makeSymbolForRenderer("sym-noscale", grid);
+    const lib: Library = { items: [sym], folders: [] };
+
+    const { canvas, drawImageCalls } = makeRendererCanvas();
+    const renderer = new CanvasRenderer(canvas);
+
+    const sceneGraph: SceneGraph = {
+      layers: [
+        {
+          id: "layer-main",
+          name: "Main",
+          visible: true,
+          locked: false,
+          objects: [
+            {
+              type: "instance",
+              id: "inst-unscaled",
+              symbolId: "sym-noscale",
+              x: 0,
+              y: 0,
+              // no scaleX / scaleY — defaults to 1:1
+            } as SymbolInstance,
+          ],
+        },
+      ],
+    };
+
+    renderer.render(sceneGraph, { x: 0, y: 0, zoom: 1 }, lib);
+
+    // No 9-slice drawImage calls when there's no scaling
+    expect(drawImageCalls.length).toBe(0);
+  });
+
+  /**
+   * Test 9: When a symbol has scale9Grid=null and the instance is scaled,
+   * the renderer uses normal rendering (no 9-slice drawImage calls).
+   */
+  it("9. CanvasRenderer uses normal rendering when scale9Grid=null even if scaled", () => {
+    const sym = makeSymbolForRenderer("sym-no-grid", null);
+    const lib: Library = { items: [sym], folders: [] };
+
+    const { canvas, drawImageCalls } = makeRendererCanvas();
+    const renderer = new CanvasRenderer(canvas);
+
+    const sceneGraph: SceneGraph = {
+      layers: [
+        {
+          id: "layer-main",
+          name: "Main",
+          visible: true,
+          locked: false,
+          objects: [
+            {
+              type: "instance",
+              id: "inst-scaled-no-grid",
+              symbolId: "sym-no-grid",
+              x: 0,
+              y: 0,
+              scaleX: 3,
+              scaleY: 2,
+            } as SymbolInstance,
+          ],
+        },
+      ],
+    };
+
+    renderer.render(sceneGraph, { x: 0, y: 0, zoom: 1 }, lib);
+
+    // No 9-slice drawImage calls — normal scale() path
+    expect(drawImageCalls.length).toBe(0);
   });
 });
