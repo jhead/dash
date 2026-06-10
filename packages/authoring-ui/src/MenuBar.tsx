@@ -246,6 +246,16 @@ export interface MenuBarProps {
   onSwapSymbol?: () => void;
   /** Called when Modify > Distribute to Layers is activated. */
   onDistributeToLayers?: () => void;
+  /** Called when Modify > Transform > Flip Horizontal is activated. */
+  onFlipHorizontal?: () => void;
+  /** Called when Modify > Transform > Flip Vertical is activated. */
+  onFlipVertical?: () => void;
+  /** Called when Modify > Transform > Rotate 90° CW is activated. */
+  onRotate90CW?: () => void;
+  /** Called when Modify > Transform > Rotate 90° CCW is activated. */
+  onRotate90CCW?: () => void;
+  /** Called when Modify > Transform > Rotate 180° is activated. */
+  onRotate180?: () => void;
   /** Called when Window > Align (Ctrl+K) is toggled. */
   onAlignPanelToggle?: () => void;
   /** Whether the Align panel is currently visible (for checkmark display). */
@@ -297,6 +307,11 @@ export function MenuBar({
   onOptimize,
   onSwapSymbol,
   onDistributeToLayers,
+  onFlipHorizontal,
+  onFlipVertical,
+  onRotate90CW,
+  onRotate90CCW,
+  onRotate180,
   onAlignPanelToggle,
   alignPanelVisible = false,
   onScenePanelToggle,
@@ -470,6 +485,27 @@ export function MenuBar({
         {
           label: "Arrange: Send to Back  Ctrl+Shift+Down",
           action: () => { onArrange?.("back"); },
+        },
+        {
+          label: "Transform: Flip Horizontal",
+          action: () => { onFlipHorizontal?.(); },
+          separator: true,
+        },
+        {
+          label: "Transform: Flip Vertical",
+          action: () => { onFlipVertical?.(); },
+        },
+        {
+          label: "Transform: Rotate 90° CW",
+          action: () => { onRotate90CW?.(); },
+        },
+        {
+          label: "Transform: Rotate 90° CCW",
+          action: () => { onRotate90CCW?.(); },
+        },
+        {
+          label: "Transform: Rotate 180°",
+          action: () => { onRotate180?.(); },
         },
       ],
     },

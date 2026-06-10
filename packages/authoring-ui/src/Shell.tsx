@@ -2188,6 +2188,72 @@ export function Shell(): React.ReactElement {
   }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
 
   // ---------------------------------------------------------------------------
+  // Transform (Flip / Rotate) — Modify > Transform submenu
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Apply a scale/rotation delta to the selected display object.
+   * Works for any DisplayObject type that carries scaleX/scaleY/rotation fields.
+   */
+  const applyTransformDelta = useCallback(
+    (scaleXDelta: number, scaleYDelta: number, rotationDelta: number) => {
+      if (!selectedShapeId) return;
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      const layer = timeline.layers[safeActiveLayerIndex];
+      if (!layer) return;
+      const kf = [...layer.frames]
+        .filter((f) => f.isKeyframe && f.index <= currentFrame)
+        .sort((a, b) => b.index - a.index)[0];
+      if (!kf) return;
+      const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
+      if (!obj) return;
+      const currentScaleX = (obj as { scaleX?: number }).scaleX ?? 1;
+      const currentScaleY = (obj as { scaleY?: number }).scaleY ?? 1;
+      const currentRotation = (obj as { rotation?: number }).rotation ?? 0;
+      const newRotation = ((currentRotation + rotationDelta) % 360 + 360) % 360;
+      pushDoc(withTimeline((t) =>
+        updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
+          scaleX: currentScaleX * scaleXDelta,
+          scaleY: currentScaleY * scaleYDelta,
+          rotation: newRotation,
+        })
+      ));
+    },
+    [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
+  );
+
+  /** Modify > Transform > Flip Horizontal — negate scaleX. */
+  const handleFlipHorizontal = useCallback(
+    () => applyTransformDelta(-1, 1, 0),
+    [applyTransformDelta]
+  );
+
+  /** Modify > Transform > Flip Vertical — negate scaleY. */
+  const handleFlipVertical = useCallback(
+    () => applyTransformDelta(1, -1, 0),
+    [applyTransformDelta]
+  );
+
+  /** Modify > Transform > Rotate 90° CW — add 90° to rotation. */
+  const handleRotate90CW = useCallback(
+    () => applyTransformDelta(1, 1, 90),
+    [applyTransformDelta]
+  );
+
+  /** Modify > Transform > Rotate 90° CCW — subtract 90° from rotation. */
+  const handleRotate90CCW = useCallback(
+    () => applyTransformDelta(1, 1, -90),
+    [applyTransformDelta]
+  );
+
+  /** Modify > Transform > Rotate 180° — add 180° to rotation. */
+  const handleRotate180 = useCallback(
+    () => applyTransformDelta(1, 1, 180),
+    [applyTransformDelta]
+  );
+
+  // ---------------------------------------------------------------------------
   // Swap Symbol
   // ---------------------------------------------------------------------------
 
@@ -3281,6 +3347,11 @@ export function Shell(): React.ReactElement {
         onBreakApart={handleBreakApart}
         onSmooth={handleSmooth}
         onOptimize={handleOptimize}
+        onFlipHorizontal={handleFlipHorizontal}
+        onFlipVertical={handleFlipVertical}
+        onRotate90CW={handleRotate90CW}
+        onRotate90CCW={handleRotate90CCW}
+        onRotate180={handleRotate180}
         onSwapSymbol={handleSwapSymbol}
         onDistributeToLayers={handleDistributeToLayers}
         onAlignPanelToggle={() => setAlignPanelVisible((v) => !v)}
