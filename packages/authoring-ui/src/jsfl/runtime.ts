@@ -49,6 +49,10 @@ import {
   cutFramesDoc,
   updateDisplayObject,
   setSymbolLinkage,
+  addScene as coreAddScene,
+  removeScene as coreRemoveScene,
+  renameScene as coreRenameScene,
+  duplicateScene as coreDuplicateScene,
 } from "@flash/core";
 import type {
   ShapeDisplayObject,
@@ -1236,6 +1240,43 @@ export interface JsflDocument {
    * Updates the selection to point to the new copies.
    */
   duplicateSelection(): void;
+  /** Add a new scene with the given name. */
+  addNewScene(name: string): void;
+  /** Delete the current scene. */
+  deleteScene(): void;
+  /** Rename the current scene. */
+  renameScene(name: string): void;
+  /** Duplicate the current scene, inserting the copy after it. */
+  duplicateScene(): void;
+  /**
+   * Arrange selected objects in z-order.
+   * type: 'front' | 'back' | 'forward' | 'backward'
+   */
+  arrange(type: string): void;
+  /**
+   * Get a property from the first selected element.
+   * Returns undefined if there is no selection.
+   */
+  getElementProperty(propertyName: string): any;
+  /**
+   * Set a property on ALL selected elements.
+   */
+  setElementProperty(propertyName: string, value: any): void;
+  /**
+   * Get the text string from the first selected text object.
+   * Returns '' if the selection contains no text object.
+   */
+  getTextString(): string;
+  /**
+   * Set the text string on all selected text objects.
+   */
+  setTextString(text: string): void;
+  /**
+   * Swap the symbol of the first selected SymbolInstance to the library item
+   * with the given name.  If no SymbolInstance is selected, or the named item
+   * is not found, this is a no-op (warns to the console).
+   */
+  swap(libraryItemName: string): void;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -1871,6 +1912,206 @@ function makeDocumentProxy(
       }
 
       state.selectedIds = newIds;
+    },
+    addNewScene(name: string): void {
+      state.doc = coreAddScene(state.doc, name);
+    },
+    deleteScene(): void {
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      if (state.doc.scenes.length <= 1) return;
+      state.doc = coreRemoveScene(state.doc, scene.id);
+      // Clamp the scene index so it stays in bounds after deletion
+      state.sceneIndex = Math.min(state.sceneIndex, state.doc.scenes.length - 1);
+    },
+    renameScene(name: string): void {
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      state.doc = coreRenameScene(state.doc, scene.id, name);
+    },
+    duplicateScene(): void {
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      state.doc = coreDuplicateScene(state.doc, scene.id);
+    },
+    arrange(type: string): void {
+      if (state.selectedIds.length === 0) return;
+      const op = type as "front" | "back" | "forward" | "backward";
+      const layerId = getActiveLayerId(state);
+      if (!layerId) return;
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      const newScenes = state.doc.scenes.map((s, si) => {
+        if (si !== state.sceneIndex) return s;
+        const newLayers = s.timeline.layers.map((layer) => {
+          if (layer.id !== layerId) return layer;
+          const kf = [...layer.frames]
+            .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+            .sort((a, b) => b.index - a.index)[0];
+          if (!kf) return layer;
+          const newFrames = layer.frames.map((f) => {
+            if (f.index !== kf.index) return f;
+            let objs = [...f.displayObjects];
+            for (const id of state.selectedIds) {
+              const idx = objs.findIndex((o) => o.id === id);
+              if (idx < 0) continue;
+              const [item] = objs.splice(idx, 1);
+              if (op === "front") {
+                objs.push(item);
+              } else if (op === "back") {
+                objs.unshift(item);
+              } else if (op === "forward") {
+                const newIdx = Math.min(idx + 1, objs.length);
+                objs.splice(newIdx, 0, item);
+              } else {
+                // backward
+                const newIdx = Math.max(0, idx - 1);
+                objs.splice(newIdx, 0, item);
+              }
+            }
+            return { ...f, displayObjects: objs };
+          });
+          return { ...layer, frames: newFrames };
+        });
+        return { ...s, timeline: { ...s.timeline, layers: newLayers } };
+      });
+      state.doc = { ...state.doc, scenes: newScenes };
+    },
+    getElementProperty(propertyName: string): any {
+      if (state.selectedIds.length === 0) return undefined;
+      const firstId = state.selectedIds[0];
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return undefined;
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        const obj = kf.displayObjects.find((o) => o.id === firstId);
+        if (obj) {
+          const proxy = makeElementProxy(state, layer.id, kf.index, obj);
+          return (proxy as unknown as Record<string, unknown>)[propertyName];
+        }
+      }
+      return undefined;
+    },
+    setElementProperty(propertyName: string, value: any): void {
+      if (state.selectedIds.length === 0) return;
+      const toSet = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type SetEntry = { layerId: string; kfIndex: number; obj: DisplayObject };
+      const entries: SetEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toSet.has(obj.id)) continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, obj });
+        }
+      }
+      for (const entry of entries) {
+        const proxy = makeElementProxy(state, entry.layerId, entry.kfIndex, entry.obj);
+        (proxy as unknown as Record<string, unknown>)[propertyName] = value;
+      }
+    },
+    getTextString(): string {
+      if (state.selectedIds.length === 0) return "";
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return "";
+      for (const id of state.selectedIds) {
+        for (const layer of scene.timeline.layers) {
+          const kf = [...layer.frames]
+            .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+            .sort((a, b) => b.index - a.index)[0];
+          if (!kf) continue;
+          const obj = kf.displayObjects.find((o) => o.id === id);
+          if (obj && obj.type === "text") {
+            return (obj as { text?: string }).text ?? "";
+          }
+        }
+      }
+      return "";
+    },
+    setTextString(text: string): void {
+      if (state.selectedIds.length === 0) return;
+      const toSet = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type TextEntry = { layerId: string; kfIndex: number; objId: string };
+      const entries: TextEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toSet.has(obj.id) || obj.type !== "text") continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, objId: obj.id });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { text }
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    swap(libraryItemName: string): void {
+      if (state.selectedIds.length === 0) return;
+      // Find the new library item by name
+      const newItem = state.doc.library.items.find((i) => i.name === libraryItemName);
+      if (!newItem) {
+        console.warn("[JSFL] doc.swap: library item not found:", libraryItemName);
+        return;
+      }
+      if (newItem.itemType !== "symbol") {
+        console.warn("[JSFL] doc.swap: only symbol items can be swapped; got:", newItem.itemType);
+        return;
+      }
+      // Find the first selected SymbolInstance in the current keyframe
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!state.selectedIds.includes(obj.id) || obj.type !== "instance") continue;
+          // Found the first selected SymbolInstance — update its symbolId
+          const currentScene = state.doc.scenes[state.sceneIndex];
+          if (!currentScene) return;
+          const newTimeline = updateDisplayObject(
+            currentScene.timeline,
+            layer.id,
+            kf.index,
+            obj.id,
+            { symbolId: newItem.id } as Parameters<typeof updateDisplayObject>[4]
+          );
+          state.doc = {
+            ...state.doc,
+            scenes: state.doc.scenes.map((s, i) =>
+              i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+            ),
+          };
+          return; // Only swap the first selected instance
+        }
+      }
+      console.warn("[JSFL] doc.swap: no SymbolInstance found in selection");
     },
   };
 }
