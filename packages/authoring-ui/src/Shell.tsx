@@ -1375,6 +1375,9 @@ export function Shell(): React.ReactElement {
       y: o.y - avgY,
     }));
 
+    // Pre-compute instId so we can select the new instance after pushDoc
+    const instId = `inst-${Date.now().toString(36)}`;
+
     pushDoc((() => {
       const { library: updatedLib, item: newSymbol } = createSymbolInLibrary(
         doc.library,
@@ -1407,7 +1410,6 @@ export function Shell(): React.ReactElement {
       };
 
       // Create the SymbolInstance to replace the selection on the timeline
-      const instId = `inst-${Date.now().toString(36)}`;
       const instance: SymbolInstance = {
         type: "instance",
         id: instId,
@@ -1455,7 +1457,7 @@ export function Shell(): React.ReactElement {
       return newDoc;
     })());
 
-    setSelectedShapeId(null);
+    setSelectedShapeId(instId);
     setConvertToSymbolOpen(false);
   }, [timeline, safeActiveLayerIndex, currentFrame, selectedShapeId, pushDoc, doc, editContext, activeSceneIndex]);
 

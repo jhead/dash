@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
-import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel } from "@flash/core";
+import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel } from "@flash/core";
 import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 
@@ -195,6 +195,67 @@ function findShapeInLasso(polygon: Point[], objects: ShapeDisplayObject[]): stri
 }
 
 export type ViewMode = "normal" | "outlines" | "antialias";
+
+// ---------------------------------------------------------------------------
+// Symbol instance bounds helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute a stage-space bounding box for a SymbolInstance.
+ * Resolves the symbol's first-frame shapes from the library to get real content
+ * bounds, then applies the instance's x/y offset. Falls back to a 40×40 px
+ * box centered on the instance origin when the symbol cannot be resolved.
+ */
+function getSymbolInstanceBounds(
+  inst: SymbolInstance,
+  library: Library | undefined
+): { x: number; y: number; width: number; height: number } {
+  const FALLBACK_HALF = 40;
+
+  if (!library) {
+    return { x: inst.x - FALLBACK_HALF, y: inst.y - FALLBACK_HALF, width: FALLBACK_HALF * 2, height: FALLBACK_HALF * 2 };
+  }
+
+  const sym = library.items.find((i) => i.id === inst.symbolId && i.itemType === "symbol") as FlashSymbol | undefined;
+
+  if (!sym) {
+    return { x: inst.x - FALLBACK_HALF, y: inst.y - FALLBACK_HALF, width: FALLBACK_HALF * 2, height: FALLBACK_HALF * 2 };
+  }
+
+  // Gather all shapes from the first keyframe of every layer in the symbol
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let hasShape = false;
+  for (const layer of sym.timeline.layers) {
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index === 0)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf) continue;
+    for (const obj of kf.displayObjects) {
+      if (!("shape" in obj)) continue;
+      const b = transformedShapeBounds(obj as ShapeDisplayObject);
+      if (b.width === 0 && b.height === 0) continue;
+      hasShape = true;
+      if (b.x < minX) minX = b.x;
+      if (b.y < minY) minY = b.y;
+      if (b.x + b.width > maxX) maxX = b.x + b.width;
+      if (b.y + b.height > maxY) maxY = b.y + b.height;
+    }
+  }
+
+  if (!hasShape) {
+    return { x: inst.x - FALLBACK_HALF, y: inst.y - FALLBACK_HALF, width: FALLBACK_HALF * 2, height: FALLBACK_HALF * 2 };
+  }
+
+  const scaleX = inst.scaleX ?? 1;
+  const scaleY = inst.scaleY ?? 1;
+
+  return {
+    x: inst.x + minX * scaleX,
+    y: inst.y + minY * scaleY,
+    width: (maxX - minX) * scaleX,
+    height: (maxY - minY) * scaleY,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Marquee selection helpers
@@ -1510,21 +1571,67 @@ export function StageArea({
             startX: hit.x,
             startY: hit.y,
           };
-        } else {
-          // Start marquee selection on empty stage (arrow tool rubber-band)
-          e.preventDefault();
-          onShapeSelect?.(null);
-          // When in symbol edit mode and clicking empty space, exit edit mode.
-          if (parentSceneGraph && onExitSymbolEdit) {
-            onExitSymbolEdit();
-          }
-          setSelMarqueeStart({ x: stageX, y: stageY });
-          setSelMarqueeEnd({ x: stageX, y: stageY });
-          setSelIsMarqueeSelecting(true);
+          return;
         }
+
+        // --- Hit test symbol instances (AABB derived from library bounds) ---
+        const hitInst = [...symbolInstanceDisplayObjects].reverse().find((inst) => {
+          const bounds = getSymbolInstanceBounds(inst, library);
+          return (
+            stageX >= bounds.x &&
+            stageX <= bounds.x + bounds.width &&
+            stageY >= bounds.y &&
+            stageY <= bounds.y + bounds.height
+          );
+        });
+        if (hitInst) {
+          e.preventDefault();
+          onShapeSelect?.(hitInst.id);
+          selectionDragRef.current = {
+            shapeId: hitInst.id,
+            startMouseX: e.clientX,
+            startMouseY: e.clientY,
+            startX: hitInst.x,
+            startY: hitInst.y,
+          };
+          return;
+        }
+
+        // --- Hit test text objects (simple AABB) ---
+        const hitText = [...textDisplayObjects].reverse().find((obj) => {
+          return (
+            stageX >= obj.x &&
+            stageX <= obj.x + obj.width &&
+            stageY >= obj.y &&
+            stageY <= obj.y + obj.height
+          );
+        });
+        if (hitText) {
+          e.preventDefault();
+          onShapeSelect?.(hitText.id);
+          selectionDragRef.current = {
+            shapeId: hitText.id,
+            startMouseX: e.clientX,
+            startMouseY: e.clientY,
+            startX: hitText.x,
+            startY: hitText.y,
+          };
+          return;
+        }
+
+        // Start marquee selection on empty stage (arrow tool rubber-band)
+        e.preventDefault();
+        onShapeSelect?.(null);
+        // When in symbol edit mode and clicking empty space, exit edit mode.
+        if (parentSceneGraph && onExitSymbolEdit) {
+          onExitSymbolEdit();
+        }
+        setSelMarqueeStart({ x: stageX, y: stageY });
+        setSelMarqueeEnd({ x: stageX, y: stageY });
+        setSelIsMarqueeSelecting(true);
       }
     },
-    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit]
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library]
   );
 
   const onMouseMove = useCallback(
