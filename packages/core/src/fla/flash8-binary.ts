@@ -352,6 +352,7 @@ export interface Fla8Frame {
   readonly duration: number;
   readonly label: string;
   readonly labelIsComment: boolean;
+  readonly labelIsAnchor: boolean;
   readonly script: string;
   readonly keyMode: number;
   /**
@@ -2312,6 +2313,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
   let shapeBlend = 0;
   let label = "";
   let labelIsComment = false;
+  let labelIsAnchor = false;
   let script = "";
   let motionEase = 0;
   let motionEaseCurve: Fla8EaseCurve | null = null;
@@ -2378,7 +2380,9 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
           motionRotate = rotateMap[rotateFlaValue] ?? "none";
           motionRotateCount = r.u32(); // extra full rotations beyond normal interpolation
           if (fs > 11) {
-            labelIsComment = r.u32() === 1;
+            const labelTypeValue = r.u32();
+            labelIsComment = labelTypeValue === 1;
+            labelIsAnchor = labelTypeValue === 2;
           }
           if (fs > 12) {
             const morphTag = r.u16();
@@ -2519,7 +2523,7 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     return {
       cls: "CPicFrame",
       frame: {
-        duration, label, labelIsComment, script, keyMode, shapeBlend,
+        duration, label, labelIsComment, labelIsAnchor, script, keyMode, shapeBlend,
         motionEase,
         easeType: decodeEaseTypeFromAcceleration(motionEase, motionEaseCurve != null),
         motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, motionSnap,

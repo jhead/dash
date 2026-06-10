@@ -1080,7 +1080,7 @@ function convertLayer(
     frames.push(
       createFrame(frameIndex, {
         label: f.label,
-        labelType: f.labelIsComment ? "comment" : "name",
+        labelType: f.labelIsAnchor ? "anchor" : f.labelIsComment ? "comment" : "name",
         script: f.script,
         tweenType,
         ...easeOverrides,
