@@ -769,6 +769,12 @@ interface ParseCtx {
   ar: ArchiveReader;
   r: Reader;
   warnings: Set<string>;
+  /**
+   * End-shape geometry decoded from CPicMorphShape. Set by decodeMorphData()
+   * while processing a shape-tween start keyframe, consumed by finishFrame()
+   * when the subsequent end keyframe has no elements of its own.
+   */
+  pendingMorphEndShape?: Fla8Shape | null;
 }
 
 function warnOnce(ctx: ParseCtx, msg: string): void {
@@ -2165,16 +2171,17 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
           if (fs > 12) {
             const morphTag = r.u16();
             if (morphTag !== 0) {
-              // Back up so skipMorphData can re-read the class tag, then skip
-              // the entire CPicMorphShape object (including CMorphSegment/
-              // CMorphCurve children). The reader is repositioned at the next
-              // sibling CPicFrame's class tag (end keyframe) or at the null
-              // terminator of the parent CPicLayer's children list.
+              // Back up so decodeMorphData can re-read the class tag, then
+              // decode the CPicMorphShape object (CMorphSegment / CMorphCurve
+              // children) into end-shape geometry stored in
+              // ctx.pendingMorphEndShape.  The reader is repositioned at the
+              // next sibling CPicFrame's class tag (end keyframe) or at the
+              // null terminator of the parent CPicLayer's children list.
               // We return immediately rather than reading the remaining frame-
               // tail fields, which would otherwise advance the reader past the
               // correctly-positioned next CPicFrame class tag.
               r.pos -= 2;
-              skipMorphData(ctx);
+              decodeMorphData(ctx, ownShape.fills, ownShape.strokes);
               return finishFrame();
             }
           }
@@ -2279,6 +2286,14 @@ function readCPicFrameNode(ctx: ParseCtx): ParsedFrameNode {
     for (const c of base.children) {
       if (c.cls === "element") elements.push(c.element);
     }
+    // If this frame has no elements of its own AND the preceding start keyframe
+    // decoded CPicMorphShape end-geometry, inject it here.  This handles real
+    // FLA files where the end CPicFrame's own shape data is empty and the
+    // end-shape geometry lives exclusively in the CPicMorphShape object.
+    if (elements.length === 0 && ctx.pendingMorphEndShape != null) {
+      elements.push(ctx.pendingMorphEndShape);
+      ctx.pendingMorphEndShape = null; // consume once
+    }
     return {
       cls: "CPicFrame",
       frame: { duration, label, labelIsComment, script, keyMode, motionEase, motionEaseCurve, motionRotate, motionRotateCount, motionOrientToPath, soundId, soundSync, soundLoop, inPoint, outPoint, envelopePoints, elements },
@@ -2307,26 +2322,242 @@ function frameTailEndScan(r: Reader): void {
 }
 
 /**
- * Skip the CPicMorphShape (and its CMorphSegment/CMorphCurve children) that
- * follows the morph-tag field in a shape-tweened CPicFrame.
+ * Decode the CPicMorphShape (and its CMorphSegment/CMorphCurve children) that
+ * follows the morph-tag field in a shape-tweened CPicFrame, producing the
+ * end-keyframe shape geometry.
  *
- * The morph object is serialized inline in the CPicFrame tail — it is NOT a
- * child of the CPicFrame in the CArchive children list. After skipping, the
- * reader is positioned either:
- *   - at the next sibling CPicFrame's CArchive class tag (the end keyframe),
- *   - or at the null terminator that ends the parent CPicLayer's children list.
+ * The morph object is serialised inline in the CPicFrame tail — it is NOT a
+ * child of the CPicFrame in the CArchive children list. After decoding, the
+ * reader is positioned at the next sibling CPicFrame's class tag (the end
+ * keyframe) or at the null terminator of the parent CPicLayer's children list.
  *
- * Strategy: scan forward looking for a CPicFrame class backref (because the
- * end keyframe is the next sibling), then fall back to `frameTailEndScan` if
- * no such tag is found within a reasonable window.
+ * CPicMorphShape binary layout (observed in MX/F8 fixtures):
+ *   - CArchive class tag (NEWCLASS or backref for CPicMorphShape)
+ *   - CPicObjBase header: schema(u8), flags(u8), then children loop which
+ *     immediately encounters a "bad" tag (0x0001) triggering skipToNextBoundary;
+ *     the scanner re-positions at the first CMorphSegment or CMorphCurve NEWCLASS.
+ *   - CArchive loop of CMorphSegment / CMorphCurve objects terminated by null(u16=0):
+ *       CMorphSegment: CPicObjBase(schema=0,null) + 7×s32 + 1×u16
+ *         s32 fields: styleFlags, fill0Style, fill1Style, fromX, fromY, toX, toY
+ *         All coordinates in SWF twips (1 px = 20 twips).
+ *       CMorphCurve: CPicObjBase(variable schema, null) + reg-point + extra bytes
+ *         + 6×s32 per-class fields:
+ *         s32 fields: ctrlX, ctrlY, anchorX, anchorY, ???, ???
+ *         Coordinates in SWF twips.
+ *   - After null: CPicMorphShape reg point (8 bytes if CPicMorphShape schema > 0)
  *
- * We also read the morph class tag properly (so the CArchive class table stays
- * consistent for any subsequent backref resolution in this stream).
+ * The decoded edges are stored in ctx.pendingMorphEndShape with the same fills
+ * and strokes as the start keyframe shape, to be consumed by finishFrame() of
+ * the subsequent end CPicFrame if that frame has no elements of its own.
+ *
+ * Falls back to the old forward-scan if decoding fails for any reason.
  */
-function skipMorphData(ctx: ParseCtx): void {
+function decodeMorphData(
+  ctx: ParseCtx,
+  startFills: Fla8Fill[],
+  startStrokes: Fla8Stroke[],
+): void {
   const { r, ar } = ctx;
-  // Consume the class tag (NEWCLASS or backref) so the ArchiveReader class
-  // table is updated and subsequent class-tag reads remain consistent.
+  const savedPos = r.pos;
+
+  try {
+    // 1. Consume the CPicMorphShape class tag so the CArchive table stays
+    //    consistent for subsequent backref resolution in this stream.
+    const morphClassTag = ar.readClassTag();
+    if (morphClassTag.kind !== "class") {
+      // Not a recognised class tag — fall back to position scan.
+      r.pos = savedPos;
+      skipMorphDataFallback(ctx);
+      return;
+    }
+
+    // 2. Read CPicMorphShape's CPicObjBase. It always hits a "bad" internal
+    //    tag (0x0001) which causes skipToNextBoundary to reposition the reader
+    //    at the next CMorphSegment or CMorphCurve NEWCLASS tag.
+    const morphSchema = r.u8(); // CPicObjBase schema byte (typically 2)
+    r.skip(1); // flags byte
+
+    // Children loop: consume until null or handle bad tag via recovery scan.
+    for (;;) {
+      const childTag = ar.readClassTag();
+      if (childTag.kind === "null") {
+        // Normal terminator: skip reg point if schema > 0.
+        if (morphSchema > 0) r.skip(8);
+        if (morphSchema > 2) r.skip(1);
+        if (morphSchema > 3) r.skip(1);
+        break;
+      }
+      if (childTag.kind === "bad") {
+        // Advance past the two bytes of the bad tag and scan for the next
+        // plausible boundary (CMorphSegment/CMorphCurve NEWCLASS or CPicFrame
+        // backref). The CPicMorphShape reg point is NOT read in this path
+        // because badTag=true mirrors readCPicObjBase's own behaviour.
+        skipToNextBoundary(ctx);
+        break;
+      }
+      if (childTag.kind === "object-backref") continue;
+      // Known child class — deserialise normally (this path is rare in MX/F8).
+      deserializeClass(childTag.name, ctx);
+    }
+
+    // 3. Read the sequence of CMorphSegment / CMorphCurve objects, terminated
+    //    by a null class tag (0x0000).
+    const SWF_TWIPS_PER_PX = 20;
+    const edges: Fla8Edge[] = [];
+    let fill0 = 0;
+    let fill1 = 0;
+    let line = 0;
+
+    for (;;) {
+      const childTag = ar.readClassTag();
+      if (childTag.kind === "null") break;
+      if (childTag.kind !== "class") {
+        // bad or object-backref: scan to next boundary and stop.
+        if (childTag.kind === "bad") skipToNextBoundary(ctx);
+        break;
+      }
+
+      // Each CMorphSegment / CMorphCurve uses CPicObjBase (schema, flags,
+      // null-terminated children list, optional reg point).
+      const cSchema = r.u8();
+      r.skip(1); // flags
+      // Children loop for this segment/curve (always empty in practice).
+      for (;;) {
+        const cChild = ar.readClassTag();
+        if (cChild.kind === "null") break;
+        if (cChild.kind === "bad") { skipToNextBoundary(ctx); break; }
+        if (cChild.kind === "object-backref") continue;
+        deserializeClass(cChild.name, ctx);
+      }
+      // Consume optional reg-point / schema-extra bytes.
+      if (cSchema > 0) r.skip(8);
+      if (cSchema > 2) r.skip(1);
+      if (cSchema > 3) r.skip(1);
+
+      // Per-class fields (coordinates in SWF twips).
+      if (childTag.name === "CMorphSegment") {
+        // Layout: styleFlags(s32) fill0Style(s32) fill1Style(s32)
+        //         fromX(s32) fromY(s32) toX(s32) toY(s32) trailing(u16)
+        const styleFlags = r.s32();
+        const fill0Style = r.s32();
+        const fill1Style = r.s32();
+        const fromX = r.s32() / SWF_TWIPS_PER_PX;
+        const fromY = r.s32() / SWF_TWIPS_PER_PX;
+        const toX = r.s32() / SWF_TWIPS_PER_PX;
+        const toY = r.s32() / SWF_TWIPS_PER_PX;
+        r.u16(); // trailing field (observed as 0x0004 in MX fixture; purpose unknown)
+        // Derive 1-based fill/line indices: use style indices from the segment,
+        // mapping -1 (none) to 0 and positive values as-is.
+        fill0 = fill0Style > 0 ? fill0Style : 0;
+        fill1 = styleFlags > 0 ? styleFlags : 0;
+        line = 0;
+        // Suppress the unused-variable warning for fill0Style / fill1Style;
+        // they are captured above and may be useful for future refinement.
+        void fill0Style; void fill1Style;
+        edges.push({
+          kind: "line",
+          fromX, fromY,
+          ctrlX: (fromX + toX) / 2,
+          ctrlY: (fromY + toY) / 2,
+          toX, toY,
+          fill0,
+          fill1,
+          line,
+        });
+      } else if (childTag.name === "CMorphCurve") {
+        // Layout (after CPicObjBase with its reg-point skip): 6×s32
+        //   ctrlX, ctrlY, anchorX, anchorY, unknown1, unknown2
+        // ctrlX/ctrlY are absolute SWF twips (the quadratic control point).
+        // anchorX/anchorY are absolute SWF twips (the curve end point).
+        const ctrlX = r.s32() / SWF_TWIPS_PER_PX;
+        const ctrlY = r.s32() / SWF_TWIPS_PER_PX;
+        const anchorX = r.s32() / SWF_TWIPS_PER_PX;
+        const anchorY = r.s32() / SWF_TWIPS_PER_PX;
+        r.s32(); // unknown1
+        r.s32(); // unknown2 (observed to be a style index; ignored for now)
+        // Reuse last edge's fill/line styles — curves in CPicMorphShape do not
+        // carry independent style indices; they inherit from the preceding segment.
+        edges.push({
+          kind: "curve",
+          fromX: edges.length > 0 ? edges[edges.length - 1]!.toX : ctrlX,
+          fromY: edges.length > 0 ? edges[edges.length - 1]!.toY : ctrlY,
+          ctrlX,
+          ctrlY,
+          toX: anchorX,
+          toY: anchorY,
+          fill0: fill0 ?? 0,
+          fill1: fill1 ?? 0,
+          line: line ?? 0,
+        });
+      } else {
+        // Unknown morph child — skip its data as best we can.
+        warnOnce(ctx, `unknown morph child class "${childTag.name}" skipped`);
+        skipToNextBoundary(ctx);
+      }
+    }
+
+    // CPicMorphShape reg point after the null terminator (schema=2 > 0).
+    // Already consumed in the children-loop null branch above if schema > 0.
+
+    // 4. Store decoded end-shape for use by the subsequent end keyframe.
+    if (edges.length > 0) {
+      const identityMatrix: Fla8Matrix = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+      ctx.pendingMorphEndShape = {
+        type: "shape",
+        matrix: identityMatrix,
+        fills: startFills,
+        strokes: startStrokes,
+        edges,
+      };
+    } else {
+      ctx.pendingMorphEndShape = null;
+    }
+
+    // 5. Re-position at the next CPicFrame backref or layer null terminator,
+    //    matching the old skipMorphData behaviour so the caller's frame loop
+    //    can continue normally.
+    skipToNextCPicFrame(ctx);
+  } catch {
+    // Any parse error: revert to the fallback position scan.
+    r.pos = savedPos;
+    ctx.pendingMorphEndShape = null;
+    skipMorphDataFallback(ctx);
+  }
+}
+
+/**
+ * Reposition the reader at the next sibling CPicFrame class tag or the null
+ * terminator of the parent CPicLayer's children list.  Used by decodeMorphData
+ * after the morph data has been consumed.
+ */
+function skipToNextCPicFrame(ctx: ParseCtx): void {
+  const { r, ar } = ctx;
+  const cpicFrameTag = ar.classBackrefTag("CPicFrame");
+  const limit = Math.min(r.buf.length - 4, r.pos + 8192);
+  for (let i = r.pos; i < limit; i++) {
+    const v = r.buf[i]! | (r.buf[i + 1]! << 8);
+    if (cpicFrameTag !== null && v === cpicFrameTag) {
+      const schemaByte = r.buf[i + 2]!;
+      if (schemaByte <= 10) { r.pos = i; return; }
+    }
+    if (v === 0x0000 && i + END_MARKER.length <= r.buf.length) {
+      let match = true;
+      for (let j = 2; j < END_MARKER.length; j++) {
+        if (r.buf[i + j] !== END_MARKER[j]) { match = false; break; }
+      }
+      if (match) { r.pos = i; return; }
+    }
+  }
+  frameTailEndScan(r);
+}
+
+/**
+ * Fallback for decodeMorphData when the decode attempt fails: consume the
+ * CPicMorphShape class tag (for CArchive table consistency) then scan forward
+ * to the next sibling CPicFrame or layer end marker.
+ */
+function skipMorphDataFallback(ctx: ParseCtx): void {
+  const { r, ar } = ctx;
   try {
     const morphClassTag = ar.readClassTag();
     if (morphClassTag.kind === "class") {
@@ -2335,42 +2566,24 @@ function skipMorphData(ctx: ParseCtx): void {
   } catch {
     // readClassTag can throw for malformed data; proceed with position scan.
   }
-
-  // Look for the next CPicFrame class tag (sibling end keyframe) or a valid
-  // frame-boundary end marker within a generous lookahead window.
   const cpicFrameTag = ar.classBackrefTag("CPicFrame");
   const limit = Math.min(r.buf.length - 4, r.pos + 8192);
   for (let i = r.pos; i < limit; i++) {
     const lo = r.buf[i]!;
     const hi = r.buf[i + 1]!;
     const v = lo | (hi << 8);
-
-    // Check for CPicFrame class backref (sibling end keyframe).
     if (cpicFrameTag !== null && v === cpicFrameTag) {
-      // Verify the byte after the class tag looks like a plausible CPicObjBase
-      // schema byte (0–10 is safe; values above 30 indicate a false positive).
       const schemaByte = r.buf[i + 2]!;
-      if (schemaByte <= 10) {
-        r.pos = i;
-        return;
-      }
+      if (schemaByte <= 10) { r.pos = i; return; }
     }
-
-    // Check for NULL class tag followed by the INT_MIN registration-point
-    // sentinel — this is the end of the parent CPicLayer's children list.
     if (v === 0x0000 && i + END_MARKER.length <= r.buf.length) {
       let matchEndMarker = true;
       for (let j = 2; j < END_MARKER.length; j++) {
         if (r.buf[i + j] !== END_MARKER[j]) { matchEndMarker = false; break; }
       }
-      if (matchEndMarker) {
-        r.pos = i;
-        return;
-      }
+      if (matchEndMarker) { r.pos = i; return; }
     }
   }
-
-  // Final fallback: use the original end-marker scan.
   frameTailEndScan(r);
 }
 

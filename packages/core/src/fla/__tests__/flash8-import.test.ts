@@ -319,6 +319,23 @@ describe("shape tween FLA import (morph-shape-tween-mx.fla)", () => {
       Math.abs(startPt.x - endPt.x) < 0.01 && Math.abs(startPt.y - endPt.y) < 0.01;
     expect(sameStart).toBe(false);
   });
+
+  it("decodeMorphData runs without emitting a skip-fallback warning (task 0878)", () => {
+    // Verify that decodeMorphData successfully decodes CPicMorphShape and does
+    // NOT fall back to the old forward-scan path.  The fallback emits a
+    // specific console.warn message; its absence means the decoder ran cleanly.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const bytes = fixture("morph-shape-tween-mx.fla");
+      tryLoadRealFla(bytes);
+      const skipWarnings = warnSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("morph data") && m.includes("skipped"));
+      expect(skipWarnings).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
