@@ -116,19 +116,26 @@ class Parser {
           if (this.check('keyword', 'function')) return this.parseFunctionDecl(true, null);
           throw new Error(`Parse error at line ${this.peek().line}: expected var or function after static`);
         }
-        // import statements — consume as expression statement
+        // import statements — AS2 imports are compile-time hints only; no bytecode emitted
         case 'import': {
-          this.advance();
-          // consume dotted path
-          let path = '';
-          while (!this.check('punctuation', ';') && !this.check('eof') &&
-                 !this.check('punctuation', '\n')) {
-            path += this.advance().value;
+          this.advance(); // consume 'import'
+          // consume the dotted path: identifier (. identifier)* [. *]
+          if (this.check('identifier') || this.check('keyword')) {
+            this.advance(); // first segment
+            while (this.check('punctuation', '.')) {
+              this.advance(); // consume '.'
+              // allow 'identifier', keyword, or '*' (import pkg.*)
+              if (this.check('identifier') || this.check('keyword') ||
+                  (this.check('operator', '*'))) {
+                this.advance();
+              } else {
+                break;
+              }
+            }
           }
           this.trySemicolon();
-          const id: Identifier = { type: 'Identifier', name: 'import ' + path, pos: t.pos, line: t.line };
-          const stmt: ExprStmt = { type: 'ExprStmt', expression: id, pos: t.pos, line: t.line };
-          return stmt;
+          // Emit no bytecode — return an empty block (no-op)
+          return { type: 'Block', body: [], pos: t.pos, line: t.line } as Block;
         }
       }
     }

@@ -233,26 +233,25 @@ describe("AS2 EventDispatcher patterns", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 10: import statement AST has an ExprStmt with import path info
+  // Test 10: import statement is a pure no-op (empty Block, no bytecode)
   // -------------------------------------------------------------------------
 
-  it("10. import statement parses to ExprStmt (treated as no-op at runtime)", () => {
+  it("10. import statement parses to no-op Block (emits no bytecode)", () => {
     const ast = parse("import mx.events.EventDispatcher;");
 
     expect(ast.body.length).toBe(1);
     const stmt = ast.body[0]!;
 
-    // Import is parsed as an ExprStmt wrapping an Identifier
-    expect(stmt.type).toBe("ExprStmt");
+    // Import is parsed as an empty Block — a pure no-op that emits no bytecode
+    expect(stmt.type).toBe("Block");
 
-    if (stmt.type === "ExprStmt") {
-      const expr = stmt.expression;
-      expect(expr.type).toBe("Identifier");
-      if (expr.type === "Identifier") {
-        // The path should be captured in the identifier name
-        expect(expr.name).toContain("mx.events.EventDispatcher");
-      }
+    if (stmt.type === "Block") {
+      expect(stmt.body.length).toBe(0);
     }
+
+    // The compiled output should be empty (no bytecode for a bare import)
+    const bytes = compileAS2("import mx.events.EventDispatcher;");
+    expect(bytes.length).toBe(0);
   });
 
   // -------------------------------------------------------------------------
