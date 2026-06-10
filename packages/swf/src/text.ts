@@ -225,9 +225,14 @@ export function encodeDefineEditText(
 
   const hasEmbeddedFont = fontCharId !== undefined;
 
+  // When html=true, the initial content is the HTML string (htmlText); otherwise
+  // plain text. For encoding purposes we use whichever string is authoritative.
+  const isHtml = obj.html === true;
+  const initialContent = isHtml && obj.htmlText != null ? obj.htmlText : obj.text;
+
   // Emit HasText for static/dynamic (always have content) and for input only
   // when there is a non-empty initial value.
-  const hasText = isStatic || isDynamic || obj.text.length > 0;
+  const hasText = isStatic || isDynamic || initialContent.length > 0;
 
   // HasMaxLength: only meaningful for input text; set when maxChars > 0.
   const hasMaxLength = isInput && obj.maxChars != null && obj.maxChars > 0;
@@ -245,6 +250,7 @@ export function encodeDefineEditText(
   // Ruffle to use our custom embedded 5×7 pixel-art glyphs instead of system
   // device fonts, making the text look "mangled". With UseOutlines=0, Ruffle
   // renders with device fonts (real Arial, etc.) at the size given by FontHeight.
+  if (isHtml) flags |= 1 << 9;           // HTML — enables Flash HTML markup in text content
   if (isStatic) flags |= 1 << 10;        // WasStatic — Flash 8+ static marker
   if (obj.hasBorder) flags |= 1 << 11;   // Border — draw border rectangle
   if (isStatic) flags |= 1 << 12;        // NoSelect for static text only
@@ -298,9 +304,11 @@ export function encodeDefineEditText(
   // VariableName: null-terminated string (empty for static/dynamic display)
   bw.writeString("");
 
-  // InitialText: null-terminated string (only present when HasText flag is set)
+  // InitialText: null-terminated string (only present when HasText flag is set).
+  // When html=true, emit the HTML-formatted string (htmlText) so Flash's HTML
+  // renderer can apply per-run font/size/color/bold/italic markup.
   if (hasText) {
-    bw.writeString(obj.text);
+    bw.writeString(initialContent);
   }
 
   return bw.getBytes();

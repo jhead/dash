@@ -168,6 +168,16 @@ export interface Fla8Instance {
   readonly script: string;
 }
 
+export interface Fla8TextRun {
+  readonly text: string;
+  readonly fontName: string;
+  /** pt */
+  readonly fontSize: number;
+  readonly color: Fla8Color;
+  readonly bold: boolean;
+  readonly italic: boolean;
+}
+
 export interface Fla8Text {
   readonly type: "text";
   readonly matrix: Fla8Matrix;
@@ -187,6 +197,13 @@ export interface Fla8Text {
   readonly wordWrap: boolean;
   /** Flash 8+ filters (empty array when none). */
   readonly filters: Fla8Filter[];
+  /**
+   * All formatting runs in the text field. When a field has multiple runs
+   * with different styling, this array has more than one entry. When empty
+   * or containing a single entry, per-run styling is captured in the top-level
+   * fontName/fontSize/color/bold/italic fields.
+   */
+  readonly runs: readonly Fla8TextRun[];
 }
 
 export interface Fla8BitmapRef {
@@ -1722,6 +1739,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
 
   let run: TextRun | null = null;
   let text = "";
+  const runs: Fla8TextRun[] = [];
   try {
     if (embedFlag & 0x40) {
       // empty text: a single formatting run with no character-count prefix
@@ -1733,7 +1751,16 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
         if (charCount > 65000) throw new FlaEofError(`implausible run length ${charCount}`);
         const thisRun = readTextRunFields(r, ts);
         if (!run) run = thisRun;
-        text += unicode ? utf16le(r.bytes(charCount * 2)) : ascii(r.bytes(charCount));
+        const runText = unicode ? utf16le(r.bytes(charCount * 2)) : ascii(r.bytes(charCount));
+        text += runText;
+        runs.push({
+          text: runText,
+          fontName: thisRun.fontName,
+          fontSize: thisRun.sizePt,
+          color: thisRun.color,
+          bold: thisRun.bold,
+          italic: thisRun.italic,
+        });
       }
     }
   } catch (err) {
@@ -1791,6 +1818,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     textType: (textFlags & 0x01) === 0 ? "static" : textFlags & 0x02 ? "dynamic" : "input",
     wordWrap: (textFlags & 0x08) !== 0,
     filters,
+    runs,
   };
 }
 

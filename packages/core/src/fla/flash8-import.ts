@@ -45,12 +45,45 @@ import {
   type Fla8Layer,
   type Fla8Matrix,
   type Fla8Shape,
+  type Fla8TextRun,
   type Fla8Timeline,
 } from "./flash8-binary.js";
 
 let _idCounter = 0;
 function nextId(prefix: string): string {
   return `fla8-${prefix}-${++_idCounter}`;
+}
+
+// ---------------------------------------------------------------------------
+// HTML rich-text builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Escape text for Flash HTML content (avoid breaking markup tags).
+ */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Build a Flash HTML string from multiple formatting runs.
+ * Uses `<font>`, `<b>`, `<i>` tags supported by Flash's HTML text renderer.
+ * Each run gets a `<font face="..." size="N" color="#rrggbb">` wrapper;
+ * bold/italic are applied via inner `<b>`/`<i>` tags.
+ */
+export function buildHtmlText(runs: readonly Fla8TextRun[]): string {
+  return runs
+    .map((r) => {
+      const face = r.fontName || "Arial";
+      const size = Math.round(r.fontSize > 0 ? r.fontSize : 12);
+      const h = (v: number) => v.toString(16).padStart(2, "0");
+      const color = `#${h(r.color.r)}${h(r.color.g)}${h(r.color.b)}`;
+      let inner = escapeHtml(r.text);
+      if (r.italic) inner = `<i>${inner}</i>`;
+      if (r.bold) inner = `<b>${inner}</b>`;
+      return `<font face="${face}" size="${size}" color="${color}">${inner}</font>`;
+    })
+    .join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -704,6 +737,11 @@ function convertElement(
     }
     case "text": {
       const textFilters = toFlashFilters(el.filters);
+      // Build HTML markup when there are multiple formatting runs, each potentially
+      // with different font/size/color/bold/italic. DefineEditText only holds a single
+      // style, but the HTML flag (bit 9) allows per-run formatting via Flash HTML tags.
+      const isMultiRun = el.runs.length > 1;
+      const htmlText = isMultiRun ? buildHtmlText(el.runs) : undefined;
       return {
         type: "text",
         id: nextId("text"),
@@ -723,6 +761,7 @@ function convertElement(
         wordWrap: el.wordWrap,
         ...(el.instanceName ? { instanceName: el.instanceName } : {}),
         ...(textFilters.length > 0 ? { filters: textFilters } : {}),
+        ...(isMultiRun ? { html: true, htmlText } : {}),
       };
     }
     case "bitmap": {

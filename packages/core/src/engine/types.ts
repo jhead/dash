@@ -557,6 +557,19 @@ export interface TextDisplayObject {
    * the encoder applies it only for non-static text fields.
    */
   readonly hasBackground?: boolean;
+  /**
+   * Whether this text field contains HTML markup (multi-run rich text).
+   * When true, the SWF DefineEditText HTML flag (bit 9) is set and
+   * `htmlText` is used as the initial text content instead of `text`.
+   */
+  readonly html?: boolean;
+  /**
+   * HTML-formatted initial text content for rich text fields (html=true).
+   * Uses Flash HTML subset: `<font face="..." size="..." color="...">`,
+   * `<b>`, `<i>`, `<u>` tags.
+   * Only used when `html` is true; otherwise `text` is the initial content.
+   */
+  readonly htmlText?: string;
 }
 
 /**

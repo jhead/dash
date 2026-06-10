@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isOle2, tryLoadRealFla } from "../ole.js";
 import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
-import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document } from "../flash8-import.js";
+import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText } from "../flash8-import.js";
 import { getTweenSpans } from "../../model/timeline-query.js";
 import type { Fla8ColorEffect, Fla8Filter } from "../flash8-binary.js";
 import type { FlashDocument, Symbol as SymbolItem, SoundItem } from "../../model/types.js";
@@ -1081,5 +1081,71 @@ describe("fill subtype 0x20 (task 0858)", () => {
       expect(fill.color.b).toBe(0x00);
       expect(fill.color.a).toBe(0xff);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-run rich text — buildHtmlText
+// ---------------------------------------------------------------------------
+
+describe("buildHtmlText — multi-run rich text HTML builder", () => {
+  it("single run: wraps text in <font> tag with face, size, color", () => {
+    const html = buildHtmlText([
+      { text: "Hello", fontName: "Arial", fontSize: 12, color: { r: 0, g: 0, b: 0, a: 255 }, bold: false, italic: false },
+    ]);
+    expect(html).toBe('<font face="Arial" size="12" color="#000000">Hello</font>');
+  });
+
+  it("single run with bold: wraps content in <b>", () => {
+    const html = buildHtmlText([
+      { text: "Bold", fontName: "Arial", fontSize: 14, color: { r: 255, g: 0, b: 0, a: 255 }, bold: true, italic: false },
+    ]);
+    expect(html).toBe('<font face="Arial" size="14" color="#ff0000"><b>Bold</b></font>');
+  });
+
+  it("single run with italic: wraps content in <i>", () => {
+    const html = buildHtmlText([
+      { text: "Italic", fontName: "Times", fontSize: 16, color: { r: 0, g: 128, b: 0, a: 255 }, bold: false, italic: true },
+    ]);
+    expect(html).toBe('<font face="Times" size="16" color="#008000"><i>Italic</i></font>');
+  });
+
+  it("single run with bold+italic: nests <i> inside <b>", () => {
+    const html = buildHtmlText([
+      { text: "BoldItalic", fontName: "Arial", fontSize: 12, color: { r: 0, g: 0, b: 255, a: 255 }, bold: true, italic: true },
+    ]);
+    expect(html).toBe('<font face="Arial" size="12" color="#0000ff"><b><i>BoldItalic</i></b></font>');
+  });
+
+  it("multi-run: concatenates two runs with different color", () => {
+    const html = buildHtmlText([
+      { text: "Hello", fontName: "Arial", fontSize: 12, color: { r: 255, g: 0, b: 0, a: 255 }, bold: true, italic: false },
+      { text: " World", fontName: "Arial", fontSize: 12, color: { r: 0, g: 0, b: 255, a: 255 }, bold: false, italic: false },
+    ]);
+    expect(html).toContain('<font face="Arial" size="12" color="#ff0000"><b>Hello</b></font>');
+    expect(html).toContain('<font face="Arial" size="12" color="#0000ff"> World</font>');
+  });
+
+  it("multi-run: preserves per-run font and size differences", () => {
+    const html = buildHtmlText([
+      { text: "Big", fontName: "Impact", fontSize: 24, color: { r: 0, g: 0, b: 0, a: 255 }, bold: false, italic: false },
+      { text: "Small", fontName: "Arial", fontSize: 10, color: { r: 0, g: 0, b: 0, a: 255 }, bold: false, italic: false },
+    ]);
+    expect(html).toContain('face="Impact" size="24"');
+    expect(html).toContain('face="Arial" size="10"');
+  });
+
+  it("escapes HTML special characters in text content", () => {
+    const html = buildHtmlText([
+      { text: "a<b>&c", fontName: "Arial", fontSize: 12, color: { r: 0, g: 0, b: 0, a: 255 }, bold: false, italic: false },
+    ]);
+    expect(html).toContain("a&lt;b&gt;&amp;c");
+  });
+
+  it("falls back to Arial when fontName is empty", () => {
+    const html = buildHtmlText([
+      { text: "test", fontName: "", fontSize: 12, color: { r: 0, g: 0, b: 0, a: 255 }, bold: false, italic: false },
+    ]);
+    expect(html).toContain('face="Arial"');
   });
 });

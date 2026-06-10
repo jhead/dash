@@ -1035,3 +1035,63 @@ describe("DefineEditText — input text password/maxChars/hasBorder", () => {
     expect(decoded.border).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// HTML flag (bit 9) — rich text multi-run support
+// ---------------------------------------------------------------------------
+
+interface HtmlDecodedEditText extends DecodedEditText {
+  isHtml: boolean;
+}
+
+function decodeHtmlFlag(body: Uint8Array): HtmlDecodedEditText {
+  const base = decodeDefineEditText(body);
+  const isHtml = (base.flags & (1 << 9)) !== 0;
+  return { ...base, isHtml };
+}
+
+function compileAndDecodeHtml(obj: TextDisplayObject): HtmlDecodedEditText {
+  const doc = makeDoc([obj]);
+  const bytes = compileDocument(doc);
+  const tags = parseSWFTags(bytes);
+  const editTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+  expect(editTags.length).toBeGreaterThanOrEqual(1);
+  return decodeHtmlFlag(editTags[0].body);
+}
+
+describe("DefineEditText — HTML flag (bit 9) for rich text", () => {
+  it("html=false (default): HTML flag (bit 9) is NOT set", () => {
+    const decoded = compileAndDecodeHtml(makeText({ textType: "dynamic", text: "plain text" }));
+    expect(decoded.isHtml).toBe(false);
+  });
+
+  it("html=true: HTML flag (bit 9) IS set", () => {
+    const decoded = compileAndDecodeHtml(
+      makeText({ textType: "dynamic", html: true, htmlText: '<font face="Arial" size="12" color="#ff0000">Hello</font>' })
+    );
+    expect(decoded.isHtml).toBe(true);
+  });
+
+  it("html=true: initial text content is the htmlText string, not plain text", () => {
+    const htmlContent = '<font face="Arial" size="12" color="#ff0000"><b>Hello</b></font><font face="Arial" size="12" color="#0000ff"> World</font>';
+    const decoded = compileAndDecodeHtml(
+      makeText({ textType: "dynamic", text: "Hello World", html: true, htmlText: htmlContent })
+    );
+    expect(decoded.initialText).toBe(htmlContent);
+  });
+
+  it("html=true: HasText flag (bit 7) is set when htmlText is non-empty", () => {
+    const decoded = compileAndDecodeHtml(
+      makeText({ textType: "dynamic", html: true, htmlText: '<font face="Arial">text</font>' })
+    );
+    expect(decoded.hasText).toBe(true);
+  });
+
+  it("html=false with plain text: initial text is the plain text string", () => {
+    const decoded = compileAndDecodeHtml(
+      makeText({ textType: "dynamic", text: "plain content" })
+    );
+    expect(decoded.initialText).toBe("plain content");
+    expect(decoded.isHtml).toBe(false);
+  });
+});
