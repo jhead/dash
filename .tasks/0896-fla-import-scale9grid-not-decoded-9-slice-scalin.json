@@ -1,0 +1,10 @@
+{
+  "id": "0896-fla-import-scale9grid-not-decoded-9-slice-scalin",
+  "title": "FLA import: scale9Grid not decoded \u2014 9-slice scaling lost on round-trip",
+  "description": "The symbol model supports scale9Grid (a { left, top, right, bottom } rectangle) and compile.ts emits DefineScalingGrid (tag 78) correctly. However flash8-binary.ts has no code to read it from the FLA binary stream, and flash8-import.ts always leaves scale9Grid as null for imported symbols.\n\nIn Flash 8 binary FLAs, the 9-slice grid rectangle is stored in the Symbol N CPicPage afterData (after the CPicPage children list and registration point). The flacomdoc FlaConverter encodes it; the exact byte layout needs to be verified against flacomdoc writeFlashMovieInfo or the symbol-level afterData block.\n\nSteps:\n1. Locate the scale9Grid encoding in flacomdoc FlaConverter (likely in writeSymbol or writeFlashMovieInfo \u2014 look for '9slice', 'Scale9', or 'splitter' references)\n2. Add a scale9Grid field to Fla8Timeline (or Fla8ContentsInfo via the symbol table)\n3. Decode it in flash8-binary.ts (parseFla8Timeline or CPicPage afterData reader)\n4. Wire it through flash8-import.ts to createSymbol() options\n\nWithout this, any imported FLA that uses 9-slice scaling (common for UI panels and buttons) will scale uniformly and distort corners in Ruffle.",
+  "status": "open",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-10T18:11:28Z",
+  "updated_at": "2026-06-10T18:11:28Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0899-fla-import-close-stale-task-0885-and-fix-blank-s",
+  "title": "FLA import: close stale task 0885 and fix blank-stage regression in Magnet.fla after 0890/0891 land",
+  "description": "Context: Magnet.fla still renders a black/blank stage in Ruffle after tasks 0889 (CS2 class tags) and 0886 (layer names) were fixed.\n\nRoot causes still in-progress:\n- 0890: DefineShape4 invalid fill style \u2192 black shapes\n- 0891: JPEG bitmaps missing EOI marker \u2192 Ruffle bitmap decode failure\n- 0892: CPicSwf embedded SWF symbols dropped\n\nTask 0885 ('unrecognised class tags') is functionally resolved (class-tag parsing errors are gone) but its status is still 'open'. This task is a verification + cleanup:\n\n1. After 0890 and 0891 are done, publish Magnet.fla and confirm Ruffle renders recognisable content (not blank/black)\n2. Close task 0885 with evidence (screenshot comparison or pixel-diff)\n3. Identify and file any remaining rendering gaps specific to Magnet.fla\n4. Use the same Playwright/Ruffle oracle approach used in the capstone (task 0519)\n\nThis task gates the 'Magnet.fla fully renders in Ruffle' milestone.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T18:11:59Z",
+  "updated_at": "2026-06-10T18:11:59Z"
+}

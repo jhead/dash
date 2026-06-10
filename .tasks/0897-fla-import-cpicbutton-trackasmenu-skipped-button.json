@@ -1,0 +1,10 @@
+{
+  "id": "0897-fla-import-cpicbutton-trackasmenu-skipped-button",
+  "title": "FLA import: CPicButton trackAsMenu skipped; button sounds (up/over/down states) not decoded",
+  "description": "readCPicButton() in flash8-binary.ts skips two things:\n\n1. trackAsMenu (line 1674: r.skip(1)) \u2014 this flag makes the button behave like a menu item (press = click, drag-out stays active). Skipping it causes imported buttons to have wrong click behavior.\n\n2. Button per-state sounds \u2014 the FLA stores up-to-4 sound attachments on each button symbol (roll-over, roll-out, press, release). These are NOT in CPicButton (they live in the symbol-level CPicPage or a separate Sound substream). The SWF model (ButtonSounds) and SWF encoder (encodeDefineButtonSound, tag 17) are already implemented (task 0856 done), but FLA import never populates them.\n\nSteps:\n1. Read the trackAsMenu byte in readCPicButton() and store it in Fla8Instance (add a trackAsMenu field)\n2. Forward trackAsMenu to the SymbolItem in flash8-import.ts\n3. Research where button per-state sounds live in the FLA binary (flacomdoc, fla-decoder), decode them in parseFla8Timeline or readCPicButton, and wire them to the model's ButtonSounds field.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T18:11:38Z",
+  "updated_at": "2026-06-10T18:11:38Z"
+}
