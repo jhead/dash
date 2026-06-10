@@ -806,11 +806,13 @@ export function Timeline({
         case "remove-frame": {
           const rangeStart = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.start : frameIndex;
           const rangeEnd = selectedFrameRange?.layerId === _layerId ? selectedFrameRange.end : frameIndex;
-          if (onRemoveFrames) {
-            onRemoveFrames(rangeStart, rangeEnd);
-          } else {
-            onTimelineChange(removeFrame(timeline, _layerId, rangeStart));
+          // Remove frames from the right-clicked layer (not the active layer).
+          // Iterate from end to start to avoid index-shifting issues.
+          let updatedTl = timeline;
+          for (let i = rangeEnd; i >= rangeStart; i--) {
+            updatedTl = removeFrame(updatedTl, _layerId, i);
           }
+          onTimelineChange(updatedTl);
           break;
         }
         case "create-motion-tween":
@@ -843,7 +845,7 @@ export function Timeline({
           break;
       }
     },
-    [contextMenu, timeline, onTimelineChange, onSetShapeTween, onCopyFrames, onCutFrames, onPasteFrames, onRemoveFrames, selectedFrameRange]
+    [contextMenu, timeline, onTimelineChange, onSetShapeTween, onCopyFrames, onCutFrames, onPasteFrames, selectedFrameRange]
   );
 
   // Layer rename
@@ -869,6 +871,16 @@ export function Timeline({
     <div
       ref={panelRef}
       tabIndex={0}
+      onMouseDown={(e) => {
+        // Explicitly grab keyboard focus when the user clicks anywhere in the
+        // Timeline panel, so Delete / arrow-key shortcuts work immediately.
+        // Skip when the target is itself a focusable element (button / input)
+        // so those elements can still receive their own native focus.
+        const t = e.target as HTMLElement;
+        if (t.tagName !== "BUTTON" && t.tagName !== "INPUT" && t.tagName !== "TEXTAREA") {
+          panelRef.current?.focus();
+        }
+      }}
       style={{
         display: "flex",
         flexDirection: "column",
