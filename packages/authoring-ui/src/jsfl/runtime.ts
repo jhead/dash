@@ -910,6 +910,10 @@ export interface JsflLibrary {
    * Supported props: 'linkageIdentifier', 'exportForActionScript', 'exportInFirstFrame'.
    */
   setItemProperty(name: string, prop: string, value: unknown): void;
+  /**
+   * Returns true if a library item with the given name exists.
+   */
+  itemExists(name: string): boolean;
 }
 
 function jsflSymbolType(jsflType: string): SymbolType {
@@ -1068,6 +1072,9 @@ function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCoun
           break;
       }
     },
+    itemExists(name: string): boolean {
+      return state.doc.library.items.some((i) => i.name === name);
+    },
   };
 }
 
@@ -1088,6 +1095,11 @@ export interface JsflDocument {
   readonly timeline: JsflTimeline;
   /** All scene timelines in this document (one per scene, read-only). */
   readonly timelines: readonly JsflTimeline[];
+  /**
+   * Index of the currently-active timeline.
+   * 0 = main timeline; 1+ = symbol edit. Always 0 in this runtime.
+   */
+  readonly currentTimeline: number;
   getTimeline(): JsflTimeline;
   get library(): JsflLibrary;
   addNewRectangle(bounds: { left: number; top: number; right: number; bottom: number }, cornerRadius: number): void;
@@ -1214,6 +1226,10 @@ function makeDocumentProxy(
         });
         return makeTimelineProxy(sceneState);
       });
+    },
+    get currentTimeline(): number {
+      // Always 0 — this runtime operates on the main timeline only.
+      return 0;
     },
     get library(): JsflLibrary {
       return makeLibraryProxy(state, ids);
@@ -1587,6 +1603,15 @@ export interface JsflFl {
   /** Paste the application-level frame clipboard into doc at the current position. */
   clipPasteFrames(doc: JsflDocument): void;
   /**
+   * Open the FLA document at fileURL.  In a browser context this is not
+   * supported; warns and returns the current document as a fallback.
+   */
+  openDocument(fileURL: string): JsflDocument;
+  /**
+   * Close the given document.  Not supported in browser context; no-op stub.
+   */
+  closeDocument(doc: JsflDocument, bPromptToSaveChanges?: boolean): void;
+  /**
    * Open a file-picker dialog and return a file:// URL for the chosen file.
    * Always returns null in a browser context (no native picker available).
    */
@@ -1677,6 +1702,13 @@ function makeFlProxy(
       // Browser context has no filesystem access; always return false.
       console.warn("[JSFL fl.fileExists] always returns false in browser context:", fileURL);
       return false;
+    },
+    openDocument(fileURL: string): JsflDocument {
+      console.warn("[JSFL fl.openDocument] opening files from URL is not supported in browser context; returning current document:", fileURL);
+      return _docProxy;
+    },
+    closeDocument(_doc: JsflDocument, _bPromptToSaveChanges?: boolean): void {
+      console.warn("fl.closeDocument: not supported in browser context");
     },
     clipCopyFrames(_doc: JsflDocument): void {
       console.warn("[JSFL] fl.clipCopyFrames not fully implemented");
