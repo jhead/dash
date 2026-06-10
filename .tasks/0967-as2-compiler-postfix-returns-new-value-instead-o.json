@@ -1,0 +1,10 @@
+{
+  "id": "0967-as2-compiler-postfix-returns-new-value-instead-o",
+  "title": "AS2 compiler: postfix ++/-- returns new value instead of old (wrong semantics)",
+  "description": "The compiler has a UnaryExpr handler but never checks expr.prefix (false=postfix, true=prefix). Postfix i++ should return the OLD value before incrementing, but the compiler always emits the prefix pattern (returns the new value). Fix: in the UnaryExpr handler for Increment/Decrement, check expr.prefix. For postfix: dup the variable before incrementing, so the old value is on the stack as the expression result.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T21:55:11Z",
+  "updated_at": "2026-06-10T21:58:15Z"
+}
