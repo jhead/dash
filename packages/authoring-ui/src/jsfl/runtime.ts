@@ -441,6 +441,11 @@ export interface JsflTimeline {
    * The copy is inserted immediately after the source layer.
    */
   duplicateLayer(layerIndex?: number): void;
+  /**
+   * Set the active (current) layer to layerIndex.
+   * Equivalent to assigning `currentLayer`.
+   */
+  setActiveLayer(layerIndex: number): void;
 }
 
 function makeTimelineProxy(state: RuntimeState): JsflTimeline {
@@ -613,6 +618,76 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
         mutateTimeline((tl) =>
           setFrameScript(tl, layerId, fi, String(value))
         );
+      } else if (property === "soundName") {
+        const soundItem = state.doc.library.items.find(
+          (i) => i.name === String(value) && i.itemType === "sound"
+        );
+        if (!soundItem) {
+          console.warn("[JSFL] setFrameProperty soundName: sound not found:", value);
+          return;
+        }
+        mutateTimeline((tl) => ({
+          ...tl,
+          layers: tl.layers.map((l) => {
+            if (l.id !== layerId) return l;
+            return {
+              ...l,
+              frames: l.frames.map((f) => {
+                if (!f.isKeyframe || f.index !== fi) return f;
+                const existing = f.sound;
+                return {
+                  ...f,
+                  sound: {
+                    libraryItemId: soundItem.id,
+                    syncMode: existing?.syncMode ?? "event",
+                    repeatCount: existing?.repeatCount ?? 1,
+                    effect: existing?.effect,
+                  },
+                };
+              }),
+            };
+          }),
+        }));
+      } else if (property === "soundSync") {
+        const syncMode = String(value) as "event" | "start" | "stop" | "stream";
+        mutateTimeline((tl) => ({
+          ...tl,
+          layers: tl.layers.map((l) => {
+            if (l.id !== layerId) return l;
+            return {
+              ...l,
+              frames: l.frames.map((f) => {
+                if (!f.isKeyframe || f.index !== fi) return f;
+                if (!f.sound) return f;
+                return {
+                  ...f,
+                  sound: { ...f.sound, syncMode },
+                };
+              }),
+            };
+          }),
+        }));
+      } else if (property === "soundEffect") {
+        mutateTimeline((tl) => ({
+          ...tl,
+          layers: tl.layers.map((l) => {
+            if (l.id !== layerId) return l;
+            return {
+              ...l,
+              frames: l.frames.map((f) => {
+                if (!f.isKeyframe || f.index !== fi) return f;
+                if (!f.sound) return f;
+                return {
+                  ...f,
+                  sound: {
+                    ...f.sound,
+                    effect: String(value) as import("@flash/core").SoundEffect,
+                  },
+                };
+              }),
+            };
+          }),
+        }));
       }
     },
     clearFrames(startFrame: number, endFrame?: number) {
@@ -760,6 +835,9 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
       if (!layer) return;
       mutateTimeline((tl) => coreDuplicateLayer(tl, layer.id));
     },
+    setActiveLayer(layerIndex: number) {
+      state.currentLayerIndex = layerIndex;
+    },
   };
 }
 
@@ -784,6 +862,11 @@ export interface JsflLibrary {
   renameItem(oldName: string, newName: string): boolean;
   /** Select an item by name (Flash 8 compat — no-op in this runtime). */
   selectItem(name: string, bReplaceCurrentSelection?: boolean): boolean;
+  /**
+   * Place a library item on the stage at (x, y) on the current frame/layer.
+   * Only symbol items are supported; other item types are silently ignored.
+   */
+  addItemToDocument(itemName: string, x: number, y: number): void;
 }
 
 function jsflSymbolType(jsflType: string): SymbolType {
@@ -793,7 +876,7 @@ function jsflSymbolType(jsflType: string): SymbolType {
   return "graphic";
 }
 
-function makeLibraryProxy(state: RuntimeState): JsflLibrary {
+function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCounters>): JsflLibrary {
   return {
     get items(): JsflLibraryItem[] {
       return state.doc.library.items.map((item) => {
@@ -841,6 +924,33 @@ function makeLibraryProxy(state: RuntimeState): JsflLibrary {
     selectItem(_name: string, _bReplaceCurrentSelection?: boolean): boolean {
       // No-op in non-UI context; return true for compat
       return true;
+    },
+    addItemToDocument(itemName: string, x: number, y: number) {
+      const item = state.doc.library.items.find((i) => i.name === itemName);
+      if (!item) {
+        console.warn("[JSFL] addItemToDocument: item not found:", itemName);
+        return;
+      }
+      if (item.itemType !== "symbol") {
+        console.warn("[JSFL] addItemToDocument: only symbol items can be placed on stage; got:", item.itemType);
+        return;
+      }
+      const layerId = getActiveLayerId(state);
+      if (!layerId) return;
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      const instance: SymbolInstance = {
+        type: "instance",
+        id: ids.nextInstId(),
+        symbolId: item.id,
+        x,
+        y,
+      };
+      const newTimeline = addDisplayObject(scene.timeline, layerId, state.frameIndex, instance);
+      const newScenes = state.doc.scenes.map((s, i) =>
+        i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+      );
+      state.doc = { ...state.doc, scenes: newScenes };
     },
   };
 }
@@ -972,7 +1082,7 @@ function makeDocumentProxy(
       return makeTimelineProxy(state);
     },
     get library(): JsflLibrary {
-      return makeLibraryProxy(state);
+      return makeLibraryProxy(state, ids);
     },
     addNewRectangle(bounds, _cornerRadius) {
       const layerId = getActiveLayerId(state);
