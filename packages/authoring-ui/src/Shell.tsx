@@ -20,6 +20,7 @@ import {
   removeScene,
   renameScene,
   reorderScenes,
+  duplicateScene,
   CanvasRenderer,
   insertFrame,
   insertKeyframe,
@@ -1763,6 +1764,14 @@ export function Shell(): React.ReactElement {
       }
       return prev;
     });
+  }, [doc, pushDoc]);
+
+  const handleDuplicateScene = useCallback((index: number) => {
+    const scene = doc.scenes[index];
+    if (!scene) return;
+    pushDoc(duplicateScene(doc, scene.id));
+    // Navigate to the duplicate (inserted right after the source)
+    setActiveSceneIndex(index + 1);
   }, [doc, pushDoc]);
 
   const handleSelectScene = useCallback((index: number) => {
@@ -4586,6 +4595,7 @@ export function Shell(): React.ReactElement {
           onRemoveScene={handleRemoveScene}
           onRenameScene={handleRenameScene}
           onReorderScene={handleReorderScene}
+          onDuplicateScene={handleDuplicateScene}
           onClose={() => setScenePanelVisible(false)}
         />
       )}

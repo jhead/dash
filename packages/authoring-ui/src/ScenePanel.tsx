@@ -19,6 +19,7 @@ export interface ScenePanelProps {
   onRemoveScene: (index: number) => void;
   onRenameScene: (index: number, name: string) => void;
   onReorderScene: (fromIndex: number, toIndex: number) => void;
+  onDuplicateScene?: (index: number) => void;
   onClose: () => void;
 }
 
@@ -93,6 +94,7 @@ export function ScenePanel({
   onRemoveScene,
   onRenameScene,
   onReorderScene,
+  onDuplicateScene,
   onClose,
 }: ScenePanelProps): React.ReactElement {
   // Index of the scene currently being renamed (-1 means none)
@@ -288,6 +290,17 @@ export function ScenePanel({
           onClick={onAddScene}
         >
           +
+        </button>
+        <button
+          style={{ ...footerBtnStyle(false), borderRight: "1px solid #555" }}
+          title="Duplicate Scene"
+          onClick={() => {
+            if (onDuplicateScene) {
+              onDuplicateScene(activeSceneIndex);
+            }
+          }}
+        >
+          &#x2398;
         </button>
         <button
           style={{ ...footerBtnStyle(!canRemove), borderRight: "none" }}
