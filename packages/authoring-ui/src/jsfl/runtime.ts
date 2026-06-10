@@ -36,17 +36,22 @@ import {
   setMotionTween,
   setShapeTween,
   clearTween,
+  reverseFrames as coreReverseFrames,
   createSymbolInLibrary,
   removeLibraryItem,
   groupObjects,
   ungroupObjects,
   createDocument as coreCreateDocument,
+  copyFramesDoc,
+  pasteFramesDoc,
+  cutFramesDoc,
 } from "@flash/core";
 import type {
   ShapeDisplayObject,
   TextDisplayObject,
   DisplayObject,
   SymbolInstance,
+  FrameClipboard,
 } from "@flash/core";
 
 // ---------------------------------------------------------------------------
@@ -110,6 +115,8 @@ interface RuntimeState {
   frameIndex: number;
   currentLayerIndex: number;
   selectedIds: string[];
+  /** Clipboard for copyFrames / cutFrames / pasteFrames operations. */
+  frameClipboard: FrameClipboard | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +326,21 @@ export interface JsflTimeline {
   convertToBlankKeyframes(frameIndex?: number): void;
   createMotionTween(startFrameIndex?: number): void;
   setFrameProperty(property: string, value: unknown, frameIndex?: number): void;
+  /** Clear frame content (scripts, labels, sounds, display objects) in [startFrame, endFrame]. */
+  clearFrames(startFrame: number, endFrame?: number): void;
+  /** Reverse the order of frames (including their content) in [startFrame, endFrame]. */
+  reverseFrames(startFrame: number, endFrame?: number): void;
+  /** Copy frames [startFrame, endFrame] to the internal clipboard. */
+  copyFrames(startFrame: number, endFrame?: number): void;
+  /** Cut frames [startFrame, endFrame] to the internal clipboard, replacing with blank keyframes. */
+  cutFrames(startFrame: number, endFrame?: number): void;
+  /** Paste the clipboard contents at startFrame, overwriting existing frames. */
+  pasteFrames(startFrame: number): void;
+  /**
+   * Add a motion guide layer directly above the current layer.
+   * The current layer is set to type "guided" to follow the new guide layer.
+   */
+  addMotionGuide(): void;
 }
 
 function makeTimelineProxy(state: RuntimeState): JsflTimeline {
@@ -459,6 +481,136 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
           setFrameScript(tl, layerId, fi, String(value))
         );
       }
+    },
+    clearFrames(startFrame: number, endFrame?: number) {
+      const layerId = getActiveLayerId();
+      if (!layerId) return;
+      const end = endFrame ?? startFrame;
+      // Replace every keyframe in the range with a blank keyframe (preserve index).
+      // Non-keyframe span slots are cleared implicitly since their governing keyframe
+      // is replaced. We do not insert new keyframes at non-keyframe positions —
+      // that would grow the frame count unexpectedly.
+      mutateTimeline((tl) => ({
+        ...tl,
+        layers: tl.layers.map((l) => {
+          if (l.id !== layerId) return l;
+          const newFrames = l.frames.map((f) => {
+            if (!f.isKeyframe) return f;
+            if (f.index < startFrame || f.index > end) return f;
+            return {
+              ...f,
+              isEmpty: true,
+              label: "",
+              script: "",
+              sound: null,
+              displayObjects: [],
+              tweenType: "none" as const,
+            };
+          });
+          return { ...l, frames: newFrames };
+        }),
+      }));
+    },
+    reverseFrames(startFrame: number, endFrame?: number) {
+      const layerId = getActiveLayerId();
+      if (!layerId) return;
+      const end = endFrame ?? startFrame;
+      mutateTimeline((tl) => coreReverseFrames(tl, layerId, startFrame, end));
+    },
+    copyFrames(startFrame: number, endFrame?: number) {
+      const end = endFrame ?? startFrame;
+      state.frameClipboard = copyFramesDoc(
+        state.doc,
+        state.sceneIndex,
+        [],
+        startFrame,
+        end
+      );
+    },
+    cutFrames(startFrame: number, endFrame?: number) {
+      const end = endFrame ?? startFrame;
+      const { newDoc, clipboard } = cutFramesDoc(
+        state.doc,
+        state.sceneIndex,
+        [],
+        startFrame,
+        end
+      );
+      state.doc = newDoc;
+      state.frameClipboard = clipboard;
+    },
+    pasteFrames(startFrame: number) {
+      if (!state.frameClipboard) return;
+      state.doc = pasteFramesDoc(
+        state.doc,
+        state.sceneIndex,
+        [],
+        startFrame,
+        state.frameClipboard
+      );
+    },
+    addMotionGuide() {
+      const scene = getScene();
+      if (!scene) return;
+      const currentLayer = scene.timeline.layers[state.currentLayerIndex];
+      if (!currentLayer) return;
+      const guideName = `Guide: ${currentLayer.name}`;
+      // Insert a guide layer at the current layer index (above it in Flash
+      // convention). The current layer becomes "guided".
+      mutateTimeline((tl) => {
+        const guideLayer = {
+          id: `layer-guide-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          name: guideName,
+          type: "guide" as const,
+          visible: true,
+          locked: false,
+          outlineMode: false,
+          outlineColor: "#0000ff",
+          height: 20,
+          parentFolderId: null as string | null,
+          frames: [
+            {
+              index: 0,
+              isKeyframe: true,
+              isEmpty: true,
+              tweenType: "none" as const,
+              label: "",
+              labelType: "name" as const,
+              script: "",
+              sound: null,
+              motionEase: 0,
+              motionEaseType: "none" as const,
+              motionEaseCurve: null,
+              motionRotate: "none" as const,
+              motionRotateCount: 0,
+              motionOrientToPath: false,
+              motionSnap: false,
+              motionSync: false,
+              motionScale: false,
+              shapeEase: 0,
+              shapeEaseType: "none" as const,
+              shapeBlend: "distributive" as const,
+              displayObjects: [],
+            },
+          ],
+          frameCount: 1,
+        };
+        // Set the current layer to "guided"
+        const updatedLayers = tl.layers.map((l, i) =>
+          i === state.currentLayerIndex ? { ...l, type: "guided" as const } : l
+        );
+        // Insert guide above the current layer (same index in the array,
+        // shifting the current layer down by one)
+        const newLayers = [
+          ...updatedLayers.slice(0, state.currentLayerIndex),
+          guideLayer,
+          ...updatedLayers.slice(state.currentLayerIndex),
+        ];
+        return { ...tl, layers: newLayers };
+      });
+      // After insertion, currentLayerIndex now points at the guide layer.
+      // Shift by 1 so the user's context stays on the guided layer.
+      state.currentLayerIndex += 1;
     },
   };
 }
@@ -1020,6 +1172,7 @@ function makeFlProxy(
       state.frameIndex = 0;
       state.currentLayerIndex = 0;
       state.selectedIds = [];
+      state.frameClipboard = null;
       _docProxy = makeDocumentProxy(state, ids);
       return _docProxy;
     },
@@ -1062,6 +1215,7 @@ export function buildJsflContext(
     frameIndex,
     currentLayerIndex: 0,
     selectedIds: [],
+    frameClipboard: null,
   };
   const ids = makeIdCounters();
   const docProxy = makeDocumentProxy(state, ids);
