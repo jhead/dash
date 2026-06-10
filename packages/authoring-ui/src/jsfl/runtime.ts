@@ -16,6 +16,7 @@ import type {
   Library,
   SymbolType,
   LibraryItem,
+  FlashFilter,
 } from "@flash/core";
 import {
   createRectShape,
@@ -53,6 +54,10 @@ import {
   removeScene as coreRemoveScene,
   renameScene as coreRenameScene,
   duplicateScene as coreDuplicateScene,
+  defaultDropShadow,
+  defaultBlur,
+  defaultGlow,
+  defaultBevel,
 } from "@flash/core";
 import type {
   ShapeDisplayObject,
@@ -1297,6 +1302,31 @@ export interface JsflDocument {
    * Alias for setElementTextAttr — Flash JSFL exposes both at document level.
    */
   setTextAttr(attrName: string, value: any): void;
+  /**
+   * Returns the filters array of the first selected display object.
+   * Returns [] if nothing is selected or the object has no filters.
+   */
+  getFilters(): FlashFilter[];
+  /**
+   * Add a filter to all selected display objects.
+   * filter.name (case-insensitive) determines the filter type:
+   *   'dropshadow' | 'blur' | 'glow' | 'bevel'
+   * Extra keys in filter are merged as overrides onto the defaults.
+   * Warns and returns if the name is unrecognised.
+   */
+  addFilter(filter: { name: string; [key: string]: any }): void;
+  /**
+   * Remove the filter at filterIndex from all selected display objects.
+   */
+  removeFilter(filterIndex: number): void;
+  /**
+   * Enable the filter at filterIndex on all selected display objects.
+   */
+  enableFilter(filterIndex: number): void;
+  /**
+   * Disable the filter at filterIndex on all selected display objects.
+   */
+  disableFilter(filterIndex: number): void;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -2242,6 +2272,211 @@ function makeDocumentProxy(
     },
     setTextAttr(attrName: string, value: any): void {
       this.setElementTextAttr(attrName, value);
+    },
+    getFilters(): FlashFilter[] {
+      if (state.selectedIds.length === 0) return [];
+      const firstId = state.selectedIds[0];
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        const obj = kf.displayObjects.find((o) => o.id === firstId);
+        if (obj) {
+          const withFilters = obj as { filters?: FlashFilter[] };
+          return withFilters.filters ? [...withFilters.filters] : [];
+        }
+      }
+      return [];
+    },
+    addFilter(filter: { name: string; [key: string]: any }): void {
+      if (state.selectedIds.length === 0) return;
+      const nameLower = filter.name.toLowerCase().replace(/\s+/g, "");
+      let baseFilter: FlashFilter;
+      if (nameLower === "dropshadow") {
+        baseFilter = defaultDropShadow();
+      } else if (nameLower === "blur") {
+        baseFilter = defaultBlur();
+      } else if (nameLower === "glow") {
+        baseFilter = defaultGlow();
+      } else if (nameLower === "bevel") {
+        baseFilter = defaultBevel();
+      } else {
+        console.warn("[JSFL] doc.addFilter: unrecognised filter name:", filter.name);
+        return;
+      }
+      // Merge caller overrides (excluding the 'name' key) onto the defaults.
+      const { name: _name, ...overrides } = filter;
+      const newFilter = { ...baseFilter, ...overrides } as FlashFilter;
+      const toUpdate = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type Entry = { layerId: string; kfIndex: number; objId: string; existingFilters: FlashFilter[] };
+      const entries: Entry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toUpdate.has(obj.id)) continue;
+          const withFilters = obj as { filters?: FlashFilter[] };
+          entries.push({
+            layerId: layer.id,
+            kfIndex: kf.index,
+            objId: obj.id,
+            existingFilters: withFilters.filters ? [...withFilters.filters] : [],
+          });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { filters: [...entry.existingFilters, newFilter] } as Parameters<typeof updateDisplayObject>[4]
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    removeFilter(filterIndex: number): void {
+      if (state.selectedIds.length === 0) return;
+      const toUpdate = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type Entry = { layerId: string; kfIndex: number; objId: string; existingFilters: FlashFilter[] };
+      const entries: Entry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toUpdate.has(obj.id)) continue;
+          const withFilters = obj as { filters?: FlashFilter[] };
+          entries.push({
+            layerId: layer.id,
+            kfIndex: kf.index,
+            objId: obj.id,
+            existingFilters: withFilters.filters ? [...withFilters.filters] : [],
+          });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { filters: entry.existingFilters.filter((_, i) => i !== filterIndex) } as Parameters<typeof updateDisplayObject>[4]
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    enableFilter(filterIndex: number): void {
+      if (state.selectedIds.length === 0) return;
+      const toUpdate = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type Entry = { layerId: string; kfIndex: number; objId: string; existingFilters: FlashFilter[] };
+      const entries: Entry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toUpdate.has(obj.id)) continue;
+          const withFilters = obj as { filters?: FlashFilter[] };
+          entries.push({
+            layerId: layer.id,
+            kfIndex: kf.index,
+            objId: obj.id,
+            existingFilters: withFilters.filters ? [...withFilters.filters] : [],
+          });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newFilters = entry.existingFilters.map((f, i) =>
+          i === filterIndex ? { ...f, enabled: true } : f
+        ) as FlashFilter[];
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { filters: newFilters } as Parameters<typeof updateDisplayObject>[4]
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    disableFilter(filterIndex: number): void {
+      if (state.selectedIds.length === 0) return;
+      const toUpdate = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type Entry = { layerId: string; kfIndex: number; objId: string; existingFilters: FlashFilter[] };
+      const entries: Entry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toUpdate.has(obj.id)) continue;
+          const withFilters = obj as { filters?: FlashFilter[] };
+          entries.push({
+            layerId: layer.id,
+            kfIndex: kf.index,
+            objId: obj.id,
+            existingFilters: withFilters.filters ? [...withFilters.filters] : [],
+          });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newFilters = entry.existingFilters.map((f, i) =>
+          i === filterIndex ? { ...f, enabled: false } : f
+        ) as FlashFilter[];
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { filters: newFilters } as Parameters<typeof updateDisplayObject>[4]
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
     },
   };
 }
