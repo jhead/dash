@@ -37,8 +37,12 @@ import {
   smoothPath,
   setMotionTween,
   setShapeTween,
+  addShapeHint,
+  updateShapeHint,
   clearTween,
   updateMotionTweenProps,
+  saveFla,
+  loadFla,
 } from "@flash/core";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts.js";
 import { TransformHandles } from "./TransformHandles";
@@ -59,6 +63,7 @@ import type {
   SceneGraph,
   Shape,
   ShapeDisplayObject,
+  ShapeHint,
   SolidStroke,
   SoundEnvelopePoint,
   SoundItem,
@@ -1769,6 +1774,15 @@ export function Shell(): React.ReactElement {
     return getGoverningKeyframe(layer, currentFrame) ?? null;
   }, [timeline, safeActiveLayerIndex, currentFrame]);
 
+  /**
+   * Shape hints from the governing keyframe of the active layer at the current
+   * frame. Non-empty only on shape-tween keyframes that have hints added.
+   * Used to render the hint overlay on the stage.
+   */
+  const activeShapeHints = useMemo<readonly ShapeHint[]>(() => {
+    return currentGoverningFrame?.shapeHints ?? [];
+  }, [currentGoverningFrame]);
+
   // ---------------------------------------------------------------------------
   // Handlers — Align panel
   // ---------------------------------------------------------------------------
@@ -2722,6 +2736,37 @@ export function Shell(): React.ReactElement {
   }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
 
   // ---------------------------------------------------------------------------
+  // Shape hints — Modify > Shape > Add Shape Hint (Ctrl+Shift+H)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Add a shape hint to the governing keyframe at the current frame on the
+   * active layer. The hint is placed at the centre of the stage by default.
+   * Only meaningful on a keyframe that is part of a shape tween span.
+   */
+  const handleAddShapeHint = useCallback(() => {
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return;
+    pushDoc(withTimeline((t) =>
+      addShapeHint(t, layerId, currentFrame,
+        Math.round(docProperties.width / 2),
+        Math.round(docProperties.height / 2))
+    ));
+  }, [timeline, safeActiveLayerIndex, currentFrame, docProperties, pushDoc, withTimeline]);
+
+  /**
+   * Move a shape hint to a new position (called while dragging a hint circle).
+   * Commits to undo history immediately (one entry per drag-end).
+   */
+  const handleUpdateShapeHint = useCallback((hintId: string, x: number, y: number) => {
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return;
+    pushDoc(withTimeline((t) =>
+      updateShapeHint(t, layerId, currentFrame, hintId, x, y)
+    ));
+  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
+
+  // ---------------------------------------------------------------------------
   // Transform (Flip / Rotate) — Modify > Transform submenu
   // ---------------------------------------------------------------------------
 
@@ -3426,6 +3471,7 @@ export function Shell(): React.ReactElement {
     onTextTrackingDecrease: handleTextTrackingDecrease,
     onTextTrackingReset: handleTextTrackingReset,
     onNudge: handleNudge,
+    onAddShapeHint: handleAddShapeHint,
   });
 
   // ---------------------------------------------------------------------------
@@ -3796,6 +3842,23 @@ export function Shell(): React.ReactElement {
         return result;
       },
 
+      // Serialize the current document to FLA bytes, return as base64
+      saveFlaBytes: (): string => {
+        const bytes = saveFla(doc);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+      },
+
+      // Deserialize FLA bytes (base64) and load the resulting document into the editor
+      loadFlaBytes: (base64: string): void => {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const restored = loadFla(bytes);
+        pushDoc(restored);
+      },
+
       // Load a fixture/test document into the editor
       loadDocument: (newDoc: unknown) => {
         pushDoc(newDoc as typeof doc);
@@ -4127,6 +4190,7 @@ export function Shell(): React.ReactElement {
         onBreakApart={handleBreakApart}
         onSmooth={handleSmooth}
         onOptimize={handleOptimize}
+        onAddShapeHint={handleAddShapeHint}
         onFlipHorizontal={handleFlipHorizontal}
         onFlipVertical={handleFlipVertical}
         onRotate90CW={handleRotate90CW}
@@ -4340,17 +4404,36 @@ export function Shell(): React.ReactElement {
                 onEditMultipleFrameClick={handleEditMultipleFrameClick}
                 timeline={timeline}
                 stageOverlay={
-                  (toolState.activeTool === "free-transform" || toolState.activeTool === "selection") &&
-                  selectedBounds &&
-                  selectedShapeId ? (
-                    <TransformHandles
-                      bounds={selectedBounds}
-                      zoom={zoom}
-                      onScale={handleFreeTransformScale}
-                      onRotate={handleFreeTransformRotate}
-                      onMove={handleFreeTransformMove}
-                    />
-                  ) : undefined
+                  <>
+                    {(toolState.activeTool === "free-transform" || toolState.activeTool === "selection") &&
+                    selectedBounds &&
+                    selectedShapeId && (
+                      <TransformHandles
+                        bounds={selectedBounds}
+                        zoom={zoom}
+                        onScale={handleFreeTransformScale}
+                        onRotate={handleFreeTransformRotate}
+                        onMove={handleFreeTransformMove}
+                      />
+                    )}
+                    {activeShapeHints.length > 0 && (
+                      <ShapeHintOverlay
+                        hints={activeShapeHints}
+                        isEndKeyframe={
+                          currentGoverningFrame?.tweenType !== "shape" &&
+                          (() => {
+                            const layer = timeline.layers[safeActiveLayerIndex];
+                            if (!layer) return false;
+                            const prevKf = [...layer.frames]
+                              .filter((f) => f.isKeyframe && f.index < currentFrame)
+                              .sort((a, b) => b.index - a.index)[0];
+                            return !!(prevKf && prevKf.tweenType === "shape");
+                          })()
+                        }
+                        onHintMove={handleUpdateShapeHint}
+                      />
+                    )}
+                  </>
                 }
               />
               <Rulers
