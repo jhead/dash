@@ -245,13 +245,16 @@ export function useFileActions() {
       return null;
     }
 
-    // Derive MIME type from extension
+    // Derive MIME type and compression type from extension
     const lowerPath = path.toLowerCase();
     let mime = "audio/wav";
+    let compressionType: "mp3" | "raw" | "adpcm" | "speech" = "raw";
     if (lowerPath.endsWith(".mp3")) {
       mime = "audio/mpeg";
+      compressionType = "mp3";
     } else if (lowerPath.endsWith(".aiff") || lowerPath.endsWith(".aif")) {
       mime = "audio/aiff";
+      compressionType = "raw";
     }
 
     // Convert bytes to base64 data URI
@@ -273,7 +276,7 @@ export function useFileActions() {
       sampleSize: 16,
       isStereo: true,
       durationSeconds: 0,
-      compressionType: "raw",
+      compressionType,
     });
 
     return { item, dataUri };
