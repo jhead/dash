@@ -646,4 +646,148 @@ test.describe('Motion guide layer visual oracle — task 0797', () => {
     // frame 2 would be at (300, 300) = NOT in y=140-240.
     expect(maxMidCount, 'At least one frame must show the blue box in the mid-center stage region (guide path curve at frame 2: ≈ (300, 175))').toBeGreaterThan(50);
   });
+
+  // -------------------------------------------------------------------------
+  // Test 4: Pixel-position oracle — guided object at key frames (task 0845)
+  //
+  // Confirms that the guided object lands in the correct stage region at each
+  // of the three key frames, using `stop()` frame scripts to lock Ruffle to
+  // a specific frame and then taking a screenshot.
+  //
+  // Guide path geometry (Bézier Q start=(100,300), ctrl=(300,50), end=(500,300)):
+  //   Frame 0: (100, 300)  → left third  (x < 550/3 ≈ 183)
+  //   Frame 2: (300, 175)  → middle third (183 < x < 367) AND y < 230 (above midline)
+  //   Frame 4: (500, 300)  → right third  (x > 367)
+  //
+  // Without guide-path following, ALL frames have y=300 (start y = end y = 300).
+  // With guide-path following, frame 2 has y≈175 (path apex), not y=300.
+  //
+  // Technique: for each target frame, build a variant of GUIDE_DOC with
+  // `stop()` injected into the frame script of that frame on the guided layer.
+  // The SWF auto-plays but stops immediately at that frame — Ruffle renders
+  // the stopped frame, and the screenshot shows the baked PlaceObject2 position.
+  //
+  // Expected pixel regions (50×50 blue box):
+  //   Frame 0: box at stage (100,300)..(150,350) → check region x=75..175, y=270..375
+  //   Frame 2: box at stage (300,175)..(350,225) → check region x=270..375, y=145..245
+  //   Frame 4: box at stage (500,300)..(550,350) → check region x=470..555, y=270..375
+  // -------------------------------------------------------------------------
+  test('pixel-position oracle — guided object in correct region at frames 0, 2, 4 (task 0845)', async ({ page }, testInfo: TestInfo) => {
+    // Build three variants of GUIDE_DOC, each with stop() at a different frame.
+    // The stop() script is injected into the guided layer (layer index 1) at the
+    // target frame.  compile.ts emits DoAction for any frame with a non-empty script.
+    function buildGuidedDocWithStop(targetFrame: number): typeof GUIDE_DOC {
+      // Deep-clone the guided layer's frames and inject stop() at targetFrame.
+      const originalDoc = GUIDE_DOC;
+      const guidedLayerFrames = originalDoc.scenes[0]!.timeline.layers[1]!.frames.map((f) => {
+        if (f.index === targetFrame) {
+          return { ...f, script: 'stop();' };
+        }
+        return f;
+      });
+
+      return {
+        ...originalDoc,
+        id: `guide-doc-0845-stop-at-${targetFrame}`,
+        scenes: [{
+          ...originalDoc.scenes[0]!,
+          timeline: {
+            layers: [
+              // Layer 0: guide layer unchanged
+              { ...originalDoc.scenes[0]!.timeline.layers[0]! },
+              // Layer 1: guided layer with stop() at targetFrame
+              {
+                ...originalDoc.scenes[0]!.timeline.layers[1]!,
+                frames: guidedLayerFrames,
+              },
+            ],
+          },
+        }],
+      };
+    }
+
+    // Frame definitions and expected pixel-region checks.
+    // regionX, regionY: top-left of the check region (stage coords)
+    // regionW, regionH: size of the check region
+    // description: what the oracle is checking
+    const frameChecks = [
+      {
+        frame: 0,
+        desc: 'frame 0 (path start: x≈100, y≈300) — left-lower region',
+        // Box at (100,300)..(150,350); check with margin: x=75..175, y=270..380
+        regionX: 75, regionY: 270, regionW: 100, regionH: 110,
+        // Negative check: mid region (300-360, y=140-240) should be empty at frame 0
+        negRegionX: 270, negRegionY: 145, negRegionW: 100, negRegionH: 100,
+        negDesc: 'mid region empty at frame 0',
+      },
+      {
+        frame: 2,
+        desc: 'frame 2 (path apex: x≈300, y≈175) — mid-upper region',
+        // Box at (300,175)..(350,225); check with margin: x=270..375, y=145..245
+        regionX: 270, regionY: 145, regionW: 105, regionH: 100,
+        // Negative check: lower-left region (75..175, 270..380) should be empty at frame 2
+        // (straight-line interpolation would put it at y=300; guide puts it at y=175)
+        negRegionX: 75, negRegionY: 270, negRegionW: 100, negRegionH: 110,
+        negDesc: 'lower-left region empty at frame 2 (proving guide path, not straight line)',
+      },
+      {
+        frame: 4,
+        desc: 'frame 4 (path end: x≈500, y≈300) — right-lower region',
+        // Box at (500,300)..(550,350); check with margin: x=470..560, y=270..380
+        regionX: 470, regionY: 270, regionW: 90, regionH: 110,
+        // Negative check: left region should be empty at frame 4
+        negRegionX: 75, negRegionY: 270, negRegionW: 100, negRegionH: 110,
+        negDesc: 'left region empty at frame 4',
+      },
+    ];
+
+    await ensureRuffleLoaded(page);
+
+    for (const check of frameChecks) {
+      const doc = buildGuidedDocWithStop(check.frame);
+
+      // Load document and publish SWF
+      await page.evaluate((d) => {
+        (window as unknown as { __flashTest: { loadDocument: (d: unknown) => void } }).__flashTest.loadDocument(d);
+      }, doc);
+      await page.waitForTimeout(300);
+
+      const swfBase64: string = await page.evaluate(() => {
+        return (window as unknown as { __flashTest: { publish: () => string } }).__flashTest.publish();
+      });
+      expect(swfBase64.length, `SWF at frame ${check.frame} must be non-empty`).toBeGreaterThan(0);
+
+      const playerId = `__ruffle_guide_pos_f${check.frame}__`;
+      // Load in Ruffle; injectRufflePlayer waits 1500ms — more than enough for stop()
+      // to have executed regardless of targetFrame (12fps means 5 frames = 417ms).
+      await injectRufflePlayer(page, swfBase64, playerId);
+
+      const panic = await hasRufflePanic(page, playerId);
+      const shot = await page.locator(`#${playerId}`).screenshot();
+      await testInfo.attach(`guide-pos-frame${check.frame}`, { body: shot, contentType: 'image/png' });
+
+      await removeRufflePlayer(page, playerId);
+
+      const posCount = countNonWhitePixelsInRegion(shot, check.regionX, check.regionY, check.regionW, check.regionH);
+      const negCount = countNonWhitePixelsInRegion(shot, check.negRegionX, check.negRegionY, check.negRegionW, check.negRegionH);
+      const totalCount = countNonWhitePixels(shot);
+
+      const imgInfo = PNG.sync.read(shot);
+      console.log(`[0845] frame=${check.frame}: size=${imgInfo.width}x${imgInfo.height}, panic=${panic}`);
+      console.log(`[0845] frame=${check.frame}: total=${totalCount}, posRegion=${posCount}, negRegion=${negCount}`);
+
+      expect(panic, `Ruffle must not panic at frame ${check.frame}`).toBe(false);
+      expect(totalCount, `Frame ${check.frame} must render non-blank`).toBeGreaterThan(100);
+
+      // Positive check: object must appear in the expected region.
+      expect(posCount, `[frame ${check.frame}] ${check.desc}: expected pixels in positive region`).toBeGreaterThan(50);
+
+      // Negative check: object must NOT appear in the wrong region.
+      // This is the key discriminator between guide-path following and straight-line interpolation.
+      // At frame 2: guide places box at y≈175; straight-line would place it at y=300.
+      // The negative check for frame 2 is the region at y=270..380, which would only
+      // have pixels if the straight-line (non-guide) path were used.
+      expect(negCount, `[frame ${check.frame}] ${check.negDesc}: negative region must be empty`).toBeLessThan(50);
+    }
+  });
 });
