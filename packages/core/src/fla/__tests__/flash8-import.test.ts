@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isOle2, tryLoadRealFla } from "../ole.js";
 import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
-import { parseClipActions, toColorEffect, toFlashFilter, buildFla8Document } from "../flash8-import.js";
+import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document } from "../flash8-import.js";
 import { getTweenSpans } from "../../model/timeline-query.js";
 import type { Fla8ColorEffect, Fla8Filter } from "../flash8-binary.js";
 import type { FlashDocument, Symbol as SymbolItem, SoundItem } from "../../model/types.js";
@@ -867,5 +867,71 @@ describe("frame sound wiring (buildFla8Document)", () => {
     );
     expect(soundItems.length).toBe(1);
     expect(soundItems[0]!.name).toBe("boom.mp3");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseButtonHandlers unit tests
+// ---------------------------------------------------------------------------
+
+describe("parseButtonHandlers", () => {
+  it("parses a single on(release) handler", () => {
+    const src = `on(release) { gotoAndStop(2); }`;
+    const handlers = parseButtonHandlers(src);
+    expect(handlers).toHaveLength(1);
+    expect(handlers[0]!.event).toBe("release");
+    expect(handlers[0]!.script).toBe("gotoAndStop(2);");
+  });
+
+  it("parses multiple distinct handlers", () => {
+    const src = `on(press) { play(); }\non(release) { stop(); }`;
+    const handlers = parseButtonHandlers(src);
+    expect(handlers).toHaveLength(2);
+    expect(handlers[0]!.event).toBe("press");
+    expect(handlers[0]!.script).toBe("play();");
+    expect(handlers[1]!.event).toBe("release");
+    expect(handlers[1]!.script).toBe("stop();");
+  });
+
+  it("splits comma-separated events into separate handlers", () => {
+    const src = `on(rollOver, rollOut) { trace("hover"); }`;
+    const handlers = parseButtonHandlers(src);
+    expect(handlers).toHaveLength(2);
+    expect(handlers[0]!.event).toBe("rollOver");
+    expect(handlers[1]!.event).toBe("rollOut");
+    expect(handlers[0]!.script).toBe(`trace("hover");`);
+    expect(handlers[1]!.script).toBe(`trace("hover");`);
+  });
+
+  it("handles nested braces in handler body", () => {
+    const src = `on(release) { if (x) { gotoAndStop(2); } }`;
+    const handlers = parseButtonHandlers(src);
+    expect(handlers).toHaveLength(1);
+    expect(handlers[0]!.script).toBe("if (x) { gotoAndStop(2); }");
+  });
+
+  it("skips unknown event names with a warning", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const src = `on(bogusEvent) { stop(); }`;
+    const handlers = parseButtonHandlers(src);
+    expect(handlers).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("bogusEvent")
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(parseButtonHandlers("")).toHaveLength(0);
+    expect(parseButtonHandlers("   ")).toHaveLength(0);
+  });
+
+  it("recognises all valid button event names", () => {
+    const events = ["press", "release", "releaseOutside", "rollOut", "rollOver", "dragOut", "dragOver"];
+    for (const ev of events) {
+      const handlers = parseButtonHandlers(`on(${ev}) { trace("ok"); }`);
+      expect(handlers).toHaveLength(1);
+      expect(handlers[0]!.event).toBe(ev);
+    }
   });
 });

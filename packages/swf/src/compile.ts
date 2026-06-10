@@ -9,7 +9,7 @@
  *  - RemoveObject2 when objects leave the display list
  *  - ShowFrame per frame, End
  */
-import type { BitmapFill, BitmapItem, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoItem } from "@flash/core";
+import type { BitmapFill, BitmapItem, ButtonHandler, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoItem } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans } from "@flash/core";
 import { deflateSync } from "fflate";
 import { Tag } from "./tags.js";
@@ -444,6 +444,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
 
   // Sort symbols topologically so dependencies are emitted first
   const symbols = topoSortSymbols(rawSymbols);
+
+  // Quick lookup: symbolId → Symbol (for instance-level overrides in compile loop)
+  const symbolById = new Map<string, Symbol>(symbols.map((s) => [s.id, s]));
 
   const charIdMap = new Map<string, number>();
   // Assign character IDs to all symbols up front (so nested instances resolve)
@@ -1241,8 +1244,36 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 writer.writeTag(Tag.PlaceObject2, placeBody);
               }
             } else if (displayObj.type === "instance") {
-              const charId = charIdMap.get(displayObj.symbolId);
+              let charId = charIdMap.get(displayObj.symbolId);
               if (charId !== undefined) {
+                // Button instances with instance-level on() handlers need a
+                // unique DefineButton2 character (the handlers live in the tag,
+                // not in PlaceObject2). Emit an inline DefineButton2 with the
+                // instance's handlers and use its char ID for placement.
+                const hasButtonHandlers =
+                  !!displayObj.buttonHandlers && displayObj.buttonHandlers.length > 0;
+                if (hasButtonHandlers) {
+                  const sym = symbolById.get(displayObj.symbolId);
+                  if (sym && sym.symbolType === "button") {
+                    const instCharId = writer.nextCharId();
+                    const instHoisted: Array<{ tagType: number; body: Uint8Array }> = [];
+                    const buttonBody = encodeDefineButton2(
+                      instCharId,
+                      sym,
+                      doc,
+                      charIdMap,
+                      () => writer.nextCharId(),
+                      instHoisted,
+                      displayObj.buttonHandlers as readonly ButtonHandler[]
+                    );
+                    for (const def of instHoisted) {
+                      writer.writeTag(def.tagType, def.body);
+                    }
+                    writer.writeTag(Tag.DefineButton2, buttonBody);
+                    charId = instCharId;
+                  }
+                }
+
                 const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
                 const hasClipActions = !!displayObj.clipActions && displayObj.clipActions.length > 0;
                 if (hasBlend || hasEnabledFilters(displayObj.filters)) {

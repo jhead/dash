@@ -2,6 +2,7 @@
 export type {
   BitmapDisplayObject,
   BitmapFill,
+  ButtonHandler,
   ClipAction,
   Color,
   ColorEffect,

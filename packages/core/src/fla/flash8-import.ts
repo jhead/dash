@@ -17,6 +17,7 @@ import type {
   SoundLinkage,
 } from "../model/types.js";
 import type {
+  ButtonHandler,
   ClipAction,
   ColorEffect,
   DisplayObject,
@@ -238,6 +239,53 @@ export function parseClipActions(src: string): ClipAction[] {
     }
   }
   return actions;
+}
+
+/** FLA `on()` event keyword → ButtonHandler event name. */
+const BUTTON_EVENTS: Record<string, ButtonHandler["event"]> = {
+  press: "press",
+  release: "release",
+  releaseOutside: "releaseOutside",
+  rollOut: "rollOut",
+  rollOver: "rollOver",
+  dragOut: "dragOut",
+  dragOver: "dragOver",
+};
+
+/**
+ * Parse the raw button instance script (concatenated `on(event){body}` blocks
+ * that Flash stores verbatim in the FLA) into model ButtonHandler entries.
+ * Brace-matching is used so handler bodies may contain nested blocks.
+ * Multiple events on one block (`on(release,rollOver)`) are split into one
+ * ButtonHandler per event. Unrecognized event keywords are skipped with a warning.
+ */
+export function parseButtonHandlers(src: string): ButtonHandler[] {
+  const handlers: ButtonHandler[] = [];
+  const re = /\bon\s*\(([^)]*)\)\s*\{/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    const events = m[1]!.split(",").map((e) => e.trim()).filter(Boolean);
+    const bodyStart = re.lastIndex;
+    // brace-match the body
+    let depth = 1;
+    let i = bodyStart;
+    for (; i < src.length && depth > 0; i++) {
+      const ch = src[i]!;
+      if (ch === "{") depth++;
+      else if (ch === "}") depth--;
+    }
+    const body = src.slice(bodyStart, i - 1).trim();
+    re.lastIndex = i;
+    for (const ev of events) {
+      const mapped = BUTTON_EVENTS[ev];
+      if (!mapped) {
+        console.warn(`[FLA import] unknown on() button event "${ev}"; skipping handler`);
+        continue;
+      }
+      handlers.push({ event: mapped, script: body });
+    }
+  }
+  return handlers;
 }
 
 // ---------------------------------------------------------------------------
@@ -509,15 +557,10 @@ function convertElement(
       const colorEffect = toColorEffect(el.colorEffect);
       const filters = toFlashFilters(el.filters);
       const blendMode = toBlendMode(el.blendMode);
-      // onClipEvent handlers only apply to movieclip (sprite) instances; a
-      // button instance's on() handlers have no instance-level model field yet,
-      // so they are warned-and-skipped below.
+      // onClipEvent handlers apply to movieclip (sprite) instances; on()
+      // handlers apply to button instances.
       const clipActions = el.kind === "sprite" && el.script ? parseClipActions(el.script) : [];
-      if (el.kind === "button" && el.script) {
-        console.warn(
-          "[FLA import] button instance on() handlers are not imported (no instance-level model field); skipping",
-        );
-      }
+      const buttonHandlers = el.kind === "button" && el.script ? parseButtonHandlers(el.script) : [];
       return {
         type: "instance",
         id: nextId("inst"),
@@ -532,6 +575,7 @@ function convertElement(
         ...(filters.length > 0 ? { filters } : {}),
         ...(blendMode ? { blendMode } : {}),
         ...(clipActions.length > 0 ? { clipActions } : {}),
+        ...(buttonHandlers.length > 0 ? { buttonHandlers } : {}),
       };
     }
     case "text":

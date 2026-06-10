@@ -279,6 +279,18 @@ export interface ColorEffect {
 }
 
 /**
+ * A button event handler attached to a button instance placed on the stage.
+ * Corresponds to an `on(event) {}` block in AS2.
+ * Encoded as a BUTTONCONDACTION record in a per-instance DefineButton2 tag.
+ * The same event vocabulary as the symbol-level ButtonAction in model/types.ts.
+ */
+export interface ButtonHandler {
+  readonly event: "press" | "release" | "releaseOutside" | "rollOut" | "rollOver" | "dragOut" | "dragOver";
+  /** AS2 source code for the handler body (not wrapped in on(){}). */
+  readonly script: string;
+}
+
+/**
  * A clip event handler attached to a MovieClip instance.
  * Corresponds to an `onClipEvent(event) {}` block in AS2.
  * Encoded as a CLIPACTIONRECORD in the PlaceObject2/PlaceObject3 SWF tag.
@@ -340,6 +352,13 @@ export interface SymbolInstance {
    * Only meaningful when the referenced symbol is a movieclip.
    */
   readonly clipActions?: readonly ClipAction[];
+  /**
+   * on() handlers attached to this button instance placed on the stage.
+   * Encoded as BUTTONCONDACTION records in a per-instance DefineButton2 tag
+   * that is emitted inline just before the PlaceObject2 for this instance.
+   * Only meaningful when the referenced symbol is a button.
+   */
+  readonly buttonHandlers?: readonly ButtonHandler[];
 }
 
 /**

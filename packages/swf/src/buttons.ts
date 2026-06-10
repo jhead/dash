@@ -15,7 +15,7 @@
  *     each record: 1 byte flags, CharId UI16, Depth UI16, MATRIX, CXFORMWITHALPHA
  *   ButtonConditions (optional, none emitted for MVP)
  */
-import type { BitmapItem, FlashDocument, Symbol } from "@flash/core";
+import type { BitmapItem, ButtonHandler, FlashDocument, Symbol } from "@flash/core";
 import { compileAS2 } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import { encodeCxformWithAlpha } from "./cxform.js";
@@ -127,7 +127,9 @@ export function encodeDefineButton2(
   doc: FlashDocument,
   charIdMap: Map<string, number>,
   nextCharId: () => number,
-  hoistedDefs: Array<{ tagType: number; body: Uint8Array }>
+  hoistedDefs: Array<{ tagType: number; body: Uint8Array }>,
+  /** When set, replaces the symbol's own buttonActions with these instance-level on() handlers. */
+  actionOverrides?: readonly ButtonHandler[]
 ): Uint8Array {
   const bw = new BitWriter();
 
@@ -333,7 +335,8 @@ export function encodeDefineButton2(
     rollOver:       0x0040,
   };
 
-  const actions = symbol.buttonActions;
+  // Use instance-level overrides if provided, otherwise fall back to symbol-level actions.
+  const actions = actionOverrides ?? symbol.buttonActions;
   const hasConditions = actions && actions.length > 0;
 
   if (hasConditions) {

@@ -464,3 +464,239 @@ describe("DefineButton2 — button action encoding", () => {
     expect(condBits).toBe(0x0020); // bit 5: rollOut
   });
 });
+
+// ---------------------------------------------------------------------------
+// Instance-level buttonHandlers tests
+// ---------------------------------------------------------------------------
+
+import type { ButtonHandler, Scene } from "@flash/core";
+
+/**
+ * Build a scene that places a button instance with optional buttonHandlers.
+ */
+function makeSceneWithButtonInstance(
+  symbolId: string,
+  buttonHandlers?: readonly ButtonHandler[]
+): Scene {
+  const instance = {
+    id: "inst-1",
+    type: "instance" as const,
+    symbolId,
+    x: 10,
+    y: 10,
+    ...(buttonHandlers && buttonHandlers.length > 0 ? { buttonHandlers } : {}),
+  };
+  return {
+    id: "scene-1",
+    name: "Scene 1",
+    timeline: {
+      layers: [
+        {
+          id: "layer-1",
+          name: "layer-1",
+          type: "normal" as const,
+          visible: true,
+          locked: false,
+          outlineMode: false,
+          outlineColor: "#ff0000",
+          height: 20,
+          parentFolderId: null,
+          frames: [
+            {
+              index: 0,
+              isKeyframe: true,
+              isEmpty: false,
+              tweenType: "none" as const,
+              label: "",
+              labelType: "name" as const,
+              script: "",
+              sound: null,
+              motionEase: 0,
+              motionRotate: "none" as const,
+              motionRotateCount: 0,
+              motionOrientToPath: false,
+              motionSync: false,
+              motionScale: false,
+              shapeEase: 0,
+              shapeBlend: "distributive" as const,
+              displayObjects: [instance],
+            },
+          ],
+          frameCount: 1,
+        },
+      ],
+    },
+  };
+}
+
+describe("DefineButton2 — instance-level buttonHandlers", () => {
+  // ---------------------------------------------------------------------------
+  // Test A: button instance with buttonHandlers emits TWO DefineButton2 tags
+  // ---------------------------------------------------------------------------
+  it("A: button instance with buttonHandlers emits a second DefineButton2 for the instance", () => {
+    const btn = makeButtonSymbol("btn-ih-A");
+    const scene = makeSceneWithButtonInstance("btn-ih-A", [
+      { event: "release", script: 'gotoAndStop(2);' },
+    ]);
+    const doc = {
+      id: "doc-ih-A",
+      properties: {
+        width: 550,
+        height: 400,
+        frameRate: 12,
+        backgroundColor: "#ffffff",
+        rulerUnits: "px" as const,
+        grid: {
+          showGrid: false,
+          snapToGrid: false,
+          gridColor: "#999999",
+          gridWidth: 18,
+          gridHeight: 18,
+        },
+        guides: [],
+        snapToObjects: false,
+        snapToPixels: false,
+        snapToGuides: false,
+      },
+      scenes: [scene],
+      library: { items: [btn], folders: [] },
+    };
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    // Symbol-level DefineButton2 + instance-level DefineButton2 = 2 total
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    expect(btn2Tags.length).toBe(2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test B: the instance-level DefineButton2 carries the on(release) handler
+  // ---------------------------------------------------------------------------
+  it("B: the second DefineButton2 carries the instance on(release) BUTTONCONDACTION", () => {
+    const btn = makeButtonSymbol("btn-ih-B");
+    const scene = makeSceneWithButtonInstance("btn-ih-B", [
+      { event: "release", script: 'stop();' },
+    ]);
+    const doc = {
+      id: "doc-ih-B",
+      properties: {
+        width: 550,
+        height: 400,
+        frameRate: 12,
+        backgroundColor: "#ffffff",
+        rulerUnits: "px" as const,
+        grid: {
+          showGrid: false,
+          snapToGrid: false,
+          gridColor: "#999999",
+          gridWidth: 18,
+          gridHeight: 18,
+        },
+        guides: [],
+        snapToObjects: false,
+        snapToPixels: false,
+        snapToGuides: false,
+      },
+      scenes: [scene],
+      library: { items: [btn], folders: [] },
+    };
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    // Second tag is the instance-level one
+    const instParsed = parseButton2Body(btn2Tags[1].body);
+    // ActionOffset > 0 means BUTTONCONDACTION records are present
+    expect(instParsed.actionOffset).toBeGreaterThan(0);
+    // First BUTTONCONDACTION: ConditionBits bit 0 = release
+    const condBits = readUI16LE(instParsed.condActionBytes, 2);
+    expect(condBits & 0x0001).toBe(1); // bit 0: release
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test C: PlaceObject2 references the instance-level char ID (not the symbol)
+  // ---------------------------------------------------------------------------
+  it("C: PlaceObject2 references the instance-level DefineButton2 char ID", () => {
+    const btn = makeButtonSymbol("btn-ih-C");
+    const scene = makeSceneWithButtonInstance("btn-ih-C", [
+      { event: "press", script: 'play();' },
+    ]);
+    const doc = {
+      id: "doc-ih-C",
+      properties: {
+        width: 550,
+        height: 400,
+        frameRate: 12,
+        backgroundColor: "#ffffff",
+        rulerUnits: "px" as const,
+        grid: {
+          showGrid: false,
+          snapToGrid: false,
+          gridColor: "#999999",
+          gridWidth: 18,
+          gridHeight: 18,
+        },
+        guides: [],
+        snapToObjects: false,
+        snapToPixels: false,
+        snapToGuides: false,
+      },
+      scenes: [scene],
+      library: { items: [btn], folders: [] },
+    };
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    // The instance-level DefineButton2 is the second one
+    const instCharId = readUI16LE(btn2Tags[1].body, 0);
+
+    // Find PlaceObject2 that references the instance char ID
+    const TAG_PLACE_OBJECT2 = 26;
+    const place2Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+    const foundPlace = place2Tags.some((tag) => {
+      const flags = tag.body[0];
+      const hasCharacter = (flags & 0x02) !== 0;
+      if (!hasCharacter) return false;
+      const cid = tag.body[3] | (tag.body[4] << 8);
+      return cid === instCharId;
+    });
+    expect(foundPlace).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test D: button instance without buttonHandlers still emits only one DefineButton2
+  // ---------------------------------------------------------------------------
+  it("D: button instance without buttonHandlers emits only one DefineButton2", () => {
+    const btn = makeButtonSymbol("btn-ih-D");
+    const scene = makeSceneWithButtonInstance("btn-ih-D"); // no handlers
+    const doc = {
+      id: "doc-ih-D",
+      properties: {
+        width: 550,
+        height: 400,
+        frameRate: 12,
+        backgroundColor: "#ffffff",
+        rulerUnits: "px" as const,
+        grid: {
+          showGrid: false,
+          snapToGrid: false,
+          gridColor: "#999999",
+          gridWidth: 18,
+          gridHeight: 18,
+        },
+        guides: [],
+        snapToObjects: false,
+        snapToPixels: false,
+        snapToGuides: false,
+      },
+      scenes: [scene],
+      library: { items: [btn], folders: [] },
+    };
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    expect(btn2Tags.length).toBe(1);
+  });
+});
