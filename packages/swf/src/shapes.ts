@@ -269,18 +269,58 @@ function joinStyleBits(join: string): number {
   return 0; // round (default)
 }
 
-/** LINESTYLE2 flag bytes for a model stroke (DefineShape4 / DefineMorphShape2). */
+/** LINESTYLE2 flag bytes for a model stroke (DefineShape4 / DefineMorphShape2).
+ *
+ * SWF LINESTYLE2 flags are a UI16 written little-endian. The first (low) byte
+ * contains bits 0-7, the second (high) byte contains bits 8-15. From Ruffle's
+ * LineStyleFlag (types.rs):
+ *   bit  0: PixelHinting
+ *   bit  1: NoVScale
+ *   bit  2: NoHScale
+ *   bit  3: HasFill
+ *   bits 5-4: JoinStyle (0=round, 1=bevel, 2=miter)
+ *   bits 7-6: StartCapStyle (0=round, 1=none, 2=square)
+ *   bits 9-8: EndCapStyle (0=round, 1=none, 2=square)  [second byte bits 1-0]
+ *   bit  10: NoClose  [second byte bit 2]
+ *
+ * We write the two bytes individually (highByte = first/low byte, lowByte =
+ * second/high byte) matching the existing convention in this file.
+ */
 function lineStyle2FlagBytes(s: SolidStroke): { highByte: number; lowByte: number } {
   const startCapBits = capStyleBits(s.caps);
   const endCapBits = capStyleBits(s.caps);
   const joinBits = joinStyleBits(s.joints);
   const isHairline = s.strokeType === "hairline";
-  // Hairline: width=0 twips + NoHScale + NoVScale so stroke stays 1px at any zoom.
-  const scaleFlags = isHairline ? 0x06 : 0;
+
+  // Compute NoHScale / NoVScale bits from strokeScaleMode (or hairline fallback).
+  // strokeScaleMode:
+  //   "none"       → NoHScale (bit 2) + NoVScale (bit 1)
+  //   "vertical"   → NoHScale (bit 2)     [only vertical scaling → no H scaling in SWF]
+  //   "horizontal" → NoVScale (bit 1)     [only horizontal scaling → no V scaling in SWF]
+  //   "normal"     → no flags
+  let noHScale = false;
+  let noVScale = false;
+  if (isHairline) {
+    // Hairline always gets NoHScale + NoVScale so it stays 1px at any zoom.
+    noHScale = true;
+    noVScale = true;
+  } else if (s.strokeScaleMode) {
+    noHScale = s.strokeScaleMode === "none" || s.strokeScaleMode === "vertical";
+    noVScale = s.strokeScaleMode === "none" || s.strokeScaleMode === "horizontal";
+  }
+
+  const pixelHintingBit = s.pixelHinting ? 0x01 : 0;
+  const noVScaleBit = noVScale ? 0x02 : 0;
+  const noHScaleBit = noHScale ? 0x04 : 0;
+
+  // highByte = first (low) byte of the LE u16 = bits 0-7
   const highByte =
     ((startCapBits & 0x3) << 6) |
     ((joinBits & 0x3) << 4) |
-    scaleFlags;
+    noHScaleBit |
+    noVScaleBit |
+    pixelHintingBit;
+  // lowByte = second (high) byte of the LE u16 = bits 8-15
   const lowByte = endCapBits & 0x3;
   return { highByte, lowByte };
 }

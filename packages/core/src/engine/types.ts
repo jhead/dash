@@ -212,6 +212,21 @@ export interface SolidStroke {
   readonly miterLimit: number;
   /** Stroke style (dash/dot/ragged/etc). Defaults to solid if omitted. */
   readonly style?: StrokeStyle;
+  /**
+   * Whether stroke coordinates snap to whole pixels.
+   * Maps to SWF LINESTYLE2 PixelHintingFlag (bit 0 of flags).
+   * Defaults to false when omitted.
+   */
+  readonly pixelHinting?: boolean;
+  /**
+   * Stroke scaling behavior when the containing object is scaled.
+   *   "normal"     — stroke scales on both axes (default, omit to leave unset)
+   *   "horizontal" — stroke scales only horizontally (sets NoVScale in SWF)
+   *   "vertical"   — stroke scales only vertically (sets NoHScale in SWF)
+   *   "none"       — stroke does not scale (sets NoHScale + NoVScale in SWF)
+   * Defaults to "normal" (no NoScale flags set) when omitted.
+   */
+  readonly strokeScaleMode?: "normal" | "horizontal" | "vertical" | "none";
 }
 
 export type Stroke = SolidStroke;
