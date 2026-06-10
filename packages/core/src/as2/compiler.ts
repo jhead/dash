@@ -1585,13 +1585,39 @@ class Compiler {
     this.emit(0x3d); // ActionCallFunction
   }
 
+  /**
+   * Convert a static member expression chain (a.b.c) to a dotted string.
+   * Returns null if the expression is computed or otherwise not a static chain.
+   *
+   * Examples:
+   *   Identifier("mx")  → "mx"
+   *   MemberExpr(MemberExpr(Identifier("mx"), "transitions"), "Tween")  → "mx.transitions.Tween"
+   */
+  private memberExprToString(expr: Expression): string | null {
+    if (expr.type === 'Identifier') return (expr as Identifier).name;
+    if (expr.type === 'MemberExpr') {
+      const m = expr as MemberExpr;
+      // Only static (dot-notation) member access, not computed (m["prop"])
+      const obj = this.memberExprToString(m.object);
+      if (obj !== null) return `${obj}.${m.property}`;
+    }
+    return null;
+  }
+
   private compileNewExpr(expr: NewExpr): void {
-    // ActionNew stack layout (top is arg[0]):
-    //   className | nArgs | arg[n-1] | ... | arg[0]
-    if (expr.callee.type === 'Identifier') {
-      this.pushString((expr.callee as Identifier).name);
+    // ActionNewObject (0x40) stack layout (deepest first, top is arg[0]):
+    //   className-string | nArgs | arg[n-1] | ... | arg[0]
+    //
+    // ActionNewObject pops the class name as a STRING, not as an object reference.
+    // For `new pkg.sub.ClassName()` we must push "pkg.sub.ClassName" as a string,
+    // NOT resolve the member chain to an object via GetVariable/GetMember.
+    const className = this.memberExprToString(expr.callee);
+    if (className !== null) {
+      this.pushString(className);
     } else {
-      // Best effort: evaluate callee expression
+      // Computed/dynamic callee (e.g. new obj["class"]()) — best effort: evaluate
+      // the callee expression and leave it on the stack as the class name slot.
+      // AVM1 will coerce it to a string when ActionNewObject runs.
       this.compileExpr(expr.callee);
     }
     this.pushInt(expr.args.length);
