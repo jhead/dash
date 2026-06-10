@@ -524,6 +524,16 @@ export interface StageAreaProps {
    * with CSS zoom/pan applied). Use this to render SVG overlays like transform handles.
    */
   stageOverlay?: React.ReactNode;
+  /**
+   * When true, clicking on an object from a ghost frame (onion range) will jump
+   * the timeline to that frame. Used for Edit Multiple Frames mode.
+   */
+  editMultipleFrames?: boolean;
+  /**
+   * Called when the user clicks an object from a non-current ghost frame while
+   * editMultipleFrames is active. The timeline should jump to this frame index.
+   */
+  onEditMultipleFrameClick?: (frameIndex: number) => void;
 }
 
 // Draw tools that create shapes via drag
@@ -852,6 +862,8 @@ export function StageArea({
   onionFrames = [],
   timeline,
   stageOverlay,
+  editMultipleFrames = false,
+  onEditMultipleFrameClick,
 }: StageAreaProps): React.ReactElement {
   const workAreaRef = useRef<HTMLDivElement>(null);
   const gridCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1518,6 +1530,31 @@ export function StageArea({
         });
         if (hit) {
           onShapeSelect?.(hit.id);
+        } else if (editMultipleFrames && onionFrames.length > 0) {
+          // In Edit Multiple Frames mode: if no current-frame hit, check ghost frames
+          // sorted closest-to-current first so we prefer the nearest frame.
+          const sortedGhosts = [...onionFrames].sort((a, b) => b.opacity - a.opacity);
+          let ghostHit = false;
+          for (const ghost of sortedGhosts) {
+            for (const layer of ghost.sceneGraph.layers) {
+              if (!layer.visible) continue;
+              const shapes = layer.objects.filter((o): o is import("@flash/core").ShapeDisplayObject => o.type === "shape");
+              const ghostShape = [...shapes].reverse().find((obj) => {
+                const bounds = transformedShapeBounds(obj);
+                return (
+                  stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+                  stageY >= bounds.y && stageY <= bounds.y + bounds.height
+                );
+              });
+              if (ghostShape) {
+                onEditMultipleFrameClick?.(ghost.frameIndex);
+                ghostHit = true;
+                break;
+              }
+            }
+            if (ghostHit) break;
+          }
+          if (!ghostHit) onShapeSelect?.(null);
         } else {
           onShapeSelect?.(null);
         }
@@ -1777,7 +1814,7 @@ export function StageArea({
         setSelIsMarqueeSelecting(true);
       }
     },
-    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library]
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick]
   );
 
   const onMouseMove = useCallback(

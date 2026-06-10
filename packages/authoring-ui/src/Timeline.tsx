@@ -61,6 +61,9 @@ export interface TimelineProps {
   onionAfter?: number;
   onToggleOnionSkin?: () => void;
   onOnionRangeChange?: (before: number, after: number) => void;
+  // Edit Multiple Frames
+  editMultipleFrames?: boolean;
+  onToggleEditMultipleFrames?: () => void;
   // Frame clipboard props
   onCopyFrames?: (startFrame: number, endFrame: number) => void;
   onCutFrames?: (startFrame: number, endFrame: number) => void;
@@ -512,6 +515,8 @@ export function Timeline({
   onionAfter = 2,
   onToggleOnionSkin,
   onOnionRangeChange,
+  editMultipleFrames = false,
+  onToggleEditMultipleFrames,
   onCopyFrames,
   onCutFrames,
   onPasteFrames,
@@ -1396,6 +1401,15 @@ export function Timeline({
           active={onionSkinEnabled}
         >
           OS
+        </PlayBtn>
+
+        {/* Edit Multiple Frames toggle */}
+        <PlayBtn
+          title={editMultipleFrames ? "Edit Multiple Frames: on" : "Edit Multiple Frames: off"}
+          onClick={() => onToggleEditMultipleFrames?.()}
+          active={editMultipleFrames}
+        >
+          EMF
         </PlayBtn>
 
         <div style={{ flex: 1 }} />

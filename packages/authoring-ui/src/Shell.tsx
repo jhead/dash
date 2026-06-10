@@ -459,6 +459,9 @@ export function Shell(): React.ReactElement {
   const [onionBefore, setOnionBefore] = useState(2);
   const [onionAfter, setOnionAfter] = useState(2);
 
+  // Edit Multiple Frames state
+  const [editMultipleFrames, setEditMultipleFrames] = useState(false);
+
   // RAF playback refs
   const rafRef = useRef<number | null>(null);
   const isPlayingRef = useRef(false);
@@ -602,6 +605,10 @@ export function Shell(): React.ReactElement {
   const handleOnionRangeChange = useCallback((before: number, after: number) => {
     setOnionBefore(Math.max(0, before));
     setOnionAfter(Math.max(0, after));
+  }, []);
+
+  const handleToggleEditMultipleFrames = useCallback(() => {
+    setEditMultipleFrames((v) => !v);
   }, []);
 
   const handleTimelineChange = useCallback((t: TimelineModel) => {
@@ -2221,6 +2228,11 @@ export function Shell(): React.ReactElement {
     if (id !== null) setRightTab("properties");
   }, []);
 
+  // Edit Multiple Frames: jump to the ghost frame that was clicked
+  const handleEditMultipleFrameClick = useCallback((frameIndex: number) => {
+    setCurrentFrame(frameIndex);
+  }, []);
+
   const handleInstanceDoubleClick = useCallback((instanceId: string) => {
     // Find the PlacedInstance to get its libraryItemId, then enter edit-in-place
     const inst = instances.find((i) => i.id === instanceId);
@@ -2343,9 +2355,9 @@ export function Shell(): React.ReactElement {
     return { layers };
   }, [editContext, doc, activeSceneIndex, currentFrame]);
 
-  // Compute onion skin ghost frames
+  // Compute onion skin ghost frames (also used by Edit Multiple Frames mode)
   const onionFrames = useMemo<OnionFrame[]>(() => {
-    if (!onionSkinEnabled) return [];
+    if (!onionSkinEnabled && !editMultipleFrames) return [];
     const frames: OnionFrame[] = [];
     const maxFrame = Math.max(...timeline.layers.map((l) => {
       if (l.frames.length === 0) return 1;
@@ -2369,22 +2381,27 @@ export function Shell(): React.ReactElement {
       return { layers };
     };
 
+    // In Edit Multiple Frames mode, all range frames are shown at high opacity (0.6).
+    // In normal onion-skin mode, use the graduated opacity.
+    const beforeOpacity = (i: number) =>
+      editMultipleFrames ? 0.6 : 0.2 + (0.2 * (onionBefore - i) / Math.max(onionBefore, 1));
+    const afterOpacity = (i: number) =>
+      editMultipleFrames ? 0.6 : 0.2 + (0.2 * (onionAfter - i) / Math.max(onionAfter, 1));
+
     // Before frames (closer = higher opacity)
     for (let i = 1; i <= onionBefore; i++) {
       const fi = currentFrame - i;
       if (fi < 0) continue;
-      const opacity = 0.2 + (0.2 * (onionBefore - i) / Math.max(onionBefore, 1));
-      frames.push({ frameIndex: fi, opacity, tint: "before", sceneGraph: buildSceneGraph(fi) });
+      frames.push({ frameIndex: fi, opacity: beforeOpacity(i), tint: "before", sceneGraph: buildSceneGraph(fi) });
     }
     // After frames (closer = higher opacity)
     for (let i = 1; i <= onionAfter; i++) {
       const fi = currentFrame + i;
       if (fi >= maxFrame) continue;
-      const opacity = 0.2 + (0.2 * (onionAfter - i) / Math.max(onionAfter, 1));
-      frames.push({ frameIndex: fi, opacity, tint: "after", sceneGraph: buildSceneGraph(fi) });
+      frames.push({ frameIndex: fi, opacity: afterOpacity(i), tint: "after", sceneGraph: buildSceneGraph(fi) });
     }
     return frames;
-  }, [onionSkinEnabled, onionBefore, onionAfter, currentFrame, timeline, doc.library]);
+  }, [onionSkinEnabled, editMultipleFrames, onionBefore, onionAfter, currentFrame, timeline, doc.library]);
 
   // Derive selected keyframe frame object (from active layer, governing keyframe at currentFrame)
   const selectedKeyframeFrame = useMemo<Frame | null>(() => {
@@ -3152,6 +3169,8 @@ export function Shell(): React.ReactElement {
                   onionAfter={onionAfter}
                   onToggleOnionSkin={handleToggleOnionSkin}
                   onOnionRangeChange={handleOnionRangeChange}
+                  editMultipleFrames={editMultipleFrames}
+                  onToggleEditMultipleFrames={handleToggleEditMultipleFrames}
                   onCopyFrames={handleCopyFrames}
                   onCutFrames={handleCutFrames}
                   onPasteFrames={handlePasteFrames}
@@ -3253,6 +3272,8 @@ export function Shell(): React.ReactElement {
                 onBreakApart={handleBreakApart}
                 onPlayToggle={handlePlayToggle}
                 onionFrames={onionFrames}
+                editMultipleFrames={editMultipleFrames}
+                onEditMultipleFrameClick={handleEditMultipleFrameClick}
                 timeline={timeline}
                 stageOverlay={
                   (toolState.activeTool === "free-transform" || toolState.activeTool === "selection") &&
