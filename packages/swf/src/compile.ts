@@ -489,6 +489,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   // useFont3 defaults to true; pass useFont3: false to emit DefineFont2 instead.
   const useFont3 = options?.useFont3 !== false;
   const fontTagCode = useFont3 ? Tag.DefineFont3 : Tag.DefineFont2;
+  // DefineFont3 stores glyph coordinates in a 20×-larger EM square than
+  // DefineFont2; emit glyph outlines at the matching scale so Ruffle renders
+  // them at the correct size.
+  const fontCoordScale = useFont3 ? 20 : 1;
   const fontCharIdMap = new Map<string, number>();
 
   for (const s of doc.scenes) {
@@ -503,7 +507,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           if (fontCharIdMap.has(key)) continue;
           const fontId = writer.nextCharId();
           fontCharIdMap.set(key, fontId);
-          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic);
+          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale);
           writer.writeTag(fontTagCode, fontBody);
         }
       }
@@ -522,7 +526,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     if (fontCharIdMap.has(key)) continue; // already emitted from text pre-pass
     const fontId = writer.nextCharId();
     fontCharIdMap.set(key, fontId);
-    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic);
+    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale);
     writer.writeTag(fontTagCode, fontBody);
   }
 

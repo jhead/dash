@@ -130,11 +130,33 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **Multi-frame movies**: emit `RemoveObject2` when an object leaves the display list;
   set the `Move` flag on `PlaceObject2` for objects that persist across frames; hoist
   all character definitions before the first `ShowFrame`.
-- **Text renders invisibly in Ruffle**: the embedded-font encoder
-  (`packages/swf/src/fonts.ts`) emits placeholder EMPTY glyph shapes, so static
-  (DefineText) and dynamic (DefineEditText) text contribute zero visible pixels. Never
-  base a pixel-diff assertion on text content — put a shape on any frame that must be
-  visually distinguishable (see capstone-0519 game-over panel).
+- **Embedded font glyphs (task 0702)**: `packages/swf/src/fonts.ts` now emits REAL
+  vector glyph outlines (from a built-in 5×7 font in `glyphdata.ts`) so text renders as
+  visible pixels in Ruffle. Several non-obvious encoding facts were discovered:
+  - **DefineFont3 (tag 75) uses a 20× EM scale** vs DefineFont2 (tag 48): glyph
+    coordinates AND layout metrics (ascent/descent/advance) live in a 20480-unit EM
+    square, not 1024. `encodeDefineFont2` takes a `coordScale` arg (1 for tag 48, 20 for
+    tag 75). Emitting 1024-scale coords into a tag-75 font renders text 20× too small
+    (invisible dots). See ruffle `core/src/font.rs` `from_swf_tag`: `scale = version>=3 ?
+    20480 : 1024`.
+  - **Ruffle wraps each glyph's shape-records in a Shape with a single fill at index 1**
+    (`render/src/shape_utils.rs` `swf_glyph_to_shape`). Each glyph contour must reference
+    a fill style (we set `fill_style_1 = 1` via a StyleChangeRecord); the actual text
+    colour comes from the DefineText/EditText record, not the glyph.
+  - **DefineText TEXTRECORD field order**: after the style-change flag byte the fields
+    are FontID, Color, **XOffset, YOffset, then TextHeight** — height comes AFTER the
+    offsets, not next to FontID. Flag low-nibble bits are font=0b1000, color=0b100,
+    yoff=0b10, xoff=0b1. Getting this wrong yields `glyphs=0` / garbage color.
+  - **DefineEditText flag bit positions** (per ruffle `EditTextFlag`): HasFont=0,
+    HasMaxLength=1, HasTextColor=2, ReadOnly=3, Multiline=5, WordWrap=6, HasText=7,
+    UseOutlines=8, WasStatic=10, NoSelect=12, HasLayout=13. The old encoder had these
+    scrambled, so dynamic/input text never rendered. Set UseOutlines (bit 8) so the
+    embedded glyph outlines are actually used.
+  - **Headless Ruffle's lyon tessellator drops wide-short fills**: a glyph made of many
+    thin (single-cell-tall) rectangles renders incompletely (vertical strokes survive,
+    horizontal bars drop) even though the SWF is spec-correct. Decompose glyphs into
+    maximal rectangles and grow thin strokes to ≥2 cells thick. The acceptance oracle is
+    `apps/desktop/e2e/text-rendering.spec.ts` (counts dark pixels over white).
 - **`isEmpty: true` frames are skipped by the compiler** (`compile.ts`:
   `if (!frame.isKeyframe || frame.isEmpty) continue;`). Display objects listed on a
   frame marked `isEmpty` are silently dropped from the SWF — fixture builders must set

@@ -7,6 +7,16 @@
 import { BitWriter } from "./bits.js";
 import type { TextDisplayObject } from "@flash/core";
 import { px, edgeNumBits, writeRect } from "./helpers.js";
+import { GLYPH_ADVANCE_EM, GLYPH_ADVANCE_SPACE_EM, FONT_EM } from "./fonts.js";
+
+/**
+ * Advance (in twips) for a glyph at the given text height (twips), derived from
+ * the embedded font's EM-unit advance widths so spacing matches the outlines.
+ */
+function glyphAdvanceTwips(code: number, textHeightTwips: number): number {
+  const em = code === 32 ? GLYPH_ADVANCE_SPACE_EM : GLYPH_ADVANCE_EM;
+  return Math.round((em / FONT_EM) * textHeightTwips);
+}
 
 // ---------------------------------------------------------------------------
 // Color helpers
@@ -59,19 +69,23 @@ export function encodeDefineText(
   y: number
 ): Uint8Array {
   const GLYPH_BITS = 8;
-  const ADVANCE_BITS = 8;
+  // Advances are in twips and can exceed an 8-bit signed range for larger text
+  // (e.g. 660/1024 * 480 ≈ 309 twips), so use 16 advance bits.
+  const ADVANCE_BITS = 16;
 
   const bw = new BitWriter();
 
   // CharacterId: UI16 LE
   bw.writeUI16LE(charId);
 
-  // TextBounds RECT (approximate based on text length and font size)
-  // fontSize is in twips; approximate width = text.length * fontSize * 0.6
-  const approxWidth = Math.round(text.length * fontSize * 0.6);
-  const approxHeight = Math.round(fontSize * 1.2);
-  // Bounds relative to origin; x/y offset applied in TextRecord
-  writeRect(bw, 0, approxWidth, 0, approxHeight);
+  // TextBounds RECT. The glyph baseline is at y = `y` (the TextRecord YOffset)
+  // and outlines extend upward from there, so bounds span from above the
+  // baseline down past it. fontSize is in twips.
+  const approxWidth =
+    x + Math.round(text.length * (GLYPH_ADVANCE_EM / FONT_EM) * fontSize);
+  const top = y - fontSize; // ascenders above baseline
+  const bottom = y + Math.round(fontSize * 0.3); // descenders below baseline
+  writeRect(bw, 0, approxWidth, top, bottom);
 
   // TextMatrix: identity matrix
   // MATRIX format:
@@ -95,44 +109,30 @@ export function encodeDefineText(
   // ---------------------------------------------------------------------------
   // TEXTRECORD (single record with all glyphs)
   // ---------------------------------------------------------------------------
-  // First byte of TEXTRECORD:
-  //   bit 7 (MSB): TextRecordType = 1 (style change record) — must be 1
-  //   bit 6: (reserved) = 0
-  //   bit 5: TextHasFont
-  //   bit 4: TextHasColor
-  //   bit 3: TextHasYOffset
-  //   bit 2: TextHasXOffset
-  //   bits 1-0: (reserved) = 0
+  // First byte is a GlyphStyleChange record. The style flags are (per SWF spec
+  // §16, matching Ruffle's read_text_record):
+  //   bit 7: TextRecordType = 1 (must be 1 for a style-change record)
+  //   bits 6-4: reserved = 0
+  //   bit 3 (0b1000): StyleFlagsHasFont
+  //   bit 2 (0b0100): StyleFlagsHasColor
+  //   bit 1 (0b0010): StyleFlagsHasYOffset
+  //   bit 0 (0b0001): StyleFlagsHasXOffset
   //
-  // Since we set HasFont=1, HasColor=1, HasXOffset=1, HasYOffset=1:
-  // byte = 1_0_1_1_1_1_0_0 = 0b10111100 = 0xBC
-  bw.writeUI8(0xbc);
+  // We set HasFont|HasColor|HasYOffset|HasXOffset → low nibble 0b1111, plus the
+  // record-type bit (0x80): 0x80 | 0x0F = 0x8F.
+  bw.writeUI8(0x8f);
 
-  // GlyphCount: UI8 (since TextHasFont is set, the next byte is the glyph count)
-  // Wait — per SWF spec: when TextHasFont=1, the GlyphCount is in the first byte
-  // bits [3:0] when TextRecordType=1. Re-reading the spec:
-  //
-  // TEXTRECORD1 (for DefineText):
-  //   UB[1]  TextRecordType  — must be 1
-  //   UB[3]  StyleFlagsReserved
-  //   UB[1]  StyleFlagsHasFont
-  //   UB[1]  StyleFlagsHasColor
-  //   UB[1]  StyleFlagsHasYOffset
-  //   UB[1]  StyleFlagsHasXOffset
-  //
-  // This is the first byte. Then:
-  //   If StyleFlagsHasFont: UI16 FontID, UI16 TextHeight
-  //   If StyleFlagsHasColor: RGB (3 bytes for DefineText, RGBA for DefineText2)
-  //   If StyleFlagsHasXOffset: SI16 XOffset
-  //   If StyleFlagsHasYOffset: SI16 YOffset
+  // The fields then follow in this exact order (this is what Ruffle reads):
+  //   HasFont    → UI16 FontID
+  //   HasColor   → RGB (DefineText) / RGBA (DefineText2)
+  //   HasXOffset → SI16 XOffset
+  //   HasYOffset → SI16 YOffset
+  //   HasFont    → UI16 TextHeight   (height is read AFTER the offsets!)
   //   UI8 GlyphCount
-  //   Then GlyphCount glyph entries: UB[GlyphBits] + SB[AdvanceBits]
+  //   then GlyphCount × (UB[GlyphBits] index, SB[AdvanceBits] advance)
 
   // FontID: UI16 LE
   bw.writeUI16LE(fontId);
-
-  // TextHeight: UI16 LE (font size in twips)
-  bw.writeUI16LE(fontSize);
 
   // TextColor: RGB (3 bytes for DefineText tag 11)
   const rgb = parseHexColor(color);
@@ -146,18 +146,22 @@ export function encodeDefineText(
   // YOffset: SI16 LE
   bw.writeSI16LE(y);
 
+  // TextHeight: UI16 LE (font size in twips) — comes after the offsets.
+  bw.writeUI16LE(fontSize);
+
   // GlyphCount: UI8
   bw.writeUI8(text.length);
 
-  // Glyph entries: UB[GlyphBits] GlyphIndex, SB[AdvanceBits] GlyphAdvance
-  const advance = Math.round(fontSize * 0.6);
-  // Clamp advance to fit in signed 8-bit (-128..127)
-  const advanceClamped = Math.min(127, Math.max(-128, advance));
-
+  // Glyph entries: UB[GlyphBits] GlyphIndex, SB[AdvanceBits] GlyphAdvance.
+  // Advance is per-glyph in twips, derived from the embedded font's EM metrics
+  // so the spacing matches the real glyph outlines.
+  const advMask = (1 << ADVANCE_BITS) - 1;
   for (let i = 0; i < text.length; i++) {
-    const glyphIndex = Math.max(0, text.charCodeAt(i) - 32) & 0xff;
+    const code = text.charCodeAt(i);
+    const glyphIndex = Math.max(0, code - 32) & 0xff;
+    const advance = glyphAdvanceTwips(code, fontSize);
     bw.writeBits(glyphIndex, GLYPH_BITS);
-    bw.writeBits(advanceClamped & 0xff, ADVANCE_BITS);
+    bw.writeBits(advance & advMask, ADVANCE_BITS);
   }
   bw.flushBits();
 
@@ -194,24 +198,24 @@ export function encodeDefineEditText(
   writeRect(bw, 0, x2, 0, y2);
 
   // ---------------------------------------------------------------------------
-  // Flags UI16
+  // Flags UI16 — bit positions per SWF spec / Ruffle's EditTextFlag.
   // ---------------------------------------------------------------------------
-  // bit 0: HasText       — initial text string follows VariableName
-  // bit 1: WordWrap
-  // bit 2: Multiline
-  // bit 3: Password
-  // bit 4: ReadOnly      — static and dynamic text are read-only at runtime
-  // bit 5: HasTextColor
-  // bit 6: HasMaxLength
-  // bit 7: HasFont
-  // bit 8: HasFontClass (0)
-  // bit 9: AutoSize
-  // bit 10: HasLayout
-  // bit 11: NoSelect     — static text only (not selectable)
-  // bit 12: Border (0)
-  // bit 13: StoreInDict (0)
-  // bit 14: WasStatic    — Flash 8+: set for static text fields
-  // bit 15: HTML (0)
+  // bit 0:  HasFont        — FontID + FontHeight follow
+  // bit 1:  HasMaxLength
+  // bit 2:  HasTextColor
+  // bit 3:  ReadOnly
+  // bit 4:  Password
+  // bit 5:  Multiline
+  // bit 6:  WordWrap
+  // bit 7:  HasText        — initial text string follows VariableName
+  // bit 8:  UseOutlines    — render with embedded font outlines (vs device font)
+  // bit 9:  HTML
+  // bit 10: WasStatic      — Flash 8+: set for static text fields
+  // bit 11: Border
+  // bit 12: NoSelect       — not selectable (static text)
+  // bit 13: HasLayout      — layout block follows the color
+  // bit 14: AutoSize
+  // bit 15: HasFontClass
 
   const isStatic = obj.textType === "static";
   const isDynamic = obj.textType === "dynamic";
@@ -226,19 +230,22 @@ export function encodeDefineEditText(
   const hasText = isStatic || isDynamic || obj.text.length > 0;
 
   let flags = 0;
-  if (hasText) flags |= 1 << 0;  // HasText
-  if (obj.wordWrap) flags |= 1 << 1;
-  if (obj.multiline) flags |= 1 << 2;
-  if (isReadOnly) flags |= 1 << 4;  // ReadOnly for static and dynamic text
-  flags |= 1 << 5;  // HasTextColor
-  if (hasEmbeddedFont) flags |= 1 << 7; // HasFont — reference embedded font character
-  flags |= 1 << 10; // HasLayout
-  if (isStatic) flags |= 1 << 11; // NoSelect for static text only
-  if (isStatic) flags |= 1 << 14; // WasStatic — Flash 8+ static text marker
+  if (hasEmbeddedFont) flags |= 1 << 0;  // HasFont — reference embedded font
+  flags |= 1 << 2;                       // HasTextColor
+  if (isReadOnly) flags |= 1 << 3;       // ReadOnly for static and dynamic text
+  if (obj.multiline) flags |= 1 << 5;    // Multiline
+  if (obj.wordWrap) flags |= 1 << 6;     // WordWrap
+  if (hasText) flags |= 1 << 7;          // HasText
+  // UseOutlines: render using the embedded font's glyph outlines rather than a
+  // device font. Required for the embedded glyphs to actually be used.
+  if (hasEmbeddedFont) flags |= 1 << 8;  // UseOutlines
+  if (isStatic) flags |= 1 << 10;        // WasStatic — Flash 8+ static marker
+  if (isStatic) flags |= 1 << 12;        // NoSelect for static text only
+  flags |= 1 << 13;                      // HasLayout
 
   bw.writeUI16LE(flags);
 
-  // FontID and FontHeight are only present when HasFont (bit 7) is set.
+  // FontID and FontHeight are only present when HasFont (bit 0) is set.
   if (hasEmbeddedFont) {
     bw.writeUI16LE(fontCharId!);                  // FontID: UI16
     bw.writeUI16LE(Math.round(obj.fontSize * 20)); // FontHeight in twips

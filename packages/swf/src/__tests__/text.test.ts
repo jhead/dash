@@ -141,14 +141,15 @@ function decodeDefineEditText(body: Uint8Array): DecodedEditText {
   const flags = body[byteOff] | (body[byteOff + 1] << 8);
   byteOff += 2;
 
-  const hasText = (flags & (1 << 0)) !== 0;
-  const readOnly = (flags & (1 << 4)) !== 0;
-  const hasTextColor = (flags & (1 << 5)) !== 0;
-  const hasFont = (flags & (1 << 7)) !== 0;
-  const hasMaxLength = (flags & (1 << 6)) !== 0;
-  const hasLayout = (flags & (1 << 10)) !== 0;
-  const noSelect = (flags & (1 << 11)) !== 0;
-  const wasStatic = (flags & (1 << 14)) !== 0;
+  // Bit positions per SWF spec / Ruffle EditTextFlag.
+  const hasFont = (flags & (1 << 0)) !== 0;
+  const hasMaxLength = (flags & (1 << 1)) !== 0;
+  const hasTextColor = (flags & (1 << 2)) !== 0;
+  const readOnly = (flags & (1 << 3)) !== 0;
+  const hasText = (flags & (1 << 7)) !== 0;
+  const wasStatic = (flags & (1 << 10)) !== 0;
+  const noSelect = (flags & (1 << 12)) !== 0;
+  const hasLayout = (flags & (1 << 13)) !== 0;
 
   // Skip optional fields to reach VariableName
   if (hasFont) {
