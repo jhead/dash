@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ClipAction, SymbolInstance } from "@flash/core";
+import { parse as parseAS2 } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // AS2 keyword list for lightweight syntax highlighting
@@ -72,6 +73,16 @@ interface ScriptEditorProps {
   onCursorChange?: (line: number, col: number) => void;
 }
 
+// ---------------------------------------------------------------------------
+// parseLineFromError — extract line number from AS2 parser error message
+// e.g. "Parse error at line 3: unexpected token..."
+// ---------------------------------------------------------------------------
+
+function parseLineFromError(msg: string): number | null {
+  const m = /Parse error at line (\d+)/.exec(msg);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 function ScriptEditor({
   script,
   onScriptChange,
@@ -80,6 +91,30 @@ function ScriptEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  // Debounced AS2 syntax check
+  const [syntaxError, setSyntaxError] = useState<{ message: string; line: number | null } | null>(null);
+  const [isValid, setIsValid] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (script.trim() === "") {
+      setSyntaxError(null);
+      setIsValid(null);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      try {
+        parseAS2(script);
+        setSyntaxError(null);
+        setIsValid(true);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setSyntaxError({ message: msg, line: parseLineFromError(msg) });
+        setIsValid(false);
+      }
+    }, 500);
+    return () => clearTimeout(timeout);
+  }, [script]);
 
   const handleScroll = useCallback(() => {
     const ta = textareaRef.current;
@@ -185,35 +220,85 @@ function ScriptEditor({
   };
 
   return (
-    <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
-      <div ref={lineNumRef} style={lineNumStyle}>
-        {Array.from({ length: lineCount }, (_, i) => (
-          <div key={i} style={{ lineHeight: "1.5" }}>
-            {i + 1}
-          </div>
-        ))}
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
+        <div ref={lineNumRef} style={lineNumStyle}>
+          {Array.from({ length: lineCount }, (_, i) => (
+            <div
+              key={i}
+              style={{
+                lineHeight: "1.5",
+                background: syntaxError?.line === i + 1 ? "rgba(255,80,80,0.18)" : undefined,
+                color: syntaxError?.line === i + 1 ? "#f97171" : undefined,
+              }}
+            >
+              {i + 1}
+            </div>
+          ))}
+        </div>
+        <div ref={overlayRef} style={overlayStyle}>
+          {lines.map((line, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && "\n"}
+              {highlightLine(line, i)}
+            </React.Fragment>
+          ))}
+        </div>
+        <textarea
+          ref={textareaRef}
+          style={textareaStyle}
+          value={script}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onScroll={handleScroll}
+          onClick={updateCursor}
+          onKeyUp={updateCursor}
+        />
       </div>
-      <div ref={overlayRef} style={overlayStyle}>
-        {lines.map((line, i) => (
-          <React.Fragment key={i}>
-            {i > 0 && "\n"}
-            {highlightLine(line, i)}
-          </React.Fragment>
-        ))}
-      </div>
-      <textarea
-        ref={textareaRef}
-        style={textareaStyle}
-        value={script}
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        onScroll={handleScroll}
-        onClick={updateCursor}
-        onKeyUp={updateCursor}
-      />
+      {/* Error / valid indicator bar */}
+      {syntaxError && (
+        <div
+          data-testid="as2-error-bar"
+          style={{
+            flexShrink: 0,
+            background: "#3a1010",
+            borderTop: "1px solid #7a2222",
+            padding: "3px 8px",
+            fontSize: "12px",
+            color: "#f97171",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            userSelect: "text",
+          }}
+        >
+          <span style={{ fontWeight: "bold", flexShrink: 0 }}>
+            {syntaxError.line != null ? `Line ${syntaxError.line}:` : "Syntax error:"}
+          </span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {syntaxError.message.replace(/^Parse error at line \d+:\s*/, "")}
+          </span>
+        </div>
+      )}
+      {isValid === true && script.trim() !== "" && (
+        <div
+          data-testid="as2-valid-bar"
+          style={{
+            flexShrink: 0,
+            background: "#0d2a1a",
+            borderTop: "1px solid #1e6840",
+            padding: "3px 8px",
+            fontSize: "12px",
+            color: "#4ec9b0",
+            userSelect: "none",
+          }}
+        >
+          No errors found
+        </div>
+      )}
     </div>
   );
 }
