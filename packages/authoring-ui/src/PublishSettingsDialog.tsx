@@ -12,6 +12,11 @@ export interface PublishSettings {
   jpegQuality: number;
   audioStreamFormat: "mp3" | "adpcm";
   audioEventFormat: "mp3" | "adpcm";
+  /** SWF output options */
+  compress: boolean;
+  protect: boolean;
+  debuggingPermitted: boolean;
+  debugPassword: string;
 }
 
 export interface PublishSettingsDialogProps {
@@ -26,6 +31,18 @@ export interface PublishSettingsDialogProps {
   settings?: PublishSettings;
   onSave?: (settings: PublishSettings) => void;
 }
+
+// ---------------------------------------------------------------------------
+// Style helpers
+// ---------------------------------------------------------------------------
+
+/** Checkbox row with a label on the right side (after the checkbox). */
+const checkboxRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  marginBottom: "6px",
+  gap: "6px",
+};
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -157,6 +174,8 @@ export function PublishSettingsDialog({
   onClose,
   pushDoc,
   open,
+  settings,
+  onSave,
 }: PublishSettingsDialogProps): React.ReactElement | null {
   // When used in legacy mode (open prop), respect the open flag
   const isOpen = open !== undefined ? open : true;
@@ -168,6 +187,13 @@ export function PublishSettingsDialog({
   const [backgroundColor, setBackgroundColor] = useState(props.backgroundColor);
   const [frameRate, setFrameRate] = useState(props.frameRate);
 
+  // SWF output options — seeded from the settings prop when available
+  const [compress, setCompress] = useState(settings?.compress ?? false);
+  const [protect, setProtect] = useState(settings?.protect ?? false);
+  const [debuggingPermitted, setDebuggingPermitted] = useState(settings?.debuggingPermitted ?? false);
+  const [debugPassword, setDebugPassword] = useState(settings?.debugPassword ?? "");
+  const [jpegQuality, setJpegQuality] = useState(settings?.jpegQuality ?? 80);
+
   // Sync local state when dialog re-opens
   useEffect(() => {
     if (isOpen) {
@@ -175,7 +201,13 @@ export function PublishSettingsDialog({
       setHeight(doc.properties.height);
       setBackgroundColor(doc.properties.backgroundColor);
       setFrameRate(doc.properties.frameRate);
+      setCompress(settings?.compress ?? false);
+      setProtect(settings?.protect ?? false);
+      setDebuggingPermitted(settings?.debuggingPermitted ?? false);
+      setDebugPassword(settings?.debugPassword ?? "");
+      setJpegQuality(settings?.jpegQuality ?? 80);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, doc.properties]);
 
   const handleOk = useCallback(() => {
@@ -186,8 +218,21 @@ export function PublishSettingsDialog({
       frameRate: Math.max(0.01, Number(frameRate) || props.frameRate),
     });
     pushDoc(updatedDoc);
+    // Persist SWF output options back to Shell via onSave
+    if (onSave) {
+      onSave({
+        filename: settings?.filename ?? "movie.swf",
+        audioStreamFormat: settings?.audioStreamFormat ?? "mp3",
+        audioEventFormat: settings?.audioEventFormat ?? "mp3",
+        jpegQuality,
+        compress,
+        protect,
+        debuggingPermitted,
+        debugPassword,
+      });
+    }
     onClose();
-  }, [doc, width, height, backgroundColor, frameRate, props, pushDoc, onClose]);
+  }, [doc, width, height, backgroundColor, frameRate, props, pushDoc, onClose, onSave, settings, compress, protect, debuggingPermitted, debugPassword, jpegQuality]);
 
   // Keyboard: Enter = OK, Escape = Cancel
   useEffect(() => {
@@ -295,6 +340,81 @@ export function PublishSettingsDialog({
               style={styles.input}
             />
           </div>
+
+          <div style={styles.divider} />
+
+          {/* SWF Output Options */}
+          <div style={styles.sectionTitle}>Flash (.swf) Output</div>
+
+          <div style={styles.row}>
+            <span style={styles.label}>JPEG quality:</span>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="range"
+                min={1}
+                max={100}
+                value={jpegQuality}
+                onChange={(e) => setJpegQuality(Number(e.target.value))}
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: "11px", color: "#ccc", minWidth: "28px", textAlign: "right" }}>
+                {jpegQuality}
+              </span>
+            </div>
+          </div>
+
+          <div style={checkboxRowStyle}>
+            <input
+              id="ps-compress"
+              type="checkbox"
+              checked={compress}
+              onChange={(e) => setCompress(e.target.checked)}
+              style={{ cursor: "pointer" }}
+            />
+            <label htmlFor="ps-compress" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+              Compress movie
+            </label>
+          </div>
+
+          <div style={checkboxRowStyle}>
+            <input
+              id="ps-protect"
+              type="checkbox"
+              checked={protect}
+              onChange={(e) => setProtect(e.target.checked)}
+              style={{ cursor: "pointer" }}
+            />
+            <label htmlFor="ps-protect" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+              Protect from import
+            </label>
+          </div>
+
+          <div style={checkboxRowStyle}>
+            <input
+              id="ps-debugging"
+              type="checkbox"
+              checked={debuggingPermitted}
+              onChange={(e) => setDebuggingPermitted(e.target.checked)}
+              style={{ cursor: "pointer" }}
+            />
+            <label htmlFor="ps-debugging" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+              Debugging permitted
+            </label>
+          </div>
+
+          {debuggingPermitted && (
+            <div style={styles.row}>
+              <span style={styles.label}>Password:</span>
+              <input
+                type="password"
+                value={debugPassword}
+                onChange={(e) => setDebugPassword(e.target.value)}
+                style={styles.input}
+                placeholder="(optional)"
+                autoComplete="off"
+              />
+            </div>
+          )}
 
           {/* Buttons */}
           <div style={styles.btnRow}>

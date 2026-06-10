@@ -53,6 +53,7 @@ import type {
   SolidStroke,
   SoundItem,
   SoundLinkage,
+  Symbol,
   SymbolInstance,
   SymbolType,
   TextAlign,
@@ -107,6 +108,7 @@ interface EditContext {
   mode: "document" | "symbol";
   symbolId?: string;
   symbolName?: string;
+  symbolType?: SymbolType;
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +624,10 @@ export function Shell(): React.ReactElement {
     jpegQuality: 80,
     audioStreamFormat: "mp3",
     audioEventFormat: "mp3",
+    compress: false,
+    protect: false,
+    debuggingPermitted: false,
+    debugPassword: "",
   });
 
   // ---------------------------------------------------------------------------
@@ -1658,7 +1664,8 @@ export function Shell(): React.ReactElement {
   const handleEditInPlace = useCallback((itemId: string, instanceId?: string) => {
     const item = library.items.find((i) => i.id === itemId);
     if (!item) return;
-    setEditContext({ mode: "symbol", symbolId: itemId, symbolName: item.name });
+    const symType = item.itemType === "symbol" ? (item as Symbol).symbolType : undefined;
+    setEditContext({ mode: "symbol", symbolId: itemId, symbolName: item.name, symbolType: symType });
     setEditPath((prev) => [...prev, { symbolId: itemId, instanceId: instanceId ?? itemId }]);
     setCurrentFrame(0);
     setActiveLayerIndex(0);
@@ -2897,7 +2904,14 @@ export function Shell(): React.ReactElement {
   // Publish handlers
   // ---------------------------------------------------------------------------
 
-  const { publishToBytes, testMovie } = usePublish(doc);
+  const { publishToBytes, testMovie } = usePublish(doc, {
+    compress: publishSettings.compress,
+    protect: publishSettings.protect,
+    debugPassword: publishSettings.debuggingPermitted && publishSettings.debugPassword
+      ? publishSettings.debugPassword
+      : undefined,
+    bitmapPixels: undefined,
+  });
 
   const handlePublish = useCallback(() => {
     const bytes = publishToBytes();
@@ -3471,6 +3485,7 @@ export function Shell(): React.ReactElement {
                   onPasteFrames={handlePasteFrames}
                   hasFrameClipboard={hasFrameClipboard}
                   onRemoveFrames={handleRemoveFrames}
+                  symbolType={editContext.symbolType}
                 />
               </div>
             )}

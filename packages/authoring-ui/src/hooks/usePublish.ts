@@ -2,6 +2,9 @@ import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { compileDocument } from "@flash/swf";
 import type { FlashDocument } from "@flash/core";
+import type { CompileOptions } from "@flash/swf";
+
+export type { CompileOptions };
 
 const SWF_FILTERS = [{ name: "Dash Movie", extensions: ["swf"] }];
 
@@ -12,10 +15,10 @@ const SWF_FILTERS = [{ name: "Dash Movie", extensions: ["swf"] }];
  * publishToFile()   — open a native save dialog then write .swf to disk
  * testMovie()       — compile for in-app Ruffle preview (returns bytes)
  */
-export function usePublish(doc: FlashDocument) {
+export function usePublish(doc: FlashDocument, compileOptions?: CompileOptions) {
   /** Compile the document to raw SWF bytes. */
   function publishToBytes(): Uint8Array {
-    return compileDocument(doc);
+    return compileDocument(doc, compileOptions);
   }
 
   /**
