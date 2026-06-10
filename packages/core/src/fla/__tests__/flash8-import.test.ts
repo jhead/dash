@@ -1407,3 +1407,58 @@ describe("text element colorEffect forwarding (convertFla8Text)", () => {
     expect(result.colorEffect).toEqual({ type: "alpha", alpha: 50 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Magnet.fla — CS2-era FLA with multiple scenes (regression 0886 / 0889)
+// ---------------------------------------------------------------------------
+// Regression test: verifies that layer names in Magnet.fla are decoded as
+// human-readable strings and not as raw binary bytes.  Before the CS2
+// class-reference-index fix (task 0889) several layers came out as garbled
+// binary (e.g. "\x01\x00\x00\x06…ÿÿÿ?ÿÿ") because the MFC CArchive
+// class-tag table was mis-indexed, causing the stream reader to desync.
+
+describe("Magnet.fla — CS2 FLA layer names are readable strings (regression 0886)", () => {
+  let doc: FlashDocument;
+
+  beforeAll(() => {
+    const loaded = tryLoadRealFla(fixture("Magnet.fla"));
+    expect(loaded).not.toBeNull();
+    doc = loaded!;
+  });
+
+  it("imports 6 scenes", () => {
+    expect(doc.scenes.length).toBe(6);
+  });
+
+  it("all layer names are printable ASCII strings (no raw binary garbage)", () => {
+    for (const scene of doc.scenes) {
+      for (const layer of scene.timeline.layers) {
+        // A garbled name contains control bytes below 0x20 or high non-ASCII
+        // code-points that Flash never emits in layer names.
+        const hasControlBytes = [...layer.name].some(
+          (c) => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) > 0x7e,
+        );
+        expect(hasControlBytes).toBe(false);
+      }
+    }
+  });
+
+  it("scene 0 (AA) has the expected layer names", () => {
+    const names = doc.scenes[0]!.timeline.layers.map((l) => l.name);
+    expect(names).toEqual(["Layer 7", "Layer 3", "Layer 5", "Magnets", "Walls", "Ball"]);
+  });
+
+  it("scene 2 (Scene 5) has readable layer names", () => {
+    const names = doc.scenes[2]!.timeline.layers.map((l) => l.name);
+    expect(names).toEqual(["Layer 3", "Ball", "Layer 5", "Layer 5"]);
+  });
+
+  it("scenes 3–5 (BA, AB, BB) have readable layer names", () => {
+    for (const scene of doc.scenes.slice(3)) {
+      for (const layer of scene.timeline.layers) {
+        expect(typeof layer.name).toBe("string");
+        expect(layer.name.length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
