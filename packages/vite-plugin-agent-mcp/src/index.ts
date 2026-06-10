@@ -384,6 +384,18 @@ function createMcpServerForRequest(): McpServer {
     async (params) => callTool("scene_select", params as Record<string, unknown>)
   );
 
+  server.registerTool(
+    "scene_duplicate",
+    {
+      title: "Duplicate Scene",
+      description:
+        "Duplicate the current scene. The copy is inserted immediately after the source scene " +
+        "and becomes the active scene. Returns sceneIndex, sceneName, and rev.",
+      inputSchema: undefined,
+    },
+    async () => callTool("scene_duplicate")
+  );
+
   // =========================================================================
   // Stage & selection
   // =========================================================================

@@ -42,6 +42,7 @@ import type {
   PublishSwfResult,
   FileSaveFlaResult,
   SceneAddResult,
+  SceneDuplicateResult,
 } from "@flash/agent-protocol";
 import type { FlashDocument, LayerType, SymbolType } from "@flash/core";
 import {
@@ -85,6 +86,7 @@ import {
   addScene,
   removeScene,
   renameScene,
+  duplicateScene,
 } from "@flash/core";
 import type {
   DisplayObject,
@@ -1763,6 +1765,22 @@ const handlers: Record<string, AnyHandler> = {
     }
     cb.setActiveSceneIndex(params.index);
     return { ok: true, rev: _rev };
+  },
+
+  scene_duplicate(_params: Record<string, unknown>): SceneDuplicateResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    const currentIndex = cb.getActiveSceneIndex();
+    const scene = doc.scenes[currentIndex];
+    if (!scene) {
+      throw new Error(`scene_duplicate: no scene at index ${currentIndex}`);
+    }
+    const newDoc = duplicateScene(doc, scene.id);
+    cb.pushDoc(newDoc);
+    // The duplicate is inserted immediately after the source scene
+    const newIndex = currentIndex + 1;
+    cb.setActiveSceneIndex(newIndex);
+    return { sceneIndex: newIndex, sceneName: newDoc.scenes[newIndex]!.name, rev: _rev };
   },
 };
 

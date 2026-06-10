@@ -559,6 +559,16 @@ export const SceneRenameParamsSchema = z.object({
 });
 export type SceneRenameParams = z.infer<typeof SceneRenameParamsSchema>;
 
+export const SceneDuplicateParamsSchema = z.object({}).strict();
+export type SceneDuplicateParams = z.infer<typeof SceneDuplicateParamsSchema>;
+
+export const SceneDuplicateResultSchema = z.object({
+  sceneIndex: z.number().int().nonnegative(),
+  sceneName: z.string(),
+  rev: RevSchema,
+});
+export type SceneDuplicateResult = z.infer<typeof SceneDuplicateResultSchema>;
+
 export const SceneSelectParamsSchema = z.object({
   index: z.number().int().nonnegative(),
 });
@@ -678,6 +688,7 @@ export const ALL_COMMANDS = [
   "scene_remove",
   "scene_rename",
   "scene_select",
+  "scene_duplicate",
 ] as const;
 
 export type AgentCommand = (typeof ALL_COMMANDS)[number];
