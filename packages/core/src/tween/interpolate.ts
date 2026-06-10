@@ -866,6 +866,157 @@ function applyHintsToPath(
   return [reorderedStart, reorderedEnd];
 }
 
+// ---------------------------------------------------------------------------
+// Angular blend mode helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the centroid of a ShapePath (average of all vertices: start + segment endpoints).
+ */
+function pathCentroid(path: ShapePath): Point {
+  const pts: Point[] = [{ ...path.start }];
+  for (const seg of path.segments) {
+    pts.push({ ...seg.to });
+  }
+  let sx = 0;
+  let sy = 0;
+  for (const p of pts) {
+    sx += p.x;
+    sy += p.y;
+  }
+  return { x: sx / pts.length, y: sy / pts.length };
+}
+
+/**
+ * Rotate a point around the origin by `angleRad` radians.
+ */
+function rotatePoint(p: Point, angleRad: number): Point {
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  return {
+    x: p.x * cos - p.y * sin,
+    y: p.x * sin + p.y * cos,
+  };
+}
+
+/**
+ * Interpolate a ShapePath using angular morphing.
+ *
+ * Angular mode adds a rotational component on top of the linear vertex lerp:
+ *   vertex_t = centroid_t + rotate(v_start - c_start, angle * t) * (1 - t)
+ *                         + (v_end - c_end) * t
+ *
+ * The rotation `angle` is the angular difference between each shape's
+ * characteristic orientation vector (centroid → first vertex), ensuring a
+ * smooth rotational arc rather than a straight-line translation.
+ *
+ * At t=0 this reduces to the start shape; at t=1 it reduces to the end shape.
+ */
+function lerpShapePathAngular(a: ShapePath, b: ShapePath, t: number): ShapePath {
+  const ca = pathCentroid(a);
+  const cb = pathCentroid(b);
+
+  // Lerp centroid linearly
+  const ct: Point = { x: lerp(ca.x, cb.x, t), y: lerp(ca.y, cb.y, t) };
+
+  // Compute characteristic orientation angle for each shape:
+  // use the vector from centroid to the start vertex.
+  const angleA = Math.atan2(a.start.y - ca.y, a.start.x - ca.x);
+  const angleB = Math.atan2(b.start.y - cb.y, b.start.x - cb.x);
+
+  // Shortest-path angular delta (wrap to [-π, π])
+  let angleDelta = angleB - angleA;
+  if (angleDelta > Math.PI) angleDelta -= 2 * Math.PI;
+  if (angleDelta < -Math.PI) angleDelta += 2 * Math.PI;
+
+  /**
+   * Angular-blend position for a single vertex pair:
+   *   vertex_t = ct + rotate(v_a - c_a, angleDelta * t) * (1 - t)
+   *                 + (v_b - c_b) * t
+   */
+  function angularLerpPoint(va: Point, vb: Point): Point {
+    const relA: Point = { x: va.x - ca.x, y: va.y - ca.y };
+    const relB: Point = { x: vb.x - cb.x, y: vb.y - cb.y };
+    const rotated = rotatePoint(relA, angleDelta * t);
+    return {
+      x: ct.x + rotated.x * (1 - t) + relB.x * t,
+      y: ct.y + rotated.y * (1 - t) + relB.y * t,
+    };
+  }
+
+  const newStart = angularLerpPoint(a.start, b.start);
+
+  const len = Math.min(a.segments.length, b.segments.length);
+  const segments: PathSegment[] = [];
+
+  for (let i = 0; i < len; i++) {
+    const sa = a.segments[i]!;
+    const sb = b.segments[i]!;
+    // For angular morphing we work with endpoints; for curves we lerp the
+    // control point linearly (angular rotation applies to endpoints only).
+    if (sa.type === "line" && sb.type === "line") {
+      segments.push({ type: "line", to: angularLerpPoint(sa.to, sb.to) });
+    } else if (sa.type === "curve" && sb.type === "curve") {
+      segments.push({
+        type: "curve",
+        control: lerpPoint(sa.control, sb.control, t),
+        to: angularLerpPoint(sa.to, sb.to),
+      });
+    } else if (sa.type === "line" && sb.type === "curve") {
+      const prevA: Point = i === 0 ? a.start : a.segments[i - 1]!.to;
+      const degControl: Point = {
+        x: lerp((sa.to.x + prevA.x) / 2, sb.control.x, t),
+        y: lerp((sa.to.y + prevA.y) / 2, sb.control.y, t),
+      };
+      segments.push({ type: "curve", control: degControl, to: angularLerpPoint(sa.to, sb.to) });
+    } else if (sa.type === "curve" && sb.type === "line") {
+      const prevB: Point = i === 0 ? b.start : b.segments[i - 1]!.to;
+      const degControl: Point = {
+        x: lerp(sa.control.x, (sb.to.x + prevB.x) / 2, t),
+        y: lerp(sa.control.y, (sb.to.y + prevB.y) / 2, t),
+      };
+      segments.push({ type: "curve", control: degControl, to: angularLerpPoint(sa.to, sb.to) });
+    } else {
+      segments.push(sa);
+    }
+  }
+
+  // Extra segments from the longer array — keep from start
+  for (let i = len; i < a.segments.length; i++) {
+    segments.push(a.segments[i]!);
+  }
+
+  return {
+    start: newStart,
+    segments,
+    fill:
+      a.fill !== undefined && b.fill !== undefined
+        ? lerpFill(a.fill, b.fill, t)
+        : a.fill,
+    stroke:
+      a.stroke !== undefined && b.stroke !== undefined
+        ? lerpStroke(a.stroke, b.stroke, t)
+        : a.stroke,
+    closed: a.closed,
+  };
+}
+
+/**
+ * Interpolate a Shape using angular blend mode.
+ * Paths are matched by index; unmatched paths are kept from the start shape.
+ */
+function lerpShapeAngular(a: Shape, b: Shape, t: number): Shape {
+  const len = Math.min(a.paths.length, b.paths.length);
+  const paths: ShapePath[] = [];
+  for (let i = 0; i < len; i++) {
+    paths.push(lerpShapePathAngular(a.paths[i]!, b.paths[i]!, t));
+  }
+  for (let i = len; i < a.paths.length; i++) {
+    paths.push(a.paths[i]!);
+  }
+  return { ...a, paths };
+}
+
 /**
  * Interpolate shape display objects for a shape tween.
  *
@@ -889,8 +1040,6 @@ export function interpolateShapeTween(
   startHints?: readonly ShapeHint[] | null,
   endHints?: readonly ShapeHint[] | null
 ): DisplayObject[] {
-  // Suppress unused-variable lint for blend (angular morphing not yet implemented)
-  void blend;
 
   const easedT = applyEase(Math.max(0, Math.min(1, t)), ease, easeCurve);
 
@@ -960,7 +1109,10 @@ export function interpolateShapeTween(
     const interpolated: ShapeDisplayObject = {
       type: "shape",
       id: s.id,
-      shape: lerpShape(startShape, endShape, easedT),
+      shape:
+        blend === "angular"
+          ? lerpShapeAngular(startShape, endShape, easedT)
+          : lerpShape(startShape, endShape, easedT),
       x: lerp(s.x, e.x, easedT),
       y: lerp(s.y, e.y, easedT),
       scaleX: lerp(s.scaleX ?? 1, e.scaleX ?? 1, easedT),
