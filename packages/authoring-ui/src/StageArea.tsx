@@ -392,11 +392,17 @@ export interface StageAreaProps {
   shapeDisplayObjects?: ShapeDisplayObject[];
   onShapeCreated?: (shape: Shape, x: number, y: number) => void;
   selectedShapeId?: string | null;
-  onShapeSelect?: (id: string | null) => void;
+  /** Full set of selected display object IDs (for multi-selection). */
+  selectedShapeIds?: string[];
+  onShapeSelect?: (id: string | null, shiftKey?: boolean) => void;
+  /** Called when a marquee or shift+click produces a multi-selection result. */
+  onShapeSelectMultiple?: (ids: string[], replace: boolean) => void;
   onShapeMove?: (id: string, dx: number, dy: number) => void;
   /** Called once when a shape drag gesture finishes (mouse-up). Use to commit to undo history. */
   onShapeMoveEnd?: () => void;
   onShapeDelete?: (id: string) => void;
+  /** Called to delete all currently selected objects. */
+  onDeleteSelected?: () => void;
   onShapeResize?: (id: string, newX: number, newY: number, scaleX: number, scaleY: number) => void;
   onShapeRotate?: (id: string, newRotation: number) => void;
   /** Called by pen tool when a new path is complete (uses onShapeCreated); by subselection when geometry changes */
@@ -800,10 +806,13 @@ export function StageArea({
   shapeDisplayObjects = [],
   onShapeCreated,
   selectedShapeId,
+  selectedShapeIds = [],
   onShapeSelect,
+  onShapeSelectMultiple,
   onShapeMove,
   onShapeMoveEnd,
   onShapeDelete,
+  onDeleteSelected,
   onShapeResize,
   onShapeRotate,
   onShapeUpdate,
@@ -1749,14 +1758,22 @@ export function StageArea({
         });
         if (hit) {
           e.preventDefault();
-          onShapeSelect?.(hit.id);
-          selectionDragRef.current = {
-            shapeId: hit.id,
-            startMouseX: e.clientX,
-            startMouseY: e.clientY,
-            startX: hit.x,
-            startY: hit.y,
-          };
+          const hitAlreadySelected = selectedShapeIds.includes(hit.id);
+          // If clicking an already-selected object in multi-select mode (no shift), start drag
+          // without changing the selection. Otherwise, update selection normally.
+          if (!hitAlreadySelected || e.shiftKey) {
+            onShapeSelect?.(hit.id, e.shiftKey);
+          }
+          // Start a drag if not shift-toggling
+          if (!e.shiftKey) {
+            selectionDragRef.current = {
+              shapeId: hit.id,
+              startMouseX: e.clientX,
+              startMouseY: e.clientY,
+              startX: hit.x,
+              startY: hit.y,
+            };
+          }
           return;
         }
 
@@ -1772,14 +1789,19 @@ export function StageArea({
         });
         if (hitInst) {
           e.preventDefault();
-          onShapeSelect?.(hitInst.id);
-          selectionDragRef.current = {
-            shapeId: hitInst.id,
-            startMouseX: e.clientX,
-            startMouseY: e.clientY,
-            startX: hitInst.x,
-            startY: hitInst.y,
-          };
+          const hitInstAlreadySelected = selectedShapeIds.includes(hitInst.id);
+          if (!hitInstAlreadySelected || e.shiftKey) {
+            onShapeSelect?.(hitInst.id, e.shiftKey);
+          }
+          if (!e.shiftKey) {
+            selectionDragRef.current = {
+              shapeId: hitInst.id,
+              startMouseX: e.clientX,
+              startMouseY: e.clientY,
+              startX: hitInst.x,
+              startY: hitInst.y,
+            };
+          }
           return;
         }
 
@@ -1794,14 +1816,19 @@ export function StageArea({
         });
         if (hitText) {
           e.preventDefault();
-          onShapeSelect?.(hitText.id);
-          selectionDragRef.current = {
-            shapeId: hitText.id,
-            startMouseX: e.clientX,
-            startMouseY: e.clientY,
-            startX: hitText.x,
-            startY: hitText.y,
-          };
+          const hitTextAlreadySelected = selectedShapeIds.includes(hitText.id);
+          if (!hitTextAlreadySelected || e.shiftKey) {
+            onShapeSelect?.(hitText.id, e.shiftKey);
+          }
+          if (!e.shiftKey) {
+            selectionDragRef.current = {
+              shapeId: hitText.id,
+              startMouseX: e.clientX,
+              startMouseY: e.clientY,
+              startX: hitText.x,
+              startY: hitText.y,
+            };
+          }
           return;
         }
 
@@ -1817,7 +1844,7 @@ export function StageArea({
         setSelIsMarqueeSelecting(true);
       }
     },
-    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick]
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick]
   );
 
   const onMouseMove = useCallback(
@@ -2225,7 +2252,8 @@ export function StageArea({
   );
 
   const onMouseUp = useCallback(
-    (_e: React.MouseEvent<HTMLDivElement>) => {
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const _e = e;
       isPanningRef.current = false;
       panStartRef.current = null;
       const wasShapeDrag = selectionDragRef.current !== null;
@@ -2243,11 +2271,30 @@ export function StageArea({
         const rect = normalizeRect(selMarqueeStart, selMarqueeEnd);
         // Only select if the marquee has non-trivial size (more than 2px in each direction)
         if (rect.width > 2 || rect.height > 2) {
-          const hit = [...shapeDisplayObjects].find((obj) =>
+          // Collect ALL objects whose bounds overlap the marquee rect
+          const hits = [...shapeDisplayObjects].filter((obj) =>
             boundsOverlap(transformedShapeBounds(obj), rect)
           );
-          if (hit) {
-            onShapeSelect?.(hit.id);
+          // Also include symbol instances and text objects in marquee
+          const hitInsts = [...symbolInstanceDisplayObjects].filter((inst) => {
+            const bounds = getSymbolInstanceBounds(inst, library);
+            return boundsOverlap(bounds, rect);
+          });
+          const hitTexts = [...textDisplayObjects].filter((obj) =>
+            boundsOverlap({ x: obj.x, y: obj.y, width: obj.width, height: obj.height }, rect)
+          );
+          const allHitIds = [
+            ...hits.map((o) => o.id),
+            ...hitInsts.map((o) => o.id),
+            ...hitTexts.map((o) => o.id),
+          ];
+          if (allHitIds.length > 0) {
+            if (onShapeSelectMultiple) {
+              // Shift held: union with existing selection; otherwise replace
+              onShapeSelectMultiple(allHitIds, !_e.shiftKey);
+            } else {
+              onShapeSelect?.(allHitIds[0]);
+            }
           }
         }
         setSelIsMarqueeSelecting(false);
@@ -2262,11 +2309,15 @@ export function StageArea({
       // Finalize Free Transform marquee selection
       if (ftIsMarqueeSelecting && ftMarqueeStart && ftMarqueeEnd) {
         const rect = normalizeRect(ftMarqueeStart, ftMarqueeEnd);
-        const hit = [...shapeDisplayObjects].find((obj) =>
+        const hits = [...shapeDisplayObjects].filter((obj) =>
           boundsOverlap(transformedShapeBounds(obj), rect)
         );
-        if (hit) {
-          onShapeSelect?.(hit.id);
+        if (hits.length > 0) {
+          if (onShapeSelectMultiple) {
+            onShapeSelectMultiple(hits.map((o) => o.id), !_e.shiftKey);
+          } else {
+            onShapeSelect?.(hits[0].id);
+          }
         } else {
           onShapeSelect?.(null);
         }
@@ -2395,7 +2446,7 @@ export function StageArea({
       drawStartRef.current = null;
       setDrawPreview(null);
     },
-    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd]
+    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library]
   );
 
   // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place
@@ -2450,16 +2501,20 @@ export function StageArea({
   // Delete key → delete selected shape
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedShapeId) {
+      if ((e.key === "Delete" || e.key === "Backspace") && (selectedShapeIds.length > 0 || selectedShapeId)) {
         const target = e.target as HTMLElement;
         if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
-          onShapeDelete?.(selectedShapeId);
+          if (selectedShapeIds.length > 1) {
+            onDeleteSelected?.();
+          } else if (selectedShapeId) {
+            onShapeDelete?.(selectedShapeId);
+          }
         }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedShapeId, onShapeDelete]);
+  }, [selectedShapeId, selectedShapeIds, onShapeDelete, onDeleteSelected]);
 
   // Clipboard shortcuts: Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+Shift+V, Ctrl+D
   useEffect(() => {
@@ -2672,81 +2727,87 @@ export function StageArea({
     }
 
     // Draw selection + transform overlay on top of rendered shapes
-    if (selectedShapeId) {
-      const obj = shapeDisplayObjects.find((o) => o.id === selectedShapeId);
-      if (obj) {
-        const bounds = transformedShapeBounds(obj);
-        if (bounds.width > 0 || bounds.height > 0) {
-          const ctx = renderCanvasRef.current.getContext("2d")!;
-          ctx.save();
+    // Build the effective selection set: use selectedShapeIds when available, fallback to selectedShapeId
+    const effectiveSelectedIds = selectedShapeIds.length > 0
+      ? selectedShapeIds
+      : (selectedShapeId ? [selectedShapeId] : []);
+    const isSingleSelect = effectiveSelectedIds.length === 1;
 
-          // Dashed bounding box
-          ctx.strokeStyle = "#0099ff";
-          ctx.lineWidth = 1;
-          ctx.setLineDash([4, 2]);
-          ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
-          ctx.setLineDash([]);
+    if (effectiveSelectedIds.length > 0 && renderCanvasRef.current) {
+      const ctx = renderCanvasRef.current.getContext("2d")!;
+      ctx.save();
 
-          // 8 resize handles (white squares with blue border)
-          const handles = getHandlePositions(bounds);
-          for (const h of handles) {
-            ctx.fillStyle = "white";
+      for (const selId of effectiveSelectedIds) {
+        const obj = shapeDisplayObjects.find((o) => o.id === selId);
+        if (obj) {
+          const bounds = transformedShapeBounds(obj);
+          if (bounds.width > 0 || bounds.height > 0) {
+            // Dashed bounding box
             ctx.strokeStyle = "#0099ff";
             ctx.lineWidth = 1;
-            ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
-            ctx.strokeRect(h.x - 4, h.y - 4, 8, 8);
+            ctx.setLineDash([4, 2]);
+            ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+            ctx.setLineDash([]);
+
+            if (isSingleSelect) {
+              // 8 resize handles (white squares with blue border)
+              const handles = getHandlePositions(bounds);
+              for (const h of handles) {
+                ctx.fillStyle = "white";
+                ctx.strokeStyle = "#0099ff";
+                ctx.lineWidth = 1;
+                ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
+                ctx.strokeRect(h.x - 4, h.y - 4, 8, 8);
+              }
+
+              // Rotation handle (circle above top-center)
+              const rotHandleX = bounds.x + bounds.width / 2;
+              const rotHandleY = bounds.y - 20;
+              ctx.beginPath();
+              ctx.moveTo(rotHandleX, bounds.y);
+              ctx.lineTo(rotHandleX, rotHandleY);
+              ctx.strokeStyle = "#0099ff";
+              ctx.lineWidth = 1;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.arc(rotHandleX, rotHandleY, 5, 0, Math.PI * 2);
+              ctx.fillStyle = "white";
+              ctx.fill();
+              ctx.strokeStyle = "#0099ff";
+              ctx.stroke();
+            }
           }
+        } else {
+          // Check if the selected object is a text or bitmap display object
+          const textObj = textDisplayObjects.find((o) => o.id === selId);
+          const bitmapObj = !textObj ? bitmapDisplayObjects.find((o) => o.id === selId) : undefined;
+          const selectedGenericObj = textObj ?? bitmapObj;
+          if (selectedGenericObj && selectedGenericObj.width > 0 && selectedGenericObj.height > 0) {
+            const bounds = { x: selectedGenericObj.x, y: selectedGenericObj.y, width: selectedGenericObj.width, height: selectedGenericObj.height };
 
-          // Rotation handle (circle above top-center)
-          const rotHandleX = bounds.x + bounds.width / 2;
-          const rotHandleY = bounds.y - 20;
-          // Line from top-center to rotation handle
-          ctx.beginPath();
-          ctx.moveTo(rotHandleX, bounds.y);
-          ctx.lineTo(rotHandleX, rotHandleY);
-          ctx.strokeStyle = "#0099ff";
-          ctx.lineWidth = 1;
-          ctx.stroke();
-          // Circle
-          ctx.beginPath();
-          ctx.arc(rotHandleX, rotHandleY, 5, 0, Math.PI * 2);
-          ctx.fillStyle = "white";
-          ctx.fill();
-          ctx.strokeStyle = "#0099ff";
-          ctx.stroke();
-
-          ctx.restore();
-        }
-      } else {
-        // Check if the selected object is a text or bitmap display object
-        const textObj = textDisplayObjects.find((o) => o.id === selectedShapeId);
-        const bitmapObj = !textObj ? bitmapDisplayObjects.find((o) => o.id === selectedShapeId) : undefined;
-        const selectedGenericObj = textObj ?? bitmapObj;
-        if (selectedGenericObj && selectedGenericObj.width > 0 && selectedGenericObj.height > 0) {
-          const ctx = renderCanvasRef.current.getContext("2d")!;
-          ctx.save();
-
-          // Dashed bounding box
-          ctx.strokeStyle = "#0099ff";
-          ctx.lineWidth = 1;
-          ctx.setLineDash([4, 2]);
-          ctx.strokeRect(selectedGenericObj.x, selectedGenericObj.y, selectedGenericObj.width, selectedGenericObj.height);
-          ctx.setLineDash([]);
-
-          // Corner and mid-edge handles
-          const bounds = { x: selectedGenericObj.x, y: selectedGenericObj.y, width: selectedGenericObj.width, height: selectedGenericObj.height };
-          const handles = getHandlePositions(bounds);
-          for (const h of handles) {
-            ctx.fillStyle = "white";
+            // Dashed bounding box
             ctx.strokeStyle = "#0099ff";
             ctx.lineWidth = 1;
-            ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
-            ctx.strokeRect(h.x - 4, h.y - 4, 8, 8);
-          }
+            ctx.setLineDash([4, 2]);
+            ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+            ctx.setLineDash([]);
 
-          ctx.restore();
+            if (isSingleSelect) {
+              // Corner and mid-edge handles
+              const handles = getHandlePositions(bounds);
+              for (const h of handles) {
+                ctx.fillStyle = "white";
+                ctx.strokeStyle = "#0099ff";
+                ctx.lineWidth = 1;
+                ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
+                ctx.strokeRect(h.x - 4, h.y - 4, 8, 8);
+              }
+            }
+          }
         }
       }
+
+      ctx.restore();
     }
 
     // Draw unselected text field outlines (dashed blue border on all text objects)
@@ -2757,7 +2818,7 @@ export function StageArea({
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       for (const tObj of textDisplayObjects) {
-        if (tObj.id !== selectedShapeId && tObj.width > 0 && tObj.height > 0) {
+        if (!effectiveSelectedIds.includes(tObj.id) && tObj.width > 0 && tObj.height > 0) {
           ctx.strokeRect(tObj.x, tObj.y, tObj.width, tObj.height);
         }
       }
@@ -3057,7 +3118,7 @@ export function StageArea({
       ctx.fillRect(r.x, r.y, r.width, r.height);
       ctx.restore();
     }
-  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd]);
+  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd]);
 
   // CSS filter for view modes
   const stageFilter =

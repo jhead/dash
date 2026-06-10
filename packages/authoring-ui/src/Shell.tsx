@@ -657,8 +657,8 @@ export function Shell(): React.ReactElement {
 
   // Multi-selection: list of selected display object IDs (draw/selection tool)
   const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
-  // Backward-compat single-selection: first selected id or null
-  const selectedShapeId = selectedShapeIds.length === 1 ? selectedShapeIds[0] : (selectedShapeIds.length > 0 ? selectedShapeIds[0] : null);
+  // Backward-compat single-selection: the selected id when exactly one object is selected, else null
+  const selectedShapeId = selectedShapeIds.length === 1 ? selectedShapeIds[0] : null;
 
   /** Replace the entire selection set. */
   const setSelectedShapeId = useCallback((id: string | null) => {
@@ -4077,10 +4077,13 @@ export function Shell(): React.ReactElement {
                 shapeDisplayObjects={shapeDisplayObjects}
                 onShapeCreated={handleShapeCreated}
                 selectedShapeId={selectedShapeId}
-                onShapeSelect={setSelectedShapeId}
+                selectedShapeIds={selectedShapeIds}
+                onShapeSelect={handleShapeSelectFromStage}
+                onShapeSelectMultiple={handleShapeSelectMultiple}
                 onShapeMove={handleShapeMove}
                 onShapeMoveEnd={handleShapeMoveEnd}
                 onShapeDelete={handleShapeDelete}
+                onDeleteSelected={handleDeleteSelected}
                 onShapeResize={handleShapeResize}
                 onShapeRotate={handleShapeRotate}
                 onShapeUpdate={handleShapeUpdate}
