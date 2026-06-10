@@ -31,7 +31,8 @@ import type { FlashFilter } from "../engine/filters.js";
 import { createDocument, createDocumentProperties } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
-import { createSymbol, createSound } from "../model/library.js";
+import { createSymbol, createSound, createBitmap } from "../model/library.js";
+import { decodeMediaBitmap, decodedBitmapToDataUri } from "./media.js";
 import {
   parseFla8Contents,
   parseFla8Timeline,
@@ -488,6 +489,8 @@ function toFlashFilters(flaFilters: Fla8Filter[]): FlashFilter[] {
 function convertElement(
   el: Fla8Element,
   symbolIdByIndex: Map<number, string>,
+  bitmapIdByIndex: Map<number, string>,
+  bitmapSizeByIndex: Map<number, { width: number; height: number }>,
 ): DisplayObject | null {
   switch (el.type) {
     case "shape":
@@ -550,11 +553,29 @@ function convertElement(
         wordWrap: el.wordWrap,
         ...(el.instanceName ? { instanceName: el.instanceName } : {}),
       };
-    case "bitmap":
-      console.warn(
-        "[FLA import] bitmap placements are not imported (Media stream decoding unsupported); skipping",
-      );
-      return null;
+    case "bitmap": {
+      const libraryItemId = bitmapIdByIndex.get(el.mediaId);
+      if (!libraryItemId) {
+        console.warn(
+          `[FLA import] bitmap placement references unknown media #${el.mediaId}; skipping`,
+        );
+        return null;
+      }
+      const { scaleX, scaleY, rotation } = decompose(el.matrix);
+      const size = bitmapSizeByIndex.get(el.mediaId) ?? { width: 1, height: 1 };
+      return {
+        type: "bitmap",
+        id: nextId("bitmap"),
+        libraryItemId,
+        x: el.matrix.tx,
+        y: el.matrix.ty,
+        width: Math.max(size.width, 1),
+        height: Math.max(size.height, 1),
+        scaleX,
+        scaleY,
+        rotation,
+      };
+    }
   }
 }
 
@@ -583,13 +604,15 @@ function convertLayer(
   index: number,
   symbolIdByIndex: Map<number, string>,
   soundIdByIndex: Map<number, string>,
+  bitmapIdByIndex: Map<number, string>,
+  bitmapSizeByIndex: Map<number, { width: number; height: number }>,
 ): Layer {
   const frames: Frame[] = [];
   let frameIndex = 0;
   for (const f of l.frames) {
     const displayObjects: DisplayObject[] = [];
     for (const el of f.elements) {
-      const converted = convertElement(el, symbolIdByIndex);
+      const converted = convertElement(el, symbolIdByIndex, bitmapIdByIndex, bitmapSizeByIndex);
       if (converted) displayObjects.push(converted);
     }
     let sound: SoundLinkage | null = null;
@@ -639,8 +662,12 @@ function convertTimeline(
   t: Fla8Timeline,
   symbolIdByIndex: Map<number, string>,
   soundIdByIndex: Map<number, string>,
+  bitmapIdByIndex: Map<number, string>,
+  bitmapSizeByIndex: Map<number, { width: number; height: number }>,
 ): Timeline {
-  const layers = t.layers.map((l, i) => convertLayer(l, i, symbolIdByIndex, soundIdByIndex));
+  const layers = t.layers.map((l, i) =>
+    convertLayer(l, i, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex),
+  );
   if (layers.length === 0) {
     return { layers: [createLayer("Layer 1", "normal")] };
   }
@@ -653,6 +680,7 @@ function convertTimeline(
 
 const PAGE_RE = /^(?:Page (\d+)|P (\d+) \d+)$/;
 const SYMBOL_RE = /^(?:Symbol (\d+)|S (\d+) \d+)$/;
+const MEDIA_RE = /^Media (\d+)$/;
 
 function streamNumber(re: RegExp, name: string): number | null {
   const m = re.exec(name);
@@ -736,6 +764,39 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     items.push(soundItem);
   }
 
+  // --- library bitmaps -------------------------------------------------------
+  // Bitmap pixel data lives in "Media N" streams (the same N that a
+  // CPicBitmapRef record carries as mediaId). Decode each Media stream that
+  // looks like a bitmap (JPEG/PNG/Flash-lossless) into a BitmapItem and record
+  // the FLA media index -> library id mapping so bitmap placements resolve.
+  // Sound media indexes are already claimed above; Media streams that are not
+  // bitmaps (audio PCM/MP3, video) decode to null and are skipped here.
+  const bitmapIdByIndex = new Map<number, string>();
+  const bitmapSizeByIndex = new Map<number, { width: number; height: number }>();
+  const soundMediaIds = new Set<number>(contents.sounds.keys());
+  for (const [name, bytes] of streams) {
+    const mediaNum = streamNumber(MEDIA_RE, name);
+    if (mediaNum === null) continue;
+    if (soundMediaIds.has(mediaNum)) continue; // audio media, handled as a stub sound
+    let decoded;
+    try {
+      decoded = decodeMediaBitmap(bytes);
+    } catch (err) {
+      console.warn(`[FLA import] failed to decode media stream "${name}": ${String(err)}`);
+      continue;
+    }
+    if (!decoded) continue;
+    const bitmapItem = createBitmap(`Bitmap ${mediaNum}`, {
+      dataUri: decodedBitmapToDataUri(decoded),
+      originalWidth: decoded.width,
+      originalHeight: decoded.height,
+      compressionType: decoded.compressionType,
+    });
+    bitmapIdByIndex.set(mediaNum, bitmapItem.id);
+    bitmapSizeByIndex.set(mediaNum, { width: decoded.width, height: decoded.height });
+    items.push(bitmapItem);
+  }
+
   // --- library symbols -------------------------------------------------------
   // Two passes: create symbol shells first so instances can reference any
   // symbol regardless of ordering, then parse timelines.
@@ -767,7 +828,7 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     const shell = shells.get(s.num)!;
     const parsed = parsedSymbolTimelines.get(s.num);
     const timeline = parsed
-      ? convertTimeline(parsed, symbolIdByIndex, soundIdByIndex)
+      ? convertTimeline(parsed, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex)
       : shell.timeline;
     items.push({ ...shell, timeline });
   }
@@ -779,7 +840,13 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     const sceneName = contents.sceneNames.get(p.name) ?? `Scene ${i + 1}`;
     let timeline: Timeline;
     try {
-      timeline = convertTimeline(parseFla8Timeline(p.bytes), symbolIdByIndex, soundIdByIndex);
+      timeline = convertTimeline(
+        parseFla8Timeline(p.bytes),
+        symbolIdByIndex,
+        soundIdByIndex,
+        bitmapIdByIndex,
+        bitmapSizeByIndex,
+      );
     } catch (err) {
       console.warn(
         `[FLA import] could not parse page stream "${p.name}": ${String(err)} — importing empty scene`,
