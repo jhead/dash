@@ -1,0 +1,8 @@
+{
+  "id": "0687-bug-symbol-instance-not-selectable-on-stage-afte",
+  "title": "Bug: symbol instance not selectable on stage after Convert to Symbol",
+  "description": "After converting a shape to a MovieClip via Modify > Convert to Symbol, the resulting instance cannot be selected by clicking on stage. Root cause (confirmed by code search): StageArea click hit-testing uses shapeDisplayObjects which filters for type === 'shape' only. Symbol instances (type === 'instance') are excluded. Fix: include instances in the single-click hit-test pass in StageArea.tsx so they can be selected, and auto-select the new instance after handleConvertToSymbolConfirm (Shell.tsx line 1453 currently sets selectedShapeId(null)). The InstancePanel instance-name field exists and works once selection is wired up.",
+  "status": "in_progress",
+  "created_at": "2026-06-10T00:03:51Z",
+  "updated_at": "2026-06-10T00:04:10Z"
+}
