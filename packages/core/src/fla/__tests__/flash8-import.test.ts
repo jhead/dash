@@ -697,6 +697,137 @@ describe("instance filter mapping (toFlashFilter)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Frame sound linkage (task 0754)
+//
+// Verifies that buildFla8Document wires a non-zero soundId in the binary frame
+// to a SoundItem in the library and populates Frame.sound correctly.
+//
+// The test uses two minimal synthetic binary streams:
+//
+//   Contents stream (27 bytes):
+//     Byte 0: format version 0x3F (unicode mode)
+//     Bytes 1-14: "Sound 1" as UTF-16LE (the length byte at pos 0 = 0x3F = 63
+//       which satisfies the scanner's "lenByte >= 7 and <= 64" range check)
+//     Bytes 15-26: BomString FF FE FF 04 + "test" as UTF-16LE → sound name
+//
+//   Page stream (~106 bytes):
+//     A minimal CPicPage → CPicLayer → CPicFrame chain where the CPicFrame
+//     carries fs=5 (frame schema 5) with soundId=1. All CPicObjBase children
+//     lists and shape bodies are empty; EOF terminates the remaining reads
+//     (which are all wrapped in FlaEofError-catching try/catch blocks).
+// ---------------------------------------------------------------------------
+
+describe("frame sound linkage (buildFla8Document with in-memory synthetic streams)", () => {
+  let doc: FlashDocument;
+
+  beforeAll(() => {
+    // --- Contents stream: encodes sound #1 named "test" ---
+    // Layout: [version=0x3F] [lenByte=7] ["Sound 1" as UTF-16LE] [BomString "test"]
+    //
+    // The scanner for sounds looks for the UTF-16 pattern "Sound " in the bytes,
+    // then checks bytes[idx-1] as a length byte (must be 7..64 for "Sound 1").
+    // We place lenByte=7 immediately before the "Sound 1" pattern at position 2,
+    // so bytes[1]=7 satisfies the range check.  The BomString immediately follows
+    // the stream name and carries the library display name "test".
+    const contentsBytes = new Uint8Array([
+      0x3f, // byte 0: format version 0x3F (>= 0x38 → unicode mode)
+      0x07, // byte 1: lenByte = 7 (length of "Sound 1")
+      // bytes 2-15: "Sound 1" as UTF-16LE (7 chars × 2 = 14 bytes)
+      0x53, 0x00, 0x6f, 0x00, 0x75, 0x00, 0x6e, 0x00,
+      0x64, 0x00, 0x20, 0x00, 0x31, 0x00,
+      // bytes 16-27: BomString FF FE FF <len=4> + "test" as UTF-16LE
+      0xff, 0xfe, 0xff, 0x04,
+      0x74, 0x00, 0x65, 0x00, 0x73, 0x00, 0x74, 0x00,
+    ]);
+
+    // --- Page stream: CPicPage → CPicLayer → CPicFrame with soundId=1 ---
+    // Class table after parsing:
+    //   slots 1+2 → CPicPage  (backref 0x8001)
+    //   slots 3+4 → CPicLayer (backref 0x8003)
+    //   slots 5+6 → CPicFrame (backref 0x8005)
+    const pageBytes = new Uint8Array([
+      // Root marker
+      0x01,
+      // New class CPicPage (schema=1, name len=8)
+      0xff, 0xff, 0x01, 0x00, 0x08, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x50, 0x61, 0x67, 0x65, // "CPicPage"
+      // CPicPage readCPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // CPicPage children: new class CPicLayer (schema=1, name len=9)
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x4c, 0x61, 0x79, 0x65, 0x72, // "CPicLayer"
+      // CPicLayer readCPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // CPicLayer children: new class CPicFrame (schema=1, name len=9)
+      0xff, 0xff, 0x01, 0x00, 0x09, 0x00,
+      0x43, 0x50, 0x69, 0x63, 0x46, 0x72, 0x61, 0x6d, 0x65, // "CPicFrame"
+      // CPicFrame readCPicObjBase: schema=4, flags=0
+      0x04, 0x00,
+      // CPicFrame has no children
+      0x00, 0x00, // null class tag
+      // schema>0: skip 8 bytes (registration point = 2x INT_MIN sentinel)
+      0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
+      // schema>2: skip 1; schema>3: skip 1
+      0x00, 0x00,
+      // readCPicFrameNode: shapeSchema
+      0x00,
+      // readMatrix: a=1.0 (16.16 fixed), b=0, c=0, d=1.0, tx=0, ty=0
+      0x00, 0x00, 0x01, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x01, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      // readShapeData: schema=0, no fills, no strokes (edge loop skipped)
+      0x00,             // shapeData schema=0
+      0x00, 0x00, 0x00, 0x00, // edge count hint
+      0x00, 0x00,       // fillCount=0
+      0x00, 0x00,       // lineCount=0
+      // CPicFrame-specific fields (fs=5):
+      0x05,             // fs=5
+      0x01, 0x00,       // duration=1
+      0x00, 0x00,       // keyMode (fs>2)
+      0x00, 0x00,       // ease (fs>1)
+      0x01, 0x00,       // soundId=1 (fs>4)
+      // Stream ends here; remaining reads (CPicLayer body, repositionAfterLayerTrailer,
+      // CPicPage body) all hit EOF and are caught by FlaEofError try/catch.
+    ]);
+
+    const streams = new Map<string, Uint8Array>([
+      ["contents", contentsBytes],
+      ["Page 1",   pageBytes],
+    ]);
+    const result = buildFla8Document(streams);
+    expect(result).not.toBeNull();
+    doc = result!;
+  });
+
+  it("creates a SoundItem in the library for the referenced sound", () => {
+    const soundItems = doc.library.items.filter((i): i is SoundItem => i.itemType === "sound");
+    expect(soundItems).toHaveLength(1);
+    expect(soundItems[0]!.name).toBe("test");
+  });
+
+  it("populates Frame.sound with the correct libraryItemId", () => {
+    const soundItems = doc.library.items.filter((i): i is SoundItem => i.itemType === "sound");
+    const soundId = soundItems[0]!.id;
+    const frame = doc.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.sound).not.toBeNull();
+    expect(frame.sound!.libraryItemId).toBe(soundId);
+  });
+
+  it("uses event sync mode when soundSync field is absent (fs=5 has no soundSync)", () => {
+    const frame = doc.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.sound!.syncMode).toBe("event");
+  });
+
+  it("uses repeatCount=1 when soundLoop field is absent (fs=5 has no soundLoop)", () => {
+    const frame = doc.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.sound!.repeatCount).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Wave-4: frame sound attachment wiring (task 0754)
 // ---------------------------------------------------------------------------
 
