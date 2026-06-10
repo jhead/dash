@@ -435,6 +435,61 @@ export function toColorEffect(ce: Fla8ColorEffect | null): ColorEffect | undefin
     return { type: "alpha", alpha: Math.round((ce.aMult / 256) * 100) };
   }
 
+  // Check if alpha is unmodified (identity alpha: multiplier 1.0, offset 0).
+  // Brightness and tint never touch the alpha channel.
+  const alphaIsIdentity = ce.aMult === 256 && ce.aOff === 0;
+
+  // Brightness: all three RGB multipliers are equal, all three RGB offsets are equal,
+  // alpha is identity, and the offset is consistent with Flash 8 brightness encoding:
+  //   Brighter (b > 0): mult = 256*(1-b/100), offset = 255*b/100  → offset ≈ 255-mult
+  //   Darker  (b < 0): mult = 256*(1+b/100), offset = 0
+  if (alphaIsIdentity &&
+      ce.rMult === ce.gMult && ce.rMult === ce.bMult &&
+      ce.rOff === ce.gOff && ce.rOff === ce.bOff) {
+    const m = ce.rMult;
+    const o = ce.rOff;
+    // Darker case: offset is 0 (or very close), multiplier reduced below 256
+    if (o === 0 && m <= 256) {
+      const b = Math.round((256 - m) / 256 * -100); // negative: darker
+      if (b >= -100 && b <= 0) {
+        return { type: "brightness", brightness: b };
+      }
+    }
+    // Brighter case: offset > 0, multiplier reduced, offset ≈ 255 - mult
+    if (o > 0 && m < 256 && Math.abs(o - (255 - m)) <= 2) {
+      const b = Math.round((o / 255) * 100); // positive: brighter
+      if (b > 0 && b <= 100) {
+        return { type: "brightness", brightness: b };
+      }
+    }
+    // Equal RGB but not a clean brightness formula — could be tint
+  }
+
+  // Tint: all three RGB multipliers are equal and reduced below identity (> 0%
+  // tint), alpha is identity. At least one color offset must be non-zero.
+  // Flash tint: mult = 256*(1-tintAmount/100), offsets = tintColor * tintAmount/100
+  if (alphaIsIdentity &&
+      ce.rMult === ce.gMult && ce.rMult === ce.bMult &&
+      ce.rMult < 256 && // require non-identity multiplier (tintAmount > 0)
+      (ce.rOff !== 0 || ce.gOff !== 0 || ce.bOff !== 0)) {
+    const m = ce.rMult;
+    // tintAmount = (1 - m/256)*100, i.e. 100% tint when m=0
+    const tintAmount = Math.round((1 - m / 256) * 100);
+    if (tintAmount > 0 && tintAmount <= 100) {
+      // Recover tint color: tintColor_channel = offset / (tintAmount/100)
+      const scale = 100 / tintAmount;
+      const tintR = Math.max(0, Math.min(255, Math.round(ce.rOff * scale)));
+      const tintG = Math.max(0, Math.min(255, Math.round(ce.gOff * scale)));
+      const tintB = Math.max(0, Math.min(255, Math.round(ce.bOff * scale)));
+      const h = (v: number) => v.toString(16).padStart(2, "0");
+      return {
+        type: "tint",
+        tintColor: `#${h(tintR)}${h(tintG)}${h(tintB)}`,
+        tintAmount,
+      };
+    }
+  }
+
   // General case -> advanced color transform. Multipliers map 256 (=1.0) to
   // 100%; offsets are already in 0..255 scale.
   const pct = (mult: number) => Math.round((mult / 256) * 100);
