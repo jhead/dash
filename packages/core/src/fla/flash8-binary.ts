@@ -198,6 +198,12 @@ export interface Fla8Text {
   /** Flash 8+ filters (empty array when none). */
   readonly filters: Fla8Filter[];
   /**
+   * Instance-level color transform applied to this text field placement, or
+   * null when identity/absent. Populated when a color effect block is present
+   * in the CPicText record (Flash 8+ binary FLA schema ts >= 0x0d).
+   */
+  readonly colorEffect: Fla8ColorEffect | null;
+  /**
    * All formatting runs in the text field. When a field has multiple runs
    * with different styling, this array has more than one entry. When empty
    * or containing a single entry, per-run styling is captured in the top-level
@@ -1877,6 +1883,10 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     textType: (textFlags & 0x01) === 0 ? "static" : textFlags & 0x02 ? "dynamic" : "input",
     wordWrap: (textFlags & 0x08) !== 0,
     filters,
+    // Instance color effect for text fields is not yet decoded from the binary
+    // (no confirmed fixture for the exact byte layout in CPicText). The field is
+    // populated by callers that construct Fla8Text directly (e.g. unit tests).
+    colorEffect: null,
     runs,
   };
 }

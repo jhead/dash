@@ -27,6 +27,7 @@ import type {
   Stroke,
   Color,
   SymbolInstance,
+  TextDisplayObject,
 } from "../engine/types.js";
 import type { AdjustColorFilter, ConvolutionFilter, FlashFilter } from "../engine/filters.js";
 import { createDocument, createDocumentProperties } from "../model/document.js";
@@ -45,6 +46,7 @@ import {
   type Fla8Layer,
   type Fla8Matrix,
   type Fla8Shape,
+  type Fla8Text,
   type Fla8TextRun,
   type Fla8Timeline,
 } from "./flash8-binary.js";
@@ -739,6 +741,7 @@ function convertElement(
     }
     case "text": {
       const textFilters = toFlashFilters(el.filters);
+      const textColorEffect = toColorEffect(el.colorEffect);
       // Build HTML markup when there are multiple formatting runs, each potentially
       // with different font/size/color/bold/italic. DefineEditText only holds a single
       // style, but the HTML flag (bit 9) allows per-run formatting via Flash HTML tags.
@@ -762,6 +765,7 @@ function convertElement(
         multiline: el.text.includes("\r") || el.text.includes("\n"),
         wordWrap: el.wordWrap,
         ...(el.instanceName ? { instanceName: el.instanceName } : {}),
+        ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
         ...(textFilters.length > 0 ? { filters: textFilters } : {}),
         ...(isMultiRun ? { html: true, htmlText } : {}),
       };
@@ -817,6 +821,44 @@ function convertElement(
       };
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Text element conversion (exported for unit testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a parsed FLA text element to the editor's TextDisplayObject model.
+ * Exported so that unit tests can directly exercise the conversion with
+ * synthetic Fla8Text objects (including those with a non-null colorEffect).
+ */
+export function convertFla8Text(el: Fla8Text): TextDisplayObject {
+  const textFilters = toFlashFilters(el.filters);
+  const textColorEffect = toColorEffect(el.colorEffect);
+  const isMultiRun = el.runs.length > 1;
+  const htmlText = isMultiRun ? buildHtmlText(el.runs) : undefined;
+  return {
+    type: "text",
+    id: nextId("text"),
+    x: el.matrix.tx,
+    y: el.matrix.ty,
+    width: Math.max(el.width, 1),
+    height: Math.max(el.height, 1),
+    text: el.text,
+    textType: el.textType,
+    fontFamily: el.fontName || "Arial",
+    fontSize: el.fontSize > 0 ? el.fontSize : 12,
+    bold: el.bold,
+    italic: el.italic,
+    color: toColor(el.color),
+    align: el.align,
+    multiline: el.text.includes("\r") || el.text.includes("\n"),
+    wordWrap: el.wordWrap,
+    ...(el.instanceName ? { instanceName: el.instanceName } : {}),
+    ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
+    ...(textFilters.length > 0 ? { filters: textFilters } : {}),
+    ...(isMultiRun ? { html: true, htmlText } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------

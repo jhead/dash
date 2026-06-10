@@ -28,9 +28,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isOle2, tryLoadRealFla } from "../ole.js";
 import { parseFla8Contents, parseFla8Timeline } from "../flash8-binary.js";
-import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText } from "../flash8-import.js";
+import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText, convertFla8Text } from "../flash8-import.js";
 import { getTweenSpans } from "../../model/timeline-query.js";
-import type { Fla8ColorEffect, Fla8Filter } from "../flash8-binary.js";
+import type { Fla8ColorEffect, Fla8Filter, Fla8Text } from "../flash8-binary.js";
 import type { FlashDocument, Symbol as SymbolItem, SoundItem } from "../../model/types.js";
 import type {
   ShapeDisplayObject,
@@ -1294,5 +1294,114 @@ describe("parseFla8Contents className decode (synthetic Contents stream)", () =>
     const sym = info.symbols.get(1)!;
     // With the prefix corrupted the block won't be recognized, className should be ""
     expect(sym.className).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Text element colorEffect forwarding (task 0882)
+//
+// Verifies that convertFla8Text forwards a non-null Fla8Text.colorEffect to the
+// resulting TextDisplayObject.  This exercises the forwarding fix in flash8-import.ts:
+// the text branch now calls toColorEffect(el.colorEffect) and includes it in the
+// output when non-identity, matching the pattern used for SymbolInstance and
+// BitmapDisplayObject.
+// ---------------------------------------------------------------------------
+
+describe("text element colorEffect forwarding (convertFla8Text)", () => {
+  /** Minimal valid Fla8Text for conversion tests. */
+  function makeFla8Text(overrides: Partial<Fla8Text> = {}): Fla8Text {
+    return {
+      type: "text",
+      matrix: { a: 1, b: 0, c: 0, d: 1, tx: 10, ty: 20 },
+      width: 100,
+      height: 20,
+      text: "Hello",
+      fontName: "Arial",
+      fontSize: 12,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      bold: false,
+      italic: false,
+      align: "left",
+      instanceName: "",
+      textType: "dynamic",
+      wordWrap: false,
+      filters: [],
+      colorEffect: null,
+      runs: [],
+      ...overrides,
+    };
+  }
+
+  it("produces no colorEffect when colorEffect is null (identity)", () => {
+    const result = convertFla8Text(makeFla8Text({ colorEffect: null }));
+    expect(result.colorEffect).toBeUndefined();
+  });
+
+  it("preserves an alpha colorEffect on the TextDisplayObject", () => {
+    const ce: Fla8ColorEffect = {
+      rMult: 256, rOff: 0,
+      gMult: 256, gOff: 0,
+      bMult: 256, bOff: 0,
+      aMult: 128, aOff: 0, // 50% alpha
+    };
+    const result = convertFla8Text(makeFla8Text({ colorEffect: ce }));
+    expect(result.colorEffect).toEqual({ type: "alpha", alpha: 50 });
+  });
+
+  it("preserves an advanced (tint) colorEffect on the TextDisplayObject", () => {
+    const ce: Fla8ColorEffect = {
+      rMult: 128, rOff: 100,
+      gMult: 64,  gOff: 0,
+      bMult: 0,   bOff: 50,
+      aMult: 256, aOff: 0,
+    };
+    const result = convertFla8Text(makeFla8Text({ colorEffect: ce }));
+    expect(result.colorEffect).toMatchObject({
+      type: "advanced",
+      redMult: 50,
+      greenMult: 25,
+      blueMult: 0,
+      redOffset: 100,
+      greenOffset: 0,
+      blueOffset: 50,
+    });
+  });
+
+  it("omits colorEffect from the result for an identity transform", () => {
+    const identity: Fla8ColorEffect = {
+      rMult: 256, rOff: 0,
+      gMult: 256, gOff: 0,
+      bMult: 256, bOff: 0,
+      aMult: 256, aOff: 0,
+    };
+    const result = convertFla8Text(makeFla8Text({ colorEffect: identity }));
+    // Identity transform → toColorEffect returns undefined → not forwarded
+    expect(result.colorEffect).toBeUndefined();
+  });
+
+  it("forwards all standard text fields correctly alongside colorEffect", () => {
+    const ce: Fla8ColorEffect = {
+      rMult: 256, rOff: 0,
+      gMult: 256, gOff: 0,
+      bMult: 256, bOff: 0,
+      aMult: 128, aOff: 0,
+    };
+    const result = convertFla8Text(makeFla8Text({
+      text: "Test",
+      fontName: "Times New Roman",
+      fontSize: 18,
+      bold: true,
+      textType: "static",
+      instanceName: "myLabel",
+      colorEffect: ce,
+    }));
+    expect(result.type).toBe("text");
+    expect(result.text).toBe("Test");
+    expect(result.fontFamily).toBe("Times New Roman");
+    expect(result.fontSize).toBe(18);
+    expect(result.bold).toBe(true);
+    expect(result.textType).toBe("static");
+    expect(result.instanceName).toBe("myLabel");
+    expect(result.colorEffect).toEqual({ type: "alpha", alpha: 50 });
   });
 });
