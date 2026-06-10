@@ -19,18 +19,15 @@
  *   3. MCP variant: doc_load via MCP bridge + publish_swf.
  *      Proves the full MCP authoring → compile → runtime pipeline.
  *
- * ConditionBits runtime note (discovered during development):
- *   Our buttons.ts ConditionBits map follows the real Flash 8 ordering where
- *   bit 0 = release (overDownToIdle) and bit 1 = press (idleToOverDown).
- *   Ruffle's internal bitflags label bit 0 as IDLE_TO_OVER_UP (mouse enters).
- *   In practice, the `on(release) { ... }` BUTTONCONDACTION fires when the
- *   mouse enters the button's hit area in headless Ruffle — because a Playwright
- *   `.click()` starts from outside the button (IDLE→OVER_UP is the first
- *   transition), which dispatches the bit-0 condition. The pixel change (red→blue)
- *   still proves BUTTONCONDACTION records are compiled and dispatched correctly;
- *   the exact state-machine transition that fires is a secondary concern for
- *   this oracle test. The important finding: bit-0 DOES fire on click, the
- *   BUTTONCONDACTION bytecode runs, and `nextFrame()` executes.
+ * ConditionBits runtime note (updated after task 0912 fix):
+ *   Our buttons.ts ConditionBits map now uses the correct Flash 8 / Ruffle ordering
+ *   (authoritative: ruffle/swf/src/types.rs ButtonActionCondition):
+ *     bit 0 = rollOver (idleToOverUp), bit 3 = release (overDownToOverUp).
+ *   A Playwright `.click()` performs the full IDLE→OVER_UP→OVER_DOWN→OVER_UP
+ *   state-machine sequence, which fires bit 3 (release / overDownToOverUp).
+ *   The pixel change (red→blue) proves the on(release) BUTTONCONDACTION bytecode
+ *   compiled to the correct bit value and Ruffle dispatched it on the true
+ *   mouse-up-over-button transition.
  *
  * Run locally:
  *   pnpm --filter @flash/desktop e2e --grep "button round"
@@ -431,9 +428,8 @@ async function runButtonClickOracle(opts: {
   console.log(`[0763] ${label} before: red=${before.red} blue=${before.blue}`);
 
   // Click at stage center. The full-stage button hit area is there.
-  // The Playwright click starts from outside the player element, generating
-  // a mouse-enter event (IDLE_TO_OVER_UP, bit 0 = our 'release' condition)
-  // which fires the on(release) BUTTONCONDACTION → nextFrame() → blue frame.
+  // The Playwright click drives IDLE→OVER_UP→OVER_DOWN→OVER_UP, which fires
+  // bit 3 (release / overDownToOverUp) → on(release) BUTTONCONDACTION → nextFrame() → blue frame.
   await page.locator(`#${playerId}`).click({ position: { x: 275, y: 200 } });
   await page.waitForTimeout(1500);
   await hideRuffleOverlays(page, playerId);
@@ -489,12 +485,12 @@ test.describe('Button authoring round-trip: on(release) fires in Ruffle after pu
   // compiles BUTTONCONDACTION records into the SWF, and Ruffle dispatches them
   // when the user interacts with the button.
   //
-  // Implementation note on the 'release' ConditionBit (0x0001):
-  //   Our buttons.ts uses bit 0 for 'release' (overDownToIdle), following real
-  //   Flash 8's bit ordering. In headless Ruffle, this bit fires when the mouse
-  //   transitions from idle to over (IDLE_TO_OVER_UP) — i.e. when the Playwright
-  //   click moves the mouse INTO the full-stage button hit area. The pixel change
-  //   from red to blue proves the BUTTONCONDACTION bytecode executed correctly.
+  // Implementation note on the 'release' ConditionBit (0x0008):
+  //   Our buttons.ts uses bit 3 for 'release' (overDownToOverUp), matching Ruffle's
+  //   ButtonActionCondition enum (ruffle/swf/src/types.rs). A Playwright .click()
+  //   drives the full IDLE→OVER_UP→OVER_DOWN→OVER_UP sequence so bit 3 fires on the
+  //   true mouse-up-over-button transition. The pixel change from red to blue proves
+  //   the BUTTONCONDACTION bytecode executed correctly.
   // -------------------------------------------------------------------------
   test('button on(release) action fires in Ruffle: click advances frame red→blue', async ({ page }, testInfo: TestInfo) => {
     const doc = makeButtonDoc({

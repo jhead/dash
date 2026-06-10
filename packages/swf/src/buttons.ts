@@ -320,14 +320,14 @@ export function encodeDefineButton2(
   //   ACTIONRECORD[]        — AVM1 bytecode
   //   UI8   0x00            — EndAction
   //
-  // ConditionBits:
-  //   bit 0: release          (overDownToIdle)
-  //   bit 1: press            (idleToOverDown)
-  //   bit 2: dragOut          (overDownToOutDown)
-  //   bit 3: dragOver         (outDownToOverDown)
-  //   bit 4: releaseOutside   (outDownToIdle)
-  //   bit 5: rollOut          (overUpToIdle)
-  //   bit 6: rollOver         (overUpToOverDown / idleToOverUp)
+  // ConditionBits (authoritative: ruffle/swf/src/types.rs ButtonActionCondition):
+  //   bit 0: rollOver         (idleToOverUp)
+  //   bit 1: rollOut          (overUpToIdle)
+  //   bit 2: press            (overUpToOverDown)
+  //   bit 3: release          (overDownToOverUp)
+  //   bit 4: dragOut          (overDownToOutDown)
+  //   bit 5: dragOver         (outDownToOverDown)
+  //   bit 6: releaseOutside   (outDownToIdle)
   //   bits 9-15: keyPress key code (0 = no key press condition)
   //
   // Key codes for named keys (matches Ruffle ButtonKeyCode enum):
@@ -336,13 +336,13 @@ export function encodeDefineButton2(
   //   Regular printable ASCII characters use their ASCII code (Space=32..~=126)
   // ---------------------------------------------------------------------------
   const eventBitMap: Record<string, number> = {
-    release:        0x0001,
-    press:          0x0002,
-    dragOut:        0x0004,
-    dragOver:       0x0008,
-    releaseOutside: 0x0010,
-    rollOut:        0x0020,
-    rollOver:       0x0040,
+    rollOver:       0x0001,
+    rollOut:        0x0002,
+    press:          0x0004,
+    release:        0x0008,
+    dragOut:        0x0010,
+    dragOver:       0x0020,
+    releaseOutside: 0x0040,
   };
 
   /** Named key → SWF key code for on(keyPress '<Name>') handlers. */

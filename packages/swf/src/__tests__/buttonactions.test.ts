@@ -9,14 +9,14 @@
  *   UI16  ConditionBits    — event bitmask
  *   ACTIONRECORD[]         — AVM1 bytecode terminated by EndAction (0x00)
  *
- * Condition bits:
- *   bit 0: release          (overDownToIdle)
- *   bit 1: press            (idleToOverDown)
- *   bit 2: dragOut          (overDownToOutDown)
- *   bit 3: dragOver         (outDownToOverDown)
- *   bit 4: releaseOutside   (outDownToIdle)
- *   bit 5: rollOut          (overUpToIdle)
- *   bit 6: rollOver         (overUpToOverDown)
+ * Condition bits (authoritative: ruffle/swf/src/types.rs ButtonActionCondition):
+ *   bit 0: rollOver         (idleToOverUp)
+ *   bit 1: rollOut          (overUpToIdle)
+ *   bit 2: press            (overUpToOverDown)
+ *   bit 3: release          (overDownToOverUp)
+ *   bit 4: dragOut          (overDownToOutDown)
+ *   bit 5: dragOver         (outDownToOverDown)
+ *   bit 6: releaseOutside   (outDownToIdle)
  */
 
 import { describe, it, expect } from "vitest";
@@ -326,9 +326,9 @@ describe("DefineButton2 — button action encoding", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Test 5: on(press) condition bits = 0x0002 (idleToOverDown)
+  // Test 5: on(press) condition bits = 0x0004 (overUpToOverDown)
   // ---------------------------------------------------------------------------
-  it("5: on(press) handler encodes ConditionBits = 0x0002 (bit 1 = idleToOverDown)", () => {
+  it("5: on(press) handler encodes ConditionBits = 0x0004 (bit 2 = overUpToOverDown)", () => {
     const btn = makeButtonSymbol("btn5", [
       { event: "press", script: 'trace("press");' },
     ]);
@@ -342,13 +342,13 @@ describe("DefineButton2 — button action encoding", () => {
     // First BUTTONCONDACTION: [0..1]=CondActionSize, [2..3]=ConditionBits
     expect(parsed.condActionBytes.length).toBeGreaterThanOrEqual(4);
     const condBits = readUI16LE(parsed.condActionBytes, 2);
-    expect(condBits).toBe(0x0002); // bit 1: press
+    expect(condBits).toBe(0x0004); // bit 2: press
   });
 
   // ---------------------------------------------------------------------------
-  // Test 6: on(release) condition bits = 0x0001 (overDownToIdle)
+  // Test 6: on(release) condition bits = 0x0008 (overDownToOverUp)
   // ---------------------------------------------------------------------------
-  it("6: on(release) handler encodes ConditionBits = 0x0001 (bit 0 = overDownToIdle)", () => {
+  it("6: on(release) handler encodes ConditionBits = 0x0008 (bit 3 = overDownToOverUp)", () => {
     const btn = makeButtonSymbol("btn6", [
       { event: "release", script: 'trace("release");' },
     ]);
@@ -361,7 +361,7 @@ describe("DefineButton2 — button action encoding", () => {
 
     expect(parsed.condActionBytes.length).toBeGreaterThanOrEqual(4);
     const condBits = readUI16LE(parsed.condActionBytes, 2);
-    expect(condBits).toBe(0x0001); // bit 0: release
+    expect(condBits).toBe(0x0008); // bit 3: release
   });
 
   // ---------------------------------------------------------------------------
@@ -395,10 +395,10 @@ describe("DefineButton2 — button action encoding", () => {
     // Last record has CondActionSize = 0
     expect(secondCondActionSize).toBe(0);
 
-    // One record has press bit (0x0002) and one has release bit (0x0001)
+    // One record has press bit (0x0004) and one has release bit (0x0008)
     const condBitsSet = new Set([firstCondBits, secondCondBits]);
-    expect(condBitsSet.has(0x0002)).toBe(true); // press
-    expect(condBitsSet.has(0x0001)).toBe(true); // release
+    expect(condBitsSet.has(0x0004)).toBe(true); // press
+    expect(condBitsSet.has(0x0008)).toBe(true); // release
   });
 
   // ---------------------------------------------------------------------------
@@ -437,7 +437,7 @@ describe("DefineButton2 — button action encoding", () => {
   // ---------------------------------------------------------------------------
   // Test 10: rollOver and rollOut events use correct condition bits
   // ---------------------------------------------------------------------------
-  it("10: on(rollOver) encodes ConditionBits = 0x0040 (bit 6)", () => {
+  it("10: on(rollOver) encodes ConditionBits = 0x0001 (bit 0 = idleToOverUp)", () => {
     const btn = makeButtonSymbol("btn10", [
       { event: "rollOver", script: 'trace("over");' },
     ]);
@@ -448,10 +448,10 @@ describe("DefineButton2 — button action encoding", () => {
     const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
     const parsed = parseButton2Body(btn2Tags[0].body);
     const condBits = readUI16LE(parsed.condActionBytes, 2);
-    expect(condBits).toBe(0x0040); // bit 6: rollOver
+    expect(condBits).toBe(0x0001); // bit 0: rollOver (idleToOverUp)
   });
 
-  it("10b: on(rollOut) encodes ConditionBits = 0x0020 (bit 5)", () => {
+  it("10b: on(rollOut) encodes ConditionBits = 0x0002 (bit 1 = overUpToIdle)", () => {
     const btn = makeButtonSymbol("btn10b", [
       { event: "rollOut", script: 'trace("out");' },
     ]);
@@ -462,7 +462,7 @@ describe("DefineButton2 — button action encoding", () => {
     const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
     const parsed = parseButton2Body(btn2Tags[0].body);
     const condBits = readUI16LE(parsed.condActionBytes, 2);
-    expect(condBits).toBe(0x0020); // bit 5: rollOut
+    expect(condBits).toBe(0x0002); // bit 1: rollOut (overUpToIdle)
   });
 });
 
@@ -608,9 +608,9 @@ describe("DefineButton2 — instance-level buttonHandlers", () => {
     const instParsed = parseButton2Body(btn2Tags[1].body);
     // ActionOffset > 0 means BUTTONCONDACTION records are present
     expect(instParsed.actionOffset).toBeGreaterThan(0);
-    // First BUTTONCONDACTION: ConditionBits bit 0 = release
+    // First BUTTONCONDACTION: ConditionBits bit 3 = release
     const condBits = readUI16LE(instParsed.condActionBytes, 2);
-    expect(condBits & 0x0001).toBe(1); // bit 0: release
+    expect(condBits & 0x0008).toBe(0x0008); // bit 3: release (overDownToOverUp)
   });
 
   // ---------------------------------------------------------------------------
