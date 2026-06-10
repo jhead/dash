@@ -1,0 +1,10 @@
+{
+  "id": "0909-test-movie-clicking-play-button-on-title-screen-",
+  "title": "Test Movie: clicking Play button on title screen does not advance to game level",
+  "description": "Investigation findings (2026-06-10): The 'Ruffle instance destroyed + two new SWF blobs loaded' observation was a false alarm from HMR (hot-module reload) firing while the 0907 agent was simultaneously editing source files during QA testing \u2014 not caused by clicking the Play button.\n\nArchitecture finding: The Play button (symbol-32) has NO buttonActions defined. Game navigation uses the 'ballmask' MovieClip transition pattern: frame scripts assign onRelease handlers that set _root.ballmask.tgt = 'AA1' (or another label) then call _root.ballmask.play(), which plays a mask animation and at the end calls _root.gotoAndStop(tgt).\n\nFrame scripts on Scene AA include: _root.gotoAndPlay('menu') on Walls frame 52 (back-to-menu); _root.pos = SharedObject.getLocal('magsaveAA') on frame 0 (persistent progress). The title screen is Scene 5 (frame label 'menu').\n\nClosing as cannot-reproduce-as-filed. A proper Playwright E2E test specifically for the Play button (without concurrent file edits) would be needed to confirm if ballmask transitions work correctly at runtime.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T19:40:21Z",
+  "updated_at": "2026-06-10T19:59:59Z"
+}
