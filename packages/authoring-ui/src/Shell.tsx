@@ -149,7 +149,53 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #1a1a1a",
     flexShrink: 0,
   },
+  // Vertical drag handle (resizes a left/right pane along the X axis)
+  vResizeHandle: {
+    width: "4px",
+    flexShrink: 0,
+    cursor: "col-resize",
+    background: "#1a1a1a",
+  },
+  // Horizontal drag handle (resizes a top/bottom pane along the Y axis)
+  hResizeHandle: {
+    height: "4px",
+    flexShrink: 0,
+    cursor: "row-resize",
+    background: "#1a1a1a",
+  },
+  bottomPanel: {
+    display: "flex",
+    flexDirection: "column",
+    flexShrink: 0,
+    background: "#1e1e1e",
+    overflow: "hidden",
+  },
+  bottomTabs: {
+    display: "flex",
+    flexDirection: "row",
+    height: "24px",
+    background: "#2d2d2d",
+    borderTop: "1px solid #1a1a1a",
+    borderBottom: "1px solid #1a1a1a",
+    flexShrink: 0,
+    alignItems: "stretch",
+  },
+  bottomContent: {
+    flex: 1,
+    minHeight: 0,
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+  },
 };
+
+type BottomTab = "timeline" | "actions" | "sound" | "properties";
+const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
+  { id: "timeline", label: "Timeline" },
+  { id: "actions", label: "Actions" },
+  { id: "sound", label: "Sound" },
+  { id: "properties", label: "Properties" },
+];
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -196,6 +242,52 @@ function nextTextId() {
 let _bitmapObjCounter = 0;
 function nextBitmapId() {
   return `bmp-${++_bitmapObjCounter}-${Date.now().toString(36)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Resizable pane hook — drag a handle to set a pixel size, clamped to [min,max].
+// `axis: "x"` resizes a right-docked panel (drag left = grow, so we use
+// startX - clientX). `axis: "y"` resizes a bottom-docked panel (drag up = grow,
+// so we use startY - clientY).
+// ---------------------------------------------------------------------------
+
+function useResize(
+  initial: number,
+  min: number,
+  max: number,
+  axis: "x" | "y"
+): { size: number; setSize: (n: number) => void; onMouseDown: (e: React.MouseEvent) => void } {
+  const [size, setSize] = useState(initial);
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const start = axis === "x" ? e.clientX : e.clientY;
+      const startSize = sizeRef.current;
+      const prevUserSelect = document.body.style.userSelect;
+      const prevCursor = document.body.style.cursor;
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = axis === "x" ? "col-resize" : "row-resize";
+      const onMove = (ev: MouseEvent) => {
+        const cur = axis === "x" ? ev.clientX : ev.clientY;
+        const delta = start - cur; // dragging toward origin grows the panel
+        setSize(Math.max(min, Math.min(max, startSize + delta)));
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        document.body.style.userSelect = prevUserSelect;
+        document.body.style.cursor = prevCursor;
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [axis, min, max]
+  );
+
+  return { size, setSize, onMouseDown };
 }
 
 // ---------------------------------------------------------------------------
@@ -365,6 +457,28 @@ export function Shell(): React.ReactElement {
   // Right panel tab: "library" | "properties"
   const [rightTab, setRightTab] = useState<"library" | "properties">("library");
 
+  // Bottom dock: tabbed (Timeline | Actions | Sound | Properties) and collapsible.
+  // `bottomTab === null` means the dock is collapsed to just its tab bar.
+  const [bottomTab, setBottomTab] = useState<BottomTab | null>("timeline");
+  // Remember the last expanded tab so re-expanding restores it.
+  const lastBottomTabRef = useRef<BottomTab>("timeline");
+
+  // Resizable panes: right panel width and bottom dock height.
+  const rightResize = useResize(240, 160, 600, "x");
+  const bottomResize = useResize(220, 80, 600, "y");
+
+  /**
+   * Click a bottom tab. Clicking the active (expanded) tab collapses the dock;
+   * clicking any other tab (or a tab while collapsed) expands to that tab.
+   */
+  const handleBottomTabClick = useCallback((tab: BottomTab) => {
+    setBottomTab((prev) => {
+      if (prev === tab) return null; // collapse
+      lastBottomTabRef.current = tab;
+      return tab;
+    });
+  }, []);
+
   // Placed instances on stage
   const [instances, setInstances] = useState<PlacedInstance[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
@@ -414,9 +528,6 @@ export function Shell(): React.ReactElement {
   // Fill/stroke alpha for Color Mixer (separate from toolState which tracks stroke alpha)
   const [mixerFillAlpha, setMixerFillAlpha] = useState(100);
   const [mixerStrokeAlpha, setMixerStrokeAlpha] = useState(100);
-
-  // Actions panel (F9)
-  const [actionsPanelVisible, setActionsPanelVisible] = useState(false);
 
   // Filters panel
   const [filtersPanelVisible, setFiltersPanelVisible] = useState(false);
@@ -2360,7 +2471,7 @@ export function Shell(): React.ReactElement {
         // Allow F9 inside the actions panel textarea to close it
         if (!isEditable || tag === "TEXTAREA") {
           e.preventDefault();
-          setActionsPanelVisible((v) => !v);
+          handleBottomTabClick("actions");
         }
       }
     }
@@ -2611,6 +2722,22 @@ export function Shell(): React.ReactElement {
     userSelect: "none",
   });
 
+  // Tab button for the collapsible bottom dock (Timeline | Actions | Sound | Properties)
+  const bottomTabBtnStyle = (active: boolean): React.CSSProperties => ({
+    flex: "0 0 auto",
+    minWidth: 72,
+    fontSize: 11,
+    fontWeight: active ? "bold" : "normal",
+    background: active ? "#1e1e1e" : "#2d2d2d",
+    color: active ? "#e0e0e0" : "#999",
+    border: "none",
+    borderRight: "1px solid #1a1a1a",
+    borderTop: active ? "2px solid #1a6ea8" : "2px solid transparent",
+    cursor: "pointer",
+    padding: "0 12px",
+    userSelect: "none",
+  });
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -2626,7 +2753,7 @@ export function Shell(): React.ReactElement {
         onPublish={handlePublish}
         onPublishSettings={() => setPublishSettingsOpen(true)}
         onColorPanelToggle={() => setColorPanelVisible((v) => !v)}
-        onActionsToggle={() => setActionsPanelVisible((v) => !v)}
+        onActionsToggle={() => handleBottomTabClick("actions")}
         onFiltersPanelToggle={() => setFiltersPanelVisible((v) => !v)}
         onDocPropsOpen={() => setDocPropsOpen(true)}
         onRulersToggle={handleRulersToggle}
@@ -2891,47 +3018,128 @@ export function Shell(): React.ReactElement {
                 onSceneChange={handleSelectScene}
               />
             )}
-            <Timeline
-              timeline={timeline}
-              currentFrame={currentFrame}
-              isPlaying={isPlaying}
-              frameRate={docProperties.frameRate}
-              activeLayerIndex={safeActiveLayerIndex}
-              onActiveLayerChange={setActiveLayerIndex}
-              onTimelineChange={handleTimelineChange}
-              onFrameChange={handleFrameChange}
-              onPlayingChange={handlePlayingChange}
-              onionSkinEnabled={onionSkinEnabled}
-              onionBefore={onionBefore}
-              onionAfter={onionAfter}
-              onToggleOnionSkin={handleToggleOnionSkin}
-              onOnionRangeChange={handleOnionRangeChange}
-              onCopyFrames={handleCopyFrames}
-              onCutFrames={handleCutFrames}
-              onPasteFrames={handlePasteFrames}
-              hasFrameClipboard={hasFrameClipboard}
-              onRemoveFrames={handleRemoveFrames}
+          </div>
+
+          {/* Horizontal resize handle between stage and the bottom dock.
+              Only draggable while the dock is expanded. */}
+          {bottomTab !== null && (
+            <div
+              style={styles.hResizeHandle}
+              onMouseDown={bottomResize.onMouseDown}
+              title="Drag to resize"
+              data-testid="bottom-resize-handle"
             />
-            <SoundPanel
-              frame={selectedKeyframeFrame}
-              frameIndex={selectedKeyframeFrame?.index ?? currentFrame}
-              layerIndex={selectedLayerIndex}
-              sounds={soundLibraryItems}
-              onSoundChange={handleSoundChange}
-              onPreviewSound={previewSound}
-            />
-            {/* Bottom dock: context-sensitive Properties panel (Flash 8 style) */}
-            <PropertiesPanel
-              doc={doc}
-              selectedObjects={selectedObjects}
-              onUpdateDocProperties={handleUpdateDocProperties}
-              onUpdateObject={handleUpdateObject}
-            />
+          )}
+
+          {/* Bottom dock: tabbed (Timeline | Actions | Sound | Properties), collapsible */}
+          <div
+            style={{
+              ...styles.bottomPanel,
+              height: bottomTab === null ? "auto" : bottomResize.size,
+            }}
+            data-testid="bottom-panel"
+          >
+            <div style={styles.bottomTabs} role="tablist">
+              {BOTTOM_TABS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={bottomTab === id}
+                  style={bottomTabBtnStyle(bottomTab === id)}
+                  onClick={() => handleBottomTabClick(id)}
+                  title={bottomTab === id ? `Collapse ${label}` : label}
+                >
+                  {label}
+                </button>
+              ))}
+              <div style={{ flex: 1 }} />
+              <button
+                style={{
+                  ...bottomTabBtnStyle(false),
+                  flex: "0 0 auto",
+                  width: 28,
+                  fontSize: 12,
+                }}
+                onClick={() =>
+                  setBottomTab((prev) => (prev === null ? lastBottomTabRef.current : null))
+                }
+                title={bottomTab === null ? "Expand panel" : "Collapse panel"}
+              >
+                {bottomTab === null ? "▴" : "▾"}
+              </button>
+            </div>
+
+            {bottomTab !== null && (
+              <div style={styles.bottomContent}>
+                {bottomTab === "timeline" && (
+                  <Timeline
+                    timeline={timeline}
+                    currentFrame={currentFrame}
+                    isPlaying={isPlaying}
+                    frameRate={docProperties.frameRate}
+                    activeLayerIndex={safeActiveLayerIndex}
+                    onActiveLayerChange={setActiveLayerIndex}
+                    onTimelineChange={handleTimelineChange}
+                    onFrameChange={handleFrameChange}
+                    onPlayingChange={handlePlayingChange}
+                    onionSkinEnabled={onionSkinEnabled}
+                    onionBefore={onionBefore}
+                    onionAfter={onionAfter}
+                    onToggleOnionSkin={handleToggleOnionSkin}
+                    onOnionRangeChange={handleOnionRangeChange}
+                    onCopyFrames={handleCopyFrames}
+                    onCutFrames={handleCutFrames}
+                    onPasteFrames={handlePasteFrames}
+                    hasFrameClipboard={hasFrameClipboard}
+                    onRemoveFrames={handleRemoveFrames}
+                  />
+                )}
+                {bottomTab === "actions" && (
+                  <ActionsPanel
+                    embedded
+                    script={currentScript}
+                    frameIndex={currentFrame}
+                    layerName={timeline.layers[safeActiveLayerIndex]?.name ?? ""}
+                    onScriptChange={handleScriptChange}
+                    isVisible={true}
+                    onClose={() => setBottomTab(null)}
+                    selectedInstance={selectedMovieClipInstance}
+                    onClipActionsChange={handleClipActionsChange}
+                  />
+                )}
+                {bottomTab === "sound" && (
+                  <SoundPanel
+                    frame={selectedKeyframeFrame}
+                    frameIndex={selectedKeyframeFrame?.index ?? currentFrame}
+                    layerIndex={selectedLayerIndex}
+                    sounds={soundLibraryItems}
+                    onSoundChange={handleSoundChange}
+                    onPreviewSound={previewSound}
+                  />
+                )}
+                {bottomTab === "properties" && (
+                  <PropertiesPanel
+                    doc={doc}
+                    selectedObjects={selectedObjects}
+                    onUpdateDocProperties={handleUpdateDocProperties}
+                    onUpdateObject={handleUpdateObject}
+                  />
+                )}
+              </div>
+            )}
           </div>
         </div>
 
+        {/* Vertical resize handle between the main column and the right panel */}
+        <div
+          style={styles.vResizeHandle}
+          onMouseDown={rightResize.onMouseDown}
+          title="Drag to resize"
+          data-testid="right-resize-handle"
+        />
+
         {/* Right panel: Library + Properties tabs */}
-        <div style={styles.rightPanel}>
+        <div style={{ ...styles.rightPanel, width: rightResize.size }}>
           <div style={styles.rightPanelTabs}>
             <button
               style={tabBtnStyle(rightTab === "library")}
@@ -3093,18 +3301,6 @@ export function Shell(): React.ReactElement {
         onStrokeChange={handleStrokeChangeFromPanel}
         isVisible={colorPanelVisible}
         onClose={() => setColorPanelVisible(false)}
-      />
-
-      {/* Actions panel (F9) — frame script mode OR "Actions - Movie Clip" mode */}
-      <ActionsPanel
-        script={currentScript}
-        frameIndex={currentFrame}
-        layerName={timeline.layers[safeActiveLayerIndex]?.name ?? ""}
-        onScriptChange={handleScriptChange}
-        isVisible={actionsPanelVisible}
-        onClose={() => setActionsPanelVisible(false)}
-        selectedInstance={selectedMovieClipInstance}
-        onClipActionsChange={handleClipActionsChange}
       />
 
       {/* Filters panel (Window > Filters) */}

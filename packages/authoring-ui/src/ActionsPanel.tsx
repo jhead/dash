@@ -233,6 +233,12 @@ export interface ActionsPanelProps {
   selectedInstance?: SymbolInstance | null;
   /** Called when clipActions on the selected movieclip instance should be updated. */
   onClipActionsChange?: (clipActions: readonly ClipAction[]) => void;
+  /**
+   * Embedded mode: render inline (filling its container) as part of the bottom
+   * docked panel instead of as a floating, fixed-position window. The title bar
+   * and close button are omitted since the host tab bar provides those.
+   */
+  embedded?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +254,7 @@ export function ActionsPanel({
   onClose,
   selectedInstance,
   onClipActionsChange,
+  embedded = false,
 }: ActionsPanelProps): React.ReactElement | null {
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
@@ -269,7 +276,7 @@ export function ActionsPanel({
     }
   }, [isVisible]);
 
-  if (!isVisible) return null;
+  if (!isVisible && !embedded) return null;
 
   // ---------------------------------------------------------------------------
   // Clip actions helpers
@@ -300,25 +307,38 @@ export function ActionsPanel({
   // Styles
   // ---------------------------------------------------------------------------
 
-  const panelStyle: React.CSSProperties = {
-    position: "fixed",
-    bottom: "40px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    width: isMovieClipMode ? "760px" : "680px",
-    height: "320px",
-    background: "#1e1e1e",
-    border: "1px solid #444",
-    boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
-    display: "flex",
-    flexDirection: "column",
-    zIndex: 2000,
-    fontFamily: "'Consolas', 'Courier New', monospace",
-    fontSize: "13px",
-    color: "#d4d4d4",
-    borderRadius: "4px",
-    overflow: "hidden",
-  };
+  const panelStyle: React.CSSProperties = embedded
+    ? {
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        background: "#1e1e1e",
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: "'Consolas', 'Courier New', monospace",
+        fontSize: "13px",
+        color: "#d4d4d4",
+        overflow: "hidden",
+      }
+    : {
+        position: "fixed",
+        bottom: "40px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: isMovieClipMode ? "760px" : "680px",
+        height: "320px",
+        background: "#1e1e1e",
+        border: "1px solid #444",
+        boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
+        display: "flex",
+        flexDirection: "column",
+        zIndex: 2000,
+        fontFamily: "'Consolas', 'Courier New', monospace",
+        fontSize: "13px",
+        color: "#d4d4d4",
+        borderRadius: "4px",
+        overflow: "hidden",
+      };
 
   const titleBarStyle: React.CSSProperties = {
     display: "flex",
@@ -381,16 +401,18 @@ export function ActionsPanel({
     return (
       <div style={panelStyle}>
         {/* Title bar */}
-        <div style={titleBarStyle}>
-          <span>Actions - Movie Clip{instanceLabel}</span>
-          <button
-            style={{ background: "transparent", border: "none", color: "#ccc", cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
-            onClick={onClose}
-            title="Close (F9)"
-          >
-            &#x2715;
-          </button>
-        </div>
+        {!embedded && (
+          <div style={titleBarStyle}>
+            <span>Actions - Movie Clip{instanceLabel}</span>
+            <button
+              style={{ background: "transparent", border: "none", color: "#ccc", cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
+              onClick={onClose}
+              title="Close (F9)"
+            >
+              &#x2715;
+            </button>
+          </div>
+        )}
 
         {/* Toolbar */}
         <div style={toolbarStyle}>
@@ -476,27 +498,29 @@ export function ActionsPanel({
   return (
     <div style={panelStyle}>
       {/* Title bar */}
-      <div style={titleBarStyle}>
-        <span>
-          Actions - Frame {frameIndex + 1}
-          {layerName ? ` (${layerName})` : ""}
-        </span>
-        <button
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "#ccc",
-            cursor: "pointer",
-            fontSize: "14px",
-            lineHeight: "1",
-            padding: "0 2px",
-          }}
-          onClick={onClose}
-          title="Close (F9)"
-        >
-          &#x2715;
-        </button>
-      </div>
+      {!embedded && (
+        <div style={titleBarStyle}>
+          <span>
+            Actions - Frame {frameIndex + 1}
+            {layerName ? ` (${layerName})` : ""}
+          </span>
+          <button
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#ccc",
+              cursor: "pointer",
+              fontSize: "14px",
+              lineHeight: "1",
+              padding: "0 2px",
+            }}
+            onClick={onClose}
+            title="Close (F9)"
+          >
+            &#x2715;
+          </button>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div style={toolbarStyle}>
