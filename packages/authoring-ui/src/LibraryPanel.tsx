@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useMemo } from "react";
-import type { FlashDocument, Library, LibraryItem, LibraryFolder, Symbol, SymbolLinkage, SymbolType } from "@flash/core";
+import type { BitmapItem, FlashDocument, Library, LibraryItem, LibraryFolder, Symbol, SymbolLinkage, SymbolType } from "@flash/core";
 import { SymbolLinkageDialog } from "./SymbolLinkageDialog";
 import { SymbolPropertiesDialog } from "./SymbolPropertiesDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
@@ -20,6 +20,8 @@ export interface LibraryPanelProps {
   onMoveItemToFolder?: (itemId: string, folderId: string | null) => void;
   onSetLinkage?: (id: string, linkage: SymbolLinkage) => void;
   onSetSymbolProperties?: (id: string, data: SymbolPropertiesData) => void;
+  /** Called when a BitmapItem row is double-clicked (opens Bitmap Properties). */
+  onBitmapDoubleClick?: (item: BitmapItem) => void;
 }
 
 // ----------------------------------------------------------------------------
@@ -431,6 +433,7 @@ export function LibraryPanel({
   onMoveItemToFolder,
   onSetLinkage,
   onSetSymbolProperties,
+  onBitmapDoubleClick,
 }: LibraryPanelProps): React.ReactElement {
   const [collapsed, setCollapsed] = useState(false);
   const [showNewSymbolDialog, setShowNewSymbolDialog] = useState(false);
@@ -518,17 +521,22 @@ export function LibraryPanel({
       if (renamingId) return;
       onItemSelect(item.id);
 
-      // Double-click detection — starts inline rename
+      // Double-click detection
       const now = Date.now();
       if (
         lastClickRef.current &&
         lastClickRef.current.id === item.id &&
         now - lastClickRef.current.time < 400
       ) {
-        // Double-click: start inline rename
+        lastClickRef.current = null;
+        // Bitmap double-click → open Bitmap Properties dialog
+        if (item.itemType === "bitmap" && onBitmapDoubleClick) {
+          onBitmapDoubleClick(item as BitmapItem);
+          return;
+        }
+        // All other items: start inline rename
         setRenamingId(item.id);
         setRenameValue(item.name);
-        lastClickRef.current = null;
         // Focus the input after render
         setTimeout(() => {
           renameInputRef.current?.select();
@@ -537,7 +545,7 @@ export function LibraryPanel({
       }
       lastClickRef.current = { id: item.id, time: now };
     },
-    [onItemSelect, renamingId]
+    [onItemSelect, renamingId, onBitmapDoubleClick]
   );
 
   const handleRenameCommit = useCallback(() => {

@@ -122,6 +122,7 @@ import { SwapSymbolDialog } from "./SwapSymbolDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
 import type { PublishSettings } from "./PublishSettingsDialog";
+import { BitmapPropertiesDialog } from "./BitmapPropertiesDialog";
 import { generateHtmlWrapper } from "@flash/swf";
 import { PanelGroup } from "./PanelGroup";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
@@ -929,6 +930,9 @@ export function Shell(): React.ReactElement {
     debugPassword: "",
     html: DEFAULT_HTML_OPTIONS,
   });
+
+  // Bitmap Properties dialog
+  const [bitmapPropsItem, setBitmapPropsItem] = useState<BitmapItem | null>(null);
 
   // ---------------------------------------------------------------------------
   // Handlers — timeline / frame
@@ -2280,6 +2284,21 @@ export function Shell(): React.ReactElement {
       ),
     })));
   }, [pushDoc, withLibrary]);
+
+  /** Save changes from the Bitmap Properties dialog back into the library. */
+  const handleBitmapPropsSave = useCallback((changes: Partial<BitmapItem>) => {
+    if (!bitmapPropsItem) return;
+    const id = bitmapPropsItem.id;
+    pushDoc(withLibrary((lib) => ({
+      ...lib,
+      items: lib.items.map((item) =>
+        item.id === id && item.itemType === "bitmap"
+          ? { ...item, ...changes }
+          : item
+      ),
+    })));
+    setBitmapPropsItem(null);
+  }, [bitmapPropsItem, pushDoc, withLibrary]);
 
   const handleEditInPlace = useCallback((itemId: string, instanceId?: string) => {
     const item = library.items.find((i) => i.id === itemId);
@@ -5124,6 +5143,7 @@ export function Shell(): React.ReactElement {
               onMoveItemToFolder={handleMoveItemToFolder}
               onSetLinkage={handleSetLinkage}
               onSetSymbolProperties={handleSetSymbolProperties}
+              onBitmapDoubleClick={setBitmapPropsItem}
             />
           ) : (
             <div
@@ -5393,6 +5413,15 @@ export function Shell(): React.ReactElement {
         onSave={setPublishSettings}
         onClose={() => setPublishSettingsOpen(false)}
       />
+
+      {/* Bitmap Properties dialog (double-click bitmap in Library panel) */}
+      {bitmapPropsItem && (
+        <BitmapPropertiesDialog
+          item={bitmapPropsItem}
+          onSave={handleBitmapPropsSave}
+          onClose={() => setBitmapPropsItem(null)}
+        />
+      )}
 
       {/* Sound Envelope Edit dialog */}
       {envelopeDialogOpen && envelopeDialogTarget && (() => {

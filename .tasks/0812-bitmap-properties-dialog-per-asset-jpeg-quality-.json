@@ -1,0 +1,10 @@
+{
+  "id": "0812-bitmap-properties-dialog-per-asset-jpeg-quality-",
+  "title": "Bitmap Properties dialog \u2014 per-asset JPEG quality vs lossless, allowSmoothing",
+  "description": "Add BitmapPropertiesDialog in LibraryPanel (double-click bitmap in library). Fields: compressionType (JPEG/lossless), jpegQuality, allowSmoothing, update-from-disk button. Wire to DefineBitsJPEG2/3 vs DefineBitsLossless2 path in SWF compiler. Per docs/08.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T11:46:23Z",
+  "updated_at": "2026-06-10T11:50:33Z"
+}
