@@ -85,7 +85,7 @@ class Parser {
 
     if (t.type === 'keyword') {
       switch (t.value) {
-        case 'var':      return this.parseVarDecl(false, null);
+        case 'var':      return this.parseVarDeclList(false, null);
         case 'function': return this.parseFunctionDecl(false, null);
         case 'class':    return this.parseClassDecl(false);
         case 'dynamic':  return this.parseClassDecl(true);
@@ -106,13 +106,13 @@ class Parser {
           const access = t.value as 'public' | 'private';
           this.advance();
           const isStatic = !!this.tryEat('keyword', 'static');
-          if (this.check('keyword', 'var')) return this.parseVarDecl(isStatic, access);
+          if (this.check('keyword', 'var')) return this.parseVarDeclList(isStatic, access);
           if (this.check('keyword', 'function')) return this.parseFunctionDecl(isStatic, access);
           throw new Error(`Parse error at line ${this.peek().line}: expected var or function after ${access}`);
         }
         case 'static': {
           this.advance();
-          if (this.check('keyword', 'var')) return this.parseVarDecl(true, null);
+          if (this.check('keyword', 'var')) return this.parseVarDeclList(true, null);
           if (this.check('keyword', 'function')) return this.parseFunctionDecl(true, null);
           throw new Error(`Parse error at line ${this.peek().line}: expected var or function after static`);
         }
@@ -155,6 +155,43 @@ class Parser {
     }
     this.eat('punctuation', '}');
     return { type: 'Block', body, ...this.base(start) };
+  }
+
+  /**
+   * Parse a `var` statement that may declare multiple comma-separated variables:
+   *   var x = 1, y = 2, z;
+   * Returns a single VarDecl when there is only one declarator, or a Block
+   * containing multiple VarDecl nodes when there are two or more.
+   */
+  private parseVarDeclList(isStatic: boolean, access: 'public' | 'private' | null): Statement {
+    const start = this.eat('keyword', 'var');
+    const decls: VarDecl[] = [];
+
+    do {
+      const nameToken = this.eat('identifier');
+      const name = nameToken.value;
+
+      // optional type annotation: var x:Number
+      let varType: string | null = null;
+      if (this.tryEat('operator', ':')) {
+        varType = this.parseTypeName();
+      }
+
+      // optional initialiser
+      let init: Expression | null = null;
+      if (this.tryEat('operator', '=')) {
+        init = this.parseAssignment();
+      }
+
+      decls.push({ type: 'VarDecl', name, varType, init, isStatic, access, ...this.base(nameToken) });
+    } while (this.tryEat('punctuation', ','));
+
+    this.trySemicolon();
+
+    if (decls.length === 1) {
+      return decls[0]!;
+    }
+    return { type: 'Block', body: decls, ...this.base(start) };
   }
 
   private parseVarDecl(isStatic: boolean, access: 'public' | 'private' | null): VarDecl {

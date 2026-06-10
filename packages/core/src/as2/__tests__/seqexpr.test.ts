@@ -5,9 +5,8 @@
  * multi-variable declarations, for-loop multi-init/update, void expressions,
  * and the comma operator as a sequence expression.
  *
- * NOTE: The AS2 parser currently does NOT support comma-separated variable
- * declarations or the comma operator. These tests document that behavior
- * and verify void expressions (which ARE supported) work correctly.
+ * NOTE: Multi-variable var declarations ARE supported (var x = 1, y = 2).
+ * The comma operator as a standalone expression is NOT supported.
  */
 
 import { describe, it, expect } from "vitest";
@@ -40,12 +39,9 @@ function compileError(source: string): string | null {
 // ---------------------------------------------------------------------------
 
 describe("multi-variable declaration (var x = 1, y = 2)", () => {
-  it("var x = 1, y = 2, z = 3 — parser does not support multi-var; throws parse error", () => {
-    // The AS2 parser currently only supports one declarator per var statement.
-    // Attempting multi-var produces a parse error, not a crash.
-    const err = compileError("var x = 1, y = 2, z = 3;");
-    expect(err).not.toBeNull();
-    expect(err).toMatch(/unexpected token.*,|expected.*got.*,/i);
+  it("var x = 1, y = 2, z = 3 — parser supports multi-var declarations", () => {
+    // The AS2 parser supports multiple comma-separated declarators per var statement.
+    expect(compilesOk("var x = 1, y = 2, z = 3;")).toBe(true);
   });
 
   it("single var declaration still compiles fine", () => {
