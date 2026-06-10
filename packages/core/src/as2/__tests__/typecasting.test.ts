@@ -2,8 +2,9 @@
  * Tests for AS2 type-casting functions and the `as` type-assertion operator.
  *
  * Verifies:
- *   - Number(x), String(x), Boolean(x) compile to ActionCallFunction (0x3D),
- *     NOT ActionCallMethod (0x52) — they are global functions, not methods.
+ *   - Number(x) compiles to ActionToNumber (0x30), NOT ActionCallFunction (0x3D)
+ *     (Flash Professional emits the native opcode for single-arg coercions).
+ *   - String(x), Boolean(x) compile to ActionCallFunction (0x3D) — still generic calls.
  *   - `x as Type` (compile-time type assertion) compiles without error and
  *     evaluates the operand, discarding the type annotation.
  */
@@ -45,16 +46,18 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 
 const ACTION_CALL_FUNCTION = 0x3d; // ActionCallFunction — global function dispatch
 const ACTION_CALL_METHOD   = 0x52; // ActionCallMethod   — method dispatch (obj.method())
+const ACTION_TO_NUMBER     = 0x30; // ActionToNumber     — native numeric coercion
 
 // ---------------------------------------------------------------------------
 // Type casting global functions
 // ---------------------------------------------------------------------------
 
 describe("Type casting global functions", () => {
-  it("1. Number(x) compiles to ActionCallFunction (0x3D)", () => {
+  it("1. Number(x) emits ActionToNumber (0x30), NOT ActionCallFunction (0x3D)", () => {
+    // Flash Professional emits ActionToNumber for single-arg Number() coercions
     const bytes = compileAS2("Number(x);");
-    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
-    expect(containsString(bytes, "Number")).toBe(true);
+    expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
   it("2. String(x) compiles to ActionCallFunction (0x3D)", () => {
@@ -71,14 +74,14 @@ describe("Type casting global functions", () => {
 
   it("4. Number(x) does NOT use ActionCallMethod (0x52)", () => {
     const bytes = compileAS2("Number(x);");
-    // Global function calls must never emit ActionCallMethod
+    // Native opcode path must never emit ActionCallMethod
     expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(false);
   });
 
-  it("5. Number(\"42\") with a string literal compiles correctly", () => {
+  it("5. Number(\"42\") with a string literal compiles to ActionToNumber (0x30)", () => {
     const bytes = compileAS2('Number("42");');
-    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
-    expect(containsString(bytes, "Number")).toBe(true);
+    expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
     expect(containsString(bytes, "42")).toBe(true);
   });
 

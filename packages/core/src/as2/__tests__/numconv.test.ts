@@ -6,7 +6,8 @@
  * AVM1 bytecode.
  *
  * Key opcodes:
- *   - ActionCallFunction (0x3D): global function calls e.g. Number(x), parseInt(…)
+ *   - ActionToNumber     (0x30): Number(x) single-arg coercion (native opcode)
+ *   - ActionCallFunction (0x3D): global function calls e.g. parseInt(…)
  *   - ActionGetMember    (0x4e): member access e.g. Number.MAX_VALUE
  */
 
@@ -45,6 +46,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
+const ACTION_TO_NUMBER     = 0x30; // ActionToNumber     — native numeric coercion
 const ACTION_CALL_FUNCTION = 0x3d; // ActionCallFunction — global function call
 const ACTION_GET_MEMBER    = 0x4e; // ActionGetMember    — property / member read
 
@@ -57,18 +59,20 @@ describe("Number() conversion", () => {
     expect(compilesOk("var x; var n = Number(x);")).toBe(true);
   });
 
-  it("2. Number(x) emits ActionCallFunction (0x3D)", () => {
+  it("2. Number(x) emits ActionToNumber (0x30), not ActionCallFunction (0x3D)", () => {
     const bytes = compileAS2("var x; Number(x);");
-    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
+    expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
   it('3. Number("123") compiles', () => {
     expect(compilesOk('var n = Number("123");')).toBe(true);
   });
 
-  it('4. Number("123") emits ActionCallFunction (0x3D)', () => {
+  it('4. Number("123") emits ActionToNumber (0x30), not ActionCallFunction (0x3D)', () => {
     const bytes = compileAS2('Number("123");');
-    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
+    expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 });
 

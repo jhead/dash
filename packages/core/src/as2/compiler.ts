@@ -311,7 +311,9 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
             add('call');
           } else if (!['stop', 'play', 'nextFrame', 'prevFrame',
                        'gotoAndPlay', 'gotoAndStop', 'trace',
-                       'getURL', 'loadMovie', 'loadMovieNum'].includes(name)) {
+                       'getURL', 'loadMovie', 'loadMovieNum'].includes(name)
+                    && !(name === 'int' && e.args.length === 1)
+                    && !(name === 'Number' && e.args.length === 1)) {
             add(name);
           }
           if (name === 'loadMovieNum') {
@@ -1935,6 +1937,20 @@ class Compiler {
         // ActionGetURL2: method=0x40 (load movie into target)
         this.emitWithPayload(0x9a, [0x40]);
         this.pushUndefined();
+        return;
+      }
+
+      // Built-in: int(x) → push x, ActionToInteger (0x18)
+      if (name === 'int' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x18); // ActionToInteger
+        return;
+      }
+
+      // Built-in: Number(x) → push x, ActionToNumber (0x30)
+      if (name === 'Number' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x30); // ActionToNumber
         return;
       }
 
