@@ -293,17 +293,96 @@ function renderShape(
       const gy1 = cy - Math.sin(rad) * halfLen;
       const gx2 = cx + Math.cos(rad) * halfLen;
       const gy2 = cy + Math.sin(rad) * halfLen;
-      const grad = ctx.createLinearGradient(gx1, gy1, gx2, gy2);
-      for (const stop of path.fill.stops) {
-        grad.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+
+      const spreadMode = path.fill.spreadMode ?? "extend";
+      if (spreadMode === "extend") {
+        // Native Canvas 2D gradient = pad/extend mode
+        const grad = ctx.createLinearGradient(gx1, gy1, gx2, gy2);
+        for (const stop of path.fill.stops) {
+          grad.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+        }
+        ctx.fillStyle = grad;
+      } else {
+        // reflect / repeat: tile a small offscreen canvas as a pattern.
+        // The tile runs along the x-axis; we then rotate+translate the pattern
+        // to align with the gradient's angle and start position.
+        const dx = gx2 - gx1;
+        const dy = gy2 - gy1;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+
+        // For reflect mode we need a 2-cycle tile (forward then reversed) so
+        // that adjacent tiles mirror each other. For repeat just one cycle.
+        const tileW = spreadMode === "reflect"
+          ? Math.max(2, Math.ceil(len) * 2)
+          : Math.max(1, Math.ceil(len));
+        const tileH = 1;
+
+        const off = createOffscreenCanvas(tileW, tileH);
+        if (off) {
+          const tileCtx = off.ctx;
+
+          if (spreadMode === "reflect") {
+            // First half: forward gradient
+            const g1 = tileCtx.createLinearGradient(0, 0, tileW / 2, 0);
+            for (const stop of path.fill.stops) {
+              g1.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+            }
+            tileCtx.fillStyle = g1;
+            tileCtx.fillRect(0, 0, tileW / 2, tileH);
+
+            // Second half: reversed gradient (mirror)
+            const g2 = tileCtx.createLinearGradient(0, 0, tileW / 2, 0);
+            const reversed = path.fill.stops.slice().reverse();
+            for (const stop of reversed) {
+              g2.addColorStop(1 - stop.ratio / 255, colorToCss(stop.color));
+            }
+            tileCtx.fillStyle = g2;
+            tileCtx.fillRect(tileW / 2, 0, tileW / 2, tileH);
+          } else {
+            // repeat: single cycle
+            const g = tileCtx.createLinearGradient(0, 0, tileW, 0);
+            for (const stop of path.fill.stops) {
+              g.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+            }
+            tileCtx.fillStyle = g;
+            tileCtx.fillRect(0, 0, tileW, tileH);
+          }
+
+          const pattern = ctx.createPattern(off.canvas as CanvasImageSource, "repeat");
+          if (pattern) {
+            // Rotate and translate to align the tile with the gradient direction.
+            // DOMMatrix may not be available in all environments (e.g. older Node /
+            // test harnesses); fall back to the unrotated pattern in that case.
+            try {
+              const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+              const mat = new DOMMatrix()
+                .translateSelf(gx1, gy1)
+                .rotateSelf(angleDeg);
+              pattern.setTransform(mat);
+            } catch (_) {
+              // DOMMatrix unavailable — pattern renders without rotation transform
+            }
+            ctx.fillStyle = pattern;
+          } else {
+            // Fallback: extend mode
+            const grad = ctx.createLinearGradient(gx1, gy1, gx2, gy2);
+            for (const stop of path.fill.stops) {
+              grad.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+            }
+            ctx.fillStyle = grad;
+          }
+        } else {
+          // No offscreen canvas available — fall back to extend mode
+          const grad = ctx.createLinearGradient(gx1, gy1, gx2, gy2);
+          for (const stop of path.fill.stops) {
+            grad.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+          }
+          ctx.fillStyle = grad;
+        }
       }
-      // TODO(0810): spreadMode "reflect"/"repeat" require manual tiling via
-      // clipping + repeated gradient draws — Canvas 2D has no native equivalent.
-      // Currently renders as "extend" (pad) for all modes.
-      // TODO(0810): interpolation "linearRGB" requires the CSS Color Level 4
+      // Note: interpolation "linearRGB" requires CSS Color Level 4
       // `colorInterpolation` or `interpolateColorSpace` API, which is not yet
       // widely supported. Currently renders in sRGB for both modes.
-      ctx.fillStyle = grad;
       ctx.fill("nonzero");
     } else if (path.fill.type === "radial-gradient") {
       // Compute bounding box center + radius
@@ -317,15 +396,72 @@ function renderShape(
       const r = Math.max((bx2 - bx1), (by2 - by1)) / 2;
       const focalX = cx + path.fill.focalPoint * r;
       const focalY = cy;
-      const grad = ctx.createRadialGradient(focalX, focalY, 0, cx, cy, r);
-      for (const stop of path.fill.stops) {
-        grad.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+
+      const radialSpreadMode = path.fill.spreadMode ?? "extend";
+      if (radialSpreadMode === "extend") {
+        // Native Canvas 2D radialGradient = pad/extend mode
+        const grad = ctx.createRadialGradient(focalX, focalY, 0, cx, cy, r);
+        for (const stop of path.fill.stops) {
+          grad.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+        }
+        ctx.fillStyle = grad;
+        // Note: interpolation "linearRGB" requires CSS interpolateColorSpace.
+        ctx.fill("nonzero");
+      } else {
+        // reflect / repeat for radial gradients:
+        // Approximate using multiple concentric radial gradient rings drawn on an
+        // offscreen canvas, clipped to the path, then composited with drawImage.
+        // We render N rings out to the bounding-box diagonal from the centre.
+        const diagR = Math.sqrt(
+          Math.max(cx - bx1, bx2 - cx) ** 2 + Math.max(cy - by1, by2 - cy) ** 2
+        ) || r || 1;
+        const rings = Math.ceil(diagR / r) + 1; // gradient cycles needed
+
+        const offW = Math.max(1, Math.ceil(bx2 - bx1));
+        const offH = Math.max(1, Math.ceil(by2 - by1));
+        const off = createOffscreenCanvas(offW, offH);
+        if (off) {
+          const tileCtx = off.ctx;
+          // Draw from outermost ring inward so inner rings paint over outer ones.
+          for (let ring = rings; ring >= 0; ring--) {
+            const outerR = (ring + 1) * r;
+            const innerR = ring * r;
+            const isReversed = radialSpreadMode === "reflect" && ring % 2 === 1;
+
+            const rg = tileCtx.createRadialGradient(
+              cx - bx1 + path.fill.focalPoint * r, cy - by1, innerR,
+              cx - bx1, cy - by1, outerR
+            );
+            if (isReversed) {
+              const rev = path.fill.stops.slice().reverse();
+              for (const stop of rev) {
+                rg.addColorStop(1 - stop.ratio / 255, colorToCss(stop.color));
+              }
+            } else {
+              for (const stop of path.fill.stops) {
+                rg.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+              }
+            }
+            tileCtx.fillStyle = rg;
+            tileCtx.beginPath();
+            tileCtx.arc(cx - bx1, cy - by1, outerR, 0, Math.PI * 2);
+            tileCtx.fill();
+          }
+          // Clip to the shape path and draw the offscreen buffer.
+          ctx.save();
+          ctx.clip("nonzero");
+          ctx.drawImage(off.canvas as CanvasImageSource, bx1, by1);
+          ctx.restore();
+        } else {
+          // Fallback: extend mode when no offscreen canvas available
+          const grad = ctx.createRadialGradient(focalX, focalY, 0, cx, cy, r);
+          for (const stop of path.fill.stops) {
+            grad.addColorStop(stop.ratio / 255, colorToCss(stop.color));
+          }
+          ctx.fillStyle = grad;
+          ctx.fill("nonzero");
+        }
       }
-      // TODO(0810): spreadMode "reflect"/"repeat" require manual tiling —
-      // Canvas 2D radialGradient has no native spread mode support.
-      // TODO(0810): interpolation "linearRGB" requires CSS interpolateColorSpace.
-      ctx.fillStyle = grad;
-      ctx.fill("nonzero");
     }
   }
 

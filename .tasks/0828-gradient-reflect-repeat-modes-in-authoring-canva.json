@@ -1,0 +1,10 @@
+{
+  "id": "0828-gradient-reflect-repeat-modes-in-authoring-canva",
+  "title": "Gradient reflect/repeat modes in authoring canvas renderer",
+  "description": "Implement reflect and repeat spread modes in renderer.ts (currently TODO since 0810). Manually tile gradients via clip+repeated canvas draws so the authoring preview matches SWF/Ruffle output for both linear and radial gradients with reflect/repeat.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T12:55:00Z",
+  "updated_at": "2026-06-10T12:55:36Z"
+}
