@@ -72,6 +72,23 @@ export interface SoundLinkage {
   readonly repeatCount: number;     // 0 = loop indefinitely
 }
 
+/**
+ * Flash 8 custom ease curve — a cubic Bézier defined by two control points in
+ * normalised [0,1] space.  P0=(0,0) and P3=(1,1) are implicit.
+ *
+ *   x1,y1 — first handle (near the start)
+ *   x2,y2 — second handle (near the end)
+ *
+ * Maps to the CSS `cubic-bezier(x1,y1,x2,y2)` convention.
+ * When null the legacy integer ease (-100..100) is used instead.
+ */
+export interface EaseCurve {
+  readonly x1: number;  // 0-1
+  readonly y1: number;  // unconstrained (allows overshoot)
+  readonly x2: number;  // 0-1
+  readonly y2: number;  // unconstrained
+}
+
 export interface Frame {
   readonly index: number;           // 0-based frame index within the layer
   readonly isKeyframe: boolean;
@@ -82,7 +99,8 @@ export interface Frame {
   readonly script: string;          // AS2 script attached to this keyframe
   readonly sound: SoundLinkage | null;
   // Motion tween properties
-  readonly motionEase: number;      // -100..100
+  readonly motionEase: number;      // -100..100 (ignored when motionEaseCurve is set)
+  readonly motionEaseCurve?: EaseCurve | null; // custom Bézier ease; null = use motionEase
   readonly motionRotate: "none" | "auto" | "cw" | "ccw";
   readonly motionRotateCount: number;
   readonly motionOrientToPath: boolean;

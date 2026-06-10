@@ -1,4 +1,4 @@
-import type { Frame, Layer, LayerType, Timeline } from "./types.js";
+import type { EaseCurve, Frame, Layer, LayerType, Timeline } from "./types.js";
 import type { DisplayObject, ShapeDisplayObject } from "../engine/types.js";
 
 import type { FlashFilter } from "../engine/filters.js";
@@ -34,6 +34,7 @@ export function createFrame(index: number, overrides?: Partial<Frame>): Frame {
     script: "",
     sound: null,
     motionEase: 0,
+    motionEaseCurve: null,
     motionRotate: "none",
     motionRotateCount: 0,
     motionOrientToPath: false,
@@ -449,14 +450,16 @@ export function setFrameLabel(
 
 /**
  * Set motion tween on the keyframe at startFrameIndex in the given layer.
- * Optionally update the ease value (−100..100).
+ * Optionally update the ease value (−100..100) and/or a custom Bézier ease curve.
+ * Passing easeCurve=null clears the custom curve and falls back to the integer ease.
  * Returns a new Timeline.
  */
 export function setMotionTween(
   timeline: Timeline,
   layerId: string,
   startFrameIndex: number,
-  ease?: number
+  ease?: number,
+  easeCurve?: EaseCurve | null
 ): Timeline {
   return {
     ...timeline,
@@ -468,6 +471,7 @@ export function setMotionTween(
           ...f,
           tweenType: "motion" as const,
           motionEase: ease !== undefined ? ease : f.motionEase,
+          motionEaseCurve: easeCurve !== undefined ? easeCurve : f.motionEaseCurve,
         };
       });
       return { ...layer, frames: newFrames };

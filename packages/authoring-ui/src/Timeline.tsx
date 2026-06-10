@@ -4,7 +4,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import type { Layer, LayerType, Timeline as TimelineModel } from "@flash/core";
+import type { EaseCurve, Layer, LayerType, Timeline as TimelineModel } from "@flash/core";
 import {
   addLayer,
   clearTween,
@@ -23,6 +23,7 @@ import {
   setMotionTween,
   setShapeTween,
 } from "@flash/core";
+import { EaseCurveDialog } from "./EaseCurveDialog";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -523,6 +524,8 @@ export function Timeline({
     layerId: string;
     frameIndex: number;
   } | null>(null);
+  // Custom ease curve dialog
+  const [easeCurveDialogOpen, setEaseCurveDialogOpen] = useState(false);
   // Track shift-selected frame range for bulk operations
   const [selectedFrameRange, setSelectedFrameRange] = useState<{
     layerId: string;
@@ -1474,6 +1477,52 @@ export function Timeline({
               }}
             />
             <span style={{ fontSize: 9, color: "#777" }}>(-100 to 100)</span>
+            {/* Custom ease button — only for motion tweens */}
+            {!isShape && (
+              <>
+                <button
+                  onClick={() => setEaseCurveDialogOpen(true)}
+                  style={{
+                    fontSize: 10,
+                    background: kf.motionEaseCurve ? "#225522" : "#2a2a2a",
+                    border: `1px solid ${kf.motionEaseCurve ? "#44aa44" : "#555"}`,
+                    color: kf.motionEaseCurve ? "#88ee88" : "#cccccc",
+                    cursor: "pointer",
+                    padding: "1px 6px",
+                    borderRadius: 2,
+                    marginLeft: 4,
+                  }}
+                  title="Open custom ease curve editor"
+                >
+                  Custom…
+                </button>
+                {kf.motionEaseCurve && (
+                  <button
+                    onClick={() => {
+                      const newTimeline = setMotionTween(
+                        timeline,
+                        selectedKeyframe.layerId,
+                        selectedKeyframe.frameIndex,
+                        undefined,
+                        null
+                      );
+                      onTimelineChange(newTimeline);
+                    }}
+                    style={{
+                      fontSize: 9,
+                      background: "none",
+                      border: "none",
+                      color: "#888",
+                      cursor: "pointer",
+                      padding: "1px 4px",
+                    }}
+                    title="Clear custom ease curve"
+                  >
+                    ✕
+                  </button>
+                )}
+              </>
+            )}
             {/* Blend mode selector — only for shape tweens */}
             {isShape && (
               <>
@@ -1513,6 +1562,35 @@ export function Timeline({
               </>
             )}
           </div>
+        );
+      })()}
+
+      {/* Custom ease curve dialog */}
+      {easeCurveDialogOpen && selectedKeyframe && (() => {
+        const layer = timeline.layers.find((l) => l.id === selectedKeyframe.layerId);
+        const kf = layer?.frames.find(
+          (f) => f.index === selectedKeyframe.frameIndex && f.isKeyframe
+        );
+        if (!kf) return null;
+        const initialCurve: EaseCurve = kf.motionEaseCurve ?? {
+          x1: 0.25, y1: 0.1,
+          x2: 0.25, y2: 1.0,
+        };
+        return (
+          <EaseCurveDialog
+            initialCurve={initialCurve}
+            onConfirm={(curve) => {
+              const newTimeline = setMotionTween(
+                timeline,
+                selectedKeyframe.layerId,
+                selectedKeyframe.frameIndex,
+                undefined,
+                curve
+              );
+              onTimelineChange(newTimeline);
+            }}
+            onClose={() => setEaseCurveDialogOpen(false)}
+          />
         );
       })()}
 

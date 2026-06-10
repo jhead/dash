@@ -4,6 +4,7 @@ export type {
   ButtonAction,
   ComponentItem,
   DocumentProperties,
+  EaseCurve,
   FlashDocument,
   FontItem,
   Frame,
