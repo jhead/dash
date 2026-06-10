@@ -2,9 +2,9 @@
   "id": "0921-swf-compile-definebitslossless2-tag-36-palette-m",
   "title": "SWF compile: DefineBitsLossless2 (tag 36) palette mode (BitmapFormat=3) not implemented",
   "description": "packages/swf/src/bitmaps.ts only implements BitmapFormat=5 (32-bit ARGB) for DefineBitsLossless2. BitmapFormat=3 (8-bit indexed with 256-color palette) is never emitted. Real Flash content occasionally uses palette-mode bitmaps \u2014 when a DefineBitsLossless2 with format 3 is needed, the compiler silently falls back to 32-bit which wastes space. Fix: detect when bitmap source data is paletted (e.g. PNG with palette), build a 256-entry RGBA palette + indexed pixel data, and emit BitmapFormat=3 tag body per SWF spec \u00a72.4.2.2 (UI8 colorTableSize, then palette as RGBA entries, then pixel data zlib-compressed).",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-06-10T20:26:08Z",
-  "updated_at": "2026-06-10T20:26:35Z"
+  "updated_at": "2026-06-10T20:29:13Z"
 }
