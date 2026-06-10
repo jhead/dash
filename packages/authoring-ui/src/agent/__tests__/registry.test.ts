@@ -656,6 +656,47 @@ describe("library_convert_to_symbol", () => {
     expect(instance).toBeTruthy();
     expect(instance?.type).toBe("instance");
   });
+
+  it("normalizes coords: instance origin = selection visual top-left, content shifted into symbol-local space (task 0707)", async () => {
+    const layerId = state.doc.scenes[0].timeline.layers[0].id;
+    // stage_add_shape bakes the rect geometry at absolute stage coords
+    // (here top-left at 200,150) while leaving the object's x/y at 0.
+    const addResult = await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 200, y1: 150, x2: 300, y2: 230, fill: "#ff0000",
+      layerId, frameIndex: 0,
+    }) as { id: string };
+
+    const convertResult = await dispatchAgentCommand("library_convert_to_symbol", {
+      ids: [addResult.id],
+      name: "NormalizedSymbol",
+      symbolType: "movieclip",
+      layerId,
+      frameIndex: 0,
+    }) as { symbolId: string; instanceId: string };
+
+    // The placed instance must sit at the selection's true visual top-left,
+    // NOT at (0,0) (which is what the object's raw x/y field was).
+    const kf = state.doc.scenes[0].timeline.layers[0].frames[0];
+    const instance = kf.displayObjects.find((o) => o.id === convertResult.instanceId);
+    expect(instance).toBeTruthy();
+    expect((instance as { x: number }).x).toBeCloseTo(200, 6);
+    expect((instance as { y: number }).y).toBeCloseTo(150, 6);
+
+    // The symbol's content must be normalized so its visual top-left is at the
+    // registration point (0,0). The shape geometry's leftmost point is at 200
+    // in path space, so the object's x must be shifted by -200 to compensate.
+    const sym = state.doc.library.items.find((i) => i.id === convertResult.symbolId);
+    expect(sym?.itemType).toBe("symbol");
+    if (sym?.itemType === "symbol") {
+      const frame = sym.timeline.layers[0].frames[0];
+      expect(frame.isEmpty).toBe(false);
+      expect(frame.displayObjects).toHaveLength(1);
+      const local = frame.displayObjects[0] as { type: string; x: number; y: number };
+      expect(local.type).toBe("shape");
+      expect(local.x).toBeCloseTo(-200, 6);
+      expect(local.y).toBeCloseTo(-150, 6);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

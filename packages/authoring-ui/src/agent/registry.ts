@@ -45,6 +45,7 @@ import {
   createRectShape,
   createOvalShape,
   createLineShape,
+  transformedShapeBounds,
   addLayer,
   deleteLayer,
   renameLayer,
@@ -244,6 +245,28 @@ function withSceneTimeline(
 let _agentObjCounter = 0;
 function nextAgentObjId(prefix = "agent-obj"): string {
   return `${prefix}-${++_agentObjCounter}-${Date.now().toString(36)}`;
+}
+
+/**
+ * Compute the true visual top-left (minimum x/y in stage space) of a display
+ * object. For shapes/drawing-objects the geometry can be offset from the
+ * object's (x,y) — `stage_add_shape` bakes absolute coordinates into the path
+ * and leaves (x,y) at (0,0) — so we must account for the shape's own bounds,
+ * not just the (x,y) translation. For everything else the visual origin is the
+ * object's (x,y).
+ *
+ * Used by library_convert_to_symbol to derive the symbol's registration point
+ * (top-left of the selection bounding box) so converted content can be
+ * normalized into symbol-local coordinates.
+ */
+function visualTopLeft(o: DisplayObject): { x: number; y: number } {
+  if (o.type === "shape" || o.type === "drawing-object") {
+    const b = transformedShapeBounds(o as ShapeDisplayObject);
+    return { x: b.x, y: b.y };
+  }
+  const x = "x" in o ? (o as { x: number }).x : 0;
+  const y = "y" in o ? (o as { y: number }).y : 0;
+  return { x, y };
 }
 
 // ---------------------------------------------------------------------------
@@ -1205,11 +1228,14 @@ const handlers: Record<string, AnyHandler> = {
       throw new Error(`No objects found with ids: ${params.ids.join(", ")}`);
     }
 
-    // Compute bounding box
-    const xs = toConvert.map((o) => ("x" in o ? (o as { x: number }).x : 0));
-    const ys = toConvert.map((o) => ("y" in o ? (o as { y: number }).y : 0));
-    const originX = Math.min(...xs);
-    const originY = Math.min(...ys);
+    // Compute the selection's true visual bounding box. The symbol's
+    // registration point is the top-left of this box. We must use the real
+    // visual bounds (which account for shape geometry baked into the path, not
+    // just the object's (x,y) translation) so the symbol-local normalization is
+    // correct regardless of how each object stores its position.
+    const tls = toConvert.map(visualTopLeft);
+    const originX = Math.min(...tls.map((t) => t.x));
+    const originY = Math.min(...tls.map((t) => t.y));
 
     // Create symbol and populate its first frame with the converted objects,
     // normalized to the symbol's local coordinate space (origin = top-left of selection).
@@ -1219,7 +1245,13 @@ const handlers: Record<string, AnyHandler> = {
       params.symbolType
     );
 
-    // Normalize converted objects to symbol-local coordinates
+    // Normalize converted objects to symbol-local coordinates by shifting each
+    // object's translation by the negative origin. Shape path geometry is left
+    // untouched (it is already absolute relative to the object's x/y); the net
+    // rendered position is preserved because the placed instance re-applies
+    // (originX, originY). For shapes whose geometry is baked absolute with
+    // (x,y)=(0,0), this drives x/y negative so the content's visual top-left
+    // lands at symbol-local (0,0).
     const localObjects = toConvert.map((o) => {
       const ox = "x" in o ? (o as { x: number }).x : 0;
       const oy = "y" in o ? (o as { y: number }).y : 0;
@@ -1234,6 +1266,7 @@ const handlers: Record<string, AnyHandler> = {
           ...sym.timeline.layers[0],
           frames: [{
             ...sym.timeline.layers[0].frames[0],
+            isEmpty: false,
             displayObjects: localObjects,
           }],
         }],
