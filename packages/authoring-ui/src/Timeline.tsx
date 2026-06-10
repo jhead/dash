@@ -4,7 +4,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import type { EaseCurve, Layer, LayerType, Timeline as TimelineModel } from "@flash/core";
+import type { EaseCurve, Layer, LayerType, SymbolType, Timeline as TimelineModel } from "@flash/core";
 import {
   addLayer,
   clearTween,
@@ -34,6 +34,8 @@ import { EaseCurveDialog } from "./EaseCurveDialog";
 
 const LAYER_COL_WIDTH = 130;
 const FRAME_W = 7;
+/** Width of each button-state column in button-symbol editing mode */
+const BUTTON_STATE_W = 60;
 const FRAME_H = 20;
 const RULER_H = 16;
 const PLAYBACK_BAR_H = 24;
@@ -72,6 +74,8 @@ export interface TimelineProps {
   hasFrameClipboard?: boolean;
   // Frame delete
   onRemoveFrames?: (startFrame: number, endFrame: number) => void;
+  /** When editing a symbol, its type — used to switch to button-state view */
+  symbolType?: SymbolType;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,14 +372,14 @@ function FrameCell({
 // Playhead marker (sits in the ruler row)
 // ---------------------------------------------------------------------------
 
-function PlayheadMarker({ frame }: { frame: number }) {
+function PlayheadMarker({ frame, colWidth = FRAME_W }: { frame: number; colWidth?: number }) {
   return (
     <div
       style={{
         position: "absolute",
-        left: frame * FRAME_W,
+        left: frame * colWidth,
         top: 0,
-        width: FRAME_W,
+        width: colWidth,
         height: RULER_H,
         pointerEvents: "none",
         zIndex: 10,
@@ -390,14 +394,14 @@ function PlayheadMarker({ frame }: { frame: number }) {
           borderRight: "4px solid transparent",
           borderTop: "7px solid #ff3030",
           position: "absolute",
-          left: FRAME_W / 2 - 4,
+          left: Math.floor(colWidth / 2) - 4,
           top: 2,
         }}
       />
       <div
         style={{
           position: "absolute",
-          left: Math.floor(FRAME_W / 2),
+          left: Math.floor(colWidth / 2),
           top: 9,
           width: 1,
           height: RULER_H - 9,
@@ -495,6 +499,18 @@ function OnionRangeMarker({
 }
 
 // ---------------------------------------------------------------------------
+// Button-state metadata
+// ---------------------------------------------------------------------------
+
+/** Flash 8 button state definitions — indices match the frame indices (0-3). */
+const BUTTON_STATES: Array<{ label: string; color: string; titleColor: string }> = [
+  { label: "Up",   color: "#d0e8f8", titleColor: "#1a5080" }, // light blue
+  { label: "Over", color: "#d4f0d4", titleColor: "#1a6020" }, // light green
+  { label: "Down", color: "#f0e0a0", titleColor: "#806010" }, // light orange/yellow
+  { label: "Hit",  color: "#f0ccc8", titleColor: "#802010" }, // light pink/red
+];
+
+// ---------------------------------------------------------------------------
 // Main Timeline component
 // ---------------------------------------------------------------------------
 
@@ -523,6 +539,7 @@ export function Timeline({
   onPasteFrames,
   hasFrameClipboard = false,
   onRemoveFrames,
+  symbolType,
 }: TimelineProps): React.ReactElement {
   const [loop, setLoop] = useState(true);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -547,7 +564,10 @@ export function Timeline({
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  const frameCount = totalFrameCount(timeline);
+  // In button-symbol editing mode we lock the frame area to exactly 4 columns
+  const isButtonMode = symbolType === "button";
+  const frameCount = isButtonMode ? 4 : totalFrameCount(timeline);
+
   const panelRef = useRef<HTMLDivElement>(null);
   const framesScrollRef = useRef<HTMLDivElement>(null);
   const layerScrollRef = useRef<HTMLDivElement>(null);
@@ -578,13 +598,14 @@ export function Timeline({
   // Auto-scroll playhead into view
   useEffect(() => {
     if (framesScrollRef.current) {
-      const x = currentFrame * FRAME_W;
+      const colW = isButtonMode ? BUTTON_STATE_W : FRAME_W;
+      const x = currentFrame * colW;
       const el = framesScrollRef.current;
-      if (x < el.scrollLeft || x + FRAME_W > el.scrollLeft + el.clientWidth) {
+      if (x < el.scrollLeft || x + colW > el.scrollLeft + el.clientWidth) {
         el.scrollLeft = Math.max(0, x - el.clientWidth / 2);
       }
     }
-  }, [currentFrame]);
+  }, [currentFrame, isButtonMode]);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -619,13 +640,13 @@ export function Timeline({
       const selectedLayerId = timeline.layers[activeIdx]?.id;
       if (!selectedLayerId) return;
 
-      if (e.key === "F5") {
+      if (!isButtonMode && e.key === "F5") {
         e.preventDefault();
         onTimelineChange(insertFrame(timeline, selectedLayerId, currentFrame));
-      } else if (e.key === "F6") {
+      } else if (!isButtonMode && e.key === "F6") {
         e.preventDefault();
         onTimelineChange(insertKeyframe(timeline, selectedLayerId, currentFrame));
-      } else if (e.key === "F7") {
+      } else if (!isButtonMode && e.key === "F7") {
         e.preventDefault();
         onTimelineChange(insertBlankKeyframe(timeline, selectedLayerId, currentFrame));
       } else if (e.key === "ArrowLeft") {
@@ -1149,7 +1170,7 @@ export function Timeline({
               </div>
             ))}
           </div>
-          {/* Add / Delete Layer buttons */}
+          {/* Add / Delete Layer buttons (hidden in button-symbol editing mode) */}
           <div
             style={{
               height: 22,
@@ -1161,6 +1182,7 @@ export function Timeline({
               gap: 3,
             }}
           >
+            {!isButtonMode && (
             <button
               title="Add layer above active layer"
               onClick={handleAddLayer}
@@ -1178,6 +1200,8 @@ export function Timeline({
             >
               +
             </button>
+            )}
+            {!isButtonMode && (
             <button
               title="Delete active layer"
               onClick={handleDeleteActiveLayer}
@@ -1196,6 +1220,7 @@ export function Timeline({
             >
               −
             </button>
+            )}
           </div>
         </div>
 
@@ -1214,61 +1239,95 @@ export function Timeline({
         >
           <div
             style={{
-              width: frameCount * FRAME_W,
+              width: isButtonMode ? frameCount * BUTTON_STATE_W : frameCount * FRAME_W,
               display: "flex",
               flexDirection: "column",
             }}
           >
             {/* Ruler */}
             <div
-              onMouseDown={handleRulerMouseDown}
+              onMouseDown={isButtonMode ? undefined : handleRulerMouseDown}
               style={{
                 position: "relative",
                 display: "flex",
                 flexDirection: "row",
                 height: RULER_H,
-                background: "#3a3a3a",
+                background: isButtonMode ? "#2a2a2a" : "#3a3a3a",
                 borderBottom: "1px solid #1a1a1a",
                 flexShrink: 0,
-                cursor: "col-resize",
+                cursor: isButtonMode ? "default" : "col-resize",
               }}
             >
-              {Array.from({ length: frameCount }, (_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    width: FRAME_W,
-                    height: RULER_H,
-                    flexShrink: 0,
-                    borderRight:
-                      (i + 1) % 5 === 0
-                        ? "1px solid #555"
-                        : "1px solid #2a2a2a",
-                    boxSizing: "border-box",
-                    display: "flex",
-                    alignItems: "flex-end",
-                    paddingBottom: 1,
-                    paddingLeft: 1,
-                  }}
-                >
-                  {i % 5 === 0 && (
-                    <span
+              {isButtonMode
+                ? BUTTON_STATES.map((state, i) => (
+                    <div
+                      key={i}
+                      onClick={() => onFrameChange(i)}
                       style={{
-                        fontSize: 7,
-                        color: "#888",
-                        lineHeight: 1,
-                        pointerEvents: "none",
+                        width: BUTTON_STATE_W,
+                        height: RULER_H,
+                        flexShrink: 0,
+                        borderRight: "1px solid #1a1a1a",
+                        boxSizing: "border-box",
+                        background: i === currentFrame
+                          ? state.color
+                          : `${state.color}88`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
                       }}
                     >
-                      {i + 1}
-                    </span>
-                  )}
-                </div>
-              ))}
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontWeight: "bold",
+                          color: state.titleColor,
+                          lineHeight: 1,
+                          pointerEvents: "none",
+                          userSelect: "none",
+                        }}
+                      >
+                        {state.label}
+                      </span>
+                    </div>
+                  ))
+                : Array.from({ length: frameCount }, (_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        width: FRAME_W,
+                        height: RULER_H,
+                        flexShrink: 0,
+                        borderRight:
+                          (i + 1) % 5 === 0
+                            ? "1px solid #555"
+                            : "1px solid #2a2a2a",
+                        boxSizing: "border-box",
+                        display: "flex",
+                        alignItems: "flex-end",
+                        paddingBottom: 1,
+                        paddingLeft: 1,
+                      }}
+                    >
+                      {i % 5 === 0 && (
+                        <span
+                          style={{
+                            fontSize: 7,
+                            color: "#888",
+                            lineHeight: 1,
+                            pointerEvents: "none",
+                          }}
+                        >
+                          {i + 1}
+                        </span>
+                      )}
+                    </div>
+                  ))}
               {/* Playhead marker on ruler */}
-              <PlayheadMarker frame={currentFrame} />
-              {/* Onion skin range markers */}
-              {onionSkinEnabled && (
+              <PlayheadMarker frame={currentFrame} colWidth={isButtonMode ? BUTTON_STATE_W : FRAME_W} />
+              {/* Onion skin range markers (suppressed in button-symbol mode) */}
+              {!isButtonMode && onionSkinEnabled && (
                 <>
                   <OnionRangeMarker
                     frame={Math.max(0, currentFrame - onionBefore)}
@@ -1308,62 +1367,109 @@ export function Timeline({
                   background: idx === activeLayerIndex ? "rgba(42,64,96,0.35)" : "transparent",
                 }}
               >
-                {Array.from({ length: frameCount }, (_, fi) => {
-                  const state = getFrameState(layer, fi);
-                  const tweenSt = getTweenState(layer, fi);
-                  const kf = layer.frames.find((f) => f.index === fi && f.isKeyframe);
-                  // isFirstInTweenSpan: this is the start keyframe of a motion or shape tween
-                  const isFirstInTweenSpan =
-                    (tweenSt === "motion-tween" && kf?.tweenType === "motion") ||
-                    (tweenSt === "shape-tween" && kf?.tweenType === "shape");
-                  // Determine if this frame is within the selected range
-                  const isSelected =
-                    selectedFrameRange !== null &&
-                    selectedFrameRange.layerId === layer.id &&
-                    fi >= selectedFrameRange.start &&
-                    fi <= selectedFrameRange.end;
-                  return (
-                    <FrameCell
-                      key={fi}
-                      state={state}
-                      tweenState={tweenSt}
-                      isPlayhead={fi === currentFrame}
-                      isSelected={isSelected}
-                      isFirstInTweenSpan={isFirstInTweenSpan}
-                      label={kf?.label || undefined}
-                      onClick={(e) => {
-                        onFrameChange(fi);
-                        // Select keyframe for ease editing if it's a tween keyframe
-                        if (kf?.tweenType === "motion" || kf?.tweenType === "shape") {
-                          setSelectedKeyframe({ layerId: layer.id, frameIndex: fi });
-                        } else {
-                          setSelectedKeyframe(null);
-                        }
-                        // Shift-click: extend selection range from anchor
-                        if (e.shiftKey && anchorFrameRef.current && anchorFrameRef.current.layerId === layer.id) {
-                          const anchor = anchorFrameRef.current.frame;
-                          setSelectedFrameRange({
-                            layerId: layer.id,
-                            start: Math.min(anchor, fi),
-                            end: Math.max(anchor, fi),
-                          });
-                        } else {
-                          // Plain click: set anchor and single-frame selection
-                          anchorFrameRef.current = { layerId: layer.id, frame: fi };
-                          setSelectedFrameRange({ layerId: layer.id, start: fi, end: fi });
-                        }
-                      }}
-                      onContextMenu={(e) => openContextMenu(e, layer.id, fi)}
-                    />
-                  );
-                })}
+                {isButtonMode
+                  ? /* Button-state columns: one wide cell per state */
+                    BUTTON_STATES.map((btnState, fi) => {
+                      const kf = layer.frames.find((f) => f.index === fi && f.isKeyframe);
+                      const hasContent = kf && !kf.isEmpty && kf.displayObjects.length > 0;
+                      const isActive = fi === currentFrame;
+                      return (
+                        <div
+                          key={fi}
+                          onClick={() => {
+                            onFrameChange(fi);
+                            onActiveLayerChange?.(idx);
+                          }}
+                          style={{
+                            width: BUTTON_STATE_W,
+                            height: FRAME_H,
+                            flexShrink: 0,
+                            borderRight: "1px solid #1a1a1a",
+                            boxSizing: "border-box",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: isActive
+                              ? `${btnState.color}cc`
+                              : `${btnState.color}44`,
+                            outline: isActive ? `2px solid ${btnState.titleColor}` : "none",
+                            outlineOffset: "-2px",
+                          }}
+                        >
+                          {/* Filled dot = content, hollow dot = empty keyframe, nothing = no keyframe */}
+                          {kf && (
+                            <div
+                              style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: "50%",
+                                background: hasContent ? btnState.titleColor : "transparent",
+                                border: `1px solid ${btnState.titleColor}`,
+                                flexShrink: 0,
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })
+                  : /* Normal frame cells */
+                    Array.from({ length: frameCount }, (_, fi) => {
+                      const state = getFrameState(layer, fi);
+                      const tweenSt = getTweenState(layer, fi);
+                      const kf = layer.frames.find((f) => f.index === fi && f.isKeyframe);
+                      // isFirstInTweenSpan: this is the start keyframe of a motion or shape tween
+                      const isFirstInTweenSpan =
+                        (tweenSt === "motion-tween" && kf?.tweenType === "motion") ||
+                        (tweenSt === "shape-tween" && kf?.tweenType === "shape");
+                      // Determine if this frame is within the selected range
+                      const isSelected =
+                        selectedFrameRange !== null &&
+                        selectedFrameRange.layerId === layer.id &&
+                        fi >= selectedFrameRange.start &&
+                        fi <= selectedFrameRange.end;
+                      return (
+                        <FrameCell
+                          key={fi}
+                          state={state}
+                          tweenState={tweenSt}
+                          isPlayhead={fi === currentFrame}
+                          isSelected={isSelected}
+                          isFirstInTweenSpan={isFirstInTweenSpan}
+                          label={kf?.label || undefined}
+                          onClick={(e) => {
+                            onFrameChange(fi);
+                            // Select keyframe for ease editing if it's a tween keyframe
+                            if (kf?.tweenType === "motion" || kf?.tweenType === "shape") {
+                              setSelectedKeyframe({ layerId: layer.id, frameIndex: fi });
+                            } else {
+                              setSelectedKeyframe(null);
+                            }
+                            // Shift-click: extend selection range from anchor
+                            if (e.shiftKey && anchorFrameRef.current && anchorFrameRef.current.layerId === layer.id) {
+                              const anchor = anchorFrameRef.current.frame;
+                              setSelectedFrameRange({
+                                layerId: layer.id,
+                                start: Math.min(anchor, fi),
+                                end: Math.max(anchor, fi),
+                              });
+                            } else {
+                              // Plain click: set anchor and single-frame selection
+                              anchorFrameRef.current = { layerId: layer.id, frame: fi };
+                              setSelectedFrameRange({ layerId: layer.id, start: fi, end: fi });
+                            }
+                          }}
+                          onContextMenu={(e) => openContextMenu(e, layer.id, fi)}
+                        />
+                      );
+                    })}
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Playback controls */}
+      {/* Playback controls (or button state info bar) */}
       <div
         style={{
           display: "flex",
@@ -1377,96 +1483,127 @@ export function Timeline({
           gap: 4,
         }}
       >
-        {/* Go to first */}
-        <PlayBtn
-          title="Go to first frame"
-          onClick={() => { onFrameChange(0); }}
-        >
-          |&lt;
-        </PlayBtn>
-        {/* Step back */}
-        <PlayBtn
-          title="Step back one frame"
-          onClick={() => onFrameChange(Math.max(0, currentFrame - 1))}
-        >
-          &lt;
-        </PlayBtn>
-        {/* Play/Stop */}
-        <PlayBtn
-          title={isPlaying ? "Stop" : "Play"}
-          onClick={() => onPlayingChange(!isPlaying)}
-          active={isPlaying}
-        >
-          {isPlaying ? "||" : ">"}
-        </PlayBtn>
-        {/* Step forward */}
-        <PlayBtn
-          title="Step forward one frame"
-          onClick={() =>
-            onFrameChange(Math.min(frameCount - 1, currentFrame + 1))
-          }
-        >
-          &gt;
-        </PlayBtn>
-        {/* Go to last */}
-        <PlayBtn
-          title="Go to last frame"
-          onClick={() => onFrameChange(frameCount - 1)}
-        >
-          &gt;|
-        </PlayBtn>
+        {isButtonMode ? (
+          /* In button-symbol mode show state name and arrow navigation only */
+          <>
+            <PlayBtn
+              title="Previous state"
+              onClick={() => onFrameChange(Math.max(0, currentFrame - 1))}
+            >
+              &lt;
+            </PlayBtn>
+            <PlayBtn
+              title="Next state"
+              onClick={() => onFrameChange(Math.min(3, currentFrame + 1))}
+            >
+              &gt;
+            </PlayBtn>
+            <div style={{ width: 8 }} />
+            <span style={{ fontSize: 10, color: "#aaa" }}>
+              Button state: <strong style={{ color: BUTTON_STATES[currentFrame]?.titleColor ?? "#aaa" }}>
+                {BUTTON_STATES[currentFrame]?.label ?? "Up"}
+              </strong>
+            </span>
+            <div style={{ flex: 1 }} />
+            <span style={{ fontSize: 9, color: "#666" }}>
+              Click a state column to edit its content
+            </span>
+          </>
+        ) : (
+          /* Normal playback controls */
+          <>
+            {/* Go to first */}
+            <PlayBtn
+              title="Go to first frame"
+              onClick={() => { onFrameChange(0); }}
+            >
+              |&lt;
+            </PlayBtn>
+            {/* Step back */}
+            <PlayBtn
+              title="Step back one frame"
+              onClick={() => onFrameChange(Math.max(0, currentFrame - 1))}
+            >
+              &lt;
+            </PlayBtn>
+            {/* Play/Stop */}
+            <PlayBtn
+              title={isPlaying ? "Stop" : "Play"}
+              onClick={() => onPlayingChange(!isPlaying)}
+              active={isPlaying}
+            >
+              {isPlaying ? "||" : ">"}
+            </PlayBtn>
+            {/* Step forward */}
+            <PlayBtn
+              title="Step forward one frame"
+              onClick={() =>
+                onFrameChange(Math.min(frameCount - 1, currentFrame + 1))
+              }
+            >
+              &gt;
+            </PlayBtn>
+            {/* Go to last */}
+            <PlayBtn
+              title="Go to last frame"
+              onClick={() => onFrameChange(frameCount - 1)}
+            >
+              &gt;|
+            </PlayBtn>
 
-        <div style={{ width: 8 }} />
+            <div style={{ width: 8 }} />
 
-        {/* Loop */}
-        <PlayBtn
-          title={loop ? "Loop: on" : "Loop: off"}
-          onClick={() => setLoop((l) => !l)}
-          active={loop}
-        >
-          Loop
-        </PlayBtn>
+            {/* Loop */}
+            <PlayBtn
+              title={loop ? "Loop: on" : "Loop: off"}
+              onClick={() => setLoop((l) => !l)}
+              active={loop}
+            >
+              Loop
+            </PlayBtn>
 
-        <div style={{ width: 8 }} />
+            <div style={{ width: 8 }} />
 
-        {/* Onion Skin toggle */}
-        <PlayBtn
-          title={onionSkinEnabled ? "Onion Skin: on" : "Onion Skin: off"}
-          onClick={() => onToggleOnionSkin?.()}
-          active={onionSkinEnabled}
-        >
-          OS
-        </PlayBtn>
+            {/* Onion Skin toggle */}
+            <PlayBtn
+              title={onionSkinEnabled ? "Onion Skin: on" : "Onion Skin: off"}
+              onClick={() => onToggleOnionSkin?.()}
+              active={onionSkinEnabled}
+            >
+              OS
+            </PlayBtn>
 
-        {/* Edit Multiple Frames toggle */}
-        <PlayBtn
-          title={editMultipleFrames ? "Edit Multiple Frames: on" : "Edit Multiple Frames: off"}
-          onClick={() => onToggleEditMultipleFrames?.()}
-          active={editMultipleFrames}
-        >
-          EMF
-        </PlayBtn>
+            {/* Edit Multiple Frames toggle */}
+            <PlayBtn
+              title={editMultipleFrames ? "Edit Multiple Frames: on" : "Edit Multiple Frames: off"}
+              onClick={() => onToggleEditMultipleFrames?.()}
+              active={editMultipleFrames}
+            >
+              EMF
+            </PlayBtn>
 
-        <div style={{ flex: 1 }} />
+            <div style={{ flex: 1 }} />
 
-        {/* Frame counter input */}
-        <FrameCounterInput
-          currentFrame={currentFrame}
-          frameCount={frameCount}
-          onFrameChange={onFrameChange}
-        />
+            {/* Frame counter input */}
+            <FrameCounterInput
+              currentFrame={currentFrame}
+              frameCount={frameCount}
+              onFrameChange={onFrameChange}
+            />
 
-        {/* FPS display */}
-        <span
-          style={{
-            fontSize: 10,
-            color: "#888",
-            marginLeft: 6,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {frameRate} fps
-        </span>
+            {/* FPS display */}
+            <span
+              style={{
+                fontSize: 10,
+                color: "#888",
+                marginLeft: 6,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {frameRate} fps
+            </span>
+          </>
+        )}
       </div>
 
       {/* Ease control — shown when a tween keyframe is selected */}

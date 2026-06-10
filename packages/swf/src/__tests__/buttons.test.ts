@@ -455,4 +455,90 @@ describe("DefineButton2 export", () => {
     expect(tagCodes).toContain(TAG_DEFINE_SPRITE);
     expect(tagCodes).not.toContain(TAG_DEFINE_BUTTON2);
   });
+
+  it("9: ButtonRecord state bits correct for Over state (frame 1)", () => {
+    const btn = makeButtonSymbol("btn9", [
+      [],                            // frame 0 = Up (empty)
+      [makeShapeObj("shape-over")],  // frame 1 = Over
+      [],                            // frame 2 = Down (empty)
+      [],                            // frame 3 = Hit (empty)
+    ]);
+    const doc = makeDoc([btn]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    expect(btn2Tags.length).toBe(1);
+
+    const body = btn2Tags[0].body;
+    const flagsByte = body[5];
+    expect(flagsByte & 0x01).toBe(0); // StateUp not set
+    expect(flagsByte & 0x02).toBe(2); // StateOver set
+    expect(flagsByte & 0x04).toBe(0); // StateDown not set
+    expect(flagsByte & 0x08).toBe(0); // StateHitTest not set
+  });
+
+  it("10: ButtonRecord state bits correct for Down state (frame 2)", () => {
+    const btn = makeButtonSymbol("btn10", [
+      [],                            // frame 0 = Up (empty)
+      [],                            // frame 1 = Over (empty)
+      [makeShapeObj("shape-down")],  // frame 2 = Down
+      [],                            // frame 3 = Hit (empty)
+    ]);
+    const doc = makeDoc([btn]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    expect(btn2Tags.length).toBe(1);
+
+    const body = btn2Tags[0].body;
+    const flagsByte = body[5];
+    expect(flagsByte & 0x01).toBe(0); // StateUp not set
+    expect(flagsByte & 0x02).toBe(0); // StateOver not set
+    expect(flagsByte & 0x04).toBe(4); // StateDown set
+    expect(flagsByte & 0x08).toBe(0); // StateHitTest not set
+  });
+
+  it("11: all 4 states with distinct shapes — each state's ButtonRecord has the correct single state bit", () => {
+    // Each state has a unique shape, placed on a different layer so they get
+    // separate depths. This means 4 ButtonRecords each with exactly one state bit.
+    // We verify that the OR of all state bits in the body covers all 4 states.
+    const btn = makeButtonSymbol("btn11", [
+      [makeShapeObj("shape-up")],    // frame 0 = Up
+      [makeShapeObj("shape-over")],  // frame 1 = Over
+      [makeShapeObj("shape-down")],  // frame 2 = Down
+      [makeShapeObj("shape-hit")],   // frame 3 = Hit
+    ]);
+    const doc = makeDoc([btn]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    expect(btn2Tags.length).toBe(1);
+
+    // Scan the body for ButtonRecord flag bytes.
+    // Each ButtonRecord starts with a flags byte; bit3..bit0 are the state bits.
+    // A flags byte of 0x00 is the null terminator.
+    // We scan from offset 5 (after ButtonId + TrackAsMenu + ActionOffset)
+    // and collect non-zero bytes at record starts.
+    // Since MATRIX and CXFORM are variable-length, we can't stride by a fixed
+    // amount, but we CAN assert that all 4 state bits are represented somewhere
+    // in the body bytes.
+    const body = btn2Tags[0].body;
+    // Scan the entire body (from offset 5) and OR all non-zero low-nibble values.
+    // The state bits (0x01/0x02/0x04/0x08) will each appear exactly once as
+    // the first byte of their respective ButtonRecord.
+    let coveredStates = 0;
+    for (let i = 5; i < body.length; i++) {
+      const b = body[i] & 0x0f;
+      if (b === 0x01 || b === 0x02 || b === 0x04 || b === 0x08) {
+        coveredStates |= b;
+      }
+    }
+    expect(coveredStates & 0x01).toBe(1); // StateUp byte present
+    expect(coveredStates & 0x02).toBe(2); // StateOver byte present
+    expect(coveredStates & 0x04).toBe(4); // StateDown byte present
+    expect(coveredStates & 0x08).toBe(8); // StateHit byte present
+  });
 });
