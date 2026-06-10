@@ -1,0 +1,10 @@
+{
+  "id": "0945-fla-import-frame-label-anchor-type-never-decoded",
+  "title": "FLA import: frame label anchor type never decoded \u2014 always mapped to name/comment",
+  "description": "In flash8-binary.ts, the FLA binary decoder tracks labelIsComment: boolean but has no labelIsAnchor field. flash8-import.ts line 1026 maps: f.labelIsComment ? 'comment' : 'name' \u2014 the 'anchor' type is never produced from FLA import. The SWF encoding side already supports anchor labels (encodeFrameLabel with isAnchor=true), but they're never created by the importer. Fix: in flash8-binary.ts CPicFrame reading, find where labelType/labelIsComment is decoded (the byte that distinguishes name vs comment vs anchor) and also extract the anchor flag. Add labelIsAnchor?: boolean to Fla8Frame. In flash8-import.ts, map to 'anchor' when appropriate.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:30:13Z",
+  "updated_at": "2026-06-10T21:41:32Z"
+}
