@@ -2,9 +2,9 @@
   "id": "0879-as2-compiler-actionconstantpool-0x88-never-emitt",
   "title": "AS2 compiler: ActionConstantPool (0x88) never emitted \u2014 strings pushed inline",
   "description": "Implemented ActionConstantPool (0x88) emission in the AS2 compiler.\n\n## Changes\n- Added two-pass approach to compiler.ts:\n  - Pass 1: collectStrings() walks the AST and counts all string occurrences\n  - Pass 2: builds constant pool, emits ActionConstantPool (0x88) as first action, then compiles body with pool references\n- Modified pushString() to emit ActionPush type=8 (UI8 index) or type=9 (UI16 index) for pooled strings instead of type=0 (inline)\n- Sub-compilers (function bodies, try/catch/finally) inherit the parent constant pool via constantPool field\n- Updated and strengthened constantpool.test.ts with 8 tests covering:\n  - Pool emitted as first action\n  - Pool contains all string literals\n  - ActionPush uses type=8 instead of inline strings\n  - Repeated strings deduplicated in pool\n  - Bytecode size reduction\n  - Empty script produces no pool\n  - UI16 index (type=9) for pools > 255 entries\n\n## Test results\npnpm --filter @flash/core run test -- --run\n\u2192 301 passed (4765 tests) \u2014 all 8 new constantpool tests pass\n(2 unrelated failures from another agent's work on flash8-import/0886)\n\nCommand: pnpm --filter @flash/core run test -- --run\nResult: Test Files 301 passed (301), Tests 4765 passed | 5 todo (4770)",
-  "status": "in_progress",
+  "status": "done",
   "effort": "high",
   "priority": "low",
   "created_at": "2026-06-10T17:13:35Z",
-  "updated_at": "2026-06-10T18:11:03Z"
+  "updated_at": "2026-06-10T18:28:18Z"
 }

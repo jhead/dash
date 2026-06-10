@@ -166,6 +166,13 @@ export interface Fla8Instance {
    * the `on(...) { ... }` blocks. Empty string when the instance has no handler.
    */
   readonly script: string;
+  /**
+   * trackAsMenu flag for button instances (kind === "button" only).
+   * When true the button behaves like a menu item: pressing and dragging onto it
+   * activates it; releasing elsewhere still counts as a release.
+   * Maps to the TrackAsMenu bit in the DefineButton2 SWF tag.
+   */
+  readonly trackAsMenu?: boolean;
 }
 
 export interface Fla8TextRun {
@@ -1646,6 +1653,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
   let fields = DEFAULT_FIELDS;
   let instanceName = "";
   let script = "";
+  let trackAsMenu = false;
   try {
     fields = readCPicSymbolFields(ctx);
     if (!fields.filtersPresent) {
@@ -1653,7 +1661,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
       if (b >= 5) {
         const sub = readTimelineSubObject(r);
         if (sub.script) script = sub.script;
-        r.skip(1); // trackAsMenu
+        trackAsMenu = r.u8() !== 0;
         const name = readCString(r);
         if (plausibleName(name)) instanceName = name;
         if (b >= 8) readAccessibilityMaybe(ctx, b >= 0x0b);
@@ -1674,6 +1682,7 @@ function readCPicButton(ctx: ParseCtx): Fla8Instance {
     filters: fields.filters,
     blendMode: fields.blendMode,
     script,
+    ...(trackAsMenu ? { trackAsMenu } : {}),
   };
 }
 

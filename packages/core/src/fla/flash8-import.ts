@@ -737,6 +737,7 @@ function convertElement(
         ...(blendMode ? { blendMode } : {}),
         ...(clipActions.length > 0 ? { clipActions } : {}),
         ...(buttonHandlers.length > 0 ? { buttonHandlers } : {}),
+        ...(el.trackAsMenu ? { trackAsMenu: true } : {}),
       };
     }
     case "text": {

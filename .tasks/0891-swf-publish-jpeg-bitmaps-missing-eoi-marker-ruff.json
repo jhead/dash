@@ -2,9 +2,9 @@
   "id": "0891-swf-publish-jpeg-bitmaps-missing-eoi-marker-ruff",
   "title": "SWF publish: JPEG bitmaps missing EOI marker \u2014 Ruffle warns on every bitmap",
   "description": "When running Test Movie on Magnet.fla, Ruffle logs 12+ warnings:\n\n  WARN render/src/utils.rs:151 JPEG is missing EOI marker and may not decode properly\n\nEach bitmap placed in the SWF triggers this warning. Magnet.fla has 25 bitmaps (Bitmap 1\u201331). Bitmaps missing the JPEG EOI (0xFF 0xD9) end marker may display as black or corrupted in strict JPEG decoders.\n\nExpected: Published SWF JPEG data should include the proper EOI marker at the end of each JPEG stream so Ruffle decodes them without warnings.",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T17:54:40Z",
-  "updated_at": "2026-06-10T17:54:40Z"
+  "updated_at": "2026-06-10T18:27:54Z"
 }
