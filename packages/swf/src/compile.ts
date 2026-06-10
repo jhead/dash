@@ -954,7 +954,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         for (let li = 0; li < layers.length; li++) {
           const layer = layers[li];
           if (layer.type === "guide") continue;
-          const frame = getTweenedFrame(layer, frameIdx);
+          const frame = getTweenedFrame(layer, frameIdx, scene.timeline);
           // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
           if (!frame || frame.displayObjects.length === 0) continue;
 
@@ -978,7 +978,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           for (let mli = li + 1; mli < layers.length; mli++) {
             const ml = layers[mli]!;
             if (ml.type !== "masked") break;
-            const mFrame = getTweenedFrame(ml, frameIdx);
+            const mFrame = getTweenedFrame(ml, frameIdx, scene.timeline);
             // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
             if (!mFrame || mFrame.displayObjects.length === 0) continue;
             for (const obj of mFrame.displayObjects) {
