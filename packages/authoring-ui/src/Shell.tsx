@@ -34,6 +34,10 @@ import {
   createLayer,
   simplifyPath,
   smoothPath,
+  setMotionTween,
+  setShapeTween,
+  clearTween,
+  updateMotionTweenProps,
 } from "@flash/core";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts.js";
 import { TransformHandles } from "./TransformHandles";
@@ -651,8 +655,42 @@ export function Shell(): React.ReactElement {
   const [instances, setInstances] = useState<PlacedInstance[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 
-  // Selected shape (draw tool)
-  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  // Multi-selection: list of selected display object IDs (draw/selection tool)
+  const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
+  // Backward-compat single-selection: first selected id or null
+  const selectedShapeId = selectedShapeIds.length === 1 ? selectedShapeIds[0] : (selectedShapeIds.length > 0 ? selectedShapeIds[0] : null);
+
+  /** Replace the entire selection set. */
+  const setSelectedShapeId = useCallback((id: string | null) => {
+    setSelectedShapeIds(id ? [id] : []);
+  }, []);
+
+  /** Handle a shape-select event from StageArea (supports shift+click for multi-select). */
+  const handleShapeSelectFromStage = useCallback((id: string | null, shiftKey?: boolean) => {
+    if (id === null) {
+      setSelectedShapeIds([]);
+    } else if (shiftKey) {
+      // Toggle id in the selection set
+      setSelectedShapeIds((prev) =>
+        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      );
+    } else {
+      setSelectedShapeIds([id]);
+    }
+  }, []);
+
+  /** Handle a multi-shape-select event from StageArea (marquee result). */
+  const handleShapeSelectMultiple = useCallback((ids: string[], replace: boolean) => {
+    if (replace) {
+      setSelectedShapeIds(ids);
+    } else {
+      // Union with existing selection
+      setSelectedShapeIds((prev) => {
+        const merged = new Set([...prev, ...ids]);
+        return Array.from(merged);
+      });
+    }
+  }, []);
 
   // Stage / view
   const [zoom, setZoom] = useState(1.0);
@@ -1096,6 +1134,9 @@ export function Shell(): React.ReactElement {
       if (dragStartDocRef.current === null) {
         dragStartDocRef.current = doc;
       }
+      // Determine which IDs to move: if dragged id is selected, move all selected;
+      // otherwise just move the dragged id alone.
+      const idsToMove = selectedShapeIds.includes(id) ? selectedShapeIds : [id];
       replaceDoc(withTimeline((prev) => {
         const layer = prev.layers.find((l) => l.id === layerId);
         if (!layer) return prev;
@@ -1103,15 +1144,19 @@ export function Shell(): React.ReactElement {
           .filter((f) => f.isKeyframe && f.index <= currentFrame)
           .sort((a, b) => b.index - a.index)[0];
         if (!kf) return prev;
-        const obj = kf.displayObjects.find((o) => o.id === id) as ShapeDisplayObject | undefined;
-        if (!obj) return prev;
-        return updateDisplayObject(prev, layerId, currentFrame, id, {
-          x: obj.x + dx,
-          y: obj.y + dy,
-        });
+        let result = prev;
+        for (const moveId of idsToMove) {
+          const obj = kf.displayObjects.find((o) => o.id === moveId);
+          if (!obj) continue;
+          result = updateDisplayObject(result, layerId, currentFrame, moveId, {
+            x: obj.x + dx,
+            y: obj.y + dy,
+          });
+        }
+        return result;
       }));
     },
-    [timeline, currentFrame, activeLayerIndex, doc, replaceDoc, withTimeline]
+    [selectedShapeIds, timeline, currentFrame, activeLayerIndex, doc, replaceDoc, withTimeline]
   );
 
   /** Called by StageArea on mouse-up after a drag gesture. Commits to history. */
@@ -1128,41 +1173,56 @@ export function Shell(): React.ReactElement {
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
       if (!layerId) return;
       pushDoc(withTimeline((t) => removeDisplayObject(t, layerId, currentFrame, id)));
-      setSelectedShapeId(null);
+      setSelectedShapeIds((prev) => prev.filter((x) => x !== id));
     },
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
   );
+
+  /** Delete all currently selected display objects in one undo step. */
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedShapeIds.length === 0) return;
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return;
+    pushDoc(withTimeline((t) => {
+      let result = t;
+      for (const id of selectedShapeIds) {
+        result = removeDisplayObject(result, layerId, currentFrame, id);
+      }
+      return result;
+    }));
+    setSelectedShapeIds([]);
+  }, [selectedShapeIds, timeline, currentFrame, safeActiveLayerIndex, pushDoc, withTimeline]);
 
   // ---------------------------------------------------------------------------
   // Clipboard handlers
   // ---------------------------------------------------------------------------
 
-  /** Copy: snapshot the selected display object into the module-level clipboard. */
+  /** Copy: snapshot the selected display object(s) into the module-level clipboard. */
   const handleCopy = useCallback(() => {
-    if (!selectedShapeId) return;
+    if (selectedShapeIds.length === 0) return;
     const layer = timeline.layers[safeActiveLayerIndex];
     if (!layer) return;
     const kf = [...layer.frames]
       .filter((f) => f.isKeyframe && f.index <= currentFrame)
       .sort((a, b) => b.index - a.index)[0];
     if (!kf) return;
-    const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
-    if (obj) _clipboardItems = [obj];
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame]);
+    const objs = kf.displayObjects.filter((o) => selectedShapeIds.includes(o.id));
+    if (objs.length > 0) _clipboardItems = objs;
+  }, [selectedShapeIds, timeline, safeActiveLayerIndex, currentFrame]);
 
-  /** Cut: copy then delete the selected display object. */
+  /** Cut: copy then delete the selected display object(s). */
   const handleCut = useCallback(() => {
-    if (!selectedShapeId) return;
+    if (selectedShapeIds.length === 0) return;
     handleCopy();
-    handleShapeDelete(selectedShapeId);
-  }, [selectedShapeId, handleCopy, handleShapeDelete]);
+    handleDeleteSelected();
+  }, [selectedShapeIds, handleCopy, handleDeleteSelected]);
 
   /** Paste: add clipboard items to the active keyframe with an optional +10/+10 offset. */
   const handlePaste = useCallback((inPlace = false) => {
     if (_clipboardItems.length === 0) return;
     const layerId = timeline.layers[safeActiveLayerIndex]?.id;
     if (!layerId) return;
-    let lastId: string | null = null;
+    const pastedIds: string[] = [];
     let newDoc = doc;
     for (const item of _clipboardItems) {
       const newId = `paste-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -1186,10 +1246,10 @@ export function Shell(): React.ReactElement {
         const t = addDisplayObject(newDoc.scenes[sceneIdx].timeline, layerId, currentFrame, pasted);
         newDoc = { ...newDoc, scenes: newDoc.scenes.map((s, i) => i === sceneIdx ? { ...s, timeline: t } : s) };
       }
-      lastId = newId;
+      pastedIds.push(newId);
     }
     pushDoc(newDoc);
-    if (lastId) setSelectedShapeId(lastId);
+    if (pastedIds.length > 0) setSelectedShapeIds(pastedIds);
   }, [doc, timeline, safeActiveLayerIndex, currentFrame, editContext, pushDoc, activeSceneIndex]);
 
   /** Paste in Place: paste at the exact same coordinates as the source. */
@@ -1446,32 +1506,52 @@ export function Shell(): React.ReactElement {
       if (!selectedShapeId || !selectedDisplayObject) return;
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
       if (!layerId) return;
-      replaceDoc(withTimeline((t) =>
-        updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
-          x: selectedDisplayObject.x + dx,
-          y: selectedDisplayObject.y + dy,
-        })
-      ));
+      const layer = timeline.layers[safeActiveLayerIndex];
+      if (!layer) return;
+      const kf = getGoverningKeyframe(layer, currentFrame);
+      if (!kf) return;
+      replaceDoc(withTimeline((t) => {
+        let result = t;
+        for (const id of selectedShapeIds) {
+          const obj = kf.displayObjects.find((o) => o.id === id);
+          if (!obj) continue;
+          result = updateDisplayObject(result, layerId, currentFrame, id, {
+            x: obj.x + dx,
+            y: obj.y + dy,
+          });
+        }
+        return result;
+      }));
     },
-    [selectedShapeId, selectedDisplayObject, timeline, safeActiveLayerIndex, currentFrame, replaceDoc, withTimeline]
+    [selectedShapeId, selectedShapeIds, selectedDisplayObject, timeline, safeActiveLayerIndex, currentFrame, replaceDoc, withTimeline]
   );
 
-  /** Arrow-key nudge: move the selected object by dx/dy pixels (1px plain, 8px with Shift). */
+  /** Arrow-key nudge: move the selected object(s) by dx/dy pixels (1px plain, 8px with Shift). */
   const handleNudge = useCallback(
     (dx: number, dy: number) => {
-      if (!selectedShapeId || !selectedDisplayObject) return;
+      if (selectedShapeIds.length === 0) return;
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
       if (!layerId) return;
       // Skip nudge when the user is actively editing text in a text field
       if (editingTextId !== null) return;
-      pushDoc(withTimeline((t) =>
-        updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
-          x: selectedDisplayObject.x + dx,
-          y: selectedDisplayObject.y + dy,
-        })
-      ));
+      const layer = timeline.layers[safeActiveLayerIndex];
+      if (!layer) return;
+      const kf = getGoverningKeyframe(layer, currentFrame);
+      if (!kf) return;
+      pushDoc(withTimeline((t) => {
+        let result = t;
+        for (const id of selectedShapeIds) {
+          const obj = kf.displayObjects.find((o) => o.id === id);
+          if (!obj) continue;
+          result = updateDisplayObject(result, layerId, currentFrame, id, {
+            x: obj.x + dx,
+            y: obj.y + dy,
+          });
+        }
+        return result;
+      }));
     },
-    [selectedShapeId, selectedDisplayObject, editingTextId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
+    [selectedShapeIds, editingTextId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
   );
 
   const handleTransformObject = useCallback(
@@ -1578,6 +1658,13 @@ export function Shell(): React.ReactElement {
     () => (selectedDisplayObject ? [selectedDisplayObject] : []),
     [selectedDisplayObject]
   );
+
+  /** Governing keyframe at the active layer cursor position (for PropertiesPanel frame view). */
+  const currentGoverningFrame = useMemo<Frame | null>(() => {
+    const layer = timeline.layers[safeActiveLayerIndex];
+    if (!layer) return null;
+    return getGoverningKeyframe(layer, currentFrame) ?? null;
+  }, [timeline, safeActiveLayerIndex, currentFrame]);
 
   // ---------------------------------------------------------------------------
   // Handlers — Align panel
@@ -3113,13 +3200,12 @@ export function Shell(): React.ReactElement {
     if (!layer) return;
     const kf = getGoverningKeyframe(layer, currentFrame);
     if (!kf || kf.displayObjects.length === 0) return;
-    // Select the last object (multi-select is not yet supported; select any for now)
-    const last = kf.displayObjects[kf.displayObjects.length - 1];
-    setSelectedShapeId(last.id);
+    // Select all objects in the governing keyframe
+    setSelectedShapeIds(kf.displayObjects.map((o) => o.id));
   }, [timeline, safeActiveLayerIndex, currentFrame]);
 
   const handleDeselect = useCallback(() => {
-    setSelectedShapeId(null);
+    setSelectedShapeIds([]);
   }, []);
 
   const handleInsertFrame = useCallback(() => {
@@ -3147,7 +3233,7 @@ export function Shell(): React.ReactElement {
     onCut: handleCut,
     onPaste: () => handlePaste(false),
     onPasteInPlace: handlePasteInPlace,
-    onDelete: selectedShapeId ? () => handleShapeDelete(selectedShapeId) : undefined,
+    onDelete: selectedShapeIds.length > 0 ? handleDeleteSelected : undefined,
     onSelectAll: handleSelectAll,
     onDeselect: handleDeselect,
     onGroup: handleGroup,
@@ -3185,6 +3271,75 @@ export function Shell(): React.ReactElement {
   const handleUpdateDocProperties = useCallback((partial: Partial<DocumentProperties>) => {
     pushDoc(withProperties((p) => ({ ...p, ...partial })));
   }, [pushDoc, withProperties]);
+
+  /**
+   * Update frame properties from the PropertiesPanel frame view.
+   * Handles label, labelType, tweenType, motionEase, motionRotate, motionRotateCount.
+   */
+  const handleFrameUpdate = useCallback(
+    (layerIndex: number, frameIndex: number, updates: Partial<Frame>) => {
+      const layer = timeline.layers[layerIndex];
+      if (!layer) return;
+      const kf = getGoverningKeyframe(layer, frameIndex);
+      if (!kf || !kf.isKeyframe) return;
+      const kfIndex = kf.index;
+      const layerId = layer.id;
+
+      pushDoc(
+        withTimeline((t) => {
+          let updated = t;
+
+          // Handle label/labelType updates
+          if (updates.label !== undefined || updates.labelType !== undefined) {
+            updated = {
+              ...updated,
+              layers: updated.layers.map((l) => {
+                if (l.id !== layerId) return l;
+                return {
+                  ...l,
+                  frames: l.frames.map((f) => {
+                    if (f.index !== kfIndex || !f.isKeyframe) return f;
+                    return {
+                      ...f,
+                      ...(updates.label !== undefined ? { label: updates.label } : {}),
+                      ...(updates.labelType !== undefined ? { labelType: updates.labelType } : {}),
+                    };
+                  }),
+                };
+              }),
+            };
+          }
+
+          // Handle tweenType changes
+          if (updates.tweenType !== undefined) {
+            if (updates.tweenType === "none") {
+              updated = clearTween(updated, layerId, kfIndex);
+            } else if (updates.tweenType === "motion") {
+              updated = setMotionTween(updated, layerId, kfIndex);
+            } else if (updates.tweenType === "shape") {
+              updated = setShapeTween(updated, layerId, kfIndex);
+            }
+          }
+
+          // Handle motion ease update
+          if (updates.motionEase !== undefined) {
+            updated = setMotionTween(updated, layerId, kfIndex, updates.motionEase);
+          }
+
+          // Handle motion rotate/rotateCount via updateMotionTweenProps
+          const motionProps: { motionRotate?: "none" | "auto" | "cw" | "ccw"; motionRotateCount?: number } = {};
+          if (updates.motionRotate !== undefined) motionProps.motionRotate = updates.motionRotate;
+          if (updates.motionRotateCount !== undefined) motionProps.motionRotateCount = updates.motionRotateCount;
+          if (Object.keys(motionProps).length > 0) {
+            updated = updateMotionTweenProps(updated, layerId, kfIndex, motionProps);
+          }
+
+          return updated;
+        }),
+      );
+    },
+    [timeline, pushDoc, withTimeline],
+  );
 
   // ---------------------------------------------------------------------------
   // File menu handlers
@@ -3427,7 +3582,7 @@ export function Shell(): React.ReactElement {
 
     const bridge = {
       getDocument: () => doc,
-      getSelection: () => (selectedShapeId ? [selectedShapeId] : []),
+      getSelection: () => selectedShapeIds,
       getCurrentFrame: () => currentFrame,
       getActiveLayerIndex: () => activeLayerIndex,
       getHistoryDepth: () => history.undoDepth,
@@ -3521,7 +3676,7 @@ export function Shell(): React.ReactElement {
     };
   }, [
     doc,
-    selectedShapeId,
+    selectedShapeIds,
     currentFrame,
     activeLayerIndex,
     activeSceneIndex,
@@ -3553,7 +3708,7 @@ export function Shell(): React.ReactElement {
       // Read from latestDocRef so agent commands issued immediately after
       // pushDoc() see the updated document before React re-renders.
       getDoc: () => latestDocRef.current,
-      getSelectedIds: () => (selectedShapeId ? [selectedShapeId] : []),
+      getSelectedIds: () => selectedShapeIds,
       getCurrentFrame: () => currentFrame,
       getActiveLayerIndex: () => activeLayerIndex,
       getActiveTool: () => toolState.activeTool,
@@ -3575,7 +3730,7 @@ export function Shell(): React.ReactElement {
         if (idx >= 0) setActiveLayerIndex(idx);
       },
       setSelectedIds: (ids: string[]) => {
-        setSelectedShapeId(ids.length === 1 ? ids[0] : null);
+        setSelectedShapeIds(ids);
       },
       setZoom: handleZoomChangeDirect,
       setPan: handlePanChange,
@@ -3644,7 +3799,7 @@ export function Shell(): React.ReactElement {
     };
   }, [
     doc,
-    selectedShapeId,
+    selectedShapeIds,
     currentFrame,
     activeLayerIndex,
     toolState.activeTool,
@@ -4191,6 +4346,10 @@ export function Shell(): React.ReactElement {
                     selectedObjects={selectedObjects}
                     onUpdateDocProperties={handleUpdateDocProperties}
                     onUpdateObject={handleUpdateObject}
+                    currentFrame={currentGoverningFrame}
+                    currentLayerIndex={safeActiveLayerIndex}
+                    currentFrameIndex={currentFrame}
+                    onFrameUpdate={handleFrameUpdate}
                   />
                 )}
                 {bottomTab === "output" && (
@@ -4300,7 +4459,7 @@ export function Shell(): React.ReactElement {
                   visible={true}
                   embedded={true}
                   displayObjects={activeKeyframeObjects}
-                  selectedIds={selectedShapeId ? [selectedShapeId] : []}
+                  selectedIds={selectedShapeIds}
                   stageWidth={docProperties.width}
                   stageHeight={docProperties.height}
                   onAlign={handleAlignObjects}
@@ -4390,7 +4549,7 @@ export function Shell(): React.ReactElement {
       <AlignPanel
         visible={alignPanelVisible}
         displayObjects={activeKeyframeObjects}
-        selectedIds={selectedShapeId ? [selectedShapeId] : []}
+        selectedIds={selectedShapeIds}
         stageWidth={docProperties.width}
         stageHeight={docProperties.height}
         onAlign={handleAlignObjects}

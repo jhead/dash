@@ -14,6 +14,8 @@ import type {
   DisplayObject,
   DocumentProperties,
   FlashDocument,
+  Frame,
+  LabelType,
   ShapeDisplayObject,
   SymbolInstance,
   TextDisplayObject,
@@ -25,6 +27,7 @@ import type {
   Color,
   TextAlign,
   TextType,
+  TweenType,
 } from "@flash/core";
 import { ColorPicker } from "./ColorPicker";
 
@@ -61,22 +64,30 @@ export interface PropertiesPanelProps {
   selectedObjects: DisplayObject[];
   onUpdateDocProperties: (props: Partial<DocumentProperties>) => void;
   onUpdateObject: (id: string, changes: Partial<DisplayObject>) => void;
+  /** The governing keyframe at the current cursor position (used for frame view). */
+  currentFrame?: Frame | null;
+  /** 0-based layer index of the active layer (used for frame view). */
+  currentLayerIndex?: number;
+  /** 0-based frame index of the current playhead position (used for frame view). */
+  currentFrameIndex?: number;
+  /** Callback to update frame properties. */
+  onFrameUpdate?: (layerIndex: number, frameIndex: number, updates: Partial<Frame>) => void;
 }
 
 // ---------------------------------------------------------------------------
 // View discriminator
 // ---------------------------------------------------------------------------
 
-type PanelView = "document" | "shape" | "instance" | "text" | "mixed";
+type PanelView = "document" | "frame" | "shape" | "instance" | "text" | "mixed";
 
 function getView(selectedObjects: DisplayObject[]): PanelView {
-  if (selectedObjects.length === 0) return "document";
+  if (selectedObjects.length === 0) return "frame";
   if (selectedObjects.length > 1) return "mixed";
   const obj = selectedObjects[0];
   if (obj.type === "shape") return "shape";
   if (obj.type === "instance") return "instance";
   if (obj.type === "text") return "text";
-  return "document";
+  return "frame";
 }
 
 // ---------------------------------------------------------------------------
@@ -885,6 +896,184 @@ function TextView({
 }
 
 // ---------------------------------------------------------------------------
+// Frame view
+// ---------------------------------------------------------------------------
+
+const LABEL_TYPES: { value: LabelType; label: string }[] = [
+  { value: "name", label: "Name" },
+  { value: "comment", label: "Comment" },
+  { value: "anchor", label: "Anchor" },
+];
+
+const TWEEN_TYPES: { value: TweenType; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "motion", label: "Motion" },
+  { value: "shape", label: "Shape" },
+];
+
+const ROTATE_MODES: { value: "none" | "auto" | "cw" | "ccw"; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "cw", label: "CW" },
+  { value: "ccw", label: "CCW" },
+  { value: "none", label: "None" },
+];
+
+function FrameView({
+  frame,
+  layerIndex,
+  frameIndex,
+  onFrameUpdate,
+}: {
+  frame: Frame | null | undefined;
+  layerIndex: number;
+  frameIndex: number;
+  onFrameUpdate?: (layerIndex: number, frameIndex: number, updates: Partial<Frame>) => void;
+}): React.ReactElement {
+  const label = frame?.label ?? "";
+  const labelType: LabelType = frame?.labelType ?? "name";
+  const tweenType: TweenType = frame?.tweenType ?? "none";
+  const motionEase = frame?.motionEase ?? 0;
+  const motionRotate = frame?.motionRotate ?? "auto";
+  const motionRotateCount = frame?.motionRotateCount ?? 0;
+
+  const [labelDraft, setLabelDraft] = useState(label);
+  useEffect(() => {
+    setLabelDraft(frame?.label ?? "");
+  }, [frame?.label, layerIndex, frameIndex]);
+
+  const commitLabel = useCallback(() => {
+    if (!frame) return;
+    onFrameUpdate?.(layerIndex, frameIndex, { label: labelDraft });
+  }, [frame, layerIndex, frameIndex, labelDraft, onFrameUpdate]);
+
+  const isMotion = tweenType === "motion";
+
+  if (!frame) {
+    return (
+      <div style={S.body}>
+        <span style={S.placeholder}>No keyframe at current position</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={S.body}>
+      {/* Frame label */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Label:</span>
+        <input
+          style={S.inputWide}
+          value={labelDraft}
+          placeholder="frame label"
+          onChange={(e) => setLabelDraft(e.target.value)}
+          onBlur={commitLabel}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitLabel(); }
+            if (e.key === "Escape") { e.preventDefault(); setLabelDraft(frame.label); }
+          }}
+        />
+      </div>
+
+      {/* Label type */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Type:</span>
+        <select
+          style={S.select}
+          value={labelType}
+          onChange={(e) => onFrameUpdate?.(layerIndex, frameIndex, { labelType: e.target.value as LabelType })}
+        >
+          {LABEL_TYPES.map(({ value, label: lbl }) => (
+            <option key={value} value={value}>{lbl}</option>
+          ))}
+        </select>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Tween type */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Tween:</span>
+        <select
+          style={S.selectWide}
+          value={tweenType}
+          onChange={(e) => onFrameUpdate?.(layerIndex, frameIndex, { tweenType: e.target.value as TweenType })}
+        >
+          {TWEEN_TYPES.map(({ value, label: lbl }) => (
+            <option key={value} value={value}>{lbl}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Motion tween fields */}
+      {isMotion && (
+        <>
+          <div style={S.separator} />
+
+          {/* Ease */}
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Ease:</span>
+            <NumInput
+              value={motionEase}
+              min={-100}
+              max={100}
+              style={{ width: 46 }}
+              onChange={(v) => onFrameUpdate?.(layerIndex, frameIndex, { motionEase: Math.round(v) })}
+            />
+            <button
+              style={{
+                ...S.toggleBtn,
+                background: "#333",
+                color: "#888",
+                fontSize: "10px",
+                padding: "1px 4px",
+              }}
+              onClick={() => {
+                // TODO: open custom ease curve dialog when implemented
+              }}
+              title="Custom ease curve (not yet implemented)"
+            >
+              Custom…
+            </button>
+          </div>
+
+          <div style={S.separator} />
+
+          {/* Rotate mode */}
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Rotate:</span>
+            <select
+              style={S.select}
+              value={motionRotate}
+              onChange={(e) =>
+                onFrameUpdate?.(layerIndex, frameIndex, { motionRotate: e.target.value as "none" | "auto" | "cw" | "ccw" })
+              }
+            >
+              {ROTATE_MODES.map(({ value, label: lbl }) => (
+                <option key={value} value={value}>{lbl}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Rotate count (when explicit CW or CCW) */}
+          {(motionRotate === "cw" || motionRotate === "ccw") && (
+            <div style={S.fieldGroup}>
+              <span style={S.label}>×</span>
+              <NumInput
+                value={motionRotateCount}
+                min={0}
+                max={99}
+                style={{ width: 36 }}
+                onChange={(v) => onFrameUpdate?.(layerIndex, frameIndex, { motionRotateCount: Math.round(v) })}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // PropertiesPanel
 // ---------------------------------------------------------------------------
 
@@ -893,11 +1082,16 @@ export function PropertiesPanel({
   selectedObjects,
   onUpdateDocProperties,
   onUpdateObject,
+  currentFrame: currentFrameProp,
+  currentLayerIndex = 0,
+  currentFrameIndex = 0,
+  onFrameUpdate,
 }: PropertiesPanelProps): React.ReactElement {
   const view = getView(selectedObjects);
 
-  let typeLabel = "Document";
-  if (view === "shape") typeLabel = "Shape";
+  let typeLabel = "Frame";
+  if (view === "document") typeLabel = "Document";
+  else if (view === "shape") typeLabel = "Shape";
   else if (view === "instance") typeLabel = "Symbol Instance";
   else if (view === "text") typeLabel = "Text Field";
   else if (view === "mixed") typeLabel = "Mixed";
@@ -908,6 +1102,15 @@ export function PropertiesPanel({
         <span style={S.headerLabel}>Properties</span>
         <span style={S.headerType}>{typeLabel}</span>
       </div>
+
+      {view === "frame" && (
+        <FrameView
+          frame={currentFrameProp}
+          layerIndex={currentLayerIndex}
+          frameIndex={currentFrameIndex}
+          onFrameUpdate={onFrameUpdate}
+        />
+      )}
 
       {view === "document" && (
         <DocumentView doc={doc} onUpdateDocProperties={onUpdateDocProperties} />
