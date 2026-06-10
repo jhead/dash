@@ -864,7 +864,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   for (const scene of doc.scenes) {
     for (const layer of scene.timeline.layers) {
       for (const frame of layer.frames) {
-        for (const obj of frame.displayObjects) {
+        for (const obj of flattenDisplayObjects(frame.displayObjects)) {
           if (obj.type === "video") {
             referencedVideoItemIds.add((obj as VideoDisplayObject).videoItemId);
           }
@@ -931,7 +931,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       for (const frame of layer.frames) {
         // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
         if (!frame.isKeyframe) continue;
-        for (const obj of frame.displayObjects) {
+        for (const obj of flattenDisplayObjects(frame.displayObjects)) {
           if (obj.type !== "text") continue;
           const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
           if (fontCharIdMap.has(key)) continue;
@@ -1006,6 +1006,45 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       easeCurve?: { x1: number; y1: number; x2: number; y2: number } | null;
     }>
   >();
+
+  // ---------------------------------------------------------------------------
+  // GroupObject flattening helper
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Recursively flatten GroupObject entries in a DisplayObject array.
+   *
+   * GroupObject (type "group") is a container with x/y and children[].
+   * It has no SWF equivalent — instead, each child is placed directly on the
+   * stage with the group's x/y accumulated into the child's own position.
+   * Nesting is handled by accumulating dx/dy through recursive calls.
+   *
+   * Returns a flat array of non-group DisplayObjects with positions adjusted.
+   */
+  function flattenDisplayObjects(
+    objs: readonly DisplayObject[],
+    dx = 0,
+    dy = 0
+  ): DisplayObject[] {
+    const result: DisplayObject[] = [];
+    for (const obj of objs) {
+      if (obj.type === "group") {
+        // Recurse into children, accumulating the group's offset
+        const childFlat = flattenDisplayObjects(
+          obj.children,
+          dx + obj.x,
+          dy + obj.y
+        );
+        result.push(...childFlat);
+      } else if (dx !== 0 || dy !== 0) {
+        // Apply accumulated group offset to non-group child
+        result.push({ ...obj, x: (obj.x ?? 0) + dx, y: (obj.y ?? 0) + dy } as DisplayObject);
+      } else {
+        result.push(obj);
+      }
+    }
+    return result;
+  }
 
   // Character pre-pass: define all characters across ALL scenes' timelines.
   // This ensures objects defined in scene 1 can be referenced in scene 2.
@@ -1084,7 +1123,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       for (const frame of layer.frames) {
         // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
         if (!frame.isKeyframe) continue;
-        for (const obj of frame.displayObjects) {
+        for (const obj of flattenDisplayObjects(frame.displayObjects)) {
           if (objCharIdMap.has(obj.id)) continue;
           if (obj.type === "shape" || obj.type === "drawing-object") {
             // Emit DefineBits tags for any bitmap fills referenced by this shape
@@ -1254,10 +1293,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     }
 
     // Register all object IDs for a layer across every keyframe it has.
+    // Groups are flattened so each child gets its own depth entry.
     const registerLayerDepths = (li: number) => {
       for (const frame of preLayers[li]!.frames) {
         if (!frame.isKeyframe) continue;
-        for (const obj of frame.displayObjects) {
+        for (const obj of flattenDisplayObjects(frame.displayObjects)) {
           getOrAssignDepth(preSceneIdx, li, obj.id);
         }
       }
@@ -1505,7 +1545,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
           if (!frame || frame.displayObjects.length === 0) continue;
 
-          for (const obj of frame.displayObjects) {
+          for (const obj of flattenDisplayObjects(frame.displayObjects)) {
             const depth = getOrAssignDepth(sceneIdx, li, obj.id);
             thisFrameDepths.set(depth, { objId: obj.id, displayObj: obj, layerIdx: li });
           }
@@ -1528,7 +1568,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             const mFrame = getTweenedFrame(ml, frameIdx, scene.timeline);
             // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
             if (!mFrame || mFrame.displayObjects.length === 0) continue;
-            for (const obj of mFrame.displayObjects) {
+            for (const obj of flattenDisplayObjects(mFrame.displayObjects)) {
               // Depths already assigned in pass 1 — getOrAssignDepth is idempotent
               const d = getOrAssignDepth(sceneIdx, mli, obj.id);
               if (d > maxDepth) maxDepth = d;
