@@ -767,10 +767,12 @@ describe("frame sound linkage (buildFla8Document with in-memory synthetic stream
     ]);
 
     // --- Page stream: CPicPage → CPicLayer → CPicFrame with soundId=1 ---
-    // Class table after parsing:
-    //   slots 1+2 → CPicPage  (backref 0x8001)
-    //   slots 3+4 → CPicLayer (backref 0x8003)
-    //   slots 5+6 → CPicFrame (backref 0x8005)
+    // Class reference indices (= 1 + classesDefinedBefore + objectsWrittenBefore,
+    // per the MFC CArchive scheme; here no objects are interleaved between the
+    // class declarations so the indices come out 1, 3, 5):
+    //   CPicPage  → backref 0x8001
+    //   CPicLayer → backref 0x8003
+    //   CPicFrame → backref 0x8005
     const pageBytes = new Uint8Array([
       // Root marker
       0x01,

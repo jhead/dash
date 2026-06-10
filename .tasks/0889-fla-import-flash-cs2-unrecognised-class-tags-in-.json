@@ -1,0 +1,10 @@
+{
+  "id": "0889-fla-import-flash-cs2-unrecognised-class-tags-in-",
+  "title": "FLA import: Flash CS2 unrecognised class tags in Magnet.fla",
+  "description": "Magnet.fla (Flash CS2 binary FLA) failed import with 'unrecognised class tag 0x102/0x202/0x002/0x204' and consequent 'stream truncated while reading CPicFrame'. Root cause: our MFC CArchive class-reference table used a fixed 'two slots per class' model. The real MFC scheme (verified against flacomdoc AbstractConverter.useClass, the byte-verified XFL->FLA writer) assigns each class a reference index = 1 + (classes defined before) + (objects written before) at first declaration, where a SINGLE object counter advances on EVERY object header (every class-tag read, new or backref). When a class is first declared after several objects were already serialized (e.g. CPicShape first appearing after 4 CPicFrame+bitmap objects in Symbol 13), its reference index is higher than the 2-per-class model predicts (CPicShape=16, not 9), so its backref tag 0x8010 was mis-read as unrecognised, desyncing the rest of the layer/frame walk. Fix: rewrite ArchiveReader to track classIndex=1+definedCount+objectCount at declaration and advance objectCount on every class-tag read; resolve backrefs by reference index. Result: Magnet.fla imports with 6 scenes, zero unrecognised-tag warnings (only benign 'sound id N not found' remain; sounds live in unmapped Media streams). All 4754 core tests + tsc pass.",
+  "status": "in_progress",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T17:50:51Z",
+  "updated_at": "2026-06-10T17:50:51Z"
+}

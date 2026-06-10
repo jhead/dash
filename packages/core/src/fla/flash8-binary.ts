@@ -453,32 +453,64 @@ type ClassTag =
   | { kind: "object-backref" }
   | { kind: "bad"; tag: number };
 
+/**
+ * MFC CArchive class/object reference table.
+ *
+ * The serialization assigns each *referenceable* item a 1-based index drawn
+ * from a SINGLE monotonically-increasing counter that advances on every object
+ * header (every class-tag read). This is the exact inverse of flacomdoc's
+ * writer (`AbstractConverter.useClass`):
+ *
+ *   // on first use of a class:
+ *   definedClasses.put(className, 1 + definedClasses.size() + totalObjectCount);
+ *   // on EVERY useClass call (NEWCLASS or backref):
+ *   totalObjectCount++;
+ *
+ * So a class first declared after N earlier objects and C earlier class
+ * declarations gets reference index `1 + C + N`, and that index is reused by
+ * every later backref to the class — even though the running object counter
+ * keeps climbing. Earlier implementations modelled a fixed "two slots per
+ * class" table, which only happens to be correct while no objects have been
+ * serialized between class declarations; in real streams (e.g. a CPicShape
+ * first declared after several CPicFrame/CPicBitmap objects) the class index
+ * is much higher (CPicShape = 16, not 9, in Magnet.fla Symbol 13), so its
+ * backref tag `0x8010` was mis-read as an unrecognised tag.
+ */
 class ArchiveReader {
-  /** combined class+object table: each new class occupies two slots */
-  private map: Array<{ slot: "class" | "object"; name: string }> = [];
+  /** className -> assigned 1-based reference index (fixed at first declaration) */
+  private classIndex = new Map<string, number>();
+  /** reference index -> className, for resolving backref tags */
+  private nameByIndex = new Map<number, string>();
+  /** number of class declarations seen so far */
+  private definedCount = 0;
+  /** running object counter (advances on every object header) */
+  private objectCount = 0;
   readonly classNames: string[] = [];
 
   constructor(readonly r: Reader) {}
 
   registerClass(name: string): void {
-    this.classNames.push(name);
-    this.map.push({ slot: "class", name });
-    this.map.push({ slot: "object", name });
-  }
-
-  /** Combined-table backref tag value for an already-declared class, or null. */
-  classBackrefTag(name: string): number | null {
-    for (let i = 0; i < this.map.length; i++) {
-      const e = this.map[i]!;
-      if (e.slot === "class" && e.name === name) return 0x8000 | (i + 1);
+    // Index assigned at declaration time, mirroring flacomdoc's useClass:
+    //   1 + (classes defined before) + (objects written before)
+    const index = 1 + this.definedCount + this.objectCount;
+    if (!this.classIndex.has(name)) {
+      this.classIndex.set(name, index);
+      this.nameByIndex.set(index, name);
     }
-    return null;
+    this.classNames.push(name);
+    this.definedCount += 1;
+    this.objectCount += 1;
   }
 
-  /** True if `idx` (1-based combined index) refers to a declared class. */
+  /** Backref tag value for an already-declared class, or null. */
+  classBackrefTag(name: string): number | null {
+    const idx = this.classIndex.get(name);
+    return idx === undefined ? null : 0x8000 | idx;
+  }
+
+  /** True if `idx` (1-based reference index) refers to a declared class. */
   isClassIndex(idx: number): boolean {
-    const e = this.map[idx - 1];
-    return !!e && e.slot === "class";
+    return this.nameByIndex.has(idx);
   }
 
   readClassTag(): ClassTag {
@@ -495,16 +527,18 @@ class ArchiveReader {
       return { kind: "class", name, schema };
     }
     if (tag === 0x7fff) {
-      // extended backref: u32 index
+      // extended backref: u32 index. Still counts as one object header.
       const idx = this.r.u32();
-      const e = this.map[idx - 1];
-      if (e && e.slot === "class") return { kind: "class", name: e.name, schema: 0 };
+      this.objectCount += 1;
+      const name = this.nameByIndex.get(idx);
+      if (name !== undefined) return { kind: "class", name, schema: 0 };
       return { kind: "object-backref" };
     }
     if (tag & 0x8000) {
       const idx = tag & 0x7fff;
-      const e = this.map[idx - 1];
-      if (e && e.slot === "class") return { kind: "class", name: e.name, schema: 0 };
+      this.objectCount += 1;
+      const name = this.nameByIndex.get(idx);
+      if (name !== undefined) return { kind: "class", name, schema: 0 };
       return { kind: "object-backref" };
     }
     // Unrecognised tag value — not a known MFC CArchive sentinel. Return a
