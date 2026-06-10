@@ -1,8 +1,10 @@
-# Flash 8 clone
+# dash
 
-Flash 8 clone — author Flash content in your browser.
+a Macromedia Flash 8 clone
 
-**Live demo:** https://jhead.github.io/dash/
+**Try It** https://jhead.github.io/dash/
+
+Author Flash content in your browser, publish to SWF, and run it with Ruffle.
 
 ## Features
 
