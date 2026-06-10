@@ -2,7 +2,7 @@
  * Tests for AS2 type-casting functions and the `as` type-assertion operator.
  *
  * Verifies:
- *   - Number(x) compiles to ActionToNumber (0x30), NOT ActionCallFunction (0x3D)
+ *   - Number(x) compiles to ActionToNumber (0x4A), NOT ActionCallFunction (0x3D)
  *     (Flash Professional emits the native opcode for single-arg coercions).
  *   - String(x), Boolean(x) compile to ActionCallFunction (0x3D) — still generic calls.
  *   - `x as Type` (compile-time type assertion) compiles without error and
@@ -46,14 +46,14 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 
 const ACTION_CALL_FUNCTION = 0x3d; // ActionCallFunction — global function dispatch
 const ACTION_CALL_METHOD   = 0x52; // ActionCallMethod   — method dispatch (obj.method())
-const ACTION_TO_NUMBER     = 0x30; // ActionToNumber     — native numeric coercion
+const ACTION_TO_NUMBER     = 0x4A; // ActionToNumber     — native numeric coercion
 
 // ---------------------------------------------------------------------------
 // Type casting global functions
 // ---------------------------------------------------------------------------
 
 describe("Type casting global functions", () => {
-  it("1. Number(x) emits ActionToNumber (0x30), NOT ActionCallFunction (0x3D)", () => {
+  it("1. Number(x) emits ActionToNumber (0x4A), NOT ActionCallFunction (0x3D)", () => {
     // Flash Professional emits ActionToNumber for single-arg Number() coercions
     const bytes = compileAS2("Number(x);");
     expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(true);
@@ -78,7 +78,7 @@ describe("Type casting global functions", () => {
     expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(false);
   });
 
-  it("5. Number(\"42\") with a string literal compiles to ActionToNumber (0x30)", () => {
+  it("5. Number(\"42\") with a string literal compiles to ActionToNumber (0x4A)", () => {
     const bytes = compileAS2('Number("42");');
     expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(true);
     expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);

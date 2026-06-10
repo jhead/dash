@@ -4,7 +4,7 @@
  * Flash Professional emits native opcodes instead of ActionCallFunction for
  * these coercions:
  *   int(x)    → ActionToInteger  (0x18)
- *   Number(x) → ActionToNumber   (0x30)
+ *   Number(x) → ActionToNumber   (0x4A)
  *
  * Both must NOT fall through to ActionCallFunction (0x3D).
  */
@@ -36,7 +36,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_TO_INTEGER   = 0x18; // ActionToInteger — native int coercion
-const ACTION_TO_NUMBER    = 0x30; // ActionToNumber  — native numeric coercion
+const ACTION_TO_NUMBER    = 0x4A; // ActionToNumber  — native numeric coercion
 const ACTION_CALL_FUNCTION = 0x3d; // ActionCallFunction — generic call (should NOT appear)
 
 // ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ describe("int(x) coercion", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Number(x) — ActionToNumber (0x30)
+// Number(x) — ActionToNumber (0x4A)
 // ---------------------------------------------------------------------------
 
 describe("Number(x) coercion", () => {
@@ -98,7 +98,7 @@ describe("Number(x) coercion", () => {
     expect(() => compileAS2("var n = Number(x);")).not.toThrow();
   });
 
-  it("Number(x) emits ActionToNumber (0x30)", () => {
+  it("Number(x) emits ActionToNumber (0x4A)", () => {
     const bytes = compileAS2("Number(x);");
     expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(true);
   });
@@ -115,13 +115,13 @@ describe("Number(x) coercion", () => {
     expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
-  it("Number('42') compiles and emits ActionToNumber (0x30)", () => {
+  it("Number('42') compiles and emits ActionToNumber (0x4A)", () => {
     const bytes = compileAS2("var n = Number('42');");
     expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(true);
     expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
-  it("Number(a + b) with complex expression emits ActionToNumber (0x30)", () => {
+  it("Number(a + b) with complex expression emits ActionToNumber (0x4A)", () => {
     const bytes = compileAS2("var n = Number(a + b);");
     expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(true);
     expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
