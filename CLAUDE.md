@@ -55,8 +55,14 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   5173. `playwright.config.ts` and all spec files must use `http://localhost:1420`.
 - **Visual oracle — Ruffle must be on-screen**: injecting the Ruffle player at
   `top:-9999px` prevents Chromium from compositing it, producing a blank screenshot.
-  Use `top:0; left:0; opacity:1; z-index:99999` (fully visible, on top of UI) and
-  remove the element after the screenshot.
+  Use `top:0; left:0; opacity:1` (fully visible, on top of UI) and remove the element
+  after the screenshot.
+- **Visual oracle — z-index breaks WebGL capture**: adding `z-index:99999` to the Ruffle
+  player element causes `locator().screenshot()` to return a solid-black image for the
+  `wgpu-webgl` renderer in headless Chromium. The fix is two-fold: (1) do NOT set
+  z-index on the player element; (2) use `page.screenshot({ clip: {x:0,y:0,w:550,h:400} })`
+  rather than `locator().screenshot()`. The `page.screenshot` path composites the actual
+  WebGL surface correctly; the locator path does not. Discovered by task 0899.
 - **Visual oracle — DPR**: `StageArea` sizes its canvas backing buffer at
   `stageW * devicePixelRatio`. On a 2× display the canvas PNG is 1100×800 while Ruffle
   renders at 550×400, causing large pixel diffs. Use `deviceScaleFactor:1` in the
