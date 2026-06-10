@@ -1,0 +1,10 @@
+{
+  "id": "0965-mcp-timeline-set-sound-tool-missing-cannot-attac",
+  "title": "MCP: timeline_set_sound tool missing \u2014 cannot attach sound to keyframe",
+  "description": "Added timeline_set_sound MCP tool. Schema: { layerId, frameIndex, libraryItemId (nullable), syncMode (event|start|stop|stream), repeatCount }. Handler looks up layerIndex from layerId, constructs SoundLinkage, and calls setSoundOnFrame from @flash/core. Registered in vite-plugin-agent-mcp/src/index.ts. All 575 authoring-ui tests pass. Committed in feat(0966) commit.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T21:54:18Z",
+  "updated_at": "2026-06-10T21:58:23Z"
+}
