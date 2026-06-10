@@ -750,6 +750,11 @@ export interface StageAreaProps {
    * editMultipleFrames is active. The timeline should jump to this frame index.
    */
   onEditMultipleFrameClick?: (frameIndex: number) => void;
+  /**
+   * When true, hovering or clicking a button instance on stage previews its
+   * Over/Down/Up state (Control > Enable Simple Buttons).
+   */
+  simpleButtonsEnabled?: boolean;
 }
 
 // Draw tools that create shapes via drag
@@ -1087,6 +1092,7 @@ export function StageArea({
   editMultipleFrames = false,
   onEditMultipleFrameClick,
   onCursorMove,
+  simpleButtonsEnabled = false,
 }: StageAreaProps): React.ReactElement {
   const workAreaRef = useRef<HTMLDivElement>(null);
   const gridCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1216,6 +1222,10 @@ export function StageArea({
   const [selMarqueeStart, setSelMarqueeStart] = useState<{ x: number; y: number } | null>(null);
   const [selMarqueeEnd, setSelMarqueeEnd] = useState<{ x: number; y: number } | null>(null);
   const [selIsMarqueeSelecting, setSelIsMarqueeSelecting] = useState(false);
+
+  // Enable Simple Buttons: track which button instance is hovered / pressed
+  const [hoveredButtonId, setHoveredButtonId] = useState<string | null>(null);
+  const [pressedButtonId, setPressedButtonId] = useState<string | null>(null);
 
   // Keep internal state in sync with props when they change externally
   useEffect(() => { setInternalZoom(zoom); }, [zoom]);
@@ -1361,6 +1371,11 @@ export function StageArea({
   // Mouse events for panning (middle mouse, space+drag, or hand tool drag)
   const onMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      // Enable Simple Buttons: track pressed state on button instances
+      if (simpleButtonsEnabled && e.button === 0 && hoveredButtonId) {
+        setPressedButtonId(hoveredButtonId);
+      }
+
       const isMiddle = e.button === 1;
       const isSpaceDrag = e.button === 0 && spaceHeld;
       const isHandTool = e.button === 0 && activeTool === "hand";
@@ -2092,7 +2107,7 @@ export function StageArea({
         setSelIsMarqueeSelecting(true);
       }
     },
-    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoMagicWand, magicWandThreshold, magicWandSmoothing, bitmapDisplayObjects, bitmapLibraryItems, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick]
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoMagicWand, magicWandThreshold, magicWandSmoothing, bitmapDisplayObjects, bitmapLibraryItems, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick, simpleButtonsEnabled, hoveredButtonId]
   );
 
   const onMouseMove = useCallback(
@@ -2512,8 +2527,26 @@ export function StageArea({
       } else {
         setHandleCursor(undefined);
       }
+
+      // Enable Simple Buttons: update hovered button instance
+      if (simpleButtonsEnabled && symbolInstanceDisplayObjects.length > 0 && library) {
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        const hitButton = [...symbolInstanceDisplayObjects].reverse().find((inst) => {
+          const sym = library.items.find((i) => i.id === inst.symbolId && i.itemType === "symbol") as import("@flash/core").Symbol | undefined;
+          if (!sym || sym.symbolType !== "button") return false;
+          const bounds = getSymbolInstanceBounds(inst, library);
+          return (
+            stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+            stageY >= bounds.y && stageY <= bounds.y + bounds.height
+          );
+        });
+        setHoveredButtonId(hitButton ? hitButton.id : null);
+      } else if (!simpleButtonsEnabled && hoveredButtonId !== null) {
+        setHoveredButtonId(null);
+        setPressedButtonId(null);
+      }
     },
-    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove]
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
   );
 
   const onMouseUp = useCallback(
@@ -2529,6 +2562,10 @@ export function StageArea({
       // Notify parent that a shape drag gesture just ended so it can commit to undo history
       if (wasShapeDrag) {
         onShapeMoveEnd?.();
+      }
+      // Enable Simple Buttons: clear pressed state on mouse up
+      if (simpleButtonsEnabled) {
+        setPressedButtonId(null);
       }
 
       // Finalize arrow (selection) tool marquee selection
@@ -2711,7 +2748,7 @@ export function StageArea({
       drawStartRef.current = null;
       setDrawPreview(null);
     },
-    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library]
+    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
   );
 
   // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place
@@ -2908,7 +2945,7 @@ export function StageArea({
 
     // Build SceneGraph: use the multi-layer scene graph from the parent when provided,
     // otherwise fall back to a synthetic single-layer graph from the flat prop arrays.
-    const sceneGraph: SceneGraph = propSceneGraph ?? {
+    let sceneGraph: SceneGraph = propSceneGraph ?? {
       layers: [
         {
           id: "main",
@@ -2919,6 +2956,29 @@ export function StageArea({
         },
       ],
     };
+
+    // Enable Simple Buttons: patch firstFrame on button SymbolInstances to show Over/Down/Up state.
+    if (simpleButtonsEnabled && library && (hoveredButtonId || pressedButtonId)) {
+      sceneGraph = {
+        layers: sceneGraph.layers.map((layer) => ({
+          ...layer,
+          objects: layer.objects.map((obj) => {
+            if (obj.type !== "instance") return obj;
+            const inst = obj as SymbolInstance;
+            const sym = library.items.find((i) => i.id === inst.symbolId && i.itemType === "symbol") as import("@flash/core").Symbol | undefined;
+            if (!sym || sym.symbolType !== "button") return obj;
+            // Determine button state frame: 2=Down, 1=Over, 0=Up
+            let buttonFrame = 0; // Up
+            if (pressedButtonId === inst.id) {
+              buttonFrame = 2; // Down
+            } else if (hoveredButtonId === inst.id) {
+              buttonFrame = 1; // Over
+            }
+            return { ...inst, firstFrame: buttonFrame };
+          }),
+        })),
+      };
+    }
 
     // Viewport: no zoom/pan here — the parent div's CSS transform handles those.
     // We render at 1:1 scale so the canvas stays sharp.
@@ -3398,7 +3458,7 @@ export function StageArea({
       ctx.fillRect(r.x, r.y, r.width, r.height);
       ctx.restore();
     }
-  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd]);
+  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId]);
 
   // CSS filter for view modes
   const stageFilter =
@@ -3435,7 +3495,7 @@ export function StageArea({
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    cursor: handleCursor ?? getToolCursor(activeTool, spaceHeld),
+    cursor: handleCursor ?? (simpleButtonsEnabled && hoveredButtonId ? "pointer" : getToolCursor(activeTool, spaceHeld)),
   };
 
   const stageContainerStyle: React.CSSProperties = {
@@ -3574,7 +3634,7 @@ export function StageArea({
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
-      onMouseLeave={(e) => { onMouseUp(e); setEraserCursorPos(null); }}
+      onMouseLeave={(e) => { onMouseUp(e); setEraserCursorPos(null); setHoveredButtonId(null); setPressedButtonId(null); }}
       onClick={onZoomToolClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={activeTool === "zoom" ? onZoomToolClick : undefined}

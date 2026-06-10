@@ -1008,9 +1008,16 @@ export function Shell(): React.ReactElement {
   const [bandwidthProfilerVisible, setBandwidthProfilerVisible] = useState(false);
   const [bandwidthProfilerReport, setBandwidthProfilerReport] = useState<FrameSizeReport | null>(null);
 
+  // Control > Enable Simple Buttons
+  const [simpleButtonsEnabled, setSimpleButtonsEnabled] = useState(false);
+
   // ---------------------------------------------------------------------------
   // Handlers — timeline / frame
   // ---------------------------------------------------------------------------
+
+  const handleToggleSimpleButtons = useCallback(() => {
+    setSimpleButtonsEnabled((v) => !v);
+  }, []);
 
   const handleToggleOnionSkin = useCallback(() => {
     setOnionSkinEnabled((v) => !v);
@@ -5479,6 +5486,8 @@ export function Shell(): React.ReactElement {
         }}
         onManageCommands={() => setManageCommandsOpen(true)}
         onRunCommand={handleRunCommand}
+        onToggleSimpleButtons={handleToggleSimpleButtons}
+        simpleButtonsEnabled={simpleButtonsEnabled}
       />
       <EditBar
         documentName="Untitled-1"
@@ -5676,6 +5685,7 @@ export function Shell(): React.ReactElement {
                 editMultipleFrames={editMultipleFrames}
                 onEditMultipleFrameClick={handleEditMultipleFrameClick}
                 timeline={timeline}
+                simpleButtonsEnabled={simpleButtonsEnabled}
                 stageOverlay={
                   <>
                     {(toolState.activeTool === "free-transform" || toolState.activeTool === "selection") &&

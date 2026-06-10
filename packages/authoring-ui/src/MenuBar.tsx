@@ -387,6 +387,10 @@ export interface MenuBarProps {
   onManageCommands?: () => void;
   /** Called when a saved command item is clicked with the command's id. */
   onRunCommand?: (id: string) => void;
+  /** Called when Control > Enable Simple Buttons is toggled. */
+  onToggleSimpleButtons?: () => void;
+  /** Whether Enable Simple Buttons is currently active (for checkmark display). */
+  simpleButtonsEnabled?: boolean;
 }
 
 export function MenuBar({
@@ -493,6 +497,8 @@ export function MenuBar({
   onSaveAsCommand,
   onManageCommands,
   onRunCommand,
+  onToggleSimpleButtons,
+  simpleButtonsEnabled = false,
 }: MenuBarProps = {}): React.ReactElement {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const { newDocument, openDocument, saveDocument, saveDocumentAs } =
@@ -849,6 +855,11 @@ export function MenuBar({
         {
           label: "Publish",
           action: () => { onPublish?.(); },
+          separator: true,
+        },
+        {
+          label: `${simpleButtonsEnabled ? "+ " : "  "}Enable Simple Buttons`,
+          action: () => { onToggleSimpleButtons?.(); },
           separator: true,
         },
       ],
