@@ -1281,6 +1281,10 @@ export function deriveFoldersFromPaths(
 const PAGE_RE = /^(?:Page (\d+)|P (\d+) \d+)$/;
 const SYMBOL_RE = /^(?:Symbol (\d+)|S (\d+) \d+)$/;
 const MEDIA_RE = /^Media (\d+)$/;
+// "Sound N" OLE streams (pre-CS4 / Flash 5-MX era) carry raw audio payload
+// directly in the OLE2 container, keyed by the same stream number used in
+// the Contents-stream sound table.
+const SOUND_RE = /^(?:Sound (\d+)|So (\d+) \d+)$/;
 
 function streamNumber(re: RegExp, name: string): number | null {
   const m = re.exec(name);
@@ -1361,7 +1365,11 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
   // data when we encounter the corresponding "Media N" stream.
   const soundStubByIndex = new Map<number, import("../model/types.js").SoundItem>();
   for (const [num, info] of contents.sounds) {
-    const soundItem = createSound(info.name);
+    // Forward AS2 linkage metadata decoded from the Contents stream.
+    const soundItem = createSound(info.name, {
+      ...(info.linkageId ? { linkageIdentifier: info.linkageId } : {}),
+      ...(info.exportForActionScript ? { exportForActionScript: true } : {}),
+    });
     soundIdByIndex.set(num, soundItem.id);
     soundStubByIndex.set(num, soundItem);
     // items will be populated after audio streams are decoded below
@@ -1373,17 +1381,23 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
   //   1. Audio (for media indexes listed as sounds in the Contents stream)
   //   2. Video (FLV magic "FLV" = 0x46 0x4C 0x56 at offset 0)
   //   3. Bitmap fallback (JPEG / PNG / lossless)
+  // Additionally, pre-CS4 FLAs may store raw audio directly in "Sound N" OLE
+  // streams keyed by the same stream number as in the Contents sound table.
+  // These are decoded using the same audio-detection logic as "Media N".
   const bitmapIdByIndex = new Map<number, string>();
   const bitmapSizeByIndex = new Map<number, { width: number; height: number }>();
   const videoIdByIndex = new Map<number, string>();
   const videoSizeByIndex = new Map<number, { width: number; height: number }>();
   for (const [name, bytes] of streams) {
-    const mediaNum = streamNumber(MEDIA_RE, name);
+    // Resolve stream number: prefer "Media N" first, then "Sound N".
+    let mediaNum = streamNumber(MEDIA_RE, name);
+    const isSoundStream = mediaNum === null && streamNumber(SOUND_RE, name) !== null;
+    if (isSoundStream) mediaNum = streamNumber(SOUND_RE, name);
     if (mediaNum === null) continue;
 
     const soundStub = soundStubByIndex.get(mediaNum);
     if (soundStub !== undefined) {
-      // This media stream belongs to a sound library item — attempt audio decode.
+      // This stream belongs to a sound library item — attempt audio decode.
       let decoded = null;
       try {
         decoded = decodeMediaAudio(bytes);
@@ -1398,8 +1412,11 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
           compressionType: decoded.compressionType,
         });
       }
-      continue; // audio media — never treat as bitmap or video
+      continue; // audio stream — never treat as bitmap or video
     }
+
+    // "Sound N" streams only carry audio — never process as bitmap/video.
+    if (isSoundStream) continue;
 
     // Detect FLV video payload: magic bytes "FLV" (0x46 0x4C 0x56) at offset 0.
     if (bytes.length >= 3 && bytes[0] === 0x46 && bytes[1] === 0x4c && bytes[2] === 0x56) {

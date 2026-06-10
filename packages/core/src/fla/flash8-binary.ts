@@ -568,6 +568,21 @@ export interface Fla8SymbolInfo {
 
 export interface Fla8SoundInfo {
   readonly name: string;
+  /**
+   * AS2 linkage identifier for attachSound / new Sound(id).
+   * Decoded from the BomString that follows the display-name BomString in
+   * "Sound N" Contents-stream entries (same position as the symbol linkage
+   * identifier after the typeByte in symbol entries).
+   * Empty string when not set.
+   */
+  readonly linkageId: string;
+  /**
+   * Whether the sound is exported for ActionScript (attachSound / class).
+   * Decoded from the UI8 flag immediately after the linkageId BomString in
+   * "Sound N" Contents-stream entries.
+   * false when not set or when the entry has no linkage block.
+   */
+  readonly exportForActionScript: boolean;
 }
 
 export interface Fla8VideoInfo {
@@ -3153,7 +3168,7 @@ function registerCMediaSoundObject(
   if (!s) return;
   const name = s.value;
   if (name.length > 0 && !name.includes("/") && !name.startsWith(".\\")) {
-    if (!out.has(num)) out.set(num, { name });
+    if (!out.has(num)) out.set(num, { name, linkageId: "", exportForActionScript: false });
   }
 }
 
@@ -3503,6 +3518,14 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
         if (!m) continue;
         const num = parseInt(m[1] ?? m[2]!, 10);
         // The library display name follows as the next BomString within a short window.
+        // After the display name, sound entries optionally carry:
+        //   UI32LE stream number (redundant cross-check, 4 bytes)
+        //   BomString linkageId  (AS2 attachSound identifier; empty when not set)
+        //   UI8 exportForActionScript (1 = exported)
+        //   UI8 exportInFirstFrame
+        //   UI8 exportForRuntimeSharing
+        //   UI8 importForRuntimeSharing
+        // (Same layout as symbol entries but without a typeByte field.)
         let search = end;
         const windowEnd = Math.min(bytes.length - 2, end + 120);
         while (search < windowEnd) {
@@ -3510,7 +3533,22 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
           if (s) {
             const name = s.value;
             if (name.length > 0 && !name.includes("/") && !name.startsWith(".\\")) {
-              if (!sounds.has(num)) sounds.set(num, { name });
+              // Attempt to decode optional linkage block after the display name.
+              // Skip UI32LE stream number (4 bytes) then read BomString linkageId.
+              let linkageId = "";
+              let exportForActionScript = false;
+              const afterName = s.end + 4; // skip UI32LE stream number
+              if (afterName < bytes.length) {
+                const lnk = tryReadBomStringAt(bytes, afterName);
+                if (lnk !== null) {
+                  linkageId = lnk.value;
+                  // UI8 flags: exportForAS at lnk.end, exportInFirstFrame at +1, etc.
+                  if (lnk.end < bytes.length) {
+                    exportForActionScript = bytes[lnk.end]! !== 0;
+                  }
+                }
+              }
+              if (!sounds.has(num)) sounds.set(num, { name, linkageId, exportForActionScript });
             }
             break;
           }

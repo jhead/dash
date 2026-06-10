@@ -423,6 +423,52 @@ describe("parseFla8Contents / parseFla8Timeline (low level)", () => {
     expect(info.sounds.size).toBe(1);
     expect(info.sounds.get(3)).toBeDefined();
     expect(info.sounds.get(3)!.name).toBe("boom.mp3");
+    // linkageId and exportForActionScript default to empty/false when absent
+    expect(info.sounds.get(3)!.linkageId).toBe("");
+    expect(info.sounds.get(3)!.exportForActionScript).toBe(false);
+  });
+
+  it("parses sound linkage from a synthetic Contents stream with linkage block", () => {
+    // Build a unicode Contents stream where the "Sound 2" entry has:
+    //   display name "mysound.mp3"
+    //   UI32LE stream number (0x02 0x00 0x00 0x00)
+    //   BomString linkageId "soundLink"
+    //   UI8 exportForActionScript = 1
+    function utf16le(s: string): number[] {
+      const out: number[] = [];
+      for (let i = 0; i < s.length; i++) {
+        out.push(s.charCodeAt(i) & 0xff, s.charCodeAt(i) >> 8);
+      }
+      return out;
+    }
+    const streamName = "Sound 2";      // 7 chars
+    const displayName = "mysound.mp3"; // 11 chars
+    const linkageId = "soundLink";     // 9 chars
+    const buf = new Uint8Array([
+      0x38,                         // formatVersion (unicode)
+      streamName.length,            // length byte
+      ...utf16le(streamName),       // "Sound 2" UTF-16LE
+      0xff, 0xfe, 0xff,             // BomString magic
+      displayName.length,           // display name length (11 chars)
+      ...utf16le(displayName),      // "mysound.mp3" UTF-16LE
+      // UI32LE stream number (= 2)
+      0x02, 0x00, 0x00, 0x00,
+      // BomString linkageId "soundLink"
+      0xff, 0xfe, 0xff,
+      linkageId.length,
+      ...utf16le(linkageId),
+      // UI8 exportForActionScript = 1
+      0x01,
+      // UI8 exportInFirstFrame = 1, exportForRuntimeSharing = 0, importForRuntimeSharing = 0
+      0x01, 0x00, 0x00,
+    ]);
+
+    const info = parseFla8Contents(buf);
+    expect(info.sounds.size).toBe(1);
+    expect(info.sounds.get(2)).toBeDefined();
+    expect(info.sounds.get(2)!.name).toBe("mysound.mp3");
+    expect(info.sounds.get(2)!.linkageId).toBe("soundLink");
+    expect(info.sounds.get(2)!.exportForActionScript).toBe(true);
   });
 
   it("rejects a non-timeline stream with a descriptive error", () => {
@@ -943,6 +989,97 @@ describe("frame sound wiring (buildFla8Document)", () => {
     );
     expect(soundItems.length).toBe(1);
     expect(soundItems[0]!.name).toBe("boom.mp3");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sound N OLE stream audio decoding (task 0987)
+// ---------------------------------------------------------------------------
+
+describe("Sound N OLE stream audio decoding (buildFla8Document)", () => {
+  it("decodes audio from a 'Sound N' OLE stream for pre-CS4 FLAs", () => {
+    // Construct a Contents stream declaring sound #1 named "beep.mp3".
+    function utf16le(s: string): number[] {
+      const out: number[] = [];
+      for (let i = 0; i < s.length; i++) {
+        out.push(s.charCodeAt(i) & 0xff, s.charCodeAt(i) >> 8);
+      }
+      return out;
+    }
+    const contentsBytes = new Uint8Array([
+      0x38,              // formatVersion (unicode)
+      0x07,              // length of "Sound 1" (7 chars)
+      ...utf16le("Sound 1"),
+      0xff, 0xfe, 0xff,  // BomString magic
+      0x08,              // display name length (8 chars "beep.mp3")
+      ...utf16le("beep.mp3"),
+    ]);
+
+    // Minimal MP3 sync frame (0xFF 0xFB ...) so decodeMediaAudio detects it
+    // as MP3 and returns a data URI.
+    const mp3Bytes = new Uint8Array([0xff, 0xfb, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+    const streams = new Map<string, Uint8Array>([
+      ["Contents", contentsBytes],
+      ["Sound 1", mp3Bytes],          // "Sound N" OLE stream (pre-CS4 style)
+      ["Page 1", new Uint8Array([0x00])], // invalid; triggers graceful fallback
+    ]);
+
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+
+    const soundItems = doc!.library.items.filter(
+      (i): i is SoundItem => i.itemType === "sound"
+    );
+    expect(soundItems.length).toBe(1);
+    expect(soundItems[0]!.name).toBe("beep.mp3");
+    // dataUri should be populated from the Sound N stream
+    expect(soundItems[0]!.dataUri).toMatch(/^data:audio\/mpeg;base64,/);
+    expect(soundItems[0]!.compressionType).toBe("mp3");
+  });
+
+  it("forwards sound linkageId to the SoundItem when present in Contents stream", () => {
+    function utf16le(s: string): number[] {
+      const out: number[] = [];
+      for (let i = 0; i < s.length; i++) {
+        out.push(s.charCodeAt(i) & 0xff, s.charCodeAt(i) >> 8);
+      }
+      return out;
+    }
+    const displayName = "sfx.mp3";    // 7 chars
+    const linkageId = "SoundClip";    // 9 chars
+    const contentsBytes = new Uint8Array([
+      0x38,
+      0x07,
+      ...utf16le("Sound 4"),
+      0xff, 0xfe, 0xff,
+      displayName.length,
+      ...utf16le(displayName),
+      // UI32LE stream number
+      0x04, 0x00, 0x00, 0x00,
+      // BomString linkageId
+      0xff, 0xfe, 0xff,
+      linkageId.length,
+      ...utf16le(linkageId),
+      // exportForActionScript = 1
+      0x01, 0x01, 0x00, 0x00,
+    ]);
+
+    const streams = new Map<string, Uint8Array>([
+      ["Contents", contentsBytes],
+      ["Page 1", new Uint8Array([0x00])],
+    ]);
+
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+
+    const soundItems = doc!.library.items.filter(
+      (i): i is SoundItem => i.itemType === "sound"
+    );
+    expect(soundItems.length).toBe(1);
+    expect(soundItems[0]!.name).toBe("sfx.mp3");
+    expect(soundItems[0]!.linkageIdentifier).toBe("SoundClip");
+    expect(soundItems[0]!.exportForActionScript).toBe(true);
   });
 });
 
