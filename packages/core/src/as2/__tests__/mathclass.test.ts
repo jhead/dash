@@ -33,6 +33,7 @@ function containsByte(bytes: Uint8Array, byte: number): boolean {
 // ---------------------------------------------------------------------------
 
 const ACTION_GET_MEMBER = 0x4e; // ActionGetMember — property/member access
+const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
 
 // ---------------------------------------------------------------------------
 // Math single-argument methods
@@ -43,7 +44,11 @@ describe("Math.abs", () => {
     expect(compilesOk("Math.abs(-5);")).toBe(true);
   });
 
-  it.todo("Math.abs(-5) emits ActionGetMember (0x4e) for 'abs' on Math");
+  it("Math.abs(-5) emits ActionCallMethod (0x52) and NOT ActionGetMember (0x4e)", () => {
+    const bytes = compileAS2("Math.abs(-5);");
+    expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(true);
+    expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(false);
+  });
 });
 
 describe("Math.ceil", () => {
