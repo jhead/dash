@@ -503,11 +503,13 @@ export interface JsflTimeline {
   deleteLayer(layerIndex: number): void;
   setSelectedLayers(layerIndex: number): void;
   insertFrames(numFrames: number, startFrameIndex?: number): void;
-  removeFrames(numFrames: number, startFrameIndex?: number): void;
+  removeFrames(numFrames: number, startFrameIndex?: number, endFrame?: number): void;
   insertKeyframe(frameIndex?: number): void;
   insertBlankKeyframe(frameIndex?: number): void;
-  convertToKeyframes(frameIndex?: number): void;
-  convertToBlankKeyframes(frameIndex?: number): void;
+  convertToKeyframes(startFrame?: number, endFrame?: number): void;
+  convertToBlankKeyframes(startFrame?: number, endFrame?: number): void;
+  /** Select all frames on all layers. No-op stub. */
+  selectAllFrames(): void;
   createMotionTween(startFrameIndex?: number): void;
   setFrameProperty(property: string, value: unknown, frameIndex?: number): void;
   /** Clear frame content (scripts, labels, sounds, display objects) in [startFrame, endFrame]. */
@@ -683,11 +685,13 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
         mutateTimeline((tl) => insertFrame(tl, layerId, fi));
       }
     },
-    removeFrames(numFrames: number, startFrameIndex?: number) {
+    removeFrames(numFrames: number, startFrameIndex?: number, endFrame?: number) {
       const layerId = getActiveLayerId();
       if (!layerId) return;
       const fi = startFrameIndex ?? state.frameIndex;
-      for (let i = 0; i < numFrames; i++) {
+      // If endFrame is provided, compute numFrames from the range
+      const count = endFrame !== undefined ? endFrame - fi + 1 : numFrames;
+      for (let i = 0; i < count; i++) {
         mutateTimeline((tl) => removeFrame(tl, layerId, fi));
       }
     },
@@ -703,17 +707,32 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
       const fi = frameIndex ?? state.frameIndex;
       mutateTimeline((tl) => coreInsertBlankKeyframe(tl, layerId, fi));
     },
-    convertToKeyframes(frameIndex?: number) {
+    convertToKeyframes(startFrame?: number, endFrame?: number) {
       const layerId = getActiveLayerId();
       if (!layerId) return;
-      const fi = frameIndex ?? state.frameIndex;
-      mutateTimeline((tl) => coreInsertKeyframe(tl, layerId, fi));
+      const fi = startFrame ?? state.frameIndex;
+      if (endFrame !== undefined) {
+        for (let f = fi; f <= endFrame; f++) {
+          mutateTimeline((tl) => coreInsertKeyframe(tl, layerId, f));
+        }
+      } else {
+        mutateTimeline((tl) => coreInsertKeyframe(tl, layerId, fi));
+      }
     },
-    convertToBlankKeyframes(frameIndex?: number) {
+    convertToBlankKeyframes(startFrame?: number, endFrame?: number) {
       const layerId = getActiveLayerId();
       if (!layerId) return;
-      const fi = frameIndex ?? state.frameIndex;
-      mutateTimeline((tl) => coreInsertBlankKeyframe(tl, layerId, fi));
+      const fi = startFrame ?? state.frameIndex;
+      if (endFrame !== undefined) {
+        for (let f = fi; f <= endFrame; f++) {
+          mutateTimeline((tl) => coreInsertBlankKeyframe(tl, layerId, f));
+        }
+      } else {
+        mutateTimeline((tl) => coreInsertBlankKeyframe(tl, layerId, fi));
+      }
+    },
+    selectAllFrames() {
+      // No-op stub
     },
     createMotionTween(startFrameIndex?: number) {
       const layerId = getActiveLayerId();
@@ -1566,6 +1585,20 @@ export interface JsflDocument {
    * Returns [] if the symbol is not found or has no instances.
    */
   findSymbolInstances(symbolName: string): any[];
+  /**
+   * Set a property on the currently active layer.
+   * Supported properties: 'name', 'locked', 'visible', 'layerType', 'color'.
+   */
+  setLayerProperty(property: string, value: any): void;
+  /**
+   * Get a property from the currently active layer.
+   * Returns undefined if the layer doesn't exist or the property is unknown.
+   */
+  getLayerProperty(property: string): any;
+  /**
+   * Compile and play the movie.  Not supported in browser context; stub.
+   */
+  testMovie(): void;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -2896,6 +2929,61 @@ function makeDocumentProxy(
         }
       }
       return results;
+    },
+    setLayerProperty(property: string, value: any): void {
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      const layer = scene.timeline.layers[state.currentLayerIndex];
+      if (!layer) return;
+      const layerId = layer.id;
+      switch (property) {
+        case 'name':
+          mutateTimeline((tl) => renameLayer(tl, layerId, String(value)));
+          break;
+        case 'locked':
+          mutateTimeline((tl) => setLayerLocked(tl, layerId, Boolean(value)));
+          break;
+        case 'visible':
+          mutateTimeline((tl) => setLayerVisible(tl, layerId, Boolean(value)));
+          break;
+        case 'layerType':
+          mutateTimeline((tl) => setLayerType(tl, layerId, value as LayerType));
+          break;
+        case 'color':
+          mutateTimeline((tl) => ({
+            ...tl,
+            layers: tl.layers.map((l) =>
+              l.id === layerId ? { ...l, outlineColor: String(value) } : l
+            ),
+          }));
+          break;
+        default:
+          console.warn('[JSFL] setLayerProperty: unsupported property:', property);
+          break;
+      }
+    },
+    getLayerProperty(property: string): any {
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return undefined;
+      const layer = scene.timeline.layers[state.currentLayerIndex];
+      if (!layer) return undefined;
+      switch (property) {
+        case 'name':
+          return layer.name;
+        case 'locked':
+          return layer.locked;
+        case 'visible':
+          return layer.visible;
+        case 'layerType':
+          return layer.type;
+        case 'color':
+          return layer.outlineColor;
+        default:
+          return undefined;
+      }
+    },
+    testMovie(): void {
+      console.warn('testMovie: not supported');
     },
   };
 }
