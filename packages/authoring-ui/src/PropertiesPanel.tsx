@@ -35,6 +35,7 @@ import type {
   TextType,
   TweenType,
 } from "@flash/core";
+import { shapeBounds } from "@flash/core";
 import { ColorPicker } from "./ColorPicker";
 import { EaseCurveDialog } from "./EaseCurveDialog";
 
@@ -581,6 +582,43 @@ function ShapeView({
         <span style={S.label}>%</span>
       </div>
 
+      {/* W / H pixel dimensions */}
+      {(() => {
+        const raw = shapeBounds(obj.shape, 0, 0);
+        const displayW = raw.width * (obj.scaleX ?? 1);
+        const displayH = raw.height * (obj.scaleY ?? 1);
+        return (
+          <>
+            <div style={S.fieldGroup}>
+              <span style={S.label}>W:</span>
+              <NumInput
+                value={Math.round(displayW * 100) / 100}
+                min={0}
+                style={{ width: 52 }}
+                onChange={(v) => {
+                  if (raw.width === 0) return;
+                  onUpdateObject(obj.id, { scaleX: v / raw.width } as Partial<DisplayObject>);
+                }}
+              />
+              <span style={S.label}>px</span>
+            </div>
+            <div style={S.fieldGroup}>
+              <span style={S.label}>H:</span>
+              <NumInput
+                value={Math.round(displayH * 100) / 100}
+                min={0}
+                style={{ width: 52 }}
+                onChange={(v) => {
+                  if (raw.height === 0) return;
+                  onUpdateObject(obj.id, { scaleY: v / raw.height } as Partial<DisplayObject>);
+                }}
+              />
+              <span style={S.label}>px</span>
+            </div>
+          </>
+        );
+      })()}
+
       <div style={S.separator} />
 
       {/* Fill */}
@@ -748,6 +786,7 @@ function InstanceView({
   const symbolName = libItem?.name ?? obj.symbolId;
 
   const [nameDraft, setNameDraft] = useState(obj.instanceName ?? "");
+  const [aspectLocked, setAspectLocked] = React.useState(true);
   useEffect(() => {
     setNameDraft(obj.instanceName ?? "");
   }, [obj.instanceName, obj.id]);
@@ -810,19 +849,63 @@ function InstanceView({
 
       <div style={S.separator} />
 
-      {/* W/H dimensions (read-only, from naturalWidth/naturalHeight) */}
-      {(obj.naturalWidth != null || obj.naturalHeight != null) && (
-        <div style={S.fieldGroup}>
-          <span style={S.label}>W:</span>
-          <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
-            {Math.round((obj.naturalWidth ?? 0) * (obj.scaleX ?? 1))}
-          </span>
-          <span style={{ ...S.label, marginLeft: 8 }}>H:</span>
-          <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
-            {Math.round((obj.naturalHeight ?? 0) * (obj.scaleY ?? 1))}
-          </span>
-        </div>
-      )}
+      {/* W/H dimensions (editable, with aspect-lock) */}
+      {(() => {
+        const natW = obj.naturalWidth ?? 100;
+        const natH = obj.naturalHeight ?? 100;
+        const displayW = natW * (obj.scaleX ?? 1);
+        const displayH = natH * (obj.scaleY ?? 1);
+        return (
+          <div style={S.fieldGroup}>
+            <span style={S.label}>W:</span>
+            <NumInput
+              value={Math.round(displayW * 100) / 100}
+              min={0}
+              style={{ width: 52 }}
+              onChange={(newW) => {
+                const newScaleX = newW / natW;
+                if (aspectLocked) {
+                  const ratio = natW / natH;
+                  const newScaleY = newScaleX / ratio;
+                  onUpdateObject(obj.id, { scaleX: newScaleX, scaleY: newScaleY } as Partial<DisplayObject>);
+                } else {
+                  onUpdateObject(obj.id, { scaleX: newScaleX } as Partial<DisplayObject>);
+                }
+              }}
+            />
+            <button
+              title={aspectLocked ? "Unlock aspect ratio" : "Lock aspect ratio"}
+              style={{
+                ...S.toggleBtn,
+                background: aspectLocked ? "#1a6ea8" : "#333",
+                color: aspectLocked ? "#fff" : "#999",
+                padding: "1px 4px",
+                minWidth: 18,
+              }}
+              onClick={() => setAspectLocked((v) => !v)}
+            >
+              {aspectLocked ? "🔒" : "🔓"}
+            </button>
+            <span style={S.label}>H:</span>
+            <NumInput
+              value={Math.round(displayH * 100) / 100}
+              min={0}
+              style={{ width: 52 }}
+              onChange={(newH) => {
+                const newScaleY = newH / natH;
+                if (aspectLocked) {
+                  const ratio = natW / natH;
+                  const newScaleX = newScaleY * ratio;
+                  onUpdateObject(obj.id, { scaleX: newScaleX, scaleY: newScaleY } as Partial<DisplayObject>);
+                } else {
+                  onUpdateObject(obj.id, { scaleY: newScaleY } as Partial<DisplayObject>);
+                }
+              }}
+            />
+            <span style={S.label}>px</span>
+          </div>
+        );
+      })()}
 
       <div style={S.separator} />
 
