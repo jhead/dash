@@ -983,6 +983,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     return null;
   }
 
+  /** Compute a serialized key representing the effective clip actions for a SymbolInstance.
+   *  Returns null if there are no effective clip actions. */
+  function computeClipActionsKey(displayObj: DisplayObject): string | null {
+    if (displayObj.type !== "instance") return null;
+    const inst = displayObj as import("@flash/core").SymbolInstance;
+    const loopMode = inst.loopMode ?? "loop";
+    const firstFrame = inst.firstFrame ?? 0;
+    const explicit = inst.clipActions ?? [];
+    if (loopMode === "loop" && firstFrame === 0 && explicit.length === 0) return null;
+    return JSON.stringify({ loopMode, firstFrame, clipActions: explicit });
+  }
+
   // Per-depth: last placed state (objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio)
   interface DepthState {
     objId: string;
@@ -997,6 +1009,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     ratio: number;
     /** Serialized color effect key for change detection (null = no effect). */
     colorEffectKey: string | null;
+    /** Serialized clip actions key for change detection (null = no clip actions). */
+    clipActionsKey: string | null;
   }
   const depthState = new Map<number, DepthState>();
 
@@ -1746,6 +1760,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           }
 
           const thisColorEffectKey = colorEffectKey(displayObj);
+          const thisClipActionsKey = computeClipActionsKey(displayObj);
 
           const isFirst = !prev;
           const posChanged =
@@ -1759,7 +1774,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               prev.skewY !== skewY ||
               prev.objId !== objId ||
               prev.ratio !== morphRatio ||
-              prev.colorEffectKey !== thisColorEffectKey);
+              prev.colorEffectKey !== thisColorEffectKey ||
+              prev.clipActionsKey !== thisClipActionsKey);
 
           if (isFirst) {
             // First placement at this depth
@@ -2089,7 +2105,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     instanceTransform
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
-                  depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey });
+                  depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey });
                   continue;
                 }
 
@@ -2285,7 +2301,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               );
             }
 
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey });
           } else if (posChanged) {
             // Object moved, scaled, rotated, or replaced — emit PlaceObject2+Move
             if (
@@ -2304,7 +2320,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   true
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
-                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
+                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey });
                 continue; // skip the generic depthState.set below
               }
               const objTransform =
@@ -2569,6 +2585,30 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   );
                   writer.writeTag(Tag.PlaceObject3, filtersPlaceBody);
                 } else {
+                  // Compute effective clip actions (loopMode, firstFrame, explicit clipActions).
+                  const moveLoopMode = displayObj.loopMode ?? "loop";
+                  const moveFirstFrame = displayObj.firstFrame ?? 0;
+                  let moveEffectiveClipActions = displayObj.clipActions ?? [];
+                  if (moveLoopMode === "play-once") {
+                    moveEffectiveClipActions = [...moveEffectiveClipActions, {
+                      event: "enterFrame",
+                      script: "if (this._currentframe >= this._totalframes) { this.stop(); }",
+                    }];
+                  }
+                  if (moveLoopMode === "single-frame") {
+                    moveEffectiveClipActions = [...moveEffectiveClipActions, {
+                      event: "load",
+                      script: `this.gotoAndStop(${moveFirstFrame + 1});`,
+                    }];
+                  }
+                  if ((moveLoopMode === "loop" || moveLoopMode === "play-once") && moveFirstFrame > 0) {
+                    moveEffectiveClipActions = [...moveEffectiveClipActions, {
+                      event: "load",
+                      script: `this.gotoAndPlay(${moveFirstFrame + 1});`,
+                    }];
+                  }
+                  const moveHasClipActions = moveEffectiveClipActions.length > 0;
+
                   // Check for color effect (CXFormWithAlpha).
                   // Also synthesize a zero-alpha CXForm when visible===false, or from
                   // standalone alpha when colorEffect is absent.
@@ -2601,6 +2641,27 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       displayObj.instanceName ?? undefined
                     );
                     writer.writeTag(Tag.PlaceObject2, placeBody);
+                    // If clip actions also changed, emit a separate Move+ClipActions tag.
+                    if (moveHasClipActions) {
+                      const clipBody = encodePlaceObject2MoveWithClipActions(depth, moveEffectiveClipActions);
+                      writer.writeTag(Tag.PlaceObject2, clipBody);
+                    }
+                  } else if (moveHasClipActions) {
+                    // Position + clip actions: emit position move then clip-actions tag.
+                    const moveTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                      ? { scaleX, scaleY, rotation, skewX, skewY }
+                      : undefined;
+                    const moveBody = encodePlaceObject2Move(
+                      charId,
+                      depth,
+                      x,
+                      y,
+                      moveTransform,
+                      prev!.objId !== objId
+                    );
+                    writer.writeTag(Tag.PlaceObject2, moveBody);
+                    const clipBody = encodePlaceObject2MoveWithClipActions(depth, moveEffectiveClipActions);
+                    writer.writeTag(Tag.PlaceObject2, clipBody);
                   } else {
                     const moveTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
                       ? { scaleX, scaleY, rotation, skewX, skewY }
@@ -2618,7 +2679,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 }
               }
             }
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey });
           }
           // else: unchanged — emit nothing
         }

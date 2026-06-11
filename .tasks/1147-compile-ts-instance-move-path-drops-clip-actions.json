@@ -1,0 +1,10 @@
+{
+  "id": "1147-compile-ts-instance-move-path-drops-clip-actions",
+  "title": "compile.ts: instance move path drops clip actions when clip actions change between keyframes",
+  "description": "File: packages/swf/src/compile.ts, lines 2501-2619 (instance posChanged path).\n\nBug: When a SymbolInstance already on the display list (posChanged) has clip actions (from loopMode, firstFrame, or explicit clipActions), the posChanged path for instances with no blendMode/filters (lines 2571-2618) never emits a PlaceObject2 with HasClipActions. It only emits PlaceObject2Move without clip actions. Compare with the isFirst path at lines 2196-2210 which correctly calls encodePlaceObject2WithClipActions.\n\nScenario: An instance with loopMode='play-once' that moves/scales between keyframes. On the first keyframe the clip action is emitted correctly (isFirst). On subsequent keyframes where the instance moves but clip actions are unchanged, only a bare Move is emitted \u2014 Ruffle keeps playing the loopMode because the clip action was registered on load. However if the instance is removed and re-placed at a different depth, the clip action is lost entirely.\n\nA related gap: if only clipActions change (but position doesn't), posChanged is false and nothing is emitted.\n\nFix:\n1. Include effective clip actions in the posChanged check (serialize as a key).  \n2. In the posChanged instance path, emit clip actions when they are present (via encodePlaceObject2MoveWithClipActions or PlaceObject2WithClipActions).\n\nThis is less critical than task 1145/1146 because loopMode changes between keyframes are uncommon; but authoring tools do allow it and an agent building a complex sprite timeline may hit it.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T15:43:53Z",
+  "updated_at": "2026-06-11T15:47:45Z"
+}
