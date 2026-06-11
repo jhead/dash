@@ -336,6 +336,18 @@ function makeElementProxy(
         }
         return 0;
       }
+      // getTransformationPoint: return the transformation/registration point
+      if (prop === "getTransformationPoint") {
+        return function (): { x: number; y: number } {
+          if (current.type === "instance") {
+            const inst = current as SymbolInstance;
+            if (inst.registrationPoint) {
+              return { x: inst.registrationPoint.x, y: inst.registrationPoint.y };
+            }
+          }
+          return { x: 0, y: 0 };
+        };
+      }
       return Reflect.get(current, prop, receiver);
     },
     set(_target, prop, value) {
@@ -1084,6 +1096,24 @@ export interface JsflLibrary {
    * Returns true on success, false if the item is not found.
    */
   duplicateItem(name: string): boolean;
+  /**
+   * Count how many times the library item (by name or object with .name) is used
+   * across all scenes/layers/keyframes as a SymbolInstance.
+   * Returns 0 if the item is not found or is not a symbol.
+   */
+  useCount(item: any): number;
+  /**
+   * Lock a library item. Not supported; stub.
+   */
+  lockItem(name: string): void;
+  /**
+   * Unlock a library item. Not supported; stub.
+   */
+  unlockItem(name: string): void;
+  /**
+   * Enter edit mode for a library item. Not supported; stub. Returns true.
+   */
+  editItem(name: string): boolean;
 }
 
 function jsflSymbolType(jsflType: string): SymbolType {
@@ -1303,6 +1333,38 @@ function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCoun
       };
       return true;
     },
+    useCount(item: any): number {
+      // Accept item by name (string) or object with .name property
+      const itemName: string = typeof item === "string" ? item : (item?.name ?? "");
+      const libItem = state.doc.library.items.find((i) => i.name === itemName);
+      if (!libItem) return 0;
+      const symbolId = libItem.id;
+      let count = 0;
+      for (const scene of state.doc.scenes) {
+        for (const layer of scene.timeline.layers) {
+          for (const frame of layer.frames) {
+            if (!frame.isKeyframe) continue;
+            for (const obj of frame.displayObjects) {
+              const inst = obj as { type?: string; symbolId?: string };
+              if (inst.type === "instance" && inst.symbolId === symbolId) {
+                count++;
+              }
+            }
+          }
+        }
+      }
+      return count;
+    },
+    lockItem(_name: string): void {
+      console.warn('library.lockItem: not supported');
+    },
+    unlockItem(_name: string): void {
+      console.warn('library.unlockItem: not supported');
+    },
+    editItem(_name: string): boolean {
+      console.warn('library.editItem: not supported');
+      return true;
+    },
   };
 }
 
@@ -1474,6 +1536,16 @@ export interface JsflDocument {
    * Set the text string on all selected text objects.
    */
   setTextString(text: string): void;
+  /**
+   * Get the text content of the first selected TextDisplayObject.
+   * Returns '' if nothing text is selected.
+   */
+  getSelectedText(): string;
+  /**
+   * Set the text content of the first selected TextDisplayObject.
+   * No-op if nothing text is selected.
+   */
+  setSelectedText(text: string): void;
   /**
    * Swap the symbol of the first selected SymbolInstance to the library item
    * with the given name.  If no SymbolInstance is selected, or the named item
@@ -2447,6 +2519,56 @@ function makeDocumentProxy(
             i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
           ),
         };
+      }
+    },
+    getSelectedText(): string {
+      if (state.selectedIds.length === 0) return "";
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return "";
+      for (const id of state.selectedIds) {
+        for (const layer of scene.timeline.layers) {
+          const kf = [...layer.frames]
+            .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+            .sort((a, b) => b.index - a.index)[0];
+          if (!kf) continue;
+          const obj = kf.displayObjects.find((o) => o.id === id);
+          if (obj && obj.type === "text") {
+            return (obj as TextDisplayObject).text ?? "";
+          }
+        }
+      }
+      return "";
+    },
+    setSelectedText(text: string): void {
+      if (state.selectedIds.length === 0) return;
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      for (const id of state.selectedIds) {
+        for (const layer of scene.timeline.layers) {
+          const kf = [...layer.frames]
+            .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+            .sort((a, b) => b.index - a.index)[0];
+          if (!kf) continue;
+          const obj = kf.displayObjects.find((o) => o.id === id);
+          if (obj && obj.type === "text") {
+            const currentScene = state.doc.scenes[state.sceneIndex];
+            if (!currentScene) return;
+            const newTimeline = updateDisplayObject(
+              currentScene.timeline,
+              layer.id,
+              kf.index,
+              obj.id,
+              { text }
+            );
+            state.doc = {
+              ...state.doc,
+              scenes: state.doc.scenes.map((s, i) =>
+                i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+              ),
+            };
+            return; // Only update the first selected text object
+          }
+        }
       }
     },
     swap(libraryItemName: string): void {
