@@ -5,13 +5,13 @@
  * so that attachMovie() and `new ClassName()` work at runtime.
  *
  * AVM1 bytecode structure:
- *   ActionPush "ClassName"      // push class name string
+ *   ActionPush "ClassName"      // push class name string (arg 1)
  *   ActionGetVariable           // resolve ClassName → constructor
- *   ActionPush "LinkageId"      // push linkage identifier
+ *   ActionPush "LinkageId"      // push linkage identifier (arg 0)
  *   ActionPush 2 (integer)      // arg count
- *   ActionPush "registerClass"  // method name
  *   ActionPush "Object"         // object name
- *   ActionGetVariable           // resolve Object global
+ *   ActionGetVariable           // resolve Object global ← object (below method_name)
+ *   ActionPush "registerClass"  // method name ← TOP (popped first by ActionCallMethod)
  *   ActionCallMethod (0x52)     // call Object.registerClass(linkageId, ClassName)
  *   ActionPop (0x17)            // discard return value
  *   ActionEnd (0x00)
@@ -70,12 +70,12 @@ function buildRegisterClassBytecode(className: string, linkageId: string): Uint8
     // Push arg count = 2
     ...encodePushInt(2),
 
-    // Push "registerClass" method name
-    ...encodePushString("registerClass"),
-
-    // Push "Object" and resolve it
+    // Push "Object" and resolve it (object — below method_name on stack)
     ...encodePushString("Object"),
     0x1c,                          // ActionGetVariable
+
+    // Push "registerClass" method name (TOP — popped first by ActionCallMethod)
+    ...encodePushString("registerClass"),
 
     0x52,                          // ActionCallMethod
     0x17,                          // ActionPop
