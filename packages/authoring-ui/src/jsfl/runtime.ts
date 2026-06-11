@@ -25,6 +25,7 @@ import {
   createRectShape,
   createOvalShape,
   createLineShape,
+  transformedShapeBounds,
   breakApart as coreBreakApart,
   addDisplayObject,
   addLayer,
@@ -2292,12 +2293,24 @@ function makeDocumentProxy(
       );
       if (objectsToConvert.length === 0) return;
 
-      const minX = Math.min(
-        ...objectsToConvert.map((o) => (o as { x?: number }).x ?? 0)
-      );
-      const minY = Math.min(
-        ...objectsToConvert.map((o) => (o as { y?: number }).y ?? 0)
-      );
+      // Compute the true visual top-left of each object. Shapes bake geometry
+      // into the path with (x,y)=(0,0), so raw x/y would always yield (0,0)
+      // instead of the actual visual position. Use transformedShapeBounds for
+      // shapes/drawing-objects (mirrors the MCP library_convert_to_symbol fix).
+      function visualTopLeftJsfl(o: DisplayObject): { x: number; y: number } {
+        if (o.type === "shape" || o.type === "drawing-object") {
+          const b = transformedShapeBounds(o as ShapeDisplayObject);
+          return { x: b.x, y: b.y };
+        }
+        return {
+          x: (o as { x?: number }).x ?? 0,
+          y: (o as { y?: number }).y ?? 0,
+        };
+      }
+
+      const tls = objectsToConvert.map(visualTopLeftJsfl);
+      const minX = Math.min(...tls.map((t) => t.x));
+      const minY = Math.min(...tls.map((t) => t.y));
 
       const symbolObjects = objectsToConvert.map((o) => ({
         ...o,
