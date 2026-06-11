@@ -324,33 +324,51 @@ export function encodeDefineSprite(
           }
         } else if (displayObj.type === "text") {
           const charId = objCharIdMap.get(objId)!;
-          // Bug 1103 fix: encode colorEffect / visible=false
-          let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
-            ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
-            : null;
-          if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
-            cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
-          }
-          if (cxform !== null) {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform)));
+          // Task 1110 fix: filters require PlaceObject3
+          if (hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
+            const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!);
+            spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2ForText(charId, depth, x, y)));
-          }
-        } else if (displayObj.type === "bitmap") {
-          const charId = objCharIdMap.get(objId);
-          if (charId !== undefined) {
             // Bug 1103 fix: encode colorEffect / visible=false
-            const isHidden = (displayObj as { visible?: boolean }).visible === false;
             let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
               ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
               : null;
-            if (cxform === null && isHidden) {
+            if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
               cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
             }
             if (cxform !== null) {
               spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform)));
             } else {
-              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y)));
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2ForText(charId, depth, x, y)));
+            }
+          }
+        } else if (displayObj.type === "bitmap") {
+          const charId = objCharIdMap.get(objId);
+          if (charId !== undefined) {
+            // Task 1110 fix: blendMode or filters require PlaceObject3
+            const hasBlend = !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
+            if (hasBlend || hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
+              const bmpCXForm = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+                ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect) ?? undefined
+                : undefined;
+              const placeBody = hasBlend
+                ? encodePlaceObject3WithBlendMode(charId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, undefined, undefined, bmpCXForm)
+                : encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!);
+              spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
+            } else {
+              // Bug 1103 fix: encode colorEffect / visible=false
+              const isHidden = (displayObj as { visible?: boolean }).visible === false;
+              let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+                ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
+                : null;
+              if (cxform === null && isHidden) {
+                cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+              }
+              if (cxform !== null) {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform)));
+              } else {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y)));
+              }
             }
           }
         } else if (displayObj.type === "instance") {
@@ -406,21 +424,39 @@ export function encodeDefineSprite(
           }
         } else if (displayObj.type === "text") {
           const charId = objCharIdMap.get(objId)!;
-          let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
-            ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
-            : null;
-          if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
-            cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
-          }
-          if (cxform !== null) {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform, undefined, true)));
+          // Task 1110 fix: filters require PlaceObject3 on move too
+          if (hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
+            const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!);
+            spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar)));
+            let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+              ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
+              : null;
+            if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
+              cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+            }
+            if (cxform !== null) {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform, undefined, true)));
+            } else {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar)));
+            }
           }
         } else if (displayObj.type === "bitmap") {
           const charId = objCharIdMap.get(objId);
           if (charId !== undefined) {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar)));
+            // Task 1110 fix: blendMode or filters require PlaceObject3 on move too
+            const hasBlend = !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
+            if (hasBlend || hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
+              const bmpCXForm = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+                ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect) ?? undefined
+                : undefined;
+              const placeBody = hasBlend
+                ? encodePlaceObject3WithBlendMode(charId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, undefined, undefined, bmpCXForm)
+                : encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!);
+              spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
+            } else {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar)));
+            }
           }
         } else if (displayObj.type === "instance") {
           const refCharId = charIdMap.get(displayObj.symbolId);
