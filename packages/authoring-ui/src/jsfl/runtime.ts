@@ -608,7 +608,7 @@ function makeLayerProxy(state: RuntimeState, layerIndex: number): JsflLayer {
 export interface JsflTimeline {
   /** Current layer index (get/set). */
   currentLayer: number;
-  readonly currentFrame: number;
+  currentFrame: number;
   readonly frameCount: number;
   readonly layerCount: number;
   readonly layers: JsflLayer[];
@@ -718,6 +718,15 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
     },
     get currentFrame() {
       return state.frameIndex;
+    },
+    set currentFrame(n: number) {
+      const scene = getScene();
+      const layers = scene?.timeline.layers ?? [];
+      let frameCount = 1;
+      for (const layer of layers) {
+        if (layer.frameCount > frameCount) frameCount = layer.frameCount;
+      }
+      state.frameIndex = Math.max(0, Math.min(Math.floor(n), frameCount - 1));
     },
     get frameCount() {
       const scene = getScene();
