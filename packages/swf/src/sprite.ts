@@ -13,7 +13,7 @@
  * DefineSprite tag. Callers should collect hoisted definitions via the
  * `hoistedDefs` out-parameter and emit them before the sprite tag.
  */
-import type { BitmapItem, ClipAction, DisplayObject, FlashDocument, Symbol } from "@flash/core";
+import type { BitmapItem, ButtonHandler, ClipAction, DisplayObject, FlashDocument, Symbol } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import {
@@ -38,6 +38,7 @@ import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
 import { fontKey } from "./fonts.js";
 import { encodeStartSound } from "./sounds.js";
+import { encodeDefineButton2 } from "./buttons.js";
 import { encodeDefineMorphShape2, encodePlaceObject2WithRatio } from "./morphshape.js";
 
 // ---------------------------------------------------------------------------
@@ -582,8 +583,33 @@ export function encodeDefineSprite(
             }
           }
         } else if (displayObj.type === "instance") {
-          const refCharId = charIdMap.get(displayObj.symbolId);
+          let refCharId = charIdMap.get(displayObj.symbolId);
           if (refCharId !== undefined) {
+            // Button instances with instance-level on() handlers need a unique DefineButton2 character.
+            const hasButtonHandlers = !!(displayObj as { buttonHandlers?: ButtonHandler[] }).buttonHandlers?.length;
+            if (hasButtonHandlers) {
+              const sym = doc.library.items.find(item => item.itemType === "symbol" && item.id === displayObj.symbolId) as Symbol | undefined;
+              if (sym && sym.symbolType === "button") {
+                const instCharId = nextCharId();
+                const instHoisted: Array<{ tagType: number; body: Uint8Array }> = [];
+                const buttonBody = encodeDefineButton2(
+                  instCharId,
+                  sym,
+                  doc,
+                  charIdMap,
+                  nextCharId,
+                  instHoisted,
+                  (displayObj as { buttonHandlers: readonly ButtonHandler[] }).buttonHandlers,
+                  (displayObj as { trackAsMenu?: boolean }).trackAsMenu,
+                  fontCharIdMap
+                );
+                for (const def of instHoisted) {
+                  hoistedDefs.push(def);
+                }
+                hoistedDefs.push({ tagType: Tag.DefineButton2, body: buttonBody });
+                refCharId = instCharId;
+              }
+            }
             const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
               ? { scaleX, scaleY, rotation, skewX, skewY }
               : undefined;
