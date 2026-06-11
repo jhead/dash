@@ -517,6 +517,10 @@ export function encodeDefineSprite(
             }
             const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, objTransform, undefined, undefined, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap, shapeCXForm);
             spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
+          } else if (displayObj.type === "shape" && !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal") {
+            // Bug 1139 fix: blend mode on first placement requires PlaceObject3
+            const placeBody = encodePlaceObject3WithBlendMode(charId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, objTransform, undefined, undefined, false, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap);
+            spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
             spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y, objTransform)));
           }
