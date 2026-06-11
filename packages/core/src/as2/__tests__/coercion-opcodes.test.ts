@@ -1,12 +1,13 @@
 /**
- * Tests for AS2 compiler int(x) and Number(x) native opcode emission.
+ * Tests for AS2 compiler int(x), Number(x), and Boolean(x) native opcode emission.
  *
  * Flash Professional emits native opcodes instead of ActionCallFunction for
  * these coercions:
- *   int(x)    → ActionToInteger  (0x18)
- *   Number(x) → ActionToNumber   (0x4A)
+ *   int(x)     → ActionToInteger  (0x18)
+ *   Number(x)  → ActionToNumber   (0x4A)
+ *   Boolean(x) → ActionNot (0x12) × 2  (AVM1 has no ActionToBoolean; !!x is equivalent)
  *
- * Both must NOT fall through to ActionCallFunction (0x3D).
+ * All must NOT fall through to ActionCallFunction (0x3D).
  */
 
 import { describe, it, expect } from "vitest";
@@ -35,8 +36,9 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // Opcode constants
 // ---------------------------------------------------------------------------
 
-const ACTION_TO_INTEGER   = 0x18; // ActionToInteger — native int coercion
-const ACTION_TO_NUMBER    = 0x4A; // ActionToNumber  — native numeric coercion
+const ACTION_TO_INTEGER    = 0x18; // ActionToInteger — native int coercion
+const ACTION_TO_NUMBER     = 0x4A; // ActionToNumber  — native numeric coercion
+const ACTION_NOT           = 0x12; // ActionNot       — boolean negate (used twice for Boolean())
 const ACTION_CALL_FUNCTION = 0x3d; // ActionCallFunction — generic call (should NOT appear)
 
 // ---------------------------------------------------------------------------
@@ -137,5 +139,73 @@ describe("Number(x) coercion", () => {
     const bytes = compileAS2("Number(a, b);");
     expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
     expect(containsByte(bytes, ACTION_TO_NUMBER)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Boolean(x) — double-not (ActionNot 0x12 × 2)
+// AVM1 has no ActionToBoolean opcode; !!x achieves the same semantics.
+// ---------------------------------------------------------------------------
+
+describe("Boolean(x) coercion", () => {
+  it("Boolean(x) compiles without error", () => {
+    expect(() => compileAS2("var b = Boolean(x);")).not.toThrow();
+  });
+
+  it("Boolean(x) emits ActionNot (0x12)", () => {
+    const bytes = compileAS2("Boolean(x);");
+    expect(containsByte(bytes, ACTION_NOT)).toBe(true);
+  });
+
+  it("Boolean(x) does NOT emit ActionCallFunction (0x3D)", () => {
+    const bytes = compileAS2("Boolean(x);");
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
+  });
+
+  it("Boolean(x) does not push 'Boolean' as a string into the constant pool", () => {
+    const bytes = compileAS2("Boolean(x);");
+    expect(containsString(bytes, "Boolean")).toBe(false);
+  });
+
+  it("Boolean(x) emits exactly two consecutive ActionNot (0x12) bytes", () => {
+    // The double-not pattern must appear: 0x12 0x12
+    const bytes = compileAS2("Boolean(x);");
+    let found = false;
+    for (let i = 0; i < bytes.length - 1; i++) {
+      if (bytes[i] === ACTION_NOT && bytes[i + 1] === ACTION_NOT) {
+        found = true;
+        break;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it("Boolean(0) with a falsy literal emits double-not, NOT ActionCallFunction", () => {
+    const bytes = compileAS2("var b = Boolean(0);");
+    expect(containsByte(bytes, ACTION_NOT)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
+  });
+
+  it("Boolean(true) with a boolean literal emits double-not, NOT ActionCallFunction", () => {
+    const bytes = compileAS2("var b = Boolean(true);");
+    expect(containsByte(bytes, ACTION_NOT)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
+  });
+
+  it("Boolean(a + b) with a complex expression emits ActionNot (0x12)", () => {
+    const bytes = compileAS2("var b = Boolean(a + b);");
+    expect(containsByte(bytes, ACTION_NOT)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
+  });
+
+  it("Boolean() with no args falls through to ActionCallFunction (0x3D)", () => {
+    // Without exactly 1 argument, falls back to generic call path
+    const bytes = compileAS2("Boolean();");
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
+  });
+
+  it("Boolean(a, b) with 2 args falls through to ActionCallFunction (0x3D)", () => {
+    const bytes = compileAS2("Boolean(a, b);");
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
   });
 });

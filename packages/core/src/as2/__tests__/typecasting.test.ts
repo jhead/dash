@@ -5,7 +5,8 @@
  *   - Number(x) compiles to ActionToNumber (0x4A), NOT ActionCallFunction (0x3D)
  *     (Flash Professional emits the native opcode for single-arg coercions).
  *   - String(x) compiles to ActionToString (0x4B), NOT ActionCallFunction (0x3D).
- *   - Boolean(x) compiles to ActionCallFunction (0x3D) — still a generic call.
+ *   - Boolean(x) compiles to double-not (ActionNot 0x12 twice), NOT ActionCallFunction (0x3D).
+ *     AVM1 has no ActionToBoolean; !!x is the idiomatic equivalent.
  *   - `x as Type` (compile-time type assertion) compiles without error and
  *     evaluates the operand, discarding the type annotation.
  */
@@ -49,6 +50,7 @@ const ACTION_CALL_FUNCTION = 0x3d; // ActionCallFunction — global function dis
 const ACTION_CALL_METHOD   = 0x52; // ActionCallMethod   — method dispatch (obj.method())
 const ACTION_TO_NUMBER     = 0x4A; // ActionToNumber     — native numeric coercion
 const ACTION_TO_STRING     = 0x4B; // ActionToString     — native string coercion
+const ACTION_NOT           = 0x12; // ActionNot          — boolean negate (used for Boolean())
 
 // ---------------------------------------------------------------------------
 // Type casting global functions
@@ -68,10 +70,12 @@ describe("Type casting global functions", () => {
     expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
-  it("3. Boolean(x) compiles to ActionCallFunction (0x3D)", () => {
+  it("3. Boolean(x) emits double-not (ActionNot 0x12 twice), NOT ActionCallFunction (0x3D)", () => {
+    // AVM1 has no ActionToBoolean; Boolean(x) compiles to !!x via two ActionNot opcodes.
     const bytes = compileAS2("Boolean(x);");
-    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
-    expect(containsString(bytes, "Boolean")).toBe(true);
+    expect(containsByte(bytes, ACTION_NOT)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
+    expect(containsString(bytes, "Boolean")).toBe(false);
   });
 
   it("4. Number(x) does NOT use ActionCallMethod (0x52)", () => {
@@ -93,10 +97,11 @@ describe("Type casting global functions", () => {
     expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
-  it("5c. Boolean(0) with a number literal compiles correctly", () => {
+  it("5c. Boolean(0) with a number literal emits double-not, NOT ActionCallFunction", () => {
     const bytes = compileAS2("Boolean(0);");
-    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(true);
-    expect(containsString(bytes, "Boolean")).toBe(true);
+    expect(containsByte(bytes, ACTION_NOT)).toBe(true);
+    expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
+    expect(containsString(bytes, "Boolean")).toBe(false);
   });
 });
 

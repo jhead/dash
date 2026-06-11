@@ -329,6 +329,7 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
                     && !(name === 'int' && e.args.length === 1)
                     && !(name === 'Number' && e.args.length === 1)
                     && !(name === 'String' && e.args.length === 1)
+                    && !(name === 'Boolean' && e.args.length === 1)
                     && !(name === 'getTimer' && e.args.length === 0)
                     && !(name === 'random' && e.args.length === 1)
                     && !(name === 'chr' && e.args.length === 1)
@@ -1801,6 +1802,13 @@ class Compiler {
       case '>':   this.emit(0x67); break; // ActionGreater (SWF6+)
       case '<=':  this.emit(0x67); this.emit(0x12); break; // !(left > right)
       case '>=':  this.emit(0x48); this.emit(0x12); break; // !(left < right)
+      case 'add': this.emit(0x21); break; // ActionStringAdd (Flash 4 string concat)
+      case 'eq':  this.emit(0x13); break; // ActionStringEquals
+      case 'ne':  this.emit(0x13); this.emit(0x12); break; // StringEquals + Not
+      case 'lt':  this.emit(0x29); break; // ActionStringLess
+      case 'gt':  this.emit(0x68); break; // ActionStringGreater
+      case 'le':  this.emit(0x68); this.emit(0x12); break; // !(StringGreater) = le
+      case 'ge':  this.emit(0x29); this.emit(0x12); break; // !(StringLess) = ge
       case 'instanceof': this.emit(0x54); break; // ActionInstanceOf
       case 'as':
         // 'x as Type' is a compile-time type assertion — evaluates to x unchanged.
@@ -2272,6 +2280,15 @@ class Compiler {
       if (name === 'String' && expr.args.length === 1) {
         this.compileExpr(expr.args[0]!);
         this.emit(0x4B); // ActionToString
+        return;
+      }
+
+      // Built-in: Boolean(x) → push x, ActionNot (0x12) twice (double-not = toBoolean)
+      // AVM1 has no ActionToBoolean; !!x is the idiomatic equivalent.
+      if (name === 'Boolean' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!);
+        this.emit(0x12); // ActionNot
+        this.emit(0x12); // ActionNot (second not restores the correct boolean value)
         return;
       }
 

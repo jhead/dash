@@ -28,6 +28,9 @@ export const AS2_KEYWORDS = new Set([
   '_global', 'with', 'switch', 'case', 'default', 'break', 'continue',
   'try', 'catch', 'finally', 'throw', 'void',
   'get', 'set',  // property accessors
+  // Note: Flash 4 legacy operators (add, eq, ne, lt, gt, le, ge) are NOT keywords —
+  // they're contextual identifiers handled by the parser so they remain usable as
+  // variable/function names in Flash 8 code.
 ]);
 
 /**

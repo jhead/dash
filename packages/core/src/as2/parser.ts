@@ -260,11 +260,8 @@ class Parser {
     // name is optional (anonymous function expression)
     let name: string | null = null;
     const next = this.peek();
-    if (next.type === 'identifier' || (next.type === 'keyword' && next.value !== 'function')) {
-      // Identifiers or certain keywords can be method names
-      if (next.type === 'identifier') {
-        name = this.advance().value;
-      }
+    if (next.type === 'identifier') {
+      name = this.advance().value;
     }
 
     const params = this.parseFunctionParams();
@@ -791,7 +788,8 @@ class Parser {
   private parseEquality(): Expression {
     let left = this.parseRelational();
     while (this.check('operator', '==') || this.check('operator', '!=') ||
-           this.check('operator', '===') || this.check('operator', '!==')) {
+           this.check('operator', '===') || this.check('operator', '!==') ||
+           this.check('identifier', 'eq') || this.check('identifier', 'ne')) {
       const op = this.advance().value;
       const right = this.parseRelational();
       left = { type: 'BinaryExpr', operator: op, left, right, pos: left.pos, line: left.line };
@@ -804,7 +802,9 @@ class Parser {
     while (this.check('operator', '<') || this.check('operator', '>') ||
            this.check('operator', '<=') || this.check('operator', '>=') ||
            this.check('keyword', 'instanceof') || this.check('keyword', 'in') ||
-           this.check('identifier', 'as')) {
+           this.check('identifier', 'as') ||
+           this.check('identifier', 'lt') || this.check('identifier', 'gt') ||
+           this.check('identifier', 'le') || this.check('identifier', 'ge')) {
       const op = this.advance().value;
       const right = this.parseShift();
       left = { type: 'BinaryExpr', operator: op, left, right, pos: left.pos, line: left.line };
@@ -824,7 +824,8 @@ class Parser {
 
   private parseAdditive(): Expression {
     let left = this.parseMultiplicative();
-    while (this.check('operator', '+') || this.check('operator', '-')) {
+    while (this.check('operator', '+') || this.check('operator', '-') ||
+           this.check('identifier', 'add')) {
       const op = this.advance().value;
       const right = this.parseMultiplicative();
       left = { type: 'BinaryExpr', operator: op, left, right, pos: left.pos, line: left.line };
