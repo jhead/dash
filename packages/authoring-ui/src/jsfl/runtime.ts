@@ -349,6 +349,60 @@ function makeElementProxy(
           return { x: 0, y: 0 };
         };
       }
+      // getBounds: return the bounding box in document or object space
+      if (prop === "getBounds") {
+        return function (_objSpace?: boolean): { left: number; top: number; right: number; bottom: number } {
+          if (current.type === "shape") {
+            const shapeObj = current as ShapeDisplayObject;
+            const ox = shapeObj.x ?? 0;
+            const oy = shapeObj.y ?? 0;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            try {
+              for (const path of shapeObj.shape.paths) {
+                // Include start point
+                minX = Math.min(minX, path.start.x);
+                minY = Math.min(minY, path.start.y);
+                maxX = Math.max(maxX, path.start.x);
+                maxY = Math.max(maxY, path.start.y);
+                for (const seg of path.segments) {
+                  minX = Math.min(minX, seg.to.x);
+                  minY = Math.min(minY, seg.to.y);
+                  maxX = Math.max(maxX, seg.to.x);
+                  maxY = Math.max(maxY, seg.to.y);
+                  if (seg.type === "curve") {
+                    minX = Math.min(minX, seg.control.x);
+                    minY = Math.min(minY, seg.control.y);
+                    maxX = Math.max(maxX, seg.control.x);
+                    maxY = Math.max(maxY, seg.control.y);
+                  }
+                }
+              }
+            } catch {
+              // fall through to fallback
+            }
+            if (!isFinite(minX)) {
+              return { left: ox, top: oy, right: ox, bottom: oy };
+            }
+            return { left: ox + minX, top: oy + minY, right: ox + maxX, bottom: oy + maxY };
+          }
+          if (current.type === "instance") {
+            const inst = current as SymbolInstance;
+            const ix = inst.x ?? 0;
+            const iy = inst.y ?? 0;
+            const iw = (inst.naturalWidth ?? 100) * (inst.scaleX ?? 1);
+            const ih = (inst.naturalHeight ?? 100) * (inst.scaleY ?? 1);
+            return { left: ix, top: iy, right: ix + iw, bottom: iy + ih };
+          }
+          const anyObj = current as { x?: number; y?: number };
+          return { left: anyObj.x ?? 0, top: anyObj.y ?? 0, right: anyObj.x ?? 0, bottom: anyObj.y ?? 0 };
+        };
+      }
+      // colorEffect get: return the JSFL string type
+      if (prop === "colorEffect") {
+        const anyObj = current as { colorEffect?: { type?: string } };
+        if (anyObj.colorEffect == null) return "none";
+        return anyObj.colorEffect.type ?? "none";
+      }
       return Reflect.get(current, prop, receiver);
     },
     set(_target, prop, value) {
@@ -385,6 +439,47 @@ function makeElementProxy(
             keyframeIndex,
             obj.id,
             { firstFrame: value as number } as Parameters<typeof updateDisplayObject>[4]
+          );
+          const newScenes = state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          );
+          state.doc = { ...state.doc, scenes: newScenes };
+        }
+        return true;
+      }
+      // Handle colorEffect setter: map JSFL string to model ColorEffect object
+      if (prop === "colorEffect") {
+        let mappedValue: import("@flash/core").ColorEffect | null | undefined;
+        if (typeof value === "string") {
+          if (value === "none") {
+            mappedValue = null;
+          } else if (value === "alpha") {
+            mappedValue = { type: "alpha", alpha: 100 };
+          } else if (value === "brightness") {
+            mappedValue = { type: "brightness", brightness: 0 };
+          } else if (value === "tint") {
+            mappedValue = { type: "tint", tintColor: "#000000", tintAmount: 0 };
+          } else if (value === "advanced") {
+            mappedValue = {
+              type: "advanced",
+              redMult: 100, greenMult: 100, blueMult: 100, alphaMult: 100,
+              redOffset: 0, greenOffset: 0, blueOffset: 0, alphaOffset: 0,
+            };
+          } else {
+            mappedValue = { type: "none" } as import("@flash/core").ColorEffect;
+          }
+        } else {
+          // Pass through object values directly
+          mappedValue = value as import("@flash/core").ColorEffect;
+        }
+        const scene = state.doc.scenes[state.sceneIndex];
+        if (scene) {
+          const newTimeline = updateDisplayObject(
+            scene.timeline,
+            layerId,
+            keyframeIndex,
+            obj.id,
+            { colorEffect: mappedValue } as Parameters<typeof updateDisplayObject>[4]
           );
           const newScenes = state.doc.scenes.map((s, i) =>
             i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
