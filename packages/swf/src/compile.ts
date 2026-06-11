@@ -902,7 +902,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     ) {
       return "visible:false";
     }
-    if (displayObj.type !== "instance" && displayObj.type !== "text" && displayObj.type !== "bitmap") return null;
+    if (displayObj.type !== "instance" && displayObj.type !== "text" && displayObj.type !== "bitmap" && displayObj.type !== "shape") return null;
+    // Track standalone alpha for shape change detection
+    if (displayObj.type === "shape") {
+      const shp = displayObj as import("@flash/core").ShapeDisplayObject;
+      if (shp.alpha !== undefined && shp.alpha !== 1) {
+        return `alpha:${shp.alpha}`;
+      }
+      return null;
+    }
     const obj = displayObj as import("@flash/core").SymbolInstance | import("@flash/core").TextDisplayObject | import("@flash/core").BitmapDisplayObject;
     const ce = (obj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect;
     const hasColorEffect = ce && ce.type !== "none";
@@ -1760,6 +1768,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
                   const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform);
                   writer.writeTag(Tag.PlaceObject2, placeBody);
+                } else if (displayObj.type === "shape" && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
+                  // alpha != 1: encode as CXForm with alphaMult
+                  const alphaCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, alphaCXForm, objTransform);
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
                   const placeBody = encodePlaceObject2(
                     charId,
@@ -2190,6 +2203,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 // visible=false: encode as zero-alpha CXForm move
                 const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
                 const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform, true);
+                writer.writeTag(Tag.PlaceObject2, placeBody);
+              } else if (displayObj.type === "shape" && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
+                // alpha != 1: encode CXForm move with alphaMult
+                const alphaCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, alphaCXForm, objTransform, true);
                 writer.writeTag(Tag.PlaceObject2, placeBody);
               } else {
                 // Character changed at same depth — use Move+Character flags
