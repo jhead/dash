@@ -1827,6 +1827,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
+              const bmpTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)
+                ? { scaleX, scaleY, rotation }
+                : undefined;
               const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
               if (hasBlend || hasEnabledFilters(displayObj.filters)) {
                 // blendMode or filters require PlaceObject3 (tag 70).
@@ -1837,14 +1840,16 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       x,
                       y,
                       displayObj.blendMode!,
-                      displayObj.filters
+                      displayObj.filters,
+                      bmpTransform
                     )
                   : encodePlaceObject3WithFilters(
                       charId,
                       depth,
                       x,
                       y,
-                      displayObj.filters!
+                      displayObj.filters!,
+                      bmpTransform
                     );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
@@ -1864,10 +1869,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   };
                 }
                 if (cxform !== null) {
-                  const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, cxform);
+                  const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, cxform, bmpTransform);
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
-                  const placeBody = encodePlaceObject2(charId, depth, x, y);
+                  const placeBody = encodePlaceObject2(charId, depth, x, y, bmpTransform);
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 }
               }
@@ -2193,6 +2198,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
+              const bmpTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)
+                ? { scaleX, scaleY, rotation }
+                : undefined;
               const isHidden = displayObj.visible === false;
               const hasAlpha =
                 (displayObj.alpha !== undefined && displayObj.alpha !== 1) || isHidden;
@@ -2204,7 +2212,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   x,
                   y,
                   isHidden ? 0 : displayObj.alpha!,
-                  undefined,
+                  bmpTransform,
                   true
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
@@ -2214,7 +2222,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   depth,
                   x,
                   y,
-                  undefined,
+                  bmpTransform,
                   prev!.objId !== objId
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
