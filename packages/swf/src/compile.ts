@@ -1824,12 +1824,24 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (displayObj.type === "shape" && displayObj.cacheAsBitmap) {
                   // cacheAsBitmap requires PlaceObject3 (tag 70) with HasCacheAsBitmap bit set.
+                  // Also pass colorEffect as CXForm if present (bug fix: colorEffect was silently dropped).
+                  const shapeObj = displayObj as { colorEffect?: import("@flash/core").ColorEffect; visible?: boolean; alpha?: number };
+                  let shapeCacheCXForm = shapeObj.colorEffect
+                    ? colorEffectToCXForm(shapeObj.colorEffect) ?? undefined
+                    : undefined;
+                  if (!shapeCacheCXForm && shapeObj.visible === false) {
+                    shapeCacheCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
+                  if (!shapeCacheCXForm && shapeObj.alpha !== undefined && shapeObj.alpha !== 1) {
+                    shapeCacheCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, shapeObj.alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
                   const placeBody = encodePlaceObject3WithCacheAsBitmap(
                     charId,
                     depth,
                     x,
                     y,
-                    objTransform
+                    objTransform,
+                    shapeCacheCXForm
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (displayObj.type === "shape" && (displayObj.colorEffect || displayObj.visible === false || (displayObj.alpha !== undefined && displayObj.alpha !== 1))) {
@@ -2339,6 +2351,17 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 const alphaCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
                 const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, alphaCXForm, objTransform, true);
                 writer.writeTag(Tag.PlaceObject2, placeBody);
+              } else if (displayObj.type === "shape" && (displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap) {
+                // cacheAsBitmap on move: re-emit PlaceObject3 with HasCacheAsBitmap
+                const shapeMoveCache = displayObj as { colorEffect?: import("@flash/core").ColorEffect; visible?: boolean; alpha?: number };
+                let shapeCacheMoveCXForm = shapeMoveCache.colorEffect
+                  ? colorEffectToCXForm(shapeMoveCache.colorEffect) ?? undefined
+                  : undefined;
+                if (!shapeCacheMoveCXForm && shapeMoveCache.visible === false) {
+                  shapeCacheMoveCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                }
+                const placeBody = encodePlaceObject3WithCacheAsBitmap(charId, depth, x, y, objTransform, shapeCacheMoveCXForm);
+                writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
                 // Character changed at same depth — use Move+Character flags
                 const newCharId =
