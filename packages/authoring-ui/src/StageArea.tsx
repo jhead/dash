@@ -1405,6 +1405,143 @@ function getToolCursor(
   return "default";
 }
 
+// ---------------------------------------------------------------------------
+// Stage area right-click context menu
+// ---------------------------------------------------------------------------
+
+interface StageContextMenuProps {
+  x: number;
+  y: number;
+  hasSelection: boolean;
+  onAction: (action: string) => void;
+  onClose: () => void;
+  canGroup: boolean;
+  canUngroup: boolean;
+  hasPaste: boolean;
+}
+
+function StageContextMenu({
+  x,
+  y,
+  hasSelection,
+  onAction,
+  onClose,
+  canGroup,
+  canUngroup,
+  hasPaste,
+}: StageContextMenuProps): React.ReactElement {
+  const items: {
+    label: string;
+    action: string;
+    shortcut?: string;
+    separator?: boolean;
+    disabled?: boolean;
+  }[] = hasSelection
+    ? [
+        { label: "Cut", action: "cut", shortcut: "Ctrl+X" },
+        { label: "Copy", action: "copy", shortcut: "Ctrl+C" },
+        { label: "Paste", action: "paste", shortcut: "Ctrl+V" },
+        { label: "Delete", action: "delete", shortcut: "Del" },
+        { label: "Select All", action: "select-all", shortcut: "Ctrl+A" },
+        { label: "---", action: "---1", separator: true },
+        { label: "Convert to Symbol...", action: "convert-to-symbol", shortcut: "F8" },
+        ...(canGroup
+          ? [{ label: "Group", action: "group", shortcut: "Ctrl+G" }]
+          : []),
+        ...(canUngroup
+          ? [{ label: "Ungroup", action: "ungroup", shortcut: "Ctrl+Shift+G" }]
+          : []),
+        { label: "---", action: "---2", separator: true },
+        { label: "Bring to Front", action: "bring-to-front", shortcut: "Ctrl+Shift+↑" },
+        { label: "Send to Back", action: "send-to-back", shortcut: "Ctrl+Shift+↓" },
+      ]
+    : [
+        { label: "Select All", action: "select-all", shortcut: "Ctrl+A" },
+        ...(hasPaste
+          ? [{ label: "Paste", action: "paste", shortcut: "Ctrl+V" }]
+          : []),
+      ];
+
+  return (
+    <>
+      {/* Backdrop to dismiss on outside click */}
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 9998,
+        }}
+        onMouseDown={() => onClose()}
+      />
+      {/* Menu popup */}
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          position: "fixed",
+          left: x,
+          top: y,
+          background: "#2e2e2e",
+          border: "1px solid #555",
+          borderRadius: 3,
+          zIndex: 9999,
+          minWidth: 180,
+          boxShadow: "2px 4px 12px rgba(0,0,0,0.5)",
+          padding: "3px 0",
+        }}
+      >
+        {items.map((item) => {
+          if (item.separator) {
+            return (
+              <div
+                key={item.action}
+                style={{
+                  height: 1,
+                  background: "#444",
+                  margin: "3px 0",
+                }}
+              />
+            );
+          }
+          const isDisabled = !!item.disabled;
+          return (
+            <div
+              key={item.action}
+              onClick={() => {
+                if (!isDisabled) {
+                  onAction(item.action);
+                  onClose();
+                }
+              }}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "4px 12px",
+                fontSize: 11,
+                color: isDisabled ? "#666" : "#ddd",
+                cursor: isDisabled ? "default" : "pointer",
+                gap: 16,
+              }}
+              onMouseEnter={(e) => {
+                if (!isDisabled)
+                  (e.currentTarget as HTMLElement).style.background = "#4060a0";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.background = "transparent";
+              }}
+            >
+              <span>{item.label}</span>
+              {item.shortcut && (
+                <span style={{ fontSize: 10, color: "#888" }}>{item.shortcut}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 export function StageArea({
   stageWidth = 550,
   stageHeight = 400,
@@ -1637,6 +1774,9 @@ export function StageArea({
   // Enable Simple Buttons: track which button instance is hovered / pressed
   const [hoveredButtonId, setHoveredButtonId] = useState<string | null>(null);
   const [pressedButtonId, setPressedButtonId] = useState<string | null>(null);
+
+  // Stage context menu state
+  const [stageContextMenu, setStageContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Keep internal state in sync with props when they change externally
   useEffect(() => { setInternalZoom(zoom); }, [zoom]);
@@ -4109,7 +4249,11 @@ export function StageArea({
       onMouseLeave={(e) => { onMouseUp(e); setEraserCursorPos(null); setHoveredButtonId(null); setPressedButtonId(null); }}
       onClick={onZoomToolClick}
       onDoubleClick={onDoubleClick}
-      onContextMenu={activeTool === "zoom" ? onZoomToolClick : undefined}
+      onContextMenu={(e) => {
+        if (activeTool === "zoom") { onZoomToolClick(e); return; }
+        e.preventDefault();
+        setStageContextMenu({ x: e.clientX, y: e.clientY });
+      }}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
@@ -4550,6 +4694,54 @@ export function StageArea({
           </div>
         )}
       </div>
+
+      {/* Stage right-click context menu */}
+      {stageContextMenu && (
+        <StageContextMenu
+          x={stageContextMenu.x}
+          y={stageContextMenu.y}
+          hasSelection={selectedShapeIds.length > 0 || !!selectedShapeId}
+          canGroup={selectedShapeIds.length > 1 && !!onGroup}
+          canUngroup={
+            !!onUngroup &&
+            (selectedShapeIds.length > 0 || !!selectedShapeId) &&
+            (() => {
+              const allSelected = selectedShapeIds.length > 0
+                ? selectedShapeIds
+                : selectedShapeId ? [selectedShapeId] : [];
+              return allSelected.some((id) => {
+                const shape = shapeDisplayObjects.find((s) => s.id === id);
+                return shape && (shape.shape as { type?: string }).type === "group";
+              });
+            })()
+          }
+          hasPaste={!!onPaste}
+          onClose={() => setStageContextMenu(null)}
+          onAction={(action) => {
+            switch (action) {
+              case "cut": onCut?.(); break;
+              case "copy": onCopy?.(); break;
+              case "paste": onPaste?.(); break;
+              case "delete": onDeleteSelected?.(); break;
+              case "select-all": {
+                const allIds = [
+                  ...shapeDisplayObjects.map((s) => s.id),
+                  ...textDisplayObjects.map((t) => t.id),
+                  ...bitmapDisplayObjects.map((b) => b.id),
+                ];
+                if (allIds.length > 0) onShapeSelectMultiple?.(allIds, true);
+                break;
+              }
+              case "convert-to-symbol": onConvertToSymbol?.(); break;
+              case "group": onGroup?.(); break;
+              case "ungroup": onUngroup?.(); break;
+              case "bring-to-front": onArrange?.("front"); break;
+              case "send-to-back": onArrange?.("back"); break;
+              default: break;
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
