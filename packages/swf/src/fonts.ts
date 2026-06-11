@@ -513,18 +513,16 @@ export function encodeDefineFontAlignZones(
  * system (device) font, enabling Flash Player / Ruffle to fall back to a
  * device font by name when the embedded outlines are not used (UseOutlines=0).
  *
- * Format (SWF spec §10.4):
+ * Format (SWF spec §10.4 / Ruffle read_define_font_info):
  *   UI16                FontID
  *   UI8                 FontNameLen
  *   UI8[FontNameLen]    FontName  (no null terminator)
- *   UI8 flags:
- *     bits 7-3: reserved = 0
- *     bit 2: SmallText
- *     bit 1: ShiftJIS
- *     bit 0: ANSI
- *   UI1 Italic
- *   UI1 Bold
- *   UI8 LanguageCode  (1 = Latin)
+ *   UI8 flags (packed):
+ *     bit 4: IS_ANSI
+ *     bit 2: IS_ITALIC
+ *     bit 1: IS_BOLD
+ *     bit 0: HAS_WIDE_CODES (must be 1 when code table uses UI16)
+ *   UI8 LanguageCode  (1 = Latin, DefineFontInfo2 only)
  *   UI16[nGlyphs]     CodeTable
  */
 export function encodeDefineFontInfo2(
@@ -544,18 +542,19 @@ export function encodeDefineFontInfo2(
   bw.writeUI8(nameBytes.length);
   bw.writeBytes(nameBytes);
 
-  // Flags byte: bits 7-3 reserved, bit 2 SmallText, bit 1 ShiftJIS, bit 0 ANSI
-  // Set ANSI=1 for Latin fonts.
-  const flags = 0x01; // ANSI
+  // Single packed flags byte (matches Ruffle FontInfoFlag):
+  //   bit 0: HAS_WIDE_CODES = 1  (we always emit UI16 code points)
+  //   bit 1: IS_BOLD
+  //   bit 2: IS_ITALIC
+  //   bit 4: IS_ANSI
+  const flags =
+    0x01 | // HAS_WIDE_CODES (always set — code table is UI16)
+    (isBold ? 0x02 : 0) |
+    (isItalic ? 0x04 : 0) |
+    0x10; // IS_ANSI (Latin font)
   bw.writeUI8(flags);
 
-  // FontFlagsItalic: UI8
-  bw.writeUI8(isItalic ? 1 : 0);
-
-  // FontFlagsBold: UI8
-  bw.writeUI8(isBold ? 1 : 0);
-
-  // LanguageCode: UI8 = 1 (Latin)
+  // LanguageCode: UI8 = 1 (Latin) — present in DefineFontInfo2 (tag 62)
   bw.writeUI8(1);
 
   // CodeTable: UI16[nGlyphs]
