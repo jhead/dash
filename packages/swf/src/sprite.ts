@@ -388,6 +388,12 @@ export function encodeDefineSprite(
     skewX: number;
     skewY: number;
     colorEffectKey: string | null;
+    /** Serialized clip actions key for change detection (null = no clip actions). */
+    clipActionsKey: string | null;
+    /** Serialized letter-spacing key for change detection. */
+    letterSpacingKey: string;
+    /** Serialized restrict key for change detection. */
+    restrictKey: string;
     morphRatio: number;
   }
   const depthState = new Map<number, DepthState>();

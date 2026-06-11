@@ -1013,6 +1013,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     colorEffectKey: string | null;
     /** Serialized clip actions key for change detection (null = no clip actions). */
     clipActionsKey: string | null;
+    /** Serialized letter-spacing key for change detection. */
+    letterSpacingKey: string;
+    /** Serialized restrict key for change detection. */
+    restrictKey: string;
   }
   const depthState = new Map<number, DepthState>();
 
