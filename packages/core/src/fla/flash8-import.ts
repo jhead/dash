@@ -1255,12 +1255,41 @@ function convertTimeline(
   const resolvedLayers: Fla8Layer[] = resolveMaskedLayers(t.layers);
 
   const reversedBinary = [...resolvedLayers].reverse();
-  const layers = reversedBinary.map((l, i) =>
+  let layers = reversedBinary.map((l, i) =>
     convertLayer(l, i, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex, videoIdByIndex, videoSizeByIndex),
   );
   if (layers.length === 0) {
     return { layers: [createLayer("Layer 1", "normal")] };
   }
+
+  // After binary-order reversal, mask groups are inverted: masked children end up
+  // at LOWER li indices than their owning mask layer.  Fix: collect any run of
+  // 'masked' layers immediately preceding a 'mask' layer and re-insert them right
+  // after the mask so the group becomes [mask, …masked].
+  const reordered: Layer[] = [];
+  let i = 0;
+  while (i < layers.length) {
+    const layer = layers[i]!;
+    if (layer.type === "mask") {
+      const hasConsecutiveMaskedAfter =
+        i + 1 < layers.length && layers[i + 1]!.type === "masked";
+      if (hasConsecutiveMaskedAfter) {
+        reordered.push(layer);
+        i++;
+      } else {
+        const maskedBefore: Layer[] = [];
+        while (reordered.length > 0 && reordered[reordered.length - 1]!.type === "masked") {
+          maskedBefore.unshift(reordered.pop()!);
+        }
+        reordered.push(layer, ...maskedBefore);
+        i++;
+      }
+    } else {
+      reordered.push(layer);
+      i++;
+    }
+  }
+  layers = reordered;
 
   return { layers: assignFolderParents(layers) };
 }

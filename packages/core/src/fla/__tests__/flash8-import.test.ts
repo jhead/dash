@@ -1760,8 +1760,10 @@ describe("Magnet.fla — CS2 FLA layer names are readable strings (regression 08
   it("scene 0 (AA) has the expected layer names", () => {
     const names = doc.scenes[0]!.timeline.layers.map((l) => l.name);
     // Binary FLA stores layers bottom-to-top; import reverses to match Flash convention
-    // (li=0 = topmost/frontmost layer in panel = Ball; li=5 = background = Layer 7).
-    expect(names).toEqual(["Ball", "Walls", "Magnets", "Layer 5", "Layer 3", "Layer 7"]);
+    // (li=0 = topmost/frontmost layer in panel).  The mask reordering pass moves
+    // the mask layer (Layer 5) BEFORE its masked children so that compile.ts can
+    // find masked children at li=mask+1, li=mask+2, … when it iterates.
+    expect(names).toEqual(["Layer 5", "Ball", "Walls", "Magnets", "Layer 3", "Layer 7"]);
   });
 
   it("scene 2 (Scene 5) has readable layer names", () => {
@@ -1829,8 +1831,9 @@ describe("Magnet.fla — CPicSwf embedded SWF placements (task 0892)", () => {
     expect(loaded!.scenes.length).toBe(6);
     // Verify stream alignment wasn't disturbed by CPicSwf parsing.
     // Binary FLA stores layers bottom-to-top; import reverses so li=0 is frontmost.
+    // The mask reordering pass moves Layer 5 (mask) BEFORE its masked children.
     const names = loaded!.scenes[0]!.timeline.layers.map((l) => l.name);
-    expect(names).toEqual(["Ball", "Walls", "Magnets", "Layer 5", "Layer 3", "Layer 7"]);
+    expect(names).toEqual(["Layer 5", "Ball", "Walls", "Magnets", "Layer 3", "Layer 7"]);
   });
 });
 

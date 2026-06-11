@@ -47,8 +47,9 @@ describe("Magnet.fla inspection", () => {
     expect(layers.length).toBe(6);
 
     // The mask group: Ball, Walls, Magnets should be type=masked
-    // Layer 5 should be type=mask and appear AFTER the masked layers
-    // (higher model index = lower in panel = rendered first in bottom-up pass).
+    // Layer 5 should be type=mask and appear BEFORE its masked children
+    // (lower model index = higher in panel = in front of the masked layers).
+    // compile.ts expects the model convention: mask at li=X, masked at li=X+1, X+2, …
     const ball = layers.find((l: Layer) => l.name === "Ball");
     const walls = layers.find((l: Layer) => l.name === "Walls");
     const magnets = layers.find((l: Layer) => l.name === "Magnets");
@@ -59,10 +60,11 @@ describe("Magnet.fla inspection", () => {
     expect(magnets?.type).toBe("masked");
     expect(maskLayer?.name).toBe("Layer 5");
 
-    // Mask layer is below the masked layers in the panel (higher model index).
+    // Mask layer must be at a LOWER index than its masked children so that
+    // compile.ts can find masked children at li+1, li+2, … when it iterates.
     const maskIdx = layers.findIndex((l: Layer) => l.type === "mask");
     const ballIdx = layers.findIndex((l: Layer) => l.name === "Ball");
-    expect(maskIdx).toBeGreaterThan(ballIdx);
+    expect(maskIdx).toBeLessThan(ballIdx);
   });
 
   it("ballmask symbol (Symbol 27) has gotoAndPlay navigation script at frame 9", () => {
