@@ -3985,6 +3985,11 @@ export interface JsflFl {
    */
   saveDocument(doc: JsflDocument, fileURL?: string): void;
   /**
+   * Publish the document as a SWF.  publishProfile is accepted for API
+   * compatibility but ignored; the document is always exported to 'movie.swf'.
+   */
+  publishDocument(doc: JsflDocument, publishProfile?: string): void;
+  /**
    * Returns whether the file at fileURL exists.  Always returns false in a browser
    * context (no filesystem access).
    */
@@ -4186,6 +4191,9 @@ function makeFlProxy(
         // gracefully rather than throwing.
         console.log("[JSFL fl.saveDocument] save requested (no-op in this context)", fileURL);
       }
+    },
+    publishDocument(doc: JsflDocument, _publishProfile?: string): void {
+      doc.exportSWF('movie.swf');
     },
     fileExists(fileURL: string): boolean {
       // Browser context has no filesystem access; always return false.
