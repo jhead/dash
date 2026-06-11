@@ -1763,16 +1763,24 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     objTransform
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
-                } else if (displayObj.type === "shape" && displayObj.visible === false) {
-                  // visible=false: encode as zero-alpha CXForm (alphaMult=0)
-                  const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
-                  const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform);
-                  writer.writeTag(Tag.PlaceObject2, placeBody);
-                } else if (displayObj.type === "shape" && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
-                  // alpha != 1: encode as CXForm with alphaMult
-                  const alphaCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
-                  const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, alphaCXForm, objTransform);
-                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                } else if (displayObj.type === "shape" && (displayObj.colorEffect || displayObj.visible === false || (displayObj.alpha !== undefined && displayObj.alpha !== 1))) {
+                  // colorEffect / visible=false / alpha: encode as CXFormWithAlpha.
+                  let cxform = displayObj.colorEffect
+                    ? colorEffectToCXForm(displayObj.colorEffect)
+                    : null;
+                  if (cxform === null && displayObj.visible === false) {
+                    cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
+                  if (cxform === null && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
+                    cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
+                  if (cxform !== null) {
+                    const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, cxform, objTransform);
+                    writer.writeTag(Tag.PlaceObject2, placeBody);
+                  } else {
+                    const placeBody = encodePlaceObject2(charId, depth, x, y, objTransform);
+                    writer.writeTag(Tag.PlaceObject2, placeBody);
+                  }
                 } else {
                   const placeBody = encodePlaceObject2(
                     charId,
