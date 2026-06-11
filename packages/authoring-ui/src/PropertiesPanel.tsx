@@ -18,6 +18,7 @@ import type {
   EaseCurve,
   FlashDocument,
   Frame,
+  GroupObject,
   LabelType,
   ShapeDisplayObject,
   SoundItem,
@@ -86,13 +87,15 @@ export interface PropertiesPanelProps {
   sounds?: SoundItem[];
   /** Callback to update the sound linkage for the current frame. */
   onSoundChange?: (frameIndex: number, layerIndex: number, sound: SoundLinkage | null) => void;
+  /** Called when the user clicks "Ungroup" in the GroupView. */
+  onUngroup?: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // View discriminator
 // ---------------------------------------------------------------------------
 
-type PanelView = "document" | "frame" | "shape" | "instance" | "text" | "bitmap" | "video" | "mixed";
+type PanelView = "document" | "frame" | "shape" | "instance" | "text" | "bitmap" | "video" | "group" | "mixed";
 
 function getView(selectedObjects: DisplayObject[]): PanelView {
   if (selectedObjects.length === 0) return "frame";
@@ -103,6 +106,7 @@ function getView(selectedObjects: DisplayObject[]): PanelView {
   if (obj.type === "text") return "text";
   if (obj.type === "bitmap") return "bitmap";
   if (obj.type === "video") return "video";
+  if (obj.type === "group") return "group";
   return "frame";
 }
 
@@ -2256,6 +2260,114 @@ function FrameView({
 }
 
 // ---------------------------------------------------------------------------
+// GroupView
+// ---------------------------------------------------------------------------
+
+function GroupView({
+  obj,
+  onUpdateObject,
+  onUngroup,
+}: {
+  obj: GroupObject;
+  onUpdateObject: (id: string, changes: Partial<DisplayObject>) => void;
+  onUngroup?: () => void;
+}): React.ReactElement {
+  // Compute the bounding box of all children relative to the group origin.
+  let totalW = 0;
+  let totalH = 0;
+  if (obj.children.length > 0) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const expandBounds = (x: number, y: number, w: number, h: number) => {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x + w > maxX) maxX = x + w;
+      if (y + h > maxY) maxY = y + h;
+    };
+    for (const child of obj.children) {
+      if (child.type === "shape" || child.type === "drawing") {
+        const bounds = shapeBounds(child.shape, child.x, child.y);
+        expandBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+      } else if ("x" in child && "y" in child) {
+        // SymbolInstance, BitmapDisplayObject, TextDisplayObject, VideoDisplayObject, nested GroupObject
+        const w = ("width" in child ? (child.width as number) : 0) * (("scaleX" in child ? (child.scaleX as number) : null) ?? 1);
+        const h = ("height" in child ? (child.height as number) : 0) * (("scaleY" in child ? (child.scaleY as number) : null) ?? 1);
+        expandBounds(child.x, child.y, w, h);
+      }
+    }
+    if (isFinite(minX)) {
+      totalW = Math.max(0, maxX - minX);
+      totalH = Math.max(0, maxY - minY);
+    }
+  }
+
+  return (
+    <div style={S.body}>
+      {/* Type indicator */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Type:</span>
+        <span style={{ ...S.label, color: "#c0c0c0" }}>Group</span>
+        <span style={{ ...S.label, color: "#888", marginLeft: 4 }}>
+          ({obj.children.length} item{obj.children.length !== 1 ? "s" : ""})
+        </span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* X / Y */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>X:</span>
+        <NumInput
+          value={obj.x}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { x: v } as Partial<DisplayObject>)}
+        />
+      </div>
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Y:</span>
+        <NumInput
+          value={obj.y}
+          style={{ width: 52 }}
+          onChange={(v) => onUpdateObject(obj.id, { y: v } as Partial<DisplayObject>)}
+        />
+      </div>
+
+      <div style={S.separator} />
+
+      {/* W / H (read-only — derived from children bounds) */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>W:</span>
+        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+          {Math.round(totalW)}
+        </span>
+        <span style={{ ...S.label, marginLeft: 8 }}>H:</span>
+        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+          {Math.round(totalH)}
+        </span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Ungroup button */}
+      <div style={S.fieldGroup}>
+        <button
+          style={{
+            ...S.toggleBtn,
+            background: "#333",
+            color: "#c0c0c0",
+            border: "1px solid #555",
+            padding: "2px 8px",
+          }}
+          onClick={() => onUngroup?.()}
+          title="Break apart the group (Ctrl+Shift+G)"
+        >
+          Ungroup
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // PropertiesPanel
 // ---------------------------------------------------------------------------
 
@@ -2271,6 +2383,7 @@ export function PropertiesPanel({
   onSwapBitmap,
   sounds,
   onSoundChange,
+  onUngroup,
 }: PropertiesPanelProps): React.ReactElement {
   const view = getView(selectedObjects);
 
@@ -2281,6 +2394,7 @@ export function PropertiesPanel({
   else if (view === "text") typeLabel = "Text Field";
   else if (view === "bitmap") typeLabel = "Bitmap";
   else if (view === "video") typeLabel = "Video";
+  else if (view === "group") typeLabel = "Group";
   else if (view === "mixed") typeLabel = "Mixed";
 
   return (
@@ -2341,6 +2455,14 @@ export function PropertiesPanel({
           obj={selectedObjects[0] as VideoDisplayObject}
           doc={doc}
           onUpdateObject={onUpdateObject}
+        />
+      )}
+
+      {view === "group" && (
+        <GroupView
+          obj={selectedObjects[0] as GroupObject}
+          onUpdateObject={onUpdateObject}
+          onUngroup={onUngroup}
         />
       )}
 

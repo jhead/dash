@@ -2960,11 +2960,38 @@ export function StageArea({
         let dx = (e.clientX - drag.startMouseX) / internalZoom;
         let dy = (e.clientY - drag.startMouseY) / internalZoom;
 
+        // Helper: resolve the axis-aligned bounds of the dragged object regardless of type.
+        // Searches shapes, symbol instances, and text objects.
+        const getDraggedBounds = (id: string) => {
+          const shape = shapeDisplayObjects.find((o) => o.id === id);
+          if (shape) return { bounds: transformedShapeBounds(shape), x: shape.x, y: shape.y };
+          const inst = symbolInstanceDisplayObjects.find((o) => o.id === id);
+          if (inst) return { bounds: getSymbolInstanceBounds(inst, library), x: inst.x, y: inst.y };
+          const text = textDisplayObjects.find((o) => o.id === id);
+          if (text) return { bounds: { x: text.x, y: text.y, width: text.width, height: text.height }, x: text.x, y: text.y };
+          return null;
+        };
+
+        // Collect axis-aligned bounds for all objects except the one being dragged.
+        const getAllOtherBounds = (excludeId: string) => {
+          const result: { x: number; y: number; width: number; height: number }[] = [];
+          for (const o of shapeDisplayObjects) {
+            if (o.id !== excludeId) result.push(transformedShapeBounds(o));
+          }
+          for (const o of symbolInstanceDisplayObjects) {
+            if (o.id !== excludeId) result.push(getSymbolInstanceBounds(o, library));
+          }
+          for (const o of textDisplayObjects) {
+            if (o.id !== excludeId) result.push({ x: o.x, y: o.y, width: o.width, height: o.height });
+          }
+          return result;
+        };
+
         // Snap-to-guides: snap the dragged object's edges/center to nearby guides
         if (snapToGuides && guides.length > 0) {
-          const selObj = shapeDisplayObjects.find((o) => o.id === drag.shapeId);
-          if (selObj) {
-            const bounds = transformedShapeBounds(selObj);
+          const dragged = getDraggedBounds(drag.shapeId);
+          if (dragged) {
+            const { bounds } = dragged;
             const snapThreshold = 5;
 
             // Check horizontal guides (snap top, center, or bottom edge of object)
@@ -3009,25 +3036,21 @@ export function StageArea({
 
         // Snap-to-grid: quantize dragged object's edges/center to nearest grid line
         if (snapToGrid && (gridWidth > 0 || gridHeight > 0)) {
-          const selObj = shapeDisplayObjects.find((o) => o.id === drag.shapeId);
-          if (selObj) {
-            const bounds = transformedShapeBounds(selObj);
-            const snapped = applySnapToGrid(dx, dy, bounds, gridWidth, gridHeight);
+          const dragged = getDraggedBounds(drag.shapeId);
+          if (dragged) {
+            const snapped = applySnapToGrid(dx, dy, dragged.bounds, gridWidth, gridHeight);
             dx = snapped.dx;
             dy = snapped.dy;
           }
         }
 
         // Snap-to-objects: snap dragged object's edges/center to other objects' edges/centers
-        if (snapToObjects && shapeDisplayObjects.length > 1) {
-          const selObj = shapeDisplayObjects.find((o) => o.id === drag.shapeId);
-          if (selObj) {
-            const bounds = transformedShapeBounds(selObj);
-            const otherBounds = shapeDisplayObjects
-              .filter((o) => o.id !== drag.shapeId)
-              .map((o) => transformedShapeBounds(o));
+        if (snapToObjects) {
+          const dragged = getDraggedBounds(drag.shapeId);
+          if (dragged) {
+            const otherBounds = getAllOtherBounds(drag.shapeId);
             if (otherBounds.length > 0) {
-              const snapped = applySnapToObjects(dx, dy, bounds, otherBounds);
+              const snapped = applySnapToObjects(dx, dy, dragged.bounds, otherBounds);
               dx = snapped.dx;
               dy = snapped.dy;
             }
@@ -3036,12 +3059,12 @@ export function StageArea({
 
         // Snap-to-pixels: round the deltas so the final position lands on integer coords
         if (snapToPixels) {
-          const selObj = shapeDisplayObjects.find((o) => o.id === drag.shapeId);
-          if (selObj) {
-            const newX = Math.round(selObj.x + dx);
-            const newY = Math.round(selObj.y + dy);
-            dx = newX - selObj.x;
-            dy = newY - selObj.y;
+          const dragged = getDraggedBounds(drag.shapeId);
+          if (dragged) {
+            const newX = Math.round(dragged.x + dx);
+            const newY = Math.round(dragged.y + dy);
+            dx = newX - dragged.x;
+            dy = newY - dragged.y;
           }
         }
 

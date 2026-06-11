@@ -4510,13 +4510,16 @@ export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
 
   const handleDocumentChange = useCallback((newDoc: FlashDocument, newPath?: string) => {
-    pushDoc(newDoc);
+    // Replace present with the new document, then wipe history so that
+    // undo/redo cannot cross the open/new boundary.
+    replaceDoc(newDoc);
+    clearHistory();
     setFilePath(newPath);
     setCurrentFrame(0);
     setInstances([]);
     setSelectedInstanceId(null);
     setSelectedShapeId(null);
-  }, [pushDoc]);
+  }, [replaceDoc, clearHistory]);
 
   const handleFilePathChange = useCallback((newPath: string) => {
     setFilePath(newPath);

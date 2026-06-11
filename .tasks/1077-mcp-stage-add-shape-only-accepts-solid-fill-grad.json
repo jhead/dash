@@ -1,0 +1,10 @@
+{
+  "id": "1077-mcp-stage-add-shape-only-accepts-solid-fill-grad",
+  "title": "MCP stage_add_shape only accepts solid fill \u2014 gradient/bitmap fills unreachable",
+  "description": "The stage_add_shape MCP tool schema accepts fill as a single #RRGGBB string, and buildFill() in packages/authoring-ui/src/agent/registry.ts (line 252) hardcodes type:'solid'. The core model (engine/types.ts Fill = SolidFill | LinearGradientFill | RadialGradientFill | BitmapFill), SWF compiler, and renderer all fully support gradients. An agent wanting a gradient-filled shape must use jsfl_run with hand-coded JSFL. Fix: extend the stage_add_shape schema with an optional gradient sub-object { type: 'linear'|'radial', stops: [{color, alpha, ratio}], angle? } and update buildFill in registry.ts to parse it into a LinearGradientFill or RadialGradientFill model object.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T02:27:04Z",
+  "updated_at": "2026-06-11T02:29:52Z"
+}

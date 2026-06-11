@@ -424,14 +424,28 @@ function createMcpServerForRequest(): McpServer {
       description:
         "Add a rectangle, oval, or line to the stage. " +
         "x1/y1 = top-left, x2/y2 = bottom-right (or end point for line). " +
-        "Colors are #RRGGBB strings. Returns the new object id and rev.",
+        "Colors are #RRGGBB strings. fill can be a solid hex color string or a gradient object. " +
+        "Returns the new object id and rev.",
       inputSchema: z.object({
         kind: z.enum(["rect", "oval", "line"]).describe("Shape kind"),
         x1: z.number().describe("Left/start x"),
         y1: z.number().describe("Top/start y"),
         x2: z.number().describe("Right/end x"),
         y2: z.number().describe("Bottom/end y"),
-        fill: z.string().optional().describe("Fill color #RRGGBB (omit for no fill)"),
+        fill: z.union([
+          z.string().describe("Solid fill color #RRGGBB"),
+          z.object({
+            type: z.enum(["linear", "radial"]).describe("Gradient type"),
+            stops: z.array(z.object({
+              color: z.string().describe("Stop color #RRGGBB"),
+              alpha: z.number().min(0).max(1).optional().default(1).describe("Stop opacity 0–1"),
+              ratio: z.number().min(0).max(1).describe("Stop position 0.0–1.0 (start to end)"),
+            })).min(2).max(8).describe("Gradient color stops (2–8)"),
+            angle: z.number().optional().describe("Gradient angle in degrees (linear only; 0 = left-to-right)"),
+            focalPoint: z.number().min(-1).max(1).optional().describe("Focal point offset -1 to 1 (radial only)"),
+            spreadMode: z.enum(["extend", "reflect", "repeat"]).optional().describe("Spread mode outside gradient bounds"),
+          }).describe("Gradient fill"),
+        ]).optional().describe("Fill: #RRGGBB solid color, or a gradient descriptor (omit for no fill)"),
         stroke: z.string().optional().describe("Stroke color #RRGGBB"),
         strokeWidth: z.number().optional().describe("Stroke width in px"),
         layerId: z.string().optional().describe("Target layer id (default: active layer)"),
