@@ -181,6 +181,8 @@ export interface JsflFrame {
   labelName: string;
   /** Tween type: "none" | "motion" | "shape" (read). */
   readonly tweenType: string;
+  /** Tween easing: -100 (ease in) to 100 (ease out), 0 = linear (get/set). */
+  tweenEasing: number;
   /** Display objects on this frame (read). */
   readonly elements: DisplayObject[];
 }
@@ -242,6 +244,29 @@ function makeFrameProxy(
     },
     get tweenType() {
       return getKeyframe()?.tweenType ?? "none";
+    },
+    get tweenEasing() {
+      return getKeyframe()?.motionEase ?? 0;
+    },
+    set tweenEasing(value: number) {
+      const layer = getLayer();
+      if (!layer) return;
+      const kf = getKeyframe();
+      if (!kf) return;
+      const clamped = Math.max(-100, Math.min(100, Number(value)));
+      mutateTimeline((tl) => ({
+        ...tl,
+        layers: tl.layers.map((l) => {
+          if (l.id !== layer.id) return l;
+          return {
+            ...l,
+            frames: l.frames.map((f) => {
+              if (!f.isKeyframe || f.index !== kf.index) return f;
+              return { ...f, motionEase: clamped };
+            }),
+          };
+        }),
+      }));
     },
     get elements(): DisplayObject[] {
       const layer = getLayer();
@@ -1028,6 +1053,21 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
                     effect: String(value) as import("@flash/core").SoundEffect,
                   },
                 };
+              }),
+            };
+          }),
+        }));
+      } else if (property === "ease") {
+        const easeVal = Math.max(-100, Math.min(100, Number(value)));
+        mutateTimeline((tl) => ({
+          ...tl,
+          layers: tl.layers.map((l) => {
+            if (l.id !== layerId) return l;
+            return {
+              ...l,
+              frames: l.frames.map((f) => {
+                if (!f.isKeyframe || f.index !== fi) return f;
+                return { ...f, motionEase: easeVal };
               }),
             };
           }),
