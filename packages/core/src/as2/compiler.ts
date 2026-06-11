@@ -325,7 +325,8 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
             add('call');
           } else if (!['stop', 'play', 'nextFrame', 'prevFrame',
                        'gotoAndPlay', 'gotoAndStop', 'trace',
-                       'getURL', 'loadMovie', 'loadMovieNum'].includes(name)
+                       'getURL', 'loadMovie', 'loadMovieNum',
+                       'unloadMovie', 'unloadMovieNum'].includes(name)
                     && !(name === 'int' && e.args.length === 1)
                     && !(name === 'Number' && e.args.length === 1)
                     && !(name === 'String' && e.args.length === 1)
@@ -339,7 +340,7 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
                     && !(name === 'substring' && e.args.length === 3)) {
             add(name);
           }
-          if (name === 'loadMovieNum') {
+          if (name === 'loadMovieNum' || name === 'unloadMovieNum') {
             add('_level');
           }
           for (const a of e.args) scanExpr(a);
@@ -2354,6 +2355,30 @@ class Compiler {
         this.compileExpr(expr.args[1] ?? { type: 'Literal', value: 0 } as any);
         this.emit(0x47); // ActionAdd2 — concatenate "_level" + level
         // ActionGetURL2: method=0x40 (load movie into target)
+        this.emitWithPayload(0x9a, [0x40]);
+        this.pushUndefined();
+        return;
+      }
+
+      // Built-in: unloadMovie(target) → push "" + push target + ActionGetURL2 method=0x40
+      // An empty URL with method=0x40 tells Flash/Ruffle to unload the movie at target.
+      if (name === 'unloadMovie') {
+        this.pushString(''); // empty url (deeper)
+        this.compileExpr(expr.args[0] ?? { type: 'Literal', value: '' } as any); // target (on top)
+        // ActionGetURL2: method=0x40 (empty url = unload)
+        this.emitWithPayload(0x9a, [0x40]);
+        this.pushUndefined();
+        return;
+      }
+
+      // Built-in: unloadMovieNum(level) → push "" + push "_level"+level + ActionGetURL2 method=0x40
+      if (name === 'unloadMovieNum') {
+        this.pushString(''); // empty url (deeper)
+        // Construct target string "_level<N>" from the level argument and push it on top
+        this.pushString('_level');
+        this.compileExpr(expr.args[0] ?? { type: 'Literal', value: 0 } as any);
+        this.emit(0x47); // ActionAdd2 — concatenate "_level" + level
+        // ActionGetURL2: method=0x40 (empty url = unload)
         this.emitWithPayload(0x9a, [0x40]);
         this.pushUndefined();
         return;
