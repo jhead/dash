@@ -777,15 +777,15 @@ describe("script_get / script_set / script_check / script_list", () => {
     expect(getResult["script"]).toBe("stop();");
   });
 
-  it("script_set returns diagnostics for broken script (non-blocking)", async () => {
+  it("script_set rejects broken script with ok:false and diagnostics", async () => {
     const layerId = state.doc.scenes[0].timeline.layers[0].id;
     const result = await dispatchAgentCommand("script_set", {
       layerId,
       frameIndex: 0,
       script: "function broken( {",
     }) as Record<string, unknown>;
-    // Write should succeed
-    expect(result["ok"]).toBe(true);
+    // Write should fail when the script has compile errors
+    expect(result["ok"]).toBe(false);
     // Diagnostics should be non-empty for broken script
     const diag = result["diagnostics"] as unknown[];
     expect(diag.length).toBeGreaterThan(0);
