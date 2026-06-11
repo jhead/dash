@@ -34,6 +34,8 @@ export interface DropShadowFilter {
   readonly knockout: boolean;
   /** Hide the source object entirely (shadow only). */
   readonly hideObject: boolean;
+  /** Quality (render passes). 1 = Low, 2 = Med, 3 = High. Default: 1. */
+  readonly quality?: 1 | 2 | 3;
   readonly enabled: boolean;
 }
 
@@ -247,6 +249,7 @@ export function defaultDropShadow(): DropShadowFilter {
     inner: false,
     knockout: false,
     hideObject: false,
+    quality: 1,
     enabled: true,
   };
 }

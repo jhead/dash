@@ -37,13 +37,13 @@ function writeDropShadowFilter(bw: BitWriter, f: DropShadowFilter): void {
   // Strength: FIXED8 (2 bytes)
   bw.writeFixed8(f.strength);
 
-  // Flags: UI8
-  let flags = 0;
-  flags |= 1 << 5; // CompositeSource — always 1
-  if (f.inner) flags |= 1 << 7;      // InnerShadow
-  if (f.knockout) flags |= 1 << 6;   // Knockout
-  if (f.hideObject) flags |= 1 << 4; // OnTop (used for "hide object")
-  // bits 0-3: Passes = 0
+  // Flags: UI8 — bit 7: InnerShadow, 6: Knockout, 5: CompositeSource, 4-0: Passes
+  // CompositeSource=1 means the source object is composited (visible); =0 means hidden.
+  // Ruffle: hide_object() = !COMPOSITE_SOURCE, so set bit 5 only when !hideObject.
+  let flags = (f.quality ?? 1) & 0x1f; // Passes (bits 4-0)
+  if (!f.hideObject) flags |= 1 << 5;  // CompositeSource
+  if (f.inner) flags |= 1 << 7;        // InnerShadow
+  if (f.knockout) flags |= 1 << 6;     // Knockout
   bw.writeUI8(flags);
 }
 
