@@ -2,9 +2,9 @@
   "id": "1098-as2-assignment-as-expression-returns-undefined-i",
   "title": "AS2: assignment-as-expression returns undefined instead of assigned value",
   "description": "In packages/core/src/as2/compiler.ts at lines 1642, 1661, 1698, 1716, assignment used as a sub-expression (e.g. while ((line = readLine()) != null)) yields undefined instead of the assigned value. The compiler emits a Set action but does not duplicate the value on the stack first. Fix: before emitting ActionSetVariable/ActionSetMember/etc in assignment-expression context, dup the value so it remains on the stack after the set.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-11T03:13:56Z",
-  "updated_at": "2026-06-11T04:04:02Z"
+  "updated_at": "2026-06-11T04:06:30Z"
 }

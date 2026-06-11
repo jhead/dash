@@ -1638,8 +1638,8 @@ class Compiler {
         this.compileExpr(member.object);
         this.pushString(member.property);
         this.compileExpr(expr.right);
-        this.emit(0x4f); // ActionSetMember
-        this.pushUndefined(); // expression result
+        this.emit(0x4c); // ActionDuplicate — preserve assigned value as expression result
+        this.emit(0x4f); // ActionSetMember (consumes obj, name, top copy of value)
       } else {
         // Compound member assignment: obj.prop OP= rhs
         //   obj name           (for SetMember)
@@ -1657,8 +1657,8 @@ class Compiler {
         this.emit(0x4e); // ActionGetMember → current value
         this.compileExpr(expr.right);
         this.emitArithOp(arithOp);
-        this.emit(0x4f); // ActionSetMember
-        this.pushUndefined(); // expression result
+        this.emit(0x4c); // ActionDuplicate — preserve result as expression result
+        this.emit(0x4f); // ActionSetMember (consumes obj, name, top copy of result)
       }
       return;
     }
@@ -1670,8 +1670,8 @@ class Compiler {
         this.compileExpr(idx.object);
         this.compileExpr(idx.index);
         this.compileExpr(expr.right);
-        this.emit(0x4f); // ActionSetMember
-        this.pushUndefined();
+        this.emit(0x4c); // ActionDuplicate — preserve assigned value as expression result
+        this.emit(0x4f); // ActionSetMember (consumes obj, index, top copy of value)
       } else {
         // Compound indexed assignment: obj[i] OP= rhs (same shape as above)
         const arithOp = op.slice(0, -1);
@@ -1682,8 +1682,8 @@ class Compiler {
         this.emit(0x4e); // ActionGetMember → current value
         this.compileExpr(expr.right);
         this.emitArithOp(arithOp);
-        this.emit(0x4f); // ActionSetMember
-        this.pushUndefined();
+        this.emit(0x4c); // ActionDuplicate — preserve result as expression result
+        this.emit(0x4f); // ActionSetMember (consumes obj, index, top copy of result)
       }
       return;
     }
@@ -1694,8 +1694,8 @@ class Compiler {
         // ActionSetVariable: stack = [... name value] (name below value)
         this.pushString(name);
         this.compileExpr(expr.right);
-        this.emit(0x1d); // ActionSetVariable
-        this.pushUndefined(); // expression result
+        this.emit(0x4c); // ActionDuplicate — preserve assigned value as expression result
+        this.emit(0x1d); // ActionSetVariable (consumes name and top copy of value)
       } else {
         // Compound: name OP= rhs
         // We need: load current, apply op, store back.
@@ -1705,15 +1705,16 @@ class Compiler {
         //   push name + GetVariable → current value
         //   push rhs
         //   emitArithOp       → result = current OP rhs on stack
-        //   ActionSetVariable (pops name and result)
+        //   ActionDuplicate   → preserve result as expression result
+        //   ActionSetVariable (pops name and top copy of result)
         const arithOp = op.slice(0, -1); // strip trailing '='
         this.pushString(name);          // name for SetVariable
         this.pushString(name);
         this.emit(0x1c);                // ActionGetVariable → current value
         this.compileExpr(expr.right);   // rhs
         this.emitArithOp(arithOp);      // result on top of stack
-        this.emit(0x1d);                // ActionSetVariable (pops name then result)
-        this.pushUndefined();           // expression result
+        this.emit(0x4c);                // ActionDuplicate — preserve result as expression result
+        this.emit(0x1d);                // ActionSetVariable (pops name then top copy of result)
       }
       return;
     }
