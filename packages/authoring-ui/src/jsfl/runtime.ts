@@ -2204,8 +2204,7 @@ function makeDocumentProxy(
       const sc = state.doc.scenes[state.sceneIndex];
       if (!sc) return { name: '', index: 0, frameCount: 0 };
       const frameCount = sc.timeline.layers.reduce((max, l) => {
-        const last = l.keyframes[l.keyframes.length - 1];
-        return last ? Math.max(max, last.index + last.duration) : max;
+        return Math.max(max, l.frameCount);
       }, 1);
       return { name: sc.name, index: state.sceneIndex, frameCount };
     },
