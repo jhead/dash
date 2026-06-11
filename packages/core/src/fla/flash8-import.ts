@@ -108,24 +108,42 @@ function toHex(c: Fla8Color): string {
   return `#${h(c.r)}${h(c.g)}${h(c.b)}`;
 }
 
+/** Map FLA binary spreadMode integer (bits[7:6]) to the model string union. */
+function toSpreadMode(n: number | undefined): "extend" | "reflect" | "repeat" | undefined {
+  if (n === undefined) return undefined;
+  if (n === 1) return "reflect";
+  if (n === 2) return "repeat";
+  return undefined; // 0 = pad/extend (model default — omit field)
+}
+
 function toFill(f: Fla8Fill, bitmapIdByIndex: Map<number, string>): Fill {
   switch (f.kind) {
     case "solid":
       return { type: "solid", color: toColor(f.color) };
-    case "linear-gradient":
+    case "linear-gradient": {
+      const spreadMode = toSpreadMode(f.spreadMode);
+      const interpolation = f.linearRGB ? "linearRGB" : undefined;
       return {
         type: "linear-gradient",
         stops: f.stops.map((s) => ({ ratio: s.position, color: toColor(s.color) })),
         angle: (Math.atan2(f.matrix.b, f.matrix.a) * 180) / Math.PI,
         matrix: { a: f.matrix.a, b: f.matrix.b, c: f.matrix.c, d: f.matrix.d, tx: f.matrix.tx, ty: f.matrix.ty },
+        ...(spreadMode ? { spreadMode } : {}),
+        ...(interpolation ? { interpolation } : {}),
       };
-    case "radial-gradient":
+    }
+    case "radial-gradient": {
+      const spreadMode = toSpreadMode(f.spreadMode);
+      const interpolation = f.linearRGB ? "linearRGB" : undefined;
       return {
         type: "radial-gradient",
         stops: f.stops.map((s) => ({ ratio: s.position, color: toColor(s.color) })),
         focalPoint: f.focalRatio,
         matrix: { a: f.matrix.a, b: f.matrix.b, c: f.matrix.c, d: f.matrix.d, tx: f.matrix.tx, ty: f.matrix.ty },
+        ...(spreadMode ? { spreadMode } : {}),
+        ...(interpolation ? { interpolation } : {}),
       };
+    }
     case "bitmap": {
       const bitmapId = bitmapIdByIndex.get(f.bitmapId);
       if (!bitmapId) {

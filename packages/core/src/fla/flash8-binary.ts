@@ -88,6 +88,10 @@ export type Fla8Fill =
       matrix: Fla8Matrix;
       stops: Fla8GradientStop[];
       focalRatio: number;
+      /** Spread mode decoded from flow byte bits[7:6]: 0=pad, 1=reflect, 2=repeat */
+      spreadMode?: number;
+      /** True when flow byte bit[4] is set (linear RGB interpolation) */
+      linearRGB?: boolean;
     }
   | {
       kind: "bitmap";
@@ -1332,11 +1336,17 @@ function readFillStyle(ctx: ParseCtx, caps: boolean): Fla8Fill {
     const matrix = readMatrix(r);
     const numStops = r.u8();
     let focalRatio = 0;
+    let spreadMode: number | undefined;
+    let linearRGB: boolean | undefined;
     if (caps) {
       // F8+ gradient extras: focal*255, 0,0,0, flow|linearRGB, 0,0,0
       const focalByte = r.u8();
       focalRatio = focalByte > 127 ? (focalByte - 256) / 255 : focalByte / 255;
-      r.skip(7);
+      r.skip(3); // three reserved/padding bytes after focal
+      const flowByte = r.u8();
+      spreadMode = (flowByte >> 6) & 0x3; // bits[7:6]: 0=pad,1=reflect,2=repeat
+      linearRGB = ((flowByte >> 4) & 0x1) === 1; // bit[4]: 1=linearRGB
+      r.skip(3); // three trailing padding bytes
     }
     const stops: Fla8GradientStop[] = [];
     for (let i = 0; i < Math.min(numStops, 15); i++) {
@@ -1348,6 +1358,8 @@ function readFillStyle(ctx: ParseCtx, caps: boolean): Fla8Fill {
       matrix,
       stops,
       focalRatio,
+      ...(spreadMode !== undefined ? { spreadMode } : {}),
+      ...(linearRGB !== undefined ? { linearRGB } : {}),
     };
   }
   if (subtype & 0x40) {
