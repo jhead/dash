@@ -152,8 +152,9 @@ export function encodeSoundInfo(opts: SoundInfoOptions = {}): Uint8Array {
     bw.writeUI32LE(opts.outPoint!);
   }
   if (hasLoops) {
-    // loops: 0 = infinite, N = play N times — maps directly to SWF LoopCount
-    bw.writeUI16LE(opts.loops!);
+    // loops: 0 = infinite, N = play N times. SWF convention: 0xFFFF = infinite.
+    // Ruffle treats LoopCount=0 as "don't play", so map 0 → 0xFFFF.
+    bw.writeUI16LE(opts.loops === 0 ? 0xFFFF : opts.loops!);
   }
   if (hasEnvelope) {
     bw.writeUI8(envelopePoints.length);

@@ -243,10 +243,10 @@ describe("String.fromCharCode", () => {
     expect(compilesOk("String.fromCharCode(65);")).toBe(true);
   });
 
-  it("String.fromCharCode(65) emits ActionMBChr (0x63) instead of ActionCallMethod", () => {
+  it("String.fromCharCode(65) emits ActionMBAsciiToChar (0x37) instead of ActionCallMethod", () => {
     const bytes = compileAS2("String.fromCharCode(65);");
-    // Flash Professional emits ActionMBChr (0x63) for single-arg String.fromCharCode
-    expect(containsByte(bytes, 0x63)).toBe(true);
+    // Flash Professional emits ActionMBAsciiToChar (0x37) for single-arg String.fromCharCode
+    expect(containsByte(bytes, 0x37)).toBe(true);
     expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(false);
   });
 });

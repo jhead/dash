@@ -335,16 +335,16 @@ describe("Global function calls", () => {
 });
 
 // ---------------------------------------------------------------------------
-// String static method call — String.fromCharCode(n) → ActionMBChr (0x63)
+// String static method call — String.fromCharCode(n) → ActionMBAsciiToChar (0x37)
 // ---------------------------------------------------------------------------
 
-// Flash Professional emits ActionMBChr instead of a generic ActionCallMethod.
-const ACTION_MB_CHR = 0x63; // ActionMBChr — char code to string
+// Flash Professional emits ActionMBAsciiToChar instead of a generic ActionCallMethod.
+const ACTION_MB_ASCII_TO_CHAR = 0x37; // ActionMBAsciiToChar — char code to string
 
 describe("String static method call", () => {
-  it("20. String.fromCharCode(65) emits ActionMBChr (0x63)", () => {
+  it("20. String.fromCharCode(65) emits ActionMBAsciiToChar (0x37)", () => {
     const bytes = compileAS2("String.fromCharCode(65);");
-    expect(containsByte(bytes, ACTION_MB_CHR)).toBe(true);
+    expect(containsByte(bytes, ACTION_MB_ASCII_TO_CHAR)).toBe(true);
   });
 
   it("20b. String.fromCharCode(65) does NOT emit ActionCallMethod (0x52)", () => {
@@ -358,28 +358,28 @@ describe("String static method call", () => {
     expect(containsByte(bytes, ACTION_CALL_FUNCTION)).toBe(false);
   });
 
-  it("20d. String.fromCharCode(n) with variable argument emits ActionMBChr (0x63)", () => {
+  it("20d. String.fromCharCode(n) with variable argument emits ActionMBAsciiToChar (0x37)", () => {
     const bytes = compileAS2("var s = String.fromCharCode(n);");
-    expect(containsByte(bytes, ACTION_MB_CHR)).toBe(true);
+    expect(containsByte(bytes, ACTION_MB_ASCII_TO_CHAR)).toBe(true);
     expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(false);
   });
 
-  it("20e. String.fromCharCode(expr) with complex expression emits ActionMBChr (0x63)", () => {
+  it("20e. String.fromCharCode(expr) with complex expression emits ActionMBAsciiToChar (0x37)", () => {
     const bytes = compileAS2("var s = String.fromCharCode(a + b);");
-    expect(containsByte(bytes, ACTION_MB_CHR)).toBe(true);
+    expect(containsByte(bytes, ACTION_MB_ASCII_TO_CHAR)).toBe(true);
     expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(false);
   });
 
   it("20f. String.fromCharCode with 0 args falls through to ActionCallMethod (not special-cased)", () => {
     const bytes = compileAS2("String.fromCharCode();");
     expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(true);
-    expect(containsByte(bytes, ACTION_MB_CHR)).toBe(false);
+    expect(containsByte(bytes, ACTION_MB_ASCII_TO_CHAR)).toBe(false);
   });
 
   it("20g. String.fromCharCode with 2 args falls through to ActionCallMethod (not special-cased)", () => {
     const bytes = compileAS2("String.fromCharCode(65, 66);");
     expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(true);
-    expect(containsByte(bytes, ACTION_MB_CHR)).toBe(false);
+    expect(containsByte(bytes, ACTION_MB_ASCII_TO_CHAR)).toBe(false);
   });
 });
 
