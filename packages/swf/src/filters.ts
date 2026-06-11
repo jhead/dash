@@ -659,20 +659,20 @@ export function hasEnabledFilters(filters: readonly FlashFilter[] | undefined): 
  * Flash blend mode name → SWF BlendMode UI8 value mapping.
  */
 export const SWF_BLEND_MODE: Record<string, number> = {
-  'normal':     0,
-  'layer':      1,
-  'multiply':   2,
-  'screen':     3,
-  'lighten':    4,
-  'darken':     5,
-  'difference': 6,
-  'add':        7,
-  'subtract':   8,
-  'invert':     9,
-  'alpha':      10,
-  'erase':      11,
-  'overlay':    12,
-  'hardlight':  13,
+  'normal':     1,
+  'layer':      2,
+  'multiply':   3,
+  'screen':     4,
+  'lighten':    5,
+  'darken':     6,
+  'difference': 7,
+  'add':        8,
+  'subtract':   9,
+  'invert':     10,
+  'alpha':      11,
+  'erase':      12,
+  'overlay':    13,
+  'hardlight':  14,
 };
 
 /**

@@ -9,8 +9,8 @@
  *  1. Instance with blendMode='multiply' uses tag 70 (PlaceObject3)
  *  2. Instance with blendMode='normal' uses tag 26 (PlaceObject2)
  *  3. Flags2 has HasBlendMode bit set (0x02)
- *  4. BlendMode byte = 2 for 'multiply'
- *  5. BlendMode byte = 12 for 'overlay'
+ *  4. BlendMode byte = 3 for 'multiply'
+ *  5. BlendMode byte = 13 for 'overlay'
  *  6. Instance with both filter and blendMode → single PlaceObject3 with both flags set
  */
 
@@ -254,27 +254,27 @@ describe("SWF blend mode encoding", () => {
   });
 
   /**
-   * Test 4: BlendMode byte = 2 for 'multiply'
+   * Test 4: BlendMode byte = 3 for 'multiply'
    */
-  it("4. BlendMode byte value is 2 for 'multiply'", () => {
-    expect(SWF_BLEND_MODE["multiply"]).toBe(2);
+  it("4. BlendMode byte value is 3 for 'multiply'", () => {
+    expect(SWF_BLEND_MODE["multiply"]).toBe(3);
 
     // Also verify by encoding and checking the last byte
     const body = encodePlaceObject3WithBlendMode(1, 1, 0, 0, "multiply");
     // BlendMode is the last byte in the body (after matrix, no filters)
     const blendByte = body[body.length - 1];
-    expect(blendByte).toBe(2);
+    expect(blendByte).toBe(3);
   });
 
   /**
-   * Test 5: BlendMode byte = 12 for 'overlay'
+   * Test 5: BlendMode byte = 13 for 'overlay'
    */
-  it("5. BlendMode byte value is 12 for 'overlay'", () => {
-    expect(SWF_BLEND_MODE["overlay"]).toBe(12);
+  it("5. BlendMode byte value is 13 for 'overlay'", () => {
+    expect(SWF_BLEND_MODE["overlay"]).toBe(13);
 
     const body = encodePlaceObject3WithBlendMode(1, 1, 0, 0, "overlay");
     const blendByte = body[body.length - 1];
-    expect(blendByte).toBe(12);
+    expect(blendByte).toBe(13);
   });
 
   /**
