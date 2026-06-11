@@ -32,7 +32,7 @@ import {
   encodePlaceObject3WithBlendMode,
   hasEnabledFilters,
 } from "./filters.js";
-import { encodeDefineEditText, encodePlaceObject2ForText } from "./text.js";
+import { encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
 import { Tag } from "./tags.js";
 import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
@@ -163,6 +163,15 @@ export function encodeDefineSprite(
           // Task 1119 fix: look up font char ID so HasFont=1 and authored fontSize is honoured.
           const embeddedFontId = fontCharIdMap?.get(fontKey(obj.fontFamily, obj.bold, obj.italic));
           hoistedDefs.push({ tagType: Tag.DefineEditText, body: encodeDefineEditText(charId, obj, embeddedFontId) });
+          const aa = (obj as { antiAlias?: string }).antiAlias;
+          if (aa === 'readability') {
+            hoistedDefs.push({ tagType: Tag.CSMTextSettings, body: encodeCSMTextSettings(charId, 0, 0) });
+          } else if (aa === 'custom') {
+            const csm = (obj as { csm?: { thickness: number; sharpness: number } }).csm;
+            if (csm) {
+              hoistedDefs.push({ tagType: Tag.CSMTextSettings, body: encodeCSMTextSettings(charId, csm.thickness, csm.sharpness) });
+            }
+          }
         } else if (obj.type === "bitmap") {
           // Look up the BitmapItem from the library
           const bitmapItem = doc.library.items.find(
