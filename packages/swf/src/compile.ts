@@ -658,6 +658,43 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     }
   }
 
+  // Symbol timeline font pre-pass: walk all symbol timelines so that fonts
+  // used only inside a symbol (not on any scene timeline) still get a
+  // DefineFont3 tag and an entry in fontCharIdMap.  Without this pass the
+  // key is never inserted, encodeDefineSprite cannot look it up, and
+  // encodeDefineEditText is called without a fontCharId (HasFont=0, font
+  // height ignored).  Mirrors the scene pre-pass above — same guard logic.
+  for (const item of doc.library.items) {
+    if (item.itemType !== "symbol") continue;
+    const sym = item as import("@flash/core").Symbol;
+    for (const layer of sym.timeline.layers) {
+      if (layer.type === "guide") continue;
+      if (layer.type === "folder") continue;
+      for (const frame of layer.frames) {
+        if (!frame.isKeyframe) continue;
+        for (const obj of flattenDisplayObjects(frame.displayObjects)) {
+          if (obj.type !== "text") continue;
+          const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
+          if (fontCharIdMap.has(key)) continue;
+          const fontId = writer.nextCharId();
+          fontCharIdMap.set(key, fontId);
+          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale);
+          writer.writeTag(fontTagCode, fontBody);
+          if (useFont3) {
+            const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
+            writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
+          }
+          {
+            const codeTable: number[] = [];
+            for (let c = 32; c <= 126; c++) codeTable.push(c);
+            const fontInfo2Body = encodeDefineFontInfo2(fontId, obj.fontFamily, obj.bold, obj.italic, codeTable);
+            writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
+          }
+        }
+      }
+    }
+  }
+
   // Font library items pre-pass: emit DefineFont3 (or DefineFont2) tags for
   // FontItem library items. These represent explicitly embedded fonts defined
   // in the library panel. Any font already emitted by the text pre-pass above
@@ -731,7 +768,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         doc,
         charIdMap,
         () => writer.nextCharId(),
-        hoistedDefs
+        hoistedDefs,
+        fontCharIdMap
       );
 
       // Emit hoisted definition tags first

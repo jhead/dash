@@ -33,6 +33,7 @@ import { encodeDefineEditText, encodePlaceObject2ForText } from "./text.js";
 import { Tag } from "./tags.js";
 import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
+import { fontKey } from "./fonts.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,7 +79,11 @@ export function encodeDefineSprite(
   doc: FlashDocument,
   charIdMap: Map<string, number>,
   nextCharId: () => number,
-  hoistedDefs: Array<{ tagType: number; body: Uint8Array }>
+  hoistedDefs: Array<{ tagType: number; body: Uint8Array }>,
+  /** Maps fontKey(name, bold, italic) → SWF character ID for embedded fonts.
+   *  When provided, text objects inside this sprite will have HasFont=1 and
+   *  use the authored fontSize (matching the buttons.ts pattern from task 1083). */
+  fontCharIdMap?: Map<string, number>
 ): Uint8Array {
   const timeline = symbol.timeline;
   const layers = timeline.layers;
@@ -115,7 +120,9 @@ export function encodeDefineSprite(
           const charId = nextCharId();
           objCharIdMap.set(obj.id, charId);
           // Hoist DefineEditText to top level (Bug 3)
-          hoistedDefs.push({ tagType: Tag.DefineEditText, body: encodeDefineEditText(charId, obj) });
+          // Task 1119 fix: look up font char ID so HasFont=1 and authored fontSize is honoured.
+          const embeddedFontId = fontCharIdMap?.get(fontKey(obj.fontFamily, obj.bold, obj.italic));
+          hoistedDefs.push({ tagType: Tag.DefineEditText, body: encodeDefineEditText(charId, obj, embeddedFontId) });
         } else if (obj.type === "bitmap") {
           // Look up the BitmapItem from the library
           const bitmapItem = doc.library.items.find(
