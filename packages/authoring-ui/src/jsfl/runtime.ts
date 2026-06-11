@@ -4186,8 +4186,9 @@ function makeFlProxy(
         console.log("[JSFL output]", msg);
       },
       clear(): void {
-        // No-op: the output panel state is managed outside the runtime.
-        // Callers wishing to clear the panel must do so via the UI.
+        if (_clearOutputCallback) {
+          _clearOutputCallback();
+        }
       },
     },
     Math: Object.freeze({
@@ -4298,6 +4299,22 @@ export function buildJsflContext(
  * @param source   The JSFL script source string.
  * @param context  A JsflContext created by `buildJsflContext()`.
  */
+// ---------------------------------------------------------------------------
+// Output-panel clear callback — wired by Shell.tsx so fl.outputPanel.clear()
+// can reach the React state setter without the runtime depending on React.
+// ---------------------------------------------------------------------------
+
+/** Callback registered by Shell.tsx to clear the Output Panel. */
+let _clearOutputCallback: (() => void) | null = null;
+
+/**
+ * Register a callback that will be invoked whenever `fl.outputPanel.clear()`
+ * is called from a JSFL script.  Call with `null` to unregister.
+ */
+export function registerClearOutputCallback(cb: (() => void) | null): void {
+  _clearOutputCallback = cb;
+}
+
 export function runJsfl(source: string, context: JsflContext): JsflResult {
   // Access the internal state through the typed InternalContext
   const internal = context as InternalContext;

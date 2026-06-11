@@ -84,7 +84,7 @@ import type {
   TraceBitmapOptions,
   ShapePath,
 } from "@flash/core";
-import { runJsfl, buildJsflContext } from "./jsfl/index.js";
+import { runJsfl, buildJsflContext, registerClearOutputCallback } from "./jsfl/index.js";
 import { ColorPanel } from "./ColorPanel";
 import { PlayerWindow } from "@flash/player";
 import { MenuBar } from "./MenuBar";
@@ -4936,6 +4936,13 @@ export function Shell(): React.ReactElement {
     setOutputMessages((prev) => [...prev, line]);
   }, []);
 
+  // Wire fl.outputPanel.clear() in the JSFL runtime to the React state setter.
+  // setOutputMessages is a stable identity from useState so no deps are needed.
+  useEffect(() => {
+    registerClearOutputCallback(() => setOutputMessages([]));
+    return () => registerClearOutputCallback(null);
+  }, []);
+
   // Ref to playerOpen so keyboard handler can read latest value without being
   // re-registered on every open/close toggle.
   const playerOpenRef = useRef(playerOpen);
@@ -5122,6 +5129,11 @@ export function Shell(): React.ReactElement {
         if (result.finalDocument) {
           pushDoc(result.finalDocument);
         }
+        // Forward fl.trace() output to the Output Panel.
+        if (result.traces.length > 0) {
+          setOutputMessages((prev) => [...prev, ...result.traces]);
+          setBottomTab("output");
+        }
         return result;
       },
 
@@ -5283,6 +5295,11 @@ export function Shell(): React.ReactElement {
         const result = (runJsfl as (source: string, context: unknown) => { traces: string[]; returnValue?: unknown; error?: string; finalDocument?: import("@flash/core").FlashDocument })(source, context);
         if (result.finalDocument) {
           pushDoc(result.finalDocument);
+        }
+        // Forward fl.trace() output to the Output Panel.
+        if (result.traces.length > 0) {
+          setOutputMessages((prev) => [...prev, ...result.traces]);
+          setBottomTab("output");
         }
         return {
           traces: result.traces,
