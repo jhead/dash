@@ -3983,6 +3983,16 @@ function makeDocumentProxy(
     get strokeStyle(): string {
       return _strokeStyle;
     },
+    // ---------------------------------------------------------------------------
+    // Internal backdoor methods for app-level clipboard (fl.clipCopyFrames /
+    // fl.clipPasteFrames).  Prefixed with underscore to signal non-public API.
+    // ---------------------------------------------------------------------------
+    _getFrameClipboard(): FrameClipboard | null {
+      return state.frameClipboard;
+    },
+    _setFrameClipboard(cb: FrameClipboard | null): void {
+      state.frameClipboard = cb;
+    },
   };
 }
 
@@ -4145,6 +4155,9 @@ function makeFlProxy(
   docProxy: JsflDocument
 ): JsflFl {
   const _startTime = Date.now();
+  // App-level frame clipboard shared across documents for fl.clipCopyFrames /
+  // fl.clipPasteFrames.
+  let appFrameClipboard: FrameClipboard | null = null;
   // Keep a mutable reference so createDocument() can swap it out.
   let _docProxy = docProxy;
   // Additional documents created by doc.duplicate() accumulate here.
@@ -4248,13 +4261,12 @@ function makeFlProxy(
     closeDocument(_doc: JsflDocument, _bPromptToSaveChanges?: boolean): void {
       console.warn("fl.closeDocument: not supported in browser context");
     },
-    clipCopyFrames(_doc: JsflDocument): void {
-      console.warn("[JSFL] fl.clipCopyFrames not fully implemented");
-      return undefined;
+    clipCopyFrames(doc: JsflDocument): void {
+      appFrameClipboard = (doc as any)._getFrameClipboard?.() ?? null;
     },
-    clipPasteFrames(_doc: JsflDocument): void {
-      console.warn("[JSFL] fl.clipPasteFrames not fully implemented");
-      return undefined;
+    clipPasteFrames(doc: JsflDocument): void {
+      if (!appFrameClipboard) return;
+      (doc as any)._setFrameClipboard?.(appFrameClipboard);
     },
     browseForFileURL(_description: string, _fileType?: string): string | null {
       console.warn("[JSFL] fl.browseForFileURL: browser file picker not available; returning null");
