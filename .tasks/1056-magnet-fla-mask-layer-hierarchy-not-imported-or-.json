@@ -2,9 +2,9 @@
   "id": "1056-magnet-fla-mask-layer-hierarchy-not-imported-or-",
   "title": "Magnet.fla: mask layer hierarchy not imported or shown in UI (Layer 5 \u2192 Ball/Walls/Magnets)",
   "description": "fixtures/Magnet.fla has 'Layer 5' as a mask layer that parents Ball, Walls, Magnets, and another 'Layer 5' child layer. Two issues to fix end-to-end:\n\n1. FLA IMPORT \u2014 Layer parent/child nesting not decoded:\nIn flash8-binary.ts, CPicLayer records contain a parentLayerIndex or similar field that establishes the mask\u2192masked hierarchy. The current flash8-import.ts convertTimeline() may not be reading this correctly. Steps:\n   a. Read the binary format: check flacomdoc (github.com/jindrapetrik/flacomdoc) CPicLayer fields for parentIndex or nesting depth\n   b. Check flash8-binary.ts readCPicLayerRecord() for how layer type and parent/child relationships are decoded  \n   c. In flash8-import.ts, ensure masked layers get parentLayerIndex set correctly so the layer model knows which mask layer owns them\n   d. After the layer reversal (BOTTOM-TO-TOP \u2192 TOP-TO-BOTTOM), verify the parent indices are adjusted accordingly (if they're stored as indices, reversing the array changes the index mapping)\n\n2. EDITOR UI \u2014 Layer hierarchy not shown in Timeline:\nIn packages/authoring-ui/src/Timeline.tsx, masked layers should be indented under their mask parent in the layer list. Check if Timeline.tsx renders layer parent/child nesting at all. If not, add indentation for layers whose parentLayerIndex is non-null, similar to how Flash 8 shows the nested hierarchy.\n\nStart by opening fixtures/Magnet.fla with the FLA import and calling doc_summary or layer list to see what the current import produces. Then read the layer model type to understand the parentLayerIndex field.\n\nRun the full test suite after any changes: pnpm --filter @flash/authoring-ui run test -- --run (must stay at 612 or higher)",
-  "status": "in_progress",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-11T01:16:24Z",
-  "updated_at": "2026-06-11T01:16:27Z"
+  "updated_at": "2026-06-11T01:33:01Z"
 }

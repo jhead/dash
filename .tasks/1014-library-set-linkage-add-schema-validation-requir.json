@@ -1,0 +1,10 @@
+{
+  "id": "1014-library-set-linkage-add-schema-validation-requir",
+  "title": "library_set_linkage: add schema validation (require linkageId when exporting)",
+  "description": "In packages/agent-protocol/src/index.ts (~line 518-530), the LibrarySetLinkageParamsSchema has all fields after symbolId as optional with no constraints. This allows calling library_set_linkage with only symbolId (all other fields absent), which is a silent no-op. Fix: add a .refine() or .superRefine() constraint that ensures at least one of linkageId, exportForActionScript, exportInFirstFrame is provided. Also optionally validate that if exportForActionScript=true, a linkageId must be present (standard Flash 8 behavior). Keep the existing export: all types should still be exported after the change.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T23:25:48Z",
+  "updated_at": "2026-06-10T23:26:14Z"
+}

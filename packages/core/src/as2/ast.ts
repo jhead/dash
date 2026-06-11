@@ -32,7 +32,7 @@ export interface FunctionDecl extends NodeBase {
   readonly returnType: string | null;
   readonly body: Block;
   readonly isStatic: boolean;
-  readonly access: 'public' | 'private' | null;
+  readonly access: 'public' | 'private' | 'protected' | null;
   readonly isGetter: boolean;
   readonly isSetter: boolean;
 }
@@ -59,7 +59,7 @@ export interface VarDecl extends NodeBase {
   readonly varType: string | null;     // AS2 type annotation: var x:Number
   readonly init: Expression | null;
   readonly isStatic: boolean;
-  readonly access: 'public' | 'private' | null;
+  readonly access: 'public' | 'private' | 'protected' | null;
 }
 
 export interface Block extends NodeBase {

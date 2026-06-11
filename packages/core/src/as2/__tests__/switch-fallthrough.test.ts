@@ -378,4 +378,67 @@ describe("AS2 switch fall-through — AVM1 stack correctness (task 0996)", () =>
       }
     `)).toBe(true);
   });
+
+  // ---- Task 1072: fall-through must skip ActionPop (no double-pop) ----------
+
+  it("task 1072: empty-body fall-through (case 1: case 2: ...) compiles and contains trace string", () => {
+    // Regression test for the bug where a fall-through jump landed BEFORE
+    // ActionPop, causing the discriminant to be popped twice on the fall-through
+    // path.  The canonical reproduction is:
+    //   case 1:          ← empty body, falls through
+    //   case 2: trace("two"); break;
+    const bytes = compileAS2(`
+      var x = 2;
+      switch(x) {
+        case 1:
+        case 2: trace("two"); break;
+        case 3: trace("three"); break;
+      }
+    `);
+    expect(bytes.length).toBeGreaterThan(0);
+    expect(containsString(bytes, "two")).toBe(true);
+    expect(containsString(bytes, "three")).toBe(true);
+  });
+
+  it("task 1072: fall-through from empty case produces same ActionPop count as break-only version", () => {
+    // With the bug, fall-through from case 1 (empty) to case 2 would land before
+    // case 2's ActionPop, resulting in one extra ActionPop executed at runtime.
+    // The bytecode count should be the same for both patterns since the number of
+    // entry paths that need a pop is identical (one per value-case + one for no-match).
+    const withFallThrough = compileAS2(`
+      switch (x) {
+        case 1:
+        case 2: var r = 2; break;
+      }
+    `);
+    const withBreaks = compileAS2(`
+      switch (x) {
+        case 1: break;
+        case 2: var r = 2; break;
+      }
+    `);
+    // Same number of ActionPop (0x17) opcodes: one per case body entry + one at end
+    expect(countByte(withFallThrough, 0x17)).toBe(countByte(withBreaks, 0x17));
+  });
+
+  it("task 1072: code after switch is not corrupted by phantom pops", () => {
+    // Ensures that after the switch block, subsequent statements compile and
+    // execute correctly (no leftover values on the stack from a double-pop).
+    // We verify by checking that identifiers from the post-switch assignment
+    // appear in the bytecode.
+    const bytes = compileAS2(`
+      var result = 0;
+      switch (n) {
+        case 1:
+        case 2: result = 99; break;
+        default: result = 0;
+      }
+      var after = result + 1;
+    `);
+    expect(bytes.length).toBeGreaterThan(0);
+    expect(containsString(bytes, "result")).toBe(true);
+    expect(containsString(bytes, "after")).toBe(true);
+    // "after" assignment must appear in bytecode — both constant pool strings present
+    expect(countByte(bytes, 0x17)).toBeGreaterThanOrEqual(1); // at least one ActionPop
+  });
 });

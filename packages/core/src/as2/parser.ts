@@ -102,8 +102,9 @@ class Parser {
         case 'switch':   return this.parseSwitchStmt();
         case 'with':     return this.parseWithStmt();
         case 'public':
-        case 'private': {
-          const access = t.value as 'public' | 'private';
+        case 'private':
+        case 'protected': {
+          const access = t.value as 'public' | 'private' | 'protected';
           this.advance();
           const isStatic = !!this.tryEat('keyword', 'static');
           if (this.check('keyword', 'var')) return this.parseVarDeclList(isStatic, access);
@@ -170,7 +171,7 @@ class Parser {
    * Returns a single VarDecl when there is only one declarator, or a Block
    * containing multiple VarDecl nodes when there are two or more.
    */
-  private parseVarDeclList(isStatic: boolean, access: 'public' | 'private' | null): Statement {
+  private parseVarDeclList(isStatic: boolean, access: 'public' | 'private' | 'protected' | null): Statement {
     const start = this.eat('keyword', 'var');
     const decls: VarDecl[] = [];
 
@@ -201,7 +202,7 @@ class Parser {
     return { type: 'Block', body: decls, ...this.base(start) };
   }
 
-  private parseVarDecl(isStatic: boolean, access: 'public' | 'private' | null): VarDecl {
+  private parseVarDecl(isStatic: boolean, access: 'public' | 'private' | 'protected' | null): VarDecl {
     const start = this.eat('keyword', 'var');
     const nameToken = this.eat('identifier');
     const name = nameToken.value;
@@ -242,7 +243,7 @@ class Parser {
     return name;
   }
 
-  private parseFunctionDecl(isStatic: boolean, access: 'public' | 'private' | null): FunctionDecl {
+  private parseFunctionDecl(isStatic: boolean, access: 'public' | 'private' | 'protected' | null): FunctionDecl {
     const start = this.eat('keyword', 'function');
 
     // Handle get/set property accessor keywords
@@ -1028,6 +1029,9 @@ class Parser {
       // strip surrounding quotes
       const raw = t.value;
       const inner = raw.slice(1, -1)
+        .replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/\\0/g, '\0')
         .replace(/\\n/g, '\n')
         .replace(/\\t/g, '\t')
         .replace(/\\r/g, '\r')

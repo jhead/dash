@@ -1,0 +1,10 @@
+{
+  "id": "1043-mcp-tools-stage-move-selection-scene-reorder-sta",
+  "title": "MCP tools: stage_move_selection, scene_reorder, stage_find_instances, library_use_count",
+  "description": "Add 4 new MCP tools that expose recently-added JSFL methods:\n\n1. stage_move_selection: moves selected objects by a delta. Params: dx (number), dy (number). Calls doc.moveSelectionBy({x:dx, y:dy}) via JSFL or the equivalent core mutation directly. Use the same pattern as stage_update.\n\n2. scene_reorder: reorders a scene. Params: sceneIndex (number, 0-based scene to move), insertBefore (number, 0-based position to insert before). Calls coreReorderScenes or doc.reorderScene(). Look at scene_duplicate as a structural template.\n\n3. stage_find_instances: finds all instances of a named library symbol on stage. Params: symbolName (string). Returns { instances: Array<{id, x, y, layerIndex, frameIndex}> }. Iterates scenes/layers/keyframes like the JSFL findSymbolInstances implementation.\n\n4. library_use_count: returns the usage count for a library item. Params: name (string). Returns { count: number }. Can either call the JSFL library.useCount() or implement directly by counting SymbolInstances matching the symbol's id.\n\nFiles to modify:\n- packages/agent-protocol/src/index.ts \u2014 add schemas and types for each tool\n- packages/vite-plugin-agent-mcp/src/index.ts \u2014 register the tools\n- packages/authoring-ui/src/agent/registry.ts \u2014 implement handlers\n\nUse timeline_copy_frames and scene_duplicate as structural templates.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T00:26:31Z",
+  "updated_at": "2026-06-11T00:31:31Z"
+}

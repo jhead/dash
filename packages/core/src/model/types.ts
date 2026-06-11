@@ -279,13 +279,15 @@ export interface SymbolLinkage {
  *
  * The `event` field matches the Flash button event names used in the
  * SWF ButtonCondition bitfield:
- *   "press"          → idleToOverDown   (bit 1)
- *   "release"        → overDownToIdle   (bit 0)
- *   "releaseOutside" → outDownToIdle    (bit 4)
- *   "rollOut"        → overUpToIdle     (bit 5)
- *   "rollOver"       → overUpToOverDown (bit 6)
- *   "dragOut"        → overDownToOutDown (bit 2)
- *   "dragOver"       → outDownToOverDown (bit 3)
+ *   "press"          → overUpToOverDown  (bit 2)
+ *   "release"        → overDownToOverUp  (bit 3)
+ *   "releaseOutside" → outDownToIdle     (bit 6)
+ *   "rollOut"        → overUpToIdle      (bit 1)
+ *   "rollOver"       → idleToOverUp      (bit 0)
+ *   "dragOut"        → overDownToOutDown (bit 4)
+ *   "dragOver"       → outDownToOverDown (bit 5)
+ *   "overDownToIdle" → overDownToIdle    (bit 8)
+ *   "idleToOverDown" → idleToOverDown    (bit 7)
  *
  * The `script` field contains the raw AS2 source code for the handler body
  * (not wrapped in `on(event){}`). It is compiled to AVM1 bytecode and
@@ -300,6 +302,8 @@ export interface ButtonAction {
     | "rollOver"
     | "dragOut"
     | "dragOver"
+    | "overDownToIdle"
+    | "idleToOverDown"
     | { readonly keyPress: string };
   readonly script: string;
 }

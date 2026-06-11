@@ -1,0 +1,10 @@
+{
+  "id": "1053-ui-keyboard-shortcuts-ctrl-d-duplicate-shift-f5-",
+  "title": "UI: keyboard shortcuts Ctrl+D (duplicate), Shift+F5 (remove frame), Shift+F6 (clear keyframe)",
+  "description": "Add three missing keyboard shortcuts. Files: packages/authoring-ui/src/useKeyboardShortcuts.ts and packages/authoring-ui/src/Shell.tsx.\n\n1. Ctrl+D \u2014 duplicate selection (Flash 8 canonical shortcut):\n   - Add onDuplicate?: () => void to KeyboardShortcutHandlers interface in useKeyboardShortcuts.ts\n   - Add binding: else if (ctrl && !shift && e.key === 'd') { e.preventDefault(); h.onDuplicate?.(); }\n   - Wire in Shell.tsx useKeyboardShortcuts call: onDuplicate: handleDuplicate (the handleDuplicate function already exists in Shell.tsx around line 1617)\n\n2. Shift+F5 \u2014 remove frame:\n   - Add onRemoveFrame?: () => void to KeyboardShortcutHandlers (if it doesn't exist already)\n   - Add binding: else if (shift && e.key === 'F5') { e.preventDefault(); h.onRemoveFrame?.(); }\n   - Wire in Shell.tsx: onRemoveFrame: handleRemoveFrame (find the existing handleRemoveFrame function)\n\n3. Shift+F6 \u2014 clear keyframe (convert keyframe back to regular frame):\n   - Add onClearKeyframe?: () => void to KeyboardShortcutHandlers (if it doesn't exist already)\n   - Add binding: else if (shift && e.key === 'F6') { e.preventDefault(); h.onClearKeyframe?.(); }\n   - Wire in Shell.tsx: onClearKeyframe: handleClearKeyframe (find the existing handler)\n\nRead useKeyboardShortcuts.ts and Shell.tsx carefully before editing to find the exact existing patterns and ensure you match the code style.\n\nRun: pnpm --filter @flash/authoring-ui run test -- --run (must stay at 612)\nCommit: feat(ui): add Ctrl+D duplicate, Shift+F5 remove frame, Shift+F6 clear keyframe shortcuts",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T00:55:14Z",
+  "updated_at": "2026-06-11T00:57:18Z"
+}

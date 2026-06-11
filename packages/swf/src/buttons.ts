@@ -402,6 +402,8 @@ export function encodeDefineButton2(
   //   bit 4: dragOut          (overDownToOutDown)
   //   bit 5: dragOver         (outDownToOverDown)
   //   bit 6: releaseOutside   (outDownToIdle)
+  //   bit 7: idleToOverDown   (direct drag from idle to pressed)
+  //   bit 8: overDownToIdle   (drag from pressed back to idle)
   //   bits 9-15: keyPress key code (0 = no key press condition)
   //
   // Key codes for named keys (matches Ruffle ButtonKeyCode enum):
@@ -417,6 +419,8 @@ export function encodeDefineButton2(
     dragOut:        0x0010,
     dragOver:       0x0020,
     releaseOutside: 0x0040,
+    idleToOverDown: 0x0080,
+    overDownToIdle: 0x0100,
   };
 
   /** Named key → SWF key code for on(keyPress '<Name>') handlers. */

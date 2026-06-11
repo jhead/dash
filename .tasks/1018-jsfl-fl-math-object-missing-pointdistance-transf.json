@@ -1,0 +1,10 @@
+{
+  "id": "1018-jsfl-fl-math-object-missing-pointdistance-transf",
+  "title": "JSFL: fl.Math object missing (pointDistance, transformPoint etc)",
+  "description": "The fl object in packages/authoring-ui/src/jsfl/runtime.ts lacks a fl.Math property. Flash 8 JSFL exposes fl.Math with utility functions. Fix: add Math property to JsflFl interface and makeFlProxy with at minimum: pointDistance({x,y}, {x,y}) -> number (Euclidean distance), transformPoint(matrix, {x,y}) -> {x,y} (apply a 2D transform matrix to a point), and optionally: matrixToScreen/screenToMatrix if those are common. Keep implementations simple/pure. Type the point as {x: number, y: number}.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T23:31:37Z",
+  "updated_at": "2026-06-10T23:33:29Z"
+}

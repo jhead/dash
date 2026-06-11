@@ -1,0 +1,10 @@
+{
+  "id": "1048-ui-propertiespanel-w-h-inputs-for-shapedisplayob",
+  "title": "UI: PropertiesPanel W/H inputs for ShapeDisplayObject and locked-aspect resize for InstanceView",
+  "description": "Two PropertiesPanel improvements in packages/authoring-ui/src/PropertiesPanel.tsx:\n\n1. ShapeView missing W/H direct pixel inputs: ShapeView (~line 393) shows X, Y, Rot, SX%, SY% but no direct W/H pixel fields. Add W and H NumInput fields that:\n   - Read: compute from transformedShapeBounds(shape) * scaleX/scaleY (the bounds helper is in @flash/core)\n   - Write: convert pixel W/H back to scaleX/scaleY = newW / naturalWidth, dispatch updateDisplayObject\n   - Look at how InstanceView handles naturalWidth/naturalHeight as a reference\n\n2. InstanceView locked-aspect resize: InstanceView (~line 738) shows naturalWidth/naturalHeight as read-only labels. Add editable W/H NumInput fields (similar to ShapeView fix above) plus an aspect-lock toggle (a lock icon button):\n   - When aspect locked: changing W auto-updates H = newW * (naturalHeight/naturalWidth) and vice versa\n   - Store lock state in local React state\n   - Dispatch scaleX/scaleY updates via updateDisplayObject\n\nUse the existing NumInput component and the same pattern as other property inputs in the panel. No new dependencies needed.\nRun tests: pnpm --filter @flash/authoring-ui run test -- --run (must stay at 612)",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T00:36:24Z",
+  "updated_at": "2026-06-11T00:40:02Z"
+}

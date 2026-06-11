@@ -1,0 +1,10 @@
+{
+  "id": "1008-jsfl-fl-browseforfileurl-and-fl-browseforfolderu",
+  "title": "JSFL: fl.browseForFileURL and fl.browseForFolderURL stubs missing",
+  "description": "The fl object in packages/authoring-ui/src/jsfl/runtime.ts is missing fl.browseForFileURL(description, fileType?) and fl.browseForFolderURL(description). In Flash 8 JSFL these open native file/folder pickers. Fix: add both methods to JsflFl interface and proxy. In the browser context, use the HTML5 <input type=file> element via a programmatic click to get a File object, then return a fake file:// URL from the file.name (or return null if user cancels). browseForFolderURL can always return null with a console.warn. Priority: low.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T23:14:24Z",
+  "updated_at": "2026-06-10T23:15:09Z"
+}

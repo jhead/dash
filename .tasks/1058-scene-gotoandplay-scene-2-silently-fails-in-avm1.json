@@ -1,0 +1,10 @@
+{
+  "id": "1058-scene-gotoandplay-scene-2-silently-fails-in-avm1",
+  "title": "Scene: gotoAndPlay('Scene 2') silently fails in AVM1",
+  "description": "In Ruffle's AVM1, gotoAndPlay(string) resolves via frame_labels_map, but scene names are stored in scene_labels_map (from tag 86 SceneAndFrameLabelData). So gotoAndPlay('Scene 2') never finds a matching frame and silently fails. Fix options: (1) In scenelabels.ts / compile.ts, when emitting tag 86, also emit the scene names as FrameLabel tags at each scene start frame so frame_labels_map has them as an alias. (2) Alternatively, in the AS2 compiler, detect 2-arg gotoAndPlay(sceneName, frame) and emit ActionGotoFrame2 with a SceneBiasFlag + scene offset, matching how Flash 8 authoring compiles cross-scene navigation. Option 1 is simpler and handles both cases. Verify against ruffle/core/src/display_object/movie_clip.rs frame_label_to_number().",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T01:31:19Z",
+  "updated_at": "2026-06-11T01:38:01Z"
+}

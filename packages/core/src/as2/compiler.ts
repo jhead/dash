@@ -1020,18 +1020,20 @@ class Compiler {
     //     ActionEquals2
     //     ActionNot                  ; invert: truthy when NOT equal
     //     ActionIf(comparison_block_N+1)  ← prevSkipPatch
-    //   body_N:                      ← prevFallThroughPatches land here
+    //   bodyStart_N:                 ← match-path falls through to here
     //     ActionPop                  ; pop original discriminant (dup was consumed)
+    //   stmtStart_N:                 ← fall-through jumps from case N-1 land here
     //     <case body>
-    //     [ActionJump(end)]          ; explicit break — or fall-through jump below
-    //     [ActionJump(body_N+1)]     ; fall-through: jump PAST next case's comparison
-    //                                ;   to land directly at that body's ActionPop
+    //     [ActionJump(end)]          ; explicit break
+    //     [ActionJump(stmtStart_N+1)]; fall-through: jump PAST next case's comparison
+    //                                ;   AND ActionPop (discriminant already consumed)
     //
     //   defaultStart:                ← last skip-jump lands here
-    //     ActionPop                  ; discard discriminant
+    //     ActionPop                  ; discard discriminant (no-match path only)
+    //   defaultStmtStart:            ← fall-through jumps from last value-case land here
     //     <default body>
     //
-    //   switchEnd:                   ← break patches, fall-through from last case
+    //   switchEnd:                   ← break patches, fall-through from last case (no default)
 
     // prevSkipPatch: offset-field pos of the ActionIf that skips to the next
     //   comparison block when the current case does NOT match.
@@ -1068,23 +1070,31 @@ class Compiler {
 
       // ---- Body block --------------------------------------------------------
 
-      // body_N starts HERE (after comparison).  Patch fall-through jumps from
-      // the previous case to land at this point so they bypass the comparison.
-      const bodyStart = this.buf.length;
-      for (const p of prevFallThroughPatches) {
-        this.patchJump(p, bodyStart);
-      }
+      // body_N starts HERE (after comparison) — the match-path ActionIf above
+      // falls through to here.  Fall-through jumps from the PREVIOUS case body
+      // must NOT land here because those come from a path where the discriminant
+      // was already popped; landing before this ActionPop would double-pop the
+      // stack and corrupt subsequent operations.  We save those patches now and
+      // apply them AFTER the ActionPop so they jump to stmtStart instead.
+      const prevFallThroughPatchesSaved = prevFallThroughPatches;
       prevFallThroughPatches = [];
 
       // Matched: pop the original discriminant (the dup was consumed by Equals2)
       this.emit(0x17); // ActionPop
+
+      // stmtStart: first instruction of the case body — fall-through jumps from
+      // the previous case land here, bypassing the ActionPop above.
+      const stmtStart = this.buf.length;
+      for (const p of prevFallThroughPatchesSaved) {
+        this.patchJump(p, stmtStart);
+      }
 
       // Compile case body; break emits ActionJump(switchEnd) via loopStack
       this.compileStatements(c.consequent);
 
       // If the case body does NOT end with an unconditional transfer, it falls
       // through to the next case.  Emit a placeholder ActionJump now; we will
-      // patch it to land at the next case's body start once we know that offset.
+      // patch it to land at the next case's stmtStart once we know that offset.
       if (!Compiler.caseEndsWithTransfer(c.consequent)) {
         prevFallThroughPatches.push(this.emitActionJump());
       }
@@ -1092,24 +1102,36 @@ class Compiler {
 
     // ---- Default / no-match path -------------------------------------------
 
-    // Patch the last case's skip-jump to land here (start of default or end).
+    // Patch the last case's skip-jump to land here (start of default/end).
+    // The skip-jump comes from the no-match path where the discriminant is still
+    // on the stack, so it must land BEFORE the ActionPop below.
     const defaultStart = this.buf.length;
     if (prevSkipPatch !== null) {
       this.patchJump(prevSkipPatch, defaultStart);
     }
 
-    // Patch any fall-through jumps from the last value-case to land here too.
-    for (const p of prevFallThroughPatches) {
-      this.patchJump(p, defaultStart);
-    }
-
     // No case matched: pop the original discriminant, then run default body.
     if (defaultCase !== null) {
-      this.emit(0x17); // ActionPop — discard discriminant before default body
+      this.emit(0x17); // ActionPop — discard discriminant (no-match path)
+
+      // Fall-through jumps from the last value-case land here (AFTER ActionPop)
+      // because those paths already consumed the discriminant.
+      const defaultStmtStart = this.buf.length;
+      for (const p of prevFallThroughPatches) {
+        this.patchJump(p, defaultStmtStart);
+      }
+
       this.compileStatements(defaultCase.consequent);
     } else {
-      // No default: just pop the discriminant and fall through to switchEnd
+      // No default: pop the discriminant (no-match path) and fall through.
       this.emit(0x17); // ActionPop
+
+      // Fall-through jumps from the last value-case skip the pop above and land
+      // directly at switchEnd (patched below after we know switchEnd).
+      // Collect them so they get patched alongside break patches.
+      for (const p of prevFallThroughPatches) {
+        ctx.breakPatches.push(p);
+      }
     }
 
     // End of switch — patch all breaks
@@ -2026,6 +2048,41 @@ class Compiler {
       ) {
         this.compileExpr(expr.args[0]!);
         this.emit(0x63); // ActionMBChr
+        return;
+      }
+
+      // super.method(args) → Animal.prototype.method.call(this, args)
+      // Must be handled before the generic MemberExpr path so that `super`
+      // resolves to Animal.prototype.method rather than Animal.method.
+      if (
+        member.object.type === 'Identifier' &&
+        (member.object as Identifier).name === 'super' &&
+        this.currentSuperClass !== null
+      ) {
+        const superName = this.currentSuperClass;
+        const methodName = member.property;
+        // ActionCallMethod stack (top popped first by Ruffle):
+        //   method_name | object | numArgs | arg[0] | ... | arg[n-1]
+        // We want: "call" | Animal.prototype.speak | nArgs+1 | this | arg[0] | ... | arg[n-1]
+        // Push actual args deepest first (arg[n-1] first)
+        for (let i = expr.args.length - 1; i >= 0; i--) {
+          this.compileExpr(expr.args[i]!);
+        }
+        // Push 'this' as the first argument to .call()
+        this.pushString('this');
+        this.emit(0x1c); // ActionGetVariable → this
+        // Push nArgs + 1 (user args + 'this')
+        this.pushInt(expr.args.length + 1);
+        // Build Animal.prototype.method on the stack
+        this.pushString(superName);
+        this.emit(0x1c); // ActionGetVariable → Animal
+        this.pushString('prototype');
+        this.emit(0x4e); // ActionGetMember → Animal.prototype
+        this.pushString(methodName);
+        this.emit(0x4e); // ActionGetMember → Animal.prototype.speak
+        // Push method name "call" — top of stack, first popped by Ruffle
+        this.pushString('call');
+        this.emit(0x52); // ActionCallMethod → Animal.prototype.speak.call(this, ...)
         return;
       }
 

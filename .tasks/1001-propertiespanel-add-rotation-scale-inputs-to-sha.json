@@ -2,9 +2,9 @@
   "id": "1001-propertiespanel-add-rotation-scale-inputs-to-sha",
   "title": "PropertiesPanel: add rotation/scale inputs to ShapeView, BitmapView, VideoView",
   "description": "packages/authoring-ui/src/PropertiesPanel.tsx ShapeView (lines 393-663), BitmapView (lines 1410-1522), and VideoView (lines 1529-1618) all show x, y and W/H but none expose rotation or scaleX/scaleY as writable numeric inputs. These are standard Flash 8 properties panel fields. Fix: add rotation (degrees) and scaleX/scaleY (%) numeric inputs to each of these three view types, wired to the same mutation callbacks.",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-10T23:00:30Z",
-  "updated_at": "2026-06-10T23:00:35Z"
+  "updated_at": "2026-06-10T23:02:53Z"
 }

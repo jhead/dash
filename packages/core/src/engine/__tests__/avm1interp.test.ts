@@ -162,13 +162,12 @@ describe("AVM1 expression eval: ActionPush numeric constants", () => {
     expect(ints).toContain(0);
   });
 
-  it("negation of 7 compiles to ActionSubtract on (0, 7) — emits 7 in the push payload", () => {
-    // Unary minus is lowered to (0 - operand), so the pushed integer is 7, not -7.
-    // The ActionSubtract opcode (0x0b) then performs the negation at runtime.
+  it("negation of a numeric literal folds into a direct negative push (no ActionSubtract)", () => {
+    // Unary minus on a literal is folded at compile time: `-7` pushes -7 directly.
     const bytes = compile("-7;");
     const ints = extractPushedInts(bytes);
-    expect(ints).toContain(7);
-    expect(hasByte(bytes, 0x0b)).toBe(true); // ActionSubtract
+    expect(ints).toContain(-7);
+    expect(hasByte(bytes, 0x0b)).toBe(false); // ActionSubtract not emitted
   });
 
   it("encodes floating-point 3.14 as a double in the push payload", () => {

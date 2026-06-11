@@ -1,0 +1,10 @@
+{
+  "id": "1055-swf-compile-bitmapdisplayobject-placement-ignore",
+  "title": "SWF compile: BitmapDisplayObject placement ignores scaleX/scaleY/rotation",
+  "description": "Two related bugs in packages/swf/src/compile.ts \u2014 both in BitmapDisplayObject placement code.\n\nBUG 1 \u2014 Initial placement ignores transform (isFirst branch, ~line 1870):\nWhen displayObj.type === 'bitmap', encodePlaceObject2(charId, depth, x, y) is called without an objTransform argument. BitmapDisplayObject has scaleX?, scaleY?, rotation? fields and compile.ts reads them into locals (lines ~1623-1632), but unlike shape (which builds objTransform and passes it), the bitmap branch passes undefined.\n\nFix: after the transform extraction block, before the isFirst bitmap PlaceObject2 call, build:\n  const bmpTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)\n    ? { scaleX, scaleY, rotation }\n    : undefined\nPass bmpTransform as the 5th argument to encodePlaceObject2 and encodePlaceObject2WithCXForm in the bitmap initial-place block. Follow the same pattern as the shape isFirst block.\n\nBUG 2 \u2014 posChanged update also ignores transform (~line 2194-2221):\nIn the 'posChanged' update branch for bitmap, encodePlaceObject2Move(charId, depth, x, y, undefined) also drops the transform. Fix: build bmpTransform the same way and pass it to encodePlaceObject2WithAlpha and encodePlaceObject2Move.\n\nRun tests after:\npnpm --filter @flash/swf run test -- --run\npnpm --filter @flash/authoring-ui run test -- --run\nBoth must pass at current counts.\nCommit: fix(swf): BitmapDisplayObject placement includes scaleX/scaleY/rotation transform",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T01:00:38Z",
+  "updated_at": "2026-06-11T01:02:50Z"
+}

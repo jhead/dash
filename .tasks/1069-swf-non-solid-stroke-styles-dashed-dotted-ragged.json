@@ -1,0 +1,10 @@
+{
+  "id": "1069-swf-non-solid-stroke-styles-dashed-dotted-ragged",
+  "title": "SWF: non-solid stroke styles (Dashed/Dotted/Ragged/Stippled/Hatched) silently dropped",
+  "description": "StrokeStyle variants Dashed, Dotted, Ragged, Stippled, and Hatched are fully modeled in packages/core/src/engine/types.ts but shapes.ts has no encoding path for them. Any shape with a non-solid stroke style is encoded as a plain solid stroke, losing the dash/dot/hatch visual entirely. Flash 8 stores these as special LINESTYLE2 FillType entries where the fill style describes the line pattern. This is a medium-complexity feature: LINESTYLE2 can carry a fill-style (instead of a color) to encode complex strokes. Fix: detect non-solid stroke types in encodeLINESTYLE2 and emit the appropriate FillType byte and fill style record.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-11T02:00:22Z",
+  "updated_at": "2026-06-11T02:00:22Z"
+}

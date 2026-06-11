@@ -3,8 +3,10 @@
  *
  * Flash 8 behavior:
  *  - loop (default): no extra encoding — sprites loop by default.
- *  - single-frame: PlaceObject2 emits HasRatio (0x10) with ratio computed as
- *    Math.round(firstFrame / (totalFrames - 1) * 65535).
+ *  - single-frame: PlaceObject2 emits HasClipActions (0x80) with a load clip
+ *    action: this.gotoAndStop(firstFrame + 1);
+ *    (The Ratio field approach was dropped because Ruffle's MovieClip ignores
+ *    on_ratio_changed and always shows frame 1 regardless of ratio.)
  *  - play-once: PlaceObject2 has HasClipActions (0x80) with an enterFrame clip
  *    action: if (this._currentframe >= this._totalframes) { this.stop(); }
  *
@@ -254,7 +256,9 @@ describe("loopMode: loop (default)", () => {
 // ---------------------------------------------------------------------------
 
 describe("loopMode: single-frame", () => {
-  it("single-frame sets HasRatio (0x10) flag on PlaceObject2", () => {
+  it("single-frame sets HasClipActions (0x80) flag on PlaceObject2", () => {
+    // single-frame uses an onClipEvent(load){ gotoAndStop(N) } clip action rather than
+    // the Ratio field, because Ruffle's MovieClip ignores on_ratio_changed.
     const sym = makeSymbolWithFrames("sym-1", "MyClip", 4);
     const inst: SymbolInstance = {
       id: "inst-1",
@@ -273,13 +277,13 @@ describe("loopMode: single-frame", () => {
       (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
     );
     expect(po2).toBeDefined();
-    // HasRatio (0x10) MUST be set for single-frame mode
-    expect(po2!.body[0]! & 0x10).toBe(0x10);
+    // HasClipActions (0x80) MUST be set for single-frame mode
+    expect(po2!.body[0]! & 0x80).toBe(0x80);
+    // HasRatio (0x10) must NOT be set (we no longer use the ratio field)
+    expect(po2!.body[0]! & 0x10).toBe(0);
   });
 
-  it("single-frame firstFrame=2 on 4-frame symbol gives ratio ~43690 (2/3 * 65535)", () => {
-    // Symbol has 4 frames (indices 0-3), so totalFrames=4, lastFrame=3.
-    // firstFrame=2 → ratio = Math.round(2/3 * 65535) = 43690
+  it("single-frame does NOT set HasRatio (0x10) on PlaceObject2", () => {
     const sym = makeSymbolWithFrames("sym-1", "MyClip", 4);
     const inst: SymbolInstance = {
       id: "inst-1",
@@ -298,65 +302,12 @@ describe("loopMode: single-frame", () => {
       (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
     );
     expect(po2).toBeDefined();
-
-    // Parse the ratio field from the PlaceObject2 body.
-    // Body layout: flags(1) + depth(2) + charId(2) + MATRIX(variable) + ratio(2)
-    // We need to skip the MATRIX to find ratio. The flags byte has HasRatio=0x10.
-    // Flags in this case: HasCharacter(0x02) | HasMatrix(0x04) | HasRatio(0x10) = 0x16
-    const body = po2!.body;
-    expect(body[0]! & 0x10).toBe(0x10); // HasRatio set
-
-    // Skip depth(2) + charId(2) = 4 bytes after flags(1) = offset 5
-    // Then decode MATRIX (bit-encoded) to find where ratio starts.
-    // We trust the ratio is present at the end after the MATRIX.
-    // Parse MATRIX bits: starting at byte offset 5 (after flags+depth+charId).
-    let bytePos = 5;
-    let bitBuf = 0;
-    let bitsLeft = 0;
-
-    function readBit(): number {
-      if (bitsLeft === 0) {
-        bitBuf = body[bytePos++]!;
-        bitsLeft = 8;
-      }
-      bitsLeft--;
-      return (bitBuf >> bitsLeft) & 1;
-    }
-
-    function readBitsN(n: number): number {
-      let r = 0;
-      for (let i = 0; i < n; i++) r = (r << 1) | readBit();
-      return r;
-    }
-
-    // hasScale
-    const hasScale = readBit();
-    if (hasScale) {
-      const nBits = readBitsN(5);
-      readBitsN(nBits); // scaleX
-      readBitsN(nBits); // scaleY
-    }
-    // hasRotate
-    const hasRotate = readBit();
-    if (hasRotate) {
-      const nBits = readBitsN(5);
-      readBitsN(nBits); // rotateSkew0
-      readBitsN(nBits); // rotateSkew1
-    }
-    // translate (always present)
-    const nBits = readBitsN(5);
-    readBitsN(nBits); // translateX (signed, but we just consume)
-    readBitsN(nBits); // translateY
-    // flush to byte boundary
-    bitsLeft = 0;
-
-    // Now bytePos points at the ratio UI16LE
-    const ratio = body[bytePos]! | (body[bytePos + 1]! << 8);
-    // Expected: Math.round(2/3 * 65535) = 43690
-    expect(ratio).toBe(Math.round(2 / 3 * 65535));
+    expect(po2!.body[0]! & 0x10).toBe(0); // no HasRatio
   });
 
-  it("single-frame firstFrame=0 on any symbol gives ratio 0", () => {
+  it("single-frame firstFrame=0 on any symbol still sets HasClipActions", () => {
+    // Even firstFrame=0 emits a load clip action (gotoAndStop(1)) to ensure the
+    // clip stays frozen at frame 1 and does not loop.
     const sym = makeSymbolWithFrames("sym-1", "MyClip", 5);
     const inst: SymbolInstance = {
       id: "inst-1",
@@ -375,11 +326,13 @@ describe("loopMode: single-frame", () => {
       (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
     );
     expect(po2).toBeDefined();
-    // HasRatio must be set
-    expect(po2!.body[0]! & 0x10).toBe(0x10);
+    // HasClipActions must be set
+    expect(po2!.body[0]! & 0x80).toBe(0x80);
+    // HasRatio must NOT be set
+    expect(po2!.body[0]! & 0x10).toBe(0);
   });
 
-  it("single-frame on 1-frame symbol gives ratio 0", () => {
+  it("single-frame on 1-frame symbol still sets HasClipActions", () => {
     const sym = makeSymbolWithFrames("sym-1", "MyClip", 1);
     const inst: SymbolInstance = {
       id: "inst-1",
@@ -398,8 +351,35 @@ describe("loopMode: single-frame", () => {
       (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
     );
     expect(po2).toBeDefined();
-    // HasRatio set even for 1-frame symbol (ratio = 0)
-    expect(po2!.body[0]! & 0x10).toBe(0x10);
+    // HasClipActions set (gotoAndStop(1) still emitted)
+    expect(po2!.body[0]! & 0x80).toBe(0x80);
+    // HasRatio must NOT be set
+    expect(po2!.body[0]! & 0x10).toBe(0);
+  });
+
+  it("single-frame merges with existing clipActions", () => {
+    const sym = makeSymbolWithFrames("sym-1", "MyClip", 4);
+    const inst: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      loopMode: "single-frame",
+      firstFrame: 1,
+      clipActions: [{ event: "load", script: "trace('loaded');" }],
+    };
+    const doc = makeDoc(sym, inst);
+    // Should compile without error — both existing load and synthesized gotoAndStop load actions emitted
+    expect(() => compileDocument(doc)).not.toThrow();
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+
+    const po2 = tags.find(
+      (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
+    );
+    expect(po2).toBeDefined();
+    expect(po2!.body[0]! & 0x80).toBe(0x80); // HasClipActions set
   });
 });
 
@@ -473,5 +453,127 @@ describe("loopMode: play-once", () => {
     );
     expect(po2).toBeDefined();
     expect(po2!.body[0]! & 0x80).toBe(0x80); // HasClipActions set
+  });
+
+  it("play-once with firstFrame=0 does NOT add a load seek action (no change from firstFrame=0)", () => {
+    // firstFrame=0 means start from frame 1 (default), no seek needed.
+    const sym = makeSymbolWithFrames("sym-1", "MyClip", 4);
+    const inst: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      loopMode: "play-once",
+      firstFrame: 0,
+    };
+    const doc = makeDoc(sym, inst);
+    const bytes = compileDocument(doc);
+    // Should compile without error
+    expect(bytes.length).toBeGreaterThan(0);
+    const tags = parseSWFTags(bytes);
+    const po2 = tags.find(
+      (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
+    );
+    expect(po2).toBeDefined();
+    expect(po2!.body[0]! & 0x80).toBe(0x80); // HasClipActions set (stop action still present)
+  });
+
+  it("play-once with firstFrame=2 sets HasClipActions and compiles without error", () => {
+    // firstFrame=2 means gotoAndPlay(3) should be emitted on load.
+    const sym = makeSymbolWithFrames("sym-1", "MyClip", 6);
+    const inst: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      loopMode: "play-once",
+      firstFrame: 2,
+    };
+    const doc = makeDoc(sym, inst);
+    expect(() => compileDocument(doc)).not.toThrow();
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const po2 = tags.find(
+      (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
+    );
+    expect(po2).toBeDefined();
+    // HasClipActions must be set (both stop and seek actions)
+    expect(po2!.body[0]! & 0x80).toBe(0x80);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — loop mode with firstFrame > 0
+// ---------------------------------------------------------------------------
+
+describe("loopMode: loop with firstFrame > 0", () => {
+  it("loop with firstFrame=0 has no HasClipActions", () => {
+    // Default loop with no firstFrame offset: no clip actions needed.
+    const sym = makeSymbolWithFrames("sym-1", "MyClip", 4);
+    const inst: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      loopMode: "loop",
+      firstFrame: 0,
+    };
+    const doc = makeDoc(sym, inst);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const po2 = tags.find(
+      (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
+    );
+    expect(po2).toBeDefined();
+    expect(po2!.body[0]! & 0x80).toBe(0); // no HasClipActions
+  });
+
+  it("loop with firstFrame=2 sets HasClipActions (0x80) on PlaceObject2", () => {
+    // firstFrame=2 means gotoAndPlay(3) emitted on load so the loop starts at frame 3.
+    const sym = makeSymbolWithFrames("sym-1", "MyClip", 6);
+    const inst: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      loopMode: "loop",
+      firstFrame: 2,
+    };
+    const doc = makeDoc(sym, inst);
+    expect(() => compileDocument(doc)).not.toThrow();
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const po2 = tags.find(
+      (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
+    );
+    expect(po2).toBeDefined();
+    // HasClipActions (0x80) MUST be set since a load seek is emitted
+    expect(po2!.body[0]! & 0x80).toBe(0x80);
+  });
+
+  it("loop with firstFrame=2 does NOT set HasRatio", () => {
+    const sym = makeSymbolWithFrames("sym-1", "MyClip", 6);
+    const inst: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      loopMode: "loop",
+      firstFrame: 2,
+    };
+    const doc = makeDoc(sym, inst);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const po2 = tags.find(
+      (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
+    );
+    expect(po2).toBeDefined();
+    // HasRatio (0x10) must NOT be set — ratio is for single-frame mode only
+    expect(po2!.body[0]! & 0x10).toBe(0);
   });
 });

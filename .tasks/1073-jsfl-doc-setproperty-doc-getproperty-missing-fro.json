@@ -1,0 +1,10 @@
+{
+  "id": "1073-jsfl-doc-setproperty-doc-getproperty-missing-fro",
+  "title": "JSFL: doc.setProperty / doc.getProperty missing from runtime",
+  "description": "JsflDocument interface and implementation in runtime.ts have no setProperty or getProperty methods. Flash 8 JSFL uses these to set/get per-element display properties by index on selected elements (e.g. doc.setProperty(fl.ELEMENT_X_POS, 100) sets _x of selected objects). JSFL automation scripts that use these will throw at runtime. Implement setProperty(index, value) and getProperty(index) using the same property index map Flash 8 JSFL uses (fl.ELEMENT_X_POS=0, fl.ELEMENT_Y_POS=1, fl.ELEMENT_W=2, fl.ELEMENT_H=3, fl.ELEMENT_ROTATION=4, fl.ELEMENT_ALPHA=5, fl.ELEMENT_VISIBLE=6, fl.ELEMENT_NAME=7). Location: packages/authoring-ui/src/jsfl/runtime.ts.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T02:10:02Z",
+  "updated_at": "2026-06-11T02:14:30Z"
+}

@@ -161,19 +161,34 @@ export function encodeSceneAndFrameLabelData(doc: FlashDocument): Uint8Array {
 
   // Build scene data: compute cumulative frame offsets
   const sceneParts: Uint8Array[] = [];
+  const sceneStartFrames: number[] = [];
   let frameOffset = 0;
   for (const scene of scenes) {
     sceneParts.push(encodeU32(frameOffset));
     sceneParts.push(encodeString(scene.name));
+    sceneStartFrames.push(frameOffset);
     frameOffset += sceneFrameCount(scene);
   }
 
   // Build frame label data: collect labeled frames (labelType === 'name' or 'anchor')
   // Anchor labels must be included so gotoAndPlay("anchorName") resolves across scenes.
-  // Track absolute frame numbers across all scenes
+  // Track absolute frame numbers across all scenes.
+  //
+  // IMPORTANT: Ruffle ignores FrameLabel (tag 43) tags when scene labels exist (populated
+  // by this tag 86). To make gotoAndPlay("Scene 2") work in AVM1 — which resolves via
+  // frame_labels_map, not scene_labels_map — we must also add each scene's name as a
+  // frame label entry in the frame_labels section of this tag. Ruffle processes these
+  // entries (tag 86 frame labels section) into frame_labels_map regardless.
+  // See: ruffle/core/src/display_object/movie_clip.rs frame_label() and
+  // scene_and_frame_labels().
   const labelParts: Uint8Array[] = [];
   let labelCount = 0;
+
+  // Collect user-defined frame labels
   let absoluteFrameBase = 0;
+  // Track which label names are already covered by user-defined labels (case-insensitive
+  // to match AVM1 lookup semantics) to avoid duplicate-label warnings from Ruffle.
+  const seenLabelNames = new Set<string>();
 
   for (const scene of scenes) {
     // Use a set to deduplicate frame indices (multiple layers may share a label at same index)
@@ -191,12 +206,26 @@ export function encodeSceneAndFrameLabelData(doc: FlashDocument): Uint8Array {
           const absoluteFrameNum = absoluteFrameBase + frame.index;
           labelParts.push(encodeU32(absoluteFrameNum));
           labelParts.push(encodeString(frame.label));
+          seenLabelNames.add(frame.label.toLowerCase());
           labelCount++;
         }
       }
     }
 
     absoluteFrameBase += sceneFrameCount(scene);
+  }
+
+  // Add scene names as frame labels at each scene's start frame so that
+  // gotoAndPlay("Scene 2") resolves via frame_labels_map in Ruffle's AVM1.
+  // Only add if the scene name isn't already covered by a user-defined label.
+  for (let i = 0; i < scenes.length; i++) {
+    const name = scenes[i].name;
+    if (!seenLabelNames.has(name.toLowerCase())) {
+      seenLabelNames.add(name.toLowerCase());
+      labelParts.push(encodeU32(sceneStartFrames[i]));
+      labelParts.push(encodeString(name));
+      labelCount++;
+    }
   }
 
   // Assemble body: SceneCount + scene data + FrameLabelCount + label data

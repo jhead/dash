@@ -24,7 +24,7 @@ export const AS2_KEYWORDS = new Set([
   'new', 'delete', 'this', 'typeof', 'instanceof', 'in',
   'true', 'false', 'null', 'undefined', 'NaN', 'Infinity',
   'class', 'extends', 'implements', 'interface', 'import',
-  'dynamic', 'intrinsic', 'private', 'public', 'static',
+  'dynamic', 'intrinsic', 'private', 'protected', 'public', 'static',
   '_global', 'with', 'switch', 'case', 'default', 'break', 'continue',
   'try', 'catch', 'finally', 'throw', 'void',
   'get', 'set',  // property accessors

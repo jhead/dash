@@ -142,4 +142,68 @@ describe("AS2 increment/decrement operators", () => {
     const incSetVar = countByte(incBytes, 0x1d);
     expect(decSetVar).toBe(incSetVar);
   });
+
+  // 13. Postfix obj.prop++ — StoreRegister must appear BEFORE Inc/Dec so that
+  //     the saved register holds the OLD value (not the new value).
+  //     Bytecode sequence: GetMember → StoreRegister → Increment → SetMember → Push(r0)
+  it("13. obj.prop++ saves OLD value: StoreRegister (0x87) precedes ActionIncrement (0x50)", () => {
+    function indexOfByte(bytes: Uint8Array, byte: number): number {
+      for (let i = 0; i < bytes.length; i++) if (bytes[i] === byte) return i;
+      return -1;
+    }
+    const bytes = compileAS2("var obj = {}; var old = obj.n++;");
+    const storeIdx = indexOfByte(bytes, 0x87); // ActionStoreRegister
+    const incIdx   = indexOfByte(bytes, 0x50); // ActionIncrement
+    expect(storeIdx).toBeGreaterThan(-1);
+    expect(incIdx).toBeGreaterThan(-1);
+    // StoreRegister must come BEFORE Increment so that r0 captures the OLD value
+    expect(storeIdx).toBeLessThan(incIdx);
+  });
+
+  // 14. Prefix ++obj.prop — StoreRegister must appear AFTER Inc/Dec so that
+  //     the saved register holds the NEW value.
+  //     Bytecode sequence: GetMember → Increment → StoreRegister → SetMember → Push(r0)
+  it("14. ++obj.prop saves NEW value: ActionIncrement (0x50) precedes StoreRegister (0x87)", () => {
+    function indexOfByte(bytes: Uint8Array, byte: number): number {
+      for (let i = 0; i < bytes.length; i++) if (bytes[i] === byte) return i;
+      return -1;
+    }
+    const bytes = compileAS2("var obj = {}; var nw = ++obj.n;");
+    const storeIdx = indexOfByte(bytes, 0x87); // ActionStoreRegister
+    const incIdx   = indexOfByte(bytes, 0x50); // ActionIncrement
+    expect(storeIdx).toBeGreaterThan(-1);
+    expect(incIdx).toBeGreaterThan(-1);
+    // Increment must come BEFORE StoreRegister so that r0 captures the NEW value
+    expect(incIdx).toBeLessThan(storeIdx);
+  });
+
+  // 15. Postfix obj.prop-- behaves symmetrically: StoreRegister before Decrement
+  it("15. obj.prop-- saves OLD value: StoreRegister (0x87) precedes ActionDecrement (0x51)", () => {
+    function indexOfByte(bytes: Uint8Array, byte: number): number {
+      for (let i = 0; i < bytes.length; i++) if (bytes[i] === byte) return i;
+      return -1;
+    }
+    const bytes = compileAS2("var obj = {}; var old = obj.n--;");
+    const storeIdx = indexOfByte(bytes, 0x87); // ActionStoreRegister
+    const decIdx   = indexOfByte(bytes, 0x51); // ActionDecrement
+    expect(storeIdx).toBeGreaterThan(-1);
+    expect(decIdx).toBeGreaterThan(-1);
+    // StoreRegister must come BEFORE Decrement so that r0 captures the OLD value
+    expect(storeIdx).toBeLessThan(decIdx);
+  });
+
+  // 16. Prefix --obj.prop saves NEW value: Decrement before StoreRegister
+  it("16. --obj.prop saves NEW value: ActionDecrement (0x51) precedes StoreRegister (0x87)", () => {
+    function indexOfByte(bytes: Uint8Array, byte: number): number {
+      for (let i = 0; i < bytes.length; i++) if (bytes[i] === byte) return i;
+      return -1;
+    }
+    const bytes = compileAS2("var obj = {}; var nw = --obj.n;");
+    const storeIdx = indexOfByte(bytes, 0x87); // ActionStoreRegister
+    const decIdx   = indexOfByte(bytes, 0x51); // ActionDecrement
+    expect(storeIdx).toBeGreaterThan(-1);
+    expect(decIdx).toBeGreaterThan(-1);
+    // Decrement must come BEFORE StoreRegister so that r0 captures the NEW value
+    expect(decIdx).toBeLessThan(storeIdx);
+  });
 });

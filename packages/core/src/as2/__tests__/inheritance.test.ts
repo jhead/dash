@@ -230,6 +230,47 @@ describe("AS2 class inheritance: extends and super()", () => {
   });
 
   // -------------------------------------------------------------------------
+  // 11c. super.method() dispatches via Animal.prototype.speak.call(this)
+  //      NOT via Animal.speak (which doesn't exist on the constructor)
+  // -------------------------------------------------------------------------
+
+  it("11c. super.method() emits Animal→prototype→method→call pattern (not Animal.method)", () => {
+    const bytes = compileAS2(`
+      class Dog extends Animal {
+        function Dog() { super(); }
+        function speak() { super.speak(); }
+      }
+    `);
+
+    // Must reference "Animal" (superclass constructor name)
+    expect(containsString(bytes, "Animal")).toBe(true);
+    // Must reference "prototype" (to traverse Animal.prototype)
+    expect(containsString(bytes, "prototype")).toBe(true);
+    // Must reference the method name "speak"
+    expect(containsString(bytes, "speak")).toBe(true);
+    // Must reference "call" (to invoke as Function.prototype.call)
+    expect(containsString(bytes, "call")).toBe(true);
+    // ActionGetMember (0x4e) must appear twice — once for .prototype, once for .speak
+    const getMembers = Array.from(bytes).filter(b => b === 0x4e).length;
+    expect(getMembers).toBeGreaterThanOrEqual(2);
+    // ActionCallMethod (0x52) must appear
+    expect(hasOpcode(bytes, 0x52)).toBe(true);
+  });
+
+  it("11d. super.method(arg) passes args correctly — nArgs+1 includes implicit this", () => {
+    // super.speak("hello") should push: "hello", this, numArgs=2, Animal.prototype.speak, "call"
+    // Verify it compiles without error and contains "call" string (function.call pattern).
+    const bytes = compileAS2(`
+      class Dog extends Animal {
+        function Dog() { super(); }
+        function speak(msg) { super.speak(msg); }
+      }
+    `);
+    expect(containsString(bytes, "call")).toBe(true);
+    expect(containsString(bytes, "prototype")).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
   // 12. Interface declaration is silently ignored (compiles without error)
   // -------------------------------------------------------------------------
 

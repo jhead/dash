@@ -1,0 +1,10 @@
+{
+  "id": "1062-swf-folder-layers-not-skipped-in-compile-ts-dept",
+  "title": "SWF: folder layers not skipped in compile.ts depth/frame loops",
+  "description": "All layer iteration loops in compile.ts skip layer.type === 'guide' but have no equivalent check for layer.type === 'folder'. Folder layers are authoring-only organizational containers that must emit no SWF content. Currently safe because flash8-import.ts produces folder layers with only a blank createFrame(0) with no displayObjects, but a programmatically-created folder layer with content would be incorrectly included in the SWF and assigned a depth slot. Fix: add 'if (layer.type === \"folder\") continue' alongside the existing guide checks at lines 937, 1066, 1137, 1326, and 1558.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T01:38:04Z",
+  "updated_at": "2026-06-11T01:39:22Z"
+}

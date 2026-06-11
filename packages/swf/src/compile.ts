@@ -935,6 +935,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   for (const s of doc.scenes) {
     for (const layer of s.timeline.layers) {
       if (layer.type === "guide") continue;
+      if (layer.type === "folder") continue;
       for (const frame of layer.frames) {
         // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
         if (!frame.isKeyframe) continue;
@@ -1064,6 +1065,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     for (let li = 0; li < s.timeline.layers.length; li++) {
       const layer = s.timeline.layers[li];
       if (layer.type === "guide") continue;
+      if (layer.type === "folder") continue;
 
       const spans = getTweenSpans(layer);
       for (const span of spans) {
@@ -1135,6 +1137,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     for (const layer of s.timeline.layers) {
       // Guide layers are authoring-only — skip in SWF pre-pass too
       if (layer.type === "guide") continue;
+      if (layer.type === "folder") continue;
       for (const frame of layer.frames) {
         // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
         if (!frame.isKeyframe) continue;
@@ -1324,6 +1327,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     for (let li = preLayers.length - 1; li >= 0; li--) {
       const layer = preLayers[li]!;
       if (layer.type === "guide") continue;
+      if (layer.type === "folder") continue;
       if (isMaskedLi.has(li)) continue; // handled when its owning mask is encountered
 
       registerLayerDepths(li);
@@ -1556,6 +1560,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         for (let li = 0; li < layers.length; li++) {
           const layer = layers[li];
           if (layer.type === "guide") continue;
+          if (layer.type === "folder") continue;
           const frame = getTweenedFrame(layer, frameIdx, scene.timeline);
           // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
           if (!frame || frame.displayObjects.length === 0) continue;
@@ -1833,6 +1838,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
               if (hasBlend || hasEnabledFilters(displayObj.filters)) {
                 // blendMode or filters require PlaceObject3 (tag 70).
+                // Compute CXForm so it can be embedded in the PO3 tag alongside blend/filters.
+                const bmpCXForm = displayObj.colorEffect
+                  ? colorEffectToCXForm(displayObj.colorEffect) ?? undefined
+                  : undefined;
                 const placeBody = hasBlend
                   ? encodePlaceObject3WithBlendMode(
                       charId,
@@ -1841,7 +1850,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       y,
                       displayObj.blendMode!,
                       displayObj.filters,
-                      bmpTransform
+                      bmpTransform,
+                      undefined,
+                      bmpCXForm
                     )
                   : encodePlaceObject3WithFilters(
                       charId,
@@ -1941,10 +1952,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
 
                 const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
                 const hasCacheAsBitmap = !!displayObj.cacheAsBitmap;
-                // For play-once mode, add an enterFrame clip action that calls stop()
-                // when the instance reaches its last frame. Merge with any existing clipActions.
-                // This is synthesized unconditionally — the PO3 blend/filter path will emit
-                // a separate PlaceObject2 Move tag to attach these clip actions.
+                // Synthesize clip actions for loopMode and firstFrame.
+                // All three modes use clip actions (HasClipActions on PlaceObject2); the
+                // Ratio field approach for single-frame was dropped because Ruffle's MovieClip
+                // ignores on_ratio_changed and always shows frame 1 regardless of ratio.
+                //
+                //  play-once: enterFrame fires stop() when the clip reaches its last frame.
+                //  single-frame: load fires gotoAndStop(N) to freeze on the chosen frame.
+                //  loop/play-once with firstFrame>0: load fires gotoAndPlay(N) to start
+                //    playback from the chosen frame.
                 let effectiveClipActions = displayObj.clipActions ?? [];
                 if (loopMode === "play-once") {
                   const playOnceAction: ClipAction = {
@@ -1953,24 +1969,33 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   };
                   effectiveClipActions = [...effectiveClipActions, playOnceAction];
                 }
+                if (loopMode === "single-frame") {
+                  // gotoAndStop uses 1-based frame numbers; instanceFirstFrame is 0-based.
+                  const singleFrameAction: ClipAction = {
+                    event: "load",
+                    script: `this.gotoAndStop(${instanceFirstFrame + 1});`,
+                  };
+                  effectiveClipActions = [...effectiveClipActions, singleFrameAction];
+                }
+                // If firstFrame > 0, emit a load clip action to seek to the starting frame
+                // before playback begins. This applies to "loop" and "play-once" modes.
+                if ((loopMode === "loop" || loopMode === "play-once") && instanceFirstFrame > 0) {
+                  const seekAction: ClipAction = {
+                    event: "load",
+                    script: `this.gotoAndPlay(${instanceFirstFrame + 1});`,
+                  };
+                  effectiveClipActions = [...effectiveClipActions, seekAction];
+                }
                 const hasClipActions = effectiveClipActions.length > 0;
 
-                // Compute ratio for single-frame mode (applies to both PO2 and PO3 paths).
-                // Ratio field: 0 = frame 1, 65535 = last frame.
-                let singleFrameRatio: number | undefined;
-                if (loopMode === "single-frame") {
-                  const sym = symbolById.get(displayObj.symbolId);
-                  const totalFrames = sym ? sceneFrameCount(sym.timeline) : 1;
-                  singleFrameRatio = totalFrames <= 1
-                    ? 0
-                    : Math.round(instanceFirstFrame / (totalFrames - 1) * 65535);
-                }
+                // Compute CXForm once — used in both the blend/filter and cacheAsBitmap paths.
+                const instCXForm = displayObj.colorEffect
+                  ? colorEffectToCXForm(displayObj.colorEffect) ?? undefined
+                  : undefined;
 
-                if (singleFrameRatio !== undefined && !hasBlend && !hasEnabledFilters(displayObj.filters)) {
-                  const placeBody = encodePlaceObject2WithRatio(charId, depth, x, y, singleFrameRatio, false);
-                  writer.writeTag(Tag.PlaceObject2, placeBody);
-                } else if (hasBlend || hasEnabledFilters(displayObj.filters)) {
-                  // Blend/filter path: use PlaceObject3, passing ratio if single-frame mode.
+                if (hasBlend || hasEnabledFilters(displayObj.filters)) {
+                  // Blend/filter path: use PlaceObject3.
+                  // Also embed CXForm (colorEffect) in the PO3 tag if present.
                   const placeBody = hasBlend
                     ? encodePlaceObject3WithBlendMode(
                         charId,
@@ -1980,7 +2005,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         displayObj.blendMode!,
                         displayObj.filters,
                         undefined,
-                        singleFrameRatio
+                        undefined,
+                        instCXForm
                       )
                     : encodePlaceObject3WithFilters(
                         charId,
@@ -1990,10 +2016,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         displayObj.filters!,
                         undefined,
                         undefined,
-                        singleFrameRatio
+                        undefined
                       );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
-                  // play-once clip actions: attach via a PlaceObject2 Move tag on the same depth.
+                  // Clip actions (play-once / single-frame / firstFrame seek): attach via a
+                  // PlaceObject2 Move tag on the same depth.
                   if (hasClipActions) {
                     const moveBody = encodePlaceObject2MoveWithClipActions(depth, effectiveClipActions);
                     writer.writeTag(Tag.PlaceObject2, moveBody);
@@ -2008,7 +2035,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     depth,
                     x,
                     y,
-                    instanceTransform
+                    instanceTransform,
+                    instCXForm
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (hasClipActions) {
@@ -2245,51 +2273,86 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             } else if (displayObj.type === "instance") {
               const charId = charIdMap.get(displayObj.symbolId);
               if (charId !== undefined) {
-                // Check for color effect (CXFormWithAlpha).
-                // Also synthesize a zero-alpha CXForm when visible===false, or from
-                // standalone alpha when colorEffect is absent.
-                let cxform = displayObj.colorEffect
-                  ? colorEffectToCXForm(displayObj.colorEffect)
-                  : null;
-                if (cxform === null && displayObj.visible === false) {
-                  cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
-                }
-                if (cxform === null && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
-                  cxform = {
-                    redMult: 256, greenMult: 256, blueMult: 256,
-                    alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256),
-                    redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0,
-                  };
-                }
-                if (cxform !== null) {
-                  const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
-                    ? { scaleX, scaleY, rotation, skewX, skewY }
-                    : undefined;
-                  // Move + HasMatrix + HasColorTransform (no HasCharacter unless replacing)
-                  const placeBody = encodePlaceObject2WithCXForm(
-                    charId,
-                    depth,
-                    x,
-                    y,
-                    cxform,
-                    transform,
-                    true,  // move = true
-                    displayObj.instanceName ?? undefined
-                  );
-                  writer.writeTag(Tag.PlaceObject2, placeBody);
-                } else {
+                // Check if blend mode requires PlaceObject3 for the Move.
+                const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal' && displayObj.blendMode !== '';
+                if (hasBlend) {
+                  // PlaceObject3 Move: preserves blend mode across positional updates.
                   const moveTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
                     ? { scaleX, scaleY, rotation, skewX, skewY }
                     : undefined;
-                  const placeBody = encodePlaceObject2Move(
+                  let cxformForBlend = displayObj.colorEffect
+                    ? colorEffectToCXForm(displayObj.colorEffect) ?? undefined
+                    : undefined;
+                  if (!cxformForBlend && displayObj.visible === false) {
+                    cxformForBlend = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
+                  if (!cxformForBlend && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
+                    cxformForBlend = {
+                      redMult: 256, greenMult: 256, blueMult: 256,
+                      alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256),
+                      redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0,
+                    };
+                  }
+                  const placeBody = encodePlaceObject3WithBlendMode(
                     charId,
                     depth,
                     x,
                     y,
+                    displayObj.blendMode!,
+                    displayObj.filters,
                     moveTransform,
-                    prev!.objId !== objId
+                    undefined,
+                    cxformForBlend,
+                    true  // move = true
                   );
-                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                  writer.writeTag(Tag.PlaceObject3, placeBody);
+                } else {
+                  // Check for color effect (CXFormWithAlpha).
+                  // Also synthesize a zero-alpha CXForm when visible===false, or from
+                  // standalone alpha when colorEffect is absent.
+                  let cxform = displayObj.colorEffect
+                    ? colorEffectToCXForm(displayObj.colorEffect)
+                    : null;
+                  if (cxform === null && displayObj.visible === false) {
+                    cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
+                  if (cxform === null && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
+                    cxform = {
+                      redMult: 256, greenMult: 256, blueMult: 256,
+                      alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256),
+                      redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0,
+                    };
+                  }
+                  if (cxform !== null) {
+                    const transform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                      ? { scaleX, scaleY, rotation, skewX, skewY }
+                      : undefined;
+                    // Move + HasMatrix + HasColorTransform (no HasCharacter unless replacing)
+                    const placeBody = encodePlaceObject2WithCXForm(
+                      charId,
+                      depth,
+                      x,
+                      y,
+                      cxform,
+                      transform,
+                      true,  // move = true
+                      displayObj.instanceName ?? undefined
+                    );
+                    writer.writeTag(Tag.PlaceObject2, placeBody);
+                  } else {
+                    const moveTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                      ? { scaleX, scaleY, rotation, skewX, skewY }
+                      : undefined;
+                    const placeBody = encodePlaceObject2Move(
+                      charId,
+                      depth,
+                      x,
+                      y,
+                      moveTransform,
+                      prev!.objId !== objId
+                    );
+                    writer.writeTag(Tag.PlaceObject2, placeBody);
+                  }
                 }
               }
             }

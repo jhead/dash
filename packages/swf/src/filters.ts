@@ -8,6 +8,7 @@ import { BitWriter } from "./bits.js";
 import type { FlashFilter, DropShadowFilter, GlowFilter, BlurFilter, BevelFilter, GradientGlowFilter, GradientBevelFilter, AdjustColorFilter, ConvolutionFilter, DisplacementMapFilter } from "@flash/core";
 import { toSWFMatrix, composeMatrix } from "@flash/core";
 import { edgeNumBits } from "./helpers.js";
+import { type CXForm, encodeCXFormWithAlpha } from "./cxform.js";
 
 // ---------------------------------------------------------------------------
 // Individual filter encoders
@@ -694,14 +695,20 @@ export function encodePlaceObject3WithBlendMode(
     skewX?: number;
     skewY?: number;
   },
-  ratio?: number
+  ratio?: number,
+  cxform?: CXForm,
+  move?: boolean
 ): Uint8Array {
   const bw = new BitWriter();
   const hasRatio = ratio !== undefined;
+  const hasCXForm = cxform !== undefined;
+  const isMove = !!move;
 
   const flags1 =
-    (1 << 1) | // HasCharacter
+    (isMove ? (1 << 0) : 0) | // HasMove (for update across frames)
+    (isMove ? 0 : (1 << 1)) | // HasCharacter (only on first placement)
     (1 << 2) | // HasMatrix
+    (hasCXForm ? (1 << 3) : 0) | // HasColorTransform
     (hasRatio ? (1 << 4) : 0); // HasRatio
   bw.writeUI8(flags1);
 
@@ -716,8 +723,10 @@ export function encodePlaceObject3WithBlendMode(
   // Depth: UI16
   bw.writeUI16LE(depth);
 
-  // CharacterId: UI16
-  bw.writeUI16LE(charId);
+  // CharacterId: UI16 (only written when HasCharacter is set, i.e. first placement)
+  if (!isMove) {
+    bw.writeUI16LE(charId);
+  }
 
   // MATRIX
   const m = composeMatrix({
@@ -758,7 +767,12 @@ export function encodePlaceObject3WithBlendMode(
 
   bw.flushBits();
 
-  // Ratio: UI16 (written after MATRIX, before FilterList/BlendMode, per SWF spec field order)
+  // CXFORMWITHALPHA (HasColorTransform): written after MATRIX, per SWF spec field order
+  if (hasCXForm) {
+    bw.writeBytes(encodeCXFormWithAlpha(cxform!));
+  }
+
+  // Ratio: UI16 (written after CXFORM, before FilterList/BlendMode, per SWF spec field order)
   if (hasRatio) {
     bw.writeUI16LE(Math.max(0, Math.min(65535, Math.round(ratio!))));
   }
@@ -798,13 +812,16 @@ export function encodePlaceObject3WithCacheAsBitmap(
     rotation?: number;
     skewX?: number;
     skewY?: number;
-  }
+  },
+  cxform?: CXForm
 ): Uint8Array {
   const bw = new BitWriter();
+  const hasCXForm = cxform !== undefined;
 
   const flags1 =
     (1 << 1) | // HasCharacter
-    (1 << 2);  // HasMatrix
+    (1 << 2) | // HasMatrix
+    (hasCXForm ? (1 << 3) : 0); // HasColorTransform
   bw.writeUI8(flags1);
 
   // Flags2:
@@ -856,6 +873,11 @@ export function encodePlaceObject3WithCacheAsBitmap(
   }
 
   bw.flushBits();
+
+  // CXFORMWITHALPHA (HasColorTransform): written after MATRIX, per SWF spec field order
+  if (hasCXForm) {
+    bw.writeBytes(encodeCXFormWithAlpha(cxform!));
+  }
 
   // is_bitmap_cached: UI8 = 1 (required when HasCacheAsBitmap is set)
   bw.writeUI8(1);

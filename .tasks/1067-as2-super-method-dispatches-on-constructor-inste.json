@@ -1,0 +1,10 @@
+{
+  "id": "1067-as2-super-method-dispatches-on-constructor-inste",
+  "title": "AS2: super.method() dispatches on constructor instead of prototype",
+  "description": "super.speak() compiles to ActionCallMethod('speak', Animal, 0) which calls Animal['speak'] \u2014 a property on the constructor function itself. Instance methods live on Animal.prototype so the lookup fails at runtime. The correct AVM1 pattern is: push args, push nArgs+1, pushThis (ActionPush this via GetVariable), then push Animal.prototype.speak, then ActionCallMethod('call', ...). Specifically: for super.method(args) in a method body, emit ActionGetVariable(superClassName), ActionGetMember('prototype'), ActionGetMember(methodName), then ActionCallMethod('call') with (this + args) as the argument list. Location: packages/core/src/as2/compiler.ts around line 2032 in compileCallExpr where it detects super as the callee object.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T01:55:47Z",
+  "updated_at": "2026-06-11T01:57:22Z"
+}

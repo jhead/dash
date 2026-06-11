@@ -1,0 +1,10 @@
+{
+  "id": "1035-jsfl-element-gaps-symboltype-loop-firstframe-doc",
+  "title": "JSFL element gaps: symbolType, loop, firstFrame, doc.setInstanceAlpha",
+  "description": "Add missing JSFL element proxy properties and a document method to packages/authoring-ui/src/jsfl/runtime.ts:\n1. element.symbolType: getter on makeElementProxy \u2014 for SymbolInstance, look up the symbol in state.doc.library.items by symbolId, return the symbolType ('movie clip', 'button', 'graphic'). For non-SymbolInstance elements return 'graphic'.\n2. element.loop: getter/setter on makeElementProxy \u2014 maps to SymbolInstance.loopMode ('loop', 'play once', 'single frame'). Flash 8 JSFL uses these exact strings. Map: 'loop'\u2192'loop', 'play-once'\u2192'play once', 'single-frame'\u2192'single frame' and reverse.\n3. element.firstFrame: getter/setter on makeElementProxy \u2014 maps directly to SymbolInstance.firstFrame (0-based number). Readable and writable.\n4. doc.setInstanceAlpha(alpha: number): follows the same pattern as setInstanceBrightness/setInstanceTint \u2014 iterates selectedIds, calls updateDisplayObject(state.doc, layerId, kfIndex, objId, { colorEffect: { type: 'alpha', alpha: alpha/100 } }) or however colorEffect.alpha is structured in the model. Check how alpha colorEffect is stored in packages/core/src/model/types.ts.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T00:05:53Z",
+  "updated_at": "2026-06-11T00:08:57Z"
+}

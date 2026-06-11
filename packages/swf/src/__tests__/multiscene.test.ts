@@ -501,10 +501,21 @@ describe("multi-scene SWF compilation", () => {
     expect(parsed.scenes[0].frameOffset).toBe(0);
     expect(parsed.scenes[1].frameOffset).toBe(3);
 
-    // "menu" label at absolute frame 4
-    expect(parsed.frameLabels.length).toBe(1);
-    expect(parsed.frameLabels[0].name).toBe("menu");
-    expect(parsed.frameLabels[0].frameNum).toBe(4); // 3 (scene 1 frames) + 1 (scene 2 frame index)
+    // "menu" label at absolute frame 4.
+    // Tag 86 frame labels now also include scene names ("Title" at 0, "Game" at 3) so that
+    // gotoAndPlay("Title") / gotoAndPlay("Game") resolve via frame_labels_map in AVM1.
+    // Total: 3 labels ("menu" + "Title" + "Game").
+    expect(parsed.frameLabels.length).toBe(3);
+    const menuLabel = parsed.frameLabels.find((l) => l.name === "menu");
+    expect(menuLabel).toBeDefined();
+    expect(menuLabel!.frameNum).toBe(4); // 3 (scene 1 frames) + 1 (scene 2 frame index)
+    // Scene name aliases
+    const titleLabel = parsed.frameLabels.find((l) => l.name === "Title");
+    expect(titleLabel).toBeDefined();
+    expect(titleLabel!.frameNum).toBe(0);
+    const gameLabel = parsed.frameLabels.find((l) => l.name === "Game");
+    expect(gameLabel).toBeDefined();
+    expect(gameLabel!.frameNum).toBe(3);
 
     // 2. A FrameLabel tag with "menu" must also appear in the tag stream
     //    (Ruffle uses FrameLabel tags for within-scene navigation by label)

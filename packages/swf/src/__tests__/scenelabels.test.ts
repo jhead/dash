@@ -246,7 +246,7 @@ describe('encodeU32', () => {
 // ---------------------------------------------------------------------------
 
 describe('encodeSceneAndFrameLabelData', () => {
-  it('single scene no labels: scene count = 1, offset = 0, frame label count = 0', () => {
+  it('single scene no labels: scene count = 1, offset = 0, scene name added as frame label', () => {
     const doc = makeDoc([makeScene('s1', 'Scene 1', [makeFrame(0)])]);
     const tagRecord = encodeSceneAndFrameLabelData(doc);
     const { code, body } = parseTagRecord(tagRecord);
@@ -270,12 +270,21 @@ describe('encodeSceneAndFrameLabelData', () => {
     expect(nameResult.str).toBe('Scene 1');
     pos += nameResult.bytesRead;
 
-    // FrameLabelCount = 0
+    // FrameLabelCount = 1 — scene name "Scene 1" is added as a frame label so that
+    // gotoAndPlay("Scene 1") resolves via frame_labels_map in Ruffle's AVM1.
     const labelCountResult = readU32(body, pos);
-    expect(labelCountResult.value).toBe(0);
+    expect(labelCountResult.value).toBe(1);
+    pos += labelCountResult.bytesRead;
+
+    // Frame label 0: frame 0, name "Scene 1"
+    const { value: fn0, bytesRead: fn0r } = readU32(body, pos);
+    expect(fn0).toBe(0);
+    pos += fn0r;
+    const { str: ln0 } = readNullString(body, pos);
+    expect(ln0).toBe('Scene 1');
   });
 
-  it('two scenes produce correct cumulative frame offsets', () => {
+  it('two scenes produce correct cumulative frame offsets and scene names as frame labels', () => {
     const doc = makeDoc([
       makeScene('s1', 'Scene 1', [makeFrame(0), makeFrame(1), makeFrame(2)]),
       makeScene('s2', 'Scene 2', [makeFrame(0), makeFrame(1)]),
@@ -306,9 +315,26 @@ describe('encodeSceneAndFrameLabelData', () => {
     expect(name1).toBe('Scene 2');
     pos += n1r;
 
-    // FrameLabelCount = 0
-    const { value: labelCount } = readU32(body, pos);
-    expect(labelCount).toBe(0);
+    // FrameLabelCount = 2 — both scene names are added as frame labels so that
+    // gotoAndPlay("Scene 1") and gotoAndPlay("Scene 2") resolve via frame_labels_map.
+    const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
+    expect(labelCount).toBe(2);
+    pos += lcr;
+
+    // Frame label 0: "Scene 1" at absolute frame 0
+    const { value: fn0, bytesRead: fn0r } = readU32(body, pos);
+    expect(fn0).toBe(0);
+    pos += fn0r;
+    const { str: ln0, bytesRead: ln0r } = readNullString(body, pos);
+    expect(ln0).toBe('Scene 1');
+    pos += ln0r;
+
+    // Frame label 1: "Scene 2" at absolute frame 3
+    const { value: fn1, bytesRead: fn1r } = readU32(body, pos);
+    expect(fn1).toBe(3);
+    pos += fn1r;
+    const { str: ln1 } = readNullString(body, pos);
+    expect(ln1).toBe('Scene 2');
   });
 
   it('frame label in scene 1 appears with correct absolute frame number', () => {
@@ -335,18 +361,33 @@ describe('encodeSceneAndFrameLabelData', () => {
       pos += nb;
     }
 
-    // FrameLabelCount = 1
+    // FrameLabelCount = 3: user label "myLabel" + scene names "Scene 1" and "Scene 2"
     const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
-    expect(labelCount).toBe(1);
+    expect(labelCount).toBe(3);
     pos += lcr;
 
-    // Label 0: absolute frame = 3 + 1 = 4
+    // Label 0: absolute frame = 3 + 1 = 4, name "myLabel" (user-defined label)
     const { value: frameNum, bytesRead: fnr } = readU32(body, pos);
     expect(frameNum).toBe(4); // 3 frames in scene 1, then frame index 1 in scene 2
     pos += fnr;
 
-    const { str: labelName } = readNullString(body, pos);
+    const { str: labelName, bytesRead: lnr } = readNullString(body, pos);
     expect(labelName).toBe('myLabel');
+    pos += lnr;
+
+    // Labels 1 and 2: scene names "Scene 1" (frame 0) and "Scene 2" (frame 3)
+    const { value: fn1, bytesRead: fn1r } = readU32(body, pos);
+    expect(fn1).toBe(0);
+    pos += fn1r;
+    const { str: ln1, bytesRead: ln1r } = readNullString(body, pos);
+    expect(ln1).toBe('Scene 1');
+    pos += ln1r;
+
+    const { value: fn2, bytesRead: fn2r } = readU32(body, pos);
+    expect(fn2).toBe(3);
+    pos += fn2r;
+    const { str: ln2 } = readNullString(body, pos);
+    expect(ln2).toBe('Scene 2');
   });
 
   it('comment-type labels are excluded from frame label data', () => {
@@ -372,17 +413,25 @@ describe('encodeSceneAndFrameLabelData', () => {
       pos += nr;
     }
 
-    // FrameLabelCount should be 1 (only the 'name' type label)
+    // FrameLabelCount should be 2: 'namedLabel' (user-defined) + 'Scene 1' (scene name alias)
     const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
-    expect(labelCount).toBe(1);
+    expect(labelCount).toBe(2);
     pos += lcr;
 
     // The frame label should be 'namedLabel', not 'commentLabel'
     const { value: frameNum, bytesRead: fnr } = readU32(body, pos);
     expect(frameNum).toBe(2); // frame index 2
     pos += fnr;
-    const { str: labelName } = readNullString(body, pos);
+    const { str: labelName, bytesRead: lnr } = readNullString(body, pos);
     expect(labelName).toBe('namedLabel');
+    pos += lnr;
+
+    // Scene name alias: 'Scene 1' at frame 0
+    const { value: fn1, bytesRead: fn1r } = readU32(body, pos);
+    expect(fn1).toBe(0);
+    pos += fn1r;
+    const { str: ln1 } = readNullString(body, pos);
+    expect(ln1).toBe('Scene 1');
   });
 
   it('anchor-type labels are INCLUDED in frame label data (required for cross-scene gotoAndPlay)', () => {
@@ -406,9 +455,9 @@ describe('encodeSceneAndFrameLabelData', () => {
       pos += nr;
     }
 
-    // FrameLabelCount should be 2: both the 'anchor' and 'name' type labels are included
+    // FrameLabelCount should be 3: 'anchorLabel', 'namedLabel' (user-defined) + 'Scene 1' (scene name alias)
     const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
-    expect(labelCount).toBe(2);
+    expect(labelCount).toBe(3);
     pos += lcr;
 
     // Label 0: frame 1, name "anchorLabel" (anchor type, included)
@@ -423,8 +472,16 @@ describe('encodeSceneAndFrameLabelData', () => {
     const { value: fn1, bytesRead: fn1r } = readU32(body, pos);
     expect(fn1).toBe(2);
     pos += fn1r;
-    const { str: ln1 } = readNullString(body, pos);
+    const { str: ln1, bytesRead: ln1r } = readNullString(body, pos);
     expect(ln1).toBe('namedLabel');
+    pos += ln1r;
+
+    // Label 2: scene name alias 'Scene 1' at frame 0
+    const { value: fn2, bytesRead: fn2r } = readU32(body, pos);
+    expect(fn2).toBe(0);
+    pos += fn2r;
+    const { str: ln2 } = readNullString(body, pos);
+    expect(ln2).toBe('Scene 1');
   });
 
   it('tag code in header is 86', () => {
@@ -462,9 +519,10 @@ describe('encodeSceneAndFrameLabelData', () => {
       pos += nr;
     }
 
-    // FrameLabelCount = 3
+    // FrameLabelCount = 4: user labels "start", "main", "end" + scene name "Intro".
+    // Scene "Main" is skipped because its name (case-insensitive) matches user label "main".
     const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
-    expect(labelCount).toBe(3);
+    expect(labelCount).toBe(4);
     pos += lcr;
 
     // Label 0: frame 1, name "start"
@@ -487,8 +545,16 @@ describe('encodeSceneAndFrameLabelData', () => {
     const { value: fn2, bytesRead: fn2r } = readU32(body, pos);
     expect(fn2).toBe(4);
     pos += fn2r;
-    const { str: ln2 } = readNullString(body, pos);
+    const { str: ln2, bytesRead: ln2r } = readNullString(body, pos);
     expect(ln2).toBe('end');
+    pos += ln2r;
+
+    // Label 3: scene name "Intro" at frame 0 (added as alias; "Main" is skipped — matches "main")
+    const { value: fn3, bytesRead: fn3r } = readU32(body, pos);
+    expect(fn3).toBe(0);
+    pos += fn3r;
+    const { str: ln3 } = readNullString(body, pos);
+    expect(ln3).toBe('Intro');
   });
 });
 
@@ -640,16 +706,66 @@ describe('compileDocument SceneAndFrameLabelData integration', () => {
       pos += nr;
     }
 
-    // FrameLabelCount = 1 (anchor is included)
+    // FrameLabelCount = 2 (anchor 'myAnchor' + scene name 'Scene 1' as alias)
     const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
-    expect(labelCount).toBe(1);
+    expect(labelCount).toBe(2);
     pos += lcr;
 
-    // The label should be 'myAnchor' at frame 1
+    // Label 0: 'myAnchor' at frame 1 (user-defined anchor)
     const { value: frameNum, bytesRead: fnr } = readU32(body, pos);
     expect(frameNum).toBe(1);
     pos += fnr;
-    const { str: labelName } = readNullString(body, pos);
+    const { str: labelName, bytesRead: lnr } = readNullString(body, pos);
     expect(labelName).toBe('myAnchor');
+    pos += lnr;
+
+    // Label 1: scene name 'Scene 1' at frame 0 (added as gotoAndPlay alias)
+    const { value: fn1, bytesRead: fn1r } = readU32(body, pos);
+    expect(fn1).toBe(0);
+    pos += fn1r;
+    const { str: ln1 } = readNullString(body, pos);
+    expect(ln1).toBe('Scene 1');
+  });
+
+  it('scene names appear in tag 86 frame labels section so gotoAndPlay("Scene 2") resolves in AVM1', () => {
+    // Ruffle ignores FrameLabel (tag 43) when scene_labels exist (from tag 86).
+    // AVM1 gotoAndPlay(string) uses frame_labels_map, not scene_labels_map.
+    // Scene names must therefore appear in tag 86's frame_labels section so Ruffle
+    // populates frame_labels_map with them. (task 1058)
+    const doc = makeDoc([
+      makeScene('s1', 'Scene 1', [makeFrame(0), makeFrame(1), makeFrame(2)]),
+      makeScene('s2', 'Scene 2', [makeFrame(0), makeFrame(1)]),
+    ]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    const tag86 = tags.find((t) => t.code === 86)!;
+    expect(tag86).toBeDefined();
+
+    // Parse all frame labels from tag 86
+    const body = tag86.body;
+    let pos = 0;
+    const { value: sceneCount, bytesRead: scr } = readU32(body, pos);
+    pos += scr;
+    for (let i = 0; i < sceneCount; i++) {
+      const { bytesRead: or } = readU32(body, pos);
+      pos += or;
+      const { bytesRead: nr } = readNullString(body, pos);
+      pos += nr;
+    }
+
+    const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
+    pos += lcr;
+    const frameLabelNames: string[] = [];
+    for (let i = 0; i < labelCount; i++) {
+      const { bytesRead: fnr } = readU32(body, pos);
+      pos += fnr;
+      const { str, bytesRead: nr } = readNullString(body, pos);
+      pos += nr;
+      frameLabelNames.push(str);
+    }
+
+    // Both scene names must be in the frame labels section
+    expect(frameLabelNames).toContain('Scene 1');
+    expect(frameLabelNames).toContain('Scene 2');
   });
 });

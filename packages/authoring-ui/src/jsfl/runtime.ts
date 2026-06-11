@@ -138,6 +138,12 @@ interface RuntimeState {
   selectedIds: string[];
   /** Clipboard for copyFrames / cutFrames / pasteFrames operations. */
   frameClipboard: FrameClipboard | null;
+  /**
+   * When non-null, the JSFL runtime is in symbol-editing mode for this
+   * library item id.  `getTimeline()` and `timelines` return the symbol's
+   * timeline instead of the scene timeline.
+   */
+  editingSymbolId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1136,6 +1142,75 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
 }
 
 // ---------------------------------------------------------------------------
+// Symbol-timeline proxy helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a JsflTimeline proxy that reads and writes the timeline of a symbol
+ * library item rather than a scene timeline.
+ *
+ * We achieve this by wrapping the real RuntimeState in a Proxy that shims
+ * `state.doc.scenes[0]` to point at the symbol's timeline, and that redirects
+ * writes back into `state.doc.library`.
+ */
+function makeSymbolTimelineProxy(state: RuntimeState, symbolId: string): JsflTimeline | null {
+  const item = state.doc.library.items.find(
+    (i) => i.itemType === 'symbol' && i.id === symbolId
+  ) as FlashSymbol | undefined;
+  if (!item) return null;
+
+  // Build a virtual single-scene wrapper around the symbol's timeline so that
+  // makeTimelineProxy can be reused without changes.  Mutations to the virtual
+  // scenes array are intercepted and written back to the library item.
+  const virtualScene: import("@flash/core").Scene = {
+    id: `__sym__${symbolId}`,
+    name: item.name,
+    timeline: item.timeline,
+  };
+
+  // Create a virtual document whose `.scenes` array has exactly one entry —
+  // the symbol's timeline wrapped as a scene.  Writes to this virtual document
+  // are intercepted and forwarded back to `state.doc.library`.
+  const virtualDoc: FlashDocument = {
+    ...state.doc,
+    scenes: [virtualScene],
+  };
+
+  // Mutable holder so the inner Proxy can update it on write.
+  const holder = { doc: virtualDoc };
+
+  const symState: RuntimeState = new Proxy(state, {
+    get(target, prop) {
+      if (prop === 'doc') return holder.doc;
+      if (prop === 'sceneIndex') return 0;
+      return Reflect.get(target, prop);
+    },
+    set(target, prop, value) {
+      if (prop === 'doc') {
+        // The timeline proxy has mutated the virtual doc's scenes[0].
+        // Propagate the change back to the real doc's library item.
+        const newVirtualDoc = value as FlashDocument;
+        const newTimeline = newVirtualDoc.scenes[0]?.timeline ?? item.timeline;
+        holder.doc = newVirtualDoc;
+        state.doc = {
+          ...state.doc,
+          library: {
+            ...state.doc.library,
+            items: state.doc.library.items.map((i) =>
+              i.id === symbolId ? { ...i, timeline: newTimeline } : i
+            ),
+          },
+        };
+        return true;
+      }
+      return Reflect.set(target, prop, value);
+    },
+  });
+
+  return makeTimelineProxy(symState);
+}
+
+// ---------------------------------------------------------------------------
 // JsflLibrary facade
 // ---------------------------------------------------------------------------
 
@@ -1514,6 +1589,8 @@ export interface JsflDocument {
    * 0 = main timeline; 1+ = symbol edit. Always 0 in this runtime.
    */
   readonly currentTimeline: number;
+  readonly currentScene: { name: string; index: number; frameCount: number };
+  readonly sceneCount: number;
   getTimeline(): JsflTimeline;
   get library(): JsflLibrary;
   addNewRectangle(bounds: { left: number; top: number; right: number; bottom: number }, cornerRadius: number): void;
@@ -1802,6 +1879,33 @@ export interface JsflDocument {
    */
   getLayerProperty(property: string): any;
   /**
+   * Get a numeric-indexed property from the FIRST selected display object.
+   * Index constants are exposed as fl.ELEMENT_X_POS, fl.ELEMENT_Y_POS, etc.
+   * Returns undefined if nothing is selected.
+   *   0 → x position
+   *   1 → y position
+   *   2 → width
+   *   3 → height
+   *   4 → rotation (degrees)
+   *   5 → alpha (0–100, JSFL convention)
+   *   6 → visible (boolean)
+   *   7 → instance name
+   */
+  getProperty(index: number): number | string | boolean | undefined;
+  /**
+   * Set a numeric-indexed property on ALL selected display objects.
+   * Index constants are exposed as fl.ELEMENT_X_POS, fl.ELEMENT_Y_POS, etc.
+   *   0 → x position
+   *   1 → y position
+   *   2 → width
+   *   3 → height
+   *   4 → rotation (degrees)
+   *   5 → alpha (0–100, JSFL convention; converted to 0–1 in model)
+   *   6 → visible (boolean/0/1)
+   *   7 → instance name
+   */
+  setProperty(index: number, value: number | string | boolean): void;
+  /**
    * Compile and play the movie.  Not supported in browser context; stub.
    */
   testMovie(): void;
@@ -1917,15 +2021,31 @@ function makeDocumentProxy(
       }
     },
     getTimeline() {
+      if (state.editingSymbolId) {
+        return makeSymbolTimelineProxy(state, state.editingSymbolId) ?? makeTimelineProxy(state);
+      }
       return makeTimelineProxy(state);
     },
     get timeline(): JsflTimeline {
+      if (state.editingSymbolId) {
+        return makeSymbolTimelineProxy(state, state.editingSymbolId) ?? makeTimelineProxy(state);
+      }
       return makeTimelineProxy(state);
     },
     get layers(): JsflLayer[] {
+      if (state.editingSymbolId) {
+        const tl = makeSymbolTimelineProxy(state, state.editingSymbolId);
+        return tl ? tl.layers : makeTimelineProxy(state).layers;
+      }
       return makeTimelineProxy(state).layers;
     },
     get timelines(): readonly JsflTimeline[] {
+      if (state.editingSymbolId) {
+        // In symbol-editing mode expose only the symbol's timeline (Flash compat:
+        // doc.timelines has 1 entry when inside a symbol).
+        const tl = makeSymbolTimelineProxy(state, state.editingSymbolId);
+        return tl ? [tl] : [];
+      }
       return state.doc.scenes.map((_, sceneIdx) => {
         // Build a temporary state snapshot pointing at the given scene so
         // that the returned proxy reads/writes the correct scene timeline.
@@ -1942,8 +2062,20 @@ function makeDocumentProxy(
       });
     },
     get currentTimeline(): number {
-      // Always 0 — this runtime operates on the main timeline only.
-      return 0;
+      // Return 1 when inside a symbol (edit depth > 0), 0 for the main timeline.
+      return state.editingSymbolId ? 1 : state.sceneIndex;
+    },
+    get currentScene(): { name: string; index: number; frameCount: number } {
+      const sc = state.doc.scenes[state.sceneIndex];
+      if (!sc) return { name: '', index: 0, frameCount: 0 };
+      const frameCount = sc.timeline.layers.reduce((max, l) => {
+        const last = l.keyframes[l.keyframes.length - 1];
+        return last ? Math.max(max, last.index + last.duration) : max;
+      }, 1);
+      return { name: sc.name, index: state.sceneIndex, frameCount };
+    },
+    get sceneCount(): number {
+      return state.doc.scenes.length;
     },
     get library(): JsflLibrary {
       return makeLibraryProxy(state, ids);
@@ -2322,10 +2454,29 @@ function makeDocumentProxy(
       console.warn('doc.addDataToDocument: not supported');
     },
     enterEditMode(_editMode?: string): void {
-      console.warn('doc.enterEditMode: symbol editing not supported');
+      // Find the first selected object's symbolId and enter symbol-editing mode.
+      if (state.selectedIds.length > 0) {
+        const scene = state.doc.scenes[state.sceneIndex];
+        if (scene) {
+          // Search all layers' governing keyframes for the first selected instance.
+          outer: for (const layer of scene.timeline.layers) {
+            const kf = [...layer.frames]
+              .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+              .sort((a, b) => b.index - a.index)[0];
+            if (!kf) continue;
+            for (const obj of kf.displayObjects) {
+              if (state.selectedIds.includes(obj.id) && obj.type === 'instance') {
+                const inst = obj as SymbolInstance;
+                state.editingSymbolId = inst.symbolId;
+                break outer;
+              }
+            }
+          }
+        }
+      }
     },
     exitEditMode(): void {
-      console.warn('doc.exitEditMode: not supported');
+      state.editingSymbolId = undefined;
     },
     setTransformationPoint(_point: { x: number; y: number }): void {
       console.warn('doc.setTransformationPoint: not supported');
@@ -3570,6 +3721,116 @@ function makeDocumentProxy(
           return undefined;
       }
     },
+    getProperty(index: number): number | string | boolean | undefined {
+      if (state.selectedIds.length === 0) return undefined;
+      const firstId = state.selectedIds[0];
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return undefined;
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        const obj = kf.displayObjects.find((o) => o.id === firstId);
+        if (!obj) continue;
+        switch (index) {
+          case 0: return (obj as { x?: number }).x ?? 0;
+          case 1: return (obj as { y?: number }).y ?? 0;
+          case 2: {
+            const inst = obj as { naturalWidth?: number; scaleX?: number; width?: number };
+            if (inst.naturalWidth !== undefined) return inst.naturalWidth * (inst.scaleX ?? 1);
+            return inst.width ?? 0;
+          }
+          case 3: {
+            const inst = obj as { naturalHeight?: number; scaleY?: number; height?: number };
+            if (inst.naturalHeight !== undefined) return inst.naturalHeight * (inst.scaleY ?? 1);
+            return inst.height ?? 0;
+          }
+          case 4: return (obj as { rotation?: number }).rotation ?? 0;
+          case 5: return ((obj as { alpha?: number }).alpha ?? 1) * 100;
+          case 6: return (obj as { visible?: boolean }).visible ?? true;
+          case 7: return (obj as { instanceName?: string }).instanceName ?? "";
+          default: return undefined;
+        }
+      }
+      return undefined;
+    },
+    setProperty(index: number, value: number | string | boolean): void {
+      if (state.selectedIds.length === 0) return;
+      const toSet = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type SetEntry = { layerId: string; kfIndex: number; objId: string };
+      const entries: SetEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toSet.has(obj.id)) continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, objId: obj.id });
+        }
+      }
+      for (const entry of entries) {
+        let updates: Record<string, unknown>;
+        switch (index) {
+          case 0: updates = { x: Number(value) }; break;
+          case 1: updates = { y: Number(value) }; break;
+          case 2: {
+            // For symbol instances set scaleX; for other types set width directly.
+            const currentScene = state.doc.scenes[state.sceneIndex];
+            if (!currentScene) continue;
+            const layerObj = currentScene.timeline.layers.find((l) => l.id === entry.layerId);
+            const kfObj = layerObj?.frames.find((f) => f.isKeyframe && f.index === entry.kfIndex);
+            const obj = kfObj?.displayObjects.find((o) => o.id === entry.objId);
+            if (obj?.type === 'instance') {
+              const inst = obj as { naturalWidth?: number };
+              const nw = inst.naturalWidth ?? Number(value);
+              updates = { scaleX: Number(value) / (nw || 1) };
+            } else {
+              updates = { width: Number(value) };
+            }
+            break;
+          }
+          case 3: {
+            const currentScene = state.doc.scenes[state.sceneIndex];
+            if (!currentScene) continue;
+            const layerObj = currentScene.timeline.layers.find((l) => l.id === entry.layerId);
+            const kfObj = layerObj?.frames.find((f) => f.isKeyframe && f.index === entry.kfIndex);
+            const obj = kfObj?.displayObjects.find((o) => o.id === entry.objId);
+            if (obj?.type === 'instance') {
+              const inst = obj as { naturalHeight?: number };
+              const nh = inst.naturalHeight ?? Number(value);
+              updates = { scaleY: Number(value) / (nh || 1) };
+            } else {
+              updates = { height: Number(value) };
+            }
+            break;
+          }
+          case 4: updates = { rotation: Number(value) }; break;
+          case 5: updates = { alpha: Number(value) / 100 }; break;
+          case 6: updates = { visible: Boolean(value) }; break;
+          case 7: updates = { instanceName: String(value) }; break;
+          default: continue;
+        }
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          updates as Parameters<typeof updateDisplayObject>[4]
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
     testMovie(): void {
       console.warn('testMovie: not supported');
     },
@@ -3711,6 +3972,26 @@ export interface JsflFl {
    * Not supported; always null.
    */
   readonly xmlToUIRef: null;
+  // ---------------------------------------------------------------------------
+  // ELEMENT_* property-index constants (Flash 8 JSFL standard)
+  // Used with doc.getProperty(index) and doc.setProperty(index, value).
+  // ---------------------------------------------------------------------------
+  /** Property index for x position. */
+  readonly ELEMENT_X_POS: 0;
+  /** Property index for y position. */
+  readonly ELEMENT_Y_POS: 1;
+  /** Property index for width. */
+  readonly ELEMENT_W: 2;
+  /** Property index for height. */
+  readonly ELEMENT_H: 3;
+  /** Property index for rotation (degrees). */
+  readonly ELEMENT_ROTATION: 4;
+  /** Property index for alpha (0–100). */
+  readonly ELEMENT_ALPHA: 5;
+  /** Property index for visibility. */
+  readonly ELEMENT_VISIBLE: 6;
+  /** Property index for instance name. */
+  readonly ELEMENT_NAME: 7;
 }
 
 function makeFlProxy(
@@ -3882,6 +4163,15 @@ function makeFlProxy(
     get xmlToUIRef(): null {
       return null;
     },
+    // ELEMENT_* property-index constants
+    ELEMENT_X_POS: 0 as const,
+    ELEMENT_Y_POS: 1 as const,
+    ELEMENT_W: 2 as const,
+    ELEMENT_H: 3 as const,
+    ELEMENT_ROTATION: 4 as const,
+    ELEMENT_ALPHA: 5 as const,
+    ELEMENT_VISIBLE: 6 as const,
+    ELEMENT_NAME: 7 as const,
   };
 }
 

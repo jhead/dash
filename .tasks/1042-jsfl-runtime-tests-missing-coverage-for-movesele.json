@@ -1,0 +1,10 @@
+{
+  "id": "1042-jsfl-runtime-tests-missing-coverage-for-movesele",
+  "title": "JSFL runtime tests: missing coverage for moveSelectionBy, duplicateSelection, duplicateItem, copyFrames, setFillColor, findSymbolInstances",
+  "description": "Add missing test coverage to packages/authoring-ui/src/jsfl/__tests__/runtime-expanded.test.ts for JSFL methods that are implemented but untested:\n\n1. doc.moveSelectionBy(delta) \u2014 test that selected object x/y changes by the delta\n2. doc.duplicateSelection() \u2014 test that a new object is created offset from the original\n3. library.duplicateItem(name) \u2014 test that a 'Copy of X' item appears in library\n4. timeline.copyFrames() / pasteFrames() \u2014 test that frame contents can be copied and pasted\n5. doc.setFillColor('#ff0000') / doc.setStrokeColor('#0000ff') \u2014 test state is stored and affects addNewRectangle fill\n6. doc.findSymbolInstances(symbolName) \u2014 test that placed instances of a named symbol are returned\n\nPattern: Each test should create a minimal fixture document with a symbol/shape, run the JSFL method, then assert the expected state change. Look at existing tests in runtime-expanded.test.ts (e.g., the convertToSymbol tests around line 602) as the template for structure.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T00:24:10Z",
+  "updated_at": "2026-06-11T00:28:32Z"
+}
