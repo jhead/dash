@@ -1631,6 +1631,20 @@ class Compiler {
   private compileAssignExpr(expr: AssignExpr): void {
     const op = expr.operator;
 
+    // Helper: save TOS to register 0 without popping, then after the Set action
+    // restore it so the assigned value remains as the expression result.
+    //
+    // Why StoreRegister instead of ActionDuplicate (0x4c)?
+    //   ActionDuplicate copies TOS, giving stack [..., name_or_obj, value, value].
+    //   SetVariable then pops the top value as the VALUE and the second value as
+    //   the VARIABLE NAME — but that second value is the duplicate of the rhs, not
+    //   the name string, so the wrong variable gets set and the original name is
+    //   orphaned on the stack.  SetMember has the same problem: the dup ends up
+    //   where the property name should be.
+    //   StoreRegister saves TOS into r0 without altering the stack, so
+    //   SetVariable/SetMember still see the correct [name, value] / [obj, name, value]
+    //   layout, and we Push(r0) afterwards to restore the result.
+
     if (expr.left.type === 'MemberExpr') {
       const member = expr.left as MemberExpr;
       if (op === '=') {
@@ -1638,15 +1652,19 @@ class Compiler {
         this.compileExpr(member.object);
         this.pushString(member.property);
         this.compileExpr(expr.right);
-        this.emit(0x4c); // ActionDuplicate — preserve assigned value as expression result
-        this.emit(0x4f); // ActionSetMember (consumes obj, name, top copy of value)
+        // Save value to r0 before SetMember consumes it, then restore as result.
+        this.emitWithPayload(0x87, [0]);     // ActionStoreRegister r0 (no pop)
+        this.emit(0x4f);                     // ActionSetMember (pops value, name, obj)
+        this.emitWithPayload(0x96, [4, 0]);  // ActionPush register r0 → expression result
       } else {
         // Compound member assignment: obj.prop OP= rhs
         //   obj name           (for SetMember)
         //   obj name           (for GetMember)
         //   GetMember          → current value
         //   rhs, arith op      → result
+        //   StoreRegister r0   → save result (no pop)
         //   SetMember          (pops result, name, obj)
+        //   Push r0            → expression result
         // The object expression is evaluated twice — acceptable for the
         // common `mc._x += dx` / `_root.score.text += s` shapes.
         const arithOp = op.slice(0, -1); // strip trailing '='
@@ -1654,11 +1672,12 @@ class Compiler {
         this.pushString(member.property);
         this.compileExpr(member.object);
         this.pushString(member.property);
-        this.emit(0x4e); // ActionGetMember → current value
+        this.emit(0x4e);                     // ActionGetMember → current value
         this.compileExpr(expr.right);
-        this.emitArithOp(arithOp);
-        this.emit(0x4c); // ActionDuplicate — preserve result as expression result
-        this.emit(0x4f); // ActionSetMember (consumes obj, name, top copy of result)
+        this.emitArithOp(arithOp);           // result on top of stack
+        this.emitWithPayload(0x87, [0]);     // ActionStoreRegister r0 (no pop)
+        this.emit(0x4f);                     // ActionSetMember (pops result, name, obj)
+        this.emitWithPayload(0x96, [4, 0]);  // ActionPush register r0 → expression result
       }
       return;
     }
@@ -1670,20 +1689,22 @@ class Compiler {
         this.compileExpr(idx.object);
         this.compileExpr(idx.index);
         this.compileExpr(expr.right);
-        this.emit(0x4c); // ActionDuplicate — preserve assigned value as expression result
-        this.emit(0x4f); // ActionSetMember (consumes obj, index, top copy of value)
+        this.emitWithPayload(0x87, [0]);     // ActionStoreRegister r0 (no pop)
+        this.emit(0x4f);                     // ActionSetMember (pops value, index, obj)
+        this.emitWithPayload(0x96, [4, 0]);  // ActionPush register r0 → expression result
       } else {
-        // Compound indexed assignment: obj[i] OP= rhs (same shape as above)
+        // Compound indexed assignment: obj[i] OP= rhs (same shape as member above)
         const arithOp = op.slice(0, -1);
         this.compileExpr(idx.object);
         this.compileExpr(idx.index);
         this.compileExpr(idx.object);
         this.compileExpr(idx.index);
-        this.emit(0x4e); // ActionGetMember → current value
+        this.emit(0x4e);                     // ActionGetMember → current value
         this.compileExpr(expr.right);
-        this.emitArithOp(arithOp);
-        this.emit(0x4c); // ActionDuplicate — preserve result as expression result
-        this.emit(0x4f); // ActionSetMember (consumes obj, index, top copy of result)
+        this.emitArithOp(arithOp);           // result on top of stack
+        this.emitWithPayload(0x87, [0]);     // ActionStoreRegister r0 (no pop)
+        this.emit(0x4f);                     // ActionSetMember (pops result, index, obj)
+        this.emitWithPayload(0x96, [4, 0]);  // ActionPush register r0 → expression result
       }
       return;
     }
@@ -1692,29 +1713,26 @@ class Compiler {
       const name = (expr.left as Identifier).name;
       if (op === '=') {
         // ActionSetVariable: stack = [... name value] (name below value)
+        // StoreRegister saves the value (TOS) to r0 before SetVariable consumes
+        // both name and value; Push(r0) restores it as the expression result.
         this.pushString(name);
         this.compileExpr(expr.right);
-        this.emit(0x4c); // ActionDuplicate — preserve assigned value as expression result
-        this.emit(0x1d); // ActionSetVariable (consumes name and top copy of value)
+        this.emitWithPayload(0x87, [0]);     // ActionStoreRegister r0 (no pop)
+        this.emit(0x1d);                     // ActionSetVariable (pops value then name)
+        this.emitWithPayload(0x96, [4, 0]);  // ActionPush register r0 → expression result
       } else {
         // Compound: name OP= rhs
-        // We need: load current, apply op, store back.
-        // Stack layout for SetVariable at the end: [name, result]
-        // Sequence:
-        //   push name         ← for SetVariable at end
-        //   push name + GetVariable → current value
-        //   push rhs
-        //   emitArithOp       → result = current OP rhs on stack
-        //   ActionDuplicate   → preserve result as expression result
-        //   ActionSetVariable (pops name and top copy of result)
+        // Stack layout at SetVariable: [name, result] (name below, result on TOS)
+        // StoreRegister saves result to r0 while SetVariable can still see [name, result].
         const arithOp = op.slice(0, -1); // strip trailing '='
-        this.pushString(name);          // name for SetVariable
+        this.pushString(name);           // name for SetVariable
         this.pushString(name);
-        this.emit(0x1c);                // ActionGetVariable → current value
-        this.compileExpr(expr.right);   // rhs
-        this.emitArithOp(arithOp);      // result on top of stack
-        this.emit(0x4c);                // ActionDuplicate — preserve result as expression result
-        this.emit(0x1d);                // ActionSetVariable (pops name then top copy of result)
+        this.emit(0x1c);                 // ActionGetVariable → current value
+        this.compileExpr(expr.right);    // rhs
+        this.emitArithOp(arithOp);       // result on top of stack → [name, result]
+        this.emitWithPayload(0x87, [0]); // ActionStoreRegister r0 (no pop)
+        this.emit(0x1d);                 // ActionSetVariable (pops result then name)
+        this.emitWithPayload(0x96, [4, 0]); // ActionPush register r0 → expression result
       }
       return;
     }
