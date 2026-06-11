@@ -290,6 +290,61 @@ const CLIP_EVENTS: Record<string, ClipAction["event"]> = {
 };
 
 /**
+ * Scan `src` starting at `start` (which must be just inside an already-opened
+ * `{`), and return the index one past the matching closing `}`.
+ *
+ * The scanner skips:
+ *  - String literals delimited by `"` or `'` (respecting `\` escapes)
+ *  - Single-line comments `// …`
+ *  - Block comments `/* … *​/`
+ *
+ * so brace characters inside those contexts are never counted.
+ */
+function scanToMatchingBrace(src: string, start: number): number {
+  let depth = 1;
+  let i = start;
+  while (i < src.length && depth > 0) {
+    const ch = src[i]!;
+    // Single-line comment: skip to end of line
+    if (ch === "/" && src[i + 1] === "/") {
+      i += 2;
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    // Block comment: skip to */
+    if (ch === "/" && src[i + 1] === "*") {
+      i += 2;
+      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i += 2; // skip the closing */
+      continue;
+    }
+    // String literal
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      i++;
+      while (i < src.length) {
+        const sc = src[i]!;
+        if (sc === "\\") {
+          i += 2; // skip escaped character
+          continue;
+        }
+        if (sc === quote) {
+          i++; // skip closing quote
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    // Brace counting (only reached when outside strings/comments)
+    if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+    i++;
+  }
+  return i;
+}
+
+/**
  * Parse the raw instance script (the concatenated `onClipEvent(event){body}`
  * blocks Flash stores verbatim in the FLA) into model ClipAction entries.
  * Brace-matching is used so handler bodies may contain nested blocks.
@@ -303,14 +358,8 @@ export function parseClipActions(src: string): ClipAction[] {
   while ((m = re.exec(src)) !== null) {
     const events = m[1]!.split(",").map((e) => e.trim()).filter(Boolean);
     const bodyStart = re.lastIndex;
-    // brace-match the body
-    let depth = 1;
-    let i = bodyStart;
-    for (; i < src.length && depth > 0; i++) {
-      const ch = src[i]!;
-      if (ch === "{") depth++;
-      else if (ch === "}") depth--;
-    }
+    // brace-match the body (string-literal and comment aware)
+    const i = scanToMatchingBrace(src, bodyStart);
     const body = src.slice(bodyStart, i - 1).trim();
     re.lastIndex = i;
     for (const ev of events) {
@@ -381,14 +430,8 @@ export function parseButtonHandlers(src: string): ButtonHandler[] {
   while ((m = re.exec(src)) !== null) {
     const eventsStr = m[1]!;
     const bodyStart = re.lastIndex;
-    // brace-match the body
-    let depth = 1;
-    let i = bodyStart;
-    for (; i < src.length && depth > 0; i++) {
-      const ch = src[i]!;
-      if (ch === "{") depth++;
-      else if (ch === "}") depth--;
-    }
+    // brace-match the body (string-literal and comment aware)
+    const i = scanToMatchingBrace(src, bodyStart);
     const body = src.slice(bodyStart, i - 1).trim();
     re.lastIndex = i;
 
