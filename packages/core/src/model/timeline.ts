@@ -22,6 +22,12 @@ type DisplayObjectUpdates = Partial<
     fontSize: number;
     // Accessibility (_accProps) — instance-level accessibility override
     accessibility: ObjectAccessibility;
+    // Symbol instance-specific fields
+    colorEffect: import("../engine/types.js").ColorEffect;
+    blendMode: 'normal' | 'layer' | 'multiply' | 'screen' | 'lighten' | 'darken' |
+      'difference' | 'add' | 'subtract' | 'invert' | 'alpha' | 'erase' | 'overlay' | 'hardlight';
+    loopMode: "loop" | "play-once" | "single-frame";
+    firstFrame: number;
   }
 >;
 
