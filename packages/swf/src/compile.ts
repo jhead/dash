@@ -739,6 +739,69 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     writer.writeTag(Tag.DefineSound, soundBody);
   }
 
+  // Pre-build videoCharIdMap and emit DefineVideoStream tags BEFORE the symbol
+  // loop so that encodeDefineSprite can look up video character IDs for
+  // VideoDisplayObject placement inside symbol timelines (task 1129).
+  // The actual per-frame VideoFrame (tag 61) tags are emitted in the frame
+  // loop so they interleave with ShowFrame in playback order.
+  interface VideoStreamInfo {
+    /** Library VideoItem id this stream was built from. */
+    itemId: string;
+    charId: number;
+    width: number;
+    height: number;
+    /** Per-SWF-frame video payloads (one entry per VideoFrame tag to emit). */
+    payloads: Uint8Array[];
+  }
+  const videoItems = doc.library.items.filter(
+    (item): item is VideoItem => item.itemType === "video"
+  );
+  const videoStreams: VideoStreamInfo[] = [];
+  // Map library VideoItem id → its DefineVideoStream character ID, so
+  // VideoDisplayObject placement can resolve the stream to place.
+  const videoCharIdMap = new Map<string, number>();
+  for (const videoItem of videoItems) {
+    // Attempt to demux the FLV payload from the data URI; fall back to an
+    // empty stream so authoring still produces a valid character.
+    let flvFrames: FlvVideoFrame[] = [];
+    let codecId: number = VideoCodec.H263;
+    if (videoItem.dataUri) {
+      try {
+        const bytes = dataUriToBytes(videoItem.dataUri);
+        const flv = demuxFlv(bytes);
+        if (flv) {
+          flvFrames = flv.frames;
+          codecId = flvCodecToSwfCodec(flv.codecId);
+        }
+      } catch {
+        // Malformed data URI — emit an empty stream so compile still succeeds.
+      }
+    }
+
+    // Build the per-frame payload list. With real demuxed FLV frames we use the
+    // decoded video payloads directly. When demux yields nothing (e.g. a stub
+    // data URI in authoring), fall back to driving `frameCount` empty-payload
+    // VideoFrame tags so the stream is still advanced one frame per ShowFrame.
+    let payloads: Uint8Array[];
+    if (flvFrames.length > 0) {
+      payloads = flvFrames.map((f) => f.data);
+    } else {
+      const n = Math.max(0, Math.floor(videoItem.frameCount));
+      payloads = Array.from({ length: n }, () => new Uint8Array(0));
+    }
+
+    const numFrames = payloads.length;
+    const charId = writer.nextCharId();
+    const width = Math.max(0, Math.round(videoItem.width));
+    const height = Math.max(0, Math.round(videoItem.height));
+    writer.writeTag(
+      Tag.DefineVideoStream,
+      encodeDefineVideoStream(charId, numFrames, width, height, codecId)
+    );
+    videoCharIdMap.set(videoItem.id, charId);
+    videoStreams.push({ itemId: videoItem.id, charId, width, height, payloads });
+  }
+
   // Emit DefineSprite for each symbol (using the pre-assigned IDs).
   // encodeDefineSprite returns the tag *body* (SpriteID + FrameCount + inner tags);
   // writeTag wraps it with the DefineSprite record header.
@@ -785,7 +848,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         () => writer.nextCharId(),
         hoistedDefs,
         fontCharIdMap,
-        soundIdMap
+        soundIdMap,
+        videoCharIdMap,
+        videoStreams
       );
 
       // Emit hoisted definition tags first
@@ -866,68 +931,6 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   for (const { charId, sounds } of pendingButtonSounds) {
     const soundBody = encodeDefineButtonSound(charId, sounds, soundIdMap);
     writer.writeTag(Tag.DefineButtonSound, soundBody);
-  }
-
-  // 3d. Emit DefineVideoStream (tag 60) for each VideoItem in the library.
-  //     The actual per-frame VideoFrame (tag 61) tags are emitted in the frame
-  //     loop so they interleave with ShowFrame in playback order. Each video is
-  //     placed on its own depth on the first SWF frame.
-  interface VideoStreamInfo {
-    /** Library VideoItem id this stream was built from. */
-    itemId: string;
-    charId: number;
-    width: number;
-    height: number;
-    /** Per-SWF-frame video payloads (one entry per VideoFrame tag to emit). */
-    payloads: Uint8Array[];
-  }
-  const videoItems = doc.library.items.filter(
-    (item): item is VideoItem => item.itemType === "video"
-  );
-  const videoStreams: VideoStreamInfo[] = [];
-  // Map library VideoItem id → its DefineVideoStream character ID, so
-  // VideoDisplayObject placement can resolve the stream to place.
-  const videoCharIdMap = new Map<string, number>();
-  for (const videoItem of videoItems) {
-    // Attempt to demux the FLV payload from the data URI; fall back to an
-    // empty stream so authoring still produces a valid character.
-    let flvFrames: FlvVideoFrame[] = [];
-    let codecId: number = VideoCodec.H263;
-    if (videoItem.dataUri) {
-      try {
-        const bytes = dataUriToBytes(videoItem.dataUri);
-        const flv = demuxFlv(bytes);
-        if (flv) {
-          flvFrames = flv.frames;
-          codecId = flvCodecToSwfCodec(flv.codecId);
-        }
-      } catch {
-        // Malformed data URI — emit an empty stream so compile still succeeds.
-      }
-    }
-
-    // Build the per-frame payload list. With real demuxed FLV frames we use the
-    // decoded video payloads directly. When demux yields nothing (e.g. a stub
-    // data URI in authoring), fall back to driving `frameCount` empty-payload
-    // VideoFrame tags so the stream is still advanced one frame per ShowFrame.
-    let payloads: Uint8Array[];
-    if (flvFrames.length > 0) {
-      payloads = flvFrames.map((f) => f.data);
-    } else {
-      const n = Math.max(0, Math.floor(videoItem.frameCount));
-      payloads = Array.from({ length: n }, () => new Uint8Array(0));
-    }
-
-    const numFrames = payloads.length;
-    const charId = writer.nextCharId();
-    const width = Math.max(0, Math.round(videoItem.width));
-    const height = Math.max(0, Math.round(videoItem.height));
-    writer.writeTag(
-      Tag.DefineVideoStream,
-      encodeDefineVideoStream(charId, numFrames, width, height, codecId)
-    );
-    videoCharIdMap.set(videoItem.id, charId);
-    videoStreams.push({ itemId: videoItem.id, charId, width, height, payloads });
   }
 
   // 4. Frames — iterate ALL scenes' timelines.
