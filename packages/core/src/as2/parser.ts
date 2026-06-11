@@ -13,7 +13,7 @@ import type {
 
 const EOF_TOKEN: Token = { type: 'eof', value: '', line: 0, col: 0, pos: 0 };
 
-const ASSIGN_OPS = new Set(['=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=', '>>>=', '&&=', '||=', '**=']);
+const ASSIGN_OPS = new Set(['=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=', '>>>=']);
 
 class Parser {
   private tokens: Token[];

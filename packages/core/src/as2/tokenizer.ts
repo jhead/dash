@@ -133,7 +133,7 @@ export function tokenize(source: string): Token[] {
     // --- Multi-char operators ---
     const threeChar = source.slice(pos, pos + 3);
     const two = source.slice(pos, pos + 2);
-    if (['===', '!==', '>>>', '**=', '&&=', '||='].includes(threeChar)) {
+    if (['===', '!==', '>>>'].includes(threeChar)) {
       tokens.push(makeToken('operator', threeChar, startPos, startLine, startCol)); advance(3); continue;
     }
     if (['==', '!=', '<=', '>=', '&&', '||', '++', '--', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<', '>>', '>>>'].includes(two)) {
