@@ -1059,7 +1059,26 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
             };
           }),
         }));
-      } else if (property === "ease") {
+      } else if (property === "soundLoop" || property === "soundLoops") {
+        const loopVal = Math.max(0, Math.floor(Number(value)));
+        mutateTimeline((tl) => ({
+          ...tl,
+          layers: tl.layers.map((l) => {
+            if (l.id !== layerId) return l;
+            return {
+              ...l,
+              frames: l.frames.map((f) => {
+                if (!f.isKeyframe || f.index !== fi) return f;
+                if (!f.sound) return f;
+                return {
+                  ...f,
+                  sound: { ...f.sound, repeatCount: loopVal },
+                };
+              }),
+            };
+          }),
+        }));
+      } else if (property === "ease" || property === "tweenEasing") {
         const easeVal = Math.max(-100, Math.min(100, Number(value)));
         mutateTimeline((tl) => ({
           ...tl,
