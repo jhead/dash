@@ -2330,11 +2330,280 @@ function makeDocumentProxy(
     setTransformationPoint(_point: { x: number; y: number }): void {
       console.warn('doc.setTransformationPoint: not supported');
     },
-    align(_alignMode: string, _bUseDocumentBounds?: boolean): void {
-      console.warn('doc.align: not implemented');
+    align(alignMode: string, bUseDocumentBounds?: boolean): void {
+      if (state.selectedIds.length < 2) return;
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+
+      // Helper: compute bounding box for a display object
+      function objBounds(obj: DisplayObject): { left: number; top: number; right: number; bottom: number } {
+        if (obj.type === 'shape') {
+          const shapeObj = obj as ShapeDisplayObject;
+          const ox = shapeObj.x ?? 0;
+          const oy = shapeObj.y ?? 0;
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          try {
+            for (const path of shapeObj.shape.paths) {
+              minX = Math.min(minX, path.start.x);
+              minY = Math.min(minY, path.start.y);
+              maxX = Math.max(maxX, path.start.x);
+              maxY = Math.max(maxY, path.start.y);
+              for (const seg of path.segments) {
+                minX = Math.min(minX, seg.to.x);
+                minY = Math.min(minY, seg.to.y);
+                maxX = Math.max(maxX, seg.to.x);
+                maxY = Math.max(maxY, seg.to.y);
+                if (seg.type === 'curve') {
+                  minX = Math.min(minX, (seg as { control: { x: number; y: number } }).control.x);
+                  minY = Math.min(minY, (seg as { control: { x: number; y: number } }).control.y);
+                  maxX = Math.max(maxX, (seg as { control: { x: number; y: number } }).control.x);
+                  maxY = Math.max(maxY, (seg as { control: { x: number; y: number } }).control.y);
+                }
+              }
+            }
+          } catch { /* fall through to fallback */ }
+          if (!isFinite(minX)) return { left: ox, top: oy, right: ox, bottom: oy };
+          return { left: ox + minX, top: oy + minY, right: ox + maxX, bottom: oy + maxY };
+        }
+        if (obj.type === 'instance') {
+          const inst = obj as SymbolInstance;
+          const ix = inst.x ?? 0;
+          const iy = inst.y ?? 0;
+          const iw = (inst.naturalWidth ?? 100) * (inst.scaleX ?? 1);
+          const ih = (inst.naturalHeight ?? 100) * (inst.scaleY ?? 1);
+          return { left: ix, top: iy, right: ix + iw, bottom: iy + ih };
+        }
+        const anyObj = obj as { x?: number; y?: number; width?: number; height?: number };
+        const ax = anyObj.x ?? 0;
+        const ay = anyObj.y ?? 0;
+        const aw = anyObj.width ?? 0;
+        const ah = anyObj.height ?? 0;
+        return { left: ax, top: ay, right: ax + aw, bottom: ay + ah };
+      }
+
+      // Collect selected objects with their location and bounds
+      type AlignEntry = {
+        layerId: string;
+        kfIndex: number;
+        obj: DisplayObject;
+        bounds: { left: number; top: number; right: number; bottom: number };
+      };
+      const selected = new Set(state.selectedIds);
+      const entries: AlignEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!selected.has(obj.id)) continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, obj, bounds: objBounds(obj) });
+        }
+      }
+      if (entries.length < 2) return;
+
+      // Compute target bounds
+      let targetLeft: number;
+      let targetTop: number;
+      let targetRight: number;
+      let targetBottom: number;
+      if (bUseDocumentBounds) {
+        targetLeft = 0;
+        targetTop = 0;
+        targetRight = state.doc.properties.width;
+        targetBottom = state.doc.properties.height;
+      } else {
+        targetLeft = Math.min(...entries.map((e) => e.bounds.left));
+        targetTop = Math.min(...entries.map((e) => e.bounds.top));
+        targetRight = Math.max(...entries.map((e) => e.bounds.right));
+        targetBottom = Math.max(...entries.map((e) => e.bounds.bottom));
+      }
+
+      // Compute new positions for each entry
+      type MoveEntry = { layerId: string; kfIndex: number; objId: string; newX: number; newY: number };
+      const moves: MoveEntry[] = [];
+
+      if (alignMode === 'distribute widths' || alignMode === 'distribute heights') {
+        // Distribute: need at least 3 objects
+        if (entries.length < 3) return;
+        if (alignMode === 'distribute widths') {
+          // Sort by left edge
+          const sorted = [...entries].sort((a, b) => a.bounds.left - b.bounds.left);
+          const firstLeft = sorted[0].bounds.left;
+          const lastRight = sorted[sorted.length - 1].bounds.right;
+          const totalObjWidths = sorted.reduce((sum, e) => sum + (e.bounds.right - e.bounds.left), 0);
+          const gap = (lastRight - firstLeft - totalObjWidths) / (sorted.length - 1);
+          let cursor = firstLeft;
+          for (let i = 0; i < sorted.length; i++) {
+            const e = sorted[i];
+            const w = e.bounds.right - e.bounds.left;
+            const offsetX = (e.obj as { x?: number }).x ?? 0;
+            const newX = offsetX + (cursor - e.bounds.left);
+            moves.push({ layerId: e.layerId, kfIndex: e.kfIndex, objId: e.obj.id, newX, newY: (e.obj as { y?: number }).y ?? 0 });
+            cursor += w + gap;
+          }
+        } else {
+          // Sort by top edge
+          const sorted = [...entries].sort((a, b) => a.bounds.top - b.bounds.top);
+          const firstTop = sorted[0].bounds.top;
+          const lastBottom = sorted[sorted.length - 1].bounds.bottom;
+          const totalObjHeights = sorted.reduce((sum, e) => sum + (e.bounds.bottom - e.bounds.top), 0);
+          const gap = (lastBottom - firstTop - totalObjHeights) / (sorted.length - 1);
+          let cursor = firstTop;
+          for (let i = 0; i < sorted.length; i++) {
+            const e = sorted[i];
+            const h = e.bounds.bottom - e.bounds.top;
+            const offsetY = (e.obj as { y?: number }).y ?? 0;
+            const newY = offsetY + (cursor - e.bounds.top);
+            moves.push({ layerId: e.layerId, kfIndex: e.kfIndex, objId: e.obj.id, newX: (e.obj as { x?: number }).x ?? 0, newY });
+            cursor += h + gap;
+          }
+        }
+      } else {
+        // Standard alignment
+        for (const e of entries) {
+          const objX = (e.obj as { x?: number }).x ?? 0;
+          const objY = (e.obj as { y?: number }).y ?? 0;
+          const bw = e.bounds.right - e.bounds.left;
+          const bh = e.bounds.bottom - e.bounds.top;
+          let newX = objX;
+          let newY = objY;
+          if (alignMode === 'left edge') {
+            newX = objX + (targetLeft - e.bounds.left);
+          } else if (alignMode === 'right edge') {
+            newX = objX + ((targetRight - bw) - e.bounds.left);
+          } else if (alignMode === 'top edge') {
+            newY = objY + (targetTop - e.bounds.top);
+          } else if (alignMode === 'bottom edge') {
+            newY = objY + ((targetBottom - bh) - e.bounds.top);
+          } else if (alignMode === 'center vertical') {
+            // Center horizontally on vertical center line
+            const centerX = (targetLeft + targetRight) / 2;
+            newX = objX + (centerX - bw / 2 - e.bounds.left);
+          } else if (alignMode === 'center horizontal') {
+            // Center vertically on horizontal center line
+            const centerY = (targetTop + targetBottom) / 2;
+            newY = objY + (centerY - bh / 2 - e.bounds.top);
+          }
+          moves.push({ layerId: e.layerId, kfIndex: e.kfIndex, objId: e.obj.id, newX, newY });
+        }
+      }
+
+      // Apply all position updates
+      for (const move of moves) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          move.layerId,
+          move.kfIndex,
+          move.objId,
+          { x: move.newX, y: move.newY }
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
     },
-    space(_direction: string): void {
-      console.warn('doc.space: not implemented');
+    space(direction: string): void {
+      if (state.selectedIds.length < 3) return;
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+
+      // Helper: compute bounding box for a display object (same as in align)
+      function objBoundsSpace(obj: DisplayObject): { left: number; top: number; right: number; bottom: number } {
+        if (obj.type === 'instance') {
+          const inst = obj as SymbolInstance;
+          const ix = inst.x ?? 0;
+          const iy = inst.y ?? 0;
+          const iw = (inst.naturalWidth ?? 100) * (inst.scaleX ?? 1);
+          const ih = (inst.naturalHeight ?? 100) * (inst.scaleY ?? 1);
+          return { left: ix, top: iy, right: ix + iw, bottom: iy + ih };
+        }
+        const anyObj = obj as { x?: number; y?: number; width?: number; height?: number };
+        const ax = anyObj.x ?? 0;
+        const ay = anyObj.y ?? 0;
+        const aw = anyObj.width ?? 0;
+        const ah = anyObj.height ?? 0;
+        return { left: ax, top: ay, right: ax + aw, bottom: ay + ah };
+      }
+
+      type SpaceEntry = {
+        layerId: string;
+        kfIndex: number;
+        obj: DisplayObject;
+        bounds: { left: number; top: number; right: number; bottom: number };
+      };
+      const selected = new Set(state.selectedIds);
+      const entries: SpaceEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!selected.has(obj.id)) continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, obj, bounds: objBoundsSpace(obj) });
+        }
+      }
+      if (entries.length < 3) return;
+
+      type MoveEntry = { layerId: string; kfIndex: number; objId: string; newX: number; newY: number };
+      const moves: MoveEntry[] = [];
+
+      if (direction === 'space evenly horizontally') {
+        const sorted = [...entries].sort((a, b) => a.bounds.left - b.bounds.left);
+        const firstLeft = sorted[0].bounds.left;
+        const lastRight = sorted[sorted.length - 1].bounds.right;
+        const totalObjWidths = sorted.reduce((sum, e) => sum + (e.bounds.right - e.bounds.left), 0);
+        const gap = (lastRight - firstLeft - totalObjWidths) / (sorted.length - 1);
+        let cursor = firstLeft;
+        for (let i = 0; i < sorted.length; i++) {
+          const e = sorted[i];
+          const w = e.bounds.right - e.bounds.left;
+          const offsetX = (e.obj as { x?: number }).x ?? 0;
+          const newX = offsetX + (cursor - e.bounds.left);
+          moves.push({ layerId: e.layerId, kfIndex: e.kfIndex, objId: e.obj.id, newX, newY: (e.obj as { y?: number }).y ?? 0 });
+          cursor += w + gap;
+        }
+      } else if (direction === 'space evenly vertically') {
+        const sorted = [...entries].sort((a, b) => a.bounds.top - b.bounds.top);
+        const firstTop = sorted[0].bounds.top;
+        const lastBottom = sorted[sorted.length - 1].bounds.bottom;
+        const totalObjHeights = sorted.reduce((sum, e) => sum + (e.bounds.bottom - e.bounds.top), 0);
+        const gap = (lastBottom - firstTop - totalObjHeights) / (sorted.length - 1);
+        let cursor = firstTop;
+        for (let i = 0; i < sorted.length; i++) {
+          const e = sorted[i];
+          const h = e.bounds.bottom - e.bounds.top;
+          const offsetY = (e.obj as { y?: number }).y ?? 0;
+          const newY = offsetY + (cursor - e.bounds.top);
+          moves.push({ layerId: e.layerId, kfIndex: e.kfIndex, objId: e.obj.id, newX: (e.obj as { x?: number }).x ?? 0, newY });
+          cursor += h + gap;
+        }
+      }
+
+      // Apply all position updates
+      for (const move of moves) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          move.layerId,
+          move.kfIndex,
+          move.objId,
+          { x: move.newX, y: move.newY }
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
     },
     match(_bWidth: boolean, _bHeight: boolean): void {
       console.warn('doc.match: not implemented');
