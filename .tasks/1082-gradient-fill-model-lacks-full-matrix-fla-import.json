@@ -1,0 +1,10 @@
+{
+  "id": "1082-gradient-fill-model-lacks-full-matrix-fla-import",
+  "title": "Gradient fill model lacks full matrix \u2014 FLA import loses gradient scale/position/center",
+  "description": "toFill() in flash8-import.ts converts the gradient's FLA matrix to just an angle (Math.atan2(f.matrix.b, f.matrix.a)), discarding scale, translation, and aspect ratio. LinearGradientFill and RadialGradientFill model types only hold angle \u2014 there is no matrix field. When re-encoded to SWF via encodeDefineShape4, the gradient is auto-fit to the shape's bounding box. Gradients that were manually offset, scaled to a fraction of the shape, or skewed in the original FLA will render differently after import+publish. For radial gradients, the center position (tx/ty) is also lost \u2014 a radial gradient centered off the bounding box center appears centered on the box. Fix: (a) add matrix?: { a,b,c,d,tx,ty } to LinearGradientFill/RadialGradientFill in packages/core/src/engine/types.ts; (b) populate from FLA import in flash8-import.ts; (c) use in SWF encoder gradient matrix calculation in shapes.ts instead of auto-fitting to bounding box.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-11T02:49:20Z",
+  "updated_at": "2026-06-11T02:49:20Z"
+}

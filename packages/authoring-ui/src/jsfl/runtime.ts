@@ -805,21 +805,27 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
       state.currentLayerIndex = layerIndex;
     },
     insertFrames(numFrames: number, startFrameIndex?: number) {
-      const layerId = getActiveLayerId();
-      if (!layerId) return;
+      const scene = getScene();
+      if (!scene) return;
       const fi = startFrameIndex ?? state.frameIndex;
-      for (let i = 0; i < numFrames; i++) {
-        mutateTimeline((tl) => insertFrame(tl, layerId, fi));
+      const layerIds = scene.timeline.layers.map((l) => l.id);
+      for (const layerId of layerIds) {
+        for (let i = 0; i < numFrames; i++) {
+          mutateTimeline((tl) => insertFrame(tl, layerId, fi));
+        }
       }
     },
     removeFrames(numFrames: number, startFrameIndex?: number, endFrame?: number) {
-      const layerId = getActiveLayerId();
-      if (!layerId) return;
+      const scene = getScene();
+      if (!scene) return;
       const fi = startFrameIndex ?? state.frameIndex;
       // If endFrame is provided, compute numFrames from the range
       const count = endFrame !== undefined ? endFrame - fi + 1 : numFrames;
-      for (let i = 0; i < count; i++) {
-        mutateTimeline((tl) => removeFrame(tl, layerId, fi));
+      const layerIds = scene.timeline.layers.map((l) => l.id);
+      for (const layerId of layerIds) {
+        for (let i = 0; i < count; i++) {
+          mutateTimeline((tl) => removeFrame(tl, layerId, fi));
+        }
       }
     },
     insertKeyframe(frameIndex?: number) {
@@ -1009,20 +1015,22 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
     },
     copyFrames(startFrame: number, endFrame?: number) {
       const end = endFrame ?? startFrame;
+      const layerId = getActiveLayerId();
       state.frameClipboard = copyFramesDoc(
         state.doc,
         state.sceneIndex,
-        [],
+        layerId ? [layerId] : [],
         startFrame,
         end
       );
     },
     cutFrames(startFrame: number, endFrame?: number) {
       const end = endFrame ?? startFrame;
+      const layerId = getActiveLayerId();
       const { newDoc, clipboard } = cutFramesDoc(
         state.doc,
         state.sceneIndex,
-        [],
+        layerId ? [layerId] : [],
         startFrame,
         end
       );
