@@ -2180,7 +2180,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   x,
                   y,
                   displayObj.filters!,
-                  objTransform
+                  objTransform,
+                  undefined,
+                  undefined,
+                  true   // move = true
                 );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else if (displayObj.type === "shape" && displayObj.visible === false) {
@@ -2334,6 +2337,36 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     true  // move = true
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
+                } else if (hasEnabledFilters(displayObj.filters)) {
+                  // Filters-only (no blend mode): PlaceObject3 Move with filter list.
+                  const moveTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                    ? { scaleX, scaleY, rotation, skewX, skewY }
+                    : undefined;
+                  let cxformForFilters = displayObj.colorEffect
+                    ? colorEffectToCXForm(displayObj.colorEffect) ?? undefined
+                    : undefined;
+                  if (!cxformForFilters && displayObj.visible === false) {
+                    cxformForFilters = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
+                  if (!cxformForFilters && displayObj.alpha !== undefined && displayObj.alpha !== 1) {
+                    cxformForFilters = {
+                      redMult: 256, greenMult: 256, blueMult: 256,
+                      alphaMult: Math.round(Math.max(0, Math.min(1, displayObj.alpha)) * 256),
+                      redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0,
+                    };
+                  }
+                  const filtersPlaceBody = encodePlaceObject3WithFilters(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    displayObj.filters!,
+                    moveTransform,
+                    displayObj.instanceName ?? undefined,
+                    undefined,
+                    true   // move = true
+                  );
+                  writer.writeTag(Tag.PlaceObject3, filtersPlaceBody);
                 } else {
                   // Check for color effect (CXFormWithAlpha).
                   // Also synthesize a zero-alpha CXForm when visible===false, or from
