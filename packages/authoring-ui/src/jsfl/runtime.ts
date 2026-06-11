@@ -68,6 +68,7 @@ import type {
   DisplayObject,
   SymbolInstance,
   FrameClipboard,
+  Symbol as FlashSymbol,
 } from "@flash/core";
 
 // ---------------------------------------------------------------------------
@@ -297,10 +298,85 @@ function makeElementProxy(
         const t = current as { instanceName?: string };
         return t.instanceName ?? "";
       }
+      // symbolType: look up the library item and map symbolType to Flash string
+      if (prop === "symbolType") {
+        if (current.type === "instance") {
+          const inst = current as SymbolInstance;
+          const sym = state.doc.library.items.find(
+            (i) => i.itemType === "symbol" && i.id === inst.symbolId
+          ) as FlashSymbol | undefined;
+          if (sym) {
+            if (sym.symbolType === "movieclip") return "movie clip";
+            if (sym.symbolType === "button") return "button";
+            return "graphic";
+          }
+        }
+        return "graphic";
+      }
+      // loop: map loopMode to Flash string
+      if (prop === "loop") {
+        if (current.type === "instance") {
+          const inst = current as SymbolInstance;
+          const mode = inst.loopMode ?? "loop";
+          if (mode === "loop") return "loop";
+          if (mode === "play-once") return "play once";
+          if (mode === "single-frame") return "single frame";
+          return "loop";
+        }
+        return "loop";
+      }
+      // firstFrame: return the firstFrame value (0-based)
+      if (prop === "firstFrame") {
+        if (current.type === "instance") {
+          const inst = current as SymbolInstance;
+          return inst.firstFrame ?? 0;
+        }
+        return 0;
+      }
       return Reflect.get(current, prop, receiver);
     },
     set(_target, prop, value) {
       if (typeof prop !== "string") return true;
+      // Handle loop setter: map Flash string back to model loopMode
+      if (prop === "loop") {
+        let loopMode: SymbolInstance["loopMode"] = "loop";
+        if (value === "play once") loopMode = "play-once";
+        else if (value === "single frame") loopMode = "single-frame";
+        else loopMode = "loop";
+        const scene = state.doc.scenes[state.sceneIndex];
+        if (scene) {
+          const newTimeline = updateDisplayObject(
+            scene.timeline,
+            layerId,
+            keyframeIndex,
+            obj.id,
+            { loopMode } as Parameters<typeof updateDisplayObject>[4]
+          );
+          const newScenes = state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          );
+          state.doc = { ...state.doc, scenes: newScenes };
+        }
+        return true;
+      }
+      // Handle firstFrame setter
+      if (prop === "firstFrame") {
+        const scene = state.doc.scenes[state.sceneIndex];
+        if (scene) {
+          const newTimeline = updateDisplayObject(
+            scene.timeline,
+            layerId,
+            keyframeIndex,
+            obj.id,
+            { firstFrame: value as number } as Parameters<typeof updateDisplayObject>[4]
+          );
+          const newScenes = state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          );
+          state.doc = { ...state.doc, scenes: newScenes };
+        }
+        return true;
+      }
       // Map JSFL property name to model field name
       const modelProp = JSFL_PROP_MAP[prop] ?? prop;
       // Build the update object
@@ -1393,6 +1469,11 @@ export interface JsflDocument {
    */
   setInstanceTint(r: number, g: number, b: number, strength: number): void;
   /**
+   * Set an alpha color effect on all selected display objects.
+   * alpha: 0–100 (percentage).
+   */
+  setInstanceAlpha(alpha: number): void;
+  /**
    * Set a text attribute on all selected text display objects.
    * Common attributes: fontFamily, fontSize, bold, italic, underline, color,
    * align, leading, letterSpacing, wordWrap, multiline.
@@ -2387,6 +2468,41 @@ function makeDocumentProxy(
           entry.kfIndex,
           entry.objId,
           { colorEffect: { type: "tint", tintColor, tintAmount: strength } } as Parameters<typeof updateDisplayObject>[4]
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    setInstanceAlpha(alpha: number): void {
+      if (state.selectedIds.length === 0) return;
+      const toSet = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type Entry = { layerId: string; kfIndex: number; objId: string };
+      const entries: Entry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((a, b) => b.index - a.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toSet.has(obj.id)) continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, objId: obj.id });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { colorEffect: { type: "alpha", alpha } } as Parameters<typeof updateDisplayObject>[4]
         );
         state.doc = {
           ...state.doc,
