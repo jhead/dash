@@ -1059,8 +1059,8 @@ class Compiler {
       // Push case test value
       this.compileExpr(c.test!);
 
-      // ActionEquals2 — strict equality
-      this.emit(0x49);
+      // ActionStrictEquals (0x66) — strict equality (JS switch uses ===)
+      this.emit(0x66);
 
       // ActionNot — invert so ActionIf jumps when NOT equal
       this.emit(0x12); // ActionNot

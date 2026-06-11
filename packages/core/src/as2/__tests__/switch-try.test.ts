@@ -70,8 +70,8 @@ describe("AS2 switch/case", () => {
     // ActionDuplicate (0x4c) should appear — one per non-default case
     expect(countByte(bytes, 0x4c)).toBeGreaterThanOrEqual(2);
 
-    // ActionEquals2 (0x49) should appear — one per non-default case
-    expect(countByte(bytes, 0x49)).toBeGreaterThanOrEqual(2);
+    // ActionStrictEquals (0x66) should appear — one per non-default case
+    expect(countByte(bytes, 0x66)).toBeGreaterThanOrEqual(2);
 
     // ActionNot (0x12) should appear (at least one per case for skip logic)
     expect(countByte(bytes, 0x12)).toBeGreaterThanOrEqual(2);

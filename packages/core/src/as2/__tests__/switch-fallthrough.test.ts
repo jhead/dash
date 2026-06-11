@@ -2,7 +2,7 @@
  * Tests for AS2 switch fall-through AVM1 stack behavior (task 0996).
  *
  * Problem: when a case body has no `break`, the old compiler fell through into
- * the next case's COMPARISON block (ActionDuplicate / push / ActionEquals2).
+ * the next case's COMPARISON block (ActionDuplicate / push / ActionStrictEquals).
  * But the discriminant was already popped by the matched case's ActionPop, so
  * the equality check ran on garbage, corrupting the AVM1 stack.
  *
@@ -11,8 +11,8 @@
  * the default/end when it is the last value-case.
  *
  * Key AVM1 opcodes used in switch:
- *   ActionDuplicate  0x4c  — copy discriminant before each comparison
- *   ActionEquals2    0x49  — strict equality
+ *   ActionDuplicate    0x4c  — copy discriminant before each comparison
+ *   ActionStrictEquals 0x66  — strict equality (JS switch uses ===)
  *   ActionNot        0x12  — invert for skip-when-not-equal
  *   ActionIf         0x9d  — conditional jump (pops top)
  *   ActionPop        0x17  — discard discriminant when entering a body
@@ -154,9 +154,9 @@ describe("AS2 switch fall-through — AVM1 stack correctness (task 0996)", () =>
     );
   });
 
-  // ---- ActionEquals2 count — comparison blocks must not be re-entered -----
+  // ---- ActionStrictEquals count — comparison blocks must not be re-entered -----
 
-  it("two-case fall-through still emits two ActionEquals2 (both comparisons present)", () => {
+  it("two-case fall-through still emits two ActionStrictEquals (both comparisons present)", () => {
     // Even though case 1 falls through, the comparison for case 2 must still
     // exist on the non-matching path (when x !== 1, we need to check x === 2).
     const bytes = compileAS2(`
@@ -165,11 +165,11 @@ describe("AS2 switch fall-through — AVM1 stack correctness (task 0996)", () =>
         case 2: var b = 2; break;
       }
     `);
-    expect(countByte(bytes, 0x49)).toBeGreaterThanOrEqual(2); // ActionEquals2 per case
+    expect(countByte(bytes, 0x66)).toBeGreaterThanOrEqual(2); // ActionStrictEquals per case
     expect(countByte(bytes, 0x4c)).toBeGreaterThanOrEqual(2); // ActionDuplicate per case
   });
 
-  it("three-case all-fall-through emits three ActionEquals2 (all comparisons present)", () => {
+  it("three-case all-fall-through emits three ActionStrictEquals (all comparisons present)", () => {
     const bytes = compileAS2(`
       switch (x) {
         case 1: var a = 1;
@@ -177,7 +177,7 @@ describe("AS2 switch fall-through — AVM1 stack correctness (task 0996)", () =>
         case 3: var c = 3;
       }
     `);
-    expect(countByte(bytes, 0x49)).toBeGreaterThanOrEqual(3);
+    expect(countByte(bytes, 0x66)).toBeGreaterThanOrEqual(3);
     expect(countByte(bytes, 0x4c)).toBeGreaterThanOrEqual(3);
   });
 

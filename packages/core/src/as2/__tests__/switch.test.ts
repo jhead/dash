@@ -2,10 +2,10 @@
  * Tests for AS2 switch/case/default statement compilation.
  *
  * Verifies that switch statements compile to valid AVM1 bytecode using an
- * if-else chain strategy: each case uses ActionDuplicate + ActionEquals2 +
+ * if-else chain strategy: each case uses ActionDuplicate + ActionStrictEquals +
  * ActionNot + ActionIf to skip bodies that don't match the discriminant.
  *
- * ActionEquals2 opcode = 0x49
+ * ActionStrictEquals opcode = 0x66  (JS switch uses ===)
  * ActionDuplicate opcode = 0x4c
  * ActionNot opcode = 0x12
  * ActionIf opcode = 0x9d
@@ -65,7 +65,7 @@ describe("AS2 switch statement compilation", () => {
     ).toBe(true);
   });
 
-  it("single case matching — produces ActionEquals2 (0x49) opcode", () => {
+  it("single case matching — produces ActionStrictEquals (0x66) opcode", () => {
     const bytes = compileAS2(`
       switch (x) {
         case 1:
@@ -73,8 +73,8 @@ describe("AS2 switch statement compilation", () => {
           break;
       }
     `);
-    // At least one ActionEquals2 should appear for the single case comparison
-    expect(bytes).toContain(0x49); // ActionEquals2
+    // At least one ActionStrictEquals should appear for the single case comparison
+    expect(bytes).toContain(0x66); // ActionStrictEquals
   });
 
   it("single case matching — produces ActionDuplicate for discriminant copy", () => {
@@ -250,13 +250,13 @@ describe("AS2 switch statement compilation", () => {
     `);
     expect(containsString(bytes, "inner")).toBe(true);
     expect(containsString(bytes, "outer")).toBe(true);
-    // Nested switches each produce their own ActionEquals2
-    expect(countByte(bytes, 0x49)).toBeGreaterThanOrEqual(2);
+    // Nested switches each produce their own ActionStrictEquals
+    expect(countByte(bytes, 0x66)).toBeGreaterThanOrEqual(2);
   });
 
   // ---- Structural opcode counts -------------------------------------------
 
-  it("two-case switch produces two ActionEquals2 and two ActionDuplicate", () => {
+  it("two-case switch produces two ActionStrictEquals and two ActionDuplicate", () => {
     const bytes = compileAS2(`
       switch (x) {
         case 1:
@@ -267,7 +267,7 @@ describe("AS2 switch statement compilation", () => {
           break;
       }
     `);
-    expect(countByte(bytes, 0x49)).toBeGreaterThanOrEqual(2); // ActionEquals2 per case
+    expect(countByte(bytes, 0x66)).toBeGreaterThanOrEqual(2); // ActionStrictEquals per case
     expect(countByte(bytes, 0x4c)).toBeGreaterThanOrEqual(2); // ActionDuplicate per case
     expect(countByte(bytes, 0x9d)).toBeGreaterThanOrEqual(2); // ActionIf per case skip
   });
@@ -288,9 +288,9 @@ describe("AS2 switch statement compilation", () => {
           var b = 2;
       }
     `);
-    // switch with only default has 0 ActionEquals2; one non-default case has 1
-    expect(countByte(noCasesBytes, 0x49)).toBe(0);
-    expect(countByte(oneCaseBytes, 0x49)).toBe(1);
+    // switch with only default has 0 ActionStrictEquals; one non-default case has 1
+    expect(countByte(noCasesBytes, 0x66)).toBe(0);
+    expect(countByte(oneCaseBytes, 0x66)).toBe(1);
   });
 
   // ---- Switch over various discriminant types ------------------------------

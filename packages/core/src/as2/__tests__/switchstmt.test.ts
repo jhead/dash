@@ -96,8 +96,8 @@ describe("AS2 switch statement", () => {
   });
 
   // Stack-balance fix: each case's skip-jump must go to the NEXT case, not straight
-  // to the default/end.  A 3-case switch must emit exactly 3 ActionEquals2 comparisons.
-  it("3-case switch emits 3 ActionEquals2 opcodes (one per case, not collapsed)", () => {
+  // to the default/end.  A 3-case switch must emit exactly 3 ActionStrictEquals comparisons.
+  it("3-case switch emits 3 ActionStrictEquals opcodes (one per case, not collapsed)", () => {
     function countByte(bytes: Uint8Array, byte: number): number {
       let n = 0; for (const b of bytes) if (b === byte) n++; return n;
     }
@@ -108,12 +108,12 @@ describe("AS2 switch statement", () => {
         case 3: trace("three"); break;
       }
     `);
-    // Each of the 3 cases must produce its own ActionEquals2 comparison.
+    // Each of the 3 cases must produce its own ActionStrictEquals comparison.
     // With the old bug (all skips went to defaultStart), cases 2+ were dead code
     // but still emitted bytes — so the count was already 3.  The important check
     // is that 3 ActionDuplicate + 3 ActionIf opcodes are also present, confirming
     // that all 3 comparisons are part of a chained skip sequence.
-    expect(countByte(bytes, 0x49)).toBeGreaterThanOrEqual(3); // ActionEquals2
+    expect(countByte(bytes, 0x66)).toBeGreaterThanOrEqual(3); // ActionStrictEquals
     expect(countByte(bytes, 0x4c)).toBeGreaterThanOrEqual(3); // ActionDuplicate
     expect(countByte(bytes, 0x9d)).toBeGreaterThanOrEqual(3); // ActionIf
     // Exactly one ActionPop per case match path + one at default/end = N+1 pops minimum
