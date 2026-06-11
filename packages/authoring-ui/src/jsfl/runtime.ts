@@ -58,6 +58,7 @@ import {
   pasteFramesDoc,
   cutFramesDoc,
   updateDisplayObject,
+  removeDisplayObject,
   setSymbolLinkage,
   addScene as coreAddScene,
   removeScene as coreRemoveScene,
@@ -1875,11 +1876,13 @@ export interface JsflDocument {
    */
   setTransformationPoint(point: { x: number; y: number }): void;
   /**
-   * Align selected objects.  Not implemented; no-op stub.
+   * Align selected objects to each other or to the stage.
+   * alignModes: 'left edge', 'right edge', 'top edge', 'bottom edge',
+   * 'center horizontal', 'center vertical', 'distribute widths', 'distribute heights'.
    */
   align(alignMode: string, bUseDocumentBounds?: boolean): void;
   /**
-   * Space selected objects evenly.  Not implemented; no-op stub.
+   * Space selected objects evenly.
    */
   space(direction: string): void;
   /**
@@ -1887,9 +1890,16 @@ export interface JsflDocument {
    */
   match(bWidth: boolean, bHeight: boolean): void;
   /**
-   * Apply a 2×2 transform matrix to the current selection.  Not implemented; no-op stub.
+   * Apply a 2×2 transform matrix to the current selection.
+   * The matrix [a,b,c,d] is applied to each selected object's position and scale.
    */
   transformSelection(a: number, b: number, c: number, d: number): void;
+  /**
+   * Distribute each selected object onto its own new layer.
+   * The first selected object stays on its original layer; each subsequent object
+   * is moved to a new layer inserted above it.
+   */
+  distributeToLayers(): void;
   /**
    * Move all selected display objects by (delta.x, delta.y) pixels.
    * Mutates x/y on each selected object in the current frame.
@@ -2996,8 +3006,143 @@ function makeDocumentProxy(
     match(_bWidth: boolean, _bHeight: boolean): void {
       console.warn('doc.match: not implemented');
     },
-    transformSelection(_a: number, _b: number, _c: number, _d: number): void {
-      console.warn('doc.transformSelection: not implemented');
+    transformSelection(a: number, b: number, c: number, d: number): void {
+      // Apply 2×2 matrix [[a,b],[c,d]] to each selected object's x/y/scaleX/scaleY/rotation.
+      // The matrix is applied to the object's current position vector (x, y) and
+      // decomposed into scaleX/scaleY/rotation updates.
+      if (state.selectedIds.length === 0) return;
+      const toTransform = new Set(state.selectedIds);
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+      type TransformEntry = {
+        layerId: string; kfIndex: number; objId: string;
+        newX: number; newY: number; newScaleX: number; newScaleY: number; newRotation: number;
+      };
+      const entries: TransformEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((fa, fb) => fb.index - fa.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!toTransform.has(obj.id)) continue;
+          const anyObj = obj as { x?: number; y?: number; scaleX?: number; scaleY?: number; rotation?: number };
+          const ox = anyObj.x ?? 0;
+          const oy = anyObj.y ?? 0;
+          const sx = anyObj.scaleX ?? 1;
+          const sy = anyObj.scaleY ?? 1;
+          const rot = anyObj.rotation ?? 0;
+          // Apply position transform: new position = matrix * [ox, oy]
+          const newX = a * ox + b * oy;
+          const newY = c * ox + d * oy;
+          // Decompose matrix to get scale and rotation adjustments.
+          // Combined scale factors from the matrix columns.
+          const matScaleX = Math.sqrt(a * a + c * c);
+          const matScaleY = Math.sqrt(b * b + d * d);
+          const matRotation = Math.atan2(c, a) * (180 / Math.PI);
+          entries.push({
+            layerId: layer.id,
+            kfIndex: kf.index,
+            objId: obj.id,
+            newX,
+            newY,
+            newScaleX: sx * matScaleX,
+            newScaleY: sy * matScaleY,
+            newRotation: rot + matRotation,
+          });
+        }
+      }
+      for (const entry of entries) {
+        const currentScene = state.doc.scenes[state.sceneIndex];
+        if (!currentScene) continue;
+        const newTimeline = updateDisplayObject(
+          currentScene.timeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.objId,
+          { x: entry.newX, y: entry.newY, scaleX: entry.newScaleX, scaleY: entry.newScaleY, rotation: entry.newRotation }
+        );
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, i) =>
+            i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
+    },
+    distributeToLayers(): void {
+      // Move each selected object (beyond the first) to its own new layer.
+      if (state.selectedIds.length < 2) return;
+      const scene = state.doc.scenes[state.sceneIndex];
+      if (!scene) return;
+
+      // Collect selected objects with their source location, preserving selection order.
+      type ObjEntry = {
+        layerId: string;
+        kfIndex: number;
+        obj: DisplayObject;
+      };
+      const selected = new Set(state.selectedIds);
+      // Build in document order (layer order, then displayObjects order within each keyframe).
+      const entries: ObjEntry[] = [];
+      for (const layer of scene.timeline.layers) {
+        const kf = [...layer.frames]
+          .filter((f) => f.isKeyframe && f.index <= state.frameIndex)
+          .sort((fa, fb) => fb.index - fa.index)[0];
+        if (!kf) continue;
+        for (const obj of kf.displayObjects) {
+          if (!selected.has(obj.id)) continue;
+          entries.push({ layerId: layer.id, kfIndex: kf.index, obj });
+        }
+      }
+      if (entries.length < 2) return;
+
+      // The first entry stays on its original layer.
+      // For each subsequent entry: create a new layer, add the object's keyframe there,
+      // and remove it from its original layer.
+      let insertIdx = state.currentLayerIndex; // insert new layers above the current layer
+
+      for (let i = 1; i < entries.length; i++) {
+        const entry = entries[i]!;
+        // Generate a layer name based on the object id to ensure uniqueness.
+        const newLayerName = `Layer ${entry.obj.id.slice(0, 8)}`;
+
+        // addLayer prepends at index 0; we'll keep it there (topmost).
+        let newTimeline: TimelineModel = addLayer(
+          state.doc.scenes[state.sceneIndex]!.timeline,
+          newLayerName
+        );
+        // Move new layer to just above the current layer.
+        const newLayerId = newTimeline.layers[0]!.id;
+        if (insertIdx > 0) {
+          newTimeline = coreMoveLayer(newTimeline, newLayerId, insertIdx);
+        }
+        insertIdx++; // subsequent new layers go further down
+
+        // Remove the object from its original layer (using the updated timeline).
+        newTimeline = removeDisplayObject(
+          newTimeline,
+          entry.layerId,
+          entry.kfIndex,
+          entry.obj.id
+        );
+
+        // Add the object to the new layer's keyframe (frame 0 = the default keyframe).
+        newTimeline = addDisplayObject(
+          newTimeline,
+          newLayerId,
+          0,
+          entry.obj
+        );
+
+        // Commit the intermediate state so each iteration sees the latest timeline.
+        state.doc = {
+          ...state.doc,
+          scenes: state.doc.scenes.map((s, idx) =>
+            idx === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+          ),
+        };
+      }
     },
     moveSelectionBy(delta: { x: number; y: number }): void {
       if (state.selectedIds.length === 0) return;
