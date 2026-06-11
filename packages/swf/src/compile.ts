@@ -1794,7 +1794,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     depth,
                     x,
                     y,
-                    cxform
+                    cxform,
+                    undefined,
+                    false,
+                    textName && textName.length > 0 ? textName : undefined
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
@@ -2165,6 +2168,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
               if (cxform !== null) {
                 // Move + HasMatrix + HasColorTransform (no HasCharacter unless replacing)
+                const textMoveName = displayObj.instanceName;
                 const placeBody = encodePlaceObject2WithCXForm(
                   charId,
                   depth,
@@ -2172,7 +2176,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   y,
                   cxform,
                   undefined,
-                  true  // move = true
+                  true,  // move = true
+                  textMoveName && textMoveName.length > 0 ? textMoveName : undefined
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
               } else {
