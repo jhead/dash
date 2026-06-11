@@ -1659,7 +1659,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 if (frameIdx >= spanInfo.startFrame && frameIdx <= spanInfo.endFrame) {
                   const spanLen = spanInfo.endFrame - spanInfo.startFrame + 1;
                   const frameOffset = frameIdx - spanInfo.startFrame;
-                  const linearT = spanLen <= 1 ? 0 : frameOffset / spanLen;
+                  const linearT = spanLen <= 1 ? 0 : frameOffset / (spanLen - 1);
                   const easedT = applyEase(linearT, spanInfo.ease, spanInfo.easeCurve);
                   morphRatio = Math.round(easedT * 65535);
                   break;
