@@ -484,12 +484,24 @@ export function encodeDefineSprite(
       // Bug 1103 fix: compute colorEffectKey for change detection
       const thisColorEffectKey = (() => {
         if (
-          (displayObj.type === "instance" || displayObj.type === "text" || displayObj.type === "bitmap") &&
+          (displayObj.type === "instance" || displayObj.type === "shape" ||
+           displayObj.type === "text" || displayObj.type === "bitmap") &&
           (displayObj as { visible?: boolean }).visible === false
         ) {
           return "visible:false";
         }
-        if (displayObj.type !== "instance" && displayObj.type !== "text" && displayObj.type !== "bitmap") return null;
+        if (displayObj.type !== "instance" && displayObj.type !== "text" && displayObj.type !== "bitmap" && displayObj.type !== "shape") return null;
+        // Track standalone alpha and blendMode for shape change detection
+        if (displayObj.type === "shape") {
+          const shp = displayObj as import("@flash/core").ShapeDisplayObject;
+          if (shp.blendMode && shp.blendMode !== "normal") {
+            return `blend:${shp.blendMode};alpha:${shp.alpha ?? 1}`;
+          }
+          if (shp.alpha !== undefined && shp.alpha !== 1) {
+            return `alpha:${shp.alpha}`;
+          }
+          return null;
+        }
         const ce = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect;
         if (ce && ce.type !== "none") return JSON.stringify(ce);
         return null;
