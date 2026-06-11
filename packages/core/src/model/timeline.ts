@@ -28,6 +28,7 @@ type DisplayObjectUpdates = Partial<
       'difference' | 'add' | 'subtract' | 'invert' | 'alpha' | 'erase' | 'overlay' | 'hardlight';
     loopMode: "loop" | "play-once" | "single-frame";
     firstFrame: number;
+    cacheAsBitmap: boolean;
   }
 >;
 

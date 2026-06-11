@@ -593,12 +593,13 @@ function createMcpServerForRequest(): McpServer {
     {
       title: "Update Stage Object",
       description:
-        "Update properties of a display object (x, y, scaleX, scaleY, rotation, alpha, text, etc.). Returns ok and rev.",
+        "Update properties of a display object (x, y, scaleX, scaleY, rotation, alpha, text, blendMode, colorEffect, cacheAsBitmap, etc.). Returns ok and rev.",
       inputSchema: z.object({
         id: z.string().describe("Object id"),
         layerId: z.string().optional(),
         frameIndex: z.number().int().nonnegative().optional(),
-        updates: z.record(z.string(), z.unknown()).describe("Property updates to apply"),
+        updates: z.record(z.string(), z.unknown()).describe("Property updates to apply (may include cacheAsBitmap: boolean)"),
+        cacheAsBitmap: z.boolean().optional().describe("Enable bitmap caching for the display object"),
       }),
     },
     async (params) => callTool("stage_update", params as Record<string, unknown>)

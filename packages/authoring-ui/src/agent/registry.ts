@@ -994,19 +994,21 @@ const handlers: Record<string, AnyHandler> = {
     blendMode?: string;
     loopMode?: string;
     firstFrame?: number;
+    cacheAsBitmap?: boolean;
   }): OkRevResult {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
     const doc = cb.getDoc();
     // Merge top-level shorthand params into the updates object so callers can
-    // pass colorEffect/blendMode/loopMode/firstFrame directly without nesting
-    // them under an `updates` key.
+    // pass colorEffect/blendMode/loopMode/firstFrame/cacheAsBitmap directly
+    // without nesting them under an `updates` key.
     const merged: Record<string, unknown> = { ...(params.updates ?? {}) };
     if (params.colorEffect !== undefined) merged.colorEffect = params.colorEffect;
     if (params.blendMode !== undefined) merged.blendMode = params.blendMode;
     if (params.loopMode !== undefined) merged.loopMode = params.loopMode;
     if (params.firstFrame !== undefined) merged.firstFrame = params.firstFrame;
+    if (params.cacheAsBitmap !== undefined) merged.cacheAsBitmap = params.cacheAsBitmap;
     const newDoc = withActiveTimeline(cb, doc, (t) =>
       updateDisplayObject(t, layerId, frameIndex, params.id, merged as Parameters<typeof updateDisplayObject>[4])
     );
