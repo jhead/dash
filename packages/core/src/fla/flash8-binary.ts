@@ -493,6 +493,13 @@ export interface Fla8Layer {
   readonly outlineMode: boolean;
   readonly outlineColor: Fla8Color | null;
   readonly frames: Fla8Frame[];
+  /**
+   * Non-zero CArchive object-reference index of the parent layer in the binary
+   * stream (read from the first 2 bytes of the CPicLayer trailer).
+   * A non-zero value indicates this layer is a child of a mask/folder layer.
+   * Zero means no parent (top-level layer).
+   */
+  readonly parentLayerRef: number;
 }
 
 export interface Fla8Timeline {
@@ -1230,6 +1237,15 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
   // version-dependent; rather than decoding it, scan forward (bounded) for
   // the nearest continuation: another CPicLayer backref tag, a NEWCLASS tag,
   // or the page object-tail signature.
+  //
+  // The first 2 bytes of the trailer encode a CArchive object-reference index
+  // for the parent layer (0 = no parent).  We peek at them without advancing
+  // r.pos so that repositionAfterLayerTrailer can still scan from the same
+  // position it always did.
+  const parentLayerRef =
+    r.pos + 1 < r.buf.length
+      ? (r.buf[r.pos]! | (r.buf[r.pos + 1]! << 8))
+      : 0;
   repositionAfterLayerTrailer(ctx);
 
   const frames: Fla8Frame[] = [];
@@ -1238,7 +1254,7 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
   }
   return {
     cls: "CPicLayer",
-    layer: { name, layerType, hidden, locked, outlineMode, outlineColor, frames },
+    layer: { name, layerType, hidden, locked, outlineMode, outlineColor, frames, parentLayerRef },
   };
 }
 

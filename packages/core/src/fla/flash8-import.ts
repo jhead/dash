@@ -1132,6 +1132,56 @@ function convertLayer(
   });
 }
 
+/**
+ * Resolve mask→masked hierarchy in the binary layer list (bottom-to-top order).
+ *
+ * In the Flash 8 binary format, layers that are masked children of a mask layer
+ * have `layerType=0` (normal) but carry a non-zero `parentLayerRef` in their
+ * CPicLayer trailer — a CArchive object-reference pointing to the mask parent.
+ *
+ * This function scans the binary (bottom-to-top) layer array: after finding a
+ * mask layer (type=4), consecutive layers with the same non-zero parentLayerRef
+ * are promoted to layerType=5 (masked).
+ *
+ * The mask group ends when a layer has parentLayerRef=0 (no parent / different
+ * group) or a different parentLayerRef value (belongs to a nested/different mask).
+ */
+function resolveMaskedLayers(binaryLayers: readonly Fla8Layer[]): Fla8Layer[] {
+  const result: Fla8Layer[] = [...binaryLayers];
+  // Whether we are currently tracking a mask group (just passed a type=4 layer)
+  let inMaskGroup = false;
+  // The parentLayerRef value shared by all children of the current mask
+  let maskRef = 0;
+
+  for (let i = 0; i < result.length; i++) {
+    const layer = result[i]!;
+    if (layer.layerType === 4) {
+      // Just encountered a mask layer — activate tracking for its children.
+      inMaskGroup = true;
+      maskRef = 0; // will be set from the first child's parentLayerRef
+    } else if (inMaskGroup && layer.parentLayerRef !== 0) {
+      // Inside a mask group: this layer has a parent reference.
+      if (maskRef === 0) {
+        // First child: record the shared parentLayerRef for this mask group.
+        maskRef = layer.parentLayerRef;
+      }
+      if (layer.parentLayerRef === maskRef && layer.layerType === 0) {
+        // Promote to masked type.
+        result[i] = { ...layer, layerType: 5 };
+      } else if (layer.parentLayerRef !== maskRef) {
+        // Different parent ref → exit this mask group.
+        inMaskGroup = false;
+        maskRef = 0;
+      }
+    } else {
+      // parentLayerRef=0 or not in a mask group → exit mask group tracking.
+      inMaskGroup = false;
+      maskRef = 0;
+    }
+  }
+  return result;
+}
+
 function convertTimeline(
   t: Fla8Timeline,
   symbolIdByIndex: Map<number, string>,
@@ -1145,7 +1195,20 @@ function convertTimeline(
   // The Flash 8 clone model convention (and compile.ts) expect layers stored top-to-bottom
   // (li=0 = topmost/frontmost, li=n-1 = bottommost/background).
   // Reverse the array so the frontmost layer ends up at index 0.
-  const reversedBinary = [...t.layers].reverse();
+
+  // Pre-process: resolve mask→masked hierarchy from parentLayerRef.
+  //
+  // In the binary stream, masked layers have layerType=0 (normal) but carry a
+  // non-zero parentLayerRef in their CPicLayer trailer — a CArchive object-
+  // reference index pointing to their mask parent.  Layers with parentLayerRef=0
+  // are top-level (no mask parent).
+  //
+  // We detect masked children by scanning the binary (bottom-to-top) layer list:
+  // after a mask layer (type=4), consecutive layers with the same non-zero
+  // parentLayerRef are its masked children → promote their layerType to 5.
+  const resolvedLayers: Fla8Layer[] = resolveMaskedLayers(t.layers);
+
+  const reversedBinary = [...resolvedLayers].reverse();
   const layers = reversedBinary.map((l, i) =>
     convertLayer(l, i, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex, videoIdByIndex, videoSizeByIndex),
   );

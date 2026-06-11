@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { tryLoadRealFla } from "../ole.js";
+import type { Layer } from "../../model/types.js";
 
 describe("Magnet.fla inspection", () => {
   it("has 6 scenes with expected names", () => {
@@ -32,6 +33,36 @@ describe("Magnet.fla inspection", () => {
       }
     }
     expect(menuFound).toBe(true);
+  });
+
+  it("scene AA (scene 0) has Ball/Walls/Magnets as masked under Layer 5 mask", () => {
+    const bytes = new Uint8Array(readFileSync("/Users/jhead/dev/flash/packages/core/fixtures/Magnet.fla"));
+    const doc = tryLoadRealFla(bytes);
+    if (!doc) throw new Error("failed to load");
+
+    const sceneAA = doc.scenes[0];
+    expect(sceneAA.name).toBe("AA");
+
+    const layers = sceneAA.timeline.layers;
+    expect(layers.length).toBe(6);
+
+    // The mask group: Ball, Walls, Magnets should be type=masked
+    // Layer 5 should be type=mask and appear AFTER the masked layers
+    // (higher model index = lower in panel = rendered first in bottom-up pass).
+    const ball = layers.find((l: Layer) => l.name === "Ball");
+    const walls = layers.find((l: Layer) => l.name === "Walls");
+    const magnets = layers.find((l: Layer) => l.name === "Magnets");
+    const maskLayer = layers.find((l: Layer) => l.type === "mask");
+
+    expect(ball?.type).toBe("masked");
+    expect(walls?.type).toBe("masked");
+    expect(magnets?.type).toBe("masked");
+    expect(maskLayer?.name).toBe("Layer 5");
+
+    // Mask layer is below the masked layers in the panel (higher model index).
+    const maskIdx = layers.findIndex((l: Layer) => l.type === "mask");
+    const ballIdx = layers.findIndex((l: Layer) => l.name === "Ball");
+    expect(maskIdx).toBeGreaterThan(ballIdx);
   });
 
   it("ballmask symbol (Symbol 27) has gotoAndPlay navigation script at frame 9", () => {

@@ -1147,7 +1147,11 @@ export function Timeline({
           >
             {visibleLayers.map((layer) => {
               const idx = timeline.layers.indexOf(layer);
-              const depth = getLayerDepth(timeline, layer.id);
+              const folderDepth = getLayerDepth(timeline, layer.id);
+              // Masked layers are indented one level below their mask parent,
+              // similar to how guide/guided pairs display in Flash 8.
+              const maskDepth = layer.type === "masked" ? 1 : 0;
+              const depth = folderDepth + maskDepth;
               const indentPx = depth * 12;
               return (
               <div
