@@ -245,6 +245,7 @@ function writeGradientBevelFilter(bw: BitWriter, f: GradientBevelFilter): void {
   if (f.compositeSource) flags |= 1 << 5;
   if (f.inner) flags |= 1 << 7;
   if (f.knockout) flags |= 1 << 6;
+  if ((f.bevelType ?? "outer") === "full") flags |= 1 << 4; // ON_TOP
   flags |= (f.quality & 0x0f);
   bw.writeUI8(flags);
 }

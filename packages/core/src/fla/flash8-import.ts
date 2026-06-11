@@ -651,6 +651,7 @@ export function toFlashFilter(f: Fla8Filter): FlashFilter | null {
         inner: f.inner,
         knockout: f.knockout,
         compositeSource: f.compositeSource,
+        bevelType: f.onTop ? "full" : f.inner ? "inner" : "outer",
         enabled: true,
       };
     case "color-matrix":

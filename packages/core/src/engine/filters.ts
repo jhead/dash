@@ -141,6 +141,8 @@ export interface GradientBevelFilter {
   readonly inner: boolean;
   readonly knockout: boolean;
   readonly compositeSource: boolean;
+  /** Bevel placement. 'full' sets the ON_TOP bit in the SWF encoder. Default: 'outer'. */
+  readonly bevelType?: "inner" | "outer" | "full";
   readonly enabled: boolean;
 }
 
@@ -335,6 +337,7 @@ export function defaultGradientBevel(): GradientBevelFilter {
     inner: false,
     knockout: false,
     compositeSource: true,
+    bevelType: "outer",
     enabled: true,
   };
 }
