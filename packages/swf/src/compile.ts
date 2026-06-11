@@ -2012,7 +2012,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         displayObj.filters,
                         undefined,
                         undefined,
-                        instCXForm
+                        instCXForm,
+                        undefined,
+                        (displayObj as SymbolInstance).instanceName ?? undefined
                       )
                     : encodePlaceObject3WithFilters(
                         charId,
@@ -2021,7 +2023,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         y,
                         displayObj.filters!,
                         undefined,
-                        undefined,
+                        (displayObj as SymbolInstance).instanceName ?? undefined,
                         undefined
                       );
                   writer.writeTag(Tag.PlaceObject3, placeBody);

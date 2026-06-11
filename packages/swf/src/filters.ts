@@ -697,19 +697,22 @@ export function encodePlaceObject3WithBlendMode(
   },
   ratio?: number,
   cxform?: CXForm,
-  move?: boolean
+  move?: boolean,
+  name?: string
 ): Uint8Array {
   const bw = new BitWriter();
   const hasRatio = ratio !== undefined;
   const hasCXForm = cxform !== undefined;
   const isMove = !!move;
+  const hasName = !!(name && name.length > 0);
 
   const flags1 =
     (isMove ? (1 << 0) : 0) | // HasMove (for update across frames)
     (isMove ? 0 : (1 << 1)) | // HasCharacter (only on first placement)
     (1 << 2) | // HasMatrix
     (hasCXForm ? (1 << 3) : 0) | // HasColorTransform
-    (hasRatio ? (1 << 4) : 0); // HasRatio
+    (hasRatio ? (1 << 4) : 0) | // HasRatio
+    (hasName ? (1 << 5) : 0); // HasName
   bw.writeUI8(flags1);
 
   // Flags2:
@@ -772,9 +775,14 @@ export function encodePlaceObject3WithBlendMode(
     bw.writeBytes(encodeCXFormWithAlpha(cxform!));
   }
 
-  // Ratio: UI16 (written after CXFORM, before FilterList/BlendMode, per SWF spec field order)
+  // Ratio: UI16 (written after CXFORM, before Name/FilterList/BlendMode, per SWF spec field order)
   if (hasRatio) {
     bw.writeUI16LE(Math.max(0, Math.min(65535, Math.round(ratio!))));
+  }
+
+  // Name: null-terminated string (written after Ratio, before FILTERLIST, per SWF spec)
+  if (hasName) {
+    bw.writeString(name!);
   }
 
   // FILTERLIST (HasFilterList is set when there are enabled filters)
