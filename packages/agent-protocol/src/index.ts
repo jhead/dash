@@ -639,6 +639,52 @@ export const TimelinePasteFramesResultSchema = z.object({ success: z.literal(tru
 export type TimelinePasteFramesResult = z.infer<typeof TimelinePasteFramesResultSchema>;
 
 // ---------------------------------------------------------------------------
+// Filters
+// ---------------------------------------------------------------------------
+
+export const FilterAddParamsSchema = z.object({
+  type: z.enum(['dropShadow', 'blur', 'glow', 'bevel', 'gradientGlow', 'gradientBevel', 'colorMatrix']).describe('Filter type'),
+  enabled: z.boolean().optional().describe('Whether filter is enabled (default true)'),
+  ids: z.array(z.string()).optional().describe('Target object ids (defaults to current selection)'),
+  layerId: z.string().optional().describe('Layer id (defaults to active layer)'),
+  frameIndex: z.number().int().nonnegative().optional().describe('Frame index (defaults to current frame)'),
+  // Common filter params (all optional):
+  blurX: z.number().optional(),
+  blurY: z.number().optional(),
+  strength: z.number().optional(),
+  angle: z.number().optional(),
+  distance: z.number().optional(),
+  quality: z.number().optional(),
+  color: z.string().optional().describe('#RRGGBB color'),
+  alpha: z.number().optional().describe('0-1'),
+  inner: z.boolean().optional(),
+  knockout: z.boolean().optional(),
+  hideObject: z.boolean().optional(),
+});
+export type FilterAddParams = z.infer<typeof FilterAddParamsSchema>;
+export const FilterAddResultSchema = z.object({ success: z.literal(true), rev: z.number() });
+export type FilterAddResult = z.infer<typeof FilterAddResultSchema>;
+
+export const FilterRemoveParamsSchema = z.object({
+  index: z.number().int().min(0).describe('0-based filter index to remove'),
+  ids: z.array(z.string()).optional().describe('Target object ids (defaults to current selection)'),
+  layerId: z.string().optional().describe('Layer id (defaults to active layer)'),
+  frameIndex: z.number().int().nonnegative().optional().describe('Frame index (defaults to current frame)'),
+});
+export type FilterRemoveParams = z.infer<typeof FilterRemoveParamsSchema>;
+export const FilterRemoveResultSchema = z.object({ success: z.literal(true), rev: z.number() });
+export type FilterRemoveResult = z.infer<typeof FilterRemoveResultSchema>;
+
+export const FilterListParamsSchema = z.object({
+  id: z.string().optional().describe('Object id to query (defaults to first selected object)'),
+  layerId: z.string().optional().describe('Layer id (defaults to active layer)'),
+  frameIndex: z.number().int().nonnegative().optional().describe('Frame index (defaults to current frame)'),
+});
+export type FilterListParams = z.infer<typeof FilterListParamsSchema>;
+export const FilterListResultSchema = z.object({ filters: z.array(z.any()), rev: z.number() });
+export type FilterListResult = z.infer<typeof FilterListResultSchema>;
+
+// ---------------------------------------------------------------------------
 // Bridge message envelope
 // ---------------------------------------------------------------------------
 
@@ -700,6 +746,10 @@ export const ALL_COMMANDS = [
   "library_import_bitmap",
   "library_import_sound",
   "library_set_linkage",
+  // filters
+  "filter_add",
+  "filter_remove",
+  "filter_list",
   // output & escape hatches
   "jsfl_run",
   "stage_screenshot",

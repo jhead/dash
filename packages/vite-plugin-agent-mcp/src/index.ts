@@ -844,6 +844,75 @@ function createMcpServerForRequest(): McpServer {
     async (params) => callTool("timeline_paste_frames", params as Record<string, unknown>)
   );
 
+  // =========================================================================
+  // Filters
+  // =========================================================================
+
+  server.registerTool(
+    "filter_add",
+    {
+      title: "Add Filter",
+      description:
+        "Add a visual filter (drop shadow, blur, glow, or bevel) to selected display objects. " +
+        "Pass `ids` to target specific objects, or omit to use the current selection. " +
+        "Returns success and rev.",
+      inputSchema: z.object({
+        type: z.enum(['dropShadow', 'blur', 'glow', 'bevel']).describe('Filter type'),
+        enabled: z.boolean().optional().describe('Whether filter is enabled (default true)'),
+        ids: z.array(z.string()).optional().describe('Target object ids (defaults to current selection)'),
+        layerId: z.string().optional().describe('Layer id (defaults to active layer)'),
+        frameIndex: z.number().int().nonnegative().optional().describe('Frame index (defaults to current frame)'),
+        blurX: z.number().optional().describe('Horizontal blur radius'),
+        blurY: z.number().optional().describe('Vertical blur radius'),
+        strength: z.number().optional().describe('Filter strength (0–255)'),
+        angle: z.number().optional().describe('Angle in degrees'),
+        distance: z.number().optional().describe('Offset distance in pixels'),
+        quality: z.number().int().min(1).max(3).optional().describe('Render quality: 1=Low, 2=Med, 3=High'),
+        color: z.string().optional().describe('Filter color as #RRGGBB'),
+        alpha: z.number().min(0).max(1).optional().describe('Alpha 0–1'),
+        inner: z.boolean().optional().describe('Inner shadow/glow mode'),
+        knockout: z.boolean().optional().describe('Knockout mode'),
+        hideObject: z.boolean().optional().describe('Hide source object (drop shadow only)'),
+      }),
+    },
+    async (params) => callTool("filter_add", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "filter_remove",
+    {
+      title: "Remove Filter",
+      description:
+        "Remove a filter by 0-based index from selected display objects. " +
+        "Pass `ids` to target specific objects, or omit to use the current selection. " +
+        "Returns success and rev.",
+      inputSchema: z.object({
+        index: z.number().int().min(0).describe('0-based filter index to remove'),
+        ids: z.array(z.string()).optional().describe('Target object ids (defaults to current selection)'),
+        layerId: z.string().optional().describe('Layer id (defaults to active layer)'),
+        frameIndex: z.number().int().nonnegative().optional().describe('Frame index (defaults to current frame)'),
+      }),
+    },
+    async (params) => callTool("filter_remove", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "filter_list",
+    {
+      title: "List Filters",
+      description:
+        "Get the filters array of a display object. " +
+        "Pass `id` to target a specific object, or omit to use the first selected object. " +
+        "Returns filters array and rev.",
+      inputSchema: z.object({
+        id: z.string().optional().describe('Object id to query (defaults to first selected object)'),
+        layerId: z.string().optional().describe('Layer id (defaults to active layer)'),
+        frameIndex: z.number().int().nonnegative().optional().describe('Frame index (defaults to current frame)'),
+      }),
+    },
+    async (params) => callTool("filter_list", params as Record<string, unknown>)
+  );
+
   server.registerTool(
     "playback_play",
     {

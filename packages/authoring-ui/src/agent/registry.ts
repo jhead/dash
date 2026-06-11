@@ -45,8 +45,11 @@ import type {
   SceneDuplicateResult,
   TimelineCopyFramesResult,
   TimelinePasteFramesResult,
+  FilterAddResult,
+  FilterRemoveResult,
+  FilterListResult,
 } from "@flash/agent-protocol";
-import type { FlashDocument, LayerType, SymbolType } from "@flash/core";
+import type { FlashDocument, LayerType, SymbolType, FlashFilter } from "@flash/core";
 import type { FrameClipboard } from "@flash/core";
 import {
   hexToColor,
@@ -92,6 +95,10 @@ import {
   duplicateScene,
   copyFramesDoc,
   pasteFramesDoc,
+  defaultDropShadow,
+  defaultBlur,
+  defaultGlow,
+  defaultBevel,
 } from "@flash/core";
 import type {
   DisplayObject,
@@ -1817,6 +1824,178 @@ const handlers: Record<string, AnyHandler> = {
     }
     cb.setActiveSceneIndex(params.index);
     return { ok: true, rev: _rev };
+  },
+
+  // =========================================================================
+  // Filters
+  // =========================================================================
+
+  filter_add(params: {
+    type: 'dropShadow' | 'blur' | 'glow' | 'bevel' | 'gradientGlow' | 'gradientBevel' | 'colorMatrix';
+    enabled?: boolean;
+    ids?: string[];
+    layerId?: string;
+    frameIndex?: number;
+    blurX?: number;
+    blurY?: number;
+    strength?: number;
+    angle?: number;
+    distance?: number;
+    quality?: number;
+    color?: string;
+    alpha?: number;
+    inner?: boolean;
+    knockout?: boolean;
+    hideObject?: boolean;
+  }): FilterAddResult {
+    const cb = requireCallbacks();
+    const layerId = resolveLayerId(cb, params.layerId);
+    const frameIndex = resolveFrameIndex(cb, params.frameIndex);
+    const targetIds = params.ids && params.ids.length > 0 ? params.ids : cb.getSelectedIds();
+    if (targetIds.length === 0) {
+      throw new Error("filter_add: no objects selected and no ids provided");
+    }
+
+    // Build base filter from type
+    const typeLower = params.type.toLowerCase();
+    let baseFilter: FlashFilter;
+    if (typeLower === 'dropshadow') {
+      baseFilter = defaultDropShadow();
+    } else if (typeLower === 'blur') {
+      baseFilter = defaultBlur();
+    } else if (typeLower === 'glow') {
+      baseFilter = defaultGlow();
+    } else if (typeLower === 'bevel') {
+      baseFilter = defaultBevel();
+    } else {
+      throw new Error(`filter_add: unsupported filter type "${params.type}". Supported: dropShadow, blur, glow, bevel`);
+    }
+
+    // Apply overrides from params
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const overrides: Record<string, any> = {};
+    if (params.enabled !== undefined) overrides.enabled = params.enabled;
+    if (params.blurX !== undefined) overrides.blurX = params.blurX;
+    if (params.blurY !== undefined) overrides.blurY = params.blurY;
+    if (params.strength !== undefined) overrides.strength = params.strength;
+    if (params.angle !== undefined) overrides.angle = params.angle;
+    if (params.distance !== undefined) overrides.distance = params.distance;
+    if (params.quality !== undefined) overrides.quality = params.quality;
+    if (params.color !== undefined) overrides.color = parseHexColor(params.color);
+    if (params.alpha !== undefined) overrides.alpha = params.alpha;
+    if (params.inner !== undefined) overrides.inner = params.inner;
+    if (params.knockout !== undefined) overrides.knockout = params.knockout;
+    if (params.hideObject !== undefined) overrides.hideObject = params.hideObject;
+
+    const newFilter = { ...baseFilter, ...overrides } as FlashFilter;
+
+    const doc = cb.getDoc();
+    const sceneIndex = cb.getActiveSceneIndex();
+    const toUpdate = new Set(targetIds);
+
+    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+      return {
+        ...t,
+        layers: t.layers.map((layer) => {
+          if (layer.id !== layerId) return layer;
+          const kf = [...layer.frames]
+            .filter((f) => f.isKeyframe && f.index <= frameIndex)
+            .sort((a, b) => b.index - a.index)[0];
+          if (!kf) return layer;
+          const newFrames = layer.frames.map((f) => {
+            if (f.index !== kf.index) return f;
+            const newObjects = f.displayObjects.map((obj) => {
+              if (!toUpdate.has(obj.id)) return obj;
+              const withFilters = obj as { filters?: FlashFilter[] };
+              const existing = withFilters.filters ? [...withFilters.filters] : [];
+              return { ...obj, filters: [...existing, newFilter] };
+            });
+            return { ...f, displayObjects: newObjects };
+          });
+          return { ...layer, frames: newFrames };
+        }),
+      };
+    });
+    cb.pushDoc(newDoc);
+    return { success: true, rev: _rev };
+  },
+
+  filter_remove(params: {
+    index: number;
+    ids?: string[];
+    layerId?: string;
+    frameIndex?: number;
+  }): FilterRemoveResult {
+    const cb = requireCallbacks();
+    const layerId = resolveLayerId(cb, params.layerId);
+    const frameIndex = resolveFrameIndex(cb, params.frameIndex);
+    const targetIds = params.ids && params.ids.length > 0 ? params.ids : cb.getSelectedIds();
+    if (targetIds.length === 0) {
+      throw new Error("filter_remove: no objects selected and no ids provided");
+    }
+
+    const doc = cb.getDoc();
+    const sceneIndex = cb.getActiveSceneIndex();
+    const toUpdate = new Set(targetIds);
+
+    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+      return {
+        ...t,
+        layers: t.layers.map((layer) => {
+          if (layer.id !== layerId) return layer;
+          const kf = [...layer.frames]
+            .filter((f) => f.isKeyframe && f.index <= frameIndex)
+            .sort((a, b) => b.index - a.index)[0];
+          if (!kf) return layer;
+          const newFrames = layer.frames.map((f) => {
+            if (f.index !== kf.index) return f;
+            const newObjects = f.displayObjects.map((obj) => {
+              if (!toUpdate.has(obj.id)) return obj;
+              const withFilters = obj as { filters?: FlashFilter[] };
+              const existing = withFilters.filters ? [...withFilters.filters] : [];
+              return { ...obj, filters: existing.filter((_, i) => i !== params.index) };
+            });
+            return { ...f, displayObjects: newObjects };
+          });
+          return { ...layer, frames: newFrames };
+        }),
+      };
+    });
+    cb.pushDoc(newDoc);
+    return { success: true, rev: _rev };
+  },
+
+  filter_list(params: {
+    id?: string;
+    layerId?: string;
+    frameIndex?: number;
+  }): FilterListResult {
+    const cb = requireCallbacks();
+    const layerId = resolveLayerId(cb, params.layerId);
+    const frameIndex = resolveFrameIndex(cb, params.frameIndex);
+    const targetId = params.id ?? cb.getSelectedIds()[0];
+    if (!targetId) {
+      return { filters: [], rev: _rev };
+    }
+
+    const doc = cb.getDoc();
+    const sceneIndex = cb.getActiveSceneIndex();
+    const scene = doc.scenes[Math.min(sceneIndex, doc.scenes.length - 1)];
+    if (!scene) return { filters: [], rev: _rev };
+
+    const layer = scene.timeline.layers.find((l) => l.id === layerId);
+    if (!layer) return { filters: [], rev: _rev };
+
+    const kf = [...layer.frames]
+      .filter((f) => f.isKeyframe && f.index <= frameIndex)
+      .sort((a, b) => b.index - a.index)[0];
+    if (!kf) return { filters: [], rev: _rev };
+
+    const obj = kf.displayObjects.find((o) => o.id === targetId);
+    if (!obj) return { filters: [], rev: _rev };
+
+    const withFilters = obj as { filters?: FlashFilter[] };
+    return { filters: withFilters.filters ? [...withFilters.filters] : [], rev: _rev };
   },
 
   scene_duplicate(_params: Record<string, unknown>): SceneDuplicateResult {
