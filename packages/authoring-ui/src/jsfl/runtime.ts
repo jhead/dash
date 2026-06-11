@@ -60,6 +60,7 @@ import {
   removeScene as coreRemoveScene,
   renameScene as coreRenameScene,
   duplicateScene as coreDuplicateScene,
+  reorderScenes as coreReorderScenes,
   defaultDropShadow,
   defaultBlur,
   defaultGlow,
@@ -573,6 +574,16 @@ export interface JsflTimeline {
   setSelectedFrames(startFrame: number, endFrame: number, replaceCurrentSelection?: boolean): void;
   /** The name of the scene this timeline belongs to. */
   readonly name: string;
+  /**
+   * Expand or collapse a folder layer.
+   * Not supported; stub.
+   */
+  expandFolder(bExpand: boolean, bApplyToChildren?: boolean, layerIndex?: number): void;
+  /**
+   * Show the layer masking in the editor.
+   * Not supported; stub.
+   */
+  showLayerMasking(layerIndex?: number): void;
 }
 
 function makeTimelineProxy(state: RuntimeState): JsflTimeline {
@@ -1020,6 +1031,12 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
     get name(): string {
       return state.doc.scenes[state.sceneIndex]?.name ?? 'Scene 1';
     },
+    expandFolder(_bExpand: boolean, _bApplyToChildren?: boolean, _layerIndex?: number): void {
+      console.warn('expandFolder: not supported');
+    },
+    showLayerMasking(_layerIndex?: number): void {
+      console.warn('showLayerMasking: not supported');
+    },
   };
 }
 
@@ -1114,6 +1131,11 @@ export interface JsflLibrary {
    * Enter edit mode for a library item. Not supported; stub. Returns true.
    */
   editItem(name: string): boolean;
+  /**
+   * Return the index of the library item with the given name.
+   * Returns -1 if the item is not found.
+   */
+  findItemIndex(name: string): number;
 }
 
 function jsflSymbolType(jsflType: string): SymbolType {
@@ -1365,6 +1387,9 @@ function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCoun
       console.warn('library.editItem: not supported');
       return true;
     },
+    findItemIndex(name: string): number {
+      return state.doc.library.items.findIndex((i) => i.name === name);
+    },
   };
 }
 
@@ -1513,6 +1538,17 @@ export interface JsflDocument {
   renameScene(name: string): void;
   /** Duplicate the current scene, inserting the copy after it. */
   duplicateScene(): void;
+  /**
+   * Reorder scenes: move the scene at sceneToMove so it appears before the
+   * scene that was originally at sceneBefore.
+   */
+  reorderScene(sceneToMove: number, sceneBefore: number): void;
+  /** Simulate a mouse click at (x, y) on the stage. Not supported; stub. */
+  mouseClick(x: number, y: number, bAutoSelect?: boolean, bToggleSelection?: boolean): void;
+  /** Simulate a mouse-up event at (x, y). Not supported; stub. */
+  mouseUp(x: number, y: number): void;
+  /** Simulate a mouse-down event at (x, y). Not supported; stub. */
+  mouseDown(x: number, y: number): void;
   /**
    * Arrange selected objects in z-order.
    * type: 'front' | 'back' | 'forward' | 'backward'
@@ -2384,6 +2420,18 @@ function makeDocumentProxy(
       const scene = state.doc.scenes[state.sceneIndex];
       if (!scene) return;
       state.doc = coreDuplicateScene(state.doc, scene.id);
+    },
+    reorderScene(sceneToMove: number, sceneBefore: number): void {
+      state.doc = coreReorderScenes(state.doc, sceneToMove, sceneBefore);
+    },
+    mouseClick(_x: number, _y: number, _bAutoSelect?: boolean, _bToggleSelection?: boolean): void {
+      console.warn('doc.mouseClick: not supported');
+    },
+    mouseUp(_x: number, _y: number): void {
+      console.warn('doc.mouseUp: not supported');
+    },
+    mouseDown(_x: number, _y: number): void {
+      console.warn('doc.mouseDown: not supported');
     },
     arrange(type: string): void {
       if (state.selectedIds.length === 0) return;
@@ -3289,6 +3337,16 @@ export interface JsflFl {
    * No-op stub in this runtime.
    */
   showIdleMessage(show: boolean): void;
+  /**
+   * Create a UI panel from an XML description.
+   * Not supported in browser context; always returns null.
+   */
+  xmlToUI(xmlString: string): any;
+  /**
+   * A reference to the xmlToUI result.
+   * Not supported; always null.
+   */
+  readonly xmlToUIRef: null;
 }
 
 function makeFlProxy(
@@ -3452,6 +3510,13 @@ function makeFlProxy(
     },
     showIdleMessage(_show: boolean): void {
       // no-op stub
+    },
+    xmlToUI(_xmlString: string): any {
+      console.warn('fl.xmlToUI: not supported');
+      return null;
+    },
+    get xmlToUIRef(): null {
+      return null;
     },
   };
 }
