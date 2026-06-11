@@ -6,15 +6,18 @@
  *   - delete myVar         → ActionDelete2 (0x3B): scope-chain form
  *   - delete arr[0]        → ActionDelete  (0x3A): computed-index form (object + key)
  *   - for (var k in obj)   → ActionEnumerate2 (0x55)
- *   - "key" in obj         → compiles to obj.hasOwnProperty("key") via ActionCallMethod (0x52)
+ *   - "key" in obj         → GetMember probe: typeof(obj[key]) !== "undefined"
+ *                            emits ActionGetMember (0x4e) + ActionTypeOf (0x44) +
+ *                            ActionEquals2 (0x49) + ActionNot (0x12)
  *
  * The delete and in operators have nuanced AVM1 semantics:
  *   - ActionDelete  (0x3A) requires an explicit object reference and property name/key.
  *   - ActionDelete2 (0x3B) removes a named variable from the scope chain.
  *   - Computed-index deletion (delete arr[0]) uses ActionDelete (0x3A) with the
  *     computed index as the key — same opcode as the MemberExpr form.
- *   - The `in` operator is lowered to obj.hasOwnProperty(key) — NOT to
- *     ActionEnumerate2 (0x55), which is reserved for for..in enumeration.
+ *   - The `in` operator is a GetMember probe (typeof(obj[key]) !== "undefined") — NOT
+ *     ActionEnumerate2 (0x55), which is reserved for for..in enumeration. This approach
+ *     correctly handles inherited prototype properties (unlike hasOwnProperty).
  */
 
 import { describe, it, expect } from "vitest";
@@ -52,10 +55,14 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_DELETE       = 0x3a; // ActionDelete  — delete object property (object + name)
-const ACTION_DELETE2      = 0x3b; // ActionDelete2 — delete scope-chain variable (name only)
+const ACTION_DELETE       = 0x3a; // ActionDelete     — delete object property (object + name)
+const ACTION_DELETE2      = 0x3b; // ActionDelete2    — delete scope-chain variable (name only)
 const ACTION_ENUMERATE2   = 0x55; // ActionEnumerate2 — push all enumerable keys for for..in
 const ACTION_CALL_METHOD  = 0x52; // ActionCallMethod — method dispatch
+const ACTION_GET_MEMBER   = 0x4e; // ActionGetMember  — obj[key] property read
+const ACTION_TYPEOF       = 0x44; // ActionTypeOf     — type string of stack top
+const ACTION_EQUALS2      = 0x49; // ActionEquals2    — abstract equality
+const ACTION_NOT          = 0x12; // ActionNot        — boolean negation
 
 // ---------------------------------------------------------------------------
 // 1. delete obj.prop — ActionDelete (0x3A)
@@ -188,11 +195,14 @@ describe("for..in loop: this enumeration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. "key" in obj — in operator (compiled to hasOwnProperty call)
+// 7. "key" in obj — in operator (GetMember probe: typeof(obj[key]) !== "undefined")
 //
-// The AS2 `in` operator is NOT ActionEnumerate2; it is lowered to
-// obj.hasOwnProperty(key) — emitting ActionCallMethod (0x52) with the
-// "hasOwnProperty" method name string in the bytecode.
+// AVM1 has no ActionIn opcode. The `in` operator is approximated via a
+// GetMember probe: push obj, push key, ActionGetMember → value, ActionTypeOf →
+// type string, push "undefined", ActionEquals2, ActionNot → boolean result.
+// This correctly handles inherited prototype-chain properties (unlike the old
+// hasOwnProperty approach). Limitation: returns false when the value IS
+// undefined (acceptable AVM1 approximation).
 // ---------------------------------------------------------------------------
 
 describe("in operator: key in obj", () => {
@@ -200,20 +210,38 @@ describe("in operator: key in obj", () => {
     expect(compilesOk('"key" in obj;')).toBe(true);
   });
 
-  it('7b. "key" in obj; is lowered to obj.hasOwnProperty("key") — emits ActionCallMethod (0x52)', () => {
+  it('7b. "key" in obj; emits ActionGetMember (0x4e) — GetMember probe approach', () => {
     const bytes = compileAS2('"key" in obj;');
-    // The `in` operator compiles to obj.hasOwnProperty(key)
-    expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(true);
-    expect(containsString(bytes, "hasOwnProperty")).toBe(true);
+    expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
 
-  it('7c. "key" in obj; does NOT emit ActionEnumerate2 (0x55) — that is for for..in', () => {
+  it('7c. "key" in obj; emits ActionTypeOf (0x44)', () => {
     const bytes = compileAS2('"key" in obj;');
-    // ActionEnumerate2 is only for for..in enumeration, not the in operator
+    expect(containsByte(bytes, ACTION_TYPEOF)).toBe(true);
+  });
+
+  it('7d. "key" in obj; emits ActionEquals2 (0x49) + ActionNot (0x12) for the !== "undefined" check', () => {
+    const bytes = compileAS2('"key" in obj;');
+    expect(containsByte(bytes, ACTION_EQUALS2)).toBe(true);
+    expect(containsByte(bytes, ACTION_NOT)).toBe(true);
+  });
+
+  it('7e. "key" in obj; contains "undefined" string in bytecode', () => {
+    const bytes = compileAS2('"key" in obj;');
+    expect(containsString(bytes, 'undefined')).toBe(true);
+  });
+
+  it('7f. "key" in obj; does NOT emit ActionCallMethod (0x52) — no hasOwnProperty call', () => {
+    const bytes = compileAS2('"key" in obj;');
+    expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(false);
+  });
+
+  it('7g. "key" in obj; does NOT emit ActionEnumerate2 (0x55) — that is for for..in', () => {
+    const bytes = compileAS2('"key" in obj;');
     expect(containsByte(bytes, ACTION_ENUMERATE2)).toBe(false);
   });
 
-  it("7d. variable in obj compiles without error", () => {
+  it("7h. variable in obj compiles without error", () => {
     expect(compilesOk("var key = 'x'; var obj = {}; key in obj;")).toBe(true);
   });
 });

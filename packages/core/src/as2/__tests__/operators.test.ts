@@ -221,10 +221,15 @@ describe("in operator", () => {
     expect(compilesOk('"x" in obj;')).toBe(true);
   });
 
-  it("emits ActionCallMethod (0x52) for in operator (hasOwnProperty)", () => {
+  it("emits ActionGetMember (0x4e) for in operator — GetMember probe approach", () => {
     const bytes = compileAS2('"x" in obj;');
-    expect(containsByte(bytes, 0x52)).toBe(true); // ActionCallMethod
-    expect(containsString(bytes, "hasOwnProperty")).toBe(true);
+    // typeof(obj[key]) !== "undefined" probe
+    expect(containsByte(bytes, 0x4e)).toBe(true); // ActionGetMember
+    expect(containsByte(bytes, 0x44)).toBe(true); // ActionTypeOf
+    expect(containsString(bytes, "undefined")).toBe(true);
+    // must NOT use hasOwnProperty (it misses inherited prototype properties)
+    expect(containsByte(bytes, 0x52)).toBe(false); // ActionCallMethod
+    expect(containsString(bytes, "hasOwnProperty")).toBe(false);
   });
 
   it("compiles key in obj with identifier key", () => {

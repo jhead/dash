@@ -210,15 +210,20 @@ describe("instanceof operator", () => {
 
 describe("in operator", () => {
   it('"prop" in obj compiles without error', () => {
-    // The compiler implements 'in' as obj.hasOwnProperty(key) → ActionCallMethod
+    // The compiler implements 'in' via a GetMember probe: typeof(obj[key]) !== "undefined"
     expect(compilesOk('var obj = { prop: 1 }; "prop" in obj;')).toBe(true);
   });
 
-  it('"prop" in obj emits ActionCallMethod (0x52) via hasOwnProperty', () => {
+  it('"prop" in obj emits ActionGetMember (0x4e) — GetMember probe, not hasOwnProperty', () => {
     const bytes = compileAS2('var obj = { prop: 1 }; "prop" in obj;');
-    // 'in' maps to obj.hasOwnProperty(key) internally
-    expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(true);
-    expect(containsString(bytes, "hasOwnProperty")).toBe(true);
+    // 'in' uses GetMember probe: push obj, push key, ActionGetMember, ActionTypeOf,
+    // push "undefined", ActionEquals2, ActionNot
+    expect(containsByte(bytes, 0x4e)).toBe(true); // ActionGetMember
+    expect(containsByte(bytes, 0x44)).toBe(true); // ActionTypeOf
+    expect(containsString(bytes, "undefined")).toBe(true);
+    // must NOT use hasOwnProperty (misses inherited prototype properties)
+    expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(false);
+    expect(containsString(bytes, "hasOwnProperty")).toBe(false);
   });
 });
 
