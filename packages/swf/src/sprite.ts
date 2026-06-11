@@ -13,7 +13,7 @@
  * DefineSprite tag. Callers should collect hoisted definitions via the
  * `hoistedDefs` out-parameter and emit them before the sprite tag.
  */
-import type { BitmapItem, FlashDocument, Symbol } from "@flash/core";
+import type { BitmapItem, ClipAction, FlashDocument, Symbol } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import {
@@ -23,6 +23,8 @@ import {
   encodePlaceObject2Move,
   encodePlaceObject2WithCXForm,
   encodePlaceObject2WithName,
+  encodePlaceObject2WithClipActions,
+  encodePlaceObject2MoveWithClipActions,
 } from "./shapes.js";
 import {
   encodePlaceObject3WithFilters,
@@ -395,6 +397,31 @@ export function encodeDefineSprite(
               ? { scaleX, scaleY, rotation, skewX, skewY }
               : undefined;
             const instName = (displayObj as { instanceName?: string }).instanceName ?? undefined;
+
+            // Task 1124: synthesize clip actions for loopMode / firstFrame / explicit clipActions
+            const loopMode = (displayObj as { loopMode?: string }).loopMode ?? "loop";
+            const instanceFirstFrame = (displayObj as { firstFrame?: number }).firstFrame ?? 0;
+            let effectiveClipActions: ClipAction[] = (displayObj as { clipActions?: ClipAction[] }).clipActions ?? [];
+            if (loopMode === "play-once") {
+              effectiveClipActions = [...effectiveClipActions, {
+                event: "enterFrame",
+                script: "if (this._currentframe >= this._totalframes) { this.stop(); }",
+              }];
+            }
+            if (loopMode === "single-frame") {
+              effectiveClipActions = [...effectiveClipActions, {
+                event: "load",
+                script: `this.gotoAndStop(${instanceFirstFrame + 1});`,
+              }];
+            }
+            if ((loopMode === "loop" || loopMode === "play-once") && instanceFirstFrame > 0) {
+              effectiveClipActions = [...effectiveClipActions, {
+                event: "load",
+                script: `this.gotoAndPlay(${instanceFirstFrame + 1});`,
+              }];
+            }
+            const hasClipActions = effectiveClipActions.length > 0;
+
             // Bug 1103 fix: encode colorEffect / visible=false / filters / blend mode
             const hasBlend = !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
             if (hasBlend || hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
@@ -405,6 +432,13 @@ export function encodeDefineSprite(
                 ? encodePlaceObject3WithBlendMode(refCharId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, instanceTransform, undefined, instCXForm, undefined, instName, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap)
                 : encodePlaceObject3WithFilters(refCharId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, instanceTransform, instName, undefined, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap, instCXForm);
               spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
+              // Attach clip actions as a PlaceObject2 Move on the same depth (matches compile.ts pattern)
+              if (hasClipActions) {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2MoveWithClipActions(depth, effectiveClipActions)));
+              }
+            } else if (hasClipActions) {
+              // Task 1124: place with HasClipActions via PlaceObject2
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithClipActions(refCharId, depth, x, y, effectiveClipActions, instanceTransform, instName)));
             } else {
               let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
                 ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
@@ -508,6 +542,31 @@ export function encodeDefineSprite(
               ? { scaleX, scaleY, rotation, skewX, skewY }
               : undefined;
             const instName = (displayObj as { instanceName?: string }).instanceName ?? undefined;
+
+            // Task 1124: synthesize clip actions for loopMode / firstFrame / explicit clipActions (move path)
+            const loopModeMove = (displayObj as { loopMode?: string }).loopMode ?? "loop";
+            const instanceFirstFrameMove = (displayObj as { firstFrame?: number }).firstFrame ?? 0;
+            let effectiveMoveClipActions: ClipAction[] = (displayObj as { clipActions?: ClipAction[] }).clipActions ?? [];
+            if (loopModeMove === "play-once") {
+              effectiveMoveClipActions = [...effectiveMoveClipActions, {
+                event: "enterFrame",
+                script: "if (this._currentframe >= this._totalframes) { this.stop(); }",
+              }];
+            }
+            if (loopModeMove === "single-frame") {
+              effectiveMoveClipActions = [...effectiveMoveClipActions, {
+                event: "load",
+                script: `this.gotoAndStop(${instanceFirstFrameMove + 1});`,
+              }];
+            }
+            if ((loopModeMove === "loop" || loopModeMove === "play-once") && instanceFirstFrameMove > 0) {
+              effectiveMoveClipActions = [...effectiveMoveClipActions, {
+                event: "load",
+                script: `this.gotoAndPlay(${instanceFirstFrameMove + 1});`,
+              }];
+            }
+            const hasMoveClipActions = effectiveMoveClipActions.length > 0;
+
             // Bug 1103 fix: encode colorEffect / visible=false on move
             const hasBlend = !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
             if (hasBlend || hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
@@ -518,6 +577,13 @@ export function encodeDefineSprite(
                 ? encodePlaceObject3WithBlendMode(refCharId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, instanceTransform, undefined, instCXForm, true, instName, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap)
                 : encodePlaceObject3WithFilters(refCharId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, instanceTransform, instName, undefined, true, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap, instCXForm);
               spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
+              // Attach clip actions as a PlaceObject2 Move on the same depth (matches compile.ts pattern)
+              if (hasMoveClipActions) {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2MoveWithClipActions(depth, effectiveMoveClipActions)));
+              }
+            } else if (hasMoveClipActions) {
+              // Task 1124: move with HasClipActions via PlaceObject2 Move
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2MoveWithClipActions(depth, effectiveMoveClipActions)));
             } else {
               let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
                 ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
