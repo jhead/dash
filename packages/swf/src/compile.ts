@@ -9,7 +9,7 @@
  *  - RemoveObject2 when objects leave the display list
  *  - ShowFrame per frame, End
  */
-import type { BitmapFill, BitmapItem, ButtonHandler, ButtonSounds, ClipAction, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, VideoDisplayObject, VideoItem } from "@flash/core";
+import type { BitmapFill, BitmapItem, ButtonHandler, ButtonSounds, ClipAction, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, SymbolInstance, VideoDisplayObject, VideoItem } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { deflateSync } from "fflate";
 import { Tag } from "./tags.js";
@@ -2372,7 +2372,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               const charId = charIdMap.get(displayObj.symbolId);
               if (charId !== undefined) {
                 // Check if blend mode requires PlaceObject3 for the Move.
-                const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal' && displayObj.blendMode !== '';
+                const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
                 if (hasBlend) {
                   // PlaceObject3 Move: preserves blend mode across positional updates.
                   const moveTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)

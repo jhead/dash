@@ -396,6 +396,8 @@ export interface ButtonHandler {
     | "rollOver"
     | "dragOut"
     | "dragOver"
+    | "idleToOverDown"
+    | "overDownToIdle"
     | { readonly keyPress: string };
   /** AS2 source code for the handler body (not wrapped in on(){}). */
   readonly script: string;

@@ -13,7 +13,7 @@
  * DefineSprite tag. Callers should collect hoisted definitions via the
  * `hoistedDefs` out-parameter and emit them before the sprite tag.
  */
-import type { BitmapItem, FlashDocument, Symbol, Layer, Frame } from "@flash/core";
+import type { BitmapItem, FlashDocument, Symbol } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import {
@@ -53,22 +53,6 @@ function encodeTag(tagType: number, body: Uint8Array): Uint8Array {
   }
   bw.writeBytes(body);
   return bw.getBytes();
-}
-
-/**
- * Find the governing keyframe for a layer at the given frame index.
- * The governing keyframe is the last keyframe at or before `frameIdx`.
- */
-function findGoverningKeyframe(layer: Layer, frameIdx: number): Frame | null {
-  let governing: Frame | null = null;
-  for (const frame of layer.frames) {
-    if (frame.isKeyframe && frame.index <= frameIdx) {
-      if (governing === null || frame.index > governing.index) {
-        governing = frame;
-      }
-    }
-  }
-  return governing;
 }
 
 // ---------------------------------------------------------------------------

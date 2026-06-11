@@ -19,28 +19,6 @@ import type { ShapePath, LinearGradientFill, RadialGradientFill, BitmapFill } fr
 // Binary reader helpers
 // ---------------------------------------------------------------------------
 
-function readBitsFromBytes(
-  bytes: Uint8Array,
-  byteOff: number,
-  bitsLeft: number,
-  n: number
-): { value: number; byteOff: number; bitsLeft: number; bitBuf: number } {
-  let bitBuf = bitsLeft > 0 ? bytes[byteOff] : 0;
-  let result = 0;
-  let curByteOff = byteOff;
-  let curBitsLeft = bitsLeft;
-
-  for (let i = 0; i < n; i++) {
-    if (curBitsLeft === 0) {
-      bitBuf = bytes[curByteOff++];
-      curBitsLeft = 8;
-    }
-    result = (result << 1) | ((bitBuf >> (curBitsLeft - 1)) & 1);
-    curBitsLeft--;
-  }
-  return { value: result, byteOff: curByteOff, bitsLeft: curBitsLeft, bitBuf };
-}
-
 /**
  * Skip a bit-packed RECT from a byte array.
  * Returns the number of bytes consumed (rounded up to byte boundary).
