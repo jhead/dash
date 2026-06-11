@@ -952,9 +952,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       return "visible:false";
     }
     if (displayObj.type !== "instance" && displayObj.type !== "text" && displayObj.type !== "bitmap" && displayObj.type !== "shape") return null;
-    // Track standalone alpha and blendMode for shape change detection
+    // Track colorEffect, blendMode, and standalone alpha for shape change detection
     if (displayObj.type === "shape") {
       const shp = displayObj as import("@flash/core").ShapeDisplayObject;
+      const ce = shp.colorEffect;
+      if (ce && ce.type !== "none") return JSON.stringify(ce);
       if (shp.blendMode && shp.blendMode !== "normal") {
         return `blend:${shp.blendMode};alpha:${shp.alpha ?? 1}`;
       }
