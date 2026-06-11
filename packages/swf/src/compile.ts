@@ -1151,13 +1151,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
 
           // Skip if already handled (same objId in multiple spans)
           if (objCharIdMap.has(startObj.id)) {
-            // Already emitted — just record span info if missing
+            // Already emitted — just record span info for endObj.id too
+            const morphCharId = objCharIdMap.get(startObj.id)!;
+            objCharIdMap.set(endObj.id, morphCharId);
+            morphShapeObjIds.add(endObj.id);
           } else {
             const morphCharId = writer.nextCharId();
 
-            // Mark the start object ID as handled (morph char ID)
+            // Mark both start and end object IDs (morph char ID)
             objCharIdMap.set(startObj.id, morphCharId);
+            objCharIdMap.set(endObj.id, morphCharId);
             morphShapeObjIds.add(startObj.id);
+            morphShapeObjIds.add(endObj.id);
 
             // Emit DefineBits tags for any bitmap fills in the morph shape paths.
             // Both start and end shapes may reference bitmaps; emit once per unique id.
@@ -1188,6 +1193,16 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             easeCurve: span.easeCurve,
           });
           morphObjSpanInfo.set(startObj.id, existing);
+          // Also map endObj.id so the end keyframe gets ratio=65535
+          const endExisting = morphObjSpanInfo.get(endObj.id) ?? [];
+          endExisting.push({
+            startFrame: span.startFrame,
+            endFrame: span.endFrame,
+            spanLength,
+            ease: span.ease,
+            easeCurve: span.easeCurve,
+          });
+          morphObjSpanInfo.set(endObj.id, endExisting);
         }
       }
     }
