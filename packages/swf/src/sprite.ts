@@ -37,7 +37,7 @@ import { Tag } from "./tags.js";
 import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
 import { fontKey } from "./fonts.js";
-import { encodeStartSound } from "./sounds.js";
+import { encodeStartSound, encodeStartSound2 } from "./sounds.js";
 import { encodeDefineButton2 } from "./buttons.js";
 import { encodeDefineMorphShape2, encodePlaceObject2WithRatio } from "./morphshape.js";
 
@@ -989,8 +989,15 @@ export function encodeDefineSprite(
                 inPoint: frame.sound.inPoint,
                 outPoint: frame.sound.outPoint,
               };
-              const startSoundBody = encodeStartSound(soundId, soundInfoOpts);
-              spriteTags.push(encodeTag(Tag.StartSound, startSoundBody));
+              // Use StartSound2 (by class name) when the sound has an AS2 linkage identifier
+              const soundItem = doc.library.items.find(
+                item => item.itemType === "sound" && item.id === frame.sound!.libraryItemId
+              ) as import("@flash/core").SoundItem | undefined;
+              if (soundItem?.linkageIdentifier) {
+                spriteTags.push(encodeTag(Tag.StartSound2, encodeStartSound2(soundItem.linkageIdentifier, soundInfoOpts)));
+              } else {
+                spriteTags.push(encodeTag(Tag.StartSound, encodeStartSound(soundId, soundInfoOpts)));
+              }
             }
           }
         }
