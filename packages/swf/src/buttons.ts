@@ -194,6 +194,8 @@ export function encodeDefineButton2(
   const objCharIdMap = new Map<string, number>();
 
   for (const layer of layers) {
+    if (layer.type === 'guide') continue;
+    if (layer.type === 'folder') continue;
     for (const frame of layer.frames) {
       // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
       if (!frame.isKeyframe) continue;
@@ -303,6 +305,8 @@ export function encodeDefineButton2(
   }
 
   for (const layer of layers) {
+    if (layer.type === 'guide') continue;
+    if (layer.type === 'folder') continue;
     for (const frame of layer.frames) {
       // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
       if (!frame.isKeyframe) continue;
