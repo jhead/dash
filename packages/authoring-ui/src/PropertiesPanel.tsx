@@ -972,6 +972,43 @@ function InstanceView({
 
       <div style={S.separator} />
 
+      {/* Loop mode (graphic symbols only) */}
+      {(() => {
+        const libItem2 = doc.library.items.find((i) => i.id === obj.symbolId);
+        const isGraphic = libItem2?.itemType === "symbol" && libItem2.symbolType === "graphic";
+        if (!isGraphic) return null;
+        const loopMode = obj.loopMode ?? "loop";
+        const firstFrameDisplay = (obj.firstFrame ?? 0) + 1;
+        return (
+          <>
+            <div style={S.fieldGroup}>
+              <span style={S.label}>Loop:</span>
+              <select
+                style={S.selectWide}
+                value={loopMode}
+                onChange={(e) => onUpdateObject(obj.id, { loopMode: e.target.value as SymbolInstance["loopMode"] } as Partial<DisplayObject>)}
+              >
+                <option value="loop">Loop</option>
+                <option value="play-once">Play Once</option>
+                <option value="single-frame">Single Frame</option>
+              </select>
+            </div>
+            {loopMode === "single-frame" && (
+              <div style={S.fieldGroup}>
+                <span style={S.label}>Frame:</span>
+                <NumInput
+                  value={firstFrameDisplay}
+                  min={1}
+                  style={{ width: 52 }}
+                  onChange={(v) => onUpdateObject(obj.id, { firstFrame: Math.max(0, v - 1) } as Partial<DisplayObject>)}
+                />
+              </div>
+            )}
+            <div style={S.separator} />
+          </>
+        );
+      })()}
+
       {/* Color Effect */}
       <ColorEffectSection obj={obj} onUpdateObject={onUpdateObject} />
     </div>
