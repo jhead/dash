@@ -27,6 +27,7 @@ import {
   insertKeyframe,
   insertBlankKeyframe,
   removeFrame,
+  clearKeyframe,
   transformedShapeBounds,
   shapeBounds,
   getUnionBounds,
@@ -4372,6 +4373,18 @@ export function Shell(): React.ReactElement {
     pushDoc(withTimeline((t) => insertBlankKeyframe(t, layerId, currentFrame)));
   }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
 
+  const handleRemoveFrame = useCallback(() => {
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return;
+    pushDoc(withTimeline((t) => removeFrame(t, layerId, currentFrame)));
+  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
+
+  const handleClearKeyframe = useCallback(() => {
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return;
+    pushDoc(withTimeline((t) => clearKeyframe(t, layerId, currentFrame)));
+  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
+
   useKeyboardShortcuts({
     onUndo: undo,
     onRedo: redo,
@@ -4390,6 +4403,9 @@ export function Shell(): React.ReactElement {
     onInsertFrame: handleInsertFrame,
     onInsertKeyframe: handleInsertKeyframe,
     onInsertBlankKeyframe: handleInsertBlankKeyframe,
+    onDuplicate: handleDuplicate,
+    onRemoveFrame: handleRemoveFrame,
+    onClearKeyframe: handleClearKeyframe,
     onPlay: handlePlayToggle,
     onTextBold: handleTextBold,
     onTextItalic: handleTextItalic,

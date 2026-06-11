@@ -37,6 +37,9 @@ export interface KeyboardShortcutHandlers {
   onAddShapeHint?: () => void;
   /** Open Find and Replace dialog (Ctrl+H). */
   onFindReplace?: () => void;
+  onDuplicate?: () => void;
+  onRemoveFrame?: () => void;
+  onClearKeyframe?: () => void;
 }
 
 export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
@@ -72,6 +75,9 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
       else if (e.key === 'F5') { e.preventDefault(); h.onInsertFrame?.(); }
       else if (e.key === 'F6') { e.preventDefault(); h.onInsertKeyframe?.(); }
       else if (e.key === 'F7') { e.preventDefault(); h.onInsertBlankKeyframe?.(); }
+      else if (ctrl && !shift && e.key === 'd') { e.preventDefault(); h.onDuplicate?.(); }
+      else if (shift && e.key === 'F5') { e.preventDefault(); h.onRemoveFrame?.(); }
+      else if (shift && e.key === 'F6') { e.preventDefault(); h.onClearKeyframe?.(); }
       else if (e.key === 'Enter') { h.onPlay?.(); }
       // Text menu shortcuts
       else if (ctrl && shift && e.key === 'b') { e.preventDefault(); h.onTextBold?.(); }
