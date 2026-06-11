@@ -1773,6 +1773,16 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else if (hasEnabledFilters(displayObj.filters)) {
+                  const shapeObj = displayObj as { colorEffect?: import("@flash/core").ColorEffect; visible?: boolean; alpha?: number; cacheAsBitmap?: boolean };
+                  let shapeCXForm = shapeObj.colorEffect
+                    ? colorEffectToCXForm(shapeObj.colorEffect) ?? undefined
+                    : undefined;
+                  if (!shapeCXForm && shapeObj.visible === false) {
+                    shapeCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
+                  if (!shapeCXForm && shapeObj.alpha !== undefined && shapeObj.alpha !== 1) {
+                    shapeCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, shapeObj.alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                  }
                   const placeBody = encodePlaceObject3WithFilters(
                     charId,
                     depth,
@@ -1783,7 +1793,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     undefined,
                     undefined,
                     undefined,
-                    !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap
+                    !!shapeObj.cacheAsBitmap,
+                    shapeCXForm
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (displayObj.type === "shape" && displayObj.blendMode && displayObj.blendMode !== "normal") {
@@ -1850,6 +1861,13 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               if (hasEnabledFilters(displayObj.filters)) {
                 // Filters require PlaceObject3 (tag 70). If the field also has
                 // a name, pass it so both HasName and HasFilterList are set.
+                // Also compute CXForm so colorEffect is preserved alongside filters.
+                let textFilterCXForm = displayObj.colorEffect
+                  ? colorEffectToCXForm(displayObj.colorEffect) ?? undefined
+                  : undefined;
+                if (!textFilterCXForm && displayObj.visible === false) {
+                  textFilterCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                }
                 const placeBody = encodePlaceObject3WithFilters(
                   charId,
                   depth,
@@ -1857,7 +1875,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   y,
                   displayObj.filters!,
                   undefined,
-                  textName && textName.length > 0 ? textName : undefined
+                  textName && textName.length > 0 ? textName : undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  textFilterCXForm
                 );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
@@ -1943,7 +1965,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       undefined,
                       undefined,
                       undefined,
-                      !!displayObj.cacheAsBitmap
+                      !!displayObj.cacheAsBitmap,
+                      bmpCXForm
                     );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
@@ -2108,7 +2131,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         (displayObj as SymbolInstance).instanceName ?? undefined,
                         undefined,
                         undefined,
-                        !!displayObj.cacheAsBitmap
+                        !!displayObj.cacheAsBitmap,
+                        instCXForm
                       );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                   // Clip actions (play-once / single-frame / firstFrame seek): attach via a
@@ -2273,6 +2297,16 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else if (hasEnabledFilters(displayObj.filters)) {
                 // Filters require PlaceObject3 — re-emit full placement with filter list
+                const shapeMoveObj = displayObj as { colorEffect?: import("@flash/core").ColorEffect; visible?: boolean; alpha?: number; cacheAsBitmap?: boolean };
+                let shapeMoveCXForm = shapeMoveObj.colorEffect
+                  ? colorEffectToCXForm(shapeMoveObj.colorEffect) ?? undefined
+                  : undefined;
+                if (!shapeMoveCXForm && shapeMoveObj.visible === false) {
+                  shapeMoveCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                }
+                if (!shapeMoveCXForm && shapeMoveObj.alpha !== undefined && shapeMoveObj.alpha !== 1) {
+                  shapeMoveCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, shapeMoveObj.alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                }
                 const placeBody = encodePlaceObject3WithFilters(
                   charId,
                   depth,
@@ -2283,7 +2317,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   undefined,
                   undefined,
                   true,   // move = true
-                  !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap
+                  !!shapeMoveObj.cacheAsBitmap,
+                  shapeMoveCXForm
                 );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else if (displayObj.type === "shape" && displayObj.visible === false) {
@@ -2316,6 +2351,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               if (hasEnabledFilters(displayObj.filters)) {
                 // Filters require PlaceObject3 with the Move flag set so the
                 // filter list is re-applied when the text field moves across frames.
+                let textMoveCXForm = displayObj.colorEffect
+                  ? colorEffectToCXForm(displayObj.colorEffect) ?? undefined
+                  : undefined;
+                if (!textMoveCXForm && displayObj.visible === false) {
+                  textMoveCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                }
                 const placeBody = encodePlaceObject3WithFilters(
                   charId,
                   depth,
@@ -2325,7 +2366,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   undefined,
                   textMoveName && textMoveName.length > 0 ? textMoveName : undefined,
                   undefined,
-                  true  // move = true
+                  true,  // move = true
+                  undefined,
+                  textMoveCXForm
                 );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
@@ -2472,7 +2515,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     displayObj.instanceName ?? undefined,
                     undefined,
                     true,   // move = true
-                    !!displayObj.cacheAsBitmap
+                    !!displayObj.cacheAsBitmap,
+                    cxformForFilters
                   );
                   writer.writeTag(Tag.PlaceObject3, filtersPlaceBody);
                 } else {
