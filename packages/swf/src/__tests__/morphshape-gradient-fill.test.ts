@@ -208,10 +208,10 @@ describe("DefineMorphShape2 gradient and bitmap fill encoding", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 4: Bitmap fill → type byte 0x41 (clipped, no smoothing)
+  // Test 4: Bitmap fill → type byte 0x43 (clipped, no smoothing)
   // -------------------------------------------------------------------------
 
-  it("bitmap fill (clipped, no smoothing) produces fill type byte 0x41", () => {
+  it("bitmap fill (clipped, no smoothing) produces fill type byte 0x43", () => {
     const startPaths = [makeRectPath(0, 0, 100, 100, BITMAP_FILL)];
     const endPaths = [makeRectPath(0, 0, 150, 150, BITMAP_FILL)];
 
@@ -220,7 +220,7 @@ describe("DefineMorphShape2 gradient and bitmap fill encoding", () => {
     const off = fillArrayOffset2(body);
 
     expect(body[off]).toBe(1);
-    expect(body[off + 1]).toBe(0x41); // clipped, no smoothing
+    expect(body[off + 1]).toBe(0x43); // clipped, no smoothing
   });
 
   // -------------------------------------------------------------------------
@@ -314,10 +314,10 @@ describe("DefineMorphShape2 gradient and bitmap fill encoding", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 10: Bitmap fill with repeat+smooth → type byte 0x42
+  // Test 10: Bitmap fill with repeat+smooth → type byte 0x40
   // -------------------------------------------------------------------------
 
-  it("bitmap fill with repeat=true and smooth=true produces type byte 0x42", () => {
+  it("bitmap fill with repeat=true and smooth=true produces type byte 0x40", () => {
     const smoothRepeatBitmap: BitmapFill = {
       type: "bitmap",
       bitmapId: "bitmap-2",
@@ -330,7 +330,7 @@ describe("DefineMorphShape2 gradient and bitmap fill encoding", () => {
     const body = encodeDefineMorphShape2(1, startPaths, endPaths);
     const off = fillArrayOffset2(body);
 
-    expect(body[off + 1]).toBe(0x42); // repeating, smoothed
+    expect(body[off + 1]).toBe(0x40); // repeating, smoothed
   });
 
   // -------------------------------------------------------------------------

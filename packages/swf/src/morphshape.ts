@@ -422,15 +422,15 @@ function writeMorphFillStyleArray(
       const endBitmap = ef.type === "bitmap" ? ef as BitmapFill : startBitmap;
 
       // Bitmap fill type byte (same encoding as DefineShape4):
-      //   0x40 = repeating, no smoothing
-      //   0x41 = clipped, no smoothing
-      //   0x42 = repeating, smoothed
-      //   0x43 = clipped, smoothed
+      //   0x40 = repeating, smoothed
+      //   0x41 = clipped, smoothed
+      //   0x42 = repeating, no smoothing
+      //   0x43 = clipped, no smoothing
       let fillTypeByte: number;
-      if (startBitmap.repeat && startBitmap.smooth) fillTypeByte = 0x42;
-      else if (startBitmap.repeat && !startBitmap.smooth) fillTypeByte = 0x40;
-      else if (!startBitmap.repeat && startBitmap.smooth) fillTypeByte = 0x43;
-      else fillTypeByte = 0x41;
+      if (startBitmap.repeat && startBitmap.smooth) fillTypeByte = 0x40;
+      else if (startBitmap.repeat && !startBitmap.smooth) fillTypeByte = 0x42;
+      else if (!startBitmap.repeat && startBitmap.smooth) fillTypeByte = 0x41;
+      else fillTypeByte = 0x43;
       bw.writeUI8(fillTypeByte);
 
       // BitmapId: UI16 — the SWF character ID (shared for start/end)

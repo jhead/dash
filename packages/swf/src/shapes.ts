@@ -537,16 +537,16 @@ export function encodeDefineShape4(
       bw.writeUI8(fill.color.b);
       bw.writeUI8(fill.color.a);
     } else if (fill.type === "bitmap") {
-      // Bitmap fill types (SWF spec §2.4.2.2):
-      //   0x40 = repeating bitmap, no smoothing
-      //   0x41 = clipped bitmap, no smoothing
-      //   0x42 = repeating bitmap, smoothed
-      //   0x43 = clipped bitmap, smoothed
+      // Bitmap fill types (SWF spec §2.4.2.2, per ruffle write.rs):
+      //   0x40 = repeating bitmap, smoothed
+      //   0x41 = clipped bitmap, smoothed
+      //   0x42 = repeating bitmap, no smoothing
+      //   0x43 = clipped bitmap, no smoothing
       let fillTypeByte: number;
-      if (fill.repeat && fill.smooth) fillTypeByte = 0x42;
-      else if (fill.repeat && !fill.smooth) fillTypeByte = 0x40;
-      else if (!fill.repeat && fill.smooth) fillTypeByte = 0x43;
-      else fillTypeByte = 0x41;
+      if (fill.repeat && fill.smooth) fillTypeByte = 0x40;
+      else if (fill.repeat && !fill.smooth) fillTypeByte = 0x42;
+      else if (!fill.repeat && fill.smooth) fillTypeByte = 0x41;
+      else fillTypeByte = 0x43;
       bw.writeUI8(fillTypeByte);
 
       // BitmapId: UI16 — the SWF character ID of the DefineBits tag
