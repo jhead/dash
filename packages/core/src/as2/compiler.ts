@@ -2888,46 +2888,28 @@ class Compiler {
     // ---- 3. Emit prototype chain if extends -------------------------------
     if (decl.superClass !== null) {
       const superName = decl.superClass;
-      // Emit: ClassName.prototype = new SuperClass()
+      // Emit: ActionExtends (0x69)
       //
-      // ActionSetMember pops (from top): value, name, obj → obj.name = value
-      // So we push: obj (ClassName), name ("prototype"), value (new SuperClass())
+      // Ruffle's action_extends() pops (top first):
+      //   superclass constructor  ← TOP (popped first)
+      //   subclass constructor    ← next
       //
-      // For ActionNewObject (0x40), className must be on TOP (last pushed).
-      // Stack layout: nArgs (pushed first), then className on top.
-      // For a no-arg constructor: push 0 (nArgs), push superName (className), emit 0x40.
+      // It then:
+      //   - creates sub_prototype with __proto__ = superclass.prototype
+      //   - sets sub_prototype.__constructor__ = superclass  (critical for super())
+      //   - sets subclass.prototype = sub_prototype
+      //
+      // So we push subclass first (deeper on stack), then superclass on top.
 
-      // target object: ClassName
+      // subclass constructor (pushed first → deeper on stack)
       this.pushString(className);
-      this.emit(0x1c); // ActionGetVariable → ClassName function object
+      this.emit(0x1c); // ActionGetVariable → subclass constructor
 
-      // property name
-      this.pushString('prototype');
-
-      // new SuperClass(): push arg count 0, then class name on top, ActionNewObject
-      this.pushInt(0);
+      // superclass constructor (pushed second → on top)
       this.pushString(superName);
-      this.emit(0x40); // ActionNewObject → new SuperClass() instance on top
+      this.emit(0x1c); // ActionGetVariable → superclass constructor
 
-      // ActionSetMember: pops value(new instance), name("prototype"), obj(ClassName)
-      this.emit(0x4f); // ActionSetMember
-
-      // Restore: ClassName.prototype.constructor = ClassName
-      // ActionSetMember needs: obj | propName | value (obj deepest, value on top)
-      // obj = ClassName.prototype
-      this.pushString(className);
-      this.emit(0x1c); // ActionGetVariable → ClassName
-      this.pushString('prototype');
-      this.emit(0x4e); // ActionGetMember → ClassName.prototype
-
-      // propName = "constructor"
-      this.pushString('constructor');
-
-      // value = ClassName
-      this.pushString(className);
-      this.emit(0x1c); // ActionGetVariable → ClassName
-
-      this.emit(0x4f); // ActionSetMember: ClassName.prototype.constructor = ClassName
+      this.emit(0x69); // ActionExtends — sets up prototype chain
     }
 
     // ---- 3b. Emit ActionImplementsOp (0x2c) if the class has interfaces ----

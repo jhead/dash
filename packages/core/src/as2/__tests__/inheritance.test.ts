@@ -51,32 +51,32 @@ describe("AS2 class inheritance: extends and super()", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 2. extends emits ActionNew (0x40) for prototype chain setup
+  // 2. extends emits ActionExtends (0x69) for prototype chain setup
   // -------------------------------------------------------------------------
 
-  it("2. extends emits ActionNew for prototype chain setup", () => {
+  it("2. extends emits ActionExtends (0x69) for prototype chain setup", () => {
     const bytes = compileAS2("class Foo extends Bar {}");
 
-    // ActionNew (0x40) must appear: used for `new Bar()` in prototype setup
-    expect(hasOpcode(bytes, 0x40)).toBe(true);
+    // ActionExtends (0x69) must appear: the correct opcode for prototype chain setup
+    expect(hasOpcode(bytes, 0x69)).toBe(true);
+
+    // ActionNewObject (0x40) must NOT appear for prototype chain (ActionExtends replaces it)
+    expect(hasOpcode(bytes, 0x40)).toBe(false);
   });
 
   // -------------------------------------------------------------------------
-  // 3. extends emits ActionSetMember (0x4f) to assign prototype
+  // 3. extends emits ActionExtends (0x69) with both class names on stack
   // -------------------------------------------------------------------------
 
-  it("3. extends emits ActionSetMember to assign Foo.prototype = new Bar()", () => {
+  it("3. extends emits ActionExtends (0x69) with subclass and superclass on stack", () => {
     const bytes = compileAS2("class Foo extends Bar {}");
 
-    // ActionSetMember (0x4f) must appear
-    expect(hasOpcode(bytes, 0x4f)).toBe(true);
+    // ActionExtends (0x69) must appear
+    expect(hasOpcode(bytes, 0x69)).toBe(true);
 
-    // Both class names must be present as strings
+    // Both class names must be present as strings (pushed onto stack for ActionExtends)
     expect(containsString(bytes, "Foo")).toBe(true);
     expect(containsString(bytes, "Bar")).toBe(true);
-
-    // "prototype" string must be present
-    expect(containsString(bytes, "prototype")).toBe(true);
   });
 
   // -------------------------------------------------------------------------

@@ -150,14 +150,14 @@ describe("AS2 class declarations", () => {
     expect(containsString(bytes, "Dog")).toBe(true);
     expect(containsString(bytes, "Animal")).toBe(true);
 
-    // "prototype" must appear (for Dog.prototype = new Animal())
+    // "prototype" must appear (used by super.method() dispatch pattern)
     expect(containsString(bytes, "prototype")).toBe(true);
 
-    // ActionNew (0x40) to create new Animal()
-    expect(bytes).toContain(0x40);
+    // ActionExtends (0x69) sets up the prototype chain (replaces old ActionNewObject approach)
+    expect(bytes).toContain(0x69);
 
-    // ActionSetMember (0x4f) to assign prototype
-    expect(bytes).toContain(0x4f);
+    // ActionNewObject (0x40) must NOT appear for prototype chain setup
+    expect(bytes).not.toContain(0x40);
   });
 
   // -------------------------------------------------------------------------

@@ -201,8 +201,8 @@ describe("AS2 EventDispatcher patterns", () => {
     // ActionInitObject (0x43) used for object literal
     expect(bytes).toContain(0x43);
 
-    // ActionNew (0x40) used for prototype chain setup (new EventDispatcher())
-    expect(bytes).toContain(0x40);
+    // ActionExtends (0x69) used for prototype chain setup
+    expect(bytes).toContain(0x69);
 
     // ActionDefineFunction2 (0x8e) used for function definitions
     expect(bytes).toContain(0x8e);
