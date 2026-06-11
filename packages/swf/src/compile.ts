@@ -2437,10 +2437,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
 
         // Emit per-frame FrameLabel (tag 43) if any keyframe at this index has a
         // non-empty label of type "name" or "anchor".
-        // For frameIdx 0 the scene-name label was already emitted above; skip it here
-        // to avoid duplicate FrameLabel tags at the same frame position.
+        // Two FrameLabel tags at the same frame position are fine (second overrides);
+        // emitting a user-defined label at frame 0 alongside the scene-name label is
+        // correct and necessary for gotoAndPlay("start") to work when frame 0 is named.
         // Comment-type labels (labelType === "comment") are NOT emitted as FrameLabel.
-        if (frameIdx > 0) {
+        {
           let frameLabel: string | null = null;
           let frameLabelType: string = "name";
           outerLabel: for (const layer of layers) {
