@@ -2325,6 +2325,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
   let instanceName = "";
   let scrollable = false;
   let filters: Fla8Filter[] = [];
+  let colorEffect: Fla8ColorEffect | null = null;
   try {
     if (ts >= 9) {
       const name = readCString(r);
@@ -2395,28 +2396,34 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     ...(run?.rightMargin ? { rightMargin: run.rightMargin / 20 } : {}),
     ...(run?.letterSpacing ? { letterSpacing: run.letterSpacing / 20 } : {}),
     filters,
-    // Instance color effect for text fields: not yet decoded from the binary.
+    // colorEffect is null until the exact byte position in CPicText is confirmed
+    // with a fixture FLA that has a tinted/alpha/brightness effect on a text field.
     //
-    // In CPicSymbol, the color-effect block appears at a fixed position after
-    // matrix/loop data and is gated by `symbolSchema >= 4` (Flash 3+). The block
-    // is 24 bytes: 4×(u16 multiplier + s16 offset) for RGBA channels (16 bytes),
-    // then 2 bytes effect-type/reserved, 2 bytes percent, 4 bytes tint color.
-    // The alpha pair is only present for symbolSchema >= 6 (MX+).
+    // Investigation (task 1050): the fixture flash8-nested-textfields.fla has Flash 8
+    // text fields (ts=0x0D) with NO color effects applied. Hex-tracing the CPicText
+    // stream body confirms these fields have NO 24-byte colorEffect pad — unlike
+    // CPicSymbol where the block is unconditionally present for symbolSchema >= 4.
+    // CPicText therefore uses a conditional (effect-absent = no block), not a constant-
+    // size block with neutral values.
     //
-    // In CPicText, there is no confirmed fixture with a tinted text field to
-    // pin the equivalent byte position. The most plausible location (by analogy
-    // with CPicSymbol) is inside the `ts >= 9` block, between the instance-name
-    // string and the 8-byte scrollable block — but the existing scrollable-block
-    // skip would need to be split differently if a 24-byte colorEffect precedes
-    // it. Until a fixture FLA with a colored text instance is available to verify
-    // the exact byte offset, this field remains null.
+    // The two candidate positions verified by hex-trace:
+    //   1) After accessibility, before 8-byte scrollable block (at ts >= 0x0D): RULED OUT.
+    //      Inserting 24 bytes here shifts all subsequent reads in the existing fixture,
+    //      causing wrong text content to be decoded. The bytes at that position are part
+    //      of the 8-byte block, not a colorEffect pad.
+    //   2) Inside ts >= 0x0D block, before filterCount: RULED OUT for the same reason.
+    //      The bytes at that position are the filterCount itself (0x00) followed by two
+    //      trailing bytes, with nothing left before the boundary null-tag.
     //
-    // TODO(0985): acquire a Flash 8 FLA with a tinted text field, hex-dump the
-    // CPicText stream, and confirm whether the colorEffect block appears at
-    // ~(instanceName-end + accessibility-size) with the same 24-byte layout as
-    // CPicSymbol. If confirmed, add `let colorEffect: Fla8ColorEffect | null =
-    // null;` and decode it the same way as `readCPicSymbolFields` (lines 1857–1878).
-    colorEffect: null,
+    // Both positions are incompatible with a fixed-size 24-byte block for the no-effect
+    // case. A conditional representation (e.g. a leading indicator byte, or the block
+    // only written when effect-type != 0) is needed.
+    //
+    // TODO(1050): acquire a real Flash 8 FLA with a Tint/Alpha/Brightness effect on a
+    // text field and hex-dump its CPicText stream. Identify the indicator byte that
+    // gates the colorEffect block and its exact offset relative to the accessibility /
+    // scrollable / filter fields documented above.
+    colorEffect,
     runs,
     ...hiddenElementProp(visible),
   };
