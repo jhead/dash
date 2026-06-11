@@ -165,7 +165,9 @@ function displayObjectToTweenTarget(obj: DisplayObject): TweenTarget {
     scaleX: shaped.scaleX ?? 1,
     scaleY: shaped.scaleY ?? 1,
     rotation: shaped.rotation ?? 0,
-    alpha: 100,
+    skewX: shaped.skewX ?? 0,
+    skewY: shaped.skewY ?? 0,
+    alpha: (shaped.alpha ?? 1) * 100,
     colorEffect,
     filters,
   };
@@ -297,6 +299,9 @@ export function getTweenedFrame(
         scaleX: result.scaleX,
         scaleY: result.scaleY,
         rotation,
+        skewX: result.skewX ?? 0,
+        skewY: result.skewY ?? 0,
+        alpha: result.alpha / 100,
         ...(interpolatedColorEffect !== undefined
           ? { colorEffect: interpolatedColorEffect ?? undefined }
           : {}),

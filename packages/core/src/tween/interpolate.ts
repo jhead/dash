@@ -583,6 +583,8 @@ export function interpolateTween(
       config.motionRotate,
       config.motionRotateCount
     ),
+    skewX: lerp(from.skewX ?? 0, to.skewX ?? 0, tRotation),
+    skewY: lerp(from.skewY ?? 0, to.skewY ?? 0, tRotation),
     alpha: lerp(from.alpha, to.alpha, tColor),
     colorEffect,
     filters,

@@ -11,6 +11,8 @@ export interface TweenTarget {
   scaleX: number;
   scaleY: number;
   rotation: number;   // degrees
+  skewX?: number;     // degrees
+  skewY?: number;     // degrees
   alpha: number;      // 0–100
   /** Optional color effect to interpolate (tint/brightness/alpha/advanced). */
   colorEffect?: ColorEffect | null;
