@@ -1039,10 +1039,11 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
     },
     pasteFrames(startFrame: number) {
       if (!state.frameClipboard) return;
+      const layerId = getActiveLayerId();
       state.doc = pasteFramesDoc(
         state.doc,
         state.sceneIndex,
-        [],
+        layerId ? [layerId] : [],
         startFrame,
         state.frameClipboard
       );
@@ -2273,21 +2274,17 @@ function makeDocumentProxy(
       );
       if (objectsToConvert.length === 0) return;
 
-      const avgX =
-        objectsToConvert.reduce(
-          (sum, o) => sum + ((o as { x?: number }).x ?? 0),
-          0
-        ) / objectsToConvert.length;
-      const avgY =
-        objectsToConvert.reduce(
-          (sum, o) => sum + ((o as { y?: number }).y ?? 0),
-          0
-        ) / objectsToConvert.length;
+      const minX = Math.min(
+        ...objectsToConvert.map((o) => (o as { x?: number }).x ?? 0)
+      );
+      const minY = Math.min(
+        ...objectsToConvert.map((o) => (o as { y?: number }).y ?? 0)
+      );
 
       const symbolObjects = objectsToConvert.map((o) => ({
         ...o,
-        x: ((o as { x?: number }).x ?? 0) - avgX,
-        y: ((o as { y?: number }).y ?? 0) - avgY,
+        x: ((o as { x?: number }).x ?? 0) - minX,
+        y: ((o as { y?: number }).y ?? 0) - minY,
       }));
 
       const symType = jsflSymbolType(type);
@@ -2327,8 +2324,8 @@ function makeDocumentProxy(
         type: "instance",
         id: instId,
         symbolId: newSymbol.id,
-        x: avgX,
-        y: avgY,
+        x: minX,
+        y: minY,
       };
 
       const newTimeline: TimelineModel = {

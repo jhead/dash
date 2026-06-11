@@ -2039,8 +2039,8 @@ class Compiler {
     if (expr.callee.type === 'MemberExpr') {
       const member = expr.callee as MemberExpr;
 
-      // Built-in: String.fromCharCode(n) → push n, ActionMBChr (0x63)
-      // Flash Professional emits ActionMBChr instead of a generic method call.
+      // Built-in: String.fromCharCode(n) → push n, ActionMBAsciiToChar (0x37)
+      // Flash Professional emits ActionMBAsciiToChar instead of a generic method call.
       if (
         member.object.type === 'Identifier' &&
         (member.object as Identifier).name === 'String' &&
@@ -2048,7 +2048,7 @@ class Compiler {
         expr.args.length === 1
       ) {
         this.compileExpr(expr.args[0]!);
-        this.emit(0x63); // ActionMBChr
+        this.emit(0x37); // ActionMBAsciiToChar
         return;
       }
 
@@ -2330,16 +2330,16 @@ class Compiler {
     //   1. Store the computed function into a temp variable
     //   2. Call it by name via ActionCallFunction (0x3D)
     //
-    // ActionSetVariable pops value (top) then name (below), so sequence is:
+    // ActionDefineLocal pops value (top) then name (below), so sequence is:
     //   push tempName
     //   compile callee  → pushes fn on top
-    //   ActionSetVariable → stores fn into tempName, consumes both
+    //   ActionDefineLocal → stores fn into tempName (function-scoped), consumes both
     //   push args (reverse), push argCount, push tempName
     //   ActionCallFunction
     const tmpName = `__callTmp${this.callTmpCounter++}`;
     this.pushString(tmpName);
     this.compileExpr(expr.callee); // function value on top
-    this.emit(0x1d); // ActionSetVariable — stores fn, leaves nothing on stack
+    this.emit(0x3c); // ActionDefineLocal — stores fn as local var, leaves nothing on stack
     for (let i = expr.args.length - 1; i >= 0; i--) {
       this.compileExpr(expr.args[i]!);
     }

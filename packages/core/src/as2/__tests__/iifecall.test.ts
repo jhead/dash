@@ -54,7 +54,7 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 const OP = {
   ActionCallFunction: 0x3d,
   ActionCallMethod: 0x52,
-  ActionSetVariable: 0x1d,
+  ActionDefineLocal: 0x3c,
   ActionGetVariable: 0x1c,
   ActionDefineFunction2: 0x8e,
 } as const;
@@ -74,10 +74,10 @@ describe("IIFE (immediately-invoked function expression)", () => {
     expect(hasOpcode(bytes, OP.ActionDefineFunction2)).toBe(true);
   });
 
-  it("stores callee in a temp variable via ActionSetVariable (0x1D)", () => {
+  it("stores callee in a temp variable via ActionDefineLocal (0x3C)", () => {
     const bytes = compileAS2("var x = (function() { return 42; })();");
-    // The temp-var approach must store the function before calling it
-    expect(hasOpcode(bytes, OP.ActionSetVariable)).toBe(true);
+    // The temp-var approach must store the function as a local before calling it
+    expect(hasOpcode(bytes, OP.ActionDefineLocal)).toBe(true);
   });
 
   it("IIFE with arguments emits ActionCallFunction with correct arg count", () => {
@@ -133,6 +133,6 @@ describe("double-call (factory returning function)", () => {
 
   it("double-call stores intermediate result in a temp variable", () => {
     const bytes = compileAS2("factory()();");
-    expect(hasOpcode(bytes, OP.ActionSetVariable)).toBe(true);
+    expect(hasOpcode(bytes, OP.ActionDefineLocal)).toBe(true);
   });
 });
