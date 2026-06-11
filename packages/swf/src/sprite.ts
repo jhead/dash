@@ -14,12 +14,24 @@
  * `hoistedDefs` out-parameter and emit them before the sprite tag.
  */
 import type { BitmapItem, FlashDocument, Symbol, Layer, Frame } from "@flash/core";
-import { layerFrameCount, compileAS2 } from "@flash/core";
+import { layerFrameCount, compileAS2, getTweenedFrame } from "@flash/core";
 import { BitWriter } from "./bits.js";
-import { encodeDefineShape4, encodeBitmapFillShape, encodePlaceObject2, encodePlaceObject2Move } from "./shapes.js";
+import {
+  encodeDefineShape4,
+  encodeBitmapFillShape,
+  encodePlaceObject2,
+  encodePlaceObject2Move,
+  encodePlaceObject2WithCXForm,
+} from "./shapes.js";
+import {
+  encodePlaceObject3WithFilters,
+  encodePlaceObject3WithBlendMode,
+  hasEnabledFilters,
+} from "./filters.js";
 import { encodeDefineEditText, encodePlaceObject2ForText } from "./text.js";
 import { Tag } from "./tags.js";
 import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
+import { colorEffectToCXForm } from "./cxform.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -179,11 +191,32 @@ export function encodeDefineSprite(
     return depth;
   }
 
+  // Bug 1101 fix: pre-pass to seed depth assignments in correct visual order.
+  // Iterate from li=layers.length-1 (background/bottommost) down to li=0 (foreground/topmost).
+  // This ensures background layers get lower depths (rendered behind) and foreground
+  // layers get higher depths (rendered in front), matching compile.ts lines ~1327-1346.
+  for (let li = layers.length - 1; li >= 0; li--) {
+    const layer = layers[li];
+    for (const frame of layer.frames) {
+      if (!frame.isKeyframe) continue;
+      for (const obj of frame.displayObjects) {
+        getOrAssignDepth(li, obj.id);
+      }
+    }
+  }
+
   // Per-depth display-list state (last placed objId and position)
+  // Bug 1102 fix: track scaleX/scaleY/rotation/skewX/skewY and colorEffectKey.
   interface DepthState {
     objId: string;
     x: number;
     y: number;
+    scaleX: number;
+    scaleY: number;
+    rotation: number;
+    skewX: number;
+    skewY: number;
+    colorEffectKey: string | null;
   }
   const depthState = new Map<number, DepthState>();
 
@@ -192,19 +225,19 @@ export function encodeDefineSprite(
 
   for (let frameIdx = 0; frameIdx < maxFrames; frameIdx++) {
     // Collect what should be on screen this frame
-    const thisFrameDepths = new Map<number, { objId: string; x: number; y: number }>();
+    // Bug 1100 fix: use getTweenedFrame (not findGoverningKeyframe) so tween
+    // interpolation is applied for each frame within a motion-tween span.
+    const thisFrameDepths = new Map<number, { objId: string; displayObj: import("@flash/core").DisplayObject }>();
 
     for (let li = 0; li < layers.length; li++) {
       const layer = layers[li];
-      const keyframe = findGoverningKeyframe(layer, frameIdx);
+      const keyframe = getTweenedFrame(layer, frameIdx, timeline);
       // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
       if (!keyframe || keyframe.displayObjects.length === 0) continue;
 
       for (const obj of keyframe.displayObjects) {
         const depth = getOrAssignDepth(li, obj.id);
-        const x = "x" in obj ? (obj as { x: number }).x ?? 0 : 0;
-        const y = "y" in obj ? (obj as { y: number }).y ?? 0 : 0;
-        thisFrameDepths.set(depth, { objId: obj.id, x, y });
+        thisFrameDepths.set(depth, { objId: obj.id, displayObj: obj });
       }
     }
 
@@ -219,32 +252,57 @@ export function encodeDefineSprite(
     }
 
     // Emit PlaceObject2 / PlaceObject2+Move for each object this frame
-    for (const [depth, { objId, x, y }] of thisFrameDepths) {
+    for (const [depth, { objId, displayObj }] of thisFrameDepths) {
+      // Bug 1102 fix: extract full transform from the (possibly tweened) display object
+      let x = 0;
+      let y = 0;
+      let scaleX = 1;
+      let scaleY = 1;
+      let rotation = 0;
+      let skewX = 0;
+      let skewY = 0;
+      if ("x" in displayObj) x = (displayObj as { x: number }).x ?? 0;
+      if ("y" in displayObj) y = (displayObj as { y: number }).y ?? 0;
+      if ("scaleX" in displayObj) scaleX = (displayObj as { scaleX: number }).scaleX ?? 1;
+      if ("scaleY" in displayObj) scaleY = (displayObj as { scaleY: number }).scaleY ?? 1;
+      if ("rotation" in displayObj) rotation = (displayObj as { rotation: number }).rotation ?? 0;
+      if ("skewX" in displayObj) skewX = (displayObj as { skewX: number }).skewX ?? 0;
+      if ("skewY" in displayObj) skewY = (displayObj as { skewY: number }).skewY ?? 0;
+
+      // Bug 1103 fix: compute colorEffectKey for change detection
+      const thisColorEffectKey = (() => {
+        if (
+          (displayObj.type === "instance" || displayObj.type === "text" || displayObj.type === "bitmap") &&
+          (displayObj as { visible?: boolean }).visible === false
+        ) {
+          return "visible:false";
+        }
+        if (displayObj.type !== "instance" && displayObj.type !== "text" && displayObj.type !== "bitmap") return null;
+        const ce = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect;
+        if (ce && ce.type !== "none") return JSON.stringify(ce);
+        return null;
+      })();
+
       const prev = depthState.get(depth);
       const isFirst = !prev;
-      const posChanged = prev && (prev.x !== x || prev.y !== y || prev.objId !== objId);
+      // Bug 1102 fix: posChanged now includes all transform components + colorEffectKey
+      const posChanged =
+        prev &&
+        (prev.x !== x ||
+          prev.y !== y ||
+          prev.scaleX !== scaleX ||
+          prev.scaleY !== scaleY ||
+          prev.rotation !== rotation ||
+          prev.skewX !== skewX ||
+          prev.skewY !== skewY ||
+          prev.objId !== objId ||
+          prev.colorEffectKey !== thisColorEffectKey);
 
       if (!isFirst && !posChanged) {
         // Unchanged — emit nothing
-        depthState.set(depth, { objId, x, y });
+        depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey });
         continue;
       }
-
-      // Find the display object
-      let displayObj: import("@flash/core").DisplayObject | undefined;
-      outer: for (let li = 0; li < layers.length; li++) {
-        const layer = layers[li];
-        const keyframe = findGoverningKeyframe(layer, frameIdx);
-        // Do not skip on isEmpty — the flag can be stale; check displayObjects directly.
-        if (!keyframe || keyframe.displayObjects.length === 0) continue;
-        for (const obj of keyframe.displayObjects) {
-          if (obj.id === objId) {
-            displayObj = obj;
-            break outer;
-          }
-        }
-      }
-      if (!displayObj) continue;
 
       if (isFirst) {
         if (displayObj.type === "shape" || displayObj.type === "drawing-object") {
@@ -254,19 +312,76 @@ export function encodeDefineSprite(
             scaleY: displayObj.scaleY,
             rotation: displayObj.rotation,
           } : undefined;
-          spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y, objTransform)));
+          // Bug 1103 fix: encode colorEffect / visible=false via CXForm
+          if (displayObj.type === "shape" && displayObj.visible === false) {
+            const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform)));
+          } else if (hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
+            const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, objTransform);
+            spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
+          } else {
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y, objTransform)));
+          }
         } else if (displayObj.type === "text") {
           const charId = objCharIdMap.get(objId)!;
-          spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2ForText(charId, depth, x, y)));
+          // Bug 1103 fix: encode colorEffect / visible=false
+          let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+            ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
+            : null;
+          if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
+            cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+          }
+          if (cxform !== null) {
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform)));
+          } else {
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2ForText(charId, depth, x, y)));
+          }
         } else if (displayObj.type === "bitmap") {
           const charId = objCharIdMap.get(objId);
           if (charId !== undefined) {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y)));
+            // Bug 1103 fix: encode colorEffect / visible=false
+            const isHidden = (displayObj as { visible?: boolean }).visible === false;
+            let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+              ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
+              : null;
+            if (cxform === null && isHidden) {
+              cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+            }
+            if (cxform !== null) {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform)));
+            } else {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y)));
+            }
           }
         } else if (displayObj.type === "instance") {
           const refCharId = charIdMap.get(displayObj.symbolId);
           if (refCharId !== undefined) {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(refCharId, depth, x, y)));
+            const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+              ? { scaleX, scaleY, rotation, skewX, skewY }
+              : undefined;
+            // Bug 1103 fix: encode colorEffect / visible=false / filters / blend mode
+            const hasBlend = !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
+            if (hasBlend || hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
+              const instCXForm = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+                ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect) ?? undefined
+                : undefined;
+              const placeBody = hasBlend
+                ? encodePlaceObject3WithBlendMode(refCharId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, instanceTransform, undefined, instCXForm)
+                : encodePlaceObject3WithFilters(refCharId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, instanceTransform);
+              spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
+            } else {
+              let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+                ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
+                : null;
+              if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
+                cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+              }
+              if (cxform !== null) {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(refCharId, depth, x, y, cxform, instanceTransform)));
+              } else {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(refCharId, depth, x, y, instanceTransform)));
+              }
+            }
           }
         }
       } else {
@@ -279,10 +394,29 @@ export function encodeDefineSprite(
             scaleY: displayObj.scaleY,
             rotation: displayObj.rotation,
           } : undefined;
-          spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, objTransform, replaceChar)));
+          // Bug 1103 fix: encode colorEffect / visible=false / filters on move
+          if (displayObj.type === "shape" && displayObj.visible === false) {
+            const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform, true)));
+          } else if (hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
+            const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, objTransform);
+            spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
+          } else {
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, objTransform, replaceChar)));
+          }
         } else if (displayObj.type === "text") {
           const charId = objCharIdMap.get(objId)!;
-          spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar)));
+          let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+            ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
+            : null;
+          if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
+            cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+          }
+          if (cxform !== null) {
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform, undefined, true)));
+          } else {
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar)));
+          }
         } else if (displayObj.type === "bitmap") {
           const charId = objCharIdMap.get(objId);
           if (charId !== undefined) {
@@ -291,12 +425,26 @@ export function encodeDefineSprite(
         } else if (displayObj.type === "instance") {
           const refCharId = charIdMap.get(displayObj.symbolId);
           if (refCharId !== undefined) {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(refCharId, depth, x, y, undefined, replaceChar)));
+            const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+              ? { scaleX, scaleY, rotation, skewX, skewY }
+              : undefined;
+            // Bug 1103 fix: encode colorEffect / visible=false on move
+            let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+              ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
+              : null;
+            if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
+              cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+            }
+            if (cxform !== null) {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(refCharId, depth, x, y, cxform, instanceTransform, true)));
+            } else {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(refCharId, depth, x, y, instanceTransform, replaceChar)));
+            }
           }
         }
       }
 
-      depthState.set(depth, { objId, x, y });
+      depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey });
     }
 
     // Emit FrameLabel (tag 43) if any keyframe at this frame index has a label
