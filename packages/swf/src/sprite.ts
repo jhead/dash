@@ -13,7 +13,7 @@
  * DefineSprite tag. Callers should collect hoisted definitions via the
  * `hoistedDefs` out-parameter and emit them before the sprite tag.
  */
-import type { BitmapItem, ClipAction, FlashDocument, Symbol } from "@flash/core";
+import type { BitmapItem, ClipAction, DisplayObject, FlashDocument, Symbol } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import {
@@ -58,6 +58,33 @@ function encodeTag(tagType: number, body: Uint8Array): Uint8Array {
   }
   bw.writeBytes(body);
   return bw.getBytes();
+}
+
+// ---------------------------------------------------------------------------
+// flattenDisplayObjects
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursively expand GroupObject containers into a flat list of non-group
+ * DisplayObjects, merging each group's x/y offset into its children.
+ * Mirrors the same helper in compile.ts (task 1128).
+ */
+function flattenDisplayObjects(
+  objs: readonly DisplayObject[],
+  dx = 0,
+  dy = 0
+): DisplayObject[] {
+  const result: DisplayObject[] = [];
+  for (const obj of objs) {
+    if (obj.type === "group") {
+      result.push(...flattenDisplayObjects(obj.children, dx + obj.x, dy + obj.y));
+    } else if (dx !== 0 || dy !== 0) {
+      result.push({ ...obj, x: (obj.x ?? 0) + dx, y: (obj.y ?? 0) + dy } as DisplayObject);
+    } else {
+      result.push(obj);
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +149,7 @@ export function encodeDefineSprite(
     for (const frame of layer.frames) {
       // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
       if (!frame.isKeyframe) continue;
-      for (const obj of frame.displayObjects) {
+      for (const obj of flattenDisplayObjects(frame.displayObjects)) {
         if (objCharIdMap.has(obj.id)) continue;
         if (obj.type === "shape" || obj.type === "drawing-object") {
           const charId = nextCharId();
@@ -221,7 +248,7 @@ export function encodeDefineSprite(
   const registerLayerDepths = (li: number) => {
     for (const frame of layers[li]!.frames) {
       if (!frame.isKeyframe) continue;
-      for (const obj of frame.displayObjects) {
+      for (const obj of flattenDisplayObjects(frame.displayObjects)) {
         getOrAssignDepth(li, obj.id);
       }
     }
@@ -281,7 +308,7 @@ export function encodeDefineSprite(
       // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
       if (!keyframe || keyframe.displayObjects.length === 0) continue;
 
-      for (const obj of keyframe.displayObjects) {
+      for (const obj of flattenDisplayObjects(keyframe.displayObjects)) {
         const depth = getOrAssignDepth(li, obj.id);
         thisFrameDepths.set(depth, { objId: obj.id, displayObj: obj, layerIdx: li });
       }
@@ -299,7 +326,7 @@ export function encodeDefineSprite(
         if (ml.type !== "masked") break;
         const mFrame = getTweenedFrame(ml, frameIdx, timeline);
         if (!mFrame || mFrame.displayObjects.length === 0) continue;
-        for (const obj of mFrame.displayObjects) {
+        for (const obj of flattenDisplayObjects(mFrame.displayObjects)) {
           const d = getOrAssignDepth(mli, obj.id);
           if (d > maxDepth) maxDepth = d;
         }
