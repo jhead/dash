@@ -327,7 +327,8 @@ export function encodeDefineSprite(
           const charId = objCharIdMap.get(objId)!;
           // Task 1110 fix: filters require PlaceObject3
           if (hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
-            const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!);
+            const textName = (displayObj as { instanceName?: string }).instanceName;
+            const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, undefined, textName && textName.length > 0 ? textName : undefined);
             spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
             // Bug 1103 fix: encode colorEffect / visible=false
@@ -430,7 +431,8 @@ export function encodeDefineSprite(
           const charId = objCharIdMap.get(objId)!;
           // Task 1110 fix: filters require PlaceObject3 on move too
           if (hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
-            const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, undefined, undefined, undefined, true);
+            const textName = (displayObj as { instanceName?: string }).instanceName;
+            const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, undefined, textName && textName.length > 0 ? textName : undefined, undefined, true);
             spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
             let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
