@@ -117,6 +117,7 @@ import type {
   TextDisplayObject,
   SymbolInstance,
   VideoDisplayObject,
+  BitmapDisplayObject,
   GroupObject,
   Color,
   ColorEffect,
@@ -813,7 +814,7 @@ const handlers: Record<string, AnyHandler> = {
 
     // Validate symbolId
     const sym = doc.library.items.find((i) => i.id === params.symbolId);
-    if (!sym) {
+    if (!sym || sym.itemType !== "symbol") {
       const known = doc.library.items
         .filter((i) => i.itemType === "symbol")
         .map((i) => i.id)
@@ -924,6 +925,53 @@ const handlers: Record<string, AnyHandler> = {
       type: "video",
       id: nextAgentObjId("video"),
       videoItemId: params.videoItemId,
+      x: params.x,
+      y: params.y,
+      width,
+      height,
+    };
+
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
+      addDisplayObject(t, layerId, frameIndex, obj)
+    );
+    cb.pushDoc(newDoc);
+    return { id: obj.id, rev: _rev };
+  },
+
+  stage_add_bitmap(params: {
+    bitmapItemId: string;
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    layerId?: string;
+    frameIndex?: number;
+  }): StagePlaceInstanceResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+
+    // Validate bitmapItemId references a BitmapItem in the library.
+    const item = doc.library.items.find((i) => i.id === params.bitmapItemId);
+    if (!item || item.itemType !== "bitmap") {
+      const known = doc.library.items
+        .filter((i) => i.itemType === "bitmap")
+        .map((i) => i.id)
+        .join(", ");
+      throw new Error(
+        `Unknown bitmapItemId "${params.bitmapItemId}". Known bitmaps: ${known || "(none)"}`
+      );
+    }
+
+    const layerId = resolveLayerId(cb, params.layerId);
+    const frameIndex = resolveFrameIndex(cb, params.frameIndex);
+
+    const width = params.width ?? (item.originalWidth > 0 ? item.originalWidth : 100);
+    const height = params.height ?? (item.originalHeight > 0 ? item.originalHeight : 100);
+
+    const obj: BitmapDisplayObject = {
+      type: "bitmap",
+      id: nextAgentObjId("bmp"),
+      libraryItemId: params.bitmapItemId,
       x: params.x,
       y: params.y,
       width,

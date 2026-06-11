@@ -570,6 +570,25 @@ function createMcpServerForRequest(): McpServer {
   );
 
   server.registerTool(
+    "stage_add_bitmap",
+    {
+      title: "Place Bitmap On Stage",
+      description:
+        "Place a BitmapItem from the library on the stage as a bitmap display object. Defaults to the bitmap's native dimensions when width/height are omitted. Returns the new object id and rev.",
+      inputSchema: z.object({
+        bitmapItemId: z.string().describe("Library BitmapItem id"),
+        x: z.number(),
+        y: z.number(),
+        width: z.number().positive().optional().describe("Display width (defaults to native)"),
+        height: z.number().positive().optional().describe("Display height (defaults to native)"),
+        layerId: z.string().optional(),
+        frameIndex: z.number().int().nonnegative().optional(),
+      }),
+    },
+    async (params) => callTool("stage_add_bitmap", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
     "stage_update",
     {
       title: "Update Stage Object",

@@ -800,6 +800,7 @@ export const ALL_COMMANDS = [
   "stage_add_text",
   "stage_place_instance",
   "stage_add_video",
+  "stage_add_bitmap",
   "stage_update",
   "stage_remove",
   "stage_arrange",
