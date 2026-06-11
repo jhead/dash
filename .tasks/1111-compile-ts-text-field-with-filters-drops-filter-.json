@@ -1,0 +1,10 @@
+{
+  "id": "1111-compile-ts-text-field-with-filters-drops-filter-",
+  "title": "compile.ts: text field with filters drops filter list when it moves between keyframes",
+  "description": "In compile.ts, the isFirst placement path for TextDisplayObject (lines ~1779-1791) correctly checks hasEnabledFilters and emits PlaceObject3. However, the posChanged path (lines ~2202-2234) does NOT check for filters \u2014 it always emits PlaceObject2 via encodePlaceObject2WithCXForm or encodePlaceObject2Move.\n\nResult: if a text field with Flash 8 filters (drop-shadow, glow, blur, etc.) is animated (position tween) across keyframes, the filter is present on frame 1 but silently dropped on every subsequent frame where the position changed.\n\nFix: in the posChanged branch for displayObj.type === 'text', add a hasEnabledFilters(displayObj.filters) check before the CXForm check, and emit PlaceObject3 via encodePlaceObject3WithFilters (passing the name if any). Mirror the isFirst text+filters path at lines 1779-1791.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T04:35:24Z",
+  "updated_at": "2026-06-11T04:38:12Z"
+}

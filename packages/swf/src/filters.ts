@@ -534,16 +534,18 @@ export function encodePlaceObject3WithFilters(
     skewY?: number;
   },
   name?: string,
-  ratio?: number
+  ratio?: number,
+  move?: boolean
 ): Uint8Array {
   const bw = new BitWriter();
   const hasName = !!(name && name.length > 0);
   const hasRatio = ratio !== undefined;
+  const isMove = !!move;
 
   // ---------------------------------------------------------------------------
   // Flags1: UI8
-  // bit 0: HasMove (0 — placing new object)
-  // bit 1: HasCharacter (1)
+  // bit 0: HasMove (1 when updating an existing object; 0 when placing new)
+  // bit 1: HasCharacter (1 when placing new; 0 when only moving)
   // bit 2: HasMatrix (1)
   // bit 3: HasColorTransform (0)
   // bit 4: HasRatio (1 if ratio provided)
@@ -552,7 +554,8 @@ export function encodePlaceObject3WithFilters(
   // bit 7: HasClipActions (0)
   // ---------------------------------------------------------------------------
   const flags1 =
-    (1 << 1) | // HasCharacter
+    (isMove ? (1 << 0) : 0) | // HasMove
+    (isMove ? 0 : (1 << 1)) | // HasCharacter (only on initial placement)
     (1 << 2) | // HasMatrix
     (hasRatio ? (1 << 4) : 0) | // HasRatio
     (hasName ? (1 << 5) : 0); // HasName
@@ -574,8 +577,10 @@ export function encodePlaceObject3WithFilters(
   // Depth: UI16
   bw.writeUI16LE(depth);
 
-  // CharacterId: UI16 (HasCharacter)
-  bw.writeUI16LE(charId);
+  // CharacterId: UI16 (HasCharacter — omitted when HasMove is set)
+  if (!isMove) {
+    bw.writeUI16LE(charId);
+  }
 
   // MATRIX — build full affine matrix from position + optional transform
   const m = composeMatrix({

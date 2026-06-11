@@ -2201,36 +2201,53 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               }
             } else if (displayObj.type === "text") {
               const charId = objCharIdMap.get(objId)!;
-              let cxform = displayObj.colorEffect
-                ? colorEffectToCXForm(displayObj.colorEffect)
-                : null;
-              if (cxform === null && displayObj.visible === false) {
-                cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
-              }
-              if (cxform !== null) {
-                // Move + HasMatrix + HasColorTransform (no HasCharacter unless replacing)
-                const textMoveName = displayObj.instanceName;
-                const placeBody = encodePlaceObject2WithCXForm(
+              const textMoveName = displayObj.instanceName;
+              if (hasEnabledFilters(displayObj.filters)) {
+                // Filters require PlaceObject3 with the Move flag set so the
+                // filter list is re-applied when the text field moves across frames.
+                const placeBody = encodePlaceObject3WithFilters(
                   charId,
                   depth,
                   x,
                   y,
-                  cxform,
+                  displayObj.filters!,
                   undefined,
-                  true,  // move = true
-                  textMoveName && textMoveName.length > 0 ? textMoveName : undefined
+                  textMoveName && textMoveName.length > 0 ? textMoveName : undefined,
+                  undefined,
+                  true  // move = true
                 );
-                writer.writeTag(Tag.PlaceObject2, placeBody);
+                writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
-                const placeBody = encodePlaceObject2Move(
-                  charId,
-                  depth,
-                  x,
-                  y,
-                  undefined,
-                  prev!.objId !== objId
-                );
-                writer.writeTag(Tag.PlaceObject2, placeBody);
+                let cxform = displayObj.colorEffect
+                  ? colorEffectToCXForm(displayObj.colorEffect)
+                  : null;
+                if (cxform === null && displayObj.visible === false) {
+                  cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+                }
+                if (cxform !== null) {
+                  // Move + HasMatrix + HasColorTransform (no HasCharacter unless replacing)
+                  const placeBody = encodePlaceObject2WithCXForm(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    cxform,
+                    undefined,
+                    true,  // move = true
+                    textMoveName && textMoveName.length > 0 ? textMoveName : undefined
+                  );
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                } else {
+                  const placeBody = encodePlaceObject2Move(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    undefined,
+                    prev!.objId !== objId
+                  );
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                }
               }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;

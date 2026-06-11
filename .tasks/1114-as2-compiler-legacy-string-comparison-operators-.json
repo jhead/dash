@@ -1,0 +1,10 @@
+{
+  "id": "1114-as2-compiler-legacy-string-comparison-operators-",
+  "title": "AS2 compiler: legacy string comparison operators (eq, ne, lt, gt, le, ge) not implemented",
+  "description": "Flash 2\u20134 AS2 had keyword-based string comparison operators that are still valid (though rare) syntax:\n- `eq` \u2192 ActionStringEquals (0x13)\n- `ne` \u2192 ActionStringEquals (0x13) + ActionNot (0x12)\n- `lt` \u2192 ActionStringLess (0x29)\n- `gt` \u2192 ActionStringGreater (0x68)\n- `le` \u2192 ActionStringGreater (0x68) + ActionNot (0x12)\n- `ge` \u2192 ActionStringLess (0x29) + ActionNot (0x12)\n\n**Current state:**\n- None of these are in `AS2_KEYWORDS` in `tokenizer.ts`, so they parse as identifiers.\n- `parseRelational()` and `parseEquality()` in `parser.ts` have no handling for these keyword operators.\n- `compileBinaryExpr()` in `compiler.ts` has no cases for these operator strings.\n\n**Fix needed:**\n1. Add `'eq'`, `'ne'`, `'lt'`, `'gt'`, `'le'`, `'ge'` to `AS2_KEYWORDS` in `tokenizer.ts`.\n2. In `parseEquality()`, add checks for keyword tokens `'eq'` and `'ne'`.\n3. In `parseRelational()`, add checks for keyword tokens `'lt'`, `'gt'`, `'le'`, `'ge'`.\n4. In `compileBinaryExpr()`, add cases:\n   - `'eq'`: emit 0x13 (ActionStringEquals)\n   - `'ne'`: emit 0x13 + 0x12 (ActionStringEquals + ActionNot)\n   - `'lt'`: emit 0x29 (ActionStringLess)\n   - `'gt'`: emit 0x68 (ActionStringGreater)\n   - `'le'`: emit 0x68 + 0x12 (ActionStringGreater + ActionNot)\n   - `'ge'`: emit 0x29 + 0x12 (ActionStringLess + ActionNot)\n\n**Priority note:** These operators are extremely rare in Flash 8 content (deprecated since Flash 5) and none of the capstone content uses them. File as low priority.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T04:36:45Z",
+  "updated_at": "2026-06-11T04:37:34Z"
+}
