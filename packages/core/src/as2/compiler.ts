@@ -279,8 +279,8 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
         break;
       case 'BinaryExpr':
         if (e.operator === 'in') {
-          // hasOwnProperty call
-          add('hasOwnProperty');
+          // GetMember probe: typeof(obj[key]) !== "undefined"
+          add('undefined');
         }
         scanExpr(e.left);
         scanExpr(e.right);
@@ -1169,11 +1169,57 @@ class Compiler {
    *   CatchBody:   <CatchSize bytes>   (0 bytes if no catch)
    *   FinallyBody: <FinallySize bytes> (0 bytes if no finally)
    */
+  /**
+   * Snapshot the current lengths of all break/continue patch arrays on every
+   * live LoopContext so we can identify which entries were newly added by a
+   * sub-compiler.
+   */
+  private snapshotPatchCounts(): Array<{ breakLen: number; continueLen: number }> {
+    return this.loopStack.map(ctx => ({
+      breakLen:    ctx.breakPatches.length,
+      continueLen: ctx.continuePatches.length,
+    }));
+  }
+
+  /**
+   * After a sub-compiler has run and its bytes are about to be appended to this
+   * (parent) buffer starting at byte `parentBase`, rebase all newly added patch
+   * positions in the shared loopStack from sub-compiler-relative to parent-relative.
+   *
+   * `snapshot` must be the value returned by `snapshotPatchCounts()` taken
+   * immediately before the sub-compiler ran.
+   */
+  private rebasePatchOffsets(
+    snapshot: Array<{ breakLen: number; continueLen: number }>,
+    parentBase: number,
+  ): void {
+    for (let i = 0; i < this.loopStack.length; i++) {
+      const ctx  = this.loopStack[i];
+      const snap = snapshot[i];
+      if (!snap) continue; // defensive: stack grew inside sub-compiler (shouldn't happen)
+      for (let j = snap.breakLen; j < ctx.breakPatches.length; j++) {
+        ctx.breakPatches[j] += parentBase;
+      }
+      for (let j = snap.continueLen; j < ctx.continuePatches.length; j++) {
+        ctx.continuePatches[j] += parentBase;
+      }
+    }
+  }
+
   private compileTryStmt(stmt: TryStmt): void {
     const hasCatch   = stmt.catchClause !== null;
     const hasFinally = stmt.finallyBlock !== null;
 
-    // Compile bodies into sub-buffers (number[] avoids Uint8Array variance issues)
+    // Compile bodies into sub-buffers (number[] avoids Uint8Array variance issues).
+    //
+    // Each sub-compiler shares the parent's loopStack so that break/continue inside
+    // a try/catch/finally body can resolve to enclosing loop targets.  However,
+    // each sub-compiler has its own `buf` starting at position 0, so any patch
+    // positions recorded in the shared loopStack contexts are sub-compiler-relative.
+    // We must rebase them to parent-buffer-relative positions after appending the
+    // sub-bytes.  `snapshotPatchCounts` + `rebasePatchOffsets` handle this.
+
+    const trySnapshot = this.snapshotPatchCounts();
     const trySubCompiler = new Compiler();
     trySubCompiler.currentSuperClass = this.currentSuperClass;
     trySubCompiler.loopStack = this.loopStack; // share break/continue context
@@ -1184,8 +1230,10 @@ class Compiler {
 
     let catchBytes: number[] = [];
     let catchParam = '';
+    let catchSnapshot: Array<{ breakLen: number; continueLen: number }> = [];
     if (hasCatch) {
       catchParam = stmt.catchClause!.param;
+      catchSnapshot = this.snapshotPatchCounts();
       const catchSubCompiler = new Compiler();
       catchSubCompiler.currentSuperClass = this.currentSuperClass;
       catchSubCompiler.loopStack = this.loopStack;
@@ -1196,7 +1244,9 @@ class Compiler {
     }
 
     let finallyBytes: number[] = [];
+    let finallySnapshot: Array<{ breakLen: number; continueLen: number }> = [];
     if (hasFinally) {
+      finallySnapshot = this.snapshotPatchCounts();
       const finallySubCompiler = new Compiler();
       finallySubCompiler.currentSuperClass = this.currentSuperClass;
       finallySubCompiler.loopStack = this.loopStack;
@@ -1258,10 +1308,28 @@ class Compiler {
     }
     this.buf.write(0); // null terminator (always present)
 
-    // Bodies — write byte-by-byte from number arrays
-    for (const b of tryBytes)     this.buf.write(b);
-    for (const b of catchBytes)   this.buf.write(b);
-    for (const b of finallyBytes) this.buf.write(b);
+    // Bodies — write byte-by-byte from number arrays.
+    // Rebase break/continue patch positions collected during sub-compilation from
+    // sub-compiler-relative (buf starts at 0) to parent-buffer-relative offsets.
+    const tryBase = this.buf.length;
+    for (const b of tryBytes) this.buf.write(b);
+    this.rebasePatchOffsets(trySnapshot, tryBase);
+
+    if (hasCatch && catchSnapshot.length > 0) {
+      const catchBase = this.buf.length;
+      for (const b of catchBytes) this.buf.write(b);
+      this.rebasePatchOffsets(catchSnapshot, catchBase);
+    } else {
+      for (const b of catchBytes) this.buf.write(b);
+    }
+
+    if (hasFinally && finallySnapshot.length > 0) {
+      const finallyBase = this.buf.length;
+      for (const b of finallyBytes) this.buf.write(b);
+      this.rebasePatchOffsets(finallySnapshot, finallyBase);
+    } else {
+      for (const b of finallyBytes) this.buf.write(b);
+    }
   }
 
   // ---- With statement ------------------------------------------------------
@@ -1767,15 +1835,20 @@ class Compiler {
     if (op === '&&') { this.compileShortCircuitAnd(expr); return; }
     if (op === '||') { this.compileShortCircuitOr(expr);  return; }
 
-    // 'in' operator: key in obj → obj.hasOwnProperty(key)
-    // ActionCallMethod stack (top popped first by Ruffle):
-    //   method_name | object | numArgs | arg[0] | ... | arg[n-1]
+    // 'in' operator: key in obj → typeof(obj[key]) !== "undefined"
+    // AVM1 has no ActionIn opcode. We probe via GetMember and check the result
+    // type. This correctly handles inherited prototype properties (unlike
+    // hasOwnProperty). Limitation: returns false when the property value IS
+    // undefined, but that is an acceptable AVM1 approximation.
+    // Stack for ActionGetMember (0x4e): top = property name, next = object.
     if (op === 'in') {
-      this.compileExpr(expr.left);   // push key (arg[0], deepest)
-      this.pushInt(1);               // nArgs = 1
-      this.compileExpr(expr.right);  // push obj (object)
-      this.pushString('hasOwnProperty'); // method name (top)
-      this.emit(0x52);               // ActionCallMethod
+      this.compileExpr(expr.right);  // push obj
+      this.compileExpr(expr.left);   // push key (top)
+      this.emit(0x4e);               // ActionGetMember → property value (or undefined)
+      this.emit(0x44);               // ActionTypeOf → type string
+      this.pushString('undefined');  // push "undefined" for comparison
+      this.emit(0x49);               // ActionEquals2 → true if type == "undefined"
+      this.emit(0x12);               // ActionNot → true if property EXISTS
       return;
     }
 
