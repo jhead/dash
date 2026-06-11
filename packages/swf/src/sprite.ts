@@ -320,7 +320,9 @@ export function encodeDefineSprite(
     }
 
     // Emit PlaceObject2 / PlaceObject2+Move for each object this frame
-    for (const [depth, { objId, displayObj }] of thisFrameDepths) {
+    for (const [depth, { objId, displayObj, layerIdx }] of thisFrameDepths) {
+      // Task 1126: determine if this object is on a mask layer (HasClipDepth)
+      const clipDepth = maskClipDepths.get(layerIdx);
       // Bug 1102 fix: extract full transform from the (possibly tweened) display object
       let x = 0;
       let y = 0;
@@ -380,8 +382,9 @@ export function encodeDefineSprite(
             scaleY: displayObj.scaleY,
             rotation: displayObj.rotation,
           } : undefined;
-          // Bug 1103 fix: encode colorEffect / visible=false via CXForm
-          if (displayObj.type === "shape" && displayObj.visible === false) {
+          if (clipDepth !== undefined) {
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithClipDepth(charId, depth, x, y, clipDepth, objTransform)));
+          } else if (displayObj.type === "shape" && displayObj.visible === false) {
             const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
             spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform)));
           } else if (hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
@@ -490,6 +493,11 @@ export function encodeDefineSprite(
             }
             const hasClipActions = effectiveClipActions.length > 0;
 
+            // Task 1126: mask layer — place instance with HasClipDepth
+            if (clipDepth !== undefined) {
+              const placeBody = encodePlaceObject2WithClipDepth(refCharId, depth, x, y, clipDepth, instanceTransform);
+              spriteTags.push(encodeTag(Tag.PlaceObject2, placeBody));
+            } else {
             // Bug 1103 fix: encode colorEffect / visible=false / filters / blend mode
             const hasBlend = !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
             if (hasBlend || hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
@@ -521,6 +529,7 @@ export function encodeDefineSprite(
               } else {
                 spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(refCharId, depth, x, y, instanceTransform)));
               }
+            }
             }
           }
         }
