@@ -1,0 +1,10 @@
+{
+  "id": "1146-as2-compiler-parsed-but-cause-runtime-crash",
+  "title": "AS2 compiler: &&=, ||=, **= parsed but cause runtime crash",
+  "description": "The tokenizer (tokenizer.ts line 136) and parser (parser.ts line 16 ASSIGN_OPS) both accept the operators &&=, ||=, and **= as valid assignment operators. However, the compiler's emitArithOp() (compiler.ts line 1856) only handles +, -, *, /, %, &, |, ^, <<, >>, >>> and throws 'Unsupported compound-assignment operator: &&' (or ||, or **) at compile time when any of these operators is encountered.\n\nRoot cause: compileAssignExpr strips the trailing '=' from the operator to get &&, ||, or ** and passes it to emitArithOp, which has no case for them.\n\n&&= and ||= are NOT standard Flash 8 AS2 operators (they were added in ES2021). **= is also not valid AS2. These should be rejected at parse time (remove from ASSIGN_OPS in parser.ts) so users get a clear parse error rather than an opaque compiler crash.\n\nAlternatively, &&= and ||= could be implemented with short-circuit semantics (read LHS, if truthy/falsy short-circuit, else evaluate RHS and assign), but since they are non-AS2 extensions it is cleaner to just reject them.\n\nFiles: packages/core/src/as2/tokenizer.ts (line 136), packages/core/src/as2/parser.ts (line 16), packages/core/src/as2/compiler.ts (emitArithOp).\n\nReproduction: compileAS2('x &&= y') throws 'Unsupported compound-assignment operator: &&'. Verified in packages/core/dist.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T08:50:08Z",
+  "updated_at": "2026-06-11T08:51:43Z"
+}

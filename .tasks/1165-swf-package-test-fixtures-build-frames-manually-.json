@@ -1,0 +1,10 @@
+{
+  "id": "1165-swf-package-test-fixtures-build-frames-manually-",
+  "title": "SWF package test fixtures build frames manually \u2014 missing motionEaseType/motionSnap/shapeEaseType causing 102 TypeScript errors",
+  "description": "The Frame type in @flash/core was updated to make motionEaseType, motionSnap, and shapeEaseType required fields (non-optional). However, the 105 test files in packages/swf/src/__tests__/ and visual-fixture.ts build Frame objects as raw object literals without using createFrame(), so they all miss these required fields.\n\nRunning 'cd packages/swf && npx tsc --noEmit' reports 102 TypeScript errors like:\n  'Type { ... } is missing the following properties from type Frame: motionEaseType, motionSnap, shapeEaseType'\n\nThese are silently ignored at test time because vitest does not type-check, so all 105 test files pass. But the TypeScript errors mean the build is technically broken and any CI step that runs tsc will fail.\n\nSome test fixtures also use a createFrame helper (buttonactions.test.ts etc) that returns Frame objects with motionEaseType typed as 'TweenEaseType | undefined', causing TS2322 errors where TweenEaseType is required.\n\nFix options:\n1. Update all test fixtures to use createFrame() from @flash/core instead of raw object literals \u2014 preferred since createFrame() defaults all the new fields correctly.\n2. Make motionEaseType, motionSnap, shapeEaseType optional in the Frame type (but this would weaken the model).\n3. Add a makeFrame() test helper to packages/swf/src/__tests__/ that wraps createFrame() for backward compatibility.\n\nOption 1 is cleanest. The test fixtures are in packages/swf/src/__tests__/ (105 files) and packages/swf/src/__tests__/visual-fixture.ts.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T10:17:37Z",
+  "updated_at": "2026-06-11T10:25:59Z"
+}

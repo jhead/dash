@@ -1,0 +1,10 @@
+{
+  "id": "1121-as2-compiler-break-continue-inside-try-block-emi",
+  "title": "AS2 compiler: break/continue inside try block emits wrong jump-patch offsets",
+  "description": "When a loop contains a try statement, and break or continue fires inside the try body, the emitted jump patch position is corrupted.\n\nRoot cause: compileTryStmt (compiler.ts ~line 1177) creates separate sub-compiler instances for try/catch/finally bodies (each with their own ByteBuffer starting at position 0), but SHARES the parent's loopStack array. When break or continue fires inside the sub-compiler body, it calls emitActionJump() which returns the jump's SI16-field position relative to the sub-compiler's buf (e.g. position 5). This position is pushed into ctx.breakPatches or ctx.continuePatches. Later, the parent compiler calls patchJump(p, loopEnd) which patches this.buf (the parent's buffer) at position p \u2014 but p is a sub-buffer offset, not a parent-buffer offset. The patch corrupts whatever bytes happen to be at that position in the parent buffer, producing invalid AVM1 bytecode.\n\nMinimal reproduction:\n  for (var i = 0; i < 10; i++) {\n    try {\n      if (i == 5) break;   // break exits the for loop, inside the try\n    } catch(e) { }\n  }\n\nExpected: loop runs for i=0..4 then breaks.\nActual: break-patch is at wrong position in parent buffer \u2192 corrupted AVM1 bytecode.\n\nSame issue exists for continue inside try/catch/finally, and break/continue in catch/finally sub-compilers.\n\nFix: when copying sub-compiled bytes into the parent buffer, adjust all break/continue patch positions by the sub-buffer's parent offset (parentBuf.length at the time the sub-bytes are written). Or inline try compilation without sub-compilers. See packages/core/src/as2/compiler.ts lines 1177-1265.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T05:48:41Z",
+  "updated_at": "2026-06-11T05:54:52Z"
+}

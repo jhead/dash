@@ -1,0 +1,10 @@
+{
+  "id": "1122-fix-swf-encodeplaceobject3withfilters-drops-colo",
+  "title": "fix(swf): encodePlaceObject3WithFilters drops colorEffect \u2014 add CXForm parameter",
+  "description": "When a display object has BOTH enabled filters AND a colorEffect, the SWF encoder loses the colorEffect. This is because encodePlaceObject3WithFilters (packages/swf/src/filters.ts) does not accept a CXForm parameter \u2014 HasColorTransform is hardcoded to 0 in its flags1 byte.\n\nThe bug affects:\n- Symbol instances with filters + colorEffect (compile.ts line 2101, sprite.ts line 388)\n- Bitmap display objects with filters + colorEffect (sprite.ts line 355)\n- Text fields with filters + colorEffect (sprite.ts line 322)\n- All of the above in posChanged/move branches (compile.ts line 2465, sprite.ts lines 427/437/468/489)\n\nThe fix is three-part:\n1. Add optional cxform?: CXForm parameter to encodePlaceObject3WithFilters in filters.ts. Set HasColorTransform flag in flags1 when cxform is present. Emit encodeCXFormWithAlpha after MATRIX (matching the field order in encodePlaceObject3WithBlendMode).\n2. In compile.ts: pass instCXForm/cxformForFilters to encodePlaceObject3WithFilters at each filters-only call site. Also synthesize a zero-alpha CXForm from visible===false and from standalone alpha (like the blend-mode paths do).\n3. In sprite.ts: similarly pass the computed CXForm to encodePlaceObject3WithFilters at each filters-only call site.\n\nAcceptance: a unit test in packages/swf/src/__tests__/filterlist.test.ts (or a new filters-cxform.test.ts) compiles a symbol instance with a Glow filter (enabled) AND a tint colorEffect (e.g. type:'tint', tintAmount:50, tintColor:'#ff0000') and asserts the PlaceObject3 body has HasColorTransform set and correct CXFORMWITHALPHA bytes after the filter list.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T12:40:35Z",
+  "updated_at": "2026-06-11T12:47:13Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "1143-fix-filters-gradientglowfilter-compositesource-a",
+  "title": "fix(filters): GradientGlowFilter compositeSource always 0 when property is false/absent",
+  "description": "In writeGradientGlowFilter (packages/swf/src/filters.ts line ~208): the compositeSource bit (bit 5) is only set if f.compositeSource is truthy. For most GradientGlow filters imported from binary FLA, compositeSource=true (the object remains visible). But if the model has compositeSource=false or undefined, the bit is 0, which means 'hide_object' in Ruffle (COMPOSITE_SOURCE=0 \u2192 object is hidden behind its glow).\n\nThe GlowFilter encoder always sets bit 5 unconditionally (line 85: 'flags |= 1 << 5; // CompositeSource \u2014 always 1'), treating compositeSource as always-on. The GradientGlowFilter encoder conditionally sets it based on f.compositeSource, which is correct \u2014 but a newly constructed defaultGradientGlow() (packages/core/src/engine/filters.ts line ~300) must default compositeSource to true. Check defaultGradientGlow() returns compositeSource: true, and verify the model's default.\n\nAlso: writeGradientBevelFilter has the same conditional compositeSource pattern (line 245). Both gradient filters' default value functions must have compositeSource: true.",
+  "status": "cancelled",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T08:31:23Z",
+  "updated_at": "2026-06-11T08:31:44Z"
+}

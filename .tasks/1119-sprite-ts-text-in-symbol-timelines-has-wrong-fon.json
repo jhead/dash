@@ -1,10 +1,10 @@
 {
   "id": "1119-sprite-ts-text-in-symbol-timelines-has-wrong-fon",
   "title": "sprite.ts: text in symbol timelines has wrong font size (HasFont=0, fontCharId not passed)",
-  "description": "packages/swf/src/sprite.ts line 118 calls encodeDefineEditText(charId, obj) WITHOUT passing a fontCharId. This sets HasFont=0 in the DefineEditText record, so Ruffle has no font-size reference for text inside MovieClip symbols and falls back to a default font height \u2014 the authored fontSize is silently ignored.\n\nRoot cause has TWO parts that must be fixed together:\n1. compile.ts font pre-pass (lines 624-659) only iterates doc.scenes; symbol timelines are never scanned. If a font is used only inside a symbol (not on the main stage), no DefineFont3 tag is emitted for it and fontCharIdMap never maps that key.\n2. encodeDefineSprite() has no fontCharIdMap parameter, so sprite.ts cannot look up font character IDs even for fonts that ARE registered via the main-timeline scan.\n\nFix:\na. Extend the font pre-pass in compile.ts to also walk all symbol timelines (doc.library.items where itemType===symbol, iterating their timeline layers/frames/displayObjects for type==='text').\nb. Add a fontCharIdMap parameter to encodeDefineSprite() (packages/swf/src/sprite.ts line 75). Pass it from compile.ts at line 728.\nc. In sprite.ts pre-pass (line 114-118), look up const embeddedFontId = fontCharIdMap?.get(fontKey(obj.fontFamily, obj.bold, obj.italic)) and pass it as the third argument to encodeDefineEditText.\n\nRelated: task 1083 fixed the same bug for buttons.ts \u2014 this task mirrors that fix for sprites.",
-  "status": "in_progress",
+  "description": "Fixed in commit 0066cea: compile.ts now has a symbol-timeline font pre-pass (lines 661-690) that scans all symbol timelines for text objects and registers their fonts in fontCharIdMap. encodeDefineSprite() now accepts fontCharIdMap as an optional parameter (sprite.ts line 86) and is passed it from compile.ts (lines 750, 772). encodeDefineEditText is called with the embedded font ID (sprite.ts line 124). This mirrors the fix for buttons.ts (task 1083).",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-11T12:35:27Z",
-  "updated_at": "2026-06-11T12:37:04Z"
+  "updated_at": "2026-06-11T12:39:22Z"
 }

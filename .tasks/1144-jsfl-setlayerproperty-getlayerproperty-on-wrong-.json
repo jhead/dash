@@ -1,0 +1,10 @@
+{
+  "id": "1144-jsfl-setlayerproperty-getlayerproperty-on-wrong-",
+  "title": "JSFL: setLayerProperty/getLayerProperty on wrong object and missing layerIndex param",
+  "description": "In Flash 8 JSFL, setLayerProperty(layerIndex, property, value) and getLayerProperty(layerIndex, property) are methods on the Timeline object (not Document), and take a layerIndex as the first parameter.\n\nCurrent implementation (packages/authoring-ui/src/jsfl/runtime.ts):\n- These methods are on JsflDocument (interface at line 1894/1899, implementation at lines 3708/3740)\n- Signature is (property, value) \u2014 no layerIndex\n- Always operates on state.currentLayerIndex rather than an explicit layer index\n\nCorrect Flash 8 JSFL API:\n  var tl = fl.getDocumentDOM().getTimeline();\n  tl.setLayerProperty(0, 'layerType', 'guide');  // first param is layer index\n  var t = tl.getLayerProperty(0, 'layerType');\n\nFix needed:\n1. Add setLayerProperty(layerIndex, property, value) and getLayerProperty(layerIndex, property) to JsflTimeline interface\n2. Implement them in makeTimelineProxy() using the explicit layerIndex\n3. Can keep the doc-level stubs as aliases for backward compat but they are non-standard\n\nNo existing callers \u2014 this is an API surface bug that would break any JSFL script using the standard signature.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T08:36:02Z",
+  "updated_at": "2026-06-11T08:37:53Z"
+}

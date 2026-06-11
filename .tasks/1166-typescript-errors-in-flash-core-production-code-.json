@@ -1,0 +1,10 @@
+{
+  "id": "1166-typescript-errors-in-flash-core-production-code-",
+  "title": "TypeScript errors in @flash/core production code: readonly mutation, missing AST property, unused var",
+  "description": "Running 'cd packages/core && npx tsc --noEmit' shows 6 TypeScript errors in production code:\n\n1. model/timeline.ts lines 257, 262, 272, 279 \u2014 TS2540: Cannot assign to 'type' because it is a read-only property.\n   In setLayerType(), the code creates shallow Layer copies with { ...l } but then mutates l.type directly.\n   Since Layer.type is readonly, TypeScript rejects this. Runtime works because JS doesn't enforce readonly,\n   but it is incorrect TypeScript. Fix: construct each modified layer with the correct type inline, e.g.\n   { ...newLayers[li]!, type } instead of mutating after the spread.\n\n2. as2/formatter.ts line 100 \u2014 TS2339: Property 'expression' does not exist on type 'Block | ExprStmt'.\n   An AST node type is likely used without proper type narrowing. A Block node and an ExprStmt node are\n   in a union; formatter.ts accesses .expression without narrowing to ExprStmt first.\n   Fix: add a type guard or narrow to ExprStmt before accessing .expression.\n\n3. as2/compiler.ts line 2632 \u2014 TS6133: 'memberExprToString' is declared but its value is never read.\n   Unused function/variable. Fix: remove it or suppress with /* eslint-disable */.\n\nThe readonly mutation is the most concerning since it violates TypeScript's const-correctness invariants.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T10:18:03Z",
+  "updated_at": "2026-06-11T10:20:32Z"
+}

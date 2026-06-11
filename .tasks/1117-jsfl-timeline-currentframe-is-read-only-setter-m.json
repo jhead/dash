@@ -1,0 +1,10 @@
+{
+  "id": "1117-jsfl-timeline-currentframe-is-read-only-setter-m",
+  "title": "JSFL: timeline.currentFrame is read-only \u2014 setter missing",
+  "description": "Flash 8 JSFL allows `tl.currentFrame = 5` to navigate the timeline to a specific frame. In packages/authoring-ui/src/jsfl/runtime.ts the JsflTimeline interface (line 611) declares `readonly currentFrame: number` and the proxy at line 719 only has a getter (`get currentFrame()`). There is no setter. Any JSFL script that writes `fl.getDocumentDOM().getTimeline().currentFrame = n` silently fails (assignment to a read-only property in strict mode throws; in sloppy mode it is a no-op).\n\nFix: (1) Remove the `readonly` modifier from `currentFrame` in the JsflTimeline interface. (2) Add a `set currentFrame(n)` in the timeline proxy that updates `state.frameIndex` to the clamped value (0 \u2264 n < frameCount) and calls the appropriate setState callback to refresh the UI. Compare with `set currentLayer` (line 716) which correctly updates `state.currentLayerIndex`.\n\nAcceptance: a JSFL script `var tl = fl.getDocumentDOM().getTimeline(); tl.currentFrame = 2;` advances the playhead to frame 2; reading `tl.currentFrame` then returns 2.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T05:39:23Z",
+  "updated_at": "2026-06-11T05:40:30Z"
+}

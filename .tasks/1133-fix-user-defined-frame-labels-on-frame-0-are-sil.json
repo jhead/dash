@@ -1,0 +1,10 @@
+{
+  "id": "1133-fix-user-defined-frame-labels-on-frame-0-are-sil",
+  "title": "fix: user-defined frame labels on frame 0 are silently dropped in SWF output",
+  "description": "In packages/swf/src/compile.ts, the per-frame FrameLabel (tag 43) emission block (around line 2443) is gated with `if (frameIdx > 0)`, skipping frame 0 to avoid duplicating the scene-name FrameLabel. However, this also silently drops any user-defined named label on frame 0 (e.g., a label named \"start\" or \"menu\").\n\n**Bug:** If a layer's frame 0 keyframe has `label = \"start\"` and `labelType = \"name\"`, the FrameLabel tag is never emitted. AS2 calls like `gotoAndPlay(\"start\")` or `gotoAndStop(\"start\")` will fail silently.\n\n**Root cause:** The code emits a scene-name FrameLabel unconditionally at the start of each scene (encodeSceneLabel), then skips user labels at frame 0. The correct fix is to emit the scene-name label AND any user-defined label at frame 0, or (better) only emit the scene-name label when multi-scene navigation is needed, and always emit user frame labels regardless of frame index.\n\n**Fix approach:** Within the existing `if (frameIdx > 0)` block, also check frame 0 for user labels, OR change the guard to emit user labels even at frame 0 (the two FrameLabel tags at the same position are legal per SWF spec \u2014 Ruffle uses the last one). Alternatively, emit only the user frame label for frame 0 and skip the scene-name label if a user label exists.\n\n**Affected file:** packages/swf/src/compile.ts, around line 2443.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T08:00:13Z",
+  "updated_at": "2026-06-11T08:03:02Z"
+}

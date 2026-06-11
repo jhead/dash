@@ -1,0 +1,10 @@
+{
+  "id": "1130-as2-compiler-global-setproperty-getproperty-fall",
+  "title": "AS2 compiler: global setProperty()/getProperty() fall through to ActionCallFunction \u2014 should emit ActionSetProperty (0x23)/ActionGetProperty (0x22)",
+  "description": "In AS2 timeline scripts, setProperty(target, property, value) and getProperty(target, property) are valid global functions that must emit ActionSetProperty (0x23) and ActionGetProperty (0x22) opcodes respectively.\n\nCurrent behaviour: both fall through to generic ActionCallFunction('setProperty') / ActionCallFunction('getProperty'). Ruffle's AVM1 globals (globals.rs create_globals) do NOT register setProperty or getProperty as global function objects \u2014 only as MovieClip methods. ActionCallFunction will thus produce undefined at runtime.\n\nActionSetProperty (0x23) stack protocol per Ruffle activation.rs action_set_property():\n  pops: property_index (UI16-equivalent), target path (string), value\n  push order: value (deepest), target (middle), property_index (top)\n\nActionGetProperty (0x22) stack protocol:\n  pops: property_index, target path\n  push order: target (deepest), property_index (top)\n\nProperty indices for the SWF 'legacy property' table (per SWF spec / Ruffle):\n  _x=0, _y=1, _xscale=2, _yscale=3, _currentframe=4, _totalframes=5, _alpha=6, _visible=7,\n  _width=8, _height=9, _rotation=10, _target=11, _framesloaded=12, _name=13, _droptarget=14,\n  _url=15, _highquality=16, _focusrect=17, _soundbuftime=18, _quality=19, _xmouse=20, _ymouse=21\n\nFix in packages/core/src/as2/compiler.ts compileCallExpr():\n1. Add 'setProperty', 'getProperty' to the string-pool exclusion list.\n2. Add built-in handlers:\n   - setProperty(target, propIndex, value): push value, push target, push propIndex, emit 0x23\n   - getProperty(target, propIndex): push target, push propIndex, emit 0x22\n3. Add tests.\n\nReferences: ruffle/swf/src/avm1/opcode.rs (SetProperty=0x23, GetProperty=0x22), ruffle/core/src/avm1/activation.rs.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T06:02:28Z",
+  "updated_at": "2026-06-11T07:56:31Z"
+}

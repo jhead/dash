@@ -1,0 +1,10 @@
+{
+  "id": "1138-mcp-stage-place-instance-accepts-non-symbol-libr",
+  "title": "MCP stage_place_instance accepts non-symbol library item IDs silently",
+  "description": "stage_place_instance in registry.ts (line 815) uses doc.library.items.find((i) => i.id === params.symbolId) with NO itemType filter. If a bitmap, sound, video, or font item's ID is passed, the lookup succeeds and the tool proceeds to create a SymbolInstance display object (type: 'instance') with symbolId pointing to a non-symbol item. This produces a broken display object that references a non-symbol, causing undefined behavior during compile/render.\n\nAdditionally, there is NO MCP tool for placing bitmap items on the stage (BitmapDisplayObject). The only tools available are:\n- stage_place_instance (symbols only)\n- stage_add_shape (raw shapes)\n- stage_add_text (text)\n- stage_add_video (video items)\n- library_import_bitmap (imports to library, no placement)\n\nAn agent that imports a bitmap via library_import_bitmap and then tries to place it via stage_place_instance will silently create a broken SymbolInstance.\n\nFIX 1: Add itemType validation in stage_place_instance. At line 815, change the find() to filter on itemType === 'symbol', OR add an explicit check after the find() and throw a clear error: 'Item X is a bitmap, not a symbol. Use stage_add_bitmap to place bitmaps on stage.'\n\nFIX 2: Add a stage_add_bitmap MCP tool that creates a BitmapDisplayObject (type: 'bitmap') referencing a BitmapItem. Modelled after stage_add_video. Parameters: bitmapItemId, x, y, width?, height?, scaleX?, scaleY?, rotation?, alpha?, blendMode?, colorEffect?, instanceName?, layerId?, frameIndex?.\n\nFILES:\n- packages/authoring-ui/src/agent/registry.ts (stage_place_instance validation, line 815; add stage_add_bitmap)\n- packages/vite-plugin-agent-mcp/src/index.ts (add stage_add_bitmap MCP schema; already has stage_add_video pattern to copy)\n- packages/agent-protocol/src/index.ts (register new tool name)",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T08:07:58Z",
+  "updated_at": "2026-06-11T08:12:24Z"
+}

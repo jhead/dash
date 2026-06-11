@@ -1,0 +1,10 @@
+{
+  "id": "1119-bitmapdisplayobject-missing-instancename-bitmap-",
+  "title": "BitmapDisplayObject missing instanceName \u2014 bitmap not addressable from AS2 and PlaceObject2 name never encoded",
+  "description": "Two related gaps:\n\n1. **Type gap**: `BitmapDisplayObject` in packages/core/src/engine/types.ts (lines 697-723) has no `instanceName` field. Compare with `SymbolInstance` (line 481: `instanceName?: string`) and `TextDisplayObject` (line 600: `instanceName?: string`). There is no way to assign an instance name to a placed bitmap, so AS2 cannot address it as `_root.myBitmap`.\n\n2. **Compiler gap**: The bitmap initial-placement path in packages/swf/src/compile.ts (lines 1838-1894) never calls `encodePlaceObject2WithName`. Compare with the text path at line 1815 which correctly calls `encodePlaceObject2WithName(charId, depth, x, y, textName)` when a text field has an `instanceName`. The bitmap path calls only `encodePlaceObject2`, `encodePlaceObject2WithCXForm`, or `encodePlaceObject3WithBlendMode` \u2014 none of which carry the name. Even if a bitmap had an `instanceName` in the model, the SWF would not encode it.\n\nFix:\n- Add `readonly instanceName?: string;` to `BitmapDisplayObject` in types.ts.\n- In compile.ts bitmap isFirst path, after selecting the encoder variant, check if `displayObj.instanceName` is set and use `encodePlaceObject2WithName` (or a new PlaceObject3 variant) when it is, mirroring the text path.\n- Also check the posChanged (Move) path for bitmaps (lines 2252-2282) \u2014 if the object changes layer/depth, the name should be re-encoded.\n\nAcceptance: a BitmapDisplayObject with instanceName \\'myBmp\\' placed on the main timeline produces a PlaceObject2 tag with the HasName flag set and the name bytes encoded. AS2 `_root.myBmp._alpha = 50` resolves the instance in Ruffle.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T05:39:46Z",
+  "updated_at": "2026-06-11T05:42:05Z"
+}
