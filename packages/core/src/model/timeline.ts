@@ -250,16 +250,13 @@ export function setLayerType(
   if (li < 0) return timeline;
 
   const oldType = layers[li]!.type;
-  // Build mutable copy
-  const newLayers: Layer[] = layers.map((l) => ({ ...l }));
-
-  // Apply the requested type change
-  newLayers[li]!.type = type;
+  // Build a copy with the requested type applied to the target layer
+  const newLayers: Layer[] = layers.map((l, idx) => idx === li ? { ...l, type } : { ...l });
 
   if (type === "guided") {
     // Promote the layer directly above to "guide" if it is currently "normal"
     if (li > 0 && newLayers[li - 1]!.type === "normal") {
-      newLayers[li - 1]!.type = "guide";
+      newLayers[li - 1] = { ...newLayers[li - 1]!, type: "guide" };
     }
   } else if (oldType === "guided") {
     // Reverting a guided layer: revert the guide above if it has no other
@@ -269,14 +266,14 @@ export function setLayerType(
       // Any layer from guideIdx+1 onward that is still "guided"?
       const anyGuided = newLayers.slice(guideIdx + 1).some((l) => l.type === "guided");
       if (!anyGuided) {
-        newLayers[guideIdx]!.type = "normal";
+        newLayers[guideIdx] = { ...newLayers[guideIdx]!, type: "normal" };
       }
     }
   } else if (oldType === "guide") {
     // Reverting a guide layer: change immediately adjacent "guided" layers below to "normal"
     for (let j = li + 1; j < newLayers.length; j++) {
       if (newLayers[j]!.type === "guided") {
-        newLayers[j]!.type = "normal";
+        newLayers[j] = { ...newLayers[j]!, type: "normal" };
       } else {
         break; // stop at first non-guided layer
       }

@@ -2621,25 +2621,6 @@ class Compiler {
     this.emit(0x3d); // ActionCallFunction
   }
 
-  /**
-   * Convert a static member expression chain (a.b.c) to a dotted string.
-   * Returns null if the expression is computed or otherwise not a static chain.
-   *
-   * Examples:
-   *   Identifier("mx")  → "mx"
-   *   MemberExpr(MemberExpr(Identifier("mx"), "transitions"), "Tween")  → "mx.transitions.Tween"
-   */
-  private memberExprToString(expr: Expression): string | null {
-    if (expr.type === 'Identifier') return (expr as Identifier).name;
-    if (expr.type === 'MemberExpr') {
-      const m = expr as MemberExpr;
-      // Only static (dot-notation) member access, not computed (m["prop"])
-      const obj = this.memberExprToString(m.object);
-      if (obj !== null) return `${obj}.${m.property}`;
-    }
-    return null;
-  }
-
   private compileNewExpr(expr: NewExpr): void {
     // Push args deepest-first (last arg pushed first = deepest on stack)
     for (let i = expr.args.length - 1; i >= 0; i--) {

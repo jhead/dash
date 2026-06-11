@@ -96,7 +96,7 @@ class Formatter {
           if (node.init.type === 'VarDecl') {
             // Strip leading indentation and trailing semicolon for for-init
             initStr = this.stmt(node.init, '').trim().replace(/;$/, '');
-          } else {
+          } else if (node.init.type === 'ExprStmt') {
             initStr = this.expr(node.init.expression);
           }
         }
