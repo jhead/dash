@@ -349,9 +349,23 @@ describe("RemoveObject2 (tag 28) emission", () => {
 
     expect(labelIndices.length).toBe(2);
 
-    // Between scene-1 label and scene-2 label, there must be RemoveObject2
-    const between = tags.slice(labelIndices[0] + 1, labelIndices[1]);
-    const removes = between.filter((t) => t.code === Tag.RemoveObject2);
+    // Per SWF spec, FrameLabel precedes display-list modification tags in the
+    // same frame.  The second scene's FrameLabel comes BEFORE its RemoveObject2
+    // clear block.  Verify RemoveObject2 appears after the second FrameLabel
+    // but before the next ShowFrame.
+    const secondLabelIdx = labelIndices[1];
+    const showFrameAfterLabel = tags
+      .map((t, i) => ({ t, i }))
+      .find(({ t, i }) => t.code === Tag.ShowFrame && i > secondLabelIdx);
+    expect(showFrameAfterLabel).toBeDefined();
+
+    const sceneStartSegment = tags.slice(
+      secondLabelIdx + 1,
+      showFrameAfterLabel!.i
+    );
+    const removes = sceneStartSegment.filter(
+      (t) => t.code === Tag.RemoveObject2
+    );
     expect(removes.length).toBeGreaterThan(0);
   });
 

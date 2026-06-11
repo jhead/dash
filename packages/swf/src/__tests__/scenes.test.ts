@@ -368,9 +368,23 @@ describe("multi-scene SWF export", () => {
 
     expect(labelIndices.length).toBe(2);
 
-    // Between the two FrameLabel tags there must be at least one RemoveObject2
-    const between = tags.slice(labelIndices[0] + 1, labelIndices[1]);
-    const removes = between.filter((t) => t.code === TAG_REMOVE_OBJECT2);
+    // Per SWF spec, FrameLabel must precede display-list modification tags in
+    // the same frame.  So the second scene's FrameLabel comes BEFORE its
+    // RemoveObject2 clear block.  Find the next ShowFrame after the second label
+    // and verify RemoveObject2 falls in [secondLabel, nextShowFrame).
+    const secondLabelIdx = labelIndices[1];
+    const showFrameAfterLabel = tags
+      .map((t, idx) => ({ t, idx }))
+      .find(({ t, idx }) => t.code === TAG_SHOW_FRAME && idx > secondLabelIdx);
+    expect(showFrameAfterLabel).toBeDefined();
+
+    const sceneStartSegment = tags.slice(
+      secondLabelIdx + 1,
+      showFrameAfterLabel!.idx
+    );
+    const removes = sceneStartSegment.filter(
+      (t) => t.code === TAG_REMOVE_OBJECT2
+    );
     expect(removes.length).toBeGreaterThan(0);
   });
 

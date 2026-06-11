@@ -1847,8 +1847,9 @@ class Compiler {
         break;
 
       case '+':
-        // Unary plus — evaluate operand (no numeric coerce in MVP)
+        // Unary plus — coerce operand to number (AS2: +x === Number(x))
         this.compileExpr(expr.operand);
+        this.emit(0x4A); // ActionToNumber
         break;
 
       case '~':

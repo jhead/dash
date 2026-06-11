@@ -1,0 +1,10 @@
+{
+  "id": "1086-swf-compile-scene-removeobject2-tags-emitted-bef",
+  "title": "SWF compile: scene RemoveObject2 tags emitted before FrameLabel (spec violation)",
+  "description": "For scenes N>0 in compile.ts, RemoveObject2 tags are emitted (lines ~1357-1363) before the FrameLabel for the new scene (line ~1483). Per SWF spec \u00a71.3.2, FrameLabel should precede any display-list modification tags within the same frame. Ruffle likely tolerates this but it deviates from spec. Fix: move the FrameLabel emission to before the RemoveObject2 block.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T02:49:43Z",
+  "updated_at": "2026-06-11T02:55:43Z"
+}

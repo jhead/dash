@@ -118,6 +118,16 @@ describe("unary plus operator (+)", () => {
     const bytes = compileAS2("+x;");
     expect(bytes.length).toBeGreaterThan(0);
   });
+
+  it('+"3" emits ActionToNumber (0x4A) to coerce to number', () => {
+    const bytes = compileAS2('+"3";');
+    expect(containsByte(bytes, 0x4a)).toBe(true); // ActionToNumber
+  });
+
+  it("+x emits ActionToNumber (0x4A) after evaluating operand", () => {
+    const bytes = compileAS2("+x;");
+    expect(containsByte(bytes, 0x4a)).toBe(true); // ActionToNumber
+  });
 });
 
 // ---------------------------------------------------------------------------
