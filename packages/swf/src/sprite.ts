@@ -332,6 +332,7 @@ export function encodeDefineSprite(
             spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
             // Bug 1103 fix: encode colorEffect / visible=false
+            const textName = (displayObj as { instanceName?: string }).instanceName;
             let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
               ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
               : null;
@@ -339,9 +340,14 @@ export function encodeDefineSprite(
               cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
             }
             if (cxform !== null) {
-              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform)));
+              // Task 1157 fix: carry instanceName in CXForm path
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform, undefined, false, textName && textName.length > 0 ? textName : undefined)));
             } else {
-              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2ForText(charId, depth, x, y)));
+              // Task 1157 fix: carry instanceName so AS2 paths like myMc.myField.text resolve
+              const placeBody = textName && textName.length > 0
+                ? encodePlaceObject2WithName(charId, depth, x, y, textName)
+                : encodePlaceObject2ForText(charId, depth, x, y);
+              spriteTags.push(encodeTag(Tag.PlaceObject2, placeBody));
             }
           }
         } else if (displayObj.type === "bitmap") {
@@ -435,6 +441,8 @@ export function encodeDefineSprite(
             const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, undefined, textName && textName.length > 0 ? textName : undefined, undefined, true);
             spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
+            // Task 1157 fix: carry instanceName in move paths too
+            const textMoveName = (displayObj as { instanceName?: string }).instanceName;
             let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
               ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
               : null;
@@ -442,9 +450,12 @@ export function encodeDefineSprite(
               cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
             }
             if (cxform !== null) {
-              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform, undefined, true)));
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform, undefined, true, textMoveName && textMoveName.length > 0 ? textMoveName : undefined)));
             } else {
-              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar)));
+              const placeBody = textMoveName && textMoveName.length > 0
+                ? encodePlaceObject2WithName(charId, depth, x, y, textMoveName)
+                : encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar);
+              spriteTags.push(encodeTag(Tag.PlaceObject2, placeBody));
             }
           }
         } else if (displayObj.type === "bitmap") {
