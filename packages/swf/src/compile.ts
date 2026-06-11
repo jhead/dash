@@ -1761,6 +1761,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
 
           const thisColorEffectKey = colorEffectKey(displayObj);
           const thisClipActionsKey = computeClipActionsKey(displayObj);
+          const thisLetterSpacingKey = displayObj.type === "text"
+            ? String((displayObj as { letterSpacing?: number }).letterSpacing ?? 0)
+            : "";
+          const thisRestrictKey = displayObj.type === "text"
+            ? ((displayObj as { restrict?: string }).restrict ?? "")
+            : "";
 
           const isFirst = !prev;
           const posChanged =
@@ -1775,7 +1781,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               prev.objId !== objId ||
               prev.ratio !== morphRatio ||
               prev.colorEffectKey !== thisColorEffectKey ||
-              prev.clipActionsKey !== thisClipActionsKey);
+              prev.clipActionsKey !== thisClipActionsKey ||
+              prev.letterSpacingKey !== thisLetterSpacingKey ||
+              prev.restrictKey !== thisRestrictKey);
 
           if (isFirst) {
             // First placement at this depth
@@ -2105,7 +2113,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     instanceTransform
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
-                  depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey });
+                  depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
                   continue;
                 }
 
@@ -2301,7 +2309,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               );
             }
 
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
           } else if (posChanged) {
             // Object moved, scaled, rotated, or replaced — emit PlaceObject2+Move
             if (
@@ -2320,7 +2328,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   true
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
-                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey });
+                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
                 continue; // skip the generic depthState.set below
               }
               const objTransform =
@@ -2467,6 +2475,20 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 }
+              }
+              // posChanged text path: also collect letterSpacing/restrict DoActions
+              // so changes between keyframes are not silently dropped.
+              const textMoveNameForAction = displayObj.instanceName;
+              const lsMove = displayObj.letterSpacing;
+              if (lsMove != null && lsMove !== 0 && textMoveNameForAction && textMoveNameForAction.length > 0) {
+                letterSpacingActions.push(
+                  `var _tf=new TextFormat();_tf.letterSpacing=${lsMove};_root.${textMoveNameForAction}.setTextFormat(_tf);`
+                );
+              }
+              const restrictMove = displayObj.restrict;
+              if (restrictMove != null && restrictMove.length > 0 && textMoveNameForAction && textMoveNameForAction.length > 0) {
+                const escapedMove = restrictMove.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+                restrictActions.push(`_root.${textMoveNameForAction}.restrict = "${escapedMove}";`);
               }
             } else if (displayObj.type === "bitmap") {
               const charId = objCharIdMap.get(objId)!;
@@ -2679,7 +2701,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 }
               }
             }
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
           }
           // else: unchanged — emit nothing
         }

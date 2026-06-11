@@ -528,6 +528,13 @@ export function encodeDefineSprite(
         }
       }
 
+      const thisLetterSpacingKey = displayObj.type === "text"
+        ? String((displayObj as { letterSpacing?: number }).letterSpacing ?? 0)
+        : "";
+      const thisRestrictKey = displayObj.type === "text"
+        ? ((displayObj as { restrict?: string }).restrict ?? "")
+        : "";
+
       const isFirst = !prev;
       // Bug 1102 fix: posChanged now includes all transform components + colorEffectKey
       const posChanged =
@@ -541,11 +548,13 @@ export function encodeDefineSprite(
           prev.skewY !== skewY ||
           prev.objId !== objId ||
           prev.colorEffectKey !== thisColorEffectKey ||
-          prev.morphRatio !== morphRatio);
+          prev.morphRatio !== morphRatio ||
+          prev.letterSpacingKey !== thisLetterSpacingKey ||
+          prev.restrictKey !== thisRestrictKey);
 
       if (!isFirst && !posChanged) {
         // Unchanged — emit nothing
-        depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, morphRatio });
+        depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
         continue;
       }
 
@@ -839,6 +848,22 @@ export function encodeDefineSprite(
               spriteTags.push(encodeTag(Tag.PlaceObject2, placeBody));
             }
           }
+          // posChanged text path: also collect letterSpacing/restrict DoActions
+          // so changes between keyframes are not silently dropped.
+          {
+            const textMoveNameForAction = (displayObj as { instanceName?: string }).instanceName;
+            const lsMove = (displayObj as { letterSpacing?: number }).letterSpacing;
+            if (lsMove != null && lsMove !== 0 && textMoveNameForAction && textMoveNameForAction.length > 0) {
+              letterSpacingActions.push(
+                `var _tf=new TextFormat();_tf.letterSpacing=${lsMove};this.${textMoveNameForAction}.setTextFormat(_tf);`
+              );
+            }
+            const restrictMove = (displayObj as { restrict?: string }).restrict;
+            if (restrictMove != null && restrictMove.length > 0 && textMoveNameForAction && textMoveNameForAction.length > 0) {
+              const escapedMove = restrictMove.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+              restrictActions.push(`this.${textMoveNameForAction}.restrict = "${escapedMove}";`);
+            }
+          }
         } else if (displayObj.type === "bitmap") {
           const charId = objCharIdMap.get(objId);
           if (charId !== undefined) {
@@ -931,7 +956,7 @@ export function encodeDefineSprite(
         }
       }
 
-      depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, morphRatio });
+      depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
     }
 
     // Emit FrameLabel (tag 43) if any keyframe at this frame index has a label

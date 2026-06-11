@@ -1,0 +1,10 @@
+{
+  "id": "1146-compile-ts-sprite-ts-letterspacing-restrict-doac",
+  "title": "compile.ts + sprite.ts: letterSpacing/restrict DoActions only fire on isFirst, silently dropped on keyframe update",
+  "description": "Files: packages/swf/src/compile.ts (lines 1951-1968) and packages/swf/src/sprite.ts (lines 604-619).\n\nBug: The letterSpacing and restrict DoAction scripts are collected only inside the isFirst placement branch. When a TextDisplayObject is already on the display list (prev exists) and only its letterSpacing or restrict value changes between keyframes, posChanged fires but the DoAction collection code does not run for posChanged paths. The updated letterSpacing/restrict is silently lost \u2014 the old value persists at runtime.\n\nRoot cause: Both compile.ts and sprite.ts collect letterSpacingActions/restrictActions only in the 'text' case of the isFirst block. The posChanged 'text' path (compile.ts lines 2397-2454, sprite.ts lines 799-829) does not include letterSpacing/restrict collection.\n\nAdditionally, letterSpacing/restrict changes are NOT included in the posChanged condition (lines 1751-1762 in compile.ts, lines 521-532 in sprite.ts), so if position/transform don't change but letterSpacing does, posChanged is false and even the Move PlaceObject2 is skipped.\n\nFix:\n1. Add letterSpacing and restrict to the posChanged check (serialize them into a key comparable across frames).\n2. Collect letterSpacingActions/restrictActions in the posChanged text path too, mirroring the isFirst path.\n\nAcceptance: Unit test with a two-keyframe symbol where a text field's letterSpacing changes at frame 2 \u2014 verify DoAction is emitted on frame 2 in the sprite body.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T15:43:43Z",
+  "updated_at": "2026-06-11T15:51:25Z"
+}
