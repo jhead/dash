@@ -44,6 +44,7 @@ import {
   reverseFrames as coreReverseFrames,
   createSymbolInLibrary,
   removeLibraryItem,
+  addLibraryItem,
   groupObjects,
   ungroupObjects,
   createDocument as coreCreateDocument,
@@ -953,6 +954,36 @@ export interface JsflLibrary {
    * Returns true if a library item with the given name exists.
    */
   itemExists(name: string): boolean;
+  /**
+   * Returns the item type string for the library item with the given name.
+   * Maps: 'graphic' → 'graphic', 'movie clip' → 'movie clip', 'button' → 'button',
+   * 'sound' → 'sound', 'bitmap' → 'bitmap'.
+   * Returns '' if the item is not found.
+   */
+  getItemType(name: string): string;
+  /**
+   * Returns the currently selected library items.
+   * No library selection tracking in this runtime; always returns [].
+   */
+  getSelectedItems(): any[];
+  /**
+   * Move a library item to a folder. Not supported; always returns true.
+   */
+  moveToFolder(folderPath: string, itemToMove?: string, bReplace?: boolean): boolean;
+  /**
+   * Create a new library folder. Not supported; always returns true.
+   */
+  newFolder(folderPath: string): boolean;
+  /**
+   * Reload/update a library item from its source file. Not supported; always returns true.
+   */
+  updateItem(name: string): boolean;
+  /**
+   * Duplicate the library item with the given name.
+   * The copy is given a new unique id and named 'Copy of <name>'.
+   * Returns true on success, false if the item is not found.
+   */
+  duplicateItem(name: string): boolean;
 }
 
 function jsflSymbolType(jsflType: string): SymbolType {
@@ -1113,6 +1144,49 @@ function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCoun
     },
     itemExists(name: string): boolean {
       return state.doc.library.items.some((i) => i.name === name);
+    },
+    getItemType(name: string): string {
+      const item = state.doc.library.items.find((i) => i.name === name);
+      if (!item) return '';
+      if (item.itemType === 'symbol') {
+        const symTypeMap: Record<string, string> = {
+          movieclip: 'movie clip',
+          button: 'button',
+          graphic: 'graphic',
+        };
+        return symTypeMap[(item as { symbolType: string }).symbolType] ?? 'graphic';
+      }
+      if (item.itemType === 'bitmap') return 'bitmap';
+      if (item.itemType === 'sound') return 'sound';
+      return item.itemType;
+    },
+    getSelectedItems(): any[] {
+      return [];
+    },
+    moveToFolder(_folderPath: string, _itemToMove?: string, _bReplace?: boolean): boolean {
+      console.warn('library.moveToFolder: not supported');
+      return true;
+    },
+    newFolder(_folderPath: string): boolean {
+      console.warn('library.newFolder: not supported');
+      return true;
+    },
+    updateItem(_name: string): boolean {
+      console.warn('library.updateItem: not supported');
+      return true;
+    },
+    duplicateItem(name: string): boolean {
+      const item = state.doc.library.items.find((i) => i.name === name);
+      if (!item) return false;
+      const copy = JSON.parse(JSON.stringify(item)) as typeof item;
+      const newId = `jsfl-lib-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      (copy as { id: string }).id = newId;
+      (copy as { name: string }).name = `Copy of ${name}`;
+      state.doc = {
+        ...state.doc,
+        library: addLibraryItem(state.doc.library, copy),
+      };
+      return true;
     },
   };
 }
@@ -1380,6 +1454,12 @@ export interface JsflDocument {
    * Returns the element proxy, or null if out of bounds.
    */
   getElementByIndex(layerIndex: number, frameIndex: number, elementIndex: number): any;
+  /**
+   * Find all instances of the symbol named symbolName across ALL scenes/layers/keyframes.
+   * Returns an array of element proxies for each matching SymbolInstance.
+   * Returns [] if the symbol is not found or has no instances.
+   */
+  findSymbolInstances(symbolName: string): any[];
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -2649,6 +2729,26 @@ function makeDocumentProxy(
       const obj = kf.displayObjects[elementIndex];
       if (!obj) return null;
       return makeElementProxy(state, layer.id, kf.index, obj);
+    },
+    findSymbolInstances(symbolName: string): any[] {
+      const libItem = state.doc.library.items.find((i) => i.name === symbolName);
+      if (!libItem) return [];
+      const symbolId = libItem.id;
+      const results: any[] = [];
+      for (const scene of state.doc.scenes) {
+        for (const layer of scene.timeline.layers) {
+          for (const frame of layer.frames) {
+            if (!frame.isKeyframe) continue;
+            for (const obj of frame.displayObjects) {
+              const inst = obj as { type?: string; symbolId?: string };
+              if (inst.type === 'instance' && inst.symbolId === symbolId) {
+                results.push(makeElementProxy(state, layer.id, frame.index, obj));
+              }
+            }
+          }
+        }
+      }
+      return results;
     },
   };
 }
