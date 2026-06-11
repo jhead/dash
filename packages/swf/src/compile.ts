@@ -1888,7 +1888,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   const placeBody = encodePlaceObject2WithCXForm(charId, depth, x, y, cxform, bmpTransform);
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 } else {
-                  const placeBody = encodePlaceObject2(charId, depth, x, y, bmpTransform);
+                  const bmpInstanceName = displayObj.instanceName;
+                  const placeBody = bmpInstanceName && bmpInstanceName.length > 0
+                    ? encodePlaceObject2WithName(charId, depth, x, y, bmpInstanceName, bmpTransform)
+                    : encodePlaceObject2(charId, depth, x, y, bmpTransform);
                   writer.writeTag(Tag.PlaceObject2, placeBody);
                 }
               }

@@ -720,6 +720,8 @@ export interface BitmapDisplayObject {
   readonly colorEffect?: ColorEffect;
   /** Flash 8 filters applied to this object. */
   readonly filters?: readonly FlashFilter[];
+  /** AS2 instance name — makes the bitmap accessible as _root.<name> in scripts. */
+  readonly instanceName?: string;
 }
 
 /**
