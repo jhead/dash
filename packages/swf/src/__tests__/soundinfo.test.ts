@@ -48,13 +48,13 @@ describe("encodeSoundInfo", () => {
     expect(loopCount).toBe(3);
   });
 
-  it("loops=0 sets hasLoops bit (bit 2) and LoopCount = 0 (infinite)", () => {
+  it("loops=0 sets hasLoops bit (bit 2) and LoopCount=0xFFFF (Ruffle infinite)", () => {
     const result = encodeSoundInfo({ loops: 0 });
     expect(result.length).toBe(3);
     const flags = result[0];
     expect((flags >> 2) & 1).toBe(1); // hasLoops
     const loopCount = result[1] | (result[2] << 8);
-    expect(loopCount).toBe(0);
+    expect(loopCount).toBe(0xFFFF);
   });
 
   it("inPoint=44100 sets hasInPoint bit (bit 0) and appends uint32 value", () => {
@@ -346,7 +346,7 @@ describe("compileDocument — StartSound (tag 15) integration", () => {
     expect(loopCount).toBe(3);
   });
 
-  it("event sound with repeatCount=0 (infinite) emits HasLoops with LoopCount=0", () => {
+  it("event sound with repeatCount=0 (infinite) emits HasLoops with LoopCount=0xFFFF (Ruffle infinite)", () => {
     const doc = makeMinimalDoc({
       libraryItemId: "snd-1",
       syncMode: "event",
@@ -358,7 +358,7 @@ describe("compileDocument — StartSound (tag 15) integration", () => {
     const flags = startTag.body[2];
     expect((flags >> 2) & 1).toBe(1); // hasLoops
     const loopCount = startTag.body[3] | (startTag.body[4] << 8);
-    expect(loopCount).toBe(0); // 0 = loop forever per SWF SoundInfo spec
+    expect(loopCount).toBe(0xFFFF); // 0xFFFF = loop forever (Ruffle infinite)
   });
 
   it("stop sync mode sets stop bit (bit 5) in SoundInfo flags", () => {

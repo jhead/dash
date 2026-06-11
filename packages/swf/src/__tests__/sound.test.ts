@@ -363,7 +363,7 @@ describe("SWF sound export — StartSound (tag 15)", () => {
     expect(loopCount).toBe(3);
   });
 
-  it("repeatCount=0 (infinite) maps to LoopCount 0 in StartSound (SWF SoundInfo spec: 0 = loop forever)", () => {
+  it("repeatCount=0 (infinite) maps to LoopCount 0xFFFF in StartSound (Ruffle infinite)", () => {
     const snd = makeSoundItem("snd-1");
     const doc = makeDoc(
       [snd],
@@ -373,7 +373,7 @@ describe("SWF sound export — StartSound (tag 15)", () => {
     const tags = parseTags(swf);
     const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
     const loopCount = startTag.body[3] | (startTag.body[4] << 8);
-    expect(loopCount).toBe(0);
+    expect(loopCount).toBe(0xFFFF);
   });
 
   it("StartSound appears before ShowFrame (tag 1) in the same frame", () => {
@@ -553,7 +553,7 @@ describe("SWF sound export — StartSound with envelope effect", () => {
     const tags = parseTags(swf);
     const startTag = tags.find((t) => t.code === TAG_START_SOUND)!;
     // body[0..1]=soundId, body[2]=flags, body[3]=LoopCount_lo, body[4]=LoopCount_hi
-    // (repeatCount=0 still sets hasLoops, writing LoopCount=0), body[5]=EnvelopeCount
+    // (repeatCount=0 still sets hasLoops, writing LoopCount=0xFFFF for infinite), body[5]=EnvelopeCount
     // body[6..9]=pos44, body[10..11]=leftLevel, body[12..13]=rightLevel
     const infoFlags = startTag.body[2];
     expect((infoFlags >> 3) & 1).toBe(1); // hasEnvelope set

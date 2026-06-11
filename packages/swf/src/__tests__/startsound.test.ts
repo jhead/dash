@@ -204,11 +204,11 @@ describe("encodeSoundInfo — SoundInfo struct", () => {
     expect(loopCount).toBe(3);
   });
 
-  it("loops=0 sets HasLoops bit and LoopCount=0 (loop forever)", () => {
+  it("loops=0 sets HasLoops bit and LoopCount=0xFFFF (Ruffle infinite)", () => {
     const info = encodeSoundInfo({ loops: 0 });
     expect((info[0] >> 2) & 1).toBe(1);
     const loopCount = info[1] | (info[2] << 8);
-    expect(loopCount).toBe(0);
+    expect(loopCount).toBe(0xFFFF);
   });
 
   it("stop option sets stop bit (bit 5)", () => {
