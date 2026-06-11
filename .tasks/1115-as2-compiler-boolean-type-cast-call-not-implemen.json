@@ -2,9 +2,9 @@
   "id": "1115-as2-compiler-boolean-type-cast-call-not-implemen",
   "title": "AS2 compiler: Boolean() type-cast call not implemented",
   "description": "`Boolean(x)` is a standard AS2 type-cast function. In AVM1 there is no dedicated ActionToBoolean opcode, but the correct emulation is: push x, then use a double-not (`ActionNot` twice) to coerce to a proper boolean value.\n\n**Current state:**\n`Number(x)` is special-cased in `compiler.ts` at line 2265 (emits ActionToNumber 0x4A) and `String(x)` at line 2272 (emits ActionToString 0x4B). There is no corresponding special case for `Boolean(x)`.\n\nWithout a special case, `Boolean(x)` falls through to the generic `ActionCallFunction` path which pushes the string `\"Boolean\"` and calls it. In AVM1/Flash 8 there is no built-in global `Boolean` function callable this way, so this will produce `undefined` at runtime instead of a boolean coercion.\n\n**Fix needed** in `compiler.ts` `compileCallExpr()`:\n```ts\n// Built-in: Boolean(x) \u2192 push x, ActionNot, ActionNot (double-not coerces to boolean)\nif (name === 'Boolean' && expr.args.length === 1) {\n  this.compileExpr(expr.args[0]!);\n  this.emit(0x12); // ActionNot\n  this.emit(0x12); // ActionNot\n  return;\n}\n```\nAlso add `Boolean` to the exclusion list in `collectStrings()` (same pattern as `Number` and `String` on lines 330\u2013331).",
-  "status": "in_progress",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-11T04:36:55Z",
-  "updated_at": "2026-06-11T04:37:09Z"
+  "updated_at": "2026-06-11T05:34:49Z"
 }
