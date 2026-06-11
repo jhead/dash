@@ -818,6 +818,33 @@ function createMcpServerForRequest(): McpServer {
   );
 
   server.registerTool(
+    "timeline_copy_frames",
+    {
+      title: "Copy Frames",
+      description: "Copy a range of frames to the clipboard.",
+      inputSchema: z.object({
+        startFrame: z.number().int().min(0).optional().describe("First frame index to copy (0-based, defaults to current frame)"),
+        endFrame: z.number().int().min(0).optional().describe("Last frame index to copy (inclusive, defaults to startFrame)"),
+        layerIndex: z.number().int().min(0).optional().describe("Layer index (defaults to all layers)"),
+      }),
+    },
+    async (params) => callTool("timeline_copy_frames", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "timeline_paste_frames",
+    {
+      title: "Paste Frames",
+      description: "Paste previously copied frames at a destination frame.",
+      inputSchema: z.object({
+        frameIndex: z.number().int().min(0).optional().describe("Destination frame index (0-based, defaults to current frame)"),
+        replaceFrames: z.boolean().optional().describe("Replace existing frames instead of inserting"),
+      }),
+    },
+    async (params) => callTool("timeline_paste_frames", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
     "playback_play",
     {
       title: "Play",

@@ -43,8 +43,11 @@ import type {
   FileSaveFlaResult,
   SceneAddResult,
   SceneDuplicateResult,
+  TimelineCopyFramesResult,
+  TimelinePasteFramesResult,
 } from "@flash/agent-protocol";
 import type { FlashDocument, LayerType, SymbolType } from "@flash/core";
+import type { FrameClipboard } from "@flash/core";
 import {
   hexToColor,
   createRectShape,
@@ -87,6 +90,8 @@ import {
   removeScene,
   renameScene,
   duplicateScene,
+  copyFramesDoc,
+  pasteFramesDoc,
 } from "@flash/core";
 import type {
   DisplayObject,
@@ -260,6 +265,9 @@ function withSceneTimeline(
   const newScenes = doc.scenes.map((s, i) => (i === idx ? { ...s, timeline: newTimeline } : s));
   return { ...doc, scenes: newScenes };
 }
+
+/** Frame clipboard for timeline_copy_frames / timeline_paste_frames. */
+let _frameClipboard: FrameClipboard | null = null;
 
 /** Generate a simple id for display objects created by agent commands. */
 let _agentObjCounter = 0;
@@ -1319,6 +1327,50 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     cb.setCurrentFrame(params.frameIndex);
     return { ok: true };
+  },
+
+  timeline_copy_frames(params: {
+    startFrame?: number;
+    endFrame?: number;
+    layerIndex?: number;
+  }): TimelineCopyFramesResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    const sceneIndex = cb.getActiveSceneIndex();
+    const start = params.startFrame !== undefined ? params.startFrame : cb.getCurrentFrame();
+    const end = params.endFrame !== undefined ? params.endFrame : start;
+
+    // Resolve layer ids: if layerIndex is specified, copy only that layer; otherwise all
+    let layerIds: string[] = [];
+    if (params.layerIndex !== undefined) {
+      const timeline = getActiveTimeline(cb);
+      const layer = timeline.layers[params.layerIndex];
+      if (!layer) {
+        throw new Error(
+          `timeline_copy_frames: layerIndex ${params.layerIndex} out of bounds (layerCount=${timeline.layers.length})`
+        );
+      }
+      layerIds = [layer.id];
+    }
+
+    _frameClipboard = copyFramesDoc(doc, sceneIndex, layerIds, start, end);
+    return { success: true };
+  },
+
+  timeline_paste_frames(params: {
+    frameIndex?: number;
+    replaceFrames?: boolean;
+  }): TimelinePasteFramesResult {
+    const cb = requireCallbacks();
+    if (!_frameClipboard) {
+      throw new Error("timeline_paste_frames: no frames in clipboard — call timeline_copy_frames first");
+    }
+    const doc = cb.getDoc();
+    const sceneIndex = cb.getActiveSceneIndex();
+    const atFrame = params.frameIndex !== undefined ? params.frameIndex : cb.getCurrentFrame();
+    const newDoc = pasteFramesDoc(doc, sceneIndex, [], atFrame, _frameClipboard);
+    cb.pushDoc(newDoc);
+    return { success: true };
   },
 
   playback_play(): { ok: true } {

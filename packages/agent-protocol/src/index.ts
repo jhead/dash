@@ -618,6 +618,27 @@ export const FileLoadFlaParamsSchema = z.object({
 export type FileLoadFlaParams = z.infer<typeof FileLoadFlaParamsSchema>;
 
 // ---------------------------------------------------------------------------
+// Timeline copy/paste frames
+// ---------------------------------------------------------------------------
+
+export const TimelineCopyFramesParamsSchema = z.object({
+  startFrame: z.number().int().min(0).optional().describe('First frame index to copy (0-based, defaults to current frame)'),
+  endFrame: z.number().int().min(0).optional().describe('Last frame index to copy (inclusive, defaults to startFrame)'),
+  layerIndex: z.number().int().min(0).optional().describe('Layer index (defaults to all layers)'),
+});
+export type TimelineCopyFramesParams = z.infer<typeof TimelineCopyFramesParamsSchema>;
+export const TimelineCopyFramesResultSchema = z.object({ success: z.literal(true) });
+export type TimelineCopyFramesResult = z.infer<typeof TimelineCopyFramesResultSchema>;
+
+export const TimelinePasteFramesParamsSchema = z.object({
+  frameIndex: z.number().int().min(0).optional().describe('Destination frame index (0-based, defaults to current frame)'),
+  replaceFrames: z.boolean().optional().describe('Replace existing frames instead of inserting'),
+});
+export type TimelinePasteFramesParams = z.infer<typeof TimelinePasteFramesParamsSchema>;
+export const TimelinePasteFramesResultSchema = z.object({ success: z.literal(true) });
+export type TimelinePasteFramesResult = z.infer<typeof TimelinePasteFramesResultSchema>;
+
+// ---------------------------------------------------------------------------
 // Bridge message envelope
 // ---------------------------------------------------------------------------
 
@@ -661,6 +682,8 @@ export const ALL_COMMANDS = [
   "timeline_set_tween",
   "timeline_set_sound",
   "timeline_goto_frame",
+  "timeline_copy_frames",
+  "timeline_paste_frames",
   "playback_play",
   "playback_stop",
   // code
