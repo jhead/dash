@@ -1915,6 +1915,14 @@ export interface JsflDocument {
    */
   setProperty(index: number, value: number | string | boolean): void;
   /**
+   * Duplicate this document.
+   * Deep-clones the current FlashDocument, assigns it a new untitled name,
+   * registers it with fl.documents, and returns a JsflDocument proxy for the clone.
+   * Flash 8 behavior: the original document remains active; the clone is added as
+   * the second entry in fl.documents.
+   */
+  duplicate(): JsflDocument;
+  /**
    * Compile and play the movie.  Not supported in browser context; stub.
    */
   testMovie(): void;
@@ -1956,7 +1964,8 @@ function getActiveLayerId(state: RuntimeState): string | null {
 
 function makeDocumentProxy(
   state: RuntimeState,
-  ids: ReturnType<typeof makeIdCounters>
+  ids: ReturnType<typeof makeIdCounters>,
+  registerDocument?: (proxy: JsflDocument) => void
 ): JsflDocument {
   function mutateTimeline(fn: (tl: TimelineModel) => TimelineModel) {
     const scene = state.doc.scenes[state.sceneIndex];
@@ -3836,6 +3845,29 @@ function makeDocumentProxy(
         };
       }
     },
+    duplicate(): JsflDocument {
+      // Deep-clone the current FlashDocument and assign a new unique id/name.
+      const clonedDoc = structuredClone(state.doc) as FlashDocument;
+      const newId = `jsfl-doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      (clonedDoc as { id: string }).id = newId;
+      // Derive an untitled name: "Untitled-N" where N increments per duplicated doc.
+      (clonedDoc as { name?: string }).name = `Untitled-${Date.now()}`;
+      // Build a fresh independent RuntimeState for the clone.
+      const cloneState: RuntimeState = {
+        doc: clonedDoc,
+        traces: [],
+        sceneIndex: 0,
+        frameIndex: 0,
+        currentLayerIndex: 0,
+        selectedIds: [],
+        frameClipboard: null,
+      };
+      const cloneIds = makeIdCounters();
+      const cloneProxy = makeDocumentProxy(cloneState, cloneIds);
+      // Register the new proxy into the fl documents list (if the callback is wired).
+      registerDocument?.(cloneProxy);
+      return cloneProxy;
+    },
     testMovie(): void {
       console.warn('testMovie: not supported');
     },
@@ -4006,6 +4038,19 @@ function makeFlProxy(
 ): JsflFl {
   // Keep a mutable reference so createDocument() can swap it out.
   let _docProxy = docProxy;
+  // Additional documents created by doc.duplicate() accumulate here.
+  const _extraDocs: JsflDocument[] = [];
+
+  function registerDocument(proxy: JsflDocument) {
+    _extraDocs.push(proxy);
+  }
+
+  // Wire the registerDocument callback into the initial proxy.
+  // We do this by re-assigning _docProxy with the callback; since docProxy was
+  // already created before this function ran, we pass registerDocument into the
+  // initial proxy's closure by rebuilding it here.  The caller (buildJsflContext)
+  // passes docProxy built without the callback, so we rebuild it now.
+  _docProxy = makeDocumentProxy(state, ids, registerDocument);
 
   return {
     get version() {
@@ -4024,7 +4069,7 @@ function makeFlProxy(
       return "";
     },
     get documents() {
-      return [_docProxy];
+      return [_docProxy, ..._extraDocs];
     },
     getDocumentDOM() {
       return _docProxy;
@@ -4038,7 +4083,7 @@ function makeFlProxy(
       state.currentLayerIndex = 0;
       state.selectedIds = [];
       state.frameClipboard = null;
-      _docProxy = makeDocumentProxy(state, ids);
+      _docProxy = makeDocumentProxy(state, ids, registerDocument);
       return _docProxy;
     },
     trace(msg: unknown) {
@@ -4216,8 +4261,12 @@ export function buildJsflContext(
     frameClipboard: null,
   };
   const ids = makeIdCounters();
-  const docProxy = makeDocumentProxy(state, ids);
-  const flProxy = makeFlProxy(state, ids, docProxy);
+  // Pass a placeholder proxy to makeFlProxy; it will rebuild it internally with
+  // the registerDocument callback wired in and return the live reference.
+  const placeholderProxy = makeDocumentProxy(state, ids);
+  const flProxy = makeFlProxy(state, ids, placeholderProxy);
+  // fl.getDocumentDOM() returns the correctly wired proxy (rebuilt inside makeFlProxy).
+  const docProxy = flProxy.getDocumentDOM();
   const ctx: InternalContext = {
     doc: docProxy,
     fl: flProxy,
