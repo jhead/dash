@@ -22,6 +22,7 @@ import {
   encodePlaceObject2,
   encodePlaceObject2Move,
   encodePlaceObject2WithCXForm,
+  encodePlaceObject2WithName,
 } from "./shapes.js";
 import {
   encodePlaceObject3WithFilters,
@@ -377,6 +378,7 @@ export function encodeDefineSprite(
             const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
               ? { scaleX, scaleY, rotation, skewX, skewY }
               : undefined;
+            const instName = (displayObj as { instanceName?: string }).instanceName ?? undefined;
             // Bug 1103 fix: encode colorEffect / visible=false / filters / blend mode
             const hasBlend = !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
             if (hasBlend || hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
@@ -384,8 +386,8 @@ export function encodeDefineSprite(
                 ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect) ?? undefined
                 : undefined;
               const placeBody = hasBlend
-                ? encodePlaceObject3WithBlendMode(refCharId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, instanceTransform, undefined, instCXForm)
-                : encodePlaceObject3WithFilters(refCharId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, instanceTransform);
+                ? encodePlaceObject3WithBlendMode(refCharId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, instanceTransform, undefined, instCXForm, undefined, instName)
+                : encodePlaceObject3WithFilters(refCharId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, instanceTransform, instName);
               spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
             } else {
               let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
@@ -395,7 +397,9 @@ export function encodeDefineSprite(
                 cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
               }
               if (cxform !== null) {
-                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(refCharId, depth, x, y, cxform, instanceTransform)));
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(refCharId, depth, x, y, cxform, instanceTransform, false, instName)));
+              } else if (instName) {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithName(refCharId, depth, x, y, instName, instanceTransform)));
               } else {
                 spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(refCharId, depth, x, y, instanceTransform)));
               }
@@ -464,17 +468,29 @@ export function encodeDefineSprite(
             const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
               ? { scaleX, scaleY, rotation, skewX, skewY }
               : undefined;
+            const instName = (displayObj as { instanceName?: string }).instanceName ?? undefined;
             // Bug 1103 fix: encode colorEffect / visible=false on move
-            let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
-              ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
-              : null;
-            if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
-              cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
-            }
-            if (cxform !== null) {
-              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(refCharId, depth, x, y, cxform, instanceTransform, true)));
+            const hasBlend = !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
+            if (hasBlend || hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
+              const instCXForm = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+                ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect) ?? undefined
+                : undefined;
+              const placeBody = hasBlend
+                ? encodePlaceObject3WithBlendMode(refCharId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, instanceTransform, undefined, instCXForm, true, instName)
+                : encodePlaceObject3WithFilters(refCharId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, instanceTransform, instName, undefined, true);
+              spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
             } else {
-              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(refCharId, depth, x, y, instanceTransform, replaceChar)));
+              let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
+                ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
+                : null;
+              if (cxform === null && (displayObj as { visible?: boolean }).visible === false) {
+                cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
+              }
+              if (cxform !== null) {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(refCharId, depth, x, y, cxform, instanceTransform, true, instName)));
+              } else {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(refCharId, depth, x, y, instanceTransform, replaceChar)));
+              }
             }
           }
         }

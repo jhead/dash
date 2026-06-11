@@ -1,0 +1,10 @@
+{
+  "id": "1116-sprite-ts-symbolinstance-instancename-never-pass",
+  "title": "sprite.ts: SymbolInstance instanceName never passed to PlaceObject \u2014 AS2 path resolution broken inside symbol timelines",
+  "description": "In packages/swf/src/sprite.ts, the SymbolInstance placement paths (lines ~374-403 for both isFirst and posChanged/move) never pass instanceName to any PlaceObject encoder. This means _root.myInstance AS2 path resolution fails for instances that are INSIDE library symbol timelines (not on the main scene).\n\nThe calls encodePlaceObject3WithFilters(), encodePlaceObject3WithBlendMode(), encodePlaceObject2WithCXForm(), and encodePlaceObject2() all omit the name. By contrast, compile.ts (scene timeline) correctly passes instanceName in all paths (task 1107 fixed the scene-timeline case).\n\nFix: In sprite.ts, for SymbolInstance:\n- isFirst path: pass (displayObj as SymbolInstance).instanceName ?? undefined to the name parameter of each encoder\n- posChanged/move path: same\n\nAlso check if encodePlaceObject2WithName() needs to be called for the plain PO2 path (no filters, no blend mode) when instanceName is set \u2014 this is the path used for most instances in symbol timelines.\n\nReference: compile.ts lines 1990-2060 for how scene-timeline does it. task 1107 already fixed the scene-timeline filter/blend paths.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T05:35:09Z",
+  "updated_at": "2026-06-11T05:36:56Z"
+}
