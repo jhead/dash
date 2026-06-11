@@ -574,8 +574,8 @@ export function interpolateTween(
   return {
     x: lerp(from.x, to.x, tPosition),
     y: lerp(from.y, to.y, tPosition),
-    scaleX: lerp(from.scaleX, to.scaleX, tScale),
-    scaleY: lerp(from.scaleY, to.scaleY, tScale),
+    scaleX: config.motionScale === false ? (from.scaleX ?? 1) : lerp(from.scaleX, to.scaleX, tScale),
+    scaleY: config.motionScale === false ? (from.scaleY ?? 1) : lerp(from.scaleY, to.scaleY, tScale),
     rotation: interpolateRotation(
       from.rotation,
       to.rotation,

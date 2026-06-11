@@ -265,6 +265,7 @@ export function getTweenedFrame(
           easeForFilters:  span.easeForFilters,
           motionRotate: startKf.motionRotate,
           motionRotateCount: startKf.motionRotateCount,
+          motionScale: startKf.motionScale ?? true,
         }
       );
 

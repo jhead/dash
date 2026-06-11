@@ -37,4 +37,5 @@ export interface TweenConfig {
   easeForFilters?:  { x1: number; y1: number; x2: number; y2: number } | null;
   motionRotate?: "none" | "auto" | "cw" | "ccw";  // rotation mode
   motionRotateCount?: number;                       // extra full rotations to add
+  motionScale?: boolean;                            // default true — when false, freeze scaleX/scaleY at start values
 }
