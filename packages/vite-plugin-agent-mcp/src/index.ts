@@ -396,6 +396,23 @@ function createMcpServerForRequest(): McpServer {
     async () => callTool("scene_duplicate")
   );
 
+  server.registerTool(
+    "scene_reorder",
+    {
+      title: "Reorder Scene",
+      description:
+        "Move a scene to a different position in the scene list. " +
+        "`sceneIndex` is the 0-based index of the scene to move; " +
+        "`insertBefore` is the 0-based position to insert it before (use a large number or scene count to move to end). " +
+        "Returns ok.",
+      inputSchema: z.object({
+        sceneIndex: z.number().int().min(0).describe('0-based index of scene to move'),
+        insertBefore: z.number().int().min(0).describe('0-based index to insert before (large value = end)'),
+      }),
+    },
+    async (params) => callTool("scene_reorder", params as Record<string, unknown>)
+  );
+
   // =========================================================================
   // Stage & selection
   // =========================================================================
@@ -609,6 +626,35 @@ function createMcpServerForRequest(): McpServer {
       }),
     },
     async (params) => callTool("stage_ungroup", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "stage_move_selection",
+    {
+      title: "Move Selection",
+      description:
+        "Move all currently selected objects by the given pixel delta (dx, dy). " +
+        "Returns movedCount (number of objects moved).",
+      inputSchema: z.object({
+        dx: z.number().describe('Horizontal delta in pixels'),
+        dy: z.number().describe('Vertical delta in pixels'),
+      }),
+    },
+    async (params) => callTool("stage_move_selection", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "stage_find_instances",
+    {
+      title: "Find Symbol Instances",
+      description:
+        "Find all instances of a named library symbol across all scenes, layers, and keyframes. " +
+        "Returns an array of { id, x, y, layerIndex, frameIndex, sceneIndex }.",
+      inputSchema: z.object({
+        symbolName: z.string().describe('Library item name to search for'),
+      }),
+    },
+    async (params) => callTool("stage_find_instances", params as Record<string, unknown>)
   );
 
   server.registerTool(
@@ -1107,6 +1153,20 @@ function createMcpServerForRequest(): McpServer {
       }),
     },
     async (params) => callTool("library_import_sound", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "library_use_count",
+    {
+      title: "Library Use Count",
+      description:
+        "Count how many symbol instances of a named library item exist across all scenes, layers, and keyframes. " +
+        "Returns { count }.",
+      inputSchema: z.object({
+        name: z.string().describe('Library item name'),
+      }),
+    },
+    async (params) => callTool("library_use_count", params as Record<string, unknown>)
   );
 
   // =========================================================================

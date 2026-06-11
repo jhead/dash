@@ -685,6 +685,65 @@ export const FilterListResultSchema = z.object({ filters: z.array(z.any()), rev:
 export type FilterListResult = z.infer<typeof FilterListResultSchema>;
 
 // ---------------------------------------------------------------------------
+// stage_move_selection
+// ---------------------------------------------------------------------------
+
+export const StageMoveSelectionParamsSchema = z.object({
+  dx: z.number().describe('Horizontal delta in pixels'),
+  dy: z.number().describe('Vertical delta in pixels'),
+})
+export type StageMoveSelectionParams = z.infer<typeof StageMoveSelectionParamsSchema>
+
+export const StageMoveSelectionResultSchema = z.object({ movedCount: z.number() })
+export type StageMoveSelectionResult = z.infer<typeof StageMoveSelectionResultSchema>
+
+// ---------------------------------------------------------------------------
+// scene_reorder
+// ---------------------------------------------------------------------------
+
+export const SceneReorderParamsSchema = z.object({
+  sceneIndex: z.number().int().min(0).describe('0-based index of scene to move'),
+  insertBefore: z.number().int().min(0).describe('0-based index to insert before (-1 or large = end)'),
+})
+export type SceneReorderParams = z.infer<typeof SceneReorderParamsSchema>
+
+export const SceneReorderResultSchema = z.object({ ok: z.boolean() })
+export type SceneReorderResult = z.infer<typeof SceneReorderResultSchema>
+
+// ---------------------------------------------------------------------------
+// stage_find_instances
+// ---------------------------------------------------------------------------
+
+export const StageFindInstancesParamsSchema = z.object({
+  symbolName: z.string().describe('Library item name to search for'),
+})
+export type StageFindInstancesParams = z.infer<typeof StageFindInstancesParamsSchema>
+
+export const StageFindInstancesResultSchema = z.object({
+  instances: z.array(z.object({
+    id: z.string(),
+    x: z.number(),
+    y: z.number(),
+    layerIndex: z.number(),
+    frameIndex: z.number(),
+    sceneIndex: z.number(),
+  }))
+})
+export type StageFindInstancesResult = z.infer<typeof StageFindInstancesResultSchema>
+
+// ---------------------------------------------------------------------------
+// library_use_count
+// ---------------------------------------------------------------------------
+
+export const LibraryUseCountParamsSchema = z.object({
+  name: z.string().describe('Library item name'),
+})
+export type LibraryUseCountParams = z.infer<typeof LibraryUseCountParamsSchema>
+
+export const LibraryUseCountResultSchema = z.object({ count: z.number() })
+export type LibraryUseCountResult = z.infer<typeof LibraryUseCountResultSchema>
+
+// ---------------------------------------------------------------------------
 // Bridge message envelope
 // ---------------------------------------------------------------------------
 
@@ -762,6 +821,12 @@ export const ALL_COMMANDS = [
   "scene_rename",
   "scene_select",
   "scene_duplicate",
+  "scene_reorder",
+  // stage utilities
+  "stage_move_selection",
+  "stage_find_instances",
+  // library utilities
+  "library_use_count",
 ] as const;
 
 export type AgentCommand = (typeof ALL_COMMANDS)[number];

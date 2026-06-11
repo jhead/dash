@@ -48,6 +48,10 @@ import type {
   FilterAddResult,
   FilterRemoveResult,
   FilterListResult,
+  StageMoveSelectionResult,
+  SceneReorderResult,
+  StageFindInstancesResult,
+  LibraryUseCountResult,
 } from "@flash/agent-protocol";
 import type { FlashDocument, LayerType, SymbolType, FlashFilter } from "@flash/core";
 import type { FrameClipboard } from "@flash/core";
@@ -92,6 +96,7 @@ import {
   addScene,
   removeScene,
   renameScene,
+  reorderScenes,
   duplicateScene,
   copyFramesDoc,
   pasteFramesDoc,
@@ -2012,6 +2017,136 @@ const handlers: Record<string, AnyHandler> = {
     const newIndex = currentIndex + 1;
     cb.setActiveSceneIndex(newIndex);
     return { sceneIndex: newIndex, sceneName: newDoc.scenes[newIndex]!.name, rev: _rev };
+  },
+
+  scene_reorder(params: { sceneIndex: number; insertBefore: number }): SceneReorderResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    if (params.sceneIndex < 0 || params.sceneIndex >= doc.scenes.length) {
+      throw new Error(
+        `scene_reorder: sceneIndex ${params.sceneIndex} out of bounds (sceneCount=${doc.scenes.length})`
+      );
+    }
+    // insertBefore is a position to insert before; convert to toIndex for reorderScenes.
+    // reorderScenes(doc, fromIndex, toIndex) moves the item from fromIndex to toIndex.
+    // insertBefore=N means we want the item at position N after the removal, which is
+    // equivalent to toIndex = min(insertBefore, scenes.length - 1).
+    const toIndex = Math.max(0, Math.min(params.insertBefore, doc.scenes.length - 1));
+    const newDoc = reorderScenes(doc, params.sceneIndex, toIndex);
+    cb.pushDoc(newDoc);
+    return { ok: true };
+  },
+
+  // =========================================================================
+  // Stage utilities
+  // =========================================================================
+
+  stage_move_selection(params: { dx: number; dy: number }): StageMoveSelectionResult {
+    const cb = requireCallbacks();
+    const selectedIds = cb.getSelectedIds();
+    if (selectedIds.length === 0) {
+      return { movedCount: 0 };
+    }
+
+    const doc = cb.getDoc();
+    const selectedSet = new Set(selectedIds);
+    let movedCount = 0;
+
+    // Iterate all scenes/layers/keyframes to find selected objects and move them
+    const newScenes = doc.scenes.map((scene) => {
+      const newLayers = scene.timeline.layers.map((layer) => {
+        const newFrames = layer.frames.map((frame) => {
+          if (!frame.isKeyframe) return frame;
+          const newObjects = frame.displayObjects.map((obj) => {
+            if (!selectedSet.has(obj.id)) return obj;
+            const ox = "x" in obj ? (obj as { x: number }).x : 0;
+            const oy = "y" in obj ? (obj as { y: number }).y : 0;
+            movedCount++;
+            return { ...obj, x: ox + params.dx, y: oy + params.dy };
+          });
+          return { ...frame, displayObjects: newObjects };
+        });
+        return { ...layer, frames: newFrames };
+      });
+      return { ...scene, timeline: { ...scene.timeline, layers: newLayers } };
+    });
+
+    const newDoc = { ...doc, scenes: newScenes };
+    cb.pushDoc(newDoc);
+    // movedCount can overcount if the same id appears in multiple keyframes; normalise
+    const uniqueMoved = Math.min(movedCount, selectedIds.length);
+    return { movedCount: uniqueMoved };
+  },
+
+  stage_find_instances(params: { symbolName: string }): StageFindInstancesResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+
+    // Find the library symbol by name
+    const sym = doc.library.items.find(
+      (i) => i.name === params.symbolName && i.itemType === "symbol"
+    );
+    if (!sym) {
+      return { instances: [] };
+    }
+    const symbolId = sym.id;
+
+    const instances: StageFindInstancesResult["instances"] = [];
+
+    doc.scenes.forEach((scene, sceneIndex) => {
+      scene.timeline.layers.forEach((layer, layerIndex) => {
+        layer.frames.forEach((frame) => {
+          if (!frame.isKeyframe) return;
+          frame.displayObjects.forEach((obj) => {
+            if (obj.type === "instance" && (obj as SymbolInstance).symbolId === symbolId) {
+              const inst = obj as SymbolInstance;
+              instances.push({
+                id: inst.id,
+                x: inst.x,
+                y: inst.y,
+                layerIndex,
+                frameIndex: frame.index,
+                sceneIndex,
+              });
+            }
+          });
+        });
+      });
+    });
+
+    return { instances };
+  },
+
+  // =========================================================================
+  // Library utilities
+  // =========================================================================
+
+  library_use_count(params: { name: string }): LibraryUseCountResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+
+    // Find the library symbol by name
+    const sym = doc.library.items.find((i) => i.name === params.name && i.itemType === "symbol");
+    if (!sym) {
+      return { count: 0 };
+    }
+    const symbolId = sym.id;
+
+    let count = 0;
+    doc.scenes.forEach((scene) => {
+      scene.timeline.layers.forEach((layer) => {
+        layer.frames.forEach((frame) => {
+          if (!frame.isKeyframe) return;
+          frame.displayObjects.forEach((obj) => {
+            if (obj.type === "instance" && (obj as SymbolInstance).symbolId === symbolId) {
+              count++;
+            }
+          });
+        });
+      });
+    });
+
+    return { count };
   },
 };
 
