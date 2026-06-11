@@ -4022,6 +4022,10 @@ export interface JsflFl {
    */
   runScript(fileURI: string): void;
   /**
+   * Save a mapping file to the given URI.  Not supported in browser context; no-op stub.
+   */
+  saveMappingFile(fileURI: string): void;
+  /**
    * Open a JSFL script file in the Flash IDE editor.
    * Not supported in browser context; no-op stub.
    */
@@ -4225,6 +4229,9 @@ function makeFlProxy(
     },
     runScript(_fileURI: string): void {
       console.warn('fl.runScript: not supported in browser context');
+    },
+    saveMappingFile(_fileURI: string): void {
+      console.warn('[JSFL] fl.saveMappingFile: not supported in browser context');
     },
     openScript(_fileURL: string): void {
       console.warn('fl.openScript: not supported in browser context');
