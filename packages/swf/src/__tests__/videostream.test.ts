@@ -507,6 +507,141 @@ describe("video.ts — encoders", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Helpers for dimension-extraction tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal Sorenson H.263 VIDEODATA payload (including the leading
+ * FrameType/CodecId byte) with the given psize field.
+ *
+ * Bit layout of the H.263 bitstream (starting at byte 1 of the returned array):
+ *   [17 bits] PSC = 0x000001 (16 zeros + a 1)
+ *   [5  bits] version = 0
+ *   [8  bits] temporal ref = 0
+ *   [3  bits] psize
+ *   [n  bits] optional custom width/height (for psize 0 or 1)
+ */
+function makeH263VideoData(
+  psize: number,
+  customW?: number,
+  customH?: number,
+): Uint8Array {
+  // We pack bits MSB-first into a byte array.
+  const bits: number[] = [];
+
+  function pushBits(value: number, n: number) {
+    for (let i = n - 1; i >= 0; i--) {
+      bits.push((value >> i) & 1);
+    }
+  }
+
+  // PSC: 17 bits == 1 (16 zeros + 1)
+  pushBits(1, 17);
+  // version (5 bits) = 0
+  pushBits(0, 5);
+  // temporal reference (8 bits) = 0
+  pushBits(0, 8);
+  // psize (3 bits)
+  pushBits(psize, 3);
+  // Optional custom dimensions
+  if (psize === 0 && customW !== undefined && customH !== undefined) {
+    pushBits(customW, 8);
+    pushBits(customH, 8);
+  } else if (psize === 1 && customW !== undefined && customH !== undefined) {
+    pushBits(customW, 16);
+    pushBits(customH, 16);
+  }
+
+  // Pack bits into bytes (MSB first, pad last byte with zeros).
+  const byteCount = Math.ceil(bits.length / 8);
+  const payload = new Uint8Array(byteCount);
+  for (let i = 0; i < bits.length; i++) {
+    payload[Math.floor(i / 8)] |= (bits[i]! << (7 - (i % 8)));
+  }
+
+  // Prepend the FLV FrameType/CodecId byte (keyframe=1, codecId=2 → 0x12).
+  const videoData = new Uint8Array(1 + byteCount);
+  videoData[0] = 0x12; // (1 << 4) | 2
+  videoData.set(payload, 1);
+  return videoData;
+}
+
+/**
+ * Build a minimal FLV buffer that has only a Script tag with onMetaData
+ * containing the given width/height, followed by one video tag.
+ */
+function makeFlvWithMetadata(w: number, h: number): Uint8Array {
+  // Build AMF0 onMetaData payload
+  const buildAmf0 = (): Uint8Array => {
+    const parts: number[] = [];
+    // AMF0 String "onMetaData"
+    const meta = "onMetaData";
+    parts.push(0x02, 0x00, meta.length);
+    for (const c of meta) parts.push(c.charCodeAt(0));
+    // AMF0 ECMA Array (type 0x08) with 2 entries
+    parts.push(0x08, 0x00, 0x00, 0x00, 0x02);
+    // Key "width"
+    const writeNum = (key: string, val: number) => {
+      parts.push(0x00, key.length);
+      for (const c of key) parts.push(c.charCodeAt(0));
+      parts.push(0x00); // Number type
+      const buf = new ArrayBuffer(8);
+      new DataView(buf).setFloat64(0, val, false);
+      parts.push(...new Uint8Array(buf));
+    };
+    writeNum("width", w);
+    writeNum("height", h);
+    // End marker
+    parts.push(0x00, 0x00, 0x09);
+    return new Uint8Array(parts);
+  };
+
+  const amf0 = buildAmf0();
+
+  // Build FLV file
+  const parts: number[] = [];
+  // FLV header
+  parts.push(0x46, 0x4c, 0x56, 0x01, 0x05 /* audio+video */, 0x00, 0x00, 0x00, 0x09);
+  // First PreviousTagSize (0)
+  parts.push(0x00, 0x00, 0x00, 0x00);
+
+  // Script tag (type 18)
+  parts.push(18);
+  parts.push((amf0.length >> 16) & 0xff, (amf0.length >> 8) & 0xff, amf0.length & 0xff);
+  parts.push(0x00, 0x00, 0x00, 0x00); // timestamp + ext
+  parts.push(0x00, 0x00, 0x00); // stream id
+  parts.push(...amf0);
+  const scriptTagSize = 11 + amf0.length;
+  parts.push(0, 0, 0, scriptTagSize);
+
+  // One video tag (H.263 keyframe, 1-byte payload)
+  parts.push(9, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+  parts.push(0x12); // FrameType=1 | CodecId=2
+  parts.push(0, 0, 0, 12); // PreviousTagSize
+
+  return new Uint8Array(parts);
+}
+
+/**
+ * Wrap a H.263 VIDEODATA into a minimal FLV (no metadata tag).
+ */
+function makeFlvWithH263Frame(videoData: Uint8Array): Uint8Array {
+  const parts: number[] = [];
+  // FLV header
+  parts.push(0x46, 0x4c, 0x56, 0x01, 0x01, 0x00, 0x00, 0x00, 0x09);
+  // First PreviousTagSize
+  parts.push(0x00, 0x00, 0x00, 0x00);
+  // Video tag
+  parts.push(9);
+  parts.push((videoData.length >> 16) & 0xff, (videoData.length >> 8) & 0xff, videoData.length & 0xff);
+  parts.push(0x00, 0x00, 0x00, 0x00); // timestamp
+  parts.push(0x00, 0x00, 0x00); // stream id
+  parts.push(...videoData);
+  parts.push(0, 0, 0, 11 + videoData.length);
+  return new Uint8Array(parts);
+}
+
 describe("video.ts — FLV demuxer", () => {
   it("returns null for non-FLV input", () => {
     expect(demuxFlv(new Uint8Array([0x00, 0x01, 0x02]))).toBeNull();
@@ -525,6 +660,76 @@ describe("video.ts — FLV demuxer", () => {
       expect(f.data.length).toBe(i + 1); // payload includes the nibble byte
       expect(f.frameType).toBe(i === 0 ? 1 : 2);
     });
+  });
+
+  it("falls back to 320×240 when FLV has no metadata and non-parseable H.263", () => {
+    const flv = makeFlv(1); // synthetic H.263 with 0xAA padding — not a real bitstream
+    const result = demuxFlv(flv);
+    expect(result).not.toBeNull();
+    expect(result!.width).toBe(320);
+    expect(result!.height).toBe(240);
+  });
+
+  it("extracts CIF (352×288) from Sorenson H.263 psize=2 bitstream", () => {
+    const videoData = makeH263VideoData(2); // psize=2 = CIF
+    const flv = makeFlvWithH263Frame(videoData);
+    const result = demuxFlv(flv);
+    expect(result).not.toBeNull();
+    expect(result!.width).toBe(352);
+    expect(result!.height).toBe(288);
+  });
+
+  it("extracts QCIF (176×144) from Sorenson H.263 psize=3 bitstream", () => {
+    const videoData = makeH263VideoData(3); // psize=3 = QCIF
+    const flv = makeFlvWithH263Frame(videoData);
+    const result = demuxFlv(flv);
+    expect(result).not.toBeNull();
+    expect(result!.width).toBe(176);
+    expect(result!.height).toBe(144);
+  });
+
+  it("extracts Sub-QCIF (128×96) from Sorenson H.263 psize=4 bitstream", () => {
+    const videoData = makeH263VideoData(4); // psize=4 = SubQCIF
+    const flv = makeFlvWithH263Frame(videoData);
+    const result = demuxFlv(flv);
+    expect(result).not.toBeNull();
+    expect(result!.width).toBe(128);
+    expect(result!.height).toBe(96);
+  });
+
+  it("extracts 320×240 from Sorenson H.263 psize=5 bitstream", () => {
+    const videoData = makeH263VideoData(5); // psize=5 = 320×240
+    const flv = makeFlvWithH263Frame(videoData);
+    const result = demuxFlv(flv);
+    expect(result).not.toBeNull();
+    expect(result!.width).toBe(320);
+    expect(result!.height).toBe(240);
+  });
+
+  it("extracts custom 8-bit dims from Sorenson H.263 psize=0", () => {
+    const videoData = makeH263VideoData(0, 160, 120); // psize=0 custom 8-bit
+    const flv = makeFlvWithH263Frame(videoData);
+    const result = demuxFlv(flv);
+    expect(result).not.toBeNull();
+    expect(result!.width).toBe(160);
+    expect(result!.height).toBe(120);
+  });
+
+  it("extracts custom 16-bit dims from Sorenson H.263 psize=1", () => {
+    const videoData = makeH263VideoData(1, 640, 480); // psize=1 custom 16-bit
+    const flv = makeFlvWithH263Frame(videoData);
+    const result = demuxFlv(flv);
+    expect(result).not.toBeNull();
+    expect(result!.width).toBe(640);
+    expect(result!.height).toBe(480);
+  });
+
+  it("extracts dimensions from FLV onMetaData Script tag (overrides bitstream)", () => {
+    const flv = makeFlvWithMetadata(640, 360);
+    const result = demuxFlv(flv);
+    expect(result).not.toBeNull();
+    expect(result!.width).toBe(640);
+    expect(result!.height).toBe(360);
   });
 
   it("compiles a real FLV data URI into matching tag-60/tag-61 payloads", () => {

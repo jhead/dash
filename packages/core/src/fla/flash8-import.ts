@@ -1361,6 +1361,192 @@ const SYMBOL_TYPES: Record<number, SymbolType> = {
   2: "movieclip",
 };
 
+// ---------------------------------------------------------------------------
+// FLV dimension extractor (used during binary FLA import)
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempt to extract frame dimensions from an FLV byte buffer.
+ *
+ * Checks (in priority order):
+ *   1. FLV Script tag (type 18) carrying an AMF0 onMetaData object with
+ *      "width" / "height" Number fields.
+ *   2. Sorenson H.263 bitstream header of the first keyframe (codecId = 2).
+ *
+ * Returns { width, height } or null if dimensions could not be determined.
+ * The caller falls back to 320×240 when null is returned.
+ *
+ * This function mirrors the logic in packages/swf/src/video.ts demuxFlv()
+ * but is kept here to avoid a circular dependency between @flash/core and
+ * @flash/swf.
+ */
+function extractFlvDims(buf: Uint8Array): { width: number; height: number } | null {
+  if (buf.length < 9) return null;
+  if (buf[0] !== 0x46 || buf[1] !== 0x4c || buf[2] !== 0x56) return null;
+
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const dataOffset = view.getUint32(5, false);
+  let pos = (dataOffset >= 9 ? dataOffset : 9) + 4; // skip PreviousTagSize
+
+  let firstVideoData: Uint8Array | null = null;
+  let firstVideoCodecId = -1;
+
+  while (pos + 11 <= buf.length) {
+    const tagType = buf[pos];
+    const dataSize = (buf[pos + 1]! << 16) | (buf[pos + 2]! << 8) | buf[pos + 3]!;
+    const dataStart = pos + 11;
+    const dataEnd = dataStart + dataSize;
+    if (dataEnd > buf.length) break;
+
+    if (tagType === 18 /* Script */ && dataSize > 0) {
+      // Try to parse AMF0 onMetaData for width/height.
+      const dims = parseFlvMetaDimsFromAmf0(buf.slice(dataStart, dataEnd));
+      if (dims) return dims;
+    } else if (tagType === 9 /* Video */ && dataSize > 0 && firstVideoData === null) {
+      const flags = buf[dataStart]!;
+      firstVideoCodecId = flags & 0x0f;
+      firstVideoData = buf.slice(dataStart, dataEnd);
+    }
+
+    pos = dataEnd + 4; // advance past tag + trailing PreviousTagSize
+  }
+
+  // Fall back to codec bitstream parsing.
+  if (firstVideoData !== null && firstVideoCodecId === 2 /* Sorenson H.263 */) {
+    return parseH263DimsFromVideoData(firstVideoData);
+  }
+
+  return null;
+}
+
+/**
+ * Parse "width" and "height" from an FLV Script tag payload (AMF0).
+ *
+ * Expected layout:
+ *   UI8(0x02) UI16-BE(len) "onMetaData"
+ *   UI8(0x08) UI32-BE(count)
+ *   [ UI16-BE(keyLen) key AMF0Value ]*
+ */
+function parseFlvMetaDimsFromAmf0(
+  payload: Uint8Array,
+): { width: number; height: number } | null {
+  if (payload.length < 3 || payload[0] !== 0x02) return null;
+  const strLen = (payload[1]! << 8) | payload[2]!;
+  const strEnd = 3 + strLen;
+  if (strEnd > payload.length) return null;
+  const onMeta = "onMetaData";
+  if (strLen !== onMeta.length) return null;
+  for (let i = 0; i < strLen; i++) {
+    if (payload[3 + i] !== onMeta.charCodeAt(i)) return null;
+  }
+  // ECMA Array (type 0x08)
+  let pos = strEnd;
+  if (pos + 5 > payload.length || payload[pos] !== 0x08) return null;
+  pos += 5; // skip type + 4-byte count
+
+  let foundW: number | null = null;
+  let foundH: number | null = null;
+
+  while (pos + 2 <= payload.length) {
+    const keyLen = (payload[pos]! << 8) | payload[pos + 1]!;
+    pos += 2;
+    if (keyLen === 0) break; // end marker
+    if (pos + keyLen > payload.length) break;
+    let key = "";
+    for (let i = 0; i < keyLen; i++) key += String.fromCharCode(payload[pos + i]!);
+    pos += keyLen;
+    if (pos >= payload.length) break;
+    const vtype = payload[pos++]!;
+    if (vtype === 0x00 /* Number (float64 BE) */) {
+      if (pos + 8 > payload.length) break;
+      const dv = new DataView(payload.buffer, payload.byteOffset + pos, 8);
+      const v = dv.getFloat64(0, false);
+      pos += 8;
+      if (key === "width") foundW = v;
+      else if (key === "height") foundH = v;
+    } else if (vtype === 0x02 /* String */) {
+      if (pos + 2 > payload.length) break;
+      const sLen = (payload[pos]! << 8) | payload[pos + 1]!;
+      pos += 2 + sLen;
+    } else if (vtype === 0x01 /* Boolean */) {
+      pos += 1;
+    } else {
+      break; // unknown type
+    }
+    if (foundW !== null && foundH !== null) {
+      const w = Math.round(foundW);
+      const h = Math.round(foundH);
+      if (w > 0 && h > 0) return { width: w, height: h };
+    }
+  }
+
+  if (foundW !== null && foundH !== null) {
+    const w = Math.round(foundW);
+    const h = Math.round(foundH);
+    if (w > 0 && h > 0) return { width: w, height: h };
+  }
+  return null;
+}
+
+/**
+ * Extract frame dimensions from a Sorenson H.263 FLV video payload.
+ *
+ * `videoData` is the full VIDEODATA bytes (first byte = FrameType/CodecId).
+ * The H.263 bitstream starts at byte 1.
+ *
+ * Sorenson picture header bit layout (h263-rs decode_sorenson_ptype):
+ *   17 bits PSC (0x00001)  +  5 bits version  +  8 bits temporal-ref  +  3 bits psize
+ *   psize: 0=custom(8+8), 1=custom(16+16), 2=CIF(352×288), 3=QCIF(176×144),
+ *          4=SubQCIF(128×96), 5=320×240, 6=160×120, 7=reserved
+ */
+function parseH263DimsFromVideoData(
+  videoData: Uint8Array,
+): { width: number; height: number } | null {
+  if (videoData.length < 5) return null;
+
+  // Bit reader over videoData starting at byte 1 (skip FLV FrameType/CodecId byte).
+  let bytePos = 1;
+  let bitOff = 0;
+
+  function readBits(n: number): number {
+    let result = 0;
+    for (let i = 0; i < n; i++) {
+      if (bytePos >= videoData.length) return -1;
+      const bit = (videoData[bytePos]! >> (7 - bitOff)) & 1;
+      result = (result << 1) | bit;
+      if (++bitOff === 8) { bitOff = 0; bytePos++; }
+    }
+    return result;
+  }
+
+  // Scan for PSC: 17-bit pattern == 1 (16 zeros + 1).
+  const maxScan = Math.min((videoData.length - 1) * 8, 64);
+  let found = false;
+  for (let skip = 0; skip <= maxScan; skip++) {
+    bytePos = 1 + Math.floor(skip / 8);
+    bitOff = skip % 8;
+    if (readBits(17) === 1) { found = true; break; }
+  }
+  if (!found) return null;
+
+  // Skip 5 (version) + 8 (temporal ref) = 13 bits.
+  if (readBits(13) < 0) return null;
+
+  const psize = readBits(3);
+  if (psize < 0) return null;
+
+  switch (psize) {
+    case 0: { const w = readBits(8); const h = readBits(8); return w > 0 && h > 0 ? { width: w, height: h } : null; }
+    case 1: { const w = readBits(16); const h = readBits(16); return w > 0 && h > 0 ? { width: w, height: h } : null; }
+    case 2: return { width: 352, height: 288 };
+    case 3: return { width: 176, height: 144 };
+    case 4: return { width: 128, height: 96 };
+    case 5: return { width: 320, height: 240 };
+    case 6: return { width: 160, height: 120 };
+    default: return null;
+  }
+}
+
 /**
  * Build a FlashDocument from the named streams of a real binary .fla.
  * Returns null when the container holds no recognizable timeline streams
@@ -1488,10 +1674,11 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
       const videoInfo = contents.videos.get(mediaNum);
       const videoName = videoInfo?.name ?? `Video ${mediaNum}`;
       const dataUri = `data:video/x-flv;base64,${bytesToBase64(bytes)}`;
-      // Extract dimensions from the first video frame if possible; default to
-      // a safe 320×240 stub so the SWF compiler always has valid dimensions.
-      let width = 320;
-      let height = 240;
+      // Extract actual frame dimensions from the FLV metadata or codec bitstream.
+      // Falls back to 320×240 when the bitstream cannot be parsed.
+      const extractedDims = extractFlvDims(bytes);
+      const width = extractedDims?.width ?? 320;
+      const height = extractedDims?.height ?? 240;
       const videoItem = createVideo(videoName, { dataUri, width, height });
       videoIdByIndex.set(mediaNum, videoItem.id);
       videoSizeByIndex.set(mediaNum, { width, height });
