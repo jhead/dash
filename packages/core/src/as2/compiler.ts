@@ -363,10 +363,10 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
           }
           return null;
         }
+        for (const a of e.args) scanExpr(a);
         const className = memberToStr(e.callee);
         if (className !== null) add(className);
         else scanExpr(e.callee);
-        for (const a of e.args) scanExpr(a);
         break;
       }
       case 'MemberExpr':
@@ -1574,31 +1574,31 @@ class Compiler {
 
   /**
    * Compile a RegExp literal `/pattern/flags` to:
-   *   ActionPush "RegExp"
-   *   ActionPush pattern
-   *   [ActionPush flags]         (only if flags is non-empty)
+   *   ActionPush flags           (if non-empty, deepest arg)
+   *   ActionPush pattern         (arg[0], just below nArgs)
    *   ActionPush argCount (1 or 2)
-   *   ActionNew                  (0x4a)  — new RegExp(pattern[, flags])
+   *   ActionPush "RegExp"        (className on top — first popped by ActionNewObject)
+   *   ActionNewObject            (0x40)  — new RegExp(pattern[, flags])
    *
-   * Uses the same ActionNew (0x4a) pattern as compileNewExpr for consistency.
-   * Stack layout for ActionNew: className | nArgs | arg[n-1] | ... | arg[0]
-   * (deepest = className, arg[0] on top)
+   * Stack layout for ActionNewObject (0x40): className on TOP, then nArgs, then args.
+   * (deepest = last arg, className on top — matches compileNewExpr push order)
    */
   private compileRegExpLiteral(expr: RegExpLiteral): void {
-    // className string (deepest)
-    this.pushString('RegExp');
-
-    // nArgs
     const argCount = expr.flags.length > 0 ? 2 : 1;
-    this.pushInt(argCount);
 
-    // args in reverse order (last arg on top for ActionNew)
+    // args deepest-first: arg[n-1] pushed first (deepest), arg[0] just below nArgs
     if (expr.flags.length > 0) {
-      // arg[1] = flags (pushed second, deeper)
+      // arg[1] = flags (deepest — pushed first)
       this.pushString(expr.flags);
     }
-    // arg[0] = pattern (pushed last, on top)
+    // arg[0] = pattern
     this.pushString(expr.pattern);
+
+    // nArgs
+    this.pushInt(argCount);
+
+    // className LAST (on top — first popped by ActionNewObject)
+    this.pushString('RegExp');
 
     this.emit(0x40); // ActionNewObject
   }
@@ -2367,13 +2367,26 @@ class Compiler {
   }
 
   private compileNewExpr(expr: NewExpr): void {
-    // ActionNewObject (0x40) stack layout (deepest first, top is arg[0]):
-    //   className-string | nArgs | arg[n-1] | ... | arg[0]
+    // ActionNewObject (0x40) stack layout — Ruffle pops TOP first:
+    //   className-string  ← TOP (popped first by ActionNewObject)
+    //   nArgs
+    //   arg[0]            ← just below nArgs
+    //   ...
+    //   arg[n-1]          ← deepest (pushed first)
+    //
+    // Push order: args deepest-first (arg[n-1] first), then nArgs, then className LAST.
+    // This mirrors ActionCallFunction which also puts the name on top.
     //
     // ActionNewObject pops the class name as a STRING, not as an object reference.
-    // For `new pkg.sub.ClassName()` we must push "pkg.sub.ClassName" as a string,
+    // For `new pkg.sub.ClassName()` we push "pkg.sub.ClassName" as a string,
     // NOT resolve the member chain to an object via GetVariable/GetMember.
     const className = this.memberExprToString(expr.callee);
+    // Push args deepest-first (last arg pushed first = deepest on stack)
+    for (let i = expr.args.length - 1; i >= 0; i--) {
+      this.compileExpr(expr.args[i]!);
+    }
+    this.pushInt(expr.args.length);
+    // Push className LAST so it ends up on top — first thing ActionNewObject pops
     if (className !== null) {
       this.pushString(className);
     } else {
@@ -2381,10 +2394,6 @@ class Compiler {
       // the callee expression and leave it on the stack as the class name slot.
       // AVM1 will coerce it to a string when ActionNewObject runs.
       this.compileExpr(expr.callee);
-    }
-    this.pushInt(expr.args.length);
-    for (let i = expr.args.length - 1; i >= 0; i--) {
-      this.compileExpr(expr.args[i]!);
     }
     this.emit(0x40); // ActionNewObject
   }
@@ -2664,9 +2673,9 @@ class Compiler {
       // ActionSetMember pops (from top): value, name, obj → obj.name = value
       // So we push: obj (ClassName), name ("prototype"), value (new SuperClass())
       //
-      // For ActionNew (0x4a), the compileNewExpr pattern pushes:
-      //   className-string, nArgs, arg[n-1]..arg[0]   (deepest = className)
-      // ActionNew pops them in that order and pushes the new instance.
+      // For ActionNewObject (0x40), className must be on TOP (last pushed).
+      // Stack layout: nArgs (pushed first), then className on top.
+      // For a no-arg constructor: push 0 (nArgs), push superName (className), emit 0x40.
 
       // target object: ClassName
       this.pushString(className);
@@ -2675,9 +2684,9 @@ class Compiler {
       // property name
       this.pushString('prototype');
 
-      // new SuperClass(): push class name (string), push arg count 0, ActionNew
-      this.pushString(superName);
+      // new SuperClass(): push arg count 0, then class name on top, ActionNewObject
       this.pushInt(0);
+      this.pushString(superName);
       this.emit(0x40); // ActionNewObject → new SuperClass() instance on top
 
       // ActionSetMember: pops value(new instance), name("prototype"), obj(ClassName)
