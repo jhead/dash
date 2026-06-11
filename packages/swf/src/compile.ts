@@ -1738,7 +1738,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     x,
                     y,
                     displayObj.filters!,
-                    objTransform
+                    objTransform,
+                    undefined,
+                    undefined,
+                    undefined,
+                    !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (displayObj.type === "shape" && displayObj.blendMode && displayObj.blendMode !== "normal") {
@@ -1750,7 +1754,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     y,
                     displayObj.blendMode,
                     displayObj.filters,
-                    objTransform
+                    objTransform,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    !!displayObj.cacheAsBitmap
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (displayObj.type === "shape" && displayObj.cacheAsBitmap) {
@@ -1878,7 +1887,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       displayObj.filters,
                       bmpTransform,
                       undefined,
-                      bmpCXForm
+                      bmpCXForm,
+                      undefined,
+                      undefined,
+                      !!displayObj.cacheAsBitmap
                     )
                   : encodePlaceObject3WithFilters(
                       charId,
@@ -1886,7 +1898,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       x,
                       y,
                       displayObj.filters!,
-                      bmpTransform
+                      bmpTransform,
+                      undefined,
+                      undefined,
+                      undefined,
+                      !!displayObj.cacheAsBitmap
                     );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else {
@@ -2038,7 +2054,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         undefined,
                         instCXForm,
                         undefined,
-                        (displayObj as SymbolInstance).instanceName ?? undefined
+                        (displayObj as SymbolInstance).instanceName ?? undefined,
+                        !!displayObj.cacheAsBitmap
                       )
                     : encodePlaceObject3WithFilters(
                         charId,
@@ -2048,7 +2065,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                         displayObj.filters!,
                         undefined,
                         (displayObj as SymbolInstance).instanceName ?? undefined,
-                        undefined
+                        undefined,
+                        undefined,
+                        !!displayObj.cacheAsBitmap
                       );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                   // Clip actions (play-once / single-frame / firstFrame seek): attach via a
@@ -2204,7 +2223,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   objTransform,
                   undefined,
                   undefined,
-                  true   // move = true
+                  true,   // move = true
+                  !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap
                 );
                 writer.writeTag(Tag.PlaceObject3, placeBody);
               } else if (displayObj.type === "shape" && displayObj.visible === false) {
@@ -2360,7 +2380,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     moveTransform,
                     undefined,
                     cxformForBlend,
-                    true  // move = true
+                    true,  // move = true
+                    undefined,
+                    !!displayObj.cacheAsBitmap
                   );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (hasEnabledFilters(displayObj.filters)) {
@@ -2390,7 +2412,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                     moveTransform,
                     displayObj.instanceName ?? undefined,
                     undefined,
-                    true   // move = true
+                    true,   // move = true
+                    !!displayObj.cacheAsBitmap
                   );
                   writer.writeTag(Tag.PlaceObject3, filtersPlaceBody);
                 } else {

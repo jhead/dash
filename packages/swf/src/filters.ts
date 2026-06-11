@@ -536,7 +536,8 @@ export function encodePlaceObject3WithFilters(
   },
   name?: string,
   ratio?: number,
-  move?: boolean
+  move?: boolean,
+  cacheAsBitmap?: boolean
 ): Uint8Array {
   const bw = new BitWriter();
   const hasName = !!(name && name.length > 0);
@@ -566,13 +567,14 @@ export function encodePlaceObject3WithFilters(
   // Flags2: UI8
   // bit 0: HasImage (0)
   // bit 1: HasClassName (0)
-  // bit 2: HasCacheAsBitmap (0)
+  // bit 2: HasCacheAsBitmap (0x04 — set when cacheAsBitmap is true)
   // bit 3: HasBlendMode (0)
   // bit 4: HasFilterList (1 if filters present)
   // bits 5-7: reserved
   // ---------------------------------------------------------------------------
   const enabledFilters = filters.filter((f) => f.enabled);
-  const flags2 = enabledFilters.length > 0 ? (1 << 4) : 0;
+  let flags2 = enabledFilters.length > 0 ? (1 << 4) : 0;
+  if (cacheAsBitmap) flags2 |= 0x04; // HasCacheAsBitmap
   bw.writeUI8(flags2);
 
   // Depth: UI16
@@ -640,6 +642,11 @@ export function encodePlaceObject3WithFilters(
     writeFilterList(bw, filters);
   }
 
+  // is_bitmap_cached: UI8 = 1 (required when HasCacheAsBitmap is set)
+  if (cacheAsBitmap) {
+    bw.writeUI8(1);
+  }
+
   return bw.getBytes();
 }
 
@@ -704,7 +711,8 @@ export function encodePlaceObject3WithBlendMode(
   ratio?: number,
   cxform?: CXForm,
   move?: boolean,
-  name?: string
+  name?: string,
+  cacheAsBitmap?: boolean
 ): Uint8Array {
   const bw = new BitWriter();
   const hasRatio = ratio !== undefined;
@@ -723,10 +731,12 @@ export function encodePlaceObject3WithBlendMode(
 
   // Flags2:
   //   bit 1 (0x02): HasBlendMode
+  //   bit 2 (0x04): HasCacheAsBitmap (set when cacheAsBitmap is true)
   //   bit 4 (0x10): HasFilterList
   const enabledFilters = filters ? filters.filter((f) => f.enabled) : [];
   let flags2 = 0x02; // HasBlendMode always set here
   if (enabledFilters.length > 0) flags2 |= 0x10; // HasFilterList
+  if (cacheAsBitmap) flags2 |= 0x04; // HasCacheAsBitmap
   bw.writeUI8(flags2);
 
   // Depth: UI16
@@ -799,6 +809,11 @@ export function encodePlaceObject3WithBlendMode(
   // BlendMode: UI8
   const blendByte = SWF_BLEND_MODE[blendMode] ?? 0;
   bw.writeUI8(blendByte);
+
+  // is_bitmap_cached: UI8 = 1 (required when HasCacheAsBitmap is set)
+  if (cacheAsBitmap) {
+    bw.writeUI8(1);
+  }
 
   return bw.getBytes();
 }
