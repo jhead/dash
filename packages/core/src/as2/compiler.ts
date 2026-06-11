@@ -914,15 +914,48 @@ class Compiler {
     const backJumpPos = this.emitActionJump();
     this.patchJump(backJumpPos, loopTop);
 
-    // exit: patch the undefined-check jump to land here
+    // Natural exit: the undefined sentinel is on top of the stack (the Dup+Equals2+ActionIf
+    // consumed the dup but left the original sentinel in place).
     const loopEnd = this.buf.length;
     this.patchJump(exitJumpPos, loopEnd);
-
-    // Pop the undefined sentinel that caused us to exit
+    // Pop the undefined sentinel that caused us to exit.
     this.emit(0x17); // ActionPop
+    // Jump over the break drain loop.
+    const skipDrainPos = this.emitActionJump();
+
+    // Break drain loop: break exits early leaving N remaining keys + the undefined
+    // sentinel on the stack.  Drain keys one by one until we see undefined, then
+    // pop the sentinel too.
+    //
+    // drainTop:
+    //   ActionDup
+    //   pushUndefined
+    //   ActionEquals2          ; is top === undefined?
+    //   ActionIf drainDone     ; yes → exit drain loop (sentinel still on stack)
+    //   ActionPop              ; no  → pop this key
+    //   ActionJump drainTop
+    // drainDone:
+    //   ActionPop              ; pop the undefined sentinel
+    const drainTop = this.buf.length;
+    this.emit(0x4c);            // ActionDuplicate
+    this.pushUndefined();
+    this.emit(0x49);            // ActionEquals2
+    const drainDonePos = this.emitActionIf();
+    this.emit(0x17);            // ActionPop (discard the non-undefined key)
+    const drainBackPos = this.emitActionJump();
+    this.patchJump(drainBackPos, drainTop);
+
+    const drainDone = this.buf.length;
+    this.patchJump(drainDonePos, drainDone);
+    this.emit(0x17);            // ActionPop (discard the undefined sentinel)
+
+    // afterCleanup: both the natural-exit path and the break-drain path land here.
+    const afterCleanup = this.buf.length;
+    this.patchJump(skipDrainPos, afterCleanup);
 
     this.loopStack.pop();
-    for (const p of ctx.breakPatches) this.patchJump(p, loopEnd);
+    // Break patches land at the drain loop entry, not at loopEnd.
+    for (const p of ctx.breakPatches) this.patchJump(p, drainTop);
     for (const p of ctx.continuePatches) this.patchJump(p, continueTarget);
   }
 
@@ -1162,19 +1195,24 @@ class Compiler {
       : [];
 
     // Compute payload length:
-    // flags(1) + catchName(catchNameArr.length + 1 null) or 0 if no catch
-    // + TrySize(2) + CatchSize(2) + FinallySize(2)
+    // flags(1) + TrySize(2) + CatchSize(2) + FinallySize(2) + catchName(N+1)
+    //
     // The try/catch/finally BODIES follow the record and are NOT included in
     // the action's declared length (per the SWF spec and Ruffle's read_try,
     // which adds try+catch+finally sizes to the action length after parsing
     // the header). Including them desynchronizes the action stream.
-    const catchNameFieldLen = hasCatch ? catchNameArr.length + 1 : 0;
+    //
+    // NOTE: Ruffle's read_try() unconditionally calls read_str() for catch_var
+    // regardless of HasCatchBlock (ruffle/swf/src/avm1/read.rs:370-374).
+    // We must always emit at least a null byte for catch_var or read_str()
+    // consumes bytes from TryBody, corrupting the finally body.
+    const catchNameFieldLen = hasCatch ? catchNameArr.length + 1 : 1; // always >= 1
     const payloadLen =
       1 +                 // flags
-      catchNameFieldLen + // catch name (null-terminated) or nothing
       2 +                 // TrySize
       2 +                 // CatchSize
-      2;                  // FinallySize
+      2 +                 // FinallySize
+      catchNameFieldLen;  // catch name (null-terminated); always >= 1 null byte
 
     // Emit the record
     this.buf.write(0x8f); // ActionTry opcode
@@ -1189,11 +1227,13 @@ class Compiler {
     this.buf.writeUI16(catchBytes.length);
     this.buf.writeUI16(finallyBytes.length);
 
-    // CatchName (null-terminated) — only when HasCatch && !CatchInRegister
+    // CatchName (null-terminated) — always emitted because Ruffle's read_try()
+    // unconditionally calls read_str() for catch_var regardless of HasCatchBlock.
+    // When there is no catch, emit just a null byte (empty string "").
     if (hasCatch) {
       for (const b of catchNameArr) this.buf.write(b);
-      this.buf.write(0); // null terminator
     }
+    this.buf.write(0); // null terminator (always present)
 
     // Bodies — write byte-by-byte from number arrays
     for (const b of tryBytes)     this.buf.write(b);
@@ -1432,13 +1472,34 @@ class Compiler {
     const backJumpPos = this.emitActionJump();
     this.patchJump(backJumpPos, loopTop);
 
+    // Natural exit: undefined sentinel is on top of the stack.
     const loopEnd = this.buf.length;
     this.patchJump(exitJumpPos, loopEnd);
-    this.emit(0x17); // ActionPop
+    this.emit(0x17); // ActionPop — pop the undefined sentinel
+    // Jump over the break drain loop.
+    const skipDrainPos = this.emitActionJump();
+
+    // Break drain loop: drain remaining keys + undefined sentinel from the stack.
+    const drainTop = this.buf.length;
+    this.emit(0x4c);            // ActionDuplicate
+    this.pushUndefined();
+    this.emit(0x49);            // ActionEquals2
+    const drainDonePos = this.emitActionIf();
+    this.emit(0x17);            // ActionPop (discard the non-undefined key)
+    const drainBackPos = this.emitActionJump();
+    this.patchJump(drainBackPos, drainTop);
+
+    const drainDone = this.buf.length;
+    this.patchJump(drainDonePos, drainDone);
+    this.emit(0x17);            // ActionPop (discard the undefined sentinel)
+
+    const afterCleanup = this.buf.length;
+    this.patchJump(skipDrainPos, afterCleanup);
 
     this.loopStack.pop();
     this.labeledLoops.delete(label);
-    for (const p of ctx.breakPatches) this.patchJump(p, loopEnd);
+    // Break patches land at the drain loop entry.
+    for (const p of ctx.breakPatches) this.patchJump(p, drainTop);
     for (const p of ctx.continuePatches) this.patchJump(p, continueTarget);
   }
 
@@ -1747,10 +1808,20 @@ class Compiler {
         break;
 
       case '-':
-        // Negate: 0 - operand
-        this.pushInt(0);
-        this.compileExpr(expr.operand);
-        this.emit(0x0b); // ActionSubtract
+        // Optimization: fold unary minus on a numeric literal into a direct negative push.
+        if (expr.operand.type === 'Literal' && typeof (expr.operand as Literal).value === 'number') {
+          const negVal = -((expr.operand as Literal).value as number);
+          if (Number.isInteger(negVal) && negVal >= -2147483648 && negVal <= 2147483647) {
+            this.pushInt(negVal);
+          } else {
+            this.pushNumber(negVal);
+          }
+        } else {
+          // General case: 0 - operand
+          this.pushInt(0);
+          this.compileExpr(expr.operand);
+          this.emit(0x0b); // ActionSubtract
+        }
         break;
 
       case '+':
@@ -1837,7 +1908,7 @@ class Compiler {
             // expression result (old value) is now on top
           }
         } else {
-          this.compileIncDecNonIdentifier(expr.operand, 0x50);
+          this.compileIncDecNonIdentifier(expr.operand, 0x50, expr.prefix);
         }
         break;
 
@@ -1882,7 +1953,7 @@ class Compiler {
             // expression result (old value) is now on top
           }
         } else {
-          this.compileIncDecNonIdentifier(expr.operand, 0x51);
+          this.compileIncDecNonIdentifier(expr.operand, 0x51, expr.prefix);
         }
         break;
 
@@ -1894,13 +1965,15 @@ class Compiler {
 
   /**
    * Increment/decrement (`++` / `--`) on a non-Identifier target.
-   * For MemberExpr (`obj.prop++`) and IndexExpr (`arr[i]++`) the new value is
-   * stored back via ActionSetMember; the expression result (new value) is left
-   * on the stack. For anything else, fall back to inc/dec without store-back.
+   * For MemberExpr (`obj.prop++`) and IndexExpr (`arr[i]++`) the modified value
+   * is stored back via ActionSetMember.
+   *
+   * - Postfix (`prefix=false`): expression result is the OLD value (before Inc/Dec).
+   * - Prefix  (`prefix=true`):  expression result is the NEW value (after Inc/Dec).
    *
    * `opcode` is 0x50 (ActionIncrement) or 0x51 (ActionDecrement).
    */
-  private compileIncDecNonIdentifier(operand: Expression, opcode: number): void {
+  private compileIncDecNonIdentifier(operand: Expression, opcode: number, prefix: boolean): void {
     if (operand.type === 'MemberExpr' || operand.type === 'IndexExpr') {
       // Compile (object, name) twice: once for the SetMember write-back, once
       // for the GetMember read. (Object expression is evaluated twice; fine
@@ -1916,14 +1989,23 @@ class Compiler {
       };
       compileTarget();                     // [obj, name]              (for SetMember)
       compileTarget();                     // [obj, name, obj, name]   (for GetMember)
-      this.emit(0x4e);                     // ActionGetMember → [obj, name, value]
-      this.emit(opcode);                   // Inc/Dec        → [obj, name, newValue]
-      // Keep the new value as the expression result: StoreRegister saves the
-      // top of stack WITHOUT popping, SetMember then consumes the triple, and
-      // a register-push restores the result.
-      this.emitWithPayload(0x87, [0]);     // ActionStoreRegister r0 (no pop)
-      this.emit(0x4f);                     // ActionSetMember (pops value, name, obj)
-      this.emitWithPayload(0x96, [4, 0]);  // ActionPush register r0 → newValue
+      this.emit(0x4e);                     // ActionGetMember → [obj, name, oldValue]
+      if (!prefix) {
+        // Postfix: save OLD value into r0 BEFORE Inc/Dec so the expression
+        // result is the value that existed before the mutation.
+        // Stack: [obj, name, oldValue]
+        this.emitWithPayload(0x87, [0]);   // ActionStoreRegister r0 (no pop)
+        this.emit(opcode);                 // Inc/Dec → [obj, name, newValue]
+        this.emit(0x4f);                   // ActionSetMember (pops newValue, name, obj)
+        this.emitWithPayload(0x96, [4, 0]); // ActionPush register r0 → oldValue
+      } else {
+        // Prefix: Inc/Dec first, then save NEW value into r0.
+        // Stack: [obj, name, oldValue]
+        this.emit(opcode);                 // Inc/Dec → [obj, name, newValue]
+        this.emitWithPayload(0x87, [0]);   // ActionStoreRegister r0 (no pop)
+        this.emit(0x4f);                   // ActionSetMember (pops newValue, name, obj)
+        this.emitWithPayload(0x96, [4, 0]); // ActionPush register r0 → newValue
+      }
     } else {
       this.compileExpr(operand);
       this.emit(opcode);                   // inc/dec result on stack (no store-back)
