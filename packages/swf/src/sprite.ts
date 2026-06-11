@@ -25,6 +25,7 @@ import {
   encodePlaceObject2WithName,
   encodePlaceObject2WithClipActions,
   encodePlaceObject2MoveWithClipActions,
+  encodePlaceObject2WithClipDepth,
 } from "./shapes.js";
 import {
   encodePlaceObject3WithFilters,
@@ -195,18 +196,53 @@ export function encodeDefineSprite(
     return depth;
   }
 
+  // Identify which layer indices are "masked" (belong to a mask group).
+  // Used both in the depth pre-pass and in the frame loop.
+  const isMaskedLi = new Set<number>();
+  for (let li = 0; li < layers.length; li++) {
+    if (layers[li]!.type === "mask") {
+      for (let mli = li + 1; mli < layers.length; mli++) {
+        if (layers[mli]!.type !== "masked") break;
+        isMaskedLi.add(mli);
+      }
+    }
+  }
+
   // Bug 1101 fix: pre-pass to seed depth assignments in correct visual order.
   // Iterate from li=layers.length-1 (background/bottommost) down to li=0 (foreground/topmost).
   // This ensures background layers get lower depths (rendered behind) and foreground
   // layers get higher depths (rendered in front), matching compile.ts lines ~1327-1346.
-  for (let li = layers.length - 1; li >= 0; li--) {
-    const layer = layers[li];
-    // Task 1125: skip guide and folder layers (same as pre-pass and main loop)
-    if (layer.type === "guide" || layer.type === "folder") continue;
-    for (const frame of layer.frames) {
+  //
+  // Task 1126 fix: mask groups need special ordering — the mask layer must get a
+  // LOWER depth than its masked children (SWF constraint: mask at depth D clips
+  // D+1..clipDepth). Within each mask group we assign the mask first (lower depth)
+  // then the masked layers (higher depths), even though the mask is visually above
+  // the masked layers. Mirror compile.ts lines ~1353-1403.
+  const registerLayerDepths = (li: number) => {
+    for (const frame of layers[li]!.frames) {
       if (!frame.isKeyframe) continue;
       for (const obj of frame.displayObjects) {
         getOrAssignDepth(li, obj.id);
+      }
+    }
+  };
+
+  for (let li = layers.length - 1; li >= 0; li--) {
+    const layer = layers[li]!;
+    // Skip guide and folder layers
+    if (layer.type === "guide" || layer.type === "folder") continue;
+    // Skip masked layers — they are handled when their owning mask is encountered
+    if (isMaskedLi.has(li)) continue;
+
+    registerLayerDepths(li);
+
+    // Immediately after registering a mask layer, register its consecutive
+    // masked children. This ensures the mask gets a LOWER depth than the
+    // masked layers it clips.
+    if (layer.type === "mask") {
+      for (let mli = li + 1; mli < layers.length; mli++) {
+        if (layers[mli]!.type !== "masked") break;
+        registerLayerDepths(mli);
       }
     }
   }
@@ -233,7 +269,8 @@ export function encodeDefineSprite(
     // Collect what should be on screen this frame
     // Bug 1100 fix: use getTweenedFrame (not findGoverningKeyframe) so tween
     // interpolation is applied for each frame within a motion-tween span.
-    const thisFrameDepths = new Map<number, { objId: string; displayObj: import("@flash/core").DisplayObject }>();
+    // Task 1126: also track layerIdx so mask layers can be identified.
+    const thisFrameDepths = new Map<number, { objId: string; displayObj: import("@flash/core").DisplayObject; layerIdx: number }>();
 
     for (let li = 0; li < layers.length; li++) {
       const layer = layers[li];
@@ -246,7 +283,29 @@ export function encodeDefineSprite(
 
       for (const obj of keyframe.displayObjects) {
         const depth = getOrAssignDepth(li, obj.id);
-        thisFrameDepths.set(depth, { objId: obj.id, displayObj: obj });
+        thisFrameDepths.set(depth, { objId: obj.id, displayObj: obj, layerIdx: li });
+      }
+    }
+
+    // Task 1126: compute clipDepth for each mask layer.
+    // For mask layer at li, clipDepth = max depth among objects on consecutive
+    // 'masked' layers immediately following it (li+1, li+2, …).
+    const maskClipDepths = new Map<number, number>();
+    for (let li = 0; li < layers.length; li++) {
+      if (layers[li]!.type !== "mask") continue;
+      let maxDepth = 0;
+      for (let mli = li + 1; mli < layers.length; mli++) {
+        const ml = layers[mli]!;
+        if (ml.type !== "masked") break;
+        const mFrame = getTweenedFrame(ml, frameIdx, timeline);
+        if (!mFrame || mFrame.displayObjects.length === 0) continue;
+        for (const obj of mFrame.displayObjects) {
+          const d = getOrAssignDepth(mli, obj.id);
+          if (d > maxDepth) maxDepth = d;
+        }
+      }
+      if (maxDepth > 0) {
+        maskClipDepths.set(li, maxDepth);
       }
     }
 
