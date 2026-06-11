@@ -328,7 +328,8 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
                        'getURL', 'loadMovie', 'loadMovieNum',
                        'unloadMovie', 'unloadMovieNum',
                        'startDrag', 'stopDrag',
-                       'getProperty', 'setProperty'].includes(name)
+                       'getProperty', 'setProperty',
+                       'duplicateMovieClip', 'removeMovieClip'].includes(name)
                     && !(name === 'int' && e.args.length === 1)
                     && !(name === 'Number' && e.args.length === 1)
                     && !(name === 'String' && e.args.length === 1)
@@ -2448,6 +2449,27 @@ class Compiler {
         this.compileExpr(expr.args[1]!); // propIndex
         this.compileExpr(expr.args[2]!); // value (top)
         this.emit(0x23); // ActionSetProperty
+        this.pushUndefined();
+        return;
+      }
+
+      // Built-in: duplicateMovieClip(source, newname, depth) → ActionCloneSprite (0x24)
+      // Ruffle pops: depth (top), newname, source (bottom).
+      // Push order: source first (deepest), newname second, depth last (top).
+      if (name === 'duplicateMovieClip' && expr.args.length === 3) {
+        this.compileExpr(expr.args[0]!); // source (deepest)
+        this.compileExpr(expr.args[1]!); // newname
+        this.compileExpr(expr.args[2]!); // depth (top)
+        this.emit(0x24); // ActionCloneSprite
+        this.pushUndefined();
+        return;
+      }
+
+      // Built-in: removeMovieClip(target) → ActionRemoveSprite (0x25)
+      // Ruffle pops: target.
+      if (name === 'removeMovieClip' && expr.args.length === 1) {
+        this.compileExpr(expr.args[0]!); // target
+        this.emit(0x25); // ActionRemoveSprite
         this.pushUndefined();
         return;
       }
