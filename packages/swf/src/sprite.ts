@@ -14,7 +14,7 @@
  * `hoistedDefs` out-parameter and emit them before the sprite tag.
  */
 import type { BitmapItem, ClipAction, DisplayObject, FlashDocument, Symbol } from "@flash/core";
-import { layerFrameCount, compileAS2, getTweenedFrame } from "@flash/core";
+import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import {
   encodeDefineShape4,
@@ -38,6 +38,7 @@ import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
 import { fontKey } from "./fonts.js";
 import { encodeStartSound } from "./sounds.js";
+import { encodeDefineMorphShape2, encodePlaceObject2WithRatio } from "./morphshape.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -137,6 +138,65 @@ export function encodeDefineSprite(
   //
   // Map from display-object id → stable SWF character ID
   const objCharIdMap = new Map<string, number>();
+
+  // Morph-shape tracking: ids of objects encoded as DefineMorphShape2
+  const morphShapeObjIds = new Set<string>();
+  const morphObjSpanInfo = new Map<string, Array<{
+    startFrame: number;
+    endFrame: number;
+    spanLength: number;
+    ease: number;
+    easeCurve: readonly { x: number; y: number }[] | null | undefined;
+  }>>();
+
+  // Shape-tween pre-pass: emit DefineMorphShape2 for each shape-tween span.
+  for (let li = 0; li < layers.length; li++) {
+    const layer = layers[li];
+    if (layer.type === "guide" || layer.type === "folder") continue;
+
+    const spans = getTweenSpans(layer);
+    for (const span of spans) {
+      if (span.tweenType !== "shape") continue;
+
+      const startKf = layer.frames.find((f) => f.isKeyframe && f.index === span.startFrame);
+      const endKf = layer.frames.find((f) => f.isKeyframe && f.index === span.endFrame + 1);
+      if (!startKf || !endKf) continue;
+      if (startKf.displayObjects.length === 0) continue;
+
+      for (let oi = 0; oi < startKf.displayObjects.length; oi++) {
+        const startObj = startKf.displayObjects[oi];
+        if (startObj.type !== "shape" && startObj.type !== "drawing-object") continue;
+        const endObj = endKf.displayObjects[oi];
+        if (!endObj || (endObj.type !== "shape" && endObj.type !== "drawing-object")) continue;
+
+        if (!objCharIdMap.has(startObj.id)) {
+          const morphCharId = nextCharId();
+          objCharIdMap.set(startObj.id, morphCharId);
+          morphShapeObjIds.add(startObj.id);
+          const morphBody = encodeDefineMorphShape2(
+            morphCharId,
+            startObj.shape.paths,
+            endObj.shape.paths,
+            startKf.shapeHints ?? null,
+            endKf.shapeHints ?? null,
+            undefined
+          );
+          hoistedDefs.push({ tagType: Tag.DefineMorphShape2, body: morphBody });
+        }
+
+        const spanLength = span.endFrame - span.startFrame + 1;
+        const existing = morphObjSpanInfo.get(startObj.id) ?? [];
+        existing.push({
+          startFrame: span.startFrame,
+          endFrame: span.endFrame,
+          spanLength,
+          ease: span.ease,
+          easeCurve: span.easeCurve,
+        });
+        morphObjSpanInfo.set(startObj.id, existing);
+      }
+    }
+  }
 
   // Pre-pass: assign character IDs and collect hoisted definition tags.
   // All DefineShape4 / DefineEditText tags are emitted at the top level
@@ -295,6 +355,7 @@ export function encodeDefineSprite(
     skewX: number;
     skewY: number;
     colorEffectKey: string | null;
+    morphRatio: number;
   }
   const depthState = new Map<number, DepthState>();
 
@@ -390,6 +451,26 @@ export function encodeDefineSprite(
       })();
 
       const prev = depthState.get(depth);
+
+      // Compute morph ratio for shape-tween objects
+      let morphRatio = -1;
+      if (morphShapeObjIds.has(objId)) {
+        const spanInfoList = morphObjSpanInfo.get(objId);
+        if (spanInfoList) {
+          for (const spanInfo of spanInfoList) {
+            if (frameIdx >= spanInfo.startFrame && frameIdx <= spanInfo.endFrame) {
+              const spanLen = spanInfo.endFrame - spanInfo.startFrame + 1;
+              const frameOffset = frameIdx - spanInfo.startFrame;
+              const linearT = spanLen <= 1 ? 0 : frameOffset / (spanLen - 1);
+              const easedT = applyEase(linearT, spanInfo.ease, spanInfo.easeCurve ?? undefined);
+              morphRatio = Math.round(easedT * 65535);
+              break;
+            }
+          }
+          if (morphRatio === -1) morphRatio = 65535;
+        }
+      }
+
       const isFirst = !prev;
       // Bug 1102 fix: posChanged now includes all transform components + colorEffectKey
       const posChanged =
@@ -402,11 +483,12 @@ export function encodeDefineSprite(
           prev.skewX !== skewX ||
           prev.skewY !== skewY ||
           prev.objId !== objId ||
-          prev.colorEffectKey !== thisColorEffectKey);
+          prev.colorEffectKey !== thisColorEffectKey ||
+          prev.morphRatio !== morphRatio);
 
       if (!isFirst && !posChanged) {
         // Unchanged — emit nothing
-        depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey });
+        depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, morphRatio });
         continue;
       }
 
@@ -418,7 +500,9 @@ export function encodeDefineSprite(
             scaleY: displayObj.scaleY,
             rotation: displayObj.rotation,
           } : undefined;
-          if (clipDepth !== undefined) {
+          if (morphRatio >= 0) {
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithRatio(charId, depth, x, y, morphRatio, false)));
+          } else if (clipDepth !== undefined) {
             spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithClipDepth(charId, depth, x, y, clipDepth, objTransform)));
           } else if (displayObj.type === "shape" && displayObj.visible === false) {
             const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
@@ -581,7 +665,9 @@ export function encodeDefineSprite(
           } : undefined;
           // Bug 1103 fix: encode colorEffect / visible=false / filters / blend on move
           const hasShapeBlend = displayObj.type === "shape" && !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
-          if (hasShapeBlend) {
+          if (morphRatio >= 0) {
+            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithRatio(charId, depth, x, y, morphRatio, true)));
+          } else if (hasShapeBlend) {
             // Blend mode requires PlaceObject3 with move=true to preserve blend mode across moves
             const placeBody = encodePlaceObject3WithBlendMode(charId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, objTransform, undefined, undefined, true, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap);
             spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
@@ -714,7 +800,7 @@ export function encodeDefineSprite(
         }
       }
 
-      depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey });
+      depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, morphRatio });
     }
 
     // Emit FrameLabel (tag 43) if any keyframe at this frame index has a label
