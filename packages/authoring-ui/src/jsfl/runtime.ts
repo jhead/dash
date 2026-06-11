@@ -4084,6 +4084,11 @@ export interface JsflFl {
   readonly ELEMENT_VISIBLE: 6;
   /** Property index for instance name. */
   readonly ELEMENT_NAME: 7;
+  /**
+   * Returns the number of milliseconds elapsed since this fl proxy was created.
+   * Mirrors the Flash 8 fl.getTimer() API.
+   */
+  getTimer(): number;
 }
 
 function makeFlProxy(
@@ -4091,6 +4096,7 @@ function makeFlProxy(
   ids: ReturnType<typeof makeIdCounters>,
   docProxy: JsflDocument
 ): JsflFl {
+  const _startTime = Date.now();
   // Keep a mutable reference so createDocument() can swap it out.
   let _docProxy = docProxy;
   // Additional documents created by doc.duplicate() accumulate here.
@@ -4268,6 +4274,9 @@ function makeFlProxy(
     },
     get xmlToUIRef(): null {
       return null;
+    },
+    getTimer(): number {
+      return Date.now() - _startTime;
     },
     // ELEMENT_* property-index constants
     ELEMENT_X_POS: 0 as const,
