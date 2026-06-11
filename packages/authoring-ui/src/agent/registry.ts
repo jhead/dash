@@ -1574,9 +1574,8 @@ const handlers: Record<string, AnyHandler> = {
   script_set(params: { layerId: string; frameIndex: number; script: string }): ScriptSetResult {
     const cb = requireCallbacks();
     const diagnostics = compileCheckScript(params.script);
-    if (diagnostics.some((d) => d.severity === "error")) {
-      return { ok: false, rev: _rev, diagnostics } as unknown as ScriptSetResult;
-    }
+    // Always save the script regardless of compile errors (Flash 8 parity: broken
+    // scripts are written to disk; callers must inspect `diagnostics` for errors).
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
     const newDoc = withActiveTimeline(cb, doc, (t) =>

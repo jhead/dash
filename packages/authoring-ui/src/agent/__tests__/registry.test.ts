@@ -777,18 +777,25 @@ describe("script_get / script_set / script_check / script_list", () => {
     expect(getResult["script"]).toBe("stop();");
   });
 
-  it("script_set rejects broken script with ok:false and diagnostics", async () => {
+  it("script_set saves broken script and returns ok:true with error diagnostics (Flash 8 parity)", async () => {
     const layerId = state.doc.scenes[0].timeline.layers[0].id;
+    const brokenScript = "function broken( {";
     const result = await dispatchAgentCommand("script_set", {
       layerId,
       frameIndex: 0,
-      script: "function broken( {",
+      script: brokenScript,
     }) as Record<string, unknown>;
-    // Write should fail when the script has compile errors
-    expect(result["ok"]).toBe(false);
-    // Diagnostics should be non-empty for broken script
+    // Flash 8 parity: always saves; ok is always true
+    expect(result["ok"]).toBe(true);
+    // Diagnostics must contain at least one error entry
     const diag = result["diagnostics"] as unknown[];
     expect(diag.length).toBeGreaterThan(0);
+    // Script should actually have been saved to the document
+    const getResult = await dispatchAgentCommand("script_get", {
+      layerId,
+      frameIndex: 0,
+    }) as Record<string, unknown>;
+    expect(getResult["script"]).toBe(brokenScript);
   });
 
   it("script_set returns empty diagnostics for valid script", async () => {

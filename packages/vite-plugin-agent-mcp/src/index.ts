@@ -1066,8 +1066,10 @@ function createMcpServerForRequest(): McpServer {
     {
       title: "Set Script",
       description:
-        "Set the AS2 script on the governing keyframe. Runs a compile check and returns diagnostics " +
-        "WITHOUT blocking the write (Flash 8 lets you save broken scripts). Returns ok, rev, diagnostics.",
+        "Set the AS2 script on the governing keyframe. The script is ALWAYS saved to the document " +
+        "regardless of compile errors (Flash 8 parity — broken scripts are allowed on disk). " +
+        "A compile check runs and results are returned in `diagnostics`; callers must inspect " +
+        "diagnostics for error-severity entries. Always returns ok:true; rev reflects the new document revision.",
       inputSchema: z.object({
         layerId: z.string(),
         frameIndex: z.number().int().nonnegative(),

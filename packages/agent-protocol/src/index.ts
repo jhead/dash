@@ -409,6 +409,8 @@ export const ScriptSetParamsSchema = z.object({
 export type ScriptSetParams = z.infer<typeof ScriptSetParamsSchema>;
 
 export const ScriptSetResultSchema = z.object({
+  /** Always true — the script is saved regardless of compile errors (Flash 8 parity).
+   *  Inspect `diagnostics` to learn whether the saved script has errors or warnings. */
   ok: z.literal(true),
   rev: RevSchema,
   diagnostics: z.array(DiagnosticSchema),
