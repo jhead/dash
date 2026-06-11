@@ -1,0 +1,10 @@
+{
+  "id": "1089-motion-tween-does-not-interpolate-symbolinstance",
+  "title": "Motion tween does not interpolate SymbolInstance.alpha",
+  "description": "In timeline-query.ts displayObjectToTweenTarget() hardcodes alpha: 100 instead of reading the object's actual alpha value. The interpolated result.alpha is computed but never written back to the display object. An instance tweened from alpha=0.2 to alpha=1.0 shows alpha=0.2 on every tween frame. Fix: map instance.alpha * 100 in displayObjectToTweenTarget(); write back result.alpha / 100 to the instance in getTweenedFrame.",
+  "status": "in_progress",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T03:09:37Z",
+  "updated_at": "2026-06-11T03:10:02Z"
+}

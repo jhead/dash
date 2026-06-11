@@ -107,6 +107,9 @@ import {
   defaultBlur,
   defaultGlow,
   defaultBevel,
+  defaultGradientGlow,
+  defaultGradientBevel,
+  defaultAdjustColor,
 } from "@flash/core";
 import type {
   DisplayObject,
@@ -1156,7 +1159,7 @@ const handlers: Record<string, AnyHandler> = {
   tool_select(params: { toolId: string }): { ok: true } {
     const cb = requireCallbacks();
     const validTools = [
-      "selection", "subselection", "freeTranform", "lasso", "pen", "text",
+      "selection", "subselection", "free-transform", "lasso", "pen", "text",
       "line", "rectangle", "oval", "polystar", "pencil", "brush", "inkBucket",
       "paintBucket", "eyedropper", "eraser", "hand", "zoom",
     ];
@@ -1925,8 +1928,14 @@ const handlers: Record<string, AnyHandler> = {
       baseFilter = defaultGlow();
     } else if (typeLower === 'bevel') {
       baseFilter = defaultBevel();
+    } else if (typeLower === 'gradientglow') {
+      baseFilter = defaultGradientGlow();
+    } else if (typeLower === 'gradientbevel') {
+      baseFilter = defaultGradientBevel();
+    } else if (typeLower === 'colormatrix') {
+      baseFilter = defaultAdjustColor();
     } else {
-      throw new Error(`filter_add: unsupported filter type "${params.type}". Supported: dropShadow, blur, glow, bevel`);
+      throw new Error(`filter_add: unsupported filter type "${params.type}". Supported: dropShadow, blur, glow, bevel, gradientGlow, gradientBevel, colorMatrix`);
     }
 
     // Apply overrides from params
