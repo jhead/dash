@@ -49,6 +49,8 @@ import {
   createSymbolInLibrary,
   removeLibraryItem,
   addLibraryItem,
+  addLibraryFolder,
+  createLibraryFolder,
   groupObjects,
   ungroupObjects,
   createDocument as coreCreateDocument,
@@ -1666,12 +1668,42 @@ function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCoun
     getSelectedItems(): any[] {
       return [];
     },
-    moveToFolder(_folderPath: string, _itemToMove?: string, _bReplace?: boolean): boolean {
-      console.warn('library.moveToFolder: not supported');
+    moveToFolder(folderPath: string, itemToMove?: string, bReplace?: boolean): boolean {
+      // Resolve the item to move: use the provided name, or fall back to the
+      // first selected item (no real selection model here, so return false).
+      const targetName = itemToMove;
+      if (!targetName) return false;
+      const item = state.doc.library.items.find((i) => i.name === targetName);
+      if (!item) return false;
+      // Compute new name: strip any existing folder prefix, then prepend folderPath.
+      const basename = targetName.includes('/')
+        ? targetName.slice(targetName.lastIndexOf('/') + 1)
+        : targetName;
+      const newName = folderPath === '' ? basename : `${folderPath}/${basename}`;
+      // Check for collision.
+      const existing = state.doc.library.items.find((i) => i.name === newName && i.id !== item.id);
+      if (existing) {
+        if (!bReplace) return false;
+        state.doc = {
+          ...state.doc,
+          library: removeLibraryItem(state.doc.library, existing.id),
+        };
+      }
+      state.doc = {
+        ...state.doc,
+        library: _renameLibraryItem(state.doc.library, item.id, newName),
+      };
       return true;
     },
-    newFolder(_folderPath: string): boolean {
-      console.warn('library.newFolder: not supported');
+    newFolder(folderPath: string): boolean {
+      // Idempotent: if a folder with this name already exists, succeed silently.
+      const exists = state.doc.library.folders.some((f) => f.name === folderPath);
+      if (exists) return true;
+      const folder = createLibraryFolder(folderPath, null);
+      state.doc = {
+        ...state.doc,
+        library: addLibraryFolder(state.doc.library, folder),
+      };
       return true;
     },
     updateItem(_name: string): boolean {
