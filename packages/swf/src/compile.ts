@@ -626,7 +626,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         doc,
         charIdMap,
         () => writer.nextCharId(),
-        hoistedDefs
+        hoistedDefs,
+        undefined,
+        undefined,
+        fontCharIdMap
       );
 
       // Emit hoisted shape/text definition tags first
@@ -1351,6 +1354,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       const scene = doc.scenes[sceneIdx];
       const layers = scene.timeline.layers;
 
+      // Emit FrameLabel (tag 43) for this scene at its first SWF frame.
+      // Must precede all display-list modification tags (RemoveObject2,
+      // PlaceObject2, etc.) in the same frame per SWF spec.
+      writer.writeTag(Tag.FrameLabel, encodeSceneLabel(scene.name));
+
       // Between scenes: emit RemoveObject2 for every occupied depth to clear
       // the display list so the next scene starts with a clean stage.
       // (Skip for the very first scene — nothing to clear yet.)
@@ -1478,9 +1486,6 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           }
         }
       }
-
-      // Emit FrameLabel (tag 43) for this scene at its first frame
-      writer.writeTag(Tag.FrameLabel, encodeSceneLabel(scene.name));
 
       // Emit ExportAssets (tag 56) in the first SWF frame (scene 0, frame 0).
       // Must appear BEFORE DoInitAction so the character IDs are mapped before
@@ -1917,7 +1922,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       () => writer.nextCharId(),
                       instHoisted,
                       displayObj.buttonHandlers as readonly ButtonHandler[],
-                      displayObj.trackAsMenu
+                      displayObj.trackAsMenu,
+                      fontCharIdMap
                     );
                     for (const def of instHoisted) {
                       writer.writeTag(def.tagType, def.body);

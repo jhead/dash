@@ -20,6 +20,7 @@ import { compileAS2, composeMatrix, toSWFMatrix } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import { encodeCxformWithAlpha, colorEffectToCXForm, encodeCXFormWithAlpha } from "./cxform.js";
 import { edgeNumBits } from "./helpers.js";
+import { fontKey } from "./fonts.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "./shapes.js";
 import { encodeDefineEditText } from "./text.js";
 import { Tag } from "./tags.js";
@@ -157,6 +158,7 @@ function buildButtonRecord(
  * @param charIdMap     Maps symbolId → SWF charId (for nested symbol instances)
  * @param nextCharId    Allocate new character IDs for shapes inside this button
  * @param hoistedDefs   Out-parameter: definition tags to emit at top level before this button
+ * @param fontCharIdMap Maps fontKey(name, bold, italic) → SWF character ID for embedded fonts
  * @returns             Raw bytes of the DefineButton2 tag body (without record header).
  */
 export function encodeDefineButton2(
@@ -169,7 +171,9 @@ export function encodeDefineButton2(
   /** When set, replaces the symbol's own buttonActions with these instance-level on() handlers. */
   actionOverrides?: readonly ButtonHandler[],
   /** When set, overrides the symbol's trackAsMenu flag for per-instance button definitions. */
-  trackAsMenuOverride?: boolean
+  trackAsMenuOverride?: boolean,
+  /** Maps fontKey(name, bold, italic) → SWF character ID; passed to encodeDefineEditText for button state text. */
+  fontCharIdMap?: Map<string, number>
 ): Uint8Array {
   const bw = new BitWriter();
 
@@ -206,9 +210,10 @@ export function encodeDefineButton2(
         } else if (obj.type === "text") {
           const cid = nextCharId();
           objCharIdMap.set(obj.id, cid);
+          const embeddedFontId = fontCharIdMap?.get(fontKey(obj.fontFamily, obj.bold, obj.italic));
           hoistedDefs.push({
             tagType: Tag.DefineEditText,
-            body: encodeDefineEditText(cid, obj),
+            body: encodeDefineEditText(cid, obj, embeddedFontId),
           });
         } else if (obj.type === "bitmap") {
           const bitmapItem = doc.library.items.find(

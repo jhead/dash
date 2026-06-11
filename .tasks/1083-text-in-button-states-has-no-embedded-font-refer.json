@@ -1,0 +1,10 @@
+{
+  "id": "1083-text-in-button-states-has-no-embedded-font-refer",
+  "title": "Text in button states has no embedded font reference \u2014 always device-font sized",
+  "description": "encodeDefineButton2 in buttons.ts calls encodeDefineEditText(cid, obj) without a fontCharId at line ~206. This sets HasFont=0, so text inside button states has no font size reference and Ruffle falls back to a default size. The main-timeline text pre-pass in compile.ts correctly resolves font char IDs via fontCharIdMap, but this map is not passed to encodeDefineButton2. Fix: add a fontCharIdMap parameter to encodeDefineButton2 and pass the font ID lookup to encodeDefineEditText for text objects inside buttons.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T02:49:26Z",
+  "updated_at": "2026-06-11T02:54:21Z"
+}
