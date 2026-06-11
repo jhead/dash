@@ -1,7 +1,7 @@
 import type { EaseCurve, Frame, Layer, Timeline } from "./types.js";
 import type { DisplayObject, ShapeDisplayObject, SymbolInstance } from "../engine/types.js";
 import type { FlashFilter } from "../engine/filters.js";
-import { interpolateTween, interpolateShapeTween, interpolateColorEffect } from "../tween/interpolate.js";
+import { interpolateTween, interpolateShapeTween, interpolateColorEffect, applyEase } from "../tween/interpolate.js";
 import type { TweenTarget } from "../tween/types.js";
 import { layerFrameCount } from "./timeline.js";
 import { samplePath, getGuideLayerPath } from "../engine/guidepath.js";
@@ -339,7 +339,8 @@ export function getTweenedFrame(
       const toCE = endObj.colorEffect;
       // Only apply when at least one side has a colorEffect defined
       if (fromCE === undefined && toCE === undefined) return obj;
-      const interpolatedCE = interpolateColorEffect(fromCE ?? null, toCE ?? null, linearT);
+      const easedT = applyEase(linearT, span.ease, span.easeCurve ?? undefined);
+      const interpolatedCE = interpolateColorEffect(fromCE ?? null, toCE ?? null, easedT);
       return {
         ...obj,
         ...(interpolatedCE !== null

@@ -285,11 +285,40 @@ interface GradientFillParam {
   spreadMode?: "extend" | "reflect" | "repeat";
 }
 
-/** Build a Fill from an optional hex string or gradient descriptor. */
-function buildFill(fill?: string | GradientFillParam): Fill | null {
+/** Bitmap fill descriptor as supplied by the MCP/agent boundary. */
+interface BitmapFillParam {
+  type: "bitmap";
+  /** Library item id of the BitmapItem to use. */
+  bitmapId: string;
+  /** Whether the bitmap tiles. Default true. */
+  repeat?: boolean;
+  /** Whether to use smoothed (bilinear) sampling. Default false. */
+  smooth?: boolean;
+  /** Optional fill transform matrix in pixel space. */
+  matrix?: {
+    a: number;
+    b: number;
+    c: number;
+    d: number;
+    tx: number;
+    ty: number;
+  };
+}
+
+/** Build a Fill from an optional hex string, gradient descriptor, or bitmap descriptor. */
+function buildFill(fill?: string | GradientFillParam | BitmapFillParam): Fill | null {
   if (!fill) return null;
   if (typeof fill === "string") {
     return { type: "solid", color: parseHexColor(fill) };
+  }
+  if (fill.type === "bitmap") {
+    return {
+      type: "bitmap",
+      bitmapId: fill.bitmapId,
+      repeat: fill.repeat ?? true,
+      smooth: fill.smooth ?? false,
+      ...(fill.matrix !== undefined && { matrix: fill.matrix }),
+    };
   }
   // Gradient fill — convert 0–1 ratios to 0–255 SWF ratios
   const stops = fill.stops.map((s) => ({
@@ -649,7 +678,7 @@ const handlers: Record<string, AnyHandler> = {
     y1: number;
     x2: number;
     y2: number;
-    fill?: string | GradientFillParam;
+    fill?: string | GradientFillParam | BitmapFillParam;
     stroke?: string;
     strokeWidth?: number;
     layerId?: string;
