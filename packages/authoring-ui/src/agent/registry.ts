@@ -55,7 +55,7 @@ import type {
   StageGetBoundsResult,
   StageDuplicateResult,
 } from "@flash/agent-protocol";
-import type { FlashDocument, LayerType, SymbolType, FlashFilter } from "@flash/core";
+import type { FlashDocument, LayerType, SymbolType, FlashFilter, Symbol as SymbolItem } from "@flash/core";
 import type { FrameClipboard } from "@flash/core";
 import {
   hexToColor,
@@ -218,8 +218,28 @@ function requireCallbacks(): AgentCallbacks {
   return _callbacks;
 }
 
-/** Find the active-scene timeline. */
+/**
+ * Return the symbol currently being edited in-place, or null when in document
+ * (scene) mode. Centralises the edit-context check so callers don't need to
+ * reach into `getEditContext()` directly.
+ */
+function getEditingSymbol(cb: AgentCallbacks): SymbolItem | null {
+  const ctx = cb.getEditContext();
+  if (ctx.mode !== "symbol" || !ctx.symbolId) return null;
+  const doc = cb.getDoc();
+  const item = doc.library.items.find((i) => i.id === ctx.symbolId && i.itemType === "symbol");
+  return (item as SymbolItem | undefined) ?? null;
+}
+
+/**
+ * Return the currently active timeline.
+ * When the editor is in symbol-edit mode this is the symbol's own timeline,
+ * not the scene timeline — matching the JSFL `fl.getDocumentDOM().getTimeline()`
+ * behaviour that the structured tools are meant to mirror.
+ */
 function getActiveTimeline(cb: AgentCallbacks) {
+  const sym = getEditingSymbol(cb);
+  if (sym) return sym.timeline;
   const doc = cb.getDoc();
   const sceneIndex = Math.min(cb.getActiveSceneIndex(), doc.scenes.length - 1);
   return doc.scenes[sceneIndex].timeline;
@@ -249,10 +269,45 @@ function parseHexColor(hex: string): Color {
   return hexToColor(hex);
 }
 
-/** Build a Fill from an optional hex string. */
-function buildFill(fillHex?: string): Fill | null {
-  if (!fillHex) return null;
-  return { type: "solid", color: parseHexColor(fillHex) };
+/** Gradient stop descriptor as supplied by the MCP/agent boundary. */
+interface GradientFillParam {
+  type: "linear" | "radial";
+  stops: Array<{
+    color: string;
+    alpha?: number;
+    ratio: number; // 0.0–1.0 at boundary; converted to 0–255 internally
+  }>;
+  angle?: number;
+  focalPoint?: number;
+  spreadMode?: "extend" | "reflect" | "repeat";
+}
+
+/** Build a Fill from an optional hex string or gradient descriptor. */
+function buildFill(fill?: string | GradientFillParam): Fill | null {
+  if (!fill) return null;
+  if (typeof fill === "string") {
+    return { type: "solid", color: parseHexColor(fill) };
+  }
+  // Gradient fill — convert 0–1 ratios to 0–255 SWF ratios
+  const stops = fill.stops.map((s) => ({
+    ratio: Math.round(s.ratio * 255),
+    color: { ...parseHexColor(s.color), a: Math.round((s.alpha ?? 1) * 255) },
+  }));
+  if (fill.type === "linear") {
+    return {
+      type: "linear-gradient" as const,
+      stops,
+      angle: fill.angle ?? 0,
+      ...(fill.spreadMode !== undefined && { spreadMode: fill.spreadMode }),
+    };
+  } else {
+    return {
+      type: "radial-gradient" as const,
+      stops,
+      focalPoint: fill.focalPoint ?? 0,
+      ...(fill.spreadMode !== undefined && { spreadMode: fill.spreadMode }),
+    };
+  }
 }
 
 /** Build a SolidStroke from optional params. */
@@ -279,6 +334,30 @@ function withSceneTimeline(
   const newTimeline = updater(scene.timeline);
   const newScenes = doc.scenes.map((s, i) => (i === idx ? { ...s, timeline: newTimeline } : s));
   return { ...doc, scenes: newScenes };
+}
+
+/**
+ * Produce a new document by updating whichever timeline is currently active.
+ *
+ * When the editor is in symbol-edit mode the symbol's own timeline is updated;
+ * otherwise the active scene's timeline is updated. This is the mutation
+ * counterpart of `getActiveTimeline`.
+ */
+function withActiveTimeline(
+  cb: AgentCallbacks,
+  doc: FlashDocument,
+  updater: (t: import("@flash/core").Timeline) => import("@flash/core").Timeline
+): FlashDocument {
+  const sym = getEditingSymbol(cb);
+  if (sym) {
+    const newTimeline = updater(sym.timeline);
+    const newItems = doc.library.items.map((item) =>
+      item.id === sym.id ? { ...item, timeline: newTimeline } : item
+    );
+    return { ...doc, library: { ...doc.library, items: newItems } };
+  }
+  const sceneIndex = Math.min(cb.getActiveSceneIndex(), doc.scenes.length - 1);
+  return withSceneTimeline(doc, sceneIndex, updater);
 }
 
 /** Frame clipboard for timeline_copy_frames / timeline_paste_frames. */
@@ -416,15 +495,13 @@ const handlers: Record<string, AnyHandler> = {
   editor_status(_params: EditorStatusParams): EditorStatusResult {
     const cb = requireCallbacks();
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const scene = doc.scenes[Math.min(sceneIndex, doc.scenes.length - 1)];
-    const timeline = scene?.timeline;
-    const frameCount = timeline
-      ? timeline.layers.reduce((max, l) => Math.max(max, l.frameCount), 0)
-      : 0;
-    const layerCount = timeline?.layers.length ?? 0;
+    // Use the active timeline (symbol or scene) for layer/frame counts so the
+    // reported state matches what the other structured tools actually operate on.
+    const timeline = getActiveTimeline(cb);
+    const frameCount = timeline.layers.reduce((max, l) => Math.max(max, l.frameCount), 0);
+    const layerCount = timeline.layers.length;
     const activeLayerIdx = cb.getActiveLayerIndex();
-    const activeLayer = timeline?.layers[activeLayerIdx];
+    const activeLayer = timeline.layers[activeLayerIdx];
 
     return {
       alive: true,
@@ -569,7 +646,7 @@ const handlers: Record<string, AnyHandler> = {
     y1: number;
     x2: number;
     y2: number;
-    fill?: string;
+    fill?: string | GradientFillParam;
     stroke?: string;
     strokeWidth?: number;
     layerId?: string;
@@ -608,8 +685,7 @@ const handlers: Record<string, AnyHandler> = {
     };
 
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       addDisplayObject(t, layerId, frameIndex, obj)
     );
     cb.pushDoc(newDoc);
@@ -678,8 +754,7 @@ const handlers: Record<string, AnyHandler> = {
     };
 
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       addDisplayObject(t, layerId, frameIndex, obj)
     );
     cb.pushDoc(newDoc);
@@ -776,8 +851,7 @@ const handlers: Record<string, AnyHandler> = {
       ...(params.firstFrame !== undefined ? { firstFrame: params.firstFrame } : {}),
     };
 
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       addDisplayObject(t, layerId, frameIndex, obj)
     );
     cb.pushDoc(newDoc);
@@ -824,8 +898,7 @@ const handlers: Record<string, AnyHandler> = {
       height,
     };
 
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       addDisplayObject(t, layerId, frameIndex, obj)
     );
     cb.pushDoc(newDoc);
@@ -842,8 +915,7 @@ const handlers: Record<string, AnyHandler> = {
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       updateDisplayObject(t, layerId, frameIndex, params.id, params.updates as Parameters<typeof updateDisplayObject>[4])
     );
     cb.pushDoc(newDoc);
@@ -859,13 +931,12 @@ const handlers: Record<string, AnyHandler> = {
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
 
-    let currentTimeline = doc.scenes[Math.min(sceneIndex, doc.scenes.length - 1)].timeline;
+    let currentTimeline = getActiveTimeline(cb);
     for (const id of params.ids) {
       currentTimeline = removeDisplayObject(currentTimeline, layerId, frameIndex, id);
     }
-    const newDoc = withSceneTimeline(doc, sceneIndex, () => currentTimeline);
+    const newDoc = withActiveTimeline(cb, doc, () => currentTimeline);
     cb.pushDoc(newDoc);
     return { ok: true, rev: _rev };
   },
@@ -880,10 +951,9 @@ const handlers: Record<string, AnyHandler> = {
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
 
     // Re-order display objects in-frame
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       return {
         ...t,
         layers: t.layers.map((layer) => {
@@ -932,9 +1002,8 @@ const handlers: Record<string, AnyHandler> = {
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
 
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       return {
         ...t,
         layers: t.layers.map((layer) => {
@@ -990,9 +1059,8 @@ const handlers: Record<string, AnyHandler> = {
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
 
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       return {
         ...t,
         layers: t.layers.map((layer) => {
@@ -1034,12 +1102,10 @@ const handlers: Record<string, AnyHandler> = {
   selection_get(): SelectionGetResult {
     const cb = requireCallbacks();
     const ids = cb.getSelectedIds();
-    const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
     const frameIndex = cb.getCurrentFrame();
-    const scene = doc.scenes[Math.min(sceneIndex, doc.scenes.length - 1)];
+    const timeline = getActiveTimeline(cb);
     const layerIdx = cb.getActiveLayerIndex();
-    const layer = scene?.timeline.layers[layerIdx];
+    const layer = timeline.layers[layerIdx];
     let objects: DisplayObject[] = [];
     if (layer) {
       const kf = getGoverningKeyframe(layer, frameIndex);
@@ -1053,13 +1119,11 @@ const handlers: Record<string, AnyHandler> = {
   selection_set(params: { ids?: string[]; all?: boolean }): { ok: true } {
     const cb = requireCallbacks();
     if (params.all) {
-      // Collect all object ids in the current frame/layer
-      const doc = cb.getDoc();
-      const sceneIndex = cb.getActiveSceneIndex();
-      const scene = doc.scenes[Math.min(sceneIndex, doc.scenes.length - 1)];
+      // Collect all object ids in the current frame across all layers of the active timeline
+      const timeline = getActiveTimeline(cb);
       const frameIndex = cb.getCurrentFrame();
       const allIds: string[] = [];
-      for (const layer of scene.timeline.layers) {
+      for (const layer of timeline.layers) {
         const kf = getGoverningKeyframe(layer, frameIndex);
         if (kf) {
           for (const obj of kf.displayObjects) allIds.push(obj.id);
@@ -1115,11 +1179,10 @@ const handlers: Record<string, AnyHandler> = {
   }): TimelineAddLayerResult {
     const cb = requireCallbacks();
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
     // Capture the before state to find the new layer id
-    const before = doc.scenes[Math.min(sceneIndex, doc.scenes.length - 1)].timeline.layers;
+    const before = getActiveTimeline(cb).layers;
 
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       const updated = addLayer(t, params.name);
       if (params.type && params.type !== "normal") {
         // setLayerType on the newly added layer (first, since addLayer prepends)
@@ -1130,7 +1193,7 @@ const handlers: Record<string, AnyHandler> = {
     });
     cb.pushDoc(newDoc);
 
-    const after = newDoc.scenes[Math.min(sceneIndex, newDoc.scenes.length - 1)].timeline.layers;
+    const after = getActiveTimeline(cb).layers;
     // The new layer is the one present in after but not in before (by id)
     const beforeIds = new Set(before.map((l) => l.id));
     const newLayer = after.find((l) => !beforeIds.has(l.id));
@@ -1141,8 +1204,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       deleteLayer(t, layerId)
     );
     cb.pushDoc(newDoc);
@@ -1159,8 +1221,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       let updated = t;
       if (params.name !== undefined) updated = renameLayer(updated, layerId, params.name);
       if (params.locked !== undefined) updated = setLayerLocked(updated, layerId, params.locked);
@@ -1176,8 +1237,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       insertFrame(t, layerId, params.frameIndex)
     );
     cb.pushDoc(newDoc);
@@ -1188,8 +1248,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       insertKeyframe(t, layerId, params.frameIndex)
     );
     cb.pushDoc(newDoc);
@@ -1200,8 +1259,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       insertBlankKeyframe(t, layerId, params.frameIndex)
     );
     cb.pushDoc(newDoc);
@@ -1212,8 +1270,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       removeFrame(t, layerId, params.frameIndex)
     );
     cb.pushDoc(newDoc);
@@ -1229,8 +1286,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       const updated = setFrameLabel(t, layerId, params.frameIndex, params.label);
       // If labelType also provided, update it
       if (params.labelType !== undefined) {
@@ -1264,8 +1320,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       const layerIndex = t.layers.findIndex((l) => l.id === layerId);
       if (layerIndex === -1) throw new Error(`Layer "${layerId}" not found`);
       const sound: SoundLinkage | null =
@@ -1291,8 +1346,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       if (params.kind === null) {
         return clearTween(t, layerId, params.frameIndex);
       } else if (params.kind === "motion") {
@@ -1406,12 +1460,10 @@ const handlers: Record<string, AnyHandler> = {
 
   script_get(params: { layerId: string; frameIndex: number }): ScriptGetResult {
     const cb = requireCallbacks();
-    const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const scene = doc.scenes[Math.min(sceneIndex, doc.scenes.length - 1)];
-    const layer = scene.timeline.layers.find((l) => l.id === params.layerId);
+    const timeline = getActiveTimeline(cb);
+    const layer = timeline.layers.find((l) => l.id === params.layerId);
     if (!layer) {
-      const known = scene.timeline.layers.map((l) => l.id).join(", ");
+      const known = timeline.layers.map((l) => l.id).join(", ");
       throw new Error(
         `Unknown layerId "${params.layerId}". Known: ${known}`
       );
@@ -1429,8 +1481,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) =>
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
       setFrameScript(t, layerId, params.frameIndex, params.script)
     );
     cb.pushDoc(newDoc);
@@ -1504,9 +1555,8 @@ const handlers: Record<string, AnyHandler> = {
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
-    const scene = doc.scenes[Math.min(sceneIndex, doc.scenes.length - 1)];
-    const layer = scene.timeline.layers.find((l) => l.id === layerId);
+    const activeTimeline = getActiveTimeline(cb);
+    const layer = activeTimeline.layers.find((l) => l.id === layerId);
     if (!layer) throw new Error(`Unknown layerId "${layerId}"`);
 
     const kf = getGoverningKeyframe(layer, frameIndex);
@@ -1580,9 +1630,9 @@ const handlers: Record<string, AnyHandler> = {
       ...(naturalHeight > 0 ? { naturalHeight } : {}),
     };
 
-    const newDoc = withSceneTimeline(
+    const newDoc = withActiveTimeline(
+      cb,
       { ...doc, library: populatedLib },
-      sceneIndex,
       (t) => {
         return {
           ...t,
@@ -1898,10 +1948,9 @@ const handlers: Record<string, AnyHandler> = {
     const newFilter = { ...baseFilter, ...overrides } as FlashFilter;
 
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
     const toUpdate = new Set(targetIds);
 
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       return {
         ...t,
         layers: t.layers.map((layer) => {
@@ -1943,10 +1992,9 @@ const handlers: Record<string, AnyHandler> = {
     }
 
     const doc = cb.getDoc();
-    const sceneIndex = cb.getActiveSceneIndex();
     const toUpdate = new Set(targetIds);
 
-    const newDoc = withSceneTimeline(doc, sceneIndex, (t) => {
+    const newDoc = withActiveTimeline(cb, doc, (t) => {
       return {
         ...t,
         layers: t.layers.map((layer) => {

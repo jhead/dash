@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { createDocument } from "@flash/core";
+import { createDocument, createSymbolInLibrary } from "@flash/core";
 import type { FlashDocument } from "@flash/core";
 import {
   setAgentCallbacks,
@@ -261,6 +261,85 @@ describe("stage_add_shape", () => {
       y2: 100,
     }) as Record<string, unknown>;
     expect(result["id"]).toBeTruthy();
+  });
+
+  it("adds a rect with a linear gradient fill", async () => {
+    const result = await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect",
+      x1: 0,
+      y1: 0,
+      x2: 100,
+      y2: 50,
+      fill: {
+        type: "linear",
+        stops: [
+          { color: "#ff0000", ratio: 0 },
+          { color: "#0000ff", ratio: 1 },
+        ],
+        angle: 90,
+      },
+    }) as Record<string, unknown>;
+    expect(result["id"]).toBeTruthy();
+
+    const docResult = await dispatchAgentCommand("doc_get", {}) as Record<string, unknown>;
+    const doc = docResult["value"] as Record<string, unknown>;
+    const scenes = doc["scenes"] as Array<Record<string, unknown>>;
+    const layers = (scenes[0]["timeline"] as Record<string, unknown>)["layers"] as Array<Record<string, unknown>>;
+    const frames = layers[0]["frames"] as Array<Record<string, unknown>>;
+    const objs = frames[0]["displayObjects"] as Array<Record<string, unknown>>;
+    const shape = objs.find((o) => o["id"] === result["id"]) as Record<string, unknown> | undefined;
+    expect(shape).toBeDefined();
+    const shapeData = shape!["shape"] as Record<string, unknown>;
+    const paths = shapeData["paths"] as Array<Record<string, unknown>>;
+    expect(paths.length).toBeGreaterThan(0);
+    const fill = paths[0]["fill"] as Record<string, unknown> | undefined;
+    expect(fill).toBeDefined();
+    expect(fill!["type"]).toBe("linear-gradient");
+    const stops = fill!["stops"] as Array<Record<string, unknown>>;
+    expect(stops).toHaveLength(2);
+    expect(stops[0]["ratio"]).toBe(0);
+    expect(stops[1]["ratio"]).toBe(255);
+  });
+
+  it("adds an oval with a radial gradient fill", async () => {
+    const result = await dispatchAgentCommand("stage_add_shape", {
+      kind: "oval",
+      x1: 0,
+      y1: 0,
+      x2: 80,
+      y2: 80,
+      fill: {
+        type: "radial",
+        stops: [
+          { color: "#ffffff", alpha: 1, ratio: 0 },
+          { color: "#000000", alpha: 0.5, ratio: 1 },
+        ],
+        focalPoint: 0.2,
+      },
+    }) as Record<string, unknown>;
+    expect(result["id"]).toBeTruthy();
+
+    const docResult = await dispatchAgentCommand("doc_get", {}) as Record<string, unknown>;
+    const doc = docResult["value"] as Record<string, unknown>;
+    const scenes = doc["scenes"] as Array<Record<string, unknown>>;
+    const layers = (scenes[0]["timeline"] as Record<string, unknown>)["layers"] as Array<Record<string, unknown>>;
+    const frames = layers[0]["frames"] as Array<Record<string, unknown>>;
+    const objs = frames[0]["displayObjects"] as Array<Record<string, unknown>>;
+    const shape = objs.find((o) => o["id"] === result["id"]) as Record<string, unknown> | undefined;
+    expect(shape).toBeDefined();
+    const shapeData = shape!["shape"] as Record<string, unknown>;
+    const paths = shapeData["paths"] as Array<Record<string, unknown>>;
+    expect(paths.length).toBeGreaterThan(0);
+    const fill = paths[0]["fill"] as Record<string, unknown> | undefined;
+    expect(fill).toBeDefined();
+    expect(fill!["type"]).toBe("radial-gradient");
+    const stops = fill!["stops"] as Array<Record<string, unknown>>;
+    expect(stops).toHaveLength(2);
+    // alpha=1 → a=255; alpha=0.5 → a=128
+    const stop0color = stops[0]["color"] as Record<string, unknown>;
+    const stop1color = stops[1]["color"] as Record<string, unknown>;
+    expect(stop0color["a"]).toBe(255);
+    expect(stop1color["a"]).toBe(128);
   });
 });
 
@@ -1126,5 +1205,136 @@ describe("scene_select", () => {
     const result = await dispatchAgentCommand("scene_select", { index: 0 }) as { ok: boolean };
     expect(result.ok).toBe(true);
     expect(state.activeSceneIndex).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Symbol-edit mode (task 1076) — structured tools must target the symbol
+// timeline, not the scene timeline, when editContext.mode === "symbol".
+// ---------------------------------------------------------------------------
+
+describe("symbol-edit mode routing", () => {
+  /** Helper: create a symbol in the library and put the harness in symbol-edit mode. */
+  function enterSymbolEditMode() {
+    const doc = state.doc;
+    const { library, item } = createSymbolInLibrary(doc.library, "MyMC", "movie-clip");
+    state.doc = { ...doc, library };
+    // Simulate in-place editing — activate the symbol timeline
+    state.editContext = { mode: "symbol", symbolId: item.id };
+    return { symId: item.id };
+  }
+
+  it("stage_add_shape targets the symbol timeline, not the scene", async () => {
+    const { symId } = enterSymbolEditMode();
+
+    const sceneBefore = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects.length;
+    const symBefore = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
+      .timeline.layers[0].frames[0].displayObjects.length;
+
+    await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 0, y1: 0, x2: 50, y2: 50, fill: "#ff0000",
+    });
+
+    const sceneAfter = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects.length;
+    const symAfter = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
+      .timeline.layers[0].frames[0].displayObjects.length;
+
+    // Object should land in symbol, not scene
+    expect(symAfter).toBe(symBefore + 1);
+    expect(sceneAfter).toBe(sceneBefore);
+  });
+
+  it("stage_add_text targets the symbol timeline", async () => {
+    const { symId } = enterSymbolEditMode();
+
+    await dispatchAgentCommand("stage_add_text", {
+      x: 10, y: 10, width: 100, height: 30, text: "hello",
+    });
+
+    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
+      .timeline;
+    const count = symTimeline.layers[0].frames[0].displayObjects.length;
+    expect(count).toBe(1);
+    // Scene should be untouched
+    const sceneCount = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects.length;
+    expect(sceneCount).toBe(0);
+  });
+
+  it("stage_update targets the symbol timeline", async () => {
+    const { symId } = enterSymbolEditMode();
+
+    // First add a shape into the symbol
+    const addResult = await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 0, y1: 0, x2: 50, y2: 50, fill: "#ff0000",
+    }) as { id: string };
+    const objId = addResult.id;
+
+    // Update should also target the symbol timeline
+    await dispatchAgentCommand("stage_update", { id: objId, updates: { x: 99 } });
+
+    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: { id: string; x?: number }[] }[] }[] } })
+      .timeline;
+    const obj = symTimeline.layers[0].frames[0].displayObjects.find((o) => o.id === objId);
+    expect(obj?.x).toBe(99);
+  });
+
+  it("stage_remove targets the symbol timeline", async () => {
+    const { symId } = enterSymbolEditMode();
+
+    const addResult = await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 0, y1: 0, x2: 50, y2: 50,
+    }) as { id: string };
+    const objId = addResult.id;
+
+    await dispatchAgentCommand("stage_remove", { ids: [objId] });
+
+    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
+      .timeline;
+    expect(symTimeline.layers[0].frames[0].displayObjects.length).toBe(0);
+  });
+
+  it("timeline_add_layer targets the symbol timeline", async () => {
+    const { symId } = enterSymbolEditMode();
+
+    const layersBefore = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: unknown[] } })
+      .timeline.layers.length;
+
+    await dispatchAgentCommand("timeline_add_layer", { name: "Layer2" });
+
+    const layersAfter = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: unknown[] } })
+      .timeline.layers.length;
+
+    expect(layersAfter).toBe(layersBefore + 1);
+    // Scene should be untouched
+    const sceneLayers = state.doc.scenes[0].timeline.layers.length;
+    expect(sceneLayers).toBe(layersBefore); // same count as symbol had before
+  });
+
+  it("editor_status reports symbol timeline layer/frame counts", async () => {
+    const { symId } = enterSymbolEditMode();
+
+    // Add a second layer to the symbol so its count differs from the scene
+    await dispatchAgentCommand("timeline_add_layer", {});
+
+    const status = await dispatchAgentCommand("editor_status", {}) as Record<string, unknown>;
+    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: unknown[] } })
+      .timeline;
+    expect(status["layerCount"]).toBe(symTimeline.layers.length);
+
+    const editCtx = status["editContext"] as { mode: string; symbolId?: string };
+    expect(editCtx.mode).toBe("symbol");
+    expect(editCtx.symbolId).toBe(symId);
+  });
+
+  it("falls back to scene timeline when not in symbol-edit mode", async () => {
+    // document mode (default)
+    expect(state.editContext.mode).toBe("document");
+
+    await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 0, y1: 0, x2: 50, y2: 50,
+    });
+
+    const sceneCount = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects.length;
+    expect(sceneCount).toBe(1);
   });
 });
