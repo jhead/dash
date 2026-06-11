@@ -544,8 +544,16 @@ class Compiler {
 
   private pushNumber(n: number): void {
     const payload = new Uint8Array(9);
-    payload[0] = 6; // type = double (IEEE 754 64-bit LE) — SWF ActionPush type 6
-    new DataView(payload.buffer).setFloat64(1, n, true);
+    payload[0] = 6; // type = double — SWF ActionPush type 6, Flash middle-endian
+    // Flash stores float64 in "middle-endian": high 32 bits (LE) first, then low 32 bits (LE).
+    // This matches Ruffle's write_f64_me: write_u64_le(bits.rotate_left(32))
+    const tmp = new DataView(new ArrayBuffer(8));
+    tmp.setFloat64(0, n, false); // big-endian to extract canonical byte layout
+    const hi = tmp.getUint32(0, false); // high 32 bits
+    const lo = tmp.getUint32(4, false); // low 32 bits
+    const view = new DataView(payload.buffer);
+    view.setUint32(1, hi, true); // write high word as LE
+    view.setUint32(5, lo, true); // write low word as LE
     this.emitWithPayload(0x96, payload);
   }
 

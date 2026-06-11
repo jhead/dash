@@ -65,9 +65,14 @@ function decodePushValues(actions: Array<{ op: number; payload: Uint8Array }>): 
         case 2: values.push(null); break;       // null
         case 3: values.push(undefined); break;  // undefined
         case 5: values.push(payload[j++] !== 0); break; // boolean
-        case 6: { // double
+        case 6: { // double — Flash middle-endian: high word LE first, then low word LE
           const buf = new DataView(payload.buffer, payload.byteOffset + j, 8);
-          values.push(buf.getFloat64(0, true));
+          const hi = buf.getUint32(0, true); // first 4 bytes = high 32 bits (LE)
+          const lo = buf.getUint32(4, true); // next 4 bytes = low 32 bits (LE)
+          const tmp = new DataView(new ArrayBuffer(8));
+          tmp.setUint32(0, hi, false); // reconstruct big-endian for getFloat64
+          tmp.setUint32(4, lo, false);
+          values.push(tmp.getFloat64(0, false));
           j += 8;
           break;
         }

@@ -113,7 +113,8 @@ function extractPushedInts(bytes: Uint8Array): number[] {
 
 /**
  * Extract all 64-bit IEEE 754 doubles stored inside ActionPush (0x96) records.
- * AVM1 double push: 0x96 <length:UI16> 0x06 <value:F64LE>
+ * AVM1 double push: 0x96 <length:UI16> 0x06 <value:F64_ME>
+ * Flash middle-endian: high 32 bits (LE) first, then low 32 bits (LE).
  * (SWF ActionPush type 6 = Double/F64)
  */
 function extractPushedDoubles(bytes: Uint8Array): number[] {
@@ -126,7 +127,13 @@ function extractPushedDoubles(bytes: Uint8Array): number[] {
       const len = view.getUint16(i + 1, true);
       const payloadStart = i + 3;
       if (bytes[payloadStart] === 0x06 && payloadStart + 8 < bytes.length) {
-        result.push(view.getFloat64(payloadStart + 1, true));
+        // Decode Flash middle-endian: high word LE first, then low word LE
+        const hi = view.getUint32(payloadStart + 1, true);
+        const lo = view.getUint32(payloadStart + 5, true);
+        const tmp = new DataView(new ArrayBuffer(8));
+        tmp.setUint32(0, hi, false);
+        tmp.setUint32(4, lo, false);
+        result.push(tmp.getFloat64(0, false));
       }
       i = payloadStart + len;
     } else if (opcode >= 0x80) {
