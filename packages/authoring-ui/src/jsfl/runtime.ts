@@ -3968,6 +3968,8 @@ export interface JsflFl {
   /** URI of the Flash configuration directory — always '' in a browser context. */
   readonly configURI: string;
   readonly documents: JsflDocument[];
+  /** Alias for fl.getDocumentDOM() — the currently active document. */
+  readonly activeDocument: JsflDocument | null;
   getDocumentDOM(): JsflDocument;
   /**
    * Create a new default document (550×400, 12fps, white background, empty library,
@@ -4131,6 +4133,9 @@ function makeFlProxy(
     },
     get documents() {
       return [_docProxy, ..._extraDocs];
+    },
+    get activeDocument() {
+      return _docProxy;
     },
     getDocumentDOM() {
       return _docProxy;
