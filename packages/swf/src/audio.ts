@@ -98,8 +98,11 @@ export function encodeDefineSound(soundId: number, item: SoundItem): Uint8Array 
   const channelBit = item.isStereo ? 1 : 0;
   const flags = (format << 4) | (rateBits << 2) | (sizeBit << 1) | channelBit;
 
-  // SampleCount: use 0 for MVP (Flash Player can still play the sound)
-  const sampleCount = 0;
+  // SampleCount: derive from duration and sample rate when available.
+  const sampleCount =
+    item.durationSeconds != null && item.sampleRate
+      ? Math.round(item.durationSeconds * item.sampleRate)
+      : 0;
 
   const bw = new BitWriter();
   bw.writeUI16LE(soundId);
