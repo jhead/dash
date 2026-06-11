@@ -239,12 +239,32 @@ function writeBitmapFillMatrix(
  * Compute the gradient matrix components (a, b, c, d, tx, ty) in 16.16 fixed-point
  * twips for a linear or radial gradient fill, given the bounding box of the shape.
  *
+ * When the fill carries an explicit matrix (preserved from FLA import), it is used
+ * directly with the same pixel-to-SWF unit conversion as in shapes.ts.
+ * Otherwise the gradient is auto-fit to the bounding box (authoring-UI default).
+ *
  * This mirrors the logic in shapes.ts encodeDefineShape4.
  */
 function computeGradientMatrixComponents(
   fill: LinearGradientFill | RadialGradientFill,
   bounds: { xMin: number; xMax: number; yMin: number; yMax: number }
 ): { a: number; b: number; c: number; d: number; tx: number; ty: number } {
+  if (fill.matrix) {
+    // Explicit matrix from FLA import.
+    // FLA matrix: a/b/c/d in pixels per gradient-unit (gradient spans ±1 in FLA = ±16384 twips in SWF)
+    // Conversion: SWF_fixed = FLA_px_per_gu * 20 / 16384 * 65536 = FLA * 80
+    const FLA_TO_SWF = 80;
+    return {
+      a: Math.round(fill.matrix.a * FLA_TO_SWF),
+      b: Math.round(fill.matrix.b * FLA_TO_SWF),
+      c: Math.round(fill.matrix.c * FLA_TO_SWF),
+      d: Math.round(fill.matrix.d * FLA_TO_SWF),
+      tx: Math.round(fill.matrix.tx * 20),
+      ty: Math.round(fill.matrix.ty * 20),
+    };
+  }
+
+  // Auto-fit gradient to bounding box.
   const GRAD_HALF = 16384;
   const cx = (bounds.xMin + bounds.xMax) / 2;
   const cy = (bounds.yMin + bounds.yMax) / 2;

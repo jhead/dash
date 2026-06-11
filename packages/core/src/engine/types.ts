@@ -56,6 +56,21 @@ export interface LinearGradientFill {
   /** Gradient angle in degrees (0 = left-to-right). */
   readonly angle: number;
   /**
+   * Full gradient transform matrix (in pixel space), preserved from FLA import.
+   * When present, the SWF encoder uses this instead of auto-fitting the gradient
+   * to the shape's bounding box. Components a/b/c/d are in pixels per gradient
+   * unit (gradient space spans ±1 in FLA / ±16384 twips in SWF); tx/ty are in pixels.
+   * Absent for gradients created via the authoring UI (which uses `angle` only).
+   */
+  readonly matrix?: {
+    readonly a: number;
+    readonly b: number;
+    readonly c: number;
+    readonly d: number;
+    readonly tx: number;
+    readonly ty: number;
+  };
+  /**
    * Gradient spread mode — controls what happens outside the 0–255 ratio range.
    *   "extend"  (default) — pad: extend the terminal stop colors.
    *   "reflect" — mirror the gradient alternately.
@@ -77,6 +92,21 @@ export interface RadialGradientFill {
   readonly stops: readonly GradientColorStop[];
   /** Focal point offset: -1 to 1 along the x-axis of the gradient. */
   readonly focalPoint: number;
+  /**
+   * Full gradient transform matrix (in pixel space), preserved from FLA import.
+   * When present, the SWF encoder uses this instead of auto-fitting the gradient
+   * to the shape's bounding box. Components a/b/c/d are in pixels per gradient
+   * unit (gradient space spans ±1 in FLA / ±16384 twips in SWF); tx/ty are in pixels.
+   * Absent for gradients created via the authoring UI (which uses bounding-box fit).
+   */
+  readonly matrix?: {
+    readonly a: number;
+    readonly b: number;
+    readonly c: number;
+    readonly d: number;
+    readonly tx: number;
+    readonly ty: number;
+  };
   /**
    * Gradient spread mode — controls what happens outside the 0–255 ratio range.
    *   "extend"  (default) — pad: extend the terminal stop colors.

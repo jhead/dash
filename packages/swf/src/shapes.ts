@@ -573,55 +573,77 @@ export function encodeDefineShape4(
       bw.writeUI8(fillTypeByte);
 
       // Gradient matrix: maps gradient space (-16384..16384 twips) to shape space.
-      // For linear gradient: rotate by angle and scale to fit the shape's bounding box.
-      // For radial gradient: scale to cover the larger half-dimension (radius).
-      const cx = (xMinTwips + xMaxTwips) / 2;
-      const cy = (yMinTwips + yMaxTwips) / 2;
-      const halfW = (xMaxTwips - xMinTwips) / 2;
-      const halfH = (yMaxTwips - yMinTwips) / 2;
-      // Gradient space is ±16384 twips; scale factor maps that to shape space
-      const GRAD_HALF = 16384;
+      //
+      // When the fill carries an explicit matrix (preserved from FLA import), convert it
+      // directly. The FLA matrix components a/b/c/d are in pixels per gradient-unit
+      // (gradient space spans ±1 in FLA, ±16384 twips in SWF); tx/ty are in pixels.
+      //
+      // Conversion to SWF 16.16 fixed-point twips:
+      //   SWF_a_fixed = round(FLA_a * 20 / 16384 * 65536) = round(FLA_a * 80)
+      //   SWF_tx      = round(FLA_tx * 20)   [pixels → twips]
+      //
+      // When no matrix is present (authoring-UI gradient), auto-fit to the bounding box.
 
-      let a: number, b: number, c: number, d: number;
-      if (isLinear) {
-        const angleRad = ((fill.angle ?? 0) * Math.PI) / 180;
-        const cosA = Math.cos(angleRad);
-        const sinA = Math.sin(angleRad);
-        // Compute independent scale factors for the gradient axes.
-        //
-        // The SWF canonical gradient space spans ±16384 twips.  The MATRIX
-        // maps gradient-space (x_g, y_g) → shape-space (x_s, y_s):
-        //
-        //   x_s = a*x_g + c*y_g + tx
-        //   y_s = b*x_g + d*y_g + ty
-        //
-        // For a gradient at angle θ we construct a rotation-scale matrix where:
-        //   • scaleX = scale along the gradient direction (covers shape projection)
-        //   • scaleY = scale perpendicular to gradient direction
-        //
-        // Both are computed from the shape's bounding box via independent
-        // projections so rectangular shapes get a properly fitted gradient.
-        const scaleX = (Math.abs(cosA) * halfW + Math.abs(sinA) * halfH) / GRAD_HALF;
-        const scaleY = (Math.abs(sinA) * halfW + Math.abs(cosA) * halfH) / GRAD_HALF;
-        // a = scaleX*cosA  (x_g along gradient direction → shape x)
-        // b = scaleX*sinA  (x_g along gradient direction → shape y)
-        // c = -scaleY*sinA (y_g perpendicular → shape x)
-        // d =  scaleY*cosA (y_g perpendicular → shape y)
-        a = Math.round(cosA * scaleX * 65536);
-        b = Math.round(sinA * scaleX * 65536);
-        c = Math.round(-sinA * scaleY * 65536);
-        d = Math.round(cosA * scaleY * 65536);
+      let a: number, b: number, c: number, d: number, tx: number, ty: number;
+      if (fill.matrix) {
+        // Explicit matrix from FLA import — convert pixel-space to SWF twips.
+        // Factor = 20 (px→twips) / 16384 (gradient-space normalization) * 65536 (16.16 scale) = 80
+        const FLA_TO_SWF = 80;
+        a = Math.round(fill.matrix.a * FLA_TO_SWF);
+        b = Math.round(fill.matrix.b * FLA_TO_SWF);
+        c = Math.round(fill.matrix.c * FLA_TO_SWF);
+        d = Math.round(fill.matrix.d * FLA_TO_SWF);
+        tx = Math.round(fill.matrix.tx * 20);
+        ty = Math.round(fill.matrix.ty * 20);
       } else {
-        // Radial: scale to cover the circle of radius = max(halfW, halfH)
-        const radius = Math.max(halfW, halfH);
-        const scale = radius / GRAD_HALF;
-        a = Math.round(scale * 65536);
-        b = 0;
-        c = 0;
-        d = Math.round(scale * 65536);
+        // Auto-fit gradient to the shape bounding box.
+        const cx = (xMinTwips + xMaxTwips) / 2;
+        const cy = (yMinTwips + yMaxTwips) / 2;
+        const halfW = (xMaxTwips - xMinTwips) / 2;
+        const halfH = (yMaxTwips - yMinTwips) / 2;
+        // Gradient space is ±16384 twips; scale factor maps that to shape space
+        const GRAD_HALF = 16384;
+
+        if (isLinear) {
+          const angleRad = ((fill.angle ?? 0) * Math.PI) / 180;
+          const cosA = Math.cos(angleRad);
+          const sinA = Math.sin(angleRad);
+          // Compute independent scale factors for the gradient axes.
+          //
+          // The SWF canonical gradient space spans ±16384 twips.  The MATRIX
+          // maps gradient-space (x_g, y_g) → shape-space (x_s, y_s):
+          //
+          //   x_s = a*x_g + c*y_g + tx
+          //   y_s = b*x_g + d*y_g + ty
+          //
+          // For a gradient at angle θ we construct a rotation-scale matrix where:
+          //   • scaleX = scale along the gradient direction (covers shape projection)
+          //   • scaleY = scale perpendicular to gradient direction
+          //
+          // Both are computed from the shape's bounding box via independent
+          // projections so rectangular shapes get a properly fitted gradient.
+          const scaleX = (Math.abs(cosA) * halfW + Math.abs(sinA) * halfH) / GRAD_HALF;
+          const scaleY = (Math.abs(sinA) * halfW + Math.abs(cosA) * halfH) / GRAD_HALF;
+          // a = scaleX*cosA  (x_g along gradient direction → shape x)
+          // b = scaleX*sinA  (x_g along gradient direction → shape y)
+          // c = -scaleY*sinA (y_g perpendicular → shape x)
+          // d =  scaleY*cosA (y_g perpendicular → shape y)
+          a = Math.round(cosA * scaleX * 65536);
+          b = Math.round(sinA * scaleX * 65536);
+          c = Math.round(-sinA * scaleY * 65536);
+          d = Math.round(cosA * scaleY * 65536);
+        } else {
+          // Radial: scale to cover the circle of radius = max(halfW, halfH)
+          const radius = Math.max(halfW, halfH);
+          const scale = radius / GRAD_HALF;
+          a = Math.round(scale * 65536);
+          b = 0;
+          c = 0;
+          d = Math.round(scale * 65536);
+        }
+        tx = Math.round(cx);
+        ty = Math.round(cy);
       }
-      const tx = Math.round(cx);
-      const ty = Math.round(cy);
 
       // Write MATRIX (SWF bit-packed)
       writeGradientMatrix(bw, a, b, c, d, tx, ty);

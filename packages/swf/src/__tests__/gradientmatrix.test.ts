@@ -423,3 +423,271 @@ describe("SWF gradient matrix twips encoding", () => {
     expect(fillType).toBe(0x10);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bit reader + gradient matrix decoder (for explicit-matrix tests below)
+// ---------------------------------------------------------------------------
+
+class BitReader {
+  private buf: Uint8Array;
+  private byteOff: number;
+  private bitBuf = 0;
+  private bitsLeft = 0;
+
+  constructor(buf: Uint8Array, startByte = 0) {
+    this.buf = buf;
+    this.byteOff = startByte;
+  }
+
+  readBit(): number {
+    if (this.bitsLeft === 0) {
+      if (this.byteOff >= this.buf.length) return 0;
+      this.bitBuf = this.buf[this.byteOff++]!;
+      this.bitsLeft = 8;
+    }
+    const bit = (this.bitBuf >> (this.bitsLeft - 1)) & 1;
+    this.bitsLeft--;
+    return bit;
+  }
+
+  readBits(n: number): number {
+    let result = 0;
+    for (let i = 0; i < n; i++) result = (result << 1) | this.readBit();
+    return result;
+  }
+
+  readSBits(n: number): number {
+    const raw = this.readBits(n);
+    if (n === 0) return 0;
+    const sign = 1 << (n - 1);
+    return (raw & (sign - 1)) - (raw & sign);
+  }
+
+  flushByte(): void { this.bitsLeft = 0; }
+
+  readUI8(): number {
+    this.flushByte();
+    if (this.byteOff >= this.buf.length) return 0;
+    return this.buf[this.byteOff++]!;
+  }
+
+  skipBytes(n: number): void { this.flushByte(); this.byteOff += n; }
+
+  skipRect(): void {
+    const nBits = this.readBits(5);
+    this.readBits(nBits * 4);
+    this.flushByte();
+  }
+}
+
+function decodeGradientMatrix(br: BitReader): { a: number; b: number; c: number; d: number; tx: number; ty: number } {
+  let a = 1 << 16, d = 1 << 16, b = 0, c = 0;
+  const hasScale = br.readBit();
+  if (hasScale) {
+    const n = br.readBits(5);
+    a = br.readSBits(n);
+    d = br.readSBits(n);
+  }
+  const hasRotate = br.readBit();
+  if (hasRotate) {
+    const n = br.readBits(5);
+    b = br.readSBits(n); // rotateSkew0 = b
+    c = br.readSBits(n); // rotateSkew1 = c
+  }
+  const nTrans = br.readBits(5);
+  const tx = br.readSBits(nTrans);
+  const ty = br.readSBits(nTrans);
+  br.flushByte();
+  return { a, b, c, d, tx, ty };
+}
+
+function readFirstGradientMatrixFull(
+  body: Uint8Array
+): { a: number; b: number; c: number; d: number; tx: number; ty: number } | null {
+  const br = new BitReader(body, 2); // skip charId
+  br.skipRect(); // ShapeBounds
+  br.skipRect(); // EdgeBounds
+  br.skipBytes(1); // flags UI8
+
+  const count = br.readUI8();
+  if (count === 0xff) br.skipBytes(2);
+  if (count === 0) return null;
+
+  const fillType = br.readUI8();
+  if (fillType !== 0x10 && fillType !== 0x12 && fillType !== 0x13) return null;
+
+  return decodeGradientMatrix(br);
+}
+
+// ---------------------------------------------------------------------------
+// Tests for explicit gradient matrix (FLA import preservation)
+// ---------------------------------------------------------------------------
+
+describe("SWF gradient matrix — explicit matrix from FLA import", () => {
+  it("linear gradient with explicit matrix uses exact FLA matrix (not bounding-box auto-fit)", () => {
+    // Simulate a gradient that was imported from FLA with a specific matrix.
+    // FLA matrix: a=410 (half the 820px default Flash gradient width at 0°),
+    // b=0, c=0, d=410, tx=100, ty=200 (offset center).
+    // Expected SWF fixed-point: a = round(410 * 80) = 32800; tx = round(100*20) = 2000.
+    const shape: Shape = {
+      id: "explicit-matrix-shape",
+      paths: [
+        {
+          start: { x: 0, y: 0 },
+          segments: [
+            { type: "line", to: { x: 200, y: 0 } },
+            { type: "line", to: { x: 200, y: 200 } },
+            { type: "line", to: { x: 0, y: 200 } },
+          ],
+          closed: true,
+          fill: {
+            type: "linear-gradient",
+            angle: 0,
+            matrix: { a: 410, b: 0, c: 0, d: 410, tx: 100, ty: 200 },
+            stops: [
+              { ratio: 0, color: { r: 255, g: 0, b: 0, a: 255 } },
+              { ratio: 255, color: { r: 0, g: 0, b: 255, a: 255 } },
+            ],
+          },
+        },
+      ],
+    };
+    const shapeObj: ShapeDisplayObject = {
+      id: "explicit-matrix-obj",
+      type: "shape",
+      shape,
+      x: 0,
+      y: 0,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+    };
+    const doc = makeDoc([shapeObj]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const shapeTags = tags.filter((t) => t.code === TAG_DEFINE_SHAPE4);
+    expect(shapeTags.length).toBeGreaterThan(0);
+
+    const m = readFirstGradientMatrixFull(shapeTags[0].body);
+    expect(m).not.toBeNull();
+
+    // a = round(410 * 80) = 32800
+    expect(m!.a).toBe(32800);
+    // d = round(410 * 80) = 32800
+    expect(m!.d).toBe(32800);
+    // b = c = 0 (no rotation)
+    expect(m!.b).toBe(0);
+    expect(m!.c).toBe(0);
+    // tx = round(100 * 20) = 2000 twips
+    expect(m!.tx).toBe(2000);
+    // ty = round(200 * 20) = 4000 twips
+    expect(m!.ty).toBe(4000);
+  });
+
+  it("radial gradient with explicit matrix uses exact FLA matrix", () => {
+    // A radial gradient with non-centered origin: tx=150px, ty=75px (off-center).
+    // FLA matrix a=d=300 (custom radius), b=c=0.
+    const shape: Shape = {
+      id: "radial-explicit-matrix-shape",
+      paths: [
+        {
+          start: { x: 0, y: 0 },
+          segments: [
+            { type: "line", to: { x: 400, y: 0 } },
+            { type: "line", to: { x: 400, y: 200 } },
+            { type: "line", to: { x: 0, y: 200 } },
+          ],
+          closed: true,
+          fill: {
+            type: "radial-gradient",
+            focalPoint: 0,
+            matrix: { a: 300, b: 0, c: 0, d: 300, tx: 150, ty: 75 },
+            stops: [
+              { ratio: 0, color: { r: 255, g: 255, b: 0, a: 255 } },
+              { ratio: 255, color: { r: 0, g: 0, b: 255, a: 255 } },
+            ],
+          },
+        },
+      ],
+    };
+    const shapeObj: ShapeDisplayObject = {
+      id: "radial-explicit-obj",
+      type: "shape",
+      shape,
+      x: 0,
+      y: 0,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+    };
+    const doc = makeDoc([shapeObj]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const shapeTags = tags.filter((t) => t.code === TAG_DEFINE_SHAPE4);
+    expect(shapeTags.length).toBeGreaterThan(0);
+
+    const m = readFirstGradientMatrixFull(shapeTags[0].body);
+    expect(m).not.toBeNull();
+
+    // a = round(300 * 80) = 24000
+    expect(m!.a).toBe(24000);
+    // d = round(300 * 80) = 24000
+    expect(m!.d).toBe(24000);
+    // tx = round(150 * 20) = 3000 twips — NOT the bounding box center (4000)
+    expect(m!.tx).toBe(3000);
+    // ty = round(75 * 20) = 1500 twips — NOT the bounding box center (2000)
+    expect(m!.ty).toBe(1500);
+  });
+
+  it("gradient without explicit matrix still auto-fits to bounding box", () => {
+    // A 200x200 shape with no explicit matrix — should auto-fit as before.
+    // halfW = halfH = 2000 twips → a = round(2000/16384*65536) = 8000
+    const shape: Shape = {
+      id: "autofit-shape",
+      paths: [
+        {
+          start: { x: 0, y: 0 },
+          segments: [
+            { type: "line", to: { x: 200, y: 0 } },
+            { type: "line", to: { x: 200, y: 200 } },
+            { type: "line", to: { x: 0, y: 200 } },
+          ],
+          closed: true,
+          fill: {
+            type: "linear-gradient",
+            angle: 0,
+            stops: [
+              { ratio: 0, color: { r: 255, g: 0, b: 0, a: 255 } },
+              { ratio: 255, color: { r: 0, g: 0, b: 255, a: 255 } },
+            ],
+          },
+        },
+      ],
+    };
+    const shapeObj: ShapeDisplayObject = {
+      id: "autofit-obj",
+      type: "shape",
+      shape,
+      x: 0,
+      y: 0,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+    };
+    const doc = makeDoc([shapeObj]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const shapeTags = tags.filter((t) => t.code === TAG_DEFINE_SHAPE4);
+    expect(shapeTags.length).toBeGreaterThan(0);
+
+    const m = readFirstGradientMatrixFull(shapeTags[0].body);
+    expect(m).not.toBeNull();
+
+    // Auto-fit: halfW = halfH = 2000 twips → a = d = round(2000/16384*65536) = 8000
+    expect(m!.a).toBe(8000);
+    expect(m!.d).toBe(8000);
+    // center tx = cy = 2000 twips
+    expect(m!.tx).toBe(2000);
+    expect(m!.ty).toBe(2000);
+  });
+});

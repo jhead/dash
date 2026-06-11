@@ -117,12 +117,14 @@ function toFill(f: Fla8Fill, bitmapIdByIndex: Map<number, string>): Fill {
         type: "linear-gradient",
         stops: f.stops.map((s) => ({ ratio: s.position, color: toColor(s.color) })),
         angle: (Math.atan2(f.matrix.b, f.matrix.a) * 180) / Math.PI,
+        matrix: { a: f.matrix.a, b: f.matrix.b, c: f.matrix.c, d: f.matrix.d, tx: f.matrix.tx, ty: f.matrix.ty },
       };
     case "radial-gradient":
       return {
         type: "radial-gradient",
         stops: f.stops.map((s) => ({ ratio: s.position, color: toColor(s.color) })),
         focalPoint: f.focalRatio,
+        matrix: { a: f.matrix.a, b: f.matrix.b, c: f.matrix.c, d: f.matrix.d, tx: f.matrix.tx, ty: f.matrix.ty },
       };
     case "bitmap": {
       const bitmapId = bitmapIdByIndex.get(f.bitmapId);
