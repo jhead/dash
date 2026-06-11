@@ -2996,6 +2996,12 @@ export interface JsflFl {
   readonly version: string;
   /** Flash build number — always '0' in this runtime. */
   readonly buildNumber: string;
+  /** UI language code — always 'en' in this runtime. */
+  readonly language: string;
+  /** URI of the currently running JSFL script — always '' in a browser context. */
+  readonly scriptURI: string;
+  /** URI of the Flash configuration directory — always '' in a browser context. */
+  readonly configURI: string;
   readonly documents: JsflDocument[];
   getDocumentDOM(): JsflDocument;
   /**
@@ -3044,9 +3050,19 @@ export interface JsflFl {
    */
   runScript(fileURI: string): void;
   /**
+   * Open a JSFL script file in the Flash IDE editor.
+   * Not supported in browser context; no-op stub.
+   */
+  openScript(fileURL: string): void;
+  /**
    * Run a named Flash command.  Not supported; no-op stub.
    */
   runCommand(name: string): void;
+  /**
+   * Show an alert dialog.  In a browser context calls window.alert(); otherwise
+   * falls back to console.warn.
+   */
+  alert(message: string): void;
   /** Undo the last action.  History is managed at the UI layer; this is a no-op stub. */
   undo(): void;
   /** Redo the last undone action.  History is managed at the UI layer; this is a no-op stub. */
@@ -3089,6 +3105,15 @@ function makeFlProxy(
     },
     get buildNumber() {
       return "0";
+    },
+    get language() {
+      return "en";
+    },
+    get scriptURI() {
+      return "";
+    },
+    get configURI() {
+      return "";
     },
     get documents() {
       return [_docProxy];
@@ -3174,8 +3199,18 @@ function makeFlProxy(
     runScript(_fileURI: string): void {
       console.warn('fl.runScript: not supported in browser context');
     },
+    openScript(_fileURL: string): void {
+      console.warn('fl.openScript: not supported in browser context');
+    },
     runCommand(_name: string): void {
       console.warn('fl.runCommand: not supported');
+    },
+    alert(message: string): void {
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(message);
+      } else {
+        console.warn('[JSFL fl.alert]', message);
+      }
     },
     undo(): void {
       console.warn('fl.undo: history managed at UI layer');
