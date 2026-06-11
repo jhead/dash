@@ -1000,10 +1000,6 @@ class Compiler {
   }
 
   private compileSwitchStmt(stmt: SwitchStmt): void {
-    // Separate default from non-default cases
-    const defaultCase = stmt.cases.find((c) => c.test === null) ?? null;
-    const valueCases  = stmt.cases.filter((c) => c.test !== null);
-
     // Push discriminant once — stays on stack throughout all case comparisons
     this.compileExpr(stmt.discriminant);
 
@@ -1011,14 +1007,14 @@ class Compiler {
     const ctx: LoopContext = { breakPatches: [], continuePatches: [] };
     this.loopStack.push(ctx);
 
-    // AVM1 switch layout:
+    // AVM1 switch layout (cases emitted in SOURCE ORDER):
     //
     //   <discriminant>
     //
     //   comparison_block_N:          ← prevSkipPatch from case N-1 lands here
     //     ActionDuplicate            ; copy discriminant (original D stays on stack)
     //     PUSH case_value
-    //     ActionEquals2
+    //     ActionStrictEquals
     //     ActionNot                  ; invert: truthy when NOT equal
     //     ActionIf(comparison_block_N+1)  ← prevSkipPatch
     //   bodyStart_N:                 ← match-path falls through to here
@@ -1026,15 +1022,22 @@ class Compiler {
     //   stmtStart_N:                 ← fall-through jumps from case N-1 land here
     //     <case body>
     //     [ActionJump(end)]          ; explicit break
-    //     [ActionJump(stmtStart_N+1)]; fall-through: jump PAST next case's comparison
+    //     [ActionJump(stmtStart_N+1)]; fall-through: jump PAST next item's comparison
     //                                ;   AND ActionPop (discriminant already consumed)
     //
-    //   defaultStart:                ← last skip-jump lands here
+    //   For the `default` case (wherever it appears in source order):
+    //   defaultPop:                  ← no-match path jump lands here (may be backward)
     //     ActionPop                  ; discard discriminant (no-match path only)
-    //   defaultStmtStart:            ← fall-through jumps from last value-case land here
+    //   defaultStmtStart:            ← fall-through jumps from previous case land here
     //     <default body>
+    //     [ActionJump(stmtStart_next)]; fall-through to next source-order case
     //
-    //   switchEnd:                   ← break patches, fall-through from last case (no default)
+    //   switchEnd:                   ← break patches, fall-through from last case
+    //
+    // Key: default body is emitted at its SOURCE POSITION so that fall-through
+    // semantics are correct when default appears between other cases.  The
+    // "no match → default" dispatch is a backward jump when default precedes
+    // value cases that follow it (patched at the end of the case loop).
 
     // prevSkipPatch: offset-field pos of the ActionIf that skips to the next
     //   comparison block when the current case does NOT match.
@@ -1046,90 +1049,124 @@ class Compiler {
     //   through (i.e., its last statement is not a transfer).
     let prevFallThroughPatches: number[] = [];
 
-    for (const c of valueCases) {
-      // ---- Comparison block --------------------------------------------------
+    // defaultPopOffset: byte position of the ActionPop that heads the default body
+    //   (the entry point for the no-match path, which still has the discriminant on
+    //   the stack).  Set when the default case is encountered; null if no default.
+    let defaultPopOffset: number | null = null;
 
-      // Patch the previous case's skip-jump to land here (start of this DUP)
+    for (const c of stmt.cases) {
+      if (c.test !== null) {
+        // ---- Value case: Comparison block ------------------------------------
+
+        // Patch the previous case's skip-jump to land here (start of this DUP)
+        if (prevSkipPatch !== null) {
+          this.patchJump(prevSkipPatch, this.buf.length);
+        }
+
+        // Duplicate the discriminant
+        this.emit(0x4c); // ActionDuplicate
+
+        // Push case test value
+        this.compileExpr(c.test);
+
+        // ActionStrictEquals (0x66) — strict equality (JS switch uses ===)
+        this.emit(0x66);
+
+        // ActionNot — invert so ActionIf jumps when NOT equal
+        this.emit(0x12); // ActionNot
+
+        // ActionIf — jump to next comparison when not equal
+        prevSkipPatch = this.emitActionIf();
+
+        // ---- Body block ------------------------------------------------------
+
+        // body_N starts HERE (after comparison) — the match-path ActionIf above
+        // falls through to here.  Fall-through jumps from the PREVIOUS case body
+        // must NOT land here because those come from a path where the discriminant
+        // was already popped; landing before this ActionPop would double-pop the
+        // stack and corrupt subsequent operations.  We save those patches now and
+        // apply them AFTER the ActionPop so they jump to stmtStart instead.
+        const prevFallThroughPatchesSaved = prevFallThroughPatches;
+        prevFallThroughPatches = [];
+
+        // Matched: pop the original discriminant (the dup was consumed by Equals2)
+        this.emit(0x17); // ActionPop
+
+        // stmtStart: first instruction of the case body — fall-through jumps from
+        // the previous case land here, bypassing the ActionPop above.
+        const stmtStart = this.buf.length;
+        for (const p of prevFallThroughPatchesSaved) {
+          this.patchJump(p, stmtStart);
+        }
+
+        // Compile case body; break emits ActionJump(switchEnd) via loopStack
+        this.compileStatements(c.consequent);
+
+        // If the case body does NOT end with an unconditional transfer, it falls
+        // through to the next case.  Emit a placeholder ActionJump now; we will
+        // patch it to land at the next case's stmtStart once we know that offset.
+        if (!Compiler.caseEndsWithTransfer(c.consequent)) {
+          prevFallThroughPatches.push(this.emitActionJump());
+        }
+
+      } else {
+        // ---- Default case: emitted at source position -----------------------
+        //
+        // The default case has TWO entry points:
+        //   1. defaultPop (= this.buf.length right now): the no-match path.
+        //      The discriminant is still on the stack here, so we emit ActionPop.
+        //   2. defaultStmtStart (after ActionPop): the fall-through path from
+        //      the previous source-order case, which already consumed the discriminant.
+        //
+        // If default is non-trailing (more value cases follow in source), the
+        // no-match dispatch (prevSkipPatch after all comparisons) will be patched
+        // to defaultPopOffset at the end of the loop — this may be a backward jump.
+
+        defaultPopOffset = this.buf.length;    // no-match path will jump here
+        this.emit(0x17);                        // ActionPop — discard discriminant
+
+        // defaultStmtStart: fall-through patches from the previous case land here
+        const defaultStmtStart = this.buf.length;
+        for (const p of prevFallThroughPatches) {
+          this.patchJump(p, defaultStmtStart);
+        }
+        prevFallThroughPatches = [];
+
+        // Compile default body; break emits ActionJump(switchEnd) via loopStack
+        this.compileStatements(c.consequent);
+
+        // If default falls through, emit a placeholder jump so the next
+        // source-order case can patch it to its stmtStart.
+        if (!Compiler.caseEndsWithTransfer(c.consequent)) {
+          prevFallThroughPatches.push(this.emitActionJump());
+        }
+      }
+    }
+
+    // ---- End of cases: resolve the final skip-patch and fall-throughs -------
+
+    if (defaultPopOffset !== null) {
+      // A default case was emitted somewhere in source order.
+      // The last value-case's skip-jump must reach defaultPop (may be backward
+      // if default appeared before the last value case).
       if (prevSkipPatch !== null) {
-        this.patchJump(prevSkipPatch, this.buf.length);
+        this.patchJump(prevSkipPatch, defaultPopOffset);
       }
-
-      // Duplicate the discriminant
-      this.emit(0x4c); // ActionDuplicate
-
-      // Push case test value
-      this.compileExpr(c.test!);
-
-      // ActionStrictEquals (0x66) — strict equality (JS switch uses ===)
-      this.emit(0x66);
-
-      // ActionNot — invert so ActionIf jumps when NOT equal
-      this.emit(0x12); // ActionNot
-
-      // ActionIf — jump to next comparison when not equal
-      prevSkipPatch = this.emitActionIf();
-
-      // ---- Body block --------------------------------------------------------
-
-      // body_N starts HERE (after comparison) — the match-path ActionIf above
-      // falls through to here.  Fall-through jumps from the PREVIOUS case body
-      // must NOT land here because those come from a path where the discriminant
-      // was already popped; landing before this ActionPop would double-pop the
-      // stack and corrupt subsequent operations.  We save those patches now and
-      // apply them AFTER the ActionPop so they jump to stmtStart instead.
-      const prevFallThroughPatchesSaved = prevFallThroughPatches;
-      prevFallThroughPatches = [];
-
-      // Matched: pop the original discriminant (the dup was consumed by Equals2)
-      this.emit(0x17); // ActionPop
-
-      // stmtStart: first instruction of the case body — fall-through jumps from
-      // the previous case land here, bypassing the ActionPop above.
-      const stmtStart = this.buf.length;
-      for (const p of prevFallThroughPatchesSaved) {
-        this.patchJump(p, stmtStart);
-      }
-
-      // Compile case body; break emits ActionJump(switchEnd) via loopStack
-      this.compileStatements(c.consequent);
-
-      // If the case body does NOT end with an unconditional transfer, it falls
-      // through to the next case.  Emit a placeholder ActionJump now; we will
-      // patch it to land at the next case's stmtStart once we know that offset.
-      if (!Compiler.caseEndsWithTransfer(c.consequent)) {
-        prevFallThroughPatches.push(this.emitActionJump());
-      }
-    }
-
-    // ---- Default / no-match path -------------------------------------------
-
-    // Patch the last case's skip-jump to land here (start of default/end).
-    // The skip-jump comes from the no-match path where the discriminant is still
-    // on the stack, so it must land BEFORE the ActionPop below.
-    const defaultStart = this.buf.length;
-    if (prevSkipPatch !== null) {
-      this.patchJump(prevSkipPatch, defaultStart);
-    }
-
-    // No case matched: pop the original discriminant, then run default body.
-    if (defaultCase !== null) {
-      this.emit(0x17); // ActionPop — discard discriminant (no-match path)
-
-      // Fall-through jumps from the last value-case land here (AFTER ActionPop)
-      // because those paths already consumed the discriminant.
-      const defaultStmtStart = this.buf.length;
+      // Fall-through patches after the last emitted case body go to switchEnd.
       for (const p of prevFallThroughPatches) {
-        this.patchJump(p, defaultStmtStart);
+        ctx.breakPatches.push(p);
       }
-
-      this.compileStatements(defaultCase.consequent);
     } else {
-      // No default: pop the discriminant (no-match path) and fall through.
-      this.emit(0x17); // ActionPop
+      // No default case: the no-match path just pops the discriminant and falls
+      // through to switchEnd.
+      const noMatchPos = this.buf.length;
+      if (prevSkipPatch !== null) {
+        this.patchJump(prevSkipPatch, noMatchPos);
+      }
+      this.emit(0x17); // ActionPop — discard discriminant on no-match path
 
-      // Fall-through jumps from the last value-case skip the pop above and land
-      // directly at switchEnd (patched below after we know switchEnd).
-      // Collect them so they get patched alongside break patches.
+      // Fall-through patches from the last value-case skip the pop above and
+      // land directly at switchEnd.
       for (const p of prevFallThroughPatches) {
         ctx.breakPatches.push(p);
       }

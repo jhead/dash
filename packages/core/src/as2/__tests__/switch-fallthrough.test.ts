@@ -441,4 +441,102 @@ describe("AS2 switch fall-through — AVM1 stack correctness (task 0996)", () =>
     // "after" assignment must appear in bytecode — both constant pool strings present
     expect(countByte(bytes, 0x17)).toBeGreaterThanOrEqual(1); // at least one ActionPop
   });
+
+  // ---- Task 1122: non-trailing default fall-through ---------------------------
+
+  it("task 1122: non-trailing default compiles without error", () => {
+    expect(compilesOk(`
+      switch (x) {
+        case 1: trace("one"); break;
+        default: trace("default");
+        case 2: trace("two"); break;
+      }
+    `)).toBe(true);
+  });
+
+  it("task 1122: non-trailing default — all body strings appear in output", () => {
+    const bytes = compileAS2(`
+      switch (x) {
+        case 1: var one = 1; break;
+        default: var dflt = 0;
+        case 2: var two = 2; break;
+      }
+    `);
+    expect(containsString(bytes, "one")).toBe(true);
+    expect(containsString(bytes, "dflt")).toBe(true);
+    expect(containsString(bytes, "two")).toBe(true);
+  });
+
+  it("task 1122: non-trailing default — two ActionStrictEquals (one per value case, none for default)", () => {
+    // There are two value cases (1 and 2) so two comparisons; default has none.
+    // Compare against a same switch with trailing default — counts should match.
+    const nonTrailing = compileAS2(`
+      switch (x) {
+        case 1: var one = 1; break;
+        default: var dflt = 0;
+        case 2: var two = 2; break;
+      }
+    `);
+    const trailing = compileAS2(`
+      switch (x) {
+        case 1: var one = 1; break;
+        case 2: var two = 2; break;
+        default: var dflt = 0;
+      }
+    `);
+    // Both layouts have the same two value cases → same number of StrictEquals
+    expect(countByte(nonTrailing, 0x66)).toBe(countByte(trailing, 0x66));
+  });
+
+  it("task 1122: default fall-through to next case — default body and following body both present", () => {
+    // default has no break, so it should fall through to case 2
+    const bytes = compileAS2(`
+      switch (x) {
+        case 1: var one = 1; break;
+        default: var dflt = 0;
+        case 2: var two = 2; break;
+      }
+    `);
+    expect(containsString(bytes, "dflt")).toBe(true);
+    expect(containsString(bytes, "two")).toBe(true);
+    // default fall-through emits a jump
+    expect(countByte(bytes, 0x99)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("task 1122: non-trailing default with fall-through to following case", () => {
+    // When no value matches, default runs and falls through to case 2.
+    // Both dflt and two strings must appear in bytecode.
+    const bytes = compileAS2(`
+      switch (x) {
+        case 1: var one = 1; break;
+        default: var dflt = 0;
+        case 2: var two = 2; break;
+      }
+    `);
+    expect(containsString(bytes, "dflt")).toBe(true);
+    expect(containsString(bytes, "two")).toBe(true);
+  });
+
+  it("task 1122: non-trailing default before all value cases compiles", () => {
+    expect(compilesOk(`
+      switch (x) {
+        default: trace("default");
+        case 1: trace("one"); break;
+        case 2: trace("two"); break;
+      }
+    `)).toBe(true);
+  });
+
+  it("task 1122: non-trailing default before all value cases — all strings present", () => {
+    const bytes = compileAS2(`
+      switch (x) {
+        default: var dflt = 0;
+        case 1: var one = 1; break;
+        case 2: var two = 2; break;
+      }
+    `);
+    expect(containsString(bytes, "dflt")).toBe(true);
+    expect(containsString(bytes, "one")).toBe(true);
+    expect(containsString(bytes, "two")).toBe(true);
+  });
 });
