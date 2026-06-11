@@ -146,7 +146,7 @@ export function encodeDefineSprite(
     endFrame: number;
     spanLength: number;
     ease: number;
-    easeCurve: readonly { x: number; y: number }[] | null | undefined;
+    easeCurve?: { x1: number; y1: number; x2: number; y2: number } | null;
   }>>();
 
   // Shape-tween pre-pass: emit DefineMorphShape2 for each shape-tween span.
@@ -462,7 +462,7 @@ export function encodeDefineSprite(
               const spanLen = spanInfo.endFrame - spanInfo.startFrame + 1;
               const frameOffset = frameIdx - spanInfo.startFrame;
               const linearT = spanLen <= 1 ? 0 : frameOffset / (spanLen - 1);
-              const easedT = applyEase(linearT, spanInfo.ease, spanInfo.easeCurve ?? undefined);
+              const easedT = applyEase(linearT, spanInfo.ease, spanInfo.easeCurve);
               morphRatio = Math.round(easedT * 65535);
               break;
             }
