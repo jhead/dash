@@ -113,8 +113,8 @@ describe("AS2 Error class", () => {
     `);
     expect(containsString(bytes, "MyError")).toBe(true);
     expect(containsString(bytes, "Error")).toBe(true);
-    // extends sets up prototype chain with ActionNew
-    expect(bytes).toContain(ACTION_NEW);
+    // extends sets up prototype chain with ActionExtends (0x69)
+    expect(bytes).toContain(0x69);
   });
 
   // ---------------------------------------------------------------------------
