@@ -2070,6 +2070,10 @@ export interface JsflDocument {
   readonly strokeSize: number;
   /** Current stroke style as a string (read-only). */
   readonly strokeStyle: string;
+  /** Internal backdoor for fl.clipCopyFrames / fl.clipPasteFrames. */
+  _getFrameClipboard(): FrameClipboard | null;
+  /** Internal backdoor for fl.clipCopyFrames / fl.clipPasteFrames. */
+  _setFrameClipboard(cb: FrameClipboard | null): void;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
