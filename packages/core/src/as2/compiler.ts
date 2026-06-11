@@ -327,7 +327,8 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
                        'gotoAndPlay', 'gotoAndStop', 'trace',
                        'getURL', 'loadMovie', 'loadMovieNum',
                        'unloadMovie', 'unloadMovieNum',
-                       'startDrag', 'stopDrag'].includes(name)
+                       'startDrag', 'stopDrag',
+                       'getProperty', 'setProperty'].includes(name)
                     && !(name === 'int' && e.args.length === 1)
                     && !(name === 'Number' && e.args.length === 1)
                     && !(name === 'String' && e.args.length === 1)
@@ -2425,6 +2426,28 @@ class Compiler {
           this.compileExpr(expr.args[0]!); // target — TOP of stack
         }
         this.emit(0x27); // ActionStartDrag
+        this.pushUndefined();
+        return;
+      }
+
+      // Built-in: getProperty(target, propIndex) → ActionGetProperty (0x22)
+      // Ruffle pops propIndex (top), then target.
+      // So push order: target first (deeper), propIndex last (top).
+      if (name === 'getProperty' && expr.args.length === 2) {
+        this.compileExpr(expr.args[0]!); // target (deeper)
+        this.compileExpr(expr.args[1]!); // propIndex (top)
+        this.emit(0x22); // ActionGetProperty
+        return;
+      }
+
+      // Built-in: setProperty(target, propIndex, value) → ActionSetProperty (0x23)
+      // Ruffle pops value (top), then propIndex, then target.
+      // So push order: target first (deepest), propIndex second, value last (top).
+      if (name === 'setProperty' && expr.args.length === 3) {
+        this.compileExpr(expr.args[0]!); // target (deepest)
+        this.compileExpr(expr.args[1]!); // propIndex
+        this.compileExpr(expr.args[2]!); // value (top)
+        this.emit(0x23); // ActionSetProperty
         this.pushUndefined();
         return;
       }
