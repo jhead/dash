@@ -943,3 +943,283 @@ describe("frame.elements writable Proxy", () => {
     expect(obj?.rotation).toBe(30);
   });
 });
+
+// ---------------------------------------------------------------------------
+// doc.moveSelectionBy (task 1042)
+// ---------------------------------------------------------------------------
+
+describe("doc.moveSelectionBy(delta)", () => {
+  it("moves selected object by given delta", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       doc.selectAll();
+       doc.moveSelectionBy({x: 10, y: 20});`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    // Shape starts at x=0, y=0; after moveSelectionBy({x:10, y:20}) → x=10, y=20
+    expect(kf?.displayObjects[0].x).toBe(10);
+    expect(kf?.displayObjects[0].y).toBe(20);
+  });
+
+  it("is a no-op when nothing is selected", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       doc.moveSelectionBy({x: 100, y: 100});`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    // Nothing was selected, so position should remain at 0, 0
+    expect(kf?.displayObjects[0].x).toBe(0);
+    expect(kf?.displayObjects[0].y).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// doc.duplicateSelection (task 1042)
+// ---------------------------------------------------------------------------
+
+describe("doc.duplicateSelection()", () => {
+  it("creates a second object offset from the original", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:50, top:50, right:100, bottom:100}, 0);
+       doc.selectAll();
+       doc.duplicateSelection();
+       var tl = doc.getTimeline();
+       fl.trace(tl.layers[0].frames[0].elements.length);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["2"]);
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    expect(kf?.displayObjects.length).toBe(2);
+    // The duplicate should be offset by +10/+10 from the original
+    const orig = kf?.displayObjects[0];
+    const dup = kf?.displayObjects[1];
+    expect(dup?.x).toBe((orig?.x ?? 0) + 10);
+    expect(dup?.y).toBe((orig?.y ?? 0) + 10);
+  });
+
+  it("is a no-op when nothing is selected", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       doc.duplicateSelection();
+       var tl = doc.getTimeline();
+       fl.trace(tl.layers[0].frames[0].elements.length);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["1"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// library.duplicateItem (task 1042)
+// ---------------------------------------------------------------------------
+
+describe("library.duplicateItem(name)", () => {
+  it("duplicates a library item with 'Copy of' prefix", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var lib = fl.getDocumentDOM().library;
+       lib.addNewItem("movie clip", "TestMC");
+       var ok = lib.duplicateItem("TestMC");
+       fl.trace(ok);
+       fl.trace(lib.items.length);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["true", "2"]);
+    const items = result.finalDocument!.library.items;
+    expect(items.find((i) => i.name === "Copy of TestMC")).toBeDefined();
+  });
+
+  it("returns false for a non-existent item", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var lib = fl.getDocumentDOM().library;
+       var ok = lib.duplicateItem("ghost");
+       fl.trace(ok);
+       fl.trace(lib.items.length);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["false", "0"]);
+  });
+
+  it("duplicate has a distinct id from original", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var lib = fl.getDocumentDOM().library;
+       lib.addNewItem("graphic", "Gfx");
+       lib.duplicateItem("Gfx");`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const items = result.finalDocument!.library.items;
+    const orig = items.find((i) => i.name === "Gfx");
+    const copy = items.find((i) => i.name === "Copy of Gfx");
+    expect(orig).toBeDefined();
+    expect(copy).toBeDefined();
+    expect(orig!.id).not.toBe(copy!.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// timeline.copyFrames / pasteFrames (task 1042)
+// ---------------------------------------------------------------------------
+
+describe("timeline.copyFrames() / pasteFrames()", () => {
+  it("pastes copied frame content onto a different keyframe", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       var tl = doc.getTimeline();
+       // Add a rectangle on frame 0
+       doc.addNewRectangle({left:5, top:5, right:55, bottom:55}, 0);
+       // Copy frame 0
+       tl.copyFrames(0, 0);
+       // Insert a blank keyframe at frame 1 to paste onto
+       tl.insertBlankKeyframe(1);
+       // Paste at frame 1
+       tl.pasteFrames(1);
+       // Check frame 1 has an element
+       var f1 = tl.layers[0].frames[1];
+       fl.trace(f1.isKeyframe);
+       fl.trace(f1.elements.length);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces[0]).toBe("true");
+    expect(result.traces[1]).toBe("1");
+  });
+
+  it("pasteFrames is a no-op when clipboard is empty", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       var tl = doc.getTimeline();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       tl.insertBlankKeyframe(1);
+       tl.pasteFrames(1);
+       var f1 = tl.layers[0].frames[1];
+       fl.trace(f1.elements.length);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    // No copy was done so clipboard is empty; frame 1 stays blank
+    expect(result.traces).toEqual(["0"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// doc.setFillColor / addNewRectangle uses it (task 1042)
+// ---------------------------------------------------------------------------
+
+describe("doc.setFillColor and doc.fillColor", () => {
+  it("setFillColor persists as doc.fillColor", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.setFillColor("#ff0000");
+       fl.trace(doc.fillColor);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["#ff0000"]);
+  });
+
+  it("rectangle created after setFillColor uses the new fill color", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.setFillColor("#ff0000");
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    );
+    // ShapeDisplayObject stores fill inside shape.paths[].fill.color
+    const shapeObj = kf?.displayObjects[0] as import("@flash/core").ShapeDisplayObject;
+    const fillColor = shapeObj?.shape?.paths?.[0]?.fill as { color?: { r: number; g: number; b: number } } | undefined;
+    // Red fill: r=255, g=0, b=0
+    expect(fillColor?.color?.r).toBe(255);
+    expect(fillColor?.color?.g).toBe(0);
+    expect(fillColor?.color?.b).toBe(0);
+  });
+
+  it("fillColor defaults to #000000", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       fl.trace(doc.fillColor);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["#000000"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// doc.findSymbolInstances (task 1042)
+// ---------------------------------------------------------------------------
+
+describe("doc.findSymbolInstances(symbolName)", () => {
+  it("returns instances of the named symbol placed on stage", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.addNewRectangle({left:0, top:0, right:50, bottom:50}, 0);
+       doc.selectAll();
+       doc.convertToSymbol("movie clip", "MySym", "center");
+       var hits = doc.findSymbolInstances("MySym");
+       fl.trace(hits.length);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["1"]);
+  });
+
+  it("returns empty array when symbol name does not exist in library", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       var hits = doc.findSymbolInstances("NoSuchSym");
+       fl.trace(hits.length);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["0"]);
+  });
+
+  it("returns empty array when symbol exists but has no instances on stage", () => {
+    const ctx = makeCtx();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.library.addNewItem("movie clip", "EmptyMC");
+       var hits = doc.findSymbolInstances("EmptyMC");
+       fl.trace(hits.length);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.traces).toEqual(["0"]);
+  });
+});
