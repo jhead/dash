@@ -358,20 +358,21 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
         }
         break;
       case 'NewExpr': {
-        // className string
-        function memberToStr(ex: Expression): string | null {
-          if (ex.type === 'Identifier') return (ex as Identifier).name;
-          if (ex.type === 'MemberExpr') {
-            const m = ex as MemberExpr;
-            const obj = memberToStr(m.object);
-            if (obj !== null) return `${obj}.${m.property}`;
-          }
-          return null;
-        }
         for (const a of e.args) scanExpr(a);
-        const className = memberToStr(e.callee);
-        if (className !== null) add(className);
-        else scanExpr(e.callee);
+        if (e.callee.type === 'Identifier') {
+          // Simple case: new ClassName() — push class name as string
+          add((e.callee as Identifier).name);
+        } else if (e.callee.type === 'MemberExpr') {
+          // Chained case: new pkg.sub.Class() — ActionNewMethod uses object + method_name
+          // Scan the object chain (will emit GetVariable + GetMember calls)
+          // and add the last property as the method_name string.
+          const m = e.callee as MemberExpr;
+          scanExpr(m.object);
+          add(m.property);
+        } else {
+          // Dynamic/computed callee
+          scanExpr(e.callee);
+        }
         break;
       }
       case 'MemberExpr':
@@ -2632,35 +2633,41 @@ class Compiler {
   }
 
   private compileNewExpr(expr: NewExpr): void {
-    // ActionNewObject (0x40) stack layout — Ruffle pops TOP first:
-    //   className-string  ← TOP (popped first by ActionNewObject)
-    //   nArgs
-    //   arg[0]            ← just below nArgs
-    //   ...
-    //   arg[n-1]          ← deepest (pushed first)
-    //
-    // Push order: args deepest-first (arg[n-1] first), then nArgs, then className LAST.
-    // This mirrors ActionCallFunction which also puts the name on top.
-    //
-    // ActionNewObject pops the class name as a STRING, not as an object reference.
-    // For `new pkg.sub.ClassName()` we push "pkg.sub.ClassName" as a string,
-    // NOT resolve the member chain to an object via GetVariable/GetMember.
-    const className = this.memberExprToString(expr.callee);
     // Push args deepest-first (last arg pushed first = deepest on stack)
     for (let i = expr.args.length - 1; i >= 0; i--) {
       this.compileExpr(expr.args[i]!);
     }
     this.pushInt(expr.args.length);
-    // Push className LAST so it ends up on top — first thing ActionNewObject pops
-    if (className !== null) {
-      this.pushString(className);
+
+    if (expr.callee.type === 'Identifier') {
+      // Simple case: new ClassName() — ActionNewObject with flat scope lookup.
+      // ActionNewObject (0x40) stack layout — Ruffle pops TOP first:
+      //   className-string  ← TOP
+      //   nArgs
+      //   arg[n-1] ... arg[0]  ← deepest
+      this.pushString((expr.callee as Identifier).name);
+      this.emit(0x40); // ActionNewObject
+    } else if (expr.callee.type === 'MemberExpr') {
+      // Chained case: new pkg.sub.Class() — ActionNewMethod (0x53).
+      // ActionNewObject's resolve() does a FLAT scope lookup and does NOT split on
+      // dots, so "mx.transitions.Tween" fails at runtime. Instead use ActionNewMethod
+      // which pops: method_name (TOP), object, numArgs, then args.
+      // Stack layout for ActionNewMethod — Ruffle pops TOP first:
+      //   method_name  ← TOP (the last property, e.g. "Tween")
+      //   object       (result of evaluating the chain minus the last property)
+      //   nArgs
+      //   arg[n-1] ... arg[0]  ← deepest
+      const m = expr.callee as MemberExpr;
+      this.compileExpr(m.object);  // push the object chain
+      this.pushString(m.property); // push method_name on TOP
+      this.emit(0x53);             // ActionNewMethod
     } else {
-      // Computed/dynamic callee (e.g. new obj["class"]()) — best effort: evaluate
+      // Dynamic/computed callee (e.g. new obj["class"]()) — best effort: evaluate
       // the callee expression and leave it on the stack as the class name slot.
       // AVM1 will coerce it to a string when ActionNewObject runs.
       this.compileExpr(expr.callee);
+      this.emit(0x40); // ActionNewObject
     }
-    this.emit(0x40); // ActionNewObject
   }
 
   private compileMemberExpr(expr: MemberExpr): void {

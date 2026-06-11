@@ -50,7 +50,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW         = 0x40; // ActionNew        — constructor call
+const ACTION_NEW         = 0x40; // ActionNew        — constructor call (simple Identifier callee)
+const ACTION_NEW_METHOD  = 0x53; // ActionNewMethod  — constructor call via MemberExpr chain
 const ACTION_CALL_METHOD = 0x52; // ActionCallMethod — method dispatch
 const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember  — property / member read
 const ACTION_SET_MEMBER  = 0x4f; // ActionSetMember  — property / member write
@@ -91,8 +92,8 @@ describe("mx.transitions.Tween constructor", () => {
   });
 
   it("direct new mx.transitions.Tween(...) compiles without error", () => {
-    // The callee is a MemberExpr chain — the compiler falls back to compileExpr
-    // on the callee, emitting the namespace traversal then ActionNew.
+    // The callee is a MemberExpr chain — the compiler uses ActionNewMethod (0x53)
+    // which resolves the object chain and calls new on the last property.
     expect(
       compilesOk(
         `var obj = {};
@@ -101,12 +102,15 @@ describe("mx.transitions.Tween constructor", () => {
     ).toBe(true);
   });
 
-  it("direct new mx.transitions.Tween(...) emits ActionNew (0x40)", () => {
+  it("direct new mx.transitions.Tween(...) emits ActionNewMethod (0x53)", () => {
+    // ActionNewObject (0x40) does a flat scope lookup and does NOT split on dots,
+    // so "mx.transitions.Tween" fails at runtime. ActionNewMethod (0x53) correctly
+    // resolves the member chain by evaluating the object and calling new on the property.
     const bytes = compileAS2(
       `var obj = {};
        new mx.transitions.Tween(obj, "_x", mx.transitions.easing.Strong.easeOut, 0, 100, 1, true);`
     );
-    expect(containsByte(bytes, ACTION_NEW)).toBe(true);
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(true);
   });
 });
 
@@ -271,7 +275,7 @@ describe("full Tween usage pattern", () => {
       t.onMotionFinished = function() {};
       t.start();
     `);
-    expect(containsByte(bytes, ACTION_NEW)).toBe(true);         // constructor
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(true);  // constructor (MemberExpr callee → ActionNewMethod)
     expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);  // namespace traversal
     expect(containsByte(bytes, ACTION_SET_MEMBER)).toBe(true);  // onMotionFinished assignment
     expect(containsByte(bytes, ACTION_CALL_METHOD)).toBe(true); // start()

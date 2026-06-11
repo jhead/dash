@@ -1,19 +1,22 @@
 /**
- * Tests for AS2 compiler: `new` on chained member expressions (task 0867).
+ * Tests for AS2 compiler: `new` on chained member expressions (task 1137).
  *
- * `new mx.transitions.easing.Strong()` must emit ActionNewObject (0x40) with
- * the FULL dotted path "mx.transitions.easing.Strong" pushed as a string —
- * NOT the result of resolving the member chain via GetVariable/GetMember.
+ * `new mx.transitions.Tween(...)` must emit ActionNewMethod (0x53), NOT
+ * ActionNewObject (0x40). Ruffle's ActionNewObject uses a flat scope lookup that
+ * does NOT split on dots, so pushing "mx.transitions.Tween" as a string fails at
+ * runtime. ActionNewMethod resolves the object chain via GetVariable/GetMember
+ * and calls new on the last property name.
  *
- * AVM1 ActionNewObject pops the class name as a string, so emitting
- * GetVariable("mx") → GetMember("transitions") → ... as the "class name"
- * would leave an object on the stack where a string is expected, causing
- * a runtime failure.
+ * AVM1 ActionNewMethod stack layout (Ruffle pops TOP first):
+ *   method_name  ← TOP  (last property, e.g. "Tween")
+ *   object              (result of evaluating chain minus last property)
+ *   nArgs
+ *   arg[n-1] ... arg[0] ← deepest
  *
  * Key opcodes:
- *   ActionNewObject  (0x40) — constructor call
- *   ActionGetMember  (0x4e) — should NOT appear as the constructor resolution
- *   ActionGetVariable(0x1c) — should NOT appear as the constructor resolution
+ *   ActionNewMethod  (0x53) — constructor call for MemberExpr callee
+ *   ActionNewObject  (0x40) — constructor call for plain Identifier callee only
+ *   ActionGetMember  (0x4e) — resolves each step of the namespace chain
  */
 
 import { describe, it, expect } from "vitest";
@@ -52,7 +55,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // Opcode constants
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW_OBJECT  = 0x40; // ActionNewObject
+const ACTION_NEW_METHOD  = 0x53; // ActionNewMethod  — constructor call for MemberExpr callee
+const ACTION_NEW_OBJECT  = 0x40; // ActionNewObject  — constructor call for Identifier callee only
 const ACTION_GET_MEMBER  = 0x4e; // ActionGetMember
 const ACTION_GET_VAR     = 0x1c; // ActionGetVariable
 
@@ -65,29 +69,24 @@ describe("new on two-segment member chain", () => {
     expect(compilesOk("var t = new pkg.ClassName();")).toBe(true);
   });
 
-  it("2. new pkg.ClassName() emits ActionNewObject (0x40)", () => {
+  it("2. new pkg.ClassName() emits ActionNewMethod (0x53)", () => {
     const bytes = compileAS2("var t = new pkg.ClassName();");
-    expect(containsByte(bytes, ACTION_NEW_OBJECT)).toBe(true);
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(true);
   });
 
-  it("3. new pkg.ClassName() pushes full dotted string 'pkg.ClassName'", () => {
+  it("3. new pkg.ClassName() pushes 'ClassName' as the method_name string", () => {
     const bytes = compileAS2("var t = new pkg.ClassName();");
-    expect(containsString(bytes, "pkg.ClassName")).toBe(true);
+    // ActionNewMethod pops the last property as method_name
+    expect(containsString(bytes, "ClassName")).toBe(true);
   });
 
-  it("4. new pkg.ClassName() pushes 'pkg.ClassName' before ActionNewObject (not via GetMember chain)", () => {
-    // The full dotted class name must appear as a string literal in the bytecode.
-    // The fix: compiler uses memberExprToString to produce "pkg.ClassName" and pushes
-    // it as a string, rather than resolving GetVariable("pkg") → GetMember("ClassName").
+  it("4. new pkg.ClassName() resolves 'pkg' via GetVariable (ActionGetVariable)", () => {
+    // The object part (pkg) is resolved via GetVariable, not pushed as a dotted string
     const bytes = compileAS2("var t = new pkg.ClassName();");
-    // The full dotted string must be present
-    expect(containsString(bytes, "pkg.ClassName")).toBe(true);
-    // The partial strings must NOT appear individually (i.e. no separate "pkg" push)
-    // Note: 0x4e (ActionGetMember) cannot be asserted absent here because the byte
-    // value 0x4e = 'N' appears inside the string "pkg.ClassName" itself. Instead we
-    // verify the full dotted form is pushed, and that "pkg" alone is not a null-terminated
-    // string (it would be if the old GetVariable("pkg") path were taken).
-    expect(containsString(bytes, "pkg")).toBe(false); // no standalone "pkg" push
+    expect(containsString(bytes, "pkg")).toBe(true);
+    expect(containsByte(bytes, ACTION_GET_VAR)).toBe(true);
+    // The full dotted string "pkg.ClassName" must NOT appear — no flat-string lookup
+    expect(containsString(bytes, "pkg.ClassName")).toBe(false);
   });
 });
 
@@ -100,27 +99,31 @@ describe("new on three-segment member chain (mx.transitions.Tween)", () => {
     expect(compilesOk("var t = new mx.transitions.Tween();")).toBe(true);
   });
 
-  it("6. new mx.transitions.Tween() emits ActionNewObject (0x40)", () => {
+  it("6. new mx.transitions.Tween() emits ActionNewMethod (0x53)", () => {
     const bytes = compileAS2("var t = new mx.transitions.Tween();");
-    expect(containsByte(bytes, ACTION_NEW_OBJECT)).toBe(true);
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(true);
   });
 
-  it("7. new mx.transitions.Tween() pushes 'mx.transitions.Tween' as string", () => {
+  it("7. new mx.transitions.Tween() pushes 'Tween' as the method_name string", () => {
     const bytes = compileAS2("var t = new mx.transitions.Tween();");
-    expect(containsString(bytes, "mx.transitions.Tween")).toBe(true);
+    // The last property "Tween" is pushed as method_name for ActionNewMethod
+    expect(containsString(bytes, "Tween")).toBe(true);
   });
 
-  it("8. new mx.transitions.Tween() does NOT push 'mx' as standalone variable lookup", () => {
+  it("8. new mx.transitions.Tween() resolves 'mx' via GetVariable for the object chain", () => {
     const bytes = compileAS2("var t = new mx.transitions.Tween();");
-    // Under the fix, "mx" is NOT pushed as a standalone string (no GetVariable("mx")).
-    // The full dotted string is pushed instead.
-    expect(containsString(bytes, "mx")).toBe(false);
+    // The object chain (mx.transitions) is resolved via GetVariable + GetMember
+    expect(containsString(bytes, "mx")).toBe(true);
+    expect(containsByte(bytes, ACTION_GET_VAR)).toBe(true);
+    // The full dotted string must NOT appear — ActionNewObject flat lookup is not used
+    expect(containsString(bytes, "mx.transitions.Tween")).toBe(false);
   });
 
-  it("9. new mx.transitions.Tween() does NOT push 'transitions' as standalone string", () => {
+  it("9. new mx.transitions.Tween() pushes 'transitions' via GetMember for object resolution", () => {
     const bytes = compileAS2("var t = new mx.transitions.Tween();");
-    // "transitions" must not appear as a standalone null-terminated string
-    expect(containsString(bytes, "transitions")).toBe(false);
+    // "transitions" appears as a GetMember key when resolving mx.transitions
+    expect(containsString(bytes, "transitions")).toBe(true);
+    expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
   });
 });
 
@@ -133,21 +136,24 @@ describe("new on four-segment member chain (mx.transitions.easing.Strong)", () =
     expect(compilesOk("var s = new mx.transitions.easing.Strong();")).toBe(true);
   });
 
-  it("11. new mx.transitions.easing.Strong() emits ActionNewObject (0x40)", () => {
+  it("11. new mx.transitions.easing.Strong() emits ActionNewMethod (0x53)", () => {
     const bytes = compileAS2("var s = new mx.transitions.easing.Strong();");
-    expect(containsByte(bytes, ACTION_NEW_OBJECT)).toBe(true);
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(true);
   });
 
-  it("12. new mx.transitions.easing.Strong() pushes full path as string", () => {
+  it("12. new mx.transitions.easing.Strong() pushes 'Strong' as method_name", () => {
     const bytes = compileAS2("var s = new mx.transitions.easing.Strong();");
-    expect(containsString(bytes, "mx.transitions.easing.Strong")).toBe(true);
+    // The last property "Strong" is pushed as method_name for ActionNewMethod
+    expect(containsString(bytes, "Strong")).toBe(true);
   });
 
-  it("13. new mx.transitions.easing.Strong() does NOT push 'easing' as standalone string", () => {
+  it("13. new mx.transitions.easing.Strong() resolves object chain via GetMember", () => {
     const bytes = compileAS2("var s = new mx.transitions.easing.Strong();");
-    // Under the fix, "easing" is NOT pushed as a standalone string —
-    // it is embedded in the full dotted class name string.
-    expect(containsString(bytes, "easing")).toBe(false);
+    // Object chain (mx.transitions.easing) is resolved via GetVariable + GetMember calls
+    expect(containsString(bytes, "easing")).toBe(true);
+    expect(containsByte(bytes, ACTION_GET_MEMBER)).toBe(true);
+    // The full dotted string must NOT appear
+    expect(containsString(bytes, "mx.transitions.easing.Strong")).toBe(false);
   });
 });
 
@@ -162,18 +168,18 @@ describe("new on chained member with arguments", () => {
     ).toBe(true);
   });
 
-  it("15. new mx.transitions.Tween with args emits ActionNewObject (0x40)", () => {
+  it("15. new mx.transitions.Tween with args emits ActionNewMethod (0x53)", () => {
     const bytes = compileAS2(
       "var t = new mx.transitions.Tween(obj, '_x', easing, 0, 100, 1);"
     );
-    expect(containsByte(bytes, ACTION_NEW_OBJECT)).toBe(true);
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(true);
   });
 
-  it("16. new mx.transitions.Tween with args pushes dotted class name", () => {
+  it("16. new mx.transitions.Tween with args pushes 'Tween' as method_name", () => {
     const bytes = compileAS2(
       "var t = new mx.transitions.Tween(obj, '_x', easing, 0, 100, 1);"
     );
-    expect(containsString(bytes, "mx.transitions.Tween")).toBe(true);
+    expect(containsString(bytes, "Tween")).toBe(true);
   });
 
   it("17. new mx.transitions.Tween with args includes arg strings in output", () => {
@@ -191,15 +197,18 @@ describe("new on chained member with arguments", () => {
 // ---------------------------------------------------------------------------
 
 describe("new on plain identifier (regression guard)", () => {
-  it("18. new MyClass() still pushes 'MyClass' as string", () => {
+  it("18. new MyClass() still pushes 'MyClass' as string and uses ActionNewObject", () => {
     const bytes = compileAS2("var x = new MyClass();");
     expect(containsByte(bytes, ACTION_NEW_OBJECT)).toBe(true);
     expect(containsString(bytes, "MyClass")).toBe(true);
+    // Plain identifier must NOT use ActionNewMethod
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(false);
   });
 
   it("19. new Array() still works correctly", () => {
     const bytes = compileAS2("var a = new Array();");
     expect(containsByte(bytes, ACTION_NEW_OBJECT)).toBe(true);
     expect(containsString(bytes, "Array")).toBe(true);
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(false);
   });
 });

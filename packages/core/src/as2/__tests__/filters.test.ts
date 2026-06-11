@@ -50,7 +50,8 @@ function containsString(bytes: Uint8Array, s: string): boolean {
 // AVM1 opcodes under test
 // ---------------------------------------------------------------------------
 
-const ACTION_NEW        = 0x40; // ActionNew        — constructor call
+const ACTION_NEW        = 0x40; // ActionNewObject  — constructor call (Identifier callee)
+const ACTION_NEW_METHOD = 0x53; // ActionNewMethod  — constructor call (MemberExpr callee)
 const ACTION_SET_MEMBER = 0x4f; // ActionSetMember  — property write
 const ACTION_GET_MEMBER = 0x4e; // ActionGetMember  — property / member read
 
@@ -88,11 +89,13 @@ describe("flash.filters.DropShadowFilter constructor", () => {
     ).toBe(true);
   });
 
-  it("direct new flash.filters.DropShadowFilter(...) emits ActionNew (0x40)", () => {
+  it("direct new flash.filters.DropShadowFilter(...) emits ActionNewMethod (0x53)", () => {
+    // MemberExpr callee (flash.filters.DropShadowFilter) uses ActionNewMethod,
+    // not ActionNewObject — Ruffle's flat scope lookup cannot resolve dotted paths.
     const bytes = compileAS2(
       "new flash.filters.DropShadowFilter(4, 45, 0x000000, 0.5, 4, 4, 1, 1);"
     );
-    expect(containsByte(bytes, ACTION_NEW)).toBe(true);
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(true);
   });
 });
 
@@ -125,9 +128,10 @@ describe("flash.filters.BlurFilter constructor", () => {
     expect(compilesOk("new flash.filters.BlurFilter(4, 4, 1);")).toBe(true);
   });
 
-  it("direct new flash.filters.BlurFilter(4, 4, 1) emits ActionNew (0x40)", () => {
+  it("direct new flash.filters.BlurFilter(4, 4, 1) emits ActionNewMethod (0x53)", () => {
+    // MemberExpr callee (flash.filters.BlurFilter) uses ActionNewMethod.
     const bytes = compileAS2("new flash.filters.BlurFilter(4, 4, 1);");
-    expect(containsByte(bytes, ACTION_NEW)).toBe(true);
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(true);
   });
 });
 
@@ -160,9 +164,10 @@ describe("flash.filters.GlowFilter constructor", () => {
     expect(compilesOk("new flash.filters.GlowFilter(0xFF0000, 0.8, 4, 4, 2, 1);")).toBe(true);
   });
 
-  it("direct new flash.filters.GlowFilter(...) emits ActionNew (0x40)", () => {
+  it("direct new flash.filters.GlowFilter(...) emits ActionNewMethod (0x53)", () => {
+    // MemberExpr callee (flash.filters.GlowFilter) uses ActionNewMethod.
     const bytes = compileAS2("new flash.filters.GlowFilter(0xFF0000, 0.8, 4, 4, 2, 1);");
-    expect(containsByte(bytes, ACTION_NEW)).toBe(true);
+    expect(containsByte(bytes, ACTION_NEW_METHOD)).toBe(true);
   });
 });
 
