@@ -401,6 +401,9 @@ export function encodeDefineSprite(
     // interpolation is applied for each frame within a motion-tween span.
     // Task 1126: also track layerIdx so mask layers can be identified.
     const thisFrameDepths = new Map<number, { objId: string; displayObj: import("@flash/core").DisplayObject; layerIdx: number }>();
+    const letterSpacingActions: string[] = [];
+    const restrictActions: string[] = [];
+    const tabOrderActions: string[] = [];
 
     for (let li = 0; li < layers.length; li++) {
       const layer = layers[li];
@@ -598,6 +601,22 @@ export function encodeDefineSprite(
               spriteTags.push(encodeTag(Tag.PlaceObject2, placeBody));
             }
           }
+          // Collect letterSpacing DoAction for text fields with non-zero spacing
+          {
+            const textName = (displayObj as { instanceName?: string }).instanceName;
+            const ls = (displayObj as { letterSpacing?: number }).letterSpacing;
+            if (ls != null && ls !== 0 && textName && textName.length > 0) {
+              letterSpacingActions.push(
+                `var _tf=new TextFormat();_tf.letterSpacing=${ls};this.${textName}.setTextFormat(_tf);`
+              );
+            }
+            // Collect restrict DoAction for input text fields
+            const restrict = (displayObj as { restrict?: string }).restrict;
+            if (restrict != null && restrict.length > 0 && textName && textName.length > 0) {
+              const escaped = restrict.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+              restrictActions.push(`this.${textName}.restrict = "${escaped}";`);
+            }
+          }
         } else if (displayObj.type === "bitmap") {
           const charId = objCharIdMap.get(objId);
           if (charId !== undefined) {
@@ -730,6 +749,17 @@ export function encodeDefineSprite(
                 spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(refCharId, depth, x, y, instanceTransform)));
               }
             }
+            }
+          }
+          // Collect tab-order DoAction for instances with accessibility.tabIndex
+          {
+            const instName = (displayObj as { instanceName?: string }).instanceName;
+            const acc = (displayObj as { accessibility?: { tabIndex?: number; enabled?: boolean } }).accessibility;
+            if (instName && instName.length > 0 && acc?.tabIndex != null) {
+              const tabEnabled = acc.enabled !== false;
+              tabOrderActions.push(
+                `this.${instName}.tabEnabled = ${tabEnabled};this.${instName}.tabIndex = ${acc.tabIndex};`
+              );
             }
           }
         }
@@ -964,6 +994,34 @@ export function encodeDefineSprite(
             }
           }
         }
+      }
+    }
+
+    // Emit letterSpacing DoActions
+    for (const script of letterSpacingActions) {
+      const actionBytes = compileAS2(script);
+      if (actionBytes.length > 0) {
+        const doActionBody = new Uint8Array(actionBytes.length + 1);
+        doActionBody.set(actionBytes);
+        spriteTags.push(encodeTag(Tag.DoAction, doActionBody));
+      }
+    }
+    // Emit restrict DoActions
+    for (const script of restrictActions) {
+      const actionBytes = compileAS2(script);
+      if (actionBytes.length > 0) {
+        const doActionBody = new Uint8Array(actionBytes.length + 1);
+        doActionBody.set(actionBytes);
+        spriteTags.push(encodeTag(Tag.DoAction, doActionBody));
+      }
+    }
+    // Emit tabOrder DoActions
+    for (const script of tabOrderActions) {
+      const actionBytes = compileAS2(script);
+      if (actionBytes.length > 0) {
+        const doActionBody = new Uint8Array(actionBytes.length + 1);
+        doActionBody.set(actionBytes);
+        spriteTags.push(encodeTag(Tag.DoAction, doActionBody));
       }
     }
 
