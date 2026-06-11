@@ -41,7 +41,7 @@ function makeShape(id: string): ShapeDisplayObject {
     type: "shape",
     x: 10,
     y: 20,
-    shape: createRectShape(0, 0, 50, 50, "#ff0000"),
+    shape: createRectShape(0, 0, 50, 50, null, null),
   };
 }
 

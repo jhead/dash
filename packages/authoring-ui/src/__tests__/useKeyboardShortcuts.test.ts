@@ -139,6 +139,9 @@ function makeHandlers(): Required<KeyboardShortcutHandlers> {
     onNudge: vi.fn(),
     onAddShapeHint: vi.fn(),
     onFindReplace: vi.fn(),
+    onDuplicate: vi.fn(),
+    onRemoveFrame: vi.fn(),
+    onClearKeyframe: vi.fn(),
   };
 }
 

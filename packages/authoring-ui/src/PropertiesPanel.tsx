@@ -2284,7 +2284,7 @@ function GroupView({
       if (y + h > maxY) maxY = y + h;
     };
     for (const child of obj.children) {
-      if (child.type === "shape" || child.type === "drawing") {
+      if (child.type === "shape" || child.type === "drawing-object") {
         const bounds = shapeBounds(child.shape, child.x, child.y);
         expandBounds(bounds.x, bounds.y, bounds.width, bounds.height);
       } else if ("x" in child && "y" in child) {

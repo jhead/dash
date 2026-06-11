@@ -1575,7 +1575,7 @@ const handlers: Record<string, AnyHandler> = {
     const cb = requireCallbacks();
     const diagnostics = compileCheckScript(params.script);
     if (diagnostics.some((d) => d.severity === "error")) {
-      return { ok: false, rev: _rev, diagnostics };
+      return { ok: false, rev: _rev, diagnostics } as unknown as ScriptSetResult;
     }
     const layerId = resolveLayerId(cb, params.layerId);
     const doc = cb.getDoc();

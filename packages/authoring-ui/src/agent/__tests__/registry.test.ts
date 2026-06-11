@@ -1217,7 +1217,7 @@ describe("symbol-edit mode routing", () => {
   /** Helper: create a symbol in the library and put the harness in symbol-edit mode. */
   function enterSymbolEditMode() {
     const doc = state.doc;
-    const { library, item } = createSymbolInLibrary(doc.library, "MyMC", "movie-clip");
+    const { library, item } = createSymbolInLibrary(doc.library, "MyMC", "movieclip");
     state.doc = { ...doc, library };
     // Simulate in-place editing — activate the symbol timeline
     state.editContext = { mode: "symbol", symbolId: item.id };
@@ -1228,7 +1228,7 @@ describe("symbol-edit mode routing", () => {
     const { symId } = enterSymbolEditMode();
 
     const sceneBefore = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects.length;
-    const symBefore = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
+    const symBefore = (state.doc.library.items.find((i) => i.id === symId) as unknown as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
       .timeline.layers[0].frames[0].displayObjects.length;
 
     await dispatchAgentCommand("stage_add_shape", {
@@ -1236,7 +1236,7 @@ describe("symbol-edit mode routing", () => {
     });
 
     const sceneAfter = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects.length;
-    const symAfter = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
+    const symAfter = (state.doc.library.items.find((i) => i.id === symId) as unknown as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
       .timeline.layers[0].frames[0].displayObjects.length;
 
     // Object should land in symbol, not scene
@@ -1251,7 +1251,7 @@ describe("symbol-edit mode routing", () => {
       x: 10, y: 10, width: 100, height: 30, text: "hello",
     });
 
-    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
+    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as unknown as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
       .timeline;
     const count = symTimeline.layers[0].frames[0].displayObjects.length;
     expect(count).toBe(1);
@@ -1272,7 +1272,7 @@ describe("symbol-edit mode routing", () => {
     // Update should also target the symbol timeline
     await dispatchAgentCommand("stage_update", { id: objId, updates: { x: 99 } });
 
-    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: { id: string; x?: number }[] }[] }[] } })
+    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as unknown as { timeline: { layers: { frames: { displayObjects: { id: string; x?: number }[] }[] }[] } })
       .timeline;
     const obj = symTimeline.layers[0].frames[0].displayObjects.find((o) => o.id === objId);
     expect(obj?.x).toBe(99);
@@ -1288,7 +1288,7 @@ describe("symbol-edit mode routing", () => {
 
     await dispatchAgentCommand("stage_remove", { ids: [objId] });
 
-    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
+    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as unknown as { timeline: { layers: { frames: { displayObjects: unknown[] }[] }[] } })
       .timeline;
     expect(symTimeline.layers[0].frames[0].displayObjects.length).toBe(0);
   });
@@ -1296,12 +1296,12 @@ describe("symbol-edit mode routing", () => {
   it("timeline_add_layer targets the symbol timeline", async () => {
     const { symId } = enterSymbolEditMode();
 
-    const layersBefore = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: unknown[] } })
+    const layersBefore = (state.doc.library.items.find((i) => i.id === symId) as unknown as { timeline: { layers: unknown[] } })
       .timeline.layers.length;
 
     await dispatchAgentCommand("timeline_add_layer", { name: "Layer2" });
 
-    const layersAfter = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: unknown[] } })
+    const layersAfter = (state.doc.library.items.find((i) => i.id === symId) as unknown as { timeline: { layers: unknown[] } })
       .timeline.layers.length;
 
     expect(layersAfter).toBe(layersBefore + 1);
@@ -1317,7 +1317,7 @@ describe("symbol-edit mode routing", () => {
     await dispatchAgentCommand("timeline_add_layer", {});
 
     const status = await dispatchAgentCommand("editor_status", {}) as Record<string, unknown>;
-    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as { timeline: { layers: unknown[] } })
+    const symTimeline = (state.doc.library.items.find((i) => i.id === symId) as unknown as { timeline: { layers: unknown[] } })
       .timeline;
     expect(status["layerCount"]).toBe(symTimeline.layers.length);
 

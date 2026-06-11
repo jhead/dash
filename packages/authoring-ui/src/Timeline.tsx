@@ -933,7 +933,7 @@ export function Timeline({
   );
 
   const handleAddMotionGuide = useCallback(
-    (layerId: string, layerIndex: number) => {
+    (_layerId: string, layerIndex: number) => {
       // Insert a new guide layer directly above the current layer (at layerIndex),
       // then mark the current layer as "guided".
       const currentLayer = timeline.layers[layerIndex];
