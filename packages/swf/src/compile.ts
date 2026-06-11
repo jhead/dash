@@ -724,6 +724,21 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     }
   }
 
+  // Pre-build soundIdMap and emit DefineSound tags BEFORE the symbol loop so
+  // that encodeDefineSprite can look up sound character IDs for StartSound tags
+  // inside symbol timelines (task 1123: frame sounds in symbol timelines).
+  const soundItems = doc.library.items.filter(
+    (item): item is SoundItem => item.itemType === "sound"
+  );
+  const soundIdMap = new Map<string, number>();
+  for (const soundItem of soundItems) {
+    if (!soundItem.dataUri) continue;
+    const soundId = writer.nextCharId();
+    soundIdMap.set(soundItem.id, soundId);
+    const soundBody = encodeDefineSound(soundId, soundItem);
+    writer.writeTag(Tag.DefineSound, soundBody);
+  }
+
   // Emit DefineSprite for each symbol (using the pre-assigned IDs).
   // encodeDefineSprite returns the tag *body* (SpriteID + FrameCount + inner tags);
   // writeTag wraps it with the DefineSprite record header.
@@ -757,7 +772,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
 
       writer.writeTag(Tag.DefineButton2, buttonBody);
 
-      // Collect for deferred DefineButtonSound emit (needs soundIdMap, built below)
+      // Collect for deferred DefineButtonSound emit (needs soundIdMap, built above)
       if (sym.buttonSounds) {
         pendingButtonSounds.push({ charId: symCharId, sounds: sym.buttonSounds });
       }
@@ -769,7 +784,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         charIdMap,
         () => writer.nextCharId(),
         hoistedDefs,
-        fontCharIdMap
+        fontCharIdMap,
+        soundIdMap
       );
 
       // Emit hoisted definition tags first
@@ -836,20 +852,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     }
   }
 
-  // 3c. Emit DefineSound tags for all SoundItems with audio data.
-  //     Build soundIdMap: soundItemId → SWF character ID
-  const soundItems = doc.library.items.filter(
-    (item): item is SoundItem => item.itemType === "sound"
-  );
-  const soundIdMap = new Map<string, number>();
+  // 3c. Add ExportAssets entries for sound items with AS2 linkage identifiers.
+  //     (DefineSound tags were already emitted in the pre-pass above; soundIdMap
+  //      and soundItems are already populated.)
   for (const soundItem of soundItems) {
-    if (!soundItem.dataUri) continue;
-    const soundId = writer.nextCharId();
-    soundIdMap.set(soundItem.id, soundId);
-    const soundBody = encodeDefineSound(soundId, soundItem);
-    writer.writeTag(Tag.DefineSound, soundBody);
-    // If the sound has an AS2 linkage identifier, add it to ExportAssets.
-    if (soundItem.exportForActionScript && soundItem.linkageIdentifier) {
+    const soundId = soundIdMap.get(soundItem.id);
+    if (soundId !== undefined && soundItem.exportForActionScript && soundItem.linkageIdentifier) {
       exportEntries.push({ charId: soundId, name: soundItem.linkageIdentifier });
     }
   }

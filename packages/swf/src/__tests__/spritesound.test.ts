@@ -67,6 +67,36 @@ function parseTags(bytes: Uint8Array): SWFTag[] {
   return tags;
 }
 
+/**
+ * Parse the inner control tags of a DefineSprite body.
+ * A DefineSprite body starts with SpriteID (UI16) + FrameCount (UI16),
+ * followed by the inner tag stream.
+ */
+function parseSpriteInnerTags(spriteBody: Uint8Array): SWFTag[] {
+  // Skip SpriteID (2 bytes) + FrameCount (2 bytes)
+  let pos = 4;
+  const tags: SWFTag[] = [];
+  while (pos + 2 <= spriteBody.length) {
+    const hdr = spriteBody[pos] | (spriteBody[pos + 1] << 8);
+    const code = (hdr >> 6) & 0x3ff;
+    let len = hdr & 0x3f;
+    let hdrSize = 2;
+    if (len === 0x3f) {
+      len =
+        spriteBody[pos + 2] |
+        (spriteBody[pos + 3] << 8) |
+        (spriteBody[pos + 4] << 16) |
+        (spriteBody[pos + 5] << 24);
+      hdrSize = 6;
+    }
+    const bodyStart = pos + hdrSize;
+    tags.push({ code, body: spriteBody.slice(bodyStart, bodyStart + len) });
+    pos = bodyStart + len;
+    if (code === 0) break;
+  }
+  return tags;
+}
+
 // ---------------------------------------------------------------------------
 // Tag code constants
 // ---------------------------------------------------------------------------
@@ -356,5 +386,79 @@ describe("root and symbol sounds coexist", () => {
     const bytes = compileDocument(doc);
     const tags = parseTags(bytes);
     expect(tags.some((t) => t.code === TAG_START_SOUND)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Symbol timeline with frame sound — StartSound emitted inside DefineSprite
+// ---------------------------------------------------------------------------
+
+describe("symbol timeline frame sounds (task 1123)", () => {
+  it("6a. symbol with keyframe sound — StartSound (15) appears inside DefineSprite body", () => {
+    const snd = makeSoundItem("snd-mc");
+    const symLayer = makeLayer("Layer 1", [
+      { sound: makeSoundLinkage("snd-mc") },
+    ]);
+    const sym = makeSymbol("sym-1", "ClipWithSound", [symLayer]);
+    const doc = makeDoc({ library: { items: [sym, snd], folders: [] } });
+    const bytes = compileDocument(doc);
+    const tags = parseTags(bytes);
+    const spriteTag = tags.find((t) => t.code === TAG_DEFINE_SPRITE);
+    expect(spriteTag).toBeDefined();
+    const innerTags = parseSpriteInnerTags(spriteTag!.body);
+    expect(innerTags.some((t) => t.code === TAG_START_SOUND)).toBe(true);
+  });
+
+  it("6b. symbol with keyframe sound — StartSound NOT emitted at root level", () => {
+    const snd = makeSoundItem("snd-mc");
+    const symLayer = makeLayer("Layer 1", [
+      { sound: makeSoundLinkage("snd-mc") },
+    ]);
+    const sym = makeSymbol("sym-1", "ClipWithSound", [symLayer]);
+    const doc = makeDoc({ library: { items: [sym, snd], folders: [] } });
+    const bytes = compileDocument(doc);
+    const tags = parseTags(bytes);
+    // StartSound at root level should not appear (no sound on root timeline)
+    expect(tags.some((t) => t.code === TAG_START_SOUND)).toBe(false);
+  });
+
+  it("6c. symbol with stream-mode sound — no StartSound inside DefineSprite", () => {
+    const snd = makeSoundItem("snd-stream");
+    const symLayer = makeLayer("Layer 1", [
+      { sound: { libraryItemId: "snd-stream", syncMode: "stream" as const, repeatCount: 1 } },
+    ]);
+    const sym = makeSymbol("sym-1", "StreamClip", [symLayer]);
+    const doc = makeDoc({ library: { items: [sym, snd], folders: [] } });
+    const bytes = compileDocument(doc);
+    const tags = parseTags(bytes);
+    const spriteTag = tags.find((t) => t.code === TAG_DEFINE_SPRITE);
+    expect(spriteTag).toBeDefined();
+    const innerTags = parseSpriteInnerTags(spriteTag!.body);
+    // Stream-mode sounds should NOT produce StartSound (need SoundStreamHead/Block instead)
+    expect(innerTags.some((t) => t.code === TAG_START_SOUND)).toBe(false);
+  });
+
+  it("6d. StartSound body inside sprite references the correct sound char ID", () => {
+    const snd = makeSoundItem("snd-mc");
+    const symLayer = makeLayer("Layer 1", [
+      { sound: makeSoundLinkage("snd-mc") },
+    ]);
+    const sym = makeSymbol("sym-1", "ClipWithSound", [symLayer]);
+    const doc = makeDoc({ library: { items: [sym, snd], folders: [] } });
+    const bytes = compileDocument(doc);
+    const tags = parseTags(bytes);
+    // Find the DefineSound char ID from its body (first 2 bytes = char ID LE)
+    const defineSoundTag = tags.find((t) => t.code === TAG_DEFINE_SOUND);
+    expect(defineSoundTag).toBeDefined();
+    const soundCharId = defineSoundTag!.body[0] | (defineSoundTag!.body[1] << 8);
+    // Find the StartSound inside the sprite
+    const spriteTag = tags.find((t) => t.code === TAG_DEFINE_SPRITE);
+    expect(spriteTag).toBeDefined();
+    const innerTags = parseSpriteInnerTags(spriteTag!.body);
+    const startSoundTag = innerTags.find((t) => t.code === TAG_START_SOUND);
+    expect(startSoundTag).toBeDefined();
+    // StartSound body: first 2 bytes = sound char ID LE
+    const startSoundCharId = startSoundTag!.body[0] | (startSoundTag!.body[1] << 8);
+    expect(startSoundCharId).toBe(soundCharId);
   });
 });

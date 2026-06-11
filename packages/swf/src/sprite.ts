@@ -34,6 +34,7 @@ import { Tag } from "./tags.js";
 import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
 import { fontKey } from "./fonts.js";
+import { encodeStartSound } from "./sounds.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -83,7 +84,12 @@ export function encodeDefineSprite(
   /** Maps fontKey(name, bold, italic) → SWF character ID for embedded fonts.
    *  When provided, text objects inside this sprite will have HasFont=1 and
    *  use the authored fontSize (matching the buttons.ts pattern from task 1083). */
-  fontCharIdMap?: Map<string, number>
+  fontCharIdMap?: Map<string, number>,
+  /** Maps SoundItem id → SWF character ID. When provided, keyframes with a
+   *  non-null `sound` field will emit StartSound (tag 15) tags inside the
+   *  sprite body (task 1123). Stream-mode sounds are skipped (need
+   *  SoundStreamHead/Block — out of scope). */
+  soundIdMap?: Map<string, number>
 ): Uint8Array {
   const timeline = symbol.timeline;
   const layers = timeline.layers;
@@ -567,6 +573,38 @@ export function encodeDefineSprite(
             doActionBody.set(actionBytes);
             // doActionBody[actionBytes.length] is already 0x00 (EndAction)
             spriteTags.push(encodeTag(Tag.DoAction, doActionBody));
+          }
+        }
+      }
+    }
+
+    // Emit StartSound (tag 15) for any keyframes at this frame index that have
+    // a non-stream sound reference (task 1123).
+    // Mirror the main-timeline pattern in compile.ts; skip stream-mode sounds
+    // (those require SoundStreamHead/Block — out of scope here).
+    if (soundIdMap) {
+      for (const layer of layers) {
+        for (const frame of layer.frames) {
+          if (
+            frame.isKeyframe &&
+            frame.index === frameIdx &&
+            frame.sound !== null &&
+            frame.sound.syncMode !== "stream"
+          ) {
+            const soundId = soundIdMap.get(frame.sound.libraryItemId);
+            if (soundId !== undefined) {
+              const soundInfoOpts = {
+                loops: frame.sound.repeatCount,
+                stop: frame.sound.syncMode === "stop",
+                noMultiple: frame.sound.syncMode === "start",
+                effect: frame.sound.customEnvelope ? undefined : frame.sound.effect,
+                envelope: frame.sound.customEnvelope,
+                inPoint: frame.sound.inPoint,
+                outPoint: frame.sound.outPoint,
+              };
+              const startSoundBody = encodeStartSound(soundId, soundInfoOpts);
+              spriteTags.push(encodeTag(Tag.StartSound, startSoundBody));
+            }
           }
         }
       }
