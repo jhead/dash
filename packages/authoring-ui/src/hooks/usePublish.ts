@@ -25,13 +25,17 @@ function rgbaToArgb(rgba: Uint8Array): Uint8Array {
 }
 
 /**
- * Decode all lossless bitmap items in the library into raw ARGB pixel data.
+ * Decode all bitmap items in the library into raw ARGB pixel data.
  *
  * Lossless bitmaps (PNG) carry their pixel data as a `data:image/png;base64,…`
  * URI.  `encodeDefineBitsLossless2` in compile.ts needs raw 32-bit ARGB bytes
  * (BitmapFormat 5), but those are not available synchronously — we must draw
  * through an OffscreenCanvas (or a regular HTMLCanvasElement in environments that
  * lack OffscreenCanvas) to get them.  Canvas ImageData is RGBA, so we convert.
+ *
+ * Photo bitmaps (JPEG) are also decoded here so that `compile.ts` can detect
+ * transparency and emit `DefineBitsJPEG3` (tag 35) with a compressed alpha
+ * channel instead of silently downgrading to `DefineBitsJPEG2` (tag 21).
  *
  * The returned map key is the BitmapItem.id.
  * The pixel array is ARGB (4 bytes per pixel, row-major).
@@ -41,15 +45,17 @@ export async function buildBitmapPixels(
 ): Promise<Map<string, { width: number; height: number; pixels: Uint8Array }>> {
   const result = new Map<string, { width: number; height: number; pixels: Uint8Array }>();
 
-  // Only process lossless (PNG) bitmaps that actually have data.
-  const losslessItems = items.filter(
-    (item) => item.compressionType === "lossless" && item.dataUri
+  // Process both lossless (PNG) and photo (JPEG) bitmaps that have data.
+  const decodableItems = items.filter(
+    (item) =>
+      (item.compressionType === "lossless" || item.compressionType === "photo") &&
+      item.dataUri
   );
 
-  if (losslessItems.length === 0) return result;
+  if (decodableItems.length === 0) return result;
 
   await Promise.all(
-    losslessItems.map(async (item) => {
+    decodableItems.map(async (item) => {
       try {
         let width: number;
         let height: number;
@@ -113,9 +119,11 @@ export function usePublish(doc: FlashDocument, compileOptions?: Omit<CompileOpti
   /**
    * Compile the document to raw SWF bytes.
    *
-   * Lossless (PNG) bitmaps in the library are decoded to raw ARGB pixel data
-   * via an OffscreenCanvas before compiling so that DefineBitsLossless2 tags
-   * are emitted with correct alpha channel data.
+   * All bitmaps (lossless PNG and photo JPEG) in the library are decoded to raw
+   * ARGB pixel data via an OffscreenCanvas before compiling so that:
+   * - DefineBitsLossless2 tags are emitted with correct alpha channel data, and
+   * - DefineBitsJPEG3 (tag 35) is emitted instead of DefineBitsJPEG2 (tag 21)
+   *   when a JPEG bitmap has a transparent alpha channel.
    */
   async function publishToBytes(): Promise<Uint8Array> {
     const bitmapItems = doc.library.items.filter(
