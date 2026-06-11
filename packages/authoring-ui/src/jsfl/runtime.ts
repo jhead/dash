@@ -410,6 +410,14 @@ function makeElementProxy(
         if (anyObj.colorEffect == null) return "none";
         return anyObj.colorEffect.type ?? "none";
       }
+      // width/height get: for SymbolInstance return naturalSize * scale
+      if (prop === "width" || prop === "height") {
+        if (current.type === "instance") {
+          const inst = current as SymbolInstance;
+          if (prop === "width") return (inst.naturalWidth ?? 100) * (inst.scaleX ?? 1);
+          return (inst.naturalHeight ?? 100) * (inst.scaleY ?? 1);
+        }
+      }
       return Reflect.get(current, prop, receiver);
     },
     set(_target, prop, value) {
@@ -494,6 +502,32 @@ function makeElementProxy(
           state.doc = { ...state.doc, scenes: newScenes };
         }
         return true;
+      }
+      // width/height set: for SymbolInstance, compute and update scale
+      if (prop === "width" || prop === "height") {
+        const current = liveObj();
+        if (current.type === "instance") {
+          const inst = current as SymbolInstance;
+          const sceneForScale = state.doc.scenes[state.sceneIndex];
+          if (sceneForScale) {
+            const updates: Record<string, unknown> =
+              prop === "width"
+                ? { scaleX: Number(value) / (inst.naturalWidth || 1) }
+                : { scaleY: Number(value) / (inst.naturalHeight || 1) };
+            const newTimeline = updateDisplayObject(
+              sceneForScale.timeline,
+              layerId,
+              keyframeIndex,
+              obj.id,
+              updates as Parameters<typeof updateDisplayObject>[4]
+            );
+            const newScenes = state.doc.scenes.map((s, i) =>
+              i === state.sceneIndex ? { ...s, timeline: newTimeline } : s
+            );
+            state.doc = { ...state.doc, scenes: newScenes };
+          }
+          return true;
+        }
       }
       // Map JSFL property name to model field name
       const modelProp = JSFL_PROP_MAP[prop] ?? prop;
