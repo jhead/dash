@@ -711,3 +711,172 @@ describe("runtime verification proxy — onClipEvent(enterFrame) in published SW
     expect(bytes[2]).toBe(0x53); // S
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 1124: clip actions and loopMode inside sprite (symbol) timelines
+// ---------------------------------------------------------------------------
+
+/** Parse the inner control tags from a DefineSprite body (after SpriteID+FrameCount). */
+function parseSpriteInnerTagsCA(body: Uint8Array): Array<{ code: number; body: Uint8Array }> {
+  // Skip SpriteID (UI16) + FrameCount (UI16) = 4 bytes
+  const tags: Array<{ code: number; body: Uint8Array }> = [];
+  let pos = 4;
+  while (pos + 2 <= body.length) {
+    const hdr = body[pos]! | (body[pos + 1]! << 8);
+    const code = (hdr >> 6) & 0x3ff;
+    let len = hdr & 0x3f;
+    let hdrSize = 2;
+    if (len === 0x3f) {
+      len = body[pos + 2]! | (body[pos + 3]! << 8) | (body[pos + 4]! << 16) | (body[pos + 5]! << 24);
+      hdrSize = 6;
+    }
+    const start = pos + hdrSize;
+    tags.push({ code, body: body.slice(start, start + len) });
+    pos = start + len;
+    if (code === 0) break;
+  }
+  return tags;
+}
+
+/** Build a parent symbol that contains a child instance (with optional clipActions). */
+function makeParentDoc(childClipActions?: readonly ClipAction[]): FlashDocument {
+  // child = the symbol being placed inside the parent
+  const childSym: Symbol = {
+    id: "child-sym",
+    name: "ChildClip",
+    itemType: "symbol",
+    symbolType: "movieclip",
+    timeline: { layers: [makeLayer([makeEmptyFrame()])] },
+    linkage: DEFAULT_LINKAGE,
+    scale9Grid: null,
+  };
+  // instance of child placed inside parent's frame
+  const childInst: SymbolInstance = childClipActions && childClipActions.length > 0
+    ? { id: "child-inst", type: "instance", symbolId: "child-sym", x: 0, y: 0, clipActions: childClipActions }
+    : { id: "child-inst", type: "instance", symbolId: "child-sym", x: 0, y: 0 };
+
+  // parent = symbol that contains the child instance
+  const parentFrame: Frame = {
+    index: 0, isKeyframe: true, isEmpty: false, tweenType: "none",
+    label: "", labelType: "name", script: "", sound: null,
+    motionEase: 0, motionEaseType: "none", motionRotate: "none",
+    motionRotateCount: 0, motionOrientToPath: false, motionSync: false,
+    motionSnap: false, motionScale: false, shapeEase: 0,
+    shapeEaseType: "none", shapeBlend: "distributive",
+    displayObjects: [childInst],
+  };
+  const parentSym: Symbol = {
+    id: "parent-sym",
+    name: "ParentClip",
+    itemType: "symbol",
+    symbolType: "movieclip",
+    timeline: { layers: [{ id: "l1", name: "Layer 1", type: "normal", visible: true, locked: false,
+      outlineMode: false, outlineColor: "#ff0000", height: 20, parentFolderId: null,
+      frames: [parentFrame], frameCount: 1 }] },
+    linkage: DEFAULT_LINKAGE,
+    scale9Grid: null,
+  };
+  // root scene places the parent symbol
+  const rootInst: SymbolInstance = { id: "root-inst", type: "instance", symbolId: "parent-sym", x: 0, y: 0 };
+  return {
+    id: "doc-1",
+    properties: BASE_PROPS,
+    scenes: [makeScene([makeEmptyFrame([rootInst])])],
+    library: { items: [parentSym, childSym], folders: [] },
+  };
+}
+
+const TAG_DEFINE_SPRITE_CA = 39;
+const TAG_PLACE_OBJECT2_CA = 26;
+
+describe("task 1124 — clip actions and loopMode inside sprite (symbol) timelines", () => {
+  it("nested instance with clipActions: HasClipActions (0x80) appears inside DefineSprite body", () => {
+    const doc = makeParentDoc([{ event: "enterFrame", script: "this._x++;" }]);
+    const bytes = exportSWF(doc);
+    const tags = parseSWFTags(bytes);
+
+    // Find the parent symbol's DefineSprite — it has a child instance, so its body
+    // should contain a PlaceObject2 with HasClipActions set.
+    const spriteTags = tags.filter((t) => t.code === TAG_DEFINE_SPRITE_CA);
+    // There are two sprites: parent and child. Parent contains the child instance.
+    // The parent sprite's inner PlaceObject2 should have HasClipActions.
+    let found = false;
+    for (const st of spriteTags) {
+      const inner = parseSpriteInnerTagsCA(st.body);
+      for (const it of inner) {
+        if (it.code === TAG_PLACE_OBJECT2_CA && (it.body[0]! & 0x80) !== 0) {
+          found = true;
+        }
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it("nested instance WITHOUT clipActions: no HasClipActions inside any DefineSprite", () => {
+    const doc = makeParentDoc(); // no clip actions
+    const bytes = exportSWF(doc);
+    const tags = parseSWFTags(bytes);
+
+    const spriteTags = tags.filter((t) => t.code === TAG_DEFINE_SPRITE_CA);
+    let found = false;
+    for (const st of spriteTags) {
+      const inner = parseSpriteInnerTagsCA(st.body);
+      for (const it of inner) {
+        if (it.code === TAG_PLACE_OBJECT2_CA && (it.body[0]! & 0x80) !== 0) {
+          found = true;
+        }
+      }
+    }
+    expect(found).toBe(false);
+  });
+
+  it("loopMode=play-once inside sprite: synthesized enterFrame clip action appears in PlaceObject2 inside DefineSprite", () => {
+    // Build parent symbol with child instance loopMode='play-once'
+    const childInst: SymbolInstance = {
+      id: "child-inst", type: "instance", symbolId: "child-sym", x: 0, y: 0,
+      loopMode: "play-once",
+    };
+    const parentFrame: Frame = {
+      index: 0, isKeyframe: true, isEmpty: false, tweenType: "none",
+      label: "", labelType: "name", script: "", sound: null,
+      motionEase: 0, motionEaseType: "none", motionRotate: "none",
+      motionRotateCount: 0, motionOrientToPath: false, motionSync: false,
+      motionSnap: false, motionScale: false, shapeEase: 0,
+      shapeEaseType: "none", shapeBlend: "distributive",
+      displayObjects: [childInst],
+    };
+    const childSym: Symbol = {
+      id: "child-sym", name: "ChildClip", itemType: "symbol", symbolType: "movieclip",
+      timeline: { layers: [makeLayer([makeEmptyFrame()])] },
+      linkage: DEFAULT_LINKAGE, scale9Grid: null,
+    };
+    const parentSym: Symbol = {
+      id: "parent-sym", name: "ParentClip", itemType: "symbol", symbolType: "movieclip",
+      timeline: { layers: [{ id: "l1", name: "Layer 1", type: "normal", visible: true, locked: false,
+        outlineMode: false, outlineColor: "#ff0000", height: 20, parentFolderId: null,
+        frames: [parentFrame], frameCount: 1 }] },
+      linkage: DEFAULT_LINKAGE, scale9Grid: null,
+    };
+    const rootInst: SymbolInstance = { id: "root-inst", type: "instance", symbolId: "parent-sym", x: 0, y: 0 };
+    const doc: FlashDocument = {
+      id: "doc-1", properties: BASE_PROPS,
+      scenes: [makeScene([makeEmptyFrame([rootInst])])],
+      library: { items: [parentSym, childSym], folders: [] },
+    };
+
+    const bytes = exportSWF(doc);
+    const tags = parseSWFTags(bytes);
+
+    const spriteTags = tags.filter((t) => t.code === TAG_DEFINE_SPRITE_CA);
+    let found = false;
+    for (const st of spriteTags) {
+      const inner = parseSpriteInnerTagsCA(st.body);
+      for (const it of inner) {
+        if (it.code === TAG_PLACE_OBJECT2_CA && (it.body[0]! & 0x80) !== 0) {
+          found = true;
+        }
+      }
+    }
+    expect(found).toBe(true);
+  });
+});

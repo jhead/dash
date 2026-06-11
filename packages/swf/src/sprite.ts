@@ -114,6 +114,10 @@ export function encodeDefineSprite(
   // All DefineShape4 / DefineEditText tags are emitted at the top level
   // (Bug 3 fix) via hoistedDefs — never inside the sprite body.
   for (const layer of layers) {
+    // Task 1125: skip guide and folder layers — guide layer content is
+    // motion-guide artwork (not rendered), folder layers are grouping-only.
+    // 'guided' layers (the actual animated layers beneath a guide) are kept.
+    if (layer.type === "guide" || layer.type === "folder") continue;
     for (const frame of layer.frames) {
       // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
       if (!frame.isKeyframe) continue;
@@ -197,6 +201,8 @@ export function encodeDefineSprite(
   // layers get higher depths (rendered in front), matching compile.ts lines ~1327-1346.
   for (let li = layers.length - 1; li >= 0; li--) {
     const layer = layers[li];
+    // Task 1125: skip guide and folder layers (same as pre-pass and main loop)
+    if (layer.type === "guide" || layer.type === "folder") continue;
     for (const frame of layer.frames) {
       if (!frame.isKeyframe) continue;
       for (const obj of frame.displayObjects) {
@@ -231,6 +237,9 @@ export function encodeDefineSprite(
 
     for (let li = 0; li < layers.length; li++) {
       const layer = layers[li];
+      // Task 1125: skip guide and folder layers — guide layer artwork is invisible;
+      // folder layers are organisational groupings with no display content.
+      if (layer.type === "guide" || layer.type === "folder") continue;
       const keyframe = getTweenedFrame(layer, frameIdx, timeline);
       // Do not skip on isEmpty — the flag can be stale; use actual displayObjects length.
       if (!keyframe || keyframe.displayObjects.length === 0) continue;
@@ -608,6 +617,7 @@ export function encodeDefineSprite(
     let frameLabel: string | null = null;
     let frameLabelType: string = "name";
     outerLabel: for (const layer of layers) {
+      if (layer.type === "guide" || layer.type === "folder") continue;
       for (const frame of layer.frames) {
         if (frame.index === frameIdx && frame.isKeyframe && frame.label) {
           frameLabel = frame.label;
@@ -626,6 +636,7 @@ export function encodeDefineSprite(
     // Emit DoAction for any keyframes with scripts at exactly this frame index
     // DoAction must appear BEFORE ShowFrame so actions execute on frame entry
     for (const layer of layers) {
+      if (layer.type === "guide" || layer.type === "folder") continue;
       for (const frame of layer.frames) {
         if (
           frame.index === frameIdx &&
@@ -650,6 +661,7 @@ export function encodeDefineSprite(
     // (those require SoundStreamHead/Block — out of scope here).
     if (soundIdMap) {
       for (const layer of layers) {
+        if (layer.type === "guide" || layer.type === "folder") continue;
         for (const frame of layer.frames) {
           if (
             frame.isKeyframe &&
