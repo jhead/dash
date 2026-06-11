@@ -606,6 +606,87 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   // SoundId references are valid. Populated during the symbol definition pass below.
   const pendingButtonSounds: Array<{ charId: number; sounds: ButtonSounds }> = [];
 
+  // Font pre-pass: collect all unique font faces from TextDisplayObjects across
+  // all scenes and emit font definition tags before any DefineEditText tags that
+  // reference them.  Key = fontKey(name, bold, italic) → SWF character ID.
+  //
+  // For SWF v8 we prefer DefineFont3 (tag 75, UTF-16) over DefineFont2 (tag 48,
+  // UCS-2). The tag body format is identical — only the tag code differs.
+  // useFont3 defaults to true; pass useFont3: false to emit DefineFont2 instead.
+  const useFont3 = options?.useFont3 !== false;
+  const fontTagCode = useFont3 ? Tag.DefineFont3 : Tag.DefineFont2;
+  // DefineFont3 stores glyph coordinates in a 20×-larger EM square than
+  // DefineFont2; emit glyph outlines at the matching scale so Ruffle renders
+  // them at the correct size.
+  const fontCoordScale = useFont3 ? 20 : 1;
+  const fontCharIdMap = new Map<string, number>();
+
+  for (const s of doc.scenes) {
+    for (const layer of s.timeline.layers) {
+      if (layer.type === "guide") continue;
+      if (layer.type === "folder") continue;
+      for (const frame of layer.frames) {
+        // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
+        if (!frame.isKeyframe) continue;
+        for (const obj of flattenDisplayObjects(frame.displayObjects)) {
+          if (obj.type !== "text") continue;
+          const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
+          if (fontCharIdMap.has(key)) continue;
+          const fontId = writer.nextCharId();
+          fontCharIdMap.set(key, fontId);
+          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale);
+          writer.writeTag(fontTagCode, fontBody);
+          // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3
+          // for all embedded fonts. Provides per-glyph stem-width hint zones
+          // that enable the FlashType sub-pixel rendering path in Ruffle.
+          // Harmlessly ignored for non-FlashType anti-alias modes.
+          if (useFont3) {
+            const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
+            writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
+          }
+          // Emit DefineFontInfo2 (tag 62) to associate the embedded font's
+          // character ID with the device font name so Flash Player / Ruffle can
+          // do device-font fallback by name.
+          {
+            const codeTable: number[] = [];
+            for (let c = 32; c <= 126; c++) codeTable.push(c);
+            const fontInfo2Body = encodeDefineFontInfo2(fontId, obj.fontFamily, obj.bold, obj.italic, codeTable);
+            writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
+          }
+        }
+      }
+    }
+  }
+
+  // Font library items pre-pass: emit DefineFont3 (or DefineFont2) tags for
+  // FontItem library items. These represent explicitly embedded fonts defined
+  // in the library panel. Any font already emitted by the text pre-pass above
+  // is skipped to avoid duplicate font definitions.
+  const fontLibraryItems = doc.library.items.filter(
+    (item): item is FontItem => item.itemType === "font"
+  );
+  for (const fontItem of fontLibraryItems) {
+    const key = fontKey(fontItem.fontName, fontItem.bold, fontItem.italic);
+    if (fontCharIdMap.has(key)) continue; // already emitted from text pre-pass
+    const fontId = writer.nextCharId();
+    fontCharIdMap.set(key, fontId);
+    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale);
+    writer.writeTag(fontTagCode, fontBody);
+    // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3.
+    if (useFont3) {
+      const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
+      writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
+    }
+    // Emit DefineFontInfo2 (tag 62) to associate the embedded font's
+    // character ID with the device font name.
+    {
+      const codeTable: number[] = [];
+      for (let c = 32; c <= 126; c++) codeTable.push(c);
+      const fontInfo2Body = encodeDefineFontInfo2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, codeTable);
+      writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
+    }
+  }
+
   // Emit DefineSprite for each symbol (using the pre-assigned IDs).
   // encodeDefineSprite returns the tag *body* (SpriteID + FrameCount + inner tags);
   // writeTag wraps it with the DefineSprite record header.
@@ -919,87 +1000,6 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   // Tracks bitmaps that have already been emitted as DefineBits tags so we
   // don't duplicate them when multiple shapes reference the same bitmap fill.
   const emittedBitmapFillCharIds = new Map<string, number>();
-
-  // Font pre-pass: collect all unique font faces from TextDisplayObjects across
-  // all scenes and emit font definition tags before any DefineEditText tags that
-  // reference them.  Key = fontKey(name, bold, italic) → SWF character ID.
-  //
-  // For SWF v8 we prefer DefineFont3 (tag 75, UTF-16) over DefineFont2 (tag 48,
-  // UCS-2). The tag body format is identical — only the tag code differs.
-  // useFont3 defaults to true; pass useFont3: false to emit DefineFont2 instead.
-  const useFont3 = options?.useFont3 !== false;
-  const fontTagCode = useFont3 ? Tag.DefineFont3 : Tag.DefineFont2;
-  // DefineFont3 stores glyph coordinates in a 20×-larger EM square than
-  // DefineFont2; emit glyph outlines at the matching scale so Ruffle renders
-  // them at the correct size.
-  const fontCoordScale = useFont3 ? 20 : 1;
-  const fontCharIdMap = new Map<string, number>();
-
-  for (const s of doc.scenes) {
-    for (const layer of s.timeline.layers) {
-      if (layer.type === "guide") continue;
-      if (layer.type === "folder") continue;
-      for (const frame of layer.frames) {
-        // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
-        if (!frame.isKeyframe) continue;
-        for (const obj of flattenDisplayObjects(frame.displayObjects)) {
-          if (obj.type !== "text") continue;
-          const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
-          if (fontCharIdMap.has(key)) continue;
-          const fontId = writer.nextCharId();
-          fontCharIdMap.set(key, fontId);
-          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale);
-          writer.writeTag(fontTagCode, fontBody);
-          // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3
-          // for all embedded fonts. Provides per-glyph stem-width hint zones
-          // that enable the FlashType sub-pixel rendering path in Ruffle.
-          // Harmlessly ignored for non-FlashType anti-alias modes.
-          if (useFont3) {
-            const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
-            writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
-          }
-          // Emit DefineFontInfo2 (tag 62) to associate the embedded font's
-          // character ID with the device font name so Flash Player / Ruffle can
-          // do device-font fallback by name.
-          {
-            const codeTable: number[] = [];
-            for (let c = 32; c <= 126; c++) codeTable.push(c);
-            const fontInfo2Body = encodeDefineFontInfo2(fontId, obj.fontFamily, obj.bold, obj.italic, codeTable);
-            writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
-          }
-        }
-      }
-    }
-  }
-
-  // Font library items pre-pass: emit DefineFont3 (or DefineFont2) tags for
-  // FontItem library items. These represent explicitly embedded fonts defined
-  // in the library panel. Any font already emitted by the text pre-pass above
-  // is skipped to avoid duplicate font definitions.
-  const fontLibraryItems = doc.library.items.filter(
-    (item): item is FontItem => item.itemType === "font"
-  );
-  for (const fontItem of fontLibraryItems) {
-    const key = fontKey(fontItem.fontName, fontItem.bold, fontItem.italic);
-    if (fontCharIdMap.has(key)) continue; // already emitted from text pre-pass
-    const fontId = writer.nextCharId();
-    fontCharIdMap.set(key, fontId);
-    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale);
-    writer.writeTag(fontTagCode, fontBody);
-    // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3.
-    if (useFont3) {
-      const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
-      writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
-    }
-    // Emit DefineFontInfo2 (tag 62) to associate the embedded font's
-    // character ID with the device font name.
-    {
-      const codeTable: number[] = [];
-      for (let c = 32; c <= 126; c++) codeTable.push(c);
-      const fontInfo2Body = encodeDefineFontInfo2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, codeTable);
-      writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
-    }
-  }
 
   // morphShapeObjIds: set of object IDs that have been encoded as DefineMorphShape.
   // Used during the frame loop to detect morph shapes and use ratio-based placement.

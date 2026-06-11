@@ -9,7 +9,7 @@
  *
  * Acceptance criteria (task 0902):
  *   - All PlaceObject2 charIds have corresponding definitions.
- *   - Spacing-9 charIds (630, 639, …) are DefineButton2 per-instance buttons,
+ *   - Per-instance charIds are DefineButton2 per-instance buttons,
  *     which IS correct SWF.
  */
 
@@ -139,10 +139,10 @@ describe("Magnet.fla: all PlaceObject2 charIds are defined (task 0902)", () => {
     ).toHaveLength(0);
   });
 
-  it("spacing-9 charIds (630, 639, ...) are DefineButton2 (per-instance button) definitions", () => {
-    // Task 0902 originally reported 113 charIds (630, 639, 648, ...) as "missing".
+  it("per-instance button charIds are DefineButton2 definitions", () => {
+    // Task 0902 originally reported 113 charIds as "missing".
     // These are actually per-instance DefineButton2 characters created when button
-    // instances carry per-instance on() handlers. Verify at least one exists.
+    // instances carry per-instance on() handlers. Verify at least 100 exist.
     const button2CharIds = new Set<number>();
     for (const tag of tags) {
       if (tag.type === 34 && tag.body.length >= 2) { // DefineButton2
@@ -153,8 +153,5 @@ describe("Magnet.fla: all PlaceObject2 charIds are defined (task 0902)", () => {
 
     // There should be 9 button symbols (pre-pass) + 113 per-instance buttons = 122 total
     expect(button2CharIds.size).toBeGreaterThanOrEqual(100);
-
-    // charId 630 should be a DefineButton2 (first per-instance button)
-    expect(button2CharIds.has(630)).toBe(true);
   });
 });
