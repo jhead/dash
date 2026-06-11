@@ -686,6 +686,18 @@ export interface JsflTimeline {
    * Not supported; stub.
    */
   showLayerMasking(layerIndex?: number): void;
+  /**
+   * Set a property on the layer at layerIndex.
+   * Supported properties: 'name', 'layerType', 'locked', 'visible', 'color', 'outline', 'parentLayer'.
+   * Flash 8 JSFL API: tl.setLayerProperty(layerIndex, property, value)
+   */
+  setLayerProperty(layerIndex: number, property: string, value: unknown): void;
+  /**
+   * Get a property from the layer at layerIndex.
+   * Supported properties: 'name', 'layerType', 'locked', 'visible', 'color', 'outline', 'parentLayer'.
+   * Flash 8 JSFL API: tl.getLayerProperty(layerIndex, property)
+   */
+  getLayerProperty(layerIndex: number, property: string): unknown;
 }
 
 function makeTimelineProxy(state: RuntimeState): JsflTimeline {
@@ -1156,6 +1168,67 @@ function makeTimelineProxy(state: RuntimeState): JsflTimeline {
     },
     showLayerMasking(_layerIndex?: number): void {
       console.warn('showLayerMasking: not supported');
+    },
+    setLayerProperty(layerIndex: number, property: string, value: unknown): void {
+      const scene = getScene();
+      if (!scene) return;
+      const layer = scene.timeline.layers[layerIndex];
+      if (!layer) return;
+      const layerId = layer.id;
+      switch (property) {
+        case 'name':
+          mutateTimeline((tl) => renameLayer(tl, layerId, String(value)));
+          break;
+        case 'locked':
+          mutateTimeline((tl) => setLayerLocked(tl, layerId, Boolean(value)));
+          break;
+        case 'visible':
+          mutateTimeline((tl) => setLayerVisible(tl, layerId, Boolean(value)));
+          break;
+        case 'layerType':
+          mutateTimeline((tl) => setLayerType(tl, layerId, value as LayerType));
+          break;
+        case 'color':
+        case 'outline':
+          mutateTimeline((tl) => ({
+            ...tl,
+            layers: tl.layers.map((l) =>
+              l.id === layerId ? { ...l, outlineColor: String(value) } : l
+            ),
+          }));
+          break;
+        case 'parentLayer':
+          // parentLayer is not mutable in the model; no-op
+          console.warn('[JSFL] timeline.setLayerProperty: parentLayer is read-only');
+          break;
+        default:
+          console.warn('[JSFL] timeline.setLayerProperty: unsupported property:', property);
+          break;
+      }
+    },
+    getLayerProperty(layerIndex: number, property: string): unknown {
+      const scene = getScene();
+      if (!scene) return undefined;
+      const layer = scene.timeline.layers[layerIndex];
+      if (!layer) return undefined;
+      switch (property) {
+        case 'name':
+          return layer.name;
+        case 'locked':
+          return layer.locked;
+        case 'visible':
+          return layer.visible;
+        case 'layerType':
+          return layer.type;
+        case 'color':
+        case 'outline':
+          return layer.outlineColor;
+        case 'parentLayer':
+          // parentLayer: return the parent folder layer proxy if applicable
+          return null;
+        default:
+          return undefined;
+      }
     },
   };
 }
@@ -3706,56 +3779,16 @@ function makeDocumentProxy(
       return results;
     },
     setLayerProperty(property: string, value: any): void {
-      const scene = state.doc.scenes[state.sceneIndex];
-      if (!scene) return;
-      const layer = scene.timeline.layers[state.currentLayerIndex];
-      if (!layer) return;
-      const layerId = layer.id;
-      switch (property) {
-        case 'name':
-          mutateTimeline((tl) => renameLayer(tl, layerId, String(value)));
-          break;
-        case 'locked':
-          mutateTimeline((tl) => setLayerLocked(tl, layerId, Boolean(value)));
-          break;
-        case 'visible':
-          mutateTimeline((tl) => setLayerVisible(tl, layerId, Boolean(value)));
-          break;
-        case 'layerType':
-          mutateTimeline((tl) => setLayerType(tl, layerId, value as LayerType));
-          break;
-        case 'color':
-          mutateTimeline((tl) => ({
-            ...tl,
-            layers: tl.layers.map((l) =>
-              l.id === layerId ? { ...l, outlineColor: String(value) } : l
-            ),
-          }));
-          break;
-        default:
-          console.warn('[JSFL] setLayerProperty: unsupported property:', property);
-          break;
-      }
+      // Backward-compat: doc.setLayerProperty delegates to timeline with the
+      // current layer index (Flash 8 correct API is timeline.setLayerProperty).
+      const tl = makeTimelineProxy(state);
+      tl.setLayerProperty(state.currentLayerIndex, property, value);
     },
     getLayerProperty(property: string): any {
-      const scene = state.doc.scenes[state.sceneIndex];
-      if (!scene) return undefined;
-      const layer = scene.timeline.layers[state.currentLayerIndex];
-      if (!layer) return undefined;
-      switch (property) {
-        case 'name':
-          return layer.name;
-        case 'locked':
-          return layer.locked;
-        case 'visible':
-          return layer.visible;
-        case 'layerType':
-          return layer.type;
-        case 'color':
-          return layer.outlineColor;
-        default:
-          return undefined;
-      }
+      // Backward-compat: doc.getLayerProperty delegates to timeline with the
+      // current layer index (Flash 8 correct API is timeline.getLayerProperty).
+      const tl = makeTimelineProxy(state);
+      return tl.getLayerProperty(state.currentLayerIndex, property);
     },
     getProperty(index: number): number | string | boolean | undefined {
       if (state.selectedIds.length === 0) return undefined;
