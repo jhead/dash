@@ -13,7 +13,7 @@
  * DefineSprite tag. Callers should collect hoisted definitions via the
  * `hoistedDefs` out-parameter and emit them before the sprite tag.
  */
-import type { BitmapItem, ButtonHandler, ClipAction, DisplayObject, FlashDocument, Symbol } from "@flash/core";
+import type { BitmapItem, ButtonHandler, ClipAction, DisplayObject, FlashDocument, Symbol, VideoDisplayObject } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import {
@@ -90,6 +90,33 @@ function flattenDisplayObjects(
 }
 
 // ---------------------------------------------------------------------------
+// videoFitTransform
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute a fit-transform for a VideoDisplayObject placement.
+ * The DefineVideoStream character has the stream's native pixel dimensions, so we
+ * scale it to the requested display width/height, then apply the object's own
+ * scaleX/scaleY/rotation on top. Returns `undefined` when the resulting
+ * transform is the identity (avoids emitting a redundant HasScale/HasRotate).
+ */
+function videoFitTransform(
+  vdo: VideoDisplayObject,
+  videoStreams: ReadonlyArray<{ itemId: string; width: number; height: number }>
+): { scaleX?: number; scaleY?: number; rotation?: number } | undefined {
+  const stream = videoStreams.find((s) => s.itemId === vdo.videoItemId);
+  const nativeW = stream && stream.width > 0 ? stream.width : vdo.width;
+  const nativeH = stream && stream.height > 0 ? stream.height : vdo.height;
+  const fitX = nativeW > 0 ? vdo.width / nativeW : 1;
+  const fitY = nativeH > 0 ? vdo.height / nativeH : 1;
+  const scaleX = fitX * (vdo.scaleX ?? 1);
+  const scaleY = fitY * (vdo.scaleY ?? 1);
+  const rotation = vdo.rotation ?? 0;
+  if (scaleX === 1 && scaleY === 1 && rotation === 0) return undefined;
+  return { scaleX, scaleY, rotation };
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -121,7 +148,12 @@ export function encodeDefineSprite(
    *  non-null `sound` field will emit StartSound (tag 15) tags inside the
    *  sprite body (task 1123). Stream-mode sounds are skipped (need
    *  SoundStreamHead/Block — out of scope). */
-  soundIdMap?: Map<string, number>
+  soundIdMap?: Map<string, number>,
+  /** Maps VideoItem id → SWF character ID for video streams. Needed for
+   *  VideoDisplayObject placement inside symbol timelines. */
+  videoCharIdMap?: Map<string, number>,
+  /** Video stream info (dimensions) for computing fit-transform for video objects. */
+  videoStreams?: ReadonlyArray<{ itemId: string; width: number; height: number }>
 ): Uint8Array {
   const timeline = symbol.timeline;
   const layers = timeline.layers;
@@ -437,6 +469,15 @@ export function encodeDefineSprite(
       if ("skewX" in displayObj) skewX = (displayObj as { skewX: number }).skewX ?? 0;
       if ("skewY" in displayObj) skewY = (displayObj as { skewY: number }).skewY ?? 0;
 
+      // Apply registrationPoint offset for symbol instances (matches compile.ts)
+      if (displayObj.type === "instance") {
+        const inst = displayObj as import("@flash/core").SymbolInstance;
+        if (inst.registrationPoint) {
+          x -= inst.registrationPoint.x;
+          y -= inst.registrationPoint.y;
+        }
+      }
+
       // Bug 1103 fix: compute colorEffectKey for change detection
       const thisColorEffectKey = (() => {
         if (
@@ -584,6 +625,15 @@ export function encodeDefineSprite(
               } else {
                 spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y)));
               }
+            }
+          }
+        } else if (displayObj.type === "video") {
+          if (videoCharIdMap) {
+            const vdo = displayObj as VideoDisplayObject;
+            const charId = videoCharIdMap.get(vdo.videoItemId);
+            if (charId !== undefined) {
+              const transform = videoFitTransform(vdo, videoStreams ?? []);
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y, transform)));
             }
           }
         } else if (displayObj.type === "instance") {
@@ -825,6 +875,15 @@ export function encodeDefineSprite(
               } else {
                 spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(refCharId, depth, x, y, instanceTransform, replaceChar)));
               }
+            }
+          }
+        } else if (displayObj.type === "video") {
+          if (videoCharIdMap) {
+            const vdo = displayObj as VideoDisplayObject;
+            const charId = videoCharIdMap.get(vdo.videoItemId);
+            if (charId !== undefined) {
+              const transform = videoFitTransform(vdo, videoStreams ?? []);
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, transform, replaceChar)));
             }
           }
         }
