@@ -1113,8 +1113,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               morphCharId,
               startObj.shape.paths,
               endObj.shape.paths,
-              null,
-              null,
+              startKf.shapeHints ?? null,
+              endKf.shapeHints ?? null,
               emittedBitmapFillCharIds.size > 0 ? emittedBitmapFillCharIds : undefined
             );
             writer.writeTag(Tag.DefineMorphShape2, morphBody);
