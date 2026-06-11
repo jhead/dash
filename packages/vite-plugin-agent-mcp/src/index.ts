@@ -658,6 +658,37 @@ function createMcpServerForRequest(): McpServer {
   );
 
   server.registerTool(
+    "stage_get_bounds",
+    {
+      title: "Get Object Bounds",
+      description:
+        "Get the axis-aligned bounding box of a display object by id. " +
+        "Returns { x, y, width, height } in stage coordinates. " +
+        "Returns { x:0, y:0, width:0, height:0 } if the object is not found.",
+      inputSchema: z.object({
+        id: z.string().describe('Display object id'),
+      }),
+    },
+    async (params) => callTool("stage_get_bounds", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
+    "stage_duplicate",
+    {
+      title: "Duplicate Stage Objects",
+      description:
+        "Duplicate one or more display objects, placing the copies offset from the originals. " +
+        "Returns { duplicatedIds } — the ids of the newly created copies.",
+      inputSchema: z.object({
+        ids: z.array(z.string()).describe('Display object ids to duplicate'),
+        offsetX: z.number().optional().default(10).describe('X offset for duplicates (default: 10)'),
+        offsetY: z.number().optional().default(10).describe('Y offset for duplicates (default: 10)'),
+      }),
+    },
+    async (params) => callTool("stage_duplicate", params as Record<string, unknown>)
+  );
+
+  server.registerTool(
     "selection_get",
     {
       title: "Get Selection",

@@ -255,6 +255,10 @@ export const StageUpdateParamsSchema = z.object({
   layerId: z.string().optional(),
   frameIndex: z.number().int().nonnegative().optional(),
   updates: z.record(z.string(), z.unknown()),
+  blendMode: z.string().optional().describe('Blend mode (normal, multiply, screen, overlay, etc.)'),
+  loopMode: z.enum(['loop', 'play-once', 'single-frame']).optional(),
+  firstFrame: z.number().int().min(0).optional(),
+  colorEffect: z.object({ type: z.string() }).passthrough().optional().describe('Color effect (alpha, tint, brightness, advanced)'),
 });
 export type StageUpdateParams = z.infer<typeof StageUpdateParamsSchema>;
 
@@ -732,6 +736,36 @@ export const StageFindInstancesResultSchema = z.object({
 export type StageFindInstancesResult = z.infer<typeof StageFindInstancesResultSchema>
 
 // ---------------------------------------------------------------------------
+// stage_get_bounds
+// ---------------------------------------------------------------------------
+
+export const StageGetBoundsParamsSchema = z.object({
+  id: z.string().describe('Display object id'),
+})
+export type StageGetBoundsParams = z.infer<typeof StageGetBoundsParamsSchema>
+
+export const StageGetBoundsResultSchema = z.object({
+  x: z.number(), y: z.number(), width: z.number(), height: z.number(),
+})
+export type StageGetBoundsResult = z.infer<typeof StageGetBoundsResultSchema>
+
+// ---------------------------------------------------------------------------
+// stage_duplicate
+// ---------------------------------------------------------------------------
+
+export const StageDuplicateParamsSchema = z.object({
+  ids: z.array(z.string()).describe('Display object ids to duplicate'),
+  offsetX: z.number().optional().default(10).describe('X offset for duplicates'),
+  offsetY: z.number().optional().default(10).describe('Y offset for duplicates'),
+})
+export type StageDuplicateParams = z.infer<typeof StageDuplicateParamsSchema>
+
+export const StageDuplicateResultSchema = z.object({
+  duplicatedIds: z.array(z.string()),
+})
+export type StageDuplicateResult = z.infer<typeof StageDuplicateResultSchema>
+
+// ---------------------------------------------------------------------------
 // library_use_count
 // ---------------------------------------------------------------------------
 
@@ -825,6 +859,8 @@ export const ALL_COMMANDS = [
   // stage utilities
   "stage_move_selection",
   "stage_find_instances",
+  "stage_get_bounds",
+  "stage_duplicate",
   // library utilities
   "library_use_count",
 ] as const;

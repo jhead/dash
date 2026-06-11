@@ -52,6 +52,8 @@ import type {
   SceneReorderResult,
   StageFindInstancesResult,
   LibraryUseCountResult,
+  StageGetBoundsResult,
+  StageDuplicateResult,
 } from "@flash/agent-protocol";
 import type { FlashDocument, LayerType, SymbolType, FlashFilter } from "@flash/core";
 import type { FrameClipboard } from "@flash/core";
@@ -62,6 +64,7 @@ import {
   createLineShape,
   transformedShapeBounds,
   getUnionBounds,
+  getTransformedBounds,
   addLayer,
   deleteLayer,
   renameLayer,
@@ -2115,6 +2118,96 @@ const handlers: Record<string, AnyHandler> = {
     });
 
     return { instances };
+  },
+
+  // =========================================================================
+  // Stage utilities (continued)
+  // =========================================================================
+
+  stage_get_bounds(params: { id: string }): StageGetBoundsResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+
+    for (const scene of doc.scenes) {
+      for (const layer of scene.timeline.layers) {
+        for (const frame of layer.frames) {
+          if (!frame.isKeyframe) continue;
+          const obj = frame.displayObjects.find((o) => o.id === params.id);
+          if (!obj) continue;
+          const bounds = getTransformedBounds(obj);
+          return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+        }
+      }
+    }
+
+    // Not found
+    return { x: 0, y: 0, width: 0, height: 0 };
+  },
+
+  stage_duplicate(params: {
+    ids: string[];
+    offsetX?: number;
+    offsetY?: number;
+  }): StageDuplicateResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    const offsetX = params.offsetX ?? 10;
+    const offsetY = params.offsetY ?? 10;
+    const duplicatedIds: string[] = [];
+
+    // Build a map from id → { sceneIndex, layerId, frameIndex, obj } for all requested ids
+    type FoundObj = {
+      sceneIndex: number;
+      layerId: string;
+      frameIndex: number;
+      obj: DisplayObject;
+    };
+    const found = new Map<string, FoundObj>();
+
+    for (let si = 0; si < doc.scenes.length; si++) {
+      const scene = doc.scenes[si];
+      for (const layer of scene.timeline.layers) {
+        for (const frame of layer.frames) {
+          if (!frame.isKeyframe) continue;
+          for (const obj of frame.displayObjects) {
+            if (params.ids.includes(obj.id) && !found.has(obj.id)) {
+              found.set(obj.id, {
+                sceneIndex: si,
+                layerId: layer.id,
+                frameIndex: frame.index,
+                obj,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (found.size === 0) {
+      return { duplicatedIds: [] };
+    }
+
+    // Apply all clones in a single doc mutation
+    let newDoc = doc;
+    for (const [, { sceneIndex, layerId, frameIndex, obj }] of found) {
+      const clone = structuredClone(obj) as DisplayObject;
+      const newId = nextAgentObjId("dup");
+      // Override the id on the clone (structuredClone gives a deep copy but same id)
+      (clone as { id: string }).id = newId;
+      // Offset position
+      const ox = "x" in clone ? (clone as { x: number }).x : 0;
+      const oy = "y" in clone ? (clone as { y: number }).y : 0;
+      (clone as { x: number }).x = ox + offsetX;
+      (clone as { y: number }).y = oy + offsetY;
+
+      newDoc = withSceneTimeline(newDoc, sceneIndex, (t) =>
+        addDisplayObject(t, layerId, frameIndex, clone)
+      );
+      duplicatedIds.push(newId);
+    }
+
+    cb.pushDoc(newDoc);
+    return { duplicatedIds };
   },
 
   // =========================================================================
