@@ -15,7 +15,7 @@
 import { describe, it, expect } from "vitest";
 import { encodeSoundInfo, encodeStartSound } from "../sounds.js";
 import { compileDocument } from "../compile.js";
-import type { FlashDocument, SoundItem, SoundLinkage } from "@flash/core";
+import type { FlashDocument, Frame, SoundItem, SoundLinkage } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Tag constants
@@ -95,7 +95,7 @@ function makeDoc(
   for (const { frameIdx, sound } of frameSounds) {
     frameMap.set(frameIdx, sound);
   }
-  const frames = [];
+  const frames: Frame[] = [];
   for (let i = 0; i <= maxFrame; i++) {
     frames.push({
       index: i,
@@ -107,12 +107,15 @@ function makeDoc(
       script: "",
       sound: frameMap.get(i) ?? null,
       motionEase: 0,
+      motionEaseType: "none",
       motionRotate: "none" as const,
       motionRotateCount: 0,
       motionOrientToPath: false,
       motionSync: false,
+      motionSnap: false,
       motionScale: false,
       shapeEase: 0,
+      shapeEaseType: "none",
       shapeBlend: "distributive" as const,
       displayObjects: [],
     });
@@ -128,12 +131,15 @@ function makeDoc(
       script: "",
       sound: null,
       motionEase: 0,
+      motionEaseType: "none",
       motionRotate: "none" as const,
       motionRotateCount: 0,
       motionOrientToPath: false,
       motionSync: false,
+      motionSnap: false,
       motionScale: false,
       shapeEase: 0,
+      shapeEaseType: "none",
       shapeBlend: "distributive" as const,
       displayObjects: [],
     });
