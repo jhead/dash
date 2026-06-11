@@ -23,9 +23,9 @@
  * Minimal shape: single straight-line path, no fill.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { encodeDefineShape4, encodePlaceObject2 } from "../shapes.js";
-import type { Shape } from "@flash/core";
+import type { Shape, SolidStroke } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -449,6 +449,190 @@ describe("DefineShape4 — degenerate path filtering", () => {
     };
     const body = encodeDefineShape4(1, shape);
     expect(body.length).toBeGreaterThan(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-solid stroke style fallback (task 1069)
+// ---------------------------------------------------------------------------
+
+describe("DefineShape4 — non-solid stroke style fallback", () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  /**
+   * Helper: build a shape with one stroke-only path using the given StrokeStyle.
+   * The stroke has the same color/width/caps/joints so any differences between
+   * encoded outputs would come only from the style field.
+   */
+  function makeNonSolidStrokeShape(styleType: string): Shape {
+    let style: SolidStroke["style"];
+    switch (styleType) {
+      case "dashed":
+        style = { type: "dashed", dashLength: 8, gapLength: 4 };
+        break;
+      case "dotted":
+        style = { type: "dotted", dotSpacing: 6 };
+        break;
+      case "ragged":
+        style = { type: "ragged", roughness: "normal", pattern: "simple", waveHeight: "wavy" };
+        break;
+      case "stippled":
+        style = { type: "stippled", dotSize: "small", dotVariation: "oneSize", density: "dense" };
+        break;
+      case "hatched":
+        style = { type: "hatched", hatchThickness: "medium", space: "close", jiggle: "none", rotate: "none", curve: "straight", length: "equal" };
+        break;
+      default:
+        style = { type: "solid" };
+    }
+    return {
+      id: "test",
+      paths: [
+        {
+          start: { x: 0, y: 0 },
+          segments: [{ type: "line", to: { x: 50, y: 0 } }],
+          closed: false,
+          stroke: {
+            type: "solid",
+            color: { r: 0, g: 0, b: 0, a: 255 },
+            width: 2,
+            caps: "round",
+            joints: "round",
+            miterLimit: 3,
+            style,
+          },
+        },
+      ],
+    };
+  }
+
+  it("encodes a dashed stroke without throwing", () => {
+    const body = encodeDefineShape4(1, makeNonSolidStrokeShape("dashed"));
+    expect(body).toBeInstanceOf(Uint8Array);
+    expect(body.length).toBeGreaterThan(10);
+  });
+
+  it("emits a console.warn for dashed stroke style", () => {
+    encodeDefineShape4(1, makeNonSolidStrokeShape("dashed"));
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("dashed");
+  });
+
+  it("emits a console.warn for dotted stroke style", () => {
+    encodeDefineShape4(1, makeNonSolidStrokeShape("dotted"));
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("dotted");
+  });
+
+  it("emits a console.warn for ragged stroke style", () => {
+    encodeDefineShape4(1, makeNonSolidStrokeShape("ragged"));
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("ragged");
+  });
+
+  it("emits a console.warn for stippled stroke style", () => {
+    encodeDefineShape4(1, makeNonSolidStrokeShape("stippled"));
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("stippled");
+  });
+
+  it("emits a console.warn for hatched stroke style", () => {
+    encodeDefineShape4(1, makeNonSolidStrokeShape("hatched"));
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("hatched");
+  });
+
+  it("does NOT warn for a solid stroke style", () => {
+    const solidShape = makeNonSolidStrokeShape("solid");
+    encodeDefineShape4(1, solidShape);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("non-solid stroke encodes as a valid LINESTYLE2 (same bytes as an equivalent solid stroke)", () => {
+    // Since SWF has no native dash encoding, a dashed stroke encodes identically
+    // to a solid stroke with the same color/width/caps/joints.
+    const dashedShape = makeNonSolidStrokeShape("dashed");
+    const solidShape: Shape = {
+      id: "test",
+      paths: [
+        {
+          ...dashedShape.paths[0],
+          stroke: {
+            type: "solid",
+            color: { r: 0, g: 0, b: 0, a: 255 },
+            width: 2,
+            caps: "round",
+            joints: "round",
+            miterLimit: 3,
+            // no style field
+          },
+        },
+      ],
+    };
+    const dashedBody = encodeDefineShape4(1, dashedShape);
+    const solidBody = encodeDefineShape4(1, solidShape);
+    // Bytes must be identical — dashed falls back to solid LINESTYLE2
+    expect(dashedBody).toEqual(solidBody);
+  });
+
+  it("two strokes with different styles but same color/width are not deduplicated (preserves semantic correctness)", () => {
+    // Both strokes have same color/width/caps but different styles.
+    // They should produce TWO LINESTYLE2 entries in the style array.
+    const shape: Shape = {
+      id: "test",
+      paths: [
+        {
+          start: { x: 0, y: 0 },
+          segments: [{ type: "line", to: { x: 50, y: 0 } }],
+          closed: false,
+          stroke: {
+            type: "solid",
+            color: { r: 255, g: 0, b: 0, a: 255 },
+            width: 2,
+            caps: "round",
+            joints: "round",
+            miterLimit: 3,
+            style: { type: "dashed", dashLength: 8, gapLength: 4 },
+          },
+        },
+        {
+          start: { x: 0, y: 10 },
+          segments: [{ type: "line", to: { x: 50, y: 10 } }],
+          closed: false,
+          stroke: {
+            type: "solid",
+            color: { r: 255, g: 0, b: 0, a: 255 },
+            width: 2,
+            caps: "round",
+            joints: "round",
+            miterLimit: 3,
+            style: { type: "dotted", dotSpacing: 6 },
+          },
+        },
+      ],
+    };
+    const body = encodeDefineShape4(1, shape);
+    // LINESTYLE2 count byte should be 2 (two distinct styles)
+    // We can verify this by comparing with a shape that has two identical styles (count=1)
+    const shapeWithSameStyle: Shape = {
+      id: "test",
+      paths: [
+        { ...shape.paths[0], stroke: { ...(shape.paths[0].stroke as SolidStroke), style: { type: "dashed", dashLength: 8, gapLength: 4 } } },
+        { ...shape.paths[1], stroke: { ...(shape.paths[1].stroke as SolidStroke), style: { type: "dashed", dashLength: 8, gapLength: 4 } } },
+      ],
+    };
+    const bodyWithSameStyle = encodeDefineShape4(1, shapeWithSameStyle);
+    // Shape with two different styles should be LARGER than with two identical styles
+    // (because identical styles are deduplicated to one LINESTYLE2 entry)
+    expect(body.length).toBeGreaterThan(bodyWithSameStyle.length);
   });
 });
 

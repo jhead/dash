@@ -482,6 +482,22 @@ export function encodeDefineShape4(
     if (path.stroke && path.stroke.type === "solid") {
       const s = path.stroke;
       const c = s.color;
+      // Warn when the stroke has a non-solid visual style (dashed/dotted/ragged/stippled/hatched).
+      // The SWF LINESTYLE2 format has no native encoding for these patterns — they are a
+      // Flash authoring UI concept only.  Ruffle and all other SWF players render LINESTYLE2
+      // as a solid stroke regardless; the visual style is preserved only in the Canvas renderer
+      // (renderer.ts applyStrokeDashStyle).  We emit a solid stroke as the best approximation.
+      if (s.style && s.style.type !== "solid") {
+        console.warn(
+          `[SWF encoder] Non-solid stroke style "${s.style.type}" cannot be encoded in LINESTYLE2. ` +
+          `Falling back to solid stroke. The dash/dot/hatch pattern will not appear in the published SWF.`
+        );
+      }
+      // Deduplication key includes the stroke style type so that two paths whose strokes
+      // differ only in their visual pattern are not collapsed into the same LINESTYLE2 entry.
+      // (They still both encode as solid strokes, but keeping them separate is semantically
+      // correct and avoids unexpected style bleed if the encoder is extended in the future.)
+      const styleType = s.style?.type ?? "solid";
       let found = strokes.find(
         (st) =>
           st.stroke.color.r === c.r &&
@@ -492,7 +508,8 @@ export function encodeDefineShape4(
           (st.stroke.strokeType ?? "solid") === (s.strokeType ?? "solid") &&
           st.stroke.caps === s.caps &&
           st.stroke.joints === s.joints &&
-          st.stroke.miterLimit === s.miterLimit
+          st.stroke.miterLimit === s.miterLimit &&
+          (st.stroke.style?.type ?? "solid") === styleType
       );
       if (!found) {
         found = { stroke: s, index: strokes.length + 1 };
