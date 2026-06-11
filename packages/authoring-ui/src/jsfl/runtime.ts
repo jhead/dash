@@ -17,8 +17,11 @@ import type {
   SymbolType,
   LibraryItem,
   FlashFilter,
+  Fill,
+  SolidStroke,
 } from "@flash/core";
 import {
+  hexToColor,
   createRectShape,
   createOvalShape,
   createLineShape,
@@ -1599,6 +1602,33 @@ export interface JsflDocument {
    * Compile and play the movie.  Not supported in browser context; stub.
    */
   testMovie(): void;
+  /**
+   * Set the current fill color used by drawing tools.
+   * colorString: CSS hex color, e.g. '#ff0000'.
+   */
+  setFillColor(colorString: string): void;
+  /**
+   * Set the current stroke color used by drawing tools.
+   * colorString: CSS hex color, e.g. '#000000'.
+   */
+  setStrokeColor(colorString: string): void;
+  /**
+   * Set the current stroke size (width in pixels) used by drawing tools.
+   */
+  setStrokeSize(size: number): void;
+  /**
+   * Set the current stroke style used by drawing tools.
+   * style: 'solid' | 'dashed' | 'dotted' etc.
+   */
+  setStrokeStyle(style: string): void;
+  /** Current fill color as CSS hex string (read-only). */
+  readonly fillColor: string;
+  /** Current stroke color as CSS hex string (read-only). */
+  readonly strokeColor: string;
+  /** Current stroke size in pixels (read-only). */
+  readonly strokeSize: number;
+  /** Current stroke style as a string (read-only). */
+  readonly strokeStyle: string;
 }
 
 function getActiveLayerId(state: RuntimeState): string | null {
@@ -1621,6 +1651,12 @@ function makeDocumentProxy(
     );
     state.doc = { ...state.doc, scenes: newScenes };
   }
+
+  // Drawing tool state — persists for the lifetime of this document proxy.
+  let _fillColor = '#000000';
+  let _strokeColor = '#000000';
+  let _strokeSize = 1;
+  let _strokeStyle = 'solid';
 
   return {
     get uuid() {
@@ -1712,13 +1748,22 @@ function makeDocumentProxy(
     addNewRectangle(bounds, _cornerRadius) {
       const layerId = getActiveLayerId(state);
       if (!layerId) return;
+      const fill: Fill = { type: "solid", color: hexToColor(_fillColor) };
+      const stroke: SolidStroke = {
+        type: "solid",
+        color: hexToColor(_strokeColor),
+        width: _strokeSize,
+        caps: "round",
+        joints: "round",
+        miterLimit: 3,
+      };
       const shape = createRectShape(
         bounds.left,
         bounds.top,
         bounds.right,
         bounds.bottom,
-        null,
-        null
+        fill,
+        stroke
       );
       const obj: ShapeDisplayObject = {
         type: "shape",
@@ -1734,13 +1779,22 @@ function makeDocumentProxy(
     addNewOval(bounds) {
       const layerId = getActiveLayerId(state);
       if (!layerId) return;
+      const fill: Fill = { type: "solid", color: hexToColor(_fillColor) };
+      const stroke: SolidStroke = {
+        type: "solid",
+        color: hexToColor(_strokeColor),
+        width: _strokeSize,
+        caps: "round",
+        joints: "round",
+        miterLimit: 3,
+      };
       const shape = createOvalShape(
         bounds.left,
         bounds.top,
         bounds.right,
         bounds.bottom,
-        null,
-        null
+        fill,
+        stroke
       );
       const obj: ShapeDisplayObject = {
         type: "shape",
@@ -2984,6 +3038,30 @@ function makeDocumentProxy(
     },
     testMovie(): void {
       console.warn('testMovie: not supported');
+    },
+    setFillColor(colorString: string): void {
+      _fillColor = colorString;
+    },
+    setStrokeColor(colorString: string): void {
+      _strokeColor = colorString;
+    },
+    setStrokeSize(size: number): void {
+      _strokeSize = size;
+    },
+    setStrokeStyle(style: string): void {
+      _strokeStyle = style;
+    },
+    get fillColor(): string {
+      return _fillColor;
+    },
+    get strokeColor(): string {
+      return _strokeColor;
+    },
+    get strokeSize(): number {
+      return _strokeSize;
+    },
+    get strokeStyle(): string {
+      return _strokeStyle;
     },
   };
 }
