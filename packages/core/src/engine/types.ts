@@ -340,6 +340,8 @@ export interface ShapeDisplayObject {
   readonly blendMode?: 'normal' | 'layer' | 'multiply' | 'screen' | 'lighten' | 'darken' |
                        'difference' | 'add' | 'subtract' | 'invert' | 'alpha' | 'erase' |
                        'overlay' | 'hardlight';
+  /** Flash 8 color effect (CXFormWithAlpha). */
+  readonly colorEffect?: ColorEffect;
   /** Cache as bitmap for filter rendering. Default: false. */
   readonly cacheAsBitmap?: boolean;
   /** Flash 8 filters applied to this object. */
@@ -557,6 +559,8 @@ export interface TextDisplayObject {
   readonly y: number;
   readonly width: number;   // bounding box width (auto-grow for static text)
   readonly height: number;  // bounding box height
+  /** Whether the object is visible. Default: true. */
+  readonly visible?: boolean;
   readonly text: string;
   readonly textType: TextType;
   readonly fontFamily: string;   // e.g. "Arial"
@@ -720,6 +724,8 @@ export interface BitmapDisplayObject {
                        'overlay' | 'hardlight';
   /** Color effect applied to this bitmap (CXFormWithAlpha). */
   readonly colorEffect?: ColorEffect;
+  /** Cache as bitmap for filter rendering. Default: false. */
+  readonly cacheAsBitmap?: boolean;
   /** Flash 8 filters applied to this object. */
   readonly filters?: readonly FlashFilter[];
   /** AS2 instance name — makes the bitmap accessible as _root.<name> in scripts. */
