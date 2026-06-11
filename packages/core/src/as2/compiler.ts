@@ -2213,25 +2213,28 @@ class Compiler {
         return;
       }
 
-      // Built-in: loadMovie(url, target) → push target + push url + ActionGetURL2 method=0x40
+      // Built-in: loadMovie(url, target) → push url + push target + ActionGetURL2 method=0x40
+      // ActionGetURL2 pops target FIRST (top of stack), then url (deeper).
+      // So push url first (deeper), then target last (on top).
       if (name === 'loadMovie') {
-        this.compileExpr(expr.args[1] ?? { type: 'Literal', value: '' } as any);
-        this.compileExpr(expr.args[0] ?? { type: 'Literal', value: '' } as any);
+        this.compileExpr(expr.args[0] ?? { type: 'Literal', value: '' } as any); // url (deeper)
+        this.compileExpr(expr.args[1] ?? { type: 'Literal', value: '' } as any); // target (on top)
         // ActionGetURL2: method=0x40 (load movie into target)
         this.emitWithPayload(0x9a, [0x40]);
         this.pushUndefined();
         return;
       }
 
-      // Built-in: loadMovieNum(url, level) → push "_level"+level + push url + ActionGetURL2 method=0x40
+      // Built-in: loadMovieNum(url, level) → push url + push "_level"+level + ActionGetURL2 method=0x40
+      // ActionGetURL2 pops target FIRST (top of stack), then url (deeper).
+      // So push url first (deeper), then target string "_level<N>" last (on top).
       if (name === 'loadMovieNum') {
-        // Construct target string "_level<N>" from the level argument
-        // Push "_level" + level as a concatenated string via stack operations
+        // Push url first (deeper)
+        this.compileExpr(expr.args[0] ?? { type: 'Literal', value: '' } as any);
+        // Construct target string "_level<N>" from the level argument and push it on top
         this.pushString('_level');
         this.compileExpr(expr.args[1] ?? { type: 'Literal', value: 0 } as any);
         this.emit(0x47); // ActionAdd2 — concatenate "_level" + level
-        // Now push the url
-        this.compileExpr(expr.args[0] ?? { type: 'Literal', value: '' } as any);
         // ActionGetURL2: method=0x40 (load movie into target)
         this.emitWithPayload(0x9a, [0x40]);
         this.pushUndefined();

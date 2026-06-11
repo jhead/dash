@@ -2,9 +2,9 @@
   "id": "1105-as2-loadmovie-loadmovienum-push-url-and-target-i",
   "title": "AS2: loadMovie/loadMovieNum push url and target in wrong order for ActionGetURL2",
   "description": "In packages/core/src/as2/compiler.ts, the handlers for loadMovie(url, target) and loadMovieNum(url, level) push url and target onto the stack in the wrong order for ActionGetURL2 (0x9F per avm1/opcode.rs). ActionGetURL2 pops: window/target first (bottom), then url (top). So the correct push order is: push target FIRST (deeper), push url LAST (top). If the compiler pushes url first and target second, ActionGetURL2 sees them swapped and navigates to the wrong URL. Fix: verify the push order in the loadMovie/loadMovieNum handler and swap if needed. Cross-reference ruffle/swf/src/avm1/read.rs read_get_url_2 and opcode.rs.",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-11T04:13:53Z",
-  "updated_at": "2026-06-11T04:13:53Z"
+  "updated_at": "2026-06-11T04:18:26Z"
 }
