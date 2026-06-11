@@ -903,9 +903,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       return "visible:false";
     }
     if (displayObj.type !== "instance" && displayObj.type !== "text" && displayObj.type !== "bitmap" && displayObj.type !== "shape") return null;
-    // Track standalone alpha for shape change detection
+    // Track standalone alpha and blendMode for shape change detection
     if (displayObj.type === "shape") {
       const shp = displayObj as import("@flash/core").ShapeDisplayObject;
+      if (shp.blendMode && shp.blendMode !== "normal") {
+        return `blend:${shp.blendMode};alpha:${shp.alpha ?? 1}`;
+      }
       if (shp.alpha !== undefined && shp.alpha !== 1) {
         return `alpha:${shp.alpha}`;
       }
@@ -2212,7 +2215,25 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       rotation: displayObj.rotation,
                     }
                   : undefined;
-              if (hasEnabledFilters(displayObj.filters)) {
+              const hasBlend = displayObj.type === "shape" && !!displayObj.blendMode && displayObj.blendMode !== "normal";
+              if (hasBlend) {
+                // Blend mode requires PlaceObject3 with move=true to preserve blend mode across moves
+                const placeBody = encodePlaceObject3WithBlendMode(
+                  charId,
+                  depth,
+                  x,
+                  y,
+                  displayObj.blendMode!,
+                  displayObj.filters,
+                  objTransform,
+                  undefined,
+                  undefined,
+                  true,   // move = true
+                  undefined,
+                  !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap
+                );
+                writer.writeTag(Tag.PlaceObject3, placeBody);
+              } else if (hasEnabledFilters(displayObj.filters)) {
                 // Filters require PlaceObject3 — re-emit full placement with filter list
                 const placeBody = encodePlaceObject3WithFilters(
                   charId,

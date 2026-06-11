@@ -423,8 +423,13 @@ export function encodeDefineSprite(
             scaleY: displayObj.scaleY,
             rotation: displayObj.rotation,
           } : undefined;
-          // Bug 1103 fix: encode colorEffect / visible=false / filters on move
-          if (displayObj.type === "shape" && displayObj.visible === false) {
+          // Bug 1103 fix: encode colorEffect / visible=false / filters / blend on move
+          const hasShapeBlend = displayObj.type === "shape" && !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
+          if (hasShapeBlend) {
+            // Blend mode requires PlaceObject3 with move=true to preserve blend mode across moves
+            const placeBody = encodePlaceObject3WithBlendMode(charId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, objTransform, undefined, undefined, true, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap);
+            spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
+          } else if (displayObj.type === "shape" && displayObj.visible === false) {
             const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
             spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform, true)));
           } else if (hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
