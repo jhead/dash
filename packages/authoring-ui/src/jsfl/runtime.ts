@@ -921,6 +921,8 @@ export interface JsflLibraryItem {
   readonly name: string;
   readonly itemType: string;
   readonly symbolType?: string;
+  readonly linkageClassName: string;
+  readonly scalingGrid: { left: number; top: number; right: number; bottom: number } | null;
 }
 
 export interface JsflLibrary {
@@ -997,8 +999,14 @@ function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCoun
   return {
     get items(): JsflLibraryItem[] {
       return state.doc.library.items.map((item) => {
-        const base: JsflLibraryItem = { name: item.name, itemType: item.itemType };
+        const base: JsflLibraryItem = {
+          name: item.name,
+          itemType: item.itemType,
+          linkageClassName: '',
+          scalingGrid: null,
+        };
         if (item.itemType === "symbol") {
+          const sym = item as import("@flash/core").Symbol;
           const symTypeMap: Record<string, string> = {
             movieclip: "movie clip",
             button: "button",
@@ -1006,7 +1014,16 @@ function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCoun
           };
           return {
             ...base,
-            symbolType: symTypeMap[(item as { symbolType: string }).symbolType] ?? item.itemType,
+            symbolType: symTypeMap[sym.symbolType] ?? item.itemType,
+            linkageClassName: sym.linkage?.className ?? '',
+            scalingGrid: sym.scale9Grid
+              ? {
+                  left: sym.scale9Grid.x,
+                  top: sym.scale9Grid.y,
+                  right: sym.scale9Grid.x + sym.scale9Grid.width,
+                  bottom: sym.scale9Grid.y + sym.scale9Grid.height,
+                }
+              : null,
           };
         }
         return base;
@@ -1196,6 +1213,8 @@ function makeLibraryProxy(state: RuntimeState, ids: ReturnType<typeof makeIdCoun
 // ---------------------------------------------------------------------------
 
 export interface JsflDocument {
+  /** Unique document identifier. */
+  readonly uuid: string;
   /** Document width in pixels (get/set). */
   width: number;
   /** Document height in pixels (get/set). */
@@ -1413,6 +1432,12 @@ export interface JsflDocument {
    */
   addNewLine(startPoint: { x: number; y: number }, endPoint: { x: number; y: number }): void;
   /**
+   * Convenience wrapper: create a new symbol in the library.
+   * type: "movie clip" | "button" | "graphic"
+   * Delegates to library.addNewItem(type, name).
+   */
+  addNewSymbol(name: string, type: string): any;
+  /**
    * Break apart the first selected object into its constituent display objects.
    */
   breakApart(): void;
@@ -1484,6 +1509,9 @@ function makeDocumentProxy(
   }
 
   return {
+    get uuid() {
+      return state.doc.id;
+    },
     get width() {
       return state.doc.properties.width;
     },
@@ -2640,6 +2668,9 @@ function makeDocumentProxy(
       if (!scene) return;
       mutateTimeline((tl) => addDisplayObject(tl, layerId, state.frameIndex, obj));
     },
+    addNewSymbol(name: string, type: string): any {
+      return makeDocumentProxy(state, ids).library.addNewItem(type, name);
+    },
     breakApart(): void {
       if (state.selectedIds.length === 0) return;
       const objectId = state.selectedIds[0];
@@ -2828,6 +2859,16 @@ export interface JsflFl {
   };
   /** The current clipboard contents. Always null in this runtime. */
   readonly clipboardContents: any;
+  /**
+   * Returns whether the current document has unsaved changes.
+   * Always returns false in this runtime (no persistent storage tracking).
+   */
+  documentHasUnsavedChanges(): boolean;
+  /**
+   * Show or hide the idle message in the Flash IDE.
+   * No-op stub in this runtime.
+   */
+  showIdleMessage(show: boolean): void;
 }
 
 function makeFlProxy(
@@ -2966,6 +3007,12 @@ function makeFlProxy(
     }),
     get clipboardContents(): any {
       return null;
+    },
+    documentHasUnsavedChanges(): boolean {
+      return false;
+    },
+    showIdleMessage(_show: boolean): void {
+      // no-op stub
     },
   };
 }
