@@ -22,7 +22,7 @@ import { encodeCxformWithAlpha, colorEffectToCXForm, encodeCXFormWithAlpha } fro
 import { edgeNumBits } from "./helpers.js";
 import { fontKey } from "./fonts.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "./shapes.js";
-import { encodeDefineEditText } from "./text.js";
+import { encodeDefineEditText, encodeDefineText, encodeCSMTextSettings } from "./text.js";
 import { Tag } from "./tags.js";
 import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 
@@ -213,9 +213,32 @@ export function encodeDefineButton2(
           const cid = nextCharId();
           objCharIdMap.set(obj.id, cid);
           const embeddedFontId = fontCharIdMap?.get(fontKey(obj.fontFamily, obj.bold, obj.italic));
+          if (obj.textType === "static" && embeddedFontId !== undefined) {
+            const fontSizeTwips = Math.round(obj.fontSize * 20);
+            hoistedDefs.push({
+              tagType: Tag.DefineText,
+              body: encodeDefineText(
+                cid,
+                obj.text,
+                embeddedFontId,
+                fontSizeTwips,
+                `#${obj.color.r.toString(16).padStart(2, "0")}${obj.color.g.toString(16).padStart(2, "0")}${obj.color.b.toString(16).padStart(2, "0")}`,
+                0,
+                fontSizeTwips,
+              ),
+            });
+          } else {
+            hoistedDefs.push({
+              tagType: Tag.DefineEditText,
+              body: encodeDefineEditText(cid, obj, embeddedFontId),
+            });
+          }
+          const aa = obj.antiAlias;
           hoistedDefs.push({
-            tagType: Tag.DefineEditText,
-            body: encodeDefineEditText(cid, obj, embeddedFontId),
+            tagType: Tag.CSMTextSettings,
+            body: (aa === "custom" && obj.csm)
+              ? encodeCSMTextSettings(cid, obj.csm.thickness, obj.csm.sharpness)
+              : encodeCSMTextSettings(cid, 0, 0),
           });
         } else if (obj.type === "bitmap") {
           const bitmapItem = doc.library.items.find(

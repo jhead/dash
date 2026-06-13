@@ -2,9 +2,9 @@
   "id": "1169-fla-import-button-symbol-decoded-as-graphic-defi",
   "title": "FLA import: Button symbol decoded as graphic \u2014 DefineButton2 lost on publish",
   "description": "Golden-pair oracle (fixtures/golden, tools/golden-report.mjs) deviation. The source FLA's 'PlayButton' is a BUTTON symbol: real Flash 8 publishes it as DefineButton2 (records in states UP|OVER|DOWN|HIT referencing the button-face shape). Our loadFla() imports PlayButton as symbolType='graphic' with two single-frame layers (Text, BG) \u2014 the Up/Over/Down/Hit state frames and the 'button' symbol type are dropped. Consequence: golden-report shows DefineButton2 ours=0/golden=1 and DefineSprite ours=3/golden=2 (PlayButton compiled as a plain sprite). Fix the binary FLA decoder to recognise the button symbolType and decode the 4 button state frames. Acceptance: node tools/golden-report.mjs shows DefineButton2 1/1 and DefineSprite 2/2. Related (done but not engaging this fixture): 0923, 0089, 0199, 0436.",
-  "status": "open",
+  "status": "in_progress",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-13T20:24:05Z",
-  "updated_at": "2026-06-13T20:24:05Z"
+  "updated_at": "2026-06-13T20:32:43Z"
 }

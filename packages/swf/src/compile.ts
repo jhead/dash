@@ -601,6 +601,37 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     charIdMap.set(sym.id, writer.nextCharId());
   }
 
+  // Pre-scan: find non-button symbols that are used as button instances (have
+  // buttonHandlers) anywhere in the document.  These will be compiled as inline
+  // DefineButton2 tags at instance-placement time, so they must NOT also emit a
+  // DefineSprite at the library level.
+  const graphicButtonSymbolIds = new Set<string>();
+  {
+    const allTimelines: Array<{ layers: readonly { frames: readonly { displayObjects: readonly DisplayObject[] }[] }[] }> = [
+      ...doc.scenes.map((s) => s.timeline),
+      ...symbols.map((s) => s.timeline),
+    ];
+    for (const timeline of allTimelines) {
+      for (const layer of timeline.layers) {
+        for (const frame of layer.frames) {
+          for (const obj of frame.displayObjects) {
+            const inst = obj as SymbolInstance;
+            if (
+              inst.type === "instance" &&
+              inst.buttonHandlers &&
+              inst.buttonHandlers.length > 0
+            ) {
+              const sym = symbolById.get(inst.symbolId);
+              if (sym && sym.symbolType !== "button") {
+                graphicButtonSymbolIds.add(inst.symbolId);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Collect pending DefineButtonSound emissions: { charId, sounds }.
   // These must be emitted AFTER DefineSound tags (which build soundIdMap) so all
   // SoundId references are valid. Populated during the symbol definition pass below.
@@ -839,6 +870,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       if (sym.buttonSounds) {
         pendingButtonSounds.push({ charId: symCharId, sounds: sym.buttonSounds });
       }
+    } else if (graphicButtonSymbolIds.has(sym.id)) {
+      // Non-button symbol used as a button instance: skip DefineSprite here.
+      // An inline DefineButton2 will be emitted at instance-placement time
+      // (see the instance handling loop below), which will hoist shapes/text
+      // and wrap them with the per-instance button handlers.
     } else {
       const spriteBody = encodeDefineSprite(
         symCharId,
@@ -2102,7 +2138,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                   !!displayObj.buttonHandlers && displayObj.buttonHandlers.length > 0;
                 if (hasButtonHandlers) {
                   const sym = symbolById.get(displayObj.symbolId);
-                  if (sym && sym.symbolType === "button") {
+                  if (sym && (sym.symbolType === "button" || graphicButtonSymbolIds.has(sym.id))) {
                     const instCharId = writer.nextCharId();
                     const instHoisted: Array<{ tagType: number; body: Uint8Array }> = [];
                     const buttonBody = encodeDefineButton2(
