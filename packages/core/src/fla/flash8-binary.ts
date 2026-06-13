@@ -262,6 +262,8 @@ export interface Fla8TextRun {
    * Omitted when normal (0).
    */
   readonly characterPosition?: 0 | 1 | 2;
+  /** Whether this run enables embedded-font kerning ("Auto kern"). Omitted when false. */
+  readonly autoKern?: boolean;
 }
 
 /** Map CPicText per-run vertical/rtl bytes to editor orientation (flacomdoc layout). */
@@ -366,6 +368,11 @@ export interface Fla8Text {
    * Default: true.
    */
   readonly selectable: boolean;
+  /**
+   * Whether the embedded font's kerning pairs are applied ("Auto kern").
+   * Decoded from the first text run's autoKern byte. Default: false.
+   */
+  readonly autoKern: boolean;
 }
 
 export interface Fla8BitmapRef {
@@ -2409,6 +2416,13 @@ interface TextRun {
   /** Letter spacing in FLA units (s16). */
   letterSpacing: number;
   /**
+   * Whether the run enables the embedded font's kerning pairs ("Auto kern").
+   * Decoded from the autoKern byte in the CPicText run formatting block
+   * (write order: bold, italic, 0x00, autoKern, charPos, alignment — verified
+   * against flacomdoc TimelineConverter handleText). Non-zero = on.
+   */
+  autoKern: boolean;
+  /**
    * Font rendering mode byte (F8+, ts >= 0x0d).
    * 0=device, 1=bitmap, 2=animation, 3=readability, 4=custom.
    * Undefined when ts < 0x0d (pre-Flash 8 format).
@@ -2454,8 +2468,8 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
   r.skip(2); // font category
   const bold = r.u8() !== 0;
   const italic = r.u8() !== 0;
-  r.skip(1);
-  r.skip(1); // autoKern
+  r.skip(1); // 0x00 reserved
+  const autoKern = r.u8() !== 0; // autoKern flag (flacomdoc handleText byte order)
   const characterPosition = r.u8() as 0 | 1 | 2; // 0=normal, 1=superscript, 2=subscript
   const align = r.u8();
   const leading = r.u16();      // line spacing (leading)
@@ -2493,7 +2507,7 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
     if (cs4) readCString(r);
     else readPlainString(r, unicode); // url (repeated)
   }
-  return { fontName, sizePt, color, bold, italic, align, characterPosition, vertical, rightToLeft, rotation, leading, indent, leftMargin, rightMargin, letterSpacing, renderMode, aaThickness, aaSharpness };
+  return { fontName, sizePt, color, bold, italic, align, characterPosition, autoKern, vertical, rightToLeft, rotation, leading, indent, leftMargin, rightMargin, letterSpacing, renderMode, aaThickness, aaSharpness };
 }
 
 /** Map the CPicText run renderMode byte to the editor's antiAlias string (F8+). */
@@ -2580,6 +2594,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
           ...(thisRun.rightMargin !== 0 ? { rightMargin: thisRun.rightMargin / 20 } : {}),
           ...(thisRun.letterSpacing !== 0 ? { letterSpacing: thisRun.letterSpacing / 20 } : {}),
           ...(thisRun.characterPosition !== 0 ? { characterPosition: thisRun.characterPosition } : {}),
+          ...(thisRun.autoKern ? { autoKern: true } : {}),
         });
       }
     }
@@ -2665,6 +2680,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     as2VariableName,
     scrollable,
     selectable,
+    autoKern: run?.autoKern ?? false,
     ...(autoExpand ? { autoExpand } : {}),
     ...(run?.leading ? { leading: run.leading / 20 } : {}),
     ...(run?.indent ? { indent: run.indent / 20 } : {}),

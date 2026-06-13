@@ -703,6 +703,17 @@ export interface TextDisplayObject {
    * Default: true (selectable). Static text is always non-selectable.
    */
   readonly selectable?: boolean;
+  /**
+   * Whether the field applies the embedded font's kerning pairs ("Auto kern"
+   * checkbox in the Flash 8 text Properties panel).
+   *
+   * When true and the field uses an embedded font, the SWF compiler emits the
+   * DefineFont2/3 KerningTable and enables kerning on the field so the player
+   * tightens/loosens specific glyph pairs (e.g. "AV", "To"). When false/omitted
+   * the kerning table is not consulted and glyphs use plain advances.
+   * Default: false.
+   */
+  readonly autoKern?: boolean;
 }
 
 /**

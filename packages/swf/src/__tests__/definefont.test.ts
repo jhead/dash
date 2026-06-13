@@ -314,3 +314,71 @@ describe("DefineFont3 (tag 75) — DefineEditText referencing a font compiles", 
     expect(font3Tags.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("DefineFont3 (tag 75) — Auto kern KerningTable (task 1178)", () => {
+  it("encodeDefineFont2 emits KerningCount=0 when kerning is off", async () => {
+    const { encodeDefineFont2 } = await import("../fonts.js");
+    const body = encodeDefineFont2(7, "Arial", false, false, 20, false);
+    // The KerningTable is the last field; with no kerning the final UI16 is 0.
+    const lo = body[body.length - 2];
+    const hi = body[body.length - 1];
+    expect(lo).toBe(0);
+    expect(hi).toBe(0);
+  });
+
+  it("encodeDefineFont2 appends kerning records when kerning is on", async () => {
+    const { encodeDefineFont2 } = await import("../fonts.js");
+    const off = encodeDefineFont2(7, "Arial", false, false, 20, false);
+    const on = encodeDefineFont2(7, "Arial", false, false, 20, true);
+    // The kerned body must be longer by KerningCount records (6 bytes each:
+    // UI16 left + UI16 right + SI16 adjustment, WideCodes=1).
+    const delta = on.length - off.length;
+    expect(delta).toBeGreaterThan(0);
+    expect(delta % 6).toBe(0);
+    const recordCount = delta / 6;
+    expect(recordCount).toBeGreaterThanOrEqual(10);
+
+    // The KerningCount UI16 sits where `off` previously had its trailing 00 00.
+    // In `on` that position holds the real record count.
+    const kerningCount = on[off.length - 2] | (on[off.length - 1] << 8);
+    expect(kerningCount).toBe(recordCount);
+  });
+
+  it("a dynamic autoKern field's font body is longer than a non-kern field's", () => {
+    const kernedDoc = makeDocWithText([
+      makeText({ id: "t", textType: "dynamic", fontFamily: "Arial", autoKern: true }),
+    ]);
+    const plainDoc = makeDocWithText([
+      makeText({ id: "t", textType: "dynamic", fontFamily: "Arial" }),
+    ]);
+    const kernedFont = findTags(compileDocument(kernedDoc)).find((t) => t.type === TAG_DEFINE_FONT3);
+    const plainFont = findTags(compileDocument(plainDoc)).find((t) => t.type === TAG_DEFINE_FONT3);
+    expect(kernedFont).toBeTruthy();
+    expect(plainFont).toBeTruthy();
+    // The autoKern font carries the KerningTable; the plain font does not.
+    expect(kernedFont!.body.length).toBeGreaterThan(plainFont!.body.length);
+  });
+
+  it("a static autoKern field still emits DefineText (kerning baked into advances)", () => {
+    const TAG_DEFINE_TEXT = 11;
+    // Flash 8 keeps static text in DefineText and bakes pair kerning into the
+    // per-glyph advances rather than switching to DefineEditText. This preserves
+    // golden tag inventory while still tightening kerned pairs.
+    const doc = makeDocWithText([
+      makeText({ id: "t", textType: "static", fontFamily: "Arial", autoKern: true }),
+    ]);
+    const tags = findTags(compileDocument(doc));
+    expect(tags.some((t) => t.type === TAG_DEFINE_TEXT)).toBe(true);
+  });
+
+  it("baking kerning shortens a static field's DefineText body advances ('AV')", async () => {
+    const { encodeDefineText } = await import("../text.js");
+    // 'A','V' is a kerned pair; the kerned encoding must shrink the first
+    // glyph's advance, but body length stays identical (advances are fixed-width).
+    const plain = encodeDefineText(9, "AV", 1, 240, "#000000", 0, 240, false);
+    const kerned = encodeDefineText(9, "AV", 1, 240, "#000000", 0, 240, true);
+    expect(kerned.length).toBe(plain.length);
+    // The two encodings must differ (a kern was applied to the 'A' advance).
+    expect(Buffer.from(kerned).equals(Buffer.from(plain))).toBe(false);
+  });
+});

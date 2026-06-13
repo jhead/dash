@@ -1656,6 +1656,59 @@ describe("text element colorEffect forwarding (convertFla8Text)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// autoKern forwarding (convertFla8Text) — task 1178
+// ---------------------------------------------------------------------------
+// Verifies that convertFla8Text forwards the decoded Fla8Text.autoKern flag to
+// the resulting TextDisplayObject. The "Auto kern" property is only emitted on
+// the model when true (omitted when false), mirroring the colorEffect/selectable
+// forwarding convention.
+describe("autoKern forwarding (convertFla8Text)", () => {
+  /** Minimal valid Fla8Text for autoKern conversion tests. */
+  function makeFla8KernText(overrides: Partial<Fla8Text> = {}): Fla8Text {
+    return {
+      type: "text",
+      matrix: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
+      width: 100,
+      height: 20,
+      text: "AVTo",
+      fontName: "Arial",
+      fontSize: 12,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      bold: false,
+      italic: false,
+      align: "left",
+      orientation: "horizontal",
+      instanceName: "",
+      textType: "dynamic",
+      wordWrap: false,
+      multiline: false,
+      password: false,
+      maxChars: 0,
+      hasBorder: false,
+      hasBackground: false,
+      as2VariableName: "",
+      scrollable: false,
+      selectable: true,
+      autoKern: false,
+      filters: [],
+      colorEffect: null,
+      runs: [],
+      ...overrides,
+    };
+  }
+
+  it("forwards autoKern=true to the TextDisplayObject", () => {
+    const result = convertFla8Text(makeFla8KernText({ autoKern: true }));
+    expect(result.autoKern).toBe(true);
+  });
+
+  it("omits autoKern when false (default)", () => {
+    const result = convertFla8Text(makeFla8KernText({ autoKern: false }));
+    expect(result.autoKern).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CPicText vertical/rtl byte → orientation mapping and import forwarding
 // ---------------------------------------------------------------------------
 

@@ -747,6 +747,7 @@ const handlers: Record<string, AnyHandler> = {
     html?: boolean;
     autoSize?: boolean;
     letterSpacing?: number;
+    autoKern?: boolean;
     leading?: number;
     restrict?: string;
     layerId?: string;
@@ -782,6 +783,7 @@ const handlers: Record<string, AnyHandler> = {
       ...(params.html !== undefined && { html: params.html }),
       ...(params.autoSize !== undefined && { autoSize: params.autoSize }),
       ...(params.letterSpacing !== undefined && { letterSpacing: params.letterSpacing }),
+      ...(params.autoKern !== undefined && { autoKern: params.autoKern }),
       ...(params.leading !== undefined && { leading: params.leading }),
       ...(params.restrict !== undefined && { restrict: params.restrict }),
     };

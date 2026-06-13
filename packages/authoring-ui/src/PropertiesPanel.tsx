@@ -1598,6 +1598,18 @@ function TextView({
         </>
       )}
 
+      {/* Auto kern — applies the embedded font's kerning pairs (all text types) */}
+      <div style={S.fieldGroup}>
+        <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={obj.autoKern ?? false}
+            onChange={(e) => onUpdateObject(obj.id, { autoKern: e.target.checked } as Partial<DisplayObject>)}
+          />
+          Auto kern
+        </label>
+      </div>
+
       {/* Border toggle — dynamic and input text */}
       {(obj.textType === "dynamic" || obj.textType === "input") && (
         <>

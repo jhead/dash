@@ -1,10 +1,10 @@
 {
   "id": "1178-auto-kern-text-property-model-ui-fla-import-swf-",
   "title": "Auto kern text property \u2014 model, UI, FLA import, SWF font kerning table",
-  "description": "Flash 8 text Properties-panel parity. The 'Auto kern' checkbox makes the field apply the embedded font's kerning pairs. Fully ABSENT today (no model/UI/import/compile). Add: (1) an autoKern boolean field on TextDisplayObject. (2) UI checkbox in PropertiesPanel TextView. (3) FLA import of the autoKern flag. (4) SWF compile: when autoKern is on for an embedded-font field, emit the DefineFont2/3 KerningTable (FontFlagsHasLayout plus kerning records) so Ruffle applies pair kerning; when off, omit it. Verify in Ruffle that kerned pairs (e.g. AV, To) tighten only when autoKern is on. Acceptance: autoKern round-trips and visibly affects glyph spacing in the published SWF.",
-  "status": "open",
+  "description": "Flash 8 'Auto kern' text property \u2014 full vertical slice. (1) autoKern boolean on TextDisplayObject (engine/types.ts, model/timeline.ts). (2) UI checkbox in PropertiesPanel TextView + agent registry. (3) FLA import: decode autoKern byte in CPicText run formatting (flash8-binary.ts), forward via flash8-import.ts convertElement+convertFla8Text. (4) SWF compile: kernedFontKeys scan in compile.ts; encodeDefineFont2 emits DefineFont2/3 KerningTable (common Latin pairs) when font used by an autoKern field; dynamic/input fields enable kerning via UseOutlines + HTML <font kerning='1'> wrapper (text.ts); static fields bake pair kerning into DefineText per-glyph advances (text.ts/sprite.ts). VERIFICATION: core 5126 passed, swf 1290 passed (+1 todo), authoring-ui 632 passed. tsc build of core+swf clean. golden-report: SELF-DETERMINISM PASS, 0 tag-type count mismatches. Ruffle e2e apps/desktop/e2e/text-kerning.spec.ts: '1 passed' (CI= pnpm exec playwright test text-kerning) \u2014 asserts kern-on maxX < kern-off maxX-8, proving kerning visibly tightens spacing.",
+  "status": "done",
   "effort": "high",
   "priority": "low",
   "created_at": "2026-06-13T20:44:00Z",
-  "updated_at": "2026-06-13T20:45:02Z"
+  "updated_at": "2026-06-13T22:57:41Z"
 }

@@ -18,6 +18,7 @@ type DisplayObjectUpdates = Partial<
     letterSpacing: number;
     scrollable: boolean;
     selectable: boolean;
+    autoKern: boolean;
     textType: "static" | "dynamic" | "input";
     fontFamily: string;
     fontSize: number;

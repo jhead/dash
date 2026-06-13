@@ -955,6 +955,7 @@ function convertElement(
         ...(el.leftMargin != null && el.leftMargin !== 0 ? { leftMargin: el.leftMargin } : {}),
         ...(el.rightMargin != null && el.rightMargin !== 0 ? { rightMargin: el.rightMargin } : {}),
         ...(el.letterSpacing != null && el.letterSpacing !== 0 ? { letterSpacing: el.letterSpacing } : {}),
+        ...(el.autoKern ? { autoKern: true } : {}),
         ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
         ...(textFilters.length > 0 ? { filters: textFilters } : {}),
         ...(isMultiRun ? { html: true, htmlText } : {}),
@@ -1079,6 +1080,7 @@ export function convertFla8Text(el: Fla8Text): TextDisplayObject {
     ...(el.scrollable ? { scrollable: true } : {}),
     // selectable defaults to true; only emit when explicitly false
     ...(el.selectable === false ? { selectable: false } : {}),
+    ...(el.autoKern ? { autoKern: true } : {}),
     ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
     ...(textFilters.length > 0 ? { filters: textFilters } : {}),
     ...(isMultiRun ? { html: true, htmlText } : {}),

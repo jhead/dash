@@ -326,10 +326,12 @@ export function encodeDefineSprite(
           const embeddedFontId = fontCharIdMap?.get(fontKey(obj.fontFamily, obj.bold, obj.italic));
           if (obj.textType === "static" && embeddedFontId !== undefined) {
             // Static text: emit DefineText (tag 11) with glyph-indexed rendering.
+            // "Auto kern" bakes pair kerning into the per-glyph advances (Flash 8
+            // stores kerned advances in DefineText for static text).
             const fontSizeTwips = Math.round(obj.fontSize * 20);
             const c = obj.color;
             const colorHex = `#${c.r.toString(16).padStart(2, "0")}${c.g.toString(16).padStart(2, "0")}${c.b.toString(16).padStart(2, "0")}`;
-            hoistedDefs.push({ tagType: Tag.DefineText, body: encodeDefineText(charId, obj.text, embeddedFontId, fontSizeTwips, colorHex, 0, fontSizeTwips) });
+            hoistedDefs.push({ tagType: Tag.DefineText, body: encodeDefineText(charId, obj.text, embeddedFontId, fontSizeTwips, colorHex, 0, fontSizeTwips, obj.autoKern === true) });
           } else {
             // Dynamic/input text (or static without embedded font): emit DefineEditText (tag 37).
             hoistedDefs.push({ tagType: Tag.DefineEditText, body: encodeDefineEditText(charId, obj, embeddedFontId) });

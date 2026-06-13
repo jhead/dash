@@ -67,6 +67,95 @@ const ADVANCE_DEFAULT = Math.round(glyphAdvance(0x41)); // 'A'
 const ADVANCE_SPACE = Math.round(glyphAdvance(0x20)); // space
 
 // ---------------------------------------------------------------------------
+// Kerning pairs ("Auto kern")
+// ---------------------------------------------------------------------------
+
+/**
+ * Common kerning pairs and their adjustment in **EM units** (negative = tighten
+ * the pair, the usual case). Adjustments are stored in the same EM coordinate
+ * space as glyph advances; the SWF encoder scales them by `coordScale` (20 for
+ * DefineFont3) when writing the KerningTable, and Ruffle adds the (scaled)
+ * adjustment to the left glyph's advance before applying the font→pixel scale
+ * (see ruffle core/src/font.rs `evaluate`, where `advance += kerning`).
+ *
+ * NotoSans-Regular ships no GPOS/`kern` pairs (opentype `getKerningValue`
+ * returns 0 for every ASCII pair), so this table is hand-authored from the
+ * canonical Latin pairs every type designer kerns. Magnitudes are intentionally
+ * generous (~10% EM) so the effect is clearly visible at typical sizes — Flash's
+ * own auto-kern is similarly aggressive for the metrics-based device path.
+ */
+const KERNING_PAIRS_EM: ReadonlyArray<readonly [string, string, number]> = [
+  // Capital + capital
+  ["A", "V", -110], ["A", "W", -100], ["A", "Y", -110], ["A", "T", -110],
+  ["V", "A", -110], ["W", "A", -100], ["Y", "A", -110], ["T", "A", -110],
+  ["L", "T", -110], ["L", "V", -110], ["L", "W", -100], ["L", "Y", -110],
+  ["F", "A", -90], ["P", "A", -100], ["R", "T", -50], ["R", "V", -50],
+  ["K", "V", -50], ["K", "W", -40], ["K", "Y", -50],
+  // Capital + lowercase
+  ["T", "o", -120], ["T", "a", -120], ["T", "e", -120], ["T", "r", -90],
+  ["T", "u", -90], ["T", "w", -90], ["T", "y", -90], ["T", "c", -120],
+  ["T", "s", -110], ["T", ".", -120], ["T", ",", -120],
+  ["V", "a", -90], ["V", "e", -90], ["V", "o", -90], ["V", "r", -60],
+  ["V", ".", -120], ["V", ",", -120],
+  ["W", "a", -70], ["W", "e", -70], ["W", "o", -70], ["W", ".", -90], ["W", ",", -90],
+  ["Y", "a", -110], ["Y", "e", -110], ["Y", "o", -110], ["Y", "u", -90],
+  ["Y", ".", -120], ["Y", ",", -120],
+  ["F", ".", -120], ["F", ",", -120],
+  ["P", ".", -120], ["P", ",", -120],
+  // Lowercase + punctuation
+  ["r", ".", -50], ["r", ",", -50],
+  ["v", ".", -80], ["v", ",", -80],
+  ["w", ".", -60], ["w", ",", -60],
+  ["y", ".", -80], ["y", ",", -80],
+  ["f", "f", -40],
+];
+
+/**
+ * Encode the KerningTable portion of a DefineFont2/3 layout block.
+ *
+ * Format (SWF spec §10.3 / ruffle read.rs `read_kerning_record`, with
+ * FontFlagsWideCodes=1 so codes are UI16):
+ *   UI16  KerningCount
+ *   repeated KerningCount times:
+ *     UI16  FontKerningCode1 (left)
+ *     UI16  FontKerningCode2 (right)
+ *     SI16  FontKerningAdjustment  (EM units * coordScale)
+ *
+ * Only pairs whose glyphs are both inside the embedded ASCII range are emitted.
+ */
+/** Build a fast {left}{right} → EM-adjustment lookup from the pair table. */
+const KERNING_LOOKUP: ReadonlyMap<string, number> = (() => {
+  const m = new Map<string, number>();
+  for (const [l, r, em] of KERNING_PAIRS_EM) m.set(l + r, em);
+  return m;
+})();
+
+/**
+ * Kerning adjustment (in EM units, negative = tighten) for the ordered pair
+ * (left, right), or 0 if the pair is not in the common-pairs table. Used by the
+ * static-text (DefineText) path to bake kerning into per-glyph advances, the way
+ * Flash 8 does (Flash bakes kerning into static glyph advances rather than
+ * emitting a runtime KerningTable for static text).
+ */
+export function kerningAdjustEm(leftCode: number, rightCode: number): number {
+  return KERNING_LOOKUP.get(String.fromCharCode(leftCode) + String.fromCharCode(rightCode)) ?? 0;
+}
+
+function writeKerningTable(bw: BitWriter, coordScale: number): void {
+  const pairs = KERNING_PAIRS_EM.filter(
+    ([l, r]) =>
+      l.charCodeAt(0) >= FIRST_CODE && l.charCodeAt(0) <= LAST_CODE &&
+      r.charCodeAt(0) >= FIRST_CODE && r.charCodeAt(0) <= LAST_CODE
+  );
+  bw.writeUI16LE(pairs.length);
+  for (const [l, r, em] of pairs) {
+    bw.writeUI16LE(l.charCodeAt(0)); // left code (WideCodes)
+    bw.writeUI16LE(r.charCodeAt(0)); // right code (WideCodes)
+    bw.writeSI16LE(Math.round(em * coordScale)); // adjustment in scaled EM units
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Glyph SHAPE encoding
 // ---------------------------------------------------------------------------
 
@@ -324,7 +413,13 @@ export function encodeDefineFont2(
    * coordinates and layout metrics in a 20×-larger EM square than
    * DefineFont1/2, so pass 20 when emitting tag 75 and 1 for tag 48.
    */
-  coordScale = 1
+  coordScale = 1,
+  /**
+   * When true, emit the KerningTable (common Latin pairs) in the layout block so
+   * the player can apply pair kerning to fields that enable "Auto kern". When
+   * false (default) KerningCount is 0 and no pairs are written.
+   */
+  kerning = false
 ): Uint8Array {
   const bw = new BitWriter();
 
@@ -414,8 +509,13 @@ export function encodeDefineFont2(
     bw.flushBits();
   }
 
-  // KerningCount: UI16 = 0
-  bw.writeUI16LE(0);
+  // KerningTable (HasLayout=1). When the font is used by an "Auto kern" field,
+  // emit the common Latin kerning pairs; otherwise KerningCount = 0.
+  if (kerning) {
+    writeKerningTable(bw, coordScale);
+  } else {
+    bw.writeUI16LE(0); // KerningCount = 0
+  }
 
   return bw.getBytes();
 }

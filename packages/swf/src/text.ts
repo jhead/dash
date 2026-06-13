@@ -7,7 +7,7 @@
 import { BitWriter } from "./bits.js";
 import type { TextDisplayObject } from "@flash/core";
 import { px, edgeNumBits, writeRect } from "./helpers.js";
-import { GLYPH_ADVANCE_EM, FONT_EM, glyphAdvanceEm } from "./fonts.js";
+import { GLYPH_ADVANCE_EM, FONT_EM, glyphAdvanceEm, kerningAdjustEm } from "./fonts.js";
 
 /**
  * Advance (in twips) for a glyph at the given text height (twips), derived from
@@ -20,6 +20,16 @@ function glyphAdvanceTwips(code: number, textHeightTwips: number): number {
 // ---------------------------------------------------------------------------
 // Color helpers
 // ---------------------------------------------------------------------------
+
+/** Escape the five XML special chars so plain text is safe inside an HTML wrapper. */
+function escapeHtmlText(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
 
 /** Parse a CSS hex color "#rrggbb" → { r, g, b }. */
 function parseHexColor(hex: string): { r: number; g: number; b: number } {
@@ -65,7 +75,14 @@ export function encodeDefineText(
   fontSize: number,
   color: string,
   x: number,
-  y: number
+  y: number,
+  /**
+   * When true, bake the embedded font's pair kerning into the per-glyph
+   * advances. This matches Flash 8, which stores kerned advances directly in the
+   * DefineText record for static "Auto kern" fields (rather than relying on a
+   * runtime KerningTable as dynamic/input fields do).
+   */
+  autoKern = false
 ): Uint8Array {
   const GLYPH_BITS = 8;
   // Advances are in twips and can exceed an 8-bit signed range for larger text
@@ -158,7 +175,16 @@ export function encodeDefineText(
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
     const glyphIndex = Math.max(0, code - 32) & 0xff;
-    const advance = glyphAdvanceTwips(code, fontSize);
+    let advance = glyphAdvanceTwips(code, fontSize);
+    // Bake pair kerning into this glyph's advance (Flash-accurate static kerning):
+    // the adjustment for (this glyph, next glyph) is added in the same EM space
+    // as the advance and scaled to twips. Negative tightens the following glyph.
+    if (autoKern && i + 1 < text.length) {
+      const km = kerningAdjustEm(code, text.charCodeAt(i + 1));
+      if (km !== 0) advance += Math.round((km / FONT_EM) * fontSize);
+    }
+    // Clamp to a non-negative advance so a large kern cannot wrap the SI16.
+    if (advance < 0) advance = 0;
     bw.writeBits(glyphIndex, GLYPH_BITS);
     bw.writeBits(advance & advMask, ADVANCE_BITS);
   }
@@ -239,15 +265,35 @@ export function encodeDefineEditText(
   // renders the correct baseline/size shift.
   const charPos = obj.characterPosition ?? 0;
   const needsHtmlWrap = charPos !== 0 && obj.html !== true;
-  const isHtml = obj.html === true || needsHtmlWrap;
+  // Auto kern: applying the embedded font's kerning pairs requires the field to
+  // render with the EMBEDDED font (UseOutlines=1 → FontType::Embedded) AND for
+  // the player's TextFormat kerning flag to be on. DefineEditText's flags carry
+  // no kerning bit and Ruffle hardcodes kerning=false at parse time, so we turn
+  // kerning on via an HTML <font kerning="1"> wrapper (SWF>=8 only — see Ruffle
+  // html/text_format.rs). This forces HTML mode for the field.
+  const autoKern = obj.autoKern === true && hasEmbeddedFont;
+  const isHtml = obj.html === true || needsHtmlWrap || autoKern;
   let initialContent: string;
   if (needsHtmlWrap) {
     const tag = charPos === 1 ? "sup" : "sub";
     initialContent = `<${tag}>${obj.text}</${tag}>`;
-  } else if (isHtml && obj.htmlText != null) {
+  } else if (obj.html === true && obj.htmlText != null) {
     initialContent = obj.htmlText;
   } else {
     initialContent = obj.text;
+  }
+  // Wrap the (plain) content in a kerning-enabling <font> tag. Preserve the
+  // field's face/size/color and bold/italic so rendering is identical apart
+  // from the pair-kerning adjustment.
+  if (autoKern && obj.html !== true && charPos === 0) {
+    const sizePt = Math.round(obj.fontSize);
+    const colorHex = `#${obj.color.r.toString(16).padStart(2, "0")}${obj.color.g
+      .toString(16)
+      .padStart(2, "0")}${obj.color.b.toString(16).padStart(2, "0")}`;
+    let inner = escapeHtmlText(initialContent);
+    if (obj.italic) inner = `<i>${inner}</i>`;
+    if (obj.bold) inner = `<b>${inner}</b>`;
+    initialContent = `<font face="${obj.fontFamily}" size="${sizePt}" color="${colorHex}" kerning="1">${inner}</font>`;
   }
 
   // Emit HasText for static/dynamic (always have content) and for input only
@@ -266,10 +312,13 @@ export function encodeDefineEditText(
   if (obj.multiline) flags |= 1 << 5;    // Multiline
   if (obj.wordWrap) flags |= 1 << 6;     // WordWrap
   if (hasText) flags |= 1 << 7;          // HasText
-  // NOTE: UseOutlines (bit 8) is intentionally NOT set. Setting it would force
-  // Ruffle to use our custom embedded 5×7 pixel-art glyphs instead of system
-  // device fonts, making the text look "mangled". With UseOutlines=0, Ruffle
-  // renders with device fonts (real Arial, etc.) at the size given by FontHeight.
+  // NOTE: UseOutlines (bit 8) is normally NOT set: setting it forces Ruffle to
+  // use our embedded font glyphs instead of system device fonts. For "Auto kern"
+  // we MUST set it, because kerning pairs live in our embedded DefineFont3 layout
+  // block and Ruffle only consults them when the field renders with the embedded
+  // font (FontType::Embedded). Without UseOutlines the field uses a device font
+  // whose kerning we do not control. (Ruffle layout.rs resolve_font / font.rs.)
+  if (autoKern) flags |= 1 << 8;         // UseOutlines — render with embedded font (enables our kerning table)
   if (isHtml) flags |= 1 << 9;           // HTML — enables Flash HTML markup in text content
   if (isStatic) flags |= 1 << 10;        // WasStatic — Flash 8+ static marker
   if (obj.hasBorder || obj.hasBackground) flags |= 1 << 11;   // Border — draw border rectangle and/or background fill

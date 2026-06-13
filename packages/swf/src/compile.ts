@@ -638,6 +638,32 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   const fontCoordScale = useFont3 ? 20 : 1;
   const fontCharIdMap = new Map<string, number>();
 
+  // Collect the set of font keys used by at least one "Auto kern" text field.
+  // Those fonts get the DefineFont2/3 KerningTable so the player can apply pair
+  // kerning; all other fonts emit KerningCount = 0. Walk both scene and symbol
+  // timelines (the same surfaces the font pre-passes below cover).
+  const kernedFontKeys = new Set<string>();
+  {
+    const scanFrames = (layers: readonly import("@flash/core").Layer[]) => {
+      for (const layer of layers) {
+        if (layer.type === "guide" || layer.type === "folder") continue;
+        for (const frame of layer.frames) {
+          if (!frame.isKeyframe) continue;
+          for (const obj of flattenDisplayObjects(frame.displayObjects)) {
+            if (obj.type === "text" && obj.autoKern) {
+              kernedFontKeys.add(fontKey(obj.fontFamily, obj.bold, obj.italic));
+            }
+          }
+        }
+      }
+    };
+    for (const s of doc.scenes) scanFrames(s.timeline.layers);
+    for (const item of doc.library.items) {
+      if (item.itemType !== "symbol") continue;
+      scanFrames((item as import("@flash/core").Symbol).timeline.layers);
+    }
+  }
+
   for (const s of doc.scenes) {
     for (const layer of s.timeline.layers) {
       if (layer.type === "guide") continue;
@@ -651,7 +677,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           if (fontCharIdMap.has(key)) continue;
           const fontId = writer.nextCharId();
           fontCharIdMap.set(key, fontId);
-          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale);
+          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key));
           writer.writeTag(fontTagCode, fontBody);
           // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3
           // for all embedded fonts. Provides per-glyph stem-width hint zones
@@ -687,7 +713,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           if (fontCharIdMap.has(key)) continue;
           const fontId = writer.nextCharId();
           fontCharIdMap.set(key, fontId);
-          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale);
+          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key));
           writer.writeTag(fontTagCode, fontBody);
           if (useFont3) {
             const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
@@ -711,7 +737,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     if (fontCharIdMap.has(key)) continue; // already emitted from text pre-pass
     const fontId = writer.nextCharId();
     fontCharIdMap.set(key, fontId);
-    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale);
+    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale, kernedFontKeys.has(key));
     writer.writeTag(fontTagCode, fontBody);
     // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3.
     if (useFont3) {
@@ -1264,6 +1290,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             const embeddedFontId = fontCharIdMap.get(key);
             if (obj.textType === "static" && embeddedFontId !== undefined) {
               // Static text: emit DefineText (tag 11) with glyph-indexed rendering.
+              // When "Auto kern" is on, kerning is baked into the per-glyph
+              // advances (Flash 8 stores kerned advances directly in DefineText
+              // for static text rather than using a runtime KerningTable).
               // The x/y in the TEXTRECORD are the layout offsets within the character;
               // actual stage position is applied via PlaceObject2 as usual.
               const fontSizeTwips = Math.round(obj.fontSize * 20);
@@ -1275,7 +1304,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 fontSizeTwips,
                 `#${obj.color.r.toString(16).padStart(2, "0")}${obj.color.g.toString(16).padStart(2, "0")}${obj.color.b.toString(16).padStart(2, "0")}`,
                 0,
-                fontSizeTwips
+                fontSizeTwips,
+                obj.autoKern === true
               );
               writer.writeTag(Tag.DefineText, textBody);
             } else {
