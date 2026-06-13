@@ -2,9 +2,9 @@
   "id": "1170-fla-import-symbol-linkage-export-not-decoded-gol",
   "title": "FLA import: symbol linkage export not decoded \u2014 golden emits ExportAssets, ours emits none",
   "description": "Golden-pair oracle deviation. Golden SWF emits ExportAssets {id:2, name:'Coin'} \u2014 the 'Coin' movieclip is exported for ActionScript/linkage in the source FLA. Our loadFla() imports Coin with no linkage (linkageId/exportForActionScript unset), so compileDocument emits no ExportAssets (golden-report: ExportAssets ours=0/golden=1). Fix the FLA Contents-stream linkage decode so Coin's export identifier survives import. Acceptance: golden-report shows ExportAssets 1/1. Related (done): 0863, 0937, 0297.",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-13T20:24:05Z",
-  "updated_at": "2026-06-13T20:24:05Z"
+  "updated_at": "2026-06-13T20:29:55Z"
 }

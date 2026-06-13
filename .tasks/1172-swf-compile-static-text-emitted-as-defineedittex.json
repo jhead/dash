@@ -2,9 +2,9 @@
   "id": "1172-swf-compile-static-text-emitted-as-defineedittex",
   "title": "SWF compile: static text emitted as DefineEditText instead of DefineText (tag 11)",
   "description": "Golden-pair oracle deviation. The model correctly carries textType='static' for the 'Test Game' field (and 'Play' inside the button). Real Flash 8 publishes static text as DefineText (tag 11, glyph-indexed) + CsmTextSettings; only the dynamic 'Score: 0' field becomes DefineEditText. Our compiler emits DefineEditText for ALL text (golden-report: DefineText ours=0/golden=2, DefineEditText ours=3/golden=1). encodeDefineText exists (task 0139) but the main compile path never routes static fields to it. Route textType==='static' fields through DefineText. Acceptance: golden-report shows DefineText 2/2 and DefineEditText 1/1. Related (done): 0139, 0123.",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-13T20:24:05Z",
-  "updated_at": "2026-06-13T20:24:05Z"
+  "updated_at": "2026-06-13T20:31:02Z"
 }
