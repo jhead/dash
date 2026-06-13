@@ -69,6 +69,8 @@ import {
   defaultBlur,
   defaultGlow,
   defaultBevel,
+  createBitmap,
+  createSound,
 } from "@flash/core";
 import type {
   ShapeDisplayObject,
@@ -127,6 +129,23 @@ export interface JsflResult {
   error?: string;
   /** Final mutated document after the script runs — push into history. */
   finalDocument?: FlashDocument;
+  /**
+   * Async import operations started by importFile() calls for http(s):/blob: URLs.
+   *
+   * importFile() for data: URLs is fully synchronous — the library item is added
+   * immediately and appears in finalDocument.  For http(s):/blob: URLs a fetch is
+   * started in the background and the resulting Promise is collected here.  Each
+   * Promise resolves with the FlashDocument after the asset has been added to the
+   * library; callers should push that document snapshot into their history stack.
+   *
+   * Typical use:
+   *   const result = runJsfl(source, ctx);
+   *   if (result.pendingImports?.length) {
+   *     const docs = await Promise.all(result.pendingImports);
+   *     pushDoc(docs[docs.length - 1]); // last resolved state
+   *   }
+   */
+  pendingImports?: Promise<FlashDocument>[];
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +167,12 @@ interface RuntimeState {
    * timeline instead of the scene timeline.
    */
   editingSymbolId?: string;
+  /**
+   * Pending async import promises accumulated by importFile() for http(s)/blob URLs.
+   * Each resolves with the FlashDocument after the import completes.
+   * Exposed via JsflResult.pendingImports so callers can await them.
+   */
+  pendingImports: Promise<FlashDocument>[];
 }
 
 // ---------------------------------------------------------------------------
@@ -2184,6 +2209,200 @@ function getActiveLayerId(state: RuntimeState): string | null {
   return layer?.id ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// importFile helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive a filename from a URL for use as the library item name.
+ * Strips query/fragment and returns just the last path segment without extension,
+ * falling back to the full URL if no path is parseable.
+ */
+function _libraryNameFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const seg = parsed.pathname.split('/').filter(Boolean).pop() ?? '';
+    if (seg) return seg;
+  } catch {
+    // Not a valid URL (e.g. a relative path or data: URL)
+  }
+  // For data: URLs use a generated name
+  if (url.startsWith('data:')) return 'imported-asset';
+  const seg = url.split(/[\\/]/).pop() ?? url;
+  return seg || 'imported-asset';
+}
+
+/**
+ * Detect asset type and extension from a URL or MIME type string.
+ * Returns 'bitmap' | 'sound' | 'unknown'.
+ */
+function _detectAssetType(url: string, mimeType?: string): 'bitmap' | 'sound' | 'unknown' {
+  const mime = mimeType?.toLowerCase() ?? '';
+  if (mime.startsWith('image/')) return 'bitmap';
+  if (mime.startsWith('audio/')) return 'sound';
+  if (mime.startsWith('video/')) return 'unknown'; // not supported
+  // Fall back to extension
+  const ext = url.split('?')[0]!.split('#')[0]!.split('.').pop()?.toLowerCase() ?? '';
+  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)) return 'bitmap';
+  if (['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a'].includes(ext)) return 'sound';
+  return 'unknown';
+}
+
+/**
+ * Decode a `data:` URL synchronously and add the asset to the library.
+ * Returns the updated FlashDocument, or the original doc if the URL cannot
+ * be decoded (e.g. unsupported MIME type).
+ */
+function _importDataUrl(doc: FlashDocument, url: string): FlashDocument {
+  // data:[<mediatype>][;base64],<data>
+  const colonIdx = url.indexOf(':');
+  const commaIdx = url.indexOf(',');
+  if (colonIdx === -1 || commaIdx === -1) {
+    console.warn('[JSFL] importFile: malformed data: URL');
+    return doc;
+  }
+  const metaPart = url.slice(colonIdx + 1, commaIdx); // e.g. "image/png;base64"
+  const dataPart = url.slice(commaIdx + 1);
+  const isBase64 = metaPart.toLowerCase().includes(';base64');
+  const mimeType = metaPart.split(';')[0]!.trim().toLowerCase();
+
+  const assetType = _detectAssetType('', mimeType);
+  const name = `imported-${assetType === 'unknown' ? 'asset' : assetType}`;
+
+  if (assetType === 'bitmap') {
+    // Build a data URI (already is one — the full URL)
+    let width = 0;
+    let height = 0;
+    // Try to decode dimensions via the PNG/JPEG headers in the raw bytes
+    if (isBase64) {
+      try {
+        const b64 = dataPart.replace(/\s/g, '');
+        const binStr = atob(b64);
+        const bytes = new Uint8Array(binStr.length);
+        for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+        // PNG: width at offset 16, height at 20
+        if (mimeType === 'image/png' && bytes.length >= 24) {
+          const dv = new DataView(bytes.buffer);
+          width = dv.getUint32(16);
+          height = dv.getUint32(20);
+        }
+        // JPEG: scan for SOF marker
+        if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+          let pos = 2;
+          while (pos + 9 < bytes.length) {
+            if (bytes[pos] !== 0xff) { pos++; continue; }
+            const marker = bytes[pos + 1]!;
+            if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) { pos += 2; continue; }
+            const len = (bytes[pos + 2]! << 8) | bytes[pos + 3]!;
+            const isSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+            if (isSof) { height = (bytes[pos + 5]! << 8) | bytes[pos + 6]!; width = (bytes[pos + 7]! << 8) | bytes[pos + 8]!; break; }
+            pos += 2 + len;
+          }
+        }
+      } catch {
+        // Dimension decode failed; default to 0×0
+      }
+    }
+    const compressionType: 'photo' | 'lossless' = mimeType === 'image/jpeg' || mimeType === 'image/jpg' ? 'photo' : 'lossless';
+    const item = createBitmap(name, {
+      dataUri: url,
+      originalWidth: width,
+      originalHeight: height,
+      compressionType,
+    });
+    return { ...doc, library: addLibraryItem(doc.library, item) };
+  }
+
+  if (assetType === 'sound') {
+    const compressionType: 'mp3' | 'raw' = (mimeType === 'audio/mpeg' || mimeType === 'audio/mp3' || mimeType === 'audio/aac') ? 'mp3' : 'raw';
+    const item = createSound(name, {
+      dataUri: url,
+      compressionType,
+    });
+    return { ...doc, library: addLibraryItem(doc.library, item) };
+  }
+
+  console.warn(`[JSFL] importFile: unsupported MIME type "${mimeType}" — cannot add to library`);
+  return doc;
+}
+
+/**
+ * Fetch a remote URL (http:, https:, blob:), decode the response, and add the
+ * resulting asset to the library.  Returns a Promise that resolves with the
+ * updated FlashDocument.
+ *
+ * This is the async path for importFile().  The Promise is stored in
+ * state.pendingImports so runJsfl() can surface it in JsflResult.
+ */
+async function _importRemoteUrl(doc: FlashDocument, url: string): Promise<FlashDocument> {
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (e) {
+    console.warn(`[JSFL] importFile: fetch failed for "${url}":`, e);
+    return doc;
+  }
+  if (!response.ok) {
+    console.warn(`[JSFL] importFile: fetch "${url}" returned HTTP ${response.status}`);
+    return doc;
+  }
+
+  const mimeType = (response.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+  const name = _libraryNameFromUrl(url);
+  const assetType = _detectAssetType(url, mimeType);
+
+  if (assetType === 'bitmap') {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let width = 0;
+    let height = 0;
+    // PNG dimensions
+    if ((mimeType === 'image/png' || url.toLowerCase().includes('.png')) && bytes.length >= 24) {
+      const dv = new DataView(bytes.buffer);
+      width = dv.getUint32(16);
+      height = dv.getUint32(20);
+    }
+    // JPEG dimensions
+    if (mimeType === 'image/jpeg' || mimeType === 'image/jpg' || url.toLowerCase().match(/\.jpe?g$/)) {
+      let pos = 2;
+      while (pos + 9 < bytes.length) {
+        if (bytes[pos] !== 0xff) { pos++; continue; }
+        const marker = bytes[pos + 1]!;
+        if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) { pos += 2; continue; }
+        const len = (bytes[pos + 2]! << 8) | bytes[pos + 3]!;
+        const isSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+        if (isSof) { height = (bytes[pos + 5]! << 8) | bytes[pos + 6]!; width = (bytes[pos + 7]! << 8) | bytes[pos + 8]!; break; }
+        pos += 2 + len;
+      }
+    }
+    // Encode bytes to data URI
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    const b64 = btoa(binary);
+    const effectiveMime = mimeType || 'image/png';
+    const dataUri = `data:${effectiveMime};base64,${b64}`;
+    const compressionType: 'photo' | 'lossless' = effectiveMime === 'image/jpeg' || effectiveMime === 'image/jpg' ? 'photo' : 'lossless';
+    const item = createBitmap(name, { dataUri, originalWidth: width, originalHeight: height, compressionType });
+    return { ...doc, library: addLibraryItem(doc.library, item) };
+  }
+
+  if (assetType === 'sound') {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    const b64 = btoa(binary);
+    const effectiveMime = mimeType || 'audio/mpeg';
+    const dataUri = `data:${effectiveMime};base64,${b64}`;
+    const compressionType: 'mp3' | 'raw' = (effectiveMime === 'audio/mpeg' || effectiveMime === 'audio/mp3' || effectiveMime === 'audio/aac') ? 'mp3' : 'raw';
+    const item = createSound(name, { dataUri, compressionType });
+    return { ...doc, library: addLibraryItem(doc.library, item) };
+  }
+
+  console.warn(`[JSFL] importFile: cannot import "${url}" — unsupported type (detected: "${assetType}", MIME: "${mimeType}")`);
+  return doc;
+}
+
 function makeDocumentProxy(
   state: RuntimeState,
   ids: ReturnType<typeof makeIdCounters>,
@@ -2690,8 +2909,64 @@ function makeDocumentProxy(
         setTimeout(() => URL.revokeObjectURL(url), 10_000);
       }
     },
-    importFile(_fileURL: string, _importToLibrary?: boolean): void {
-      console.warn('doc.importFile: not supported in browser context');
+    importFile(fileURL: string, _importToLibrary?: boolean): void {
+      /*
+       * importFile semantics in this runtime:
+       *
+       *   data: URLs — decoded SYNCHRONOUSLY.  The library item is added to
+       *     state.doc immediately; callers see the item in JsflResult.finalDocument.
+       *
+       *   http:/https:/blob: URLs — fetched ASYNCHRONOUSLY.  A Promise is pushed
+       *     onto state.pendingImports.  When the fetch completes the Promise
+       *     resolves with an updated FlashDocument that callers should push into
+       *     their history stack via JsflResult.pendingImports.
+       *
+       *   file: URLs — not accessible in the browser sandbox; warns with an
+       *     actionable message and returns without throwing.
+       *
+       * The Flash 8 JSFL importFile() is synchronous and returns void.  We
+       * preserve the void return so JSFL scripts remain compatible; the async
+       * path surfaces results via JsflResult.pendingImports instead.
+       */
+      if (fileURL.startsWith('file:') || (fileURL.length > 2 && fileURL[1] === ':') || fileURL.startsWith('\\\\')) {
+        // Local filesystem path — not accessible in the browser security sandbox.
+        // In Electron (where Node.js file access is available) this could be
+        // implemented via IPC, but that bridge does not exist here.
+        // Callers can work around this by reading the file externally and passing
+        // it as a data: URL instead.
+        console.warn(
+          `[JSFL] importFile: "${fileURL}" is a local filesystem path and cannot be accessed in the browser context. ` +
+          `To import local assets, load the file externally and pass its content as a data: URL, e.g. ` +
+          `"data:image/png;base64,<base64data>".`
+        );
+        return;
+      }
+
+      if (fileURL.startsWith('data:')) {
+        // Synchronous path: decode data: URL and add library item immediately.
+        state.doc = _importDataUrl(state.doc, fileURL);
+        return;
+      }
+
+      if (fileURL.startsWith('http:') || fileURL.startsWith('https:') || fileURL.startsWith('blob:')) {
+        // Async path: fetch remote resource.
+        // Capture the current doc reference so the async job reads from
+        // the most up-to-date state at the time the Promise was created.
+        const importPromise = _importRemoteUrl(state.doc, fileURL).then((updatedDoc) => {
+          // Mutate state.doc so subsequent synchronous reads see the new item.
+          state.doc = updatedDoc;
+          return updatedDoc;
+        });
+        state.pendingImports.push(importPromise);
+        return;
+      }
+
+      // Unknown protocol.
+      console.warn(
+        `[JSFL] importFile: unsupported URL scheme in "${fileURL}". ` +
+        `Supported schemes: data:, http:, https:, blob:. ` +
+        `Local file paths (file:, C:\\...) cannot be accessed in the browser sandbox.`
+      );
     },
     getDataFromDocument(_name: string): any {
       console.warn('doc.getDataFromDocument: not supported');
@@ -4189,6 +4464,7 @@ function makeDocumentProxy(
         currentLayerIndex: 0,
         selectedIds: [],
         frameClipboard: null,
+        pendingImports: [],
       };
       const cloneIds = makeIdCounters();
       const cloneProxy = makeDocumentProxy(cloneState, cloneIds);
@@ -4636,6 +4912,7 @@ export function buildJsflContext(
     currentLayerIndex: 0,
     selectedIds: [],
     frameClipboard: null,
+    pendingImports: [],
   };
   const ids = makeIdCounters();
   // Pass a placeholder proxy to makeFlProxy; it will rebuild it internally with
@@ -4700,10 +4977,14 @@ export function runJsfl(source: string, context: JsflContext): JsflResult {
     error = e instanceof Error ? e.message : String(e);
   }
 
-  return {
+  const result: JsflResult = {
     traces: [...state.traces],
     returnValue,
     error,
     finalDocument: state.doc,
   };
+  if (state.pendingImports.length > 0) {
+    result.pendingImports = [...state.pendingImports];
+  }
+  return result;
 }
