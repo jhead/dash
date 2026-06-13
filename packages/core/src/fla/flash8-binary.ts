@@ -3433,9 +3433,19 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
                 bytes[laStart + 2]! === 0 &&
                 bytes[laStart + 3]! === 0
               ) {
+                // Read exportForAS / importForRS from the writeAsLinkage flags byte.
+                // Layout: UI32(0) + UI8(version) + UI8(flags) + 3×UI8(0) + BomStrings
+                //   flags bit 0 = exportForActionScript
+                //   flags bit 1 = importForRuntimeSharing
+                const laFlags = bytes[laStart + 5]!;
+                if (laFlags & 0x01) exportForActionScript = true;
+                if (laFlags & 0x02) importForRuntimeSharing = true;
+
                 // skip 9-byte header: UI32 zero + version + flags + 3×zero
                 const laIdent = tryReadBomStringAt(bytes, laStart + 9);
                 if (laIdent !== null) {
+                  // Use the authoritative linkageIdentifier from the writeAsLinkage block.
+                  if (laIdent.value.length > 0) linkageIdentifier = laIdent.value;
                   const laUrl = tryReadBomStringAt(bytes, laIdent.end);
                   if (laUrl !== null) {
                     const laCn = tryReadBomStringAt(bytes, laUrl.end);
