@@ -324,53 +324,64 @@ function compileAndDecode(obj: TextDisplayObject): DecodedEditText {
 // Tests
 // ---------------------------------------------------------------------------
 
-// All text types now use DefineEditText (tag 37) with device fonts (no embedded
-// font outlines). This makes static text render identically to MC text (both use
-// Ruffle's device-font path), fixing the "mangled" 5×7 pixel-art appearance that
-// occurred when UseOutlines + DefineFont3 was enabled.
-describe("Static text — emits DefineEditText (tag 37), device fonts", () => {
-  it("static text: emits DefineEditText tag (code 37)", () => {
-    const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
-    const bytes = compileDocument(doc);
-    const tags = parseSWFTags(bytes);
-    const editTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
-    expect(editTags.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("static text: does NOT emit DefineText tag (code 11)", () => {
+// Static text uses DefineText (tag 11) with glyph-indexed rendering.
+// Dynamic/input text uses DefineEditText (tag 37) with device fonts.
+describe("Static text — emits DefineText (tag 11), glyph-indexed", () => {
+  it("static text: emits DefineText tag (code 11)", () => {
     const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
     const textTags = tags.filter((t) => t.code === TAG_DEFINE_TEXT);
-    expect(textTags.length).toBe(0);
+    expect(textTags.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("static text: HasFont flag (bit 0) IS set (for size), UseOutlines (bit 8) is NOT set (device fonts)", () => {
+  it("static text: does NOT emit DefineEditText tag (code 37)", () => {
     const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
-    const editTag = tags.find((t) => t.code === TAG_DEFINE_EDIT_TEXT);
-    expect(editTag).toBeDefined();
-    const decoded = decodeDefineEditText(editTag!.body);
-    // HasFont is set so Ruffle knows the font size; UseOutlines is NOT set so
-    // Ruffle renders with device fonts instead of the custom embedded glyphs.
-    expect(decoded.hasFont).toBe(true);
-    expect(decoded.useOutlines).toBe(false);
+    const editTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    expect(editTags.length).toBe(0);
   });
 
-  it("static text: WasStatic flag (bit 10) is set", () => {
-    const decoded = compileAndDecode(makeText({ textType: "static", text: "Hello" }));
-    expect(decoded.wasStatic).toBe(true);
+  it("static text: DefineText tag body has charId as first two bytes", () => {
+    const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const textTag = tags.find((t) => t.code === TAG_DEFINE_TEXT);
+    expect(textTag).toBeDefined();
+    // charId should be a valid positive UI16
+    const charId = textTag!.body[0] | (textTag!.body[1] << 8);
+    expect(charId).toBeGreaterThan(0);
   });
 
-  it("static text: NoSelect flag (bit 12) is set (not selectable)", () => {
-    const decoded = compileAndDecode(makeText({ textType: "static", text: "Hello" }));
-    expect(decoded.noSelect).toBe(true);
+  it("static text: DefineText tag body ends with 0x00 (TEXTRECORD terminator)", () => {
+    const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const textTag = tags.find((t) => t.code === TAG_DEFINE_TEXT);
+    expect(textTag).toBeDefined();
+    expect(textTag!.body[textTag!.body.length - 1]).toBe(0x00);
   });
 
-  it("static text: initial text is encoded in DefineEditText body", () => {
-    const decoded = compileAndDecode(makeText({ textType: "static", text: "Hello World" }));
-    expect(decoded.initialText).toBe("Hello World");
+  it("static text: CsmTextSettings (tag 74) is emitted after DefineText", () => {
+    const doc = makeDoc([makeText({ textType: "static", text: "Hello" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const csmTags = tags.filter((t) => t.code === 74);
+    expect(csmTags.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("static text: CsmTextSettings textID matches DefineText charId", () => {
+    const doc = makeDoc([makeText({ textType: "static", text: "Hello World" })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const textTag = tags.find((t) => t.code === TAG_DEFINE_TEXT);
+    const csmTag = tags.find((t) => t.code === 74);
+    expect(textTag).toBeDefined();
+    expect(csmTag).toBeDefined();
+    const textCharId = textTag!.body[0] | (textTag!.body[1] << 8);
+    const csmTextId = csmTag!.body[0] | (csmTag!.body[1] << 8);
+    expect(csmTextId).toBe(textCharId);
   });
 });
 
@@ -450,16 +461,16 @@ describe("DefineEditText — UseOutlines NOT set (device fonts, correct size)", 
     expect(decoded.useOutlines).toBe(false);
   });
 
-  it("static text: HasFont IS set (for size) but UseOutlines is NOT set (device font rendering)", () => {
-    const decoded = compileAndDecode(makeText({ textType: "static" }));
+  it("dynamic text: HasFont IS set (for size) but UseOutlines is NOT set (device font rendering)", () => {
+    const decoded = compileAndDecode(makeText({ textType: "dynamic" }));
     expect(decoded.hasFont).toBe(true);
     expect(decoded.useOutlines).toBe(false);
   });
 });
 
 describe("DefineEditText — HasLayout paragraph fields (leading, margins, indent)", () => {
-  it("default text (no paragraph fields set): leading=0, leftMargin=0, rightMargin=0, indent=0 twips", () => {
-    const decoded = compileAndDecode(makeText());
+  it("default dynamic text (no paragraph fields set): leading=0, leftMargin=0, rightMargin=0, indent=0 twips", () => {
+    const decoded = compileAndDecode(makeText({ textType: "dynamic" }));
     expect(decoded.leadingTwips).toBe(0);
     expect(decoded.leftMarginTwips).toBe(0);
     expect(decoded.rightMarginTwips).toBe(0);
@@ -467,32 +478,33 @@ describe("DefineEditText — HasLayout paragraph fields (leading, margins, inden
   });
 
   it("leading=20px → 400 twips in HasLayout Leading field", () => {
-    const decoded = compileAndDecode(makeText({ leading: 20 }));
+    const decoded = compileAndDecode(makeText({ textType: "dynamic", leading: 20 }));
     expect(decoded.leadingTwips).toBe(400); // 20 * 20 = 400
   });
 
   it("leading=2px → 40 twips", () => {
-    const decoded = compileAndDecode(makeText({ leading: 2 }));
+    const decoded = compileAndDecode(makeText({ textType: "dynamic", leading: 2 }));
     expect(decoded.leadingTwips).toBe(40); // 2 * 20 = 40
   });
 
   it("leftMargin=10px → 200 twips in HasLayout LeftMargin field", () => {
-    const decoded = compileAndDecode(makeText({ leftMargin: 10 }));
+    const decoded = compileAndDecode(makeText({ textType: "dynamic", leftMargin: 10 }));
     expect(decoded.leftMarginTwips).toBe(200); // 10 * 20 = 200
   });
 
   it("rightMargin=15px → 300 twips in HasLayout RightMargin field", () => {
-    const decoded = compileAndDecode(makeText({ rightMargin: 15 }));
+    const decoded = compileAndDecode(makeText({ textType: "dynamic", rightMargin: 15 }));
     expect(decoded.rightMarginTwips).toBe(300); // 15 * 20 = 300
   });
 
   it("indent=5px → 100 twips in HasLayout Indent field", () => {
-    const decoded = compileAndDecode(makeText({ indent: 5 }));
+    const decoded = compileAndDecode(makeText({ textType: "dynamic", indent: 5 }));
     expect(decoded.indentTwips).toBe(100); // 5 * 20 = 100
   });
 
   it("all four paragraph fields combined", () => {
     const decoded = compileAndDecode(makeText({
+      textType: "dynamic",
       leading: 20,
       leftMargin: 10,
       rightMargin: 15,
@@ -699,19 +711,21 @@ describe("CSMTextSettings (tag 74) — anti-alias mode", () => {
     expect(sharpness).toBe(0);
   });
 
-  it("antiAlias='readability': CSMTextSettings textID matches the DefineEditText charId", () => {
-    const doc = makeDoc([makeText({ antiAlias: "readability" })]);
+  it("antiAlias='readability': CSMTextSettings textID matches the DefineText charId", () => {
+    // antiAlias='readability' on a static text field → DefineText (tag 11) + CsmTextSettings
+    const doc = makeDoc([makeText({ textType: "static", antiAlias: "readability" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
-    const editTag = tags.find((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    // Static text → DefineText (tag 11)
+    const textTag = tags.find((t) => t.code === TAG_DEFINE_TEXT);
     const csmTag = tags.find((t) => t.code === TAG_CSM_TEXT_SETTINGS);
-    expect(editTag).toBeDefined();
+    expect(textTag).toBeDefined();
     expect(csmTag).toBeDefined();
-    // charId from DefineEditText body
-    const editCharId = editTag!.body[0] | (editTag!.body[1] << 8);
+    // charId from DefineText body
+    const textCharId = textTag!.body[0] | (textTag!.body[1] << 8);
     // textID from CSMTextSettings body
     const csmTextId = csmTag!.body[0] | (csmTag!.body[1] << 8);
-    expect(csmTextId).toBe(editCharId);
+    expect(csmTextId).toBe(textCharId);
   });
 
   it("antiAlias='custom': emits CSMTextSettings with provided sharpness/thickness", () => {
@@ -727,36 +741,40 @@ describe("CSMTextSettings (tag 74) — anti-alias mode", () => {
     expect(sharpness).toBeCloseTo(100);
   });
 
-  it("antiAlias='animation' (default): NO CSMTextSettings tag emitted", () => {
+  it("antiAlias='animation' (default): CSMTextSettings tag IS emitted (always emitted per Flash 8)", () => {
     const doc = makeDoc([makeText({ antiAlias: "animation" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
     const csmTags = tags.filter((t) => t.code === TAG_CSM_TEXT_SETTINGS);
-    expect(csmTags.length).toBe(0);
+    // Flash 8 always emits CsmTextSettings after every text character definition
+    expect(csmTags.length).toBe(1);
   });
 
-  it("antiAlias unset (default): NO CSMTextSettings tag emitted", () => {
+  it("antiAlias unset (default): CSMTextSettings tag IS emitted (always emitted per Flash 8)", () => {
     const doc = makeDoc([makeText()]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
     const csmTags = tags.filter((t) => t.code === TAG_CSM_TEXT_SETTINGS);
-    expect(csmTags.length).toBe(0);
+    // Flash 8 always emits CsmTextSettings after every text character definition
+    expect(csmTags.length).toBe(1);
   });
 
-  it("antiAlias='device': NO CSMTextSettings tag emitted", () => {
+  it("antiAlias='device': CSMTextSettings tag IS emitted (always emitted per Flash 8)", () => {
     const doc = makeDoc([makeText({ antiAlias: "device" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
     const csmTags = tags.filter((t) => t.code === TAG_CSM_TEXT_SETTINGS);
-    expect(csmTags.length).toBe(0);
+    // Flash 8 always emits CsmTextSettings after every text character definition
+    expect(csmTags.length).toBe(1);
   });
 
-  it("antiAlias='bitmap': NO CSMTextSettings tag emitted", () => {
+  it("antiAlias='bitmap': CSMTextSettings tag IS emitted (always emitted per Flash 8)", () => {
     const doc = makeDoc([makeText({ antiAlias: "bitmap" })]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
     const csmTags = tags.filter((t) => t.code === TAG_CSM_TEXT_SETTINGS);
-    expect(csmTags.length).toBe(0);
+    // Flash 8 always emits CsmTextSettings after every text character definition
+    expect(csmTags.length).toBe(1);
   });
 });
 
@@ -971,12 +989,16 @@ describe("DefineEditText — input text password/maxChars/hasBorder", () => {
     expect(decoded.password).toBe(false);
   });
 
-  it("static text with password=true: Password bit is NOT set (only applies to input)", () => {
-    // password is input-only; encoder guards on textType
-    const decoded = compileAndDecodeExtended(
-      makeText({ textType: "static", text: "hello", password: true })
-    );
-    expect(decoded.password).toBe(false);
+  it("static text with password=true: emits DefineText (tag 11) not DefineEditText — password ignored", () => {
+    // password is input-only; static text uses DefineText (tag 11), not DefineEditText (tag 37)
+    const doc = makeDoc([makeText({ textType: "static", text: "hello", password: true })]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    // Static text should emit DefineText, not DefineEditText
+    const textTags = tags.filter((t) => t.code === TAG_DEFINE_TEXT);
+    const editTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    expect(textTags.length).toBeGreaterThanOrEqual(1);
+    expect(editTags.length).toBe(0);
   });
 
   it("input text with maxChars=100: HasMaxLength bit (bit 1) is set", () => {

@@ -188,21 +188,21 @@ describe("DefineEditText (tag 37) encoding", () => {
     expect(editTextTags.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("SWF output contains DefineEditText (type 37) for static text (device fonts)", () => {
-    const doc = makeDoc([makeTextObject({ textType: "static", text: "Hi" })]);
-    const bytes = compileDocument(doc);
-    const tags = findTags(bytes);
-    const editTextTags = tags.filter((t) => t.type === TAG_DEFINE_EDIT_TEXT);
-    // Static text now uses DefineEditText with device fonts (matching MC text behaviour)
-    expect(editTextTags.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("static text does NOT emit DefineText (type 11) — uses DefineEditText instead", () => {
+  it("SWF output contains DefineText (type 11) for static text (glyph-indexed)", () => {
     const doc = makeDoc([makeTextObject({ textType: "static", text: "Hi" })]);
     const bytes = compileDocument(doc);
     const tags = findTags(bytes);
     const textTags = tags.filter((t) => t.type === TAG_DEFINE_TEXT);
-    expect(textTags.length).toBe(0);
+    // Static text uses DefineText (tag 11) with glyph-indexed rendering
+    expect(textTags.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("static text does NOT emit DefineEditText (type 37) — uses DefineText instead", () => {
+    const doc = makeDoc([makeTextObject({ textType: "static", text: "Hi" })]);
+    const bytes = compileDocument(doc);
+    const tags = findTags(bytes);
+    const editTextTags = tags.filter((t) => t.type === TAG_DEFINE_EDIT_TEXT);
+    expect(editTextTags.length).toBe(0);
   });
 
   it("DefineEditText tag body begins with a valid CharacterId (UI16LE > 0)", () => {

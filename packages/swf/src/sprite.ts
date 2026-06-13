@@ -32,7 +32,7 @@ import {
   encodePlaceObject3WithBlendMode,
   hasEnabledFilters,
 } from "./filters.js";
-import { encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
+import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
 import { Tag } from "./tags.js";
 import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
@@ -252,17 +252,27 @@ export function encodeDefineSprite(
         } else if (obj.type === "text") {
           const charId = nextCharId();
           objCharIdMap.set(obj.id, charId);
-          // Hoist DefineEditText to top level (Bug 3)
           // Task 1119 fix: look up font char ID so HasFont=1 and authored fontSize is honoured.
           const embeddedFontId = fontCharIdMap?.get(fontKey(obj.fontFamily, obj.bold, obj.italic));
-          hoistedDefs.push({ tagType: Tag.DefineEditText, body: encodeDefineEditText(charId, obj, embeddedFontId) });
-          const aa = (obj as { antiAlias?: string }).antiAlias;
-          if (aa === 'readability') {
-            hoistedDefs.push({ tagType: Tag.CSMTextSettings, body: encodeCSMTextSettings(charId, 0, 0) });
-          } else if (aa === 'custom') {
+          if (obj.textType === "static" && embeddedFontId !== undefined) {
+            // Static text: emit DefineText (tag 11) with glyph-indexed rendering.
+            const fontSizeTwips = Math.round(obj.fontSize * 20);
+            const c = obj.color;
+            const colorHex = `#${c.r.toString(16).padStart(2, "0")}${c.g.toString(16).padStart(2, "0")}${c.b.toString(16).padStart(2, "0")}`;
+            hoistedDefs.push({ tagType: Tag.DefineText, body: encodeDefineText(charId, obj.text, embeddedFontId, fontSizeTwips, colorHex, 0, fontSizeTwips) });
+          } else {
+            // Dynamic/input text (or static without embedded font): emit DefineEditText (tag 37).
+            hoistedDefs.push({ tagType: Tag.DefineEditText, body: encodeDefineEditText(charId, obj, embeddedFontId) });
+          }
+          // Emit CsmTextSettings (tag 74) immediately after EVERY text definition.
+          // Flash 8 always emits this tag after each text character definition.
+          {
+            const aa = (obj as { antiAlias?: string }).antiAlias;
             const csm = (obj as { csm?: { thickness: number; sharpness: number } }).csm;
-            if (csm) {
+            if (aa === 'custom' && csm) {
               hoistedDefs.push({ tagType: Tag.CSMTextSettings, body: encodeCSMTextSettings(charId, csm.thickness, csm.sharpness) });
+            } else {
+              hoistedDefs.push({ tagType: Tag.CSMTextSettings, body: encodeCSMTextSettings(charId, 0, 0) });
             }
           }
         } else if (obj.type === "bitmap") {

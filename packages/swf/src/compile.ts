@@ -30,7 +30,7 @@ import {
   encodeDefineMorphShape2,
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
-import { encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
+import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
 import { encodeDefineFont2, encodeDefineFontAlignZones, encodeDefineFontInfo2, fontKey } from "./fonts.js";
 import {
   encodePlaceObject3WithFilters,
@@ -1257,25 +1257,44 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             objCharIdMap.set(obj.id, charId);
             const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
             const embeddedFontId = fontCharIdMap.get(key);
-            // Use DefineEditText (tag 37) for ALL text types. Pass the embedded font
-            // ID so HasFont is set and Ruffle honours the font SIZE — but UseOutlines
-            // is deliberately NOT set, so Ruffle renders with device fonts (real Arial,
-            // etc.) rather than our custom 5×7 pixel-art embedded glyphs. This gives
-            // correctly-sized, legible text that matches MC text behaviour.
-            const textBody = encodeDefineEditText(charId, obj, embeddedFontId);
-            writer.writeTag(Tag.DefineEditText, textBody);
-            // Emit CSMTextSettings (tag 74) immediately after DefineEditText for
-            // FlashType anti-alias modes (readability and custom).
+            if (obj.textType === "static" && embeddedFontId !== undefined) {
+              // Static text: emit DefineText (tag 11) with glyph-indexed rendering.
+              // The x/y in the TEXTRECORD are the layout offsets within the character;
+              // actual stage position is applied via PlaceObject2 as usual.
+              const fontSizeTwips = Math.round(obj.fontSize * 20);
+              // Use fontSize as the Y baseline offset so glyphs sit above the origin.
+              const textBody = encodeDefineText(
+                charId,
+                obj.text,
+                embeddedFontId,
+                fontSizeTwips,
+                `#${obj.color.r.toString(16).padStart(2, "0")}${obj.color.g.toString(16).padStart(2, "0")}${obj.color.b.toString(16).padStart(2, "0")}`,
+                0,
+                fontSizeTwips
+              );
+              writer.writeTag(Tag.DefineText, textBody);
+            } else {
+              // Dynamic/input text (or static without an embedded font): emit DefineEditText (tag 37).
+              // Pass the embedded font ID so HasFont is set and Ruffle honours the font SIZE —
+              // but UseOutlines is deliberately NOT set, so Ruffle renders with device fonts
+              // (real Arial, etc.) rather than our custom embedded glyphs. This gives
+              // correctly-sized, legible text that matches MC text behaviour.
+              const textBody = encodeDefineEditText(charId, obj, embeddedFontId);
+              writer.writeTag(Tag.DefineEditText, textBody);
+            }
+            // Emit CsmTextSettings (tag 74) immediately after EVERY text definition
+            // (both DefineText and DefineEditText). Flash 8 always emits this tag
+            // after each text character definition. Matches sprite.ts behaviour.
             // For "readability": UseFlashType=1, GridFit=1, thickness=0, sharpness=0.
             // For "custom": UseFlashType=1, GridFit=1, with user-specified values.
-            // Other modes (device, bitmap, animation) do not need a CSMTextSettings tag.
-            const aa = obj.antiAlias;
-            if (aa === "readability") {
-              const csmBody = encodeCSMTextSettings(charId, 0, 0);
-              writer.writeTag(Tag.CSMTextSettings, csmBody);
-            } else if (aa === "custom" && obj.csm) {
-              const csmBody = encodeCSMTextSettings(charId, obj.csm.thickness, obj.csm.sharpness);
-              writer.writeTag(Tag.CSMTextSettings, csmBody);
+            // For all other modes, emit defaults (UseFlashType=1, GridFit=1, 0, 0).
+            {
+              const aa = obj.antiAlias;
+              if (aa === "custom" && obj.csm) {
+                writer.writeTag(Tag.CSMTextSettings, encodeCSMTextSettings(charId, obj.csm.thickness, obj.csm.sharpness));
+              } else {
+                writer.writeTag(Tag.CSMTextSettings, encodeCSMTextSettings(charId, 0, 0));
+              }
             }
           } else if (obj.type === "bitmap") {
             // Look up the BitmapItem from the library
