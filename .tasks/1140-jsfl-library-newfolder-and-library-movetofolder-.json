@@ -1,0 +1,10 @@
+{
+  "id": "1140-jsfl-library-newfolder-and-library-movetofolder-",
+  "title": "JSFL: library.newFolder and library.moveToFolder are no-op stubs \u2014 library organization scripts silently fail",
+  "description": "packages/authoring-ui/src/jsfl/runtime.ts lines 1629-1635:\n\n  moveToFolder(_folderPath: string, _itemToMove?: string, _bReplace?: boolean): boolean {\n    console.warn('library.moveToFolder: not supported');\n    return true;\n  },\n  newFolder(_folderPath: string): boolean {\n    console.warn('library.newFolder: not supported');\n    return true;\n  },\n\nBoth are no-ops. Any JSFL script that creates folder structure in the library (a common pattern for asset pipeline scripts) silently does nothing \u2014 the library items remain unorganized but the script proceeds as if it succeeded.\n\nThe core library model supports FolderItem (itemType='folder') in doc.library.items. The data is there; it just isn't exposed through the JSFL API.\n\nFix for library.newFolder:\n1. Check if a FolderItem with the given folderPath name already exists in doc.library.items.\n2. If not, add a new FolderItem: { itemType: 'folder', id: uuid(), name: folderPath } to the library.\n\nFix for library.moveToFolder:\n1. Look up the item by itemToMove name (or use the selected library item if not specified).\n2. Update the item's 'folder' field (or name prefix convention) to the given folderPath.\n3. If bReplace is true and an item with that name already exists in the folder, replace it.\n\nNote: need to check how library folder membership is stored in the core FlashDocument model \u2014 whether items have a 'folder' field or whether folder membership is implied by name prefix (e.g. 'Backgrounds/sky' lives in 'Backgrounds' folder).",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T15:25:02Z",
+  "updated_at": "2026-06-11T15:30:16Z"
+}

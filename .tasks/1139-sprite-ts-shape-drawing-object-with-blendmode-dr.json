@@ -1,0 +1,10 @@
+{
+  "id": "1139-sprite-ts-shape-drawing-object-with-blendmode-dr",
+  "title": "sprite.ts: shape/drawing-object with blendMode dropped on initial placement (isFirst path)",
+  "description": "packages/swf/src/sprite.ts, lines 496-521: the isFirst branch for shape/drawing-object display objects has no blend mode check. When a shape or drawing-object with a non-normal blendMode is placed for the FIRST time on a symbol timeline, the code falls through to:\n  - morphRatio check (lines 503-504) \n  - clipDepth check (lines 505-506)\n  - visible===false check (507-509)\n  - hasEnabledFilters check (510-518)\n  - plain encodePlaceObject2 fallback (line 520)\n\nPlaceObject2 cannot carry blend modes; the blend mode is silently dropped.\n\nThe posChanged branch (lines 659-688) DOES handle blend mode correctly: line 667 checks hasShapeBlend and emits encodePlaceObject3WithBlendMode. But the isFirst branch was never updated.\n\nTask 1160 (now cancelled) noted this gap. Task 1110 fixed text/bitmap but not shape.\n\nFix: in the isFirst shape branch (lines 496-521), add a hasShapeBlend check between the filters check and the plain fallback:\n  const hasShapeBlend = displayObj.type === 'shape' && !!blendMode && blendMode !== 'normal';\n  if (...filters...) { ... }\n  else if (hasShapeBlend) {\n    const placeBody = encodePlaceObject3WithBlendMode(charId, depth, x, y, blendMode, filters, objTransform, undefined, undefined, undefined, undefined, cacheAsBitmap);\n    spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));\n  } else { ... }\n\nAlso add blendMode to colorEffectKey computation for shape objects (sprite.ts ~line 440-451) so a blend mode change between keyframes correctly triggers posChanged. The same gap exists in compile.ts shape colorEffectKey but that is a separate file.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T15:24:28Z",
+  "updated_at": "2026-06-11T15:27:36Z"
+}

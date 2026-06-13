@@ -1,0 +1,10 @@
+{
+  "id": "1135-sprite-ts-easecurve-type-mismatch-causes-wrong-a",
+  "title": "sprite.ts: EaseCurve type mismatch causes wrong applyEase call for shape-tween ease curves in symbol timelines",
+  "description": "packages/swf/src/sprite.ts lines 144-150 declares its local morphObjSpanInfo map with type:\n\n  easeCurve: readonly { x: number; y: number }[] | null | undefined;\n\nBut TweenSpan.easeCurve (from @flash/core) has type EaseCurve = { x1: number; y1: number; x2: number; y2: number } | null | undefined.\n\nThis produces two TypeScript errors (confirmed via cd packages/swf && npx tsc --noEmit):\n  sprite.ts(194,11): error TS2322: Type 'EaseCurve | null | undefined' is not assignable to type 'readonly { x: number; y: number; }[] | null | undefined'.\n  sprite.ts(465,64): error TS2345: Argument of type 'readonly { x: number; y: number; }[] | undefined' is not assignable to parameter of type '{ x1: number; y1: number; x2: number; y2: number } | null | undefined'.\n\nRuntime impact: when span.easeCurve is non-null (author has set a custom B\u00e9zier ease), the value is passed to applyEase() with the wrong shape. applyEase() checks 'if (easeCurve)' (which is truthy \u2014 it's a real object), then reads easeCurve.x1 / .y1 / .x2 / .y2, all of which are undefined because the object is actually { x, y }[]. solveCubicBezier(t, undefined, undefined, undefined, undefined) returns NaN, so the morph ratio becomes NaN and PlaceObject2 ratio emits as 0xFFFF every frame, making the shape tween snap to end-state immediately instead of interpolating.\n\nFix: change line 149 to use the correct EaseCurve type:\n  easeCurve: EaseCurve | null | undefined;\n\nThen add 'import type { EaseCurve } from \"@flash/core\";' to the imports in sprite.ts.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T15:21:21Z",
+  "updated_at": "2026-06-11T15:26:27Z"
+}

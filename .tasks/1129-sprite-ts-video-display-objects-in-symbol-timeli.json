@@ -1,0 +1,10 @@
+{
+  "id": "1129-sprite-ts-video-display-objects-in-symbol-timeli",
+  "title": "sprite.ts: video display objects in symbol timelines silently skipped",
+  "description": "packages/swf/src/sprite.ts has no handler for displayObj.type === 'video' in any of its placement branches. compile.ts handles video objects at lines 2019-2030 and 2468-2479 (both initial placement and posChanged paths).\\n\\nIn practice this means a symbol timeline that contains a VideoDisplayObject will silently omit the video from the compiled SWF. The video stream itself (DefineVideoStream, VideoFrame tags) would also be missing since the character pre-pass in sprite.ts (lines 120-175) doesn't collect video items either.\\n\\nThis is lower priority than group handling since video-inside-symbols is rare in Flash 8 projects. The fix requires:\\n1. In the character pre-pass in sprite.ts, add a case for displayObj.type === 'video' to register the video stream and collect VideoFrame tags (similar to compile.ts lines 871-930)\\n2. In the placement loops, add handling for displayObj.type === 'video' to emit PlaceObject2 with the video stream charId\\n\\nNote: this is complex because it requires passing the videoCharIdMap and videoStreams structures into encodeDefineSprite, similar to how soundIdMap and fontCharIdMap were added. Consider whether this is worth the complexity given the low real-world frequency.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T15:10:28Z",
+  "updated_at": "2026-06-11T15:36:25Z"
+}
