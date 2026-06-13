@@ -1,0 +1,10 @@
+{
+  "id": "1177-selectable-text-property-model-ui-fla-import-swf",
+  "title": "Selectable text property \u2014 model, UI, FLA import, SWF NoSelect for dynamic/input",
+  "description": "Flash 8 text Properties-panel parity. The 'Selectable' toggle (the AB button) controls whether dynamic/input text can be selected at runtime. Fully ABSENT today: no model field, no UI, not imported, and SWF only sets NoSelect (DefineEditText bit 12) for STATIC text. Add: (1) a selectable boolean field on TextDisplayObject (default true for dynamic/input). (2) UI toggle in PropertiesPanel TextView. (3) FLA import of the selectable flag from the binary text record. (4) SWF compile: set or clear NoSelect (bit 12) for dynamic/input based on the selectable field (not just static). Acceptance: a non-selectable dynamic field publishes with NoSelect set and selectable ones without.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-13T20:44:00Z",
+  "updated_at": "2026-06-13T20:45:02Z"
+}

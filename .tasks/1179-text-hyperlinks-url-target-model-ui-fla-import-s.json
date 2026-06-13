@@ -1,0 +1,10 @@
+{
+  "id": "1179-text-hyperlinks-url-target-model-ui-fla-import-s",
+  "title": "Text hyperlinks (URL + Target) \u2014 model, UI, FLA import, SWF HTML anchor",
+  "description": "Flash 8 text Properties-panel parity. The bottom-row Link URL field and 'Target:' dropdown attach an HTML hyperlink to a text field. Fully ABSENT today. Add: (1) linkUrl and linkTarget string fields on TextDisplayObject. (2) UI: URL input plus Target dropdown (_self/_blank/_parent/_top) in PropertiesPanel TextView. (3) FLA import if present in the binary text record. (4) SWF compile: wrap the text in an HTML anchor (a href, target) and set the HTML flag (bit 9) on DefineEditText so Ruffle renders a clickable link (getURL on click). Acceptance: a field with a link publishes as HTML-anchored text that navigates in Ruffle.",
+  "status": "open",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-13T20:44:00Z",
+  "updated_at": "2026-06-13T20:45:02Z"
+}

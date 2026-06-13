@@ -1,0 +1,10 @@
+{
+  "id": "1176-text-properties-panel-ui-parity-expose-var-rende",
+  "title": "Text Properties panel UI parity: expose Var, Render-as-HTML, and Line-type dropdown",
+  "description": "Flash 8 text Properties-panel parity (see reference screenshot). These TextDisplayObject fields are fully supported in the model AND compiled to SWF, but the PropertiesPanel TextView (packages/authoring-ui/src/PropertiesPanel.tsx) does not expose them: (1) 'Var:' field -> as2VariableName (currently editable nowhere in UI despite import+compile support). (2) 'Render text as HTML' toggle (<> icon) -> html field. (3) Consolidate the separate multiline/wordWrap/password checkboxes into Flash's single 'Line type' dropdown: Single line | Multiline | Multiline no wrap | Password (Password only for Input text). Also show the Border toggle for Dynamic text (currently input-only). Pure UI wiring to existing model fields \u2014 no model/import/compile changes. Acceptance: each control round-trips through the model and the published SWF reflects it.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-13T20:44:00Z",
+  "updated_at": "2026-06-13T20:44:00Z"
+}
