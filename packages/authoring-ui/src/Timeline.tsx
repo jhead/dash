@@ -185,12 +185,15 @@ function getTweenState(layer: Layer, frameIndex: number): TweenState {
 }
 
 
-function totalFrameCount(timeline: TimelineModel): number {
-  const max = timeline.layers.reduce(
+export function contentFrameCount(timeline: TimelineModel): number {
+  return timeline.layers.reduce(
     (m, l) => Math.max(m, layerFrameCount(l)),
     1
   );
-  return Math.max(max, MIN_VISIBLE_FRAMES);
+}
+
+function totalFrameCount(timeline: TimelineModel): number {
+  return Math.max(contentFrameCount(timeline), MIN_VISIBLE_FRAMES);
 }
 
 // ---------------------------------------------------------------------------
@@ -663,6 +666,10 @@ export function Timeline({
   // In button-symbol editing mode we lock the frame area to exactly 4 columns
   const isButtonMode = symbolType === "button";
   const frameCount = isButtonMode ? 4 : totalFrameCount(timeline);
+  // Unpadded content frame count — used for the "current / total" display only.
+  // frameCount is padded to MIN_VISIBLE_FRAMES for grid rendering; this value
+  // shows the actual longest layer frame count (e.g. 2, not 48).
+  const displayFrameCount = isButtonMode ? 4 : contentFrameCount(timeline);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const framesScrollRef = useRef<HTMLDivElement>(null);
@@ -1799,10 +1806,10 @@ export function Timeline({
 
             <div style={{ flex: 1 }} />
 
-            {/* Frame counter input */}
+            {/* Frame counter input — uses unpadded content frame count */}
             <FrameCounterInput
               currentFrame={currentFrame}
-              frameCount={frameCount}
+              frameCount={displayFrameCount}
               onFrameChange={onFrameChange}
             />
 
