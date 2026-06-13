@@ -553,6 +553,17 @@ export function encodeDefineSprite(
         ? ((displayObj as { restrict?: string }).restrict ?? "")
         : "";
 
+      // Task 1175: compute clipActionsKey for change detection (mirrors compile.ts)
+      const thisClipActionsKey = (() => {
+        if (displayObj.type !== "instance") return null;
+        const inst = displayObj as import("@flash/core").SymbolInstance;
+        const loopMode = inst.loopMode ?? "loop";
+        const firstFrame = inst.firstFrame ?? 0;
+        const explicit = inst.clipActions ?? [];
+        if (loopMode === "loop" && firstFrame === 0 && explicit.length === 0) return null;
+        return JSON.stringify({ loopMode, firstFrame, clipActions: explicit });
+      })();
+
       const isFirst = !prev;
       // Bug 1102 fix: posChanged now includes all transform components + colorEffectKey
       const posChanged =
@@ -566,13 +577,14 @@ export function encodeDefineSprite(
           prev.skewY !== skewY ||
           prev.objId !== objId ||
           prev.colorEffectKey !== thisColorEffectKey ||
+          prev.clipActionsKey !== thisClipActionsKey ||
           prev.morphRatio !== morphRatio ||
           prev.letterSpacingKey !== thisLetterSpacingKey ||
           prev.restrictKey !== thisRestrictKey);
 
       if (!isFirst && !posChanged) {
         // Unchanged — emit nothing
-        depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, clipActionsKey: null, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+        depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
         continue;
       }
 
@@ -701,7 +713,7 @@ export function encodeDefineSprite(
             const hasButtonHandlers = !!(displayObj as { buttonHandlers?: ButtonHandler[] }).buttonHandlers?.length;
             if (hasButtonHandlers) {
               const sym = doc.library.items.find(item => item.itemType === "symbol" && item.id === displayObj.symbolId) as Symbol | undefined;
-              if (sym && sym.symbolType === "button") {
+              if (sym && (sym.symbolType === "button" || hasButtonHandlers)) {
                 const instCharId = nextCharId();
                 const instHoisted: Array<{ tagType: number; body: Uint8Array }> = [];
                 const buttonBody = encodeDefineButton2(
@@ -974,7 +986,7 @@ export function encodeDefineSprite(
         }
       }
 
-      depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, clipActionsKey: null, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+      depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
     }
 
     // Emit FrameLabel (tag 43) if any keyframe at this frame index has a label

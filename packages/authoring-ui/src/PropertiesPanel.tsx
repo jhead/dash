@@ -1232,6 +1232,24 @@ export function useFontList(): string[] {
   return fonts;
 }
 
+/** Derive the "Line type" dropdown value from the raw boolean fields. */
+function getLineType(obj: TextDisplayObject): "single" | "multiline" | "multiline-nowrap" | "password" {
+  if (obj.password) return "password";
+  if (obj.multiline && obj.wordWrap) return "multiline";
+  if (obj.multiline && !obj.wordWrap) return "multiline-nowrap";
+  return "single";
+}
+
+/** Convert a Line-type dropdown selection back to the three boolean fields. */
+function lineTypeToFields(value: string): Partial<TextDisplayObject> {
+  switch (value) {
+    case "multiline":       return { multiline: true,  wordWrap: true,  password: false };
+    case "multiline-nowrap": return { multiline: true,  wordWrap: false, password: false };
+    case "password":        return { multiline: false, wordWrap: false, password: true  };
+    default:                return { multiline: false, wordWrap: false, password: false };
+  }
+}
+
 function TextView({
   obj,
   onUpdateObject,
@@ -1250,6 +1268,11 @@ function TextView({
     setInstanceNameDraft(obj.instanceName ?? "");
   }, [obj.instanceName, obj.id]);
 
+  const [varNameDraft, setVarNameDraft] = useState(obj.as2VariableName ?? "");
+  useEffect(() => {
+    setVarNameDraft(obj.as2VariableName ?? "");
+  }, [obj.as2VariableName, obj.id]);
+
   const commitFont = useCallback(() => {
     if (fontDraft.trim()) {
       onUpdateObject(obj.id, { fontFamily: fontDraft.trim() } as Partial<DisplayObject>);
@@ -1261,6 +1284,10 @@ function TextView({
   const commitInstanceName = useCallback(() => {
     onUpdateObject(obj.id, { instanceName: instanceNameDraft } as Partial<DisplayObject>);
   }, [obj.id, instanceNameDraft, onUpdateObject]);
+
+  const commitVarName = useCallback(() => {
+    onUpdateObject(obj.id, { as2VariableName: varNameDraft } as Partial<DisplayObject>);
+  }, [obj.id, varNameDraft, onUpdateObject]);
 
   const textColorHex = colorToHex(obj.color);
   const isNotStatic = obj.textType !== "static";
@@ -1281,6 +1308,23 @@ function TextView({
               onKeyDown={(e) => {
                 if (e.key === "Enter") { e.preventDefault(); commitInstanceName(); }
                 if (e.key === "Escape") { e.preventDefault(); setInstanceNameDraft(obj.instanceName ?? ""); }
+              }}
+            />
+          </div>
+          <div style={S.separator} />
+
+          {/* AS2 variable name (dynamic/input only) */}
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Var:</span>
+            <input
+              style={S.inputWide}
+              value={varNameDraft}
+              placeholder="variable name"
+              onChange={(e) => setVarNameDraft(e.target.value)}
+              onBlur={commitVarName}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); commitVarName(); }
+                if (e.key === "Escape") { e.preventDefault(); setVarNameDraft(obj.as2VariableName ?? ""); }
               }}
             />
           </div>
@@ -1467,71 +1511,81 @@ function TextView({
 
       <div style={S.separator} />
 
-      {/* Word Wrap */}
-      <div style={S.fieldGroup}>
-        <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={obj.wordWrap}
-            onChange={(e) => onUpdateObject(obj.id, { wordWrap: e.target.checked } as Partial<DisplayObject>)}
-          />
-          Wrap
-        </label>
-      </div>
-
-      {/* Multiline (dynamic/input only) */}
-      {isNotStatic && (
+      {/* Line type dropdown (dynamic/input) or word-wrap only checkbox (static) */}
+      {isNotStatic ? (
+        <div style={S.fieldGroup}>
+          <span style={S.label}>Line type:</span>
+          <select
+            style={S.selectWide}
+            value={getLineType(obj)}
+            onChange={(e) =>
+              onUpdateObject(obj.id, lineTypeToFields(e.target.value) as Partial<DisplayObject>)
+            }
+          >
+            <option value="single">Single line</option>
+            <option value="multiline">Multiline</option>
+            <option value="multiline-nowrap">Multiline no wrap</option>
+            {obj.textType === "input" && (
+              <option value="password">Password</option>
+            )}
+          </select>
+        </div>
+      ) : (
         <div style={S.fieldGroup}>
           <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
             <input
               type="checkbox"
-              checked={obj.multiline}
-              onChange={(e) => onUpdateObject(obj.id, { multiline: e.target.checked } as Partial<DisplayObject>)}
+              checked={obj.wordWrap}
+              onChange={(e) => onUpdateObject(obj.id, { wordWrap: e.target.checked } as Partial<DisplayObject>)}
             />
-            Multiline
+            Wrap
           </label>
         </div>
+      )}
+
+      {/* HTML toggle — render as HTML (dynamic/input only) */}
+      {isNotStatic && (
+        <>
+          <div style={S.separator} />
+          <div style={S.fieldGroup}>
+            <button
+              style={{
+                ...S.toggleBtn,
+                background: obj.html ? "#1a6ea8" : "#333",
+                color: obj.html ? "#fff" : "#999",
+                fontFamily: "monospace",
+                letterSpacing: "-1px",
+              }}
+              onClick={() => onUpdateObject(obj.id, { html: !obj.html } as Partial<DisplayObject>)}
+              title={obj.html ? "Render as HTML (on)" : "Render as HTML (off)"}
+            >
+              {"<>"}
+            </button>
+          </div>
+        </>
       )}
 
       {/* Scrollable (dynamic/input only) */}
       {isNotStatic && (
-        <div style={S.fieldGroup}>
-          <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={obj.scrollable ?? false}
-              onChange={(e) => onUpdateObject(obj.id, { scrollable: e.target.checked } as Partial<DisplayObject>)}
-            />
-            Scroll
-          </label>
-        </div>
-      )}
-
-      {/* Input-only properties: password, maxChars, hasBorder, hasBackground */}
-      {obj.textType === "input" && (
         <>
+          <div style={S.separator} />
           <div style={S.fieldGroup}>
             <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
               <input
                 type="checkbox"
-                checked={obj.password ?? false}
-                onChange={(e) => onUpdateObject(obj.id, { password: e.target.checked } as Partial<DisplayObject>)}
+                checked={obj.scrollable ?? false}
+                onChange={(e) => onUpdateObject(obj.id, { scrollable: e.target.checked } as Partial<DisplayObject>)}
               />
-              Password
+              Scroll
             </label>
           </div>
+        </>
+      )}
 
-          <div style={S.fieldGroup}>
-            <span style={S.label}>Max Chars:</span>
-            <NumInput
-              value={obj.maxChars ?? 0}
-              min={0}
-              max={65535}
-              style={{ width: 52 }}
-              onChange={(v) => onUpdateObject(obj.id, { maxChars: Math.max(0, Math.round(v)) } as Partial<DisplayObject>)}
-            />
-          </div>
-
+      {/* Border toggle — dynamic and input text */}
+      {(obj.textType === "dynamic" || obj.textType === "input") && (
+        <>
+          <div style={S.separator} />
           <div style={S.fieldGroup}>
             <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
               <input
@@ -1541,6 +1595,22 @@ function TextView({
               />
               Border
             </label>
+          </div>
+        </>
+      )}
+
+      {/* Input-only properties: maxChars, hasBackground */}
+      {obj.textType === "input" && (
+        <>
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Max Chars:</span>
+            <NumInput
+              value={obj.maxChars ?? 0}
+              min={0}
+              max={65535}
+              style={{ width: 52 }}
+              onChange={(v) => onUpdateObject(obj.id, { maxChars: Math.max(0, Math.round(v)) } as Partial<DisplayObject>)}
+            />
           </div>
 
           <div style={S.fieldGroup}>
