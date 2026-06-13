@@ -1,0 +1,10 @@
+{
+  "id": "1184-ui-timeline-frame-counter-shows-padded-min-visib",
+  "title": "UI: timeline frame counter shows padded MIN_VISIBLE_FRAMES (48) instead of actual content frame count",
+  "description": "Reported on golden FLA import: the timeline shows ~48 frames but the document only has 2. NOT a parser/model bug \u2014 loadFla yields exactly 2 frames per scene layer (verified: every layer frames.length===2, getFrameCount(scene)===2). The cause is in packages/authoring-ui/src/Timeline.tsx: totalFrameCount() (line 188) returns Math.max(longestLayerFrameCount, MIN_VISIBLE_FRAMES=48), and that padded value (frameCount, line 665) feeds BOTH the frame grid AND the 'current / total' readout at line 2275 ({display} / {frameCount} -> '1 / 48'). Rendering 48 empty padding cells in the grid is correct Flash 8 behavior, but the reported TOTAL must reflect the real content length (the longest layer's actual frameCount, e.g. 2), not the padding minimum. Fix: separate the grid-render width (padded) from the displayed content frame count (unpadded getFrameCount/layerFrameCount max). The bottom counter and any 'frames' display should show the unpadded value; the empty grid can still extend to MIN_VISIBLE_FRAMES. Acceptance: importing golden.fla shows '/ 2' (or current-frame-of-2) in the timeline counter while still rendering the empty padding cells.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-13T22:04:23Z",
+  "updated_at": "2026-06-13T22:04:23Z"
+}
