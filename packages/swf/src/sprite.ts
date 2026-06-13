@@ -13,7 +13,7 @@
  * DefineSprite tag. Callers should collect hoisted definitions via the
  * `hoistedDefs` out-parameter and emit them before the sprite tag.
  */
-import type { BitmapItem, ButtonHandler, ClipAction, DisplayObject, FlashDocument, Symbol, VideoDisplayObject } from "@flash/core";
+import type { BitmapItem, ButtonHandler, ClipAction, DisplayObject, Fill, FlashDocument, Shape, Symbol, VideoDisplayObject } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { BitWriter } from "./bits.js";
 import {
@@ -117,6 +117,57 @@ function videoFitTransform(
 }
 
 // ---------------------------------------------------------------------------
+// shiftShapePaths — normalize shape geometry to symbol-local space
+// ---------------------------------------------------------------------------
+
+/**
+ * Shift a fill's gradient matrix translation by (dx, dy) in pixels.
+ * Only linear-gradient and radial-gradient fills with an explicit matrix need
+ * shifting; solid and bitmap fills are positionally neutral.
+ */
+function shiftFill(fill: Fill, dx: number, dy: number): Fill {
+  if (fill.type !== "linear-gradient" && fill.type !== "radial-gradient") return fill;
+  if (!fill.matrix) return fill;
+  return { ...fill, matrix: { ...fill.matrix, tx: fill.matrix.tx + dx, ty: fill.matrix.ty + dy } };
+}
+
+/**
+ * Return a new Shape whose path coordinates (start points, segment endpoints,
+ * curve control points) and gradient fill matrices are all shifted by (dx, dy)
+ * in pixels.  Used to normalise shape geometry from absolute/local space into
+ * symbol-local space when building a DefineSprite.
+ *
+ * The caller applies the negative of the shape's (x,y) position as the shift
+ * so that shape coords + shape.x ends up at the sprite-local position while
+ * the PlaceObject2 tx/ty inside the sprite becomes 0,0.
+ */
+function shiftShapePaths(shape: Shape, dx: number, dy: number): Shape {
+  if (dx === 0 && dy === 0) return shape;
+  return {
+    ...shape,
+    paths: shape.paths.map((path) => {
+      const shiftedFill = path.fill ? shiftFill(path.fill, dx, dy) : undefined;
+      return {
+        ...path,
+        start: { x: path.start.x + dx, y: path.start.y + dy },
+        segments: path.segments.map((seg) => {
+          if (seg.type === "line") {
+            return { type: "line" as const, to: { x: seg.to.x + dx, y: seg.to.y + dy } };
+          } else {
+            return {
+              type: "curve" as const,
+              control: { x: seg.control.x + dx, y: seg.control.y + dy },
+              to: { x: seg.to.x + dx, y: seg.to.y + dy },
+            };
+          }
+        }),
+        ...(shiftedFill !== undefined ? { fill: shiftedFill } : {}),
+      };
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -171,6 +222,13 @@ export function encodeDefineSprite(
   //
   // Map from display-object id → stable SWF character ID
   const objCharIdMap = new Map<string, number>();
+
+  // Shape normalization: track the (x,y) offset baked into each DefineShape so
+  // that PlaceObject2 inside the sprite can emit the residual delta (0,0 for
+  // non-tweened shapes).  Key = display-object id; value = normalization origin
+  // in pixels (the (x,y) that was added to the path coords when DefineShape was
+  // encoded).
+  const shapeNormOrigin = new Map<string, { x: number; y: number }>();
 
   // Morph-shape tracking: ids of objects encoded as DefineMorphShape2
   const morphShapeObjIds = new Set<string>();
@@ -247,8 +305,20 @@ export function encodeDefineSprite(
         if (obj.type === "shape" || obj.type === "drawing-object") {
           const charId = nextCharId();
           objCharIdMap.set(obj.id, charId);
+          // Task 1171: normalize symbol-internal shape geometry to the symbol's
+          // registration origin. The model stores absolute authoring path coords
+          // plus a displayObject (x,y) offset; real Flash 8 instead centers each
+          // symbol's geometry on the registration origin (DefineShape coords are
+          // origin-relative) and carries the offset in the sprite-internal
+          // PlaceObject2 matrix. We shift path coords by (+x,+y) so they become
+          // origin-relative, record the shift, and emit a residual PlaceObject2
+          // translation of (placement - shift) — i.e. 0,0 for non-tweened shapes.
+          const ox = ("x" in obj ? (obj as { x: number }).x ?? 0 : 0);
+          const oy = ("y" in obj ? (obj as { y: number }).y ?? 0 : 0);
+          shapeNormOrigin.set(obj.id, { x: ox, y: oy });
+          const normShape = shiftShapePaths(obj.shape, ox, oy);
           // Hoist DefineShape4 to top level (Bug 3)
-          hoistedDefs.push({ tagType: Tag.DefineShape4, body: encodeDefineShape4(charId, obj.shape) });
+          hoistedDefs.push({ tagType: Tag.DefineShape4, body: encodeDefineShape4(charId, normShape) });
         } else if (obj.type === "text") {
           const charId = nextCharId();
           objCharIdMap.set(obj.id, charId);
@@ -495,6 +565,16 @@ export function encodeDefineSprite(
           x -= inst.registrationPoint.x;
           y -= inst.registrationPoint.y;
         }
+      }
+
+      // Task 1171: for shapes whose DefineShape geometry was normalized to the
+      // registration origin in the pre-pass, subtract the same shift from the
+      // placement so the residual PlaceObject2 translation is (placement - shift)
+      // — 0,0 for non-tweened shapes, and the tween delta for motion-tweened ones.
+      const normOrigin = shapeNormOrigin.get(objId);
+      if (normOrigin) {
+        x -= normOrigin.x;
+        y -= normOrigin.y;
       }
 
       // Bug 1103 fix: compute colorEffectKey for change detection
