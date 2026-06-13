@@ -562,7 +562,7 @@ export function encodeDefineSprite(
 
       if (!isFirst && !posChanged) {
         // Unchanged — emit nothing
-        depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+        depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, clipActionsKey: null, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
         continue;
       }
 
@@ -964,7 +964,7 @@ export function encodeDefineSprite(
         }
       }
 
-      depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+      depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, colorEffectKey: thisColorEffectKey, clipActionsKey: null, morphRatio, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
     }
 
     // Emit FrameLabel (tag 43) if any keyframe at this frame index has a label

@@ -1,0 +1,10 @@
+{
+  "id": "1171-symbol-internal-shapes-not-normalized-to-registr",
+  "title": "Symbol-internal shapes not normalized to registration origin (retain absolute authoring coords)",
+  "description": "Golden-pair oracle deviation. Real Flash 8 centers each symbol's geometry on its registration origin: golden Coin shape bounds = +/-220 twips (centered), golden PlayButton-face = +/-1231/+/-458 (centered). Our equivalents keep absolute authoring coordinates: our Coin DefineShape bounds = xMin 6659..xMax 7079 (~333px offset), our Box = 1360..2430 (~68px offset). Same SIZE, wrong ORIGIN \u2014 the symbol's contents are offset from (0,0) by the authoring position, and instance PlaceObject2 matrices correspondingly come out at tx/ty=0 instead of golden's real translations (playButton tx=5388, player tx=1895). Investigate whether normalization belongs in FLA import (CPicShape geometry relative to symbol) or compile (shape origin + PlaceObject2 offset split). Acceptance: symbol DefineShape bounds are origin-centered and instance placements carry the stage offset, matching golden within twip tolerance. Related (done): 0707, 0968, 0946, 1141.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-13T20:24:05Z",
+  "updated_at": "2026-06-13T20:24:05Z"
+}

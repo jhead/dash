@@ -1,0 +1,10 @@
+{
+  "id": "1173-swf-compile-csmtextsettings-tag-74-not-emitted-o",
+  "title": "SWF compile: CsmTextSettings (tag 74) not emitted on main-timeline text path",
+  "description": "Golden-pair oracle deviation. Real Flash 8 emits a CsmTextSettings (tag 74, FlashType anti-alias) record immediately after EACH text definition. Our compiler emits none on the main timeline (golden-report: CsmTextSettings ours=0/golden=3). Task 1131 fixed this only for text inside symbol timelines (sprite.ts); the scene/main-timeline compile path in compile.ts still omits it for both DefineText and DefineEditText. Acceptance: golden-report shows CsmTextSettings 3/3. Related (done): 1131, 0805, 0821.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-13T20:24:05Z",
+  "updated_at": "2026-06-13T20:24:05Z"
+}
