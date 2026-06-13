@@ -729,7 +729,38 @@ export interface TextDisplayObject {
    * anchor's `target` attribute. Omitted/empty means no explicit target.
    */
   readonly linkTarget?: string;
+  /**
+   * Embedded character ranges chosen via the "Embed…" (Character Embedding)
+   * dialog in the Flash 8 text Properties panel. Each entry is a named glyph
+   * range to embed in the published SWF font. When omitted (the default), the
+   * compiler embeds the full glyph set (current behavior — byte-identical to
+   * before this field existed). When present (even as an empty array), the
+   * compiler subsets the DefineFont2/3 glyph table to the union of:
+   *   - all named ranges in this array,
+   *   - the specific characters in {@link embedChars}, and
+   *   - the characters the field's own text strictly requires.
+   * "all" is a shorthand range that embeds the entire printable-ASCII set.
+   */
+  readonly embedRanges?: readonly EmbedRange[];
+  /**
+   * Specific characters to embed, from the "Include these characters" text box
+   * in the Character Embedding dialog. Combined (union) with {@link embedRanges}
+   * and the field's own text to form the embedded glyph set. Only consulted when
+   * {@link embedRanges} is present (i.e. the user has opted into subsetting).
+   */
+  readonly embedChars?: string;
 }
+
+/**
+ * A named glyph range offered by the Character Embedding ("Embed…") dialog.
+ * Mirrors the Flash 8 preset list. "all" embeds the whole printable-ASCII set.
+ */
+export type EmbedRange =
+  | "all"
+  | "uppercase"
+  | "lowercase"
+  | "numerals"
+  | "punctuation";
 
 /**
  * A bitmap image placed on a layer, referencing a BitmapItem in the library.

@@ -31,7 +31,7 @@ import {
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
 import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
-import { encodeDefineFont2, encodeDefineFontAlignZones, fontKey } from "./fonts.js";
+import { encodeDefineFont2, encodeDefineFontAlignZones, fontKey, computeEmbedCodePoints, FULL_CODE_POINTS } from "./fonts.js";
 import {
   encodePlaceObject3WithFilters,
   encodePlaceObject3WithBlendMode,
@@ -664,6 +664,81 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Font glyph subsetting ("Embed…" character ranges).
+  //
+  // For each embedded font we compute the set of printable-ASCII code points to
+  // embed. A font is shared (deduplicated by fontKey) across every field that
+  // uses the same face/bold/italic, but the embed-range selection is per FIELD,
+  // so the embedded set is the UNION of every field's selection.
+  //
+  // CRITICAL (golden invariant): if NO field with a given font key has opted into
+  // subsetting (every such field has embedRanges === undefined), the set stays
+  // the full default (32–126) and output is byte-identical to embed-everything.
+  // Only when at least one field explicitly chooses ranges do we subset.
+  //
+  // embedCodePointsByKey: fontKey → sorted code-point array embedded for that font.
+  // glyphIndexByKey:      fontKey → code-point → glyph-index map for DefineText.
+  // ---------------------------------------------------------------------------
+  const embedCodePointsByKey = new Map<string, number[]>();
+  {
+    // Per font key: whether any field opted in, plus the accumulating union set.
+    const optedIn = new Set<string>();
+    const unionByKey = new Map<string, Set<number>>();
+    const accumulate = (layers: readonly import("@flash/core").Layer[]) => {
+      for (const layer of layers) {
+        if (layer.type === "guide" || layer.type === "folder") continue;
+        for (const frame of layer.frames) {
+          if (!frame.isKeyframe) continue;
+          for (const obj of flattenDisplayObjects(frame.displayObjects)) {
+            if (obj.type !== "text") continue;
+            const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
+            if (obj.embedRanges === undefined) continue; // not opted in
+            optedIn.add(key);
+            let set = unionByKey.get(key);
+            if (!set) {
+              set = new Set<number>();
+              unionByKey.set(key, set);
+            }
+            for (const c of computeEmbedCodePoints(obj.embedRanges, obj.embedChars, obj.text)) {
+              set.add(c);
+            }
+          }
+        }
+      }
+    };
+    for (const s of doc.scenes) accumulate(s.timeline.layers);
+    for (const item of doc.library.items) {
+      if (item.itemType !== "symbol") continue;
+      accumulate((item as import("@flash/core").Symbol).timeline.layers);
+    }
+    for (const key of optedIn) {
+      const set = unionByKey.get(key)!;
+      embedCodePointsByKey.set(key, [...set].sort((a, b) => a - b));
+    }
+  }
+
+  /** Code points to embed for a font key (full default unless the user subsetted). */
+  const codePointsForKey = (key: string): readonly number[] =>
+    embedCodePointsByKey.get(key) ?? FULL_CODE_POINTS;
+
+  /** Build a code-point → glyph-index map for a font key (for DefineText). */
+  const glyphIndexMapForKey = (key: string): ReadonlyMap<number, number> => {
+    const m = new Map<number, number>();
+    const cps = codePointsForKey(key);
+    for (let i = 0; i < cps.length; i++) m.set(cps[i], i);
+    return m;
+  };
+
+  // Glyph-index maps for subsetted fonts only (keys with an explicit embed range).
+  // Passed to encodeDefineSprite / encodeDefineButton2 so their static DefineText
+  // uses the correct subsetted glyph indices. Keys absent here fall back to the
+  // legacy `code - 32` mapping (full default table) — byte-identical to before.
+  const glyphIndexMapByFontKey = new Map<string, ReadonlyMap<number, number>>();
+  for (const key of embedCodePointsByKey.keys()) {
+    glyphIndexMapByFontKey.set(key, glyphIndexMapForKey(key));
+  }
+
   for (const s of doc.scenes) {
     for (const layer of s.timeline.layers) {
       if (layer.type === "guide") continue;
@@ -677,14 +752,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           if (fontCharIdMap.has(key)) continue;
           const fontId = writer.nextCharId();
           fontCharIdMap.set(key, fontId);
-          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key));
+          const cps = codePointsForKey(key);
+          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key), cps);
           writer.writeTag(fontTagCode, fontBody);
           // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3
           // for all embedded fonts. Provides per-glyph stem-width hint zones
           // that enable the FlashType sub-pixel rendering path in Ruffle.
           // Harmlessly ignored for non-FlashType anti-alias modes.
           if (useFont3) {
-            const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
+            const alignZonesBody = encodeDefineFontAlignZones(fontId, cps.length, fontCoordScale);
             writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
           }
           // DefineFontInfo2 (tag 62) suppressed: real Flash 8 does not emit this tag.
@@ -713,10 +789,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           if (fontCharIdMap.has(key)) continue;
           const fontId = writer.nextCharId();
           fontCharIdMap.set(key, fontId);
-          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key));
+          const cps = codePointsForKey(key);
+          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key), cps);
           writer.writeTag(fontTagCode, fontBody);
           if (useFont3) {
-            const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
+            const alignZonesBody = encodeDefineFontAlignZones(fontId, cps.length, fontCoordScale);
             writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
           }
           // DefineFontInfo2 (tag 62) suppressed: real Flash 8 does not emit this tag.
@@ -737,11 +814,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     if (fontCharIdMap.has(key)) continue; // already emitted from text pre-pass
     const fontId = writer.nextCharId();
     fontCharIdMap.set(key, fontId);
-    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale, kernedFontKeys.has(key));
+    const cps = codePointsForKey(key);
+    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale, kernedFontKeys.has(key), cps);
     writer.writeTag(fontTagCode, fontBody);
     // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3.
     if (useFont3) {
-      const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
+      const alignZonesBody = encodeDefineFontAlignZones(fontId, cps.length, fontCoordScale);
       writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
     }
     // DefineFontInfo2 (tag 62) suppressed: real Flash 8 does not emit this tag.
@@ -856,7 +934,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         hoistedDefs,
         undefined,
         undefined,
-        fontCharIdMap
+        fontCharIdMap,
+        glyphIndexMapByFontKey
       );
 
       // Emit hoisted shape/text definition tags first
@@ -881,7 +960,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
         fontCharIdMap,
         soundIdMap,
         videoCharIdMap,
-        videoStreams
+        videoStreams,
+        glyphIndexMapByFontKey
       );
 
       // Emit hoisted definition tags first
@@ -1301,6 +1381,12 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               // actual stage position is applied via PlaceObject2 as usual.
               const fontSizeTwips = Math.round(obj.fontSize * 20);
               // Use fontSize as the Y baseline offset so glyphs sit above the origin.
+              // Glyph-index map for the (possibly subsetted) font so DefineText
+              // glyph indices point at the right entries. Only non-default when
+              // the user has chosen embed ranges for this font.
+              const glyphIndexByCode = embedCodePointsByKey.has(key)
+                ? glyphIndexMapForKey(key)
+                : undefined;
               const textBody = encodeDefineText(
                 charId,
                 obj.text,
@@ -1309,7 +1395,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 `#${obj.color.r.toString(16).padStart(2, "0")}${obj.color.g.toString(16).padStart(2, "0")}${obj.color.b.toString(16).padStart(2, "0")}`,
                 0,
                 fontSizeTwips,
-                obj.autoKern === true
+                obj.autoKern === true,
+                glyphIndexByCode
               );
               writer.writeTag(Tag.DefineText, textBody);
             } else {
@@ -2151,7 +2238,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                       instHoisted,
                       displayObj.buttonHandlers as readonly ButtonHandler[],
                       displayObj.trackAsMenu,
-                      fontCharIdMap
+                      fontCharIdMap,
+                      glyphIndexMapByFontKey
                     );
                     for (const def of instHoisted) {
                       writer.writeTag(def.tagType, def.body);

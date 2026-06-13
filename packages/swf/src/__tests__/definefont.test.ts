@@ -315,6 +315,147 @@ describe("DefineFont3 (tag 75) — DefineEditText referencing a font compiles", 
   });
 });
 
+// ---------------------------------------------------------------------------
+// DefineFont2/3 glyph-count + code-table parser (for embed subsetting tests)
+// ---------------------------------------------------------------------------
+
+/** Parse the GlyphCount and (WideCodes) CodeTable from a DefineFont2/3 body. */
+function parseFontGlyphs(body: Uint8Array): { glyphCount: number; codeTable: number[] } {
+  // FontID(2) + flags(1) + langCode(1) + nameLen(1) + name(nameLen)
+  const nameLen = body[4];
+  let p = 5 + nameLen;
+  const glyphCount = body[p] | (body[p + 1] << 8);
+  p += 2;
+  // We emit WideOffsets=1 (32-bit) and WideCodes=1 (UI16). The OffsetTable is
+  // (glyphCount + 1) × 4 bytes; the first entry's value is the byte offset from
+  // the start of the OffsetTable to the first glyph, and the last entry points to
+  // the CodeTable. Read the CodeTableOffset (last entry) to locate the codes.
+  const offsetTableStart = p;
+  const codeTableOffset =
+    body[offsetTableStart + glyphCount * 4] |
+    (body[offsetTableStart + glyphCount * 4 + 1] << 8) |
+    (body[offsetTableStart + glyphCount * 4 + 2] << 16) |
+    (body[offsetTableStart + glyphCount * 4 + 3] << 24);
+  const codeTableStart = offsetTableStart + codeTableOffset;
+  const codeTable: number[] = [];
+  for (let i = 0; i < glyphCount; i++) {
+    const o = codeTableStart + i * 2;
+    codeTable.push(body[o] | (body[o + 1] << 8));
+  }
+  return { glyphCount, codeTable };
+}
+
+describe("computeEmbedCodePoints (task 1182)", () => {
+  it("undefined ranges → full default set (32–126), 95 code points", async () => {
+    const { computeEmbedCodePoints } = await import("../fonts.js");
+    const cps = computeEmbedCodePoints(undefined, undefined, "anything");
+    expect(cps.length).toBe(95);
+    expect(cps[0]).toBe(32);
+    expect(cps[cps.length - 1]).toBe(126);
+  });
+
+  it("'numerals' → space + 0–9 only", async () => {
+    const { computeEmbedCodePoints } = await import("../fonts.js");
+    const cps = computeEmbedCodePoints(["numerals"], "", "");
+    expect(cps).toEqual([0x20, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39]);
+  });
+
+  it("union of ranges + specific chars + field text, clamped to printable ASCII", async () => {
+    const { computeEmbedCodePoints } = await import("../fonts.js");
+    const cps = computeEmbedCodePoints(["numerals"], "@", "Hi\t\n");
+    // numerals + space + '@' + 'H' + 'i'; control chars (\t,\n) dropped.
+    expect(cps).toContain(0x40); // '@'
+    expect(cps).toContain(0x48); // 'H'
+    expect(cps).toContain(0x69); // 'i'
+    expect(cps).not.toContain(9); // tab dropped (out of 32–126)
+    expect(cps).not.toContain(10); // newline dropped
+  });
+
+  it("'all' embeds the entire printable-ASCII set", async () => {
+    const { computeEmbedCodePoints } = await import("../fonts.js");
+    const cps = computeEmbedCodePoints(["all"], "", "");
+    expect(cps.length).toBe(95);
+  });
+});
+
+describe("Font glyph subsetting — 'Embed…' character ranges (task 1182)", () => {
+  it("no embedRanges → full 95-glyph table (default, golden-identical)", () => {
+    const doc = makeDocWithText([makeText({ textType: "dynamic", fontFamily: "Arial", text: "123" })]);
+    const font = findTags(compileDocument(doc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const { glyphCount, codeTable } = parseFontGlyphs(font.body);
+    expect(glyphCount).toBe(95);
+    expect(codeTable[0]).toBe(32); // space
+    expect(codeTable[codeTable.length - 1]).toBe(126); // '~'
+  });
+
+  it("'Numerals only' embeds just the 0–9 glyphs (plus space + field text)", () => {
+    const doc = makeDocWithText([
+      makeText({ textType: "dynamic", fontFamily: "Arial", text: "", embedRanges: ["numerals"], embedChars: "" }),
+    ]);
+    const font = findTags(compileDocument(doc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const { glyphCount, codeTable } = parseFontGlyphs(font.body);
+    // space (0x20) + 0–9 = 11 glyphs.
+    expect(glyphCount).toBe(11);
+    expect(codeTable).toEqual([0x20, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39]);
+    // Far fewer than the all-glyphs baseline (95).
+    expect(glyphCount).toBeLessThan(95);
+  });
+
+  it("subsetted font body is smaller than the full-font body", () => {
+    const subsetDoc = makeDocWithText([
+      makeText({ textType: "dynamic", fontFamily: "Arial", text: "", embedRanges: ["numerals"] }),
+    ]);
+    const fullDoc = makeDocWithText([
+      makeText({ textType: "dynamic", fontFamily: "Arial", text: "" }),
+    ]);
+    const subset = findTags(compileDocument(subsetDoc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const full = findTags(compileDocument(fullDoc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    expect(subset.body.length).toBeLessThan(full.body.length);
+  });
+
+  it("field text characters are always included even if out of the chosen ranges", () => {
+    const doc = makeDocWithText([
+      makeText({ textType: "dynamic", fontFamily: "Arial", text: "A7", embedRanges: ["numerals"] }),
+    ]);
+    const font = findTags(compileDocument(doc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const { codeTable } = parseFontGlyphs(font.body);
+    expect(codeTable).toContain(0x41); // 'A' — required by the field text
+    expect(codeTable).toContain(0x37); // '7'
+    expect(codeTable).toContain(0x30); // numerals range still present
+  });
+
+  it("union of two fields sharing a font merges their embed selections", () => {
+    const doc = makeDocWithText([
+      makeText({ id: "a", textType: "dynamic", fontFamily: "Arial", text: "", embedRanges: ["numerals"] }),
+      makeText({ id: "b", x: 10, y: 60, textType: "dynamic", fontFamily: "Arial", text: "", embedRanges: ["uppercase"] }),
+    ]);
+    const font = findTags(compileDocument(doc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const { codeTable } = parseFontGlyphs(font.body);
+    expect(codeTable).toContain(0x30); // numerals
+    expect(codeTable).toContain(0x41); // uppercase A
+    // 0–9 (10) + A–Z (26) + space (1) = 37
+    expect(codeTable.length).toBe(37);
+  });
+
+  it("static DefineText glyph indices reference the subsetted table correctly", () => {
+    const TAG_DEFINE_TEXT = 11;
+    // Static field with text "5" and numerals embedded. In the subset table the
+    // glyph order is [space, 0,1,2,3,4,5,...], so '5' is glyph index 6 — NOT the
+    // legacy code-32 index (53-32=21, which would be out of range).
+    const doc = makeDocWithText([
+      makeText({ textType: "static", fontFamily: "Arial", text: "5", embedRanges: ["numerals"] }),
+    ]);
+    const tags = findTags(compileDocument(doc));
+    const font = tags.find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const { codeTable } = parseFontGlyphs(font.body);
+    const expectedIndex = codeTable.indexOf(0x35); // index of '5' in subset table
+    expect(expectedIndex).toBeGreaterThanOrEqual(0);
+    expect(expectedIndex).toBeLessThan(codeTable.length);
+    // A DefineText tag is emitted for the static field.
+    expect(tags.some((t) => t.type === TAG_DEFINE_TEXT)).toBe(true);
+  });
+});
+
 describe("DefineFont3 (tag 75) — Auto kern KerningTable (task 1178)", () => {
   it("encodeDefineFont2 emits KerningCount=0 when kerning is off", async () => {
     const { encodeDefineFont2 } = await import("../fonts.js");

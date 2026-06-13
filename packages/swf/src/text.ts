@@ -82,7 +82,15 @@ export function encodeDefineText(
    * DefineText record for static "Auto kern" fields (rather than relying on a
    * runtime KerningTable as dynamic/input fields do).
    */
-  autoKern = false
+  autoKern = false,
+  /**
+   * Optional code-point → glyph-index map for the referenced (possibly subsetted)
+   * font. When omitted, the legacy mapping `glyphIndex = code - 32` is used, which
+   * matches the full default 95-glyph table (codes 32–126) — byte-identical to the
+   * historical behavior. When the font has been subsetted to a chosen embed range,
+   * pass the map so glyph indices point at the right entries in the subset table.
+   */
+  glyphIndexByCode?: ReadonlyMap<number, number>
 ): Uint8Array {
   const GLYPH_BITS = 8;
   // Advances are in twips and can exceed an 8-bit signed range for larger text
@@ -174,7 +182,10 @@ export function encodeDefineText(
   const advMask = (1 << ADVANCE_BITS) - 1;
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
-    const glyphIndex = Math.max(0, code - 32) & 0xff;
+    // Glyph index into the (possibly subsetted) font glyph table. With the full
+    // default table this is `code - 32`; with a subset, look it up in the map.
+    const mappedIndex = glyphIndexByCode?.get(code);
+    const glyphIndex = (mappedIndex ?? Math.max(0, code - 32)) & 0xff;
     let advance = glyphAdvanceTwips(code, fontSize);
     // Bake pair kerning into this glyph's advance (Flash-accurate static kerning):
     // the adjustment for (this glyph, next glyph) is added in the same EM space

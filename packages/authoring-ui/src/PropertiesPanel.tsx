@@ -35,10 +35,12 @@ import type {
   TextAlign,
   TextType,
   TweenType,
+  EmbedRange,
 } from "@flash/core";
 import { shapeBounds } from "@flash/core";
 import { ColorPicker } from "./ColorPicker";
 import { EaseCurveDialog } from "./EaseCurveDialog";
+import { CharacterEmbeddingDialog } from "./CharacterEmbeddingDialog";
 
 // ---------------------------------------------------------------------------
 // Re-exported legacy types (kept for backward compatibility)
@@ -1282,6 +1284,10 @@ function TextView({
     onUpdateObject(obj.id, { linkUrl: linkUrlDraft } as Partial<DisplayObject>);
   }, [obj.id, linkUrlDraft, onUpdateObject]);
 
+  // Character Embedding ("Embed…") dialog open/close state.
+  const [showEmbedDialog, setShowEmbedDialog] = useState(false);
+  const isSubset = obj.embedRanges !== undefined;
+
   const commitFont = useCallback(() => {
     if (fontDraft.trim()) {
       onUpdateObject(obj.id, { fontFamily: fontDraft.trim() } as Partial<DisplayObject>);
@@ -1360,6 +1366,28 @@ function TextView({
             <option key={f} value={f} />
           ))}
         </datalist>
+      </div>
+
+      {/* Character embedding — opens the "Embed…" (Character Embedding) dialog */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Embed:</span>
+        <button
+          data-testid="embed-button"
+          style={{
+            ...S.toggleBtn,
+            width: "auto",
+            padding: "0 8px",
+            background: isSubset ? "#1a6ea8" : "#333",
+            color: isSubset ? "#fff" : "#bbb",
+          }}
+          onClick={() => setShowEmbedDialog(true)}
+          title="Choose which character ranges to embed in the published font"
+        >
+          Embed…
+        </button>
+        <span style={{ ...S.label, color: "#888", fontSize: 10 }}>
+          {isSubset ? "(subset)" : "(all)"}
+        </span>
       </div>
 
       {/* Font size */}
@@ -1792,6 +1820,20 @@ function TextView({
           <option value="_top">_top</option>
         </select>
       </div>
+
+      {showEmbedDialog && (
+        <CharacterEmbeddingDialog
+          initialRanges={obj.embedRanges}
+          initialChars={obj.embedChars ?? ""}
+          onConfirm={({ ranges, chars }) =>
+            onUpdateObject(obj.id, {
+              embedRanges: ranges as EmbedRange[] | undefined,
+              embedChars: ranges === undefined ? undefined : chars,
+            } as Partial<DisplayObject>)
+          }
+          onClose={() => setShowEmbedDialog(false)}
+        />
+      )}
     </div>
   );
 }

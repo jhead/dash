@@ -752,6 +752,10 @@ const handlers: Record<string, AnyHandler> = {
     linkTarget?: string;
     leading?: number;
     restrict?: string;
+    /** Named glyph ranges to embed (font subsetting). Omit for embed-all (default). */
+    embedRanges?: ("all" | "uppercase" | "lowercase" | "numerals" | "punctuation")[];
+    /** Specific characters to embed; combined with embedRanges + the field text. */
+    embedChars?: string;
     layerId?: string;
     frameIndex?: number;
   }): StageAddShapeResult {
@@ -790,6 +794,8 @@ const handlers: Record<string, AnyHandler> = {
       ...(params.linkTarget !== undefined && { linkTarget: params.linkTarget }),
       ...(params.leading !== undefined && { leading: params.leading }),
       ...(params.restrict !== undefined && { restrict: params.restrict }),
+      ...(params.embedRanges !== undefined && { embedRanges: params.embedRanges }),
+      ...(params.embedChars !== undefined && { embedChars: params.embedChars }),
     };
 
     const doc = cb.getDoc();

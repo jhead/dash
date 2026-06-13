@@ -173,7 +173,11 @@ export function encodeDefineButton2(
   /** When set, overrides the symbol's trackAsMenu flag for per-instance button definitions. */
   trackAsMenuOverride?: boolean,
   /** Maps fontKey(name, bold, italic) → SWF character ID; passed to encodeDefineEditText for button state text. */
-  fontCharIdMap?: Map<string, number>
+  fontCharIdMap?: Map<string, number>,
+  /** Maps fontKey → (code-point → glyph-index) for subsetted fonts ("Embed…"
+   *  ranges). Static DefineText for button state text uses it to map characters
+   *  to subsetted glyph indices. Absent for a key means the full default table. */
+  glyphIndexMapByFontKey?: ReadonlyMap<string, ReadonlyMap<number, number>>
 ): Uint8Array {
   const bw = new BitWriter();
 
@@ -225,6 +229,10 @@ export function encodeDefineButton2(
                 `#${obj.color.r.toString(16).padStart(2, "0")}${obj.color.g.toString(16).padStart(2, "0")}${obj.color.b.toString(16).padStart(2, "0")}`,
                 0,
                 fontSizeTwips,
+                // autoKern false here preserves the prior button-text behavior
+                // (button static text did not bake kerning); unchanged for golden.
+                false,
+                glyphIndexMapByFontKey?.get(fontKey(obj.fontFamily, obj.bold, obj.italic)),
               ),
             });
           } else {

@@ -204,7 +204,12 @@ export function encodeDefineSprite(
    *  VideoDisplayObject placement inside symbol timelines. */
   videoCharIdMap?: Map<string, number>,
   /** Video stream info (dimensions) for computing fit-transform for video objects. */
-  videoStreams?: ReadonlyArray<{ itemId: string; width: number; height: number }>
+  videoStreams?: ReadonlyArray<{ itemId: string; width: number; height: number }>,
+  /** Maps fontKey → (code-point → glyph-index) for fonts whose glyph set has been
+   *  subsetted via the "Embed…" character ranges. Static DefineText inside this
+   *  sprite uses it to map characters to the right (subsetted) glyph indices.
+   *  Absent/unset for a key means the full default 95-glyph table (legacy mapping). */
+  glyphIndexMapByFontKey?: ReadonlyMap<string, ReadonlyMap<number, number>>
 ): Uint8Array {
   const timeline = symbol.timeline;
   const layers = timeline.layers;
@@ -334,7 +339,8 @@ export function encodeDefineSprite(
             const fontSizeTwips = Math.round(obj.fontSize * 20);
             const c = obj.color;
             const colorHex = `#${c.r.toString(16).padStart(2, "0")}${c.g.toString(16).padStart(2, "0")}${c.b.toString(16).padStart(2, "0")}`;
-            hoistedDefs.push({ tagType: Tag.DefineText, body: encodeDefineText(charId, obj.text, embeddedFontId, fontSizeTwips, colorHex, 0, fontSizeTwips, obj.autoKern === true) });
+            const glyphIndexByCode = glyphIndexMapByFontKey?.get(fontKey(obj.fontFamily, obj.bold, obj.italic));
+            hoistedDefs.push({ tagType: Tag.DefineText, body: encodeDefineText(charId, obj.text, embeddedFontId, fontSizeTwips, colorHex, 0, fontSizeTwips, obj.autoKern === true, glyphIndexByCode) });
           } else {
             // Dynamic/input text (or static without embedded font): emit DefineEditText (tag 37).
             hoistedDefs.push({ tagType: Tag.DefineEditText, body: encodeDefineEditText(charId, obj, embeddedFontId) });
@@ -810,7 +816,8 @@ export function encodeDefineSprite(
                   instHoisted,
                   (displayObj as { buttonHandlers: readonly ButtonHandler[] }).buttonHandlers,
                   (displayObj as { trackAsMenu?: boolean }).trackAsMenu,
-                  fontCharIdMap
+                  fontCharIdMap,
+                  glyphIndexMapByFontKey
                 );
                 for (const def of instHoisted) {
                   hoistedDefs.push(def);

@@ -42,6 +42,7 @@ export type {
   TextDisplayObject,
   TextOrientation,
   TextType,
+  EmbedRange,
   VideoDisplayObject,
   Viewport,
 } from "./types.js";

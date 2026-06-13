@@ -38,8 +38,78 @@ import {
 const FIRST_CODE = 32;
 /** Last printable ASCII code point. */
 const LAST_CODE = 126;
-/** Total number of glyphs we embed (ASCII 32–126). */
-const GLYPH_COUNT = LAST_CODE - FIRST_CODE + 1; // 95
+/** Default glyph count when embedding the full printable-ASCII set (32–126). */
+export const DEFAULT_GLYPH_COUNT = LAST_CODE - FIRST_CODE + 1; // 95
+
+/**
+ * The full default embedded code-point set: printable ASCII 32–126. When a font
+ * is used without any explicit "Embed…" range selection, this complete set is
+ * embedded — byte-identical to the historical (embed-everything) behavior.
+ */
+export const FULL_CODE_POINTS: readonly number[] = (() => {
+  const out: number[] = [];
+  for (let c = FIRST_CODE; c <= LAST_CODE; c++) out.push(c);
+  return out;
+})();
+
+/** Named glyph range → the printable-ASCII code points it embeds. */
+const RANGE_CODE_POINTS: Record<string, number[]> = {
+  uppercase: range(0x41, 0x5a), // A–Z
+  lowercase: range(0x61, 0x7a), // a–z
+  numerals: range(0x30, 0x39), // 0–9
+  // Punctuation: every printable-ASCII char that is NOT a letter, digit, or space.
+  punctuation: FULL_CODE_POINTS.filter(
+    (c) =>
+      c !== 0x20 &&
+      !(c >= 0x41 && c <= 0x5a) &&
+      !(c >= 0x61 && c <= 0x7a) &&
+      !(c >= 0x30 && c <= 0x39)
+  ),
+  all: [...FULL_CODE_POINTS],
+};
+
+function range(lo: number, hi: number): number[] {
+  const out: number[] = [];
+  for (let c = lo; c <= hi; c++) out.push(c);
+  return out;
+}
+
+/**
+ * Compute the sorted set of printable-ASCII code points to embed for a field,
+ * given its chosen named ranges, free-text "specific characters", and the
+ * characters its own text strictly requires.
+ *
+ * - `ranges === undefined` → the user has NOT opted into subsetting; returns the
+ *   full default set (32–126) so output is byte-identical to embed-everything.
+ * - `ranges` present (even empty) → returns the union of the named ranges, the
+ *   specific chars, and the field's text — clamped to printable ASCII (32–126)
+ *   and always including space (0x20) so layout/advances stay well-formed.
+ */
+export function computeEmbedCodePoints(
+  ranges: readonly string[] | undefined,
+  specificChars: string | undefined,
+  fieldText: string | undefined
+): number[] {
+  if (ranges === undefined) return [...FULL_CODE_POINTS];
+
+  const set = new Set<number>();
+  set.add(0x20); // always embed space so spacing/advances resolve
+  for (const r of ranges) {
+    const cps = RANGE_CODE_POINTS[r];
+    if (cps) for (const c of cps) set.add(c);
+  }
+  const addPrintable = (s: string | undefined) => {
+    if (!s) return;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c >= FIRST_CODE && c <= LAST_CODE) set.add(c);
+    }
+  };
+  addPrintable(specificChars);
+  addPrintable(fieldText);
+
+  return [...set].sort((a, b) => a - b);
+}
 
 /** EM square size in font units — matches the TTF (NotoSans unitsPerEm). */
 const EM = GLYPH_EM; // 1024
@@ -141,11 +211,9 @@ export function kerningAdjustEm(leftCode: number, rightCode: number): number {
   return KERNING_LOOKUP.get(String.fromCharCode(leftCode) + String.fromCharCode(rightCode)) ?? 0;
 }
 
-function writeKerningTable(bw: BitWriter, coordScale: number): void {
+function writeKerningTable(bw: BitWriter, coordScale: number, embedded: ReadonlySet<number>): void {
   const pairs = KERNING_PAIRS_EM.filter(
-    ([l, r]) =>
-      l.charCodeAt(0) >= FIRST_CODE && l.charCodeAt(0) <= LAST_CODE &&
-      r.charCodeAt(0) >= FIRST_CODE && r.charCodeAt(0) <= LAST_CODE
+    ([l, r]) => embedded.has(l.charCodeAt(0)) && embedded.has(r.charCodeAt(0))
   );
   bw.writeUI16LE(pairs.length);
   for (const [l, r, em] of pairs) {
@@ -419,9 +487,19 @@ export function encodeDefineFont2(
    * the player can apply pair kerning to fields that enable "Auto kern". When
    * false (default) KerningCount is 0 and no pairs are written.
    */
-  kerning = false
+  kerning = false,
+  /**
+   * Sorted list of code points to embed (glyph subsetting). Defaults to the full
+   * printable-ASCII set (32–126), which makes the output byte-identical to the
+   * historical embed-everything behavior. Pass a subset (from
+   * {@link computeEmbedCodePoints}) to embed only the chosen glyphs, producing a
+   * smaller font. The DefineText glyph-index path must use the SAME ordering, so
+   * the glyph index of a code point is its position in this array.
+   */
+  codePoints: readonly number[] = FULL_CODE_POINTS
 ): Uint8Array {
   const bw = new BitWriter();
+  const glyphCount = codePoints.length;
 
   // FontID: UI16
   bw.writeUI16LE(charId);
@@ -449,7 +527,7 @@ export function encodeDefineFont2(
   bw.writeBytes(nameBytes);
 
   // GlyphCount: UI16
-  bw.writeUI16LE(GLYPH_COUNT);
+  bw.writeUI16LE(glyphCount);
 
   // ---------------------------------------------------------------------------
   // Pre-encode all glyph shapes so we know their byte lengths for the offset
@@ -462,13 +540,13 @@ export function encodeDefineFont2(
   //   CodeTable:      GLYPH_COUNT × 2 bytes (WideCodes)
   // ---------------------------------------------------------------------------
   const glyphBodies: Uint8Array[] = [];
-  for (let i = 0; i < GLYPH_COUNT; i++) {
-    glyphBodies.push(encodeGlyphShape(FIRST_CODE + i, coordScale));
+  for (let i = 0; i < glyphCount; i++) {
+    glyphBodies.push(encodeGlyphShape(codePoints[i], coordScale));
   }
 
-  const offsetTableSize = (GLYPH_COUNT + 1) * 4; // bytes
+  const offsetTableSize = (glyphCount + 1) * 4; // bytes
   let cursor = offsetTableSize;
-  for (let i = 0; i < GLYPH_COUNT; i++) {
+  for (let i = 0; i < glyphCount; i++) {
     bw.writeUI32LE(cursor);
     cursor += glyphBodies[i].length;
   }
@@ -476,13 +554,13 @@ export function encodeDefineFont2(
   bw.writeUI32LE(cursor);
 
   // GlyphShapeTable
-  for (let i = 0; i < GLYPH_COUNT; i++) {
+  for (let i = 0; i < glyphCount; i++) {
     bw.writeBytes(glyphBodies[i]);
   }
 
-  // CodeTable: GLYPH_COUNT UI16 entries (WideCodes=1) — Unicode code points.
-  for (let i = 0; i < GLYPH_COUNT; i++) {
-    bw.writeUI16LE(FIRST_CODE + i);
+  // CodeTable: glyphCount UI16 entries (WideCodes=1) — Unicode code points.
+  for (let i = 0; i < glyphCount; i++) {
+    bw.writeUI16LE(codePoints[i]);
   }
 
   // ---------------------------------------------------------------------------
@@ -495,8 +573,8 @@ export function encodeDefineFont2(
   // AdvanceTable (in the same EM units as the glyph coordinates). Real
   // per-glyph advances come from the embedded TTF; glyphs without an outline
   // fall back to the 5×7 box advance.
-  for (let i = 0; i < GLYPH_COUNT; i++) {
-    const codePoint = FIRST_CODE + i;
+  for (let i = 0; i < glyphCount; i++) {
+    const codePoint = codePoints[i];
     const emAdvance = glyphPath(codePoint) !== undefined ? glyphAdvance(codePoint) : FALLBACK_ADVANCE;
     const advance = Math.round(emAdvance * coordScale);
     bw.writeSI16LE(advance);
@@ -504,7 +582,7 @@ export function encodeDefineFont2(
 
   // BoundsTable — one RECT per glyph. Empty bounds are permitted (Ruffle
   // recalculates real bounds from the shape records); use empty RECTs.
-  for (let i = 0; i < GLYPH_COUNT; i++) {
+  for (let i = 0; i < glyphCount; i++) {
     bw.writeBits(0, 5); // Nbits = 0 → no coord bits follow
     bw.flushBits();
   }
@@ -512,7 +590,7 @@ export function encodeDefineFont2(
   // KerningTable (HasLayout=1). When the font is used by an "Auto kern" field,
   // emit the common Latin kerning pairs; otherwise KerningCount = 0.
   if (kerning) {
-    writeKerningTable(bw, coordScale);
+    writeKerningTable(bw, coordScale, new Set(codePoints));
   } else {
     bw.writeUI16LE(0); // KerningCount = 0
   }
