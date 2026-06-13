@@ -278,16 +278,6 @@ function decodeSetBackgroundColor(body: Uint8Array): { r: number; g: number; b: 
 }
 
 // ---------------------------------------------------------------------------
-// FrameLabel decoder (null-terminated string)
-// ---------------------------------------------------------------------------
-
-function decodeFrameLabel(body: Uint8Array): string {
-  let end = 0;
-  while (end < body.length && body[end] !== 0) end++;
-  return String.fromCharCode(...body.slice(0, end));
-}
-
-// ---------------------------------------------------------------------------
 // DefineFont2 body decoder (minimal: FontId + flags byte + name)
 // ---------------------------------------------------------------------------
 
@@ -970,7 +960,7 @@ describe("SWF parse-back verification", () => {
   // Group 7: FrameLabel decoding
   // -------------------------------------------------------------------------
 
-  it("FrameLabel: scene name is emitted as first tag before ShowFrame", () => {
+  it("FrameLabel: scene name is NOT emitted as FrameLabel (Flash 8 behavior)", () => {
     const doc = makeDoc({
       scenes: [
         makeScene("s1", "MainScene", [
@@ -980,20 +970,18 @@ describe("SWF parse-back verification", () => {
     });
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
+    // Scene names are suppressed; no user labels defined => zero FrameLabel tags
     const frameLabelTags = tags.filter((t) => t.code === TAG_FRAME_LABEL);
-    expect(frameLabelTags.length).toBeGreaterThanOrEqual(1);
-    const label = decodeFrameLabel(frameLabelTags[0].body);
-    expect(label).toBe("MainScene");
+    expect(frameLabelTags.length).toBe(0);
   });
 
-  it("FrameLabel: decoded label string is non-empty", () => {
+  it("FrameLabel: no FrameLabel tags for doc with no user labels", () => {
     const doc = makeRectDoc();
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
+    // makeRectDoc has no user-defined frame labels => zero FrameLabel tags
     const labelTags = tags.filter((t) => t.code === TAG_FRAME_LABEL);
-    expect(labelTags.length).toBeGreaterThanOrEqual(1);
-    const label = decodeFrameLabel(labelTags[0].body);
-    expect(label.length).toBeGreaterThan(0);
+    expect(labelTags.length).toBe(0);
   });
 
   // -------------------------------------------------------------------------
@@ -1093,7 +1081,7 @@ describe("SWF parse-back verification", () => {
   // Group 12: Multi-scene structural tests
   // -------------------------------------------------------------------------
 
-  it("two-scene doc: two FrameLabel tags (one per scene)", () => {
+  it("two-scene doc: zero FrameLabel tags (no user labels, scene names suppressed)", () => {
     const doc: FlashDocument = {
       id: "doc-1",
       properties: BASE_PROPS,
@@ -1106,9 +1094,7 @@ describe("SWF parse-back verification", () => {
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
     const labelTags = tags.filter((t) => t.code === TAG_FRAME_LABEL);
-    expect(labelTags.length).toBeGreaterThanOrEqual(2);
-    const labels = labelTags.map((t) => decodeFrameLabel(t.body));
-    expect(labels[0]).toBe("Scene 1");
-    expect(labels[1]).toBe("Scene 2");
+    // Scene names are no longer emitted as FrameLabel (Flash 8 behavior).
+    expect(labelTags.length).toBe(0);
   });
 });

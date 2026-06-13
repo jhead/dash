@@ -72,74 +72,6 @@ function parseTags(swf: Uint8Array): SwfTag[] {
   return tags;
 }
 
-/**
- * Decode a SWF EncodedU32 (variable-length LEB128-like) value.
- * Returns { value, bytesRead }.
- */
-function decodeU32(bytes: Uint8Array, offset: number): { value: number; bytesRead: number } {
-  let value = 0;
-  let shift = 0;
-  let bytesRead = 0;
-  while (offset + bytesRead < bytes.length) {
-    const byte = bytes[offset + bytesRead];
-    bytesRead++;
-    value |= (byte & 0x7f) << shift;
-    shift += 7;
-    if ((byte & 0x80) === 0) break;
-  }
-  return { value, bytesRead };
-}
-
-/**
- * Decode a null-terminated string from bytes at the given offset.
- * Returns { str, bytesRead } where bytesRead includes the null terminator.
- */
-function decodeString(bytes: Uint8Array, offset: number): { str: string; bytesRead: number } {
-  let end = offset;
-  while (end < bytes.length && bytes[end] !== 0) end++;
-  const str = new TextDecoder().decode(bytes.slice(offset, end));
-  return { str, bytesRead: end - offset + 1 }; // +1 for null terminator
-}
-
-/**
- * Parse the SceneAndFrameLabelData (tag 86) body.
- * Returns an array of { frameOffset, name } scene entries and frame label entries.
- */
-function parseSceneAndFrameLabelData(body: Uint8Array): {
-  scenes: Array<{ frameOffset: number; name: string }>;
-  frameLabels: Array<{ frameNum: number; name: string }>;
-} {
-  let pos = 0;
-
-  const sceneCountResult = decodeU32(body, pos);
-  pos += sceneCountResult.bytesRead;
-  const sceneCount = sceneCountResult.value;
-
-  const scenes: Array<{ frameOffset: number; name: string }> = [];
-  for (let i = 0; i < sceneCount; i++) {
-    const offsetResult = decodeU32(body, pos);
-    pos += offsetResult.bytesRead;
-    const nameResult = decodeString(body, pos);
-    pos += nameResult.bytesRead;
-    scenes.push({ frameOffset: offsetResult.value, name: nameResult.str });
-  }
-
-  const labelCountResult = decodeU32(body, pos);
-  pos += labelCountResult.bytesRead;
-  const labelCount = labelCountResult.value;
-
-  const frameLabels: Array<{ frameNum: number; name: string }> = [];
-  for (let i = 0; i < labelCount; i++) {
-    const frameNumResult = decodeU32(body, pos);
-    pos += frameNumResult.bytesRead;
-    const nameResult = decodeString(body, pos);
-    pos += nameResult.bytesRead;
-    frameLabels.push({ frameNum: frameNumResult.value, name: nameResult.str });
-  }
-
-  return { scenes, frameLabels };
-}
-
 // ---------------------------------------------------------------------------
 // Document factory helpers
 // ---------------------------------------------------------------------------
@@ -299,8 +231,8 @@ describe("multi-scene SWF compilation", () => {
     expect(showFrames.length).toBe(6);
   });
 
-  // Test 2: Scene names are encoded in SceneAndFrameLabelData (tag 86)
-  it("scene names are encoded in SceneAndFrameLabelData (tag 86)", () => {
+  // Test 2: SceneAndFrameLabelData (tag 86) is NOT emitted for Flash 8 targets
+  it("SceneAndFrameLabelData (tag 86) is NOT emitted for Flash 8 targets", () => {
     const doc = makeDoc([
       makeScene("s1", "Intro", 3),
       makeScene("s2", "Main", 3),
@@ -308,13 +240,9 @@ describe("multi-scene SWF compilation", () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
 
+    // Tag 86 is a Flash 9+ tag; Flash 8 targets do not emit it.
     const tag86 = tags.find((t) => t.code === TAG_SCENE_AND_FRAME_LABEL_DATA);
-    expect(tag86).toBeDefined();
-
-    const parsed = parseSceneAndFrameLabelData(tag86!.body);
-    expect(parsed.scenes.length).toBe(2);
-    expect(parsed.scenes[0].name).toBe("Intro");
-    expect(parsed.scenes[1].name).toBe("Main");
+    expect(tag86).toBeUndefined();
   });
 
   // Test 3: Both scenes' display objects appear in output (DefineShape4 tags)
@@ -405,11 +333,9 @@ describe("multi-scene SWF compilation", () => {
     expect(endTag.code).toBe(TAG_END);
   });
 
-  // Test 5: Scene boundary frame offsets in tag 86 reference correct absolute frame indices
-  it("tag 86 scene frame offsets are correct cumulative frame indices", () => {
-    // Scene 1: 3 frames → offset 0
-    // Scene 2: 4 frames → offset 3
-    // Scene 3: 2 frames → offset 7
+  // Test 5: 3-scene doc has correct total ShowFrame count (tag 86 not emitted)
+  it("3-scene doc has correct total ShowFrame count without tag 86", () => {
+    // Scene 1: 3 frames, Scene 2: 4 frames, Scene 3: 2 frames
     const doc = makeDoc([
       makeScene("s1", "Intro", 3),
       makeScene("s2", "Main", 4),
@@ -418,33 +344,18 @@ describe("multi-scene SWF compilation", () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
 
-    const tag86 = tags.find((t) => t.code === TAG_SCENE_AND_FRAME_LABEL_DATA);
-    expect(tag86).toBeDefined();
+    // Tag 86 must be absent for Flash 8 targets
+    expect(tags.find((t) => t.code === TAG_SCENE_AND_FRAME_LABEL_DATA)).toBeUndefined();
 
-    const parsed = parseSceneAndFrameLabelData(tag86!.body);
-    expect(parsed.scenes.length).toBe(3);
-
-    // First scene always starts at frame offset 0
-    expect(parsed.scenes[0].frameOffset).toBe(0);
-    expect(parsed.scenes[0].name).toBe("Intro");
-
-    // Second scene starts after 3 frames
-    expect(parsed.scenes[1].frameOffset).toBe(3);
-    expect(parsed.scenes[1].name).toBe("Main");
-
-    // Third scene starts after 3+4=7 frames
-    expect(parsed.scenes[2].frameOffset).toBe(7);
-    expect(parsed.scenes[2].name).toBe("Outro");
+    // Total ShowFrame count must equal 3+4+2=9
+    const showFrames = tags.filter((t) => t.code === TAG_SHOW_FRAME);
+    expect(showFrames.length).toBe(9);
   });
 
-  // Test 6: A frame label in scene 2 is encoded in tag 86 at the correct absolute frame number.
-  // This verifies that cross-scene gotoAndPlay("label") navigation works correctly.
-  // In Magnet.fla, scene 5 has a "menu" label at scene-relative frame 1; the title-screen
-  // Play button uses `_root.gotoAndPlay("menu")` to navigate there.
-  it("frame label in scene 2 is encoded in tag 86 at correct absolute frame number", () => {
+  // Test 6: User-defined frame label in scene 2 is emitted as FrameLabel (tag 43).
+  // Tag 86 is never emitted for Flash 8 targets. User labels still become tag 43 entries.
+  it("user-defined frame label in scene 2 is emitted as FrameLabel tag 43", () => {
     // Build a 2-scene doc where scene 2, frame 1 has label "menu"
-    // Scene 1: 3 frames (offsets 0-2), Scene 2: 2 frames (offsets 3-4)
-    // "menu" label is at scene 2 frame 1 → absolute frame 4
     const scene1 = makeScene("s1", "Title", 3);
 
     const scene2Frame0: Frame = {
@@ -501,33 +412,10 @@ describe("multi-scene SWF compilation", () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
 
-    // 1. Tag 86 must exist and encode "menu" at absolute frame 4 (3 + 1)
-    const tag86 = tags.find((t) => t.code === TAG_SCENE_AND_FRAME_LABEL_DATA);
-    expect(tag86).toBeDefined();
-    const parsed = parseSceneAndFrameLabelData(tag86!.body);
+    // Tag 86 must NOT be present (Flash 8 target)
+    expect(tags.find((t) => t.code === TAG_SCENE_AND_FRAME_LABEL_DATA)).toBeUndefined();
 
-    // Scene 1 starts at 0, Scene 2 starts at 3
-    expect(parsed.scenes[0].frameOffset).toBe(0);
-    expect(parsed.scenes[1].frameOffset).toBe(3);
-
-    // "menu" label at absolute frame 4.
-    // Tag 86 frame labels now also include scene names ("Title" at 0, "Game" at 3) so that
-    // gotoAndPlay("Title") / gotoAndPlay("Game") resolve via frame_labels_map in AVM1.
-    // Total: 3 labels ("menu" + "Title" + "Game").
-    expect(parsed.frameLabels.length).toBe(3);
-    const menuLabel = parsed.frameLabels.find((l) => l.name === "menu");
-    expect(menuLabel).toBeDefined();
-    expect(menuLabel!.frameNum).toBe(4); // 3 (scene 1 frames) + 1 (scene 2 frame index)
-    // Scene name aliases
-    const titleLabel = parsed.frameLabels.find((l) => l.name === "Title");
-    expect(titleLabel).toBeDefined();
-    expect(titleLabel!.frameNum).toBe(0);
-    const gameLabel = parsed.frameLabels.find((l) => l.name === "Game");
-    expect(gameLabel).toBeDefined();
-    expect(gameLabel!.frameNum).toBe(3);
-
-    // 2. A FrameLabel tag with "menu" must also appear in the tag stream
-    //    (Ruffle uses FrameLabel tags for within-scene navigation by label)
+    // FrameLabel tag 43 must be present for the user-defined "menu" label
     const TAG_FRAME_LABEL = 43;
     const frameLabelTags = tags.filter((t) => t.code === TAG_FRAME_LABEL);
     const decodeLabel = (body: Uint8Array): string => {
@@ -535,9 +423,10 @@ describe("multi-scene SWF compilation", () => {
       return new TextDecoder().decode(body.slice(0, nullIdx < 0 ? body.length : nullIdx));
     };
     const labelNames = frameLabelTags.map((t) => decodeLabel(t.body));
-    // "menu" must be in the FrameLabel tags (as well as scene names "Title" and "Game")
+    // "menu" must be in the FrameLabel tags
     expect(labelNames).toContain("menu");
-    expect(labelNames).toContain("Title");
-    expect(labelNames).toContain("Game");
+    // Scene names "Title" and "Game" must NOT be emitted as FrameLabel (Flash 8 behavior)
+    expect(labelNames).not.toContain("Title");
+    expect(labelNames).not.toContain("Game");
   });
 });

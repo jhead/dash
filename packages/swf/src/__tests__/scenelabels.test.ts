@@ -598,6 +598,9 @@ describe('hasAnyLabels', () => {
 // ---------------------------------------------------------------------------
 
 describe('compileDocument SceneAndFrameLabelData integration', () => {
+  // Tag 86 (DefineSceneAndFrameLabelData) is a Flash 9+ tag. Flash 8 targets never
+  // emit it. All integration tests below verify it is absent.
+
   it('single scene with no labels does NOT emit tag 86', () => {
     const doc = makeDoc([makeScene('s1', 'Scene 1', [makeFrame(0), makeFrame(1)])]);
     const swf = compileDocument(doc);
@@ -606,7 +609,7 @@ describe('compileDocument SceneAndFrameLabelData integration', () => {
     expect(tag86).toBeUndefined();
   });
 
-  it('two named scenes emit tag 86', () => {
+  it('two named scenes do NOT emit tag 86 (Flash 8 target)', () => {
     const doc = makeDoc([
       makeScene('s1', 'Scene 1', [makeFrame(0)]),
       makeScene('s2', 'Scene 2', [makeFrame(0)]),
@@ -614,20 +617,20 @@ describe('compileDocument SceneAndFrameLabelData integration', () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
     const tag86 = tags.find((t) => t.code === 86);
-    expect(tag86).toBeDefined();
+    expect(tag86).toBeUndefined();
   });
 
-  it('single scene with a named label emits tag 86', () => {
+  it('single scene with a named label does NOT emit tag 86 (Flash 8 target)', () => {
     const doc = makeDoc([
       makeScene('s1', 'Scene 1', [makeFrame(0), makeFrame(1, 'myLabel', 'name')]),
     ]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
     const tag86 = tags.find((t) => t.code === 86);
-    expect(tag86).toBeDefined();
+    expect(tag86).toBeUndefined();
   });
 
-  it('tag 86 appears immediately after FileAttributes (tag 69)', () => {
+  it('tag 86 is never present — tag 69 (FileAttributes) is always first', () => {
     const doc = makeDoc([
       makeScene('s1', 'Scene 1', [makeFrame(0)]),
       makeScene('s2', 'Scene 2', [makeFrame(0)]),
@@ -639,136 +642,69 @@ describe('compileDocument SceneAndFrameLabelData integration', () => {
     const tag86Idx = tags.findIndex((t) => t.code === 86);
 
     expect(fileAttrsIdx).toBeGreaterThanOrEqual(0);
-    expect(tag86Idx).toBe(fileAttrsIdx + 1);
+    expect(tag86Idx).toBe(-1); // never emitted
   });
 
-  it('tag 86 in compiled SWF has correct scene count for 2-scene document', () => {
+  it('2-scene document does NOT emit tag 86 (Flash 8 target)', () => {
     const doc = makeDoc([
       makeScene('s1', 'Intro', [makeFrame(0), makeFrame(1), makeFrame(2)]),
       makeScene('s2', 'Main', [makeFrame(0), makeFrame(1)]),
     ]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
-    const tag86 = tags.find((t) => t.code === 86)!;
-    expect(tag86).toBeDefined();
-
-    // Parse scene count from body
-    const { value: sceneCount } = readU32(tag86.body, 0);
-    expect(sceneCount).toBe(2);
+    const tag86 = tags.find((t) => t.code === 86);
+    expect(tag86).toBeUndefined();
   });
 
-  it('tag 86 body includes correct frame offsets for 2 scenes', () => {
+  it('2-scene doc with correct total frame count even without tag 86', () => {
     const doc = makeDoc([
       makeScene('s1', 'Intro', [makeFrame(0), makeFrame(1), makeFrame(2)]),
       makeScene('s2', 'Main', [makeFrame(0), makeFrame(1)]),
     ]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
-    const tag86 = tags.find((t) => t.code === 86)!;
-    const body = tag86.body;
-
-    let pos = 0;
-    const { value: sceneCount, bytesRead: scr } = readU32(body, pos);
-    expect(sceneCount).toBe(2);
-    pos += scr;
-
-    // Scene 0 offset = 0
-    const { value: offset0, bytesRead: o0r } = readU32(body, pos);
-    expect(offset0).toBe(0);
-    pos += o0r;
-    const { str: name0, bytesRead: n0r } = readNullString(body, pos);
-    expect(name0).toBe('Intro');
-    pos += n0r;
-
-    // Scene 1 offset = 3 (3 frames in Intro)
-    const { value: offset1, bytesRead: o1r } = readU32(body, pos);
-    expect(offset1).toBe(3);
-    pos += o1r;
-    const { str: name1 } = readNullString(body, pos);
-    expect(name1).toBe('Main');
+    const showFrames = tags.filter((t) => t.code === 1); // ShowFrame
+    expect(showFrames.length).toBe(5); // 3 + 2
   });
 
-  it('single scene with an anchor label emits tag 86 with the anchor in the frame label list', () => {
+  it('single scene with an anchor label emits FrameLabel tag 43 for anchor (no tag 86)', () => {
     const doc = makeDoc([
       makeScene('s1', 'Scene 1', [makeFrame(0), makeFrame(1, 'myAnchor', 'anchor')]),
     ]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
-    const tag86 = tags.find((t) => t.code === 86);
-    expect(tag86).toBeDefined();
 
-    const body = tag86!.body;
-    let pos = 0;
-    // Skip scene count + scene data
-    const { value: sceneCount, bytesRead: scr } = readU32(body, pos);
-    pos += scr;
-    for (let i = 0; i < sceneCount; i++) {
-      const { bytesRead: or } = readU32(body, pos);
-      pos += or;
-      const { bytesRead: nr } = readNullString(body, pos);
-      pos += nr;
-    }
+    // Tag 86 must be absent
+    expect(tags.find((t) => t.code === 86)).toBeUndefined();
 
-    // FrameLabelCount = 2 (anchor 'myAnchor' + scene name 'Scene 1' as alias)
-    const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
-    expect(labelCount).toBe(2);
-    pos += lcr;
-
-    // Label 0: 'myAnchor' at frame 1 (user-defined anchor)
-    const { value: frameNum, bytesRead: fnr } = readU32(body, pos);
-    expect(frameNum).toBe(1);
-    pos += fnr;
-    const { str: labelName, bytesRead: lnr } = readNullString(body, pos);
-    expect(labelName).toBe('myAnchor');
-    pos += lnr;
-
-    // Label 1: scene name 'Scene 1' at frame 0 (added as gotoAndPlay alias)
-    const { value: fn1, bytesRead: fn1r } = readU32(body, pos);
-    expect(fn1).toBe(0);
-    pos += fn1r;
-    const { str: ln1 } = readNullString(body, pos);
-    expect(ln1).toBe('Scene 1');
+    // The anchor FrameLabel (tag 43) must be present
+    const frameLabelTags = tags.filter((t) => t.code === 43);
+    const labelNames = frameLabelTags.map((t) => {
+      const nullIdx = t.body.indexOf(0);
+      return new TextDecoder().decode(t.body.slice(0, nullIdx < 0 ? t.body.length : nullIdx));
+    });
+    expect(labelNames).toContain('myAnchor');
   });
 
-  it('scene names appear in tag 86 frame labels section so gotoAndPlay("Scene 2") resolves in AVM1', () => {
-    // Ruffle ignores FrameLabel (tag 43) when scene_labels exist (from tag 86).
-    // AVM1 gotoAndPlay(string) uses frame_labels_map, not scene_labels_map.
-    // Scene names must therefore appear in tag 86's frame_labels section so Ruffle
-    // populates frame_labels_map with them. (task 1058)
+  it('scene names are NOT in any FrameLabel or tag 86 for Flash 8 targets', () => {
     const doc = makeDoc([
       makeScene('s1', 'Scene 1', [makeFrame(0), makeFrame(1), makeFrame(2)]),
       makeScene('s2', 'Scene 2', [makeFrame(0), makeFrame(1)]),
     ]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
-    const tag86 = tags.find((t) => t.code === 86)!;
-    expect(tag86).toBeDefined();
 
-    // Parse all frame labels from tag 86
-    const body = tag86.body;
-    let pos = 0;
-    const { value: sceneCount, bytesRead: scr } = readU32(body, pos);
-    pos += scr;
-    for (let i = 0; i < sceneCount; i++) {
-      const { bytesRead: or } = readU32(body, pos);
-      pos += or;
-      const { bytesRead: nr } = readNullString(body, pos);
-      pos += nr;
-    }
+    // No tag 86
+    expect(tags.find((t) => t.code === 86)).toBeUndefined();
 
-    const { value: labelCount, bytesRead: lcr } = readU32(body, pos);
-    pos += lcr;
-    const frameLabelNames: string[] = [];
-    for (let i = 0; i < labelCount; i++) {
-      const { bytesRead: fnr } = readU32(body, pos);
-      pos += fnr;
-      const { str, bytesRead: nr } = readNullString(body, pos);
-      pos += nr;
-      frameLabelNames.push(str);
-    }
-
-    // Both scene names must be in the frame labels section
-    expect(frameLabelNames).toContain('Scene 1');
-    expect(frameLabelNames).toContain('Scene 2');
+    // No FrameLabel tags with scene names (no user labels exist)
+    const frameLabelNames = tags
+      .filter((t) => t.code === 43)
+      .map((t) => {
+        const nullIdx = t.body.indexOf(0);
+        return new TextDecoder().decode(t.body.slice(0, nullIdx < 0 ? t.body.length : nullIdx));
+      });
+    expect(frameLabelNames).not.toContain('Scene 1');
+    expect(frameLabelNames).not.toContain('Scene 2');
   });
 });

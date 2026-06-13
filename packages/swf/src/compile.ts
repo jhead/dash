@@ -31,7 +31,7 @@ import {
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
 import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
-import { encodeDefineFont2, encodeDefineFontAlignZones, encodeDefineFontInfo2, fontKey } from "./fonts.js";
+import { encodeDefineFont2, encodeDefineFontAlignZones, fontKey } from "./fonts.js";
 import {
   encodePlaceObject3WithFilters,
   encodePlaceObject3WithBlendMode,
@@ -63,7 +63,7 @@ import {
 } from "./video.js";
 import { encodeDoInitAction } from "./doInitAction.js";
 import { encodeFrameLabel } from "./framelabel.js";
-import { encodeSceneAndFrameLabelData, hasAnyLabels } from "./scenelabels.js";
+// encodeSceneAndFrameLabelData suppressed: Flash 8 targets do not emit tag 86.
 import { buildXmpMetadata, type MetadataOptions } from "./metadata.js";
 
 // ---------------------------------------------------------------------------
@@ -145,19 +145,6 @@ function buildSetBackgroundColor(hex: string): Uint8Array {
   bw.writeUI8(r);
   bw.writeUI8(g);
   bw.writeUI8(b);
-  return bw.getBytes();
-}
-
-/**
- * ScriptLimits (tag 65) — 4 bytes: MaxRecursionDepth UI16 + ScriptTimeoutSeconds UI16.
- */
-function buildScriptLimits(
-  maxRecursionDepth: number,
-  scriptTimeoutSeconds: number
-): Uint8Array {
-  const bw = new BitWriter();
-  bw.writeUI16LE(maxRecursionDepth);
-  bw.writeUI16LE(scriptTimeoutSeconds);
   return bw.getBytes();
 }
 
@@ -327,15 +314,6 @@ function sceneFrameCount(timeline: import("@flash/core").Timeline): number {
     if (count > max) max = count;
   }
   return max;
-}
-
-/**
- * Encode a FrameLabel (tag 43) body for a scene: null-terminated name string.
- */
-function encodeSceneLabel(name: string): Uint8Array {
-  const bw = new BitWriter();
-  bw.writeString(name);
-  return bw.getBytes();
 }
 
 // ---------------------------------------------------------------------------
@@ -529,12 +507,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   // 1. FileAttributes — MUST be first tag in SWF 8
   writer.writeTag(Tag.FileAttributes, buildFileAttributes(!!options?.metadata));
 
-  // 1b. SceneAndFrameLabelData (tag 86) — emitted right after FileAttributes
-  //     when there are multiple scenes or any named frame labels.
-  if (doc.scenes.length > 1 || hasAnyLabels(doc)) {
-    const sceneData = encodeSceneAndFrameLabelData(doc);
-    writer.writeRaw(sceneData);
-  }
+  // 1b. SceneAndFrameLabelData (tag 86) — Flash 9+ tag; not emitted for Flash 8 targets.
+  //     Real Flash 8 does not emit this tag. Suppressed to match golden output.
 
   // 1c-pre. ProductInfo (tag 41) — authoring tool identity; always emitted.
   writer.writeTag(Tag.ProductInfo, buildProductInfo());
@@ -573,15 +547,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     buildSetBackgroundColor(props.backgroundColor)
   );
 
-  // 2b. ScriptLimits (tag 65) — MaxRecursionDepth + ScriptTimeoutSeconds (4 bytes).
-  //     Flash Professional always emits this tag after SetBackgroundColor.
-  writer.writeTag(
-    Tag.ScriptLimits,
-    buildScriptLimits(
-      options?.maxRecursionDepth ?? 256,
-      options?.scriptTimeoutSeconds ?? 15
-    )
-  );
+  // 2b. ScriptLimits (tag 65) — not emitted for Flash 8 targets.
+  //     Real Flash 8 does not emit this tag; Flash 8 default limits apply.
+  //     Suppressed to match golden output.
 
   // 3. Compile library symbols → DefineSprite tags
   //    Build charIdMap: symbolId → SWF character ID
@@ -675,15 +643,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
             writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
           }
-          // Emit DefineFontInfo2 (tag 62) to associate the embedded font's
-          // character ID with the device font name so Flash Player / Ruffle can
-          // do device-font fallback by name.
-          {
-            const codeTable: number[] = [];
-            for (let c = 32; c <= 126; c++) codeTable.push(c);
-            const fontInfo2Body = encodeDefineFontInfo2(fontId, obj.fontFamily, obj.bold, obj.italic, codeTable);
-            writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
-          }
+          // DefineFontInfo2 (tag 62) suppressed: real Flash 8 does not emit this tag.
         }
       }
     }
@@ -715,12 +675,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
             writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
           }
-          {
-            const codeTable: number[] = [];
-            for (let c = 32; c <= 126; c++) codeTable.push(c);
-            const fontInfo2Body = encodeDefineFontInfo2(fontId, obj.fontFamily, obj.bold, obj.italic, codeTable);
-            writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
-          }
+          // DefineFontInfo2 (tag 62) suppressed: real Flash 8 does not emit this tag.
         }
       }
     }
@@ -745,14 +700,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       const alignZonesBody = encodeDefineFontAlignZones(fontId, 95, fontCoordScale);
       writer.writeTag(Tag.DefineFontAlignZones, alignZonesBody);
     }
-    // Emit DefineFontInfo2 (tag 62) to associate the embedded font's
-    // character ID with the device font name.
-    {
-      const codeTable: number[] = [];
-      for (let c = 32; c <= 126; c++) codeTable.push(c);
-      const fontInfo2Body = encodeDefineFontInfo2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, codeTable);
-      writer.writeTag(Tag.DefineFontInfo2, fontInfo2Body);
-    }
+    // DefineFontInfo2 (tag 62) suppressed: real Flash 8 does not emit this tag.
   }
 
   // Pre-build soundIdMap and emit DefineSound tags BEFORE the symbol loop so
@@ -1504,10 +1452,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       const scene = doc.scenes[sceneIdx];
       const layers = scene.timeline.layers;
 
-      // Emit FrameLabel (tag 43) for this scene at its first SWF frame.
-      // Must precede all display-list modification tags (RemoveObject2,
-      // PlaceObject2, etc.) in the same frame per SWF spec.
-      writer.writeTag(Tag.FrameLabel, encodeSceneLabel(scene.name));
+      // Scene-name FrameLabel suppressed: real Flash 8 does not emit scene names as
+      // FrameLabel tags. Only user-created frame labels in the model become FrameLabel tags.
 
       // Between scenes: emit RemoveObject2 for every occupied depth to clear
       // the display list so the next scene starts with a clean stage.

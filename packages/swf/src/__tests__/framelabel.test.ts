@@ -291,10 +291,10 @@ describe("compileDocument FrameLabel emission", () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
 
-    // Only the scene-name FrameLabel should be present (for "Scene 1")
+    // No scene-name FrameLabel is emitted (real Flash 8 does not emit scene names as FrameLabel)
+    // and no frame labels either — so zero FrameLabel tags total
     const frameLabelTags = tags.filter((t) => t.code === TAG_FRAME_LABEL);
-    expect(frameLabelTags.length).toBe(1);
-    expect(readFrameLabelString(frameLabelTags[0].body)).toBe("Scene 1");
+    expect(frameLabelTags.length).toBe(0);
   });
 
   it("comment-type labels are NOT emitted as FrameLabel", () => {
@@ -308,10 +308,9 @@ describe("compileDocument FrameLabel emission", () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
 
-    // Only the scene-name FrameLabel should be present (for "Scene 1")
+    // No FrameLabel tags at all: no user labels, no scene-name labels
     const frameLabelTags = tags.filter((t) => t.code === TAG_FRAME_LABEL);
-    expect(frameLabelTags.length).toBe(1);
-    expect(readFrameLabelString(frameLabelTags[0].body)).toBe("Scene 1");
+    expect(frameLabelTags.length).toBe(0);
 
     // Specifically, no FrameLabel for "this is a comment"
     const commentLabel = tags.find(

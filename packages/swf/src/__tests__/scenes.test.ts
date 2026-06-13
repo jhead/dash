@@ -222,17 +222,18 @@ function makeDoc(scenes: Scene[]): FlashDocument {
 // ---------------------------------------------------------------------------
 
 describe("multi-scene SWF export", () => {
-  // Test 1: Single-scene doc produces exactly one FrameLabel tag
-  it("single-scene doc produces exactly one FrameLabel tag", () => {
+  // Test 1: Single-scene doc with no user labels produces zero FrameLabel tags
+  // (scene names are NOT emitted as FrameLabel in Flash 8 target)
+  it("single-scene doc with no user labels produces zero FrameLabel tags", () => {
     const doc = makeDoc([makeScene("s1", "Scene 1", 3)]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
     const labels = tags.filter((t) => t.code === TAG_FRAME_LABEL);
-    expect(labels.length).toBe(1);
+    expect(labels.length).toBe(0);
   });
 
-  // Test 2: Two-scene doc produces two FrameLabel tags
-  it("two-scene doc produces two FrameLabel tags", () => {
+  // Test 2: Two-scene doc with no user labels produces zero FrameLabel tags
+  it("two-scene doc with no user labels produces zero FrameLabel tags", () => {
     const doc = makeDoc([
       makeScene("s1", "Scene 1", 2),
       makeScene("s2", "Scene 2", 2),
@@ -240,43 +241,30 @@ describe("multi-scene SWF export", () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
     const labels = tags.filter((t) => t.code === TAG_FRAME_LABEL);
-    expect(labels.length).toBe(2);
+    expect(labels.length).toBe(0);
   });
 
-  // Test 3: FrameLabel tag has correct scene name string
-  it("FrameLabel tag encodes the correct scene name", () => {
+  // Test 3: Scene names are NOT emitted as FrameLabel tags (Flash 8 behavior)
+  it("scene name is NOT emitted as a FrameLabel tag", () => {
     const doc = makeDoc([makeScene("s1", "My Scene", 1)]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
-    const label = tags.find((t) => t.code === TAG_FRAME_LABEL)!;
-    expect(label).toBeDefined();
-    expect(readFrameLabelName(label.body)).toBe("My Scene");
+    const label = tags.find(
+      (t) => t.code === TAG_FRAME_LABEL && readFrameLabelName(t.body) === "My Scene"
+    );
+    expect(label).toBeUndefined();
   });
 
-  // Test 4: FrameLabel appears before the first ShowFrame of each scene
-  it("FrameLabel appears before the first ShowFrame of its scene", () => {
+  // Test 4: ShowFrame count matches scene frame counts (multi-scene ordering check)
+  it("two-scene doc has correct total ShowFrame count", () => {
     const doc = makeDoc([
       makeScene("s1", "Scene 1", 2),
       makeScene("s2", "Scene 2", 2),
     ]);
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
-
-    const labels = tags
-      .map((t, idx) => ({ ...t, idx }))
-      .filter((t) => t.code === TAG_FRAME_LABEL);
-    const showFrames = tags
-      .map((t, idx) => ({ ...t, idx }))
-      .filter((t) => t.code === TAG_SHOW_FRAME);
-
-    // First label must come before first ShowFrame
-    expect(labels[0].idx).toBeLessThan(showFrames[0].idx);
-
-    // Second label must come before (or at the same position as) the third ShowFrame
-    // (scenes 1 has 2 frames = 2 ShowFrames, then scene 2 label, then 2 more ShowFrames)
-    // The second FrameLabel must appear after the first 2 ShowFrames
-    expect(labels[1].idx).toBeGreaterThan(showFrames[1].idx);
-    expect(labels[1].idx).toBeLessThan(showFrames[2].idx);
+    const showFrames = tags.filter((t) => t.code === TAG_SHOW_FRAME);
+    expect(showFrames.length).toBe(4); // 2 + 2
   });
 
   // Test 5: Total frame count in SWF header equals sum of all scene frame counts
@@ -366,29 +354,22 @@ describe("multi-scene SWF export", () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
 
-    // Locate the two FrameLabel tags
-    const labelIndices = tags
+    // Scene 1 has 1 frame, scene 2 has 1 frame => 2 ShowFrames total.
+    // RemoveObject2 tags are emitted at the start of scene 2 (after the first ShowFrame,
+    // before the second ShowFrame). Locate by ShowFrame indices.
+    const showFrameIndices = tags
       .map((t, idx) => ({ t, idx }))
-      .filter(({ t }) => t.code === TAG_FRAME_LABEL)
+      .filter(({ t }) => t.code === TAG_SHOW_FRAME)
       .map(({ idx }) => idx);
 
-    expect(labelIndices.length).toBe(2);
+    expect(showFrameIndices.length).toBe(2);
 
-    // Per SWF spec, FrameLabel must precede display-list modification tags in
-    // the same frame.  So the second scene's FrameLabel comes BEFORE its
-    // RemoveObject2 clear block.  Find the next ShowFrame after the second label
-    // and verify RemoveObject2 falls in [secondLabel, nextShowFrame).
-    const secondLabelIdx = labelIndices[1];
-    const showFrameAfterLabel = tags
-      .map((t, idx) => ({ t, idx }))
-      .find(({ t, idx }) => t.code === TAG_SHOW_FRAME && idx > secondLabelIdx);
-    expect(showFrameAfterLabel).toBeDefined();
-
-    const sceneStartSegment = tags.slice(
-      secondLabelIdx + 1,
-      showFrameAfterLabel!.idx
+    // Between showFrame[0] and showFrame[1]: RemoveObject2 must appear
+    const betweenScenes = tags.slice(
+      showFrameIndices[0] + 1,
+      showFrameIndices[1]
     );
-    const removes = sceneStartSegment.filter(
+    const removes = betweenScenes.filter(
       (t) => t.code === TAG_REMOVE_OBJECT2
     );
     expect(removes.length).toBeGreaterThan(0);
@@ -484,8 +465,9 @@ describe("multi-scene SWF export", () => {
     expect(placeTagCount).toBeGreaterThanOrEqual(1);
   });
 
-  // Test 8: Three-scene doc produces three FrameLabel tags in order
-  it("three-scene doc produces three FrameLabel tags with names in order", () => {
+  // Test 8: Three-scene doc produces zero FrameLabel tags (no user labels)
+  // Scene names are NOT emitted as FrameLabel in Flash 8 target
+  it("three-scene doc with no user labels produces zero FrameLabel tags", () => {
     const doc = makeDoc([
       makeScene("s1", "Intro", 2),
       makeScene("s2", "Main", 3),
@@ -495,10 +477,7 @@ describe("multi-scene SWF export", () => {
     const tags = parseTags(swf);
     const labels = tags.filter((t) => t.code === TAG_FRAME_LABEL);
 
-    expect(labels.length).toBe(3);
-    expect(readFrameLabelName(labels[0].body)).toBe("Intro");
-    expect(readFrameLabelName(labels[1].body)).toBe("Main");
-    expect(readFrameLabelName(labels[2].body)).toBe("Outro");
+    expect(labels.length).toBe(0);
   });
 
   // Test 8b: Three-scene doc has correct total frame count

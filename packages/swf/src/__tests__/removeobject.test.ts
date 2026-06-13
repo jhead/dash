@@ -347,27 +347,21 @@ describe("RemoveObject2 (tag 28) emission", () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
 
-    // Find the two FrameLabel tags
-    const labelIndices = tags
+    // Scene names are no longer emitted as FrameLabel (Flash 8 behavior).
+    // Locate scene boundary via ShowFrame indices instead.
+    const showFrameIndices = tags
       .map((t, i) => ({ t, i }))
-      .filter(({ t }) => t.code === Tag.FrameLabel)
+      .filter(({ t }) => t.code === Tag.ShowFrame)
       .map(({ i }) => i);
 
-    expect(labelIndices.length).toBe(2);
+    // scene1 has 1 frame, scene2 has 1 frame => 2 ShowFrames
+    expect(showFrameIndices.length).toBe(2);
 
-    // Per SWF spec, FrameLabel precedes display-list modification tags in the
-    // same frame.  The second scene's FrameLabel comes BEFORE its RemoveObject2
-    // clear block.  Verify RemoveObject2 appears after the second FrameLabel
-    // but before the next ShowFrame.
-    const secondLabelIdx = labelIndices[1];
-    const showFrameAfterLabel = tags
-      .map((t, i) => ({ t, i }))
-      .find(({ t, i }) => t.code === Tag.ShowFrame && i > secondLabelIdx);
-    expect(showFrameAfterLabel).toBeDefined();
-
+    // RemoveObject2 tags for scene 2 appear after showFrameIndices[0] and
+    // before showFrameIndices[1].
     const sceneStartSegment = tags.slice(
-      secondLabelIdx + 1,
-      showFrameAfterLabel!.i
+      showFrameIndices[0] + 1,
+      showFrameIndices[1]
     );
     const removes = sceneStartSegment.filter(
       (t) => t.code === Tag.RemoveObject2

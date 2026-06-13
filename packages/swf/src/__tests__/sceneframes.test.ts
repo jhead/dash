@@ -160,7 +160,7 @@ describe('sceneframes: SWF tag 86 (SceneAndFrameLabelData)', () => {
     expect(swf![2]).toBe(0x53); // 'S'
   });
 
-  it('multi-scene document emits tag 86 with correct scene count', () => {
+  it('multi-scene document does NOT emit tag 86 (Flash 8 target suppresses it)', () => {
     const doc = makeDoc([
       makeScene('s1', 'Intro', [makeFrame(0), makeFrame(1)]),
       makeScene('s2', 'Main', [makeFrame(0), makeFrame(1), makeFrame(2)]),
@@ -169,12 +169,8 @@ describe('sceneframes: SWF tag 86 (SceneAndFrameLabelData)', () => {
     const tags = findTags(swf);
     const tag86 = tags.find((t) => t.type === 86);
 
-    // Tag 86 IS implemented: multi-scene docs must emit it
-    expect(tag86).toBeDefined();
-
-    // Parse scene count from body (EncodedU32: value <= 127 fits in one byte)
-    const sceneCount = tag86!.body[0];
-    expect(sceneCount).toBe(2);
+    // Tag 86 is a Flash 9+ tag; Flash 8 targets do not emit it.
+    expect(tag86).toBeUndefined();
   });
 
   it('document with a named frame has FrameLabel tag (type 43) in output', () => {

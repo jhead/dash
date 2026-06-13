@@ -140,14 +140,8 @@ function parseTags(swf: Uint8Array): SwfTag[] {
   return tags;
 }
 
-function readUI16LE(body: Uint8Array, offset: number): number {
-  return body[offset] | (body[offset + 1] << 8);
-}
-
 const TAG_PROTECT = 24;
-const TAG_SET_BACKGROUND_COLOR = 9;
 const TAG_SCRIPT_LIMITS = 65;
-const TAG_SHOW_FRAME = 1;
 const TAG_END = 0;
 
 // ---------------------------------------------------------------------------
@@ -184,34 +178,18 @@ describe("SWF minimal doc compilation", () => {
 });
 
 describe("SWF ScriptLimits tag (65)", () => {
-  it("ScriptLimits tag is present in default compilation output", () => {
+  // ScriptLimits (tag 65) is suppressed for Flash 8 targets — real Flash 8 does not
+  // emit this tag. The tests below verify it is NOT present in compiled output.
+
+  it("ScriptLimits tag is NOT present in default compilation output (Flash 8 target)", () => {
     const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
     const buf = compileDocument(doc);
     const tags = parseTags(buf);
     const scriptLimitsTag = tags.find((t) => t.code === TAG_SCRIPT_LIMITS);
-    expect(scriptLimitsTag).toBeDefined();
+    expect(scriptLimitsTag).toBeUndefined();
   });
 
-  it("ScriptLimits tag body is exactly 4 bytes", () => {
-    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
-    const buf = compileDocument(doc);
-    const tags = parseTags(buf);
-    const scriptLimitsTag = tags.find((t) => t.code === TAG_SCRIPT_LIMITS);
-    expect(scriptLimitsTag).toBeDefined();
-    expect(scriptLimitsTag!.body.length).toBe(4);
-  });
-
-  it("ScriptLimits defaults: MaxRecursionDepth=256, ScriptTimeoutSeconds=15", () => {
-    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
-    const buf = compileDocument(doc);
-    const tags = parseTags(buf);
-    const scriptLimitsTag = tags.find((t) => t.code === TAG_SCRIPT_LIMITS);
-    expect(scriptLimitsTag).toBeDefined();
-    expect(readUI16LE(scriptLimitsTag!.body, 0)).toBe(256);
-    expect(readUI16LE(scriptLimitsTag!.body, 2)).toBe(15);
-  });
-
-  it("ScriptLimits honors compile options", () => {
+  it("ScriptLimits tag is NOT present even when compile options specify limits", () => {
     const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
     const buf = compileDocument(doc, {
       maxRecursionDepth: 512,
@@ -219,44 +197,10 @@ describe("SWF ScriptLimits tag (65)", () => {
     });
     const tags = parseTags(buf);
     const scriptLimitsTag = tags.find((t) => t.code === TAG_SCRIPT_LIMITS);
-    expect(scriptLimitsTag).toBeDefined();
-    expect(readUI16LE(scriptLimitsTag!.body, 0)).toBe(512);
-    expect(readUI16LE(scriptLimitsTag!.body, 2)).toBe(30);
+    expect(scriptLimitsTag).toBeUndefined();
   });
 
-  it("ScriptLimits appears immediately after SetBackgroundColor", () => {
-    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
-    const buf = compileDocument(doc);
-    const tags = parseTags(buf);
-    const withIndices = tags.map((t, idx) => ({ ...t, idx }));
-    const bgColorIdx = withIndices.find(
-      (t) => t.code === TAG_SET_BACKGROUND_COLOR
-    )?.idx;
-    const scriptLimitsIdx = withIndices.find(
-      (t) => t.code === TAG_SCRIPT_LIMITS
-    )?.idx;
-    expect(bgColorIdx).toBeDefined();
-    expect(scriptLimitsIdx).toBeDefined();
-    expect(scriptLimitsIdx!).toBe(bgColorIdx! + 1);
-  });
-
-  it("ScriptLimits appears before the first ShowFrame", () => {
-    const doc = makeDoc([makeScene("s1", "Scene 1", 3)]);
-    const buf = compileDocument(doc);
-    const tags = parseTags(buf);
-    const withIndices = tags.map((t, idx) => ({ ...t, idx }));
-    const scriptLimitsIdx = withIndices.find(
-      (t) => t.code === TAG_SCRIPT_LIMITS
-    )?.idx;
-    const firstShowFrameIdx = withIndices.find(
-      (t) => t.code === TAG_SHOW_FRAME
-    )?.idx;
-    expect(scriptLimitsIdx).toBeDefined();
-    expect(firstShowFrameIdx).toBeDefined();
-    expect(scriptLimitsIdx!).toBeLessThan(firstShowFrameIdx!);
-  });
-
-  it("ScriptLimits appears exactly once in multi-scene SWF", () => {
+  it("ScriptLimits tag is absent in multi-scene SWF", () => {
     const doc = makeDoc([
       makeScene("s1", "Scene 1", 2),
       makeScene("s2", "Scene 2", 2),
@@ -264,17 +208,17 @@ describe("SWF ScriptLimits tag (65)", () => {
     const buf = compileDocument(doc);
     const tags = parseTags(buf);
     const scriptLimitsTags = tags.filter((t) => t.code === TAG_SCRIPT_LIMITS);
-    expect(scriptLimitsTags.length).toBe(1);
+    expect(scriptLimitsTags.length).toBe(0);
   });
 
-  it("SWF with ScriptLimits emits all required structural tags", () => {
+  it("SWF structural tags are present without ScriptLimits", () => {
     const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
     const buf = compileDocument(doc);
     const tags = parseTags(buf);
     const codes = tags.map((t) => t.code);
     expect(codes).toContain(69); // FileAttributes
     expect(codes).toContain(9); // SetBackgroundColor
-    expect(codes).toContain(65); // ScriptLimits
+    expect(codes).not.toContain(65); // ScriptLimits NOT emitted
     expect(codes).toContain(1); // ShowFrame
     expect(codes).toContain(0); // End
   });
