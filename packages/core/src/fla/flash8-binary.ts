@@ -373,6 +373,16 @@ export interface Fla8Text {
    * Decoded from the first text run's autoKern byte. Default: false.
    */
   readonly autoKern: boolean;
+  /**
+   * Hyperlink URL from the first text run ("Link" field). Empty/omitted when
+   * no link is set.
+   */
+  readonly linkUrl?: string;
+  /**
+   * Hyperlink target window from the first text run ("Target:" dropdown:
+   * _self/_blank/_parent/_top). Empty/omitted when no link/target is set.
+   */
+  readonly linkTarget?: string;
 }
 
 export interface Fla8BitmapRef {
@@ -2423,6 +2433,18 @@ interface TextRun {
    */
   autoKern: boolean;
   /**
+   * Hyperlink URL for the run ("Link" field in the Flash 8 text Properties
+   * panel). Decoded from the `url` String that follows the letterSpacing s16 in
+   * the CPicText run block (flacomdoc handleText). Empty when no link.
+   */
+  linkUrl?: string;
+  /**
+   * Hyperlink target window ("Target:" dropdown). Decoded from the `target`
+   * String that follows the vertical/rtl/rotation bytes (ts >= 9). Empty when
+   * no link/target.
+   */
+  linkTarget?: string;
+  /**
    * Font rendering mode byte (F8+, ts >= 0x0d).
    * 0=device, 1=bitmap, 2=animation, 3=readability, 4=custom.
    * Undefined when ts < 0x0d (pre-Flash 8 format).
@@ -2478,18 +2500,19 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
   const rightMargin = r.u16();  // right margin
   const letterSpacing = ts >= 5 ? r.s16() : 0;
   if (ts < 5) r.skip(1);        // pre-F5: 1 reserved byte in place of the s16
-  if (cs4) readCString(r);
-  else readPlainString(r, unicode); // url
+  // Hyperlink URL: the String here is the run's link target URL ("Link" field).
+  const linkUrl = cs4 ? readCString(r) : readPlainString(r, unicode); // url
   let vertical = false;
   let rightToLeft = false;
   let rotation = false;
+  let linkTarget = "";
   if (ts >= 9) {
     vertical = r.u8() !== 0;
     rightToLeft = r.u8() !== 0;
     rotation = r.u8() !== 0;
     if (ts >= 0x0c) r.skip(1); // bitmap-render flag
-    if (cs4) readCString(r);
-    else readPlainString(r, unicode); // link target
+    // Hyperlink target window ("Target:" dropdown): _self/_blank/_parent/_top.
+    linkTarget = cs4 ? readCString(r) : readPlainString(r, unicode); // link target
   }
   let renderMode: number | undefined;
   let aaThickness: number | undefined;
@@ -2507,7 +2530,7 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
     if (cs4) readCString(r);
     else readPlainString(r, unicode); // url (repeated)
   }
-  return { fontName, sizePt, color, bold, italic, align, characterPosition, autoKern, vertical, rightToLeft, rotation, leading, indent, leftMargin, rightMargin, letterSpacing, renderMode, aaThickness, aaSharpness };
+  return { fontName, sizePt, color, bold, italic, align, characterPosition, autoKern, linkUrl, linkTarget, vertical, rightToLeft, rotation, leading, indent, leftMargin, rightMargin, letterSpacing, renderMode, aaThickness, aaSharpness };
 }
 
 /** Map the CPicText run renderMode byte to the editor's antiAlias string (F8+). */
@@ -2681,6 +2704,8 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     scrollable,
     selectable,
     autoKern: run?.autoKern ?? false,
+    ...(run?.linkUrl ? { linkUrl: run.linkUrl } : {}),
+    ...(run?.linkTarget ? { linkTarget: run.linkTarget } : {}),
     ...(autoExpand ? { autoExpand } : {}),
     ...(run?.leading ? { leading: run.leading / 20 } : {}),
     ...(run?.indent ? { indent: run.indent / 20 } : {}),

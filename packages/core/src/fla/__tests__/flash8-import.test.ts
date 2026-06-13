@@ -1706,6 +1706,20 @@ describe("autoKern forwarding (convertFla8Text)", () => {
     const result = convertFla8Text(makeFla8KernText({ autoKern: false }));
     expect(result.autoKern).toBeUndefined();
   });
+
+  it("forwards linkUrl/linkTarget to the TextDisplayObject", () => {
+    const result = convertFla8Text(
+      makeFla8KernText({ linkUrl: "http://example.com/", linkTarget: "_blank" }),
+    );
+    expect(result.linkUrl).toBe("http://example.com/");
+    expect(result.linkTarget).toBe("_blank");
+  });
+
+  it("omits linkUrl/linkTarget when absent (default)", () => {
+    const result = convertFla8Text(makeFla8KernText({}));
+    expect(result.linkUrl).toBeUndefined();
+    expect(result.linkTarget).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

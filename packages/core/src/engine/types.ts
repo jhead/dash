@@ -714,6 +714,21 @@ export interface TextDisplayObject {
    * Default: false.
    */
   readonly autoKern?: boolean;
+  /**
+   * Hyperlink URL for the text field ("Link" field in the Flash 8 text
+   * Properties panel, bottom row). When non-empty, the SWF compiler wraps the
+   * text content in an HTML anchor (`<a href="URL" target="TARGET">…</a>`) and
+   * sets the DefineEditText HTML flag (bit 9) so the player renders a clickable
+   * link (getURL/navigateToURL on click). Empty/omitted means no link.
+   */
+  readonly linkUrl?: string;
+  /**
+   * Hyperlink target window for the text field ("Target:" dropdown in the
+   * Flash 8 text Properties panel). One of "_self", "_blank", "_parent",
+   * "_top". Only meaningful when `linkUrl` is non-empty; emitted as the
+   * anchor's `target` attribute. Omitted/empty means no explicit target.
+   */
+  readonly linkTarget?: string;
 }
 
 /**

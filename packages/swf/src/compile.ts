@@ -1288,7 +1288,11 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
             objCharIdMap.set(obj.id, charId);
             const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
             const embeddedFontId = fontCharIdMap.get(key);
-            if (obj.textType === "static" && embeddedFontId !== undefined) {
+            // A static field carrying a hyperlink must render as HTML so the
+            // anchor is clickable; glyph-indexed DefineText cannot hold an <a>.
+            // Route those through DefineEditText (HTML) instead.
+            const hasLink = (obj.linkUrl ?? "").trim().length > 0;
+            if (obj.textType === "static" && embeddedFontId !== undefined && !hasLink) {
               // Static text: emit DefineText (tag 11) with glyph-indexed rendering.
               // When "Auto kern" is on, kerning is baked into the per-glyph
               // advances (Flash 8 stores kerned advances directly in DefineText

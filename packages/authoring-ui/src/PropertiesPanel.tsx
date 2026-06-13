@@ -1273,6 +1273,15 @@ function TextView({
     setVarNameDraft(obj.as2VariableName ?? "");
   }, [obj.as2VariableName, obj.id]);
 
+  const [linkUrlDraft, setLinkUrlDraft] = useState(obj.linkUrl ?? "");
+  useEffect(() => {
+    setLinkUrlDraft(obj.linkUrl ?? "");
+  }, [obj.linkUrl, obj.id]);
+
+  const commitLinkUrl = useCallback(() => {
+    onUpdateObject(obj.id, { linkUrl: linkUrlDraft } as Partial<DisplayObject>);
+  }, [obj.id, linkUrlDraft, onUpdateObject]);
+
   const commitFont = useCallback(() => {
     if (fontDraft.trim()) {
       onUpdateObject(obj.id, { fontFamily: fontDraft.trim() } as Partial<DisplayObject>);
@@ -1745,6 +1754,44 @@ function TextView({
           </div>
         </>
       )}
+
+      <div style={S.separator} />
+
+      {/* Hyperlink — Link URL + Target (Flash 8 bottom row). Wraps the field's
+          text in an HTML anchor and enables the HTML flag on publish. */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Link:</span>
+        <input
+          style={S.inputWide}
+          value={linkUrlDraft}
+          placeholder="http://"
+          onChange={(e) => setLinkUrlDraft(e.target.value)}
+          onBlur={commitLinkUrl}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitLinkUrl(); }
+            if (e.key === "Escape") { e.preventDefault(); setLinkUrlDraft(obj.linkUrl ?? ""); }
+          }}
+        />
+      </div>
+
+      {/* Target window — only meaningful when a Link URL is set */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Target:</span>
+        <select
+          style={S.select}
+          value={obj.linkTarget ?? ""}
+          disabled={!(obj.linkUrl ?? "").trim()}
+          onChange={(e) =>
+            onUpdateObject(obj.id, { linkTarget: e.target.value } as Partial<DisplayObject>)
+          }
+        >
+          <option value="">(none)</option>
+          <option value="_self">_self</option>
+          <option value="_blank">_blank</option>
+          <option value="_parent">_parent</option>
+          <option value="_top">_top</option>
+        </select>
+      </div>
     </div>
   );
 }

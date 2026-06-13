@@ -19,6 +19,8 @@ type DisplayObjectUpdates = Partial<
     scrollable: boolean;
     selectable: boolean;
     autoKern: boolean;
+    linkUrl: string;
+    linkTarget: string;
     textType: "static" | "dynamic" | "input";
     fontFamily: string;
     fontSize: number;

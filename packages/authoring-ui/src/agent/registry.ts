@@ -748,6 +748,8 @@ const handlers: Record<string, AnyHandler> = {
     autoSize?: boolean;
     letterSpacing?: number;
     autoKern?: boolean;
+    linkUrl?: string;
+    linkTarget?: string;
     leading?: number;
     restrict?: string;
     layerId?: string;
@@ -784,6 +786,8 @@ const handlers: Record<string, AnyHandler> = {
       ...(params.autoSize !== undefined && { autoSize: params.autoSize }),
       ...(params.letterSpacing !== undefined && { letterSpacing: params.letterSpacing }),
       ...(params.autoKern !== undefined && { autoKern: params.autoKern }),
+      ...(params.linkUrl !== undefined && { linkUrl: params.linkUrl }),
+      ...(params.linkTarget !== undefined && { linkTarget: params.linkTarget }),
       ...(params.leading !== undefined && { leading: params.leading }),
       ...(params.restrict !== undefined && { restrict: params.restrict }),
     };

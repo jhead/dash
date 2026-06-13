@@ -1137,6 +1137,69 @@ describe("DefineEditText — HTML flag (bit 9) for rich text", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Hyperlink — linkUrl / linkTarget → HTML <a> anchor + HTML flag (bit 9)
+// ---------------------------------------------------------------------------
+
+describe("DefineEditText — hyperlink (linkUrl/linkTarget)", () => {
+  it("no linkUrl: content is plain, HTML flag not set", () => {
+    const decoded = compileAndDecodeHtml(makeText({ textType: "dynamic", text: "click me" }));
+    expect(decoded.isHtml).toBe(false);
+    expect(decoded.initialText).toBe("click me");
+  });
+
+  it("linkUrl set: HTML flag (bit 9) IS set", () => {
+    const decoded = compileAndDecodeHtml(
+      makeText({ textType: "dynamic", text: "click me", linkUrl: "http://example.com/" })
+    );
+    expect(decoded.isHtml).toBe(true);
+  });
+
+  it("linkUrl set: content is wrapped in an <a href=...> anchor", () => {
+    const decoded = compileAndDecodeHtml(
+      makeText({ textType: "dynamic", text: "click me", linkUrl: "http://example.com/" })
+    );
+    expect(decoded.initialText).toBe('<a href="http://example.com/">click me</a>');
+  });
+
+  it("linkUrl + linkTarget: anchor carries the target attribute", () => {
+    const decoded = compileAndDecodeHtml(
+      makeText({
+        textType: "dynamic",
+        text: "go",
+        linkUrl: "http://example.com/",
+        linkTarget: "_blank",
+      })
+    );
+    expect(decoded.initialText).toBe('<a href="http://example.com/" target="_blank">go</a>');
+  });
+
+  it("link content with HTML special chars is escaped inside the anchor", () => {
+    const decoded = compileAndDecodeHtml(
+      makeText({ textType: "dynamic", text: "a & b < c", linkUrl: "http://x/?a=1&b=2" })
+    );
+    expect(decoded.initialText).toBe(
+      '<a href="http://x/?a=1&amp;b=2">a &amp; b &lt; c</a>'
+    );
+  });
+
+  it("empty/whitespace linkUrl is treated as no link", () => {
+    const decoded = compileAndDecodeHtml(
+      makeText({ textType: "dynamic", text: "plain", linkUrl: "   " })
+    );
+    expect(decoded.isHtml).toBe(false);
+    expect(decoded.initialText).toBe("plain");
+  });
+
+  it("static text with a link routes through DefineEditText as HTML anchor", () => {
+    const decoded = compileAndDecodeHtml(
+      makeText({ textType: "static", text: "linked", linkUrl: "http://example.com/" })
+    );
+    expect(decoded.isHtml).toBe(true);
+    expect(decoded.initialText).toBe('<a href="http://example.com/">linked</a>');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // restrict → DoAction (TextField.restrict = "pattern")
 // ---------------------------------------------------------------------------
 

@@ -272,7 +272,12 @@ export function encodeDefineEditText(
   // kerning on via an HTML <font kerning="1"> wrapper (SWF>=8 only — see Ruffle
   // html/text_format.rs). This forces HTML mode for the field.
   const autoKern = obj.autoKern === true && hasEmbeddedFont;
-  const isHtml = obj.html === true || needsHtmlWrap || autoKern;
+  // Hyperlink: when linkUrl is non-empty, wrap the content in an HTML anchor and
+  // force the HTML flag so the player renders a clickable link (getURL on click).
+  const linkUrl = (obj.linkUrl ?? "").trim();
+  const linkTarget = (obj.linkTarget ?? "").trim();
+  const hasLink = linkUrl.length > 0;
+  const isHtml = obj.html === true || needsHtmlWrap || autoKern || hasLink;
   let initialContent: string;
   if (needsHtmlWrap) {
     const tag = charPos === 1 ? "sup" : "sub";
@@ -294,6 +299,17 @@ export function encodeDefineEditText(
     if (obj.italic) inner = `<i>${inner}</i>`;
     if (obj.bold) inner = `<b>${inner}</b>`;
     initialContent = `<font face="${obj.fontFamily}" size="${sizePt}" color="${colorHex}" kerning="1">${inner}</font>`;
+  }
+
+  // Hyperlink anchor wrap. The anchor goes OUTSIDE any existing markup so the
+  // entire visible text is clickable. If the content is still plain (no other
+  // markup forced HTML), escape it before placing it inside the anchor element.
+  if (hasLink) {
+    const contentIsMarkup = obj.html === true || needsHtmlWrap || (autoKern && charPos === 0);
+    const inner = contentIsMarkup ? initialContent : escapeHtmlText(initialContent);
+    const hrefAttr = ` href="${escapeHtmlText(linkUrl)}"`;
+    const targetAttr = linkTarget ? ` target="${escapeHtmlText(linkTarget)}"` : "";
+    initialContent = `<a${hrefAttr}${targetAttr}>${inner}</a>`;
   }
 
   // Emit HasText for static/dynamic (always have content) and for input only
