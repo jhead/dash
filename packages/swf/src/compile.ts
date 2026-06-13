@@ -569,34 +569,52 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     charIdMap.set(sym.id, writer.nextCharId());
   }
 
-  // Pre-scan: find non-button symbols that are used as button instances (have
-  // buttonHandlers) anywhere in the document.  These will be compiled as inline
-  // DefineButton2 tags at instance-placement time, so they must NOT also emit a
-  // DefineSprite at the library level.
+  // Pre-scan: find symbols that are placed *only* as button instances carrying
+  // instance-level on() handlers (buttonHandlers).  Each such placement emits its
+  // own inline DefineButton2 tag (the handlers live in the tag, not in
+  // PlaceObject2), so the library-level definition (DefineSprite for a graphic /
+  // movieclip, or DefineButton2 for a button symbol) must NOT also be emitted —
+  // otherwise the button would be defined twice.
+  //
+  // This covers two cases:
+  //   1. A graphic/movieclip symbol used as a button instance (legacy authoring
+  //      where on() handlers were attached to a non-button symbol).
+  //   2. A real button symbol (symbolType === "button") whose every placement
+  //      carries instance-level handlers — common for buttons imported from a
+  //      binary FLA, where the on(release){...} script lives on the instance.
+  //
+  // A button symbol with NO handler-bearing placement (e.g. one driven purely by
+  // symbol-level buttonActions) is NOT collected here, so it still emits its
+  // library-level DefineButton2.
   const graphicButtonSymbolIds = new Set<string>();
   {
     const allTimelines: Array<{ layers: readonly { frames: readonly { displayObjects: readonly DisplayObject[] }[] }[] }> = [
       ...doc.scenes.map((s) => s.timeline),
       ...symbols.map((s) => s.timeline),
     ];
+    // Track, per symbol, whether it is ever placed with handlers and ever placed
+    // without handlers. Only symbols placed exclusively with handlers are safe to
+    // emit inline-only.
+    const placedWithHandlers = new Set<string>();
+    const placedWithoutHandlers = new Set<string>();
     for (const timeline of allTimelines) {
       for (const layer of timeline.layers) {
         for (const frame of layer.frames) {
           for (const obj of frame.displayObjects) {
             const inst = obj as SymbolInstance;
-            if (
-              inst.type === "instance" &&
-              inst.buttonHandlers &&
-              inst.buttonHandlers.length > 0
-            ) {
-              const sym = symbolById.get(inst.symbolId);
-              if (sym && sym.symbolType !== "button") {
-                graphicButtonSymbolIds.add(inst.symbolId);
-              }
+            if (inst.type !== "instance") continue;
+            if (inst.buttonHandlers && inst.buttonHandlers.length > 0) {
+              placedWithHandlers.add(inst.symbolId);
+            } else {
+              placedWithoutHandlers.add(inst.symbolId);
             }
           }
         }
       }
+    }
+    for (const symbolId of placedWithHandlers) {
+      if (placedWithoutHandlers.has(symbolId)) continue;
+      graphicButtonSymbolIds.add(symbolId);
     }
   }
 
@@ -793,7 +811,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     // appear at top level before the symbol definition tag.
     const hoistedDefs: Array<{ tagType: number; body: Uint8Array }> = [];
 
-    if (sym.symbolType === "button") {
+    if (graphicButtonSymbolIds.has(sym.id)) {
+      // Symbol placed only as a button instance carrying instance-level on()
+      // handlers: skip the library-level definition here. An inline
+      // DefineButton2 will be emitted at instance-placement time (see the
+      // instance handling loop below), which hoists shapes/text and wraps them
+      // with the per-instance button handlers. This applies to graphic/movieclip
+      // symbols used as buttons AND to real button symbols (symbolType ===
+      // "button") whose every placement carries handlers.
+    } else if (sym.symbolType === "button") {
       // Button symbols: emit DefineButton2 (tag 34) instead of DefineSprite (tag 39).
       const buttonBody = encodeDefineButton2(
         symCharId,
@@ -818,11 +844,6 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       if (sym.buttonSounds) {
         pendingButtonSounds.push({ charId: symCharId, sounds: sym.buttonSounds });
       }
-    } else if (graphicButtonSymbolIds.has(sym.id)) {
-      // Non-button symbol used as a button instance: skip DefineSprite here.
-      // An inline DefineButton2 will be emitted at instance-placement time
-      // (see the instance handling loop below), which will hoist shapes/text
-      // and wrap them with the per-instance button handlers.
     } else {
       const spriteBody = encodeDefineSprite(
         symCharId,

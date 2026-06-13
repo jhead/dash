@@ -537,9 +537,12 @@ function makeSceneWithButtonInstance(
 
 describe("DefineButton2 — instance-level buttonHandlers", () => {
   // ---------------------------------------------------------------------------
-  // Test A: button instance with buttonHandlers emits TWO DefineButton2 tags
+  // Test A: a button placed solely with instance-level handlers emits exactly
+  // ONE DefineButton2 — the inline one carrying the handlers. The library-level
+  // (handler-less) definition is redundant and is suppressed, matching real
+  // Flash 8 (the golden fixture's PlayButton: one placement → one DefineButton2).
   // ---------------------------------------------------------------------------
-  it("A: button instance with buttonHandlers emits a second DefineButton2 for the instance", () => {
+  it("A: button instance placed only with buttonHandlers emits a single inline DefineButton2", () => {
     const btn = makeButtonSymbol("btn-ih-A");
     const scene = makeSceneWithButtonInstance("btn-ih-A", [
       { event: "release", script: 'gotoAndStop(2);' },
@@ -570,9 +573,10 @@ describe("DefineButton2 — instance-level buttonHandlers", () => {
     const swf = compileDocument(doc);
     const tags = parseTags(swf);
 
-    // Symbol-level DefineButton2 + instance-level DefineButton2 = 2 total
+    // Only the inline DefineButton2 (carrying the handlers) is emitted; the
+    // redundant library-level definition is suppressed.
     const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
-    expect(btn2Tags.length).toBe(2);
+    expect(btn2Tags.length).toBe(1);
   });
 
   // ---------------------------------------------------------------------------
@@ -610,8 +614,9 @@ describe("DefineButton2 — instance-level buttonHandlers", () => {
     const tags = parseTags(swf);
 
     const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
-    // Second tag is the instance-level one
-    const instParsed = parseButton2Body(btn2Tags[1].body);
+    expect(btn2Tags.length).toBe(1);
+    // The single tag is the inline one carrying the instance handlers
+    const instParsed = parseButton2Body(btn2Tags[0].body);
     // ActionOffset > 0 means BUTTONCONDACTION records are present
     expect(instParsed.actionOffset).toBeGreaterThan(0);
     // First BUTTONCONDACTION: ConditionBits bit 3 = release
@@ -654,8 +659,9 @@ describe("DefineButton2 — instance-level buttonHandlers", () => {
     const tags = parseTags(swf);
 
     const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
-    // The instance-level DefineButton2 is the second one
-    const instCharId = readUI16LE(btn2Tags[1].body, 0);
+    expect(btn2Tags.length).toBe(1);
+    // The single inline DefineButton2 is what PlaceObject2 references
+    const instCharId = readUI16LE(btn2Tags[0].body, 0);
 
     // Find PlaceObject2 that references the instance char ID
     const TAG_PLACE_OBJECT2 = 26;

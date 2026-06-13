@@ -1921,6 +1921,50 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     scenes.push(createScene(sceneName, { timeline }));
   }
 
+  // --- button symbol-type promotion -------------------------------------------
+  // A symbol placed as a button instance carries instance-level on() handlers
+  // (decoded into `buttonHandlers`). In Flash only button (and movieclip)
+  // instances accept on() handlers, and an on()-bearing graphic instance is
+  // really a button whose Contents-stream type byte was written as graphic
+  // (observed in real Flash 8 binaries, e.g. the golden fixture's PlayButton).
+  // Promote any such symbol to symbolType: "button" so the SWF compiler emits a
+  // DefineButton2 for it rather than a DefineSprite. This is the import-side
+  // counterpart to the compiler's inline-DefineButton2 path.
+  const buttonInstanceSymbolIds = new Set<string>();
+  {
+    const allTimelines: Timeline[] = [
+      ...scenes.map((sc) => sc.timeline),
+      ...items
+        .filter((it): it is Extract<LibraryItem, { itemType: "symbol" }> => it.itemType === "symbol")
+        .map((it) => it.timeline),
+    ];
+    for (const timeline of allTimelines) {
+      for (const layer of timeline.layers) {
+        for (const frame of layer.frames) {
+          for (const obj of frame.displayObjects) {
+            if (
+              obj.type === "instance" &&
+              obj.buttonHandlers &&
+              obj.buttonHandlers.length > 0
+            ) {
+              buttonInstanceSymbolIds.add(obj.symbolId);
+            }
+          }
+        }
+      }
+    }
+  }
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]!;
+    if (
+      it.itemType === "symbol" &&
+      it.symbolType !== "button" &&
+      buttonInstanceSymbolIds.has(it.id)
+    ) {
+      items[i] = { ...it, symbolType: "button" };
+    }
+  }
+
   // --- document properties -----------------------------------------------------
   const properties = createDocumentProperties({
     width: contents.width ?? 550,

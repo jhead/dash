@@ -395,9 +395,10 @@ describe("DefineButton2 — keyPress ConditionBits encoding", () => {
     const swf = compileDocument(makeDoc([btn], scene));
     const tags = parseTags(swf);
     const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
-    // Symbol + instance-level = 2 DefineButton2 tags
-    expect(btn2Tags.length).toBe(2);
-    const { condActionBytes } = parseButton2Body(btn2Tags[1]!.body);
+    // A button placed solely with instance-level handlers emits a single inline
+    // DefineButton2 carrying those handlers (matches real Flash 8).
+    expect(btn2Tags.length).toBe(1);
+    const { condActionBytes } = parseButton2Body(btn2Tags[0]!.body);
     const condBits = readUI16LE(condActionBytes, 2);
     expect(condBits).toBe(13 << 9); // Enter = 13
   });
