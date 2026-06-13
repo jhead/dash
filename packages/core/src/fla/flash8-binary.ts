@@ -1863,6 +1863,182 @@ function readFilterList(r: Reader, filterCount: number): Fla8Filter[] {
   return filters;
 }
 
+/** Little-endian float32 reader for FLA filter records. */
+function readF32(r: Reader): number {
+  const b = r.bytes(4);
+  return new DataView(b.buffer, b.byteOffset, 4).getFloat32(0, true);
+}
+
+/**
+ * Read the FLA (authoring) filter list as stored inside a CPicText / display
+ * object — this is NOT the SWF wire format (`readFilterList`/`readOneFilter`);
+ * it is the wider authoring representation written by Flash's CArchive
+ * serializer (verified against flacomdoc's `filters/*.java` writers and the
+ * golden-v2 fixture authored by real Flash 8).
+ *
+ * Wire layout (caller has already consumed the leading 0x01 "has-filters"
+ * marker byte and verified it is non-zero):
+ *   UI32  filterCount
+ *   for each filter: a fixed-length record keyed by its leading type byte.
+ *
+ * Each record's exact byte length is consumed even when the filter type is
+ * not modelled, so the reader stays aligned for the trailing bytes and the
+ * following CArchive children. Returns the decoded filters (unmodelled types
+ * are skipped but still byte-consumed).
+ */
+function readFlaFilterList(ctx: ParseCtx, filterCount: number): Fla8Filter[] {
+  const { r } = ctx;
+  const filters: Fla8Filter[] = [];
+  for (let i = 0; i < filterCount; i++) {
+    if (r.remaining() < 3) break;
+    const f = readOneFlaFilter(r);
+    if (f) filters.push(f);
+  }
+  return filters;
+}
+
+/**
+ * Read one FLA-format filter record. Field order / lengths follow flacomdoc's
+ * `converter/filters/*.java` writers (byte-verified against real Flash 8).
+ * Returns null for modelled-but-empty cases; throws FlaEofError on truncation.
+ */
+function readOneFlaFilter(r: Reader): Fla8Filter | null {
+  const type = r.u8();
+  switch (type) {
+    case 0x00: { // DropShadow — 47 bytes total
+      r.skip(2); // sub-header 04 01
+      r.skip(4); // enabled + reserved
+      const cr = r.u8(), cg = r.u8(), cb = r.u8(), ca = r.u8();
+      const distance = readF32(r);
+      const blurX = readF32(r);
+      const blurY = readF32(r);
+      const angle = readF32(r);
+      const inner = r.u32() !== 0;
+      const knockout = r.u32() !== 0;
+      const quality = r.u32();
+      const strength = r.u16() / 100; // percent
+      r.skip(2); // strength hi reserved
+      const hideObject = r.u8() !== 0;
+      r.skip(3); // reserved
+      return {
+        kind: "drop-shadow",
+        r: cr, g: cg, b: cb, a: ca,
+        blurX, blurY, angle, distance, strength,
+        inner, knockout, hideObject, passes: quality,
+      };
+    }
+    case 0x01: { // Blur — 48 bytes total
+      r.skip(3); // sub-header 03 04 01
+      r.skip(4); // enabled + reserved
+      r.skip(4); // ff ff ff ff reserved
+      r.skip(4); // 5.0 constant
+      const blurX = readF32(r);
+      const blurY = readF32(r);
+      r.skip(4); // 45deg constant
+      r.skip(8); // reserved
+      const quality = r.u32();
+      r.skip(2); // 64 00 (strength-ish constant)
+      r.skip(4); // reserved
+      r.skip(2); // reserved
+      return { kind: "blur", blurX, blurY, passes: quality };
+    }
+    case 0x02: { // Glow — 48 bytes total
+      r.skip(3); // sub-header 03 04 01
+      r.skip(4); // enabled + reserved
+      const cr = r.u8(), cg = r.u8(), cb = r.u8(), ca = r.u8();
+      r.skip(4); // 5.0 constant
+      const blurX = readF32(r);
+      const blurY = readF32(r);
+      r.skip(4); // 45deg constant
+      const inner = r.u32() !== 0;
+      const knockout = r.u32() !== 0;
+      const quality = r.u32();
+      const strength = r.u16() / 100;
+      r.skip(2); // strength hi reserved
+      r.skip(4); // reserved
+      return {
+        kind: "glow",
+        r: cr, g: cg, b: cb, a: ca,
+        blurX, blurY, strength, inner, knockout, passes: quality,
+      };
+    }
+    case 0x03: { // Bevel — 56 bytes total
+      r.skip(3); // sub-header 03 04 01
+      r.skip(4); // enabled + reserved
+      const sr = r.u8(), sg = r.u8(), sb = r.u8(), sa = r.u8();
+      const distance = readF32(r);
+      const blurX = readF32(r);
+      const blurY = readF32(r);
+      const angle = readF32(r);
+      const inner = r.u32() !== 0;
+      const knockout = r.u32() !== 0;
+      const quality = r.u32();
+      const strength = r.u16() / 100;
+      r.skip(2); // strength hi reserved
+      r.skip(4); // reserved
+      const hr = r.u8(), hg = r.u8(), hb = r.u8(), ha = r.u8();
+      const onTop = r.u32() !== 0; // type == full
+      return {
+        kind: "bevel",
+        highlightR: hr, highlightG: hg, highlightB: hb, highlightA: ha,
+        shadowR: sr, shadowG: sg, shadowB: sb, shadowA: sa,
+        blurX, blurY, angle, distance, strength,
+        inner, knockout, onTop, passes: quality,
+      };
+    }
+    case 0x04: // GradientGlow — 60 + 8*n bytes
+    case 0x07: { // GradientBevel — 61 + 8*n bytes
+      // GradientBevel has an extra leading byte before the 01 01 sub-header.
+      if (type === 0x07) r.skip(1);
+      r.skip(3); // sub-header 01 04 01
+      r.skip(4); // enabled + reserved
+      r.skip(4); // 00 00 00 ff reserved
+      const distance = readF32(r);
+      const blurX = readF32(r);
+      const blurY = readF32(r);
+      const angle = readF32(r);
+      const inner = r.u32() !== 0;
+      const knockout = r.u32() !== 0;
+      const quality = r.u32();
+      const strength = r.u16() / 100;
+      r.skip(2); // strength hi reserved
+      r.skip(4); // reserved
+      const numEntries = r.u32();
+      r.skip(4); // reserved
+      const onTop = r.u32() !== 0; // type == full
+      const stops: Fla8FilterGradientStop[] = [];
+      for (let i = 0; i < numEntries && r.remaining() >= 8; i++) {
+        const ratio = r.u8();
+        r.skip(3); // reserved
+        const cr = r.u8(), cg = r.u8(), cb = r.u8(), ca = r.u8();
+        stops.push({ r: cr, g: cg, b: cb, a: ca, ratio });
+      }
+      const gf = {
+        stops, blurX, blurY, angle, distance, strength,
+        inner, knockout, compositeSource: false, onTop, passes: quality,
+      };
+      return type === 0x04
+        ? { kind: "gradient-glow" as const, ...gf }
+        : { kind: "gradient-bevel" as const, ...gf };
+    }
+    case 0x06: { // AdjustColor — 23 bytes total
+      r.skip(2); // sub-header 01 01
+      r.skip(4); // enabled + reserved
+      const brightness = readF32(r);
+      const contrast = readF32(r);
+      const saturation = readF32(r);
+      const hue = readF32(r);
+      // Map adjust-color to a color-matrix filter (brightness/contrast/etc.
+      // would need conversion; store raw values in the matrix for round-trip).
+      return { kind: "color-matrix", matrix: [brightness, contrast, saturation, hue] };
+    }
+    default:
+      // Unknown filter type — length unknown; signal recovery by jumping to EOF
+      // so the caller's boundary scan re-syncs to the next class tag.
+      throw new FlaEofError(`unknown FLA filter type 0x${type.toString(16)}`);
+  }
+}
+
 // --- CPicSymbol / CPicSprite / CPicButton -------------------------------------
 
 interface SymbolBaseFields {
@@ -2431,15 +2607,25 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
         readCString(r); // font embed ranges
       }
       if (ts >= 0x0d) {
-        // filterCount byte: 0 = no filters + 2 trailing bytes; >0 = SWF-format
-        // filter records (same layout as symbol-instance filters) + 2 trailing bytes.
-        const filterCount = r.u8();
-        if (filterCount > 0) {
+        // FLA filter list (F8+). Wire format (verified against flacomdoc's
+        // TimelineConverter text path + the golden-v2 fixture):
+        //   u8 hasFilters marker (0 = none, 1 = present)
+        //   if present: UI32 count, then `count` FLA-format filter records
+        //   u16 trailing bytes (always present)
+        // NOTE: these are FLA authoring filter records (`readFlaFilterList`),
+        // NOT the SWF wire format used by symbol-instance filters.
+        const hasFilters = r.u8();
+        if (hasFilters !== 0) {
           try {
-            filters = readFilterList(r, filterCount);
-            r.skip(2); // 2 trailing bytes (blend mode hint + reserved)
-          } catch {
-            // Parse error inside filter data — skip to the record boundary.
+            const filterCount = r.u32();
+            if (filterCount > 0 && filterCount < 256) {
+              filters = readFlaFilterList(ctx, filterCount);
+            }
+            r.skip(2); // 2 trailing bytes
+          } catch (e) {
+            if (!(e instanceof FlaEofError)) throw e;
+            // Filter record length mismatch — re-sync to the next boundary so
+            // the remaining CArchive children (sibling layers/frames) survive.
             skipToNextBoundary(ctx);
           }
         } else {
