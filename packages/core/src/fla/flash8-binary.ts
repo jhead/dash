@@ -1213,13 +1213,6 @@ function readCPicPage(ctx: ParseCtx): ParsedNode {
   for (const c of base.children) {
     if (c.cls === "CPicLayer") layers.push(c);
   }
-  if (process.env.FLA_DEBUG) {
-    console.warn(`[DBG] CPicPage children=${base.children.length} classes=[${base.children.map((c) => (c as { cls?: string }).cls ?? "?").join(",")}] layers=${layers.length} rPos=0x${r.pos.toString(16)} rLen=${(r as unknown as { bytes?: Uint8Array }).bytes?.length ?? "?"}`);
-    for (const l of layers) {
-      const lc = (l as { children?: Array<{ cls?: string }> }).children ?? [];
-      console.warn(`[DBG]   layer name="${(l as { name?: string }).name ?? "?"}" childKinds=[${lc.map((c) => c.cls ?? "?").join(",")}]`);
-    }
-  }
   return { cls: "CPicPage", layers };
 }
 
