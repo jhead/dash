@@ -1664,6 +1664,24 @@ function TextView({
 
       <div style={S.separator} />
 
+      {/* Character position (superscript / subscript) */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Position:</span>
+        <select
+          style={S.select}
+          value={obj.characterPosition ?? 0}
+          onChange={(e) =>
+            onUpdateObject(obj.id, { characterPosition: Number(e.target.value) as 0 | 1 | 2 } as Partial<DisplayObject>)
+          }
+        >
+          <option value={0}>Normal</option>
+          <option value={1}>Superscript</option>
+          <option value={2}>Subscript</option>
+        </select>
+      </div>
+
+      <div style={S.separator} />
+
       {/* Anti-alias mode */}
       <div style={S.fieldGroup}>
         <span style={S.label}>Anti-alias:</span>

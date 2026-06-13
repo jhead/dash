@@ -232,8 +232,23 @@ export function encodeDefineEditText(
 
   // When html=true, the initial content is the HTML string (htmlText); otherwise
   // plain text. For encoding purposes we use whichever string is authoritative.
-  const isHtml = obj.html === true;
-  const initialContent = isHtml && obj.htmlText != null ? obj.htmlText : obj.text;
+  //
+  // Single-run super/subscript: if characterPosition is 1 (superscript) or 2
+  // (subscript) and the field is not already using HTML markup, wrap the plain
+  // text in <sup>…</sup> or <sub>…</sub> and force the HTML flag so Ruffle
+  // renders the correct baseline/size shift.
+  const charPos = obj.characterPosition ?? 0;
+  const needsHtmlWrap = charPos !== 0 && obj.html !== true;
+  const isHtml = obj.html === true || needsHtmlWrap;
+  let initialContent: string;
+  if (needsHtmlWrap) {
+    const tag = charPos === 1 ? "sup" : "sub";
+    initialContent = `<${tag}>${obj.text}</${tag}>`;
+  } else if (isHtml && obj.htmlText != null) {
+    initialContent = obj.htmlText;
+  } else {
+    initialContent = obj.text;
+  }
 
   // Emit HasText for static/dynamic (always have content) and for input only
   // when there is a non-empty initial value.
