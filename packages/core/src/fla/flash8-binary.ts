@@ -344,6 +344,16 @@ export interface Fla8Text {
   /** Letter spacing from the first text run, in pixels. Default 0. */
   readonly letterSpacing?: number;
   /**
+   * Flash 8 text anti-alias mode decoded from the first run's renderMode byte (ts >= 0x0d).
+   * 0=device, 1=bitmap, 2=animation, 3=readability, 4=custom.
+   * Undefined for pre-Flash 8 format (ts < 0x0d).
+   */
+  readonly antiAlias?: "device" | "bitmap" | "animation" | "readability" | "custom";
+  /**
+   * Custom CSM sharpness/thickness from the first run (only set when antiAlias === 'custom').
+   */
+  readonly csm?: { readonly thickness: number; readonly sharpness: number };
+  /**
    * Whether the text field is visible in the authoring tool.
    * Decoded from the CPicObjBase flags byte (bit 0 = visible).
    * Default: true. Only set to false when the object is explicitly hidden.
@@ -2215,6 +2225,16 @@ interface TextRun {
   rightMargin: number;
   /** Letter spacing in FLA units (s16). */
   letterSpacing: number;
+  /**
+   * Font rendering mode byte (F8+, ts >= 0x0d).
+   * 0=device, 1=bitmap, 2=animation, 3=readability, 4=custom.
+   * Undefined when ts < 0x0d (pre-Flash 8 format).
+   */
+  renderMode?: number;
+  /** CSM antialias thickness (F32, F8+). Only meaningful when renderMode === 4. */
+  aaThickness?: number;
+  /** CSM antialias sharpness (F32, F8+). Only meaningful when renderMode === 4. */
+  aaSharpness?: number;
 }
 
 /** writeString: u8 length (with 0xFF/0xFFFF extensions) + chars, no BOM. */
@@ -2274,13 +2294,41 @@ function readTextRunFields(r: Reader, ts: number): TextRun {
     if (cs4) readCString(r);
     else readPlainString(r, unicode); // link target
   }
+  let renderMode: number | undefined;
+  let aaThickness: number | undefined;
+  let aaSharpness: number | undefined;
   if (ts >= 0x0d) {
-    r.skip(2); // 0x02 marker + font rendering mode
-    r.skip(8); // antialias thickness + sharpness (2 floats)
+    r.skip(1); // 0x02 marker (constant)
+    renderMode = r.u8(); // font rendering mode: 0=device,1=bitmap,2=animation,3=readability,4=custom
+    // Read two IEEE 754 32-bit LE floats: thickness then sharpness
+    const readF32 = (): number => {
+      const b = r.bytes(4);
+      return new DataView(b.buffer, b.byteOffset, 4).getFloat32(0, true);
+    };
+    aaThickness = readF32();
+    aaSharpness = readF32();
     if (cs4) readCString(r);
     else readPlainString(r, unicode); // url (repeated)
   }
-  return { fontName, sizePt, color, bold, italic, align, characterPosition, vertical, rightToLeft, rotation, leading, indent, leftMargin, rightMargin, letterSpacing };
+  return { fontName, sizePt, color, bold, italic, align, characterPosition, vertical, rightToLeft, rotation, leading, indent, leftMargin, rightMargin, letterSpacing, renderMode, aaThickness, aaSharpness };
+}
+
+/** Map the CPicText run renderMode byte to the editor's antiAlias string (F8+). */
+const ANTI_ALIAS_NAMES = ["device", "bitmap", "animation", "readability", "custom"] as const;
+
+/**
+ * Produce the antiAlias (and optional csm) props for Fla8Text from the first text run.
+ * Returns an empty object when the run has no renderMode (pre-F8 format).
+ */
+function antiAliasFromRun(
+  run: TextRun | null,
+): { antiAlias?: Fla8Text["antiAlias"]; csm?: Fla8Text["csm"] } {
+  if (run?.renderMode == null) return {};
+  const antiAlias = ANTI_ALIAS_NAMES[run.renderMode] ?? "animation";
+  if (antiAlias === "custom" && run.aaThickness != null && run.aaSharpness != null) {
+    return { antiAlias, csm: { thickness: run.aaThickness, sharpness: run.aaSharpness } };
+  }
+  return { antiAlias };
 }
 
 function readCPicText(ctx: ParseCtx): Fla8Text {
@@ -2423,6 +2471,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     ...(run?.leftMargin ? { leftMargin: run.leftMargin / 20 } : {}),
     ...(run?.rightMargin ? { rightMargin: run.rightMargin / 20 } : {}),
     ...(run?.letterSpacing ? { letterSpacing: run.letterSpacing / 20 } : {}),
+    ...antiAliasFromRun(run),
     filters,
     // colorEffect is null until the exact byte position in CPicText is confirmed
     // with a fixture FLA that has a tinted/alpha/brightness effect on a text field.

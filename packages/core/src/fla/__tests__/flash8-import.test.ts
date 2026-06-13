@@ -1723,6 +1723,77 @@ describe("text orientation (CPicText vertical/rtl bytes)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// antiAlias forwarding (convertFla8Text) — task 1181
+// ---------------------------------------------------------------------------
+// Verifies that convertFla8Text forwards Fla8Text.antiAlias and Fla8Text.csm
+// to the resulting TextDisplayObject. The renderMode byte in F8+ run fields
+// is decoded in flash8-binary.ts and surfaced on Fla8Text; flash8-import.ts
+// must forward it to the editor model so CSMTextSettings is emitted correctly.
+
+describe("antiAlias forwarding (convertFla8Text)", () => {
+  /** Re-use the minimal Fla8Text factory from the colorEffect tests above. */
+  function makeFla8TextAA(overrides: Partial<Fla8Text> = {}): Fla8Text {
+    return {
+      type: "text",
+      matrix: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
+      width: 100, height: 20,
+      text: "Score: 0",
+      fontName: "Arial", fontSize: 12,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      bold: false, italic: false,
+      align: "left", orientation: "horizontal",
+      instanceName: "scoreText",
+      textType: "dynamic",
+      wordWrap: false, multiline: false, password: false,
+      maxChars: 0, hasBorder: false, hasBackground: false,
+      as2VariableName: "", scrollable: false,
+      filters: [], colorEffect: null, runs: [],
+      ...overrides,
+    };
+  }
+
+  it("omits antiAlias when Fla8Text has no antiAlias (pre-F8)", () => {
+    const result = convertFla8Text(makeFla8TextAA({}));
+    expect(result.antiAlias).toBeUndefined();
+  });
+
+  it("forwards antiAlias='animation' (renderMode 2)", () => {
+    const result = convertFla8Text(makeFla8TextAA({ antiAlias: "animation" }));
+    expect(result.antiAlias).toBe("animation");
+  });
+
+  it("forwards antiAlias='readability' (renderMode 3)", () => {
+    const result = convertFla8Text(makeFla8TextAA({ antiAlias: "readability" }));
+    expect(result.antiAlias).toBe("readability");
+    expect(result.csm).toBeUndefined();
+  });
+
+  it("forwards antiAlias='device' (renderMode 0)", () => {
+    const result = convertFla8Text(makeFla8TextAA({ antiAlias: "device" }));
+    expect(result.antiAlias).toBe("device");
+  });
+
+  it("forwards antiAlias='bitmap' (renderMode 1)", () => {
+    const result = convertFla8Text(makeFla8TextAA({ antiAlias: "bitmap" }));
+    expect(result.antiAlias).toBe("bitmap");
+  });
+
+  it("forwards antiAlias='custom' with csm values (renderMode 4)", () => {
+    const result = convertFla8Text(makeFla8TextAA({
+      antiAlias: "custom",
+      csm: { thickness: 1.5, sharpness: -50.0 },
+    }));
+    expect(result.antiAlias).toBe("custom");
+    expect(result.csm).toEqual({ thickness: 1.5, sharpness: -50.0 });
+  });
+
+  it("omits csm when antiAlias is not 'custom'", () => {
+    const result = convertFla8Text(makeFla8TextAA({ antiAlias: "readability" }));
+    expect(result.csm).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Magnet.fla — CS2-era FLA with multiple scenes (regression 0886 / 0889)
 // ---------------------------------------------------------------------------
 // Regression test: verifies that layer names in Magnet.fla are decoded as

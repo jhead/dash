@@ -1081,6 +1081,8 @@ export function convertFla8Text(el: Fla8Text): TextDisplayObject {
     ...(textFilters.length > 0 ? { filters: textFilters } : {}),
     ...(isMultiRun ? { html: true, htmlText } : {}),
     ...(singleRunCharPos ? { characterPosition: singleRunCharPos } : {}),
+    ...(el.antiAlias != null ? { antiAlias: el.antiAlias } : {}),
+    ...(el.csm != null ? { csm: el.csm } : {}),
   };
 }
 
