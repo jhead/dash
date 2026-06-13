@@ -359,6 +359,13 @@ export interface Fla8Text {
    * Default: true. Only set to false when the object is explicitly hidden.
    */
   readonly visible?: boolean;
+  /**
+   * Whether the text field is selectable at runtime (dynamic/input text only).
+   * Decoded from the first byte of the 2-byte "selectable flags + reserved" block
+   * present when ts >= 5. Non-zero = selectable (default), zero = not selectable.
+   * Default: true.
+   */
+  readonly selectable: boolean;
 }
 
 export interface Fla8BitmapRef {
@@ -1205,6 +1212,13 @@ function readCPicPage(ctx: ParseCtx): ParsedNode {
   const layers: ParsedLayerNode[] = [];
   for (const c of base.children) {
     if (c.cls === "CPicLayer") layers.push(c);
+  }
+  if (process.env.FLA_DEBUG) {
+    console.warn(`[DBG] CPicPage children=${base.children.length} classes=[${base.children.map((c) => (c as { cls?: string }).cls ?? "?").join(",")}] layers=${layers.length} rPos=0x${r.pos.toString(16)} rLen=${(r as unknown as { bytes?: Uint8Array }).bytes?.length ?? "?"}`);
+    for (const l of layers) {
+      const lc = (l as { children?: Array<{ cls?: string }> }).children ?? [];
+      console.warn(`[DBG]   layer name="${(l as { name?: string }).name ?? "?"}" childKinds=[${lc.map((c) => c.cls ?? "?").join(",")}]`);
+    }
   }
   return { cls: "CPicPage", layers };
 }
@@ -2352,7 +2366,13 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     textFlags = r.u8();
     embedFlag = r.u8();
   }
-  if (ts >= 5) r.skip(2); // selectable flags + reserved
+  let selectable = true;
+  if (ts >= 5) {
+    // First byte: selectable flag (non-zero = selectable; 0 = not selectable).
+    // Second byte: reserved.
+    selectable = r.u8() !== 0;
+    r.skip(1); // reserved
+  }
   let maxChars = 0;
   let as2VariableName = "";
   if (ts >= 4) {
@@ -2465,6 +2485,7 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     hasBackground: (textFlags & 0x20) !== 0,
     as2VariableName,
     scrollable,
+    selectable,
     ...(autoExpand ? { autoExpand } : {}),
     ...(run?.leading ? { leading: run.leading / 20 } : {}),
     ...(run?.indent ? { indent: run.indent / 20 } : {}),

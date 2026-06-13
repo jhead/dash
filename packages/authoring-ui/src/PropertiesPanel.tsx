@@ -1582,6 +1582,22 @@ function TextView({
         </>
       )}
 
+      {/* Selectable (dynamic/input only) */}
+      {isNotStatic && (
+        <>
+          <div style={S.fieldGroup}>
+            <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={obj.selectable ?? true}
+                onChange={(e) => onUpdateObject(obj.id, { selectable: e.target.checked } as Partial<DisplayObject>)}
+              />
+              Selectable
+            </label>
+          </div>
+        </>
+      )}
+
       {/* Border toggle — dynamic and input text */}
       {(obj.textType === "dynamic" || obj.textType === "input") && (
         <>

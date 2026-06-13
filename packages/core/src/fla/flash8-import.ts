@@ -1077,6 +1077,8 @@ export function convertFla8Text(el: Fla8Text): TextDisplayObject {
     ...(el.hasBackground ? { hasBackground: true } : {}),
     ...(el.as2VariableName ? { as2VariableName: el.as2VariableName } : {}),
     ...(el.scrollable ? { scrollable: true } : {}),
+    // selectable defaults to true; only emit when explicitly false
+    ...(el.selectable === false ? { selectable: false } : {}),
     ...(textColorEffect ? { colorEffect: textColorEffect } : {}),
     ...(textFilters.length > 0 ? { filters: textFilters } : {}),
     ...(isMultiRun ? { html: true, htmlText } : {}),

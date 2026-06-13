@@ -695,6 +695,14 @@ export interface TextDisplayObject {
    * tags in HTML text fields. Omitted when normal (0).
    */
   readonly characterPosition?: 0 | 1 | 2;
+  /**
+   * Whether the user can select the text at runtime (dynamic/input text only).
+   * Controls the DefineEditText NoSelect bit (bit 12 of flags UI16) for
+   * dynamic/input text: when false, NoSelect is set; when true (or undefined),
+   * NoSelect is clear (text is selectable).
+   * Default: true (selectable). Static text is always non-selectable.
+   */
+  readonly selectable?: boolean;
 }
 
 /**

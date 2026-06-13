@@ -258,7 +258,9 @@ export function encodeDefineEditText(
   if (isHtml) flags |= 1 << 9;           // HTML — enables Flash HTML markup in text content
   if (isStatic) flags |= 1 << 10;        // WasStatic — Flash 8+ static marker
   if (obj.hasBorder || obj.hasBackground) flags |= 1 << 11;   // Border — draw border rectangle and/or background fill
-  if (isStatic) flags |= 1 << 12;        // NoSelect for static text only
+  // NoSelect: always set for static text; for dynamic/input, set only when selectable === false
+  // (undefined/omitted means selectable=true, so NoSelect is clear by default)
+  if (isStatic || (!isStatic && obj.selectable === false)) flags |= 1 << 12;
   flags |= 1 << 13;                      // HasLayout
   if (obj.autoSize) flags |= 1 << 14;   // AutoSize — field resizes to fit content
 

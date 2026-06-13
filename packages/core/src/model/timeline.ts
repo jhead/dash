@@ -17,6 +17,7 @@ type DisplayObjectUpdates = Partial<
     align: "left" | "center" | "right" | "justify";
     letterSpacing: number;
     scrollable: boolean;
+    selectable: boolean;
     textType: "static" | "dynamic" | "input";
     fontFamily: string;
     fontSize: number;

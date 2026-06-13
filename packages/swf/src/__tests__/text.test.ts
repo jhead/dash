@@ -401,6 +401,16 @@ describe("DefineEditText flags — dynamic text", () => {
     expect(decoded.noSelect).toBe(false);
   });
 
+  it("dynamic text with selectable=false: NoSelect flag (bit 12) IS set", () => {
+    const decoded = compileAndDecode(makeText({ textType: "dynamic", selectable: false }));
+    expect(decoded.noSelect).toBe(true);
+  });
+
+  it("dynamic text with selectable=true: NoSelect flag (bit 12) is NOT set", () => {
+    const decoded = compileAndDecode(makeText({ textType: "dynamic", selectable: true }));
+    expect(decoded.noSelect).toBe(false);
+  });
+
   it("dynamic text: WasStatic flag (bit 14) is NOT set", () => {
     const decoded = compileAndDecode(makeText({ textType: "dynamic" }));
     expect(decoded.wasStatic).toBe(false);
@@ -421,6 +431,11 @@ describe("DefineEditText flags — input text", () => {
   it("input text: NoSelect flag (bit 11) is NOT set", () => {
     const decoded = compileAndDecode(makeText({ textType: "input", text: "" }));
     expect(decoded.noSelect).toBe(false);
+  });
+
+  it("input text with selectable=false: NoSelect flag (bit 12) IS set", () => {
+    const decoded = compileAndDecode(makeText({ textType: "input", text: "", selectable: false }));
+    expect(decoded.noSelect).toBe(true);
   });
 
   it("input text: WasStatic flag (bit 14) is NOT set", () => {
