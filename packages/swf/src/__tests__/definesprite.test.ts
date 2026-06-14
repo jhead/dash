@@ -23,7 +23,8 @@ import type {
   Scene,
   Symbol,
 } from "@flash/core";
-import type { Shape, ShapeDisplayObject, SymbolInstance } from "@flash/core";
+import type { Shape, ShapeDisplayObject, SymbolInstance, TextDisplayObject } from "@flash/core";
+import { alignXOffsetTwips } from "../text.js";
 
 // ---------------------------------------------------------------------------
 // Tag codes
@@ -34,6 +35,7 @@ const TAG_SHOW_FRAME = 1;
 const TAG_DEFINE_SHAPE4 = 83;
 const TAG_PLACE_OBJECT2 = 26;
 const TAG_DEFINE_SPRITE = 39;
+const TAG_DEFINE_TEXT = 11;
 
 // ---------------------------------------------------------------------------
 // SWF binary parser helpers
@@ -572,5 +574,105 @@ describe("DefineSprite (tag 39) — Symbol library items", () => {
     const tags = parseTags(bytes);
     const spriteTags = tags.filter((t) => t.code === TAG_DEFINE_SPRITE);
     expect(spriteTags.length).toBe(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // 13. Symbol-internal static text bakes alignment XOffset (task 1199).
+  //     Centered static text inside a symbol must carry the same TEXTRECORD
+  //     XOffset that the scene/main-timeline path emits — previously sprite.ts
+  //     and buttons.ts hardcoded XOffset=0, so symbol labels rendered
+  //     left-of-center (golden 'Click to Play' button: 0 vs golden 280).
+  // -------------------------------------------------------------------------
+  describe("symbol-internal static text → baked alignment XOffset (task 1199)", () => {
+    /** Read the first TEXTRECORD's signed XOffset from a DefineText body. */
+    function firstXOffset(body: Uint8Array): number {
+      const flagIdx = body.indexOf(0x8f);
+      expect(flagIdx).toBeGreaterThan(0);
+      const off = flagIdx + 1 + 2 + 3; // skip flag, FontID(2), RGB(3)
+      const v = body[off] | (body[off + 1] << 8);
+      return v & 0x8000 ? v - 0x10000 : v;
+    }
+
+    function makeCenteredText(): TextDisplayObject {
+      return {
+        id: "sym-text-1",
+        type: "text",
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 30,
+        text: "Click to Play",
+        textType: "static",
+        fontFamily: "Arial",
+        fontSize: 18,
+        bold: false,
+        italic: false,
+        color: { r: 0, g: 0, b: 0, a: 255 },
+        align: "center",
+        multiline: false,
+        wordWrap: false,
+      };
+    }
+
+    function compileSymbolTextXOffset(symbolType: "movieclip" | "graphic"): number {
+      const textObj = makeCenteredText();
+      const sym: Symbol = {
+        id: "sym-with-text",
+        name: "LabelClip",
+        itemType: "symbol",
+        symbolType,
+        timeline: {
+          layers: [makeLayer("Layer 1", [{ isEmpty: false, displayObjects: [textObj] }])],
+        },
+        linkage: DEFAULT_SYMBOL_LINKAGE,
+        scale9Grid: null,
+      };
+      const doc = makeDoc({
+        scenes: [
+          makeScene("scene-1", "Scene 1", [
+            makeLayer("Layer 1", [{ isEmpty: false, displayObjects: [makeInstance("inst-1", "sym-with-text")] }]),
+          ]),
+        ],
+        library: { items: [sym], folders: [] },
+      });
+      const bytes = compileDocument(doc);
+      const tags = parseTags(bytes);
+      // Symbol-internal character definitions are hoisted to top level; the
+      // sprite body only carries the PlaceObject2 that references them.
+      const textTag = tags.find((t) => t.code === TAG_DEFINE_TEXT);
+      expect(textTag).toBeDefined();
+      return firstXOffset(textTag!.body);
+    }
+
+    it("movieclip-internal centered static text has a positive (non-zero) XOffset", () => {
+      const xoff = compileSymbolTextXOffset("movieclip");
+      // 200px box (4000 twips), "Click to Play" at 18px is narrower → centered
+      // start offset is a meaningful positive value, NOT the old hardcoded 0.
+      expect(xoff).toBeGreaterThan(0);
+    });
+
+    it("graphic-internal centered static text has a positive (non-zero) XOffset", () => {
+      const xoff = compileSymbolTextXOffset("graphic");
+      expect(xoff).toBeGreaterThan(0);
+    });
+
+    it("the baked XOffset matches the shared alignXOffsetTwips helper", () => {
+      const obj = makeCenteredText();
+      const expected = alignXOffsetTwips(obj.align, obj.width, obj.text, Math.round(obj.fontSize * 20), false);
+      expect(expected).toBeGreaterThan(0);
+      expect(compileSymbolTextXOffset("movieclip")).toBe(expected);
+    });
+
+    it("alignXOffsetTwips: left/justify → 0; center < right; absent box → 0", () => {
+      const fs = 360; // 18px in twips
+      expect(alignXOffsetTwips("left", 200, "Click to Play", fs)).toBe(0);
+      expect(alignXOffsetTwips("justify", 200, "Click to Play", fs)).toBe(0);
+      const c = alignXOffsetTwips("center", 200, "Click to Play", fs);
+      const r = alignXOffsetTwips("right", 200, "Click to Play", fs);
+      expect(c).toBeGreaterThan(0);
+      expect(r).toBeGreaterThan(c);
+      // No box width (or text wider than box) → no offset, never negative.
+      expect(alignXOffsetTwips("center", 0, "Click to Play", fs)).toBe(0);
+    });
   });
 });

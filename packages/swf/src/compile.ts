@@ -30,7 +30,7 @@ import {
   encodeDefineMorphShape2,
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
-import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings, measureTextWidthTwips } from "./text.js";
+import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings, alignXOffsetTwips } from "./text.js";
 import { encodeDefineFont2, encodeDefineFontAlignZones, fontKey, computeEmbedCodePoints, FULL_CODE_POINTS } from "./fonts.js";
 import {
   encodePlaceObject3WithFilters,
@@ -1421,19 +1421,13 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               // starts at (boxWidth - textWidth)/2, right-aligned at
               // (boxWidth - textWidth). Left-aligned stays at 0. The box width is
               // the authored field width (px → twips).
-              let xOffsetTwips = 0;
-              if (obj.align === "center" || obj.align === "right") {
-                const boxWidthTwips = Math.round((obj.width ?? 0) * 20);
-                const textWidthTwips = measureTextWidthTwips(
-                  obj.text,
-                  fontSizeTwips,
-                  obj.autoKern === true
-                );
-                const free = boxWidthTwips - textWidthTwips;
-                if (free > 0) {
-                  xOffsetTwips = obj.align === "center" ? Math.round(free / 2) : free;
-                }
-              }
+              const xOffsetTwips = alignXOffsetTwips(
+                obj.align,
+                obj.width,
+                obj.text,
+                fontSizeTwips,
+                obj.autoKern === true
+              );
               const textBody = encodeDefineText(
                 charId,
                 obj.text,

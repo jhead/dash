@@ -161,6 +161,13 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 
 ### SWF encoding
 
+- **Static-text alignment XOffset must be applied in ALL THREE emit paths** (task 1199):
+  scene/main-timeline (`compile.ts`), button labels (`buttons.ts`), and movieclip/graphic-
+  internal text (`sprite.ts`). The centered/right-aligned start offset is computed by the
+  shared `alignXOffsetTwips()` helper in `text.ts` ((boxWidth−textWidth)/2 for center, full
+  free space for right). The symbol-internal paths used to hardcode XOffset=0, so labels
+  rendered left-of-center (golden 'Click to Play' button: 0 vs golden 280). Per-glyph
+  advance + y_offset deltas vs golden are an inert NotoSans↔Arial font-metric pivot.
 - **LINESTYLE2 byte order**: `EndCap` bits and miter limit must be written in the exact
   bit order the SWF spec prescribes; swapping them truncates the rest of the record.
 - **DefineShape4 vs older tags**: always emit tag 83 (DefineShape4) for Flash 8 targets;

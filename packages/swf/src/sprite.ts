@@ -32,7 +32,7 @@ import {
   encodePlaceObject3WithBlendMode,
   hasEnabledFilters,
 } from "./filters.js";
-import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
+import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings, alignXOffsetTwips } from "./text.js";
 import { Tag } from "./tags.js";
 import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
@@ -340,7 +340,11 @@ export function encodeDefineSprite(
             const c = obj.color;
             const colorHex = `#${c.r.toString(16).padStart(2, "0")}${c.g.toString(16).padStart(2, "0")}${c.b.toString(16).padStart(2, "0")}`;
             const glyphIndexByCode = glyphIndexMapByFontKey?.get(fontKey(obj.fontFamily, obj.bold, obj.italic));
-            hoistedDefs.push({ tagType: Tag.DefineText, body: encodeDefineText(charId, obj.text, embeddedFontId, fontSizeTwips, colorHex, 0, fontSizeTwips, obj.autoKern === true, glyphIndexByCode) });
+            // Bake the alignment start offset into the TEXTRECORD XOffset so
+            // centered/right-aligned movieclip/graphic-internal labels sit where
+            // Flash placed them (same logic as the scene path).
+            const xOffsetTwips = alignXOffsetTwips(obj.align, obj.width, obj.text, fontSizeTwips, obj.autoKern === true);
+            hoistedDefs.push({ tagType: Tag.DefineText, body: encodeDefineText(charId, obj.text, embeddedFontId, fontSizeTwips, colorHex, xOffsetTwips, fontSizeTwips, obj.autoKern === true, glyphIndexByCode) });
           } else {
             // Dynamic/input text (or static without embedded font): emit DefineEditText (tag 37).
             hoistedDefs.push({ tagType: Tag.DefineEditText, body: encodeDefineEditText(charId, obj, embeddedFontId) });

@@ -42,6 +42,39 @@ export function measureTextWidthTwips(
   return total;
 }
 
+/**
+ * Compute the horizontal alignment start offset (in twips) that Flash bakes into
+ * a static-text TEXTRECORD's XOffset. Flash positions the glyph run within the
+ * authored text box: centered text starts at `(boxWidth - textWidth)/2`,
+ * right-aligned at `(boxWidth - textWidth)`, left/justify/unknown at 0.
+ *
+ * This is the single source of truth used by every static-text emit path —
+ * scene/main-timeline (compile.ts), button labels (buttons.ts), and
+ * movieclip/graphic-internal text (sprite.ts) — so symbol-internal labels get
+ * the same centering offset the scene path already applied. Without it,
+ * symbol-internal static text published XOffset=0 (left-of-center).
+ *
+ * @param align          The field's horizontal alignment.
+ * @param widthPx        The authored text-box width in pixels.
+ * @param text           The text string (for width measurement).
+ * @param fontSizeTwips  Font size in twips (fontSize * 20).
+ * @param autoKern       Whether kerning is baked into the per-glyph advances.
+ */
+export function alignXOffsetTwips(
+  align: string | undefined,
+  widthPx: number | undefined,
+  text: string,
+  fontSizeTwips: number,
+  autoKern = false
+): number {
+  if (align !== "center" && align !== "right") return 0;
+  const boxWidthTwips = Math.round((widthPx ?? 0) * 20);
+  const textWidthTwips = measureTextWidthTwips(text, fontSizeTwips, autoKern);
+  const free = boxWidthTwips - textWidthTwips;
+  if (free <= 0) return 0;
+  return align === "center" ? Math.round(free / 2) : free;
+}
+
 // ---------------------------------------------------------------------------
 // Color helpers
 // ---------------------------------------------------------------------------

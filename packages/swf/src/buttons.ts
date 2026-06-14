@@ -22,7 +22,7 @@ import { encodeCxformWithAlpha, colorEffectToCXForm, encodeCXFormWithAlpha } fro
 import { edgeNumBits } from "./helpers.js";
 import { fontKey } from "./fonts.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "./shapes.js";
-import { encodeDefineEditText, encodeDefineText, encodeCSMTextSettings } from "./text.js";
+import { encodeDefineEditText, encodeDefineText, encodeCSMTextSettings, alignXOffsetTwips } from "./text.js";
 import { Tag } from "./tags.js";
 import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
 
@@ -219,6 +219,17 @@ export function encodeDefineButton2(
           const embeddedFontId = fontCharIdMap?.get(fontKey(obj.fontFamily, obj.bold, obj.italic));
           if (obj.textType === "static" && embeddedFontId !== undefined) {
             const fontSizeTwips = Math.round(obj.fontSize * 20);
+            // Bake the alignment start offset into the TEXTRECORD XOffset so
+            // centered/right-aligned button labels sit where Flash placed them
+            // (same logic as the scene path). autoKern=false here, matching the
+            // encode call below (button static text does not bake kerning).
+            const xOffsetTwips = alignXOffsetTwips(
+              obj.align,
+              obj.width,
+              obj.text,
+              fontSizeTwips,
+              false
+            );
             hoistedDefs.push({
               tagType: Tag.DefineText,
               body: encodeDefineText(
@@ -227,7 +238,7 @@ export function encodeDefineButton2(
                 embeddedFontId,
                 fontSizeTwips,
                 `#${obj.color.r.toString(16).padStart(2, "0")}${obj.color.g.toString(16).padStart(2, "0")}${obj.color.b.toString(16).padStart(2, "0")}`,
-                0,
+                xOffsetTwips,
                 fontSizeTwips,
                 // autoKern false here preserves the prior button-text behavior
                 // (button static text did not bake kerning); unchanged for golden.
