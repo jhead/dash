@@ -1162,10 +1162,16 @@ function convertLayer(
         console.warn(`[FLA import] frame sound id ${f.soundId} not found in library; skipping`);
       }
     }
-    // keyMode bits (flacomdoc): 0x4001-based = classic/motion tween,
-    // 0x..02 = shape tween.
+    // keyMode tween flags (flacomdoc): bit 0x0001 = classic/motion tween,
+    // bit 0x0002 = shape tween. The remaining bits (observed base 0x600 =
+    // 0x400|0x200, and an occasional 0x4000 on some authoring versions) are
+    // unrelated motion-tween-scale / sync state, so they must NOT gate tween
+    // detection. Real Flash 8 FLAs (e.g. Magnet.fla's sliding menu buttons)
+    // store motion-tween keyframes as keyMode=0x601 (base 0x600 + bit 0x0001),
+    // never 0x4001 — so the old `(keyMode & 0x4000) && (keyMode & 0x0001)`
+    // requirement dropped every motion tween.
     const tweenType =
-      (f.keyMode & 0x4000) !== 0 && (f.keyMode & 0x0001) !== 0
+      (f.keyMode & 0x0001) !== 0
         ? "motion"
         : (f.keyMode & 0x0002) !== 0
           ? "shape"

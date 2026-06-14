@@ -2500,6 +2500,32 @@ describe("shape-tween ease forwarding (task 0914)", () => {
     expect(frame.shapeEase).toBe(0); // must remain at default
   });
 
+  it("motion-tween frame: real Flash 8 keyMode 0x601 decodes as motion (not 'none')", () => {
+    // Real Flash 8 FLAs store motion (classic) tweens as keyMode=0x601 — base
+    // 0x600 (0x400 motionTweenScale-disabled | 0x200) plus the 0x0001 tween bit.
+    // 0x4000 is NOT set, so the tween bit must be detected via 0x0001 alone.
+    // (Regression: the old `(keyMode & 0x4000) && (keyMode & 0x0001)` check
+    // dropped every motion tween — e.g. Magnet.fla's sliding menu buttons.)
+    const stream = makeFrameStream(0x0601, 40);
+    const streams = new Map<string, Uint8Array>([["Page 1", stream]]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.tweenType).toBe("motion");
+    expect(frame.motionEase).toBe(40);
+    expect(frame.shapeEase).toBe(0);
+  });
+
+  it("no-tween frame: real Flash 8 keyMode 0x600 (tween bits clear) decodes as 'none'", () => {
+    // The 0x600 base (motionTweenScale/sync state) must NOT be mistaken for a tween.
+    const stream = makeFrameStream(0x0600, 0);
+    const streams = new Map<string, Uint8Array>([["Page 1", stream]]);
+    const doc = buildFla8Document(streams);
+    expect(doc).not.toBeNull();
+    const frame = doc!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(frame.tweenType).toBe("none");
+  });
+
   it("no-tween frame: shapeEase stays 0 (ease value not routed to shapeEase)", () => {
     // keyMode=0x0000 → no tween; ease=50 in the binary.
     // The ease value is not meaningful for no-tween frames.  The important

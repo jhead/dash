@@ -137,6 +137,15 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   the frameVersionC block); no decompilation needed for Flash 5+.
 - **Shape edge coords are 8.8 fixed-point twips** (1 px = 5120 units), NOT SWF twips.
   Verify any new geometry assumption against the SWF published from the same FLA.
+- **Motion/shape tween flag in CPicFrame.keyMode is bit 0x0001 / 0x0002** (NOT 0x4001).
+  Real Flash 8 FLAs store a motion (classic) tween keyframe as `keyMode=0x601` (base 0x600
+  = 0x400|0x200 plus the 0x0001 tween bit); a shape tween adds 0x0002. The old import
+  required `(keyMode & 0x4000) && (keyMode & 0x0001)`, but 0x4000 is never set, so EVERY
+  motion tween imported as `tweenType:"none"` — Magnet.fla's sliding menu buttons (Symbol 6)
+  held their start keyframe and "jumped" instead of interpolating. Detect motion via
+  `(keyMode & 0x0001)`, shape via `(keyMode & 0x0002)` (`flash8-import.ts`). The other
+  keyMode bits (0x400 motionTweenScale-disabled, 0x800 motionSync) are unrelated state and
+  must not gate tween detection.
 - **Edge style-change order is (stroke, fill0, fill1)** — not fill0/fill1/stroke.
 - **Pre-F8 strokes are 10 bytes** (RGBA+width+params); F8 adds caps/joins/miter and a
   trailing full fill style. Gating is by the CPicShape schema byte (>2 = F8).
