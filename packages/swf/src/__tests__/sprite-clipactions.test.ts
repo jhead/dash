@@ -182,13 +182,14 @@ function makeScene(id: string, name: string, layers: Layer[]): Scene {
   return { id, name, timeline: { layers } };
 }
 
-/** Leaf movieclip symbol — used as the nested target inside an outer symbol. */
-function makeLeafSymbol(id: string, name: string): Symbol {
+/** Leaf symbol — used as the nested target inside an outer symbol. loopMode /
+ *  firstFrame only apply to GRAPHIC symbols, so loopMode tests pass "graphic". */
+function makeLeafSymbol(id: string, name: string, symbolType: "movieclip" | "graphic" = "movieclip"): Symbol {
   return {
     id,
     name,
     itemType: "symbol",
-    symbolType: "movieclip",
+    symbolType,
     timeline: { layers: [makeLayer("Layer 1", [{ isEmpty: true }])] },
     linkage: DEFAULT_LINKAGE,
     scale9Grid: null,
@@ -298,7 +299,7 @@ describe("sprite.ts: clip actions on SymbolInstance in symbol timeline (task 112
   });
 
   it("3. loopMode='play-once' — synthesizes enterFrame clip action → HasClipActions flag", () => {
-    const leaf = makeLeafSymbol("leaf-1", "LeafClip");
+    const leaf = makeLeafSymbol("leaf-1", "LeafClip", "graphic");
     const outer = makeOuterSymbol("outer-1", "OuterClip", "leaf-1", { loopMode: "play-once" });
     const doc = makeDoc({ library: { items: [leaf, outer], folders: [] } });
     const bytes = compileDocument(doc);
@@ -309,7 +310,7 @@ describe("sprite.ts: clip actions on SymbolInstance in symbol timeline (task 112
   });
 
   it("4. loopMode='single-frame' — synthesizes load clip action → HasClipActions flag", () => {
-    const leaf = makeLeafSymbol("leaf-1", "LeafClip");
+    const leaf = makeLeafSymbol("leaf-1", "LeafClip", "graphic");
     const outer = makeOuterSymbol("outer-1", "OuterClip", "leaf-1", { loopMode: "single-frame", firstFrame: 2 });
     const doc = makeDoc({ library: { items: [leaf, outer], folders: [] } });
     const bytes = compileDocument(doc);
@@ -320,7 +321,7 @@ describe("sprite.ts: clip actions on SymbolInstance in symbol timeline (task 112
   });
 
   it("5. firstFrame>0 with loopMode='loop' — synthesizes load seek clip action → HasClipActions", () => {
-    const leaf = makeLeafSymbol("leaf-1", "LeafClip");
+    const leaf = makeLeafSymbol("leaf-1", "LeafClip", "graphic");
     const outer = makeOuterSymbol("outer-1", "OuterClip", "leaf-1", { loopMode: "loop", firstFrame: 3 });
     const doc = makeDoc({ library: { items: [leaf, outer], folders: [] } });
     const bytes = compileDocument(doc);

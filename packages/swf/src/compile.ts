@@ -1223,8 +1223,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   function computeClipActionsKey(displayObj: DisplayObject): string | null {
     if (displayObj.type !== "instance") return null;
     const inst = displayObj as import("@flash/core").SymbolInstance;
-    const loopMode = inst.loopMode ?? "loop";
-    const firstFrame = inst.firstFrame ?? 0;
+    // loopMode / firstFrame (Loop / Play Once / Single Frame) are GRAPHIC-symbol
+    // properties only. Movieclip and button instances play their own timeline
+    // independently, so loopMode must be ignored for them — otherwise the
+    // synthesized loop-control clip actions (e.g. single-frame → gotoAndStop(1))
+    // freeze the nested movieclip on frame 0. (Binary FLAs carry a loop-mode byte
+    // on every instance, so it is frequently "single-frame" on movieclips.)
+    const isGraphic = symbolById.get(inst.symbolId)?.symbolType === "graphic";
+    const loopMode = isGraphic ? (inst.loopMode ?? "loop") : "loop";
+    const firstFrame = isGraphic ? (inst.firstFrame ?? 0) : 0;
     const explicit = inst.clipActions ?? [];
     if (loopMode === "loop" && firstFrame === 0 && explicit.length === 0) return null;
     return JSON.stringify({ loopMode, firstFrame, clipActions: explicit });
@@ -2403,9 +2410,17 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
                 }
 
                 // Resolve loopMode and firstFrame for graphic symbol instances.
-                // loopMode defaults to "loop" (no extra encoding needed).
-                const loopMode = displayObj.loopMode ?? "loop";
-                const instanceFirstFrame = displayObj.firstFrame ?? 0;
+                // loopMode / firstFrame (Loop / Play Once / Single Frame) only
+                // apply to GRAPHIC symbols; movieclip and button instances play
+                // their own timeline independently. Ignoring loopMode for non-
+                // graphics prevents the synthesized loop-control clip actions
+                // below (e.g. single-frame → gotoAndStop(1)) from freezing a
+                // nested movieclip on frame 0. loopMode defaults to "loop" (no
+                // extra encoding needed).
+                const refSymbol = symbolById.get(displayObj.symbolId);
+                const isGraphicInstance = refSymbol?.symbolType === "graphic";
+                const loopMode = isGraphicInstance ? (displayObj.loopMode ?? "loop") : "loop";
+                const instanceFirstFrame = isGraphicInstance ? (displayObj.firstFrame ?? 0) : 0;
 
                 const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== 'normal';
                 const hasCacheAsBitmap = !!displayObj.cacheAsBitmap;

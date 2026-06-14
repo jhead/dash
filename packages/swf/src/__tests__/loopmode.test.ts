@@ -186,7 +186,10 @@ function makeSymbolWithFrames(id: string, name: string, frameCount: number): Sym
     id,
     name,
     itemType: "symbol",
-    symbolType: "movieclip",
+    // loopMode / firstFrame (Loop / Play Once / Single Frame) are GRAPHIC-symbol
+    // properties; the compiler only synthesizes loop-control clip actions for
+    // graphic instances. Movieclips play their own timeline independently.
+    symbolType: "graphic",
     timeline: { layers: [makeLayer(frames)] },
     linkage: DEFAULT_LINKAGE,
     scale9Grid: null,
@@ -578,5 +581,90 @@ describe("loopMode: loop with firstFrame > 0", () => {
     expect(po2).toBeDefined();
     // HasRatio (0x10) must NOT be set — ratio is for single-frame mode only
     expect(po2!.body[0]! & 0x10).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: loopMode is GRAPHIC-only — movieclip instances must ignore it.
+//
+// Binary FLAs store a loop-mode byte on every instance, so movieclip placements
+// frequently arrive with loopMode="single-frame". Synthesizing the single-frame
+// clip action (onClipEvent(load){ gotoAndStop(1) }) for a MOVIECLIP froze it on
+// frame 0 — e.g. Magnet.fla's Preloader never advanced, so its bytes-loaded
+// check + _root.play() never ran and the movie hung on the loading screen.
+// The compiler must only synthesize loop-control clip actions for GRAPHIC
+// instances; movieclips play their own timeline independently.
+// ---------------------------------------------------------------------------
+
+function makeMovieClipWithFrames(id: string, name: string, frameCount: number): Symbol {
+  return { ...makeSymbolWithFrames(id, name, frameCount), symbolType: "movieclip" };
+}
+
+describe("loopMode: movieclip instances ignore loopMode (regression)", () => {
+  for (const loopMode of ["single-frame", "play-once"] as const) {
+    it(`movieclip instance with loopMode='${loopMode}' does NOT get HasClipActions`, () => {
+      const sym = makeMovieClipWithFrames("sym-1", "MyClip", 4);
+      const inst: SymbolInstance = {
+        id: "inst-1",
+        type: "instance",
+        symbolId: "sym-1",
+        x: 0,
+        y: 0,
+        loopMode,
+        firstFrame: 2,
+      };
+      const doc = makeDoc(sym, inst);
+      const bytes = compileDocument(doc);
+      const tags = parseSWFTags(bytes);
+      const po2 = tags.find(
+        (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
+      );
+      expect(po2).toBeDefined();
+      // No synthesized loop-control clip action for a movieclip → no HasClipActions.
+      expect(po2!.body[0]! & 0x80).toBe(0);
+    });
+  }
+
+  it("movieclip instance with firstFrame>0 (loopMode='loop') does NOT get HasClipActions", () => {
+    const sym = makeMovieClipWithFrames("sym-1", "MyClip", 6);
+    const inst: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      loopMode: "loop",
+      firstFrame: 3,
+    };
+    const doc = makeDoc(sym, inst);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const po2 = tags.find(
+      (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
+    );
+    expect(po2).toBeDefined();
+    expect(po2!.body[0]! & 0x80).toBe(0);
+  });
+
+  it("movieclip instance still honours EXPLICIT clipActions (HasClipActions set)", () => {
+    // Real onClipEvent handlers on a movieclip must still be emitted.
+    const sym = makeMovieClipWithFrames("sym-1", "MyClip", 4);
+    const inst: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      loopMode: "single-frame", // ignored for movieclips
+      clipActions: [{ event: "load", script: "trace('hi');" }],
+    };
+    const doc = makeDoc(sym, inst);
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const po2 = tags.find(
+      (t) => t.code === TAG_PLACE_OBJECT2 && (t.body[0]! & 0x02) !== 0
+    );
+    expect(po2).toBeDefined();
+    expect(po2!.body[0]! & 0x80).toBe(0x80);
   });
 });

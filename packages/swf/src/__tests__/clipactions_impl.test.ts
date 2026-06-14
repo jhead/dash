@@ -845,8 +845,9 @@ describe("task 1124 — clip actions and loopMode inside sprite (symbol) timelin
       shapeEaseType: "none", shapeBlend: "distributive",
       displayObjects: [childInst],
     };
+    // loopMode applies only to GRAPHIC symbols (movieclips play independently).
     const childSym: Symbol = {
-      id: "child-sym", name: "ChildClip", itemType: "symbol", symbolType: "movieclip",
+      id: "child-sym", name: "ChildClip", itemType: "symbol", symbolType: "graphic",
       timeline: { layers: [makeLayer([makeEmptyFrame()])] },
       linkage: DEFAULT_LINKAGE, scale9Grid: null,
     };

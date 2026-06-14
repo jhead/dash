@@ -115,6 +115,15 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 
 ### Binary FLA import (Flash 5–CS4 OLE2 format)
 
+- **Scene PLAY ORDER is the Contents-stream order, NOT the "Page N" stream number.**
+  The OLE2 "Page N" suffix is creation/storage order (the first scene authored is "Page 1"
+  and keeps that stream name even when dragged elsewhere in the Scenes panel). The authored
+  play order is the order the CDocumentPage records appear in the Contents stream, which
+  `parseFla8Contents` preserves as `sceneNames` Map key order. `buildFla8Document`
+  (`flash8-import.ts`) orders scenes by that Map, appending any page missing a name in
+  page-number order. Sorting scenes by `pages.sort((a,b)=>a.num-b.num)` made Magnet.fla
+  start on "AA" instead of the authored "Scene 2 → Scene 5 → AA …". (Same
+  storage-vs-authored distinction as the layer-ordering bullet above.)
 - **Authoritative format references**: JPEXS `flacomdoc` (github.com/jindrapetrik/flacomdoc,
   an XFL→binary-FLA *writer* byte-verified against real Flash output — best source for
   field order/semantics per version) and `eddiemoore/fla-decoder` (Ghidra reverse
@@ -387,6 +396,20 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 
 ### SWF clip actions
 
+- **loopMode / firstFrame synthesis is GRAPHIC-ONLY** (`compile.ts` + `sprite.ts`,
+  task 1124): Loop / Play Once / Single Frame are properties of GRAPHIC symbol instances;
+  movieclips and buttons play their own timeline independently and have no such property.
+  The compiler synthesizes loop-control clip actions for these modes (single-frame →
+  `onClipEvent(load){ gotoAndStop(N) }`, play-once → enterFrame stop, firstFrame>0 → load
+  seek). This synthesis MUST be gated on the referenced symbol's `symbolType === "graphic"`.
+  Binary FLAs carry a loop-mode byte on EVERY instance, so movieclip placements routinely
+  import with `loopMode="single-frame"`; without the gate, every nested movieclip got a
+  synthesized `gotoAndStop(1)` and froze on frame 0 (Magnet.fla's Preloader never advanced,
+  so its bytes-loaded check + `_root.play()` never ran and the movie hung on the loading
+  screen — 1432/1434 MC instances were affected). The gate lives in 3 spots per file:
+  `computeClipActionsKey`/`thisClipActionsKey` (change detection) and the place + move
+  emit paths. Explicit `clipActions` (real `onClipEvent` handlers) are still honoured on
+  movieclips. Acceptance: `loopmode.test.ts` "movieclip instances ignore loopMode".
 - **Reserved UI16 before AllEventFlags**: `read_clip_actions()` in Ruffle
   (`swf/src/read.rs`) calls `read_u16()` for a reserved field *before* reading
   AllEventFlags. Omitting this 2-byte write shifts every subsequent field by 2 bytes;

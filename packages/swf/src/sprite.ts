@@ -214,6 +214,20 @@ export function encodeDefineSprite(
   const timeline = symbol.timeline;
   const layers = timeline.layers;
 
+  // loopMode / firstFrame (Loop / Play Once / Single Frame) are GRAPHIC-symbol
+  // instance properties only. Movieclip and button instances play their own
+  // timeline independently, so loopMode must be ignored for them — otherwise the
+  // synthesized loop-control clip actions below (e.g. single-frame →
+  // gotoAndStop(1)) freeze a nested movieclip on frame 0. Binary FLAs store a
+  // loop-mode byte on every instance, so movieclip placements frequently arrive
+  // with loopMode="single-frame". Resolve the referenced symbol's type once.
+  const symbolTypeById = new Map<string, string>();
+  for (const item of doc.library.items) {
+    if (item.itemType === "symbol") symbolTypeById.set(item.id, (item as Symbol).symbolType);
+  }
+  const isGraphicSymbol = (symbolId: string): boolean =>
+    symbolTypeById.get(symbolId) === "graphic";
+
   // Bug 1 fix: use layerFrameCount() instead of layer.frames.length so that
   // sparse keyframe arrays (e.g. keyframes at 0 and 9) yield 10 frames, not 2.
   let maxFrames = 1;
@@ -648,12 +662,14 @@ export function encodeDefineSprite(
         ? ((displayObj as { restrict?: string }).restrict ?? "")
         : "";
 
-      // Task 1175: compute clipActionsKey for change detection (mirrors compile.ts)
+      // Task 1175: compute clipActionsKey for change detection (mirrors compile.ts).
+      // loopMode/firstFrame only apply to graphic instances (see note at top).
       const thisClipActionsKey = (() => {
         if (displayObj.type !== "instance") return null;
         const inst = displayObj as import("@flash/core").SymbolInstance;
-        const loopMode = inst.loopMode ?? "loop";
-        const firstFrame = inst.firstFrame ?? 0;
+        const graphic = isGraphicSymbol(inst.symbolId);
+        const loopMode = graphic ? (inst.loopMode ?? "loop") : "loop";
+        const firstFrame = graphic ? (inst.firstFrame ?? 0) : 0;
         const explicit = inst.clipActions ?? [];
         if (loopMode === "loop" && firstFrame === 0 && explicit.length === 0) return null;
         return JSON.stringify({ loopMode, firstFrame, clipActions: explicit });
@@ -835,9 +851,11 @@ export function encodeDefineSprite(
               : undefined;
             const instName = (displayObj as { instanceName?: string }).instanceName ?? undefined;
 
-            // Task 1124: synthesize clip actions for loopMode / firstFrame / explicit clipActions
-            const loopMode = (displayObj as { loopMode?: string }).loopMode ?? "loop";
-            const instanceFirstFrame = (displayObj as { firstFrame?: number }).firstFrame ?? 0;
+            // Task 1124: synthesize clip actions for loopMode / firstFrame / explicit clipActions.
+            // loopMode/firstFrame only apply to graphic instances (see note at top).
+            const instIsGraphic = isGraphicSymbol(displayObj.symbolId);
+            const loopMode = instIsGraphic ? ((displayObj as { loopMode?: string }).loopMode ?? "loop") : "loop";
+            const instanceFirstFrame = instIsGraphic ? ((displayObj as { firstFrame?: number }).firstFrame ?? 0) : 0;
             let effectiveClipActions: ClipAction[] = (displayObj as { clipActions?: ClipAction[] }).clipActions ?? [];
             if (loopMode === "play-once") {
               effectiveClipActions = [...effectiveClipActions, {
@@ -1015,9 +1033,11 @@ export function encodeDefineSprite(
               : undefined;
             const instName = (displayObj as { instanceName?: string }).instanceName ?? undefined;
 
-            // Task 1124: synthesize clip actions for loopMode / firstFrame / explicit clipActions (move path)
-            const loopModeMove = (displayObj as { loopMode?: string }).loopMode ?? "loop";
-            const instanceFirstFrameMove = (displayObj as { firstFrame?: number }).firstFrame ?? 0;
+            // Task 1124: synthesize clip actions for loopMode / firstFrame / explicit clipActions (move path).
+            // loopMode/firstFrame only apply to graphic instances (see note at top).
+            const moveIsGraphic = isGraphicSymbol(displayObj.symbolId);
+            const loopModeMove = moveIsGraphic ? ((displayObj as { loopMode?: string }).loopMode ?? "loop") : "loop";
+            const instanceFirstFrameMove = moveIsGraphic ? ((displayObj as { firstFrame?: number }).firstFrame ?? 0) : 0;
             let effectiveMoveClipActions: ClipAction[] = (displayObj as { clipActions?: ClipAction[] }).clipActions ?? [];
             if (loopModeMove === "play-once") {
               effectiveMoveClipActions = [...effectiveMoveClipActions, {
