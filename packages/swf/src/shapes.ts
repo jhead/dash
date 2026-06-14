@@ -388,15 +388,35 @@ export function encodeDefineShape4(
   bw.writeUI16LE(charId);
 
   // --- Compute bounding box in twips ---
+  // EdgeBounds is the tight bound of the edge geometry (no stroke). ShapeBounds
+  // additionally includes the stroke extent: Flash 8 grows the bound by half the
+  // maximum stroke width on each side (a centered stroke of width W extends W/2
+  // beyond the edge). Without this the published ShapeBounds came out a half-stroke
+  // too small vs golden (e.g. a r=210-twip circle with a 20-twip stroke is ±220,
+  // not ±210). EdgeBounds stays tight, matching real Flash DefineShape4 output.
   const bounds = computeBounds(filteredShape.paths);
+  let maxStrokeTwips = 0;
+  for (const path of filteredShape.paths) {
+    if (path.stroke && path.stroke.type === "solid") {
+      const w = strokeWidthTwips(path.stroke);
+      if (w > maxStrokeTwips) maxStrokeTwips = w;
+    }
+  }
+  const halfStroke = Math.ceil(maxStrokeTwips / 2);
   const xMinTwips = px(bounds.xMin);
   const xMaxTwips = px(bounds.xMax);
   const yMinTwips = px(bounds.yMin);
   const yMaxTwips = px(bounds.yMax);
 
-  // ShapeBounds RECT
-  writeRect(bw, xMinTwips, xMaxTwips, yMinTwips, yMaxTwips);
-  // EdgeBounds RECT (same as ShapeBounds for simple shapes)
+  // ShapeBounds RECT (geometry + stroke extent)
+  writeRect(
+    bw,
+    xMinTwips - halfStroke,
+    xMaxTwips + halfStroke,
+    yMinTwips - halfStroke,
+    yMaxTwips + halfStroke,
+  );
+  // EdgeBounds RECT (tight geometry, no stroke)
   writeRect(bw, xMinTwips, xMaxTwips, yMinTwips, yMaxTwips);
 
   // --- UI8 flags: 0x00 (no non-scaling stroke, no pixel hinting) ---

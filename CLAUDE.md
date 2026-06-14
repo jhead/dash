@@ -89,6 +89,44 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   (`interactivity.spec.ts`, visual-oracle) are the acceptance truth; unit tests on
   encoded bytes are necessary but never sufficient.
 
+### Golden FLA→SWF parity (`fixtures/golden/`)
+
+- **Harness: `node tools/golden-parity.mjs [fla swf]`** (defaults to
+  `fixtures/golden/golden.{fla,swf}`). It compiles our SWF, normalizes both via
+  `swf-dump`, and scores ORDER-INDEPENDENT semantic dimensions: self-determinism,
+  header/stage, tag inventory, PLACEMENTS (per-frame z-order: position+scale+name —
+  ignores absolute depth/char-ID renumbering), SHAPE GEOMETRY (match by record
+  signature, compare ShapeBounds), and DECOMPRESSED bytes. Exits 0 when all *hard*
+  dimensions pass; documented byte-level gaps are reported as `KNOWN-GAP`, not failures.
+  The older `golden-report.mjs` only does tag inventory + self-determinism.
+- **True byte-for-byte is NOT achievable** for these fixtures and the gaps are
+  semantically inert (Ruffle renders identically): (1) we hoist all char definitions;
+  Flash interleaves them per-frame and puts DoAction/FrameLabel at frame start; (2)
+  char-IDs numbered in library vs usage order; (3) Flash reuses RemoveObject-freed
+  depths (d1,d3) while we allocate monotonically (d3,d4); (4) Flash expands one FLA
+  gradient into ~17 DefineShape fillStyles at publish (we emit 1, bounds identical);
+  (5) zlib CWS deflate is impl-specific. Compare DECOMPRESSED bodies, never the
+  compressed file. (Tracked in task 1194.)
+- **The CPicObjBase flags byte is NOT per-object visibility** (task 1190 supersedes
+  0932): golden has flags=0x0 on 17/19 objects, all visible in golden.swf. Flash has no
+  per-display-object hide — visibility is a layer property / runtime `_visible`.
+  `visibleFromObjBaseFlags` returns true unconditionally. The old bit0 decode made every
+  scene object `visible:false` → compile emitted zero-alpha CXForms → blank white SWF.
+- **Do not subtract registrationPoint from an instance's PlaceObject2 x/y** (task 1191):
+  import stores `registrationPoint` from the binary's absolute regX/Y, which equals the
+  placement position, so subtracting collapsed every instance to (0,0). The placement
+  x/y already is the stage position of the registration origin (symbol-internal geometry
+  is centered on its own origin at definition time, task 1171).
+- **DefineShape4 ShapeBounds includes the stroke extent; EdgeBounds is tight.** Flash
+  grows ShapeBounds by half the max stroke width per side (a r=210twip circle with a
+  20twip stroke → ±220, not ±210). `shapes.ts` adds `ceil(maxStrokeTwips/2)` to
+  ShapeBounds and leaves EdgeBounds at the raw geometry.
+- **Static-text fidelity gap (task 1193, OPEN):** the golden title imports left-aligned
+  (TextRecord x_offset=0 vs Flash's 3640 that centers it) and we substitute NotoSans
+  while REUSING the original Arial glyph indices → wrong glyphs render. The Ruffle render
+  (`golden-fla-oracle.spec.ts`) is what surfaced this — the structural harness can't see
+  glyph-layout defects, so always eyeball the actual render.
+
 ### Binary FLA import (Flash 5–CS4 OLE2 format)
 
 - **Authoritative format references**: JPEXS `flacomdoc` (github.com/jindrapetrik/flacomdoc,

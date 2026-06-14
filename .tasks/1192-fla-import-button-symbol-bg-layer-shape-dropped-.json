@@ -1,10 +1,10 @@
 {
   "id": "1192-fla-import-button-symbol-bg-layer-shape-dropped-",
   "title": "FLA import: button/symbol BG layer shape dropped \u2014 PlayButton background empty, button face missing",
-  "description": "Golden field-level gap. The PlayButton symbol has two layers, 'Text' and 'BG'. After import, the 'Text' layer correctly holds a gradient shape + 'Click to Play' text, but the 'BG' layer's keyframe imports as isEmpty=true with zero displayObjects \u2014 the button BACKGROUND shape is dropped. In golden.swf the button-face DefineShape (bounds +/-1231/+/-458) carries 17 fill styles (solid + 16 linearGradient); our compiled equivalent has only the single Text-layer gradient, so the published button is missing its background. Investigate why the BG layer's CPicShape is not decoded (possible: the shape record on that layer desyncs or is read as empty during symbol-timeline parsing). ACCEPTANCE: PlayButton's BG layer imports a non-empty shape, and the compiled button-face shape matches golden's fill set (or at least is non-empty) and renders in Ruffle. Related: 1169 (button type), 1183 (scene filter desync).",
-  "status": "open",
+  "description": "CANCELLED \u2014 premise false. Investigated byte-by-byte: the PlayButton 'BG' layer's CPicFrame is GENUINELY EMPTY in the FLA binary (frame's inherited CPicShape reads schema=5, fillCount=0, lineCount=0, 0 edges, and the frame has zero child elements \u2014 verified by dumping Symbol 3 stream /tmp/sym-3.bin and tracing readShapeData @0x58). The button face is the 'Text' layer's single linear-gradient path (8 segs, 1 fill), which we import and render correctly \u2014 its compiled ShapeBounds (xMin=-1229..xMax=1231, yMin=-458..442) EXACTLY match golden DefineShape#4. golden.swf's 17-fill DefineShape#4 is Flash's PUBLISH-TIME gradient-fill expansion (a single FLA gradient -> 17 fillStyles, most unused; bounds identical), NOT dropped FLA artwork. This is a documented byte-parity gap (tools/golden-parity.mjs SHAPE GEOMETRY -> KNOWN-GAP), semantically inert: Ruffle renders the gradient button identically. No import bug exists. (While here, fixed a real latent desync: readFillStyle capped gradient stops at 15 without consuming the rest -> would desync shapes with >15 stops; now consumes all, stores 15.)",
+  "status": "cancelled",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-14T00:29:36Z",
-  "updated_at": "2026-06-14T00:29:36Z"
+  "updated_at": "2026-06-14T01:05:22Z"
 }

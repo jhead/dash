@@ -1362,21 +1362,25 @@ describe("fill subtype 0x20 (task 0858)", () => {
     return bytes;
   }
 
-  it("decodes frame-inherited shape with flags=0 as visible:false (task 0932)", () => {
+  // Task 1190 supersedes 0932: the CPicObjBase flags byte is NOT a per-object
+  // visible flag. In the golden fixtures the flags=0x0 majority (all scene
+  // objects) are fully visible in golden.swf, so flags=0x0 must decode as
+  // VISIBLE. Display objects are therefore always visible at author time.
+  it("decodes frame-inherited shape with flags=0 as visible (task 1190)", () => {
     const timeline = parseFla8Timeline(makeFrameShapePageBytes(0x00));
     const shape = timeline.layers[0]!.frames[0]!.elements.find((e) => e.type === "shape");
     expect(shape).toBeDefined();
-    expect(shape!.type === "shape" && shape.visible).toBe(false);
+    expect(shape!.type === "shape" && shape.visible).toBeUndefined();
   });
 
-  it("decodes frame-inherited shape with flags=1 as visible (unset) (task 0932)", () => {
+  it("decodes frame-inherited shape with flags=1 as visible (unset) (task 1190)", () => {
     const timeline = parseFla8Timeline(makeFrameShapePageBytes(0x01));
     const shape = timeline.layers[0]!.frames[0]!.elements.find((e) => e.type === "shape");
     expect(shape).toBeDefined();
     expect(shape!.type === "shape" && shape.visible).toBeUndefined();
   });
 
-  it("forwards hidden frame shape through buildFla8Document as visible:false (task 0932)", () => {
+  it("forwards frame shape through buildFla8Document as visible regardless of flags (task 1190)", () => {
     const streams = new Map<string, Uint8Array>([
       ["contents", new Uint8Array([0x3f])],
       ["Page 1", makeFrameShapePageBytes(0x00)],
@@ -1387,7 +1391,7 @@ describe("fill subtype 0x20 (task 0858)", () => {
       (o): o is ShapeDisplayObject => o.type === "shape",
     );
     expect(shape).toBeDefined();
-    expect(shape!.visible).toBe(false);
+    expect(shape!.visible).toBeUndefined();
   });
 
   it("forwards visible frame shape through buildFla8Document without visible:false (task 0932)", () => {
@@ -2979,11 +2983,13 @@ describe("motion tween rotateType and rotateCount decoding (task 0936)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// CPicObjBase flags: visible/hidden decoding (task 0932)
+// CPicObjBase flags: visibility (task 1190 supersedes 0932)
 //
-// CPicObjBase is the base of every display-object class in the binary FLA.
-// Its second byte (flags) has bit 0 = visible: 0x01 → visible, 0x00 → hidden.
-// readCPicSymbolFields now captures this flag and returns it as SymbolBaseFields.visible.
+// CPicObjBase is the base of every display-object class in the binary FLA. Task
+// 0932 read its flags-byte bit 0 as a per-object visible flag, but that is wrong
+// (see task 1190): golden.swf renders the flags=0x0 majority fully visible, so no
+// bit of this byte means "hidden". Display objects are always visible at author
+// time; visibility is a layer property / runtime _visible, not an ObjBase flag.
 // ---------------------------------------------------------------------------
 
 describe("CPicSprite visible/hidden flag decoding (task 0932)", () => {
@@ -3085,8 +3091,8 @@ describe("CPicSprite visible/hidden flag decoding (task 0932)", () => {
     ]);
   }
 
-  it("CPicSprite with flags=0x00 (hidden) decodes to Fla8Instance.visible === false", () => {
-    // flags=0x00: bit 0 is 0 → not visible → visible = false
+  it("CPicSprite with flags=0x00 decodes to a visible instance (task 1190)", () => {
+    // flags=0x00 is the golden-fixture majority and renders visible → no visible field
     const stream = makeSpriteStream(0x00);
     const timeline = parseFla8Timeline(stream);
     expect(timeline.layers).toHaveLength(1);
@@ -3095,7 +3101,7 @@ describe("CPicSprite visible/hidden flag decoding (task 0932)", () => {
       (e): e is Extract<typeof e, { type: "instance" }> => e.type === "instance",
     );
     expect(instances).toHaveLength(1);
-    expect(instances[0]!.visible).toBe(false);
+    expect(instances[0]!.visible).toBeUndefined();
   });
 
   it("CPicSprite with flags=0x01 (visible) does not set visible field (default true)", () => {

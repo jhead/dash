@@ -1908,14 +1908,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           if ("skewY" in displayObj)
             skewY = (displayObj as { skewY: number }).skewY ?? 0;
 
-          // Apply registrationPoint offset for SymbolInstance: the registration
-          // point is the pivot around which transforms are applied. Subtract it
-          // from the placement position so rotation/scale happen around the
-          // symbol's registration point rather than (0,0).
-          if (displayObj.type === "instance" && displayObj.registrationPoint) {
-            x -= displayObj.registrationPoint.x;
-            y -= displayObj.registrationPoint.y;
-          }
+          // NOTE: do NOT subtract registrationPoint from an instance's placement.
+          // FLA import stores registrationPoint from the binary's absolute
+          // registrationX/Y, which equals the instance's stage position (the
+          // registration origin is where the instance sits). Subtracting it
+          // collapsed every symbol instance to (0,0) — playButton/player stacked
+          // at the stage top-left (task 1191). The placement x/y already IS the
+          // stage position of the registration origin; the symbol's internal
+          // geometry is centered on its own origin during definition encoding
+          // (task 1171), so no extra offset is needed here.
 
           // Compute morph ratio if this is a morph shape object
           let morphRatio = -1;

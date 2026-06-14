@@ -1152,9 +1152,24 @@ function readCPicObjBase(ctx: ParseCtx): CPicObjBase {
   return { schema, flags, children, regX, regY };
 }
 
-/** CPicObjBase flags bit 0 (0x01) = visible; cleared = hidden in the authoring tool. */
-function visibleFromObjBaseFlags(flags: number): boolean {
-  return (flags & 0x01) !== 0;
+/**
+ * CPicObjBase visibility.
+ *
+ * Task 0932 assumed bit 0 (0x01) of the ObjBase flags byte was a per-display-object
+ * "visible" flag. Empirically that is wrong: in the golden fixtures 17 of 19 ObjBase
+ * records carry flags=0x0 and 2 carry flags=0x3, yet golden.swf (the Flash 8 reference)
+ * renders ALL of them visible. So neither bit0=0 nor bit0=1 corresponds to "hidden",
+ * and the old logic decoded the flags=0x0 majority (all scene objects) as hidden —
+ * compile.ts then emitted zero-alpha CXForms and published a blank movie (task 1190).
+ *
+ * Flash 8 authoring has no per-display-object hide control (visibility is a LAYER
+ * property, handled separately, and a runtime `_visible` set via ActionScript). There
+ * is therefore no per-object hidden bit to decode here; display objects are always
+ * visible at author time. Returning true unconditionally is both correct and the safe
+ * default until a fixture proves a real per-object encoding exists.
+ */
+function visibleFromObjBaseFlags(_flags: number): boolean {
+  return true;
 }
 
 function hiddenElementProp(visible: boolean): { visible?: false } {
@@ -1383,9 +1398,15 @@ function readFillStyle(ctx: ParseCtx, caps: boolean): Fla8Fill {
       r.skip(3); // three trailing padding bytes
     }
     const stops: Fla8GradientStop[] = [];
-    for (let i = 0; i < Math.min(numStops, 15); i++) {
+    // Consume EVERY stop's bytes so the reader stays aligned for the following
+    // fill/stroke styles and edge records. The model only retains the first 15
+    // (the SWF gradient limit), but stopping the read at 15 leaves the bytes for
+    // stops 16+ in the stream and desyncs the rest of the shape — which dropped
+    // the PlayButton BG layer's 16-stop gradient entirely (task 1192).
+    for (let i = 0; i < numStops; i++) {
       const position = r.u8();
-      stops.push({ position, color: readColorRGBA(r) });
+      const color = readColorRGBA(r);
+      if (stops.length < 15) stops.push({ position, color });
     }
     return {
       kind: subtype & 0x02 ? "radial-gradient" : "linear-gradient",
