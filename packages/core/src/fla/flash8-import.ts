@@ -715,6 +715,17 @@ export function toFlashFilter(f: Fla8Filter): FlashFilter | null {
         bevelType: f.onTop ? "full" : f.inner ? "inner" : "outer",
         enabled: true,
       };
+    case "adjust-color":
+      // AdjustColor filter (FLA type 0x06): the four params are stored directly
+      // in the binary, so pass them straight through — no matrix math needed.
+      return {
+        type: "adjustColor" as const,
+        brightness: f.brightness,
+        contrast: f.contrast,
+        saturation: f.saturation,
+        hue: f.hue,
+        enabled: true,
+      };
     case "color-matrix":
       // ColorMatrix in FLA is a raw 4×5 matrix (20 floats) applied to
       // [R,G,B,A,1]. Decompose to best-effort brightness/contrast/saturation/hue.

@@ -814,6 +814,86 @@ describe("instance filter mapping (toFlashFilter)", () => {
     if (result!.type !== "drop-shadow") return;
     expect(result.angle).toBeCloseTo(45, 1);
   });
+
+  // ---------------------------------------------------------------------------
+  // AdjustColor filter round-trip (task 1185)
+  // ---------------------------------------------------------------------------
+
+  it("AdjustColor filter (kind=adjust-color) imports as adjustColor with the authored values, no NaN", () => {
+    // Synthesise the intermediate record that flash8-binary.ts case 0x06 now emits.
+    const f: Fla8Filter = {
+      kind: "adjust-color",
+      brightness: 30,
+      contrast: -20,
+      saturation: 50,
+      hue: 45,
+    };
+    const result = toFlashFilter(f);
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe("adjustColor");
+    if (result!.type !== "adjustColor") return;
+    // Values must be passed through unmodified (no NaN, no conversion loss).
+    expect(result.brightness).toBe(30);
+    expect(result.contrast).toBe(-20);
+    expect(result.saturation).toBe(50);
+    expect(result.hue).toBe(45);
+    expect(result.enabled).toBe(true);
+    // Confirm none of the fields are NaN (the original bug: 4-element array
+    // fed to decodeColorMatrix returned NaN for all fields).
+    expect(Number.isNaN(result.brightness)).toBe(false);
+    expect(Number.isNaN(result.contrast)).toBe(false);
+    expect(Number.isNaN(result.saturation)).toBe(false);
+    expect(Number.isNaN(result.hue)).toBe(false);
+  });
+
+  it("AdjustColor filter with all-zero values imports as identity adjustColor", () => {
+    const f: Fla8Filter = {
+      kind: "adjust-color",
+      brightness: 0,
+      contrast: 0,
+      saturation: 0,
+      hue: 0,
+    };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("adjustColor");
+    if (result!.type !== "adjustColor") return;
+    expect(result.brightness).toBe(0);
+    expect(result.contrast).toBe(0);
+    expect(result.saturation).toBe(0);
+    expect(result.hue).toBe(0);
+  });
+
+  it("AdjustColor filter with extremes stays within valid ranges", () => {
+    const f: Fla8Filter = {
+      kind: "adjust-color",
+      brightness: 100,
+      contrast: -100,
+      saturation: 100,
+      hue: -180,
+    };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("adjustColor");
+    if (result!.type !== "adjustColor") return;
+    expect(result.brightness).toBe(100);
+    expect(result.contrast).toBe(-100);
+    expect(result.saturation).toBe(100);
+    expect(result.hue).toBe(-180);
+  });
+
+  it("color-matrix filter (20-element) still decodes to adjustColor — no regression", () => {
+    // The 20-element full color matrix path (decodeColorMatrix) must still work.
+    const matrix: number[] = [1, 0, 0, 0, 127.5,  0, 1, 0, 0, 127.5,  0, 0, 1, 0, 127.5,  0, 0, 0, 1, 0];
+    const f: Fla8Filter = { kind: "color-matrix", matrix };
+    const result = toFlashFilter(f);
+    expect(result!.type).toBe("adjustColor");
+    if (result!.type !== "adjustColor") return;
+    expect(result.brightness).toBeCloseTo(50, 0);
+    expect(result.enabled).toBe(true);
+    expect(Number.isNaN(result.brightness)).toBe(false);
+    expect(Number.isNaN(result.contrast)).toBe(false);
+    expect(Number.isNaN(result.saturation)).toBe(false);
+    expect(Number.isNaN(result.hue)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

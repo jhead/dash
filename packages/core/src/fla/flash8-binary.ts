@@ -1682,6 +1682,18 @@ export interface Fla8FilterColorMatrix {
   readonly matrix: readonly number[];
 }
 
+export interface Fla8FilterAdjustColor {
+  readonly kind: "adjust-color";
+  /** −100..100 */
+  readonly brightness: number;
+  /** −100..100 */
+  readonly contrast: number;
+  /** −100..100 */
+  readonly saturation: number;
+  /** −180..180 */
+  readonly hue: number;
+}
+
 export interface Fla8FilterConvolution {
   readonly kind: "convolution";
   readonly matrixX: number;
@@ -1705,6 +1717,7 @@ export type Fla8Filter =
   | Fla8FilterGradientGlow
   | Fla8FilterGradientBevel
   | Fla8FilterColorMatrix
+  | Fla8FilterAdjustColor
   | Fla8FilterConvolution;
 
 /** SWF/FLA Fixed16: i32 little-endian, value = bits / 65536 */
@@ -2045,9 +2058,7 @@ function readOneFlaFilter(r: Reader): Fla8Filter | null {
       const contrast = readF32(r);
       const saturation = readF32(r);
       const hue = readF32(r);
-      // Map adjust-color to a color-matrix filter (brightness/contrast/etc.
-      // would need conversion; store raw values in the matrix for round-trip).
-      return { kind: "color-matrix", matrix: [brightness, contrast, saturation, hue] };
+      return { kind: "adjust-color" as const, brightness, contrast, saturation, hue };
     }
     default:
       // Unknown filter type — length unknown; signal recovery by jumping to EOF
