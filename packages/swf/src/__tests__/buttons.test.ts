@@ -274,8 +274,11 @@ describe("DefineButton2 export", () => {
     expect(tagCodes).not.toContain(TAG_DEFINE_SPRITE);
   });
 
-  it("2: ButtonRecord state bits set correctly for Up state (frame 0)", () => {
-    // Create button with only an Up state object
+  it("2: Up-only artwork forward-fills to ALL four states (UP|OVER|DOWN|HIT)", () => {
+    // A button with artwork ONLY in its Up keyframe is exactly the golden
+    // PlayButton case. Flash propagates the Up keyframe forward into the
+    // Over/Down/Hit states on publish, so the published DefineButton2 record
+    // carries UP|OVER|DOWN|HIT — without HIT there is no clickable area.
     const btn = makeButtonSymbol("btn2", [
       [makeShapeObj("shape-up")], // frame 0 = Up
       [],
@@ -296,12 +299,11 @@ describe("DefineButton2 export", () => {
     //   [3..4]  ActionOffset UI16 = 0
     //   [5]     First ButtonRecord flags byte
     //     bit0 = StateUp, bit1 = StateOver, bit2 = StateDown, bit3 = StateHitTest
-    // Up state only → flags = 0x01
     const flagsByte = body[5];
-    expect(flagsByte & 0x01).toBe(1); // StateUp set
-    expect(flagsByte & 0x02).toBe(0); // StateOver not set
-    expect(flagsByte & 0x04).toBe(0); // StateDown not set
-    expect(flagsByte & 0x08).toBe(0); // StateHitTest not set
+    expect(flagsByte & 0x01).toBe(0x01); // StateUp set
+    expect(flagsByte & 0x02).toBe(0x02); // StateOver set (forward-filled)
+    expect(flagsByte & 0x04).toBe(0x04); // StateDown set (forward-filled)
+    expect(flagsByte & 0x08).toBe(0x08); // StateHitTest set (clickable)
   });
 
   it("3: ButtonRecord state bits set correctly for Hit state (frame 3)", () => {
@@ -459,7 +461,10 @@ describe("DefineButton2 export", () => {
     expect(tagCodes).not.toContain(TAG_DEFINE_BUTTON2);
   });
 
-  it("9: ButtonRecord state bits correct for Over state (frame 1)", () => {
+  it("9: Over keyframe forward-fills into Down and Hit (OVER|DOWN|HIT), Up stays empty", () => {
+    // Forward-fill only carries a keyframe into LATER states. An empty Up frame
+    // is never seeded from a later state, so Up stays clear while the Over
+    // artwork propagates to Down and Hit.
     const btn = makeButtonSymbol("btn9", [
       [],                            // frame 0 = Up (empty)
       [makeShapeObj("shape-over")],  // frame 1 = Over
@@ -475,13 +480,13 @@ describe("DefineButton2 export", () => {
 
     const body = btn2Tags[0].body;
     const flagsByte = body[5];
-    expect(flagsByte & 0x01).toBe(0); // StateUp not set
-    expect(flagsByte & 0x02).toBe(2); // StateOver set
-    expect(flagsByte & 0x04).toBe(0); // StateDown not set
-    expect(flagsByte & 0x08).toBe(0); // StateHitTest not set
+    expect(flagsByte & 0x01).toBe(0);    // StateUp not set (no backward fill)
+    expect(flagsByte & 0x02).toBe(0x02); // StateOver set
+    expect(flagsByte & 0x04).toBe(0x04); // StateDown set (forward-filled)
+    expect(flagsByte & 0x08).toBe(0x08); // StateHitTest set (forward-filled)
   });
 
-  it("10: ButtonRecord state bits correct for Down state (frame 2)", () => {
+  it("10: Down keyframe forward-fills into Hit (DOWN|HIT), Up and Over stay empty", () => {
     const btn = makeButtonSymbol("btn10", [
       [],                            // frame 0 = Up (empty)
       [],                            // frame 1 = Over (empty)
@@ -497,10 +502,10 @@ describe("DefineButton2 export", () => {
 
     const body = btn2Tags[0].body;
     const flagsByte = body[5];
-    expect(flagsByte & 0x01).toBe(0); // StateUp not set
-    expect(flagsByte & 0x02).toBe(0); // StateOver not set
-    expect(flagsByte & 0x04).toBe(4); // StateDown set
-    expect(flagsByte & 0x08).toBe(0); // StateHitTest not set
+    expect(flagsByte & 0x01).toBe(0);    // StateUp not set
+    expect(flagsByte & 0x02).toBe(0);    // StateOver not set
+    expect(flagsByte & 0x04).toBe(0x04); // StateDown set
+    expect(flagsByte & 0x08).toBe(0x08); // StateHitTest set (forward-filled)
   });
 
   it("11: all 4 states with distinct shapes — each state's ButtonRecord has the correct single state bit", () => {
@@ -544,4 +549,93 @@ describe("DefineButton2 export", () => {
     expect(coveredStates & 0x04).toBe(4); // StateDown byte present
     expect(coveredStates & 0x08).toBe(8); // StateHit byte present
   });
+
+  it("12: golden case — Up frame with multiple objects yields one UP|OVER|DOWN|HIT record per object", () => {
+    // Mirrors golden.swf's PlayButton: two display objects (e.g. BG + Text) live
+    // only in the Up keyframe. The published DefineButton2 must carry ONE record
+    // per object, each with all four state bits (flags low-nibble = 0x0f), so the
+    // button has a hit area and is clickable.
+    const btn = makeButtonSymbol("btn12", [
+      [makeShapeObj("shape-bg"), makeShapeObj("shape-text")], // frame 0 = Up
+      [],
+      [],
+      [],
+    ]);
+    const doc = makeDoc([btn]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    expect(btn2Tags.length).toBe(1);
+
+    // Walk the ButtonRecords, decoding flags + skipping variable-length
+    // MATRIX/CXFORMWITHALPHA so we can count records and assert each carries all
+    // four state bits.
+    const body = btn2Tags[0].body;
+    const records = decodeButtonRecords(body);
+    expect(records.length).toBe(2); // one record per Up-frame object
+    for (const r of records) {
+      expect(r & 0x0f).toBe(0x0f); // UP|OVER|DOWN|HIT
+    }
+  });
 });
+
+// ---------------------------------------------------------------------------
+// ButtonRecord decoder: returns the flags byte of every record, correctly
+// skipping the variable-length MATRIX and CXFORMWITHALPHA fields so multi-record
+// bodies can be inspected.
+// ---------------------------------------------------------------------------
+function decodeButtonRecords(body: Uint8Array): number[] {
+  // Body: ButtonId(2) + TrackAsMenu(1) + ActionOffset(2) then ButtonRecords.
+  let pos = 5;
+  const flags: number[] = [];
+
+  // Minimal bit reader over `body` starting at a byte offset.
+  const makeBits = (start: number) => {
+    let bytePos = start;
+    let bit = 0;
+    return {
+      read(n: number): number {
+        let v = 0;
+        for (let i = 0; i < n; i++) {
+          v = (v << 1) | ((body[bytePos]! >> (7 - bit)) & 1);
+          bit++;
+          if (bit === 8) { bit = 0; bytePos++; }
+        }
+        return v;
+      },
+      align() { if (bit !== 0) { bit = 0; bytePos++; } },
+      pos() { return bytePos; },
+    };
+  };
+  const skipMatrix = (off: number): number => {
+    const b = makeBits(off);
+    if (b.read(1)) { const n = b.read(5); b.read(n); b.read(n); }
+    if (b.read(1)) { const n = b.read(5); b.read(n); b.read(n); }
+    const nt = b.read(5); b.read(nt); b.read(nt);
+    b.align();
+    return b.pos();
+  };
+  const skipCxform = (off: number): number => {
+    const b = makeBits(off);
+    const hasAdd = b.read(1);
+    const hasMult = b.read(1);
+    const n = b.read(4);
+    if (hasMult) { b.read(n); b.read(n); b.read(n); b.read(n); }
+    if (hasAdd) { b.read(n); b.read(n); b.read(n); b.read(n); }
+    b.align();
+    return b.pos();
+  };
+
+  while (pos < body.length) {
+    const f = body[pos]!;
+    if (f === 0) break; // null terminator
+    pos += 1;
+    pos += 2; // CharacterId
+    pos += 2; // PlaceDepth
+    pos = skipMatrix(pos);
+    pos = skipCxform(pos);
+    flags.push(f);
+  }
+  return flags;
+}

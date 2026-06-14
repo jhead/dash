@@ -17,6 +17,7 @@
 import { test, expect, TestInfo } from '@playwright/test';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
+import { inflateSync, unzipSync } from 'node:zlib';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -126,6 +127,108 @@ function countDifferentPixels(a: Buffer, b: Buffer): number {
 
   const diff = new PNG({ width, height });
   return pixelmatch(imgA.data, bData, diff.data, width, height, { threshold: 0.1 });
+}
+
+// ---------------------------------------------------------------------------
+// SWF structural inspection (task 1196): decompress a published SWF and pull
+// the ButtonRecord state flags out of every DefineButton2 (tag 34). Used to
+// assert the Up-only-button HIT_TEST fallback structurally, since the bundled
+// headless Ruffle hit-tests visible bounds and cannot distinguish the fix.
+// ---------------------------------------------------------------------------
+
+/** Decompress a CWS/ZWS SWF to its raw FWS form (8-byte header + body). */
+function inflateSwf(buf: Buffer): Uint8Array {
+  const sig = String.fromCharCode(buf[0], buf[1], buf[2]);
+  if (sig === 'FWS') return new Uint8Array(buf);
+  const body = sig === 'CWS' ? inflateSync(buf.subarray(8)) : unzipSync(buf.subarray(8));
+  const head = Buffer.from(buf.subarray(0, 8));
+  head[0] = 0x46; // 'F'
+  return new Uint8Array(Buffer.concat([head, body]));
+}
+
+interface ParsedButton2 {
+  buttonId: number;
+  /** Flags byte of each ButtonRecord (state bits in the low nibble). */
+  records: number[];
+  /** True when ActionOffset != 0 (a BUTTONCONDACTION block follows). */
+  hasActions: boolean;
+}
+
+/** Parse all DefineButton2 (tag 34) records from a decompressed SWF. */
+function findDefineButton2(swf: Uint8Array): ParsedButton2[] {
+  const nBits = (swf[8] >> 3) & 0x1f;
+  const rectBytes = Math.ceil((5 + 4 * nBits) / 8);
+  let pos = 8 + rectBytes + 4;
+  const out: ParsedButton2[] = [];
+
+  // Minimal bit reader for skipping MATRIX / CXFORMWITHALPHA inside a record.
+  const makeBits = (body: Uint8Array, start: number) => {
+    let bytePos = start;
+    let bit = 0;
+    return {
+      read(n: number): number {
+        let v = 0;
+        for (let i = 0; i < n; i++) {
+          v = (v << 1) | ((body[bytePos] >> (7 - bit)) & 1);
+          bit++;
+          if (bit === 8) { bit = 0; bytePos++; }
+        }
+        return v;
+      },
+      align() { if (bit !== 0) { bit = 0; bytePos++; } },
+      pos() { return bytePos; },
+    };
+  };
+  const skipMatrix = (body: Uint8Array, off: number): number => {
+    const b = makeBits(body, off);
+    if (b.read(1)) { const n = b.read(5); b.read(n); b.read(n); }
+    if (b.read(1)) { const n = b.read(5); b.read(n); b.read(n); }
+    const nt = b.read(5); b.read(nt); b.read(nt);
+    b.align();
+    return b.pos();
+  };
+  const skipCxform = (body: Uint8Array, off: number): number => {
+    const b = makeBits(body, off);
+    const hasAdd = b.read(1);
+    const hasMult = b.read(1);
+    const n = b.read(4);
+    if (hasMult) { b.read(n); b.read(n); b.read(n); b.read(n); }
+    if (hasAdd) { b.read(n); b.read(n); b.read(n); b.read(n); }
+    b.align();
+    return b.pos();
+  };
+
+  while (pos < swf.length) {
+    const rh = swf[pos] | (swf[pos + 1] << 8);
+    const code = (rh >> 6) & 0x3ff;
+    let len = rh & 0x3f;
+    let hdr = 2;
+    if (len === 0x3f) {
+      len = swf[pos + 2] | (swf[pos + 3] << 8) | (swf[pos + 4] << 16) | (swf[pos + 5] << 24);
+      hdr = 6;
+    }
+    const body = swf.subarray(pos + hdr, pos + hdr + len);
+    if (code === 34) {
+      const buttonId = body[0] | (body[1] << 8);
+      const actionOffset = body[3] | (body[4] << 8);
+      let p = 5;
+      const records: number[] = [];
+      while (p < body.length) {
+        const f = body[p];
+        if (f === 0) break; // null terminator
+        p += 1;
+        p += 2; // CharacterId
+        p += 2; // PlaceDepth
+        p = skipMatrix(body, p);
+        p = skipCxform(body, p);
+        records.push(f);
+      }
+      out.push({ buttonId, records, hasActions: actionOffset !== 0 });
+    }
+    pos += hdr + len;
+    if (code === 0) break;
+  }
+  return out;
 }
 
 // Helper to build a full-stage invisible rectangle shape display object
@@ -406,6 +509,113 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
     }
 
     expect(diffPixels).toBeGreaterThan(100);
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 1b (task 1196): a button whose artwork lives ONLY in its Up keyframe
+  // must publish a clickable DefineButton2 (records carrying HIT_TEST).
+  //
+  // This is the golden PlayButton scenario: the button symbol has a single
+  // keyframe (Up) carrying a visible shape, with NO explicit Over/Down/Hit
+  // frames. Flash publishes such a button by forward-filling the Up artwork into
+  // all four states — crucially populating HIT_TEST so the button has a hit
+  // area. Without that fallback the published DefineButton2 sets only the UP bit,
+  // there is no hit area, and on(release) never reaches AVM1.
+  //
+  // ORACLE CHOICE — structural, not a Ruffle mouse click.
+  //   The bundled headless Ruffle (0.1.0, apps/desktop/public/ruffle) falls back
+  //   to a button's VISIBLE bounds for hit-testing when no HIT_TEST record is
+  //   present, so a click on an Up-only button advances the frame even WITHOUT
+  //   the fix — i.e. a Ruffle-click oracle cannot distinguish fixed vs broken
+  //   (same class of headless-Ruffle limitation noted in CLAUDE.md). Real Flash
+  //   Player and ruffle-core 0.2.0 (core/src/display_object/avm1_button.rs
+  //   `mouse_pick_avm1`) hit-test ONLY the HIT_TEST-derived `hit_area`, so the
+  //   HIT_TEST bit is the true acceptance signal. We therefore inflate the
+  //   browser-published SWF and assert every Up-state ButtonRecord also carries
+  //   HIT_TEST, and that a BUTTONCONDACTION (the on(release) bytecode) is present.
+  // -------------------------------------------------------------------------
+  test('Up-only button publishes HIT_TEST records and a release action (1196)', async ({ page }) => {
+    // A small visible rect placed at the stage origin — the button's sole
+    // (Up) keyframe artwork.
+    const cornerRect = {
+      id: 'up-only-up', type: 'shape',
+      shape: {
+        id: 'shape-up-only-up',
+        paths: [{
+          start: { x: 0, y: 0 },
+          segments: [
+            { type: 'line', to: { x: 120, y: 0 } },
+            { type: 'line', to: { x: 120, y: 120 } },
+            { type: 'line', to: { x: 0, y: 120 } },
+          ],
+          closed: true,
+          fill: { type: 'solid', color: { r: 80, g: 80, b: 80, a: 255 } },
+        }],
+      },
+      x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+    };
+    // A button symbol with a SINGLE keyframe (Up) carrying a visible rect and an
+    // on(release) handler — exactly the golden PlayButton shape.
+    const upOnlyButton = {
+      id: 'sym-up-only-btn',
+      name: 'UpOnlyButton',
+      itemType: 'symbol',
+      symbolType: 'button',
+      linkage: { exportForActionScript: false, exportInFirstFrame: false, linkageIdentifier: '', className: '', exportForRuntimeSharing: false, importForRuntimeSharing: false, sharedUrl: '' },
+      scale9Grid: null,
+      buttonActions: [{ event: 'release', script: 'nextFrame();' }],
+      timeline: {
+        layers: [{
+          id: 'up-only-layer', name: 'Layer 1', type: 'normal',
+          visible: true, locked: false, outlineMode: false,
+          outlineColor: '#ff0000', height: 20, parentFolderId: null,
+          frameCount: 1,
+          frames: [{
+            // ONLY the Up keyframe — no Over/Down/Hit. The forward-fill in
+            // buttons.ts must promote this into the Hit state so the button is
+            // clickable.
+            index: 0, isKeyframe: true, isEmpty: false, tweenType: 'none',
+            label: '', labelType: 'name', script: '',
+            sound: null, motionEase: 0, motionRotate: 'none', motionRotateCount: 0,
+            motionOrientToPath: false, motionSync: false, motionScale: false,
+            shapeEase: 0, shapeBlend: 'distributive',
+            displayObjects: [cornerRect],
+          }],
+        }],
+      },
+    };
+
+    const fixtureDoc = makeTwoFrameDoc(
+      'interact-up-only-doc', 'layer-btn-uo', 'uo-inst-1', 'uo-inst-2', 'sym-up-only-btn',
+      'layer-bg-uo', 'red-rect-uo', 'blue-rect-uo', upOnlyButton,
+    );
+
+    await page.evaluate((doc) => {
+      (window as unknown as { __flashTest: { loadDocument: (d: unknown) => void } }).__flashTest.loadDocument(doc);
+    }, fixtureDoc);
+    await page.waitForTimeout(300);
+
+    const swfBase64: string = await page.evaluate(() => {
+      return (window as unknown as { __flashTest: { publish: () => string } }).__flashTest.publish();
+    });
+
+    // Inflate the published SWF and structurally inspect its DefineButton2.
+    const swf = inflateSwf(Buffer.from(swfBase64, 'base64'));
+    const buttons = findDefineButton2(swf);
+    expect(buttons.length).toBeGreaterThan(0);
+
+    for (const btn of buttons) {
+      expect(btn.records.length).toBeGreaterThan(0);
+      // Every record that participates in the Up state must also carry HIT_TEST
+      // (Up artwork forward-filled into the hit area).
+      for (const r of btn.records) {
+        if (r & 0x01) {
+          expect(r & 0x08).toBe(0x08); // HIT_TEST present → clickable
+        }
+      }
+      // The on(release) handler must have compiled to a BUTTONCONDACTION block.
+      expect(btn.hasActions).toBe(true);
+    }
   });
 
   // -------------------------------------------------------------------------

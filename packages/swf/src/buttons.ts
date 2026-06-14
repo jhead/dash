@@ -296,8 +296,6 @@ export function encodeDefineButton2(
   // its state bits are OR'd together.
   // ---------------------------------------------------------------------------
   const STATE_UP = 0;
-  const STATE_OVER = 1;
-  const STATE_DOWN = 2;
   const STATE_HIT = 3;
 
   interface RecordEntry {
@@ -317,9 +315,10 @@ export function encodeDefineButton2(
     colorEffect?: ColorEffect;
   }
 
-  // Key: `${frameIndex}:${objId}` so the same obj in different states gets
-  // separate records (matching Flash Player's approach — each state appearance
-  // is a separate ButtonRecord).
+  // Key: objId. The same display object placed in several states gets ONE
+  // ButtonRecord whose state bits are OR'd together — matching Flash 8's
+  // published DefineButton2 (golden has a single record per object carrying
+  // UP|OVER|DOWN|HIT, not one record per state appearance).
   const recordMap = new Map<string, RecordEntry>();
 
   // Depth assignment: unique per display-object ID (stable across states)
@@ -334,6 +333,28 @@ export function encodeDefineButton2(
     }
     return d;
   }
+
+  // -------------------------------------------------------------------------
+  // Step 1: collect the keyframed display objects for each of the 4 states.
+  // Button timelines store one keyframe per state frame (0=Up..3=Hit). A state
+  // frame that has no keyframe artwork of its own is left as `undefined` here
+  // so step 2 can apply Flash's keyframe-propagation fallback.
+  // -------------------------------------------------------------------------
+  type StateObj = {
+    objId: string;
+    objCharId: number;
+    x: number;
+    y: number;
+    scaleX: number;
+    scaleY: number;
+    rotation: number;
+    skewX: number;
+    skewY: number;
+    colorEffect?: ColorEffect;
+  };
+  // perState[stateIdx] is undefined when that state has no keyframe content of
+  // its own (empty/blank); an array (possibly with entries) when it does.
+  const perState: Array<StateObj[] | undefined> = [undefined, undefined, undefined, undefined];
 
   for (const layer of layers) {
     if (layer.type === 'guide') continue;
@@ -354,43 +375,91 @@ export function encodeDefineButton2(
         }
         if (objCid === undefined) continue;
 
-        // Extract transform and colorEffect from the display object
-        const x = obj.x;
-        const y = obj.y;
-        const scaleX = (obj as { scaleX?: number }).scaleX ?? 1;
-        const scaleY = (obj as { scaleY?: number }).scaleY ?? 1;
-        const rotation = (obj as { rotation?: number }).rotation ?? 0;
-        const skewX = (obj as { skewX?: number }).skewX ?? 0;
-        const skewY = (obj as { skewY?: number }).skewY ?? 0;
-        const colorEffect = (obj.type === "instance" || obj.type === "text")
-          ? obj.colorEffect
-          : undefined;
+        const entry: StateObj = {
+          objId: obj.id,
+          objCharId: objCid,
+          x: obj.x,
+          y: obj.y,
+          scaleX: (obj as { scaleX?: number }).scaleX ?? 1,
+          scaleY: (obj as { scaleY?: number }).scaleY ?? 1,
+          rotation: (obj as { rotation?: number }).rotation ?? 0,
+          skewX: (obj as { skewX?: number }).skewX ?? 0,
+          skewY: (obj as { skewY?: number }).skewY ?? 0,
+          colorEffect: (obj.type === "instance" || obj.type === "text")
+            ? obj.colorEffect
+            : undefined,
+        };
+        (perState[stateIdx] ??= []).push(entry);
+      }
+    }
+  }
 
-        const key = `${stateIdx}:${obj.id}`;
-        if (!recordMap.has(key)) {
-          recordMap.set(key, {
-            stateUp: stateIdx === STATE_UP,
-            stateOver: stateIdx === STATE_OVER,
-            stateDown: stateIdx === STATE_DOWN,
-            stateHit: stateIdx === STATE_HIT,
-            objCharId: objCid,
-            depth: getDepth(obj.id),
-            x,
-            y,
-            scaleX,
-            scaleY,
-            rotation,
-            skewX,
-            skewY,
-            colorEffect,
-          });
-        } else {
-          const entry = recordMap.get(key)!;
-          if (stateIdx === STATE_UP) entry.stateUp = true;
-          else if (stateIdx === STATE_OVER) entry.stateOver = true;
-          else if (stateIdx === STATE_DOWN) entry.stateDown = true;
-          else if (stateIdx === STATE_HIT) entry.stateHit = true;
-        }
+  // -------------------------------------------------------------------------
+  // Step 2: resolve each state to its effective display objects.
+  //
+  // Flash button timelines propagate a keyframe forward until the next
+  // keyframe: a button with artwork ONLY in its Up frame still renders that
+  // artwork in Over/Down and — crucially — uses it as the Hit (clickable) area.
+  // Flash's published DefineButton2 reflects this by setting UP|OVER|DOWN|HIT
+  // on every Up-state record (verified against golden.swf).
+  //
+  // We mirror that with a pure FORWARD fill: each state's keyframe artwork
+  // carries into any LATER state that has no keyframe content of its own. The
+  // Up state is never seeded from a later state (Flash never propagates a
+  // keyframe backward), so a button whose only artwork sits in Up gets that
+  // artwork applied to Up/Over/Down/Hit, while a button authored with artwork
+  // only in a later state keeps an empty Up.
+  // -------------------------------------------------------------------------
+  const resolvedState: StateObj[][] = [];
+  {
+    let carry: StateObj[] | undefined;
+    for (let s = STATE_UP; s <= STATE_HIT; s++) {
+      const own = perState[s];
+      if (own !== undefined && own.length > 0) {
+        carry = own; // this state defines its own keyframe content
+      }
+      resolvedState[s] = carry ?? [];
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Step 3: build one record per (objId), OR-ing in the state bit for every
+  // state whose resolved object set contains that object. Transform/colorEffect
+  // come from the FIRST (lowest-state-index) appearance.
+  // -------------------------------------------------------------------------
+  const stateBitForIdx = [
+    { up: true,  over: false, down: false, hit: false },
+    { up: false, over: true,  down: false, hit: false },
+    { up: false, over: false, down: true,  hit: false },
+    { up: false, over: false, down: false, hit: true  },
+  ] as const;
+
+  for (let s = STATE_UP; s <= STATE_HIT; s++) {
+    const bits = stateBitForIdx[s]!;
+    for (const so of resolvedState[s]!) {
+      const existing = recordMap.get(so.objId);
+      if (!existing) {
+        recordMap.set(so.objId, {
+          stateUp: bits.up,
+          stateOver: bits.over,
+          stateDown: bits.down,
+          stateHit: bits.hit,
+          objCharId: so.objCharId,
+          depth: getDepth(so.objId),
+          x: so.x,
+          y: so.y,
+          scaleX: so.scaleX,
+          scaleY: so.scaleY,
+          rotation: so.rotation,
+          skewX: so.skewX,
+          skewY: so.skewY,
+          colorEffect: so.colorEffect,
+        });
+      } else {
+        if (bits.up) existing.stateUp = true;
+        if (bits.over) existing.stateOver = true;
+        if (bits.down) existing.stateDown = true;
+        if (bits.hit) existing.stateHit = true;
       }
     }
   }
