@@ -132,10 +132,44 @@ fn normalize_tag(tag: &Tag, remap: &IdRemap) -> Option<Value> {
             "version": shape.version,
             "id": remap.get(shape.id),
             "bounds": rect_to_json(&shape.shape_bounds),
+            "edgeBounds": rect_to_json(&shape.edge_bounds),
             "fillStyles": shape.styles.fill_styles.iter().map(|f| fill_style_to_json(f, remap)).collect::<Vec<_>>(),
             "lineStyles": shape.styles.line_styles.iter().map(line_style_to_json).collect::<Vec<_>>(),
             "records": shape_records_to_json(&shape.shape),
         })),
+
+        // ---- Static text (DefineText / DefineText2) ----------------------
+        // Structured so the parity harness can compare TextRecord offsets,
+        // height, color, and the glyph-index sequence (task 1195).
+        Tag::DefineText(text) | Tag::DefineText2(text) => Some(json!({
+            "tag": tag_name(tag),
+            "id": remap.get(text.id),
+            "bounds": rect_to_json(&text.bounds),
+            "matrix": matrix_to_json(&text.matrix),
+            "records": text.records.iter().map(|r| text_record_to_json(r, remap)).collect::<Vec<_>>(),
+        })),
+
+        // ---- Dynamic / input text (DefineEditText) -----------------------
+        // The harness previously could not resolve this character's type
+        // because no `id` was emitted (task 1195). Emit id + easily-available
+        // fields. Fields are guarded accessors returning Option, so absent
+        // optionals are simply omitted.
+        Tag::DefineEditText(et) => {
+            let mut obj = Map::new();
+            obj.insert("tag".into(), Value::String("DefineEditText".into()));
+            obj.insert("id".into(), json!(remap.get(et.id())));
+            obj.insert("bounds".into(), rect_to_json(et.bounds()));
+            if let Some(fid) = et.font_id() {
+                obj.insert("fontId".into(), json!(remap.get(fid)));
+            }
+            if let Some(h) = et.height() {
+                obj.insert("height".into(), json!(h.get()));
+            }
+            if let Some(c) = et.color() {
+                obj.insert("color".into(), color_to_json(&c));
+            }
+            Some(Value::Object(obj))
+        }
 
         Tag::DefineSprite(sprite) => Some(json!({
             "tag": "DefineSprite",
@@ -317,6 +351,39 @@ fn tag_name(tag: &Tag) -> &'static str {
 // ---------------------------------------------------------------------------
 // Sub-record decoders
 // ---------------------------------------------------------------------------
+
+/// Decode one DefineText TEXTRECORD into structured JSON. Style-change fields
+/// (font_id, color, x_offset, y_offset, height) are emitted when present; the
+/// glyph run is emitted as {index, advance} pairs so the harness can compare
+/// glyph-index sequences (font-independent) and per-glyph advances separately.
+fn text_record_to_json(r: &swf::TextRecord, remap: &IdRemap) -> Value {
+    let mut obj = Map::new();
+    if let Some(fid) = r.font_id {
+        obj.insert("fontId".into(), json!(remap.get(fid)));
+    }
+    if let Some(c) = &r.color {
+        obj.insert("color".into(), color_to_json(c));
+    }
+    if let Some(x) = r.x_offset {
+        obj.insert("xOffset".into(), json!(x.get()));
+    }
+    if let Some(y) = r.y_offset {
+        obj.insert("yOffset".into(), json!(y.get()));
+    }
+    if let Some(h) = r.height {
+        obj.insert("height".into(), json!(h.get()));
+    }
+    obj.insert(
+        "glyphs".into(),
+        Value::Array(
+            r.glyphs
+                .iter()
+                .map(|g| json!({ "index": g.index, "advance": g.advance }))
+                .collect(),
+        ),
+    );
+    Value::Object(obj)
+}
 
 fn matrix_to_json(m: &Matrix) -> Value {
     json!({

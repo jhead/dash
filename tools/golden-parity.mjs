@@ -168,6 +168,7 @@ record(
   const shapes = (j) => j.tags.filter((t) => t.tag === "DefineShape").map((s) => ({
     sig: sig(s),
     bounds: s.bounds,
+    edgeBounds: s.edgeBounds ?? null,
     fills: (s.fillStyles || []).length,
     version: s.version,
   }));
@@ -183,13 +184,92 @@ record(
     for (const k of ["xMin", "xMax", "yMin", "yMax"]) {
       if (s.bounds[k] !== g.bounds[k]) fd.push(`bounds.${k} ${s.bounds[k]}≠${g.bounds[k]}`);
     }
+    // edgeBounds (now emitted by swf-dump): compare when both sides have it.
+    if (s.edgeBounds && g.edgeBounds) {
+      for (const k of ["xMin", "xMax", "yMin", "yMax"]) {
+        if (s.edgeBounds[k] !== g.edgeBounds[k]) fd.push(`edgeBounds.${k} ${s.edgeBounds[k]}≠${g.edgeBounds[k]}`);
+      }
+    }
     if (s.fills !== g.fills) fd.push(`fillStyles ${s.fills}≠${g.fills} (Flash gradient-fill expansion — byte gap, not a render defect)`);
     if (fd.length) diffs.push(fd.join(", "));
   }
-  // Only count bounds mismatches as DIFF; fill-count expansion is a known byte gap.
+  // Only count bounds/edgeBounds mismatches as DIFF; fill-count expansion is a known byte gap.
   const hard = diffs.filter((d) => d.includes("bounds.") || d.includes("no record-match"));
   record("SHAPE GEOMETRY", hard.length ? "DIFF" : (diffs.length ? "KNOWN-GAP" : "PASS"),
-    (diffs.length ? diffs.join("; ") : `${matched}/${gs.length} shapes match (records + ShapeBounds)`));
+    (diffs.length ? diffs.join("; ") : `${matched}/${gs.length} shapes match (records + ShapeBounds + EdgeBounds)`));
+}
+
+// ---- [5b] text parity (DefineText offsets, height, glyph-index sequence) ----
+{
+  // Each static-text DefineText is identity-matched ours↔golden by its glyph
+  // INDEX sequence (font-independent — both sides index into the same logical
+  // glyph table, even when the rendered outlines differ). Once matched, we
+  // compare the layout fields that drive on-screen positioning:
+  //   x_offset / y_offset / height / glyph-index-count  → HARD DIFF
+  //   per-glyph ADVANCE values                          → KNOWN-GAP
+  // Rationale: a wrong x_offset shifts the whole text run (this is exactly the
+  // task-1193 title-centering bug — title x_offset 0 ours vs 3640 golden — that
+  // the harness previously could not see). Advance deltas are a pure side
+  // effect of font substitution (golden Win7 Arial vs our generated NotoSans),
+  // visually inert at the layout level.
+  const texts = (j) =>
+    j.tags
+      .filter((t) => (t.tag === "DefineText" || t.tag === "DefineText2") && Array.isArray(t.records))
+      .map((t) => ({
+        id: t.id,
+        recs: t.records.map((r) => ({
+          glyphIdx: (r.glyphs || []).map((g) => g.index),
+          advances: (r.glyphs || []).map((g) => g.advance),
+          xOffset: r.xOffset ?? 0,
+          yOffset: r.yOffset ?? 0,
+          height: r.height ?? null,
+        })),
+        // Identity signature = concatenated glyph-index sequence across records.
+        sig: t.records.map((r) => (r.glyphs || []).map((g) => g.index).join(",")).join("|"),
+      }));
+  const ot = texts(ours), gt = texts(golden);
+  const gmap = new Map(gt.map((t) => [t.sig, t]));
+
+  const hardDiffs = [];
+  const gapDiffs = [];
+  let matched = 0;
+  let textRecords = 0;
+  for (const t of ot) {
+    const g = gmap.get(t.sig);
+    if (!g) {
+      hardDiffs.push(`text(id#${t.id}, glyphSeq=[${t.sig}]): no glyph-sequence match in golden`);
+      continue;
+    }
+    matched++;
+    const n = Math.max(t.recs.length, g.recs.length);
+    for (let i = 0; i < n; i++) {
+      textRecords++;
+      const a = t.recs[i], b = g.recs[i];
+      if (!a || !b) { hardDiffs.push(`text(id#${t.id}) rec${i}: record count ${t.recs.length}≠${g.recs.length}`); continue; }
+      if (a.glyphIdx.length !== b.glyphIdx.length)
+        hardDiffs.push(`text(id#${t.id}) rec${i}: glyph count ${a.glyphIdx.length}≠${b.glyphIdx.length}`);
+      if (a.xOffset !== b.xOffset)
+        hardDiffs.push(`text(id#${t.id}) rec${i}: x_offset ${a.xOffset}≠${b.xOffset} (text run mis-positioned — e.g. title centering, task 1193)`);
+      if (a.yOffset !== b.yOffset)
+        hardDiffs.push(`text(id#${t.id}) rec${i}: y_offset ${a.yOffset}≠${b.yOffset}`);
+      if (a.height !== b.height)
+        hardDiffs.push(`text(id#${t.id}) rec${i}: height ${a.height}≠${b.height}`);
+      // Per-glyph advance deltas → KNOWN-GAP (font substitution).
+      const advDelta = a.advances.some((v, k) => v !== b.advances[k]);
+      if (advDelta) {
+        const n0 = a.advances.length;
+        const maxd = Math.max(...a.advances.map((v, k) => Math.abs(v - (b.advances[k] ?? v))));
+        gapDiffs.push(`text(id#${t.id}) rec${i}: ${n0} glyph advances differ (max Δ=${maxd} twips; font substitution NotoSans↔Arial)`);
+      }
+    }
+  }
+  const status = hardDiffs.length ? "DIFF" : (gapDiffs.length ? "KNOWN-GAP" : "PASS");
+  const detail = hardDiffs.length
+    ? hardDiffs.join("; ") + (gapDiffs.length ? `  [+${gapDiffs.length} advance gap(s)]` : "")
+    : (gapDiffs.length
+        ? `${matched}/${gt.length} text runs match (x/y offset, height, glyph indices); ` + gapDiffs.join("; ")
+        : `${matched}/${gt.length} text runs match (offsets, height, glyph indices, advances)`);
+  record("TEXT PARITY", status, detail);
 }
 
 // ---- [6] decompressed body bytes ------------------------------------------
@@ -231,7 +311,16 @@ console.log(`    Flash's non-minimal gradient encoding.`);
 console.log(`  • zlib (CWS) deflate stream is implementation-specific; exact compressed bytes are not`);
 console.log(`    reproducible without Flash's exact deflate. Compare DECOMPRESSED bytes instead.`);
 console.log("");
+const textFail = results.find((r) => r.dim === "TEXT PARITY" && r.status === "DIFF");
 console.log(semanticFail === 0
   ? `RESULT: SEMANTIC PARITY — all hard dimensions PASS (${results.filter((r) => r.status === "KNOWN-GAP").length} documented byte-level gap(s)).`
   : `RESULT: ${semanticFail} semantic dimension(s) FAIL — see ✗ above.`);
+if (textFail) {
+  console.log("");
+  console.log(`NOTE: the TEXT PARITY DIFF above is EXPECTED on the current tree — it is the`);
+  console.log(`acceptance signal for task 1195. The harness now structurally catches the static-`);
+  console.log(`text x_offset/centering defect (task 1193: title x_offset 0 ours vs 3640 golden)`);
+  console.log(`that previously only the Ruffle render caught. Do NOT weaken this check; it will`);
+  console.log(`go green once the underlying text-positioning fix lands.`);
+}
 process.exit(semanticFail === 0 ? 0 : 1);
