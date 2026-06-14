@@ -226,8 +226,10 @@ describe("DefineFont3 (tag 75) embedding", () => {
     expect(font3Tags.length).toBe(0);
   });
 
-  it("DefineFont3 body has valid uint16 glyph count (95 for ASCII 32-126)", () => {
-    const doc = makeDoc([makeText()]);
+  it("DefineFont3 auto-subsets to the glyphs the static text actually uses (+space)", () => {
+    // Default (no embedRanges): the font embeds only the distinct chars of its
+    // text plus space, matching real Flash 8. "Hello" → {space, H, e, l, o} = 5.
+    const doc = makeDoc([makeText()]); // text: "Hello"
     const bytes = compileDocument(doc);
     const tags = parseSWF(bytes);
     const font3Tags = tags.filter((t) => t.code === TAG_DEFINE_FONT3);
@@ -238,7 +240,7 @@ describe("DefineFont3 (tag 75) embedding", () => {
     const nameLen = body[4];
     const glyphCountOffset = 5 + nameLen;
     const glyphCount = body[glyphCountOffset] | (body[glyphCountOffset + 1] << 8);
-    expect(glyphCount).toBe(95);
+    expect(glyphCount).toBe(5);
   });
 
   it("DefineFont3 body has correct FontName", () => {
@@ -255,8 +257,8 @@ describe("DefineFont3 (tag 75) embedding", () => {
     expect(name).toBe("Verdana");
   });
 
-  it("DefineFont3 body CodeTable covers Unicode code points 32-126", () => {
-    const doc = makeDoc([makeText()]);
+  it("DefineFont3 CodeTable contains exactly the subsetted code points (sorted)", () => {
+    const doc = makeDoc([makeText()]); // text: "Hello"
     const bytes = compileDocument(doc);
     const tags = parseSWF(bytes);
     const font3Tags = tags.filter((t) => t.code === TAG_DEFINE_FONT3);
@@ -283,8 +285,8 @@ describe("DefineFont3 (tag 75) embedding", () => {
       const off = codeTableStart + i * 2;
       codes.push(body[off] | (body[off + 1] << 8));
     }
-    expect(codes[0]).toBe(32);    // space
-    expect(codes[94]).toBe(126);  // tilde (~)
+    // "Hello" → distinct code points {space, H, e, l, o}, sorted ascending.
+    expect(codes).toEqual([0x20, 0x48, 0x65, 0x6c, 0x6f]);
   });
 
   it("two text objects with different fonts produce two DefineFont3 tags", () => {

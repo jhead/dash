@@ -834,14 +834,15 @@ describe("DefineFontAlignZones (tag 73) — emitted for all embedded fonts", () 
     expect(alignTag!.body[2]).toBe(0x40);
   });
 
-  it("DefineFontAlignZones body: correct size (3 + 10 * 95 = 953 bytes)", () => {
+  it("DefineFontAlignZones body: one 10-byte zone record per subsetted glyph", () => {
+    // Auto-subset default: "Hello" → 5 glyphs, so align zones =
+    // 2 (fontID) + 1 (thickness) + 5 * 10 (zones) = 53 bytes.
     const doc = makeDoc([makeText()]);
     const bytes = compileDocument(doc);
     const tags = parseSWFTags(bytes);
     const alignTag = tags.find((t) => t.code === TAG_DEFINE_FONT_ALIGN_ZONES);
     expect(alignTag).toBeDefined();
-    // 2 (fontID) + 1 (thickness) + 95 * 10 (zones) = 953 bytes
-    expect(alignTag!.body.length).toBe(953);
+    expect(alignTag!.body.length).toBe(2 + 1 + 5 * 10);
   });
 
   it("DefineFontAlignZones body: first glyph's zone has ZoneCount=2 at offset 3", () => {

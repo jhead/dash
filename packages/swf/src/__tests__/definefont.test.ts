@@ -456,6 +456,137 @@ describe("Font glyph subsetting — 'Embed…' character ranges (task 1182)", ()
   });
 });
 
+// ---------------------------------------------------------------------------
+// DefineText (tag 11) glyph-index decoder — used to prove that the per-glyph
+// indices a static field emits point at the correct entries in the (subsetted)
+// font glyph table.
+// ---------------------------------------------------------------------------
+
+/**
+ * Decode the ordered glyph indices out of a DefineText (tag 11) body produced by
+ * `encodeDefineText`. That encoder writes a single byte-aligned style-change
+ * TEXTRECORD (flag 0x8F: HasFont|HasColor|HasYOffset|HasXOffset) carrying FontID
+ * (UI16), Color (RGB), XOffset/YOffset (SI16), TextHeight (UI16), GlyphCount
+ * (UI8), then GlyphCount × (UB[glyphBits] index, SB[advanceBits] advance).
+ */
+function parseDefineTextGlyphIndices(body: Uint8Array): number[] {
+  // charId(2) + bounds RECT + text MATRIX, then glyphBits/advanceBits (UI8 each).
+  let bitPos = 2 * 8; // skip charId
+  const bit = () => {
+    const v = (body[bitPos >> 3] >> (7 - (bitPos & 7))) & 1;
+    bitPos++;
+    return v;
+  };
+  const bits = (n: number) => {
+    let v = 0;
+    for (let i = 0; i < n; i++) v = (v << 1) | bit();
+    return v;
+  };
+  const align = () => {
+    bitPos = Math.ceil(bitPos / 8) * 8;
+  };
+  // Bounds RECT (Nbits then 4 fields).
+  const rnb = bits(5);
+  bits(rnb); bits(rnb); bits(rnb); bits(rnb);
+  align();
+  // Text MATRIX.
+  if (bit()) { const nb = bits(5); bits(nb); bits(nb); } // scale
+  if (bit()) { const nb = bits(5); bits(nb); bits(nb); } // rotate/skew
+  { const nb = bits(5); bits(nb); bits(nb); }            // translate
+  align();
+  let p = bitPos >> 3;
+  const glyphBits = body[p++];
+  const advanceBits = body[p++];
+  const out: number[] = [];
+  // TEXTRECORDs: encodeDefineText emits exactly one style-change record then one
+  // run of glyphs, terminated by a 0x00 byte.
+  const flag = body[p++];
+  if ((flag & 0x80) === 0) return out; // not a style-change record
+  const hasFont = (flag >> 3) & 1;
+  const hasColor = (flag >> 2) & 1;
+  const hasY = (flag >> 1) & 1;
+  const hasX = flag & 1;
+  if (hasFont) p += 2;  // FontID UI16
+  if (hasColor) p += 3; // RGB (tag 11 = DefineText, not DefineText2)
+  if (hasX) p += 2;     // XOffset SI16
+  if (hasY) p += 2;     // YOffset SI16
+  if (hasFont) p += 2;  // TextHeight UI16
+  const glyphCount = body[p++];
+  // Glyph entries are bit-packed starting at byte p.
+  bitPos = p * 8;
+  for (let i = 0; i < glyphCount; i++) {
+    out.push(bits(glyphBits));
+    bits(advanceBits);
+  }
+  return out;
+}
+
+describe("Static-text font auto-subsetting — default (task 1186)", () => {
+  const TAG_DEFINE_TEXT = 11;
+
+  it("static text with no embedRanges auto-subsets to its own chars + space", () => {
+    const doc = makeDocWithText([makeText({ textType: "static", fontFamily: "Arial", text: "Hello" })]);
+    const font = findTags(compileDocument(doc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const { glyphCount, codeTable } = parseFontGlyphs(font.body);
+    // "Hello" → {space, H, e, l, o} sorted.
+    expect(glyphCount).toBe(5);
+    expect(codeTable).toEqual([0x20, 0x48, 0x65, 0x6c, 0x6f]);
+  });
+
+  it("two static fields sharing a font union their used chars", () => {
+    const doc = makeDocWithText([
+      makeText({ id: "a", textType: "static", fontFamily: "Arial", text: "AB" }),
+      makeText({ id: "b", x: 10, y: 60, textType: "static", fontFamily: "Arial", text: "BC" }),
+    ]);
+    const font = findTags(compileDocument(doc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const { codeTable } = parseFontGlyphs(font.body);
+    // {space, A, B, C}
+    expect(codeTable).toEqual([0x20, 0x41, 0x42, 0x43]);
+  });
+
+  it("a dynamic field with no embedRanges does NOT subset (device font, full set)", () => {
+    // A font used only by an un-embedded dynamic field falls back to the full set.
+    const doc = makeDocWithText([makeText({ textType: "dynamic", fontFamily: "Arial", text: "Hi" })]);
+    const font = findTags(compileDocument(doc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const { glyphCount } = parseFontGlyphs(font.body);
+    expect(glyphCount).toBe(95);
+  });
+
+  it("a dynamic field does NOT shrink a font shared with static text", () => {
+    // golden.fla shape: a dynamic "Score: 0" and a static field share Arial. The
+    // dynamic field renders with a device font and must NOT force the full 95-glyph
+    // set; only the static field's chars are embedded.
+    const doc = makeDocWithText([
+      makeText({ id: "dyn", textType: "dynamic", fontFamily: "Arial", text: "Score: 0" }),
+      makeText({ id: "stat", x: 10, y: 60, textType: "static", fontFamily: "Arial", text: "Win" }),
+    ]);
+    const font = findTags(compileDocument(doc)).find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const { glyphCount, codeTable } = parseFontGlyphs(font.body);
+    // Only "Win" + space → {space, W, i, n}.
+    expect(glyphCount).toBe(4);
+    expect(codeTable).toEqual([0x20, 0x57, 0x69, 0x6e]);
+  });
+
+  it("DefineText glyph indices point at the correct subsetted glyphs", () => {
+    // CRITICAL: shrinking the glyph table must rebuild the code→index map so each
+    // character still references the right glyph. "Cab" → table {space,C,a,b}.
+    const doc = makeDocWithText([makeText({ textType: "static", fontFamily: "Arial", text: "Cab" })]);
+    const tags = findTags(compileDocument(doc));
+    const font = tags.find((t) => t.type === TAG_DEFINE_FONT3)!;
+    const text = tags.find((t) => t.type === TAG_DEFINE_TEXT)!;
+    const { codeTable } = parseFontGlyphs(font.body);
+    expect(codeTable).toEqual([0x20, 0x43, 0x61, 0x62]); // space, C, a, b
+
+    const indices = parseDefineTextGlyphIndices(text.body);
+    // Decode the indices back to characters via the font's code table; they must
+    // spell the original text exactly (NOT the legacy code-32 indices).
+    const decoded = indices.map((i) => String.fromCharCode(codeTable[i])).join("");
+    expect(decoded).toBe("Cab");
+    // And concretely: 'C'→index 1, 'a'→index 2, 'b'→index 3 in {space,C,a,b}.
+    expect(indices).toEqual([1, 2, 3]);
+  });
+});
+
 describe("DefineFont3 (tag 75) — Auto kern KerningTable (task 1178)", () => {
   it("encodeDefineFont2 emits KerningCount=0 when kerning is off", async () => {
     const { encodeDefineFont2 } = await import("../fonts.js");

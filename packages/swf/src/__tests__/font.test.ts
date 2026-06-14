@@ -243,7 +243,8 @@ describe("DefineFont2 embedding", () => {
     expect(nameBytes.includes(0)).toBe(false);
   });
 
-  it("GlyphCount is 95 (ASCII 32–126)", () => {
+  it("GlyphCount auto-subsets to the static text's distinct chars (+space)", () => {
+    // "Hello" → {space, H, e, l, o} = 5 glyphs (auto-subset default).
     const doc = makeDoc([makeText()]);
     const bytes = compileDocument(doc, { useFont3: false });
     const tags = parseSWF(bytes);
@@ -255,11 +256,11 @@ describe("DefineFont2 embedding", () => {
     const nameLen = body[4];
     const glyphCountOffset = 5 + nameLen;
     const glyphCount = body[glyphCountOffset] | (body[glyphCountOffset + 1] << 8);
-    expect(glyphCount).toBe(95);
+    expect(glyphCount).toBe(5);
   });
 
-  it("CodeTable has 95 entries covering ASCII 32–126", () => {
-    const doc = makeDoc([makeText()]);
+  it("CodeTable contains exactly the subsetted code points (sorted)", () => {
+    const doc = makeDoc([makeText()]); // text: "Hello"
     const bytes = compileDocument(doc, { useFont3: false });
     const tags = parseSWF(bytes);
     const font2Tags = tags.filter((t) => t.code === TAG_DEFINE_FONT2);
@@ -269,7 +270,7 @@ describe("DefineFont2 embedding", () => {
     const nameLen = body[4];
     const glyphCountOffset = 5 + nameLen;
     const glyphCount = body[glyphCountOffset] | (body[glyphCountOffset + 1] << 8);
-    expect(glyphCount).toBe(95);
+    expect(glyphCount).toBe(5);
 
     // OffsetTable starts right after GlyphCount
     // With WideOffsets=1: (glyphCount+1)*4 bytes of offsets
@@ -285,15 +286,13 @@ describe("DefineFont2 embedding", () => {
 
     // CodeTable starts at: offsetTableStart + codeTableOffsetValue
     const codeTableStart = offsetTableStart + codeTableOffsetValue;
-    // Read 95 UI16 entries
     const codes: number[] = [];
     for (let i = 0; i < glyphCount; i++) {
       const off = codeTableStart + i * 2;
       codes.push(body[off] | (body[off + 1] << 8));
     }
-    expect(codes.length).toBe(95);
-    expect(codes[0]).toBe(32);   // space
-    expect(codes[94]).toBe(126); // tilde (~)
+    // "Hello" → distinct code points {space, H, e, l, o}, sorted ascending.
+    expect(codes).toEqual([0x20, 0x48, 0x65, 0x6c, 0x6f]);
   });
 
   it("DefineEditText HasFont flag (bit 7 of flags byte) is set when font is embedded", () => {

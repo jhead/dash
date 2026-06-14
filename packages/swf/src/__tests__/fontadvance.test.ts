@@ -298,7 +298,9 @@ describe("DefineFont2 advance table and layout metrics", () => {
     expect(layout.fontFlags & 0x80).toBe(0x80);
   });
 
-  it("AdvanceTable has at least 95 entries (ASCII 32-126)", () => {
+  it("AdvanceTable has one entry per subsetted glyph", () => {
+    // Auto-subset default: "Hello" → {space, H, e, l, o} = 5 glyphs, so the
+    // advance table has exactly 5 entries (one per embedded glyph).
     const doc = makeDoc([makeText()]);
     const bytes = compileDocument(doc, { useFont3: false });
     const tags = parseSWF(bytes);
@@ -306,8 +308,8 @@ describe("DefineFont2 advance table and layout metrics", () => {
     expect(font2Tags.length).toBeGreaterThanOrEqual(1);
 
     const layout = parseFont2Layout(font2Tags[0].body);
-    expect(layout.glyphCount).toBeGreaterThanOrEqual(95);
-    expect(layout.advances.length).toBeGreaterThanOrEqual(95);
+    expect(layout.glyphCount).toBe(5);
+    expect(layout.advances.length).toBe(5);
   });
 
   it("each advance value is > 0 (non-zero glyph widths)", () => {

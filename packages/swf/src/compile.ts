@@ -665,25 +665,40 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   }
 
   // ---------------------------------------------------------------------------
-  // Font glyph subsetting ("Embed…" character ranges).
+  // Font glyph subsetting ("Embed…" character ranges) — auto-subset by default.
   //
   // For each embedded font we compute the set of printable-ASCII code points to
   // embed. A font is shared (deduplicated by fontKey) across every field that
-  // uses the same face/bold/italic, but the embed-range selection is per FIELD,
-  // so the embedded set is the UNION of every field's selection.
+  // uses the same face/bold/italic, but the embed selection is per FIELD, so the
+  // embedded set is the UNION of every field's selection.
   //
-  // CRITICAL (golden invariant): if NO field with a given font key has opted into
-  // subsetting (every such field has embedRanges === undefined), the set stays
-  // the full default (32–126) and output is byte-identical to embed-everything.
-  // Only when at least one field explicitly chooses ranges do we subset.
+  // DEFAULT for STATIC text (no explicit embedRanges): auto-subset to the glyphs
+  // the field's own text actually uses (plus space 0x20) — matching real Flash 8,
+  // which embeds only the on-stage glyphs for static text. Static text is
+  // immutable at runtime, so subsetting to its content is exact and safe. This is
+  // the single biggest SWF size win for text-heavy movies (full 95-glyph ASCII vs
+  // the handful actually used).
+  //
+  // DYNAMIC / INPUT text (no explicit embedRanges): renders with DEVICE fonts
+  // (UseOutlines=0), so its glyphs are NOT embedded — exactly as Flash 8 leaves
+  // dynamic/input fields un-embedded unless you opt in via the Embed dialog. Such
+  // a field contributes nothing to the embedded glyph set. (If a font face is used
+  // ONLY by such fields, the set would be empty; we fall back to the full default
+  // set below so the font tag is still well-formed for any outline path.)
+  //
+  // EXPLICIT embedRanges (task 1182): the field unions the named ranges, the
+  // specific "include these characters", AND its own text (plus space). Unchanged,
+  // for all text types — the user has opted into exactly that subset.
+  //
+  // Multiple fields sharing a font key union their selections (so e.g. golden's
+  // shared Arial embeds only the two static fields' glyphs; the dynamic "Score: 0"
+  // field on the same face contributes nothing and renders with a device font).
   //
   // embedCodePointsByKey: fontKey → sorted code-point array embedded for that font.
   // glyphIndexByKey:      fontKey → code-point → glyph-index map for DefineText.
   // ---------------------------------------------------------------------------
   const embedCodePointsByKey = new Map<string, number[]>();
   {
-    // Per font key: whether any field opted in, plus the accumulating union set.
-    const optedIn = new Set<string>();
     const unionByKey = new Map<string, Set<number>>();
     const accumulate = (layers: readonly import("@flash/core").Layer[]) => {
       for (const layer of layers) {
@@ -693,16 +708,24 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           for (const obj of flattenDisplayObjects(frame.displayObjects)) {
             if (obj.type !== "text") continue;
             const key = fontKey(obj.fontFamily, obj.bold, obj.italic);
-            if (obj.embedRanges === undefined) continue; // not opted in
-            optedIn.add(key);
             let set = unionByKey.get(key);
             if (!set) {
               set = new Set<number>();
               unionByKey.set(key, set);
             }
-            for (const c of computeEmbedCodePoints(obj.embedRanges, obj.embedChars, obj.text)) {
-              set.add(c);
+            if (obj.embedRanges !== undefined) {
+              // Explicit opt-in (task 1182): exactly the chosen ranges/chars/text.
+              for (const c of computeEmbedCodePoints(obj.embedRanges, obj.embedChars, obj.text)) {
+                set.add(c);
+              }
+            } else if (obj.textType === "static") {
+              // Auto-subset static text to {space} ∪ {its own text}. Passing []
+              // as ranges yields exactly that from computeEmbedCodePoints.
+              for (const c of computeEmbedCodePoints([], obj.embedChars, obj.text)) {
+                set.add(c);
+              }
             }
+            // Dynamic/input without explicit embedRanges: contributes nothing.
           }
         }
       }
@@ -712,13 +735,19 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
       if (item.itemType !== "symbol") continue;
       accumulate((item as import("@flash/core").Symbol).timeline.layers);
     }
-    for (const key of optedIn) {
-      const set = unionByKey.get(key)!;
-      embedCodePointsByKey.set(key, [...set].sort((a, b) => a - b));
+    for (const [key, set] of unionByKey) {
+      // A font face used only by un-embedded dynamic/input fields has an empty
+      // set; fall back to the full default so the font tag stays well-formed.
+      const cps = set.size > 0 ? [...set].sort((a, b) => a - b) : [...FULL_CODE_POINTS];
+      embedCodePointsByKey.set(key, cps);
     }
   }
 
-  /** Code points to embed for a font key (full default unless the user subsetted). */
+  /**
+   * Code points to embed for a font key. Every font face used by a text field has
+   * an auto-subsetted entry; the FULL_CODE_POINTS fallback only applies to font
+   * keys that somehow are not in the map (defensive — should not happen).
+   */
   const codePointsForKey = (key: string): readonly number[] =>
     embedCodePointsByKey.get(key) ?? FULL_CODE_POINTS;
 
