@@ -806,7 +806,8 @@ export function Shell(): React.ReactElement {
 
   // Resizable panes: right panel width, top timeline height, bottom dock height.
   const rightResize = useResize(240, 160, 600, "x");
-  const timelineResize = useResize(160, 60, 500, "y", true);
+  // Taller default/min/max to fit the Flash-8 38px rows + status bar chrome.
+  const timelineResize = useResize(300, 120, 760, "y", true);
   const bottomResize = useResize(180, 80, 600, "y");
 
   // Top timeline dock collapse state.

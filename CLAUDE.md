@@ -355,6 +355,19 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 
 ### Authoring UI
 
+- **Timeline panel layout spec lives in `docs/20-timeline-ui-layout.md`** — pixel-level
+  Flash 8 chrome (16px frame cells, 38px rows, 10px keyframe dot 24px-from-top, layer-row
+  column order, status-bar contents, inset readouts). Update it alongside `Timeline.tsx`.
+- **The Timeline panel does NOT own its outer height.** `Timeline.tsx` fills its parent
+  (`height:100%`); the visible height = `Shell.tsx` `timelineResize.size` (a `useResize`)
+  minus the 24px dock-tab bar (`bottomContent` is `flex:1`). To change default/min/max
+  timeline height, edit the `useResize(...)` call in Shell, not a constant in Timeline.
+  Drag-to-resize already exists via the Shell `hResizeHandle` between the dock and stage;
+  don't add a second splitter inside the panel. The Shell dock-tab already labels the
+  panel "Timeline", so the panel has no internal title bar (would double up).
+- **HMR preserves `useState` initial values**: changing a `useState(default)` won't take
+  effect on an already-mounted component via hot reload — do a full page reload to see a
+  new default. (Bit me verifying a new timeline default height.)
 - **MenuBar mousedown race**: menu items that dispatch actions must not unmount before
   the `click` event fires. Attach the `mousedown` handler to the overlay, not the item,
   or use `onMouseDown` + `e.preventDefault()` to keep focus until `onClick` fires.

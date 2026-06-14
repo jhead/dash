@@ -38,13 +38,20 @@ import { EaseCurveDialog } from "./EaseCurveDialog";
 // ---------------------------------------------------------------------------
 
 const LAYER_COL_WIDTH = 130;
-const FRAME_W = 7;
+/** Frame cell pitch: 15px cell + 1px right gridline (Flash 8 measured = 16). */
+const FRAME_W = 16;
 /** Width of each button-state column in button-symbol editing mode */
 const BUTTON_STATE_W = 60;
-const FRAME_H = 20;
+/** Row height inside borders — applies to both frame rows and layer rows. */
+const FRAME_H = 38;
 const RULER_H = 16;
-const PLAYBACK_BAR_H = 24;
+/** Timeline status bar height (onion/EMF toggles, readouts, H-scrollbar). */
+const STATUS_BAR_H = 24;
 const MIN_VISIBLE_FRAMES = 48;
+// Keyframe dot geometry (measured from Flash 8): a 10px circle that sits low in
+// the cell — 24px from the top, 4px from the bottom (24 + 10 + 4 = FRAME_H).
+const DOT_SIZE = 10;
+const DOT_BOTTOM = 4;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -278,15 +285,21 @@ function FrameCell({
         overflow: "visible",
       }}
     >
-      {/* Keyframe dot */}
+      {/* Keyframe dot — 10px circle sitting low in the cell (24px from top,
+          4px from bottom), per the Flash 8 measured geometry. */}
       {(state === "keyframe" || state === "blank-keyframe") && (
         <div
           style={{
-            width: 5,
-            height: 5,
+            position: "absolute",
+            bottom: DOT_BOTTOM,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: DOT_SIZE,
+            height: DOT_SIZE,
             borderRadius: "50%",
             background: state === "keyframe" ? "#222" : "transparent",
             border: "1px solid #222",
+            boxSizing: "border-box",
             flexShrink: 0,
             zIndex: 1,
           }}
@@ -640,7 +653,6 @@ export function Timeline({
   onFrameDoubleClick,
   onSelectedFrameRangeChange,
 }: TimelineProps): React.ReactElement {
-  const [loop, setLoop] = useState(true);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [layerContextMenu, setLayerContextMenu] = useState<LayerContextMenu | null>(null);
   // Track selected keyframe for ease editing
@@ -662,6 +674,11 @@ export function Timeline({
   const [editingName, setEditingName] = useState("");
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  // Modify Onion Markers dropdown (status bar)
+  const [onionMenuOpen, setOnionMenuOpen] = useState(false);
+  // Horizontal scroll tracking for the status-bar scrollbar (mirrors the
+  // frame grid's scrollLeft / scrollWidth / clientWidth).
+  const [hScroll, setHScroll] = useState({ left: 0, scrollWidth: 1, clientWidth: 1 });
 
   // In button-symbol editing mode we lock the frame area to exactly 4 columns
   const isButtonMode = symbolType === "button";
@@ -678,8 +695,6 @@ export function Timeline({
   isPlayingRef.current = isPlaying;
   const currentFrameRef = useRef(currentFrame);
   currentFrameRef.current = currentFrame;
-  const loopRef = useRef(loop);
-  loopRef.current = loop;
   const frameCountRef = useRef(frameCount);
   frameCountRef.current = frameCount;
 
@@ -695,6 +710,39 @@ export function Timeline({
     []
   );
 
+  // Mirror the frame grid's horizontal scroll metrics into state so the
+  // status-bar scrollbar can render and drive them.
+  const refreshHScroll = useCallback(() => {
+    const el = framesScrollRef.current;
+    if (!el) return;
+    setHScroll({
+      left: el.scrollLeft,
+      scrollWidth: Math.max(1, el.scrollWidth),
+      clientWidth: Math.max(1, el.clientWidth),
+    });
+  }, []);
+
+  // Keep hScroll metrics fresh as the frame count changes, and whenever the
+  // frame grid is resized (e.g. the timeline dock is dragged taller/shorter).
+  useEffect(() => {
+    refreshHScroll();
+    const el = framesScrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => refreshHScroll());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [refreshHScroll, frameCount, isButtonMode]);
+
+  // Center the playhead horizontally in the frame grid.
+  const centerPlayhead = useCallback(() => {
+    const el = framesScrollRef.current;
+    if (!el) return;
+    const colW = isButtonMode ? BUTTON_STATE_W : FRAME_W;
+    el.scrollLeft = Math.max(0, currentFrame * colW - el.clientWidth / 2);
+    refreshHScroll();
+  }, [currentFrame, isButtonMode, refreshHScroll]);
+
+
   // Playback is driven by the parent Shell via requestAnimationFrame.
   // Timeline receives currentFrame updates via onFrameChange calls from Shell.
 
@@ -708,7 +756,8 @@ export function Timeline({
         el.scrollLeft = Math.max(0, x - el.clientWidth / 2);
       }
     }
-  }, [currentFrame, isButtonMode]);
+    refreshHScroll();
+  }, [currentFrame, isButtonMode, refreshHScroll]);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -1077,8 +1126,9 @@ export function Timeline({
       style={{
         display: "flex",
         flexDirection: "column",
-        height: 180,
-        flexShrink: 0,
+        height: "100%",
+        minHeight: 0,
+        flex: 1,
         background: "#2d2d2d",
         borderTop: "1px solid #1a1a1a",
         outline: "none",
@@ -1086,30 +1136,8 @@ export function Timeline({
         position: "relative",
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "row",
-          alignItems: "center",
-          height: 22,
-          background: "#3a3a3a",
-          borderBottom: "1px solid #1a1a1a",
-          padding: "0 6px",
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            fontSize: 11,
-            color: "#c0c0c0",
-            fontWeight: "bold",
-            flex: 1,
-          }}
-        >
-          Timeline
-        </span>
-      </div>
+      {/* No internal title bar — the Shell's docking tab already labels this
+          panel "Timeline", matching Flash 8's single timeline title. */}
 
       {/* Body: layer list + frame area */}
       <div
@@ -1131,15 +1159,68 @@ export function Timeline({
             background: "#2d2d2d",
           }}
         >
-          {/* Layer header spacer (aligns with ruler) */}
+          {/* Layer column headers (aligns with ruler): show / lock / outline.
+              The three icons line up over the per-row toggle columns. */}
           <div
             style={{
               height: RULER_H,
               background: "#333",
               borderBottom: "1px solid #1a1a1a",
               flexShrink: 0,
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              paddingRight: 4,
+              gap: 2,
             }}
-          />
+          >
+            {/* Show / Hide all */}
+            <button
+              title="Show/Hide all layers"
+              onClick={() => {
+                const anyVisible = timeline.layers.some((l) => l.visible);
+                let t = timeline;
+                for (const l of timeline.layers) t = setLayerVisible(t, l.id, !anyVisible);
+                onTimelineChange(t);
+              }}
+              style={{ ...iconButtonStyle, color: "#c0c0c0" }}
+            >
+              👁
+            </button>
+            {/* Lock all */}
+            <button
+              title="Lock/Unlock all layers"
+              onClick={() => {
+                const anyUnlocked = timeline.layers.some((l) => !l.locked);
+                let t = timeline;
+                for (const l of timeline.layers) t = setLayerLocked(t, l.id, anyUnlocked);
+                onTimelineChange(t);
+              }}
+              style={{ ...iconButtonStyle, color: "#c0c0c0" }}
+            >
+              🔒
+            </button>
+            {/* Show all as outlines */}
+            <button
+              title="Show all layers as outlines"
+              onClick={() => {
+                const anyOff = timeline.layers.some((l) => !l.outlineMode);
+                let t = timeline;
+                for (const l of timeline.layers) t = setLayerOutlineMode(t, l.id, anyOff);
+                onTimelineChange(t);
+              }}
+              style={{
+                ...iconButtonStyle,
+                width: 11,
+                height: 11,
+                minWidth: 11,
+                border: "1px solid #c0c0c0",
+                background: "transparent",
+                borderRadius: 0,
+              }}
+            />
+          </div>
           {/* Layer rows */}
           <div
             ref={layerScrollRef}
@@ -1209,90 +1290,32 @@ export function Timeline({
                 ) : (
                   <span style={{ width: 12, flexShrink: 0, display: "inline-block" }} />
                 )}
-                {/* Eye icon */}
-                <button
-                  title={layer.visible ? "Hide layer" : "Show layer"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTimelineChange(
-                      setLayerVisible(timeline, layer.id, !layer.visible)
-                    );
-                  }}
-                  style={iconButtonStyle}
-                >
-                  {layer.visible ? "●" : "○"}
-                </button>
-                {/* Lock icon */}
-                <button
-                  title={layer.locked ? "Unlock layer" : "Lock layer"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTimelineChange(
-                      setLayerLocked(timeline, layer.id, !layer.locked)
-                    );
-                  }}
-                  style={iconButtonStyle}
-                >
-                  {layer.locked ? "L" : "U"}
-                </button>
-                {/* Outline mode toggle (colored square) */}
-                <button
-                  title={layer.outlineMode ? "Exit outline mode" : "Show as outlines"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const newMode = !layer.outlineMode;
-                    if (e.altKey || e.ctrlKey) {
-                      // Alt/Ctrl+click: toggle outline mode for all layers
-                      let t = timeline;
-                      for (const l of timeline.layers) {
-                        t = setLayerOutlineMode(t, l.id, newMode);
-                      }
-                      onTimelineChange(t);
-                    } else {
-                      onTimelineChange(
-                        setLayerOutlineMode(timeline, layer.id, newMode)
-                      );
-                    }
-                  }}
+                {/* Layer type icon (leftmost, before the name — Flash 8 order) */}
+                <span
+                  title={`Layer type: ${layer.type}`}
                   style={{
-                    ...iconButtonStyle,
-                    padding: 0,
-                    width: 10,
-                    height: 10,
-                    minWidth: 10,
+                    width: 12,
                     flexShrink: 0,
-                    border: layer.outlineMode
-                      ? `2px solid ${layer.outlineColor ?? "#0000ff"}`
-                      : `1px solid ${layer.outlineColor ?? "#0000ff"}`,
-                    background: layer.outlineMode
-                      ? "transparent"
-                      : layer.outlineColor ?? "#0000ff",
-                    borderRadius: 0,
+                    fontSize: 9,
+                    lineHeight: 1,
+                    textAlign: "center",
+                    color:
+                      layer.type === "guide" || layer.type === "guided"
+                        ? "#70a0ff"
+                        : layer.type === "mask" || layer.type === "masked"
+                        ? "#ff7070"
+                        : layer.type === "folder"
+                        ? "#d0c060"
+                        : "#999",
                   }}
-                />
-                {/* Layer type indicator (non-normal, non-folder types) */}
-                {layer.type !== "normal" && layer.type !== "folder" && (
-                  <span
-                    title={`Layer type: ${layer.type}`}
-                    style={{
-                      fontSize: 8,
-                      color:
-                        layer.type === "guide" || layer.type === "guided"
-                          ? "#70a0ff"
-                          : layer.type === "mask" || layer.type === "masked"
-                          ? "#ff7070"
-                          : "#aaa",
-                      flexShrink: 0,
-                      lineHeight: 1,
-                    }}
-                  >
-                    {layer.type === "guide" ? "G"
-                      : layer.type === "guided" ? "gd"
-                      : layer.type === "mask" ? "M"
-                      : layer.type === "masked" ? "mk"
-                      : ""}
-                  </span>
-                )}
+                >
+                  {layer.type === "folder" ? "📁"
+                    : layer.type === "guide" ? "⟂"
+                    : layer.type === "guided" ? "⤳"
+                    : layer.type === "mask" ? "◧"
+                    : layer.type === "masked" ? "▣"
+                    : "▦"}
+                </span>
                 {/* Layer name */}
                 {editingLayerId === layer.id ? (
                   <input
@@ -1330,97 +1353,85 @@ export function Timeline({
                     {layer.name}
                   </span>
                 )}
-                {/* Delete button */}
+                {/* Edit pencil — shown on the active layer (editable indicator) */}
+                <span
+                  style={{
+                    width: 12,
+                    flexShrink: 0,
+                    textAlign: "center",
+                    fontSize: 9,
+                    lineHeight: 1,
+                    color: "#e0b020",
+                    visibility: idx === activeLayerIndex ? "visible" : "hidden",
+                  }}
+                  title="Active layer"
+                >
+                  ✎
+                </span>
+                {/* Show / Hide column — red ✕ when hidden, dot when visible */}
                 <button
-                  title="Delete layer"
+                  title={layer.visible ? "Hide layer" : "Show layer"}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (timeline.layers.length <= 1) return;
-                    const hasContent = layer.frames.some(
-                      (f) => f.isKeyframe && !f.isEmpty && f.displayObjects.length > 0
+                    onTimelineChange(
+                      setLayerVisible(timeline, layer.id, !layer.visible)
                     );
-                    if (hasContent && !window.confirm("Delete layer with content?")) return;
-                    onTimelineChange(deleteLayer(timeline, layer.id));
-                    onActiveLayerChange?.(Math.max(0, idx - 1));
                   }}
-                  style={{ ...iconButtonStyle, color: "#c04040" }}
+                  style={{ ...iconButtonStyle, color: layer.visible ? "#888" : "#c04040" }}
                 >
-                  X
+                  {layer.visible ? "•" : "✕"}
                 </button>
+                {/* Lock column — padlock when locked, dot when unlocked */}
+                <button
+                  title={layer.locked ? "Unlock layer" : "Lock layer"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTimelineChange(
+                      setLayerLocked(timeline, layer.id, !layer.locked)
+                    );
+                  }}
+                  style={{ ...iconButtonStyle, color: layer.locked ? "#c0c0c0" : "#888" }}
+                >
+                  {layer.locked ? "🔒" : "•"}
+                </button>
+                {/* Outline color chip (rightmost) — toggles outline view */}
+                <button
+                  title={layer.outlineMode ? "Exit outline mode" : "Show as outlines"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newMode = !layer.outlineMode;
+                    if (e.altKey || e.ctrlKey) {
+                      // Alt/Ctrl+click: toggle outline mode for all layers
+                      let t = timeline;
+                      for (const l of timeline.layers) {
+                        t = setLayerOutlineMode(t, l.id, newMode);
+                      }
+                      onTimelineChange(t);
+                    } else {
+                      onTimelineChange(
+                        setLayerOutlineMode(timeline, layer.id, newMode)
+                      );
+                    }
+                  }}
+                  style={{
+                    ...iconButtonStyle,
+                    padding: 0,
+                    width: 11,
+                    height: 11,
+                    minWidth: 11,
+                    flexShrink: 0,
+                    border: layer.outlineMode
+                      ? `2px solid ${layer.outlineColor ?? "#0000ff"}`
+                      : `1px solid ${layer.outlineColor ?? "#0000ff"}`,
+                    background: layer.outlineMode
+                      ? "transparent"
+                      : layer.outlineColor ?? "#0000ff",
+                    borderRadius: 0,
+                  }}
+                />
               </div>
               );
             })}
-          </div>
-          {/* Add / Delete Layer buttons (hidden in button-symbol editing mode) */}
-          <div
-            style={{
-              height: 22,
-              flexShrink: 0,
-              borderTop: "1px solid #1a1a1a",
-              display: "flex",
-              alignItems: "center",
-              padding: "0 4px",
-              gap: 3,
-            }}
-          >
-            {!isButtonMode && (
-            <button
-              title="Add layer above active layer"
-              onClick={handleAddLayer}
-              style={{
-                fontSize: 12,
-                background: "#444",
-                color: "#c0c0c0",
-                border: "1px solid #555",
-                borderRadius: 2,
-                padding: "0 5px",
-                cursor: "pointer",
-                lineHeight: "18px",
-                minWidth: 20,
-              }}
-            >
-              +
-            </button>
-            )}
-            {!isButtonMode && (
-            <button
-              title="Add layer folder"
-              onClick={handleAddLayerFolder}
-              style={{
-                fontSize: 10,
-                background: "#444",
-                color: "#c0c0c0",
-                border: "1px solid #555",
-                borderRadius: 2,
-                padding: "0 4px",
-                cursor: "pointer",
-                lineHeight: "18px",
-                minWidth: 20,
-              }}
-            >
-              📁
-            </button>
-            )}
-            {!isButtonMode && (
-            <button
-              title="Delete active layer"
-              onClick={handleDeleteActiveLayer}
-              disabled={timeline.layers.length <= 1}
-              style={{
-                fontSize: 12,
-                background: "#444",
-                color: timeline.layers.length <= 1 ? "#666" : "#c0c0c0",
-                border: "1px solid #555",
-                borderRadius: 2,
-                padding: "0 5px",
-                cursor: timeline.layers.length <= 1 ? "default" : "pointer",
-                lineHeight: "18px",
-                minWidth: 20,
-              }}
-            >
-              −
-            </button>
-            )}
           </div>
         </div>
 
@@ -1430,10 +1441,12 @@ export function Timeline({
           onScroll={(e) => {
             const el = e.target as HTMLElement;
             syncScroll("frames", el.scrollTop);
+            refreshHScroll();
           }}
           style={{
             flex: 1,
-            overflow: "auto",
+            overflowX: "hidden",
+            overflowY: "auto",
             position: "relative",
           }}
         >
@@ -1448,7 +1461,9 @@ export function Timeline({
             <div
               onMouseDown={isButtonMode ? undefined : handleRulerMouseDown}
               style={{
-                position: "relative",
+                position: "sticky",
+                top: 0,
+                zIndex: 5,
                 display: "flex",
                 flexDirection: "row",
                 height: RULER_H,
@@ -1510,7 +1525,8 @@ export function Timeline({
                         paddingLeft: 1,
                       }}
                     >
-                      {i % 5 === 0 && (
+                      {/* Label frame 1, then every 5th frame (5, 10, 15, …) */}
+                      {(i === 0 || (i + 1) % 5 === 0) && (
                         <span
                           style={{
                             fontSize: 7,
@@ -1682,20 +1698,82 @@ export function Timeline({
         </div>
       </div>
 
-      {/* Playback controls (or button state info bar) */}
+      {/* Pinned bottom bar: layer tools (under the layer column) on the left,
+          timeline status bar (under the frame grid) on the right — Flash 8 has
+          these on a single row, aligned to their columns above. */}
       <div
         style={{
           display: "flex",
           flexDirection: "row",
-          alignItems: "center",
-          height: PLAYBACK_BAR_H,
-          background: "#333",
-          borderTop: "1px solid #1a1a1a",
           flexShrink: 0,
-          padding: "0 6px",
-          gap: 4,
+          borderTop: "1px solid #1a1a1a",
         }}
       >
+        {/* Layer footer: Insert Layer · Add Motion Guide · Insert Layer Folder
+            (left), Delete Layer (trash) on the right. */}
+        <div
+          style={{
+            width: LAYER_COL_WIDTH,
+            flexShrink: 0,
+            height: STATUS_BAR_H,
+            background: "#333",
+            borderRight: "1px solid #1a1a1a",
+            display: "flex",
+            alignItems: "center",
+            padding: "0 5px",
+            gap: 5,
+            boxSizing: "border-box",
+          }}
+        >
+          {!isButtonMode && (
+            <>
+              <button title="Insert Layer" onClick={handleAddLayer} style={layerFooterBtnStyle}>
+                ⊞
+              </button>
+              <button
+                title="Add Motion Guide"
+                onClick={() => {
+                  const ai = activeLayerIndex ?? 0;
+                  handleAddMotionGuide(timeline.layers[ai]?.id ?? "", ai);
+                }}
+                style={layerFooterBtnStyle}
+              >
+                ⤳
+              </button>
+              <button title="Insert Layer Folder" onClick={handleAddLayerFolder} style={layerFooterBtnStyle}>
+                📁
+              </button>
+              <div style={{ flex: 1 }} />
+              <button
+                title="Delete Layer"
+                onClick={handleDeleteActiveLayer}
+                disabled={timeline.layers.length <= 1}
+                style={{
+                  ...layerFooterBtnStyle,
+                  color: timeline.layers.length <= 1 ? "#666" : "#c0c0c0",
+                  cursor: timeline.layers.length <= 1 ? "default" : "pointer",
+                }}
+              >
+                🗑
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Status bar */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            flex: 1,
+            minWidth: 0,
+            height: STATUS_BAR_H,
+            background: "#333",
+            padding: "0 6px",
+            gap: 4,
+          }}
+        >
         {isButtonMode ? (
           /* In button-symbol mode show state name and arrow navigation only */
           <>
@@ -1724,58 +1802,14 @@ export function Timeline({
           </>
         ) : (
           /* Normal playback controls */
+          /* Flash 8 timeline status bar (no playback transport — that lived in
+             the separate Controller). Left: frame-view toggles. Right: inset
+             readouts + horizontal scrollbar. */
           <>
-            {/* Go to first */}
-            <PlayBtn
-              title="Go to first frame"
-              onClick={() => { onFrameChange(0); }}
-            >
-              |&lt;
+            {/* Center Frame */}
+            <PlayBtn title="Center Frame" onClick={centerPlayhead}>
+              ⊟
             </PlayBtn>
-            {/* Step back */}
-            <PlayBtn
-              title="Step back one frame"
-              onClick={() => onFrameChange(Math.max(0, currentFrame - 1))}
-            >
-              &lt;
-            </PlayBtn>
-            {/* Play/Stop */}
-            <PlayBtn
-              title={isPlaying ? "Stop" : "Play"}
-              onClick={() => onPlayingChange(!isPlaying)}
-              active={isPlaying}
-            >
-              {isPlaying ? "||" : ">"}
-            </PlayBtn>
-            {/* Step forward */}
-            <PlayBtn
-              title="Step forward one frame"
-              onClick={() =>
-                onFrameChange(Math.min(frameCount - 1, currentFrame + 1))
-              }
-            >
-              &gt;
-            </PlayBtn>
-            {/* Go to last */}
-            <PlayBtn
-              title="Go to last frame"
-              onClick={() => onFrameChange(frameCount - 1)}
-            >
-              &gt;|
-            </PlayBtn>
-
-            <div style={{ width: 8 }} />
-
-            {/* Loop */}
-            <PlayBtn
-              title={loop ? "Loop: on" : "Loop: off"}
-              onClick={() => setLoop((l) => !l)}
-              active={loop}
-            >
-              Loop
-            </PlayBtn>
-
-            <div style={{ width: 8 }} />
 
             {/* Onion Skin toggle */}
             <PlayBtn
@@ -1783,7 +1817,7 @@ export function Timeline({
               onClick={() => onToggleOnionSkin?.()}
               active={onionSkinEnabled}
             >
-              OS
+              ◓
             </PlayBtn>
 
             {/* Onion Skin Outlines toggle */}
@@ -1792,7 +1826,7 @@ export function Timeline({
               onClick={() => onToggleOnionSkinOutlines?.()}
               active={onionSkinOutlines}
             >
-              OSO
+              ◑
             </PlayBtn>
 
             {/* Edit Multiple Frames toggle */}
@@ -1801,31 +1835,94 @@ export function Timeline({
               onClick={() => onToggleEditMultipleFrames?.()}
               active={editMultipleFrames}
             >
-              EMF
+              ▥
             </PlayBtn>
+
+            {/* Modify Onion Markers menu */}
+            <div style={{ position: "relative", display: "flex" }}>
+              <PlayBtn
+                title="Modify Onion Markers"
+                onClick={() => setOnionMenuOpen((o) => !o)}
+                active={onionMenuOpen}
+              >
+                ⟦⟧
+              </PlayBtn>
+              {onionMenuOpen && (
+                <div
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    position: "absolute",
+                    bottom: STATUS_BAR_H - 2,
+                    left: 0,
+                    background: "#2d2d2d",
+                    border: "1px solid #1a1a1a",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+                    zIndex: 20,
+                    minWidth: 130,
+                    padding: "2px 0",
+                  }}
+                >
+                  {([
+                    ["Onion 2", 2, 2],
+                    ["Onion 5", 5, 5],
+                    ["Onion All", currentFrame, frameCount],
+                  ] as const).map(([label, before, after]) => (
+                    <div
+                      key={label}
+                      onClick={() => {
+                        onOnionRangeChange?.(before, after);
+                        if (!onionSkinEnabled) onToggleOnionSkin?.();
+                        setOnionMenuOpen(false);
+                      }}
+                      style={{
+                        fontSize: 10,
+                        color: "#c0c0c0",
+                        padding: "3px 10px",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#3a5080")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      {label}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div style={{ flex: 1 }} />
 
-            {/* Frame counter input — uses unpadded content frame count */}
+            {/* Current Frame (editable) */}
             <FrameCounterInput
               currentFrame={currentFrame}
               frameCount={displayFrameCount}
               onFrameChange={onFrameChange}
             />
 
-            {/* FPS display */}
-            <span
-              style={{
-                fontSize: 10,
-                color: "#888",
-                marginLeft: 6,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {frameRate} fps
+            {/* Frame Rate (inset readout) */}
+            <span style={insetReadoutStyle} title="Frame rate">
+              {frameRate.toFixed(1)} fps
             </span>
+
+            {/* Elapsed Time (inset readout) */}
+            <span style={insetReadoutStyle} title="Elapsed time at current frame">
+              {(currentFrame / Math.max(1, frameRate)).toFixed(1)}s
+            </span>
+
+            {/* Horizontal scrollbar — drives the frame grid */}
+            <HScrollBar
+              left={hScroll.left}
+              scrollWidth={hScroll.scrollWidth}
+              clientWidth={hScroll.clientWidth}
+              onScrollTo={(x) => {
+                if (framesScrollRef.current) framesScrollRef.current.scrollLeft = x;
+                refreshHScroll();
+              }}
+            />
           </>
         )}
+        </div>
       </div>
 
       {/* Ease control — shown when a tween keyframe is selected */}
@@ -2215,6 +2312,36 @@ const iconButtonStyle: React.CSSProperties = {
   height: 14,
 };
 
+/** Flat icon button used in the layer footer (insert layer / guide / folder / trash). */
+const layerFooterBtnStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  color: "#c0c0c0",
+  cursor: "pointer",
+  padding: "2px 3px",
+  fontSize: 13,
+  lineHeight: 1,
+  flexShrink: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+/** Inset/sunken numeric readout used in the timeline status bar. */
+const insetReadoutStyle: React.CSSProperties = {
+  fontSize: 10,
+  color: "#222",
+  background: "#cfcfcf",
+  border: "1px solid #888",
+  borderTopColor: "#555",
+  borderLeftColor: "#555",
+  borderRadius: 1,
+  padding: "1px 5px",
+  lineHeight: "14px",
+  whiteSpace: "nowrap",
+  textAlign: "center",
+};
+
 function FrameCounterInput({
   currentFrame,
   frameCount,
@@ -2268,18 +2395,11 @@ function FrameCounterInput({
 
   return (
     <span
-      title="Click to jump to frame"
+      title="Current frame — click to jump"
       onClick={() => { setEditing(true); setInputValue(String(display)); }}
-      style={{
-        fontSize: 10,
-        color: "#aaa",
-        minWidth: 40,
-        textAlign: "right",
-        cursor: "text",
-        userSelect: "none",
-      }}
+      style={{ ...insetReadoutStyle, minWidth: 28, cursor: "text", userSelect: "none" }}
     >
-      {display} / {frameCount}
+      {display}
     </span>
   );
 }
@@ -2312,6 +2432,81 @@ function PlayBtn({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Horizontal scrollbar for the frame grid, hosted in the timeline status bar.
+ * Reflects the grid's scrollLeft/scrollWidth/clientWidth and drives scrollLeft
+ * via `onScrollTo` when the thumb is dragged or the track is clicked.
+ */
+function HScrollBar({
+  left,
+  scrollWidth,
+  clientWidth,
+  onScrollTo,
+}: {
+  left: number;
+  scrollWidth: number;
+  clientWidth: number;
+  onScrollTo: (scrollLeft: number) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const maxScroll = Math.max(0, scrollWidth - clientWidth);
+  const hasOverflow = maxScroll > 1;
+  const thumbPct = Math.max(8, Math.min(100, (clientWidth / scrollWidth) * 100));
+  const leftPct = hasOverflow ? (left / scrollWidth) * 100 : 0;
+
+  const startDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const track = trackRef.current;
+    if (!track || !hasOverflow) return;
+    const trackW = track.clientWidth;
+    const startX = e.clientX;
+    const startLeft = left;
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const deltaScroll = (dx / trackW) * scrollWidth;
+      onScrollTo(Math.max(0, Math.min(maxScroll, startLeft + deltaScroll)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div
+      ref={trackRef}
+      style={{
+        position: "relative",
+        width: 150,
+        height: 14,
+        flexShrink: 0,
+        background: "#222",
+        border: "1px solid #1a1a1a",
+        borderRadius: 2,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        onMouseDown={startDrag}
+        style={{
+          position: "absolute",
+          top: 1,
+          bottom: 1,
+          left: `${leftPct}%`,
+          width: `${thumbPct}%`,
+          background: hasOverflow ? "#6a6a6a" : "#444",
+          border: "1px solid #808080",
+          borderRadius: 2,
+          cursor: hasOverflow ? "grab" : "default",
+        }}
+      />
+    </div>
   );
 }
 

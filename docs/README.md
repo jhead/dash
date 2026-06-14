@@ -50,3 +50,4 @@ Start with `00-overview-and-architecture.md`, then read by domain.
 | 17 | [Advanced & Specialized](./17-advanced-specialized.md) | Accessibility, screens, data, printing |
 | 18 | [Verification & Agent Automation](./18-verification-and-automation.md) | E2E test harness, SWF oracles, automation bridge, JSFL |
 | 19 | [Agent Control Interface](./19-agent-interface.md) | MCP server + thin CLI: live editor control for LLM agents |
+| 20 | [Timeline Panel UI Layout](./20-timeline-ui-layout.md) | Pixel-level chrome spec for the docked Timeline panel |
