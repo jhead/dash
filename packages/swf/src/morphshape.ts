@@ -250,15 +250,17 @@ function computeGradientMatrixComponents(
   bounds: { xMin: number; xMax: number; yMin: number; yMax: number }
 ): { a: number; b: number; c: number; d: number; tx: number; ty: number } {
   if (fill.matrix) {
-    // Explicit matrix from FLA import.
-    // FLA matrix: a/b/c/d in pixels per gradient-unit (gradient spans ±1 in FLA = ±16384 twips in SWF)
-    // Conversion: SWF_fixed = FLA_px_per_gu * 20 / 16384 * 65536 = FLA * 80
-    const FLA_TO_SWF = 80;
+    // Explicit matrix from FLA import. The FLA binary stores gradient matrix
+    // a/b/c/d in the SAME SWF 16.16 float units as SWF (the FLA reader divides the
+    // raw int by 65536), so the model floats ARE the SWF MATRIX float values; tx/ty
+    // are in pixels. Convert with a plain 16.16 scale + px→twips (task 1198 — see
+    // shapes.ts for the golden-FLA/SWF evidence; the previous *80 factor collapsed
+    // the matrix to ~0 and rendered the gradient solid/non-smooth).
     return {
-      a: Math.round(fill.matrix.a * FLA_TO_SWF),
-      b: Math.round(fill.matrix.b * FLA_TO_SWF),
-      c: Math.round(fill.matrix.c * FLA_TO_SWF),
-      d: Math.round(fill.matrix.d * FLA_TO_SWF),
+      a: Math.round(fill.matrix.a * 65536),
+      b: Math.round(fill.matrix.b * 65536),
+      c: Math.round(fill.matrix.c * 65536),
+      d: Math.round(fill.matrix.d * 65536),
       tx: Math.round(fill.matrix.tx * 20),
       ty: Math.round(fill.matrix.ty * 20),
     };

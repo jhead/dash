@@ -595,24 +595,31 @@ export function encodeDefineShape4(
       // Gradient matrix: maps gradient space (-16384..16384 twips) to shape space.
       //
       // When the fill carries an explicit matrix (preserved from FLA import), convert it
-      // directly. The FLA matrix components a/b/c/d are in pixels per gradient-unit
-      // (gradient space spans ±1 in FLA, ±16384 twips in SWF); tx/ty are in pixels.
+      // directly. The FLA binary stores the gradient matrix a/b/c/d in the SAME 16.16
+      // fixed-point units as SWF (the FLA reader divides the raw int by 65536, so the
+      // model floats ARE the SWF MATRIX float values). tx/ty are stored in pixels.
       //
-      // Conversion to SWF 16.16 fixed-point twips:
-      //   SWF_a_fixed = round(FLA_a * 20 / 16384 * 65536) = round(FLA_a * 80)
-      //   SWF_tx      = round(FLA_tx * 20)   [pixels → twips]
+      // Verified against the golden FLA/SWF pair (task 1198): the PlayButton face
+      // gradient has model matrix {a:0, b:0.0244140625, c:-0.0750732421875, d:0,
+      // tx:0.05, ty:6}, and golden.swf's published gradient MATRIX decodes to the
+      // IDENTICAL floats {scaleX:0, skew0:0.0244140625, skew1:-0.0750732421875,
+      // scaleY:0, translateX:1twip, translateY:120twip}. So the conversion is a plain
+      // 16.16 scale for a/b/c/d and px→twips for tx/ty:
+      //   SWF_a_fixed = round(model_a * 65536)
+      //   SWF_tx      = round(model_tx * 20)   [pixels → twips]
+      //
+      // (The previous *80 factor assumed a/b/c/d were "pixels per ±1 gradient unit";
+      // that collapsed the matrix to ~0, making the gradient render solid/non-smooth.)
       //
       // When no matrix is present (authoring-UI gradient), auto-fit to the bounding box.
 
       let a: number, b: number, c: number, d: number, tx: number, ty: number;
       if (fill.matrix) {
-        // Explicit matrix from FLA import — convert pixel-space to SWF twips.
-        // Factor = 20 (px→twips) / 16384 (gradient-space normalization) * 65536 (16.16 scale) = 80
-        const FLA_TO_SWF = 80;
-        a = Math.round(fill.matrix.a * FLA_TO_SWF);
-        b = Math.round(fill.matrix.b * FLA_TO_SWF);
-        c = Math.round(fill.matrix.c * FLA_TO_SWF);
-        d = Math.round(fill.matrix.d * FLA_TO_SWF);
+        // Explicit matrix from FLA import — a/b/c/d are already SWF 16.16 float values.
+        a = Math.round(fill.matrix.a * 65536);
+        b = Math.round(fill.matrix.b * 65536);
+        c = Math.round(fill.matrix.c * 65536);
+        d = Math.round(fill.matrix.d * 65536);
         tx = Math.round(fill.matrix.tx * 20);
         ty = Math.round(fill.matrix.ty * 20);
       } else {

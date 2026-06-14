@@ -279,20 +279,41 @@ function renderShape(
         ctx.fill("nonzero");
       }
     } else if (path.fill.type === "linear-gradient") {
-      // Compute bounding box for gradient coordinates
-      const pts = [path.start, ...path.segments.map((s) => s.to)];
-      const xs = pts.map((p) => p.x);
-      const ys = pts.map((p) => p.y);
-      const bx1 = Math.min(...xs), by1 = Math.min(...ys);
-      const bx2 = Math.max(...xs), by2 = Math.max(...ys);
-      const cx = (bx1 + bx2) / 2;
-      const cy = (by1 + by2) / 2;
-      const halfLen = Math.max((bx2 - bx1), (by2 - by1)) / 2;
-      const rad = (path.fill.angle * Math.PI) / 180;
-      const gx1 = cx - Math.cos(rad) * halfLen;
-      const gy1 = cy - Math.sin(rad) * halfLen;
-      const gx2 = cx + Math.cos(rad) * halfLen;
-      const gy2 = cy + Math.sin(rad) * halfLen;
+      let gx1: number, gy1: number, gx2: number, gy2: number;
+      if (path.fill.matrix) {
+        // Explicit gradient transform preserved from FLA import. The matrix maps
+        // SWF gradient-space → shape-space: the gradient runs along the gradient
+        // x-axis from -16384 to +16384 twips. Components a/b/c/d are SWF 16.16
+        // floats (twips screen per twip gradient); tx/ty are in pixels. Transform
+        // the two axis endpoints into local pixel space so the canvas gradient
+        // matches Flash/Ruffle instead of a bounding-box auto-fit.
+        const GRAD_HALF_TWIPS = 16384;
+        const m = path.fill.matrix;
+        // endpoint at gradient-x = ±GRAD_HALF (gradient-y = 0):
+        //   screen_twips = a*x_g + tx_twips (x), b*x_g + ty_twips (y)
+        // divide by 20 → px. tx/ty already in px so add directly.
+        const dxPx = (m.a * GRAD_HALF_TWIPS) / 20;
+        const dyPx = (m.b * GRAD_HALF_TWIPS) / 20;
+        gx1 = m.tx - dxPx;
+        gy1 = m.ty - dyPx;
+        gx2 = m.tx + dxPx;
+        gy2 = m.ty + dyPx;
+      } else {
+        // Compute bounding box for gradient coordinates
+        const pts = [path.start, ...path.segments.map((s) => s.to)];
+        const xs = pts.map((p) => p.x);
+        const ys = pts.map((p) => p.y);
+        const bx1 = Math.min(...xs), by1 = Math.min(...ys);
+        const bx2 = Math.max(...xs), by2 = Math.max(...ys);
+        const cx = (bx1 + bx2) / 2;
+        const cy = (by1 + by2) / 2;
+        const halfLen = Math.max((bx2 - bx1), (by2 - by1)) / 2;
+        const rad = (path.fill.angle * Math.PI) / 180;
+        gx1 = cx - Math.cos(rad) * halfLen;
+        gy1 = cy - Math.sin(rad) * halfLen;
+        gx2 = cx + Math.cos(rad) * halfLen;
+        gy2 = cy + Math.sin(rad) * halfLen;
+      }
 
       const spreadMode = path.fill.spreadMode ?? "extend";
       if (spreadMode === "extend") {
@@ -385,15 +406,30 @@ function renderShape(
       // widely supported. Currently renders in sRGB for both modes.
       ctx.fill("nonzero");
     } else if (path.fill.type === "radial-gradient") {
-      // Compute bounding box center + radius
+      // Bounding box (always needed for the reflect/repeat offscreen sizing).
       const pts = [path.start, ...path.segments.map((s) => s.to)];
       const xs = pts.map((p) => p.x);
       const ys = pts.map((p) => p.y);
       const bx1 = Math.min(...xs), by1 = Math.min(...ys);
       const bx2 = Math.max(...xs), by2 = Math.max(...ys);
-      const cx = (bx1 + bx2) / 2;
-      const cy = (by1 + by2) / 2;
-      const r = Math.max((bx2 - bx1), (by2 - by1)) / 2;
+      let cx: number, cy: number, r: number;
+      if (path.fill.matrix) {
+        // Explicit gradient transform from FLA import. The radial gradient is the
+        // unit circle of radius 16384 twips in gradient space, mapped by the matrix
+        // to shape space. Center = matrix translate (px); radius = |gradient x-axis|
+        // mapped to px. a/b/c/d are SWF 16.16 floats (twips/twip); tx/ty are px.
+        const GRAD_HALF_TWIPS = 16384;
+        const m = path.fill.matrix;
+        cx = m.tx;
+        cy = m.ty;
+        // radius = length of the transformed gradient x-axis vector, in px.
+        r = (Math.hypot(m.a, m.b) * GRAD_HALF_TWIPS) / 20;
+      } else {
+        // Bounding box center + radius.
+        cx = (bx1 + bx2) / 2;
+        cy = (by1 + by2) / 2;
+        r = Math.max((bx2 - bx1), (by2 - by1)) / 2;
+      }
       const focalX = cx + path.fill.focalPoint * r;
       const focalY = cy;
 

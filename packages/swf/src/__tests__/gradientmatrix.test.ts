@@ -529,9 +529,10 @@ function readFirstGradientMatrixFull(
 describe("SWF gradient matrix — explicit matrix from FLA import", () => {
   it("linear gradient with explicit matrix uses exact FLA matrix (not bounding-box auto-fit)", () => {
     // Simulate a gradient that was imported from FLA with a specific matrix.
-    // FLA matrix: a=410 (half the 820px default Flash gradient width at 0°),
-    // b=0, c=0, d=410, tx=100, ty=200 (offset center).
-    // Expected SWF fixed-point: a = round(410 * 80) = 32800; tx = round(100*20) = 2000.
+    // The FLA binary stores gradient matrix a/b/c/d in SWF 16.16 float units, so the
+    // model floats ARE the SWF MATRIX float values; tx/ty are pixels (task 1198).
+    // Use a=d=0.5 (a half-scale gradient) → SWF 16.16 int = round(0.5*65536)=32768.
+    // tx=100px → round(100*20)=2000 twips.
     const shape: Shape = {
       id: "explicit-matrix-shape",
       paths: [
@@ -546,7 +547,7 @@ describe("SWF gradient matrix — explicit matrix from FLA import", () => {
           fill: {
             type: "linear-gradient",
             angle: 0,
-            matrix: { a: 410, b: 0, c: 0, d: 410, tx: 100, ty: 200 },
+            matrix: { a: 0.5, b: 0, c: 0, d: 0.5, tx: 100, ty: 200 },
             stops: [
               { ratio: 0, color: { r: 255, g: 0, b: 0, a: 255 } },
               { ratio: 255, color: { r: 0, g: 0, b: 255, a: 255 } },
@@ -574,10 +575,10 @@ describe("SWF gradient matrix — explicit matrix from FLA import", () => {
     const m = readFirstGradientMatrixFull(shapeTags[0].body);
     expect(m).not.toBeNull();
 
-    // a = round(410 * 80) = 32800
-    expect(m!.a).toBe(32800);
-    // d = round(410 * 80) = 32800
-    expect(m!.d).toBe(32800);
+    // a = round(0.5 * 65536) = 32768
+    expect(m!.a).toBe(32768);
+    // d = round(0.5 * 65536) = 32768
+    expect(m!.d).toBe(32768);
     // b = c = 0 (no rotation)
     expect(m!.b).toBe(0);
     expect(m!.c).toBe(0);
@@ -589,7 +590,7 @@ describe("SWF gradient matrix — explicit matrix from FLA import", () => {
 
   it("radial gradient with explicit matrix uses exact FLA matrix", () => {
     // A radial gradient with non-centered origin: tx=150px, ty=75px (off-center).
-    // FLA matrix a=d=300 (custom radius), b=c=0.
+    // FLA matrix a=d=0.25 (custom radius scale, SWF 16.16 float units), b=c=0.
     const shape: Shape = {
       id: "radial-explicit-matrix-shape",
       paths: [
@@ -604,7 +605,7 @@ describe("SWF gradient matrix — explicit matrix from FLA import", () => {
           fill: {
             type: "radial-gradient",
             focalPoint: 0,
-            matrix: { a: 300, b: 0, c: 0, d: 300, tx: 150, ty: 75 },
+            matrix: { a: 0.25, b: 0, c: 0, d: 0.25, tx: 150, ty: 75 },
             stops: [
               { ratio: 0, color: { r: 255, g: 255, b: 0, a: 255 } },
               { ratio: 255, color: { r: 0, g: 0, b: 255, a: 255 } },
@@ -632,10 +633,10 @@ describe("SWF gradient matrix — explicit matrix from FLA import", () => {
     const m = readFirstGradientMatrixFull(shapeTags[0].body);
     expect(m).not.toBeNull();
 
-    // a = round(300 * 80) = 24000
-    expect(m!.a).toBe(24000);
-    // d = round(300 * 80) = 24000
-    expect(m!.d).toBe(24000);
+    // a = round(0.25 * 65536) = 16384
+    expect(m!.a).toBe(16384);
+    // d = round(0.25 * 65536) = 16384
+    expect(m!.d).toBe(16384);
     // tx = round(150 * 20) = 3000 twips — NOT the bounding box center (4000)
     expect(m!.tx).toBe(3000);
     // ty = round(75 * 20) = 1500 twips — NOT the bounding box center (2000)
