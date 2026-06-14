@@ -21,11 +21,17 @@
  * missing, permission is denied, or a family/glyph isn't found, the caller falls
  * back to the bundled weight/style tables (`bundledGlyphSource`).
  */
-// opentype.js is a CommonJS module: a named ESM import (`{ parse }`) fails at
-// runtime under raw Node ESM. Import the default export and read `parse` off it,
-// which works in browsers (bundled), vitest, and Node ESM alike.
-import opentype, { type PathCommand } from "opentype.js";
-const parseFont = opentype.parse;
+// opentype.js is a CommonJS module and its ESM interop shape differs by
+// environment: Vite's optimized browser dep exposes `parse` directly on the
+// namespace and has NO `default` export (a default import crashes app load),
+// while raw Node ESM (golden-parity, vitest) wraps the module under `default`
+// and does NOT surface the named `parse`. Import the namespace and resolve
+// `parse` from whichever shape is present so all three work.
+import * as opentypeModule from "opentype.js";
+import type { PathCommand } from "opentype.js";
+const parseFont =
+  (opentypeModule as { default?: { parse: typeof opentypeModule.parse } }).default?.parse ??
+  opentypeModule.parse;
 import {
   GLYPH_EM,
   GLYPH_ASCENT,
