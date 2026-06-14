@@ -27,3 +27,13 @@ export {
   VideoCodec,
 } from "./video.js";
 export type { FlvVideoFrame, FlvVideoStream, VideoCodecId } from "./video.js";
+export {
+  resolveFontGlyphSources,
+  bundledGlyphSource,
+  glyphSourceFromFontBytes,
+  resolveSystemGlyphSource,
+  pickLocalFace,
+  hasLocalFontAccess,
+} from "./font-extract.js";
+export type { GlyphSource, FontFaceRequest } from "./font-extract.js";
+export { collectFontFaceRequests } from "./compile.js";

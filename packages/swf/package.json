@@ -19,10 +19,10 @@
   },
   "dependencies": {
     "@flash/core": "workspace:*",
-    "fflate": "^0.8.3"
+    "fflate": "^0.8.3",
+    "opentype.js": "^2.0.0"
   },
   "devDependencies": {
-    "opentype.js": "^2.0.0",
     "typescript": "^5.5.3",
     "vitest": "^2.1.9"
   }

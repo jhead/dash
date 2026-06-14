@@ -285,6 +285,34 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   with only invisible content both screenshot as pure white. E2E oracles should assert
   every screenshot is non-blank (diff vs a white reference > threshold) in addition to
   comparing screenshots to each other.
+- **Publish-time system-font embedding (task 1200)**: Flash embedded the author's REAL
+  system-font outlines into DefineFont2; we now do the same via the browser **Local Font
+  Access API** (`window.queryLocalFonts()`) — pure browser, no Rust. Architecture: the
+  font encoder (`fonts.ts` `encodeDefineFont2`) takes an optional `GlyphSource`
+  (em/ascent/descent + `path(code)`/`advance(code)`); `font-extract.ts` builds one from
+  the matched installed face's TTF bytes (`fd.blob() → opentype.parse → getPath`,
+  cubic→quad split, scaled into the encoder's 1024 EM via `getPath`'s size arg). The
+  publish flow (`usePublish.ts`) runs an ASYNC pre-pass `resolveFontGlyphSources(...)`
+  BEFORE the sync `compileDocument` (mirroring the bitmap-pixel pre-decode) and passes
+  the result via `CompileOptions.fontGlyphSources` (keyed by `fontKey`). `compileDocument`
+  STAYS SYNCHRONOUS — golden-parity and unit tests call it directly with no map, getting
+  the bundled fallback. Hard-won specifics:
+  - **`queryLocalFonts()` needs a user gesture + permission** and CANNOT be granted in
+    headless Chromium, so the LIVE path is unit-test-only (mock the API, inject a known
+    TTF's bytes as the "system font"); structural swf-dump confirms the DefineFont2 is
+    built from injected outlines. Only the bundled FALLBACK is observable in Ruffle e2e.
+  - **opentype.js is CommonJS** — a named ESM import (`import { parse }`) throws under
+    raw Node ESM (`golden-parity.mjs`) even though vitest/esbuild tolerate it. Use
+    `import opentype from "opentype.js"; const parseFont = opentype.parse;`. No `@types`
+    ship; add a local `opentype.d.ts` ambient module shim.
+  - **Bundled fallback is now weight/style-aware**: `gen-glyphdata.mjs` emits FOUR
+    variant tables (regular/bold/italic/boldItalic) from bundled Noto Sans TTFs (OFL).
+    The canonical static bold/italic are EM=1000 while the pre-existing regular subset is
+    EM=1024 — `getPath(0,0,1024)` normalizes every variant into the same 1024 EM box, and
+    advances are scaled by `1024/unitsPerEm`. Regenerating keeps the REGULAR table
+    byte-identical to the old single-variant data (verified), so golden-parity does not
+    regress; bold golden title now embeds bold Noto (e.g. 'T' advance 11860 vs regular
+    11380 at the 20× DefineFont3 scale).
 
 ### AS2 / AVM1 compiler
 

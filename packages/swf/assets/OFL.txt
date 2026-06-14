@@ -1,0 +1,20 @@
+Noto Sans is licensed under the SIL Open Font License, Version 1.1.
+
+The bundled font files in this directory:
+
+  NotoSans.ttf            (Regular — pre-existing ASCII subset, unitsPerEm 1024)
+  NotoSans-Bold.ttf       (Bold)
+  NotoSans-Italic.ttf     (Italic)
+  NotoSans-BoldItalic.ttf (Bold Italic)
+
+are derived from Google's Noto Sans family
+(https://github.com/googlefonts/noto-fonts), distributed under the SIL Open
+Font License, Version 1.1 (https://scripts.sil.org/OFL).
+
+These files are used ONLY as a build-time source for vector glyph outlines that
+are baked into `src/glyphdata.ts` (the runtime never ships the TTFs). They serve
+as the weight/style-aware fallback when the browser Local Font Access API
+(`window.queryLocalFonts()`) is unavailable or permission is denied, so that
+bold/italic text still renders with the correct weight/slant.
+
+Full OFL text: https://openfontlicense.org/

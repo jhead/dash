@@ -1,6 +1,6 @@
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
-import { compileDocument } from "@flash/swf";
+import { compileDocument, collectFontFaceRequests, resolveFontGlyphSources } from "@flash/swf";
 import type { FlashDocument, BitmapItem } from "@flash/core";
 import type { CompileOptions } from "@flash/swf";
 
@@ -130,7 +130,26 @@ export function usePublish(doc: FlashDocument, compileOptions?: Omit<CompileOpti
       (item): item is BitmapItem => item.itemType === "bitmap"
     );
     const bitmapPixels = await buildBitmapPixels(bitmapItems);
-    return compileDocument(doc, { ...compileOptions, bitmapPixels });
+
+    // Resolve embedded font outlines from the author's REAL system fonts via the
+    // browser Local Font Access API (Flash-style). This needs a user gesture for
+    // the permission prompt; Publish/Test Movie are user-initiated, so the prompt
+    // appears here. Falls back silently to bundled weight/style tables if the API
+    // is unavailable or permission is denied (see resolveFontGlyphSources).
+    let fontGlyphSources: CompileOptions["fontGlyphSources"];
+    try {
+      const requests = collectFontFaceRequests(doc);
+      if (requests.length > 0) {
+        fontGlyphSources = await resolveFontGlyphSources(requests);
+      }
+    } catch (err) {
+      // Never let font extraction block publishing; the compiler's bundled
+      // fallback still produces correct (if Noto-substituted) output.
+      console.warn("[usePublish] System-font extraction failed; using bundled fallback:", err);
+      fontGlyphSources = undefined;
+    }
+
+    return compileDocument(doc, { ...compileOptions, bitmapPixels, fontGlyphSources });
   }
 
   /**

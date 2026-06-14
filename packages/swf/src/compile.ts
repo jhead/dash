@@ -32,6 +32,7 @@ import {
 } from "./morphshape.js";
 import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings, alignXOffsetTwips } from "./text.js";
 import { encodeDefineFont2, encodeDefineFontAlignZones, fontKey, computeEmbedCodePoints, FULL_CODE_POINTS } from "./fonts.js";
+import type { GlyphSource } from "./font-extract.js";
 import {
   encodePlaceObject3WithFilters,
   encodePlaceObject3WithBlendMode,
@@ -482,6 +483,17 @@ export interface CompileOptions {
    */
   compress?: boolean;
   /**
+   * Per-face glyph outline sources for embedded fonts, keyed by
+   * `fontKey(family, bold, italic)`. Built by the publish flow's async pre-pass
+   * ({@link resolveFontGlyphSources} in font-extract.ts), which extracts the
+   * author's REAL system-font outlines via the browser Local Font Access API and
+   * falls back to the bundled weight/style tables. When a key is absent (or the
+   * whole map is undefined), the font encoder uses the bundled fallback selected
+   * by the face's bold/italic flags — so output is well-formed without the
+   * pre-pass (e.g. golden-parity, unit tests, headless e2e).
+   */
+  fontGlyphSources?: Map<string, GlyphSource>;
+  /**
    * MaxRecursionDepth for ScriptLimits tag (65). Defaults to 256 (Flash Player default).
    */
   maxRecursionDepth?: number;
@@ -500,6 +512,78 @@ export interface CompileOptions {
  *
  * The produced SWF is valid and playable in Ruffle.
  */
+/**
+ * Collect the embedded font-face requests for a document: one entry per unique
+ * `fontKey(family, bold, italic)` used by a text field (or a font library item),
+ * with the exact set of code points the published SWF will embed for that face.
+ *
+ * This mirrors compileDocument's font subsetting so the publish flow can resolve
+ * real system-font outlines (via the async Local Font Access API pre-pass,
+ * {@link resolveFontGlyphSources}) for exactly the glyphs that will be embedded,
+ * then hand the result back through {@link CompileOptions.fontGlyphSources}.
+ */
+export function collectFontFaceRequests(
+  doc: FlashDocument
+): Array<{ family: string; bold: boolean; italic: boolean; codePoints: number[] }> {
+  // Recursively walk display objects (including groups) gathering text fields.
+  const walkText = (objs: readonly DisplayObject[], out: import("@flash/core").TextDisplayObject[]) => {
+    for (const obj of objs) {
+      if (obj.type === "group") walkText(obj.children, out);
+      else if (obj.type === "text") out.push(obj);
+    }
+  };
+
+  const faceInfo = new Map<string, { family: string; bold: boolean; italic: boolean; cps: Set<number> }>();
+  const ensure = (family: string, bold: boolean, italic: boolean) => {
+    const key = fontKey(family, bold, italic);
+    let info = faceInfo.get(key);
+    if (!info) {
+      info = { family, bold, italic, cps: new Set<number>() };
+      faceInfo.set(key, info);
+    }
+    return info;
+  };
+
+  const accumulate = (layers: readonly import("@flash/core").Layer[]) => {
+    for (const layer of layers) {
+      if (layer.type === "guide" || layer.type === "folder") continue;
+      for (const frame of layer.frames) {
+        if (!frame.isKeyframe) continue;
+        const texts: import("@flash/core").TextDisplayObject[] = [];
+        walkText(frame.displayObjects, texts);
+        for (const obj of texts) {
+          const info = ensure(obj.fontFamily, obj.bold, obj.italic);
+          if (obj.embedRanges !== undefined) {
+            for (const c of computeEmbedCodePoints(obj.embedRanges, obj.embedChars, obj.text)) info.cps.add(c);
+          } else if (obj.textType === "static") {
+            for (const c of computeEmbedCodePoints([], obj.embedChars, obj.text)) info.cps.add(c);
+          }
+          // Dynamic/input without explicit embedRanges: contributes nothing.
+        }
+      }
+    }
+  };
+
+  for (const s of doc.scenes) accumulate(s.timeline.layers);
+  for (const item of doc.library.items) {
+    if (item.itemType === "symbol") accumulate((item as Symbol).timeline.layers);
+    else if (item.itemType === "font") {
+      const fi = item as FontItem;
+      ensure(fi.fontName, fi.bold, fi.italic);
+    }
+  }
+
+  return [...faceInfo.values()].map((info) => ({
+    family: info.family,
+    bold: info.bold,
+    italic: info.italic,
+    // Empty (e.g. font used only by un-embedded dynamic fields) → full default,
+    // matching compileDocument's fallback so the resolved source covers the same
+    // glyphs the font tag will embed.
+    codePoints: info.cps.size > 0 ? [...info.cps].sort((a, b) => a - b) : [...FULL_CODE_POINTS],
+  }));
+}
+
 export function compileDocument(doc: FlashDocument, options?: CompileOptions): Uint8Array {
   const props = doc.properties;
   const writer = new SwfWriter();
@@ -751,6 +835,15 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   const codePointsForKey = (key: string): readonly number[] =>
     embedCodePointsByKey.get(key) ?? FULL_CODE_POINTS;
 
+  /**
+   * Glyph outline source for a font key. When the publish flow supplied a
+   * resolved source (real system font via Local Font Access API, or its bundled
+   * weight/style fallback), use it; otherwise pass undefined so encodeDefineFont2
+   * selects the bundled fallback by the face's bold/italic flags.
+   */
+  const glyphSourceForKey = (key: string): GlyphSource | undefined =>
+    options?.fontGlyphSources?.get(key);
+
   /** Build a code-point → glyph-index map for a font key (for DefineText). */
   const glyphIndexMapForKey = (key: string): ReadonlyMap<number, number> => {
     const m = new Map<number, number>();
@@ -782,7 +875,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           const fontId = writer.nextCharId();
           fontCharIdMap.set(key, fontId);
           const cps = codePointsForKey(key);
-          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key), cps);
+          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key), cps, glyphSourceForKey(key));
           writer.writeTag(fontTagCode, fontBody);
           // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3
           // for all embedded fonts. Provides per-glyph stem-width hint zones
@@ -819,7 +912,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
           const fontId = writer.nextCharId();
           fontCharIdMap.set(key, fontId);
           const cps = codePointsForKey(key);
-          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key), cps);
+          const fontBody = encodeDefineFont2(fontId, obj.fontFamily, obj.bold, obj.italic, fontCoordScale, kernedFontKeys.has(key), cps, glyphSourceForKey(key));
           writer.writeTag(fontTagCode, fontBody);
           if (useFont3) {
             const alignZonesBody = encodeDefineFontAlignZones(fontId, cps.length, fontCoordScale);
@@ -844,7 +937,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     const fontId = writer.nextCharId();
     fontCharIdMap.set(key, fontId);
     const cps = codePointsForKey(key);
-    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale, kernedFontKeys.has(key), cps);
+    const fontBody = encodeDefineFont2(fontId, fontItem.fontName, fontItem.bold, fontItem.italic, fontCoordScale, kernedFontKeys.has(key), cps, glyphSourceForKey(key));
     writer.writeTag(fontTagCode, fontBody);
     // Emit DefineFontAlignZones (tag 73) immediately after DefineFont3.
     if (useFont3) {

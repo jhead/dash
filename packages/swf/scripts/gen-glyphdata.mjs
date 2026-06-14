@@ -1,26 +1,28 @@
 /**
- * Build-time generator: parse a bundled open-licensed TTF (NotoSans, SIL OFL)
+ * Build-time generator: parse bundled open-licensed Noto Sans TTFs (SIL OFL)
  * with opentype.js and emit `src/glyphdata.ts` containing real vector glyph
- * outlines for printable ASCII (codes 32–126).
+ * outlines for printable ASCII (codes 32–126) for FOUR style variants:
+ *   regular, bold, italic, bold-italic.
  *
- * Why this is safe and deterministic:
- *  - NotoSans uses unitsPerEm = 1024, which is exactly the EM square the SWF
- *    font encoder (`fonts.ts`) treats as its internal coordinate space, so no
- *    rescale is needed (the 20× DefineFont3 scale is applied later in fonts.ts).
+ * These tables are the weight/style-aware FALLBACK used when the browser Local
+ * Font Access API (`window.queryLocalFonts()`) is unavailable or denied. They
+ * replace the previous regular-only stopgap so that bold/italic text at least
+ * renders with the correct weight/slant.
+ *
+ * Coordinate space — every variant is emitted on a 1024-unit EM square:
+ *  - The regular face (assets/NotoSans.ttf) is natively unitsPerEm = 1024, which
+ *    is exactly the EM square the SWF font encoder (`fonts.ts`) treats as its
+ *    internal coordinate space (the 20× DefineFont3 scale is applied later).
+ *  - The bold/italic statics from the canonical Noto repo are unitsPerEm = 1000;
+ *    `glyph.getPath(0, 0, 1024)` scales them into the SAME 1024 EM box, so all
+ *    four variants share one coordinate space and one ascent/descent. Advance
+ *    widths are scaled by 1024/unitsPerEm to match.
+ *
  *  - opentype's `getPath` returns coordinates in the SWF font convention:
- *    +x right, **−y up** (above the baseline), +y below the baseline. This is
- *    precisely how SWF glyph shape records expect coordinates, so contours map
- *    1:1 with no Y flip.
- *  - NotoSans contains only Move / Line / Quadratic ('M','L','Q') commands for
- *    ASCII 32–126 — no cubic Béziers — so every command is directly
- *    representable as a SWF straight-edge or curved-edge record.
- *
- * Output shape (consumed by fonts.ts):
- *   export interface GlyphContour { ... }  // not needed; we export per-glyph
- *   export const GLYPH_EM = 1024;
- *   export const GLYPH_ASCENT / DESCENT / advance maps
- *   export function glyphPath(code): GlyphCommand[]   // real outlines
- *   export function glyphCells(code): boolean[][]     // legacy 5×7 fallback
+ *    +x right, **−y up** (above the baseline), +y below the baseline — so
+ *    contours map 1:1 with no Y flip.
+ *  - Noto Sans uses Move / Line / Quadratic ('M','L','Q') commands for ASCII;
+ *    any stray cubic ('C') is split into two quadratics (de Casteljau, t=0.5).
  *
  * Run: `node scripts/gen-glyphdata.mjs` from packages/swf.
  */
@@ -32,31 +34,38 @@ import opentype from 'opentype.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(__dirname, '..');
 
-const FONT_PATH = path.join(PKG, 'assets', 'NotoSans.ttf');
 const OUT_PATH = path.join(PKG, 'src', 'glyphdata.ts');
 
 const FIRST = 32;
 const LAST = 126;
 
-const font = opentype.parse(fs.readFileSync(FONT_PATH));
-const EM = font.unitsPerEm; // 1024 for NotoSans
-
-// SWF font layout metrics (EM units). opentype ascender/descender are in EM
-// units already; descender is negative in font space.
-const ASCENT = Math.round(font.ascender); // 784
-const DESCENT = Math.round(Math.abs(font.descender)); // 247
+/** Target EM square shared by all variants (the regular's native EM). */
+const TARGET_EM = 1024;
 
 /**
- * Encode one glyph's outline as a flat command list. Each command is one of:
+ * Variant descriptors. `key` is the in-file identifier; `file` the asset TTF.
+ * The regular face is loaded first and supplies the canonical ascent/descent.
+ */
+const VARIANTS = [
+  { key: 'regular', file: 'NotoSans.ttf' },
+  { key: 'bold', file: 'NotoSans-Bold.ttf' },
+  { key: 'italic', file: 'NotoSans-Italic.ttf' },
+  { key: 'boldItalic', file: 'NotoSans-BoldItalic.ttf' },
+];
+
+/**
+ * Encode one glyph's outline as a flat command list, scaling the glyph into the
+ * TARGET_EM box. Each command is:
  *   ['M', x, y]           absolute move (start a new contour)
  *   ['L', x, y]           absolute line to
  *   ['Q', cx, cy, x, y]   quadratic curve (control, anchor)
- * Coordinates are EM units in SWF font space (+x right, −y up).
  */
-function glyphCommands(code) {
+function glyphCommands(font, code) {
   const glyph = font.charToGlyph(String.fromCharCode(code));
   if (!glyph) return [];
-  const p = glyph.getPath(0, 0, EM);
+  // getPath's third arg is the font size; passing TARGET_EM scales the glyph by
+  // TARGET_EM / unitsPerEm into the shared 1024-unit EM box.
+  const p = glyph.getPath(0, 0, TARGET_EM);
   const out = [];
   for (const c of p.commands) {
     switch (c.type) {
@@ -70,14 +79,10 @@ function glyphCommands(code) {
         out.push(['Q', Math.round(c.x1), Math.round(c.y1), Math.round(c.x), Math.round(c.y)]);
         break;
       case 'C': {
-        // Cubic → split into two quadratics (NotoSans has none, but be safe).
-        // Use midpoint subdivision: approximate cubic by elevating to quadratics.
-        // Simplest robust approach: convert with a single quadratic per half.
-        // (Unused for NotoSans; kept for forward-compat with other fonts.)
+        // Cubic → split into two quadratics via de Casteljau at t=0.5.
         const prev = out.length ? lastAnchor(out) : [0, 0];
         const x0 = prev[0], y0 = prev[1];
         const x1 = c.x1, y1 = c.y1, x2 = c.x2, y2 = c.y2, x3 = c.x, y3 = c.y;
-        // de Casteljau split at t=0.5
         const mid = (a, b) => (a + b) / 2;
         const ax = mid(x0, x1), ay = mid(y0, y1);
         const bx = mid(x1, x2), by = mid(y1, y2);
@@ -85,15 +90,12 @@ function glyphCommands(code) {
         const dx = mid(ax, bx), dy = mid(ay, by);
         const ex = mid(bx, cx), ey = mid(by, cy);
         const fx = mid(dx, ex), fy = mid(dy, ey);
-        // two quadratics: (control ax,ay -> fx,fy) and (control ex,ey -> x3,y3)
         out.push(['Q', Math.round(ax), Math.round(ay), Math.round(fx), Math.round(fy)]);
         out.push(['Q', Math.round(ex), Math.round(ey), Math.round(x3), Math.round(y3)]);
         break;
       }
       case 'Z':
-        // opentype emits 'Z' to close; the contour is closed implicitly by the
-        // SWF encoder (it returns to the contour start), so ignore.
-        break;
+        break; // contour closed implicitly by the SWF encoder
       default:
         break;
     }
@@ -110,19 +112,7 @@ function lastAnchor(out) {
   return [0, 0];
 }
 
-// Build per-glyph command + advance tables.
-const paths = {};
-const advances = {};
-for (let code = FIRST; code <= LAST; code++) {
-  const glyph = font.charToGlyph(String.fromCharCode(code));
-  advances[code] = Math.round(glyph ? glyph.advanceWidth : EM * 0.5);
-  const cmds = glyphCommands(code);
-  if (cmds.length) paths[code] = cmds;
-}
-
-// Serialize command lists compactly: each command is a flat number array prefixed
-// by an opcode int (0=M,1=L,2=Q) to keep the file small and parse-free at runtime.
-const OP = { M: 0, L: 1, Q: 2 };
+/** Pack a command list to a flat int array (0=M,1=L,2=Q) for compact output. */
 function serializeCmds(cmds) {
   const flat = [];
   for (const c of cmds) {
@@ -133,42 +123,87 @@ function serializeCmds(cmds) {
   return flat;
 }
 
-let body = '';
-for (let code = FIRST; code <= LAST; code++) {
-  if (!paths[code]) continue;
-  const flat = serializeCmds(paths[code]);
-  body += `  ${code}: [${flat.join(',')}],\n`;
+/** Build packed paths + advances for one variant font, scaled to TARGET_EM. */
+function buildVariant(font) {
+  const scale = TARGET_EM / font.unitsPerEm; // 1 for regular, 1.024 for em-1000
+  const paths = {};
+  const advances = {};
+  for (let code = FIRST; code <= LAST; code++) {
+    const glyph = font.charToGlyph(String.fromCharCode(code));
+    const adv = glyph ? glyph.advanceWidth : font.unitsPerEm * 0.5;
+    advances[code] = Math.round(adv * scale);
+    const cmds = glyphCommands(font, code);
+    if (cmds.length) paths[code] = serializeCmds(cmds);
+  }
+  return { paths, advances };
 }
 
-let advBody = '';
-for (let code = FIRST; code <= LAST; code++) {
-  advBody += `  ${code}: ${advances[code]},`;
-  if ((code - FIRST + 1) % 8 === 0) advBody += '\n';
+// Load all variants; regular supplies canonical ascent/descent (already in 1024).
+const fonts = VARIANTS.map((v) => ({
+  ...v,
+  font: opentype.parse(fs.readFileSync(path.join(PKG, 'assets', v.file))),
+}));
+const regular = fonts[0].font;
+const ASCENT = Math.round(regular.ascender * (TARGET_EM / regular.unitsPerEm)); // 784
+const DESCENT = Math.round(Math.abs(regular.descender) * (TARGET_EM / regular.unitsPerEm)); // 247
+
+const built = fonts.map((v) => ({ key: v.key, ...buildVariant(v.font) }));
+
+// ---- serialize -------------------------------------------------------------
+
+function pathsBody(paths) {
+  let body = '';
+  for (let code = FIRST; code <= LAST; code++) {
+    if (!paths[code]) continue;
+    body += `  ${code}: [${paths[code].join(',')}],\n`;
+  }
+  return body;
+}
+
+function advBody(advances) {
+  let s = '';
+  for (let code = FIRST; code <= LAST; code++) {
+    s += `  ${code}: ${advances[code]},`;
+    if ((code - FIRST + 1) % 8 === 0) s += '\n';
+  }
+  return s;
+}
+
+let variantTables = '';
+for (const v of built) {
+  variantTables += `const GLYPH_PATHS_${v.key.toUpperCase()}: Record<number, number[]> = {\n${pathsBody(v.paths)}};\n\n`;
+  variantTables += `const GLYPH_ADVANCES_${v.key.toUpperCase()}: Record<number, number> = {\n${advBody(v.advances)}\n};\n\n`;
 }
 
 const fileHeader = `/**
- * Real TTF-derived glyph outlines for printable ASCII (codes 32–126).
+ * Real TTF-derived glyph outlines for printable ASCII (codes 32–126), for four
+ * style variants: regular, bold, italic, bold-italic.
  *
- * AUTO-GENERATED by \`scripts/gen-glyphdata.mjs\` from a bundled copy of
- * **NotoSans-Regular** (SIL Open Font License 1.1 — see assets/NotoSans.ttf).
- * Do NOT edit by hand; re-run the generator to regenerate.
+ * AUTO-GENERATED by \`scripts/gen-glyphdata.mjs\` from bundled Noto Sans TTFs
+ * (SIL Open Font License 1.1 — see assets/OFL.txt). Do NOT edit by hand;
+ * re-run the generator to regenerate.
  *
- * Coordinate space: NotoSans is drawn on a ${EM}-unit EM square, which is exactly
- * the internal EM the SWF font encoder uses (the 20× DefineFont3 scale is applied
- * downstream in fonts.ts). Coordinates follow the SWF glyph convention:
- *   +x = right,  −y = up (above the baseline),  +y = below the baseline.
+ * These are the weight/style-aware FALLBACK glyph tables used when the browser
+ * Local Font Access API (queryLocalFonts) cannot supply the author's real system
+ * font outlines (Firefox/Safari, permission denied, or glyph not found). The
+ * live path (\`font-extract.ts\`) builds a GlyphSource from the real installed
+ * font instead.
+ *
+ * Coordinate space: every variant is emitted on a ${TARGET_EM}-unit EM square,
+ * which is exactly the internal EM the SWF font encoder uses (the 20×
+ * DefineFont3 scale is applied downstream in fonts.ts). Coordinates follow the
+ * SWF glyph convention:  +x = right,  −y = up (above the baseline),  +y = below.
  *
  * Each glyph is a flat int array of drawing commands:
  *   0, x, y            → MoveTo  (start a new contour)
  *   1, x, y            → LineTo
  *   2, cx, cy, x, y    → Quadratic curve (control point, then anchor)
- * NotoSans uses only these (no cubic Béziers) for the ASCII range.
  *
  * A legacy 5×7 bitmap font (\`glyphCells\`) is retained as a runtime fallback for
- * any code point not present in the outline table.
+ * any code point not present in the outline tables.
  */
 
-export const GLYPH_EM = ${EM};
+export const GLYPH_EM = ${TARGET_EM};
 export const GLYPH_ASCENT = ${ASCENT};
 export const GLYPH_DESCENT = ${DESCENT};
 
@@ -179,30 +214,48 @@ export const enum GlyphOp {
   QuadTo = 2,
 }
 
-/** Packed glyph outlines (see file header for the command encoding). */
-const GLYPH_PATHS: Record<number, number[]> = {
-${body}};
+/** A weight/style variant selector. */
+export type GlyphVariant = "regular" | "bold" | "italic" | "boldItalic";
 
-/** Per-glyph advance width in EM units. */
-export const GLYPH_ADVANCES: Record<number, number> = {
-${advBody}
+`;
+
+const selectors = `/** Pick the variant key from bold/italic flags. */
+export function glyphVariantFor(bold: boolean, italic: boolean): GlyphVariant {
+  if (bold && italic) return "boldItalic";
+  if (bold) return "bold";
+  if (italic) return "italic";
+  return "regular";
+}
+
+const PATHS_BY_VARIANT: Record<GlyphVariant, Record<number, number[]>> = {
+  regular: GLYPH_PATHS_REGULAR,
+  bold: GLYPH_PATHS_BOLD,
+  italic: GLYPH_PATHS_ITALIC,
+  boldItalic: GLYPH_PATHS_BOLDITALIC,
+};
+
+const ADVANCES_BY_VARIANT: Record<GlyphVariant, Record<number, number>> = {
+  regular: GLYPH_ADVANCES_REGULAR,
+  bold: GLYPH_ADVANCES_BOLD,
+  italic: GLYPH_ADVANCES_ITALIC,
+  boldItalic: GLYPH_ADVANCES_BOLDITALIC,
 };
 
 /** Default advance for code points without an explicit entry. */
-export const GLYPH_ADVANCE_FALLBACK = ${Math.round(EM * 0.5)};
+export const GLYPH_ADVANCE_FALLBACK = ${Math.round(TARGET_EM * 0.5)};
 
 /**
- * Return the packed drawing-command array for an ASCII code point, or
- * \`undefined\` if no real outline exists (caller should fall back to the 5×7
- * bitmap glyph). The space character (0x20) legitimately has an empty outline.
+ * Return the packed drawing-command array for an ASCII code point in the given
+ * variant (defaulting to regular), or \`undefined\` if no real outline exists
+ * (caller falls back to the 5×7 bitmap glyph). Space (0x20) has an empty outline.
  */
-export function glyphPath(code: number): number[] | undefined {
-  return GLYPH_PATHS[code];
+export function glyphPath(code: number, variant: GlyphVariant = "regular"): number[] | undefined {
+  return PATHS_BY_VARIANT[variant][code];
 }
 
-/** Return the advance width (EM units) for an ASCII code point. */
-export function glyphAdvance(code: number): number {
-  return GLYPH_ADVANCES[code] ?? GLYPH_ADVANCE_FALLBACK;
+/** Return the advance width (EM units) for a code point in the given variant. */
+export function glyphAdvance(code: number, variant: GlyphVariant = "regular"): number {
+  return ADVANCES_BY_VARIANT[variant][code] ?? GLYPH_ADVANCE_FALLBACK;
 }
 
 `;
@@ -339,7 +392,7 @@ export function glyphCells(code: number): boolean[][] {
 }
 `;
 
-fs.writeFileSync(OUT_PATH, fileHeader + FALLBACK_SECTION);
+fs.writeFileSync(OUT_PATH, fileHeader + variantTables + selectors + FALLBACK_SECTION);
 console.error(
-  `Wrote ${OUT_PATH}: ${Object.keys(paths).length} real outlines, EM=${EM}, ascent=${ASCENT}, descent=${DESCENT}`
+  `Wrote ${OUT_PATH}: variants=[${built.map((v) => `${v.key}:${Object.keys(v.paths).length}`).join(', ')}], EM=${TARGET_EM}, ascent=${ASCENT}, descent=${DESCENT}`
 );

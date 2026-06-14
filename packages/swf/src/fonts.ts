@@ -26,9 +26,10 @@ import {
   glyphAdvance,
   GlyphOp,
   GLYPH_EM,
-  GLYPH_ASCENT,
-  GLYPH_DESCENT,
 } from "./glyphdata.js";
+import { bundledGlyphSource, type GlyphSource } from "./font-extract.js";
+
+export type { GlyphSource } from "./font-extract.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -114,9 +115,9 @@ export function computeEmbedCodePoints(
 /** EM square size in font units — matches the TTF (NotoSans unitsPerEm). */
 const EM = GLYPH_EM; // 1024
 
-/** Font metrics in EM units, taken from the embedded TTF. */
-const ASCENT = GLYPH_ASCENT; // 784
-const DESCENT = GLYPH_DESCENT; // 247
+// Per-face ascent/descent now come from the GlyphSource (real system font when
+// live, bundled Noto otherwise); see encodeDefineFont2. Only LEADING is a fixed
+// layout constant here.
 const LEADING = 40;
 
 /**
@@ -316,8 +317,8 @@ function writeGlyphCurve(
  * 1 for DefineFont2). MoveTo starts a new contour; the first MoveTo also selects
  * fill style 1 (the fill Ruffle recolors with the text colour).
  */
-function encodeRealGlyphShape(code: number, coordScale: number): Uint8Array | null {
-  const cmds = glyphPath(code);
+function encodeRealGlyphShape(code: number, coordScale: number, source: GlyphSource): Uint8Array | null {
+  const cmds = source.path(code);
   if (cmds === undefined) return null;
 
   const bw = new BitWriter();
@@ -374,8 +375,8 @@ function encodeRealGlyphShape(code: number, coordScale: number): Uint8Array | nu
  * decomposed into maximal solid rectangles and emitted as filled contours
  * referencing fill style 1.
  */
-function encodeGlyphShape(code: number, coordScale: number): Uint8Array {
-  const real = encodeRealGlyphShape(code, coordScale);
+function encodeGlyphShape(code: number, coordScale: number, source: GlyphSource): Uint8Array {
+  const real = encodeRealGlyphShape(code, coordScale, source);
   if (real !== null) return real;
 
   const bw = new BitWriter();
@@ -502,7 +503,15 @@ export function encodeDefineFont2(
    * smaller font. The DefineText glyph-index path must use the SAME ordering, so
    * the glyph index of a code point is its position in this array.
    */
-  codePoints: readonly number[] = FULL_CODE_POINTS
+  codePoints: readonly number[] = FULL_CODE_POINTS,
+  /**
+   * Glyph outline source for this face. Defaults to the bundled weight/style
+   * fallback selected by (isBold, isItalic). The publish flow passes a
+   * {@link GlyphSource} built from the author's REAL system font via the Local
+   * Font Access API (see font-extract.ts) so embedded text matches Flash —
+   * falling back to the bundled Noto bold/italic tables when that's unavailable.
+   */
+  glyphSource: GlyphSource = bundledGlyphSource(isBold, isItalic)
 ): Uint8Array {
   const bw = new BitWriter();
   const glyphCount = codePoints.length;
@@ -547,7 +556,7 @@ export function encodeDefineFont2(
   // ---------------------------------------------------------------------------
   const glyphBodies: Uint8Array[] = [];
   for (let i = 0; i < glyphCount; i++) {
-    glyphBodies.push(encodeGlyphShape(codePoints[i], coordScale));
+    glyphBodies.push(encodeGlyphShape(codePoints[i], coordScale, glyphSource));
   }
 
   const offsetTableSize = (glyphCount + 1) * 4; // bytes
@@ -572,16 +581,20 @@ export function encodeDefineFont2(
   // ---------------------------------------------------------------------------
   // Layout block (HasLayout=1)
   // ---------------------------------------------------------------------------
-  bw.writeSI16LE(ASCENT * coordScale);
-  bw.writeSI16LE(DESCENT * coordScale);
+  // Ascent/descent come from the glyph source (real system font when live, the
+  // bundled Noto face otherwise). The source's EM equals the encoder's EM
+  // (GLYPH_EM), so metrics share the glyph coordinate space.
+  bw.writeSI16LE(glyphSource.ascent * coordScale);
+  bw.writeSI16LE(glyphSource.descent * coordScale);
   bw.writeSI16LE(LEADING * coordScale);
 
   // AdvanceTable (in the same EM units as the glyph coordinates). Real
-  // per-glyph advances come from the embedded TTF; glyphs without an outline
+  // per-glyph advances come from the glyph source; glyphs without an outline
   // fall back to the 5×7 box advance.
   for (let i = 0; i < glyphCount; i++) {
     const codePoint = codePoints[i];
-    const emAdvance = glyphPath(codePoint) !== undefined ? glyphAdvance(codePoint) : FALLBACK_ADVANCE;
+    const emAdvance =
+      glyphSource.path(codePoint) !== undefined ? glyphSource.advance(codePoint) : FALLBACK_ADVANCE;
     const advance = Math.round(emAdvance * coordScale);
     bw.writeSI16LE(advance);
   }
