@@ -10,24 +10,10 @@
 
 ## Controlling the editor (Agent MCP bridge)
 
-Connect Claude Code or any MCP client to the live editor:
-
-```bash
-claude mcp add --transport http flash-editor http://localhost:1420/mcp
-```
-
-Or use the `flash-agent` CLI (start the dev server first with `pnpm dev:browser`):
-
-```bash
-pnpm flash-agent tools                          # list tools with schemas
-pnpm flash-agent call editor_status            # check editor is alive
-pnpm flash-agent call doc_summary              # orient: scenes/layers/library
-pnpm flash-agent screenshot -o stage.png       # write PNG to file
-pnpm flash-agent publish -o movie.swf          # compile and write SWF
-pnpm flash-agent repl                          # interactive REPL session
-```
-
-See `docs/19-agent-interface.md` for the full tool surface.
+Connect over MCP (`claude mcp add --transport http flash-editor http://localhost:1420/mcp`)
+or drive the `flash-agent` CLI after `pnpm dev:browser` (`pnpm flash-agent
+tools|call|screenshot|publish|repl`). Full command list + tool surface: **AGENTS.md** and
+`docs/19-agent-interface.md`.
 
 ## Running tests
 
@@ -193,9 +179,10 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **Multi-frame movies**: emit `RemoveObject2` when an object leaves the display list;
   set the `Move` flag on `PlaceObject2` for objects that persist across frames; hoist
   all character definitions before the first `ShowFrame`.
-- **Embedded font glyphs (task 0702)**: `packages/swf/src/fonts.ts` now emits REAL
-  vector glyph outlines (from a built-in 5×7 font in `glyphdata.ts`) so text renders as
-  visible pixels in Ruffle. Several non-obvious encoding facts were discovered:
+- **Embedded font glyphs (tasks 0702/0708)**: `packages/swf/src/fonts.ts` emits REAL
+  vector glyph outlines from `glyphdata.ts` (auto-generated from NotoSans — see the 0708
+  bullet below; a 5×7 bitmap is the per-glyph fallback) so text renders as visible pixels
+  in Ruffle. Non-obvious encoding facts:
   - **DefineFont3 (tag 75) uses a 20× EM scale** vs DefineFont2 (tag 48): glyph
     coordinates AND layout metrics (ascent/descent/advance) live in a 20480-unit EM
     square, not 1024. `encodeDefineFont2` takes a `coordScale` arg (1 for tag 48, 20 for
@@ -213,8 +200,8 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   - **DefineEditText flag bit positions** (per ruffle `EditTextFlag`): HasFont=0,
     HasMaxLength=1, HasTextColor=2, ReadOnly=3, Multiline=5, WordWrap=6, HasText=7,
     UseOutlines=8, WasStatic=10, NoSelect=12, HasLayout=13. The old encoder had these
-    scrambled, so dynamic/input text never rendered. Set UseOutlines (bit 8) so the
-    embedded glyph outlines are actually used.
+    scrambled, so dynamic/input text never rendered. (Whether to SET UseOutlines is
+    settled by the 0710 bullet below — leave it 0 for correct device-font sizing.)
   - **Headless Ruffle's lyon tessellator drops wide-short fills**: a glyph made of many
     thin (single-cell-tall) rectangles renders incompletely (vertical strokes survive,
     horizontal bars drop) even though the SWF is spec-correct. Decompose glyphs into
