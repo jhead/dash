@@ -11,8 +11,9 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { inflateSync } from "fflate";
+import { unzlibSync } from "fflate";
 import { compileDocument } from "../compile.js";
+import { exportSWF } from "../export.js";
 import type { FlashDocument, Frame, Layer, Scene } from "@flash/core";
 
 // ---------------------------------------------------------------------------
@@ -158,7 +159,7 @@ describe("SWF compressed output (CWS)", () => {
     const fwsBody = fws.slice(8);
     const cwsBody = cws.slice(8);
 
-    const decompressed = inflateSync(cwsBody);
+    const decompressed = unzlibSync(cwsBody);
 
     expect(decompressed).toEqual(fwsBody);
   });
@@ -177,7 +178,41 @@ describe("SWF compressed output (CWS)", () => {
     const fws = compileDocument(doc, { compress: false });
     const cws = compileDocument(doc, { compress: true });
 
-    const decompressed = inflateSync(cws.slice(8));
+    const decompressed = unzlibSync(cws.slice(8));
     expect(decompressed).toEqual(fws.slice(8));
+  });
+});
+
+describe("exportSWF default compression", () => {
+  it("9. exportSWF() with no options produces CWS signature (compress defaults to true)", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const buf = exportSWF(doc);
+    expect(buf[0]).toBe(0x43); // 'C'
+    expect(buf[1]).toBe(0x57); // 'W'
+    expect(buf[2]).toBe(0x53); // 'S'
+  });
+
+  it("10. exportSWF({ compress: false }) produces FWS signature", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const buf = exportSWF(doc, { compress: false });
+    expect(buf[0]).toBe(0x46); // 'F'
+    expect(buf[1]).toBe(0x57); // 'W'
+    expect(buf[2]).toBe(0x53); // 'S'
+  });
+
+  it("11. exportSWF() CWS round-trips: decompress → same body as FWS", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 3)]);
+    const fws = exportSWF(doc, { compress: false });
+    const cws = exportSWF(doc);
+
+    const decompressed = unzlibSync(cws.slice(8));
+    expect(decompressed).toEqual(fws.slice(8));
+  });
+
+  it("12. exportSWF() self-determinism: same input → byte-identical CWS output", () => {
+    const doc = makeDoc([makeScene("s1", "Scene 1", 1)]);
+    const a = exportSWF(doc);
+    const b = exportSWF(doc);
+    expect(a).toEqual(b);
   });
 });

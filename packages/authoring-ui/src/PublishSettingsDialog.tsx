@@ -64,13 +64,17 @@ export const DEFAULT_HTML_OPTIONS: HtmlPublishOptions = {
   menu: true,
 };
 
-/** Default publish profile settings. */
+/** Default publish profile settings.
+ *
+ * "Compress movie" defaults to true, matching Flash 8's publish default
+ * (zlib CWS output, requires Flash Player 6+).
+ */
 export const DEFAULT_PROFILE_SETTINGS: PublishProfileSettings = {
   filename: "movie.swf",
   jpegQuality: 80,
   audioStreamFormat: "mp3",
   audioEventFormat: "mp3",
-  compress: false,
+  compress: true,
   protect: false,
   debuggingPermitted: false,
   debugPassword: "",

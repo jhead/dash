@@ -389,7 +389,7 @@ describe("PlaceObject2 — integration: exportSWF MATRIX encoding", () => {
   it("symbol instance at (0, 0) produces a PlaceObject2 tag", () => {
     const inst = makeInstance("inst-1", "sym-1", 0, 0);
     const doc = makeDoc("sym-1", "MyClip", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
     const po2Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
     expect(po2Tags.length).toBeGreaterThan(0);
@@ -398,7 +398,7 @@ describe("PlaceObject2 — integration: exportSWF MATRIX encoding", () => {
   it("symbol at (0, 0): PlaceObject2 MATRIX has TranslateX=0, TranslateY=0", () => {
     const inst = makeInstance("inst-1", "sym-1", 0, 0);
     const doc = makeDoc("sym-1", "MyClip", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     // Find the PlaceObject2 tag that places the instance (HasCharacter bit set)
@@ -415,7 +415,7 @@ describe("PlaceObject2 — integration: exportSWF MATRIX encoding", () => {
   it("symbol at (100, 50): PlaceObject2 MATRIX has TranslateX=2000, TranslateY=1000 twips", () => {
     const inst = makeInstance("inst-1", "sym-1", 100, 50);
     const doc = makeDoc("sym-1", "MyClip", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2Tag = tags.find(
@@ -431,7 +431,7 @@ describe("PlaceObject2 — integration: exportSWF MATRIX encoding", () => {
   it("symbol at (200, 150): MATRIX has TranslateX=4000, TranslateY=3000 twips", () => {
     const inst = makeInstance("inst-1", "sym-1", 200, 150);
     const doc = makeDoc("sym-1", "MyClip", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2Tag = tags.find(
@@ -447,7 +447,7 @@ describe("PlaceObject2 — integration: exportSWF MATRIX encoding", () => {
   it("PlaceObject2 tag for instance at (0, 0) has no scale (identity)", () => {
     const inst = makeInstance("inst-1", "sym-1", 0, 0);
     const doc = makeDoc("sym-1", "MyClip", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2Tag = tags.find(
@@ -463,7 +463,7 @@ describe("PlaceObject2 — integration: exportSWF MATRIX encoding", () => {
   it("PlaceObject2 depth is encoded correctly: first instance uses depth ≥ 1", () => {
     const inst = makeInstance("inst-1", "sym-1", 0, 0);
     const doc = makeDoc("sym-1", "MyClip", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2Tag = tags.find(

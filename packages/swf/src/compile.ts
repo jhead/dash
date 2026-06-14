@@ -11,7 +11,7 @@
  */
 import type { BitmapFill, BitmapItem, ButtonHandler, ButtonSounds, ClipAction, DisplayObject, FlashDocument, FontItem, Shape, SoundItem, Symbol, SymbolInstance, VideoDisplayObject, VideoItem } from "@flash/core";
 import { layerFrameCount, compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
-import { deflateSync } from "fflate";
+import { zlibSync } from "fflate";
 import { Tag } from "./tags.js";
 import { SwfWriter } from "./writer.js";
 import {
@@ -3103,7 +3103,7 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     // Bytes 0-7 are the SWF header (signature + version + uncompressed file length).
     const header = result.slice(0, 8);
     const body = result.slice(8);
-    const compressed = deflateSync(body);
+    const compressed = zlibSync(body);
     const out = new Uint8Array(8 + compressed.length);
     out.set(header);
     out.set(compressed, 8);

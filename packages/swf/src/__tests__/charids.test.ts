@@ -221,7 +221,7 @@ describe("SWF character ID management", () => {
     const sym1 = makeSymbol("sym-a", "ClipA");
     const sym2 = makeSymbol("sym-b", "ClipB");
     const doc = makeDoc([sym1, sym2]);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
 
     const tags = findTags(bytes);
     const spriteTags = tags.filter((t) => t.type === TAG_DEFINE_SPRITE);
@@ -239,7 +239,7 @@ describe("SWF character ID management", () => {
     const shapeObj = makeShape("shape-on-stage", 0, 0);
     const sym = makeSymbol("sym-1", "MyClip");
     const doc = makeDoc([sym], [shapeObj]);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
 
     const spriteIds = collectCharIds(bytes, [TAG_DEFINE_SPRITE]);
     const shapeIds = collectCharIds(bytes, [TAG_DEFINE_SHAPE, TAG_DEFINE_SHAPE4]);
@@ -263,7 +263,7 @@ describe("SWF character ID management", () => {
     const sym2 = makeSymbol("sym-2", "ClipB");
     const sym3 = makeSymbol("sym-3", "ClipC");
     const doc = makeDoc([sym1, sym2, sym3]);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
 
     const tags = findTags(bytes);
     const spriteTags = tags.filter((t) => t.type === TAG_DEFINE_SPRITE);
@@ -284,7 +284,7 @@ describe("SWF character ID management", () => {
     const sym1 = makeSymbol("sym-1", "ClipA");
     const sym2 = makeSymbol("sym-2", "ClipB");
     const doc = makeDoc([sym1, sym2], [shapeObj]);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
 
     const allIds = collectCharIds(bytes, [
       TAG_DEFINE_SPRITE,

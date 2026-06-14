@@ -425,7 +425,7 @@ describe("exportSWF with clipActions — integration", () => {
       { event: "enterFrame", script: "this._x++;" },
     ]);
     const doc = makeDoc(inst);
-    expect(() => exportSWF(doc)).not.toThrow();
+    expect(() => exportSWF(doc, { compress: false })).not.toThrow();
   });
 
   it("HasClipActions (0x80) is set in PlaceObject2 flags byte", () => {
@@ -433,7 +433,7 @@ describe("exportSWF with clipActions — integration", () => {
       { event: "enterFrame", script: "this._x++;" },
     ]);
     const doc = makeDoc(inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2Tags = tags.filter(
@@ -449,7 +449,7 @@ describe("exportSWF with clipActions — integration", () => {
   it("instance without clipActions does NOT have HasClipActions set", () => {
     const inst = makeInstance("inst-1", "sym-1", 0, 0);
     const doc = makeDoc(inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2Tags = tags.filter(
@@ -471,8 +471,8 @@ describe("exportSWF with clipActions — integration", () => {
     const docPlain = makeDoc(instPlain);
     const docWithActions = makeDoc(instWithActions);
 
-    const bytesPlain = exportSWF(docPlain);
-    const bytesWithActions = exportSWF(docWithActions);
+    const bytesPlain = exportSWF(docPlain, { compress: false });
+    const bytesWithActions = exportSWF(docWithActions, { compress: false });
 
     const tagsPlain = parseSWFTags(bytesPlain);
     const tagsWithActions = parseSWFTags(bytesWithActions);
@@ -496,7 +496,7 @@ describe("exportSWF with clipActions — integration", () => {
       { event: "enterFrame", script: "this._x++;" },
     ]);
     const doc = makeDoc(inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2WithActions = tags.find(
@@ -528,7 +528,7 @@ describe("exportSWF with clipActions — integration", () => {
       clipActions: [{ event: "enterFrame", script: "this._x++;" }],
     };
     const doc = makeDoc(inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2Tags = tags.filter(
@@ -545,7 +545,7 @@ describe("exportSWF with clipActions — integration", () => {
       { event: "enterFrame", script: "" },
     ]);
     const doc = makeDoc(inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2Tag = tags.find(
@@ -641,7 +641,7 @@ describe("runtime verification proxy — onClipEvent(enterFrame) in published SW
       { event: "enterFrame", script: "this._x += 5;" },
     ]);
     const doc = makeDoc(inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2 = tags.find(
@@ -702,7 +702,7 @@ describe("runtime verification proxy — onClipEvent(enterFrame) in published SW
       { event: "enterFrame", script: "this._x += 5;" },
     ]);
     const doc = makeDoc(inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
 
     // SWF signature: 'F' (0x46) or 'C' (0x43), 'W' (0x57), 'S' (0x53)
     const sig = bytes[0]!;
@@ -792,7 +792,7 @@ const TAG_PLACE_OBJECT2_CA = 26;
 describe("task 1124 — clip actions and loopMode inside sprite (symbol) timelines", () => {
   it("nested instance with clipActions: HasClipActions (0x80) appears inside DefineSprite body", () => {
     const doc = makeParentDoc([{ event: "enterFrame", script: "this._x++;" }]);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     // Find the parent symbol's DefineSprite — it has a child instance, so its body
@@ -814,7 +814,7 @@ describe("task 1124 — clip actions and loopMode inside sprite (symbol) timelin
 
   it("nested instance WITHOUT clipActions: no HasClipActions inside any DefineSprite", () => {
     const doc = makeParentDoc(); // no clip actions
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const spriteTags = tags.filter((t) => t.code === TAG_DEFINE_SPRITE_CA);
@@ -864,7 +864,7 @@ describe("task 1124 — clip actions and loopMode inside sprite (symbol) timelin
       library: { items: [parentSym, childSym], folders: [] },
     };
 
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const spriteTags = tags.filter((t) => t.code === TAG_DEFINE_SPRITE_CA);

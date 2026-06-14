@@ -173,13 +173,13 @@ describe("SWF e2e compile and parse round-trip", () => {
   // Test 1: SWF compiles without error
   it("SWF compiles without error", () => {
     const doc = buildTestDoc();
-    expect(() => exportSWF(doc)).not.toThrow();
+    expect(() => exportSWF(doc, { compress: false })).not.toThrow();
   });
 
   // Test 2: File starts with "FWS"
   it('file starts with "FWS" (bytes 0-2 are 0x46, 0x57, 0x53)', () => {
     const doc = buildTestDoc();
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     expect(bytes[0]).toBe(0x46); // F
     expect(bytes[1]).toBe(0x57); // W
     expect(bytes[2]).toBe(0x53); // S
@@ -188,14 +188,14 @@ describe("SWF e2e compile and parse round-trip", () => {
   // Test 3: Version byte (index 3) is 8
   it("version byte (index 3) is 8 (Flash Player 8 / SWF v8)", () => {
     const doc = buildTestDoc();
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     expect(bytes[3]).toBe(8);
   });
 
   // Test 4: Tag stream contains ShowFrame tag (type 1)
   it("tag stream contains ShowFrame tag (type 1)", () => {
     const doc = buildTestDoc();
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     const showFrameTags = tags.filter((t) => t.type === TAG_SHOW_FRAME);
     expect(showFrameTags.length).toBeGreaterThan(0);
@@ -204,7 +204,7 @@ describe("SWF e2e compile and parse round-trip", () => {
   // Test 5: Tag stream contains End tag (type 0)
   it("tag stream contains End tag (type 0)", () => {
     const doc = buildTestDoc();
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     const endTag = tags.find((t) => t.type === TAG_END);
     expect(endTag).toBeDefined();
@@ -213,7 +213,7 @@ describe("SWF e2e compile and parse round-trip", () => {
   // Test 6: Tag stream contains SetBackgroundColor tag (type 9)
   it("tag stream contains SetBackgroundColor tag (type 9)", () => {
     const doc = buildTestDoc();
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     const bgTag = tags.find((t) => t.type === TAG_SET_BACKGROUND_COLOR);
     expect(bgTag).toBeDefined();
@@ -222,7 +222,7 @@ describe("SWF e2e compile and parse round-trip", () => {
   // Test 7: SetBackgroundColor body is 3 bytes
   it("SetBackgroundColor body is 3 bytes", () => {
     const doc = buildTestDoc();
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     const bgTag = tags.find((t) => t.type === TAG_SET_BACKGROUND_COLOR);
     expect(bgTag).toBeDefined();
@@ -232,7 +232,7 @@ describe("SWF e2e compile and parse round-trip", () => {
   // Test 8: FileAttributes tag (type 69) is first in stream
   it("FileAttributes tag (type 69) is the first tag in the stream", () => {
     const doc = buildTestDoc();
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     expect(tags.length).toBeGreaterThan(0);
     expect(tags[0].type).toBe(TAG_FILE_ATTRIBUTES);
@@ -241,7 +241,7 @@ describe("SWF e2e compile and parse round-trip", () => {
   // Test 9: FrameRate in header is correct (frameRate * 256 stored as little-endian UI16)
   it("FrameRate in header encodes frameRate * 256 as little-endian UI16 (24fps → 0x1800)", () => {
     const doc = buildTestDoc(); // frameRate: 24
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
 
     // Parse RECT length to find the FrameRate field offset
     const nbits = bytes[8] >> 3;

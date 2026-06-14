@@ -986,7 +986,7 @@ export function Shell(): React.ReactElement {
     jpegQuality: 80,
     audioStreamFormat: "mp3",
     audioEventFormat: "mp3",
-    compress: false,
+    compress: true,
     protect: false,
     debuggingPermitted: false,
     debugPassword: "",

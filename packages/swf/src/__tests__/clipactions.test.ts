@@ -295,13 +295,13 @@ describe("PlaceObject2 clip actions — integration: exportSWF baseline", () => 
   it("PlaceObject2 tag is emitted without error for a plain instance", () => {
     const inst = makeInstance("inst-1", "sym-1", 0, 0);
     const doc = makeDoc("sym-1", "MyClip", inst);
-    expect(() => exportSWF(doc)).not.toThrow();
+    expect(() => exportSWF(doc, { compress: false })).not.toThrow();
   });
 
   it("PlaceObject2 tag body flags byte does not have HasClipActions (0x80) set", () => {
     const inst = makeInstance("inst-1", "sym-1", 50, 50);
     const doc = makeDoc("sym-1", "MyClip", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     // Collect all PlaceObject2 tags that have HasCharacter set (i.e. place new instances)
@@ -321,7 +321,7 @@ describe("PlaceObject2 clip actions — integration: exportSWF baseline", () => 
     // The minimal body (identity-scale, zero-translate MATRIX) should be short.
     const inst = makeInstance("inst-1", "sym-1", 0, 0);
     const doc = makeDoc("sym-1", "MyClip", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
 
     const po2Tag = tags.find(
@@ -347,7 +347,7 @@ describe("PlaceObject2 clip actions — integration: exportSWF baseline", () => 
       library: { items: [sym], folders: [] },
     };
 
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = parseSWFTags(bytes);
     const po2Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
 

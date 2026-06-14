@@ -5,9 +5,15 @@ import { compileDocument } from './compile.js';
 import type { FlashDocument } from '@flash/core';
 import type { CompileOptions } from './compile.js';
 
-/** Compile a document to SWF bytes. */
+/** Compile a document to SWF bytes.
+ *
+ * Compression defaults to true (CWS, zlib-compressed) matching Flash 8's
+ * "Compress movie" publish default (Player 6+). Pass { compress: false } to
+ * emit an uncompressed FWS SWF.
+ */
 export function exportSWF(doc: FlashDocument, options?: CompileOptions): Uint8Array {
-  return compileDocument(doc, options);
+  const opts: CompileOptions = { compress: true, ...options };
+  return compileDocument(doc, opts);
 }
 
 /**

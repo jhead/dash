@@ -187,13 +187,13 @@ describe("PlaceObject2 — instance name (HasName flag)", () => {
   it("1. SWF compiles without error when instanceName is set", () => {
     const inst = makeInstanceWithName("inst-1", "sym-1", "myButton");
     const doc = makeDoc("sym-1", inst);
-    expect(() => exportSWF(doc)).not.toThrow();
+    expect(() => exportSWF(doc, { compress: false })).not.toThrow();
   });
 
   it("2. PlaceObject2 with instanceName has HasName flag (0x20) set in flags byte", () => {
     const inst = makeInstanceWithName("inst-1", "sym-1", "myButton");
     const doc = makeDoc("sym-1", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
 
     // Find PlaceObject2 tags that place a new character (HasCharacter=1)
@@ -214,7 +214,7 @@ describe("PlaceObject2 — instance name (HasName flag)", () => {
     const instanceName = "myButton";
     const inst = makeInstanceWithName("inst-1", "sym-1", instanceName);
     const doc = makeDoc("sym-1", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
 
     const po2Tags = tags.filter(
@@ -257,7 +257,7 @@ describe("PlaceObject2 — instance name (HasName flag)", () => {
       y: 10,
     };
     const doc = makeDoc("sym-1", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
 
     const po2Tags = tags.filter(
@@ -276,7 +276,7 @@ describe("PlaceObject2 — instance name (HasName flag)", () => {
   it("5. Flags byte equals 0x26 (HasCharacter | HasMatrix | HasName) for named instance", () => {
     const inst = makeInstanceWithName("inst-1", "sym-1", "myButton");
     const doc = makeDoc("sym-1", inst);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
 
     const po2Tags = tags.filter(

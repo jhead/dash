@@ -96,8 +96,15 @@ describe("exportSWF", () => {
     expect(result).toBeInstanceOf(Uint8Array);
   });
 
-  it("first 3 bytes are FWS (uncompressed SWF signature)", () => {
+  it("first 3 bytes are CWS (compressed SWF signature — compression is on by default)", () => {
     const result = exportSWF(minimalDoc);
+    expect(result[0]).toBe(0x43); // 'C'
+    expect(result[1]).toBe(0x57); // 'W'
+    expect(result[2]).toBe(0x53); // 'S'
+  });
+
+  it("first 3 bytes are FWS when compress: false is passed", () => {
+    const result = exportSWF(minimalDoc, { compress: false });
     expect(result[0]).toBe(0x46); // 'F'
     expect(result[1]).toBe(0x57); // 'W'
     expect(result[2]).toBe(0x53); // 'S'

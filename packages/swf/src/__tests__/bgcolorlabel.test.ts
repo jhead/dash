@@ -167,7 +167,7 @@ function makeSimpleDoc(backgroundColor: string, frameCount = 1): FlashDocument {
 describe("SWF SetBackgroundColor tag (type 9)", () => {
   it("1. doc with backgroundColor '#FF0000' has tag type 9 with body [0xFF, 0x00, 0x00]", () => {
     const doc = makeSimpleDoc("#FF0000");
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     const bgTag = tags.find((t) => t.type === TAG_SET_BACKGROUND_COLOR);
     expect(bgTag).toBeDefined();
@@ -178,7 +178,7 @@ describe("SWF SetBackgroundColor tag (type 9)", () => {
 
   it("2. doc with default white '#FFFFFF' has tag type 9 body [0xFF, 0xFF, 0xFF]", () => {
     const doc = makeSimpleDoc("#FFFFFF");
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     const bgTag = tags.find((t) => t.type === TAG_SET_BACKGROUND_COLOR);
     expect(bgTag).toBeDefined();
@@ -189,7 +189,7 @@ describe("SWF SetBackgroundColor tag (type 9)", () => {
 
   it("3. SetBackgroundColor body is exactly 3 bytes", () => {
     const doc = makeSimpleDoc("#336699");
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     const bgTag = tags.find((t) => t.type === TAG_SET_BACKGROUND_COLOR);
     expect(bgTag).toBeDefined();
@@ -198,7 +198,7 @@ describe("SWF SetBackgroundColor tag (type 9)", () => {
 
   it("4. SetBackgroundColor appears before the first ShowFrame", () => {
     const doc = makeSimpleDoc("#ffffff", 2);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     const withIdx = tags.map((t, idx) => ({ ...t, idx }));
     const bgIdx = withIdx.find((t) => t.type === TAG_SET_BACKGROUND_COLOR)?.idx;
@@ -217,7 +217,7 @@ describe("SWF FrameLabel tag (type 43)", () => {
   it("5. doc with frame label 'intro' has tag type 43 with body starting 'intro\\0'", () => {
     const frames = [makeFrame(0, ""), makeFrame(1, "intro", "name")];
     const doc = makeDoc("#ffffff", [makeScene("s1", "Scene 1", frames)]);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     const labelTag = tags.find(
       (t) => t.type === TAG_FRAME_LABEL && readCString(t.body) === "intro"
@@ -236,7 +236,7 @@ describe("SWF FrameLabel tag (type 43)", () => {
   it("6. doc with no frame labels does not emit FrameLabel for frame bodies (only scene label)", () => {
     const frames = [makeFrame(0, ""), makeFrame(1, ""), makeFrame(2, "")];
     const doc = makeDoc("#ffffff", [makeScene("s1", "Scene 1", frames)]);
-    const bytes = exportSWF(doc);
+    const bytes = exportSWF(doc, { compress: false });
     const tags = findTags(bytes);
     // Only the scene-name FrameLabel (Scene 1) should be present
     const frameLabelTags = tags.filter((t) => t.type === TAG_FRAME_LABEL);

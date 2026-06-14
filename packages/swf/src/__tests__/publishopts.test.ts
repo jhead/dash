@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { inflateSync } from "fflate";
+import { unzlibSync } from "fflate";
 import { compileDocument } from "../compile.js";
 import type { FlashDocument, Frame, Layer, Scene } from "@flash/core";
 
@@ -180,7 +180,7 @@ describe("SWF output options — compression (task 0604)", () => {
     const doc = makeDoc([makeScene("s1", "Scene 1", 3)]);
     const fws = compileDocument(doc, { compress: false });
     const cws = compileDocument(doc, { compress: true });
-    const decompressed = inflateSync(cws.slice(8));
+    const decompressed = unzlibSync(cws.slice(8));
     expect(decompressed).toEqual(fws.slice(8));
   });
 });

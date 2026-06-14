@@ -48,15 +48,19 @@ const { compileDocument } = await import(`file://${join(REPO, "packages/swf/dist
 
 const flaBytes = new Uint8Array(readFileSync(flaPath));
 
+// Use compression by default (matches the real publish/export path: CWS, Flash 8 default).
+// swf-dump calls swf::decompress_swf() so it handles both CWS and FWS correctly.
+const COMPILE_OPTIONS = { compress: true };
+
 // ---- 1. self-determinism --------------------------------------------------
 const hashes = [];
 for (let i = 0; i < 4; i++) {
-  const swf = Buffer.from(compileDocument(loadFla(flaBytes)));
+  const swf = Buffer.from(compileDocument(loadFla(flaBytes), COMPILE_OPTIONS));
   hashes.push(createHash("sha256").update(swf).digest("hex").slice(0, 16));
 }
 const deterministic = new Set(hashes).size === 1;
 
-const ourSwf = Buffer.from(compileDocument(loadFla(flaBytes)));
+const ourSwf = Buffer.from(compileDocument(loadFla(flaBytes), COMPILE_OPTIONS));
 const work = mkdtempSync(join(tmpdir(), "golden-report-"));
 const ourSwfPath = join(work, "ours.swf");
 writeFileSync(ourSwfPath, ourSwf);
