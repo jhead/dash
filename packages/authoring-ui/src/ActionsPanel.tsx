@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { ButtonAction, ClipAction, Symbol, SymbolInstance } from "@flash/core";
+import type { ButtonAction, ButtonHandler, ClipAction, Symbol, SymbolInstance } from "@flash/core";
 import { parse as parseAS2 } from "@flash/core";
 
 // ---------------------------------------------------------------------------
@@ -259,6 +259,65 @@ const BUTTON_EVENT_TYPES: Array<{ event: ButtonAction["event"]; label: string }>
   { event: "dragOver",       label: "dragOver" },
   { event: "dragOut",        label: "dragOut" },
 ];
+
+// ---------------------------------------------------------------------------
+// Button INSTANCE handler helpers (on() handlers attached to a stage instance).
+//
+// These mirror the symbol-level button-action helpers but operate on a button
+// instance's `buttonHandlers` array. The event vocabulary is the same set Flash 8
+// surfaces in the "Actions - Button" panel for a selected instance.
+// ---------------------------------------------------------------------------
+
+const BUTTON_HANDLER_EVENT_TYPES: Array<{ event: ButtonHandler["event"]; label: string }> = [
+  { event: "press",          label: "press" },
+  { event: "release",        label: "release" },
+  { event: "releaseOutside", label: "releaseOutside" },
+  { event: "rollOver",       label: "rollOver" },
+  { event: "rollOut",        label: "rollOut" },
+  { event: "dragOver",       label: "dragOver" },
+  { event: "dragOut",        label: "dragOut" },
+];
+
+/** Stable string key for a ButtonHandler event (handles keyPress objects). */
+export function buttonHandlerEventKey(event: ButtonHandler["event"]): string {
+  if (typeof event === "string") return event;
+  return `keyPress:${event.keyPress}`;
+}
+
+/** Look up the on()-handler script for a given event in a button instance's handler list. */
+export function getButtonHandlerScript(
+  handlers: readonly ButtonHandler[],
+  event: ButtonHandler["event"]
+): string {
+  const key = buttonHandlerEventKey(event);
+  return handlers.find((h) => buttonHandlerEventKey(h.event) === key)?.script ?? "";
+}
+
+/**
+ * Produce an updated buttonHandlers list with the given event's script replaced.
+ * An empty/whitespace-only script removes the handler. Order is preserved using the
+ * canonical event ordering (matching the symbol-level helper's behavior).
+ */
+export function updateButtonHandlerScript(
+  handlers: readonly ButtonHandler[],
+  event: ButtonHandler["event"],
+  newScript: string
+): ButtonHandler[] {
+  const key = buttonHandlerEventKey(event);
+  const filtered = handlers.filter((h) => buttonHandlerEventKey(h.event) !== key);
+  if (newScript.trim().length === 0) {
+    return filtered;
+  }
+  const orderOf = (e: ButtonHandler["event"]): number => {
+    const idx = BUTTON_HANDLER_EVENT_TYPES.findIndex((t) => t.event === e);
+    // keyPress / unknown events sort after the standard list, preserving relative order.
+    return idx === -1 ? BUTTON_HANDLER_EVENT_TYPES.length : idx;
+  };
+  const idx = orderOf(event);
+  const before = filtered.filter((h) => orderOf(h.event) < idx);
+  const after = filtered.filter((h) => orderOf(h.event) >= idx);
+  return [...before, { event, script: newScript }, ...after];
+}
 
 // ---------------------------------------------------------------------------
 // ScriptEditor — reusable inline editor used by both frame and clip modes
@@ -761,6 +820,16 @@ export interface ActionsPanelProps {
   /** Called when buttonActions on the selected button symbol should be updated. */
   onButtonActionsChange?: (actions: readonly ButtonAction[]) => void;
   /**
+   * When set to a button SymbolInstance placed on the stage, enables
+   * "Actions - Button" mode for the instance's on() handlers (`buttonHandlers`).
+   * Takes precedence over `selectedButtonSymbol` — selecting a button instance on
+   * the stage edits that instance's handlers (the on(release){...} blocks), which is
+   * what Flash 8 shows. This is the path that surfaces imported FLA button handlers.
+   */
+  selectedButtonInstance?: SymbolInstance | null;
+  /** Called when buttonHandlers on the selected button instance should be updated. */
+  onButtonHandlersChange?: (handlers: readonly ButtonHandler[]) => void;
+  /**
    * Embedded mode: render inline (filling its container) as part of the bottom
    * docked panel instead of as a floating, fixed-position window. The title bar
    * and close button are omitted since the host tab bar provides those.
@@ -783,6 +852,8 @@ export function ActionsPanel({
   onClipActionsChange,
   selectedButtonSymbol,
   onButtonActionsChange,
+  selectedButtonInstance,
+  onButtonHandlersChange,
   embedded = false,
 }: ActionsPanelProps): React.ReactElement | null {
   const [cursorLine, setCursorLine] = useState(1);
@@ -791,14 +862,22 @@ export function ActionsPanel({
   const [selectedClipEvent, setSelectedClipEvent] = useState<ClipAction["event"]>("enterFrame");
   // Which on(event) handler is currently selected in Button mode
   const [selectedButtonEvent, setSelectedButtonEvent] = useState<ButtonAction["event"]>("press");
+  // Which on(event) handler is currently selected in Button-instance mode
+  const [selectedButtonHandlerEvent, setSelectedButtonHandlerEvent] =
+    useState<ButtonHandler["event"]>("press");
 
   // Determine if we're in Movie Clip mode
   // (only when a movieclip instance is selected AND clipActions callbacks are wired)
   const isMovieClipMode = !!(selectedInstance && onClipActionsChange);
 
-  // Determine if we're in Button mode
+  // Determine if we're in Button-instance mode
+  // (a button instance is selected on the stage AND the buttonHandlers callback is wired).
+  // This takes precedence over the symbol-level Button mode below.
+  const isButtonInstanceMode = !!(selectedButtonInstance && onButtonHandlersChange);
+
+  // Determine if we're in Button (symbol) mode
   // (only when a button symbol is selected AND buttonActions callbacks are wired)
-  const isButtonMode = !!(selectedButtonSymbol && onButtonActionsChange);
+  const isButtonMode = !isButtonInstanceMode && !!(selectedButtonSymbol && onButtonActionsChange);
 
   // Focus first textarea when panel opens
   const firstTextareaRef = useRef<HTMLDivElement>(null);
@@ -860,7 +939,7 @@ export function ActionsPanel({
         bottom: "40px",
         left: "50%",
         transform: "translateX(-50%)",
-        width: (isMovieClipMode || isButtonMode) ? "760px" : "680px",
+        width: (isMovieClipMode || isButtonMode || isButtonInstanceMode) ? "760px" : "680px",
         height: "320px",
         background: "#1e1e1e",
         border: "1px solid #444",
@@ -947,6 +1026,125 @@ export function ActionsPanel({
       onButtonActionsChange(filtered);
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // Button INSTANCE handler helpers (on() handlers on a stage instance)
+  // ---------------------------------------------------------------------------
+
+  const buttonHandlers = selectedButtonInstance?.buttonHandlers ?? [];
+
+  const handleButtonHandlerScriptChange = (
+    event: ButtonHandler["event"],
+    newScript: string
+  ): void => {
+    if (!onButtonHandlersChange) return;
+    onButtonHandlersChange(updateButtonHandlerScript(buttonHandlers, event, newScript));
+  };
+
+  // ---------------------------------------------------------------------------
+  // Button-instance mode: on() sidebar + editor for the selected event
+  // ---------------------------------------------------------------------------
+
+  if (isButtonInstanceMode) {
+    const instanceLabel = selectedButtonInstance.instanceName
+      ? ` (${selectedButtonInstance.instanceName})`
+      : "";
+    const currentHandlerScript = getButtonHandlerScript(buttonHandlers, selectedButtonHandlerEvent);
+
+    return (
+      <div style={panelStyle}>
+        {/* Title bar */}
+        {!embedded && (
+          <div style={titleBarStyle}>
+            <span>Actions - Button{instanceLabel}</span>
+            <button
+              style={{ background: "transparent", border: "none", color: "#ccc", cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
+              onClick={onClose}
+              title="Close (F9)"
+            >
+              &#x2715;
+            </button>
+          </div>
+        )}
+
+        {/* Toolbar */}
+        <div style={toolbarStyle}>
+          <button style={toolBtnStyle} title="Add Statement">+</button>
+          <button style={toolBtnStyle} title="Find">&#128269;</button>
+          <button style={toolBtnStyle} title="Help">?</button>
+          <div style={{ width: "1px", height: "16px", background: "#555", margin: "0 4px" }} />
+          <span style={{ fontSize: "11px", color: "#888" }}>on</span>
+        </div>
+
+        {/* Two-column layout: event list + editor */}
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+          {/* Event list sidebar */}
+          <div style={{
+            width: "140px",
+            flexShrink: 0,
+            background: "#252526",
+            borderRight: "1px solid #333",
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+          }}>
+            <div style={{ padding: "4px 8px", fontSize: "10px", color: "#888", borderBottom: "1px solid #333", userSelect: "none" }}>
+              on
+            </div>
+            {BUTTON_HANDLER_EVENT_TYPES.map(({ event, label }) => {
+              const hasScript = getButtonHandlerScript(buttonHandlers, event).trim().length > 0;
+              const isSelected =
+                buttonHandlerEventKey(selectedButtonHandlerEvent) === buttonHandlerEventKey(event);
+              return (
+                <button
+                  key={buttonHandlerEventKey(event)}
+                  data-testid={`button-handler-event-${buttonHandlerEventKey(event)}`}
+                  onClick={() => setSelectedButtonHandlerEvent(event)}
+                  style={{
+                    background: isSelected ? "#094771" : "transparent",
+                    border: "none",
+                    borderBottom: "1px solid #2a2a2a",
+                    color: isSelected ? "#fff" : hasScript ? "#d4d4d4" : "#777",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    padding: "5px 8px",
+                    textAlign: "left",
+                    fontFamily: "'Consolas', 'Courier New', monospace",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  {hasScript && (
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4ec9b0", flexShrink: 0, display: "inline-block" }} />
+                  )}
+                  {!hasScript && <span style={{ width: "6px", flexShrink: 0, display: "inline-block" }} />}
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Script editor for selected event */}
+          <div ref={firstTextareaRef} style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+            <ScriptEditor
+              script={currentHandlerScript}
+              onScriptChange={(s) => handleButtonHandlerScriptChange(selectedButtonHandlerEvent, s)}
+              onCursorChange={(l, c) => { setCursorLine(l); setCursorCol(c); }}
+            />
+          </div>
+        </div>
+
+        {/* Status bar */}
+        <div style={statusBarStyle}>
+          <span>ActionScript 2.0</span>
+          <span>on({buttonHandlerEventKey(selectedButtonHandlerEvent)})</span>
+          <span>Ln {cursorLine}, Col {cursorCol}</span>
+          <span style={{ marginLeft: "auto", fontSize: "10px", opacity: 0.8 }}>F9 to close</span>
+        </div>
+      </div>
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Movie Clip mode: event list sidebar + editor for the selected event

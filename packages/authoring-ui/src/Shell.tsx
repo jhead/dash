@@ -55,6 +55,7 @@ import type {
   BitmapDisplayObject,
   BitmapItem,
   ButtonAction,
+  ButtonHandler,
   ClipAction,
   DisplayObject,
   DocumentProperties,
@@ -2010,6 +2011,31 @@ export function Shell(): React.ReactElement {
     if (!libItem || libItem.itemType !== "symbol" || libItem.symbolType !== "button") return null;
     return libItem;
   }, [selectedDisplayObject, doc.library.items]);
+
+  /**
+   * Returns the currently selected SymbolInstance if it references a button symbol,
+   * otherwise null. Used by ActionsPanel for "Actions - Button" (instance) mode, which
+   * surfaces the instance's on() handlers (`buttonHandlers`) — the handlers imported
+   * from a Flash 8 FLA's on(release){...} blocks on a placed button instance.
+   */
+  const selectedButtonInstance = useMemo<SymbolInstance | null>(() => {
+    if (!selectedDisplayObject || selectedDisplayObject.type !== "instance") return null;
+    const inst = selectedDisplayObject as SymbolInstance;
+    const libItem = doc.library.items.find(
+      (i) => i.id === inst.symbolId && i.itemType === "symbol"
+    );
+    if (!libItem || libItem.itemType !== "symbol" || libItem.symbolType !== "button") return null;
+    return inst;
+  }, [selectedDisplayObject, doc.library.items]);
+
+  /** Update buttonHandlers on the currently selected button instance (stage-level on() handlers). */
+  const handleButtonHandlersChange = useCallback(
+    (buttonHandlers: readonly ButtonHandler[]) => {
+      if (!selectedButtonInstance) return;
+      handleUpdateInstance(selectedButtonInstance.id, { buttonHandlers });
+    },
+    [selectedButtonInstance, handleUpdateInstance]
+  );
 
   /** Update buttonActions on the currently selected button symbol (library-level). */
   const handleButtonActionsChange = useCallback(
@@ -5964,6 +5990,8 @@ export function Shell(): React.ReactElement {
                     onClipActionsChange={handleClipActionsChange}
                     selectedButtonSymbol={selectedButtonSymbol}
                     onButtonActionsChange={handleButtonActionsChange}
+                    selectedButtonInstance={selectedButtonInstance}
+                    onButtonHandlersChange={handleButtonHandlersChange}
                   />
                 )}
                 {bottomTab === "sound" && (
