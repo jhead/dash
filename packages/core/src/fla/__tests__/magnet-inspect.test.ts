@@ -4,14 +4,24 @@ import { tryLoadRealFla } from "../ole.js";
 import type { Layer } from "../../model/types.js";
 
 describe("Magnet.fla inspection", () => {
-  it("has 6 scenes with expected names", () => {
+  it("has 6 scenes in authored play order (Contents-stream order, not Page-N order)", () => {
     const bytes = new Uint8Array(readFileSync("/Users/jhead/dev/flash/packages/core/fixtures/Magnet.fla"));
     const doc = tryLoadRealFla(bytes);
     if (!doc) throw new Error("failed to load");
 
+    // Authored scene order is the order CDocumentPage records appear in the
+    // Contents stream. The OLE2 "Page N" stream numbers are creation order
+    // (AA was authored first as "Page 1" but lives 3rd in the Scenes panel),
+    // so ordering by stream number would wrongly start the movie on "AA".
     expect(doc.scenes.length).toBe(6);
-    expect(doc.scenes[0].name).toBe("AA");
-    expect(doc.scenes[2].name).toBe("Scene 5"); // contains "menu" frame label
+    expect(doc.scenes.map((s) => s.name)).toEqual([
+      "Scene 2",
+      "Scene 5",
+      "AA",
+      "BA",
+      "AB",
+      "BB",
+    ]);
   });
 
   it("has 'menu' frame label in Scene 5 at frame 1", () => {
@@ -19,7 +29,7 @@ describe("Magnet.fla inspection", () => {
     const doc = tryLoadRealFla(bytes);
     if (!doc) throw new Error("failed to load");
 
-    const scene5 = doc.scenes[2];
+    const scene5 = doc.scenes[1];
     expect(scene5.name).toBe("Scene 5");
 
     let menuFound = false;
@@ -40,7 +50,7 @@ describe("Magnet.fla inspection", () => {
     const doc = tryLoadRealFla(bytes);
     if (!doc) throw new Error("failed to load");
 
-    const sceneAA = doc.scenes[0];
+    const sceneAA = doc.scenes[2];
     expect(sceneAA.name).toBe("AA");
 
     const layers = sceneAA.timeline.layers;

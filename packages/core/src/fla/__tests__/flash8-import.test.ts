@@ -1979,8 +1979,10 @@ describe("Magnet.fla — CS2 FLA layer names are readable strings (regression 08
     }
   });
 
-  it("scene 0 (AA) has the expected layer names", () => {
-    const names = doc.scenes[0]!.timeline.layers.map((l) => l.name);
+  it("scene 'AA' (scenes[2] in authored order) has the expected layer names", () => {
+    // Scenes are ordered by authored play order (Contents-stream order):
+    // [Scene 2, Scene 5, AA, BA, AB, BB], so AA is at index 2, not 0.
+    const names = doc.scenes[2]!.timeline.layers.map((l) => l.name);
     // Binary FLA stores layers bottom-to-top; import reverses to match Flash convention
     // (li=0 = topmost/frontmost layer in panel).  The mask reordering pass moves
     // the mask layer (Layer 5) BEFORE its masked children so that compile.ts can
@@ -1988,8 +1990,8 @@ describe("Magnet.fla — CS2 FLA layer names are readable strings (regression 08
     expect(names).toEqual(["Layer 5", "Ball", "Walls", "Magnets", "Layer 3", "Layer 7"]);
   });
 
-  it("scene 2 (Scene 5) has readable layer names", () => {
-    const names = doc.scenes[2]!.timeline.layers.map((l) => l.name);
+  it("scene 'Scene 5' (scenes[1] in authored order) has readable layer names", () => {
+    const names = doc.scenes[1]!.timeline.layers.map((l) => l.name);
     // Binary FLA stores layers bottom-to-top; reversed on import so frontmost is li=0.
     expect(names).toEqual(["Layer 5", "Layer 5", "Ball", "Layer 3"]);
   });
@@ -2054,7 +2056,8 @@ describe("Magnet.fla — CPicSwf embedded SWF placements (task 0892)", () => {
     // Verify stream alignment wasn't disturbed by CPicSwf parsing.
     // Binary FLA stores layers bottom-to-top; import reverses so li=0 is frontmost.
     // The mask reordering pass moves Layer 5 (mask) BEFORE its masked children.
-    const names = loaded!.scenes[0]!.timeline.layers.map((l) => l.name);
+    // AA is scenes[2] in authored play order ([Scene 2, Scene 5, AA, …]).
+    const names = loaded!.scenes[2]!.timeline.layers.map((l) => l.name);
     expect(names).toEqual(["Layer 5", "Ball", "Walls", "Magnets", "Layer 3", "Layer 7"]);
   });
 });

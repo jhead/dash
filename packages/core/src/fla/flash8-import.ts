@@ -1914,9 +1914,36 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
   }
 
   // --- scenes -----------------------------------------------------------------
+  // Scene PLAY ORDER is the order the CDocumentPage records appear in the
+  // Contents stream, NOT the numeric order of their "Page N" OLE2 streams. The
+  // "Page N" suffix is creation/storage order (the first scene authored becomes
+  // "Page 1" and keeps that stream name even when later dragged to a different
+  // position in the Scenes panel). `contents.sceneNames` is a Map populated in
+  // Contents byte-scan order, so its key order is the authored scene order.
+  // Order pages to match it; any page missing from the map (name extraction
+  // failed) is appended afterwards in page-number order as a fallback. See
+  // CLAUDE.md "FLA binary layer ordering" learnings — this is the scene-level
+  // analogue of that ordering distinction.
+  const pageByName = new Map(pages.map((p) => [p.name, p]));
+  const orderedPages: typeof pages = [];
+  const usedPageNames = new Set<string>();
+  for (const streamName of contents.sceneNames.keys()) {
+    const p = pageByName.get(streamName);
+    if (p && !usedPageNames.has(streamName)) {
+      orderedPages.push(p);
+      usedPageNames.add(streamName);
+    }
+  }
+  for (const p of pages) {
+    if (!usedPageNames.has(p.name)) {
+      orderedPages.push(p);
+      usedPageNames.add(p.name);
+    }
+  }
+
   const scenes: Scene[] = [];
-  for (let i = 0; i < pages.length; i++) {
-    const p = pages[i]!;
+  for (let i = 0; i < orderedPages.length; i++) {
+    const p = orderedPages[i]!;
     const sceneName = contents.sceneNames.get(p.name) ?? `Scene ${i + 1}`;
     let timeline: Timeline;
     try {
