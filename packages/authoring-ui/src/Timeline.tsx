@@ -38,20 +38,26 @@ import { EaseCurveDialog } from "./EaseCurveDialog";
 // ---------------------------------------------------------------------------
 
 const LAYER_COL_WIDTH = 130;
-/** Frame cell pitch: 15px cell + 1px right gridline (Flash 8 measured = 16). */
-const FRAME_W = 16;
+/**
+ * Base metrics are the raw Flash-8-measured sizes (uiScale = 1). The component
+ * multiplies the frame-cell geometry by the `uiScale` preference; chrome that
+ * carries text (ruler, status bar, layer column) stays at a fixed size so it
+ * remains legible at small scales.
+ */
+/** Frame cell pitch at scale 1: 15px cell + 1px right gridline (measured = 16). */
+const BASE_FRAME_W = 16;
 /** Width of each button-state column in button-symbol editing mode */
 const BUTTON_STATE_W = 60;
-/** Row height inside borders — applies to both frame rows and layer rows. */
-const FRAME_H = 38;
+/** Row height (inside borders) at scale 1 — applies to frame AND layer rows. */
+const BASE_FRAME_H = 38;
 const RULER_H = 16;
 /** Timeline status bar height (onion/EMF toggles, readouts, H-scrollbar). */
 const STATUS_BAR_H = 24;
 const MIN_VISIBLE_FRAMES = 48;
-// Keyframe dot geometry (measured from Flash 8): a 10px circle that sits low in
-// the cell — 24px from the top, 4px from the bottom (24 + 10 + 4 = FRAME_H).
-const DOT_SIZE = 10;
-const DOT_BOTTOM = 4;
+// Keyframe dot geometry at scale 1 (measured from Flash 8): a 10px circle that
+// sits low in the cell — 24px from the top, 4px from the bottom.
+const BASE_DOT_SIZE = 10;
+const BASE_DOT_BOTTOM = 4;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -62,6 +68,12 @@ export interface TimelineProps {
   currentFrame: number;
   isPlaying: boolean;
   frameRate?: number;
+  /**
+   * Timeline UI scale factor (default 1). Scales frame-cell geometry (cell
+   * width, row height, keyframe dot). On a 2× Retina display, 0.5 makes the
+   * timeline render at the same physical size Flash 8 had on a 1× display.
+   */
+  uiScale?: number;
   activeLayerIndex?: number;
   onActiveLayerChange?: (index: number) => void;
   onTimelineChange: (t: TimelineModel) => void;
@@ -217,6 +229,10 @@ function FrameCell({
   labelType,
   hasScript,
   hasSound,
+  frameW,
+  frameH,
+  dotSize,
+  dotBottom,
   onClick,
   onDoubleClick,
   onContextMenu,
@@ -224,6 +240,11 @@ function FrameCell({
   state: FrameState;
   tweenState: TweenState;
   isPlayhead: boolean;
+  /** Scaled frame-cell geometry (driven by the uiScale preference). */
+  frameW: number;
+  frameH: number;
+  dotSize: number;
+  dotBottom: number;
   /** True if this frame is within the shift-selected range */
   isSelected?: boolean;
   /** True for the start keyframe of a tween so we can render the arrow */
@@ -272,8 +293,8 @@ function FrameCell({
       onContextMenu={onContextMenu}
       style={{
         position: "relative",
-        width: FRAME_W,
-        height: FRAME_H,
+        width: frameW,
+        height: frameH,
         flexShrink: 0,
         background: bg,
         borderRight: border,
@@ -291,11 +312,11 @@ function FrameCell({
         <div
           style={{
             position: "absolute",
-            bottom: DOT_BOTTOM,
+            bottom: dotBottom,
             left: "50%",
             transform: "translateX(-50%)",
-            width: DOT_SIZE,
-            height: DOT_SIZE,
+            width: dotSize,
+            height: dotSize,
             borderRadius: "50%",
             background: state === "keyframe" ? "#222" : "transparent",
             border: "1px solid #222",
@@ -480,7 +501,7 @@ function FrameCell({
 // Playhead marker (sits in the ruler row)
 // ---------------------------------------------------------------------------
 
-function PlayheadMarker({ frame, colWidth = FRAME_W }: { frame: number; colWidth?: number }) {
+function PlayheadMarker({ frame, colWidth = BASE_FRAME_W }: { frame: number; colWidth?: number }) {
   return (
     <div
       style={{
@@ -531,6 +552,7 @@ function OnionRangeMarker({
   onDrag,
   framesScrollRef,
   frameCount,
+  colWidth,
 }: {
   frame: number;
   color: string;
@@ -539,6 +561,8 @@ function OnionRangeMarker({
   onDrag: (frameDelta: number) => void;
   framesScrollRef: React.RefObject<HTMLDivElement | null>;
   frameCount: number;
+  /** Scaled frame-cell width (uiScale-driven). */
+  colWidth: number;
 }) {
   const dragRef = React.useRef<{ startX: number; startFrame: number } | null>(null);
 
@@ -553,7 +577,7 @@ function OnionRangeMarker({
         const scrollLeft = framesScrollRef.current?.scrollLeft ?? 0;
         void scrollLeft;
         const dx = me.clientX - dragRef.current.startX;
-        const frameDelta = Math.round(dx / FRAME_W);
+        const frameDelta = Math.round(dx / colWidth);
         if (frameDelta !== 0) {
           onDrag(frameDelta);
           // Reset so next drag is incremental
@@ -568,7 +592,7 @@ function OnionRangeMarker({
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [frame, onDrag, framesScrollRef]
+    [frame, onDrag, framesScrollRef, colWidth]
   );
 
   const clampedFrame = Math.max(0, Math.min(frameCount - 1, frame));
@@ -578,9 +602,9 @@ function OnionRangeMarker({
       onMouseDown={handleMouseDown}
       style={{
         position: "absolute",
-        left: clampedFrame * FRAME_W,
+        left: clampedFrame * colWidth,
         top: 0,
-        width: FRAME_W,
+        width: colWidth,
         height: RULER_H,
         zIndex: 9,
         cursor: "col-resize",
@@ -627,6 +651,7 @@ export function Timeline({
   currentFrame,
   isPlaying,
   frameRate = 12,
+  uiScale = 1,
   activeLayerIndex = 0,
   onActiveLayerChange,
   onTimelineChange,
@@ -653,6 +678,14 @@ export function Timeline({
   onFrameDoubleClick,
   onSelectedFrameRangeChange,
 }: TimelineProps): React.ReactElement {
+  // Scaled frame-cell geometry. The chrome (ruler, layer column, status bar)
+  // stays fixed so text remains legible; only the cell grid scales.
+  const scale = uiScale > 0 ? uiScale : 1;
+  const FRAME_W = Math.max(3, Math.round(BASE_FRAME_W * scale));
+  const FRAME_H = Math.max(12, Math.round(BASE_FRAME_H * scale));
+  const DOT_SIZE = Math.max(3, Math.round(BASE_DOT_SIZE * scale));
+  const DOT_BOTTOM = Math.max(1, Math.round(BASE_DOT_BOTTOM * scale));
+
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [layerContextMenu, setLayerContextMenu] = useState<LayerContextMenu | null>(null);
   // Track selected keyframe for ease editing
@@ -1555,6 +1588,7 @@ export function Timeline({
                     }}
                     framesScrollRef={framesScrollRef}
                     frameCount={frameCount}
+                    colWidth={FRAME_W}
                   />
                   <OnionRangeMarker
                     frame={Math.min(frameCount - 1, currentFrame + onionAfter)}
@@ -1566,6 +1600,7 @@ export function Timeline({
                     }}
                     framesScrollRef={framesScrollRef}
                     frameCount={frameCount}
+                    colWidth={FRAME_W}
                   />
                 </>
               )}
@@ -1660,6 +1695,10 @@ export function Timeline({
                           labelType={kf?.labelType}
                           hasScript={hasScript}
                           hasSound={hasSound}
+                          frameW={FRAME_W}
+                          frameH={FRAME_H}
+                          dotSize={DOT_SIZE}
+                          dotBottom={DOT_BOTTOM}
                           onClick={(e) => {
                             onFrameChange(fi);
                             // Select keyframe for ease editing if it's a tween keyframe

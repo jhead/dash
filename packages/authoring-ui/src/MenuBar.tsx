@@ -198,6 +198,8 @@ export interface MenuBarProps {
   onFiltersPanelToggle?: () => void;
   /** Called when Modify > Document (Ctrl+J) is activated. */
   onDocPropsOpen?: () => void;
+  /** Called when Edit > Preferences... is activated. */
+  onPreferences?: () => void;
   /** Called when View > Rulers is toggled (Ctrl+Alt+R). */
   onRulersToggle?: () => void;
   /** Whether rulers are currently shown (for checkmark display). */
@@ -406,6 +408,7 @@ export function MenuBar({
   onOutputToggle,
   onFiltersPanelToggle,
   onDocPropsOpen,
+  onPreferences,
   onRulersToggle,
   showRulers = false,
   onToggleShowGrid,
@@ -595,6 +598,11 @@ export function MenuBar({
         {
           label: "Find and Replace...  Ctrl+H",
           action: () => { onFindReplace?.(); },
+          separator: true,
+        },
+        {
+          label: "Preferences...",
+          action: () => { onPreferences?.(); },
           separator: true,
         },
       ],

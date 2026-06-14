@@ -96,6 +96,8 @@ import { StageArea } from "./StageArea";
 import type { ViewMode, OnionFrame } from "./StageArea";
 import { Rulers } from "./Rulers";
 import { Timeline } from "./Timeline";
+import { PreferencesDialog } from "./PreferencesDialog";
+import { usePreferences } from "./preferences";
 import { PropertiesPanel } from "./PropertiesPanel";
 import type { PlacedInstance } from "./PropertiesPanel";
 import { LibraryPanel } from "./LibraryPanel";
@@ -806,12 +808,16 @@ export function Shell(): React.ReactElement {
 
   // Resizable panes: right panel width, top timeline height, bottom dock height.
   const rightResize = useResize(240, 160, 600, "x");
-  // Taller default/min/max to fit the Flash-8 38px rows + status bar chrome.
-  const timelineResize = useResize(300, 120, 760, "y", true);
+  // Fits several scaled Flash-8 rows + status bar chrome; user-resizable.
+  const timelineResize = useResize(210, 100, 760, "y", true);
   const bottomResize = useResize(180, 80, 600, "y");
 
   // Top timeline dock collapse state.
   const [timelineCollapsed, setTimelineCollapsed] = useState(false);
+
+  // Application preferences (UI scale, …) persisted to localStorage.
+  const { preferences, updatePreferences, resetPreferences } = usePreferences();
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
 
   /**
    * Click a bottom tab. Clicking the active (expanded) tab collapses the dock;
@@ -5486,6 +5492,7 @@ export function Shell(): React.ReactElement {
         onOutputToggle={() => handleBottomTabClick("output")}
         onFiltersPanelToggle={() => setFiltersPanelVisible((v) => !v)}
         onDocPropsOpen={() => setDocPropsOpen(true)}
+        onPreferences={() => setPreferencesOpen(true)}
         onRulersToggle={handleRulersToggle}
         showRulers={showRulers}
         onToggleShowGrid={handleToggleShowGrid}
@@ -5651,6 +5658,7 @@ export function Shell(): React.ReactElement {
                   currentFrame={currentFrame}
                   isPlaying={isPlaying}
                   frameRate={docProperties.frameRate}
+                  uiScale={preferences.uiScale}
                   activeLayerIndex={safeActiveLayerIndex}
                   onActiveLayerChange={setActiveLayerIndex}
                   onTimelineChange={handleTimelineChange}
@@ -6348,6 +6356,15 @@ export function Shell(): React.ReactElement {
         isOpen={editGridOpen}
         onConfirm={handleEditGridConfirm}
         onCancel={() => setEditGridOpen(false)}
+      />
+
+      {/* Preferences dialog (Edit > Preferences...) */}
+      <PreferencesDialog
+        isOpen={preferencesOpen}
+        preferences={preferences}
+        onChange={updatePreferences}
+        onReset={resetPreferences}
+        onClose={() => setPreferencesOpen(false)}
       />
 
       {/* Find and Replace dialog (Edit > Find and Replace..., Ctrl+H) */}

@@ -6,10 +6,28 @@ pixel-by-pixel in Preview). This doc defines the *chrome* — sizes, ordering, a
 styling of the panel's regions. The behavioral model (frames, layers, tweens) lives
 in [02 — Timeline & Animation](./02-timeline-and-animation.md).
 
-> **Authority:** these are literal target pixel values (1:1 logical CSS px), not Retina
-> 2× values. They intentionally make the timeline larger than the legacy clone layout,
-> which rendered frames too small. The implementation lives in
-> `packages/authoring-ui/src/Timeline.tsx`.
+> **Authority:** the values below are the raw Windows-measured pixels at **UI scale 1.0**.
+> They are device pixels from a 1× Windows VM. On a 2× Retina display the app renders each
+> CSS px at 2 device px, so the raw values appear physically doubled — that's why the
+> default **UI Scale is 0.5** (see below), which cancels the 2× DPR and reproduces Flash 8's
+> on-screen size. The implementation lives in `packages/authoring-ui/src/Timeline.tsx`.
+
+## UI Scale preference
+
+The timeline's frame-cell geometry is multiplied by a **UI Scale** factor, a persisted
+application preference:
+
+- Stored in **localStorage** under `flash8.preferences` as `{ "uiScale": number }`,
+  managed by `usePreferences()` in `preferences.ts` (default **0.5**, clamped to 0.25–2).
+- Edited via **Edit → Preferences…** (`PreferencesDialog.tsx`) — a category sidebar plus
+  a UI-Scale slider / % field / 50·75·100 presets, applied live and persisted on change.
+- `Shell.tsx` passes `preferences.uiScale` to `<Timeline uiScale=…>`.
+- **What scales:** only the frame-cell geometry — `FRAME_W`, `FRAME_H` (row height for both
+  frame and layer rows), and the keyframe dot (`DOT_SIZE`/`DOT_BOTTOM`). Chrome that carries
+  text (ruler height, layer column width, status bar, fonts) stays fixed so it remains
+  legible at small scales. The Stage is unaffected — it has its own zoom control.
+- All metric tables below are the **scale-1.0** base values (`BASE_FRAME_W`, `BASE_FRAME_H`,
+  `BASE_DOT_SIZE`, `BASE_DOT_BOTTOM` in code); the component rounds `base × uiScale`.
 
 ## Panel anatomy
 
@@ -106,12 +124,12 @@ All metrics are constants at the top of `packages/authoring-ui/src/Timeline.tsx`
 
 | Constant | Meaning |
 |---|---|
-| `FRAME_W` | frame cell pitch (16) |
-| `FRAME_H` | row height (38) |
-| `RULER_H` | ruler row height |
-| `LAYER_COL_WIDTH` | layer column width |
-| `STATUS_BAR_H` | timeline status bar height |
-| `DOT_SIZE` / dot offsets | keyframe dot geometry |
+| `BASE_FRAME_W` | frame cell pitch at scale 1 (16); component uses `round(BASE_FRAME_W × uiScale)` |
+| `BASE_FRAME_H` | row height at scale 1 (38); scaled by `uiScale` |
+| `BASE_DOT_SIZE` / `BASE_DOT_BOTTOM` | keyframe dot geometry at scale 1; scaled by `uiScale` |
+| `RULER_H` | ruler row height (fixed, not scaled) |
+| `LAYER_COL_WIDTH` | layer column width (fixed) |
+| `STATUS_BAR_H` | timeline status bar height (fixed) |
 
 Sub-components: `FrameCell` (one cell), the layer-row map, the layer footer, the status
 bar, `PlayheadMarker`, `OnionRangeMarker`, `FrameCounterInput`.
