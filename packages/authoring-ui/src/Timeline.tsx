@@ -1930,7 +1930,8 @@ export function Timeline({
               )}
             </div>
 
-            <div style={{ flex: 1 }} />
+            {/* Small separator between the frame-view toggles and the readouts */}
+            <div style={{ width: 6, flexShrink: 0 }} />
 
             {/* Current Frame (editable) */}
             <FrameCounterInput
@@ -2522,9 +2523,9 @@ function HScrollBar({
       ref={trackRef}
       style={{
         position: "relative",
-        width: 150,
+        flex: 1,
+        minWidth: 40,
         height: 14,
-        flexShrink: 0,
         background: "#222",
         border: "1px solid #1a1a1a",
         borderRadius: 2,
