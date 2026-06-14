@@ -2746,33 +2746,16 @@ function readCPicText(ctx: ParseCtx): Fla8Text {
     ...(run?.letterSpacing ? { letterSpacing: run.letterSpacing / 20 } : {}),
     ...antiAliasFromRun(run),
     filters,
-    // colorEffect is null until the exact byte position in CPicText is confirmed
-    // with a fixture FLA that has a tinted/alpha/brightness effect on a text field.
-    //
-    // Investigation (task 1050): the fixture flash8-nested-textfields.fla has Flash 8
-    // text fields (ts=0x0D) with NO color effects applied. Hex-tracing the CPicText
-    // stream body confirms these fields have NO 24-byte colorEffect pad — unlike
-    // CPicSymbol where the block is unconditionally present for symbolSchema >= 4.
-    // CPicText therefore uses a conditional (effect-absent = no block), not a constant-
-    // size block with neutral values.
-    //
-    // The two candidate positions verified by hex-trace:
-    //   1) After accessibility, before 8-byte scrollable block (at ts >= 0x0D): RULED OUT.
-    //      Inserting 24 bytes here shifts all subsequent reads in the existing fixture,
-    //      causing wrong text content to be decoded. The bytes at that position are part
-    //      of the 8-byte block, not a colorEffect pad.
-    //   2) Inside ts >= 0x0D block, before filterCount: RULED OUT for the same reason.
-    //      The bytes at that position are the filterCount itself (0x00) followed by two
-    //      trailing bytes, with nothing left before the boundary null-tag.
-    //
-    // Both positions are incompatible with a fixed-size 24-byte block for the no-effect
-    // case. A conditional representation (e.g. a leading indicator byte, or the block
-    // only written when effect-type != 0) is needed.
-    //
-    // TODO(1050): acquire a real Flash 8 FLA with a Tint/Alpha/Brightness effect on a
-    // text field and hex-dump its CPicText stream. Identify the indicator byte that
-    // gates the colorEffect block and its exact offset relative to the accessibility /
-    // scrollable / filter fields documented above.
+    // colorEffect is ALWAYS null for text — and that is correct, not a gap (tasks
+    // 1050/1189 resolved). Flash 8 text fields cannot carry an instance color effect
+    // (Tint/Brightness/Alpha): that is an instance/bitmap-only property (the Properties
+    // panel exposes no color-effect control for static/dynamic/input text). Confirmed
+    // against the flacomdoc writer (byte-verified vs real Flash output): its handleText
+    // emits NO color-effect block, while handleSymbolInstance/handleBitmapInstance do;
+    // and the no-effect fixture flash8-nested-textfields.fla (ts=0x0D) has no colorEffect
+    // pad in its CPicText body. Text colour lives per-character in the run fillColor, not
+    // a color transform. A "text field with a color effect" therefore cannot be authored,
+    // so there is no byte block to decode here.
     colorEffect,
     runs,
     ...hiddenElementProp(visible),
