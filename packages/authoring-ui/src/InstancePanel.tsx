@@ -450,6 +450,37 @@ export function InstancePanel({ instance, symbolType, onChange }: InstancePanelP
           </div>
         </>
       )}
+
+      {/* Display */}
+      <div style={styles.sectionHeader}>
+        <span style={styles.sectionLabel}>Display</span>
+      </div>
+      <div style={styles.sectionBody}>
+        <div style={styles.row}>
+          <label style={{ fontSize: "11px", color: "#999", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={instance.cacheAsBitmap ?? false}
+              onChange={(e) => onChange({ cacheAsBitmap: e.target.checked })}
+            />
+            Use runtime bitmap caching
+          </label>
+        </div>
+
+        {/* Track as Menu Item — button instances only */}
+        {symbolType === "button" && (
+          <div style={styles.row}>
+            <label style={{ fontSize: "11px", color: "#999", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={instance.trackAsMenu ?? false}
+                onChange={(e) => onChange({ trackAsMenu: e.target.checked })}
+              />
+              Track as Menu Item
+            </label>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

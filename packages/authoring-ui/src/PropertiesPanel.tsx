@@ -22,6 +22,7 @@ import type {
   LabelType,
   ShapeDisplayObject,
   SoundItem,
+  SoundEffect,
   SoundLinkage,
   SymbolInstance,
   TextDisplayObject,
@@ -1284,6 +1285,15 @@ function TextView({
     onUpdateObject(obj.id, { linkUrl: linkUrlDraft } as Partial<DisplayObject>);
   }, [obj.id, linkUrlDraft, onUpdateObject]);
 
+  const [restrictDraft, setRestrictDraft] = useState(obj.restrict ?? "");
+  useEffect(() => {
+    setRestrictDraft(obj.restrict ?? "");
+  }, [obj.restrict, obj.id]);
+
+  const commitRestrict = useCallback(() => {
+    onUpdateObject(obj.id, { restrict: restrictDraft || undefined } as Partial<DisplayObject>);
+  }, [obj.id, restrictDraft, onUpdateObject]);
+
   // Character Embedding ("Embed…") dialog open/close state.
   const [showEmbedDialog, setShowEmbedDialog] = useState(false);
   const isSubset = obj.embedRanges !== undefined;
@@ -1664,7 +1674,7 @@ function TextView({
         </>
       )}
 
-      {/* Input-only properties: maxChars, hasBackground */}
+      {/* Input-only properties: maxChars, hasBackground, restrict */}
       {obj.textType === "input" && (
         <>
           <div style={S.fieldGroup}>
@@ -1687,6 +1697,22 @@ function TextView({
               />
               Background
             </label>
+          </div>
+
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Restrict:</span>
+            <input
+              style={{ ...S.input, flex: 1 }}
+              type="text"
+              placeholder="e.g. A-Za-z0-9"
+              value={restrictDraft}
+              onChange={(e) => setRestrictDraft(e.target.value)}
+              onBlur={commitRestrict}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); commitRestrict(); }
+                if (e.key === "Escape") { e.preventDefault(); setRestrictDraft(obj.restrict ?? ""); }
+              }}
+            />
           </div>
         </>
       )}
@@ -2173,6 +2199,16 @@ const SYNC_MODES: { value: SyncMode; label: string }[] = [
   { value: "stream", label: "Stream" },
 ];
 
+const SOUND_EFFECTS: { value: SoundEffect | ""; label: string }[] = [
+  { value: "",              label: "None" },
+  { value: "left",          label: "Left Channel" },
+  { value: "right",         label: "Right Channel" },
+  { value: "fadeIn",        label: "Fade In" },
+  { value: "fadeOut",       label: "Fade Out" },
+  { value: "fadeLeftToRight", label: "Fade Left to Right" },
+  { value: "fadeRightToLeft", label: "Fade Right to Left" },
+];
+
 function FrameSoundSection({
   frame,
   layerIndex,
@@ -2220,6 +2256,16 @@ function FrameSoundSection({
     (v: number) => {
       if (!sound) return;
       onSoundChange(frameIndex, layerIndex, { ...sound, repeatCount: Math.max(0, Math.round(v)) });
+    },
+    [frameIndex, layerIndex, sound, onSoundChange]
+  );
+
+  const handleEffectChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      if (!sound) return;
+      const val = e.target.value;
+      const effect: SoundEffect | undefined = val === "" ? undefined : (val as SoundEffect);
+      onSoundChange(frameIndex, layerIndex, { ...sound, effect });
     },
     [frameIndex, layerIndex, sound, onSoundChange]
   );
@@ -2275,6 +2321,21 @@ function FrameSoundSection({
               onChange={handleRepeatChange}
             />
             <span style={{ ...S.label, fontSize: "10px" }}>0=loop</span>
+          </div>
+
+          <div style={S.separator} />
+
+          <div style={S.fieldGroup}>
+            <span style={S.label}>Effect:</span>
+            <select
+              style={S.select}
+              value={sound.effect ?? ""}
+              onChange={handleEffectChange}
+            >
+              {SOUND_EFFECTS.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
           </div>
         </>
       )}
