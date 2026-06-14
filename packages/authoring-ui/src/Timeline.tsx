@@ -2370,7 +2370,7 @@ const layerFooterBtnStyle: React.CSSProperties = {
 
 /** Inset/sunken numeric readout used in the timeline status bar. */
 const insetReadoutStyle: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 9,
   color: "#222",
   background: "#cfcfcf",
   border: "1px solid #888",
