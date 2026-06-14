@@ -1,0 +1,10 @@
+{
+  "id": "1191-swf-compile-symbol-instance-placement-collapses-",
+  "title": "SWF compile: symbol-instance placement collapses to (0,0) \u2014 registrationPoint over-subtracted after origin normalization",
+  "description": "Golden field-level gap (tag counts already match; this is a value mismatch). Symbol instances publish at the wrong position: golden places 'playButton' at PlaceObject2 tx=5388,ty=4158 and 'player' at tx=1895,ty=3775, but OURS emits tx=0,ty=0 for both \u2014 every symbol instance renders stacked at the stage top-left. The imported MODEL is correct: the PlayButton instance has x=269.4 (=5388 twips) and the Box/player instance x=94.75 (=1895 twips). The bug is in compile.ts:1915-1917, which subtracts the registrationPoint from the instance position (x -= registrationPoint.x and y -= registrationPoint.y) for instances, AND import (flash8-import.ts:927) sets registrationPoint from the binary's absolute registrationX/Y \u2014 which EQUALS the placement position (regX=5388, x=269.4*20=5388). So compile computes 5388-5388=0. After task 1171 centered symbol-internal shapes on their registration origin, this subtraction now over-corrects: the registrationPoint here is in the parent (stage) coordinate space, not a symbol-local offset, so subtracting it from the stage position is wrong. FIX: either stop subtracting registrationPoint from instance x/y (the placement should be the stage position of the registration origin), or have import store the symbol-local registration offset rather than the absolute regX/Y. Verify against golden: text/non-instance placements (40,997 and 420,925) already match and must stay correct. ACCEPTANCE: compiled golden places playButton at (5388,4158) and player at (1895,3775); both render at their stage positions in Ruffle. Related (done): 0968, 1141, 1171, 0946.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-14T00:29:36Z",
+  "updated_at": "2026-06-14T00:29:59Z"
+}
