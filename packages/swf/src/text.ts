@@ -17,6 +17,31 @@ function glyphAdvanceTwips(code: number, textHeightTwips: number): number {
   return Math.round((glyphAdvanceEm(code) / FONT_EM) * textHeightTwips);
 }
 
+/**
+ * Total advance width (in twips) of a static-text run, using the SAME per-glyph
+ * advances (and optional baked kerning) that {@link encodeDefineText} emits.
+ * Used by the compiler to compute the centered/right-aligned X start offset so
+ * the published static glyphs sit where Flash placed them in the text box.
+ */
+export function measureTextWidthTwips(
+  text: string,
+  fontSizeTwips: number,
+  autoKern = false
+): number {
+  let total = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    let advance = glyphAdvanceTwips(code, fontSizeTwips);
+    if (autoKern && i + 1 < text.length) {
+      const km = kerningAdjustEm(code, text.charCodeAt(i + 1));
+      if (km !== 0) advance += Math.round((km / FONT_EM) * fontSizeTwips);
+    }
+    if (advance < 0) advance = 0;
+    total += advance;
+  }
+  return total;
+}
+
 // ---------------------------------------------------------------------------
 // Color helpers
 // ---------------------------------------------------------------------------

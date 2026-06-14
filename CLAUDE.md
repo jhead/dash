@@ -243,6 +243,29 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
       `text-rendering.spec.ts` confirmed the real outlines render as visible pixels in
       Ruffle through the DefineFont3 outline path (then reverted, since the default
       device-font path from 0710 stays UseOutlines=0).
+  - **Glyph MoveTo coordinates are ABSOLUTE, not pen-relative (task 1193)**: every
+    OTHER coordinate in a SWF shape record is a delta (StraightEdge/CurvedEdge), but the
+    StyleChangeRecord MoveTo is the one exception — it sets the pen to an absolute (x,y).
+    Ruffle proves it: `shape_utils.rs` does `self.cursor = *move_to;` (assignment, not
+    `+=`). `fonts.ts writeGlyphMoveTo` used to write `x - penX` (a delta), which works by
+    accident ONLY for the first contour (pen starts at 0,0 so delta == absolute). Every
+    subsequent contour — the counter of a/e/o, the dot of 'i' — landed at the wrong
+    absolute position (a tiny blob near the origin / below the baseline), so single-contour
+    glyphs looked fine while multi-contour glyphs collapsed. Fix: emit absolute x,y in
+    MoveTo. The geometry/winding/fill-style/contour-order were all red herrings — the
+    glyphs parse correctly and Ruffle's NON_ZERO winding cuts holes regardless of order;
+    the ONLY bug was the relative-vs-absolute MoveTo. Debug method: a Rust dumper using the
+    `swf` crate (`swf::parse_swf`) that reconstructs absolute coords treating MoveTo as
+    absolute vs delta immediately reveals which one the encoder assumed.
+  - **Static-text horizontal alignment is baked into the TEXTRECORD XOffset (task 1193)**:
+    Flash centers/right-aligns static text by starting the glyph run at a non-zero XOffset
+    (centered = `(boxWidthTwips - textWidthTwips)/2`, right = the full free width), not via
+    any alignment flag in DefineText. `compile.ts` computes this from `obj.align` +
+    `obj.width` using `measureTextWidthTwips` (same per-glyph advances + baked kerning as
+    `encodeDefineText`). Left stays 0. (Exact byte-parity vs golden still differs slightly
+    because our NotoSans advances ≠ Flash's Arial, and the authored baseline YOffset is not
+    a simple fontSize fraction — golden title YOffset 660 for a 720-twip font — so y_offset
+    and a few advances remain documented golden-parity gaps, not render defects.)
 - **`isEmpty: true` frames are skipped by the compiler** (`compile.ts`:
   `if (!frame.isKeyframe || frame.isEmpty) continue;`). Display objects listed on a
   frame marked `isEmpty` are silently dropped from the SWF — fixture builders must set

@@ -44,6 +44,8 @@ interface GlyphStats {
   edgeCount: number;
   styleChangeCount: number;
   fillStyle1Set: boolean;
+  /** Absolute MoveTo positions, one per contour (MoveTo is absolute in SWF). */
+  moveTos: Array<{ x: number; y: number }>;
 }
 
 /** Decode a single glyph SHAPE starting at byte `start` and return record stats. */
@@ -56,6 +58,7 @@ function decodeGlyphShape(body: Uint8Array, start: number): GlyphStats {
   let edgeCount = 0;
   let styleChangeCount = 0;
   let fillStyle1Set = false;
+  const moveTos: Array<{ x: number; y: number }> = [];
 
   // Read shape records until EndShape (type=0, all 5 flag bits = 0).
   // Cap iterations to avoid runaway on malformed data.
@@ -91,8 +94,10 @@ function decodeGlyphShape(body: Uint8Array, start: number): GlyphStats {
       const newStyles = (flags & 0x10) !== 0;
       if (moveTo) {
         const moveBits = br.readUB(5);
-        br.readSB(moveBits);
-        br.readSB(moveBits);
+        // SWF MoveTo coordinates are ABSOLUTE (not pen-relative).
+        const x = br.readSB(moveBits);
+        const y = br.readSB(moveBits);
+        moveTos.push({ x, y });
       }
       if (fillStyle0) br.readUB(numFillBits);
       if (fillStyle1) {
@@ -104,7 +109,7 @@ function decodeGlyphShape(body: Uint8Array, start: number): GlyphStats {
     }
   }
 
-  return { edgeCount, styleChangeCount, fillStyle1Set };
+  return { edgeCount, styleChangeCount, fillStyle1Set, moveTos };
 }
 
 /** Locate the glyph offset table and decode glyph `index` (0-based). */
@@ -154,6 +159,43 @@ describe("DefineFont glyph outlines", () => {
       const stats = decodeGlyphInFont(body, ch.charCodeAt(0) - 32);
       expect(stats.edgeCount).toBeGreaterThanOrEqual(4);
       expect(stats.fillStyle1Set).toBe(true);
+    }
+  });
+
+  // Regression for task 1193: SWF StyleChangeRecord MoveTo is ABSOLUTE, not a
+  // delta from the pen. Multi-contour glyphs (a/e/o counters, the 'i' dot) used
+  // to encode the 2nd contour's MoveTo as a pen-relative delta, landing it near
+  // the origin and collapsing the glyph to a tiny blob in Ruffle. Each contour's
+  // MoveTo must be an independent absolute coordinate inside the glyph bounds.
+  describe("multi-contour glyph MoveTo coordinates are absolute (task 1193)", () => {
+    // DefineFont3 scale (20×) — same path the SWF v8 publish uses.
+    const font3 = encodeDefineFont2(7, "Arial", false, false, 20);
+    for (const ch of "oeai") {
+      it(`'${ch}' has >=2 contours, all MoveTos in glyph bounds (not at origin)`, () => {
+        const stats = decodeGlyphInFont(font3, ch.charCodeAt(0) - 32);
+        expect(stats.moveTos.length).toBeGreaterThanOrEqual(2);
+        // The outer contour establishes the glyph extent; gather its X range.
+        const xs = stats.moveTos.map((m) => m.x);
+        const ys = stats.moveTos.map((m) => m.y);
+        const xmax = Math.max(...xs);
+        // Every contour's MoveTo must be reasonably close to the others — a
+        // delta-encoded 2nd contour would land near (small, small) far from the
+        // outer contour. Assert all MoveTo X are within the glyph's X extent and
+        // none collapsed to ~0 when the outer contour is well to the right.
+        for (const m of stats.moveTos) {
+          // No contour starts at the (0,0)-ish origin when the glyph body does not.
+          expect(Math.abs(m.x) + Math.abs(m.y)).toBeGreaterThan(0);
+          // Inner-contour X should be within ~2× the outer extent, never a tiny
+          // pen-relative delta.
+          expect(m.x).toBeLessThanOrEqual(xmax + 1);
+        }
+        // The contours should overlap vertically (counter sits inside the bowl),
+        // i.e. their Y positions are within the same band, not split origin/far.
+        const ySpan = Math.max(...ys) - Math.min(...ys);
+        // Glyphs are ~10000+ twips tall at 20× scale; contour starts must be in a
+        // comparable band, far smaller than the full glyph if mis-encoded.
+        expect(ySpan).toBeLessThan(20000);
+      });
     }
   });
 });

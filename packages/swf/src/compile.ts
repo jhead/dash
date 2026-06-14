@@ -30,7 +30,7 @@ import {
   encodeDefineMorphShape2,
   encodePlaceObject2WithRatio,
 } from "./morphshape.js";
-import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings } from "./text.js";
+import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings, measureTextWidthTwips } from "./text.js";
 import { encodeDefineFont2, encodeDefineFontAlignZones, fontKey, computeEmbedCodePoints, FULL_CODE_POINTS } from "./fonts.js";
 import {
   encodePlaceObject3WithFilters,
@@ -1416,13 +1416,31 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
               const glyphIndexByCode = embedCodePointsByKey.has(key)
                 ? glyphIndexMapForKey(key)
                 : undefined;
+              // Horizontal alignment within the text box. Flash bakes the start
+              // offset of the glyph run into the TEXTRECORD XOffset: centered text
+              // starts at (boxWidth - textWidth)/2, right-aligned at
+              // (boxWidth - textWidth). Left-aligned stays at 0. The box width is
+              // the authored field width (px → twips).
+              let xOffsetTwips = 0;
+              if (obj.align === "center" || obj.align === "right") {
+                const boxWidthTwips = Math.round((obj.width ?? 0) * 20);
+                const textWidthTwips = measureTextWidthTwips(
+                  obj.text,
+                  fontSizeTwips,
+                  obj.autoKern === true
+                );
+                const free = boxWidthTwips - textWidthTwips;
+                if (free > 0) {
+                  xOffsetTwips = obj.align === "center" ? Math.round(free / 2) : free;
+                }
+              }
               const textBody = encodeDefineText(
                 charId,
                 obj.text,
                 embeddedFontId,
                 fontSizeTwips,
                 `#${obj.color.r.toString(16).padStart(2, "0")}${obj.color.g.toString(16).padStart(2, "0")}${obj.color.b.toString(16).padStart(2, "0")}`,
-                0,
+                xOffsetTwips,
                 fontSizeTwips,
                 obj.autoKern === true,
                 glyphIndexByCode

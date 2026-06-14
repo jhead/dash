@@ -243,32 +243,38 @@ const NUM_FILL_BITS = 1;
 const NUM_LINE_BITS = 0;
 
 /**
- * Emit a StyleChangeRecord that moves the pen to (x,y) and (optionally) selects
- * fill style 1. `setFill` should be true on the first contour of a glyph; the
- * fill persists for subsequent contours.
+ * Emit a StyleChangeRecord that moves the pen to ABSOLUTE (x,y) and (optionally)
+ * selects fill style 1. `setFill` should be true on the first contour of a
+ * glyph; the fill persists for subsequent contours.
  *
- * Returns nothing; updates the caller's pen via the returned coordinates.
+ * CRITICAL — the StyleChangeRecord MoveTo writes ABSOLUTE coordinates, not a
+ * delta from the pen. Every OTHER coordinate in a SWF shape record is a delta
+ * (StraightEdge / CurvedEdge), but MoveTo is the one exception: it sets the pen
+ * to an absolute (x,y). See ruffle render/src/shape_utils.rs (`self.cursor =
+ * *move_to;` — an assignment, not an add) and swf/src/read.rs. Writing a delta
+ * here works by accident ONLY for the first contour (the pen starts at 0,0, so
+ * delta == absolute); every subsequent contour — the counter of a/e/o, the 'i'
+ * dot — then lands at the wrong absolute position (a tiny blob near the origin /
+ * below the baseline). That was the multi-contour glyph garbling: single-contour
+ * glyphs looked fine, multi-contour ones collapsed. Task 1193.
  */
 function writeGlyphMoveTo(
   bw: BitWriter,
   x: number,
   y: number,
-  penX: number,
-  penY: number,
   setFill: boolean
 ): void {
-  const dx = x - penX;
-  const dy = y - penY;
   bw.writeBits(0, 1); // type = 0 (non-edge)
   bw.writeBits(0, 1); // stateNewStyles = 0
   bw.writeBits(0, 1); // stateLineStyle = 0
   bw.writeBits(setFill ? 1 : 0, 1); // stateFillStyle1
   bw.writeBits(0, 1); // stateFillStyle0 = 0
   bw.writeBits(1, 1); // stateMoveTo = 1
-  const moveBits = numBitsFor([dx, dy]);
+  // MoveTo coordinates are ABSOLUTE, not pen-relative.
+  const moveBits = numBitsFor([x, y]);
   bw.writeBits(moveBits, 5);
-  bw.writeBits(dx & ((1 << moveBits) - 1), moveBits);
-  bw.writeBits(dy & ((1 << moveBits) - 1), moveBits);
+  bw.writeBits(x & ((1 << moveBits) - 1), moveBits);
+  bw.writeBits(y & ((1 << moveBits) - 1), moveBits);
   if (setFill) bw.writeBits(1, NUM_FILL_BITS); // FillStyle1 index = 1
 }
 
@@ -328,7 +334,7 @@ function encodeRealGlyphShape(code: number, coordScale: number): Uint8Array | nu
     if (op === GlyphOp.MoveTo) {
       const x = cmds[i + 1] * S;
       const y = cmds[i + 2] * S;
-      writeGlyphMoveTo(bw, x, y, penX, penY, firstContour);
+      writeGlyphMoveTo(bw, x, y, firstContour);
       firstContour = false;
       penX = x;
       penY = y;
@@ -385,7 +391,7 @@ function encodeGlyphShape(code: number, coordScale: number): Uint8Array {
 
   /** Emit one filled rectangle contour [x0,y0]→[x1,y1] (clockwise, Y-down). */
   function emitRect(x0: number, y0: number, x1: number, y1: number): void {
-    writeGlyphMoveTo(bw, x0, y0, penX, penY, firstContour);
+    writeGlyphMoveTo(bw, x0, y0, firstContour);
     firstContour = false;
     penX = x0;
     penY = y0;

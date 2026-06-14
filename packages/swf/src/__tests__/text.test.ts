@@ -383,6 +383,56 @@ describe("Static text — emits DefineText (tag 11), glyph-indexed", () => {
     const csmTextId = csmTag!.body[0] | (csmTag!.body[1] << 8);
     expect(csmTextId).toBe(textCharId);
   });
+
+  // Task 1193 (BUG B): horizontal alignment must be baked into the TEXTRECORD
+  // XOffset. Center/right text starts partway into the box; left starts at 0.
+  describe("horizontal alignment → baked TEXTRECORD XOffset (task 1193)", () => {
+    /**
+     * Extract the first TEXTRECORD's signed XOffset from a DefineText body.
+     * Layout after the RECT + identity MATRIX + GlyphBits/AdvanceBits bytes:
+     *   flag UI8, FontID UI16, RGB(3), XOffset SI16, YOffset SI16, ...
+     * Rather than re-parse the RECT bit-width, locate the 0x8F style flag byte
+     * and read the SI16 XOffset 6 bytes after it (FontID(2)+RGB(3)+1 flag byte).
+     */
+    function firstXOffset(body: Uint8Array): number {
+      const flagIdx = body.indexOf(0x8f);
+      expect(flagIdx).toBeGreaterThan(0);
+      const off = flagIdx + 1 + 2 + 3; // skip flag, FontID, RGB
+      const v = body[off] | (body[off + 1] << 8);
+      return v & 0x8000 ? v - 0x10000 : v;
+    }
+
+    it("left-aligned static text: XOffset = 0", () => {
+      const doc = makeDoc([
+        makeText({ textType: "static", text: "Test Game", align: "left", width: 500, fontSize: 36 }),
+      ]);
+      const tag = parseSWFTags(compileDocument(doc)).find((t) => t.code === TAG_DEFINE_TEXT)!;
+      expect(firstXOffset(tag.body)).toBe(0);
+    });
+
+    it("center-aligned static text: XOffset > 0 (text pushed toward box center)", () => {
+      const doc = makeDoc([
+        makeText({ textType: "static", text: "Test Game", align: "center", width: 500, fontSize: 36 }),
+      ]);
+      const tag = parseSWFTags(compileDocument(doc)).find((t) => t.code === TAG_DEFINE_TEXT)!;
+      const xoff = firstXOffset(tag.body);
+      // 500px box (10000 twips), "Test Game" at 36px ≈ a few thousand twips wide;
+      // center offset should be a large positive value, roughly (10000 - w)/2.
+      expect(xoff).toBeGreaterThan(1000);
+    });
+
+    it("right-aligned static text: XOffset > center offset", () => {
+      const mk = (align: "center" | "right") =>
+        firstXOffset(
+          parseSWFTags(
+            compileDocument(
+              makeDoc([makeText({ textType: "static", text: "Test Game", align, width: 500, fontSize: 36 })])
+            )
+          ).find((t) => t.code === TAG_DEFINE_TEXT)!.body
+        );
+      expect(mk("right")).toBeGreaterThan(mk("center"));
+    });
+  });
 });
 
 describe("DefineEditText flags — dynamic text", () => {
