@@ -1,10 +1,10 @@
 {
   "id": "1194-golden-byte-parity-tag-ordering-char-id-order-de",
   "title": "Golden byte-parity: tag ordering, char-ID order, depth reuse, gradient-fill expansion",
-  "description": "Tracking task for the DOCUMENTED byte-level gaps between our golden FLA->SWF publish and canonical Flash 8 (surfaced by tools/golden-parity.mjs; all are semantically inert \u2014 Ruffle renders identically \u2014 so DECOMPRESSED bytes differ but no field is wrong). Gaps: (1) TAG ORDERING: we hoist all character definitions before frame 1; Flash interleaves defs per-frame before first use, and emits DoAction/FrameLabel at frame START not end. (2) CHAR-ID ORDER: we number in library order, Flash in usage order. (3) DEPTH VALUES: Flash reuses depths freed by RemoveObject (d1,d3); we allocate monotonically (d3,d4) \u2014 relative z-order identical. (4) GRADIENT FILL EXPANSION: Flash expands one FLA gradient into ~17 DefineShape fillStyles at publish; we emit 1. (5) zlib CWS deflate stream is impl-specific -> compressed bytes never bit-identical; compare decompressed. Achieving true byte-for-byte requires replicating Flash's tag interleaving, ID/depth allocation, and gradient encoding (large, low ROI). Decision: pursue only if a downstream consumer needs exact bytes. Harness: node tools/golden-parity.mjs (semantic parity PASSES; these listed as KNOWN-GAP).",
-  "status": "open",
+  "description": "RESOLVED as documented decision (not code work). The byte-level gaps between our golden FLA->SWF and canonical Flash 8 (tag ordering, char-ID order, depth reuse, gradient-fill expansion, zlib stream) are semantically inert and NOT pursued \u2014 true byte-for-byte is infeasible without replicating Flash's exact tag interleaving / ID-depth allocation / gradient encoding / deflate. The achievable target, decompressed SEMANTIC parity, is met: node tools/golden-parity.mjs exits 0 on golden + golden-v2 with these listed as KNOWN-GAP. Documented in CLAUDE.md ('Golden FLA->SWF parity' section) and the harness ledger. Reopen only if a downstream consumer needs exact bytes.",
+  "status": "done",
   "effort": "high",
   "priority": "low",
   "created_at": "2026-06-14T01:05:46Z",
-  "updated_at": "2026-06-14T01:05:46Z"
+  "updated_at": "2026-06-14T02:35:46Z"
 }
