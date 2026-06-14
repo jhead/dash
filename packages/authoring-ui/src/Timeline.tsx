@@ -1938,15 +1938,16 @@ export function Timeline({
               currentFrame={currentFrame}
               frameCount={displayFrameCount}
               onFrameChange={onFrameChange}
+              width={Math.round(52 * scale)}
             />
 
             {/* Frame Rate (inset readout) */}
-            <span style={insetReadoutStyle} title="Frame rate">
+            <span style={{ ...insetReadoutStyle, width: Math.round(80 * scale) }} title="Frame rate">
               {frameRate.toFixed(1)} fps
             </span>
 
             {/* Elapsed Time (inset readout) */}
-            <span style={insetReadoutStyle} title="Elapsed time at current frame">
+            <span style={{ ...insetReadoutStyle, width: Math.round(68 * scale) }} title="Elapsed time at current frame">
               {(currentFrame / Math.max(1, frameRate)).toFixed(1)}s
             </span>
 
@@ -2376,20 +2377,26 @@ const insetReadoutStyle: React.CSSProperties = {
   borderTopColor: "#555",
   borderLeftColor: "#555",
   borderRadius: 1,
-  padding: "1px 5px",
+  padding: "1px 0",
   lineHeight: "14px",
   whiteSpace: "nowrap",
   textAlign: "center",
+  overflow: "hidden",
+  boxSizing: "border-box",
+  flexShrink: 0,
 };
 
 function FrameCounterInput({
   currentFrame,
   frameCount,
   onFrameChange,
+  width,
 }: {
   currentFrame: number;
   frameCount: number;
   onFrameChange: (frame: number) => void;
+  /** Box width in px (already scaled by the uiScale preference). */
+  width: number;
 }) {
   const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -2419,7 +2426,8 @@ function FrameCounterInput({
           e.stopPropagation();
         }}
         style={{
-          width: 36,
+          width,
+          boxSizing: "border-box",
           fontSize: 10,
           background: "#1a1a1a",
           color: "#ffffff",
@@ -2428,6 +2436,7 @@ function FrameCounterInput({
           borderRadius: 2,
           outline: "none",
           textAlign: "right",
+          flexShrink: 0,
         }}
       />
     );
@@ -2437,7 +2446,7 @@ function FrameCounterInput({
     <span
       title="Current frame — click to jump"
       onClick={() => { setEditing(true); setInputValue(String(display)); }}
-      style={{ ...insetReadoutStyle, minWidth: 28, cursor: "text", userSelect: "none" }}
+      style={{ ...insetReadoutStyle, width, cursor: "text", userSelect: "none" }}
     >
       {display}
     </span>
