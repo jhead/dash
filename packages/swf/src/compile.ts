@@ -9,7 +9,7 @@
  *  - RemoveObject2 when objects leave the display list
  *  - ShowFrame per frame, End
  */
-import type { BitmapItem, ButtonHandler, ButtonSounds, ClipAction, DisplayObject, FlashDocument, Symbol, SymbolInstance, VideoDisplayObject } from "@flash/core";
+import type { BitmapItem, ButtonHandler, ClipAction, DisplayObject, FlashDocument, Symbol, SymbolInstance, VideoDisplayObject } from "@flash/core";
 import { compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { Tag } from "./tags.js";
 import { SwfWriter } from "./writer.js";
@@ -38,8 +38,7 @@ import {
   hasEnabledFilters,
 } from "./filters.js";
 import { colorEffectToCXForm } from "./cxform.js";
-import { encodeDefineSprite } from "./sprite.js";
-import { encodeDefineButton2, encodeDefineButtonSound } from "./buttons.js";
+import { encodeDefineButton2 } from "./buttons.js";
 import {
   encodeSoundStreamHead,
   encodeSoundStreamBlock,
@@ -50,7 +49,6 @@ import {
 import { encodeStartSound, encodeStartSound2 } from "./sounds.js";
 import { dataUriToBytes, encodeDefineBitsLossless2, encodeDefineBitsJpeg3, ensureJpegEOI } from "./bitmaps.js";
 import { encodeVideoFrame } from "./video.js";
-import { encodeDoInitAction } from "./doInitAction.js";
 import { encodeFrameLabel } from "./framelabel.js";
 // encodeSceneAndFrameLabelData suppressed: Flash 8 targets do not emit tag 86.
 // Extracted compiler-pass helpers (see compiler/ for the decomposition).
@@ -58,7 +56,7 @@ import type { CompileOptions } from "./compiler/options.js";
 import { emitHeaderTags } from "./compiler/header.js";
 import { assembleSwf } from "./compiler/assemble.js";
 import { flattenDisplayObjects } from "./compiler/display.js";
-import { topoSortSymbols, encodeExportAssets, encodeImportAssets2, encodeDefineScalingGrid } from "./compiler/symbols.js";
+import { topoSortSymbols, encodeExportAssets, encodeImportAssets2, runSymbolPass } from "./compiler/symbols.js";
 import { emitBitmapFillTags } from "./compiler/characters.js";
 import { videoFitTransform, runMediaPass } from "./compiler/media.js";
 import { sceneFrameCount } from "./compiler/depth.js";
@@ -152,11 +150,6 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     }
   }
 
-  // Collect pending DefineButtonSound emissions: { charId, sounds }.
-  // These must be emitted AFTER DefineSound tags (which build soundIdMap) so all
-  // SoundId references are valid. Populated during the symbol definition pass below.
-  const pendingButtonSounds: Array<{ charId: number; sounds: ButtonSounds }> = [];
-
   // Font pre-pass: emit DefineFont3/2 + DefineFontAlignZones tags for every font
   // face used by a text field (scene + symbol timelines) and FontItem library
   // entries, with per-field glyph subsetting. Returns the lookups downstream
@@ -169,146 +162,23 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   // resolve their character IDs inside symbol timelines. See compiler/media.ts.
   const { soundItems, soundIdMap, videoCharIdMap, videoStreams } = runMediaPass(writer, doc);
 
-  // Emit DefineSprite for each symbol (using the pre-assigned IDs).
-  // encodeDefineSprite returns the tag *body* (SpriteID + FrameCount + inner tags);
-  // writeTag wraps it with the DefineSprite record header.
-  // Bug 3 fix: hoist character definitions (DefineShape4, DefineEditText) that
-  // were embedded inside sprite bodies to the top level *before* their sprite tag.
-  for (const sym of symbols) {
-    const symCharId = charIdMap.get(sym.id)!;
-
-    // Collect hoisted definition tags (DefineShape4, DefineEditText, etc.) that must
-    // appear at top level before the symbol definition tag.
-    const hoistedDefs: Array<{ tagType: number; body: Uint8Array }> = [];
-
-    if (graphicButtonSymbolIds.has(sym.id)) {
-      // Symbol placed only as a button instance carrying instance-level on()
-      // handlers: skip the library-level definition here. An inline
-      // DefineButton2 will be emitted at instance-placement time (see the
-      // instance handling loop below), which hoists shapes/text and wraps them
-      // with the per-instance button handlers. This applies to graphic/movieclip
-      // symbols used as buttons AND to real button symbols (symbolType ===
-      // "button") whose every placement carries handlers.
-    } else if (sym.symbolType === "button") {
-      // Button symbols: emit DefineButton2 (tag 34) instead of DefineSprite (tag 39).
-      const buttonBody = encodeDefineButton2(
-        symCharId,
-        sym,
-        doc,
-        charIdMap,
-        () => writer.nextCharId(),
-        hoistedDefs,
-        undefined,
-        undefined,
-        fontCharIdMap,
-        glyphIndexMapByFontKey
-      );
-
-      // Emit hoisted shape/text definition tags first
-      for (const def of hoistedDefs) {
-        writer.writeTag(def.tagType, def.body);
-      }
-
-      writer.writeTag(Tag.DefineButton2, buttonBody);
-
-      // Collect for deferred DefineButtonSound emit (needs soundIdMap, built above)
-      if (sym.buttonSounds) {
-        pendingButtonSounds.push({ charId: symCharId, sounds: sym.buttonSounds });
-      }
-    } else {
-      const spriteBody = encodeDefineSprite(
-        symCharId,
-        sym,
-        doc,
-        charIdMap,
-        () => writer.nextCharId(),
-        hoistedDefs,
-        fontCharIdMap,
-        soundIdMap,
-        videoCharIdMap,
-        videoStreams,
-        glyphIndexMapByFontKey
-      );
-
-      // Emit hoisted definition tags first
-      for (const def of hoistedDefs) {
-        writer.writeTag(def.tagType, def.body);
-      }
-
-      writer.writeTag(Tag.DefineSprite, spriteBody);
-
-      // Emit DefineScalingGrid (tag 78) immediately after DefineSprite when
-      // the symbol has a non-null 9-slice grid.
-      if (sym.scale9Grid !== null) {
-        const gridBody = encodeDefineScalingGrid(symCharId, sym.scale9Grid);
-        writer.writeTag(Tag.DefineScalingGrid, gridBody);
-      }
-    }
-  }
-
-  // 3b. Collect ExportAssets entries for symbols with exportForActionScript=true
-  // or exportForRuntimeSharing=true.
-  // These will be emitted inside the first SWF frame (after FrameLabel, before DoInitAction).
-  const exportEntries: { charId: number; name: string }[] = [];
-  for (const sym of symbols) {
-    const shouldExport =
-      (sym.linkage.exportForActionScript && sym.linkage.linkageIdentifier) ||
-      (sym.linkage.exportForRuntimeSharing && sym.linkage.linkageIdentifier);
-    if (shouldExport && sym.linkage.linkageIdentifier) {
-      const charId = charIdMap.get(sym.id);
-      if (charId !== undefined) {
-        exportEntries.push({ charId, name: sym.linkage.linkageIdentifier });
-      }
-    }
-  }
-
-  // 3b2. Collect ImportAssets2 entries grouped by sharedUrl for symbols with
-  // importForRuntimeSharing=true and a non-empty sharedUrl and linkageIdentifier.
-  // These will be emitted in the first SWF frame, after ExportAssets.
-  const importsByUrl = new Map<string, Array<{ charId: number; name: string }>>();
-  for (const sym of symbols) {
-    if (
-      sym.linkage.importForRuntimeSharing &&
-      sym.linkage.sharedUrl &&
-      sym.linkage.linkageIdentifier
-    ) {
-      const charId = charIdMap.get(sym.id);
-      if (charId !== undefined) {
-        const group = importsByUrl.get(sym.linkage.sharedUrl) ?? [];
-        group.push({ charId, name: sym.linkage.linkageIdentifier });
-        importsByUrl.set(sym.linkage.sharedUrl, group);
-      }
-    }
-  }
-
-  // 3c-init. Collect DoInitAction bodies for symbols with exportForActionScript=true
-  // and a className. These will be emitted at the start of the first SWF frame.
-  const doInitActionBodies: Uint8Array[] = [];
-  for (const sym of symbols) {
-    if (sym.linkage.exportForActionScript && sym.linkage.className) {
-      const charId = charIdMap.get(sym.id);
-      if (charId !== undefined) {
-        const linkageId = sym.linkage.linkageIdentifier || sym.linkage.className;
-        doInitActionBodies.push(encodeDoInitAction(charId, sym.linkage.className, linkageId));
-      }
-    }
-  }
-
-  // 3c. Add ExportAssets entries for sound items with AS2 linkage identifiers.
-  //     (DefineSound tags were already emitted in the pre-pass above; soundIdMap
-  //      and soundItems are already populated.)
-  for (const soundItem of soundItems) {
-    const soundId = soundIdMap.get(soundItem.id);
-    if (soundId !== undefined && soundItem.exportForActionScript && soundItem.linkageIdentifier) {
-      exportEntries.push({ charId: soundId, name: soundItem.linkageIdentifier });
-    }
-  }
-
-  // Emit deferred DefineButtonSound tags now that soundIdMap is populated.
-  for (const { charId, sounds } of pendingButtonSounds) {
-    const soundBody = encodeDefineButtonSound(charId, sounds, soundIdMap);
-    writer.writeTag(Tag.DefineButtonSound, soundBody);
-  }
+  // Symbol definition pass: emit DefineSprite/DefineButton2 (+ hoisted defs,
+  // scaling grids, deferred DefineButtonSound) for every library symbol and
+  // collect the AS2 linkage entries to emit in the first frame. See
+  // compiler/symbols.ts.
+  const { exportEntries, importsByUrl, doInitActionBodies } = runSymbolPass({
+    writer,
+    doc,
+    symbols,
+    charIdMap,
+    graphicButtonSymbolIds,
+    fontCharIdMap,
+    glyphIndexMapByFontKey,
+    soundItems,
+    soundIdMap,
+    videoCharIdMap,
+    videoStreams,
+  });
 
   // 4. Frames — iterate ALL scenes' timelines.
   //    Each scene gets a FrameLabel tag (scene name) at its first frame.
