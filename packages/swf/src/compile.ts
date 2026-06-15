@@ -9,7 +9,7 @@
  *  - RemoveObject2 when objects leave the display list
  *  - ShowFrame per frame, End
  */
-import type { BitmapItem, ButtonHandler, ButtonSounds, ClipAction, DisplayObject, FlashDocument, SoundItem, Symbol, SymbolInstance, VideoDisplayObject, VideoItem } from "@flash/core";
+import type { BitmapItem, ButtonHandler, ButtonSounds, ClipAction, DisplayObject, FlashDocument, Symbol, SymbolInstance, VideoDisplayObject } from "@flash/core";
 import { compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
 import { Tag } from "./tags.js";
 import { SwfWriter } from "./writer.js";
@@ -41,7 +41,6 @@ import { colorEffectToCXForm } from "./cxform.js";
 import { encodeDefineSprite } from "./sprite.js";
 import { encodeDefineButton2, encodeDefineButtonSound } from "./buttons.js";
 import {
-  encodeDefineSound,
   encodeSoundStreamHead,
   encodeSoundStreamBlock,
   encodeSoundStreamBlockMp3,
@@ -50,14 +49,7 @@ import {
 } from "./audio.js";
 import { encodeStartSound, encodeStartSound2 } from "./sounds.js";
 import { dataUriToBytes, encodeDefineBitsLossless2, encodeDefineBitsJpeg3, ensureJpegEOI } from "./bitmaps.js";
-import {
-  encodeDefineVideoStream,
-  encodeVideoFrame,
-  demuxFlv,
-  flvCodecToSwfCodec,
-  VideoCodec,
-  type FlvVideoFrame,
-} from "./video.js";
+import { encodeVideoFrame } from "./video.js";
 import { encodeDoInitAction } from "./doInitAction.js";
 import { encodeFrameLabel } from "./framelabel.js";
 // encodeSceneAndFrameLabelData suppressed: Flash 8 targets do not emit tag 86.
@@ -68,7 +60,7 @@ import { assembleSwf } from "./compiler/assemble.js";
 import { flattenDisplayObjects } from "./compiler/display.js";
 import { topoSortSymbols, encodeExportAssets, encodeImportAssets2, encodeDefineScalingGrid } from "./compiler/symbols.js";
 import { emitBitmapFillTags } from "./compiler/characters.js";
-import { videoFitTransform } from "./compiler/media.js";
+import { videoFitTransform, runMediaPass } from "./compiler/media.js";
 import { sceneFrameCount } from "./compiler/depth.js";
 import { encodeRemoveObject2 } from "./compiler/scripts.js";
 import { collectFontFaceRequests, runFontPass } from "./compiler/fonts.js";
@@ -172,83 +164,10 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   const { fontCharIdMap, embedCodePointsByKey, glyphIndexMapByFontKey, glyphIndexMapForKey } =
     runFontPass(writer, doc, options);
 
-  // Pre-build soundIdMap and emit DefineSound tags BEFORE the symbol loop so
-  // that encodeDefineSprite can look up sound character IDs for StartSound tags
-  // inside symbol timelines (task 1123: frame sounds in symbol timelines).
-  const soundItems = doc.library.items.filter(
-    (item): item is SoundItem => item.itemType === "sound"
-  );
-  const soundIdMap = new Map<string, number>();
-  for (const soundItem of soundItems) {
-    if (!soundItem.dataUri) continue;
-    const soundId = writer.nextCharId();
-    soundIdMap.set(soundItem.id, soundId);
-    const soundBody = encodeDefineSound(soundId, soundItem);
-    writer.writeTag(Tag.DefineSound, soundBody);
-  }
-
-  // Pre-build videoCharIdMap and emit DefineVideoStream tags BEFORE the symbol
-  // loop so that encodeDefineSprite can look up video character IDs for
-  // VideoDisplayObject placement inside symbol timelines (task 1129).
-  // The actual per-frame VideoFrame (tag 61) tags are emitted in the frame
-  // loop so they interleave with ShowFrame in playback order.
-  interface VideoStreamInfo {
-    /** Library VideoItem id this stream was built from. */
-    itemId: string;
-    charId: number;
-    width: number;
-    height: number;
-    /** Per-SWF-frame video payloads (one entry per VideoFrame tag to emit). */
-    payloads: Uint8Array[];
-  }
-  const videoItems = doc.library.items.filter(
-    (item): item is VideoItem => item.itemType === "video"
-  );
-  const videoStreams: VideoStreamInfo[] = [];
-  // Map library VideoItem id → its DefineVideoStream character ID, so
-  // VideoDisplayObject placement can resolve the stream to place.
-  const videoCharIdMap = new Map<string, number>();
-  for (const videoItem of videoItems) {
-    // Attempt to demux the FLV payload from the data URI; fall back to an
-    // empty stream so authoring still produces a valid character.
-    let flvFrames: FlvVideoFrame[] = [];
-    let codecId: number = VideoCodec.H263;
-    if (videoItem.dataUri) {
-      try {
-        const bytes = dataUriToBytes(videoItem.dataUri);
-        const flv = demuxFlv(bytes);
-        if (flv) {
-          flvFrames = flv.frames;
-          codecId = flvCodecToSwfCodec(flv.codecId);
-        }
-      } catch {
-        // Malformed data URI — emit an empty stream so compile still succeeds.
-      }
-    }
-
-    // Build the per-frame payload list. With real demuxed FLV frames we use the
-    // decoded video payloads directly. When demux yields nothing (e.g. a stub
-    // data URI in authoring), fall back to driving `frameCount` empty-payload
-    // VideoFrame tags so the stream is still advanced one frame per ShowFrame.
-    let payloads: Uint8Array[];
-    if (flvFrames.length > 0) {
-      payloads = flvFrames.map((f) => f.data);
-    } else {
-      const n = Math.max(0, Math.floor(videoItem.frameCount));
-      payloads = Array.from({ length: n }, () => new Uint8Array(0));
-    }
-
-    const numFrames = payloads.length;
-    const charId = writer.nextCharId();
-    const width = Math.max(0, Math.round(videoItem.width));
-    const height = Math.max(0, Math.round(videoItem.height));
-    writer.writeTag(
-      Tag.DefineVideoStream,
-      encodeDefineVideoStream(charId, numFrames, width, height, codecId)
-    );
-    videoCharIdMap.set(videoItem.id, charId);
-    videoStreams.push({ itemId: videoItem.id, charId, width, height, payloads });
-  }
+  // Sound/video library definition pre-pass: emit DefineSound and
+  // DefineVideoStream tags BEFORE the symbol loop so encodeDefineSprite can
+  // resolve their character IDs inside symbol timelines. See compiler/media.ts.
+  const { soundItems, soundIdMap, videoCharIdMap, videoStreams } = runMediaPass(writer, doc);
 
   // Emit DefineSprite for each symbol (using the pre-assigned IDs).
   // encodeDefineSprite returns the tag *body* (SpriteID + FrameCount + inner tags);
