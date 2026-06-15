@@ -252,18 +252,24 @@ describe("MX 2004 binary .fla import (mx2004-frame-scripts.fla)", () => {
       (o): o is ShapeDisplayObject => o.type === "shape",
     )!;
     expect(shape).toBeDefined();
-    const path = shape.shape.paths[0]!;
+    // The fill0/fill1 reconstruction emits the filled region and the stroked
+    // contour as separate closed paths (fills first, then strokes), mirroring
+    // the SWF shape model. Both are the same 4-edge rectangle.
+    const fillPath = shape.shape.paths.find((p) => p.fill)!;
+    const strokePath = shape.shape.paths.find((p) => p.stroke)!;
     // Ground truth from the published SWF: DefineShape bounds
     // (-58.5..60.5, -36.5..38.5 px) = 118x74 px rect + 1px stroke.
-    expect(path.closed).toBe(true);
-    expect(path.segments.length).toBe(4);
-    expect(path.start.x).toBeCloseTo(60, 1);
-    expect(path.start.y).toBeCloseTo(38, 1);
-    expect(path.fill).toMatchObject({
+    expect(fillPath.closed).toBe(true);
+    expect(fillPath.segments.length).toBe(4);
+    expect(fillPath.start.x).toBeCloseTo(60, 1);
+    expect(fillPath.start.y).toBeCloseTo(38, 1);
+    expect(fillPath.fill).toMatchObject({
       type: "solid",
       color: { r: 0xff, g: 0x33, b: 0x00, a: 0xff },
     });
-    expect(path.stroke).toMatchObject({ width: 1, color: { r: 0, g: 0, b: 0, a: 255 } });
+    expect(strokePath.closed).toBe(true);
+    expect(strokePath.segments.length).toBe(4);
+    expect(strokePath.stroke).toMatchObject({ width: 1, color: { r: 0, g: 0, b: 0, a: 255 } });
   });
 
   it("frames with no display objects are flagged empty; the shape frame is not", () => {

@@ -779,6 +779,9 @@ export interface BitmapDisplayObject {
   readonly scaleX?: number;
   readonly scaleY?: number;
   readonly rotation?: number;
+  /** Skew (shear) in degrees, decomposed from the FLA placement matrix. */
+  readonly skewX?: number;
+  readonly skewY?: number;
   /** Opacity in range 0–1. Default: 1. */
   readonly alpha?: number;
   /** Whether the object is visible. Default: true. */

@@ -176,6 +176,41 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   so they survive the reversal correctly: a mask at binary-index N is still type "mask"
   after reversal, and the model's "mask is above its masked layers" invariant (`mask at
   li=k`, `masked at li=k+1`) is preserved because the panel order is maintained.
+- **Shape fills use the SWF fill0/fill1 (left/right) edge model; `convertShape` must
+  reconstruct CLOSED loops, not emit per-style-run ribbons.** Each `Fla8Edge` records the
+  fill on its LEFT (`fill0`) and RIGHT (`fill1`) side. A single filled region is bounded by
+  edges scattered through the stream, and an edge bordering region R on its `fill0` side
+  runs OPPOSITE to R's outline. To rebuild a region: accumulate a per-fill-style pending
+  path, add `fill1` runs forward and `fill0` runs REVERSED (flipped), then link runs
+  end-to-start into closed loops (a faithful port of Ruffle's `ShapeConverter` in
+  `render/src/shape_utils.rs`). The old converter chopped the edge stream into one OPEN
+  ribbon per style-run. This was invisible for simple authored shapes (single fill on
+  `fill1`, contiguous edges) but catastrophic for **traced bitmaps** — `Magnet.fla`'s
+  "images" (Bowl/Mag/Magnetism logo/balls) are NOT bitmaps on stage: they were
+  `Trace Bitmap`-converted into vector shapes with hundreds–thousands of solid fills each
+  (top shape: 1078 fills). The naive converter produced ~3000 open filled slivers → mangled
+  on the editor stage and dropped/blank in the SWF. After reconstruction every path is a
+  closed loop and both paths render. The library still holds the source bitmaps (Trace
+  Bitmap is non-destructive), which is why "the Library has images but the stage is shapes
+  you can select parts of". Fills/strokes are now emitted as SEPARATE closed paths (fills
+  first by ascending style id, then strokes), matching the SWF shape model — the renderer's
+  two-pass (fills then strokes) draws them correctly. `convertShape` shares ONE `Fill`
+  object reference across all loops of a given style id; `renderShape` exploits this to
+  batch consecutive same-reference SOLID fills into a single non-zero `fill()` so inner
+  "hole" loops cut against their outer loop on the stage (editor shapes use distinct Fill
+  objects per path, so the batching is a no-op for them). The SWF is correct for the same
+  reason on the encoder side: it dedups fills by colour and Ruffle re-groups all loops of a
+  fill and applies winding.
+- **Bitmap display objects store UNSCALED `width`/`height` + separate `scaleX`/`scaleY`;
+  the stage renderer must apply the scale** (`renderer.ts` `renderBitmapObject`). The FLA
+  importer (and `libraryplace.ts`) set `width = originalWidth` and carry the display scale
+  in `scaleX`/`scaleY` (decomposed from the placement matrix). The renderer's `bitmap` case
+  previously drew at `obj.width`/`obj.height` and ignored scale, so e.g. a 1152px photo
+  placed at `scaleX≈0.48` rendered 2× too large. Apply `translate(x,y)→rotate→skew→scale`
+  around the registration origin (NOT the bitmap center — the old center-pivot rotation
+  also disagreed with the SWF, whose PlaceObject matrix pivots at the origin). The SWF
+  compile path was already correct (`bmpTransform` in PlaceObject2/3); only the stage was
+  wrong.
 
 ### SWF encoding
 

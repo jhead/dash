@@ -245,18 +245,33 @@ function renderShape(
   ctx.translate(offsetX, offsetY);
 
   // --- Pass 1: fills ---
-  for (const path of shape.paths) {
+  for (let pi = 0; pi < shape.paths.length; pi++) {
+    const path = shape.paths[pi]!;
     if (!path.fill) continue;
+
+    if (path.fill.type === "solid") {
+      // Solid-fill regions that share the SAME Fill object reference — the
+      // multiple closed loops of one colour in an FLA-imported (e.g. traced-
+      // bitmap) shape — are built into ONE path and filled together, so inner
+      // "hole" loops cut correctly against their outer loop under the non-zero
+      // winding rule. Editor-drawn shapes allocate a distinct Fill per path, so
+      // this batching is a no-op for them (reference inequality). It also keeps
+      // overlapping same-colour merge-drawn paths uniting naturally.
+      ctx.beginPath();
+      buildCanvasPath(ctx, path);
+      while (pi + 1 < shape.paths.length && shape.paths[pi + 1]!.fill === path.fill) {
+        pi++;
+        buildCanvasPath(ctx, shape.paths[pi]!);
+      }
+      ctx.fillStyle = colorToCss(path.fill.color);
+      ctx.fill("nonzero");
+      continue;
+    }
 
     ctx.beginPath();
     buildCanvasPath(ctx, path);
 
-    if (path.fill.type === "solid") {
-      ctx.fillStyle = colorToCss(path.fill.color);
-      // Use "nonzero" winding rule so that overlapping same-colour paths
-      // rendered in merge-drawing mode unite naturally.
-      ctx.fill("nonzero");
-    } else if (path.fill.type === "bitmap") {
+    if (path.fill.type === "bitmap") {
       // Bitmap fill — look up the image in the cache and use createPattern
       const img = imageCache?.get(path.fill.bitmapId);
       if (img && img.complete && img.naturalWidth > 0) {
@@ -643,14 +658,21 @@ function renderBitmapObject(
     if (colorEffect && colorEffect.type !== 'none') {
       applyColorEffectPre(ctx, colorEffect);
     }
-    if (obj.rotation) {
-      const cx = obj.x + obj.width / 2;
-      const cy = obj.y + obj.height / 2;
-      ctx.translate(cx, cy);
-      ctx.rotate((obj.rotation * Math.PI) / 180);
-      ctx.translate(-cx, -cy);
+    // Apply the placement transform around the registration origin (obj.x, obj.y),
+    // mirroring the "shape" case. `obj.width`/`obj.height` are the UNSCALED bitmap
+    // dimensions; scaleX/scaleY carry the display scale, so they must be applied
+    // here (the importer stores width = originalWidth, scale = decomposed matrix).
+    const scaleX = obj.scaleX ?? 1;
+    const scaleY = obj.scaleY ?? 1;
+    const skewX = obj.skewX ?? 0;
+    const skewY = obj.skewY ?? 0;
+    ctx.translate(obj.x, obj.y);
+    if (obj.rotation) ctx.rotate((obj.rotation * Math.PI) / 180);
+    if (skewX !== 0 || skewY !== 0) {
+      ctx.transform(1, Math.tan((skewY * Math.PI) / 180), Math.tan((skewX * Math.PI) / 180), 1, 0, 0);
     }
-    ctx.drawImage(img, obj.x, obj.y, obj.width, obj.height);
+    if (scaleX !== 1 || scaleY !== 1) ctx.scale(scaleX, scaleY);
+    ctx.drawImage(img, 0, 0, obj.width, obj.height);
     ctx.restore();
   };
   if (filters.length > 0) {

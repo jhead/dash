@@ -193,24 +193,126 @@ export function strokeFromFla8(s: Fla8Stroke): Stroke {
 
 const EPS = 1e-6;
 
+// ---------------------------------------------------------------------------
+// SWF/FLA fill0/fill1 edge model -> closed ShapePath contours.
+//
+// In the Flash shape format every edge records the fill style on its LEFT
+// (fill0) and RIGHT (fill1) side, plus an optional stroke (line). A single
+// filled region is bounded by edges scattered throughout the stream, and an
+// edge that borders region R on its fill0 side runs in the OPPOSITE direction
+// to the region's outline. To reconstruct a region we therefore: accumulate a
+// per-style pending path, add fill1 runs forward and fill0 runs REVERSED, then
+// link the runs end-to-start into closed loops. This mirrors Ruffle's
+// `ShapeConverter` (render/src/shape_utils.rs). The old converter emitted one
+// open ribbon per style-run, which left traced-bitmap shapes (hundreds/thousands
+// of fills) as thousands of un-closed slivers — mangled on stage, dropped in SWF.
+// ---------------------------------------------------------------------------
+
+interface FillPt {
+  readonly x: number;
+  readonly y: number;
+  /** true when this point is a quadratic-Bézier control point. */
+  readonly ctrl: boolean;
+}
+
+/** A polyline run of points (some flagged as Bézier controls). */
+class RunSeg {
+  points: FillPt[];
+  constructor(start: FillPt) {
+    this.points = [start];
+  }
+  add(p: FillPt): void {
+    this.points.push(p);
+  }
+  startPt(): FillPt {
+    return this.points[0]!;
+  }
+  endPt(): FillPt {
+    return this.points[this.points.length - 1]!;
+  }
+  isEmpty(): boolean {
+    return this.points.length <= 1;
+  }
+  flip(): void {
+    this.points.reverse();
+  }
+}
+
+/** Quantise a coordinate to the source twip grid for exact endpoint matching. */
+function ptKey(p: FillPt): number {
+  // 5120 units/px is the FLA edge resolution (8.8 fixed-point twips).
+  return Math.round(p.x * 5120) * 100000 + Math.round(p.y * 5120);
+}
+
+function swapRemove<T>(arr: T[], i: number): T {
+  const v = arr[i]!;
+  const last = arr.pop()!;
+  if (i < arr.length) arr[i] = last;
+  return v;
+}
+
+/**
+ * Link `seg` into `list`, merging with any existing run whose endpoint matches
+ * the new run's start or end (faithful port of Ruffle PendingPath::add_segment).
+ */
+function linkSegment(list: RunSeg[], seg: RunSeg): void {
+  if (seg.isEmpty()) return;
+  let startOpen = true;
+  let endOpen = true;
+  let i = 0;
+  while ((startOpen || endOpen) && i < list.length) {
+    const other = list[i]!;
+    if (startOpen && ptKey(other.endPt()) === ptKey(seg.startPt())) {
+      for (let k = 1; k < seg.points.length; k++) other.points.push(seg.points[k]!);
+      seg = swapRemove(list, i);
+      startOpen = false;
+    } else if (endOpen && ptKey(seg.endPt()) === ptKey(other.startPt())) {
+      const merged = seg.points;
+      for (let k = 1; k < other.points.length; k++) merged.push(other.points[k]!);
+      other.points = merged;
+      seg = swapRemove(list, i);
+      endOpen = false;
+    } else {
+      i++;
+    }
+  }
+  list.push(seg);
+}
+
+/** Convert a linked run of points into model PathSegments + closed flag. */
+function runToPath(
+  run: RunSeg,
+  fill: Fill | undefined,
+  stroke: Stroke | undefined,
+): ShapePath {
+  const pts = run.points;
+  const start = { x: pts[0]!.x, y: pts[0]!.y };
+  const segments: PathSegment[] = [];
+  let i = 1;
+  while (i < pts.length) {
+    const p = pts[i]!;
+    if (p.ctrl && i + 1 < pts.length) {
+      const anchor = pts[i + 1]!;
+      segments.push({ type: "curve", control: { x: p.x, y: p.y }, to: { x: anchor.x, y: anchor.y } });
+      i += 2;
+    } else {
+      segments.push({ type: "line", to: { x: p.x, y: p.y } });
+      i += 1;
+    }
+  }
+  const end = run.endPt();
+  const closed = ptKey(run.startPt()) === ptKey(end);
+  return { start, segments, fill, stroke, closed };
+}
+
 function convertShape(el: Fla8Shape, bitmapIdByIndex: Map<number, string>): DisplayObject {
   const { a, b, c, d } = el.matrix;
   const identityLinear =
     Math.abs(a - 1) < EPS && Math.abs(b) < EPS && Math.abs(c) < EPS && Math.abs(d - 1) < EPS;
-  const tp = (x: number, y: number) =>
-    identityLinear ? { x, y } : { x: a * x + c * y, y: b * x + d * y };
+  const tp = (x: number, y: number): FillPt =>
+    identityLinear ? { x, y, ctrl: false } : { x: a * x + c * y, y: b * x + d * y, ctrl: false };
 
-  const paths: ShapePath[] = [];
-  let segs: PathSegment[] = [];
-  let start = { x: 0, y: 0 };
-  let cur = { x: 0, y: 0 };
-  let curFill0 = -1;
-  let curFill1 = -1;
-  let curLine = -1;
-  let open = false;
-
-  const resolveFill = (fill1: number, fill0: number): Fill | undefined => {
-    const idx = fill1 > 0 ? fill1 : fill0;
+  const resolveFill = (idx: number): Fill | undefined => {
     if (idx <= 0 || idx > el.fills.length) return undefined;
     return toFill(el.fills[idx - 1]!, bitmapIdByIndex);
   };
@@ -219,43 +321,104 @@ function convertShape(el: Fla8Shape, bitmapIdByIndex: Map<number, string>): Disp
     return strokeFromFla8(el.strokes[line - 1]!);
   };
 
-  const flush = () => {
-    if (open && segs.length > 0) {
-      const closed = Math.abs(cur.x - start.x) < 0.01 && Math.abs(cur.y - start.y) < 0.01;
-      paths.push({
-        start,
-        segments: segs,
-        fill: resolveFill(curFill1, curFill0),
-        stroke: resolveStroke(curLine),
-        closed,
-      });
+  // Per-style pending runs (style id -> linked runs).
+  const fillRuns = new Map<number, RunSeg[]>();
+  const strokeRuns = new Map<number, RunSeg[]>();
+  const runsFor = (m: Map<number, RunSeg[]>, id: number): RunSeg[] => {
+    let l = m.get(id);
+    if (!l) {
+      l = [];
+      m.set(id, l);
     }
-    segs = [];
-    open = false;
+    return l;
   };
 
+  // Active accumulators for the three styles.
+  let f0Style = 0;
+  let f1Style = 0;
+  let lineStyle = 0;
+  let f0Seg = new RunSeg({ x: 0, y: 0, ctrl: false });
+  let f1Seg = new RunSeg({ x: 0, y: 0, ctrl: false });
+  let lineSeg = new RunSeg({ x: 0, y: 0, ctrl: false });
+
+  const flushFill1 = (start: FillPt) => {
+    if (f1Style > 0 && !f1Seg.isEmpty()) linkSegment(runsFor(fillRuns, f1Style), f1Seg);
+    f1Seg = new RunSeg(start);
+  };
+  const flushFill0 = (start: FillPt) => {
+    if (f0Style > 0 && !f0Seg.isEmpty()) {
+      f0Seg.flip(); // fill0 runs border their region in reverse
+      linkSegment(runsFor(fillRuns, f0Style), f0Seg);
+    }
+    f0Seg = new RunSeg(start);
+  };
+  const flushStroke = (start: FillPt) => {
+    // Strokes are not linked into loops; each run is its own (possibly open) path.
+    if (lineStyle > 0 && !lineSeg.isEmpty()) runsFor(strokeRuns, lineStyle).push(lineSeg);
+    lineSeg = new RunSeg(start);
+  };
+
+  let cursor: FillPt | null = null;
   for (const e of el.edges) {
     const from = tp(e.fromX, e.fromY);
     const to = tp(e.toX, e.toY);
-    const styleChanged = e.fill0 !== curFill0 || e.fill1 !== curFill1 || e.line !== curLine;
-    const moved = Math.abs(from.x - cur.x) > 0.01 || Math.abs(from.y - cur.y) > 0.01;
-    if (!open || moved || styleChanged) {
-      flush();
-      start = from;
-      cur = from;
-      curFill0 = e.fill0;
-      curFill1 = e.fill1;
-      curLine = e.line;
-      open = true;
+    // Pen move (gap): flush all active runs and restart them at `from`.
+    if (cursor === null || ptKey(cursor) !== ptKey(from)) {
+      flushFill1(from);
+      flushFill0(from);
+      flushStroke(from);
     }
+    // Style transitions flush only the affected accumulator.
+    if (e.fill1 !== f1Style) {
+      flushFill1(from);
+      f1Style = e.fill1;
+    }
+    if (e.fill0 !== f0Style) {
+      flushFill0(from);
+      f0Style = e.fill0;
+    }
+    if (e.line !== lineStyle) {
+      flushStroke(from);
+      lineStyle = e.line;
+    }
+    // Append this edge's geometry to every active accumulator.
     if (e.kind === "line") {
-      segs.push({ type: "line", to });
+      if (f1Style > 0) f1Seg.add(to);
+      if (f0Style > 0) f0Seg.add(to);
+      if (lineStyle > 0) lineSeg.add(to);
     } else {
-      segs.push({ type: "curve", control: tp(e.ctrlX, e.ctrlY), to });
+      const ctrl = tp(e.ctrlX, e.ctrlY);
+      const ctrlPt: FillPt = { x: ctrl.x, y: ctrl.y, ctrl: true };
+      if (f1Style > 0) {
+        f1Seg.add(ctrlPt);
+        f1Seg.add(to);
+      }
+      if (f0Style > 0) {
+        f0Seg.add(ctrlPt);
+        f0Seg.add(to);
+      }
+      if (lineStyle > 0) {
+        lineSeg.add(ctrlPt);
+        lineSeg.add(to);
+      }
     }
-    cur = to;
+    cursor = to;
   }
-  flush();
+  const last = cursor ?? { x: 0, y: 0, ctrl: false };
+  flushFill1(last);
+  flushFill0(last);
+  flushStroke(last);
+
+  // Emit fills first (ascending style id, matching Ruffle's draw order), then strokes.
+  const paths: ShapePath[] = [];
+  for (const id of [...fillRuns.keys()].sort((x, y) => x - y)) {
+    const fill = resolveFill(id);
+    for (const run of fillRuns.get(id)!) paths.push(runToPath(run, fill, undefined));
+  }
+  for (const id of [...strokeRuns.keys()].sort((x, y) => x - y)) {
+    const stroke = resolveStroke(id);
+    for (const run of strokeRuns.get(id)!) paths.push(runToPath(run, undefined, stroke));
+  }
 
   return {
     type: "shape",
