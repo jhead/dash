@@ -5,7 +5,12 @@
  * (FileAttributes, ProductInfo, SetBackgroundColor) plus the CSS hex-colour
  * parser they share. No shared compile state — safe to call standalone.
  */
+import type { FlashDocument } from "@flash/core";
 import { BitWriter } from "../bits.js";
+import { Tag } from "../tags.js";
+import { SwfWriter } from "../writer.js";
+import { buildXmpMetadata } from "../metadata.js";
+import type { CompileOptions } from "./options.js";
 
 /** Parse a CSS hex color string like "#rrggbb" → { r, g, b }. */
 export function parseHexColor(hex: string): { r: number; g: number; b: number } {
@@ -77,4 +82,66 @@ export function buildProductInfo(): Uint8Array {
   view.setUint32(18, 0, true);
   view.setUint32(22, 0, true);
   return new Uint8Array(buf);
+}
+
+/**
+ * Emit the fixed header tags at the top of every SWF, in order:
+ * FileAttributes (69, must be first), ProductInfo (41), optional Protect (24),
+ * optional EnableDebugger2 (64) + DebugId (63), optional Metadata (77), and
+ * SetBackgroundColor (9).
+ *
+ * SceneAndFrameLabelData (86) and ScriptLimits (65) are intentionally NOT
+ * emitted — real Flash 8 omits them, and emitting them breaks golden parity.
+ */
+export function emitHeaderTags(
+  writer: SwfWriter,
+  props: FlashDocument["properties"],
+  options?: CompileOptions
+): void {
+  // 1. FileAttributes — MUST be first tag in SWF 8
+  writer.writeTag(Tag.FileAttributes, buildFileAttributes(!!options?.metadata));
+
+  // 1b. SceneAndFrameLabelData (tag 86) — Flash 9+ tag; not emitted for Flash 8 targets.
+  //     Real Flash 8 does not emit this tag. Suppressed to match golden output.
+
+  // 1c-pre. ProductInfo (tag 41) — authoring tool identity; always emitted.
+  writer.writeTag(Tag.ProductInfo, buildProductInfo());
+
+  // 1c. Protect tag (24) — marks SWF as password-protected (empty body).
+  if (options?.protect) {
+    writer.writeTag(Tag.Protect, new Uint8Array(0));
+  }
+
+  // 1d. EnableDebugger2 tag (64) — stores debugger password.
+  //     Body: uint16 reserved=0, null-terminated password string.
+  //     DebugId (tag 63) — 16-byte UUID linking SWF to debug symbols; emitted
+  //     alongside EnableDebugger2 (zero UUID = no real debug session).
+  if (options?.debugPassword) {
+    const encoder = new TextEncoder();
+    const pwBytes = encoder.encode(options.debugPassword);
+    const body = new Uint8Array(2 + pwBytes.length + 1); // 2 reserved + pw + null
+    // body[0] and body[1] are already 0x00 (reserved uint16 = 0)
+    body.set(pwBytes, 2);
+    // body[2 + pwBytes.length] is already 0x00 (null terminator)
+    writer.writeTag(Tag.EnableDebugger2, body);
+    // DebugId (tag 63): 16-byte zero UUID
+    writer.writeTag(Tag.DebugId, new Uint8Array(16));
+  }
+
+  // 1e. Metadata tag (77) — emits XMP metadata when options.metadata is set.
+  if (options?.metadata) {
+    const xml = buildXmpMetadata(options.metadata);
+    const body = new TextEncoder().encode(xml); // UTF-8, no null terminator
+    writer.writeTag(Tag.Metadata, body);
+  }
+
+  // 2. SetBackgroundColor
+  writer.writeTag(
+    Tag.SetBackgroundColor,
+    buildSetBackgroundColor(props.backgroundColor)
+  );
+
+  // 2b. ScriptLimits (tag 65) — not emitted for Flash 8 targets.
+  //     Real Flash 8 does not emit this tag; Flash 8 default limits apply.
+  //     Suppressed to match golden output.
 }

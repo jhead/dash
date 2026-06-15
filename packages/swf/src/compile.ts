@@ -11,7 +11,6 @@
  */
 import type { BitmapItem, ButtonHandler, ButtonSounds, ClipAction, DisplayObject, FlashDocument, FontItem, SoundItem, Symbol, SymbolInstance, VideoDisplayObject, VideoItem } from "@flash/core";
 import { compileAS2, getTweenedFrame, getTweenSpans, applyEase } from "@flash/core";
-import { zlibSync } from "fflate";
 import { Tag } from "./tags.js";
 import { SwfWriter } from "./writer.js";
 import {
@@ -63,11 +62,10 @@ import {
 import { encodeDoInitAction } from "./doInitAction.js";
 import { encodeFrameLabel } from "./framelabel.js";
 // encodeSceneAndFrameLabelData suppressed: Flash 8 targets do not emit tag 86.
-import { buildXmpMetadata } from "./metadata.js";
-
 // Extracted compiler-pass helpers (see compiler/ for the decomposition).
 import type { CompileOptions } from "./compiler/options.js";
-import { buildFileAttributes, buildSetBackgroundColor, buildProductInfo } from "./compiler/header.js";
+import { emitHeaderTags } from "./compiler/header.js";
+import { assembleSwf } from "./compiler/assemble.js";
 import { topoSortSymbols, encodeExportAssets, encodeImportAssets2, encodeDefineScalingGrid } from "./compiler/symbols.js";
 import { emitBitmapFillTags } from "./compiler/characters.js";
 import { videoFitTransform } from "./compiler/media.js";
@@ -92,52 +90,8 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   const props = doc.properties;
   const writer = new SwfWriter();
 
-  // 1. FileAttributes — MUST be first tag in SWF 8
-  writer.writeTag(Tag.FileAttributes, buildFileAttributes(!!options?.metadata));
-
-  // 1b. SceneAndFrameLabelData (tag 86) — Flash 9+ tag; not emitted for Flash 8 targets.
-  //     Real Flash 8 does not emit this tag. Suppressed to match golden output.
-
-  // 1c-pre. ProductInfo (tag 41) — authoring tool identity; always emitted.
-  writer.writeTag(Tag.ProductInfo, buildProductInfo());
-
-  // 1c. Protect tag (24) — marks SWF as password-protected (empty body).
-  if (options?.protect) {
-    writer.writeTag(Tag.Protect, new Uint8Array(0));
-  }
-
-  // 1d. EnableDebugger2 tag (64) — stores debugger password.
-  //     Body: uint16 reserved=0, null-terminated password string.
-  //     DebugId (tag 63) — 16-byte UUID linking SWF to debug symbols; emitted
-  //     alongside EnableDebugger2 (zero UUID = no real debug session).
-  if (options?.debugPassword) {
-    const encoder = new TextEncoder();
-    const pwBytes = encoder.encode(options.debugPassword);
-    const body = new Uint8Array(2 + pwBytes.length + 1); // 2 reserved + pw + null
-    // body[0] and body[1] are already 0x00 (reserved uint16 = 0)
-    body.set(pwBytes, 2);
-    // body[2 + pwBytes.length] is already 0x00 (null terminator)
-    writer.writeTag(Tag.EnableDebugger2, body);
-    // DebugId (tag 63): 16-byte zero UUID
-    writer.writeTag(Tag.DebugId, new Uint8Array(16));
-  }
-
-  // 1e. Metadata tag (77) — emits XMP metadata when options.metadata is set.
-  if (options?.metadata) {
-    const xml = buildXmpMetadata(options.metadata);
-    const body = new TextEncoder().encode(xml); // UTF-8, no null terminator
-    writer.writeTag(Tag.Metadata, body);
-  }
-
-  // 2. SetBackgroundColor
-  writer.writeTag(
-    Tag.SetBackgroundColor,
-    buildSetBackgroundColor(props.backgroundColor)
-  );
-
-  // 2b. ScriptLimits (tag 65) — not emitted for Flash 8 targets.
-  //     Real Flash 8 does not emit this tag; Flash 8 default limits apply.
-  //     Suppressed to match golden output.
+  // 1-2. Header / document-attribute tags (FileAttributes … SetBackgroundColor).
+  emitHeaderTags(writer, props, options);
 
   // 3. Compile library symbols → DefineSprite tags
   //    Build charIdMap: symbolId → SWF character ID
@@ -2701,40 +2655,6 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     }
   }
 
-  // 5. End
-  writer.writeTag(Tag.End, new Uint8Array(0));
-
-  // Assemble the final binary.
-  // FrameCount in the SWF header = total frames across ALL scenes.
-  const frameCount =
-    doc.scenes.length === 0
-      ? 1
-      : doc.scenes.reduce((sum, s, i) => {
-          const sceneFrames = sceneFrameCount(s.timeline);
-          // Scene 0 is extended to cover the longest embedded video stream.
-          return sum + (i === 0 ? Math.max(sceneFrames, maxVideoFrames) : sceneFrames);
-        }, 0);
-
-  const result = writer.assemble(
-    props.frameRate,
-    frameCount,
-    props.width,
-    props.height,
-    false
-  );
-
-  if (options?.compress) {
-    // Compress the SWF body (bytes 8 onward) with zlib deflate and emit CWS header.
-    // Bytes 0-7 are the SWF header (signature + version + uncompressed file length).
-    const header = result.slice(0, 8);
-    const body = result.slice(8);
-    const compressed = zlibSync(body);
-    const out = new Uint8Array(8 + compressed.length);
-    out.set(header);
-    out.set(compressed, 8);
-    out[0] = 0x43; // 'C' — CWS signature
-    return out;
-  }
-
-  return result;
+  // 5. End tag, assemble the binary, and optionally zlib-compress (CWS).
+  return assembleSwf(writer, doc, maxVideoFrames, options);
 }
