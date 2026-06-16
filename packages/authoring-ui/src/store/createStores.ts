@@ -1,6 +1,6 @@
 import type { FlashDocument } from "@flash/core";
 import { createDocumentStore, type DocumentStoreApi } from "./documentStore.js";
-import { createUiStore, type UiStoreApi } from "./uiStore.js";
+import { createUiStore, type UiStoreApi, type UiData } from "./uiStore.js";
 
 /** Bundle of per-Shell-instance stores. */
 export interface Stores {
@@ -16,9 +16,9 @@ export interface Stores {
  * leaked-module-state flakiness documented in CLAUDE.md). Non-React callers
  * (agent/JSFL/test bridges) receive the handles and read via `store.getState()`.
  */
-export function createStores(initialDoc: FlashDocument): Stores {
+export function createStores(initialDoc: FlashDocument, uiInit?: Partial<UiData>): Stores {
   return {
     documentStore: createDocumentStore(initialDoc),
-    uiStore: createUiStore(),
+    uiStore: createUiStore(uiInit),
   };
 }

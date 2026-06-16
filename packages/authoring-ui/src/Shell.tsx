@@ -77,7 +77,6 @@ import type {
   Symbol,
   SymbolInstance,
   SymbolType,
-  TextAlign,
   TextDisplayObject,
   Timeline as TimelineModel,
   VideoDisplayObject,
@@ -90,7 +89,6 @@ import { ColorPanel } from "./ColorPanel";
 import { PlayerWindow } from "@flash/player";
 import { MenuBar } from "./MenuBar";
 import { EditBar } from "./EditBar";
-import type { TextFormat } from "./EditBar";
 import { ToolsPanel } from "./ToolsPanel";
 import { StageArea } from "./StageArea";
 import type { ViewMode, OnionFrame } from "./StageArea";
@@ -102,13 +100,14 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import type { PlacedInstance } from "./PropertiesPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { StatusBar } from "./StatusBar";
-import type { FreeTransformMode, PolyStarOptions, ToolId, ToolState } from "./tools/types";
+import type { FreeTransformMode, PolyStarOptions, ToolId } from "./tools/types";
 import { usePublish } from "./hooks/usePublish";
 import { useFileActions, loadFlaFromBytes } from "./hooks/useFileActions";
 import { useStore } from "zustand";
 import {
   createStores,
   type Stores,
+  type BottomTab,
   selectDoc,
   selectCanUndo,
   selectCanRedo,
@@ -143,7 +142,6 @@ import type { EffectParams, TimelineEffectType } from "./TimelineEffectDialog";
 import { SwapSymbolDialog } from "./SwapSymbolDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
-import type { PublishSettings } from "./PublishSettingsDialog";
 import { BitmapPropertiesDialog } from "./BitmapPropertiesDialog";
 import { SwapBitmapDialog } from "./SwapBitmapDialog";
 import { TraceBitmapDialog } from "./TraceBitmapDialog";
@@ -151,7 +149,6 @@ import { ExportGifDialog } from "./ExportGifDialog";
 import type { ExportGifOptions } from "./ExportGifDialog";
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import { generateHtmlWrapper, analyzeFrameSizes } from "@flash/swf";
-import type { FrameSizeReport } from "@flash/swf";
 import { BandwidthProfilerPanel } from "./BandwidthProfilerPanel";
 import { PanelGroup } from "./PanelGroup";
 import { HistoryPanel } from "./HistoryPanel";
@@ -161,7 +158,6 @@ import type { ObjectAccessibility } from "@flash/core";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
 import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
 import { loadCommands, saveCommand, deleteCommand } from "./savedCommands.js";
-import type { SavedCommand } from "./savedCommands.js";
 
 // ---------------------------------------------------------------------------
 // Shape hint overlay
@@ -284,12 +280,6 @@ function ShapeHintOverlay({
 // Edit context
 // ---------------------------------------------------------------------------
 
-interface EditContext {
-  mode: "document" | "symbol";
-  symbolId?: string;
-  symbolName?: string;
-  symbolType?: SymbolType;
-}
 
 // ---------------------------------------------------------------------------
 // Info panel bounds helper
@@ -487,7 +477,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-type BottomTab = "actions" | "sound" | "properties" | "output";
 const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
   { id: "actions", label: "Actions" },
   { id: "sound", label: "Sound" },
@@ -500,25 +489,6 @@ const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
 // ---------------------------------------------------------------------------
 
 const _initialDoc = createDocument();
-
-const DEFAULT_TOOL_STATE: ToolState = {
-  activeTool: "selection",
-  objectDrawing: false,
-  strokeColor: "#000000",
-  fill: { type: "solid", color: { r: 255, g: 255, b: 255, a: 255 } },
-  fillColor: "#ffffff",
-  strokeWidth: 1,
-  strokeAlpha: 100,
-  pencilMode: "ink",
-  brushSize: 8,
-  eraserSize: 16,
-  freeTransformMode: "rotate-scale",
-  lassoPolygonMode: false,
-  lassoMagicWand: false,
-  magicWandThreshold: 20,
-  magicWandSmoothing: "pixels",
-  polyStarOptions: { shapeType: "polygon", sides: 5, pointSize: 0.5 },
-};
 
 let _instanceCounter = 0;
 function nextInstanceId() {
@@ -647,8 +617,26 @@ export function Shell(): React.ReactElement {
   // old latestDocRef stale-closure workaround.
   // ---------------------------------------------------------------------------
   const storesRef = useRef<Stores | null>(null);
-  if (!storesRef.current) storesRef.current = createStores(_initialDoc);
-  const { documentStore } = storesRef.current;
+  if (!storesRef.current) {
+    // Inject the UI defaults that depend on view-module *values* so the store
+    // module keeps only type-level imports from view components.
+    storesRef.current = createStores(_initialDoc, {
+      swatches: [...DEFAULT_SWATCHES],
+      savedCommands: loadCommands(),
+      publishSettings: {
+        filename: "movie.swf",
+        jpegQuality: 80,
+        audioStreamFormat: "mp3",
+        audioEventFormat: "mp3",
+        compress: true,
+        protect: false,
+        debuggingPermitted: false,
+        debugPassword: "",
+        html: DEFAULT_HTML_OPTIONS,
+      },
+    });
+  }
+  const { documentStore, uiStore } = storesRef.current;
 
   // Subscribe to the slices Shell renders from. Each re-renders only when its
   // slice changes (Object.is), mirroring the old useReducer behaviour.
@@ -687,18 +675,88 @@ export function Shell(): React.ReactElement {
   const docProperties = doc.properties;
   const guides = docProperties.guides;
 
-  // Current file path (for Save vs Save As)
-  const [filePath, setFilePath] = useState<string | undefined>(undefined);
-
-  // Edit context — declared early so helpers can use it
-  const [editContext, setEditContext] = useState<EditContext>({ mode: "document" });
-
-  // Edit path stack: each entry = { symbolId, instanceId }
-  // Empty = editing main timeline. Kept in sync with editContext for multi-level support.
-  const [editPath, setEditPath] = useState<Array<{ symbolId: string; instanceId: string }>>([]);
-
-  // Active scene index — declared early so helpers can use it
-  const [activeSceneIndex, setActiveSceneIndex] = useState(0);
+  // ---------------------------------------------------------------------------
+  // Ephemeral UI state — owned by the per-instance uiStore (Phase 2). A single
+  // whole-store subscription re-renders Shell on any UI change, matching the
+  // prior behaviour where any of these setters re-rendered Shell. Section
+  // components subscribe to narrow slices in Phase 6. Setters keep React's
+  // `value | (prev => next)` signature, so every existing call site is unchanged.
+  // ---------------------------------------------------------------------------
+  const {
+    filePath, setFilePath,
+    editContext, setEditContext,
+    editPath, setEditPath,
+    activeSceneIndex, setActiveSceneIndex,
+    activeLayerIndex, setActiveLayerIndex,
+    currentFrame, setCurrentFrame,
+    isPlaying, setIsPlaying,
+    onionSkinEnabled, setOnionSkinEnabled,
+    onionSkinOutlines, setOnionSkinOutlines,
+    onionBefore, setOnionBefore,
+    onionAfter, setOnionAfter,
+    editMultipleFrames, setEditMultipleFrames,
+    hasMotionClipboard, setHasMotionClipboard,
+    selectedLibraryItemId, setSelectedLibraryItemId,
+    rightTab, setRightTab,
+    bottomTab, setBottomTab,
+    timelineCollapsed, setTimelineCollapsed,
+    preferencesOpen, setPreferencesOpen,
+    instances, setInstances,
+    selectedInstanceId, setSelectedInstanceId,
+    selectedShapeIds, setSelectedShapeIds,
+    zoom, setZoom,
+    panX, setPanX,
+    panY, setPanY,
+    cursorPos, setCursorPos,
+    snapToPixels, setSnapToPixels,
+    viewMode, setViewMode,
+    showRulers, setShowRulers,
+    toolState, setToolState,
+    textFormat, setTextFormat,
+    editingTextId, setEditingTextId,
+    colorPanelVisible, setColorPanelVisible,
+    colorMixerVisible, setColorMixerVisible,
+    mixerFillAlpha, setMixerFillAlpha,
+    mixerStrokeAlpha, setMixerStrokeAlpha,
+    filtersPanelVisible, setFiltersPanelVisible,
+    alignPanelVisible, setAlignPanelVisible,
+    scenePanelVisible, setScenePanelVisible,
+    swatchesPanelVisible, setSwatchesPanelVisible,
+    swatches, setSwatches,
+    behaviorsPanelVisible, setBehaviorsPanelVisible,
+    movieExplorerVisible, setMovieExplorerVisible,
+    historyPanelVisible, setHistoryPanelVisible,
+    savedCommands, setSavedCommands,
+    manageCommandsOpen, setManageCommandsOpen,
+    accessibilityPanelVisible, setAccessibilityPanelVisible,
+    showScenes, setShowScenes,
+    playerOpen, setPlayerOpen,
+    swfBytes, setSwfBytes,
+    playerError, setPlayerError,
+    outputMessages, setOutputMessages,
+    docPropsOpen, setDocPropsOpen,
+    findReplaceVisible, setFindReplaceVisible,
+    editGridOpen, setEditGridOpen,
+    convertToSymbolOpen, setConvertToSymbolOpen,
+    swapSymbolOpen, setSwapSymbolOpen,
+    timelineEffectOpen, setTimelineEffectOpen,
+    timelineEffectInitial, setTimelineEffectInitial,
+    envelopeDialogOpen, setEnvelopeDialogOpen,
+    envelopeDialogTarget, setEnvelopeDialogTarget,
+    publishSettingsOpen, setPublishSettingsOpen,
+    publishSettings, setPublishSettings,
+    bitmapPropsItem, setBitmapPropsItem,
+    swapBitmapDialogOpen, setSwapBitmapDialogOpen,
+    swapBitmapTargetId, setSwapBitmapTargetId,
+    traceBitmapOpen, setTraceBitmapOpen,
+    exportGifOpen, setExportGifOpen,
+    bandwidthProfilerVisible, setBandwidthProfilerVisible,
+    bandwidthProfilerReport, setBandwidthProfilerReport,
+    simpleButtonsEnabled, setSimpleButtonsEnabled,
+    selectedFrameRange, setSelectedFrameRange,
+    hasFrameClipboard, setHasFrameClipboard,
+    isDragOver, setIsDragOver,
+  } = useStore(uiStore);
 
   // ---------------------------------------------------------------------------
   // Helpers to mutate the document through history
@@ -794,23 +852,8 @@ export function Shell(): React.ReactElement {
   }, [editPath, editContext, doc, activeSceneIndex]);
 
   // ---------------------------------------------------------------------------
-  // Frame / playback state (these are UI-only, not persisted to document)
+  // Frame / playback (state lives in uiStore; refs are component-local)
   // ---------------------------------------------------------------------------
-  const [currentFrame, setCurrentFrame] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  // Onion skin state
-  const [onionSkinEnabled, setOnionSkinEnabled] = useState(false);
-  const [onionSkinOutlines, setOnionSkinOutlines] = useState(false);
-  const [onionBefore, setOnionBefore] = useState(2);
-  const [onionAfter, setOnionAfter] = useState(2);
-
-  // Edit Multiple Frames state
-  const [editMultipleFrames, setEditMultipleFrames] = useState(false);
-
-  // Motion clipboard — tracks whether _motionClipboard is populated (for menu state)
-  const [hasMotionClipboard, setHasMotionClipboard] = useState(false);
-
   // RAF playback refs
   const rafRef = useRef<number | null>(null);
   const isPlayingRef = useRef(false);
@@ -820,22 +863,10 @@ export function Shell(): React.ReactElement {
     frameRateRef.current = doc.properties.frameRate;
   }, [doc.properties.frameRate]);
 
-  // Active layer index (0 = topmost layer in Flash convention)
-  const [activeLayerIndex, setActiveLayerIndex] = useState(0);
-
-  // Clamped to valid range whenever layers change
+  // Active layer index clamped to valid range whenever layers change.
   const safeActiveLayerIndex = Math.min(activeLayerIndex, Math.max(0, timeline.layers.length - 1));
 
-  // Selected library item
-  const [selectedLibraryItemId, setSelectedLibraryItemId] = useState<string | null>(null);
-
-  // Right panel tab: "library" | "properties"
-  const [rightTab, setRightTab] = useState<"library" | "properties">("library");
-
-  // Bottom dock: tabbed (Actions | Sound | Properties) and collapsible.
-  // `bottomTab === null` means the dock is collapsed to just its tab bar.
-  const [bottomTab, setBottomTab] = useState<BottomTab | null>("properties");
-  // Remember the last expanded tab so re-expanding restores it.
+  // Remember the last expanded bottom tab so re-expanding restores it.
   const lastBottomTabRef = useRef<BottomTab>("properties");
 
   // Resizable panes: right panel width, top timeline height, bottom dock height.
@@ -844,12 +875,8 @@ export function Shell(): React.ReactElement {
   const timelineResize = useResize(210, 100, 760, "y", true);
   const bottomResize = useResize(180, 80, 600, "y");
 
-  // Top timeline dock collapse state.
-  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
-
   // Application preferences (UI scale, …) persisted to localStorage.
   const { preferences, updatePreferences, resetPreferences } = usePreferences();
-  const [preferencesOpen, setPreferencesOpen] = useState(false);
 
   /**
    * Click a bottom tab. Clicking the active (expanded) tab collapses the dock;
@@ -863,12 +890,6 @@ export function Shell(): React.ReactElement {
     });
   }, []);
 
-  // Placed instances on stage
-  const [instances, setInstances] = useState<PlacedInstance[]>([]);
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
-
-  // Multi-selection: list of selected display object IDs (draw/selection tool)
-  const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
   // Backward-compat single-selection: the selected id when exactly one object is selected, else null
   const selectedShapeId = selectedShapeIds.length === 1 ? selectedShapeIds[0] : null;
 
@@ -904,154 +925,20 @@ export function Shell(): React.ReactElement {
     }
   }, []);
 
-  // Stage / view
-  const [zoom, setZoom] = useState(1.0);
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
-  // Stage-space cursor position (updated from StageArea onCursorMove)
-  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   // Grid settings are derived from doc.properties.grid (persisted in document state)
   const showGrid = docProperties.grid.showGrid;
   const gridWidth = docProperties.grid.gridWidth;
   const gridHeight = docProperties.grid.gridHeight;
   const gridColor = docProperties.grid.gridColor;
-  const [snapToPixels, setSnapToPixels] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("normal");
 
   // Renderer ref (for loadImage calls)
   const rendererRef = useRef<import("@flash/core").CanvasRenderer | null>(null);
 
-  // Rulers visibility (guides are stored in doc.properties.guides)
-  const [showRulers, setShowRulers] = useState(false);
+  // Guide id counter (guides are stored in doc.properties.guides)
   const guideCounterRef = React.useRef(0);
 
-  // Tool state
-  const [toolState, setToolState] = useState<ToolState>(DEFAULT_TOOL_STATE);
-
-  // Text format state (used by text tool)
-  const [textFormat, setTextFormat] = useState<TextFormat>({
-    fontFamily: "Arial",
-    fontSize: 12,
-    bold: false,
-    italic: false,
-    align: "left" as TextAlign,
-    color: "#000000",
-  });
-  // Currently editing text id (for text edit mode in selection tool)
-  const [editingTextId, setEditingTextId] = useState<string | null>(null);
-
-  // Color panel
-  const [colorPanelVisible, setColorPanelVisible] = useState(false);
-
-  // Color Mixer panel (Shift+F9)
-  const [colorMixerVisible, setColorMixerVisible] = useState(false);
-  // Fill/stroke alpha for Color Mixer (separate from toolState which tracks stroke alpha)
-  const [mixerFillAlpha, setMixerFillAlpha] = useState(100);
-  const [mixerStrokeAlpha, setMixerStrokeAlpha] = useState(100);
-
-  // Filters panel
-  const [filtersPanelVisible, setFiltersPanelVisible] = useState(false);
-
-  // Align panel (Window > Align, Ctrl+K)
-  const [alignPanelVisible, setAlignPanelVisible] = useState(false);
-
-  // Scene panel (Window > Scene, Ctrl+Shift+S)
-  const [scenePanelVisible, setScenePanelVisible] = useState(false);
-
-  // Color Swatches panel (Window > Color Swatches)
-  const [swatchesPanelVisible, setSwatchesPanelVisible] = useState(false);
-  const [swatches, setSwatches] = useState<string[]>(() => [...DEFAULT_SWATCHES]);
-
-  // Behaviors panel (Window > Behaviors)
-  const [behaviorsPanelVisible, setBehaviorsPanelVisible] = useState(false);
-
-  // Movie Explorer panel (Window > Movie Explorer, Ctrl+Alt+M)
-  const [movieExplorerVisible, setMovieExplorerVisible] = useState(false);
-
-  // History panel (Window > History, Ctrl+F10)
-  const [historyPanelVisible, setHistoryPanelVisible] = useState(false);
-
-  // Saved commands (Commands menu) — persisted in localStorage
-  const [savedCommands, setSavedCommands] = useState<SavedCommand[]>(() => loadCommands());
-
-  // Manage Commands dialog visibility
-  const [manageCommandsOpen, setManageCommandsOpen] = useState(false);
-
-  // Accessibility panel (Window > Accessibility)
-  const [accessibilityPanelVisible, setAccessibilityPanelVisible] = useState(false);
-
-  // Scene switcher inline panel (toggle near Timeline header)
-  const [showScenes, setShowScenes] = useState(false);
-
-  // Test Movie player state
-  const [playerOpen, setPlayerOpen] = useState(false);
-  const [swfBytes, setSwfBytes] = useState<Uint8Array | null>(null);
-  const [playerError, setPlayerError] = useState<string | null>(null);
-
-  // Output panel: collects AS2 trace() lines from Test Movie playback
-  const [outputMessages, setOutputMessages] = useState<string[]>([]);
-
-  // Document properties dialog
-  const [docPropsOpen, setDocPropsOpen] = useState(false);
-
-  // Find and Replace dialog
-  const [findReplaceVisible, setFindReplaceVisible] = useState(false);
-
-  // Edit Grid dialog
-  const [editGridOpen, setEditGridOpen] = useState(false);
-
-  // Convert to Symbol dialog
-  const [convertToSymbolOpen, setConvertToSymbolOpen] = useState(false);
-
-  // Swap Symbol dialog
-  const [swapSymbolOpen, setSwapSymbolOpen] = useState(false);
-
-  // Timeline Effects dialog (Insert > Timeline Effects)
-  const [timelineEffectOpen, setTimelineEffectOpen] = useState(false);
-  const [timelineEffectInitial, setTimelineEffectInitial] = useState<TimelineEffectType>("transform");
   // Counter for auto-naming effect symbols ("Transform 1", "Transform 2", …)
   const timelineEffectCounterRef = useRef(0);
-
-  // Sound Envelope edit dialog
-  const [envelopeDialogOpen, setEnvelopeDialogOpen] = useState(false);
-  const [envelopeDialogTarget, setEnvelopeDialogTarget] = useState<{
-    frameIdx: number;
-    layerIdx: number;
-  } | null>(null);
-
-  // Publish Settings dialog
-  const [publishSettingsOpen, setPublishSettingsOpen] = useState(false);
-  const [publishSettings, setPublishSettings] = useState<PublishSettings>({
-    filename: "movie.swf",
-    jpegQuality: 80,
-    audioStreamFormat: "mp3",
-    audioEventFormat: "mp3",
-    compress: true,
-    protect: false,
-    debuggingPermitted: false,
-    debugPassword: "",
-    html: DEFAULT_HTML_OPTIONS,
-  });
-
-  // Bitmap Properties dialog
-  const [bitmapPropsItem, setBitmapPropsItem] = useState<BitmapItem | null>(null);
-
-  // Swap Bitmap dialog
-  const [swapBitmapDialogOpen, setSwapBitmapDialogOpen] = useState(false);
-  const [swapBitmapTargetId, setSwapBitmapTargetId] = useState<string | null>(null);
-
-  // Trace Bitmap dialog
-  const [traceBitmapOpen, setTraceBitmapOpen] = useState(false);
-
-  // Export GIF dialog
-  const [exportGifOpen, setExportGifOpen] = useState(false);
-
-  // Bandwidth Profiler
-  const [bandwidthProfilerVisible, setBandwidthProfilerVisible] = useState(false);
-  const [bandwidthProfilerReport, setBandwidthProfilerReport] = useState<FrameSizeReport | null>(null);
-
-  // Control > Enable Simple Buttons
-  const [simpleButtonsEnabled, setSimpleButtonsEnabled] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Handlers — timeline / frame
@@ -1729,25 +1616,14 @@ export function Shell(): React.ReactElement {
   }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
 
   // ---------------------------------------------------------------------------
-  // Selected frame range — tracks shift-click selection in Timeline
-  // ---------------------------------------------------------------------------
-
-  /** Mirrors the Timeline's shift-selected frame range for menu-bar operations. */
-  const [selectedFrameRange, setSelectedFrameRange] = useState<{
-    layerId: string;
-    start: number;
-    end: number;
-  } | null>(null);
-
-  // ---------------------------------------------------------------------------
   // Frame clipboard — copy/paste frames in the Timeline
+  // (selectedFrameRange + hasFrameClipboard live in uiStore)
   // ---------------------------------------------------------------------------
 
   /** Module-level frame clipboard so it survives re-renders without state churn. */
   const frameClipboardRef = useRef<{
     frames: readonly Frame[];
   } | null>(null);
-  const [hasFrameClipboard, setHasFrameClipboard] = useState(false);
 
   /**
    * Called by Timeline's onCopyFrames (context-menu or Cmd+C).
@@ -4592,9 +4468,8 @@ export function Shell(): React.ReactElement {
 
   // ---------------------------------------------------------------------------
   // Drag-and-drop — open .fla files dropped onto the editor window
+  // (isDragOver lives in uiStore)
   // ---------------------------------------------------------------------------
-
-  const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     // Only highlight when at least one dragged item looks like a file
