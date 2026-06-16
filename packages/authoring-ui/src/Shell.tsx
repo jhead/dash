@@ -96,6 +96,7 @@ import { useSceneHandlers } from "./hooks/useSceneHandlers.js";
 import { useTextHandlers } from "./hooks/useTextHandlers.js";
 import { useShapeOpHandlers } from "./hooks/useShapeOpHandlers.js";
 import { useClipboardHandlers } from "./hooks/useClipboardHandlers.js";
+import { useExportHandlers } from "./hooks/useExportHandlers.js";
 import {
   instanceNamesOf,
   shapeDisplayObjectsAt,
@@ -124,8 +125,6 @@ import { AlignPanel } from "./AlignPanel";
 import { SceneSwitcher } from "./SceneSwitcher";
 import { DEFAULT_SWATCHES } from "./SwatchesPanel";
 import { DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
-import type { ExportGifOptions } from "./ExportGifDialog";
-import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import { generateHtmlWrapper, analyzeFrameSizes } from "@flash/swf";
 import { PanelGroup } from "./PanelGroup";
 import type { DocumentAccessibility } from "@flash/core";
@@ -527,10 +526,7 @@ function useResize(
  * @param format - file extension ("png" | "jpeg")
  * @returns e.g. "frame_0001.png" for frameIndex=0
  */
-export function frameFilename(frameIndex: number, format: "png" | "jpeg"): string {
-  const n = String(frameIndex + 1).padStart(4, "0");
-  return `frame_${n}.${format}`;
-}
+export { frameFilename } from "./frameFilename.js";
 
 // ---------------------------------------------------------------------------
 // Shell
@@ -654,9 +650,7 @@ export function Shell(): React.ReactElement {
     setManageCommandsOpen,
     accessibilityPanelVisible, setAccessibilityPanelVisible,
     showScenes, setShowScenes,
-    playerOpen, setPlayerOpen,
-    setSwfBytes,
-    setPlayerError,
+    playerOpen,
     outputMessages, setOutputMessages,
     setDocPropsOpen,
     setFindReplaceVisible,
@@ -668,7 +662,6 @@ export function Shell(): React.ReactElement {
     bitmapPropsItem, setBitmapPropsItem,
     setSwapBitmapDialogOpen,
     swapBitmapTargetId, setSwapBitmapTargetId,
-    setExportGifOpen,
     setBandwidthProfilerVisible,
     setBandwidthProfilerReport,
     simpleButtonsEnabled, setSimpleButtonsEnabled,
@@ -2508,204 +2501,11 @@ export function Shell(): React.ReactElement {
   // Export Image / Export Movie
   // ---------------------------------------------------------------------------
 
-  /**
-   * Renders a given frame index to a composited canvas (background + content)
-   * and returns the data URL (with prefix).
-   * @param frameIndex - 0-based frame index to render
-   * @param format - "png" | "jpeg"
-   * @param quality - JPEG quality 0–1 (ignored for PNG)
-   */
-  const renderFrameToDataURL = useCallback(
-    (frameIndex: number, format: "png" | "jpeg" = "png", quality = 0.92): string => {
-      const w = docProperties.width;
-      const h = docProperties.height;
-      const sceneGraph: SceneGraph = {
-        layers: timeline.layers.map((layer) => {
-          const frame = getTweenedFrame(layer, frameIndex);
-          const objects: DisplayObject[] = frame ? [...frame.displayObjects] : [];
-          return {
-            id: layer.id,
-            name: layer.name,
-            visible: layer.visible,
-            locked: layer.locked,
-            outlineMode: layer.outlineMode,
-            outlineColor: layer.outlineColor,
-            objects,
-          };
-        }),
-      };
-      const offscreen = document.createElement("canvas");
-      offscreen.width = w;
-      offscreen.height = h;
-      const renderer = new CanvasRenderer(offscreen);
-      renderer.resize(w, h, 1);
-      renderer.render(sceneGraph, { x: 0, y: 0, zoom: 1 }, doc.library);
-      const composite = document.createElement("canvas");
-      composite.width = w;
-      composite.height = h;
-      const ctx = composite.getContext("2d")!;
-      ctx.fillStyle = docProperties.backgroundColor;
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(offscreen, 0, 0);
-      const mimeType = format === "jpeg" ? "image/jpeg" : "image/png";
-      return composite.toDataURL(mimeType, quality);
-    },
-    [docProperties, timeline, doc.library]
-  );
-
-  /** Trigger a browser download for arbitrary blob data. */
-  const downloadBlob = useCallback((filename: string, blob: Blob): void => {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-  }, []);
-
-  /**
-   * File > Export Image...
-   * Exports the currently visible frame as a PNG.
-   */
-  const handleExportImage = useCallback(() => {
-    const dataURL = renderFrameToDataURL(currentFrame, "png");
-    // Strip the "data:image/png;base64," prefix to get raw bytes
-    const base64 = dataURL.replace(/^data:image\/png;base64,/, "");
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "image/png" });
-    downloadBlob("frame.png", blob);
-  }, [renderFrameToDataURL, currentFrame, downloadBlob]);
-
-  /**
-   * File > Export Movie...
-   * Opens the ExportGifDialog to let the user choose format (PNG sequence or animated GIF).
-   */
-  const handleExportMovie = useCallback(() => {
-    setExportGifOpen(true);
-  }, []);
-
-  /**
-   * Compute the total frame count across all layers.
-   * Extracted helper used by both export paths.
-   */
-  const computeMaxFrame = useCallback((): number => {
-    return Math.max(
-      ...timeline.layers.map((l) => {
-        if (l.frames.length === 0) return 1;
-        const lastKf = [...l.frames].sort((a, b) => b.index - a.index)[0];
-        return lastKf.index + 1;
-      }),
-      1
-    );
-  }, [timeline.layers]);
-
-  /**
-   * Perform the actual export once the user confirms the ExportGifDialog.
-   */
-  const handleExportGifConfirm = useCallback(
-    (options: ExportGifOptions) => {
-      setExportGifOpen(false);
-      const maxFrame = computeMaxFrame();
-
-      if (options.format === "png-sequence") {
-        // Original PNG sequence path
-        for (let fi = 0; fi < maxFrame; fi++) {
-          const dataURL = renderFrameToDataURL(fi, "png");
-          const base64 = dataURL.replace(/^data:image\/png;base64,/, "");
-          const binary = atob(base64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "image/png" });
-          downloadBlob(frameFilename(fi, "png"), blob);
-        }
-        return;
-      }
-
-      // Animated GIF path
-      void (async () => {
-        const w = docProperties.width;
-        const h = docProperties.height;
-        const gif = GIFEncoder();
-        // Repeat: 0 = loop forever; n > 0 = gifenc does not natively encode finite
-        // loop counts via NETSCAPE2.0 (it only writes the extension once on the first
-        // frame). We pass 0 for "loop forever" and -1 (no extension) otherwise.
-        const repeat = options.loopForever ? 0 : -1;
-
-        for (let fi = 0; fi < maxFrame; fi++) {
-          // Render the frame to a data URL and decode to RGBA bytes
-          const dataURL = renderFrameToDataURL(fi, "png");
-          const img = new Image();
-          img.src = dataURL;
-          await new Promise<void>((resolve) => {
-            img.onload = () => resolve();
-          });
-          const canvas = document.createElement("canvas");
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext("2d")!;
-          ctx.drawImage(img, 0, 0);
-          const { data } = ctx.getImageData(0, 0, w, h);
-
-          const palette = quantize(data, options.maxColors);
-          const index = applyPalette(data, palette);
-
-          gif.writeFrame(index, w, h, {
-            palette,
-            delay: options.frameDelay,
-            repeat: fi === 0 ? repeat : undefined,
-          });
-        }
-
-        gif.finish();
-        const rawBytes = gif.bytes();
-        // Copy to a plain ArrayBuffer to satisfy Blob constructor's type constraint
-        const buffer = rawBytes.buffer.slice(
-          rawBytes.byteOffset,
-          rawBytes.byteOffset + rawBytes.byteLength
-        ) as ArrayBuffer;
-        downloadBlob("movie.gif", new Blob([buffer], { type: "image/gif" }));
-      })();
-    },
-    [
-      computeMaxFrame,
-      renderFrameToDataURL,
-      downloadBlob,
-      docProperties.width,
-      docProperties.height,
-    ]
-  );
-
-  const handleTestMovie = useCallback(() => {
-    void (async () => {
-      const bytes = await testMovie();
-      setSwfBytes(bytes);
-      setPlayerOpen(true);
-      // Clear output from previous run and switch to the Output tab so the user
-      // can see trace() messages as the movie plays.
-      setOutputMessages([]);
-      setBottomTab("output");
-    })();
-  }, [testMovie]);
-
-  // Stable callbacks for PlayerWindow — memoized so RufflePlayer does not
-  // reload when Shell re-renders (e.g., on tool-shortcut keypresses).
-  const handlePlayerClose = useCallback(() => {
-    setPlayerOpen(false);
-    setPlayerError(null);
-  }, []);
-
-  const handlePlayerError = useCallback((msg: string) => {
-    setPlayerError(msg);
-  }, []);
-
-  // Called for each AS2 trace() line captured from the running SWF.
-  // Uses a functional setState update so the callback identity is stable and
-  // does not cause PlayerWindow / RufflePlayer to remount.
-  const handleTrace = useCallback((line: string) => {
-    setOutputMessages((prev) => [...prev, line]);
-  }, []);
+  // Export + Test Movie handlers — see hooks/useExportHandlers.
+  const {
+    handleExportImage, handleExportMovie, handleExportGifConfirm,
+    handleTestMovie, handlePlayerClose, handlePlayerError, handleTrace,
+  } = useExportHandlers({ uiStore, doc, docProperties, timeline, currentFrame, testMovie });
 
   // Wire fl.outputPanel.clear() in the JSFL runtime to the React state setter.
   // setOutputMessages is a stable identity from useState so no deps are needed.
