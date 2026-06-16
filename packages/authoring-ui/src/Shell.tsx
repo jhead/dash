@@ -23,11 +23,8 @@ import {
   reorderScenes,
   duplicateScene,
   CanvasRenderer,
-  insertFrame,
   insertKeyframe,
-  insertBlankKeyframe,
   removeFrame,
-  clearKeyframe,
   transformedShapeBounds,
   shapeBounds,
   getUnionBounds,
@@ -123,6 +120,11 @@ import {
   bitmapLibraryItems as bitmapLibraryItemsOf,
   soundLibraryItems as soundLibraryItemsOf,
 } from "./selectors/index.js";
+import {
+  createPopulatedRegistry,
+  type CommandContext,
+  type CommandRegistry,
+} from "./commands/index.js";
 import { ActionsPanel } from "./ActionsPanel";
 import { OutputPanel } from "./OutputPanel";
 import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
@@ -717,9 +719,9 @@ export function Shell(): React.ReactElement {
     panX, setPanX,
     panY, setPanY,
     cursorPos, setCursorPos,
-    snapToPixels, setSnapToPixels,
+    snapToPixels,
     viewMode, setViewMode,
-    showRulers, setShowRulers,
+    showRulers,
     toolState, setToolState,
     textFormat, setTextFormat,
     editingTextId, setEditingTextId,
@@ -1030,13 +1032,34 @@ export function Shell(): React.ReactElement {
     rafRef.current = requestAnimationFrame(tick);
   }, [timeline.layers]);
 
+  // ---------------------------------------------------------------------------
+  // Command registry — the single source of truth for editor operations. Menu,
+  // keyboard, agent, and JSFL all dispatch by id (agent/keyboard fully unified
+  // in Phase 5). Commands read live state from the stores and invoke
+  // component-coupled behaviour (playback, publish) via services.
+  // ---------------------------------------------------------------------------
+  const registryRef = useRef<CommandRegistry | null>(null);
+  if (!registryRef.current) registryRef.current = createPopulatedRegistry();
+  const registry = registryRef.current;
+
+  const commandCtx = useMemo<CommandContext>(
+    () => ({
+      doc: documentStore,
+      ui: uiStore,
+      services: { pushDoc, startPlayback, stopPlayback },
+    }),
+    [documentStore, uiStore, pushDoc, startPlayback, stopPlayback]
+  );
+
+  /** Run a command by id with the live editor context. */
+  const dispatch = useCallback(
+    (id: string, args?: unknown) => registry.dispatch(id, commandCtx, args),
+    [registry, commandCtx]
+  );
+
   const handlePlayToggle = useCallback(() => {
-    if (isPlayingRef.current) {
-      stopPlayback();
-    } else {
-      startPlayback();
-    }
-  }, [startPlayback, stopPlayback]);
+    dispatch("playback.toggle");
+  }, [dispatch]);
 
   const handlePlayingChange = useCallback((playing: boolean) => {
     if (playing) {
@@ -1085,41 +1108,13 @@ export function Shell(): React.ReactElement {
   // Handlers — rulers & guides
   // ---------------------------------------------------------------------------
 
-  const handleRulersToggle = useCallback(() => {
-    setShowRulers((v) => !v);
-  }, []);
+  const handleRulersToggle = useCallback(() => dispatch("view.toggleRulers"), [dispatch]);
+  const handleToggleShowGrid = useCallback(() => dispatch("view.toggleGrid"), [dispatch]);
+  const handleToggleSnapToGrid = useCallback(() => dispatch("view.toggleSnapToGrid"), [dispatch]);
+  const handleToggleSnapToObjects = useCallback(() => dispatch("view.toggleSnapToObjects"), [dispatch]);
+  const handleToggleSnapToGuides = useCallback(() => dispatch("view.toggleSnapToGuides"), [dispatch]);
 
-  const handleToggleShowGrid = useCallback(() => {
-    pushDoc(withProperties((p) => ({
-      ...p,
-      grid: { ...p.grid, showGrid: !p.grid.showGrid },
-    })));
-  }, [pushDoc, withProperties]);
-
-  const handleToggleSnapToGrid = useCallback(() => {
-    pushDoc(withProperties((p) => ({
-      ...p,
-      grid: { ...p.grid, snapToGrid: !p.grid.snapToGrid },
-    })));
-  }, [pushDoc, withProperties]);
-
-  const handleToggleSnapToObjects = useCallback(() => {
-    pushDoc(withProperties((p) => ({
-      ...p,
-      snapToObjects: !p.snapToObjects,
-    })));
-  }, [pushDoc, withProperties]);
-
-  const handleToggleSnapToGuides = useCallback(() => {
-    pushDoc(withProperties((p) => ({
-      ...p,
-      snapToGuides: !p.snapToGuides,
-    })));
-  }, [pushDoc, withProperties]);
-
-  const handleToggleSnapToPixels = useCallback(() => {
-    setSnapToPixels((v) => !v);
-  }, []);
+  const handleToggleSnapToPixels = useCallback(() => dispatch("view.toggleSnapToPixels"), [dispatch]);
 
   const handleViewModeChange = useCallback((mode: "normal" | "outlines" | "fast" | "antialias") => {
     setViewMode(mode as ViewMode);
@@ -4256,48 +4251,13 @@ export function Shell(): React.ReactElement {
   // Keyboard shortcut handlers
   // ---------------------------------------------------------------------------
 
-  const handleSelectAll = useCallback(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = getGoverningKeyframe(layer, currentFrame);
-    if (!kf || kf.displayObjects.length === 0) return;
-    // Select all objects in the governing keyframe
-    setSelectedShapeIds(kf.displayObjects.map((o) => o.id));
-  }, [timeline, safeActiveLayerIndex, currentFrame]);
-
-  const handleDeselect = useCallback(() => {
-    setSelectedShapeIds([]);
-  }, []);
-
-  const handleInsertFrame = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => insertFrame(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleInsertKeyframe = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => insertKeyframe(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleInsertBlankKeyframe = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => insertBlankKeyframe(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleRemoveFrame = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => removeFrame(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleClearKeyframe = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => clearKeyframe(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
+  const handleSelectAll = useCallback(() => dispatch("edit.selectAll"), [dispatch]);
+  const handleDeselect = useCallback(() => dispatch("edit.deselectAll"), [dispatch]);
+  const handleInsertFrame = useCallback(() => dispatch("timeline.insertFrame"), [dispatch]);
+  const handleInsertKeyframe = useCallback(() => dispatch("timeline.insertKeyframe"), [dispatch]);
+  const handleInsertBlankKeyframe = useCallback(() => dispatch("timeline.insertBlankKeyframe"), [dispatch]);
+  const handleRemoveFrame = useCallback(() => dispatch("timeline.removeFrame"), [dispatch]);
+  const handleClearKeyframe = useCallback(() => dispatch("timeline.clearKeyframe"), [dispatch]);
 
   useKeyboardShortcuts({
     onUndo: undo,

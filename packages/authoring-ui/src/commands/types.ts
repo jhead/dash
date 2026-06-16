@@ -1,14 +1,22 @@
+import type { FlashDocument } from "@flash/core";
 import type { DocumentStoreApi } from "../store/documentStore.js";
 import type { UiStoreApi } from "../store/uiStore.js";
 
 /**
- * Side-effecting services a command may need that live outside the stores
- * (publish/compile, stage screenshot, file IO, …). Grown as commands migrate
- * off Shell. Optional so partial contexts (tests) stay cheap to build.
+ * Side-effecting services a command may need that live outside the stores:
+ * the rev-bumping document mutator and component-coupled behaviour (playback's
+ * RAF loop, publish/compile, stage screenshot). This is the escape hatch that
+ * lets store-coupled command logic live in command modules while genuinely
+ * component-bound bits stay in Shell. Optional so partial contexts (tests) are
+ * cheap to build.
  */
 export interface CommandServices {
-  publish?: () => Promise<void>;
-  testMovie?: () => Promise<void>;
+  /** Record a document mutation AND bump the agent rev (Shell's pushDoc). */
+  pushDoc?: (next: FlashDocument) => void;
+  startPlayback?: () => void;
+  stopPlayback?: () => void;
+  publish?: () => Promise<void> | void;
+  testMovie?: () => Promise<void> | void;
   screenshot?: (frameIndex?: number) => string;
 }
 

@@ -7,5 +7,28 @@ export type {
 export { createCommandRegistry } from "./registry.js";
 export type { CommandRegistry } from "./registry.js";
 
-// Command modules (edit/timeline/shape/text/library/transform/scene/view/file)
-// are added here in Phase 4 as handlers migrate off Shell.
+import { createCommandRegistry, type CommandRegistry } from "./registry.js";
+import { historyCommands } from "./history.js";
+import { timelineCommands } from "./timeline.js";
+import { editCommands } from "./edit.js";
+import { viewCommands } from "./view.js";
+import { playbackCommands } from "./playback.js";
+
+/**
+ * Every migrated command, grouped by domain. More modules are appended here as
+ * handlers move off Shell (shape/text/library/transform/scene/file/…).
+ */
+export const ALL_COMMANDS = [
+  ...historyCommands,
+  ...timelineCommands,
+  ...editCommands,
+  ...viewCommands,
+  ...playbackCommands,
+];
+
+/** Build a registry pre-populated with all commands. */
+export function createPopulatedRegistry(): CommandRegistry {
+  const registry = createCommandRegistry();
+  registry.registerAll(ALL_COMMANDS);
+  return registry;
+}
