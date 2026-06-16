@@ -82,7 +82,6 @@ import type {
   ShapePath,
 } from "@flash/core";
 import { runJsfl, buildJsflContext, registerClearOutputCallback } from "./jsfl/index.js";
-import { PlayerWindow } from "@flash/player";
 import { MenuBar } from "./MenuBar";
 import { EditBar } from "./EditBar";
 import { ToolsPanel } from "./ToolsPanel";
@@ -113,6 +112,7 @@ import {
 import { ShellDialogs } from "./layout/ShellDialogs.js";
 import { ShellPanels } from "./layout/ShellPanels.js";
 import { ManageCommandsDialog } from "./layout/ManageCommandsDialog.js";
+import { ShellOverlays } from "./layout/ShellOverlays.js";
 import {
   instanceNamesOf,
   shapeDisplayObjectsAt,
@@ -144,14 +144,10 @@ import type { RegistrationPoint } from "./ConvertToSymbolDialog";
 import type { EffectParams, TimelineEffectType } from "./TimelineEffectDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
-import { ExportGifDialog } from "./ExportGifDialog";
 import type { ExportGifOptions } from "./ExportGifDialog";
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import { generateHtmlWrapper, analyzeFrameSizes } from "@flash/swf";
-import { BandwidthProfilerPanel } from "./BandwidthProfilerPanel";
 import { PanelGroup } from "./PanelGroup";
-import { HistoryPanel } from "./HistoryPanel";
-import { AccessibilityPanel } from "./AccessibilityPanel";
 import type { DocumentAccessibility } from "@flash/core";
 import type { ObjectAccessibility } from "@flash/core";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
@@ -646,7 +642,6 @@ export function Shell(): React.ReactElement {
   const undoDepth = useStore(documentStore, selectUndoDepth);
   const redoDepth = useStore(documentStore, selectRedoDepth);
   const historyPast = useStore(documentStore, (s) => s.history.past);
-  const historyFuture = useStore(documentStore, (s) => s.history.future);
 
   // Store actions are stable; wrap as stable callbacks for prop/dep-array use.
   const replaceDoc = useCallback(
@@ -731,8 +726,8 @@ export function Shell(): React.ReactElement {
     accessibilityPanelVisible, setAccessibilityPanelVisible,
     showScenes, setShowScenes,
     playerOpen, setPlayerOpen,
-    swfBytes, setSwfBytes,
-    playerError, setPlayerError,
+    setSwfBytes,
+    setPlayerError,
     outputMessages, setOutputMessages,
     setDocPropsOpen,
     setFindReplaceVisible,
@@ -749,9 +744,9 @@ export function Shell(): React.ReactElement {
     setSwapBitmapDialogOpen,
     swapBitmapTargetId, setSwapBitmapTargetId,
     setTraceBitmapOpen,
-    exportGifOpen, setExportGifOpen,
-    bandwidthProfilerVisible, setBandwidthProfilerVisible,
-    bandwidthProfilerReport, setBandwidthProfilerReport,
+    setExportGifOpen,
+    setBandwidthProfilerVisible,
+    setBandwidthProfilerReport,
     simpleButtonsEnabled, setSimpleButtonsEnabled,
     selectedFrameRange, setSelectedFrameRange,
     hasFrameClipboard, setHasFrameClipboard,
@@ -6055,42 +6050,19 @@ export function Shell(): React.ReactElement {
         onDuplicateScene={handleDuplicateScene}
       />
 
-      {/* Test Movie player error overlay */}
-      {playerError && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 24,
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "#b22222",
-            color: "#fff",
-            padding: "10px 18px",
-            borderRadius: 4,
-            fontSize: 13,
-            fontFamily: "system-ui, sans-serif",
-            zIndex: 10000,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
-            maxWidth: 480,
-            textAlign: "center",
-            cursor: "pointer",
-          }}
-          onClick={() => setPlayerError(null)}
-          title="Click to dismiss"
-        >
-          <strong>Test Movie failed:</strong> {playerError}
-        </div>
-      )}
-
-      {/* Test Movie player overlay */}
-      <PlayerWindow
-        swfBytes={swfBytes}
-        stageWidth={docProperties.width}
-        stageHeight={docProperties.height}
-        isOpen={playerOpen}
-        onClose={handlePlayerClose}
-        onError={handlePlayerError}
+      {/* Floating overlays (player, history, profiler, accessibility, export — flags in uiStore) */}
+      <ShellOverlays
+        doc={doc}
+        docProperties={docProperties}
+        selectedDisplayObject={selectedDisplayObject}
+        onPlayerClose={handlePlayerClose}
+        onPlayerError={handlePlayerError}
         onTrace={handleTrace}
+        onJumpToHistory={handleJumpToHistory}
+        onSaveAsCommand={handleSaveAsCommand}
+        onDocAccessibilityChange={handleDocAccessibilityChange}
+        onObjectAccessibilityChange={handleObjectAccessibilityChange}
+        onExportGifConfirm={handleExportGifConfirm}
       />
 
       {/* Application modal dialogs (open-state + dialog-local state live in uiStore) */}
@@ -6113,66 +6085,8 @@ export function Shell(): React.ReactElement {
         onTraceBitmapConfirm={handleTraceBitmapConfirm}
       />
 
-      {/* History panel (Window > History, Ctrl+F10) */}
-      {historyPanelVisible && (
-        <div
-          style={{
-            position: "fixed",
-            top: "60px",
-            right: "260px",
-            zIndex: 2000,
-          }}
-        >
-          <HistoryPanel
-            past={historyPast}
-            future={historyFuture}
-            onJumpTo={handleJumpToHistory}
-            onClear={clearHistory}
-            onClose={() => setHistoryPanelVisible(false)}
-            onSaveAsCommand={handleSaveAsCommand}
-          />
-        </div>
-      )}
-
       {/* Manage Saved Commands modal (open-state + list in uiStore) */}
       <ManageCommandsDialog onRun={handleRunCommand} onDelete={handleDeleteCommand} />
-
-      {/* Bandwidth Profiler panel */}
-      {bandwidthProfilerVisible && bandwidthProfilerReport && (
-        <BandwidthProfilerPanel
-          report={bandwidthProfilerReport}
-          frameRate={doc.properties.frameRate}
-          onClose={() => setBandwidthProfilerVisible(false)}
-        />
-      )}
-
-      {/* Accessibility panel (Window > Accessibility) */}
-      {accessibilityPanelVisible && (
-        <AccessibilityPanel
-          doc={doc}
-          selectedObjectId={
-            selectedDisplayObject?.type === "instance" || selectedDisplayObject?.type === "text"
-              ? selectedDisplayObject.id
-              : null
-          }
-          selectedObjectAccessibility={
-            selectedDisplayObject?.type === "instance"
-              ? (selectedDisplayObject as SymbolInstance).accessibility ?? null
-              : null
-          }
-          onDocChange={handleDocAccessibilityChange}
-          onObjectChange={handleObjectAccessibilityChange}
-          onClose={() => setAccessibilityPanelVisible(false)}
-        />
-      )}
-
-      {/* Export GIF / Export Movie dialog (File > Export Movie) */}
-      <ExportGifDialog
-        open={exportGifOpen}
-        frameRate={docProperties.frameRate}
-        onConfirm={handleExportGifConfirm}
-        onClose={() => setExportGifOpen(false)}
-      />
 
       {/* Sound Envelope Edit dialog */}
       {envelopeDialogOpen && envelopeDialogTarget && (() => {
