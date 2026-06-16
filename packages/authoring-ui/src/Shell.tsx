@@ -1,10 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createDocument,
-  createSymbolInLibrary,
-  createLibraryFolder,
-  removeLibraryItem,
-  addLibraryItem,
   addDisplayObject,
   removeDisplayObject,
   updateDisplayObject,
@@ -17,13 +13,7 @@ import {
   createLineShape,
   getTweenedFrame,
   getGoverningKeyframe,
-  addScene,
-  removeScene,
-  renameScene,
-  reorderScenes,
-  duplicateScene,
   CanvasRenderer,
-  insertKeyframe,
   removeFrame,
   transformedShapeBounds,
   shapeBounds,
@@ -31,20 +21,12 @@ import {
   copyFrames,
   pasteFrames,
   reverseFrames,
-  breakApart,
-  createLayer,
-  simplifyPath,
-  smoothPath,
   setMotionTween,
   setShapeTween,
-  addShapeHint,
-  updateShapeHint,
   clearTween,
   updateMotionTweenProps,
   saveFla,
   loadFla,
-  traceBitmap,
-  tracePathsToShape,
 } from "@flash/core";
 import { useCommandKeyboard } from "./dispatch/keyboard.js";
 import { TransformHandles } from "./TransformHandles";
@@ -73,13 +55,10 @@ import type {
   SoundLinkage,
   Symbol,
   SymbolInstance,
-  SymbolType,
   TextDisplayObject,
   Timeline as TimelineModel,
   VideoDisplayObject,
   VideoItem,
-  TraceBitmapOptions,
-  ShapePath,
 } from "@flash/core";
 import { runJsfl, buildJsflContext, registerClearOutputCallback } from "./jsfl/index.js";
 import { MenuBar } from "./MenuBar";
@@ -94,9 +73,9 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import type { PlacedInstance } from "./PropertiesPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { StatusBar } from "./StatusBar";
-import type { FreeTransformMode, PolyStarOptions, ToolId } from "./tools/types";
+import type { ToolId } from "./tools/types";
 import { usePublish } from "./hooks/usePublish";
-import { useFileActions, loadFlaFromBytes } from "./hooks/useFileActions";
+import { loadFlaFromBytes } from "./hooks/useFileActions";
 import { useStore } from "zustand";
 import {
   createStores,
@@ -113,6 +92,14 @@ import { ShellDialogs } from "./layout/ShellDialogs.js";
 import { ShellPanels } from "./layout/ShellPanels.js";
 import { ManageCommandsDialog } from "./layout/ManageCommandsDialog.js";
 import { ShellOverlays } from "./layout/ShellOverlays.js";
+import { useToolHandlers } from "./hooks/useToolHandlers.js";
+import { useTimelineEffectHandlers } from "./hooks/useTimelineEffectHandlers.js";
+import { nextInstanceId, nextBitmapId, nextVideoId } from "./idgen.js";
+import { useShapeModifyHandlers } from "./hooks/useShapeModifyHandlers.js";
+import { useLibraryHandlers } from "./hooks/useLibraryHandlers.js";
+import { useSceneHandlers } from "./hooks/useSceneHandlers.js";
+import { useTextHandlers } from "./hooks/useTextHandlers.js";
+import { useShapeOpHandlers } from "./hooks/useShapeOpHandlers.js";
 import {
   instanceNamesOf,
   shapeDisplayObjectsAt,
@@ -140,9 +127,6 @@ import { InstancePanel } from "./InstancePanel";
 import { AlignPanel } from "./AlignPanel";
 import { SceneSwitcher } from "./SceneSwitcher";
 import { DEFAULT_SWATCHES } from "./SwatchesPanel";
-import type { RegistrationPoint } from "./ConvertToSymbolDialog";
-import type { EffectParams, TimelineEffectType } from "./TimelineEffectDialog";
-import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
 import { DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
 import type { ExportGifOptions } from "./ExportGifDialog";
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
@@ -485,16 +469,6 @@ const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
 
 const _initialDoc = createDocument();
 
-let _instanceCounter = 0;
-function nextInstanceId() {
-  return `inst-${++_instanceCounter}-${Date.now().toString(36)}`;
-}
-
-let _groupCounter = 0;
-function nextGroupName() {
-  return `Group ${++_groupCounter}`;
-}
-
 // ---------------------------------------------------------------------------
 // Module-level clipboard (avoids async navigator.clipboard complexity)
 // ---------------------------------------------------------------------------
@@ -517,21 +491,6 @@ interface MotionClipboard {
 }
 
 let _motionClipboard: MotionClipboard | null = null;
-
-let _textObjCounter = 0;
-function nextTextId() {
-  return `text-${++_textObjCounter}-${Date.now().toString(36)}`;
-}
-
-let _bitmapObjCounter = 0;
-function nextBitmapId() {
-  return `bmp-${++_bitmapObjCounter}-${Date.now().toString(36)}`;
-}
-
-let _videoObjCounter = 0;
-function nextVideoId() {
-  return `video-${++_videoObjCounter}-${Date.now().toString(36)}`;
-}
 
 // ---------------------------------------------------------------------------
 // Resizable pane hook — drag a handle to set a pixel size, clamped to [min,max].
@@ -679,8 +638,8 @@ export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
   const {
     filePath, setFilePath,
-    editContext, setEditContext,
-    editPath, setEditPath,
+    editContext,
+    editPath,
     activeSceneIndex, setActiveSceneIndex,
     activeLayerIndex, setActiveLayerIndex,
     currentFrame, setCurrentFrame,
@@ -707,17 +666,14 @@ export function Shell(): React.ReactElement {
     viewMode, setViewMode,
     showRulers,
     toolState, setToolState,
-    textFormat, setTextFormat,
-    editingTextId, setEditingTextId,
+    textFormat,
+    editingTextId,
     setColorPanelVisible,
     colorMixerVisible, setColorMixerVisible,
-    setMixerFillAlpha,
-    setMixerStrokeAlpha,
     setFiltersPanelVisible,
     alignPanelVisible, setAlignPanelVisible,
     scenePanelVisible, setScenePanelVisible,
     swatchesPanelVisible, setSwatchesPanelVisible,
-    setSwatches,
     behaviorsPanelVisible, setBehaviorsPanelVisible,
     movieExplorerVisible, setMovieExplorerVisible,
     historyPanelVisible, setHistoryPanelVisible,
@@ -732,10 +688,6 @@ export function Shell(): React.ReactElement {
     setDocPropsOpen,
     setFindReplaceVisible,
     setEditGridOpen,
-    setConvertToSymbolOpen,
-    setSwapSymbolOpen,
-    setTimelineEffectOpen,
-    setTimelineEffectInitial,
     envelopeDialogOpen, setEnvelopeDialogOpen,
     envelopeDialogTarget, setEnvelopeDialogTarget,
     setPublishSettingsOpen,
@@ -743,7 +695,6 @@ export function Shell(): React.ReactElement {
     bitmapPropsItem, setBitmapPropsItem,
     setSwapBitmapDialogOpen,
     swapBitmapTargetId, setSwapBitmapTargetId,
-    setTraceBitmapOpen,
     setExportGifOpen,
     setBandwidthProfilerVisible,
     setBandwidthProfilerReport,
@@ -1141,150 +1092,15 @@ export function Shell(): React.ReactElement {
   // Handlers — tools
   // ---------------------------------------------------------------------------
 
-  const handleToolChange = useCallback((tool: ToolId) => {
-    setToolState((prev) => ({ ...prev, activeTool: tool }));
-  }, []);
-
-  const handleStrokeColorChange = useCallback((color: string) => {
-    setToolState((prev) => ({ ...prev, strokeColor: color }));
-  }, []);
-
-  const handleFillColorChange = useCallback((color: string | null) => {
-    const fill: Fill | null = color
-      ? { type: "solid", color: hexToColor(color) }
-      : null;
-    setToolState((prev) => ({ ...prev, fillColor: color, fill }));
-  }, []);
-
-  const handleFillChange = useCallback((newFill: Fill | null) => {
-    // Derive fillColor hex from the fill for backward compat (for solid fills)
-    let fillColor: string | null = null;
-    if (newFill?.type === "solid") {
-      const { r, g, b } = newFill.color;
-      fillColor = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-    }
-    // Always update tool state so future-drawn shapes pick up the fill.
-    setToolState((prev) => ({ ...prev, fill: newFill, fillColor }));
-
-    // If a shape is selected, also apply the new fill to every path in that shape
-    // so the canvas updates immediately (gradient preview round-trip).
-    if (selectedShapeId) {
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (layerId) {
-        const layer = timeline.layers[safeActiveLayerIndex];
-        if (layer) {
-          const kf = [...layer.frames]
-            .filter((f) => f.isKeyframe && f.index <= currentFrame)
-            .sort((a, b) => b.index - a.index)[0];
-          if (kf) {
-            const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
-            if (obj && obj.type === "shape") {
-              const shapeObj = obj as ShapeDisplayObject;
-              const newPaths = shapeObj.shape.paths.map((path) =>
-                newFill !== null ? { ...path, fill: newFill } : { ...path, fill: undefined }
-              );
-              pushDoc(withTimeline((t) =>
-                updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
-                  shape: { ...shapeObj.shape, paths: newPaths },
-                })
-              ));
-            }
-          }
-        }
-      }
-    }
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleStrokeChangeFromPanel = useCallback((stroke: SolidStroke | null) => {
-    if (stroke) {
-      const { r, g, b, a } = stroke.color;
-      const hex = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-      setToolState((prev) => ({
-        ...prev,
-        strokeColor: hex,
-        strokeWidth: stroke.width,
-        strokeAlpha: Math.round((a / 255) * 100),
-      }));
-    } else {
-      setToolState((prev) => ({ ...prev, strokeColor: "#000000", strokeAlpha: 0 }));
-    }
-  }, []);
-
-  // Color Mixer panel handlers
-  const handleMixerFillColorChange = useCallback((color: string, alpha: number) => {
-    setMixerFillAlpha(alpha);
-    handleFillColorChange(alpha > 0 ? color : null);
-  }, [handleFillColorChange]);
-
-  // Swatches panel handlers
-  /** Apply a swatch color as the current fill color */
-  const handleSelectSwatch = useCallback((color: string) => {
-    handleFillColorChange(color);
-  }, [handleFillColorChange]);
-
-  const handleAddSwatch = useCallback((color: string) => {
-    setSwatches((prev) => [...prev, color]);
-  }, []);
-
-  const handleRemoveSwatch = useCallback((index: number) => {
-    setSwatches((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const handleSwatchesLoad = useCallback((loaded: string[]) => {
-    setSwatches(loaded);
-  }, []);
-
-  const handleMixerStrokeColorChange = useCallback((color: string, alpha: number) => {
-    setMixerStrokeAlpha(alpha);
-    setToolState((prev) => ({
-      ...prev,
-      strokeColor: color,
-      strokeAlpha: alpha,
-    }));
-  }, []);
-
-  const handleObjectDrawingToggle = useCallback(() => {
-    setToolState((prev) => ({ ...prev, objectDrawing: !prev.objectDrawing }));
-  }, []);
-
-  const handlePencilModeChange = useCallback((mode: "straighten" | "smooth" | "ink") => {
-    setToolState((prev) => ({ ...prev, pencilMode: mode }));
-  }, []);
-
-  const handleBrushSizeChange = useCallback((size: number) => {
-    setToolState((prev) => ({ ...prev, brushSize: size }));
-  }, []);
-
-  const handleEraserSizeChange = useCallback((size: number) => {
-    setToolState((prev) => ({ ...prev, eraserSize: size }));
-  }, []);
-
-  const handleFreeTransformModeChange = useCallback((mode: FreeTransformMode) => {
-    setToolState((prev) => ({ ...prev, freeTransformMode: mode }));
-  }, []);
-
-  const handleLassoPolygonModeChange = useCallback((polygonMode: boolean) => {
-    setToolState((prev) => ({ ...prev, lassoPolygonMode: polygonMode }));
-  }, []);
-
-  const handleLassoMagicWandChange = useCallback((magicWand: boolean) => {
-    setToolState((prev) => ({ ...prev, lassoMagicWand: magicWand }));
-  }, []);
-
-  const handleMagicWandThresholdChange = useCallback((threshold: number) => {
-    setToolState((prev) => ({ ...prev, magicWandThreshold: threshold }));
-  }, []);
-
-  const handleMagicWandSmoothingChange = useCallback((smoothing: "pixels" | "rough" | "normal" | "smooth") => {
-    setToolState((prev) => ({ ...prev, magicWandSmoothing: smoothing }));
-  }, []);
-
-  const handlePolyStarOptionsChange = useCallback((opts: Partial<PolyStarOptions>) => {
-    setToolState((prev) => ({
-      ...prev,
-      polyStarOptions: { ...(prev.polyStarOptions ?? { shapeType: "polygon", sides: 5, pointSize: 0.5 }), ...opts },
-    }));
-  }, []);
+  // Tool / colour / swatch handlers (see hooks/useToolHandlers).
+  const {
+    handleToolChange, handleStrokeColorChange, handleFillColorChange, handleFillChange,
+    handleStrokeChangeFromPanel, handleMixerFillColorChange, handleSelectSwatch, handleAddSwatch,
+    handleRemoveSwatch, handleSwatchesLoad, handleMixerStrokeColorChange, handleObjectDrawingToggle,
+    handlePencilModeChange, handleBrushSizeChange, handleEraserSizeChange, handleFreeTransformModeChange,
+    handleLassoPolygonModeChange, handleLassoMagicWandChange, handleMagicWandThresholdChange,
+    handleMagicWandSmoothingChange, handlePolyStarOptionsChange,
+  } = useToolHandlers({ uiStore, pushDoc, withTimeline, timeline, safeActiveLayerIndex, currentFrame, selectedShapeId });
 
   // ---------------------------------------------------------------------------
   // Handlers — shape drawing
@@ -2084,378 +1900,42 @@ export function Shell(): React.ReactElement {
   // Handlers — scenes
   // ---------------------------------------------------------------------------
 
-  const handleAddScene = useCallback(() => {
-    pushDoc(addScene(doc));
-  }, [doc, pushDoc]);
-
-  const handleRemoveScene = useCallback((index: number) => {
-    const scene = doc.scenes[index];
-    if (!scene) return;
-    pushDoc(removeScene(doc, scene.id));
-    setActiveSceneIndex((prev) => Math.min(prev, doc.scenes.length - 2));
-  }, [doc, pushDoc]);
-
-  const handleRenameScene = useCallback((index: number, name: string) => {
-    const scene = doc.scenes[index];
-    if (!scene) return;
-    pushDoc(renameScene(doc, scene.id, name));
-  }, [doc, pushDoc]);
-
-  const handleReorderScene = useCallback((fromIndex: number, toIndex: number) => {
-    pushDoc(reorderScenes(doc, fromIndex, toIndex));
-    // Keep activeSceneIndex pointing to the same scene after reorder
-    setActiveSceneIndex((prev) => {
-      if (prev === fromIndex) return toIndex;
-      if (fromIndex < toIndex) {
-        if (prev > fromIndex && prev <= toIndex) return prev - 1;
-      } else {
-        if (prev >= toIndex && prev < fromIndex) return prev + 1;
-      }
-      return prev;
-    });
-  }, [doc, pushDoc]);
-
-  const handleDuplicateScene = useCallback((index: number) => {
-    const scene = doc.scenes[index];
-    if (!scene) return;
-    pushDoc(duplicateScene(doc, scene.id));
-    // Navigate to the duplicate (inserted right after the source)
-    setActiveSceneIndex(index + 1);
-  }, [doc, pushDoc]);
-
-  const handleSelectScene = useCallback((index: number) => {
-    setActiveSceneIndex(index);
-    setCurrentFrame(0);
-    setActiveLayerIndex(0);
-  }, []);
+  // Scene handlers — see hooks/useSceneHandlers.
+  const {
+    handleAddScene, handleRemoveScene, handleRenameScene,
+    handleReorderScene, handleDuplicateScene, handleSelectScene,
+  } = useSceneHandlers({ uiStore, doc, pushDoc });
 
   // ---------------------------------------------------------------------------
   // Handlers — text tool
   // ---------------------------------------------------------------------------
 
-  const handleTextCreated = useCallback(
-    (textObj: Omit<TextDisplayObject, "id">) => {
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      const obj: TextDisplayObject = { ...textObj, id: nextTextId() };
-      pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, obj)));
-    },
-    [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
-  );
-
-  /**
-   * Called by the text tool when clicking on empty stage: immediately creates a
-   * TextDisplayObject in the document (with default text "Text"), then notifies
-   * StageArea via the `onPlaced` callback so it can open the inline textarea for
-   * that specific object.
-   */
-  const handleTextPlace = useCallback(
-    (textObj: Omit<TextDisplayObject, "id">, onPlaced: (id: string) => void) => {
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      const id = nextTextId();
-      const obj: TextDisplayObject = { ...textObj, id };
-      pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, obj)));
-      setEditingTextId(id);
-      onPlaced(id);
-    },
-    [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
-  );
-
-  const handleTextEdit = useCallback(
-    (id: string, newText: string) => {
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      pushDoc(withTimeline((t) => updateDisplayObject(t, layerId, currentFrame, id, { text: newText })));
-    },
-    [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
-  );
-
-  const handleTextEditEnd = useCallback(() => {
-    setEditingTextId(null);
-  }, []);
-
-  const handleTextFormatChange = useCallback((format: Partial<typeof textFormat>) => {
-    setTextFormat((prev) => ({ ...prev, ...format }));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---------------------------------------------------------------------------
-  // Handlers — Text menu (Style/Align/Tracking/Scrollable)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Apply a partial update to the currently selected TextDisplayObject.
-   * No-op if nothing is selected or the selection is not a text object.
-   */
-  const applyTextUpdate = useCallback(
-    (changes: Partial<TextDisplayObject>) => {
-      if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      pushDoc(withTimeline((t) =>
-        updateDisplayObject(t, layerId, currentFrame, selectedDisplayObject.id, changes)
-      ));
-    },
-    [selectedDisplayObject, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
-  );
-
-  const handleTextBold = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ bold: !selectedDisplayObject.bold });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextItalic = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ italic: !selectedDisplayObject.italic });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextUnderline = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ underline: !(selectedDisplayObject.underline ?? false) });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextAlignLeft = useCallback(() => {
-    applyTextUpdate({ align: "left" });
-  }, [applyTextUpdate]);
-
-  const handleTextAlignCenter = useCallback(() => {
-    applyTextUpdate({ align: "center" });
-  }, [applyTextUpdate]);
-
-  const handleTextAlignRight = useCallback(() => {
-    applyTextUpdate({ align: "right" });
-  }, [applyTextUpdate]);
-
-  const handleTextAlignJustify = useCallback(() => {
-    applyTextUpdate({ align: "justify" });
-  }, [applyTextUpdate]);
-
-  const TRACKING_STEP = 2; // pixels per increment
-
-  const handleTextTrackingIncrease = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ letterSpacing: (selectedDisplayObject.letterSpacing ?? 0) + TRACKING_STEP });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextTrackingDecrease = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ letterSpacing: (selectedDisplayObject.letterSpacing ?? 0) - TRACKING_STEP });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextTrackingReset = useCallback(() => {
-    applyTextUpdate({ letterSpacing: 0 });
-  }, [applyTextUpdate]);
-
-  const handleTextScrollable = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ scrollable: !(selectedDisplayObject.scrollable ?? false) });
-  }, [selectedDisplayObject, applyTextUpdate]);
+  // Text tool + Text-menu handlers — see hooks/useTextHandlers.
+  const {
+    handleTextCreated, handleTextPlace, handleTextEdit, handleTextEditEnd,
+    handleTextFormatChange, handleTextBold, handleTextItalic, handleTextUnderline,
+    handleTextAlignLeft, handleTextAlignCenter, handleTextAlignRight, handleTextAlignJustify,
+    handleTextTrackingIncrease, handleTextTrackingDecrease, handleTextTrackingReset,
+    handleTextScrollable,
+  } = useTextHandlers({
+    uiStore, timeline, safeActiveLayerIndex, activeLayerIndex, currentFrame,
+    pushDoc, withTimeline, selectedDisplayObject,
+  });
 
   // ---------------------------------------------------------------------------
   // Handlers — library
   // ---------------------------------------------------------------------------
 
-  const { importToLibrary, importSoundToLibrary, importVideoToLibrary } = useFileActions();
-
-  const handleImportToLibrary = useCallback(async () => {
-    const result = await importToLibrary();
-    if (!result) return;
-    const { item, dataUri } = result;
-    pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
-    // Pre-load image into renderer cache
-    if (rendererRef.current) {
-      rendererRef.current.loadImage(item.id, dataUri);
-    }
-  }, [importToLibrary, pushDoc, withLibrary]);
-
-  const handleImportToStage = useCallback(async () => {
-    const result = await importToLibrary();
-    if (!result) return;
-    const { item, dataUri } = result;
-    // Pre-load image into renderer cache
-    if (rendererRef.current) {
-      rendererRef.current.loadImage(item.id, dataUri);
-    }
-    // Add to library and place on stage
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) {
-      pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
-      return;
-    }
-    const stageW = docProperties.width;
-    const stageH = docProperties.height;
-    const bmpW = item.originalWidth || 100;
-    const bmpH = item.originalHeight || 100;
-    const bmpObj: BitmapDisplayObject = {
-      type: "bitmap",
-      id: nextBitmapId(),
-      libraryItemId: item.id,
-      x: Math.round(stageW / 2 - bmpW / 2),
-      y: Math.round(stageH / 2 - bmpH / 2),
-      width: bmpW,
-      height: bmpH,
-      scaleX: 1,
-      scaleY: 1,
-    };
-    const newDoc = withLibrary((lib) => addLibraryItem(lib, item));
-    pushDoc({
-      ...newDoc,
-      ...(editContext.mode === "symbol" && editContext.symbolId
-        ? {
-            library: {
-              ...newDoc.library,
-              items: newDoc.library.items.map((libItem) => {
-                if (libItem.id === editContext.symbolId && libItem.itemType === "symbol") {
-                  return {
-                    ...libItem,
-                    timeline: addDisplayObject(libItem.timeline, layerId, currentFrame, bmpObj),
-                  };
-                }
-                return libItem;
-              }),
-            },
-          }
-        : (() => {
-            const idx = Math.min(activeSceneIndex, newDoc.scenes.length - 1);
-            const t = addDisplayObject(newDoc.scenes[idx].timeline, layerId, currentFrame, bmpObj);
-            return {
-              scenes: newDoc.scenes.map((s, i) => i === idx ? { ...s, timeline: t } : s),
-            };
-          })()),
-    });
-  }, [importToLibrary, pushDoc, withLibrary, timeline, safeActiveLayerIndex, docProperties, editContext, activeSceneIndex, currentFrame]);
-
-  const handleImportSound = useCallback(async () => {
-    const result = await importSoundToLibrary();
-    if (!result) return;
-    const { item } = result;
-    pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
-  }, [importSoundToLibrary, pushDoc, withLibrary]);
-
-  const handleImportVideo = useCallback(async () => {
-    const result = await importVideoToLibrary();
-    if (!result) return;
-    const { item } = result;
-    pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
-  }, [importVideoToLibrary, pushDoc, withLibrary]);
-
-  const handleCreateSymbol = useCallback((name: string, type: SymbolType) => {
-    pushDoc(withLibrary((lib) => {
-      const { library: updated } = createSymbolInLibrary(lib, name, type);
-      return updated;
-    }));
-  }, [pushDoc, withLibrary]);
-
-  const handleDeleteLibraryItem = useCallback((id: string) => {
-    pushDoc(withLibrary((lib) => removeLibraryItem(lib, id)));
-    setSelectedLibraryItemId((prev) => (prev === id ? null : prev));
-    // Also remove instances that reference this item
-    setInstances((prev) => prev.filter((inst) => inst.libraryItemId !== id));
-  }, [pushDoc, withLibrary]);
-
-  const handleRenameLibraryItem = useCallback((id: string, newName: string) => {
-    pushDoc(withLibrary((lib) => ({
-      ...lib,
-      items: lib.items.map((item) =>
-        item.id === id ? { ...item, name: newName } : item
-      ),
-    })));
-  }, [pushDoc, withLibrary]);
-
-  const handleDuplicateLibraryItem = useCallback((id: string) => {
-    pushDoc(withLibrary((lib) => {
-      const source = lib.items.find((i) => i.id === id);
-      if (!source) return lib;
-      const newId = `${source.itemType}-dup-${Date.now().toString(36)}`;
-      const baseName = source.name.replace(/ copy(\s+\d+)?$/, "");
-      // Find next available copy name
-      const existingNames = new Set(lib.items.map((i) => i.name));
-      let newName = `${baseName} copy`;
-      let n = 2;
-      while (existingNames.has(newName)) {
-        newName = `${baseName} copy ${n++}`;
-      }
-      const duplicate = { ...source, id: newId, name: newName } as typeof source;
-      return { ...lib, items: [...lib.items, duplicate] };
-    }));
-  }, [pushDoc, withLibrary]);
-
-  const handleAddFolder = useCallback((name: string) => {
-    pushDoc(withLibrary((lib) => ({
-      ...lib,
-      folders: [...lib.folders, createLibraryFolder(name)],
-    })));
-  }, [pushDoc, withLibrary]);
-
-  const handleMoveItemToFolder = useCallback((itemId: string, folderId: string | null) => {
-    pushDoc(withLibrary((lib) => ({
-      ...lib,
-      items: lib.items.map((item) =>
-        item.id === itemId ? { ...item, folderId } : item
-      ),
-    })));
-  }, [pushDoc, withLibrary]);
-
-  const handleUpdateFolder = useCallback((folderId: string, folderCollapsed: boolean) => {
-    pushDoc(withLibrary((lib) => ({
-      ...lib,
-      folders: lib.folders.map((f) =>
-        f.id === folderId ? { ...f, collapsed: folderCollapsed } : f
-      ),
-    })));
-  }, [pushDoc, withLibrary]);
-
-  const handleSetLinkage = useCallback((id: string, linkage: import("@flash/core").SymbolLinkage) => {
-    pushDoc(withLibrary((lib) => ({
-      ...lib,
-      items: lib.items.map((item) =>
-        item.id === id && item.itemType === "symbol" ? { ...item, linkage } : item
-      ),
-    })));
-  }, [pushDoc, withLibrary]);
-
-  const handleSetSymbolProperties = useCallback((id: string, data: SymbolPropertiesData) => {
-    pushDoc(withLibrary((lib) => ({
-      ...lib,
-      items: lib.items.map((item) =>
-        item.id === id && item.itemType === "symbol"
-          ? { ...item, name: data.name, symbolType: data.symbolType, scale9Grid: data.scale9Grid }
-          : item
-      ),
-    })));
-  }, [pushDoc, withLibrary]);
-
-  /** Save changes from the Bitmap Properties dialog back into the library. */
-  const handleBitmapPropsSave = useCallback((changes: Partial<BitmapItem>) => {
-    if (!bitmapPropsItem) return;
-    const id = bitmapPropsItem.id;
-    pushDoc(withLibrary((lib) => ({
-      ...lib,
-      items: lib.items.map((item) =>
-        item.id === id && item.itemType === "bitmap"
-          ? { ...item, ...changes }
-          : item
-      ),
-    })));
-    setBitmapPropsItem(null);
-  }, [bitmapPropsItem, pushDoc, withLibrary]);
-
-  const handleEditInPlace = useCallback((itemId: string, instanceId?: string) => {
-    const item = library.items.find((i) => i.id === itemId);
-    if (!item) return;
-    const symType = item.itemType === "symbol" ? (item as Symbol).symbolType : undefined;
-    setEditContext({ mode: "symbol", symbolId: itemId, symbolName: item.name, symbolType: symType });
-    setEditPath((prev) => [...prev, { symbolId: itemId, instanceId: instanceId ?? itemId }]);
-    setCurrentFrame(0);
-    setActiveLayerIndex(0);
-  }, [library]);
-
-  const handleExitEditInPlace = useCallback(() => {
-    setEditContext({ mode: "document" });
-    setEditPath([]);
-    setCurrentFrame(0);
-    setActiveLayerIndex(0);
-  }, []);
+  // Library + import handlers — see hooks/useLibraryHandlers.
+  const {
+    handleImportToLibrary, handleImportToStage, handleImportSound, handleImportVideo,
+    handleCreateSymbol, handleDeleteLibraryItem, handleRenameLibraryItem, handleDuplicateLibraryItem,
+    handleAddFolder, handleMoveItemToFolder, handleUpdateFolder, handleSetLinkage,
+    handleSetSymbolProperties, handleBitmapPropsSave, handleEditInPlace, handleExitEditInPlace,
+  } = useLibraryHandlers({
+    uiStore, library, timeline, docProperties, editContext, activeSceneIndex,
+    safeActiveLayerIndex, currentFrame, bitmapPropsItem, pushDoc, withLibrary, rendererRef,
+  });
 
   // ---------------------------------------------------------------------------
   // Convert to Symbol (F8)
@@ -2465,166 +1945,14 @@ export function Shell(): React.ReactElement {
    * Open the Convert to Symbol dialog if there is something to convert.
    * The actual conversion is performed in handleConvertToSymbolConfirm.
    */
-  const handleConvertToSymbol = useCallback(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-
-    const objectsToConvert = selectedShapeId
-      ? kf.displayObjects.filter((o) => o.id === selectedShapeId)
-      : kf.displayObjects;
-
-    if (objectsToConvert.length === 0) return;
-
-    setConvertToSymbolOpen(true);
-  }, [timeline, safeActiveLayerIndex, currentFrame, selectedShapeId]);
-
-  /**
-   * Perform the actual conversion after the dialog is confirmed.
-   */
-  const handleConvertToSymbolConfirm = useCallback((name: string, symbolType: SymbolType, registration: RegistrationPoint = "center") => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-
-    const objectsToConvert = selectedShapeId
-      ? kf.displayObjects.filter((o) => o.id === selectedShapeId)
-      : kf.displayObjects;
-
-    if (objectsToConvert.length === 0) {
-      setConvertToSymbolOpen(false);
-      return;
-    }
-
-    // Compute the true visual bounding box of the selection
-    const selectionBounds = getUnionBounds(objectsToConvert as DisplayObject[]);
-    const bx = selectionBounds?.x ?? 0;
-    const by = selectionBounds?.y ?? 0;
-    const bw = selectionBounds?.width ?? 0;
-    const bh = selectionBounds?.height ?? 0;
-
-    // Derive registration origin from the chosen anchor position
-    const originX = registration.includes("right")
-      ? bx + bw
-      : registration.includes("left")
-        ? bx
-        : bx + bw / 2;
-    const originY = registration.includes("bottom")
-      ? by + bh
-      : registration.includes("top")
-        ? by
-        : by + bh / 2;
-
-    // Objects repositioned relative to the symbol's origin
-    const symbolObjects = objectsToConvert.map((o) => ({
-      ...o,
-      x: o.x - originX,
-      y: o.y - originY,
-    }));
-
-    // Pre-compute instId so we can select the new instance after pushDoc
-    const instId = `inst-${Date.now().toString(36)}`;
-
-    pushDoc((() => {
-      const { library: updatedLib, item: newSymbol } = createSymbolInLibrary(
-        doc.library,
-        name,
-        symbolType
-      );
-
-      // Put the objects into the symbol's first keyframe
-      const symbolWithObjects = {
-        ...newSymbol,
-        timeline: {
-          layers: [
-            {
-              ...newSymbol.timeline.layers[0],
-              frames: [
-                {
-                  ...newSymbol.timeline.layers[0].frames[0],
-                  displayObjects: symbolObjects,
-                  isEmpty: false,
-                },
-              ],
-            },
-          ],
-        },
-      };
-
-      const finalLib = {
-        ...updatedLib,
-        items: updatedLib.items.map((i) => (i.id === newSymbol.id ? symbolWithObjects : i)),
-      };
-
-      // Compute natural size from the symbol's local objects
-      const symbolUnionBounds = getUnionBounds([...symbolObjects]);
-      const symNatW = symbolUnionBounds?.width ?? 0;
-      const symNatH = symbolUnionBounds?.height ?? 0;
-
-      // Create the SymbolInstance to replace the selection on the timeline
-      const instance: SymbolInstance = {
-        type: "instance",
-        id: instId,
-        symbolId: newSymbol.id,
-        x: originX,
-        y: originY,
-        ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
-        ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
-      };
-
-      const convertedObjectIds = new Set(objectsToConvert.map((o) => o.id));
-      const updatedTimelineFn = (t: TimelineModel): TimelineModel => ({
-        ...t,
-        layers: t.layers.map((l) => {
-          if (l.id !== layerId) return l;
-          return {
-            ...l,
-            frames: l.frames.map((f) => {
-              if (!f.isKeyframe || f.index !== kf.index) return f;
-              const remaining = f.displayObjects.filter((o) => !convertedObjectIds.has(o.id));
-              return { ...f, displayObjects: [...remaining, instance] };
-            }),
-          };
-        }),
-      });
-
-      // Apply to the right timeline (scene or symbol edit-in-place)
-      let newDoc: FlashDocument;
-      if (editContext.mode === "symbol" && editContext.symbolId) {
-        const items = finalLib.items.map((item) => {
-          if (item.id === editContext.symbolId && item.itemType === "symbol") {
-            return { ...item, timeline: updatedTimelineFn(item.timeline) };
-          }
-          return item;
-        });
-        newDoc = { ...doc, library: { ...finalLib, items } };
-      } else {
-        const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
-        const newSceneTimeline = updatedTimelineFn(doc.scenes[sceneIdx].timeline);
-        newDoc = {
-          ...doc,
-          scenes: doc.scenes.map((s, i) => i === sceneIdx ? { ...s, timeline: newSceneTimeline } : s),
-          library: finalLib,
-        };
-      }
-
-      return newDoc;
-    })());
-
-    setSelectedShapeId(instId);
-    setConvertToSymbolOpen(false);
-  }, [timeline, safeActiveLayerIndex, currentFrame, selectedShapeId, pushDoc, doc, editContext, activeSceneIndex]);
+  // Modify-menu shape ops (convert/arrange/group/ungroup/break-apart) — see hooks/useShapeModifyHandlers.
+  const {
+    handleConvertToSymbol, handleConvertToSymbolConfirm, handleArrange,
+    handleGroup, handleUngroup, handleBreakApart,
+  } = useShapeModifyHandlers({
+    uiStore, doc, timeline, editContext, activeSceneIndex, safeActiveLayerIndex,
+    currentFrame, selectedShapeId, pushDoc, withTimeline, setSelectedShapeId,
+  });
 
   // ---------------------------------------------------------------------------
   // Timeline Effects (Insert > Timeline Effects > Transform / Transition)
@@ -2634,757 +1962,11 @@ export function Shell(): React.ReactElement {
    * Open the Timeline Effects dialog for the given effect type.
    * A selection (or at least one object on the active keyframe) is required.
    */
-  const handleOpenTimelineEffect = useCallback((effectType: TimelineEffectType) => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf || kf.displayObjects.length === 0) return;
-    setTimelineEffectInitial(effectType);
-    setTimelineEffectOpen(true);
-  }, [timeline, safeActiveLayerIndex, currentFrame]);
-
-  /**
-   * Apply a timeline effect macro to the active selection.
-   *
-   * Steps:
-   * 1. Wrap the selected (or all) objects in a new MovieClip symbol.
-   * 2. Place the symbol instance on the current layer at the current frame.
-   * 3. Add a new layer above, copy the instance there (or reuse the existing one).
-   * 4. Insert a keyframe at frame (current + duration - 1).
-   * 5. Set the end-keyframe transform / alpha.
-   * 6. Apply a motion tween between the two keyframes.
-   *
-   * For simplicity we use the CURRENT layer (same pattern as Flash 8):
-   * the effect modifies the selected objects in-place by wrapping them in a
-   * symbol and inserting a motion tween on the same layer.
-   */
-  const handleApplyTimelineEffect = useCallback((params: EffectParams) => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-
-    const objectsToConvert = selectedShapeId
-      ? kf.displayObjects.filter((o) => o.id === selectedShapeId)
-      : kf.displayObjects;
-    if (objectsToConvert.length === 0) return;
-
-    // --- Build the symbol name -----------------------------------------
-    timelineEffectCounterRef.current += 1;
-    const effectLabelMap: Record<string, string> = {
-      "transform": "Transform",
-      "transition": "Transition",
-      "blur": "Blur",
-      "drop-shadow": "DropShadow",
-      "expand": "Expand",
-      "explode": "Explode",
-      "copy-to-grid": "Grid",
-      "distributed-duplicate": "Duplicate",
-    };
-    const effectLabel = effectLabelMap[params.effect] ?? params.effect;
-    const symbolName = `${effectLabel} ${timelineEffectCounterRef.current}`;
-
-    // --- Compute bounding box of the selection -------------------------
-    const selectionBounds = getUnionBounds([...objectsToConvert]);
-    const originX = selectionBounds ? selectionBounds.x + selectionBounds.width / 2 : 0;
-    const originY = selectionBounds ? selectionBounds.y + selectionBounds.height / 2 : 0;
-
-    // Rebase objects relative to the symbol origin (center)
-    const symbolObjects = objectsToConvert.map((o) => ({
-      ...o,
-      x: o.x - originX,
-      y: o.y - originY,
-    }));
-
-    // --- Create the symbol in the library ------------------------------
-    const { library: libWithSym, item: newSymbol } = createSymbolInLibrary(
-      doc.library,
-      symbolName,
-      "movieclip"
-    );
-
-    const symbolWithObjects = {
-      ...newSymbol,
-      timeline: {
-        layers: [
-          {
-            ...newSymbol.timeline.layers[0],
-            frames: [
-              {
-                ...newSymbol.timeline.layers[0].frames[0],
-                displayObjects: symbolObjects,
-                isEmpty: false,
-              },
-            ],
-          },
-        ],
-      },
-    };
-
-    const finalLib = {
-      ...libWithSym,
-      items: libWithSym.items.map((i) => (i.id === newSymbol.id ? symbolWithObjects : i)),
-    };
-
-    // --- Determine instance natural size -------------------------------
-    const symbolUnionBounds = getUnionBounds([...symbolObjects]);
-    const symNatW = symbolUnionBounds?.width ?? 0;
-    const symNatH = symbolUnionBounds?.height ?? 0;
-
-    // ---------------------------------------------------------------------------
-    // Copy to Grid — purely spatial, no tween
-    // ---------------------------------------------------------------------------
-    if (params.effect === "copy-to-grid") {
-      const { rows, columns, rowSpacing, columnSpacing } = params;
-      const convertedIds = new Set(objectsToConvert.map((o) => o.id));
-      const ts = Date.now().toString(36);
-      const newInstances: SymbolInstance[] = [];
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < columns; c++) {
-          const gridInstId = `effect-inst-${ts}-${r}-${c}`;
-          const cellX = originX + c * ((symNatW > 0 ? symNatW : 0) + columnSpacing);
-          const cellY = originY + r * ((symNatH > 0 ? symNatH : 0) + rowSpacing);
-          newInstances.push({
-            type: "instance",
-            id: gridInstId,
-            symbolId: newSymbol.id,
-            x: cellX,
-            y: cellY,
-            ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
-            ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
-          });
-        }
-      }
-
-      const applyGridToTimeline = (t: TimelineModel): TimelineModel => ({
-        ...t,
-        layers: t.layers.map((l) => {
-          if (l.id !== layerId) return l;
-          return {
-            ...l,
-            frames: l.frames.map((f) => {
-              if (!f.isKeyframe || f.index !== kf.index) return f;
-              const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
-              return { ...f, displayObjects: [...remaining, ...newInstances] as readonly import("@flash/core").DisplayObject[], isEmpty: false };
-            }) as readonly import("@flash/core").Frame[],
-          };
-        }) as readonly import("@flash/core").Layer[],
-      });
-
-      let newDocGrid: FlashDocument;
-      if (editContext.mode === "symbol" && editContext.symbolId) {
-        const items = finalLib.items.map((item) => {
-          if (item.id === editContext.symbolId && item.itemType === "symbol") {
-            return { ...item, timeline: applyGridToTimeline(item.timeline) };
-          }
-          return item;
-        });
-        newDocGrid = { ...doc, library: { ...finalLib, items } };
-      } else {
-        const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
-        newDocGrid = {
-          ...doc,
-          scenes: doc.scenes.map((s, i) =>
-            i === sceneIdx ? { ...s, timeline: applyGridToTimeline(s.timeline) } : s
-          ),
-          library: finalLib,
-        };
-      }
-
-      pushDoc(newDocGrid);
-      setSelectedShapeId(newInstances[0]?.id ?? null);
-      setTimelineEffectOpen(false);
-      return;
-    }
-
-    // ---------------------------------------------------------------------------
-    // Distributed Duplicate — no tween, progressive offset/scale/alpha
-    // ---------------------------------------------------------------------------
-    if (params.effect === "distributed-duplicate") {
-      const { count, offsetX, offsetY, scaleTo, alphaTo, rotateTo } = params;
-      const convertedIds = new Set(objectsToConvert.map((o) => o.id));
-      const ts = Date.now().toString(36);
-      const newInstances: SymbolInstance[] = [];
-      for (let i = 0; i < count; i++) {
-        const frac = count > 1 ? i / (count - 1) : 0;
-        const instIdDup = `effect-inst-${ts}-dup-${i}`;
-        const cx = originX + offsetX * i;
-        const cy = originY + offsetY * i;
-        const sc = 1 + (scaleTo / 100 - 1) * frac;
-        const al = 100 + (alphaTo - 100) * frac;
-        const rot = rotateTo * frac;
-        newInstances.push({
-          type: "instance",
-          id: instIdDup,
-          symbolId: newSymbol.id,
-          x: cx,
-          y: cy,
-          ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
-          ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
-          ...(sc !== 1 ? { scaleX: sc, scaleY: sc } : {}),
-          ...(al !== 100 ? { colorEffect: { type: "alpha" as const, alpha: al } } : {}),
-          ...(rot !== 0 ? { rotation: rot } : {}),
-        });
-      }
-
-      const applyDupToTimeline = (t: TimelineModel): TimelineModel => ({
-        ...t,
-        layers: t.layers.map((l) => {
-          if (l.id !== layerId) return l;
-          return {
-            ...l,
-            frames: l.frames.map((f) => {
-              if (!f.isKeyframe || f.index !== kf.index) return f;
-              const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
-              return { ...f, displayObjects: [...remaining, ...newInstances] as readonly import("@flash/core").DisplayObject[], isEmpty: false };
-            }) as readonly import("@flash/core").Frame[],
-          };
-        }) as readonly import("@flash/core").Layer[],
-      });
-
-      let newDocDup: FlashDocument;
-      if (editContext.mode === "symbol" && editContext.symbolId) {
-        const items = finalLib.items.map((item) => {
-          if (item.id === editContext.symbolId && item.itemType === "symbol") {
-            return { ...item, timeline: applyDupToTimeline(item.timeline) };
-          }
-          return item;
-        });
-        newDocDup = { ...doc, library: { ...finalLib, items } };
-      } else {
-        const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
-        newDocDup = {
-          ...doc,
-          scenes: doc.scenes.map((s, i) =>
-            i === sceneIdx ? { ...s, timeline: applyDupToTimeline(s.timeline) } : s
-          ),
-          library: finalLib,
-        };
-      }
-
-      pushDoc(newDocDup);
-      setSelectedShapeId(newInstances[0]?.id ?? null);
-      setTimelineEffectOpen(false);
-      return;
-    }
-
-    // ---------------------------------------------------------------------------
-    // Tween-based effects: Transform, Transition, Blur, Drop Shadow, Expand, Explode
-    // ---------------------------------------------------------------------------
-
-    // --- Build the START instance (frame 0 = currentFrame) ------------
-    const instId = `effect-inst-${Date.now().toString(36)}`;
-
-    // Start alpha: for Transition In, start at 0; for Transform & Transition Out, start at 1
-    const startAlpha: number | undefined = (() => {
-      if (params.effect === "transition" && params.direction === "in") return 0;
-      return undefined; // 1 (fully opaque) by default
-    })();
-
-    const startInstance: SymbolInstance = {
-      type: "instance",
-      id: instId,
-      symbolId: newSymbol.id,
-      x: originX,
-      y: originY,
-      ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
-      ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
-      ...(startAlpha !== undefined ? { colorEffect: { type: "alpha", alpha: startAlpha * 100 } } : {}),
-    };
-
-    // --- Build the END keyframe instance properties -------------------
-    const endFrameIndex = currentFrame + params.duration - 1;
-
-    // Build as a plain object then cast — SymbolInstance is all-readonly so we
-    // cannot assign to Partial<SymbolInstance> directly.
-    const endUpdatesBuilder: {
-      scaleX?: number;
-      scaleY?: number;
-      rotation?: number;
-      colorEffect?: import("@flash/core").ColorEffect;
-    } = {};
-    if (params.effect === "transform") {
-      if (params.scaleX !== 1 || params.scaleY !== 1) {
-        endUpdatesBuilder.scaleX = params.scaleX;
-        endUpdatesBuilder.scaleY = params.scaleY;
-      }
-      if (params.rotation !== 0) {
-        endUpdatesBuilder.rotation = params.rotation;
-      }
-      if (params.alpha !== 100) {
-        endUpdatesBuilder.colorEffect = { type: "alpha", alpha: params.alpha };
-      }
-    } else if (params.effect === "transition") {
-      const endAlpha = params.direction === "out" ? 0 : 100;
-      endUpdatesBuilder.colorEffect = { type: "alpha", alpha: endAlpha };
-    } else if (params.effect === "blur") {
-      // Blur: animate from full blur to 0 alpha (fade out while blurring)
-      endUpdatesBuilder.colorEffect = { type: "alpha", alpha: 0 };
-    } else if (params.effect === "drop-shadow") {
-      // Drop shadow: tween alpha to the specified end alpha
-      if (params.alpha !== 100) {
-        endUpdatesBuilder.colorEffect = { type: "alpha", alpha: params.alpha };
-      }
-    } else if (params.effect === "expand") {
-      // Expand: scale from 0 (contract) or to 0 (contract) depending on direction
-      if (params.direction === "expand") {
-        // Start small, end at natural size — set start instance to 0 scale
-        // We apply endUpdates as-is (natural size = no override needed)
-        // and the start instance needs scaleX=0,scaleY=0 — patch startInstance below
-      } else {
-        // Contract: start at natural size (default), end at scale 0
-        endUpdatesBuilder.scaleX = 0;
-        endUpdatesBuilder.scaleY = 0;
-      }
-      // Apply any position shift at end
-      if (params.shiftX !== 0 || params.shiftY !== 0) {
-        // shiftX/Y are stored separately; we'll apply them to the end instance via x/y override
-      }
-    } else if (params.effect === "explode") {
-      // Explode: scale up and fade out
-      endUpdatesBuilder.scaleX = 2;
-      endUpdatesBuilder.scaleY = 2;
-      endUpdatesBuilder.rotation = params.arcSize;
-      if (params.finalAlpha !== 100) {
-        endUpdatesBuilder.colorEffect = { type: "alpha", alpha: params.finalAlpha };
-      }
-    }
-    const endInstanceUpdates = endUpdatesBuilder as Partial<SymbolInstance>;
-
-    // For "expand" direction, we need to set start instance scale to near-0
-    const expandStart = params.effect === "expand" && params.direction === "expand";
-    const actualStartInstance: SymbolInstance = expandStart
-      ? { ...startInstance, scaleX: 0.01, scaleY: 0.01 }
-      : startInstance;
-
-    // For "expand" with shiftX/shiftY, the end instance needs a position offset
-    const expandShiftX = params.effect === "expand" ? params.shiftX : 0;
-    const expandShiftY = params.effect === "expand" ? params.shiftY : 0;
-
-    // --- Build the updated document -----------------------------------
-    const convertedIds = new Set(objectsToConvert.map((o) => o.id));
-    const ease = (params as { ease?: number }).ease ?? 0;
-
-    const applyToTimeline = (t: TimelineModel): TimelineModel => {
-      // 1. Replace original objects with the start instance in the current keyframe
-      let result: TimelineModel = {
-        ...t,
-        layers: t.layers.map((l) => {
-          if (l.id !== layerId) return l;
-          const frames = l.frames.map((f) => {
-            if (!f.isKeyframe || f.index !== kf.index) return f;
-            const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
-            return { ...f, displayObjects: [...remaining, actualStartInstance] as readonly import("@flash/core").DisplayObject[], isEmpty: false };
-          }) as readonly import("@flash/core").Frame[];
-          return { ...l, frames };
-        }) as readonly import("@flash/core").Layer[],
-      };
-
-      // 2. Insert a keyframe at endFrameIndex (copies content from start)
-      result = insertKeyframe(result, layerId, endFrameIndex);
-
-      // 3. Update the END keyframe with the effect's end properties
-      result = {
-        ...result,
-        layers: result.layers.map((l) => {
-          if (l.id !== layerId) return l;
-          return {
-            ...l,
-            frames: l.frames.map((f) => {
-              if (!f.isKeyframe || f.index !== endFrameIndex) return f;
-              const newObjs: readonly import("@flash/core").DisplayObject[] = f.displayObjects.map((o) => {
-                if (o.id !== instId) return o;
-                const updated: import("@flash/core").DisplayObject = {
-                  ...o,
-                  ...endInstanceUpdates,
-                  x: (o as SymbolInstance).x + expandShiftX,
-                  y: (o as SymbolInstance).y + expandShiftY,
-                } as import("@flash/core").DisplayObject;
-                return updated;
-              });
-              return { ...f, displayObjects: newObjs };
-            }),
-          };
-        }) as readonly import("@flash/core").Layer[],
-      };
-
-      // 4. Set motion tween on the START keyframe
-      result = setMotionTween(result, layerId, kf.index, ease);
-
-      return result;
-    };
-
-    // Apply to the right timeline context
-    let newDoc: FlashDocument;
-    if (editContext.mode === "symbol" && editContext.symbolId) {
-      const items = finalLib.items.map((item) => {
-        if (item.id === editContext.symbolId && item.itemType === "symbol") {
-          return { ...item, timeline: applyToTimeline(item.timeline) };
-        }
-        return item;
-      });
-      newDoc = { ...doc, library: { ...finalLib, items } };
-    } else {
-      const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
-      newDoc = {
-        ...doc,
-        scenes: doc.scenes.map((s, i) =>
-          i === sceneIdx ? { ...s, timeline: applyToTimeline(s.timeline) } : s
-        ),
-        library: finalLib,
-      };
-    }
-
-    pushDoc(newDoc);
-    setSelectedShapeId(instId);
-    setTimelineEffectOpen(false);
-  }, [
-    timeline, safeActiveLayerIndex, currentFrame, selectedShapeId,
-    doc, editContext, activeSceneIndex, pushDoc,
-  ]);
-
-  // ---------------------------------------------------------------------------
-  // Arrange (z-order)
-  // ---------------------------------------------------------------------------
-
-  const handleArrange = useCallback(
-    (direction: "front" | "back" | "forward" | "backward") => {
-      if (!selectedShapeId) return;
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      const layer = timeline.layers[safeActiveLayerIndex];
-      if (!layer) return;
-      const kf = [...layer.frames]
-        .filter((f) => f.isKeyframe && f.index <= currentFrame)
-        .sort((a, b) => b.index - a.index)[0];
-      if (!kf) return;
-      const objs = [...kf.displayObjects];
-      const idx = objs.findIndex((o) => o.id === selectedShapeId);
-      if (idx < 0) return;
-
-      let newObjs: DisplayObject[];
-      if (direction === "front") {
-        const [obj] = objs.splice(idx, 1);
-        newObjs = [...objs, obj];
-      } else if (direction === "back") {
-        const [obj] = objs.splice(idx, 1);
-        newObjs = [obj, ...objs];
-      } else if (direction === "forward") {
-        if (idx >= objs.length - 1) return; // already at top
-        [objs[idx], objs[idx + 1]] = [objs[idx + 1], objs[idx]];
-        newObjs = objs;
-      } else {
-        // backward
-        if (idx <= 0) return; // already at bottom
-        [objs[idx], objs[idx - 1]] = [objs[idx - 1], objs[idx]];
-        newObjs = objs;
-      }
-
-      pushDoc(withTimeline((t) => ({
-        ...t,
-        layers: t.layers.map((l) => {
-          if (l.id !== layerId) return l;
-          return {
-            ...l,
-            frames: l.frames.map((f) => {
-              if (!f.isKeyframe || f.index !== kf.index) return f;
-              return { ...f, displayObjects: newObjs };
-            }),
-          };
-        }),
-      })));
-    },
-    [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
-  );
-
-  // ---------------------------------------------------------------------------
-  // Group / Ungroup
-  // ---------------------------------------------------------------------------
-
-  const handleGroup = useCallback(() => {
-    if (!selectedShapeId) return;
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-
-    // Group selected object (or all objects if none selected)
-    const objectsToGroup = kf.displayObjects.filter((o) => o.id === selectedShapeId);
-    if (objectsToGroup.length === 0) return;
-
-    // Compute collective center (average of object x/y positions)
-    const centerX = objectsToGroup.reduce((sum, o) => sum + o.x, 0) / objectsToGroup.length;
-    const centerY = objectsToGroup.reduce((sum, o) => sum + o.y, 0) / objectsToGroup.length;
-
-    // Create symbol objects relative to center
-    const symbolObjects = objectsToGroup.map((o) => ({
-      ...o,
-      x: o.x - centerX,
-      y: o.y - centerY,
-    }));
-
-    const groupName = nextGroupName();
-
-    pushDoc((() => {
-      const { library: updatedLib, item: newSymbol } = createSymbolInLibrary(
-        doc.library,
-        groupName,
-        "movieclip"
-      );
-
-      const symbolWithObjects = {
-        ...newSymbol,
-        timeline: {
-          layers: [
-            {
-              ...newSymbol.timeline.layers[0],
-              frames: [
-                {
-                  ...newSymbol.timeline.layers[0].frames[0],
-                  displayObjects: symbolObjects,
-                  isEmpty: false,
-                },
-              ],
-            },
-          ],
-        },
-      };
-
-      const finalLib = {
-        ...updatedLib,
-        items: updatedLib.items.map((i) => (i.id === newSymbol.id ? symbolWithObjects : i)),
-      };
-
-      const instId = `group-inst-${Date.now().toString(36)}`;
-      const groupUnionBounds = getUnionBounds([...symbolObjects]);
-      const groupNatW = groupUnionBounds?.width ?? 0;
-      const groupNatH = groupUnionBounds?.height ?? 0;
-      const instance: SymbolInstance = {
-        type: "instance",
-        id: instId,
-        symbolId: newSymbol.id,
-        x: centerX,
-        y: centerY,
-        ...(groupNatW > 0 ? { naturalWidth: groupNatW } : {}),
-        ...(groupNatH > 0 ? { naturalHeight: groupNatH } : {}),
-      };
-
-      const groupedIds = new Set(objectsToGroup.map((o) => o.id));
-      const updatedTimelineFn = (t: TimelineModel): TimelineModel => ({
-        ...t,
-        layers: t.layers.map((l) => {
-          if (l.id !== layerId) return l;
-          return {
-            ...l,
-            frames: l.frames.map((f) => {
-              if (!f.isKeyframe || f.index !== kf.index) return f;
-              const remaining = f.displayObjects.filter((o) => !groupedIds.has(o.id));
-              return { ...f, displayObjects: [...remaining, instance] };
-            }),
-          };
-        }),
-      });
-
-      let newDoc: FlashDocument;
-      if (editContext.mode === "symbol" && editContext.symbolId) {
-        const items = finalLib.items.map((item) => {
-          if (item.id === editContext.symbolId && item.itemType === "symbol") {
-            return { ...item, timeline: updatedTimelineFn(item.timeline) };
-          }
-          return item;
-        });
-        newDoc = { ...doc, library: { ...finalLib, items } };
-      } else {
-        const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
-        newDoc = {
-          ...doc,
-          scenes: doc.scenes.map((s, i) => i === sceneIdx ? { ...s, timeline: updatedTimelineFn(s.timeline) } : s),
-          library: finalLib,
-        };
-      }
-      return newDoc;
-    })());
-
-    setSelectedShapeId(null);
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, doc, editContext, withTimeline, activeSceneIndex]);
-
-  const handleUngroup = useCallback(() => {
-    if (!selectedShapeId) return;
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-
-    // Find the selected object — must be a SymbolInstance
-    const selected = kf.displayObjects.find((o) => o.id === selectedShapeId);
-    if (!selected || selected.type !== "instance") return;
-    const inst = selected as SymbolInstance;
-
-    // Resolve the symbol
-    const symbol = doc.library.items.find(
-      (i) => i.id === inst.symbolId && i.itemType === "symbol"
-    );
-    if (!symbol || symbol.itemType !== "symbol") return;
-
-    // Get the objects from the symbol's first keyframe of layer 0
-    const symLayer = symbol.timeline.layers[0];
-    if (!symLayer) return;
-    const symKf = [...symLayer.frames]
-      .filter((f) => f.isKeyframe)
-      .sort((a, b) => a.index - b.index)[0];
-    if (!symKf) return;
-
-    // Apply the instance's transform (position) to each object's position
-    const ungrouped: DisplayObject[] = symKf.displayObjects.map((o) => ({
-      ...o,
-      id: `ungroup-${o.id}-${Date.now().toString(36)}`,
-      x: o.x + inst.x,
-      y: o.y + inst.y,
-    }));
-
-    const selectedIds: string[] = ungrouped.map((o) => o.id);
-
-    pushDoc(withTimeline((t) => ({
-      ...t,
-      layers: t.layers.map((l) => {
-        if (l.id !== layerId) return l;
-        return {
-          ...l,
-          frames: l.frames.map((f) => {
-            if (!f.isKeyframe || f.index !== kf.index) return f;
-            const remaining = f.displayObjects.filter((o) => o.id !== inst.id);
-            return { ...f, displayObjects: [...remaining, ...ungrouped] };
-          }),
-        };
-      }),
-    })));
-
-    // Select the last ungrouped object (or first if only one)
-    if (selectedIds.length > 0) {
-      setSelectedShapeId(selectedIds[selectedIds.length - 1]);
-    } else {
-      setSelectedShapeId(null);
-    }
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, doc, withTimeline]);
-
-  // ---------------------------------------------------------------------------
-  // Break Apart
-  // ---------------------------------------------------------------------------
-
-  const handleBreakApart = useCallback(() => {
-    if (!selectedShapeId) return;
-    if (editContext.mode === "symbol" && editContext.symbolId) {
-      // Symbol editing context: use withTimeline to update the symbol's timeline
-      const layer = timeline.layers[safeActiveLayerIndex];
-      if (!layer) return;
-      const kf = [...layer.frames]
-        .filter((f) => f.isKeyframe && f.index <= currentFrame)
-        .sort((a, b) => b.index - a.index)[0];
-      if (!kf) return;
-      const selected = kf.displayObjects.find((o) => o.id === selectedShapeId);
-      if (!selected) return;
-
-      // DrawingObject in symbol editing context: convert to plain ShapeDisplayObject
-      if (selected.type === "drawing-object") {
-        const drawObj = selected as DrawingObject;
-        const asShape: ShapeDisplayObject = {
-          type: "shape",
-          id: drawObj.id,
-          shape: drawObj.shape,
-          x: drawObj.x,
-          y: drawObj.y,
-        };
-        const layerId = layer.id;
-        pushDoc(withTimeline((t) => ({
-          ...t,
-          layers: t.layers.map((l) => {
-            if (l.id !== layerId) return l;
-            return {
-              ...l,
-              frames: l.frames.map((f) => {
-                if (!f.isKeyframe || f.index !== kf.index) return f;
-                return {
-                  ...f,
-                  displayObjects: f.displayObjects.map((o) => o.id === drawObj.id ? asShape : o),
-                };
-              }),
-            };
-          }),
-        })));
-        // Keep the same ID selected (now it's a shape)
-        return;
-      }
-
-      if (selected.type !== "instance") return;
-      const inst = selected as SymbolInstance;
-      const symbol = doc.library.items.find(
-        (i) => i.id === inst.symbolId && i.itemType === "symbol"
-      );
-      if (!symbol || symbol.itemType !== "symbol") return;
-      const symLayer = symbol.timeline.layers[0];
-      if (!symLayer) return;
-      const symKf = [...symLayer.frames]
-        .filter((f) => f.isKeyframe)
-        .sort((a, b) => a.index - b.index)[0];
-      if (!symKf) return;
-      const extracted: DisplayObject[] = symKf.displayObjects.map((o) => ({
-        ...o,
-        id: `breakapart-${o.id}-${Date.now().toString(36)}`,
-        x: o.x + inst.x,
-        y: o.y + inst.y,
-      }));
-      const layerId = layer.id;
-      pushDoc(withTimeline((t) => ({
-        ...t,
-        layers: t.layers.map((l) => {
-          if (l.id !== layerId) return l;
-          return {
-            ...l,
-            frames: l.frames.map((f) => {
-              if (!f.isKeyframe || f.index !== kf.index) return f;
-              const remaining = f.displayObjects.filter((o) => o.id !== inst.id);
-              return { ...f, displayObjects: [...remaining, ...extracted] };
-            }),
-          };
-        }),
-      })));
-      setSelectedShapeId(extracted.length > 0 ? extracted[extracted.length - 1].id : null);
-    } else {
-      // Document (scene) context: delegate to core breakApart
-      const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
-      const newDoc = breakApart(doc, sceneIdx, safeActiveLayerIndex, currentFrame, selectedShapeId);
-      if (newDoc !== doc) {
-        pushDoc(newDoc);
-        // For drawing-object→shape conversion the ID is preserved; keep it selected.
-        // For instance→children extraction the instance is gone; clear selection.
-        const wasDrawingObject = ((): boolean => {
-          const layer = timeline.layers[safeActiveLayerIndex];
-          if (!layer) return false;
-          const kf = [...layer.frames]
-            .filter((f) => f.isKeyframe && f.index <= currentFrame)
-            .sort((a, b) => b.index - a.index)[0];
-          if (!kf) return false;
-          return kf.displayObjects.find((o) => o.id === selectedShapeId)?.type === "drawing-object";
-        })();
-        if (!wasDrawingObject) setSelectedShapeId(null);
-      }
-    }
-  }, [selectedShapeId, editContext, timeline, safeActiveLayerIndex, currentFrame, doc, pushDoc, withTimeline, activeSceneIndex]);
+  // Timeline Effects (Insert > Timeline Effects) — see hooks/useTimelineEffectHandlers.
+  const { handleOpenTimelineEffect, handleApplyTimelineEffect } = useTimelineEffectHandlers({
+    uiStore, doc, timeline, editContext, activeSceneIndex, safeActiveLayerIndex,
+    currentFrame, selectedShapeId, pushDoc, setSelectedShapeId, timelineEffectCounterRef,
+  });
 
   // ---------------------------------------------------------------------------
   // Trace Bitmap
@@ -3393,433 +1975,16 @@ export function Shell(): React.ReactElement {
   /**
    * Open the Trace Bitmap dialog if the selected display object is a BitmapDisplayObject.
    */
-  const handleTraceBitmapOpen = useCallback(() => {
-    if (!selectedShapeId) return;
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-    const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
-    if (!obj || obj.type !== "bitmap") return;
-    setTraceBitmapOpen(true);
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame]);
-
-  /**
-   * Execute the trace: load bitmap pixel data, run the algorithm, replace the
-   * BitmapDisplayObject with ShapeDisplayObjects on the active keyframe.
-   */
-  const handleTraceBitmapConfirm = useCallback(
-    (options: TraceBitmapOptions) => {
-      setTraceBitmapOpen(false);
-      if (!selectedShapeId) return;
-
-      const layer = timeline.layers[safeActiveLayerIndex];
-      if (!layer) return;
-      const kf = [...layer.frames]
-        .filter((f) => f.isKeyframe && f.index <= currentFrame)
-        .sort((a, b) => b.index - a.index)[0];
-      if (!kf) return;
-      const bitmapObj = kf.displayObjects.find((o) => o.id === selectedShapeId);
-      if (!bitmapObj || bitmapObj.type !== "bitmap") return;
-      const bmpDisp = bitmapObj as BitmapDisplayObject;
-
-      // Find the BitmapItem in the library to get the data URI
-      const libItem = doc.library.items.find(
-        (i) => i.id === bmpDisp.libraryItemId && i.itemType === "bitmap"
-      ) as BitmapItem | undefined;
-      if (!libItem || !libItem.dataUri) return;
-
-      // Load the image into an offscreen canvas to extract pixel data
-      const img = new window.Image();
-      img.onload = () => {
-        const w = img.naturalWidth || bmpDisp.width;
-        const h = img.naturalHeight || bmpDisp.height;
-        if (w === 0 || h === 0) return;
-
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(img, 0, 0, w, h);
-        const imageData = ctx.getImageData(0, 0, w, h);
-
-        // Run the trace algorithm (pure, no DOM)
-        const paths: ShapePath[] = traceBitmap(imageData, options);
-        if (paths.length === 0) return;
-
-        // Build ShapeDisplayObjects, one per path
-        const newShapes: ShapeDisplayObject[] = paths.map((path) => {
-          const shapeData = tracePathsToShape([path]);
-          const shapeObj: ShapeDisplayObject = {
-            type: "shape",
-            id: shapeData.id,
-            shape: { id: shapeData.id, paths: shapeData.paths },
-            x: bmpDisp.x,
-            y: bmpDisp.y,
-          };
-          return shapeObj;
-        });
-
-        const layerId = layer.id;
-        pushDoc(
-          withTimeline((t) => {
-            // Remove the original bitmap display object
-            let updated = removeDisplayObject(t, layerId, currentFrame, selectedShapeId);
-            // Add each traced shape
-            for (const shapeObj of newShapes) {
-              updated = addDisplayObject(updated, layerId, currentFrame, shapeObj);
-            }
-            return updated;
-          })
-        );
-        // Select the last added shape so the user can see something was done
-        if (newShapes.length > 0) {
-          setSelectedShapeId(newShapes[newShapes.length - 1].id);
-        }
-      };
-      img.src = libItem.dataUri;
-    },
-    [
-      selectedShapeId,
-      timeline,
-      safeActiveLayerIndex,
-      currentFrame,
-      doc,
-      pushDoc,
-      withTimeline,
-    ]
-  );
-
-  // ---------------------------------------------------------------------------
-  // Shape > Smooth / Optimize
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Extract the point sequence from a ShapePath (start + all segment endpoints).
-   */
-  function extractPathPoints(path: import("@flash/core").ShapePath): Array<{ x: number; y: number }> {
-    const pts: Array<{ x: number; y: number }> = [path.start];
-    for (const seg of path.segments) {
-      pts.push(seg.to);
-    }
-    return pts;
-  }
-
-  /**
-   * Modify > Shape > Smooth — re-fits each path in the selected ShapeDisplayObject
-   * using the midpoint Catmull-Rom → quadratic Bézier pipeline.
-   */
-  const handleSmooth = useCallback(() => {
-    if (!selectedShapeId) return;
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-    const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
-    if (!obj || obj.type !== "shape") return;
-    const shapeObj = obj as import("@flash/core").ShapeDisplayObject;
-    const newPaths = shapeObj.shape.paths.map((path) => {
-      const pts = extractPathPoints(path);
-      if (pts.length < 2) return path;
-      const smoothed = smoothPath(pts, path.closed);
-      return {
-        ...smoothed,
-        ...(path.fill !== undefined ? { fill: path.fill } : {}),
-        ...(path.stroke !== undefined ? { stroke: path.stroke } : {}),
-      };
-    });
-    pushDoc(withTimeline((t) =>
-      updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
-        shape: { ...shapeObj.shape, paths: newPaths },
-      })
-    ));
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  /**
-   * Modify > Shape > Optimize — reduces point count in each path using
-   * Ramer-Douglas-Peucker (epsilon = 2.0) and rebuilds as straight-line segments.
-   */
-  const handleOptimize = useCallback(() => {
-    if (!selectedShapeId) return;
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-    const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
-    if (!obj || obj.type !== "shape") return;
-    const shapeObj = obj as import("@flash/core").ShapeDisplayObject;
-    const newPaths = shapeObj.shape.paths.map((path) => {
-      const pts = extractPathPoints(path);
-      if (pts.length < 2) return path;
-      const simplified = simplifyPath(pts, 2.0);
-      if (simplified.length < 2) return path;
-      const [start, ...rest] = simplified;
-      return {
-        start,
-        segments: rest.map((pt) => ({ type: "line" as const, to: pt })),
-        closed: path.closed,
-        ...(path.fill !== undefined ? { fill: path.fill } : {}),
-        ...(path.stroke !== undefined ? { stroke: path.stroke } : {}),
-      };
-    });
-    pushDoc(withTimeline((t) =>
-      updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
-        shape: { ...shapeObj.shape, paths: newPaths },
-      })
-    ));
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  // ---------------------------------------------------------------------------
-  // Shape hints — Modify > Shape > Add Shape Hint (Ctrl+Shift+H)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Add a shape hint to the governing keyframe at the current frame on the
-   * active layer. The hint is placed at the centre of the stage by default.
-   * Only meaningful on a keyframe that is part of a shape tween span.
-   */
-  const handleAddShapeHint = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) =>
-      addShapeHint(t, layerId, currentFrame,
-        Math.round(docProperties.width / 2),
-        Math.round(docProperties.height / 2))
-    ));
-  }, [timeline, safeActiveLayerIndex, currentFrame, docProperties, pushDoc, withTimeline]);
-
-  /**
-   * Move a shape hint to a new position (called while dragging a hint circle).
-   * Commits to undo history immediately (one entry per drag-end).
-   */
-  const handleUpdateShapeHint = useCallback((hintId: string, x: number, y: number) => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) =>
-      updateShapeHint(t, layerId, currentFrame, hintId, x, y)
-    ));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  // ---------------------------------------------------------------------------
-  // Transform (Flip / Rotate) — Modify > Transform submenu
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Apply a scale/rotation delta to the selected display object.
-   * Works for any DisplayObject type that carries scaleX/scaleY/rotation fields.
-   */
-  const applyTransformDelta = useCallback(
-    (scaleXDelta: number, scaleYDelta: number, rotationDelta: number) => {
-      if (!selectedShapeId) return;
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      const layer = timeline.layers[safeActiveLayerIndex];
-      if (!layer) return;
-      const kf = [...layer.frames]
-        .filter((f) => f.isKeyframe && f.index <= currentFrame)
-        .sort((a, b) => b.index - a.index)[0];
-      if (!kf) return;
-      const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
-      if (!obj) return;
-      const currentScaleX = (obj as { scaleX?: number }).scaleX ?? 1;
-      const currentScaleY = (obj as { scaleY?: number }).scaleY ?? 1;
-      const currentRotation = (obj as { rotation?: number }).rotation ?? 0;
-      const newRotation = ((currentRotation + rotationDelta) % 360 + 360) % 360;
-      pushDoc(withTimeline((t) =>
-        updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
-          scaleX: currentScaleX * scaleXDelta,
-          scaleY: currentScaleY * scaleYDelta,
-          rotation: newRotation,
-        })
-      ));
-    },
-    [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
-  );
-
-  /** Modify > Transform > Flip Horizontal — negate scaleX. */
-  const handleFlipHorizontal = useCallback(
-    () => applyTransformDelta(-1, 1, 0),
-    [applyTransformDelta]
-  );
-
-  /** Modify > Transform > Flip Vertical — negate scaleY. */
-  const handleFlipVertical = useCallback(
-    () => applyTransformDelta(1, -1, 0),
-    [applyTransformDelta]
-  );
-
-  /** Modify > Transform > Rotate 90° CW — add 90° to rotation. */
-  const handleRotate90CW = useCallback(
-    () => applyTransformDelta(1, 1, 90),
-    [applyTransformDelta]
-  );
-
-  /** Modify > Transform > Rotate 90° CCW — subtract 90° from rotation. */
-  const handleRotate90CCW = useCallback(
-    () => applyTransformDelta(1, 1, -90),
-    [applyTransformDelta]
-  );
-
-  /** Modify > Transform > Rotate 180° — add 180° to rotation. */
-  const handleRotate180 = useCallback(
-    () => applyTransformDelta(1, 1, 180),
-    [applyTransformDelta]
-  );
-
-  // ---------------------------------------------------------------------------
-  // Swap Symbol
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Open the Swap Symbol dialog (only when a single SymbolInstance is selected).
-   */
-  const handleSwapSymbol = useCallback(() => {
-    if (!selectedShapeId) return;
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-    const selected = kf.displayObjects.find((o) => o.id === selectedShapeId);
-    if (!selected || selected.type !== "instance") return;
-    setSwapSymbolOpen(true);
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame]);
-
-  /**
-   * Perform the swap after the dialog is confirmed.
-   * Preserves position, transform, name, and all other properties — only symbolId changes.
-   */
-  const handleSwapSymbolConfirm = useCallback((newSymbolId: string) => {
-    if (!selectedShapeId) return;
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-    const selected = kf.displayObjects.find((o) => o.id === selectedShapeId);
-    if (!selected || selected.type !== "instance") return;
-
-    pushDoc(withTimeline((t) => ({
-      ...t,
-      layers: t.layers.map((l) => {
-        if (l.id !== layer.id) return l;
-        return {
-          ...l,
-          frames: l.frames.map((f) => {
-            if (!f.isKeyframe || f.index !== kf.index) return f;
-            return {
-              ...f,
-              displayObjects: f.displayObjects.map((o) =>
-                o.id === selectedShapeId
-                  ? { ...(o as SymbolInstance), symbolId: newSymbolId }
-                  : o
-              ),
-            };
-          }),
-        };
-      }),
-    })));
-
-    setSwapSymbolOpen(false);
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  // ---------------------------------------------------------------------------
-  // Distribute to Layers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Flash 8 "Distribute to Layers": each selected display object on the current
-   * layer is moved to its own new layer. The first object stays on the original
-   * layer; subsequent objects each get a new layer inserted immediately after.
-   * Layer names are taken from the symbol name (for SymbolInstances) or "Layer N".
-   */
-  const handleDistributeToLayers = useCallback(() => {
-    const layerIdx = safeActiveLayerIndex;
-    const layer = timeline.layers[layerIdx];
-    if (!layer) return;
-
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return;
-
-    const objects = kf.displayObjects;
-    // Need at least 2 objects to distribute
-    if (objects.length < 2) return;
-
-    // Helper: get a display name for an object
-    const getObjectName = (o: DisplayObject, idx: number): string => {
-      if (o.type === "instance") {
-        const sym = doc.library.items.find(
-          (i) => i.id === (o as SymbolInstance).symbolId && i.itemType === "symbol"
-        );
-        if (sym) return sym.name;
-      }
-      return `Layer ${idx + 1}`;
-    };
-
-    // Build a new timeline:
-    // 1. The original layer keeps only the first object (objects[0]).
-    // 2. For each remaining object, insert a new layer after the original layer.
-
-    const layerId = layer.id;
-    const kfIndex = kf.index;
-
-    pushDoc(withTimeline((t) => {
-      const tLayer = t.layers.find((l) => l.id === layerId);
-      if (!tLayer) return t;
-
-      // Update original layer's keyframe to hold only the first object
-      const updatedOriginalLayer = {
-        ...tLayer,
-        frames: tLayer.frames.map((f) => {
-          if (!f.isKeyframe || f.index !== kfIndex) return f;
-          return { ...f, displayObjects: [objects[0]] };
-        }),
-      };
-
-      // Create new layers for objects[1..n]
-      const newLayers = objects.slice(1).map((obj, i) => {
-        const name = getObjectName(obj, layerIdx + i + 1);
-        // createLayer gives us a fresh layer with a blank keyframe
-        const freshLayer = createLayer(name);
-        // Replace the default frame with one that holds this object
-        const frame: Frame = {
-          ...freshLayer.frames[0],
-          displayObjects: [obj],
-          isEmpty: false,
-        };
-        return { ...freshLayer, frames: [frame] };
-      });
-
-      // Insert new layers right after the original layer in the layers array
-      const layers = [...t.layers];
-      const origIdx = layers.findIndex((l) => l.id === layerId);
-      if (origIdx < 0) return t;
-
-      layers[origIdx] = updatedOriginalLayer;
-      // Insert new layers after the original layer (in order)
-      layers.splice(origIdx + 1, 0, ...newLayers);
-
-      return { ...t, layers };
-    }));
-
-    // Deselect (objects now live on different layers)
-    setSelectedShapeId(null);
-  }, [safeActiveLayerIndex, timeline, currentFrame, pushDoc, withTimeline, doc.library]);
+  // Shape ops (trace/smooth/optimize/hints/flip-rotate/swap/distribute) — see hooks/useShapeOpHandlers.
+  const {
+    handleTraceBitmapOpen, handleTraceBitmapConfirm, handleSmooth, handleOptimize,
+    handleAddShapeHint, handleUpdateShapeHint, handleFlipHorizontal, handleFlipVertical,
+    handleRotate90CW, handleRotate90CCW, handleRotate180, handleSwapSymbol,
+    handleSwapSymbolConfirm, handleDistributeToLayers,
+  } = useShapeOpHandlers({
+    uiStore, doc, docProperties, timeline, safeActiveLayerIndex, currentFrame,
+    selectedShapeId, pushDoc, withTimeline, setSelectedShapeId,
+  });
 
   // ---------------------------------------------------------------------------
   // Handlers — stage drop
