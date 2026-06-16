@@ -214,6 +214,22 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 
 ### SWF encoding
 
+- **`compileDocument` is a thin orchestrator; the pipeline lives in `packages/swf/src/compiler/`.**
+  The former 3200-line `compile.ts` was decomposed into one cohesive module per pass, each
+  consumed in order by the ~230-line orchestrator: `header.ts` (FileAttributes…SetBackgroundColor),
+  `fonts.ts` (`runFontPass` — DefineFont3/AlignZones + glyph subsetting), `media.ts`
+  (`runMediaPass` — DefineSound/DefineVideoStream), `symbols.ts` (`runSymbolPass` —
+  DefineSprite/DefineButton2 + linkage), `characters.ts` (`runCharacterPass` — per-object
+  DefineShape4/Text/EditText/MorphShape/bitmap defs), `depth.ts` (`createDepthAllocator` +
+  `runDepthPrepass`), `frames.ts` (`runFrameLoop` — the per-scene/frame display-list diff +
+  PlaceObject2/3 routing dispatcher), `sound-stream.ts`, `assemble.ts`, plus `options.ts`
+  (`CompileOptions`) and `display.ts` (`flattenDisplayObjects`). Each pass takes `writer`/`doc`
+  and returns the lookups (charId maps, etc.) the next passes consume — the only shared coupling
+  is the explicit pass inputs/outputs, not a god-context. `compile.ts` re-exports `CompileOptions`
+  /`collectFontFaceRequests` so the public API and the ~80 `../compile.js` test imports are
+  unchanged. The decomposition was behavior-preserving: golden-parity self-determinism hash
+  `57db995821e170ee` and all unit tests held byte-for-byte across every step. To change a stage,
+  edit its module; to change pass ORDER, edit the orchestrator.
 - **Static-text alignment XOffset must be applied in ALL THREE emit paths** (task 1199):
   scene/main-timeline (`compile.ts`), button labels (`buttons.ts`), and movieclip/graphic-
   internal text (`sprite.ts`). The centered/right-aligned start offset is computed by the
