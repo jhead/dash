@@ -114,6 +114,15 @@ import {
   selectUndoDepth,
   selectRedoDepth,
 } from "./store/index.js";
+import {
+  instanceNamesOf,
+  shapeDisplayObjectsAt,
+  textDisplayObjectsAt,
+  bitmapDisplayObjectsAt,
+  symbolInstancesAt,
+  bitmapLibraryItems as bitmapLibraryItemsOf,
+  soundLibraryItems as soundLibraryItemsOf,
+} from "./selectors/index.js";
 import { ActionsPanel } from "./ActionsPanel";
 import { OutputPanel } from "./OutputPanel";
 import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
@@ -3981,64 +3990,28 @@ export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
 
   // Build a map: libraryItemId -> name
-  const instanceNames: Record<string, string> = {};
-  for (const item of library.items) {
-    instanceNames[item.id] = item.name;
-  }
+  const instanceNames = instanceNamesOf(library);
 
-  // Derive shape display objects for the current frame (from active layer only — for interaction)
-  const shapeDisplayObjects = useMemo<ShapeDisplayObject[]>(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer || !layer.visible || layer.locked) return [];
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return [];
-    return kf.displayObjects.filter((o): o is ShapeDisplayObject => o.type === "shape");
-  }, [timeline, currentFrame, safeActiveLayerIndex]);
-
-  // Derive text display objects for the current frame (from active layer only — for interaction)
-  const textDisplayObjects = useMemo<TextDisplayObject[]>(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer || !layer.visible || layer.locked) return [];
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return [];
-    return kf.displayObjects.filter((o): o is TextDisplayObject => o.type === "text");
-  }, [timeline, currentFrame, safeActiveLayerIndex]);
-
-  // Derive bitmap display objects for the current frame (from active layer only — for interaction)
-  const bitmapDisplayObjects = useMemo<BitmapDisplayObject[]>(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer || !layer.visible || layer.locked) return [];
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return [];
-    return kf.displayObjects.filter((o): o is BitmapDisplayObject => o.type === "bitmap");
-  }, [timeline, currentFrame, safeActiveLayerIndex]);
-
-  // Derive SymbolInstance display objects for the current frame (from active layer — for hit-testing)
-  const symbolInstanceDisplayObjects = useMemo<SymbolInstance[]>(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer || !layer.visible || layer.locked) return [];
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return [];
-    return kf.displayObjects.filter((o): o is SymbolInstance => o.type === "instance");
-  }, [timeline, currentFrame, safeActiveLayerIndex]);
-
-  // Derive BitmapItems from library for image loading in renderer
-  const bitmapLibraryItems = useMemo<BitmapItem[]>(() => {
-    return library.items.filter((i): i is BitmapItem => i.itemType === "bitmap");
-  }, [library]);
-
-  // Derive SoundItems from library
-  const soundLibraryItems = useMemo<SoundItem[]>(() => {
-    return library.items.filter((i): i is SoundItem => i.itemType === "sound");
-  }, [library]);
+  // Per-frame display-object collections for the active layer (interaction/hit-testing).
+  // Bodies live in selectors/derived.ts; memoize at the call site.
+  const shapeDisplayObjects = useMemo<ShapeDisplayObject[]>(
+    () => shapeDisplayObjectsAt(timeline, safeActiveLayerIndex, currentFrame),
+    [timeline, currentFrame, safeActiveLayerIndex]
+  );
+  const textDisplayObjects = useMemo<TextDisplayObject[]>(
+    () => textDisplayObjectsAt(timeline, safeActiveLayerIndex, currentFrame),
+    [timeline, currentFrame, safeActiveLayerIndex]
+  );
+  const bitmapDisplayObjects = useMemo<BitmapDisplayObject[]>(
+    () => bitmapDisplayObjectsAt(timeline, safeActiveLayerIndex, currentFrame),
+    [timeline, currentFrame, safeActiveLayerIndex]
+  );
+  const symbolInstanceDisplayObjects = useMemo<SymbolInstance[]>(
+    () => symbolInstancesAt(timeline, safeActiveLayerIndex, currentFrame),
+    [timeline, currentFrame, safeActiveLayerIndex]
+  );
+  const bitmapLibraryItems = useMemo<BitmapItem[]>(() => bitmapLibraryItemsOf(library), [library]);
+  const soundLibraryItems = useMemo<SoundItem[]>(() => soundLibraryItemsOf(library), [library]);
 
   // Build the full multi-layer SceneGraph for rendering in StageArea.
   // Each layer's objects are resolved at the current frame, with tween interpolation
