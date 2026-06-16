@@ -1,13 +1,12 @@
-# 21 — Binary FLA Format (Flash 5 – CS4) — Reverse-Engineering Spec
+# Binary FLA Format (Flash 5 – CS4) — Format Specification
 
-Reference for the proprietary Macromedia/Adobe binary `.fla` format as decoded by
-`packages/core/src/fla/` (`ole.ts`, `flash8-binary.ts`, `flash8-import.ts`). This is a
-**read-only import** spec; write-back is out of scope.
+Specification of the proprietary Macromedia/Adobe binary `.fla` document format.
 
-This document is deliberately explicit about **confidence**. Most of this format is
-undocumented; what follows is reconstructed from (a) JPEXS `flacomdoc` (an XFL→binary-FLA
-*writer* byte-verified against real Flash output), (b) `eddiemoore/fla-decoder` (Ghidra RE
-of `flash.exe`), and (c) a handful of real fixture FLAs. Every record/field is tagged.
+This document annotates **confidence** per field. The format is undocumented; the content
+below is reconstructed from (a) JPEXS `flacomdoc` — an XFL→binary-FLA
+*writer* byte-verified against real Flash output, (b) `eddiemoore/fla-decoder` — a Ghidra
+reverse-engineering of `flash.exe`, and (c) inspection of real sample files. Every
+record/field is tagged with a confidence level.
 
 ---
 
@@ -15,10 +14,10 @@ of `flash.exe`), and (c) a handful of real fixture FLAs. Every record/field is t
 
 | Tag | Meaning |
 |-----|---------|
-| **[V]** | **Verified.** Byte-checked against `flacomdoc` (a verified writer), against the SWF published from the same FLA, or against a confirmed fixture. |
-| **[O]** | **Observed.** Derived from one or more real fixture FLAs (Magnet.fla, golden, etc.) but not cross-checked against an independent writer. May be specimen-specific. |
-| **[I]** | **Inferred.** Best-effort layout with **no confirming fixture**. Bit/byte assignments are guesses consistent with XFL semantics; could be wrong. |
-| **[X]** | **Unknown / not decoded.** Bytes are skipped or scanned past. We cannot read the value, only re-sync after it. |
+| **[V]** | **Verified.** Byte-checked against `flacomdoc` (a verified writer), against the SWF published from the same source, or against a confirmed sample file. |
+| **[O]** | **Observed.** Derived from one or more real sample files but not cross-checked against an independent writer. May be specimen-specific. |
+| **[I]** | **Inferred.** Best-effort layout with **no confirming sample**. Bit/byte assignments are guesses consistent with XFL semantics; could be wrong. |
+| **[X]** | **Unknown / not decoded.** The value cannot be read; a reader can only resynchronize past it. |
 
 Confidence is annotated **per field**. When a whole record is one tag, it is noted at the
 record header.
@@ -51,7 +50,7 @@ Annotations
   @0xNN         // absolute byte offset within the record/stream
 ```
 
-**Units** (critical — three different coordinate scales coexist):
+**Units** — three different coordinate scales coexist:
 
 | Context | Unit | Conversion | Confidence |
 |---------|------|-----------|------------|
@@ -66,7 +65,7 @@ Annotations
 ## 2. Container: OLE2 / CFB
 
 Standard Microsoft Compound File Binary. Fully specified externally; **[V]** against the
-CFB spec. Parser: `ole.ts`.
+CFB spec.
 
 ```
 Header @0                         (always 512 bytes for v3)
@@ -82,8 +81,8 @@ Header @0                         (always 512 bytes for v3)
   u32    difat[109]      @76   first 109 FAT-sector pointers
 ```
 
-Sector addressing: `fileOffset = 512 + sector * sectorSize` (header occupies the first
-512 regardless of sectorSize).
+Sector addressing: `fileOffset = 512 + sector * sectorSize` (the header occupies the first
+512 bytes regardless of sectorSize).
 
 Special FAT values: `ENDOFCHAIN=0xFFFFFFFE`, `FREESECT=0xFFFFFFFF`, `FATSECT=0xFFFFFFFD`,
 `DIFSECT=0xFFFFFFFC`. Directory entry types: `1=storage 2=stream 5=root`.
@@ -91,7 +90,7 @@ Special FAT values: `ENDOFCHAIN=0xFFFFFFFE`, `FREESECT=0xFFFFFFFF`, `FATSECT=0xF
 **Mini-FAT [V]:** streams with `size < miniStreamCutoff` (≈4096) do **not** live in the
 main FAT. They occupy 64-byte mini-sectors carved out of the **root entry's** stream,
 indexed by the mini-FAT. Most `Page N`/`Symbol N` streams are small and live here; reading
-them via the main FAT yields garbage. This is the single most common parsing pitfall.
+them via the main FAT yields garbage.
 
 Directory entry (128 bytes each):
 ```
@@ -105,34 +104,34 @@ Directory entry (128 bytes each):
   u32  sizeLo    @120
 ```
 
-Streams are collected by walking the red-black sibling/child tree from the root. We do not
-rely on tree ordering for semantics — only the **stream name** matters.
+Streams are reached by walking the red-black sibling/child tree from the root. Tree
+ordering carries no semantics — only the **stream name** matters.
 
 ---
 
 ## 3. Stream inventory
 
-| Stream name | Payload | Parsed by | Confidence |
-|-------------|---------|-----------|------------|
-| `Contents` | Document props + library catalog (scan-based) | `parseFla8Contents` | mixed (see §6) |
-| `Page N` | Scene timeline (CArchive) | `parseFla8Timeline` | §7–§9 |
-| `Symbol N` / `S N M` | Symbol timeline (CArchive) | `parseFla8Timeline` | §7–§9 |
-| `Media N` | Bitmap / audio / FLV payload | `media.ts` (decode), not CArchive | bitmap/audio [O] |
-| `Sound N` | Raw audio (pre-CS4) | `media.ts` | [O] |
+| Stream name | Payload | Spec | Confidence |
+|-------------|---------|------|------------|
+| `Contents` | Document properties + library catalog | §6 | mixed (see §6) |
+| `Page N` | Scene timeline (CArchive) | §7–§9 | §7–§9 |
+| `Symbol N` / `S N M` | Symbol timeline (CArchive) | §7–§9 | §7–§9 |
+| `Media N` | Bitmap / audio / FLV payload | (binary asset, not CArchive) | bitmap/audio [O] |
+| `Sound N` | Raw audio (pre-CS4) | (binary asset) | [O] |
 | `Font N` | Embedded-font catalog entry (in `Contents`, not a CArchive body) | §6.6 | [O] |
 | `Video N` | Catalog entry referencing a `Media N` FLV | §6.5 | [O] |
 
-Short-form stream names (`P N M`, `S N M`, `So N M`, `Vi N M`) appear in some versions and
-are matched alongside the long forms.
+Short-form stream names (`P N M`, `S N M`, `So N M`, `Vi N M`) appear in some versions
+alongside the long forms.
 
 ---
 
 ## 4. Primitive encodings
 
-### 4.1 Strings — `CString` (`readCString`)
+### 4.1 Strings — `CString`
 
 MFC `CArchive::ReadString`-style, multiple encodings selected by the first byte(s). **[V]**
-(all four branches exercised by fixtures):
+(all four branches occur in real files):
 
 ```
 b = u8
@@ -150,11 +149,11 @@ b = u8
 `BomString` is the `FF FE FF <len> <utf16…>` subset. Unicode strings appear in **MX2004+**
 (formatVersion ≥ 0x38). Earlier versions use bare ASCII length-prefix.
 
-`readPlainString(unicode)` — a **variant without the BOM marker** used *inside* `CPicText`
-runs: `len=u8 (0xFF/0xFFFF extensions)` then `chars[len]` as ASCII or UTF-16LE per the
-`unicode` flag. **[V]** vs flacomdoc `writeString`.
+A **variant without the BOM marker** is used *inside* `CPicText` runs:
+`len=u8 (0xFF/0xFFFF extensions)` then `chars[len]` as ASCII or UTF-16LE per the unicode
+flag. **[V]** vs flacomdoc `writeString`.
 
-### 4.2 Matrix (`readMatrix`) — 24 bytes — **[V]**
+### 4.2 Matrix — 24 bytes — **[V]**
 
 ```
 struct Matrix {
@@ -164,7 +163,7 @@ struct Matrix {
 }
 ```
 
-### 4.3 Color (`readColorRGBA`) — 4 bytes — **[V]**
+### 4.3 Color — 4 bytes — **[V]**
 
 ```
 struct RGBA { u8 r, g, b, a; }   // wire order R,G,B,A (vs flacomdoc writeSolidFill)
@@ -175,9 +174,9 @@ struct RGBA { u8 r, g, b, a; }   // wire order R,G,B,A (vs flacomdoc writeSolidF
 ## 5. MFC CArchive object protocol
 
 `Page N` / `Symbol N` stream bodies are MFC `CArchive` serializations of C++ objects
-(`CPicPage`, `CPicLayer`, `CPicFrame`, `CPicShape`, …). Parser: `ArchiveReader`.
+(`CPicPage`, `CPicLayer`, `CPicFrame`, `CPicShape`, …).
 
-### 5.1 Class/object tag word (`readClassTag`) — **[V]**
+### 5.1 Class/object tag word — **[V]**
 
 Each object header is a `u16` tag:
 
@@ -187,23 +186,25 @@ Each object header is a `u16` tag:
 | `0xFFFF` | NEWCLASS — first declaration of a class | `u16 schema`, `u16 nameLen`, `ASCII name[nameLen]` |
 | `0x7FFF` | extended backref | `u32 index` |
 | `tag & 0x8000` | backref to class index `tag & 0x7FFF` | — |
-| else | **bad tag** → triggers recovery (§13) | — |
+| else | **bad tag** → requires resynchronization (§13) | — |
 
 ### 5.2 Reference-index allocation — **[V]** (mirrors flacomdoc `useClass`)
 
 A **single** monotonically increasing counter assigns indices. On **every** object header
-(NEWCLASS or backref), `objectCount++`. At a class's first declaration its index is fixed:
+(NEWCLASS or backref), an object counter increments. At a class's first declaration its
+index is fixed:
 
 ```
 index(class) = 1 + (#classes declared before) + (#objects serialized before)
 ```
 
-That index is reused by every later backref `0x8000 | index`. The older "two fixed slots
-per class" model is **wrong** in general — it only coincides when no objects are serialized
-between class declarations. Example: in `Magnet.fla` Symbol 13, `CPicShape` = index 16 (not
-9), so its backref tag is `0x8010`. Getting this wrong mis-reads backrefs as bad tags.
+That index is reused by every later backref `0x8000 | index`. A class first declared after
+several objects takes a correspondingly high index (e.g. 16), with backref tag `0x8010`. A
+fixed "two slots per class" table computes the correct index only when no objects are
+serialized between class declarations; otherwise it yields the wrong index and reads such
+backrefs as bad tags.
 
-### 5.3 `CPicObjBase` — base of every display record (`readCPicObjBase`) — **[V]** structure
+### 5.3 `CPicObjBase` — base of every display record — **[V]** structure
 
 ```
 struct CPicObjBase {
@@ -214,8 +215,8 @@ struct CPicObjBase {
     tag = readClassTag()
     if (tag == NULL) break
     if (tag == backref-to-object) continue
-    if (tag == bad) { recover (§13); badTag=true; break }
-    child = deserializeClass(tag.name)   // dispatch by class name
+    if (tag == bad) { resync (§13); badTag=true; break }
+    child = deserialize(tag.name)   // dispatch by class name
   }
   if (!badTag) {
     if (schema > 0) { s32 regX; s32 regY }   // INT_MIN (0x80000000) sentinel = "absent"
@@ -225,46 +226,47 @@ struct CPicObjBase {
 }
 ```
 
-**`flags` byte is NOT a per-object visibility bit. [V]** (task 1190 supersedes 0932.) In
-the golden fixtures 17/19 objects have `flags=0x0`, 2 have `flags=0x3`, and **all** render
-visible in the reference SWF. Flash 8 has no per-display-object hide control (visibility is
-a *layer* property + runtime `_visible`). `visibleFromObjBaseFlags()` returns `true`
-unconditionally. The true meaning of these bits is **[X] unknown**.
+**`flags` byte.** Does not encode per-object visibility ([V]): in observed sample files 17
+of 19 objects carry `flags=0x0` and 2 carry `flags=0x3`, and all render visible in the
+reference SWF. Flash 8 exposes no per-display-object hide control (visibility is a layer
+property plus a runtime `_visible`). The meaning of these bits is [X] unknown.
 
-**Registration point [V]:** `regX/regY` are in FLA twips and equal the placement position;
-`INT_MIN` means "unset". Do **not** subtract them from a PlaceObject x/y (task 1191).
+**Registration point [V]:** `regX/regY` are in FLA twips; `INT_MIN` means "unset". They
+equal the placement position, so subtracting them from a placement x/y double-counts the
+offset.
 
 ---
 
 ## 6. `Contents` stream — document catalog
 
-**The `Contents` parser is scan/heuristic-based, not a structured walk.** It locates fields
-by byte-pattern search and fixed offsets, because the surrounding `CDocument*` record
-layout is only partially understood. This makes the whole stream **[O] at best**, and
-several sub-fields **[I]**. `formatVersion = Contents[0]`; `unicode = formatVersion ≥ 0x38`;
+**The `Contents` stream is read by byte-pattern search and fixed offsets.** The surrounding
+`CDocument*` record layout is only partially understood, so a fully structured walk is not
+defined here. The whole stream is **[O] at best**, and several sub-fields **[I]**.
+`formatVersion = Contents[0]`; `unicode = formatVersion ≥ 0x38`;
 `scale9Grid present = formatVersion ≥ 0x3F`.
 
 ### 6.1 Stage / frame-rate / background — **[O]** (anchor heuristic)
 
-flacomdoc writes a fixed run; we anchor on the literal `03 B4 00 00 00` and read backwards:
+flacomdoc writes a fixed run; anchor on the literal `03 B4 00 00 00` and read backwards:
 ```
   … bgR bgG bgB FF  gridR gridG gridB FF  00  fpsFrac fpsInt  00 00 00  03 B4 00 00 00
   anchor-14 …                                  anchor-5  -4              anchor@
   frameRate = fpsInt + fpsFrac/256   (accepted only if 1..120)
   background = (bytes[anchor-14..-12], a=255)
 ```
-Stage size **[O]**: searched in the 256-byte window before the anchor — `u16 width*20`, 6
-zero bytes, `u16 height*20`, 4 zero bytes. Picks the match closest to the anchor.
-**Gap:** if these patterns are not found, width/height/fps/bg come back `null` and defaults
-(550×400, 12fps, white) are used.
+Stage size **[O]**: in the 256-byte window before the anchor — `u16 width*20`, 6 zero bytes,
+`u16 height*20`, 4 zero bytes; the match closest to the anchor wins. **Gap:** when these
+patterns are absent, width/height/fps/bg are unrecoverable.
 
-### 6.2 Scene names — **[O]**
+### 6.2 Scene names + play order — **[O]**
 
-Scan for stream-name strings `Page N` / `P N M` (UTF-16 if unicode, else ASCII), validated
-by regex `^(Page \d+|P \d+ \d+)$`, then read the **scene display name** as the immediately
-following `BomString` (or ASCII CString pre-MX2004). Stored as
-`Map<streamName → displayName>`, **key order = Contents byte order = authored play order**
-(see §15.1).
+Stream-name strings `Page N` / `P N M` (UTF-16 if unicode, else ASCII), validated by regex
+`^(Page \d+|P \d+ \d+)$`, are each followed by the **scene display name** as a `BomString`
+(or ASCII CString pre-MX2004).
+
+**Scene play order is the order the `CDocumentPage` records appear in the `Contents`
+stream. [V]** The numeric `Page N` suffix is creation/storage order: the first scene
+authored becomes `Page 1` and retains that stream name when reordered in the Scenes panel.
 
 ### 6.3 Symbol library entries — partly **[V]**, partly **[I]**
 
@@ -279,7 +281,7 @@ Per symbol, located by scanning for `Symbol N` / `S N M` then the next `BomStrin
           u8 exportForActionScript              // [I]   (only the all-false
           u8 exportForRuntimeSharing            // [I]    case is confirmed)
           u8 importForRuntimeSharing            // [I]
-  @end+41 writeAsLinkage block:                 // [V] offset vs flacomdoc + fixtures
+  @end+41 writeAsLinkage block:                 // [V] offset vs flacomdoc + samples
             u32 = 0x00000000   (validates the offset)
             u8  asLinkageVersion   (5=MX2004, 7=F8/CS3)
             u8  flags  (bit0=exportForAS, bit1=importForRS)
@@ -293,9 +295,9 @@ Per symbol, located by scanning for `Symbol N` / `S N M` then the next `BomStrin
             BomString fullLibraryPath     ← "FolderA!/Nested!/SymbolName"
 ```
 
-`className` lives in the `writeAsLinkage` block **[V]** (an earlier hypothesis that it lives
-in the `Symbol N` `CPicPage` afterData is superseded). `fullLibraryPath` segments are `/`
--separated; a trailing `!` marks a folder expanded in the UI and is stripped (§15.4).
+`className` lives in the `writeAsLinkage` block **[V]**. `fullLibraryPath` segments are `/`
+-separated; a trailing `!` marks a folder expanded in the UI (the last segment is the
+symbol display name; preceding segments are folder names).
 
 **scale9Grid [O]** (formatVersion ≥ 0x3F): located by scanning forward from the linkage
 flags for the 16-byte anchor
@@ -312,20 +314,20 @@ Two discovery paths:
 1. **`Sound N` stream names** (pre-CS4): name → `BomString` displayName, then optional
    `u32 streamNumber`, `BomString linkageId`, `u8 exportForActionScript`. Trailing flag
    order **[I]**.
-2. **`CMediaSound` CArchive objects** (F8/CS-era, e.g. Magnet.fla): discovered empirically —
-   find the `CMediaSound` `FFFF` class decl, register the inline body, then discover the
-   backref tag by elimination against `CMediaBits`, then scan all
-   `[backref][schema=6][nameLen]["Media N"][BomString name]` bodies. **[O]**, fragile.
+2. **`CMediaSound` CArchive objects** (F8/CS-era): the `CMediaSound` `FFFF` class
+   declaration, its inline body, then bodies tagged with its backref, each
+   `[backref][schema=6][nameLen]["Media N"][BomString name]`. The backref must be
+   distinguished from `CMediaBits` (bitmaps) empirically. **[O]**, fragile.
 
 ### 6.5 Video entries — **[O]**
 
-Scan `Video N` / `Vi N M` → `BomString` displayName. The number matches a `Media N` FLV
-payload and the `mediaId` in each `CPicVideo` element.
+`Video N` / `Vi N M` → `BomString` displayName. The number matches a `Media N` FLV payload
+and the `mediaId` in each `CPicVideo` element.
 
-### 6.6 Font entries — **[O]** (Magnet.fla CS2 only)
+### 6.6 Font entries — **[O]** (observed in CS2 files)
 
-`Font N` is encoded as a `BomString` stream reference (not followed by a name BomString
-like other items). The family name sits at a **fixed offset** after it:
+`Font N` is encoded as a `BomString` stream reference (not followed by a name BomString like
+other items). The family name sits at a **fixed offset** after it:
 ```
   @end+0  u16 streamNumber
   @end+2  u32 hash/timestamp        // [X]
@@ -339,18 +341,18 @@ like other items). The family name sits at a **fixed offset** after it:
 
 ## 7. Timeline streams — top-level structure
 
-`parseFla8Timeline` (used for both `Page N` and `Symbol N`):
+Used identically for `Page N` and `Symbol N`:
 
 ```
-  u8 = 0x01                       // root marker (else: throw)   [V]
-  tag = NEWCLASS "CPicPage"       // else: throw                 [V]
+  u8 = 0x01                       // root marker             [V]
+  tag = NEWCLASS "CPicPage"                                  [V]
   CPicPage
 ```
 
 Tree:
 ```
 CPicPage
-└── CPicLayer*            (one per layer, BOTTOM-TO-TOP order — §15.2)
+└── CPicLayer*            (one per layer, BOTTOM-TO-TOP order — §8.2)
     └── CPicFrame*        (one per keyframe span)
         └── <element>*    (CPicShape | CPicSprite | CPicButton | CPicSymbol |
                            CPicText | CPicBitmap | CPicVideo | CPicSwf)
@@ -363,7 +365,7 @@ also carry an inherited `CPicShape` body (frame-level merge-drawn geometry).
 
 ## 8. `CPicPage` and `CPicLayer`
 
-### 8.1 `CPicPage` (`readCPicPage`) — **[O]** tail
+### 8.1 `CPicPage` — **[O]** tail
 
 ```
 struct CPicPage : CPicObjBase {
@@ -376,7 +378,7 @@ struct CPicPage : CPicObjBase {
 }
 ```
 
-### 8.2 `CPicLayer` (`readCPicLayer`)
+### 8.2 `CPicLayer`
 
 ```
 struct CPicLayer : CPicObjBase {
@@ -395,21 +397,25 @@ struct CPicLayer : CPicObjBase {
     u8 layerType        // 0=normal 1=guide 2=guided 3=folder 4=mask
   }
   // --- trailer (NOT structurally parsed) ---
-  u16 parentLayerRef   // peeked only: CArchive obj-ref of mask/folder parent (0=none)  [O]
-  // reposition to next CPicLayer backref / NEWCLASS / page end-marker  (§13)            [X]
+  u16 parentLayerRef   // first 2 bytes: CArchive obj-ref of mask/folder parent (0=none)  [O]
+  // remaining trailer bytes are version-dependent and skipped (§13)                       [X]
 }
 ```
 
-`layerType` value `5` (masked) is **not** stored in the binary — masked children carry
-`layerType=0` plus a non-zero `parentLayerRef` and are resolved at import time (§15.3). The
-trailer beyond `parentLayerRef` is **[X]** (scanned past, not decoded).
+**Layer order is BOTTOM-TO-TOP. [V]** `CPicLayer` records are stored background-first,
+foreground-last: the bottommost panel layer is at index 0 in the stream.
+
+Mask membership is **not** stored as a distinct layer type. A masked child carries
+`layerType=0` plus a non-zero `parentLayerRef` (a CArchive object-reference to its mask).
+The mask/guide *type* itself (4=mask, 1=guide, 2=guided) is intrinsic to each record. The
+trailer beyond `parentLayerRef` is **[X]**.
 
 ---
 
 ## 9. `CPicFrame`
 
-`readCPicFrameNode`. The single most complex record; heavily schema-gated by `fs` (frame
-schema). Inherits a `CPicShape` body (frame-level drawn geometry) before its own fields.
+Schema-gated by `fs` (frame schema). Inherits a `CPicShape` body (frame-level drawn
+geometry) before its own fields.
 
 ```
 struct CPicFrame : CPicObjBase {
@@ -436,10 +442,10 @@ struct CPicFrame : CPicObjBase {
         if (fs > 11) u32 labelType;    // 1=comment 2=anchor [O]
         if (fs > 12) {
           u16 morphTag;
-          if (morphTag != 0) { rewind 2; decodeMorphData(); return }   // §11
+          if (morphTag != 0) { rewind 2; CPicMorphShape; return }   // §11
         }
         if (fs > 13) u32 orientSnap;   // bit0=orientToPath bit1=snap  [I]
-        if (fs > 14) { u16 oblistTag; if (!=0) { rewind 2; endScan; return } }  // [X]
+        if (fs > 14) { u16 oblistTag; if (!=0) { rewind 2; resync; return } }  // [X]
         if (fs > 15) CString tweenInstanceName;             // [X] field_298
         if (fs > 19) skip(4)                                // [X]
         if (fs > 20) skip(4)                                // [X]
@@ -447,10 +453,10 @@ struct CPicFrame : CPicObjBase {
         if (fs >= 24) EaseCurveData();   // §9.3            // [O]
       }
     } else {                           // fs 9..18 (F5/MX)
-      // [X] frame scripts beyond label NOT extracted; end-scan
+      // [X] frame scripts beyond label NOT extractable here
     }
   } else if (2 < fs <= 8) {            // Flash 4 or older
-    // [X] scripts stored as action records, not source; end-scan
+    // [X] scripts stored as action records (bytecode), not source
   }
 }
 ```
@@ -464,12 +470,12 @@ struct CPicFrame : CPicObjBase {
 | `0x0400` | motionTweenScale **disabled** (set = no scale) | [V] vs flacomdoc |
 | `0x0800` | motionTweenSync (sync graphic to parent) | [V] vs flacomdoc |
 | base `0x0600` | = `0x400 \| 0x200`, common idle bits | [O] |
-| `0x4000` | **never set** in real F8 FLAs; do NOT gate tween on it | [V] |
+| `0x4000` | not set in observed F8 files | [V] |
 
-Real F8 motion-tween keyframes store `keyMode = 0x601`. The historical
-`(keyMode & 0x4000) && (keyMode & 0x0001)` requirement dropped *every* motion tween.
+Observed F8 motion-tween keyframes store `keyMode = 0x601` (base `0x600` + bit `0x0001`).
+Tween detection reads bits `0x0001` and `0x0002` only.
 
-### 9.2 `TimelineSubObject` (`readTimelineSubObject`) — frame script — **[V]** for script
+### 9.2 `TimelineSubObject` — frame script — **[V]** for script
 
 ```
   u32 typeId;        // frameVersionC: 0=F5 1=MX 4=MX2004/F8 5=CS3/CS4
@@ -477,12 +483,12 @@ Real F8 motion-tween keyframes store `keyMode = 0x601`. The historical
   if (formatType == 1) {
     if (typeId >= 1) { skip(4); u32 cnt; if(0<cnt<10000) skip(cnt*4) }
     if (typeId >= 5) skip(4)
-    CString script;   // AS2 source text; CRLF/CR normalized to LF
+    CString script;   // AS2 source text (line endings normalized to LF on read)
   } else if (formatType == 0) { skip(4); u32 pfCount; skip(pfCount*4) }
 ```
 
-AS2 frame scripts are **plain source text** (Flash 5+); no bytecode decompilation needed.
-Flash 4-and-older store compiled action records instead — **[X] not extracted**.
+AS2 frame scripts are stored as plain source text (Flash 5+). Flash 4 and older store
+compiled action records (bytecode) — **[X]**.
 
 ### 9.3 Custom ease-curve data (`fs >= 24`, F8+) — **[O]**
 
@@ -503,14 +509,14 @@ Flash 4-and-older store compiled action records instead — **[X] not extracted*
   }
 ```
 
-`easeType` is derived from `sign(motionEase)`: `<0 → out`, `>0 → in`, `0 → none`
-(or `inOut` when a custom curve is present). **[V]** sign convention vs flacomdoc.
+Ease direction is derived from `sign(motionEase)`: `<0 → out`, `>0 → in`, `0 → none`
+(`inOut` when a custom curve is present). **[V]** sign convention vs flacomdoc.
 
 ---
 
 ## 10. Shapes — `CPicShape` and shape geometry
 
-### 10.1 `CPicShape` (`readCPicShape`)
+### 10.1 `CPicShape`
 
 ```
 struct CPicShape : CPicObjBase {
@@ -520,7 +526,7 @@ struct CPicShape : CPicObjBase {
 }
 ```
 
-### 10.2 Fill style (`readFillStyle`)
+### 10.2 Fill style
 
 ```
 struct FillStyle {
@@ -534,23 +540,23 @@ struct FillStyle {
       u8 focal; skip(3);     // focalRatio = signed focal / 255
       u8 flow;  skip(3);     // bits[7:6] spread (0 pad,1 reflect,2 repeat); bit[4] linearRGB
     }
-    { u8 position; RGBA color }[numStops]   // ALL stops consumed; model keeps first 15
+    { u8 position; RGBA color }[numStops]   // consumers may cap at 15 (SWF limit)
   }
   else if (subtype & 0x40) {            // BITMAP   [V]
     Matrix bitmapMatrix; u32 bitmapId;
     // repeat = !(subtype&1)   smooth = (subtype&2)   (SWF 0x40/41/42/43)
   }
   else if (subtype & 0x20) {            // [X] UNKNOWN internal fill variant
-    Matrix m; skip(4+8);                // consumed for alignment; treated as solid color
+    Matrix m; skip(4+8);                // consumed for alignment; treat as solid color
   }
   else { /* solid: use color */ }
 }
 ```
 
-The `subtype & 0x20` case is **[X]**: no legitimate binary specimen was found (it only ever
-appeared during misaligned reads). The 12-byte trailer is consumed blind to stay aligned.
+The `subtype & 0x20` case is **[X]**: no specimen has been confirmed (it has appeared only
+during misaligned reads). The 12-byte trailer is consumed to maintain alignment.
 
-### 10.3 Line style (`readLineStyle`)
+### 10.3 Line style
 
 ```
 struct LineStyle {
@@ -560,15 +566,15 @@ struct LineStyle {
   if (caps) {                // F8+ (pre-F8 strokes STOP here — 10 bytes total)  [V]
     u8 pixelHinting;
     u8 scaleMode;            // 0 normal 1 horizontal 2 vertical 3 none
-    u8 capStyle;             // CAP_STYLES = [round, none, square]
-    u8 joinStyle;            // JOIN_STYLES = [round, bevel, miter]
+    u8 capStyle;             // 0 round 1 none 2 square
+    u8 joinStyle;            // 0 round 1 bevel 2 miter
     u8 miterFrac; u8 miterInt;   // miterLimit = miterInt + miterFrac/256
-    FillStyle paint;         // stroke's paint as a full fill (solid → finalColor)
+    FillStyle paint;         // stroke's paint as a full fill (solid → stroke color)
   }
 }
 ```
 
-### 10.4 Shape data + edge stream (`readShapeData`)
+### 10.4 Shape data + edge stream
 
 ```
 struct ShapeData {
@@ -583,7 +589,7 @@ struct ShapeData {
 }
 ```
 
-### 10.5 Edge records — **[V]** (port of flacomdoc / Ruffle ShapeConverter)
+### 10.5 Edge records — **[V]**
 
 Each edge begins with a `u8 flags`; `flags==0` terminates.
 
@@ -594,7 +600,7 @@ Each edge begins with a `u8 flags`; `flags==0` terminates.
     bits[1:0]   = type of delta1 (move/from)
     bits[3:2]   = type of delta2 (control)
     bits[5:4]   = type of delta3 (to)
-  if (0x40): style change, ORDER = stroke, fill0, fill1   // [V] (NOT fill0,fill1,stroke)
+  if (0x40): style change, field order = stroke, fill0, fill1   // [V]
        0x80 set:  u8 line; u8 fill0; u8 fill1
        else:      (u8 + selByte) × 3
   delta_i by type:  0→(0,0)  1→(s16,s16)  2→(s32,s32)  3→(s16<<7, s16<<7)
@@ -604,17 +610,16 @@ Each edge begins with a `u8 flags`; `flags==0` terminates.
   // coords stored in 8.8 twips; px = /5120
 ```
 
-`fill0`/`fill1` are 1-based style indices (0 = none) recording the fill on the **left** and
-**right** of the edge. Region reconstruction (closing loops, reversing fill0 runs) is an
-import-time concern, not a format property — see CLAUDE.md "Shape fills use the SWF
-fill0/fill1 model".
+`fill0`/`fill1` are 1-based style indices (0 = none) recording the fill on the left and right
+of the edge. The edge stream stores style runs. Reconstructing filled regions (closing loops,
+reversing `fill0` runs) is performed by the consumer and is not encoded in the stream.
 
 ---
 
 ## 11. `CPicMorphShape` (shape-tween end geometry) — **[O]**, several **[X]** fields
 
 Not a CArchive child of the frame — serialized **inline** in the `CPicFrame` tail after a
-non-zero `morphTag` (§9). `decodeMorphData`:
+non-zero `morphTag` (§9):
 
 ```
   tag = NEWCLASS/backref "CPicMorphShape"
@@ -629,20 +634,20 @@ non-zero `morphTag` (§9). `decodeMorphData`:
     CMorphCurve : CPicObjBase {
       s32 ctrlX; s32 ctrlY; s32 anchorX; s32 anchorY;
       s32 unknown1;     // [X]
-      s32 unknown2;     // [X] (looks like a style index; ignored)
+      s32 unknown2;     // [X] (looks like a style index)
       // inherits fill/line from preceding segment
     }
-  // then morph fill/stroke style tables (best-effort skip):
+  // then morph fill/stroke style tables (best-effort):
   u16 fillCount;  morphFillStyle[fillCount]   // §11.1
   u16 strokeCount; skip(strokeCount * 10)
   u8  shapeTweenBlend;   // 0=distributive 1=angular
   // resync to next CPicFrame backref or layer NULL
 ```
 
-The decoded edges become the **end keyframe's** shape (injected if that frame has no
-geometry of its own). `unknown1`/`unknown2` and the segment `trailing` u16 are **[X]**.
+The decoded edges describe the **end keyframe's** shape. `unknown1`/`unknown2` and the
+segment `trailing` u16 are **[X]**.
 
-### 11.1 `morphFillStyle` skip sizes (`skipMorphFillStyle`) — **[O]**
+### 11.1 `morphFillStyle` skip sizes — **[O]**
 
 ```
   RGBA; u16 subtype;
@@ -655,8 +660,7 @@ geometry of its own). `unknown1`/`unknown2` and the segment `trailing` u16 are *
 
 ## 12. Symbol instances — `CPicSymbol` / `CPicSprite` / `CPicButton`
 
-Shared base (`readCPicSymbolFields`). `symbolSchema`: `8=F5, 0x0A=MX, 0x0E=MX2004,
-0x13=F8/CS3, 0x16=CS4` **[O]**.
+Shared base. `symbolSchema`: `8=F5, 0x0A=MX, 0x0E=MX2004, 0x13=F8/CS3, 0x16=CS4` **[O]**.
 
 ```
 struct SymbolBaseFields : CPicObjBase {
@@ -679,7 +683,7 @@ struct SymbolBaseFields : CPicObjBase {
   if (symbolSchema >= 0x0e) skip(3);           // [X]
   if (symbolSchema >= 0x13) {                  // F8+ filters + blend
     u8 filterCount;
-    if (filterCount > 0) filters = readFilterList(SWF-wire, filterCount)   // §14.1
+    if (filterCount > 0) filters = FilterList(SWF-wire, filterCount)   // §14.1
     u8 blendMode;        // 0–14, §12.1
     skip(2);             // [X]
   }
@@ -687,7 +691,11 @@ struct SymbolBaseFields : CPicObjBase {
 }
 ```
 
-### 12.1 Blend mode byte → name — **[V]** mapping
+**A loop-mode byte is present on every instance** regardless of symbol type. It is only
+meaningful for *graphic* symbols (loop / play-once / single-frame); movieclips and buttons
+play their own timeline and ignore it. **[O]**
+
+### 12.1 Blend mode byte → name — **[V]**
 
 `0,1=normal · 2=layer · 3=multiply · 4=screen · 5=lighten · 6=darken · 7=difference ·
 8=add · 9=subtract · 10=invert · 11=alpha · 12=erase · 13=overlay · 14=hardlight`.
@@ -722,34 +730,34 @@ Ends immediately after `SymbolBaseFields` (no name/script tail).
 
 ---
 
-## 13. Recovery / re-sync machinery
+## 13. Resynchronization (reader guidance)
 
-Because many record tails are **[X]**, the parser relies on resynchronization rather than
-exact consumption. This is structural, not incidental — treat re-sync as part of the spec.
+Many record tails are **[X]**, so exact consumption is not always possible; a reader
+resynchronizes to the next object boundary.
 
-| Function | Strategy |
-|----------|----------|
-| `skipToNextBoundary` | Scan for next plausible NEWCLASS (`FFFF`+schema≤0xff+ASCII name) **or** known-class backref (`0x8000\|idx`, schema≤0x10, flags≤0x40) **or** the 10-byte end-marker. |
-| `verifyBoundary` | After an exact parse, confirm the reader sits on `0x0000`/`0xFFFF`/known-backref; else `skipToNextBoundary`. |
-| `END_MARKER` | `00 00 00 00 00 80 00 00 00 80` = NULL child tag + two `INT_MIN` point sentinels (object tail signature). |
-| `repositionAfterLayerTrailer` | Bounded (96-byte) scan for next `CPicLayer` backref / NEWCLASS / page end-marker. |
-| `skipToNextCPicFrame` / `frameTailEndScan` | Bounded scan for next `CPicFrame` backref or end-marker (≤8192 bytes). |
+The 10-byte **object-tail signature** is
+`00 00 00 00 00 80 00 00 00 80` = a NULL child tag followed by two `INT_MIN` point
+sentinels (the end of an object's registration data).
 
-**Danger [V]:** a naive end-marker scan can land inside a **sibling** record whose
-registration point happens to be the `INT_MIN` sentinel. Always prefer the class-tag scan;
-the `INT_MIN`-only signature is ambiguous.
+Resynchronization strategies, in order of preference:
 
-Bad/unknown class tags (e.g. `0x0204` seen in real F8 FLAs) trigger `skipToNextBoundary` and
-a one-time `console.warn`. Truncated streams (`FlaEofError`) are caught and the partial
-record returned.
+1. Scan for the next plausible **NEWCLASS** (`FFFF` + schema ≤ 0xff + ASCII class name) or
+   **known-class backref** (`0x8000 | idx` with a plausible following schema/flags).
+2. Failing that, scan for the object-tail signature, as a fallback: the `INT_MIN` point
+   pattern also occurs at the start of a sibling record whose registration point is unset,
+   so an end-marker scan can land inside a sibling object.
+3. Bound all scans (e.g. to the next layer/frame within a few KB) to avoid runaway.
+
+A bad/unknown class tag (e.g. `0x0204` observed in F8 files) and truncated streams are
+handled by stopping the current record and resynchronizing; the stream as a whole continues.
 
 ---
 
 ## 14. Filters
 
-There are **two distinct on-disk filter encodings** and they must not be confused.
+Two on-disk filter encodings exist, used in different records.
 
-### 14.1 SWF-wire filters (`readFilterList`/`readOneFilter`) — **[V]**
+### 14.1 SWF-wire filters — **[V]**
 
 Used by **symbol-instance** and **bitmap** filters (`symbolSchema ≥ 0x13`). Identical to
 SWF §23: `u8 type` then type-specific fields; `Fixed16 = s32/65536`, `Fixed8 = s16/256`.
@@ -764,29 +772,27 @@ SWF §23: `u8 type` then type-specific fields; `Fixed16 = s32/65536`, `Fixed8 = 
 | 5 | Convolution | matrixX/Y, f32 divisor/bias, f32 matrix[X*Y], default RGBA, flags (clamp 0x01, preserveAlpha 0x02) |
 | 6 | ColorMatrix | f32 matrix[20] (4×5 row-major) |
 
-### 14.2 FLA-authoring filters (`readFlaFilterList`/`readOneFlaFilter`) — **[O]**
+### 14.2 FLA-authoring filters — **[O]**
 
 Used **only** by `CPicText` filters (`ts ≥ 0x0d`). Wider, fixed-length records with
-sub-headers and f32 fields; verified against flacomdoc `filters/*.java` + the golden-v2
-fixture. Layout is **per-type fixed-length** (DropShadow 47B, Blur 48B, Glow 48B, Bevel 56B,
-GradientGlow 60+8n, GradientBevel 61+8n, AdjustColor 23B). Many interior bytes are constants
-skipped blind. The text filter list is preceded by a `u8 hasFilters` marker then `u32 count`
-then a trailing `u16`.
+sub-headers and f32 fields. Layout is **per-type fixed-length** (DropShadow 47B, Blur 48B,
+Glow 48B, Bevel 56B, GradientGlow 60+8n, GradientBevel 61+8n, AdjustColor 23B); many interior
+bytes are constants. The text filter list is preceded by a `u8 hasFilters` marker, then
+`u32 count`, then a trailing `u16`.
 
-Unknown filter types in either encoding cannot be length-skipped safely → recovery (§13).
-**Convolution has no model type** and is dropped after parsing; **AdjustColor** decodes
-to brightness/contrast/saturation/hue (−100..100, hue −180..180) **[O]**.
+Unknown filter types in either encoding cannot be length-skipped safely → resync (§13).
+AdjustColor decodes to brightness/contrast/saturation/hue (−100..100, hue −180..180) **[O]**.
 
 ---
 
-## 15. `CPicText` (`readCPicText`)
+## 15. `CPicText`
 
 `ts` (text schema): `5=F5, 9=MX, 0x0C=MX2004, 0x0D=F8, 0x0E=CS4`.
 
 ```
 struct CPicText : CPicObjBase {
   u8 ts;  Matrix matrix;
-  s32 left, right, top, bottom;    // box bounds, twips (folded into placement tx/ty)  [V]
+  s32 left, right, top, bottom;    // box bounds, twips (fold left/top into placement)  [V]
   u8 autoExpand;
   if (ts >= 4) skip(1);
   if (ts >= 4) { u8 textFlags; u8 embedFlag }    // §15.1
@@ -802,7 +808,7 @@ struct CPicText : CPicObjBase {
   if (ts >= 9) {
     CString instanceName;
     Accessibility?;
-    skip(4); u8 scrollable; skip(3);      // [I] no confirmed fixture
+    skip(4); u8 scrollable; skip(3);      // [I] no confirmed sample
     if (ts >= 0x0c) { CString; CString }  // reserved + font embed ranges  [X]
     if (ts >= 0x0d) {                     // FLA-authoring filter list (§14.2)
       u8 hasFilters; if(set){ u32 count; FlaFilters; } u16 trailing;
@@ -816,7 +822,7 @@ struct CPicText : CPicObjBase {
 `0x01 editable · 0x02 dynamic · 0x04 password · 0x08 wordWrap · 0x10 multiline ·
 0x20 background · 0x40 border`. `textType = !(0x01)?static : (0x02)?dynamic : input`.
 
-### 15.2 `TextRun` formatting block (`readTextRunFields`) — **[O]/[V]**
+### 15.2 `TextRun` formatting block — **[O]/[V]**
 
 ```
   u8 runVersion;
@@ -835,12 +841,12 @@ struct CPicText : CPicObjBase {
 ```
 
 `renderMode`: `0 device · 1 bitmap · 2 animation · 3 readability · 4 custom` (→ CSM
-thickness/sharpness). `align`: `0 left · 1 right · 2 center · 3 justify`.
+thickness/sharpness). `align`: `0 left · 1 right · 2 center · 3 justify`. `charPos`:
+`0 normal · 1 superscript · 2 subscript`.
 
-**`colorEffect` is always `null` for text and that is correct, not a gap. [V]** Flash 8 text
-fields cannot carry an instance color transform; color is per-character in the run. The
-flacomdoc writer emits no color-effect block for text, confirmed by the
-`flash8-nested-textfields.fla` fixture.
+**Text fields carry no color-transform block. [V]** Flash 8 text has no instance color
+effect (tint/brightness/alpha); per-character color is stored in the run. The verified writer
+emits no color-effect block for text; confirmed by sample files.
 
 ---
 
@@ -849,21 +855,21 @@ flacomdoc writer emits no color-effect block for text, confirmed by the
 ```
 struct CPicBitmap : CPicObjBase {        // [O]
   u8 schema; Matrix matrix; u16 mediaId;
-  if (schema >= 2) { u8 filterCount; if(>0) SWF-wire filters }
+  if (schema >= 2) { u8 filterCount; if(>0) FilterList(SWF-wire) }
 }
 
-struct CPicVideo : CPicObjBase {         // [I] — NO fixture; layout inferred from CPicBitmap
+struct CPicVideo : CPicObjBase {         // [I] — NO sample; layout inferred from CPicBitmap
   u8 schema; Matrix matrix; u16 mediaId;
 }
 
-struct CPicSwf : CPicObjBase {           // header [O] (Magnet.fla ×4); tail [X]
+struct CPicSwf : CPicObjBase {           // header [O]; tail [X]
   u8 symbolSchema; Matrix matrix;
   <variable tail 950–5500 bytes>         // AS2 clip scripts, cxform, name — NOT decoded
 }
 ```
 
-`CPicVideo` filter fields, if any, are **[X]**. `CPicSwf`'s entire tail is **[X]** (scanned
-past); only the placement matrix survives.
+`CPicVideo` filter fields, if any, are **[X]**. The `CPicSwf` tail is **[X]**; only the
+placement matrix is recoverable.
 
 ---
 
@@ -874,7 +880,7 @@ past); only the placement matrix survives.
 Per channel: `u16 mult` (8.8, `0x100`=1.0) + `s16 off` (−255..255). Channel order:
 `(alpha if schema≥6,) red, green, blue`.
 
-### 17.2 Accessibility (`readAccessibilityMaybe`) — **[I]** (partial)
+### 17.2 Accessibility — **[I]** (partial)
 
 Absent when the leading version byte is `0`. Otherwise:
 `u8 version; skip(3); u8 silent; skip(3); CString name; CString description;
@@ -883,73 +889,45 @@ Byte layout is best-effort; `enabled = !silent`.
 
 ---
 
-## 18. Import → model mapping (`flash8-import.ts`)
-
-Decisions applied when converting the parsed IR to the editor document model. These are
-**ours**, not format facts, but they encode hard-won format truths:
-
-1. **Scene play order = `Contents` byte order, not `Page N` number. [V]** `contents.sceneNames`
-   Map key-order is authored order; pages are re-ordered to match, with name-less pages
-   appended in numeric order. The `Page N` suffix is *storage/creation* order.
-2. **Layer order is reversed. [V]** Binary layers are bottom-to-top (`index 0` = background);
-   the model expects top-to-bottom (`li=0` = frontmost). `convertTimeline` reverses, then
-   re-groups mask runs so each group is `[mask, …masked]`.
-3. **Masked layers resolved from `parentLayerRef`. [O]** After a `type=4` mask, consecutive
-   `type=0` layers sharing the mask's non-zero `parentLayerRef` are promoted to `masked`.
-4. **Library folders derived from `fullLibraryPath`. [O]** `/`-split; trailing `!` stripped;
-   last segment = symbol name.
-5. **Button promotion. [O]** A graphic symbol whose instances carry `on()` handlers is
-   promoted to `symbolType=button` (real F8 FLAs write such symbols with a graphic type byte).
-6. **loopMode is graphic-only at compile time. [V]** Binary FLAs store a loop byte on *every*
-   instance; movieclips/buttons ignore it (else nested clips freeze on frame 0 — task 1124).
-7. **`isEmpty = displayObjects.length === 0`.** Frames marked empty are dropped by the compiler.
-
----
-
-## 19. Consolidated "what we DON'T know" — gaps & guesses
+## 18. Consolidated "what is NOT known" — gaps & guesses
 
 | Area | Status | Notes |
 |------|--------|-------|
-| `CPicObjBase.flags` meaning | **[X]** | Confirmed *not* visibility; true meaning unknown. |
-| `Contents` structured layout | **[X]** | Whole stream parsed by byte-pattern scan + fixed offsets, not a real `CDocument*` walk. |
-| Stage dims / bg / fps when patterns absent | **[X]** | Falls back to 550×400 / white / 12fps. |
+| `CPicObjBase.flags` meaning | **[X]** | Confirmed not to encode visibility; meaning unknown. |
+| `Contents` structured layout | **[X]** | Read by byte-pattern scan + fixed offsets, not a real `CDocument*` walk. |
+| Stage dims / bg / fps when patterns absent | **[X]** | Unrecoverable. |
 | Symbol linkage 4 flag bytes order | **[I]** | Only the all-false case is verified. |
 | `scale9Grid` anchor scan | **[O]** | Heuristic 16-byte anchor; could mis-hit. |
 | `CMediaSound` discovery | **[O]** | Backref tag found by elimination; fragile. |
 | `Font N` interior fields (+2,+6,+8) | **[X]** | hash/schema/flag bytes skipped. |
-| `CPicFrame` tail offsets ≥ fs>15 | **[X]** | `field_298`, several `skip(4)` blocks uninterpreted. |
+| `CPicFrame` tail fields for fs>15 | **[X]** | `field_298`, several `skip(4)` blocks uninterpreted. |
 | Ease-curve point format | **[O]** | Endpoint-doubling inferred; no independent check. |
-| `orientToPath`/`snap` bit assignment | **[I]** | bit0/bit1 guess; no fixture. |
-| `0x20` fill subtype | **[X]** | No legitimate specimen; treated as solid + blind skip. |
+| `orientToPath`/`snap` bit assignment | **[I]** | bit0/bit1 guess; no sample. |
+| `0x20` fill subtype | **[X]** | No confirmed specimen; treated as solid + blind skip. |
 | Shape cubic post-stream | **[O]** | `schema>4` 32-byte entries skipped. |
 | `CMorphCurve` unknown1/2, segment trailing u16 | **[X]** | Consumed blind. |
-| Morph fill/stroke tables | **[O]** | Sizes best-effort; restored-on-error. |
-| `CPicSwf` variable tail | **[X]** | 950–5500 B scanned past; only matrix kept. |
-| `CPicVideo` whole record | **[I]** | No fixture; layout assumed ≈ `CPicBitmap`. |
-| FLA-authoring filter interior constants | **[X]** | Many bytes skipped as constants. |
-| Convolution filter | **[X]** | Parsed then dropped (no model type). |
-| Component metadata XML (sprite tail) | **[X]** | Read as CString, discarded. |
+| Morph fill/stroke tables | **[O]** | Sizes best-effort. |
+| `CPicSwf` variable tail | **[X]** | 950–5500 B; only matrix recoverable. |
+| `CPicVideo` whole record | **[I]** | No sample; layout assumed ≈ `CPicBitmap`. |
+| FLA-authoring filter interior constants | **[X]** | Many bytes are constants, skipped. |
+| Component metadata XML (sprite tail) | **[X]** | A CString of unknown schema. |
 | Accessibility byte layout | **[I]** | Partial; reserved spans guessed. |
-| `CPicText.scrollable` / `selectable` | **[I]/[O]** | No confirmed fixture. |
-| Layer trailer beyond `parentLayerRef` | **[X]** | Scanned past. |
+| `CPicText.scrollable` / `selectable` | **[I]/[O]** | No confirmed sample. |
+| Layer trailer beyond `parentLayerRef` | **[X]** | Version-dependent; skipped. |
 | `CPicPage` tail tables | **[X]** | Counted & skipped. |
-| Flash ≤4 frame action records | **[X]** | Bytecode, not source; not extracted. |
-| Pre-MX2004 (ASCII) coverage | **[O]** | Most fixtures are MX2004+/F8; older paths lightly tested. |
-| Write-back | **[X]** | Out of scope entirely. |
+| Flash ≤4 frame action records | **[X]** | Bytecode, not source. |
+| Pre-MX2004 (ASCII) coverage | **[O]** | Most samples are MX2004+/F8; older paths lightly exercised. |
 
 ---
 
-## 20. Provenance / references
+## 19. Provenance
 
-- **JPEXS `flacomdoc`** (github.com/jindrapetrik/flacomdoc) — XFL→binary-FLA writer,
-  byte-verified vs real Flash. Best source for field order/semantics. `FlaFormatVersion.java`
-  holds the full per-version schema table.
-- **`eddiemoore/fla-decoder`** — Ghidra RE of `flash.exe` Serialize methods. Best source for
-  the MFC CArchive protocol and schema gates.
-- **Ruffle `swf` crate** — SWF filter/shape encodings (the FLA reuses SWF-wire filters and
-  the fill0/fill1 edge model).
-- **Fixtures** (`packages/core/fixtures/`): `Magnet.fla` (CS2), `golden.fla`,
-  `flash8-nested-textfields.fla`, `mx2004-frame-scripts.fla`, `morph-shape-tween-mx.fla`.
-- Source: `packages/core/src/fla/{ole.ts,flash8-binary.ts,flash8-import.ts,media.ts}`.
-- Cross-references: `docs/15-file-formats-fla-swf.md` (FLA/SWF overview), CLAUDE.md
-  "Binary FLA import" learnings (the authoritative running notes — this doc consolidates them).
+- **JPEXS `flacomdoc`** (github.com/jindrapetrik/flacomdoc) — an XFL→binary-FLA writer,
+  byte-verified against real Flash. Documents field order and semantics. Its
+  `FlaFormatVersion` table enumerates per-version schema gates.
+- **`eddiemoore/fla-decoder`** — Ghidra reverse-engineering of `flash.exe` Serialize
+  methods. Documents the MFC CArchive protocol and schema gates.
+- **Ruffle `swf` crate** — SWF filter and shape encodings (the FLA reuses the SWF-wire
+  filter format and the fill0/fill1 edge model).
+- **Microsoft [MS-CFB]** — the OLE2 / Compound File Binary container.
+- **Adobe SWF File Format Specification** — twips, fixed-point encodings, filter records.
