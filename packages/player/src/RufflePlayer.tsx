@@ -101,9 +101,18 @@ export function RufflePlayer({
     });
   }, [ruffleBaseUrl]);
 
-  /** Create (or recreate) the Ruffle player element inside the container. */
+  /** Create (or recreate) the Ruffle player element inside the container.
+   *
+   * `isStale()` lets a superseded load bail out. React 18 StrictMode mounts a
+   * component, runs effects, runs cleanups, then runs effects AGAIN — so the
+   * swfBytes effect fires createAndLoad twice concurrently on the first mount.
+   * Without this guard both runs append a <ruffle-player> and race the .load()
+   * calls + console interceptor swap, leaving a blank/broken first preview
+   * (the second Test Movie "works" only because re-triggering while already
+   * open is a dep-change that fires the effect once). The guard also makes the
+   * newest compile authoritative when loads overlap, so a stale SWF can't win. */
   const createAndLoad = useCallback(
-    async (bytes: Uint8Array) => {
+    async (bytes: Uint8Array, isStale: () => boolean) => {
       try {
         await ensureRuffle();
       } catch (err) {
@@ -112,6 +121,7 @@ export function RufflePlayer({
         onErrorRef.current?.(msg);
         return;
       }
+      if (isStale()) return;
 
       const container = containerRef.current;
       if (!container) return;
@@ -189,7 +199,17 @@ export function RufflePlayer({
           // otherwise intercepts all mouse clicks on the canvas.
           autoplay: "on",
           unmuteOverlay: "hidden",
+          // preloader:false skips Ruffle's loading-spinner/splash screen; the SWF
+          // is already fully in memory (loaded from a Blob), so there is nothing
+          // to wait for and the preloader just flashes.
+          preloader: false,
         });
+        // A newer load started while this one was awaiting; remove this player
+        // so the latest SWF is the only one left on screen.
+        if (isStale() && container.contains(player)) {
+          container.removeChild(player);
+          if (playerRef.current === player) playerRef.current = null;
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[RufflePlayer] SWF load failed:", msg);
@@ -205,10 +225,16 @@ export function RufflePlayer({
     [ensureRuffle, width, height]
   );
 
-  // Load / reload when swfBytes changes
+  // Load / reload when swfBytes changes.
+  // The cleanup marks this invocation stale so a superseded or
+  // StrictMode-duplicated load bails out instead of appending a second player.
   useEffect(() => {
     if (!swfBytes) return;
-    void createAndLoad(swfBytes);
+    let stale = false;
+    void createAndLoad(swfBytes, () => stale);
+    return () => {
+      stale = true;
+    };
   }, [swfBytes, createAndLoad]);
 
   // Cleanup on unmount: remove player element and restore console.log interceptor.
