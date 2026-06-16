@@ -114,6 +114,7 @@ import { ManageCommandsDialog } from "./layout/ManageCommandsDialog.js";
 import { ShellOverlays } from "./layout/ShellOverlays.js";
 import { useToolHandlers } from "./hooks/useToolHandlers.js";
 import { useTimelineEffectHandlers } from "./hooks/useTimelineEffectHandlers.js";
+import { nextInstanceId, nextGroupName, nextTextId, nextBitmapId, nextVideoId } from "./idgen.js";
 import {
   instanceNamesOf,
   shapeDisplayObjectsAt,
@@ -485,16 +486,6 @@ const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
 
 const _initialDoc = createDocument();
 
-let _instanceCounter = 0;
-function nextInstanceId() {
-  return `inst-${++_instanceCounter}-${Date.now().toString(36)}`;
-}
-
-let _groupCounter = 0;
-function nextGroupName() {
-  return `Group ${++_groupCounter}`;
-}
-
 // ---------------------------------------------------------------------------
 // Module-level clipboard (avoids async navigator.clipboard complexity)
 // ---------------------------------------------------------------------------
@@ -517,21 +508,6 @@ interface MotionClipboard {
 }
 
 let _motionClipboard: MotionClipboard | null = null;
-
-let _textObjCounter = 0;
-function nextTextId() {
-  return `text-${++_textObjCounter}-${Date.now().toString(36)}`;
-}
-
-let _bitmapObjCounter = 0;
-function nextBitmapId() {
-  return `bmp-${++_bitmapObjCounter}-${Date.now().toString(36)}`;
-}
-
-let _videoObjCounter = 0;
-function nextVideoId() {
-  return `video-${++_videoObjCounter}-${Date.now().toString(36)}`;
-}
 
 // ---------------------------------------------------------------------------
 // Resizable pane hook — drag a handle to set a pixel size, clamped to [min,max].
