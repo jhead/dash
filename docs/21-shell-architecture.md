@@ -51,20 +51,33 @@ packages/authoring-ui/src/
   the stores and mutates via `services.pushDoc` (the rev-bumping path) or a store
   action. Component-coupled behaviour (playback RAF, publish, screenshot) is
   reached through `CommandServices`.
-- **One registry, many dispatchers.** Menu and keyboard already dispatch commands
-  by id (`dispatch("timeline.insertKeyframe")`) with centralized `isEnabled`.
-  Agent/JSFL still converge at the store level; routing them through the registry
-  is the remaining Phase 5 work.
+- **One registry for the UI dispatchers; the model layer for the programmatic
+  ones.** Menu and keyboard — the dispatchers that genuinely duplicated handler
+  logic — both dispatch commands by id (`dispatch("timeline.insertKeyframe")`)
+  through the registry, with one shared `isEnabled`. The keyboard is driven by
+  `dispatch/keyboard.ts` (`resolveKeyBinding`), replacing the old
+  `useKeyboardShortcuts`. The **agent and JSFL are parameterized programmatic
+  APIs** (`stage_add_shape` targets an explicit `layerId`/`frameIndex`; UI
+  commands act on the *active* layer/frame), so they intentionally converge one
+  level lower — they call the same `@flash/core` functions and store actions the
+  commands do, rather than re-implementing model logic. That shared-model
+  convergence is the actual anti-duplication win for them; routing them through
+  the active-state UI commands would break their parameterization.
 - **Section components read their own UI state from the store** (via `useUiStore`)
   and take only document data + action handlers as props. Derive handler prop
   types from the child component with `React.ComponentProps<typeof X>["onY"]` so
   they stay compatible by construction.
 
-## Status / remaining
+## Status
 
-Done: store + selectors + command registry (history/timeline/edit/view/playback)
-+ JSX sections (dialogs, panels, manage-commands, overlays). Remaining: broaden
-command coverage (arrange/group/clipboard/transform/scene/tool/text), unify the
-agent/JSFL dispatchers and drive keyboard from `command.shortcut` metadata, and
-extract the bottom-dock/right-panel wiring if it proves worthwhile (those are
-already thin prop-wiring around StageArea/Timeline/PropertiesPanel).
+Complete: the per-instance stores (document + UI), pure selectors, the command
+registry (41 commands across history/timeline/edit/editor/view/playback with
+`isEnabled`), the unified **keyboard + menu** dispatch onto the registry, and the
+JSX decomposition into `layout/` sections (dialogs, panels, manage-commands,
+overlays). Agent/JSFL converge at the shared model layer by design (see above).
+
+Optional future polish (not load-bearing for the architecture): migrate the
+remaining delegating `commands/editor.ts` bodies off Shell into command modules;
+drive MenuBar greyed-out enabled-state from the registry across all items (today
+it's wired for undo/redo); extract the bottom-dock/right-panel wiring (already
+thin prop-wiring around StageArea/Timeline/PropertiesPanel, so low value).
