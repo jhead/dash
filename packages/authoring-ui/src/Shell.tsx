@@ -13,11 +13,6 @@ import {
   createLineShape,
   getTweenedFrame,
   getGoverningKeyframe,
-  addScene,
-  removeScene,
-  renameScene,
-  reorderScenes,
-  duplicateScene,
   CanvasRenderer,
   removeFrame,
   transformedShapeBounds,
@@ -108,9 +103,11 @@ import { ManageCommandsDialog } from "./layout/ManageCommandsDialog.js";
 import { ShellOverlays } from "./layout/ShellOverlays.js";
 import { useToolHandlers } from "./hooks/useToolHandlers.js";
 import { useTimelineEffectHandlers } from "./hooks/useTimelineEffectHandlers.js";
-import { nextInstanceId, nextTextId, nextBitmapId, nextVideoId } from "./idgen.js";
+import { nextInstanceId, nextBitmapId, nextVideoId } from "./idgen.js";
 import { useShapeModifyHandlers } from "./hooks/useShapeModifyHandlers.js";
 import { useLibraryHandlers } from "./hooks/useLibraryHandlers.js";
+import { useSceneHandlers } from "./hooks/useSceneHandlers.js";
+import { useTextHandlers } from "./hooks/useTextHandlers.js";
 import {
   instanceNamesOf,
   shapeDisplayObjectsAt,
@@ -677,8 +674,8 @@ export function Shell(): React.ReactElement {
     viewMode, setViewMode,
     showRulers,
     toolState, setToolState,
-    textFormat, setTextFormat,
-    editingTextId, setEditingTextId,
+    textFormat,
+    editingTextId,
     setColorPanelVisible,
     colorMixerVisible, setColorMixerVisible,
     setFiltersPanelVisible,
@@ -1913,172 +1910,27 @@ export function Shell(): React.ReactElement {
   // Handlers — scenes
   // ---------------------------------------------------------------------------
 
-  const handleAddScene = useCallback(() => {
-    pushDoc(addScene(doc));
-  }, [doc, pushDoc]);
-
-  const handleRemoveScene = useCallback((index: number) => {
-    const scene = doc.scenes[index];
-    if (!scene) return;
-    pushDoc(removeScene(doc, scene.id));
-    setActiveSceneIndex((prev) => Math.min(prev, doc.scenes.length - 2));
-  }, [doc, pushDoc]);
-
-  const handleRenameScene = useCallback((index: number, name: string) => {
-    const scene = doc.scenes[index];
-    if (!scene) return;
-    pushDoc(renameScene(doc, scene.id, name));
-  }, [doc, pushDoc]);
-
-  const handleReorderScene = useCallback((fromIndex: number, toIndex: number) => {
-    pushDoc(reorderScenes(doc, fromIndex, toIndex));
-    // Keep activeSceneIndex pointing to the same scene after reorder
-    setActiveSceneIndex((prev) => {
-      if (prev === fromIndex) return toIndex;
-      if (fromIndex < toIndex) {
-        if (prev > fromIndex && prev <= toIndex) return prev - 1;
-      } else {
-        if (prev >= toIndex && prev < fromIndex) return prev + 1;
-      }
-      return prev;
-    });
-  }, [doc, pushDoc]);
-
-  const handleDuplicateScene = useCallback((index: number) => {
-    const scene = doc.scenes[index];
-    if (!scene) return;
-    pushDoc(duplicateScene(doc, scene.id));
-    // Navigate to the duplicate (inserted right after the source)
-    setActiveSceneIndex(index + 1);
-  }, [doc, pushDoc]);
-
-  const handleSelectScene = useCallback((index: number) => {
-    setActiveSceneIndex(index);
-    setCurrentFrame(0);
-    setActiveLayerIndex(0);
-  }, []);
+  // Scene handlers — see hooks/useSceneHandlers.
+  const {
+    handleAddScene, handleRemoveScene, handleRenameScene,
+    handleReorderScene, handleDuplicateScene, handleSelectScene,
+  } = useSceneHandlers({ uiStore, doc, pushDoc });
 
   // ---------------------------------------------------------------------------
   // Handlers — text tool
   // ---------------------------------------------------------------------------
 
-  const handleTextCreated = useCallback(
-    (textObj: Omit<TextDisplayObject, "id">) => {
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      const obj: TextDisplayObject = { ...textObj, id: nextTextId() };
-      pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, obj)));
-    },
-    [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
-  );
-
-  /**
-   * Called by the text tool when clicking on empty stage: immediately creates a
-   * TextDisplayObject in the document (with default text "Text"), then notifies
-   * StageArea via the `onPlaced` callback so it can open the inline textarea for
-   * that specific object.
-   */
-  const handleTextPlace = useCallback(
-    (textObj: Omit<TextDisplayObject, "id">, onPlaced: (id: string) => void) => {
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      const id = nextTextId();
-      const obj: TextDisplayObject = { ...textObj, id };
-      pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, obj)));
-      setEditingTextId(id);
-      onPlaced(id);
-    },
-    [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
-  );
-
-  const handleTextEdit = useCallback(
-    (id: string, newText: string) => {
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      pushDoc(withTimeline((t) => updateDisplayObject(t, layerId, currentFrame, id, { text: newText })));
-    },
-    [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
-  );
-
-  const handleTextEditEnd = useCallback(() => {
-    setEditingTextId(null);
-  }, []);
-
-  const handleTextFormatChange = useCallback((format: Partial<typeof textFormat>) => {
-    setTextFormat((prev) => ({ ...prev, ...format }));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---------------------------------------------------------------------------
-  // Handlers — Text menu (Style/Align/Tracking/Scrollable)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Apply a partial update to the currently selected TextDisplayObject.
-   * No-op if nothing is selected or the selection is not a text object.
-   */
-  const applyTextUpdate = useCallback(
-    (changes: Partial<TextDisplayObject>) => {
-      if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      pushDoc(withTimeline((t) =>
-        updateDisplayObject(t, layerId, currentFrame, selectedDisplayObject.id, changes)
-      ));
-    },
-    [selectedDisplayObject, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
-  );
-
-  const handleTextBold = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ bold: !selectedDisplayObject.bold });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextItalic = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ italic: !selectedDisplayObject.italic });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextUnderline = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ underline: !(selectedDisplayObject.underline ?? false) });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextAlignLeft = useCallback(() => {
-    applyTextUpdate({ align: "left" });
-  }, [applyTextUpdate]);
-
-  const handleTextAlignCenter = useCallback(() => {
-    applyTextUpdate({ align: "center" });
-  }, [applyTextUpdate]);
-
-  const handleTextAlignRight = useCallback(() => {
-    applyTextUpdate({ align: "right" });
-  }, [applyTextUpdate]);
-
-  const handleTextAlignJustify = useCallback(() => {
-    applyTextUpdate({ align: "justify" });
-  }, [applyTextUpdate]);
-
-  const TRACKING_STEP = 2; // pixels per increment
-
-  const handleTextTrackingIncrease = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ letterSpacing: (selectedDisplayObject.letterSpacing ?? 0) + TRACKING_STEP });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextTrackingDecrease = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ letterSpacing: (selectedDisplayObject.letterSpacing ?? 0) - TRACKING_STEP });
-  }, [selectedDisplayObject, applyTextUpdate]);
-
-  const handleTextTrackingReset = useCallback(() => {
-    applyTextUpdate({ letterSpacing: 0 });
-  }, [applyTextUpdate]);
-
-  const handleTextScrollable = useCallback(() => {
-    if (!selectedDisplayObject || selectedDisplayObject.type !== "text") return;
-    applyTextUpdate({ scrollable: !(selectedDisplayObject.scrollable ?? false) });
-  }, [selectedDisplayObject, applyTextUpdate]);
+  // Text tool + Text-menu handlers — see hooks/useTextHandlers.
+  const {
+    handleTextCreated, handleTextPlace, handleTextEdit, handleTextEditEnd,
+    handleTextFormatChange, handleTextBold, handleTextItalic, handleTextUnderline,
+    handleTextAlignLeft, handleTextAlignCenter, handleTextAlignRight, handleTextAlignJustify,
+    handleTextTrackingIncrease, handleTextTrackingDecrease, handleTextTrackingReset,
+    handleTextScrollable,
+  } = useTextHandlers({
+    uiStore, timeline, safeActiveLayerIndex, activeLayerIndex, currentFrame,
+    pushDoc, withTimeline, selectedDisplayObject,
+  });
 
   // ---------------------------------------------------------------------------
   // Handlers — library
