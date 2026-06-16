@@ -46,7 +46,7 @@ import {
   traceBitmap,
   tracePathsToShape,
 } from "@flash/core";
-import { useKeyboardShortcuts } from "./useKeyboardShortcuts.js";
+import { useCommandKeyboard } from "./dispatch/keyboard.js";
 import { TransformHandles } from "./TransformHandles";
 import type {
   BitmapDisplayObject,
@@ -1026,19 +1026,21 @@ export function Shell(): React.ReactElement {
   if (!registryRef.current) registryRef.current = createPopulatedRegistry();
   const registry = registryRef.current;
 
-  const commandCtx = useMemo<CommandContext>(
-    () => ({
-      doc: documentStore,
-      ui: uiStore,
-      services: { pushDoc, startPlayback, stopPlayback },
-    }),
-    [documentStore, uiStore, pushDoc, startPlayback, stopPlayback]
-  );
+  // The command context's `services.editor` wraps Shell handlers defined further
+  // down, so the context is populated late (see `commandCtxRef.current = …` just
+  // before the keyboard hook). `dispatch` is stable and reads the live context
+  // at call time — every render refreshes it with current handler refs.
+  const commandCtxRef = useRef<CommandContext | null>(null);
+  if (!commandCtxRef.current) {
+    commandCtxRef.current = { doc: documentStore, ui: uiStore, services: { pushDoc, startPlayback, stopPlayback } };
+  }
 
   /** Run a command by id with the live editor context. */
   const dispatch = useCallback(
-    (id: string, args?: unknown) => registry.dispatch(id, commandCtx, args),
-    [registry, commandCtx]
+    (id: string, args?: unknown) => {
+      if (commandCtxRef.current) return registry.dispatch(id, commandCtxRef.current, args);
+    },
+    [registry]
   );
 
   const handlePlayToggle = useCallback(() => {
@@ -4235,50 +4237,49 @@ export function Shell(): React.ReactElement {
   // Keyboard shortcut handlers
   // ---------------------------------------------------------------------------
 
-  const handleSelectAll = useCallback(() => dispatch("edit.selectAll"), [dispatch]);
-  const handleDeselect = useCallback(() => dispatch("edit.deselectAll"), [dispatch]);
-  const handleInsertFrame = useCallback(() => dispatch("timeline.insertFrame"), [dispatch]);
-  const handleInsertKeyframe = useCallback(() => dispatch("timeline.insertKeyframe"), [dispatch]);
-  const handleInsertBlankKeyframe = useCallback(() => dispatch("timeline.insertBlankKeyframe"), [dispatch]);
-  const handleRemoveFrame = useCallback(() => dispatch("timeline.removeFrame"), [dispatch]);
-  const handleClearKeyframe = useCallback(() => dispatch("timeline.clearKeyframe"), [dispatch]);
+  // edit.selectAll/deselectAll and timeline.insert*/remove/clear are dispatched
+  // directly via the keyboard (dispatch/keyboard.ts) and the command registry.
 
-  useKeyboardShortcuts({
-    onUndo: undo,
-    onRedo: redo,
-    onCopy: handleCopy,
-    onCut: handleCut,
-    onPaste: () => handlePaste(false),
-    onPasteInPlace: handlePasteInPlace,
-    onDelete: selectedShapeIds.length > 0 ? handleDeleteSelected : undefined,
-    onSelectAll: handleSelectAll,
-    onDeselect: handleDeselect,
-    onGroup: handleGroup,
-    onUngroup: handleUngroup,
-    onBreakApart: handleBreakApart,
-    onBringToFront: () => handleArrange("front"),
-    onSendToBack: () => handleArrange("back"),
-    onInsertFrame: handleInsertFrame,
-    onInsertKeyframe: handleInsertKeyframe,
-    onInsertBlankKeyframe: handleInsertBlankKeyframe,
-    onDuplicate: handleDuplicate,
-    onRemoveFrame: handleRemoveFrame,
-    onClearKeyframe: handleClearKeyframe,
-    onPlay: handlePlayToggle,
-    onTextBold: handleTextBold,
-    onTextItalic: handleTextItalic,
-    onTextUnderline: handleTextUnderline,
-    onTextAlignLeft: handleTextAlignLeft,
-    onTextAlignCenter: handleTextAlignCenter,
-    onTextAlignRight: handleTextAlignRight,
-    onTextAlignJustify: handleTextAlignJustify,
-    onTextTrackingIncrease: handleTextTrackingIncrease,
-    onTextTrackingDecrease: handleTextTrackingDecrease,
-    onTextTrackingReset: handleTextTrackingReset,
-    onNudge: handleNudge,
-    onAddShapeHint: handleAddShapeHint,
-    onFindReplace: () => setFindReplaceVisible((v) => !v),
-  });
+  // Populate the command context now that all editor handlers are defined. The
+  // editor actions delegate the not-yet-migrated operations; their command ids
+  // are dispatched by both the keyboard (below) and the menu.
+  commandCtxRef.current = {
+    doc: documentStore,
+    ui: uiStore,
+    services: {
+      pushDoc,
+      startPlayback,
+      stopPlayback,
+      editor: {
+        copy: handleCopy,
+        cut: handleCut,
+        paste: () => handlePaste(false),
+        pasteInPlace: handlePasteInPlace,
+        deleteSelected: handleDeleteSelected,
+        duplicate: handleDuplicate,
+        group: handleGroup,
+        ungroup: handleUngroup,
+        breakApart: handleBreakApart,
+        bringToFront: () => handleArrange("front"),
+        sendToBack: () => handleArrange("back"),
+        textBold: handleTextBold,
+        textItalic: handleTextItalic,
+        textUnderline: handleTextUnderline,
+        textAlignLeft: handleTextAlignLeft,
+        textAlignCenter: handleTextAlignCenter,
+        textAlignRight: handleTextAlignRight,
+        textAlignJustify: handleTextAlignJustify,
+        textTrackingIncrease: handleTextTrackingIncrease,
+        textTrackingDecrease: handleTextTrackingDecrease,
+        textTrackingReset: handleTextTrackingReset,
+        addShapeHint: handleAddShapeHint,
+        toggleFindReplace: () => setFindReplaceVisible((v) => !v),
+      },
+    },
+  };
+
+  // Keyboard shortcuts dispatch command ids through the shared registry.
+  useCommandKeyboard({ dispatch, onNudge: handleNudge });
 
   // ---------------------------------------------------------------------------
   // Document properties handlers

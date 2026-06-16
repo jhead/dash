@@ -18,6 +18,40 @@ export interface CommandServices {
   publish?: () => Promise<void> | void;
   testMovie?: () => Promise<void> | void;
   screenshot?: (frameIndex?: number) => string;
+  /**
+   * Component-coupled editor operations that still live as Shell handlers
+   * (clipboard, grouping, text formatting, …). Their commands delegate here so
+   * menu/keyboard/agent share one dispatch surface today; the logic migrates
+   * into command modules incrementally. See commands/editor.ts.
+   */
+  editor?: EditorActions;
+}
+
+/** The not-yet-fully-migrated editor operations, delegated to Shell handlers. */
+export interface EditorActions {
+  copy(): void;
+  cut(): void;
+  paste(): void;
+  pasteInPlace(): void;
+  deleteSelected(): void;
+  duplicate(): void;
+  group(): void;
+  ungroup(): void;
+  breakApart(): void;
+  bringToFront(): void;
+  sendToBack(): void;
+  textBold(): void;
+  textItalic(): void;
+  textUnderline(): void;
+  textAlignLeft(): void;
+  textAlignCenter(): void;
+  textAlignRight(): void;
+  textAlignJustify(): void;
+  textTrackingIncrease(): void;
+  textTrackingDecrease(): void;
+  textTrackingReset(): void;
+  addShapeHint(): void;
+  toggleFindReplace(): void;
 }
 
 /**
