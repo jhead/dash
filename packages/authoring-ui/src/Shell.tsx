@@ -91,7 +91,6 @@ import { StageArea } from "./StageArea";
 import type { ViewMode, OnionFrame } from "./StageArea";
 import { Rulers } from "./Rulers";
 import { Timeline } from "./Timeline";
-import { PreferencesDialog } from "./PreferencesDialog";
 import { usePreferences } from "./preferences";
 import { PropertiesPanel } from "./PropertiesPanel";
 import type { PlacedInstance } from "./PropertiesPanel";
@@ -103,6 +102,7 @@ import { useFileActions, loadFlaFromBytes } from "./hooks/useFileActions";
 import { useStore } from "zustand";
 import {
   createStores,
+  StoreProvider,
   type Stores,
   type BottomTab,
   selectDoc,
@@ -111,6 +111,7 @@ import {
   selectUndoDepth,
   selectRedoDepth,
 } from "./store/index.js";
+import { ShellDialogs } from "./layout/ShellDialogs.js";
 import {
   instanceNamesOf,
   shapeDisplayObjectsAt,
@@ -127,9 +128,6 @@ import {
 } from "./commands/index.js";
 import { ActionsPanel } from "./ActionsPanel";
 import { OutputPanel } from "./OutputPanel";
-import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
-import { EditGridDialog } from "./EditGridDialog";
-import { FindReplaceDialog } from "./FindReplaceDialog";
 import { FiltersPanel } from "./FiltersPanel";
 import { SoundPanel } from "./SoundPanel";
 import {
@@ -146,16 +144,10 @@ import { ColorMixerPanel } from "./ColorMixerPanel";
 import { SwatchesPanel, DEFAULT_SWATCHES } from "./SwatchesPanel";
 import { BehaviorsPanel } from "./BehaviorsPanel";
 import { MovieExplorerPanel } from "./MovieExplorerPanel";
-import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
 import type { RegistrationPoint } from "./ConvertToSymbolDialog";
-import { TimelineEffectDialog } from "./TimelineEffectDialog";
 import type { EffectParams, TimelineEffectType } from "./TimelineEffectDialog";
-import { SwapSymbolDialog } from "./SwapSymbolDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
-import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
-import { BitmapPropertiesDialog } from "./BitmapPropertiesDialog";
-import { SwapBitmapDialog } from "./SwapBitmapDialog";
-import { TraceBitmapDialog } from "./TraceBitmapDialog";
+import { DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
 import { ExportGifDialog } from "./ExportGifDialog";
 import type { ExportGifOptions } from "./ExportGifDialog";
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
@@ -647,7 +639,8 @@ export function Shell(): React.ReactElement {
       },
     });
   }
-  const { documentStore, uiStore } = storesRef.current;
+  const stores = storesRef.current;
+  const { documentStore, uiStore } = stores;
 
   // Subscribe to the slices Shell renders from. Each re-renders only when its
   // slice changes (Object.is), mirroring the old useReducer behaviour.
@@ -711,7 +704,7 @@ export function Shell(): React.ReactElement {
     rightTab, setRightTab,
     bottomTab, setBottomTab,
     timelineCollapsed, setTimelineCollapsed,
-    preferencesOpen, setPreferencesOpen,
+    setPreferencesOpen,
     instances, setInstances,
     selectedInstanceId, setSelectedInstanceId,
     selectedShapeIds, setSelectedShapeIds,
@@ -745,21 +738,21 @@ export function Shell(): React.ReactElement {
     swfBytes, setSwfBytes,
     playerError, setPlayerError,
     outputMessages, setOutputMessages,
-    docPropsOpen, setDocPropsOpen,
-    findReplaceVisible, setFindReplaceVisible,
-    editGridOpen, setEditGridOpen,
-    convertToSymbolOpen, setConvertToSymbolOpen,
-    swapSymbolOpen, setSwapSymbolOpen,
-    timelineEffectOpen, setTimelineEffectOpen,
-    timelineEffectInitial, setTimelineEffectInitial,
+    setDocPropsOpen,
+    setFindReplaceVisible,
+    setEditGridOpen,
+    setConvertToSymbolOpen,
+    setSwapSymbolOpen,
+    setTimelineEffectOpen,
+    setTimelineEffectInitial,
     envelopeDialogOpen, setEnvelopeDialogOpen,
     envelopeDialogTarget, setEnvelopeDialogTarget,
-    publishSettingsOpen, setPublishSettingsOpen,
-    publishSettings, setPublishSettings,
+    setPublishSettingsOpen,
+    publishSettings,
     bitmapPropsItem, setBitmapPropsItem,
-    swapBitmapDialogOpen, setSwapBitmapDialogOpen,
+    setSwapBitmapDialogOpen,
     swapBitmapTargetId, setSwapBitmapTargetId,
-    traceBitmapOpen, setTraceBitmapOpen,
+    setTraceBitmapOpen,
     exportGifOpen, setExportGifOpen,
     bandwidthProfilerVisible, setBandwidthProfilerVisible,
     bandwidthProfilerReport, setBandwidthProfilerReport,
@@ -5305,6 +5298,7 @@ export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
 
   return (
+    <StoreProvider initialDoc={_initialDoc} stores={stores}>
     <div
       style={{
         ...styles.shell,
@@ -6182,99 +6176,24 @@ export function Shell(): React.ReactElement {
         onTrace={handleTrace}
       />
 
-      {/* Document Properties dialog (Modify > Document, Ctrl+J) */}
-      <DocumentPropertiesDialog
-        properties={docProperties}
-        isOpen={docPropsOpen}
-        onConfirm={handleDocPropsConfirm}
-        onCancel={() => setDocPropsOpen(false)}
-      />
-
-      {/* Edit Grid dialog (View > Grid > Edit Grid..., Ctrl+Alt+G) */}
-      <EditGridDialog
-        grid={docProperties.grid}
-        isOpen={editGridOpen}
-        onConfirm={handleEditGridConfirm}
-        onCancel={() => setEditGridOpen(false)}
-      />
-
-      {/* Preferences dialog (Edit > Preferences...) */}
-      <PreferencesDialog
-        isOpen={preferencesOpen}
-        preferences={preferences}
-        onChange={updatePreferences}
-        onReset={resetPreferences}
-        onClose={() => setPreferencesOpen(false)}
-      />
-
-      {/* Find and Replace dialog (Edit > Find and Replace..., Ctrl+H) */}
-      {findReplaceVisible && (
-        <FindReplaceDialog
-          doc={doc}
-          activeSceneIndex={activeSceneIndex}
-          pushDoc={pushDoc}
-          onClose={() => setFindReplaceVisible(false)}
-        />
-      )}
-
-      {/* Convert to Symbol dialog (Insert/Modify > Convert to Symbol, F8) */}
-      <ConvertToSymbolDialog
-        open={convertToSymbolOpen}
-        onConfirm={handleConvertToSymbolConfirm}
-        onClose={() => setConvertToSymbolOpen(false)}
-      />
-
-      {/* Timeline Effects dialog (Insert > Timeline Effects > Transform / Transition) */}
-      <TimelineEffectDialog
-        open={timelineEffectOpen}
-        initialEffect={timelineEffectInitial}
-        onApply={handleApplyTimelineEffect}
-        onClose={() => setTimelineEffectOpen(false)}
-      />
-
-      {/* Swap Symbol dialog (Modify > Swap Symbol...) */}
-      {swapSymbolOpen && selectedDisplayObject?.type === "instance" && (
-        <SwapSymbolDialog
-          open={swapSymbolOpen}
-          library={doc.library}
-          currentSymbolId={(selectedDisplayObject as SymbolInstance).symbolId}
-          onConfirm={handleSwapSymbolConfirm}
-          onClose={() => setSwapSymbolOpen(false)}
-        />
-      )}
-
-      {/* Publish Settings dialog (File > Publish Settings, Ctrl+Shift+F12) */}
-      <PublishSettingsDialog
-        open={publishSettingsOpen}
+      {/* Application modal dialogs (open-state + dialog-local state live in uiStore) */}
+      <ShellDialogs
         doc={doc}
+        docProperties={docProperties}
+        library={library}
+        selectedDisplayObject={selectedDisplayObject}
+        preferences={preferences}
         pushDoc={pushDoc}
-        settings={publishSettings}
-        onSave={setPublishSettings}
-        onClose={() => setPublishSettingsOpen(false)}
-      />
-
-      {/* Bitmap Properties dialog (double-click bitmap in Library panel) */}
-      {bitmapPropsItem && (
-        <BitmapPropertiesDialog
-          item={bitmapPropsItem}
-          onSave={handleBitmapPropsSave}
-          onClose={() => setBitmapPropsItem(null)}
-        />
-      )}
-
-      {/* Swap Bitmap dialog (Properties panel > Swap button) */}
-      <SwapBitmapDialog
-        open={swapBitmapDialogOpen}
-        bitmapItems={library.items.filter((i): i is BitmapItem => i.itemType === "bitmap")}
-        onConfirm={handleSwapBitmapConfirm}
-        onClose={() => { setSwapBitmapDialogOpen(false); setSwapBitmapTargetId(null); }}
-      />
-
-      {/* Trace Bitmap dialog (Modify > Bitmap > Trace Bitmap...) */}
-      <TraceBitmapDialog
-        open={traceBitmapOpen}
-        onConfirm={handleTraceBitmapConfirm}
-        onClose={() => setTraceBitmapOpen(false)}
+        updatePreferences={updatePreferences}
+        resetPreferences={resetPreferences}
+        onDocPropsConfirm={handleDocPropsConfirm}
+        onEditGridConfirm={handleEditGridConfirm}
+        onConvertToSymbolConfirm={handleConvertToSymbolConfirm}
+        onApplyTimelineEffect={handleApplyTimelineEffect}
+        onSwapSymbolConfirm={handleSwapSymbolConfirm}
+        onBitmapPropsSave={handleBitmapPropsSave}
+        onSwapBitmapConfirm={handleSwapBitmapConfirm}
+        onTraceBitmapConfirm={handleTraceBitmapConfirm}
       />
 
       {/* History panel (Window > History, Ctrl+F10) */}
@@ -6541,5 +6460,6 @@ export function Shell(): React.ReactElement {
         );
       })()}
     </div>
+    </StoreProvider>
   );
 }
