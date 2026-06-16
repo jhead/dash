@@ -82,7 +82,6 @@ import type {
   ShapePath,
 } from "@flash/core";
 import { runJsfl, buildJsflContext, registerClearOutputCallback } from "./jsfl/index.js";
-import { ColorPanel } from "./ColorPanel";
 import { PlayerWindow } from "@flash/player";
 import { MenuBar } from "./MenuBar";
 import { EditBar } from "./EditBar";
@@ -112,6 +111,7 @@ import {
   selectRedoDepth,
 } from "./store/index.js";
 import { ShellDialogs } from "./layout/ShellDialogs.js";
+import { ShellPanels } from "./layout/ShellPanels.js";
 import {
   instanceNamesOf,
   shapeDisplayObjectsAt,
@@ -128,7 +128,6 @@ import {
 } from "./commands/index.js";
 import { ActionsPanel } from "./ActionsPanel";
 import { OutputPanel } from "./OutputPanel";
-import { FiltersPanel } from "./FiltersPanel";
 import { SoundPanel } from "./SoundPanel";
 import {
   SoundEnvelopeEditDialog,
@@ -138,12 +137,8 @@ import { TransformPanel } from "./TransformPanel";
 import type { TransformUpdates } from "./TransformPanel";
 import { InstancePanel } from "./InstancePanel";
 import { AlignPanel } from "./AlignPanel";
-import { ScenePanel } from "./ScenePanel";
 import { SceneSwitcher } from "./SceneSwitcher";
-import { ColorMixerPanel } from "./ColorMixerPanel";
-import { SwatchesPanel, DEFAULT_SWATCHES } from "./SwatchesPanel";
-import { BehaviorsPanel } from "./BehaviorsPanel";
-import { MovieExplorerPanel } from "./MovieExplorerPanel";
+import { DEFAULT_SWATCHES } from "./SwatchesPanel";
 import type { RegistrationPoint } from "./ConvertToSymbolDialog";
 import type { EffectParams, TimelineEffectType } from "./TimelineEffectDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
@@ -718,15 +713,15 @@ export function Shell(): React.ReactElement {
     toolState, setToolState,
     textFormat, setTextFormat,
     editingTextId, setEditingTextId,
-    colorPanelVisible, setColorPanelVisible,
+    setColorPanelVisible,
     colorMixerVisible, setColorMixerVisible,
-    mixerFillAlpha, setMixerFillAlpha,
-    mixerStrokeAlpha, setMixerStrokeAlpha,
-    filtersPanelVisible, setFiltersPanelVisible,
+    setMixerFillAlpha,
+    setMixerStrokeAlpha,
+    setFiltersPanelVisible,
     alignPanelVisible, setAlignPanelVisible,
     scenePanelVisible, setScenePanelVisible,
     swatchesPanelVisible, setSwatchesPanelVisible,
-    swatches, setSwatches,
+    setSwatches,
     behaviorsPanelVisible, setBehaviorsPanelVisible,
     movieExplorerVisible, setMovieExplorerVisible,
     historyPanelVisible, setHistoryPanelVisible,
@@ -6029,114 +6024,35 @@ export function Shell(): React.ReactElement {
         cursorY={cursorPos?.y ?? null}
       />
 
-      {/* Color panel overlay */}
-      <ColorPanel
-        fill={toolState.fill}
-        stroke={
-          toolState.strokeColor
-            ? {
-                type: "solid",
-                color: hexToColor(toolState.strokeColor, Math.round((toolState.strokeAlpha / 100) * 255)),
-                width: toolState.strokeWidth,
-                caps: "round",
-                joints: "round",
-                miterLimit: 3,
-              }
-            : null
-        }
+      {/* Floating Window-menu panels (visibility + color/swatch state in uiStore) */}
+      <ShellPanels
+        doc={doc}
+        docProperties={docProperties}
+        selectedShapeFilters={selectedShapeFilters}
+        activeKeyframeObjects={activeKeyframeObjects}
+        currentScript={currentScript}
+        currentKeyframe={currentKeyframe}
+        bitmapLibraryItems={bitmapLibraryItems}
         onFillChange={handleFillChange}
         onStrokeChange={handleStrokeChangeFromPanel}
-        isVisible={colorPanelVisible}
-        onClose={() => setColorPanelVisible(false)}
-      />
-
-      {/* Filters panel (Window > Filters) */}
-      <FiltersPanel
-        filters={selectedShapeFilters}
         onFiltersChange={handleFiltersChange}
-        isVisible={filtersPanelVisible}
-        onClose={() => setFiltersPanelVisible(false)}
-      />
-
-      {/* Align panel (Window > Align, Ctrl+K) */}
-      <AlignPanel
-        visible={alignPanelVisible}
-        displayObjects={activeKeyframeObjects}
-        selectedIds={selectedShapeIds}
-        stageWidth={docProperties.width}
-        stageHeight={docProperties.height}
         onAlign={handleAlignObjects}
         onMatchSize={handleMatchSizeObjects}
-        onClose={() => setAlignPanelVisible(false)}
+        onMixerFillColorChange={handleMixerFillColorChange}
+        onMixerStrokeColorChange={handleMixerStrokeColorChange}
+        onSelectSwatch={handleSelectSwatch}
+        onAddSwatch={handleAddSwatch}
+        onRemoveSwatch={handleRemoveSwatch}
+        onSwatchesLoad={handleSwatchesLoad}
+        onScriptChange={handleScriptChange}
+        onBehaviorsChange={handleBehaviorsChange}
+        onSelectScene={handleSelectScene}
+        onAddScene={handleAddScene}
+        onRemoveScene={handleRemoveScene}
+        onRenameScene={handleRenameScene}
+        onReorderScene={handleReorderScene}
+        onDuplicateScene={handleDuplicateScene}
       />
-
-      {/* Color Mixer panel (Window > Color Mixer, Shift+F9) */}
-      {colorMixerVisible && (
-        <ColorMixerPanel
-          fillColor={toolState.fillColor ?? "#000000"}
-          strokeColor={toolState.strokeColor}
-          fillAlpha={mixerFillAlpha}
-          strokeAlpha={mixerStrokeAlpha}
-          fill={toolState.fill}
-          onFillColorChange={handleMixerFillColorChange}
-          onStrokeColorChange={handleMixerStrokeColorChange}
-          onFillChange={handleFillChange}
-          bitmapItems={bitmapLibraryItems}
-          onClose={() => setColorMixerVisible(false)}
-        />
-      )}
-
-      {/* Color Swatches panel (Window > Color Swatches) */}
-      {swatchesPanelVisible && (
-        <SwatchesPanel
-          swatches={swatches}
-          onSelectSwatch={handleSelectSwatch}
-          onAddSwatch={handleAddSwatch}
-          onRemoveSwatch={handleRemoveSwatch}
-          onSwatchesLoad={handleSwatchesLoad}
-          onClose={() => setSwatchesPanelVisible(false)}
-        />
-      )}
-
-      {/* Behaviors panel (Window > Behaviors) */}
-      {behaviorsPanelVisible && (
-        <BehaviorsPanel
-          script={currentScript}
-          onScriptChange={handleScriptChange}
-          onClose={() => setBehaviorsPanelVisible(false)}
-          selectedFrame={currentKeyframe}
-          onBehaviorsChange={handleBehaviorsChange}
-        />
-      )}
-
-      {/* Movie Explorer panel (Window > Movie Explorer, Ctrl+Alt+M) */}
-      {movieExplorerVisible && (
-        <MovieExplorerPanel
-          doc={doc}
-          onSelectItem={(item) => {
-            // If the item is a library item, select it in the library panel
-            if (item.type === "library-item") {
-              setSelectedLibraryItemId(item.item.id);
-            }
-          }}
-          onClose={() => setMovieExplorerVisible(false)}
-        />
-      )}
-
-      {/* Scene panel (Window > Scene, Ctrl+Shift+S) */}
-      {scenePanelVisible && (
-        <ScenePanel
-          scenes={doc.scenes}
-          activeSceneIndex={Math.min(activeSceneIndex, doc.scenes.length - 1)}
-          onSelectScene={handleSelectScene}
-          onAddScene={handleAddScene}
-          onRemoveScene={handleRemoveScene}
-          onRenameScene={handleRenameScene}
-          onReorderScene={handleReorderScene}
-          onDuplicateScene={handleDuplicateScene}
-          onClose={() => setScenePanelVisible(false)}
-        />
-      )}
 
       {/* Test Movie player error overlay */}
       {playerError && (
