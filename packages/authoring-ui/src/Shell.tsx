@@ -23,11 +23,8 @@ import {
   reorderScenes,
   duplicateScene,
   CanvasRenderer,
-  insertFrame,
   insertKeyframe,
-  insertBlankKeyframe,
   removeFrame,
-  clearKeyframe,
   transformedShapeBounds,
   shapeBounds,
   getUnionBounds,
@@ -49,7 +46,7 @@ import {
   traceBitmap,
   tracePathsToShape,
 } from "@flash/core";
-import { useKeyboardShortcuts } from "./useKeyboardShortcuts.js";
+import { useCommandKeyboard } from "./dispatch/keyboard.js";
 import { TransformHandles } from "./TransformHandles";
 import type {
   BitmapDisplayObject,
@@ -77,7 +74,6 @@ import type {
   Symbol,
   SymbolInstance,
   SymbolType,
-  TextAlign,
   TextDisplayObject,
   Timeline as TimelineModel,
   VideoDisplayObject,
@@ -86,32 +82,53 @@ import type {
   ShapePath,
 } from "@flash/core";
 import { runJsfl, buildJsflContext, registerClearOutputCallback } from "./jsfl/index.js";
-import { ColorPanel } from "./ColorPanel";
-import { PlayerWindow } from "@flash/player";
 import { MenuBar } from "./MenuBar";
 import { EditBar } from "./EditBar";
-import type { TextFormat } from "./EditBar";
 import { ToolsPanel } from "./ToolsPanel";
 import { StageArea } from "./StageArea";
 import type { ViewMode, OnionFrame } from "./StageArea";
 import { Rulers } from "./Rulers";
 import { Timeline } from "./Timeline";
-import { PreferencesDialog } from "./PreferencesDialog";
 import { usePreferences } from "./preferences";
 import { PropertiesPanel } from "./PropertiesPanel";
 import type { PlacedInstance } from "./PropertiesPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { StatusBar } from "./StatusBar";
-import type { FreeTransformMode, PolyStarOptions, ToolId, ToolState } from "./tools/types";
+import type { FreeTransformMode, PolyStarOptions, ToolId } from "./tools/types";
 import { usePublish } from "./hooks/usePublish";
 import { useFileActions, loadFlaFromBytes } from "./hooks/useFileActions";
-import { useHistory } from "./hooks/useHistory";
+import { useStore } from "zustand";
+import {
+  createStores,
+  StoreProvider,
+  type Stores,
+  type BottomTab,
+  selectDoc,
+  selectCanUndo,
+  selectCanRedo,
+  selectUndoDepth,
+  selectRedoDepth,
+} from "./store/index.js";
+import { ShellDialogs } from "./layout/ShellDialogs.js";
+import { ShellPanels } from "./layout/ShellPanels.js";
+import { ManageCommandsDialog } from "./layout/ManageCommandsDialog.js";
+import { ShellOverlays } from "./layout/ShellOverlays.js";
+import {
+  instanceNamesOf,
+  shapeDisplayObjectsAt,
+  textDisplayObjectsAt,
+  bitmapDisplayObjectsAt,
+  symbolInstancesAt,
+  bitmapLibraryItems as bitmapLibraryItemsOf,
+  soundLibraryItems as soundLibraryItemsOf,
+} from "./selectors/index.js";
+import {
+  createPopulatedRegistry,
+  type CommandContext,
+  type CommandRegistry,
+} from "./commands/index.js";
 import { ActionsPanel } from "./ActionsPanel";
 import { OutputPanel } from "./OutputPanel";
-import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
-import { EditGridDialog } from "./EditGridDialog";
-import { FindReplaceDialog } from "./FindReplaceDialog";
-import { FiltersPanel } from "./FiltersPanel";
 import { SoundPanel } from "./SoundPanel";
 import {
   SoundEnvelopeEditDialog,
@@ -121,38 +138,21 @@ import { TransformPanel } from "./TransformPanel";
 import type { TransformUpdates } from "./TransformPanel";
 import { InstancePanel } from "./InstancePanel";
 import { AlignPanel } from "./AlignPanel";
-import { ScenePanel } from "./ScenePanel";
 import { SceneSwitcher } from "./SceneSwitcher";
-import { ColorMixerPanel } from "./ColorMixerPanel";
-import { SwatchesPanel, DEFAULT_SWATCHES } from "./SwatchesPanel";
-import { BehaviorsPanel } from "./BehaviorsPanel";
-import { MovieExplorerPanel } from "./MovieExplorerPanel";
-import { ConvertToSymbolDialog } from "./ConvertToSymbolDialog";
+import { DEFAULT_SWATCHES } from "./SwatchesPanel";
 import type { RegistrationPoint } from "./ConvertToSymbolDialog";
-import { TimelineEffectDialog } from "./TimelineEffectDialog";
 import type { EffectParams, TimelineEffectType } from "./TimelineEffectDialog";
-import { SwapSymbolDialog } from "./SwapSymbolDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
-import { PublishSettingsDialog, DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
-import type { PublishSettings } from "./PublishSettingsDialog";
-import { BitmapPropertiesDialog } from "./BitmapPropertiesDialog";
-import { SwapBitmapDialog } from "./SwapBitmapDialog";
-import { TraceBitmapDialog } from "./TraceBitmapDialog";
-import { ExportGifDialog } from "./ExportGifDialog";
+import { DEFAULT_HTML_OPTIONS } from "./PublishSettingsDialog";
 import type { ExportGifOptions } from "./ExportGifDialog";
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import { generateHtmlWrapper, analyzeFrameSizes } from "@flash/swf";
-import type { FrameSizeReport } from "@flash/swf";
-import { BandwidthProfilerPanel } from "./BandwidthProfilerPanel";
 import { PanelGroup } from "./PanelGroup";
-import { HistoryPanel } from "./HistoryPanel";
-import { AccessibilityPanel } from "./AccessibilityPanel";
 import type { DocumentAccessibility } from "@flash/core";
 import type { ObjectAccessibility } from "@flash/core";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
 import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
 import { loadCommands, saveCommand, deleteCommand } from "./savedCommands.js";
-import type { SavedCommand } from "./savedCommands.js";
 
 // ---------------------------------------------------------------------------
 // Shape hint overlay
@@ -275,12 +275,6 @@ function ShapeHintOverlay({
 // Edit context
 // ---------------------------------------------------------------------------
 
-interface EditContext {
-  mode: "document" | "symbol";
-  symbolId?: string;
-  symbolName?: string;
-  symbolType?: SymbolType;
-}
 
 // ---------------------------------------------------------------------------
 // Info panel bounds helper
@@ -478,7 +472,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-type BottomTab = "actions" | "sound" | "properties" | "output";
 const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
   { id: "actions", label: "Actions" },
   { id: "sound", label: "Sound" },
@@ -491,25 +484,6 @@ const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
 // ---------------------------------------------------------------------------
 
 const _initialDoc = createDocument();
-
-const DEFAULT_TOOL_STATE: ToolState = {
-  activeTool: "selection",
-  objectDrawing: false,
-  strokeColor: "#000000",
-  fill: { type: "solid", color: { r: 255, g: 255, b: 255, a: 255 } },
-  fillColor: "#ffffff",
-  strokeWidth: 1,
-  strokeAlpha: 100,
-  pencilMode: "ink",
-  brushSize: 8,
-  eraserSize: 16,
-  freeTransformMode: "rotate-scale",
-  lassoPolygonMode: false,
-  lassoMagicWand: false,
-  magicWandThreshold: 20,
-  magicWandSmoothing: "pixels",
-  polyStarOptions: { shapeType: "polygon", sides: 5, pointSize: 0.5 },
-};
 
 let _instanceCounter = 0;
 function nextInstanceId() {
@@ -632,22 +606,63 @@ export function frameFilename(frameIndex: number, format: "png" | "jpeg"): strin
 
 export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
-  // Single document owner — replaces scattered useState for timeline/library/etc.
+  // Single document owner — the per-instance Zustand documentStore owns the
+  // undo/redo HistoryState. Created once; non-React callers (agent/JSFL/test
+  // bridges) read the live doc via documentStore.getState(), which replaces the
+  // old latestDocRef stale-closure workaround.
   // ---------------------------------------------------------------------------
-  const history = useHistory(_initialDoc);
-  const { doc, push: _rawPushDoc, replace: replaceDoc, commitDrag, undo, redo, canUndo, canRedo, past: historyPast, future: historyFuture, clearHistory } = history;
-  // Track the latest doc in a ref so agent callbacks always see the most recent
-  // value even before React re-renders after a pushDoc() call.
-  const latestDocRef = useRef(doc);
-  latestDocRef.current = doc;
+  const storesRef = useRef<Stores | null>(null);
+  if (!storesRef.current) {
+    // Inject the UI defaults that depend on view-module *values* so the store
+    // module keeps only type-level imports from view components.
+    storesRef.current = createStores(_initialDoc, {
+      swatches: [...DEFAULT_SWATCHES],
+      savedCommands: loadCommands(),
+      publishSettings: {
+        filename: "movie.swf",
+        jpegQuality: 80,
+        audioStreamFormat: "mp3",
+        audioEventFormat: "mp3",
+        compress: true,
+        protect: false,
+        debuggingPermitted: false,
+        debugPassword: "",
+        html: DEFAULT_HTML_OPTIONS,
+      },
+    });
+  }
+  const stores = storesRef.current;
+  const { documentStore, uiStore } = stores;
+
+  // Subscribe to the slices Shell renders from. Each re-renders only when its
+  // slice changes (Object.is), mirroring the old useReducer behaviour.
+  const doc = useStore(documentStore, selectDoc);
+  const canUndo = useStore(documentStore, selectCanUndo);
+  const canRedo = useStore(documentStore, selectCanRedo);
+  const undoDepth = useStore(documentStore, selectUndoDepth);
+  const redoDepth = useStore(documentStore, selectRedoDepth);
+  const historyPast = useStore(documentStore, (s) => s.history.past);
+
+  // Store actions are stable; wrap as stable callbacks for prop/dep-array use.
+  const replaceDoc = useCallback(
+    (nextDoc: FlashDocument) => documentStore.getState().replaceDoc(nextDoc),
+    [documentStore]
+  );
+  const commitDrag = useCallback(
+    (preDragDoc: FlashDocument, finalDoc: FlashDocument) =>
+      documentStore.getState().commitDrag(preDragDoc, finalDoc),
+    [documentStore]
+  );
+  const undo = useCallback(() => documentStore.getState().undo(), [documentStore]);
+  const redo = useCallback(() => documentStore.getState().redo(), [documentStore]);
+  const clearHistory = useCallback(() => documentStore.getState().clearHistory(), [documentStore]);
   // Wrap push so we bump the agent rev counter on every document mutation.
   const pushDoc = useCallback(
-    (nextDoc: Parameters<typeof _rawPushDoc>[0]) => {
-      latestDocRef.current = nextDoc;
+    (nextDoc: FlashDocument) => {
       bumpRev();
-      _rawPushDoc(nextDoc);
+      documentStore.getState().pushDoc(nextDoc);
     },
-    [_rawPushDoc]
+    [documentStore]
   );
 
   // Convenience: library, docProperties
@@ -655,18 +670,88 @@ export function Shell(): React.ReactElement {
   const docProperties = doc.properties;
   const guides = docProperties.guides;
 
-  // Current file path (for Save vs Save As)
-  const [filePath, setFilePath] = useState<string | undefined>(undefined);
-
-  // Edit context — declared early so helpers can use it
-  const [editContext, setEditContext] = useState<EditContext>({ mode: "document" });
-
-  // Edit path stack: each entry = { symbolId, instanceId }
-  // Empty = editing main timeline. Kept in sync with editContext for multi-level support.
-  const [editPath, setEditPath] = useState<Array<{ symbolId: string; instanceId: string }>>([]);
-
-  // Active scene index — declared early so helpers can use it
-  const [activeSceneIndex, setActiveSceneIndex] = useState(0);
+  // ---------------------------------------------------------------------------
+  // Ephemeral UI state — owned by the per-instance uiStore (Phase 2). A single
+  // whole-store subscription re-renders Shell on any UI change, matching the
+  // prior behaviour where any of these setters re-rendered Shell. Section
+  // components subscribe to narrow slices in Phase 6. Setters keep React's
+  // `value | (prev => next)` signature, so every existing call site is unchanged.
+  // ---------------------------------------------------------------------------
+  const {
+    filePath, setFilePath,
+    editContext, setEditContext,
+    editPath, setEditPath,
+    activeSceneIndex, setActiveSceneIndex,
+    activeLayerIndex, setActiveLayerIndex,
+    currentFrame, setCurrentFrame,
+    isPlaying, setIsPlaying,
+    onionSkinEnabled, setOnionSkinEnabled,
+    onionSkinOutlines, setOnionSkinOutlines,
+    onionBefore, setOnionBefore,
+    onionAfter, setOnionAfter,
+    editMultipleFrames, setEditMultipleFrames,
+    hasMotionClipboard, setHasMotionClipboard,
+    selectedLibraryItemId, setSelectedLibraryItemId,
+    rightTab, setRightTab,
+    bottomTab, setBottomTab,
+    timelineCollapsed, setTimelineCollapsed,
+    setPreferencesOpen,
+    instances, setInstances,
+    selectedInstanceId, setSelectedInstanceId,
+    selectedShapeIds, setSelectedShapeIds,
+    zoom, setZoom,
+    panX, setPanX,
+    panY, setPanY,
+    cursorPos, setCursorPos,
+    snapToPixels,
+    viewMode, setViewMode,
+    showRulers,
+    toolState, setToolState,
+    textFormat, setTextFormat,
+    editingTextId, setEditingTextId,
+    setColorPanelVisible,
+    colorMixerVisible, setColorMixerVisible,
+    setMixerFillAlpha,
+    setMixerStrokeAlpha,
+    setFiltersPanelVisible,
+    alignPanelVisible, setAlignPanelVisible,
+    scenePanelVisible, setScenePanelVisible,
+    swatchesPanelVisible, setSwatchesPanelVisible,
+    setSwatches,
+    behaviorsPanelVisible, setBehaviorsPanelVisible,
+    movieExplorerVisible, setMovieExplorerVisible,
+    historyPanelVisible, setHistoryPanelVisible,
+    savedCommands, setSavedCommands,
+    setManageCommandsOpen,
+    accessibilityPanelVisible, setAccessibilityPanelVisible,
+    showScenes, setShowScenes,
+    playerOpen, setPlayerOpen,
+    setSwfBytes,
+    setPlayerError,
+    outputMessages, setOutputMessages,
+    setDocPropsOpen,
+    setFindReplaceVisible,
+    setEditGridOpen,
+    setConvertToSymbolOpen,
+    setSwapSymbolOpen,
+    setTimelineEffectOpen,
+    setTimelineEffectInitial,
+    envelopeDialogOpen, setEnvelopeDialogOpen,
+    envelopeDialogTarget, setEnvelopeDialogTarget,
+    setPublishSettingsOpen,
+    publishSettings,
+    bitmapPropsItem, setBitmapPropsItem,
+    setSwapBitmapDialogOpen,
+    swapBitmapTargetId, setSwapBitmapTargetId,
+    setTraceBitmapOpen,
+    setExportGifOpen,
+    setBandwidthProfilerVisible,
+    setBandwidthProfilerReport,
+    simpleButtonsEnabled, setSimpleButtonsEnabled,
+    selectedFrameRange, setSelectedFrameRange,
+    hasFrameClipboard, setHasFrameClipboard,
+    isDragOver, setIsDragOver,
+  } = useStore(uiStore);
 
   // ---------------------------------------------------------------------------
   // Helpers to mutate the document through history
@@ -762,23 +847,8 @@ export function Shell(): React.ReactElement {
   }, [editPath, editContext, doc, activeSceneIndex]);
 
   // ---------------------------------------------------------------------------
-  // Frame / playback state (these are UI-only, not persisted to document)
+  // Frame / playback (state lives in uiStore; refs are component-local)
   // ---------------------------------------------------------------------------
-  const [currentFrame, setCurrentFrame] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  // Onion skin state
-  const [onionSkinEnabled, setOnionSkinEnabled] = useState(false);
-  const [onionSkinOutlines, setOnionSkinOutlines] = useState(false);
-  const [onionBefore, setOnionBefore] = useState(2);
-  const [onionAfter, setOnionAfter] = useState(2);
-
-  // Edit Multiple Frames state
-  const [editMultipleFrames, setEditMultipleFrames] = useState(false);
-
-  // Motion clipboard — tracks whether _motionClipboard is populated (for menu state)
-  const [hasMotionClipboard, setHasMotionClipboard] = useState(false);
-
   // RAF playback refs
   const rafRef = useRef<number | null>(null);
   const isPlayingRef = useRef(false);
@@ -788,22 +858,10 @@ export function Shell(): React.ReactElement {
     frameRateRef.current = doc.properties.frameRate;
   }, [doc.properties.frameRate]);
 
-  // Active layer index (0 = topmost layer in Flash convention)
-  const [activeLayerIndex, setActiveLayerIndex] = useState(0);
-
-  // Clamped to valid range whenever layers change
+  // Active layer index clamped to valid range whenever layers change.
   const safeActiveLayerIndex = Math.min(activeLayerIndex, Math.max(0, timeline.layers.length - 1));
 
-  // Selected library item
-  const [selectedLibraryItemId, setSelectedLibraryItemId] = useState<string | null>(null);
-
-  // Right panel tab: "library" | "properties"
-  const [rightTab, setRightTab] = useState<"library" | "properties">("library");
-
-  // Bottom dock: tabbed (Actions | Sound | Properties) and collapsible.
-  // `bottomTab === null` means the dock is collapsed to just its tab bar.
-  const [bottomTab, setBottomTab] = useState<BottomTab | null>("properties");
-  // Remember the last expanded tab so re-expanding restores it.
+  // Remember the last expanded bottom tab so re-expanding restores it.
   const lastBottomTabRef = useRef<BottomTab>("properties");
 
   // Resizable panes: right panel width, top timeline height, bottom dock height.
@@ -812,12 +870,8 @@ export function Shell(): React.ReactElement {
   const timelineResize = useResize(210, 100, 760, "y", true);
   const bottomResize = useResize(180, 80, 600, "y");
 
-  // Top timeline dock collapse state.
-  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
-
   // Application preferences (UI scale, …) persisted to localStorage.
   const { preferences, updatePreferences, resetPreferences } = usePreferences();
-  const [preferencesOpen, setPreferencesOpen] = useState(false);
 
   /**
    * Click a bottom tab. Clicking the active (expanded) tab collapses the dock;
@@ -831,12 +885,6 @@ export function Shell(): React.ReactElement {
     });
   }, []);
 
-  // Placed instances on stage
-  const [instances, setInstances] = useState<PlacedInstance[]>([]);
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
-
-  // Multi-selection: list of selected display object IDs (draw/selection tool)
-  const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
   // Backward-compat single-selection: the selected id when exactly one object is selected, else null
   const selectedShapeId = selectedShapeIds.length === 1 ? selectedShapeIds[0] : null;
 
@@ -872,154 +920,20 @@ export function Shell(): React.ReactElement {
     }
   }, []);
 
-  // Stage / view
-  const [zoom, setZoom] = useState(1.0);
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
-  // Stage-space cursor position (updated from StageArea onCursorMove)
-  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   // Grid settings are derived from doc.properties.grid (persisted in document state)
   const showGrid = docProperties.grid.showGrid;
   const gridWidth = docProperties.grid.gridWidth;
   const gridHeight = docProperties.grid.gridHeight;
   const gridColor = docProperties.grid.gridColor;
-  const [snapToPixels, setSnapToPixels] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("normal");
 
   // Renderer ref (for loadImage calls)
   const rendererRef = useRef<import("@flash/core").CanvasRenderer | null>(null);
 
-  // Rulers visibility (guides are stored in doc.properties.guides)
-  const [showRulers, setShowRulers] = useState(false);
+  // Guide id counter (guides are stored in doc.properties.guides)
   const guideCounterRef = React.useRef(0);
 
-  // Tool state
-  const [toolState, setToolState] = useState<ToolState>(DEFAULT_TOOL_STATE);
-
-  // Text format state (used by text tool)
-  const [textFormat, setTextFormat] = useState<TextFormat>({
-    fontFamily: "Arial",
-    fontSize: 12,
-    bold: false,
-    italic: false,
-    align: "left" as TextAlign,
-    color: "#000000",
-  });
-  // Currently editing text id (for text edit mode in selection tool)
-  const [editingTextId, setEditingTextId] = useState<string | null>(null);
-
-  // Color panel
-  const [colorPanelVisible, setColorPanelVisible] = useState(false);
-
-  // Color Mixer panel (Shift+F9)
-  const [colorMixerVisible, setColorMixerVisible] = useState(false);
-  // Fill/stroke alpha for Color Mixer (separate from toolState which tracks stroke alpha)
-  const [mixerFillAlpha, setMixerFillAlpha] = useState(100);
-  const [mixerStrokeAlpha, setMixerStrokeAlpha] = useState(100);
-
-  // Filters panel
-  const [filtersPanelVisible, setFiltersPanelVisible] = useState(false);
-
-  // Align panel (Window > Align, Ctrl+K)
-  const [alignPanelVisible, setAlignPanelVisible] = useState(false);
-
-  // Scene panel (Window > Scene, Ctrl+Shift+S)
-  const [scenePanelVisible, setScenePanelVisible] = useState(false);
-
-  // Color Swatches panel (Window > Color Swatches)
-  const [swatchesPanelVisible, setSwatchesPanelVisible] = useState(false);
-  const [swatches, setSwatches] = useState<string[]>(() => [...DEFAULT_SWATCHES]);
-
-  // Behaviors panel (Window > Behaviors)
-  const [behaviorsPanelVisible, setBehaviorsPanelVisible] = useState(false);
-
-  // Movie Explorer panel (Window > Movie Explorer, Ctrl+Alt+M)
-  const [movieExplorerVisible, setMovieExplorerVisible] = useState(false);
-
-  // History panel (Window > History, Ctrl+F10)
-  const [historyPanelVisible, setHistoryPanelVisible] = useState(false);
-
-  // Saved commands (Commands menu) — persisted in localStorage
-  const [savedCommands, setSavedCommands] = useState<SavedCommand[]>(() => loadCommands());
-
-  // Manage Commands dialog visibility
-  const [manageCommandsOpen, setManageCommandsOpen] = useState(false);
-
-  // Accessibility panel (Window > Accessibility)
-  const [accessibilityPanelVisible, setAccessibilityPanelVisible] = useState(false);
-
-  // Scene switcher inline panel (toggle near Timeline header)
-  const [showScenes, setShowScenes] = useState(false);
-
-  // Test Movie player state
-  const [playerOpen, setPlayerOpen] = useState(false);
-  const [swfBytes, setSwfBytes] = useState<Uint8Array | null>(null);
-  const [playerError, setPlayerError] = useState<string | null>(null);
-
-  // Output panel: collects AS2 trace() lines from Test Movie playback
-  const [outputMessages, setOutputMessages] = useState<string[]>([]);
-
-  // Document properties dialog
-  const [docPropsOpen, setDocPropsOpen] = useState(false);
-
-  // Find and Replace dialog
-  const [findReplaceVisible, setFindReplaceVisible] = useState(false);
-
-  // Edit Grid dialog
-  const [editGridOpen, setEditGridOpen] = useState(false);
-
-  // Convert to Symbol dialog
-  const [convertToSymbolOpen, setConvertToSymbolOpen] = useState(false);
-
-  // Swap Symbol dialog
-  const [swapSymbolOpen, setSwapSymbolOpen] = useState(false);
-
-  // Timeline Effects dialog (Insert > Timeline Effects)
-  const [timelineEffectOpen, setTimelineEffectOpen] = useState(false);
-  const [timelineEffectInitial, setTimelineEffectInitial] = useState<TimelineEffectType>("transform");
   // Counter for auto-naming effect symbols ("Transform 1", "Transform 2", …)
   const timelineEffectCounterRef = useRef(0);
-
-  // Sound Envelope edit dialog
-  const [envelopeDialogOpen, setEnvelopeDialogOpen] = useState(false);
-  const [envelopeDialogTarget, setEnvelopeDialogTarget] = useState<{
-    frameIdx: number;
-    layerIdx: number;
-  } | null>(null);
-
-  // Publish Settings dialog
-  const [publishSettingsOpen, setPublishSettingsOpen] = useState(false);
-  const [publishSettings, setPublishSettings] = useState<PublishSettings>({
-    filename: "movie.swf",
-    jpegQuality: 80,
-    audioStreamFormat: "mp3",
-    audioEventFormat: "mp3",
-    compress: true,
-    protect: false,
-    debuggingPermitted: false,
-    debugPassword: "",
-    html: DEFAULT_HTML_OPTIONS,
-  });
-
-  // Bitmap Properties dialog
-  const [bitmapPropsItem, setBitmapPropsItem] = useState<BitmapItem | null>(null);
-
-  // Swap Bitmap dialog
-  const [swapBitmapDialogOpen, setSwapBitmapDialogOpen] = useState(false);
-  const [swapBitmapTargetId, setSwapBitmapTargetId] = useState<string | null>(null);
-
-  // Trace Bitmap dialog
-  const [traceBitmapOpen, setTraceBitmapOpen] = useState(false);
-
-  // Export GIF dialog
-  const [exportGifOpen, setExportGifOpen] = useState(false);
-
-  // Bandwidth Profiler
-  const [bandwidthProfilerVisible, setBandwidthProfilerVisible] = useState(false);
-  const [bandwidthProfilerReport, setBandwidthProfilerReport] = useState<FrameSizeReport | null>(null);
-
-  // Control > Enable Simple Buttons
-  const [simpleButtonsEnabled, setSimpleButtonsEnabled] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Handlers — timeline / frame
@@ -1102,13 +1016,36 @@ export function Shell(): React.ReactElement {
     rafRef.current = requestAnimationFrame(tick);
   }, [timeline.layers]);
 
+  // ---------------------------------------------------------------------------
+  // Command registry — the single source of truth for editor operations. Menu,
+  // keyboard, agent, and JSFL all dispatch by id (agent/keyboard fully unified
+  // in Phase 5). Commands read live state from the stores and invoke
+  // component-coupled behaviour (playback, publish) via services.
+  // ---------------------------------------------------------------------------
+  const registryRef = useRef<CommandRegistry | null>(null);
+  if (!registryRef.current) registryRef.current = createPopulatedRegistry();
+  const registry = registryRef.current;
+
+  // The command context's `services.editor` wraps Shell handlers defined further
+  // down, so the context is populated late (see `commandCtxRef.current = …` just
+  // before the keyboard hook). `dispatch` is stable and reads the live context
+  // at call time — every render refreshes it with current handler refs.
+  const commandCtxRef = useRef<CommandContext | null>(null);
+  if (!commandCtxRef.current) {
+    commandCtxRef.current = { doc: documentStore, ui: uiStore, services: { pushDoc, startPlayback, stopPlayback } };
+  }
+
+  /** Run a command by id with the live editor context. */
+  const dispatch = useCallback(
+    (id: string, args?: unknown) => {
+      if (commandCtxRef.current) return registry.dispatch(id, commandCtxRef.current, args);
+    },
+    [registry]
+  );
+
   const handlePlayToggle = useCallback(() => {
-    if (isPlayingRef.current) {
-      stopPlayback();
-    } else {
-      startPlayback();
-    }
-  }, [startPlayback, stopPlayback]);
+    dispatch("playback.toggle");
+  }, [dispatch]);
 
   const handlePlayingChange = useCallback((playing: boolean) => {
     if (playing) {
@@ -1157,41 +1094,13 @@ export function Shell(): React.ReactElement {
   // Handlers — rulers & guides
   // ---------------------------------------------------------------------------
 
-  const handleRulersToggle = useCallback(() => {
-    setShowRulers((v) => !v);
-  }, []);
+  const handleRulersToggle = useCallback(() => dispatch("view.toggleRulers"), [dispatch]);
+  const handleToggleShowGrid = useCallback(() => dispatch("view.toggleGrid"), [dispatch]);
+  const handleToggleSnapToGrid = useCallback(() => dispatch("view.toggleSnapToGrid"), [dispatch]);
+  const handleToggleSnapToObjects = useCallback(() => dispatch("view.toggleSnapToObjects"), [dispatch]);
+  const handleToggleSnapToGuides = useCallback(() => dispatch("view.toggleSnapToGuides"), [dispatch]);
 
-  const handleToggleShowGrid = useCallback(() => {
-    pushDoc(withProperties((p) => ({
-      ...p,
-      grid: { ...p.grid, showGrid: !p.grid.showGrid },
-    })));
-  }, [pushDoc, withProperties]);
-
-  const handleToggleSnapToGrid = useCallback(() => {
-    pushDoc(withProperties((p) => ({
-      ...p,
-      grid: { ...p.grid, snapToGrid: !p.grid.snapToGrid },
-    })));
-  }, [pushDoc, withProperties]);
-
-  const handleToggleSnapToObjects = useCallback(() => {
-    pushDoc(withProperties((p) => ({
-      ...p,
-      snapToObjects: !p.snapToObjects,
-    })));
-  }, [pushDoc, withProperties]);
-
-  const handleToggleSnapToGuides = useCallback(() => {
-    pushDoc(withProperties((p) => ({
-      ...p,
-      snapToGuides: !p.snapToGuides,
-    })));
-  }, [pushDoc, withProperties]);
-
-  const handleToggleSnapToPixels = useCallback(() => {
-    setSnapToPixels((v) => !v);
-  }, []);
+  const handleToggleSnapToPixels = useCallback(() => dispatch("view.toggleSnapToPixels"), [dispatch]);
 
   const handleViewModeChange = useCallback((mode: "normal" | "outlines" | "fast" | "antialias") => {
     setViewMode(mode as ViewMode);
@@ -1697,25 +1606,14 @@ export function Shell(): React.ReactElement {
   }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
 
   // ---------------------------------------------------------------------------
-  // Selected frame range — tracks shift-click selection in Timeline
-  // ---------------------------------------------------------------------------
-
-  /** Mirrors the Timeline's shift-selected frame range for menu-bar operations. */
-  const [selectedFrameRange, setSelectedFrameRange] = useState<{
-    layerId: string;
-    start: number;
-    end: number;
-  } | null>(null);
-
-  // ---------------------------------------------------------------------------
   // Frame clipboard — copy/paste frames in the Timeline
+  // (selectedFrameRange + hasFrameClipboard live in uiStore)
   // ---------------------------------------------------------------------------
 
   /** Module-level frame clipboard so it survives re-renders without state churn. */
   const frameClipboardRef = useRef<{
     frames: readonly Frame[];
   } | null>(null);
-  const [hasFrameClipboard, setHasFrameClipboard] = useState(false);
 
   /**
    * Called by Timeline's onCopyFrames (context-menu or Cmd+C).
@@ -4073,64 +3971,28 @@ export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
 
   // Build a map: libraryItemId -> name
-  const instanceNames: Record<string, string> = {};
-  for (const item of library.items) {
-    instanceNames[item.id] = item.name;
-  }
+  const instanceNames = instanceNamesOf(library);
 
-  // Derive shape display objects for the current frame (from active layer only — for interaction)
-  const shapeDisplayObjects = useMemo<ShapeDisplayObject[]>(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer || !layer.visible || layer.locked) return [];
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return [];
-    return kf.displayObjects.filter((o): o is ShapeDisplayObject => o.type === "shape");
-  }, [timeline, currentFrame, safeActiveLayerIndex]);
-
-  // Derive text display objects for the current frame (from active layer only — for interaction)
-  const textDisplayObjects = useMemo<TextDisplayObject[]>(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer || !layer.visible || layer.locked) return [];
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return [];
-    return kf.displayObjects.filter((o): o is TextDisplayObject => o.type === "text");
-  }, [timeline, currentFrame, safeActiveLayerIndex]);
-
-  // Derive bitmap display objects for the current frame (from active layer only — for interaction)
-  const bitmapDisplayObjects = useMemo<BitmapDisplayObject[]>(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer || !layer.visible || layer.locked) return [];
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return [];
-    return kf.displayObjects.filter((o): o is BitmapDisplayObject => o.type === "bitmap");
-  }, [timeline, currentFrame, safeActiveLayerIndex]);
-
-  // Derive SymbolInstance display objects for the current frame (from active layer — for hit-testing)
-  const symbolInstanceDisplayObjects = useMemo<SymbolInstance[]>(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer || !layer.visible || layer.locked) return [];
-    const kf = [...layer.frames]
-      .filter((f) => f.isKeyframe && f.index <= currentFrame)
-      .sort((a, b) => b.index - a.index)[0];
-    if (!kf) return [];
-    return kf.displayObjects.filter((o): o is SymbolInstance => o.type === "instance");
-  }, [timeline, currentFrame, safeActiveLayerIndex]);
-
-  // Derive BitmapItems from library for image loading in renderer
-  const bitmapLibraryItems = useMemo<BitmapItem[]>(() => {
-    return library.items.filter((i): i is BitmapItem => i.itemType === "bitmap");
-  }, [library]);
-
-  // Derive SoundItems from library
-  const soundLibraryItems = useMemo<SoundItem[]>(() => {
-    return library.items.filter((i): i is SoundItem => i.itemType === "sound");
-  }, [library]);
+  // Per-frame display-object collections for the active layer (interaction/hit-testing).
+  // Bodies live in selectors/derived.ts; memoize at the call site.
+  const shapeDisplayObjects = useMemo<ShapeDisplayObject[]>(
+    () => shapeDisplayObjectsAt(timeline, safeActiveLayerIndex, currentFrame),
+    [timeline, currentFrame, safeActiveLayerIndex]
+  );
+  const textDisplayObjects = useMemo<TextDisplayObject[]>(
+    () => textDisplayObjectsAt(timeline, safeActiveLayerIndex, currentFrame),
+    [timeline, currentFrame, safeActiveLayerIndex]
+  );
+  const bitmapDisplayObjects = useMemo<BitmapDisplayObject[]>(
+    () => bitmapDisplayObjectsAt(timeline, safeActiveLayerIndex, currentFrame),
+    [timeline, currentFrame, safeActiveLayerIndex]
+  );
+  const symbolInstanceDisplayObjects = useMemo<SymbolInstance[]>(
+    () => symbolInstancesAt(timeline, safeActiveLayerIndex, currentFrame),
+    [timeline, currentFrame, safeActiveLayerIndex]
+  );
+  const bitmapLibraryItems = useMemo<BitmapItem[]>(() => bitmapLibraryItemsOf(library), [library]);
+  const soundLibraryItems = useMemo<SoundItem[]>(() => soundLibraryItemsOf(library), [library]);
 
   // Build the full multi-layer SceneGraph for rendering in StageArea.
   // Each layer's objects are resolved at the current frame, with tween interpolation
@@ -4375,85 +4237,49 @@ export function Shell(): React.ReactElement {
   // Keyboard shortcut handlers
   // ---------------------------------------------------------------------------
 
-  const handleSelectAll = useCallback(() => {
-    const layer = timeline.layers[safeActiveLayerIndex];
-    if (!layer) return;
-    const kf = getGoverningKeyframe(layer, currentFrame);
-    if (!kf || kf.displayObjects.length === 0) return;
-    // Select all objects in the governing keyframe
-    setSelectedShapeIds(kf.displayObjects.map((o) => o.id));
-  }, [timeline, safeActiveLayerIndex, currentFrame]);
+  // edit.selectAll/deselectAll and timeline.insert*/remove/clear are dispatched
+  // directly via the keyboard (dispatch/keyboard.ts) and the command registry.
 
-  const handleDeselect = useCallback(() => {
-    setSelectedShapeIds([]);
-  }, []);
+  // Populate the command context now that all editor handlers are defined. The
+  // editor actions delegate the not-yet-migrated operations; their command ids
+  // are dispatched by both the keyboard (below) and the menu.
+  commandCtxRef.current = {
+    doc: documentStore,
+    ui: uiStore,
+    services: {
+      pushDoc,
+      startPlayback,
+      stopPlayback,
+      editor: {
+        copy: handleCopy,
+        cut: handleCut,
+        paste: () => handlePaste(false),
+        pasteInPlace: handlePasteInPlace,
+        deleteSelected: handleDeleteSelected,
+        duplicate: handleDuplicate,
+        group: handleGroup,
+        ungroup: handleUngroup,
+        breakApart: handleBreakApart,
+        bringToFront: () => handleArrange("front"),
+        sendToBack: () => handleArrange("back"),
+        textBold: handleTextBold,
+        textItalic: handleTextItalic,
+        textUnderline: handleTextUnderline,
+        textAlignLeft: handleTextAlignLeft,
+        textAlignCenter: handleTextAlignCenter,
+        textAlignRight: handleTextAlignRight,
+        textAlignJustify: handleTextAlignJustify,
+        textTrackingIncrease: handleTextTrackingIncrease,
+        textTrackingDecrease: handleTextTrackingDecrease,
+        textTrackingReset: handleTextTrackingReset,
+        addShapeHint: handleAddShapeHint,
+        toggleFindReplace: () => setFindReplaceVisible((v) => !v),
+      },
+    },
+  };
 
-  const handleInsertFrame = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => insertFrame(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleInsertKeyframe = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => insertKeyframe(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleInsertBlankKeyframe = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => insertBlankKeyframe(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleRemoveFrame = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => removeFrame(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleClearKeyframe = useCallback(() => {
-    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-    if (!layerId) return;
-    pushDoc(withTimeline((t) => clearKeyframe(t, layerId, currentFrame)));
-  }, [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  useKeyboardShortcuts({
-    onUndo: undo,
-    onRedo: redo,
-    onCopy: handleCopy,
-    onCut: handleCut,
-    onPaste: () => handlePaste(false),
-    onPasteInPlace: handlePasteInPlace,
-    onDelete: selectedShapeIds.length > 0 ? handleDeleteSelected : undefined,
-    onSelectAll: handleSelectAll,
-    onDeselect: handleDeselect,
-    onGroup: handleGroup,
-    onUngroup: handleUngroup,
-    onBreakApart: handleBreakApart,
-    onBringToFront: () => handleArrange("front"),
-    onSendToBack: () => handleArrange("back"),
-    onInsertFrame: handleInsertFrame,
-    onInsertKeyframe: handleInsertKeyframe,
-    onInsertBlankKeyframe: handleInsertBlankKeyframe,
-    onDuplicate: handleDuplicate,
-    onRemoveFrame: handleRemoveFrame,
-    onClearKeyframe: handleClearKeyframe,
-    onPlay: handlePlayToggle,
-    onTextBold: handleTextBold,
-    onTextItalic: handleTextItalic,
-    onTextUnderline: handleTextUnderline,
-    onTextAlignLeft: handleTextAlignLeft,
-    onTextAlignCenter: handleTextAlignCenter,
-    onTextAlignRight: handleTextAlignRight,
-    onTextAlignJustify: handleTextAlignJustify,
-    onTextTrackingIncrease: handleTextTrackingIncrease,
-    onTextTrackingDecrease: handleTextTrackingDecrease,
-    onTextTrackingReset: handleTextTrackingReset,
-    onNudge: handleNudge,
-    onAddShapeHint: handleAddShapeHint,
-    onFindReplace: () => setFindReplaceVisible((v) => !v),
-  });
+  // Keyboard shortcuts dispatch command ids through the shared registry.
+  useCommandKeyboard({ dispatch, onNudge: handleNudge });
 
   // ---------------------------------------------------------------------------
   // Document properties handlers
@@ -4560,9 +4386,8 @@ export function Shell(): React.ReactElement {
 
   // ---------------------------------------------------------------------------
   // Drag-and-drop — open .fla files dropped onto the editor window
+  // (isDragOver lives in uiStore)
   // ---------------------------------------------------------------------------
-
-  const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     // Only highlight when at least one dragged item looks like a file
@@ -5145,7 +4970,7 @@ export function Shell(): React.ReactElement {
       getSelection: () => selectedShapeIds,
       getCurrentFrame: () => currentFrame,
       getActiveLayerIndex: () => activeLayerIndex,
-      getHistoryDepth: () => history.undoDepth,
+      getHistoryDepth: () => documentStore.getState().history.past.length,
       getActiveTool: () => toolState.activeTool,
 
       selectTool: (tool: string) => handleToolChange(tool as ToolId),
@@ -5262,7 +5087,7 @@ export function Shell(): React.ReactElement {
     currentFrame,
     activeLayerIndex,
     activeSceneIndex,
-    history.undoDepth,
+    undoDepth,
     toolState.activeTool,
     handleToolChange,
     undo,
@@ -5287,17 +5112,17 @@ export function Shell(): React.ReactElement {
 
     setAgentCallbacks({
       // Readers
-      // Read from latestDocRef so agent commands issued immediately after
-      // pushDoc() see the updated document before React re-renders.
-      getDoc: () => latestDocRef.current,
+      // Read the live document straight from the store so agent commands issued
+      // immediately after pushDoc() see the update before React re-renders.
+      getDoc: () => documentStore.getState().history.present,
       getSelectedIds: () => selectedShapeIds,
       getCurrentFrame: () => currentFrame,
       getActiveLayerIndex: () => activeLayerIndex,
       getActiveTool: () => toolState.activeTool,
       getEditContext: () => editContext,
       getActiveSceneIndex: () => activeSceneIndex,
-      getUndoDepth: () => history.undoDepth,
-      getRedoDepth: () => history.redoDepth,
+      getUndoDepth: () => documentStore.getState().history.past.length,
+      getRedoDepth: () => documentStore.getState().history.future.length,
 
       // Mutators
       pushDoc,
@@ -5393,8 +5218,8 @@ export function Shell(): React.ReactElement {
     toolState.activeTool,
     editContext,
     activeSceneIndex,
-    history.undoDepth,
-    history.redoDepth,
+    undoDepth,
+    redoDepth,
     pushDoc,
     undo,
     redo,
@@ -5465,6 +5290,7 @@ export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
 
   return (
+    <StoreProvider initialDoc={_initialDoc} stores={stores}>
     <div
       style={{
         ...styles.shell,
@@ -6195,468 +6021,73 @@ export function Shell(): React.ReactElement {
         cursorY={cursorPos?.y ?? null}
       />
 
-      {/* Color panel overlay */}
-      <ColorPanel
-        fill={toolState.fill}
-        stroke={
-          toolState.strokeColor
-            ? {
-                type: "solid",
-                color: hexToColor(toolState.strokeColor, Math.round((toolState.strokeAlpha / 100) * 255)),
-                width: toolState.strokeWidth,
-                caps: "round",
-                joints: "round",
-                miterLimit: 3,
-              }
-            : null
-        }
+      {/* Floating Window-menu panels (visibility + color/swatch state in uiStore) */}
+      <ShellPanels
+        doc={doc}
+        docProperties={docProperties}
+        selectedShapeFilters={selectedShapeFilters}
+        activeKeyframeObjects={activeKeyframeObjects}
+        currentScript={currentScript}
+        currentKeyframe={currentKeyframe}
+        bitmapLibraryItems={bitmapLibraryItems}
         onFillChange={handleFillChange}
         onStrokeChange={handleStrokeChangeFromPanel}
-        isVisible={colorPanelVisible}
-        onClose={() => setColorPanelVisible(false)}
-      />
-
-      {/* Filters panel (Window > Filters) */}
-      <FiltersPanel
-        filters={selectedShapeFilters}
         onFiltersChange={handleFiltersChange}
-        isVisible={filtersPanelVisible}
-        onClose={() => setFiltersPanelVisible(false)}
-      />
-
-      {/* Align panel (Window > Align, Ctrl+K) */}
-      <AlignPanel
-        visible={alignPanelVisible}
-        displayObjects={activeKeyframeObjects}
-        selectedIds={selectedShapeIds}
-        stageWidth={docProperties.width}
-        stageHeight={docProperties.height}
         onAlign={handleAlignObjects}
         onMatchSize={handleMatchSizeObjects}
-        onClose={() => setAlignPanelVisible(false)}
+        onMixerFillColorChange={handleMixerFillColorChange}
+        onMixerStrokeColorChange={handleMixerStrokeColorChange}
+        onSelectSwatch={handleSelectSwatch}
+        onAddSwatch={handleAddSwatch}
+        onRemoveSwatch={handleRemoveSwatch}
+        onSwatchesLoad={handleSwatchesLoad}
+        onScriptChange={handleScriptChange}
+        onBehaviorsChange={handleBehaviorsChange}
+        onSelectScene={handleSelectScene}
+        onAddScene={handleAddScene}
+        onRemoveScene={handleRemoveScene}
+        onRenameScene={handleRenameScene}
+        onReorderScene={handleReorderScene}
+        onDuplicateScene={handleDuplicateScene}
       />
 
-      {/* Color Mixer panel (Window > Color Mixer, Shift+F9) */}
-      {colorMixerVisible && (
-        <ColorMixerPanel
-          fillColor={toolState.fillColor ?? "#000000"}
-          strokeColor={toolState.strokeColor}
-          fillAlpha={mixerFillAlpha}
-          strokeAlpha={mixerStrokeAlpha}
-          fill={toolState.fill}
-          onFillColorChange={handleMixerFillColorChange}
-          onStrokeColorChange={handleMixerStrokeColorChange}
-          onFillChange={handleFillChange}
-          bitmapItems={bitmapLibraryItems}
-          onClose={() => setColorMixerVisible(false)}
-        />
-      )}
-
-      {/* Color Swatches panel (Window > Color Swatches) */}
-      {swatchesPanelVisible && (
-        <SwatchesPanel
-          swatches={swatches}
-          onSelectSwatch={handleSelectSwatch}
-          onAddSwatch={handleAddSwatch}
-          onRemoveSwatch={handleRemoveSwatch}
-          onSwatchesLoad={handleSwatchesLoad}
-          onClose={() => setSwatchesPanelVisible(false)}
-        />
-      )}
-
-      {/* Behaviors panel (Window > Behaviors) */}
-      {behaviorsPanelVisible && (
-        <BehaviorsPanel
-          script={currentScript}
-          onScriptChange={handleScriptChange}
-          onClose={() => setBehaviorsPanelVisible(false)}
-          selectedFrame={currentKeyframe}
-          onBehaviorsChange={handleBehaviorsChange}
-        />
-      )}
-
-      {/* Movie Explorer panel (Window > Movie Explorer, Ctrl+Alt+M) */}
-      {movieExplorerVisible && (
-        <MovieExplorerPanel
-          doc={doc}
-          onSelectItem={(item) => {
-            // If the item is a library item, select it in the library panel
-            if (item.type === "library-item") {
-              setSelectedLibraryItemId(item.item.id);
-            }
-          }}
-          onClose={() => setMovieExplorerVisible(false)}
-        />
-      )}
-
-      {/* Scene panel (Window > Scene, Ctrl+Shift+S) */}
-      {scenePanelVisible && (
-        <ScenePanel
-          scenes={doc.scenes}
-          activeSceneIndex={Math.min(activeSceneIndex, doc.scenes.length - 1)}
-          onSelectScene={handleSelectScene}
-          onAddScene={handleAddScene}
-          onRemoveScene={handleRemoveScene}
-          onRenameScene={handleRenameScene}
-          onReorderScene={handleReorderScene}
-          onDuplicateScene={handleDuplicateScene}
-          onClose={() => setScenePanelVisible(false)}
-        />
-      )}
-
-      {/* Test Movie player error overlay */}
-      {playerError && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 24,
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "#b22222",
-            color: "#fff",
-            padding: "10px 18px",
-            borderRadius: 4,
-            fontSize: 13,
-            fontFamily: "system-ui, sans-serif",
-            zIndex: 10000,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
-            maxWidth: 480,
-            textAlign: "center",
-            cursor: "pointer",
-          }}
-          onClick={() => setPlayerError(null)}
-          title="Click to dismiss"
-        >
-          <strong>Test Movie failed:</strong> {playerError}
-        </div>
-      )}
-
-      {/* Test Movie player overlay */}
-      <PlayerWindow
-        swfBytes={swfBytes}
-        stageWidth={docProperties.width}
-        stageHeight={docProperties.height}
-        isOpen={playerOpen}
-        onClose={handlePlayerClose}
-        onError={handlePlayerError}
-        onTrace={handleTrace}
-      />
-
-      {/* Document Properties dialog (Modify > Document, Ctrl+J) */}
-      <DocumentPropertiesDialog
-        properties={docProperties}
-        isOpen={docPropsOpen}
-        onConfirm={handleDocPropsConfirm}
-        onCancel={() => setDocPropsOpen(false)}
-      />
-
-      {/* Edit Grid dialog (View > Grid > Edit Grid..., Ctrl+Alt+G) */}
-      <EditGridDialog
-        grid={docProperties.grid}
-        isOpen={editGridOpen}
-        onConfirm={handleEditGridConfirm}
-        onCancel={() => setEditGridOpen(false)}
-      />
-
-      {/* Preferences dialog (Edit > Preferences...) */}
-      <PreferencesDialog
-        isOpen={preferencesOpen}
-        preferences={preferences}
-        onChange={updatePreferences}
-        onReset={resetPreferences}
-        onClose={() => setPreferencesOpen(false)}
-      />
-
-      {/* Find and Replace dialog (Edit > Find and Replace..., Ctrl+H) */}
-      {findReplaceVisible && (
-        <FindReplaceDialog
-          doc={doc}
-          activeSceneIndex={activeSceneIndex}
-          pushDoc={pushDoc}
-          onClose={() => setFindReplaceVisible(false)}
-        />
-      )}
-
-      {/* Convert to Symbol dialog (Insert/Modify > Convert to Symbol, F8) */}
-      <ConvertToSymbolDialog
-        open={convertToSymbolOpen}
-        onConfirm={handleConvertToSymbolConfirm}
-        onClose={() => setConvertToSymbolOpen(false)}
-      />
-
-      {/* Timeline Effects dialog (Insert > Timeline Effects > Transform / Transition) */}
-      <TimelineEffectDialog
-        open={timelineEffectOpen}
-        initialEffect={timelineEffectInitial}
-        onApply={handleApplyTimelineEffect}
-        onClose={() => setTimelineEffectOpen(false)}
-      />
-
-      {/* Swap Symbol dialog (Modify > Swap Symbol...) */}
-      {swapSymbolOpen && selectedDisplayObject?.type === "instance" && (
-        <SwapSymbolDialog
-          open={swapSymbolOpen}
-          library={doc.library}
-          currentSymbolId={(selectedDisplayObject as SymbolInstance).symbolId}
-          onConfirm={handleSwapSymbolConfirm}
-          onClose={() => setSwapSymbolOpen(false)}
-        />
-      )}
-
-      {/* Publish Settings dialog (File > Publish Settings, Ctrl+Shift+F12) */}
-      <PublishSettingsDialog
-        open={publishSettingsOpen}
+      {/* Floating overlays (player, history, profiler, accessibility, export — flags in uiStore) */}
+      <ShellOverlays
         doc={doc}
+        docProperties={docProperties}
+        selectedDisplayObject={selectedDisplayObject}
+        onPlayerClose={handlePlayerClose}
+        onPlayerError={handlePlayerError}
+        onTrace={handleTrace}
+        onJumpToHistory={handleJumpToHistory}
+        onSaveAsCommand={handleSaveAsCommand}
+        onDocAccessibilityChange={handleDocAccessibilityChange}
+        onObjectAccessibilityChange={handleObjectAccessibilityChange}
+        onExportGifConfirm={handleExportGifConfirm}
+      />
+
+      {/* Application modal dialogs (open-state + dialog-local state live in uiStore) */}
+      <ShellDialogs
+        doc={doc}
+        docProperties={docProperties}
+        library={library}
+        selectedDisplayObject={selectedDisplayObject}
+        preferences={preferences}
         pushDoc={pushDoc}
-        settings={publishSettings}
-        onSave={setPublishSettings}
-        onClose={() => setPublishSettingsOpen(false)}
+        updatePreferences={updatePreferences}
+        resetPreferences={resetPreferences}
+        onDocPropsConfirm={handleDocPropsConfirm}
+        onEditGridConfirm={handleEditGridConfirm}
+        onConvertToSymbolConfirm={handleConvertToSymbolConfirm}
+        onApplyTimelineEffect={handleApplyTimelineEffect}
+        onSwapSymbolConfirm={handleSwapSymbolConfirm}
+        onBitmapPropsSave={handleBitmapPropsSave}
+        onSwapBitmapConfirm={handleSwapBitmapConfirm}
+        onTraceBitmapConfirm={handleTraceBitmapConfirm}
       />
 
-      {/* Bitmap Properties dialog (double-click bitmap in Library panel) */}
-      {bitmapPropsItem && (
-        <BitmapPropertiesDialog
-          item={bitmapPropsItem}
-          onSave={handleBitmapPropsSave}
-          onClose={() => setBitmapPropsItem(null)}
-        />
-      )}
-
-      {/* Swap Bitmap dialog (Properties panel > Swap button) */}
-      <SwapBitmapDialog
-        open={swapBitmapDialogOpen}
-        bitmapItems={library.items.filter((i): i is BitmapItem => i.itemType === "bitmap")}
-        onConfirm={handleSwapBitmapConfirm}
-        onClose={() => { setSwapBitmapDialogOpen(false); setSwapBitmapTargetId(null); }}
-      />
-
-      {/* Trace Bitmap dialog (Modify > Bitmap > Trace Bitmap...) */}
-      <TraceBitmapDialog
-        open={traceBitmapOpen}
-        onConfirm={handleTraceBitmapConfirm}
-        onClose={() => setTraceBitmapOpen(false)}
-      />
-
-      {/* History panel (Window > History, Ctrl+F10) */}
-      {historyPanelVisible && (
-        <div
-          style={{
-            position: "fixed",
-            top: "60px",
-            right: "260px",
-            zIndex: 2000,
-          }}
-        >
-          <HistoryPanel
-            past={historyPast}
-            future={historyFuture}
-            onJumpTo={handleJumpToHistory}
-            onClear={clearHistory}
-            onClose={() => setHistoryPanelVisible(false)}
-            onSaveAsCommand={handleSaveAsCommand}
-          />
-        </div>
-      )}
-
-      {/* Manage Saved Commands dialog */}
-      {manageCommandsOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 3000,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-          onClick={() => setManageCommandsOpen(false)}
-        >
-          <div
-            style={{
-              background: "#2d2d2d",
-              border: "1px solid #1a1a1a",
-              boxShadow: "2px 4px 12px rgba(0,0,0,0.5)",
-              fontFamily: "system-ui, sans-serif",
-              fontSize: "12px",
-              color: "#e0e0e0",
-              minWidth: "280px",
-              maxWidth: "400px",
-              maxHeight: "480px",
-              display: "flex",
-              flexDirection: "column",
-              borderRadius: "2px",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Title bar */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                height: "28px",
-                padding: "0 12px",
-                background: "#3c3c3c",
-                borderBottom: "1px solid #1a1a1a",
-                flexShrink: 0,
-                userSelect: "none",
-              }}
-            >
-              <span style={{ fontWeight: "bold", fontSize: "12px" }}>Manage Saved Commands</span>
-              <button
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#aaa",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  lineHeight: 1,
-                  padding: "0 2px",
-                }}
-                onClick={() => setManageCommandsOpen(false)}
-                title="Close"
-              >
-                x
-              </button>
-            </div>
-            {/* Command list */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "8px 0", minHeight: 0 }}>
-              {savedCommands.length === 0 ? (
-                <div
-                  style={{
-                    padding: "16px",
-                    color: "#777",
-                    textAlign: "center",
-                    fontStyle: "italic",
-                  }}
-                  data-testid="manage-commands-empty"
-                >
-                  No saved commands yet.
-                  <br />
-                  Use the History panel to save steps.
-                </div>
-              ) : (
-                savedCommands.map((cmd) => (
-                  <div
-                    key={cmd.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "4px 12px",
-                    }}
-                    data-testid={`manage-command-${cmd.id}`}
-                  >
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {cmd.name}
-                    </span>
-                    <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "8px" }}>
-                      <button
-                        style={{
-                          background: "#1a6ea8",
-                          border: "1px solid #0d5a8a",
-                          color: "#fff",
-                          cursor: "pointer",
-                          fontSize: "11px",
-                          padding: "1px 6px",
-                          borderRadius: "2px",
-                        }}
-                        onClick={() => {
-                          setManageCommandsOpen(false);
-                          handleRunCommand(cmd.id);
-                        }}
-                        title={`Run "${cmd.name}"`}
-                        data-testid={`run-command-${cmd.id}`}
-                      >
-                        Run
-                      </button>
-                      <button
-                        style={{
-                          background: "#5a2020",
-                          border: "1px solid #8a0d0d",
-                          color: "#fff",
-                          cursor: "pointer",
-                          fontSize: "11px",
-                          padding: "1px 6px",
-                          borderRadius: "2px",
-                        }}
-                        onClick={() => handleDeleteCommand(cmd.id)}
-                        title={`Delete "${cmd.name}"`}
-                        data-testid={`delete-command-${cmd.id}`}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            {/* Footer */}
-            <div
-              style={{
-                padding: "8px 12px",
-                borderTop: "1px solid #1a1a1a",
-                display: "flex",
-                justifyContent: "flex-end",
-                flexShrink: 0,
-              }}
-            >
-              <button
-                style={{
-                  background: "#3a3a3a",
-                  border: "1px solid #555",
-                  color: "#ccc",
-                  cursor: "pointer",
-                  fontSize: "11px",
-                  padding: "3px 12px",
-                  borderRadius: "2px",
-                }}
-                onClick={() => setManageCommandsOpen(false)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bandwidth Profiler panel */}
-      {bandwidthProfilerVisible && bandwidthProfilerReport && (
-        <BandwidthProfilerPanel
-          report={bandwidthProfilerReport}
-          frameRate={doc.properties.frameRate}
-          onClose={() => setBandwidthProfilerVisible(false)}
-        />
-      )}
-
-      {/* Accessibility panel (Window > Accessibility) */}
-      {accessibilityPanelVisible && (
-        <AccessibilityPanel
-          doc={doc}
-          selectedObjectId={
-            selectedDisplayObject?.type === "instance" || selectedDisplayObject?.type === "text"
-              ? selectedDisplayObject.id
-              : null
-          }
-          selectedObjectAccessibility={
-            selectedDisplayObject?.type === "instance"
-              ? (selectedDisplayObject as SymbolInstance).accessibility ?? null
-              : null
-          }
-          onDocChange={handleDocAccessibilityChange}
-          onObjectChange={handleObjectAccessibilityChange}
-          onClose={() => setAccessibilityPanelVisible(false)}
-        />
-      )}
-
-      {/* Export GIF / Export Movie dialog (File > Export Movie) */}
-      <ExportGifDialog
-        open={exportGifOpen}
-        frameRate={docProperties.frameRate}
-        onConfirm={handleExportGifConfirm}
-        onClose={() => setExportGifOpen(false)}
-      />
+      {/* Manage Saved Commands modal (open-state + list in uiStore) */}
+      <ManageCommandsDialog onRun={handleRunCommand} onDelete={handleDeleteCommand} />
 
       {/* Sound Envelope Edit dialog */}
       {envelopeDialogOpen && envelopeDialogTarget && (() => {
@@ -6701,5 +6132,6 @@ export function Shell(): React.ReactElement {
         );
       })()}
     </div>
+    </StoreProvider>
   );
 }

@@ -2,52 +2,16 @@ import { useCallback, useEffect, useReducer } from "react";
 import type { FlashDocument } from "@flash/core";
 import {
   createHistory,
-  pushState,
-  undo as historyUndo,
-  redo as historyRedo,
   canUndo as historyCanUndo,
   canRedo as historyCanRedo,
-  type HistoryState,
 } from "@flash/core";
+import { historyReducer, type HistoryAction } from "../store/history.js";
 
-// ---------------------------------------------------------------------------
-// Reducer
-// ---------------------------------------------------------------------------
-
-export type HistoryAction =
-  | { type: "PUSH"; nextDoc: FlashDocument }
-  | { type: "REPLACE"; nextDoc: FlashDocument }
-  | { type: "COMMIT_DRAG"; preDragDoc: FlashDocument; finalDoc: FlashDocument }
-  | { type: "UNDO" }
-  | { type: "REDO" }
-  | { type: "CLEAR" };
-
-export function historyReducer(state: HistoryState, action: HistoryAction): HistoryState {
-  switch (action.type) {
-    case "PUSH":
-      return pushState(state, action.nextDoc);
-    case "REPLACE":
-      // Update present without recording an undo entry (used for per-frame drag updates)
-      return { ...state, present: action.nextDoc, future: [] };
-    case "COMMIT_DRAG": {
-      // Record the pre-drag snapshot as the undo entry, set final position as present.
-      // This gives one clean undo step for the entire drag gesture.
-      const newPast = [...state.past, action.preDragDoc];
-      const trimmed =
-        newPast.length > state.maxSize
-          ? newPast.slice(newPast.length - state.maxSize)
-          : newPast;
-      return { past: trimmed, present: action.finalDoc, future: [], maxSize: state.maxSize };
-    }
-    case "UNDO":
-      return historyUndo(state);
-    case "REDO":
-      return historyRedo(state);
-    case "CLEAR":
-      // Reset to initial state: keep present, clear past and future
-      return { past: [], present: state.present, future: [], maxSize: state.maxSize };
-  }
-}
+// The pure reducer now lives in store/history.ts so the Zustand documentStore
+// can reuse it without importing React. Re-export it (and HistoryAction) here so
+// existing import paths — e.g. __tests__/useHistory.test.ts — keep working.
+export { historyReducer };
+export type { HistoryAction };
 
 // ---------------------------------------------------------------------------
 // Hook
