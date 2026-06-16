@@ -105,7 +105,16 @@ import { StatusBar } from "./StatusBar";
 import type { FreeTransformMode, PolyStarOptions, ToolId, ToolState } from "./tools/types";
 import { usePublish } from "./hooks/usePublish";
 import { useFileActions, loadFlaFromBytes } from "./hooks/useFileActions";
-import { useHistory } from "./hooks/useHistory";
+import { useStore } from "zustand";
+import {
+  createStores,
+  type Stores,
+  selectDoc,
+  selectCanUndo,
+  selectCanRedo,
+  selectUndoDepth,
+  selectRedoDepth,
+} from "./store/index.js";
 import { ActionsPanel } from "./ActionsPanel";
 import { OutputPanel } from "./OutputPanel";
 import { DocumentPropertiesDialog } from "./DocumentPropertiesDialog";
@@ -632,22 +641,45 @@ export function frameFilename(frameIndex: number, format: "png" | "jpeg"): strin
 
 export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
-  // Single document owner — replaces scattered useState for timeline/library/etc.
+  // Single document owner — the per-instance Zustand documentStore owns the
+  // undo/redo HistoryState. Created once; non-React callers (agent/JSFL/test
+  // bridges) read the live doc via documentStore.getState(), which replaces the
+  // old latestDocRef stale-closure workaround.
   // ---------------------------------------------------------------------------
-  const history = useHistory(_initialDoc);
-  const { doc, push: _rawPushDoc, replace: replaceDoc, commitDrag, undo, redo, canUndo, canRedo, past: historyPast, future: historyFuture, clearHistory } = history;
-  // Track the latest doc in a ref so agent callbacks always see the most recent
-  // value even before React re-renders after a pushDoc() call.
-  const latestDocRef = useRef(doc);
-  latestDocRef.current = doc;
+  const storesRef = useRef<Stores | null>(null);
+  if (!storesRef.current) storesRef.current = createStores(_initialDoc);
+  const { documentStore } = storesRef.current;
+
+  // Subscribe to the slices Shell renders from. Each re-renders only when its
+  // slice changes (Object.is), mirroring the old useReducer behaviour.
+  const doc = useStore(documentStore, selectDoc);
+  const canUndo = useStore(documentStore, selectCanUndo);
+  const canRedo = useStore(documentStore, selectCanRedo);
+  const undoDepth = useStore(documentStore, selectUndoDepth);
+  const redoDepth = useStore(documentStore, selectRedoDepth);
+  const historyPast = useStore(documentStore, (s) => s.history.past);
+  const historyFuture = useStore(documentStore, (s) => s.history.future);
+
+  // Store actions are stable; wrap as stable callbacks for prop/dep-array use.
+  const replaceDoc = useCallback(
+    (nextDoc: FlashDocument) => documentStore.getState().replaceDoc(nextDoc),
+    [documentStore]
+  );
+  const commitDrag = useCallback(
+    (preDragDoc: FlashDocument, finalDoc: FlashDocument) =>
+      documentStore.getState().commitDrag(preDragDoc, finalDoc),
+    [documentStore]
+  );
+  const undo = useCallback(() => documentStore.getState().undo(), [documentStore]);
+  const redo = useCallback(() => documentStore.getState().redo(), [documentStore]);
+  const clearHistory = useCallback(() => documentStore.getState().clearHistory(), [documentStore]);
   // Wrap push so we bump the agent rev counter on every document mutation.
   const pushDoc = useCallback(
-    (nextDoc: Parameters<typeof _rawPushDoc>[0]) => {
-      latestDocRef.current = nextDoc;
+    (nextDoc: FlashDocument) => {
       bumpRev();
-      _rawPushDoc(nextDoc);
+      documentStore.getState().pushDoc(nextDoc);
     },
-    [_rawPushDoc]
+    [documentStore]
   );
 
   // Convenience: library, docProperties
@@ -5145,7 +5177,7 @@ export function Shell(): React.ReactElement {
       getSelection: () => selectedShapeIds,
       getCurrentFrame: () => currentFrame,
       getActiveLayerIndex: () => activeLayerIndex,
-      getHistoryDepth: () => history.undoDepth,
+      getHistoryDepth: () => documentStore.getState().history.past.length,
       getActiveTool: () => toolState.activeTool,
 
       selectTool: (tool: string) => handleToolChange(tool as ToolId),
@@ -5262,7 +5294,7 @@ export function Shell(): React.ReactElement {
     currentFrame,
     activeLayerIndex,
     activeSceneIndex,
-    history.undoDepth,
+    undoDepth,
     toolState.activeTool,
     handleToolChange,
     undo,
@@ -5287,17 +5319,17 @@ export function Shell(): React.ReactElement {
 
     setAgentCallbacks({
       // Readers
-      // Read from latestDocRef so agent commands issued immediately after
-      // pushDoc() see the updated document before React re-renders.
-      getDoc: () => latestDocRef.current,
+      // Read the live document straight from the store so agent commands issued
+      // immediately after pushDoc() see the update before React re-renders.
+      getDoc: () => documentStore.getState().history.present,
       getSelectedIds: () => selectedShapeIds,
       getCurrentFrame: () => currentFrame,
       getActiveLayerIndex: () => activeLayerIndex,
       getActiveTool: () => toolState.activeTool,
       getEditContext: () => editContext,
       getActiveSceneIndex: () => activeSceneIndex,
-      getUndoDepth: () => history.undoDepth,
-      getRedoDepth: () => history.redoDepth,
+      getUndoDepth: () => documentStore.getState().history.past.length,
+      getRedoDepth: () => documentStore.getState().history.future.length,
 
       // Mutators
       pushDoc,
@@ -5393,8 +5425,8 @@ export function Shell(): React.ReactElement {
     toolState.activeTool,
     editContext,
     activeSceneIndex,
-    history.undoDepth,
-    history.redoDepth,
+    undoDepth,
+    redoDepth,
     pushDoc,
     undo,
     redo,
