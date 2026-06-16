@@ -94,7 +94,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import type { PlacedInstance } from "./PropertiesPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { StatusBar } from "./StatusBar";
-import type { FreeTransformMode, PolyStarOptions, ToolId } from "./tools/types";
+import type { ToolId } from "./tools/types";
 import { usePublish } from "./hooks/usePublish";
 import { useFileActions, loadFlaFromBytes } from "./hooks/useFileActions";
 import { useStore } from "zustand";
@@ -113,6 +113,7 @@ import { ShellDialogs } from "./layout/ShellDialogs.js";
 import { ShellPanels } from "./layout/ShellPanels.js";
 import { ManageCommandsDialog } from "./layout/ManageCommandsDialog.js";
 import { ShellOverlays } from "./layout/ShellOverlays.js";
+import { useToolHandlers } from "./hooks/useToolHandlers.js";
 import {
   instanceNamesOf,
   shapeDisplayObjectsAt,
@@ -711,13 +712,10 @@ export function Shell(): React.ReactElement {
     editingTextId, setEditingTextId,
     setColorPanelVisible,
     colorMixerVisible, setColorMixerVisible,
-    setMixerFillAlpha,
-    setMixerStrokeAlpha,
     setFiltersPanelVisible,
     alignPanelVisible, setAlignPanelVisible,
     scenePanelVisible, setScenePanelVisible,
     swatchesPanelVisible, setSwatchesPanelVisible,
-    setSwatches,
     behaviorsPanelVisible, setBehaviorsPanelVisible,
     movieExplorerVisible, setMovieExplorerVisible,
     historyPanelVisible, setHistoryPanelVisible,
@@ -1141,150 +1139,15 @@ export function Shell(): React.ReactElement {
   // Handlers — tools
   // ---------------------------------------------------------------------------
 
-  const handleToolChange = useCallback((tool: ToolId) => {
-    setToolState((prev) => ({ ...prev, activeTool: tool }));
-  }, []);
-
-  const handleStrokeColorChange = useCallback((color: string) => {
-    setToolState((prev) => ({ ...prev, strokeColor: color }));
-  }, []);
-
-  const handleFillColorChange = useCallback((color: string | null) => {
-    const fill: Fill | null = color
-      ? { type: "solid", color: hexToColor(color) }
-      : null;
-    setToolState((prev) => ({ ...prev, fillColor: color, fill }));
-  }, []);
-
-  const handleFillChange = useCallback((newFill: Fill | null) => {
-    // Derive fillColor hex from the fill for backward compat (for solid fills)
-    let fillColor: string | null = null;
-    if (newFill?.type === "solid") {
-      const { r, g, b } = newFill.color;
-      fillColor = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-    }
-    // Always update tool state so future-drawn shapes pick up the fill.
-    setToolState((prev) => ({ ...prev, fill: newFill, fillColor }));
-
-    // If a shape is selected, also apply the new fill to every path in that shape
-    // so the canvas updates immediately (gradient preview round-trip).
-    if (selectedShapeId) {
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (layerId) {
-        const layer = timeline.layers[safeActiveLayerIndex];
-        if (layer) {
-          const kf = [...layer.frames]
-            .filter((f) => f.isKeyframe && f.index <= currentFrame)
-            .sort((a, b) => b.index - a.index)[0];
-          if (kf) {
-            const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
-            if (obj && obj.type === "shape") {
-              const shapeObj = obj as ShapeDisplayObject;
-              const newPaths = shapeObj.shape.paths.map((path) =>
-                newFill !== null ? { ...path, fill: newFill } : { ...path, fill: undefined }
-              );
-              pushDoc(withTimeline((t) =>
-                updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
-                  shape: { ...shapeObj.shape, paths: newPaths },
-                })
-              ));
-            }
-          }
-        }
-      }
-    }
-  }, [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
-
-  const handleStrokeChangeFromPanel = useCallback((stroke: SolidStroke | null) => {
-    if (stroke) {
-      const { r, g, b, a } = stroke.color;
-      const hex = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-      setToolState((prev) => ({
-        ...prev,
-        strokeColor: hex,
-        strokeWidth: stroke.width,
-        strokeAlpha: Math.round((a / 255) * 100),
-      }));
-    } else {
-      setToolState((prev) => ({ ...prev, strokeColor: "#000000", strokeAlpha: 0 }));
-    }
-  }, []);
-
-  // Color Mixer panel handlers
-  const handleMixerFillColorChange = useCallback((color: string, alpha: number) => {
-    setMixerFillAlpha(alpha);
-    handleFillColorChange(alpha > 0 ? color : null);
-  }, [handleFillColorChange]);
-
-  // Swatches panel handlers
-  /** Apply a swatch color as the current fill color */
-  const handleSelectSwatch = useCallback((color: string) => {
-    handleFillColorChange(color);
-  }, [handleFillColorChange]);
-
-  const handleAddSwatch = useCallback((color: string) => {
-    setSwatches((prev) => [...prev, color]);
-  }, []);
-
-  const handleRemoveSwatch = useCallback((index: number) => {
-    setSwatches((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const handleSwatchesLoad = useCallback((loaded: string[]) => {
-    setSwatches(loaded);
-  }, []);
-
-  const handleMixerStrokeColorChange = useCallback((color: string, alpha: number) => {
-    setMixerStrokeAlpha(alpha);
-    setToolState((prev) => ({
-      ...prev,
-      strokeColor: color,
-      strokeAlpha: alpha,
-    }));
-  }, []);
-
-  const handleObjectDrawingToggle = useCallback(() => {
-    setToolState((prev) => ({ ...prev, objectDrawing: !prev.objectDrawing }));
-  }, []);
-
-  const handlePencilModeChange = useCallback((mode: "straighten" | "smooth" | "ink") => {
-    setToolState((prev) => ({ ...prev, pencilMode: mode }));
-  }, []);
-
-  const handleBrushSizeChange = useCallback((size: number) => {
-    setToolState((prev) => ({ ...prev, brushSize: size }));
-  }, []);
-
-  const handleEraserSizeChange = useCallback((size: number) => {
-    setToolState((prev) => ({ ...prev, eraserSize: size }));
-  }, []);
-
-  const handleFreeTransformModeChange = useCallback((mode: FreeTransformMode) => {
-    setToolState((prev) => ({ ...prev, freeTransformMode: mode }));
-  }, []);
-
-  const handleLassoPolygonModeChange = useCallback((polygonMode: boolean) => {
-    setToolState((prev) => ({ ...prev, lassoPolygonMode: polygonMode }));
-  }, []);
-
-  const handleLassoMagicWandChange = useCallback((magicWand: boolean) => {
-    setToolState((prev) => ({ ...prev, lassoMagicWand: magicWand }));
-  }, []);
-
-  const handleMagicWandThresholdChange = useCallback((threshold: number) => {
-    setToolState((prev) => ({ ...prev, magicWandThreshold: threshold }));
-  }, []);
-
-  const handleMagicWandSmoothingChange = useCallback((smoothing: "pixels" | "rough" | "normal" | "smooth") => {
-    setToolState((prev) => ({ ...prev, magicWandSmoothing: smoothing }));
-  }, []);
-
-  const handlePolyStarOptionsChange = useCallback((opts: Partial<PolyStarOptions>) => {
-    setToolState((prev) => ({
-      ...prev,
-      polyStarOptions: { ...(prev.polyStarOptions ?? { shapeType: "polygon", sides: 5, pointSize: 0.5 }), ...opts },
-    }));
-  }, []);
+  // Tool / colour / swatch handlers (see hooks/useToolHandlers).
+  const {
+    handleToolChange, handleStrokeColorChange, handleFillColorChange, handleFillChange,
+    handleStrokeChangeFromPanel, handleMixerFillColorChange, handleSelectSwatch, handleAddSwatch,
+    handleRemoveSwatch, handleSwatchesLoad, handleMixerStrokeColorChange, handleObjectDrawingToggle,
+    handlePencilModeChange, handleBrushSizeChange, handleEraserSizeChange, handleFreeTransformModeChange,
+    handleLassoPolygonModeChange, handleLassoMagicWandChange, handleMagicWandThresholdChange,
+    handleMagicWandSmoothingChange, handlePolyStarOptionsChange,
+  } = useToolHandlers({ uiStore, pushDoc, withTimeline, timeline, safeActiveLayerIndex, currentFrame, selectedShapeId });
 
   // ---------------------------------------------------------------------------
   // Handlers — shape drawing
