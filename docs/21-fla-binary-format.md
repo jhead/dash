@@ -879,10 +879,23 @@ flacomdoc has **no** SWF-import write path, and fla-decoder has no `read_cpicswf
 cannot be transcribed from a writer. Known facts (fla-decoder Ghidra): `CPicSwf : CPicObj`,
 class size 308 B, schema 1, `serialize` VA `0x9490400`; it begins with the standard
 `CPicObj::Serialize` base (§5.3 note) then a SWF-specific body of ~950–5500 bytes of which only
-the leading matrix is reliably recoverable. This is the **one residual gap**: imported SWFs are
+the leading placement is reliably recoverable.
+
+Observed from a real sample (`fixtures/Magnet.fla` `Page 1`, the "Claw.swft" imported SWF) —
+the record body after the `CPicSwf` class tag begins:
+
+```
+02 00 00 00  b6 10 00 00  ec 06 00 00  06  c6 3c 01 00  00 00 00 00  00 00 00 00  c6 3c 01 00 ...
+^stateFlags  ^u32         ^u32              ^u32(0x13cc6 — appears twice; likely a bounds/size)
+ (=selected) (0x10b6)     (0x6ec)
+```
+
+i.e. an instance-placement-like header (selected flag, dimension/bounds u32s, repeated size
+word) then the opaque imported-SWF payload. **This is the one residual gap.** Imported SWFs are
 not part of the normal authoring round-trip (the clone never emits them), so a reader need only
-resync past the record. To fully decode it would require Ghidra at the cited VA or a sample FLA
-that embeds an imported SWF (none exists in the corpus).
+resync past the record (scan for the next sibling class tag — §5.1). Fully
+decoding the body would require Ghidra at the cited VA or differential analysis of the Magnet
+samples; it is out of scope here because no byte-verified writer covers it.
 
 ---
 
