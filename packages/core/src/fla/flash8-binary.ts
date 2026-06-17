@@ -418,6 +418,13 @@ export interface Fla8SwfRef {
   readonly type: "swf";
   /** Approximate placement matrix extracted from the record header. */
   readonly matrix: Fla8Matrix;
+  /**
+   * Raw bytes of the whole CPicSwf record body (from the start of the
+   * CPicObjBase header through the byte before the re-sync landing point).
+   * The record tail is `[X]` (undecoded) per the format spec, so these bytes
+   * are captured verbatim for lossless round-trip rather than dropped.
+   */
+  readonly rawBytes: Uint8Array;
 }
 
 export type Fla8Element = Fla8Shape | Fla8Instance | Fla8Text | Fla8BitmapRef | Fla8VideoRef | Fla8SwfRef;
@@ -2420,6 +2427,11 @@ function readCPicVideo(ctx: ParseCtx): Fla8VideoRef {
 
 function readCPicSwf(ctx: ParseCtx): Fla8SwfRef {
   const { r } = ctx;
+  // Record-body start: the byte after the CArchive class tag (the CPicObjBase
+  // schema byte). We capture from here through the re-sync landing point so the
+  // undecoded variable tail is preserved verbatim for lossless round-trip
+  // (§16 / §18: the CPicSwf tail is [X] — only the placement matrix is decoded).
+  const bodyStart = r.pos;
   let matrix: Fla8Matrix = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
   try {
     readCPicObjBase(ctx);
@@ -2430,7 +2442,10 @@ function readCPicSwf(ctx: ParseCtx): Fla8SwfRef {
   }
   // Skip the variable-length tail to re-sync at the next sibling element.
   skipToNextBoundary(ctx);
-  return { type: "swf", matrix };
+  // Copy the consumed range (the parse buffer subarray is a view into a stream
+  // buffer that may be reused; slice to own the bytes).
+  const rawBytes = r.buf.slice(bodyStart, r.pos);
+  return { type: "swf", matrix, rawBytes };
 }
 
 // --- CPicText ------------------------------------------------------------------

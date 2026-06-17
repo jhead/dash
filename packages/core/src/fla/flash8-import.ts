@@ -16,6 +16,7 @@ import type {
   LibraryItem,
   Frame,
   SoundLinkage,
+  FlaSwfBlob,
 } from "../model/types.js";
 import type {
   ButtonHandler,
@@ -1835,6 +1836,35 @@ function parseH263DimsFromVideoData(
  * Returns null when the container holds no recognizable timeline streams
  * (the caller is expected to fall back to a skeleton document).
  */
+/**
+ * Walk a parsed timeline and capture every CPicSwf record's raw bytes as an
+ * opaque blob for lossless re-export. The CPicSwf tail is undecoded ([X] in the
+ * format spec) so these records have no rendered display object; capturing the
+ * bytes avoids silently dropping them.
+ */
+function collectSwfBlobs(
+  timeline: Fla8Timeline,
+  sceneIndex: number | undefined,
+  out: FlaSwfBlob[],
+): void {
+  for (const layer of timeline.layers) {
+    for (const frame of layer.frames) {
+      for (const el of frame.elements) {
+        if (el.type === "swf") {
+          out.push({
+            bytes: el.rawBytes,
+            matrix: {
+              a: el.matrix.a, b: el.matrix.b, c: el.matrix.c, d: el.matrix.d,
+              tx: el.matrix.tx, ty: el.matrix.ty,
+            },
+            ...(sceneIndex !== undefined ? { sceneIndex } : {}),
+          });
+        }
+      }
+    }
+  }
+}
+
 export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocument | null {
   let contentsBytes: Uint8Array | null = null;
   const pages: Array<{ num: number; name: string; bytes: Uint8Array }> = [];
@@ -1901,6 +1931,7 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     const soundItem = createSound(info.name, {
       ...(info.linkageId ? { linkageIdentifier: info.linkageId } : {}),
       ...(info.exportForActionScript ? { exportForActionScript: true } : {}),
+      flaItemId: { order: num },
     });
     soundIdByIndex.set(num, soundItem.id);
     soundStubByIndex.set(num, soundItem);
@@ -1962,7 +1993,7 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
       const extractedDims = extractFlvDims(bytes);
       const width = extractedDims?.width ?? 320;
       const height = extractedDims?.height ?? 240;
-      const videoItem = createVideo(videoName, { dataUri, width, height });
+      const videoItem = createVideo(videoName, { dataUri, width, height, flaItemId: { order: mediaNum } });
       videoIdByIndex.set(mediaNum, videoItem.id);
       videoSizeByIndex.set(mediaNum, { width, height });
       items.push(videoItem);
@@ -1983,6 +2014,7 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
       originalWidth: decoded.width,
       originalHeight: decoded.height,
       compressionType: decoded.compressionType,
+      flaItemId: { order: mediaNum },
     });
     bitmapIdByIndex.set(mediaNum, bitmapItem.id);
     bitmapSizeByIndex.set(mediaNum, { width: decoded.width, height: decoded.height });
@@ -1999,8 +2031,8 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
   // The Contents stream records "Font N" entries with a font family name
   // (e.g. "_sans", "Arial"). We use the family name as both the library
   // display name and the fontName.
-  for (const [, fontInfo] of contents.fonts) {
-    const fontItem = createFont(fontInfo.name, fontInfo.fontName);
+  for (const [fontNum, fontInfo] of contents.fonts) {
+    const fontItem = createFont(fontInfo.name, fontInfo.fontName, { flaItemId: { order: fontNum } });
     items.push(fontItem);
   }
 
@@ -2072,14 +2104,22 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     shells.set(s.num, shell);
     symbolIdByIndex.set(s.num, shell.id);
   }
+  // Accumulate opaque CPicSwf records (raw bytes) across both symbol and scene
+  // timelines so a future re-export can reproduce them verbatim; the format spec
+  // marks the CPicSwf tail [X] (undecoded), so these placements have no rendered
+  // display representation. Surfaced on the document via `flaSwfBlobs` below.
+  const flaSwfBlobs: FlaSwfBlob[] = [];
+
   // timelines
   for (const s of symbolStreams) {
     const shell = shells.get(s.num)!;
     const parsed = parsedSymbolTimelines.get(s.num);
+    if (parsed) collectSwfBlobs(parsed, undefined, flaSwfBlobs);
     const timeline = parsed
       ? convertTimeline(parsed, symbolIdByIndex, soundIdByIndex, bitmapIdByIndex, bitmapSizeByIndex, videoIdByIndex, videoSizeByIndex)
       : shell.timeline;
-    items.push({ ...shell, timeline });
+    // flaItemId.order is the "Symbol N" stream number (creation/storage order).
+    items.push({ ...shell, timeline, flaItemId: { order: s.num } });
   }
 
   // --- scenes -----------------------------------------------------------------
@@ -2116,8 +2156,10 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     const sceneName = contents.sceneNames.get(p.name) ?? `Scene ${i + 1}`;
     let timeline: Timeline;
     try {
+      const parsedTimeline = parseFla8Timeline(p.bytes);
+      collectSwfBlobs(parsedTimeline, i, flaSwfBlobs);
       timeline = convertTimeline(
-        parseFla8Timeline(p.bytes),
+        parsedTimeline,
         symbolIdByIndex,
         soundIdByIndex,
         bitmapIdByIndex,
@@ -2131,7 +2173,9 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
       );
       timeline = { layers: [createLayer("Layer 1", "normal")] };
     }
-    scenes.push(createScene(sceneName, { timeline }));
+    // flaItemId.order is the "Page N" stream number (creation/storage order),
+    // which is distinct from this scene's authored play order (the loop index).
+    scenes.push(createScene(sceneName, { timeline, flaItemId: { order: p.num } }));
   }
 
   // --- button symbol-type promotion -------------------------------------------
@@ -2190,5 +2234,6 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     properties,
     scenes,
     library: { items, folders },
+    ...(flaSwfBlobs.length > 0 ? { flaSwfBlobs } : {}),
   });
 }

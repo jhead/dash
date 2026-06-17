@@ -2,7 +2,18 @@ import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 import { serializeDocument } from "./serialize.js";
 import { deserializeDocument } from "./deserialize.js";
 import { isOle2, tryLoadRealFla } from "./ole.js";
+import { saveRealFla as saveRealFlaImpl } from "./write/fla-write.js";
 import type { FlashDocument } from "../model/types.js";
+
+/**
+ * Serialize a FlashDocument to a genuine Macromedia Flash 8 binary `.fla`
+ * (OLE2/CFB container). This is a separate export from the default `saveFla`
+ * (which writes this clone's zip/JSON format); the default round-trip behavior
+ * of saveFla/loadFla is unchanged.
+ */
+export function saveRealFla(doc: FlashDocument): Uint8Array {
+  return saveRealFlaImpl(doc);
+}
 
 const ENTRY_NAME = "document.json";
 

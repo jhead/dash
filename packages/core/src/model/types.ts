@@ -31,6 +31,28 @@ export type LayerType = "normal" | "guide" | "guided" | "mask" | "masked" | "fol
 
 export type SymbolType = "movieclip" | "button" | "graphic";
 
+/**
+ * Round-trip identity metadata recovered from a binary FLA's ItemID record
+ * (Flash's per-item library/scene identity, used to preserve item identity
+ * across a re-export). Attached to imported scenes and library items so a
+ * future writer can reproduce the original item ordering/identity.
+ *
+ * - `order` is the item's storage/creation index, derived from the OLE2 stream
+ *   number (`Page N` / `Symbol N` / `Media N` / `Sound N`). This is reliably
+ *   recoverable. NOTE: it is the *creation* order, NOT the authored play/library
+ *   display order (see the scene-ordering note in flash8-import.ts).
+ * - `timeCreated` is the original FLA creation timestamp when it could be
+ *   recovered from the binary; undefined when the byte layout could not be
+ *   confirmed (the binary FLA format spec does not document the ItemID timestamp
+ *   layout with verified confidence, so this is populated only opportunistically).
+ */
+export interface FlaItemId {
+  /** Storage/creation order index (OLE2 stream number). */
+  readonly order: number;
+  /** Original FLA creation timestamp (epoch ms), when recoverable. */
+  readonly timeCreated?: number;
+}
+
 export type LibraryItemType =
   | "symbol"
   | "bitmap"
@@ -258,7 +280,7 @@ export interface Scene {
   readonly id: string;
   readonly name: string;
   readonly timeline: Timeline;
-  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
+  /** Round-trip identity recovered from a binary FLA import; undefined otherwise. */
   readonly flaItemId?: FlaItemId;
 }
 
@@ -338,26 +360,10 @@ export interface ButtonSounds {
   readonly downToOver?: ButtonStateSound;
 }
 
-/**
- * Original binary-FLA identity of a library item or scene — the `"%08x-%08x"`
- * ItemID (timeCreated-order) from the Contents catalog (binary-FLA spec §8.6).
- *
- * Captured by the real-FLA importer so that a re-exported binary .fla can
- * reproduce the exact ItemID a round-tripped document had. Absent for documents
- * authored in the clone — the binary-FLA writer synthesizes one in that case.
- * Pure round-trip metadata: never consulted by rendering or SWF compile.
- */
-export interface FlaItemId {
-  readonly timeCreated: number;
-  readonly order: number;
-}
-
 export interface Symbol {
   readonly id: string;
   readonly name: string;
   readonly itemType: "symbol";
-  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
-  readonly flaItemId?: FlaItemId;
   readonly symbolType: SymbolType;
   readonly timeline: Timeline;
   readonly linkage: SymbolLinkage;
@@ -383,6 +389,8 @@ export interface Symbol {
    * Only meaningful when symbolType === "button". Default: false.
    */
   readonly trackAsMenu?: boolean;
+  /** Round-trip identity recovered from a binary FLA import; undefined otherwise. */
+  readonly flaItemId?: FlaItemId;
 }
 
 export interface Scale9Grid {
@@ -396,8 +404,6 @@ export interface BitmapItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "bitmap";
-  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
-  readonly flaItemId?: FlaItemId;
   /** Data URL or asset reference; empty string until asset is loaded */
   readonly dataUri: string;
   readonly originalWidth: number;
@@ -405,14 +411,14 @@ export interface BitmapItem {
   readonly allowSmoothing: boolean;
   readonly compressionType: "photo" | "lossless";
   readonly quality: number;         // JPEG quality 1-100
+  /** Round-trip identity recovered from a binary FLA import; undefined otherwise. */
+  readonly flaItemId?: FlaItemId;
 }
 
 export interface SoundItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "sound";
-  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
-  readonly flaItemId?: FlaItemId;
   readonly dataUri: string;
   readonly sampleRate: number;      // Hz
   readonly sampleSize: 8 | 16;
@@ -423,41 +429,43 @@ export interface SoundItem {
   readonly linkageIdentifier?: string;
   /** Whether this sound is exported for ActionScript (attachSound/class). */
   readonly exportForActionScript?: boolean;
+  /** Round-trip identity recovered from a binary FLA import; undefined otherwise. */
+  readonly flaItemId?: FlaItemId;
 }
 
 export interface VideoItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "video";
-  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
-  readonly flaItemId?: FlaItemId;
   readonly dataUri: string;
   readonly frameCount: number;
   readonly frameRate: number;
   readonly width: number;
   readonly height: number;
+  /** Round-trip identity recovered from a binary FLA import; undefined otherwise. */
+  readonly flaItemId?: FlaItemId;
 }
 
 export interface FontItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "font";
-  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
-  readonly flaItemId?: FlaItemId;
   readonly fontName: string;
   readonly bold: boolean;
   readonly italic: boolean;
   readonly linkageIdentifier: string;
+  /** Round-trip identity recovered from a binary FLA import; undefined otherwise. */
+  readonly flaItemId?: FlaItemId;
 }
 
 export interface ComponentItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "component";
-  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
-  readonly flaItemId?: FlaItemId;
   readonly componentName: string;
   readonly packageName: string;
+  /** Round-trip identity recovered from a binary FLA import; undefined otherwise. */
+  readonly flaItemId?: FlaItemId;
 }
 
 export type LibraryItem =
@@ -535,11 +543,43 @@ export interface DocumentAccessibility {
   readonly useCustomTabOrder: boolean;
 }
 
+/**
+ * Opaque passthrough capture of a legacy imported-SWF (`CPicSwf`) display
+ * record from a binary FLA. Flash 8's `CPicSwf` carries a placement matrix plus
+ * a large variable-length tail (AS2 clip scripts, color transform, source SWF
+ * filename, instance name) that the format spec marks `[X]` (undecoded). Rather
+ * than silently dropping the record, the importer captures its raw bytes here so
+ * a future re-export can reproduce them verbatim. The element is not rendered on
+ * the editor stage (it has no decoded display representation).
+ */
+export interface FlaSwfBlob {
+  /** Raw record bytes (from the CArchive class tag through the record tail). */
+  readonly bytes: Uint8Array;
+  /** Decoded placement matrix scalars (best-effort; only the header is parsed). */
+  readonly matrix: {
+    readonly a: number;
+    readonly b: number;
+    readonly c: number;
+    readonly d: number;
+    readonly tx: number;
+    readonly ty: number;
+  };
+  /** Scene index this record was placed on (when known). */
+  readonly sceneIndex?: number;
+}
+
 export interface FlashDocument {
   readonly id: string;
   readonly properties: DocumentProperties;
   readonly scenes: readonly Scene[];
   readonly library: Library;
+  /**
+   * Opaque CPicSwf records captured from a binary FLA import (legacy embedded
+   * SWF placements). Preserved so a future re-export can reproduce them; not
+   * part of the rendered document model. Present only on imported documents
+   * that contained CPicSwf records.
+   */
+  readonly flaSwfBlobs?: readonly FlaSwfBlob[];
   /** Named publish configurations. The active profile id is stored separately in the editor state. */
   readonly publishProfiles?: readonly PublishProfile[];
   /** Id of the currently selected publish profile. Falls back to the first profile. */
