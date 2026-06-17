@@ -1,0 +1,6 @@
+{
+  "name": "s_base2",
+  "fla": "s_base2.fla",
+  "twinGroup": "S",
+  "actual": { "width": 550, "height": 400, "frameRate": 12, "bg": "'#ffffff'" }
+}

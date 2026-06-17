@@ -1,0 +1,4 @@
+width=777
+height=333
+frameRate=12
+backgroundColor='#ffffff'

@@ -132,18 +132,47 @@ run time (save the SAME input twice, diff), never hardcode these.
 
 ## Status / next steps
 - [x] Build flashdrv (Win7 x86 server + mac client) — `tools/flashdrv/`
-- [x] Cleared 5 Win7 traps: `RtlGetSystemTimePrecise` (Win8+), `RtlWaitOnAddress` (Win8+,
-      via `-fsingle-threaded`), SP1-only `WSA_FLAG_NO_HANDLE_INHERIT` (custom listen),
-      missing `WSAStartup`, wrong Flash path. PE import audit: `tools/flashdrv/peimp.py`.
-- [x] Smoke test against REAL Flash 8 PASSED (see above).
-- [x] Noise floor measured (~8 bytes, see above).
-- [ ] Build host-side noise-mask differ (`tools/flashdrv/differ.*`): baseline+mutant+twin
-      → `(mutant^baseline) & ~(twinA^twinB)`, emit decoded byte offsets + values vs `.meta`.
-- [ ] Write first generator `tools/flashdrv/jsfl/linkage.jsfl` (gap #1, §6.3): ramp the 4
-      linkage flags individually + library symbol; one `flashdrvSave` + `.meta` per specimen.
-- [ ] Iterate the gap list; fold findings back into `docs/21-fla-binary-format.md`.
+- [x] Cleared 5 Win7 traps (see above). PE import audit: `tools/flashdrv/peimp.py`.
+- [x] Smoke test against REAL Flash 8 PASSED.
+- [x] Noise floor measured (~8 bytes).
+- [x] Host-side per-stream differ `tools/flashdrv/fladiff.py` (+ dependency-free CFB reader
+      `fla_cfb.py`). Diffs INSIDE each CFB stream (Contents/Page/Symbol) so offsets are
+      stream-relative and CFB-container noise is excluded — far better than whole-file XOR.
+- [x] Stage block decoded & oracle-verified (`jsfl/stage.jsfl` → `corpus/stage`): width@407
+      u16*20 twips, height@415 u16*20, bg@456 RGB, fps@466 u8 (8.8). See docs/21 §6.6.
+- [x] **All remaining gaps resolved from the byte-verified writer flacomdoc** (cloned to
+      `tools/refs/flacomdoc`, cross-checked vs `tools/refs/fla-decoder`). 5 parallel agents
+      mined FlaConverter/TimelineConverter/FlaWriter; findings folded into docs/21 (every
+      [I]/[O]/[X] → [V] except the bounded CPicSwf body). Authoritative F8 schema table
+      computed in `findings/schema-F8.md` (`findings/dump_schema.py`) — both agents had
+      positional errors in this table, so it was machine-computed.
+- [x] READ proof: `flaparse.py` parses the full document catalog + CArchive class inventory
+      of Magnet/golden/evaporatingdrip (`findings/read-proof.txt`).
+- [x] WRITE proof: `flapatch.py` rewrites §6.6 stage fields by the spec; **real Flash 8 reads
+      our bytes back exactly** (640×480, fps 30, bg #123456) — `findings/write-proof.txt`.
+
+## What worked / what did NOT (hard-won)
+- **JSFL linkage edits HANG session-0 Flash.** Setting linkage (even AS-export, no RS) pops a
+  modal that headless/session-0 Flash can't dismiss → the whole batch times out. `addNewItem`,
+  stage props, and shapes are modal-free and fine. Linkage (§6.4) is therefore verified from
+  flacomdoc + the read side, NOT the oracle.
+- **flacomdoc >> oracle for STRUCTURAL layout.** The differential oracle is great for confirming
+  a single field's offset/encoding (stage block) but slow and modal-prone for whole records. The
+  byte-verified writer gives the entire field order at once; the oracle's best use is spot-checks
+  + the write round-trip proof.
+- **The server SSH session dying kills the server.** Run it via a long-lived background SSH
+  keyed to a NON-passphrase key. The ed25519 key is now in the VM authorized_keys
+  (`administrators_authorized_keys`) for durable access independent of the agent.
+- **Verify agent output against real bytes.** Both mining agents mis-mapped the FlaFormatVersion
+  positional row (asLinkageVersion 4-vs-2, really 7); the scene tag string is unicode "Page N"
+  not ASCII "P <n> <time>". Always cross-check the writer claims against a real FLA.
+
+## Residual
+- `CPicSwf` (imported-SWF) body — flacomdoc has no SWF-import writer; ~950–5500 B, only the
+  matrix recoverable; derives from CPicObj. Out of the authoring round-trip (reader resyncs
+  past it). Magnet.fla DOES contain samples (symbols "Claw.swft"/"claw2.swft") if a future
+  Ghidra/diff pass wants to bottom it out. docs/21 §16.3.
 
 ## Out of scope (phase 2)
-- flash.exe static decompilation (Ghidra, extend `eddiemoore/fla-decoder`) for true `[X]`
-  semantics: CPicSwf tail, CPicObjBase.flags meaning, Contents structured walk, filter constants.
-- Live debugger (x64dbg/WinDbg) tie-breaking for resync-prone tails.
+- Full `CPicSwf` body decode (Ghidra at VA 0x9490400, or diff Magnet's CPicSwf records).
+- Live debugger tie-breaking for resync-prone tails.

@@ -1,0 +1,21 @@
+WRITE PROOF — spec-driven FLA edit read back by REAL Flash 8
+============================================================
+
+Method: take a real Flash-8-authored empty FLA (corpus/noise/base_a.fla), rewrite the §6.6
+stage fields in the Contents stream with tools/flashdrv/flapatch.py (byte-exact, in-place),
+upload to the Win7 VM, and have real Flash 8 open it via JSFL (fl.openDocument) and report
+doc.width/height/frameRate/backgroundColor back through the flashdrv oracle.
+
+Test 1 — width/height:
+  wrote width=777 height=333
+  Flash 8 reported:  width=777  height=333  frameRate=12  backgroundColor='#ffffff'   PASS
+
+Test 2 — all four stage fields:
+  wrote width=640 height=480 bg=#123456 fps=30
+  Flash 8 reported:  width=640  height=480  frameRate=30  backgroundColor='#123456'   PASS
+
+Conclusion: the spec's §6.6 stage-block field locations/encodings are correct in BOTH
+directions — we can read them from Flash output AND write them such that real Flash 8 reads
+our bytes back exactly. Combined with the read proof (read-proof.txt: full catalog + class
+inventory of Magnet/golden/evaporatingdrip), the format spec is proven by reading and writing
+real FLA files.

@@ -1,0 +1,6 @@
+{
+  "name": "s_h600",
+  "fla": "s_h600.fla",
+  "baseline": "s_base1",
+  "actual": { "width": 550, "height": 600, "frameRate": 12, "bg": "'#ffffff'" }
+}

@@ -1,0 +1,20 @@
+corpus/noise/base_a.fla
+  stage: 550.0x400.0 @ 12.0fps bg=#FFFFFF
+  scenes(1): ['Scene 1']
+  symbols: 0   classes(6): CColorDef,CDocumentPage,CPicFrame,CPicLayer,CPicPage,CQTAudioSettings
+fixtures/Magnet.fla
+  stage: 550.0x400.0 @ 24.0fps bg=#FFFFFF
+  scenes(6): ['Scene 2', 'Scene 5', 'AA', 'BA', 'AB', 'BB']
+  symbols: 61   classes(16): CColorDef,CDocumentPage,CMediaBits,CMediaSound,CPicBitmap,CPicButton,CPicFrame,CPicLayer,CPicPage,CPicShape,CPicSprite,CPicSwf,CPicSymbol,CPicText,CQTAudioSettings,CSwfPage
+fixtures/evaporatingdrip.fla
+  stage: 300.0x300.0 @ 30.0fps bg=#FFFFFF
+  scenes(1): ['Scene 1']
+  symbols: 2   classes(9): CColorDef,CDocumentPage,CMediaBits,CPicFrame,CPicLayer,CPicPage,CPicSprite,CPicText,CQTAudioSettings
+fixtures/golden/golden.fla
+  stage: 550.0x400.0 @ 60.0fps bg=#FFFFFF
+  scenes(1): ['Scene 1']
+  symbols: 3   classes(10): CColorDef,CDocumentPage,CPicButton,CPicFrame,CPicLayer,CPicPage,CPicShape,CPicSprite,CPicText,CQTAudioSettings
+fixtures/golden/golden-v2.fla
+  stage: 550.0x400.0 @ 60.0fps bg=#FFFFFF
+  scenes(1): ['Scene 1']
+  symbols: 3   classes(10): CColorDef,CDocumentPage,CPicButton,CPicFrame,CPicLayer,CPicPage,CPicShape,CPicSprite,CPicText,CQTAudioSettings

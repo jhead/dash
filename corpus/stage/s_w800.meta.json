@@ -1,0 +1,6 @@
+{
+  "name": "s_w800",
+  "fla": "s_w800.fla",
+  "baseline": "s_base1",
+  "actual": { "width": 800, "height": 400, "frameRate": 12, "bg": "'#ffffff'" }
+}

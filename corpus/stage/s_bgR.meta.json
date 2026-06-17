@@ -1,0 +1,6 @@
+{
+  "name": "s_bgR",
+  "fla": "s_bgR.fla",
+  "baseline": "s_base1",
+  "actual": { "width": 550, "height": 400, "frameRate": 12, "bg": "'#ff0000'" }
+}

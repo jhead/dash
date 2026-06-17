@@ -55,3 +55,10 @@ coverage/
 
 # Turbo
 .turbo/
+
+# FLA RE harness
+/tools/refs/
+/dist/
+__pycache__/
+*.pyc
+/corpus/**/*.fla

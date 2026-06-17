@@ -1,0 +1,6 @@
+{
+  "name": "s_fps24",
+  "fla": "s_fps24.fla",
+  "baseline": "s_base1",
+  "actual": { "width": 550, "height": 400, "frameRate": 24, "bg": "'#ffffff'" }
+}
