@@ -489,7 +489,13 @@ u8 layerType            // 0=normal 1=guide 2=guided 3=folder 4=mask
 ## 9. `CPicFrame` — **[V]**
 
 `writeLayerContents` per-frame body (`fs = frameVersionB = 0x18 = 24` for F8, so all
-`fs >= 19/22/24` branches fire). Header then body then a long tail:
+`fs >= 19/22/24` branches fire). Header then body then a long tail. The header, display list,
+and the leading frame fields (through the F5 `frameVersionC`/`frameId` block) are byte-verified
+against a real empty Page stream (`findings/timeline-bytewalk.md`); the **exact byte order of
+the F3+ sub-blocks below the frameId block** (motionTweenRotate / comment / MorphShape /
+shapeTweenBlend / soundEffect / anchor / ease) is transcribed from flacomdoc's grouped emission
+and is approximate — each field is verified, but a strict byte-walk shows the interleave differs
+slightly (a `BomString ""` appears earlier than the grouping implies). Below:
 
 ```
 useClass("CPicFrame")
@@ -974,7 +980,10 @@ round-trip and only requires resync. Everything else is [V].
 The spec is proven by reading and (round-trip) writing real FLAs:
 
 - **Reader:** `tools/flashdrv/flaparse.py` walks the CFB container (`fla_cfb.py`) and the
-  CArchive streams per this spec, accounting for every byte.
+  document catalog + CArchive class inventory per this spec; verified on Magnet (6 scenes,
+  61 symbols, 16 classes), golden, and evaporatingdrip (`findings/read-proof.txt`).
+- **Timeline byte-walk:** `findings/timeline-bytewalk.md` reconciles every byte of a real
+  empty Page stream against §5/§8/§9/§10.
 - **Round-trip:** `tools/flashdrv/flaroundtrip.py` re-serializes a parsed stream and asserts
   byte-equality with the original (volatile bytes masked per `FLA-RE-PLAN.md`). Validated
   against real **Flash 8-authored** FLAs from the flashdrv oracle (`corpus/`) and the sample
