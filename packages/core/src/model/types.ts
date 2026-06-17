@@ -258,6 +258,8 @@ export interface Scene {
   readonly id: string;
   readonly name: string;
   readonly timeline: Timeline;
+  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
+  readonly flaItemId?: FlaItemId;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,10 +338,26 @@ export interface ButtonSounds {
   readonly downToOver?: ButtonStateSound;
 }
 
+/**
+ * Original binary-FLA identity of a library item or scene — the `"%08x-%08x"`
+ * ItemID (timeCreated-order) from the Contents catalog (binary-FLA spec §8.6).
+ *
+ * Captured by the real-FLA importer so that a re-exported binary .fla can
+ * reproduce the exact ItemID a round-tripped document had. Absent for documents
+ * authored in the clone — the binary-FLA writer synthesizes one in that case.
+ * Pure round-trip metadata: never consulted by rendering or SWF compile.
+ */
+export interface FlaItemId {
+  readonly timeCreated: number;
+  readonly order: number;
+}
+
 export interface Symbol {
   readonly id: string;
   readonly name: string;
   readonly itemType: "symbol";
+  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
+  readonly flaItemId?: FlaItemId;
   readonly symbolType: SymbolType;
   readonly timeline: Timeline;
   readonly linkage: SymbolLinkage;
@@ -378,6 +396,8 @@ export interface BitmapItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "bitmap";
+  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
+  readonly flaItemId?: FlaItemId;
   /** Data URL or asset reference; empty string until asset is loaded */
   readonly dataUri: string;
   readonly originalWidth: number;
@@ -391,6 +411,8 @@ export interface SoundItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "sound";
+  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
+  readonly flaItemId?: FlaItemId;
   readonly dataUri: string;
   readonly sampleRate: number;      // Hz
   readonly sampleSize: 8 | 16;
@@ -407,6 +429,8 @@ export interface VideoItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "video";
+  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
+  readonly flaItemId?: FlaItemId;
   readonly dataUri: string;
   readonly frameCount: number;
   readonly frameRate: number;
@@ -418,6 +442,8 @@ export interface FontItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "font";
+  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
+  readonly flaItemId?: FlaItemId;
   readonly fontName: string;
   readonly bold: boolean;
   readonly italic: boolean;
@@ -428,6 +454,8 @@ export interface ComponentItem {
   readonly id: string;
   readonly name: string;
   readonly itemType: "component";
+  /** Round-trip identity from a real binary .fla import (binary-FLA spec §8.6). */
+  readonly flaItemId?: FlaItemId;
   readonly componentName: string;
   readonly packageName: string;
 }
