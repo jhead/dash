@@ -879,29 +879,37 @@ u16 videoId                          // 1-based media index
 (The embedded-clip variant `CPicVideo` is a distinct 160-byte class that flacomdoc never
 emits; it remains **[I]** — no writer, no sample.)
 
-### 16.3 `CPicSwf` (imported SWF) — **[X]** (bounded)
+### 16.3 `CPicSwf` (imported SWF) — header **[O]**, body **[X]** (bounded)
 
-flacomdoc has **no** SWF-import write path, and fla-decoder has no `read_cpicswf`, so the body
-cannot be transcribed from a writer. Known facts (fla-decoder Ghidra): `CPicSwf : CPicObj`,
-class size 308 B, schema 1, `serialize` VA `0x9490400`; it begins with the standard
-`CPicObj::Serialize` base (§5.3 note) then a SWF-specific body of ~950–5500 bytes of which only
-the leading placement is reliably recoverable.
-
-Observed from a real sample (`fixtures/Magnet.fla` `Page 1`, the "Claw.swft" imported SWF) —
-the record body after the `CPicSwf` class tag begins:
+flacomdoc has **no** SWF-import write path, and fla-decoder has no `read_cpicswf`, so the record
+cannot be transcribed from a writer. Headless JSFL cannot generate one either — `importFile`
+of a content-bearing SWF pops a modal that hangs session-0 Flash (the same trap as linkage). The
+structure below is **observed** by differential analysis of the four real `CPicSwf` records in
+`fixtures/Magnet.fla` (`Page 1/6/7/8`, the reused "Claw" imported SWF): comparing the instances
+separates per-placement fields (differ) from SWF-intrinsic metadata (constant across reuse).
+Class facts (fla-decoder Ghidra): `CPicSwf : CPicObj`, class size 308 B, schema 1, `serialize`
+VA `0x9490400`.
 
 ```
-02 00 00 00  b6 10 00 00  ec 06 00 00  06  c6 3c 01 00  00 00 00 00  00 00 00 00  c6 3c 01 00 ...
-^stateFlags  ^u32         ^u32              ^u32(0x13cc6 — appears twice; likely a bounds/size)
- (=selected) (0x10b6)     (0x6ec)
+useClass("CPicSwf")
+instanceHeader            // §5.3: stateFlags(selected/locked), pad, transform-pt, F8 byte+cacheAsBitmap,
+                          //       instanceType, 24-byte matrix  (per-placement part; differs per instance)
+// SWF-intrinsic metadata block (CONSTANT across reuse of the same imported SWF) — [O]:
+u32 swfWidthTwips         // 0x10b6 = 4278 ≈ 213 px  (imported SWF stage width)
+u32 swfHeightTwips        // 0x6ec  = 1772 ≈  88 px
+... u32 size/bounds words // incl. 0x13cc6 (=81094) twice (content/byte size); 0xbe1, 0x5dc secondary bounds
+u32 ... counts/flags      // e.g. 0x1e, 01 00 00 00 markers
+BomString clipActions     // onClipEvent(...) handlers — imported SWFs carry instance scripts like any clip
+<decomposed SWF content>  // bulk (~900–5400 B): Flash's INTERNAL decomposition of the movie
+                          //   (NOT raw SWF bytes — no FWS/CWS signature present). [X]
 ```
 
-i.e. an instance-placement-like header (selected flag, dimension/bounds u32s, repeated size
-word) then the opaque imported-SWF payload. **This is the one residual gap.** Imported SWFs are
-not part of the normal authoring round-trip (the clone never emits them), so a reader need only
-resync past the record (scan for the next sibling class tag — §5.1). Fully
-decoding the body would require Ghidra at the cited VA or differential analysis of the Magnet
-samples; it is out of scope here because no byte-verified writer covers it.
+**Residual:** the placement header + SWF-metadata block + clip-actions are decoded to **[O]**;
+the trailing decomposed-content bulk is **[X]** (Flash's internal movie representation, no
+byte-verified writer exists). Imported SWFs are **out of the normal authoring round-trip** (the
+clone never emits them), so a reader need only resync past the record (next sibling class tag,
+§5.1). Fully decoding the bulk would require Ghidra at the cited VA, or a controlled corpus of
+interactively-imported SWF variants (headless generation is blocked by the import modal).
 
 ---
 
@@ -959,7 +967,7 @@ oracle, except one bounded residual.
 | Shape cubic post-stream | [O] | **[V]** | F5+ 32-byte entries — §10.4 |
 | `CMorphCurve` unknowns | [X] | **[V]** | isLine + pad + terminator — §11 |
 | Morph fill/stroke tables | [O] | **[V]** | §11.1/11.2 |
-| `CPicSwf` variable tail | [X] | **[X]** | bounded: derives from CPicObj; no writer/sample — §16.3 |
+| `CPicSwf` variable tail | [X] | **[O] header / [X] bulk** | header+metadata+clip-actions decoded from Magnet's 4 samples; decomposed-content bulk needs Ghidra — §16.3 |
 | `CPicVideo` (embedded) | [I] | **[V]** for `CPicVideoStream` | stream form fully decoded; embedded variant remains [I] — §16.2 |
 | FLA filter interior constants | [X] | **[V]** | filter-ID tags + constants enumerated — §14.2 |
 | Component metadata XML | [X] | **[V]** | BomString of `<component>` XML — §13 |
