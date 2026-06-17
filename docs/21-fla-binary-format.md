@@ -1,92 +1,127 @@
-# Binary FLA Format (Flash 5 – CS4) — Format Specification
+# Binary FLA Format — File Format Specification
 
-Specification of the proprietary Macromedia/Adobe binary `.fla` document format, focused on
-**Flash 8** (the clone's primary target) and annotated for the Flash 5 .. CS4 family.
+**Target: Macromedia Flash 8** (`.fla`), annotated for the Flash 5 – CS4 family's version gating.
+Version 2 (2026-06-17).
 
-This revision is reconstructed from three independent, cross-checked sources, then **verified
-against real Flash 8 output**:
+This document specifies the proprietary Macromedia/Adobe binary `.fla` document format as
+written by **Flash 8**. Field layouts are reconstructed from three cross-checked sources and
+verified against real Flash 8 output:
 
-1. **JPEXS `flacomdoc`** (`tools/refs/flacomdoc/`) — an XFL→binary-FLA *writer* that is
-   byte-verified against real Flash. Its `FlaWriter`/`FlaConverter`/`TimelineConverter`
-   classes are the authoritative field order and encoding for every record. This is the
-   primary ground truth (tagged **[V]**).
-2. **`eddiemoore/fla-decoder`** (`tools/refs/fla-decoder/`) — a Ghidra reverse-engineering
-   of `flash.exe` `Serialize` methods. Confirms the MFC CArchive protocol, the class table,
-   and per-record schema gates from the *reader* side.
-3. **The flashdrv differential oracle** (`tools/flashdrv/`) — drives a real Flash 8 install
-   (Win7 VM) via JSFL to emit single-property-varied FLAs, byte-diffed per-stream on the host
-   (`fla_cfb.py` + `fladiff.py`). Used to empirically confirm field offsets/encodings against
-   genuine Flash output (e.g. the stage block).
+* **JPEXS `flacomdoc`** (`tools/refs/flacomdoc/`) — a byte-verified XFL→binary-FLA *writer*;
+  the authoritative field order/encoding (the source of every **[V]**/**[V\*]** tag here).
+* **`eddiemoore/fla-decoder`** (`tools/refs/fla-decoder/`) — Ghidra RE of `flash.exe`; confirms
+  the MFC CArchive protocol and per-record schema gates from the *reader* side.
+* **flashdrv oracle** (`tools/flashdrv/`) — drives a real Flash 8 install (Win7 VM) via JSFL to
+  emit single-property-varied FLAs, byte-diffed per-stream on the host. Confirms field
+  offsets/encodings against genuine output (the stage block §8, the timeline byte-walk §17).
 
-The per-version schema constants are computed mechanically from `FlaFormatVersion.java`
-(`tools/flashdrv/findings/dump_schema.py`, table in §3); the Flash 8 row is reproduced in §3.
+> **Scope note.** The constants in §3 are the **Flash 8** column only; other versions are
+> reachable via the version *gates* throughout (and `tools/flashdrv/findings/dump_schema.py`
+> for their constants) but their constant values and post-F8 structures (e.g. the CS4 3-D
+> block) are named, not fully laid out. A CS3/CS4-targeting reader must supply those constants.
 
 ---
 
-## 0. Confidence legend
+## Table of contents
+
+```
+0   Conventions and confidence tags
+1   Notation
+2   Container: OLE2 / Compound File Binary
+3   Per-version schema constants (Flash 8)
+4   Primitive encodings
+5   MFC CArchive object protocol
+6   How to read a FLA  (normative procedure)
+7   Resynchronization  (normative + hazards)
+8   Contents stream — document catalog
+9   Timeline streams
+10  CPicPage / CPicLayer
+11  CPicFrame
+12  Shapes (CPicShape)
+13  Morph shapes (CPicMorphShape)
+14  Symbol instances (CPicSprite / CPicButton / CPicSymbol)
+15  Component metadata
+16  Filters
+17  Text (CPicText)
+18  Media objects (CPicBitmap / CPicVideoStream / CPicSwf)
+19  Color transform, accessibility, scale-9
+20  Gap status
+21  Verification
+22  Provenance
+```
+
+---
+
+## 0. Conventions and confidence tags
+
+**Confidence tags** (per field; a tag on a record header applies to the whole record):
 
 | Tag | Meaning |
 |-----|---------|
-| **[V]** | **Verified.** Byte-checked against `flacomdoc` (a byte-verified writer) and/or confirmed directly against real Flash output via the flashdrv oracle or a sample file. |
-| **[O]** | **Observed.** Derived from samples / one source but not cross-verified; may be specimen-specific. |
-| **[I]** | **Inferred.** Best-effort layout with no confirming writer/sample. |
-| **[X]** | **Unknown / not decoded.** Only the byte extent is known; a reader resynchronizes past it. |
+| **[V]** | **Verified — bytes and semantics.** Byte-checked against the `flacomdoc` writer *and* the field's meaning is known. |
+| **[V\*]** | **Verified bytes, opaque semantics.** The exact bytes are known and constant (safe to assert/echo), but their *meaning* is not. Used for the many fixed constant runs Flash emits. |
+| **[O]** | **Observed.** Derived from real specimens but not cross-checked against the writer. |
+| **[I]** | **Inferred.** Best-effort, no confirming writer/sample. |
+| **[X]** | **Unknown.** Only the byte extent (or how to skip it) is known. |
 
-Confidence is annotated per field; a single tag at a record header applies to the whole record.
+**Offsets.** Unless written `@abs N`, an `@N` offset is **relative to the start of the enclosing
+record/block**. Absolute offsets (`@abs N`) are given only for the *empty default document* as a
+worked anchor; they shift with any preceding variable-length data and must not be hard-coded.
 
----
-
-## 1. Notation (IDL)
-
-Pseudo-C struct notation, **little-endian unless stated**.
-
-```
-Scalar types
-  u8 u16 u32 u64        unsigned LE integers
-  s16 s32               signed LE integers (two's complement)
-  f32 f64               IEEE-754 LE (writeFloat / writeDouble)
-  fixed16 = s32 / 65536   16.16 fixed point  (matrix a/b/c/d)
-  fixed8  = s16 / 256     8.8  fixed point
-
-Composite types
-  CString               MFC length-prefixed string (ASCII or UTF-16; see §4.1)
-  BomString             FF FE FF-prefixed UTF-16LE string (the unicode CString; §4.1)
-  encodedUI             u16, OR (FF 7F + u32) when value >= 0x7FFF (§4.4)
-  Matrix                24 bytes: a,b,c,d (fixed16) + tx,ty (s32 twips)   (§4.2)
-  RGBA                  4×u8 in R,G,B,A order
-  Point8_8              per axis 2 bytes (u8 frac, s8 int)  = 8.8 fixed twips  (shape edges)
-  Point8_24             per axis 4 bytes (u8 frac, s24 int) = 8.24 fixed       (morph points)
-
-Annotations
-  field;        // [V|O|I|X] note
-  skip(n)       // n bytes consumed but not interpreted
-  if (cond)     // schema-gated presence (cond uses the §3 version ordinals)
-  field[count]  // array
-  >= F8         // present when target format ordinal >= Flash 8 (the usual gate form)
-```
-
-**Units** — three coordinate scales coexist:
-
-| Context | Unit | px conversion | Conf |
-|---------|------|---------------|------|
-| Matrix `tx`/`ty`, stage W/H, text bounds, margins, scale9, guides | SWF twips | px = v / 20 | [V] |
-| Shape **edge** coords (`writeXY` BYTE form) | 8.8 fixed twips | px = v / 5120 | [V] |
-| Shape **cubic** post-stream ints | twips (plain s32) | px = v / 20 | [V] |
-| Morph **point** coords (`writePoint`) | 8.24 fixed twips | px = v / 5120 | [V] |
+**Byte order** is little-endian unless stated. **All `skip(n)` are exact byte counts**, never an
+unbounded gap — this spec contains no `...` placeholders inside a layout.
 
 ---
 
-## 2. Container: OLE2 / CFB
-
-Standard Microsoft Compound File Binary ([MS-CFB]). Implemented dependency-free in
-`tools/flashdrv/fla_cfb.py` and verified against every sample (Magnet/golden/evaporatingdrip)
-and all oracle output. **[V]**
+## 1. Notation
 
 ```
-Header @0                         (512 bytes for v3)
-  u8[8]  magic           @0    = D0 CF 11 E0 A1 B1 1A E1
-  u16    sectorSizePow   @30   sectorSize  = 1 << pow  (512 typical, 4096 for v4)
-  u16    miniSectorPow   @32   miniSector  = 1 << pow  (usually 64)
+Integers      u8 u16 u32 u64                unsigned LE
+              s8 s16 s24 s32                signed LE, two's complement
+                 (s24 = 3 bytes LE; sign-extend from bit 23)
+IEEE-754      f32 (writeFloat)  f64 (writeDouble)   little-endian
+Fixed-point   fixed16  = s32 / 65536        16.16   (matrix a,b,c,d)
+              fix8_8   = (u8 frac, s8 int)         see naming note
+              fix8_24  = (u8 frac, s24 int)        see naming note
+
+Strings       CString    MFC length-prefixed (ASCII or UTF-16; §4.1)
+              BomString  FF FE FF-prefixed UTF-16LE CString (§4.1)
+Var-int       encodedUI  u16, or (FF 7F + u32) when value >= 0x7FFF (§4.4)
+Composite     Matrix     24 bytes: a,b,c,d (fixed16) + tx,ty (s32 twips) (§4.2)
+              RGBA       u8 R,G,B,A
+              Point8_8   per axis: u8 frac, s8 int   (shape edges, fix8_8)
+              Point8_24  per axis: u8 frac, s24 int  (morph points, fix8_24)
+```
+
+> **Fixed-point naming note.** This spec writes fixed-point as **frac.int** order on the wire
+> (the fraction byte is stored first), so `fix8_8`/`fix8_24` name the *(frac bits).(int bits)*
+> as stored. Numerically `fix8_24` is a 24-integer-bit / 8-fraction-bit value (conventionally
+> "24.8"); the name reflects storage order, not magnitude. Always: value = int + frac/256.
+
+```
+Annotations   field;        // [tag] note
+              skip(n)       // exactly n bytes, uninterpreted ([V*] or [X])
+              if (>= F8)    // present when the target ordinal >= Flash 8 (gates: F5<MX<MX2004<F8<CS3<CS4)
+              field[count]  // array
+              @N / @abs N   // record-relative / absolute(empty-doc) offset
+```
+
+> **`FF 7F + u32` is overloaded** and context-dependent: as a *class tag* it is an extended
+> backref (§5.1); inside `encodedUI` it is the escaped large-value form (§4.4). They are
+> unrelated; never cross-apply.
+
+---
+
+## 2. Container: OLE2 / Compound File Binary
+
+Standard Microsoft CFB ([MS-CFB]). Implemented dependency-free in `tools/flashdrv/fla_cfb.py`,
+verified against every sample and all oracle output. **[V]**
+
+```
+Header @abs 0                       (512 bytes for v3)
+  u8[8]  magic           @0   = D0 CF 11 E0 A1 B1 1A E1
+  u16    sectorSizePow   @30   sectorSize = 1 << pow   (512 v3, 4096 v4)
+  u16    miniSectorPow   @32   miniSector = 1 << pow   (usually 64)
   u32    fatSectorCount  @44
   u32    firstDirSector  @48
   u32    miniStreamCutoff@56   usually 4096
@@ -96,22 +131,24 @@ Header @0                         (512 bytes for v3)
   u32    difat[109]      @76
 ```
 
-Sector addressing: `fileOffset = 512 + sector * sectorSize`. Special FAT values:
-`ENDOFCHAIN=0xFFFFFFFE FREESECT=0xFFFFFFFF FATSECT=0xFFFFFFFD DIFSECT=0xFFFFFFFC`. Directory
-entry types: `1=storage 2=stream 5=root`. **Mini-FAT [V]:** streams with `size <
-miniStreamCutoff` live in 64-byte mini sectors carved from the root entry's stream; most
-`Page N`/`Symbol N` streams are small and live here.
+`fileOffset = 512 + sector * sectorSize`. FAT sentinels: `ENDOFCHAIN=0xFFFFFFFE
+FREESECT=0xFFFFFFFF FATSECT=0xFFFFFFFD DIFSECT=0xFFFFFFFC`. Directory entry types `1=storage
+2=stream 5=root`. **Mini-FAT:** streams with `size < miniStreamCutoff` live in 64-byte mini
+sectors carved from the root entry's stream; most `Page N`/`Symbol N` streams live there.
+Directory entry (128 B): `utf16 name@0` (`(nameLen@64-2)/2` chars), `u8 type@66`, `u32
+left@68/right@72/child@76`, `u32 start@116`, `u32 sizeLo@120/sizeHi@124`.
 
-Directory entry (128 bytes): `utf16 name@0` (len `(nameLen@64 - 2)/2` chars), `u8 type@66`,
-`u32 left@68/right@72/child@76`, `u32 start@116`, `u32 sizeLo@120/sizeHi@124`.
+Stream inventory (typical): `Contents` (the document catalog, §8); one `Page N <time>` per scene
+and one `Symbol N`/`S N <time>` per symbol (timelines, §9); `Media N <time>` for sound/bitmap/
+video payloads.
 
 ---
 
-## 3. Per-version schema table (Flash 8)
+## 3. Per-version schema constants (Flash 8)
 
-Every record begins with one or more *schema/version bytes*; readers gate optional fields on
-the **format ordinal** (`F5<MX<MX2004<F8<CS3<CS4`), and writers stamp the literal values
-below. Computed from `FlaFormatVersion.java`; full table via `dump_schema.py`. **[V]**
+Every record carries one or more *schema/version bytes*; the reader gates optional fields on the
+**format ordinal** and the writer stamps the literal values below. Computed mechanically from
+`FlaFormatVersion.java` (`tools/flashdrv/findings/dump_schema.py`). **[V]**
 
 | constant | F8 | constant | F8 | constant | F8 |
 |---|---|---|---|---|---|
@@ -134,891 +171,905 @@ below. Computed from `FlaFormatVersion.java`; full table via `dump_schema.py`. *
 | spriteVersionE | 6 | mediaBitsVersionB | 3 | generatorBuild | 494 |
 | spriteVersionF | 2 | mediaBitsVersionC | 6 | unicode | true |
 
-> **`fs` in §9 = `frameVersionB` = 0x18 (24)** for F8, *not* `frameVersion`. All the §9
-> `fs >= 19/22/24` branches therefore fire on F8.  `unicode=true` ⇒ every string is a
-> BomString. `symbolType/shapeType/bitmapType/videoType` are the instanceType bytes (§5.3).
+> The `CPicFrame` "fs" gate referenced in §11 is **`frameVersionB` = 0x18 (24)**, not
+> `frameVersion`. `unicode=true` ⇒ every string is a BomString. `symbolType/shapeType/
+> bitmapType/videoType` are the `instanceType` discriminators in the instance header (§5.3).
 
 ---
 
 ## 4. Primitive encodings
 
-### 4.1 Strings — `CString` / `BomString` — **[V]** (`FlaWriter.writeString`/`writeBomString`)
+### 4.1 Strings — `CString` / `BomString` — [V] (`FlaWriter.writeString`/`writeBomString`)
 
 ```
-writeString(s):                    // length then chars
-  len = unicode ? s.length(chars) : byteLength
-  if len < 0xFF:        u8 len
-  elif len < 0xFFFF:    u8 0xFF, u16 len
-  else:                 u8 0xFF, u16 0xFFFF, u32 len
-  chars: UTF-16LE (unicode) or charset bytes
-writeBomString(s):                 // unicode (MX2004+) prepends BOM
-  if unicode: u8 0xFF, u8 0xFE, u8 0xFF   // "FF FE FF"
+writeString(s):
+  len  = unicode ? (UTF-16 code-unit count) : (byte count)   // see note
+  if   len <  0xFF:    u8 len
+  elif len <  0xFFFF:  u8 0xFF, u16 len
+  else:                u8 0xFF, u16 0xFFFF, u32 len
+  body: UTF-16LE code units (unicode) | charset bytes (else)
+writeBomString(s):
+  if unicode: u8 0xFF, u8 0xFE, u8 0xFF      // "FF FE FF"
   writeString(s)
 ```
 
-So an empty F8 BomString = `FF FE FF 00` (4 bytes); `"P"` ASCII via writeString = `01 50`.
-Pre-MX2004 (`unicode=false`) drops the BOM and writes bytes in the document charset. (The
-reader must also accept the `FF + u16 len` long-ASCII and `FF FE FF FF + u32` long-unicode
-escalations.)
+> **Length unit:** for `unicode` (all F8) the length prefix counts **UTF-16 code units** (2
+> bytes each), not code points — a non-BMP character is 2 units. Byte length of the body =
+> `len * 2`. Empty F8 BomString = `FF FE FF 00` (4 bytes).
 
-### 4.2 Matrix — 24 bytes — **[V]** (`FlaWriter.writeMatrix`)
+Readers must also accept the long escalations (`FF` + u16, `FF FF FF` + u32) and, pre-MX2004,
+the BOM-less single-byte form.
 
-`s32 a,b,c,d` each = `round(value / 1.52587890625e-5)` (i.e. ×65536, 16.16 fixed); then
-`s32 tx,ty` each = `round(value * 20)` (twips). Order: a,b,c,d,tx,ty.
+### 4.2 Matrix — 24 bytes — [V] (`FlaWriter.writeMatrix`)
 
-### 4.3 Color — **[V]**
+`s32 a,b,c,d` each `= round(value × 65536)` (16.16); then `s32 tx,ty` each `= round(value × 20)`
+(twips). Order on the wire: `a, b, c, d, tx, ty`.
 
-`RGBA` = `u8 R,G,B,A`. Solid fills/strokes use RGBA; the document stage **background** is
-`R,G,B,0xFF` (the alpha byte is always 0xFF).
+### 4.3 Color — [V]
 
-### 4.4 `encodedUI` and points — **[V]** (`FlaWriter.writeEncodedUI` / `writePointPart`)
+`RGBA = u8 R,G,B,A`. Solid fills/strokes use RGBA. The stage background is written `R,G,B,0xFF`
+(alpha byte always 0xFF).
 
-`encodedUI`: `u16 value` if `< 0x7FFF`, else `u8 0xFF, u8 0x7F, u32 value`. `writePointPart`
-(morph) emits per axis `u8 frac, u8 int&0xFF, u8 (int>>8)&0xFF, u8 (int>>16)&0xFF` = signed
-8.24. The shape edge `writeXY` BYTE form emits per axis `u8 frac, s8 int` = 8.8 (see §10.3).
+### 4.4 `encodedUI` and points — [V] (`FlaWriter.writeEncodedUI` / `writePointPart`)
+
+`encodedUI`: `u16 value` if `< 0x7FFF`, else `u8 0xFF, u8 0x7F, u32 value`. `Point8_24` axis =
+`u8 frac, s24 int` (sign-extend the s24 from bit 23). `Point8_8` axis (shape edge BYTE form) =
+`u8 frac, s8 int`.
 
 ---
 
 ## 5. MFC CArchive object protocol
 
-Every timeline/symbol stream (and the document catalog) is an MFC `CArchive` serialization of
-`CPic*`/`CMedia*`/`CDocumentPage` objects. **[V]** (`AbstractConverter.useClass`,
-fla-decoder `ArchiveReader`).
+Every stream (catalog and timelines) is an MFC `CArchive` serialization of `CPic*`/`CMedia*`/
+`CDocumentPage` objects. **[V]** (`AbstractConverter.useClass`, fla-decoder `ArchiveReader`).
 
-### 5.1 Class/object tag word — **[V]**
+### 5.1 Class/object tag word — [V]
 
-A 2-byte LE tag precedes each (referenceable) object:
+At every object-header position the reader reads a `u16` tag (LE):
 
-| tag | meaning | trailing |
-|-----|---------|----------|
+| tag value | meaning | trailing |
+|-----------|---------|----------|
 | `0x0000` | NULL / end-of-children | — |
-| `0xFFFF` | **new class declaration** | `u16 defineNum` (schema #, default 1) + `u16 nameLen` + `nameLen` ASCII (WINDOWS-1250) bytes |
-| `0x8000 \| idx` | **backref** to class `idx` (when `idx < 0x7FFF`) | — |
-| `0x7FFF` (`FF 7F`) | **extended backref** | `u32 = 0x80000000 + idx` |
+| `0x0001`–`0x7FFE` | **invalid at a tag position** (see invariant) | — |
+| `0x7FFF` (`FF 7F`) | extended backref | `u32 = 0x80000000 + idx` |
+| `0x8000 \| idx` | backref to class `idx` (`1 ≤ idx < 0x7FFF`) | — |
+| `0xFFFF` | new class declaration | `u16 defineNum` (schema #, default 1) + `u16 nameLen` + `nameLen` ASCII (Windows-1250) bytes |
 
-Verified against the empty doc: `Contents@23 = FF FF | 01 00 | 0D 00 | "CDocumentPage"`
-(defineNum=1, nameLen=13).
+> **Invariant (assertable):** at an object-header position the tag is exactly one of
+> `0x0000`, `0x8000|idx` (with a previously-declared `idx`), `0x7FFF`, or `0xFFFF`. A value in
+> `0x0001`–`0x7FFE`, or a backref to an unknown `idx`, means the reader is **mis-aligned** (it is
+> inside a record body, not at a header) — trigger resync (§7). Verified on the empty doc:
+> `@abs 23 = FF FF | 01 00 | 0D 00 | "CDocumentPage"`.
 
-### 5.2 Reference-index allocation — **[V]** (`useClass`)
+### 5.2 Reference-index allocation — [V] (`useClass`)
 
-A **single running object counter** is shared by classes and objects:
-
-```
-on a NEW class:   index(className) = 1 + (#classes declared before) + (#objects before)
-on EVERY useClass (new OR backref):  totalObjectCount += 1
-```
-
-So a class first declared after N objects and C class declarations gets index `1+C+N`, reused
-by every later backref. The older "two fixed slots per class" model is only correct while no
-objects are interleaved between declarations — track the running counter instead.
-
-### 5.3 `instanceHeader` — the per-display-object placement header — **[V]**
-
-`TimelineConverter.instanceHeader` writes this immediately after a display object's class tag
-+ leading version byte, for every `CPicBitmap`/`CPicVideoStream`/`CPicText`/`CPicSprite`/
-`CPicSymbol`/`CPicButton` and (with bit 0) groups/floating shapes:
+One running counter is shared by classes *and* objects:
 
 ```
-if (isInstance) u8 stateFlags;        // see below — ONLY for placed instances
-u8 0x00, u8 0x00;                      // pad
-// transformation (registration) point:
+on a NEW class (0xFFFF):  index(name) = 1 + (#classes declared so far) + (#objects so far)
+on EVERY tag read (new OR backref):  totalObjectCount += 1
+```
+
+**Worked trace** (a stream that declares CPicPage, then 2 frames, then CPicShape):
+
+```
+read   tag           classesBefore  objsBefore   action
+  1    FFFF CPicPage        0            0        index[CPicPage]=1+0+0=1 ; objs->1
+  2    FFFF CPicFrame       1            1        index[CPicFrame]=1+1+1=3 ; objs->2
+  3    8000|3 (CPicFrame)   —            2        backref to idx 3 ; objs->3
+  4    FFFF CPicShape       2            3        index[CPicShape]=1+2+3=6 ; objs->4
+```
+
+So `CPicShape` is index **6**, and its later backref tag is `0x8006` — *not* `0x8009`. The old
+"two fixed slots per class" model only matches when no objects are interleaved; track the running
+counter as above.
+
+### 5.3 `instanceHeader` — display-object placement header — [V]
+
+Written immediately after a display object's class tag + leading version byte, for every
+`CPicBitmap`/`CPicVideoStream`/`CPicText`/`CPicSprite`/`CPicSymbol`/`CPicButton`, and (with bit
+0 used) groups/floating shapes:
+
+```
+if (isInstance) u8 stateFlags;     // placed instances only (see table)
+u8 0x00, u8 0x00;                   // pad
+// registration/transform point:
 if (absent)  s32 0x80000000, s32 0x80000000;   // INT_MIN sentinel per axis = "unset"
-else         s32 tptX, s32 tptY;               // = round(placeMatrix.transform(pt) * 20) twips
->= F8:  u8 0x00, u8 cacheAsBitmap;     // cacheAsBitmap 0/1
-u8 instanceType;                        // = symbolType(0x13)/shapeType(3)/bitmapType(2)/videoType(4)
-Matrix placeMatrix;                     // 24 bytes (identity if strippedMatrix)
+else         s32 tptX, s32 tptY;               // = round(placeMatrix·pt × 20) twips
+if (>= F8)   u8 0x00, u8 cacheAsBitmap;        // 0/1
+u8 instanceType;                   // = symbolType 0x13 / shapeType 3 / bitmapType 2 / videoType 4
+Matrix placeMatrix;                // 24 bytes (identity if strippedMatrix)
 ```
 
-**`stateFlags` — resolves the long-standing `CPicObjBase.flags` `[X]`:** it is the *authoring
-UI state*, **not** visibility:
+`stateFlags` (resolves the historical "CPicObjBase.flags [X]" — it is authoring UI state, **not**
+visibility):
 
 | bit | mask | meaning |
 |-----|------|---------|
-| 0 | 0x01 | `isFloating` (raw shape not in a group) — group/shape header form only |
-| 1 | 0x02 | `selected` (selected at save time) |
+| 0 | 0x01 | `isFloating` (raw shape, not grouped) — group/shape header form only |
+| 1 | 0x02 | `selected` (at save time) |
 | 2 | 0x04 | `locked` |
 
-`flags=0x3` = selected+floating; `flags=0x0` = neither. Bits 3–7 are always 0. This confirms
-the prior finding that the byte is not per-object visibility (Flash has no per-display-object
-hide; visibility is a layer/runtime property).
-
-> Note: the generic MFC `CPicObj` *base* used by container records (CPicPage/CPicLayer/
-> CPicShape/CPicFrame) is a different scaffold — `u8 schema; u8 flags;` then the child loop and
-> a trailing registration point. The `instanceHeader` above is the *placement* header and is
-> what carries selected/locked/matrix; do not conflate the two.
+Bits 3–7 are always 0. (The generic MFC `CPicObj` base used by container records —
+CPicPage/Layer/Shape/Frame — is a different scaffold: `u8 schema; u8 flags;` then the child loop
+and a trailing registration point. Do not conflate it with this placement header.)
 
 ---
 
-## 6. `Contents` stream — document catalog
-
-Full structured layout from `FlaConverter.convert` — replaces the old byte-scan heuristics.
-The F8 order is below; every offset cited is for the **empty default document** (verified) and
-shifts with the variable-length records before it.
-
-### 6.1 Preamble — **[V]** (`convert` head; verified `@0`)
+## 6. How to read a FLA  (normative procedure)
 
 ```
-u8 contentsVersion   = 0x3F            // verified @0
-u8 contentsVersionB  = 1
-u8 0x00 ×3
-u8 0x00     (>=F3)
-u8 0x00     (>=F4)
-u32 0       (>=F5)
-u32 0       (>=MX)
-u32 0       (>=MX2004)
-u32 0       (>=F8)
-u32 0       (>=CS3)   u32 0  (CS4)
+1.  Open the file as CFB (§2). Read the directory; index streams by name.
+2.  Parse the `Contents` stream (§8) → document properties, scene list (play order),
+    symbol list, media list, fonts, folders.
+3.  For each scene, in Contents play order, open its `Page N <time>` stream (§9) and
+    walk its CArchive tree: CPicPage → CPicLayer[] → CPicFrame[] → display objects.
+4.  For each library symbol, open its `Symbol N` / `S N <time>` stream and walk it the
+    same way (a symbol timeline has the identical CPicPage structure).
+5.  Resolve media payloads from `Media N <time>` streams as referenced by id.
 ```
 
-For F8 this is **23 bytes** (`3F 01 00 00 00` + 18 zero), after which the first scene's
-`CDocumentPage` class tag begins (verified: new-class `CDocumentPage` at @23).
+Walking a CArchive tree (steps 3–4): maintain the §5.2 class table. At each object-header
+position read a tag (§5.1); on `0xFFFF` register and dispatch by class name; on a backref
+dispatch by the resolved name; on `0x0000` pop to the parent. Each record's body is consumed
+field-by-field per its section below — record bodies have **no length prefix**, so a reader must
+know every field's size (which is the point of this spec). If a record is not understood, see §7.
 
-### 6.2 Scenes — `CDocumentPage` records (play order) — **[V]**
+---
 
-Scenes are emitted in **authored play order**; that order is the order these records appear in
-the stream (the OLE2 `P N` stream *name* is creation order, not play order). Each scene record
-(`convert` :868+):
+## 7. Resynchronization  (normative + hazards)
+
+A reader that has consumed a record's body correctly is, by construction, positioned at the next
+object-header (§6). Resync is needed only when a record is **deliberately skipped** (e.g. the
+imported-SWF `CPicSwf` bulk, §18.3) or when a bug leaves the cursor mis-aligned.
+
+**Resync algorithm:**
 
 ```
-useClass("CDocumentPage")               // first decl FFFF; subsequent backref
-u8  documentPageVersion = 0x17          // verified @42
-String "P <n> <timeCreated>"            // ASCII via writeString
-BomString sceneName
-u16 0x0000   u16 0x0000   u8 0x00       // symbolId=0, symbolType=0 (scene)
->= F4:  BomString ""
-        01 00 00 00 <documentPageVersionB=6> 00 00 00 01 00 00 00  <parentFolderId:00×8>  01 00 00 00
-        writeItemID(pageItemID)         // 8 bytes (two u32 from "%08x-%08x")
-        writeAsLinkage(scene)           // §6.4 (empty for scenes)
->= F4:  writeTimeCreated (u32)
-        ... fixed page-tail block (BomString"" runs + constants; scene variant) ...
->= F8:  scaleGrid 20 bytes (off → 00 00 00 00 + 4× 00 00 00 80)
-        // per-frame timeline lives in the separate OLE2 stream "P <n> <time>" (§7)
+from the current cursor, scan forward for the next valid object-header (§5.1):
+  - a 0xFFFF followed by a plausible class declaration
+        (defineNum small, 2 <= nameLen <= 40, name = ASCII starting with 'C'), OR
+  - a backref tag 0x8000|idx whose idx is already in the class table AND which is
+    immediately followed by a plausible record header for that class.
+accept the FIRST candidate that also validates one record ahead (read its body; the
+following bytes must again form a valid tag). Otherwise keep scanning.
 ```
 
-After all scenes: `00 00`, `u16 nextSceneIdentifier` (=scenes+1), `01 00`, `u8 1+currentTimeline`, `00`.
+> **HAZARD — do not scan for "end markers" (hard-won; CLAUDE.md).** The 10-byte object-tail
+> signature `00 00  00 00 00 80  00 00 00 80` (NULL child tag + two INT_MIN registration points)
+> also appears at the **start** of sibling records whose registration point is uninitialized, and
+> mid-record inside the `instanceHeader` (§5.3) of any object with an absent transform point. A
+> naive end-marker scan therefore re-syncs into the *middle* of a record. Always resync to the
+> nearest plausible **class tag** (above), never to an end-marker, and always validate one record
+> ahead before accepting.
 
-### 6.3 Symbol library entries — `CDocumentPage` (symbols) — **[V]**
+---
 
-Same `CDocumentPage` class, symbol variant (`writeSymbols` :549+):
+## 8. `Contents` stream — document catalog
+
+Structured layout from `FlaConverter.convert`. F8 order below; `@abs` offsets are for the empty
+default document (verified) and shift with preceding variable-length data.
+
+### 8.1 Preamble — [V] (verified `@abs 0`)
+
+```
+u8  contentsVersion  = 0x3F         // @abs 0
+u8  contentsVersionB = 1
+skip(3)   [V*]                      // 00 00 00
+if (>= F3) skip(1)  [V*]            // 00
+if (>= F4) skip(1)  [V*]            // 00
+if (>= F5) u32 0    [V*]
+if (>= MX) u32 0    [V*]
+if (>= MX2004) u32 0 [V*]
+if (>= F8) u32 0    [V*]
+if (>= CS3) u32 0   [V*]
+if (== CS4) u32 0   [V*]
+```
+
+F8 preamble = 23 bytes (`3F 01 00 00 00` + 18 zero); the first scene's `CDocumentPage` class tag
+begins at `@abs 23`.
+
+### 8.2 Scene records — `CDocumentPage` (play order) — [V]
+
+Scenes appear in **authored play order** (the `Page N` stream *name* is creation order, not play
+order). Each scene record:
+
+```
+useClass("CDocumentPage")                 // 0xFFFF first time, else backref (§5.1)
+u8  documentPageVersion = 0x17
+String pageName                            // unicode writeString, e.g. "Page 1" (NO BOM)
+BomString sceneName                        // e.g. "Scene 1"
+u16 symbolId = 0;  u16 0;  u8 symbolType = 0   // scenes: id 0, type 0
+if (>= F4):
+  BomString ""
+  skip(15) [V*]    // 01 00 00 00 <documentPageVersionB=06> 00 00 00 01 00 00 00 + parentFolder lead-in
+  skip(8)  [V*]    // parentFolderId: itemID (8) or 00x8 when top-level
+  skip(4)  [V*]    // 01 00 00 00
+  ItemID pageItemID            // 8 bytes (two u32, §8.6)
+  writeAsLinkage(scene)        // §8.5 (empty for scenes)
+if (>= F4):  u32 timeCreated
+fixedPageTail                  // §8.7 — [V*] constant block ending in scaleGrid
+```
+
+**Correction vs. older revisions:** the tag string is a **unicode `writeString`** ("Page 1"),
+not ASCII "P n time"; after `sceneName` the fields are `u16 symbolId` (not a stream number) +
+`u16` + `u8 symbolType`.
+
+### 8.3 Symbol library entries — `CDocumentPage` (symbols) — [V]
 
 ```
 useClass("CDocumentPage")
 u8  documentPageVersion = 0x17
-String "S <id> <time>"                  // ASCII
+String pageName                            // unicode writeString, "Symbol N"
 BomString symbolName
-u16 symbolId       // 1-based include index (NOT a stream number)
-u8 0x00  u8 0x00  u8 symbolType         // symbolType: 0=graphic 1=button 2=movie clip
->= F4:  BomString ""
-        01 00 00 00 <spriteVersionE=6> 00 00 00 01 00 00 00  <parentFolderId | 00×8>  01 00 00 00
-        writeItemID(itemID)
-        writeAsLinkage(symbol)          // §6.4
->= MX2004: u8 0x00
->= F4:  writeTime (u32)
-        ... symbol page-tail block (same shape as scenes) ...
->= F8:  scaleGrid 20 bytes (§17.3)
+u16 symbolId           // 1-based include index (NOT a stream number)
+u16 0;  u8 symbolType  // 0 graphic, 1 button, 2 movie clip
+if (>= F4):
+  BomString ""
+  skip(11) [V*]   // 01 00 00 00 <spriteVersionE=06> 00 00 00 01 00 00 00
+  skip(8)  [V*]   // parentFolderId (itemID or 00x8)
+  skip(4)  [V*]   // 01 00 00 00
+  ItemID itemID                 // 8 bytes
+  writeAsLinkage(symbol)        // §8.5
+if (>= MX2004) u8 0
+if (>= F4) u32 timeCreated
+fixedPageTail                   // §8.7
 ```
 
-### 6.4 AS2 linkage — `writeAsLinkage` — **[V]**
+### 8.4 Stage / document-properties block — [V] (offsets verified by the oracle)
 
-Reused by symbols, scenes, sounds, bitmaps, fonts. The two flag bytes (this resolves the
-old "4 flag bytes" gap — they are *packed bitfields across two bytes*):
+This is the §8 block the oracle decoded exhaustively. **Ellipsis-free**, every byte named; F8
+layout, anchored at the `rulerUnitType` byte (`@abs 400` in the empty doc):
 
 ```
-u8 0x00 ×4
->= F5:
+// --- F2+ ruler block ---
+u8  rulerUnitType         @+0    // 0 in,1 dec-in,2 pt,3 cm,4 mm,5 px   (px default = 5)
+u8  0x00                  @+1
+u8  (gridVisible ? 3 : 0) @+2
+u8  0x00                  @+3
+skip(3) [V*]              @+4    // 00 00 00
+u16 width  * 20           @+7    // STAGE WIDTH  (twips)   @abs 407
+skip(6) [V*]              @+9    // 00 00 00 00 00 00
+u16 height * 20           @+15   // STAGE HEIGHT (twips)   @abs 415
+skip(4) [V*]              @+17   // 00 00 00 00
+u16 gridSpacingX * 20     @+21
+u8  previewMode           @+23   // 0 outlines,1 fast,2 antialias,3 antialias-text,4 full
+u8  rulerVisible          @+24
+u8  pageTabsVisible       @+25
+u8  (playOptions<<4)|viewOptions  @+26   // see bitfields below
+skip(29) [V*]             @+27   // constant: 00 68 01 00 00 68 01 00 00 68 01 00 00 68 01 00 00
+                                 //           01 01 00 00 00 00 01 00 00 00 00 00
+u8  bgR, bgG, bgB, 0xFF   @+56   // BACKGROUND color (RGB + FF)   @abs 456
+u8  gridR, gridG, gridB   @+60   // grid color (3 bytes; alpha follows)
+u8  0xFF                  @+63
+u8  0x00                  @+64
+u8  fpsFrac               @+65   // FRAME RATE = fix8_8: round((fps-floor(fps))*256)
+u8  fpsInt                @+66   //                      floor(fps)            @abs 466
+u8  0x00, u8 0x00         @+67
+skip(6) [V*]              @+69   // 00 03 b4 00 00 00   ("03 B4" anchor at @abs 470-471)
+```
+
+`viewOptions` bits: 1 animControlVisible, 2 buttonsActive, 4 pasteBoardView, 8 livePreview
+(MX+). `playOptions` (then `<<4`): 1 loop, 2 playPages, 4 frameActions, 8 playSounds.
+
+**Oracle verification** (`jsfl/stage.jsfl` → `corpus/stage`, per-stream diff): width
+550/600/800/1000 → `width*20` = 11000/12000/16000/20000; height 400/500/600 → 8000/10000/12000;
+fps 12/24/30 → `fpsInt` = 0x0C/0x18/0x1E; bg `#123456` → `12 34 56`. The whole 75-byte block is
+byte-for-byte reproduced by flacomdoc and confirmed against the specimen.
+
+> The previous revision mis-placed the "03 B4" anchor at `@abs 467`; it is at `@abs 470–471`
+> (the fps run occupies `@abs 464–468`). Corrected here.
+
+After this block come the property maps (`writeMap`), color definitions (`CColorDef`), QT audio
+settings (`CQTAudioSettings`), folders (§8.8), fonts (§8.9), guides, accessibility (§19.2,
+`mainDocument`), and a version/XMP trailer.
+
+### 8.5 AS2 linkage — `writeAsLinkage` — [V]
+
+Reused by symbols, scenes, sounds, bitmaps, fonts. **Two packed flag bytes** (not "4 flags"):
+
+```
+skip(4) [V*]                       // 00 00 00 00
+if (>= F5):
   u8 asLinkageVersion = 7
-  u8 flagsA = (exportForAS?1) | (importForRS?2)            // ONLY these two bits
-  u8 0x00 ×3
+  u8 flagsA = (exportForAS?1) | (importForRS?2)     // ONLY these two bits
+  skip(3) [V*]                     // 00 00 00
   BomString linkageIdentifier
   BomString linkageURL
->= MX2004:
-  BomString className                                       // AS2 class name
->= MX:
+if (>= MX2004):
+  BomString className              // AS2 class name
+if (>= MX):
   u8 flagsB = (exportForAS?1) | (exportForRS?2) | (exportInFirstFrame?4)   // NO importForRS bit
-  u8 asLinkageVersionB = 2,  u8 0x00 ×3
+  u8 asLinkageVersionB = 2;  skip(3) [V*]   // 00 00 00
   BomString ""
   BomString sourceLibraryItemHRef
-  u8 00×8, 01 00 00 00, 00×4, FF FF FF FF                   // 20 fixed bytes
->= F8:
+  skip(20) [V*]   // 00x8  01 00 00 00  00x4  FF FF FF FF
+if (>= F8):
   u8 0x00
   BomString linkageBaseClass
 ```
 
-> Real Flash 8 sometimes drops the `flagsB` bit2 (exportInFirstFrame) nondeterministically
-> (flacomdoc comment: "sometimes there's just no 4 flag, randomly"). Treat flagsB bit2 as
-> advisory when byte-matching. JSFL cannot set linkage headlessly (session-0 Flash pops a
-> modal and hangs — see `FLA-RE-PLAN.md`), so this block is verified from flacomdoc + the read
-> side, not the oracle.
+> Real Flash 8 occasionally drops `flagsB` bit 2 (exportInFirstFrame) nondeterministically;
+> treat it as advisory for byte-matching. Headless JSFL cannot set linkage (the linkage editor
+> modal hangs session-0 Flash), so this block is verified from flacomdoc + the read side.
 
-### 6.5 Media entries — **[V]** (`writeMedia`, dispatched by tag, name-sorted)
+### 8.6 `ItemID` — [V]
 
-`mediaCount` is 1-based across all media (bitmaps+sounds+videos, sorted by name).
+8 bytes: `u32 timeCreated, u32 order` (the `"%08x-%08x"` library item id).
 
-**Sound — `CMediaSound`:** `useClass`, `u8 mediaSoundVersionC=6`, `String "M n time"`,
-`BomString name`, `u16 mediaCount`, `BomString importHRef`, `writeTimeCreated`, `>=F4` block
-(`00 00 00 01 00 00 00` + parentFolderId + `01 00 00 00` + itemID + `writeAsLinkage` +
-MX2004:`00`), `>=F5 01 00 00 00`, `u8 mediaSoundVersionB(0x0A) u8 formatByte 00`,
-`u32 sampleCount`, `u16 exportFormat`, `u16 exportBits`, `>=F5` 11 zero, `>=MX2004 BomString
-deviceHRef`, `>=F8 00 00 00 00`. `formatByte = (rate<<2) | (16bit?2) | (stereo?1)` (rate 0=5k
-1=11k 2=22k 3=44k). PCM/compressed payload lives in the `M n time` stream.
+### 8.7 `fixedPageTail` — [V\*]
 
-**Video — `CMediaVideoStream`:** parallel structure with `mediaVideoVersion*` constants; the
-encoded clip lives in its `M n time` stream.
+The constant block closing every scene/symbol `CDocumentPage`. For F8 it is a fixed sequence of
+constants and empty BomStrings (`FF FE FF 00`) — see `FlaConverter.java:947-1047`. The only
+field a reader cares about is its tail: the **20-byte scale-9 grid** (§19.3), which for a symbol
+with a grid is `01 00 00 00` + `right,left,bottom,top` (each `u32 ×20`), else `00 00 00 00` +
+four `00 00 00 80` sentinels. Everything before it is opaque constants ([V\*]); a reader that
+understands the rest of the record can resync at the next class tag, or skip the exact F8 byte
+count emitted by the writer.
 
-**Bitmap — `CMediaBits`:** `useClass`, `u8 mediaBitsVersion=6`, `String "M n time"`,
-`BomString name`, `u16 mediaCount`, `BomString ""`, `writeTimeCreated`, `u8 mediaBitsVersionC`,
-`>=F4` block (parentFolderId/itemID/writeAsLinkage), `>=F5 01 00 00 00`, `u8 mediaBitsVersionB`,
-then trailer: `u8 compression` (1=lossless / 0=keep-imported-JPEG / 2=recompress), `u8 quality`,
-`u8 allowSmoothing`, `u32 externalFileSize` (JPEG; else 0), `CS4: u8 useDeblocking`. Pixel/JPEG
-data lives in the `M n time` stream.
+### 8.8 Folder entries — [V]
 
-### 6.6 Stage / document properties block — **[V]** (verified offsets)
+`u32 folderCount`, then per folder: `u8 libraryFolderVersionB; skip(3); BomString folderName;
+skip(7); ItemID-or-00x8 parentFolderId; skip(4); ItemID; u8 isExpanded; skip(3); …` (version-
+gated empty BomStrings + constants, like §8.7). Folder display name is the leaf; nesting via
+`parentFolderId`.
 
-After the catalog (`convert` :1099+), the document block. F8 order (empty-doc offsets in
-parentheses, all verified by the oracle stage corpus):
+### 8.9 Font entries — [V] (F5+)
 
-```
->=F2: u8 rulerUnitType, 00, u8 (gridVisible?3:0), 00
-      00 00 00
-      u16 width*20            (@407 = 11000 = 550px)   // STAGE WIDTH, twips
-      00 ×6
-      u16 height*20           (@415 = 8000 = 400px)    // STAGE HEIGHT, twips
-      00 ×4
-      ... u16 gridSpacingX*20; u8 previewMode; u8 rulerVisible; u8 pageTabsVisible ...
-      u8 ((playOptions<<4) | viewOptions)
-      <29 fixed bytes>
-      u8 bgR,bgG,bgB,0xFF     (@456 = FF FF FF FF)     // BACKGROUND (RGB + FF)
-      u8 gridR,gridG,gridB,0xFF                         // grid color
-      00, u8 fpsFrac, u8 fpsInt, 00, 00   (@466 fpsInt=0x0C=12) // FRAME RATE = 8.8 (frac,int)
-      00 03 b4 00 00 00       (@467.. the legacy "03 B4" anchor)
-```
-
-`rulerUnitType`: 0 in,1 dec-in,2 pt,3 cm,4 mm,5 px. `viewOptions` bits 1 animControl,2 buttons,
-4 pasteboard,8 livePreview; `playOptions` (×16) bits 1 loop,2 playPages,4 frameActions,8 sounds.
-
-Verified by ramps (`tools/flashdrv/jsfl/stage.jsfl` → `corpus/stage`): width 550/600/800/1000
-→ 11000/12000/16000/20000 (×20); height 400/500/600 → 8000/10000/12000; fps 12/24/30 →
-0x0C/0x18/0x1E; bg `#123456` → bytes `12 34 56`. **[V]**
-
-### 6.7 Folders, fonts, tail — **[V]**
-
-`u32 folderCount` then per-folder records (leaf name, itemID, parentFolderId, isExpanded,
-`writeAsLinkage`-shaped trailers). `writeFonts` (F5+): `u32 fontCount`, per-font record with
-`u8 fontVersion`, `BomString name`, `u16 id`, `u32 time`, `u8 fontVersionB`, family name, bold/
-italic u8 flags, the `0x12` magic, itemID, parentFolderId, `writeAsLinkage`. Tail: guides
-color/visible/locked/snap, `BomString sharedLibraryURL`, grid/snap accuracy bytes, `u16
-gridSpacingY*20`, document `writeAccessibleData` (§17.2, `mainDocument=true`), snap-align flags,
-and an XMP/version trailer (`majorVersion`, `u16 buildNumber`, `"timecount = <time>"`).
+`u32 fontCount`, then per font: `u8 fontVersion; BomString name; u16 id; u32 timeCreated; u8
+fontVersionB; skip(2); String fontFamily; … u8 bold; u8 italic; … (the 0x12 "magic"); ItemID;
+parentFolderId; writeAsLinkage`. (Constant runs [V\*].)
 
 ---
 
-## 7. Timeline streams — top-level structure
+## 9. Timeline streams
 
-Each scene/symbol timeline is its own OLE2 stream (`P N <time>` for scenes, `Symbol N` /
-`S N <time>` for symbols). The stream is a CArchive serialization rooted at a `CPicPage`
-holding `CPicLayer`s, each holding `CPicFrame`s. **[V]**
+A scene/symbol timeline is its own CFB stream rooted at a `CPicPage` (§10) holding `CPicLayer`s,
+each holding `CPicFrame`s. **[V]** Layers are stored **bottom-to-top** (background at binary
+index 0); importers that expect top-to-bottom must reverse.
 
 ---
 
-## 8. `CPicPage` and `CPicLayer`
+## 10. `CPicPage` / `CPicLayer`
 
-### 8.1 `CPicPage` — **[V]** (`TimelineConverter.convert` :3559)
+### 10.1 `CPicPage` — [V] (`TimelineConverter.convert`)
 
 ```
 u8 0x01                                  // leading marker
 useClass("CPicPage")
-u8 pageVersion = 0x04,  u8 0x00          // header schema
-<layers>                                 // CPicLayer ×N, emitted REVERSE index order (background first)
+u8 pageVersion = 0x04;  u8 0x00
+CPicLayer[]                              // emitted REVERSE index order (background first)
 // tail:
-00 00,  00 00 00 80,  00 00 00 80        // INT_MIN transform-point sentinel
->= F8:  00 00                            // F8 pad
+skip(2) [V*]                            // 00 00
+s32 0x80000000, s32 0x80000000          // INT_MIN transform-point sentinel
+if (>= F8) skip(2) [V*]                 // 00 00
 u8 pageVersionB = 0x07
-u16 nextLayerId, 00
-== MX2004 only: u16 nextFolderId, 00     // ABSENT in F8
->= F8:  u16 currentFrame, 00,  00, 00 00 00   // playhead + pad
->= F5:  u32 guideCount;  guideCount × { u32 direction(0=h,1=v); u32 valueTwips }   // RULER GUIDES
+u16 nextLayerId;  u8 0x00
+if (== MX2004) { u16 nextFolderId; u8 0x00 }     // MX2004 ONLY (absent in F8)
+if (>= F8) { u16 currentFrame; u8 0x00; skip(3) [V*] }
+if (>= F5):
+  u32 guideCount
+  guide[guideCount] { u32 direction; u32 valueTwips }   // 0=horizontal, 1=vertical (RULER GUIDES)
 ```
 
-This resolves the old "CPicPage tail tables [X]": the trailing `{u32 count; count×8}` is the
-**ruler-guides table** (`{direction, twips}` pairs). `nextFolderId` is MX2004-only.
-
-> Layer storage order is **bottom-to-top** (background layer at binary index 0). The clone's
-> model expects top-to-bottom, so importers reverse the layer list (see CLAUDE.md).
-
-### 8.2 `CPicLayer` — **[V]**
-
-`writeLayerContents` writes the frames first, then a layer-identity *trailer*:
+### 10.2 `CPicLayer` — [V]
 
 ```
 useClass("CPicLayer")
-u8 layerVersion = 0x04,  u8 0x00
-<frames>                                 // CPicFrame ×N (§9)
-// layer-properties block:
-00 00,  00 00 00 80, 00 00 00 80         // transform-pt sentinel
->= F8:  00 00
+u8 layerVersion = 0x04;  u8 0x00
+CPicFrame[]                              // §11
+// properties block:
+skip(2) [V*]                            // 00 00
+s32 0x80000000, s32 0x80000000          // transform-point sentinel
+if (>= F8) skip(2) [V*]                 // 00 00
 u8 layerVersionB = 0x0B
 BomString layerName
->= F4:  // F8 path
+if (>= F4):
   u8 isSelected
-  u8 hiddenLayer        // 1 = layer hidden (eye off)
-  u8 lockedLayer        // 1 = locked
-  FF FF FF FF
-  u8 colR,colG,colB,0xFF                 // outline color
-  u8 showOutlines       // outline && useOutlineView
-  00 00 00, u8 heightMultiplier, 00 00 00     // row-height multiplier (byte at +3 of a 7-byte run)
-u8 layerType            // 0=normal 1=guide 2=guided 3=folder 4=mask
+  u8 hiddenLayer       // 1 = layer hidden (eye off)
+  u8 lockedLayer       // 1 = locked
+  skip(4) [V*]         // FF FF FF FF
+  u8 colR, colG, colB, 0xFF            // outline color
+  u8 showOutlines      // outline && useOutlineView
+  skip(3) [V*]         // 00 00 00
+  u8 heightMultiplier  // row-height multiplier
+  skip(3) [V*]         // 00 00 00
+u8 layerType           // 0 normal, 1 guide, 2 guided, 3 folder, 4 mask
+// layer trailer:
+if (>= MX):            // (the pre-F5 mask back-link block is skipped on F8)
+  if (parentLayerIndex > -1) encodedUI(parentNValue)   // CArchive obj-index of parent folder/mask
+  else                       u16 0                      // no parent (top-level)
+  u8 open               // folder/parent expanded
+  u8 autoNamed          // name auto-generated
+  if (== CS4) u8 animationType         // CS4 only
+  // nested normal layers: trailing encodedUI(ancestorNValue) chain links
 ```
 
-**Layer trailer beyond the properties block** (`writeLayer` :3433+, resolves the old `[X]`):
-
-```
->= MX (F8): // mask back-link block is F5-and-earlier only and is skipped
-  if parentLayerIndex > -1:  encodedUI(parentNValue)     // CArchive obj-index of parent folder/mask
-  else:                      u16 0                        // no parent (top-level)
-  u8 open                 // folder/parent expanded in panel
-  u8 autoNamed            // name auto-generated
-  == CS4 only: u8 animationType    // ABSENT in F8
-  // for nested normal layers: trailing encodedUI(ancestorNValue) chain links
-```
-
-`encodedUI` per §4.4. The parent link is the parent layer's running CArchive object index
-(`1 + classesBefore + objectsBefore` at that layer's `useClass`), not its array index.
+`parentNValue`/`ancestorNValue` are the parent layer's running CArchive object index (§5.2),
+not its array index.
 
 ---
 
-## 9. `CPicFrame` — **[V]**
+## 11. `CPicFrame` — [V] header / [O] interleaved tail sub-blocks
 
-`writeLayerContents` per-frame body (`fs = frameVersionB = 0x18 = 24` for F8, so all
-`fs >= 19/22/24` branches fire). Header then body then a long tail. The header, display list,
-and the leading frame fields (through the F5 `frameVersionC`/`frameId` block) are byte-verified
-against a real empty Page stream (`findings/timeline-bytewalk.md`); the **exact byte order of
-the F3+ sub-blocks below the frameId block** (motionTweenRotate / comment / MorphShape /
-shapeTweenBlend / soundEffect / anchor / ease) is transcribed from flacomdoc's grouped emission
-and is approximate — each field is verified, but a strict byte-walk shows the interleave differs
-slightly (a `BomString ""` appears earlier than the grouping implies). Below:
+`fs = frameVersionB = 0x18 (24)` for F8 (so `fs>=19/22/24` branches all fire). The header,
+display list, and leading frame fields (through the `frameVersionC`/`frameId` block) are
+byte-walked against a real empty Page stream (`findings/timeline-bytewalk.md`). **The exact
+byte ORDER of the F3+ sub-blocks after `frameId` is [O]** (each field is verified, but a strict
+byte-walk shows a `BomString` earlier than flacomdoc's grouping implies).
 
 ```
 useClass("CPicFrame")
-u8 frameVersion = 0x04,  u8 0x00
-<display list>                           // handleElements: instances/shapes/text/bitmaps (§5.3 each)
-u8 frameVersionB = 0x18                  // the "fs" gate
-u16 duration                             // frame span length
-u16 keyMode                              // §9.1
-u16 acceleration                         // classic-tween ease -100..100 as u16
->= F2: // sound assignment on the frame
-  u16 soundId                            // 1-based media index, 0=none
-  u16 pointCount; pointCount × { u32 mark44; u16 lvl0; u16 lvl1 }   // sound envelope (default 1 pt: 0,0x8000,0x8000)
-  u16 soundLoop                          // 32767 if loop mode
-  u8  soundSync                          // 0 event 1 start 2 stop 3 stream
-  u32 inPoint44,  u32 outPoint44         // sample-accurate (default 0, 0x3FFFFFFF)
-  u16 soundZoomLevel                     // default 0xFFFF
->= F3:  BomString name                   // frame label/comment string
->= F5:  u8 frameVersionC=4, 00 00 00,  u8 0x01, 00 00 00   // present-flag block
->= MX:  u8 (frameId>>8), u8 frameId&0xFF, 00 00 00 00 00 00    // frameId is BIG-endian here
->= CS3: 00 00 00 00
->= F3:  u32 motionTweenRotate (0 none,1 cw,2 ccw); u16 rotateTimes; 00 00
-        u32 comment        // label is a comment
-        <MorphShape or 00 00>  (§11)
-        u8 shapeTweenBlend // 0 distributive, 1 angular
->= F3:  u8 0x00, u32 0,  BomString ""
->= F5:  01 00 00 00, u8 soundEffect (0..7), 00 00 00
->= MX:  u32 anchor       // label is a named anchor
-// frame tail — resolves the old fs>15 [X]:
->= F8:
-  u32 useSingleEaseCurve        // 1 = one ease curve for all props
+u8 frameVersion = 0x04;  u8 0x00
+displayObject[]                          // §5.3 each (instances/shapes/text/bitmaps; empty frame = 1 empty shape)
+u8 frameVersionB = 0x18                  // [V] the "fs" gate
+u16 duration                             // [V]
+u16 keyMode                              // [V] §11.1
+u16 acceleration                         // [V] classic-tween ease -100..100 as u16
+if (>= F2):                              // [V] sound assignment
+  u16 soundId                            //   1-based media index, 0 = none
+  u16 pointCount; envelope[pointCount] { u32 mark44; u16 lvl0; u16 lvl1 }   // default 1 pt = 0,0x8000,0x8000
+  u16 soundLoop;  u8 soundSync           //   sync: 0 event,1 start,2 stop,3 stream
+  u32 inPoint44;  u32 outPoint44         //   defaults 0, 0x3FFFFFFF
+  u16 soundZoomLevel                     //   default 0xFFFF
+if (>= F3)  BomString frameLabel         // [V]
+if (>= F5)  { u8 frameVersionC=4; skip(3); u8 0x01; skip(3) } [V*]
+if (>= MX)  { u8 (frameId>>8); u8 (frameId&0xFF); skip(6) }   // [V] frameId is BIG-endian here
+if (>= CS3) skip(4) [V*]
+// ---- F3+ tail sub-blocks: fields [V], interleave order [O] ----
+if (>= F3):
+  u32 motionTweenRotate (0 none,1 cw,2 ccw);  u16 rotateTimes;  skip(2)
+  u32 comment                            // label is a comment
+  MorphShape | skip(2)                   // §13 (00 00 if none)
+  u8 shapeTweenBlend                     // 0 distributive, 1 angular
+  u8 0x00;  u32 0;  BomString ""
+if (>= F5)  { skip(4); u8 soundEffect (0..7); skip(3) }
+if (>= MX)  u32 anchor                   // label is a named anchor
+// ---- frame tail (F8), [V] ----
+if (>= F8):
+  u32 useSingleEaseCurve                 // 1 = one ease curve for all properties
   u32 hasCustomEase
-  if hasCustomEase:  <custom ease table>  (§9.2)
-== CS4 && <motionObjectXML>:    // ABSENT in plain F8 — this is the old "field_298"/tweenInstanceName
+  if (hasCustomEase) customEaseTable     // §11.2
+if (== CS4 && motionObjectXML present):  // absent in plain F8
   BomString motionObjectXML;  u32 visibleAnimationKeyframes;  BomString tweenInstanceName
 ```
 
-### 9.1 `keyMode` bitfield (u16) — **[V]**
+### 11.1 `keyMode` (u16) — [V]
 
-Base normal keyframe = `0x2600` (KEYMODE_STANDARD). Tween bits: `0x0001` = **motion (classic)
-tween**; `0x0002` = **shape tween**. Sub-property bits (high nibbles): `0x0100`
-orientToPath, `0x0200` motionTweenScale, `0x0400` rotate≠none, `0x0800` sync, `0x1000` snap.
-F8 clears `0x2000`; F4-and-earlier clears `0x4000`. (Classic-tween keyframes appear as e.g.
-`0x4001+flags` or the standard `0x2600`+`0x0001`; a shape tween as `0x5602`.) This pins the
-import rule: motion via `& 0x0001`, shape via `& 0x0002`.
+Base normal keyframe `= 0x2600` (KEYMODE_STANDARD); F8 clears `0x2000` (so a plain F8 keyframe
+reads `0x0600`, confirmed by byte-walk). Tween bits: `0x0001` motion (classic) tween; `0x0002`
+shape tween. Sub-property bits: `0x0100` orientToPath, `0x0200` motionTweenScale, `0x0400`
+rotate≠none, `0x0800` sync, `0x1000` snap. (F4- additionally clears `0x4000`.) Import rule:
+motion via `&0x0001`, shape via `&0x0002`.
 
-### 9.2 Custom ease-curve table — **[V]**
+### 11.2 `customEaseTable` — [V]
 
-When `hasCustomEase`, six fixed property slots are always written in order **position,
-rotation, scale, color, filters, all**. Per slot:
+Six fixed property slots, always in order **position, rotation, scale, color, filters, all**:
 
 ```
-u32 numPoints                  // 0 if that property has no custom curve
-per point (over the raw <Point> list):
-  if (first or last):  f64 x; f64 y       // endpoint emitted an EXTRA time
-  f64 x; f64 y                            // every point
+slot[6] {
+  u32 numPoints                          // logical anchor points; 0 if this property has none
+  // pairs on the wire = numPoints + 2  (the first and last anchor are each written one EXTRA time)
+  f64 pair[numPoints + 2] { f64 x; f64 y }   // x = normalized time 0..1, y = normalized value
+}
 ```
 
-Each point is two LE doubles `(x,y)` (x = normalized time 0..1, y = normalized value); the
-first and last anchors are written twice. This resolves §9.3 (the old endpoint-doubling guess).
+> **Point count (resolves the ambiguity):** a reader given `numPoints` must consume exactly
+> `numPoints + 2` `(x,y)` double pairs — the first and last anchors are duplicated on the wire.
 
-### 9.3 Frame script (AS2) — **[V]**
+### 11.3 Frame script (AS2) — [V]
 
-F5+ stores the frame script as a single `BomString` of **plain AS2 source text** (within the
-F5 block). F4-and-earlier use `FlaWriter.writeScript`, a structured action-record format
-(per-command url/window/frameNum records) — bytecode-adjacent, source not directly present
-(**[O]** for the pre-F5 record layout).
+F5+ stores the frame script as a single `BomString` of plain AS2 source (inside the F5 block).
+F4-and-earlier use `FlaWriter.writeScript`, a structured action-record format (**[O]**).
 
 ---
 
-## 10. Shapes — `CPicShape` and geometry — **[V]**
-
-`handleShape` (:2143). After the class tag:
+## 12. Shapes — `CPicShape` — [V]
 
 ```
->= F5 (group container only): u8 groupVersion=4; u8 ((selected?2)|(locked?4)|(floating?1))
-instanceHeader   (instanceType = shapeType = 3)   // §5.3
+useClass("CPicShape")
+if (>= F5 && group container): { u8 groupVersion=4; u8 ((selected?2)|(locked?4)|(floating?1)) }
+instanceHeader               // §5.3, instanceType = shapeType = 3
 u8 shapeVersion = 5
 u32 totalEdgeCount
-u16 fillStyleCount;   fillStyle ×N           (§10.1)
-u16 strokeStyleCount; lineStyle ×N           (§10.2)
-<edge stream>                                 (§10.3)
-u8 0x00                                        // post-edge marker
->= F5: u32 cubicCount; cubic ×N               (§10.4)
+u16 fillStyleCount;   fillStyle[fillStyleCount]      // §12.1
+u16 strokeStyleCount; lineStyle[strokeStyleCount]    // §12.2
+edge[]                       // §12.3 (totalEdgeCount segments across all <Edge>)
+u8 0x00                      // post-edge marker
+if (>= F5) { u32 cubicCount; cubic[cubicCount] }     // §12.4
 ```
 
-### 10.1 Fill styles — **[V]** (`handleFill`)
-
-Fill **type byte** values (`FlaWriter` consts): there is **no 0x20 subtype** — the old "0x20"
-was a misread bitmap/gradient. The high bits are: **0x10 = gradient**, **0x40 = bitmap**,
-neither = solid.
+### 12.1 Fill style — [V] — **discriminator-first**
 
 ```
-SOLID:           u8 R,G,B,A;  u8 0x00,0x00
-GRADIENT:        u8 00 00 00 FF;  u8 type(0x10 linear / 0x12 radial);  u8 00;
-                 Matrix gradientMatrix;  u8 stopCount;
-                 >= F8: u8 focalRatio(=round(focal*255)); 00 00 00; u8 (flow|linearRgb); 00 00 00
-                 per stop: u8 round(ratio*255), u8 R,G,B,A
-BITMAP:          u8 FF 00 00 FF;  u8 type(0x40 tiled/0x41 clipped/0x42 tiled-nosmooth/0x43 clipped-nosmooth);
-                 u8 00;  Matrix bitmapMatrix;  u16 bitmapId
+// Read the type discriminator FIRST, at a fixed position, then branch:
+//   peek u8 at @+4. bit 0x10 set -> GRADIENT ; bit 0x40 set -> BITMAP ; neither -> SOLID.
+//   (For SOLID those first 4 bytes are RGBA, and there is no type byte; for gradient/bitmap
+//    @+0..3 is a fixed lead-in and @+4 is the type byte.)
+SOLID:    u8 R,G,B,A;  u8 0x00, u8 0x00                          // 6 bytes total
+GRADIENT: u8 0x00,0x00,0x00,0xFF;  u8 type;  u8 0x00;            // type @+4: 0x10 linear, 0x12 radial
+          Matrix gradientMatrix;  u8 stopCount;
+          if (>= F8) { u8 focalRatio; skip(3); u8 (flow|linearRgb); skip(3) }
+          stop[stopCount] { u8 round(ratio*255); u8 R,G,B,A }
+BITMAP:   u8 0xFF,0x00,0x00,0xFF;  u8 type;  u8 0x00;            // type @+4: 0x40/0x41/0x42/0x43
+          Matrix bitmapMatrix;  u16 bitmapId
 ```
 
-`flow`: 0 extend, 4 reflect, 8 repeat; `+1` for linearRGB interpolation. Focal radial uses
-type 0x12 with a non-zero focalRatio (never 0x13). The leading `…FF` byte must be 0xFF or
-Flash drops the fill.
+`flow`: 0 extend, 4 reflect, 8 repeat; `+1` for linearRGB interpolation. Bitmap `type` low bits:
+0x40 tiled, 0x41 clipped, 0x42 tiled-no-smooth, 0x43 clipped-no-smooth. There is **no 0x20
+subtype**. The lead-in's last byte must be `0xFF` or Flash drops the fill.
 
-### 10.2 Line styles (LINESTYLE/LINESTYLE2) — **[V]** (`writeStrokeBegin`)
+> A reader cannot distinguish SOLID from gradient/bitmap by `@+0` alone (it is R or a lead-in
+> byte). Use the rule above: test `@+4 & 0x10` / `& 0x40`; if the bytes don't reach `@+4` as a
+> valid gradient/bitmap, it is SOLID (6 bytes). In practice fill arrays are homogeneous per
+> shape and the count is known, so mis-branching is detectable by length.
+
+### 12.2 Line style (LINESTYLE / LINESTYLE2) — [V]
 
 ```
 u8 R,G,B,A                       // line color
-u16 widthTwips = round(weight*20)
-u16 styleParam1, u16 styleParam2 // stroke style (solid/dashed/dotted/ragged/stipple/hatched), bit-packed
->= F8:  u8 pixelHinting; u8 scaleMode(0 normal,1 h,2 v,3 none); u8 capStyle(0 none,1 round,2 sq);
-        u8 joinStyle(0 miter,1 round,2 bevel); u8 miterFrac; u8 miterInt
->= F8:  <trailing fill>          // a full fill record (solid → RGBA+0000; bitmap → writeBitmapFill)
+u16 widthTwips
+u16 styleParam1;  u16 styleParam2   // dash/dot/ragged/stipple/hatch params (bit-packed; low 3 bits = style id)
+if (>= F8):
+  u8 pixelHinting; u8 scaleMode(0 normal,1 h,2 v,3 none); u8 capStyle(0 none,1 round,2 sq);
+  u8 joinStyle(0 miter,1 round,2 bevel); u8 miterFrac; u8 miterInt
+  fillStyle trailingFill           // §12.1 (solid -> RGBA+0000; bitmap -> bitmap fill)
 ```
 
-Pre-F8 stroke = 10 bytes (RGBA + u16 width + 2×u16 styleParam), no caps/joins/miter and no
-trailing fill. `styleParam2` encodes dotted/ragged/stipple/hatched parameters in bit fields
-(low 3 bits = style id; `+0x8000` = sharp corners, MX+).
+Pre-F8 stroke = 10 bytes (no caps/joins/miter, no trailing fill). `styleParam2 + 0x8000` =
+sharp corners (MX+).
 
-### 10.3 Edge stream — **[V]** (`writeEdges`/`writeEdge`/`writeXY`)
+### 12.3 Edge stream — [V]
 
-Each `<Edge>` carries `(strokeStyle, fillStyle0, fillStyle1)` indices and an edges string
-(`!`=moveTo, `|`/`/`=line, `[`=quadratic curve). Per edge record:
+Each `<Edge>` carries `(strokeStyle, fillStyle0, fillStyle1)` and an edge string. Per edge
+record, first a **type byte** (bitfield), then optional style-change, then coordinates:
 
 ```
-u8 typeByte:  0x80 no-selection; 0x40 has-styles; TO size 0x20/0x30/0x10 (float/short/byte);
-              CONTROL 0x08/0x0C/0x04 (curve only); FROM 0x02/0x03/0x01 (only if from != 0,0)
-if has-styles:  u8 strokeIdx [u8 sel]; u8 fill0Idx [u8 sel]; u8 fill1Idx [u8 sel]   // ORDER: stroke, fill0, fill1
-<from?> <control?> <to>          // each via writeXY
->= CS3 (straight only): u8 generalLineFlag    // absent in F8
+typeByte (u8):
+  bit 7    0x80  noSelection
+  bit 6    0x40  hasStyles
+  bits 5-4       TO   coord size:  01=BYTE(0x10), 10=FLOAT(0x20), 11=SHORT(0x30)
+  bits 3-2       CTRL coord size (curve only): 01=BYTE(0x04), 10=FLOAT(0x08), 11=SHORT(0x0C)
+  bits 1-0       FROM coord size (only if from != 0,0): 01=BYTE(0x01), 10=FLOAT(0x02), 11=SHORT(0x03)
+if hasStyles:    u8 strokeIdx [u8 sel];  u8 fill0Idx [u8 sel];  u8 fill1Idx [u8 sel]   // ORDER: stroke, fill0, fill1
+[ from ] [ control ] to          // present per the size fields; each via the coord form below
+if (>= CS3 && straight) u8 generalLineFlag       // absent in F8
 ```
 
-`writeXY` per axis: **BYTE** `u8 frac, s8 int` (8.8 twips, 1px=5120); **SHORT** `s16 =
-round(v*2)` (15.1); **FLOAT** `u8 frac, s24 int`. Coordinates are **deltas** from the pen;
-a leading (0,0) moveTo is omitted. Style-change block order is **stroke, fill0, fill1**.
+Coordinate forms per axis: **BYTE** = `Point8_8` (u8 frac, s8 int; 8.8 twips, 1px=5120); **SHORT**
+= `s16 = round(v*2)` (15.1); **FLOAT** = `u8 frac, s24 int`. Coordinates are **deltas** from the
+pen; a leading (0,0) moveTo is omitted.
 
-### 10.4 Cubic post-stream — **[V]** (F5+, resolves the old `[O]`)
+### 12.4 Cubic post-stream — [V] (F5+)
 
 ```
 u32 cubicCount
-per cubic edge: s32 mx,my, x1,y1, x2,y2, ex,ey    // 32 bytes: move, 2 controls, end (plain twips)
->= CS3: u8 segCount; segCount×{ s32 x,y; u8 onCurve; u8 line }; u8 pnFlags; opt prev/next BCP   // absent in F8
+cubic[cubicCount] {
+  s32 mx,my, x1,y1, x2,y2, ex,ey         // 32 bytes: move, 2 controls, end (plain twips)
+  if (>= CS3) { u8 segCount; seg[segCount]{s32 x,y; u8 onCurve; u8 line}; u8 pnFlags; opt prev/next BCP }  // absent in F8
+}
 ```
-
-In F8 each cubic entry is exactly the 32-byte core (eight s32 twips). This preserves the
-authored cubic geometry alongside the quadratic edge stream for re-editing.
 
 ---
 
-## 11. `CPicMorphShape` (shape-tween geometry) — **[V]**
+## 13. Morph shapes — `CPicMorphShape` — [V]
 
-On a frame with `<MorphShape>` (`:2849+`):
+On a frame with a shape tween:
 
 ```
 useClass("CPicMorphShape")
-<57 fixed bytes>                          // two identity-ish matrices/flags, written verbatim
+skip(57) [V*]                            // two identity-ish matrices/flags (opaque constants)
 u16 segmentCount
-per segment:
+segment[segmentCount] {
   useClass("CMorphSegment")
-  u32 strokeIdx1, strokeIdx2, fillIdx1, fillIdx2   // 0xFFFFFFFF = none
-  Point8_24 startA;  Point8_24 startB              // 8 bytes each
+  u32 strokeIdx1, strokeIdx2, fillIdx1, fillIdx2     // 0xFFFFFFFF = none
+  Point8_24 startA;  Point8_24 startB
   u16 curveCount
-  per curve:
+  curve[curveCount] {
     useClass("CMorphCurve")
-    Point8_24 ctrlA, anchorA, ctrlB, anchorB        // 4 points
-    u8 isLine;  u8 00 00 00                          // resolves CMorphCurve "unknown1/2"
-u16 0x0000                                          // segment-list terminator (resolves "trailing u16")
-u16 fillCount;   morphFill ×N                        // §11.1
-u16 strokeCount; morphStroke ×N                      // §11.2
+    Point8_24 ctrlA, anchorA, ctrlB, anchorB
+    u8 isLine;  skip(3) [V*]            // 00 00 00
+  }
+}
+u16 0x0000                               // segment-list terminator
+u16 fillCount;   morphFill[fillCount]    // §13.1
+u16 strokeCount; morphStroke[strokeCount]// §13.2
 ```
 
-### 11.1 Morph fill — **[V]**
+### 13.1 Morph fill — [V] — discriminator-first
 
 ```
-null:     RGBA 00 00 00 00,  u16 0x0000
-SOLID:    u8 R,G,B,A,  u16 0x0000
-GRADIENT: u8 00 00 00 FF,  u16 type(0x10/0x12),  Matrix,  u8 stopCount, per stop (u8 ratio, RGBA)
-BITMAP:   u8 FF 00 00 FF,  u8 type(0x40..0x43), u8 00,  Matrix,  u16 bitmapId
+// peek u8 at @+0: 0x00 -> solid/null lead; 0xFF -> bitmap lead. Then the type word distinguishes.
+null:     u8 0x00,0x00,0x00,0x00;  u16 0x0000
+SOLID:    u8 R,G,B,A;              u16 0x0000
+GRADIENT: u8 0x00,0x00,0x00,0xFF;  u16 type(0x10/0x12);  Matrix;  u8 stopCount; stop[]{u8 ratio; RGBA}
+BITMAP:   u8 0xFF,0x00,0x00,0xFF;  u8 type(0x40..0x43); u8 0x00;  Matrix;  u16 bitmapId
 ```
 
-Note: morph gradient `type` is **u16** here (vs u8 in static shapes) and has no F8 focal/flow
-block.
+Note the gradient `type` is **u16** here (vs u8 in §12.1) and there is no F8 focal/flow block.
 
-### 11.2 Morph stroke — **[V]**
+### 13.2 Morph stroke — [V]
 
-Each record is **10 bytes**: `u8 R,G,B,A; u32 round(weight*20); u16 0x0000`. Empty-stroke
-fallback writes count 1 (F8) with one zeroed 10-byte record (MX-and-earlier write count 2).
+Each record is 10 bytes: `u8 R,G,B,A; u32 round(weight*20); u16 0x0000`. Empty-stroke fallback:
+count 1 (F8) with one zeroed 10-byte record (MX- writes count 2).
 
 ---
 
-## 12. Symbol instances — `CPicSprite` / `CPicButton` / `CPicSymbol` — **[V]**
+## 14. Symbol instances — `CPicSprite` / `CPicButton` / `CPicSymbol` — [V]
 
-Class by symbolType: graphic→`CPicSymbol`, button→`CPicButton`, movieclip→`CPicSprite`. Common
-prefix (`handleSymbolInstance` :735):
+Class by `symbolType`: graphic→`CPicSymbol`, button→`CPicButton`, movieclip→`CPicSprite`.
 
 ```
+useClass(<class>)
 u8 spriteVersion = 4
-instanceHeader   (instanceType = symbolType = 0x13)   // §5.3 — carries matrix, cacheAsBitmap, selected/locked
-u16 firstFrame                                          // graphic only (0-based)
-u8 loopMode        // MC→0x02; button→0x00; graphic: loop 0 / playOnce 1 / singleFrame 2
+instanceHeader            // §5.3, instanceType = symbolType = 0x13 (carries matrix, cacheAsBitmap, selected/locked)
+u16 firstFrame            // graphic only (0-based)
+u8 loopMode               // MC=0x02; button=0x00; graphic: loop 0 / playOnce 1 / singleFrame 2
 u8 0x00
->= F4: u8 0x01
->= F2: <color effect>                                   // §12.2
->= F3: BomString ""
-u16 libraryItemIndex                                    // 1-based into library symbols
-u8 0x00, u8 0x00                                        // (libraryItemIndex hi-extension?) [O]
->= MX2004: 00 00 00
->= F8: <filter list> (§14.2);  u8 blendMode, 00, 00    // §12.1
+if (>= F4) u8 0x01
+if (>= F2) colorEffect    // §19.1
+if (>= F3) BomString ""
+u16 libraryItemIndex      // 1-based into library symbols
+u8 0x00, u8 0x00          // [O] (libraryItemIndex hi-extension?)
+if (>= MX2004) skip(3) [V*]
+if (>= F8) { filterList (§16); u8 blendMode; u8 0x00, u8 0x00 }   // §14.1
+// --- per-class tail ---
+graphic:    (none — record ends here)
+movieclip:  u8 spriteVersionG=8; skip(7)[V*]; u16 symbolInstanceId; if(>=CS3) skip(4);
+            skip(6)[V*]; BomString clipScript; BomString instanceName; skip(9)[V*];
+            writeAccessibleData (§19.2); skip(7)[V*]; componentMetadata (§15)
+button:     skip(11)[V*]; if(>=MX){u16 symbolInstanceId; if(>=CS3)skip(4); skip(6)};
+            BomString clipScript; u8 trackAsMenu; BomString instanceName;
+            writeAccessibleData; skip(4)[V*]
 ```
 
-- **graphic**: returns here — no tail.
-- **movieclip (sprite) tail**: `u8 spriteVersionG=8`, `spriteVersionB=4 00 00 00 01 00 00 00`,
-  `u16 symbolInstanceId`(random), CS3:`00000000`, `00 00 00 00 00 00`, `BomString clipScript`,
-  `BomString instanceName`, `02 00 00 00 00 01 00 00 00`, `writeAccessibleData` (§17.2),
-  `00 00000000 000000`, then MX2004+ component metadata (§13).
-- **button tail**: `buttonVersion=0x0B spriteVersionB=4 00 00 00 01 00 00 00`, (MX+) symbol
-  instance id block, `BomString clipScript`, `u8 trackAsMenu`, `BomString instanceName`,
-  `writeAccessibleData`, `00 00 00 00`.
+(CS4 inserts a 3-D matrix/rotation block in the common prefix; not laid out here.)
 
-CS4 adds a 3D matrix/rotation block in the common prefix (absent in F8).
+### 14.1 Blend mode byte → name — [V]
 
-### 12.1 Blend mode byte → name — **[V]**
-
-1 normal, 2 layer, 3 multiply, 4 screen, 5 lighten, 6 darken, 7 difference, 8 add, 9 subtract,
-10 invert, 11 alpha, 12 erase, 13 overlay, 14 hardlight (0 = unset sentinel).
-
-### 12.2 Color effect — **[V]** (`coloreffects/*`)
-
-```
->= F3: u16 alphaMul, u16 alphaOffset
-       u16 redMul, u16 redOffset, u16 greenMul, u16 greenOffset, u16 blueMul, u16 blueOffset
-       u8 type, u8 0x00
-       u16 valuePercent
-       u8 effectColor R,G,B,A
-```
-
-Multipliers are SI16 with **256 = 1.0**. `type`: 0 none, 1 brightness, 2 tint, 3 advanced,
-4 alpha. Derivations: brightness → RGB-mul `round((1-|b|)*256)`, percent `round(b*100)`; tint →
-RGB-mul `round((1-amt)*256)`, RGB-offset `round(color*amt)`, color = tint color; alpha →
-alphaMul `round(a*256)`; advanced → muls `round(v*256)`, offsets verbatim.
+`0` unset, `1` normal, `2` layer, `3` multiply, `4` screen, `5` lighten, `6` darken, `7`
+difference, `8` add, `9` subtract, `10` invert, `11` alpha, `12` erase, `13` overlay, `14`
+hardlight.
 
 ---
 
-## 13. Component metadata (sprite tail) — **[V]**
+## 15. Component metadata — [V]
 
-For MX2004+ movieclip/sprite instances only (`:1187`):
+For MX2004+ movieclip/sprite instances only:
 
 ```
-u8 0x01, u32 0                  // u32 resets on resave
-BomString componentXML          // "<component metaDataFetched='true' schemaUrl='' schemaOperation=''
+u8 0x01;  u32 0                  // u32 resets on resave
+BomString componentXML           // "<component metaDataFetched='true' schemaUrl='' schemaOperation=''
                                  //   sceneRootLabel='Scene 1' oldCopiedComponentPath='N'>\n</component>\n"
 ```
 
-A populated component (with parameters) fills `schemaUrl`/`schemaOperation` and child nodes.
-This resolves the old "CString of unknown schema" — it is a length-prefixed BomString of XML.
+A populated component fills `schemaUrl`/`schemaOperation` and child nodes.
 
 ---
 
-## 14. Filters
+## 16. Filters
 
-### 14.1 SWF-wire filters — **[V]**
+### 16.1 SWF-wire filters — [V]
 
-The runtime/SWF filter records (DropShadow/Blur/Glow/Bevel/Gradient*/ColorMatrix) follow the
-Adobe SWF spec wire format; see Ruffle `swf` crate. Used when filters reach the SWF.
+The runtime/SWF filter records follow the Adobe SWF spec wire format (Ruffle `swf` crate).
 
-### 14.2 FLA-authoring filters — **[V]** (`filters/*`, F8+ instance/text tail)
-
-List wrapper: if filters present → `u8 0x01`, `u32 filterCount`, then each `filter.write()`;
-else `u8 0x00`. Each filter body starts with a per-filter ID tag + sub-header, then
-`u32 enabled`, then its fields. Multi-byte ints u32 LE; floats IEEE-754 LE; angles in radians;
-`strengthPercent = round(strength*100)` as u16-in-u32.
+### 16.2 FLA-authoring filter list — [V] (F8+ instance/text tail)
 
 ```
-DropShadow  (00, 04 01):   enabled; RGBA color; f32 distance; f32 blurX; f32 blurY; f32 angle;
-                           u32 inner; u32 knockout; u32 quality; u16 strength,00,00; u8 hideObject,00 00 00
-Blur        (01 03,04 01): enabled; FF FF FF FF; <5f const>; f32 blurX; f32 blurY; <45°const>;
-                           00×8; u32 quality; <100 const> 00×6        // only blurX/Y/quality meaningful
-Glow        (02 03,04 01): enabled; RGBA; <5f const>; f32 blurX; f32 blurY; <45°>; u32 inner;
-                           u32 knockout; u32 quality; u16 strength,00,00; 00 00 00 00
-Bevel       (03 03,04 01): enabled; RGBA shadow; f32 distance; f32 blurX; f32 blurY; f32 angle;
-                           u32 (type==inner); u32 knockout; u32 quality; u16 strength,00,00; 00×4;
-                           RGBA highlight; u32 (type==full)
-GradientGlow(04 01,04 01): enabled; 00 00 00 FF; f32 distance/blurX/blurY/angle; u32(inner);
-                           u32 knockout; u32 quality; u16 strength,00,00; 00×4; u32 gradCount; 00×4;
-                           u32(full); per entry: u32 round(ratio*255), RGBA
-GradientBevel(07 01 01,04 01): like GradientGlow (gradient entry alpha is buggy in CS5 — [O])
-AdjustColor (06 01 01):    enabled; f32 brightness; f32 contrast; f32 saturation; f32 hue
+if (filters present): u8 0x01;  u32 filterCount;  filter[filterCount]
+else:                 u8 0x00
 ```
 
-Bevel `type`: 1 inner, 2 outer, 3 full. This resolves the old "filter interior constants [X]"
-— every byte is a filter-ID tag, a fixed sub-header, or a baked angle/strength constant.
+Each `filter` = a per-type ID tag + fixed sub-header, then `u32 enabled`, then fields (u32 ints;
+f32 floats; angles in radians; `strengthPercent = round(strength*100)` as u16-in-u32):
+
+```
+DropShadow   (00, 04 01):   enabled; RGBA; f32 distance,blurX,blurY,angle; u32 inner,knockout,quality; u16 strength,skip(2); u8 hideObject,skip(3)
+Blur         (01 03,04 01): enabled; skip(4)[V*]; skip(4 const)[V*]; f32 blurX,blurY; skip(4)[V*]; skip(8)[V*]; u32 quality; skip(8)[V*]   // only blurX/Y/quality meaningful
+Glow         (02 03,04 01): enabled; RGBA; skip(4)[V*]; f32 blurX,blurY; skip(4)[V*]; u32 inner,knockout,quality; u16 strength,skip(2); skip(4)
+Bevel        (03 03,04 01): enabled; RGBA shadow; f32 distance,blurX,blurY,angle; u32 (type==inner),knockout,quality; u16 strength,skip(2); skip(4); RGBA highlight; u32 (type==full)
+GradientGlow (04 01,04 01): enabled; skip(4)[V*]; f32 distance,blurX,blurY,angle; u32 inner,knockout,quality; u16 strength,skip(2); skip(4); u32 gradCount; skip(4); u32 full; entry[gradCount]{u32 round(ratio*255); RGBA}
+GradientBevel(07 01 01,04 01): as GradientGlow (gradient-entry alpha is buggy in CS5 — [O])
+AdjustColor  (06 01 01):    enabled; f32 brightness,contrast,saturation,hue
+```
+
+Bevel `type`: 1 inner, 2 outer, 3 full.
 
 ---
 
-## 15. `CPicText` — **[V]** (`handleText` :1275)
+## 17. Text — `CPicText` — [V]
 
 ```
 u8 textVersionC = 4
-instanceHeader   (instanceType = textVersion = 0x0D)
-u32 left*20, u32 (left+width)*20, u32 top*20, u32 (top+height)*20    // bounds, twips
+instanceHeader            // §5.3, instanceType = textVersion = 0x0D
+u32 left*20, u32 (left+width)*20, u32 top*20, u32 (top+height)*20    // bounds (twips)
 u8 autoExpand
->= F3: u8 0x00
->= F4: u8 textFlags                  // §15.1
-u8 embedFlag                          // §15.2
->= F5: u8 staticFlags  (static: bit0 selectable, bit1 device-font[CS3+]; non-static 0);  u8 0x00
->= F4: u16 maxCharacters;  BomString variableName
-       if embeddedCharacters: BomString embeddedCharacters
-<text run blocks>                     // §15.3
+if (>= F3) u8 0x00
+if (>= F4) u8 textFlags                 // §17.1
+u8 embedFlag                            // §17.2
+if (>= F5) { u8 staticFlags; u8 0x00 }  // static: bit0 selectable, bit1 device-font(CS3+); non-static 0
+if (>= F4) { u16 maxCharacters; BomString variableName }
+if (embeddedCharacters) BomString embeddedCharacters
+textRun[]                               // §17.3
 // tail:
-00 00
->= MX: BomString instanceName;  writeAccessibleData;  00 00 00 00, u8 scrollable, 00 00 00
->= MX2004: BomString "";  BomString embedRanges(joined "|")
->= F8: <filter list> (§14.2);  00 00
+u16 0x0000
+if (>= MX) { BomString instanceName; writeAccessibleData; skip(4); u8 scrollable; skip(3) }
+if (>= MX2004) { BomString ""; BomString embedRanges }     // ranges joined by "|"
+if (>= F8) { filterList (§16); u16 0x0000 }
 ```
 
-### 15.1 `textFlags` (u8) — **[V]**
+### 17.1 `textFlags` (u8) — [V]
 
-`0x01` non-static (dynamic|input); `0x02` dynamic; `0x04` password; `0x08` word-wrap; `0x10`
-multiline; `0x20` includeOutlines (embed fonts); `0x40` border; `0x80` (dynamic && renderAsHTML
-&& !selectable). **selectable** = bit0 of the `staticFlags` byte; **scrollable** = the byte in
-the MX tail above.
+`0x01` non-static; `0x02` dynamic; `0x04` password; `0x08` word-wrap; `0x10` multiline; `0x20`
+includeOutlines; `0x40` border; `0x80` (dynamic && renderAsHTML && !selectable). **selectable**
+= bit0 of `staticFlags`; **scrollable** = the byte in the MX tail above.
 
-### 15.2 `embedFlag` (u8) — **[V]**
+### 17.2 `embedFlag` (u8) — [V]
 
 bit0 font embedded; bits1–4 embed ranges 1..4 (`1<<rangeId`); 0x20 embeddedCharacters present;
 0x40 isEmpty; 0x80 renderAsHTML (F5+).
 
-### 15.3 Text run formatting block — **[V]** (per merged run)
+### 17.3 Text run (per merged run) — [V]
 
 ```
 u16 charCount (if non-empty)
 u8 textVersionB = 0x0C
 u16 size*20
 String fontFamily        (BomString in CS4)
-u8 R,G,B,A               // fill color
-u8 0x12, u8 0x00         // font-class flags (family-dependent; meaning partly unknown [O])
-u8 bold, u8 italic, u8 0x00, u8 autoKern, u8 charPosition(0 norm,1 super,2 sub), u8 alignment(0 L,1 R,2 C,3 J)
-u16 lineSpacing*20, u16 indent*20, u16 leftMargin*20, u16 rightMargin*20
->= F5: u16 letterSpacing*20    (F4: a single 0x00)
+u8 R,G,B,A
+u8 0x12, u8 0x00         // [O] font-class flags (family-dependent)
+u8 bold, italic, 0x00, autoKern, charPosition(0 norm,1 super,2 sub), alignment(0 L,1 R,2 C,3 J)
+u16 lineSpacing*20, indent*20, leftMargin*20, rightMargin*20
+if (>= F5) u16 letterSpacing*20    else u8 0x00
 String url
->= MX: u8 vertical, u8 rightToLeft, u8 rotation
->= MX2004: u8 (renderMode==BITMAP)
->= MX: String target
->= F8: u8 0x02; u8 renderMode(device 0/bitmap 1/standard 2/default 3/custom 4 → 0/1/.../2);
-       f32 antiAliasThickness; f32 antiAliasSharpness (or 8 zero if device); String url
-characters: UTF-16LE (unicode) / charset bytes
+if (>= MX) { u8 vertical, rightToLeft, rotation }
+if (>= MX2004) u8 (renderMode==BITMAP)
+if (>= MX) String target
+if (>= F8) { u8 0x02; u8 renderMode; f32 antiAliasThickness; f32 antiAliasSharpness (or 8 zero if device); String url }
+characters               // UTF-16LE (unicode) / charset bytes
 ```
 
 ---
 
-## 16. Media display objects — **[V]/[X]**
+## 18. Media display objects
 
-### 16.1 `CPicBitmap` — **[V]**
+### 18.1 `CPicBitmap` — [V]
 
 ```
 u8 bitmapVersion = 4
-instanceHeader   (instanceType = bitmapType = 2)
-u16 mediaId                          // 1-based into name-sorted media list
->= MX2004: u8 0x00                   // (filter flag, 0)
+instanceHeader            // §5.3, instanceType = bitmapType = 2
+u16 mediaId               // 1-based into name-sorted media list
+if (>= MX2004) u8 0x00    // (filter flag, 0)
 ```
 
-No width/height/scale fields: display scale lives in the placement matrix; intrinsic pixel
-size lives in the library `DOMBitmapItem`. Smoothing is a fill-style property (0x42/0x43 vs
-0x40/0x41), not a placement byte.
+No width/height/scale fields: display scale lives in the placement matrix; intrinsic pixel size
+in the library item; smoothing is a fill-style property, not a placement byte.
 
-### 16.2 `CPicVideoStream` — **[V]**
+### 18.2 `CPicVideoStream` — [V]
 
 ```
 useClass("CPicVideoStream")
 u8 videoStreamVersion = 4
-instanceHeader   (instanceType = videoType = 4)
+instanceHeader            // §5.3, instanceType = videoType = 4
 u32 frameLeft, frameRight, frameTop, frameBottom    // crop rect
 u8 0x00
 BomString ""
-BomString name                       // instance name
-01 00 00 00
-u16 videoId                          // 1-based media index
+BomString name            // instance name
+u32 0x00000001
+u16 videoId               // 1-based media index
 ```
 
-(The embedded-clip variant `CPicVideo` is a distinct 160-byte class that flacomdoc never
-emits; it remains **[I]** — no writer, no sample.)
+(The embedded-clip `CPicVideo` is a distinct class flacomdoc never emits — **[I]**.)
 
-### 16.3 `CPicSwf` (imported SWF) — header **[O]**, body **[X]** (bounded)
+### 18.3 `CPicSwf` (imported SWF) — header [O] / bulk [X] (bounded)
 
-flacomdoc has **no** SWF-import write path, and fla-decoder has no `read_cpicswf`, so the record
-cannot be transcribed from a writer. Headless JSFL cannot generate one either — `importFile`
-of a content-bearing SWF pops a modal that hangs session-0 Flash (the same trap as linkage). The
-structure below is **observed** by differential analysis of the four real `CPicSwf` records in
-`fixtures/Magnet.fla` (`Page 1/6/7/8`, the reused "Claw" imported SWF): comparing the instances
-separates per-placement fields (differ) from SWF-intrinsic metadata (constant across reuse).
-Class facts (fla-decoder Ghidra): `CPicSwf : CPicObj`, class size 308 B, schema 1, `serialize`
-VA `0x9490400`.
+A **legacy** record: Flash 8 `Import to Stage` of a `.swf` breaks the movie apart into
+shapes/symbols and never creates a `CPicSwf` (verified by manual import). Magnet's records were
+authored in older Flash and upgraded; the record is **not freshly producible** and is out of the
+authoring round-trip. No writer exists (flacomdoc has no SWF-import path); structure below is
+**observed** by differential analysis of Magnet's four `CPicSwf` records (the reused "Claw" SWF).
+Class facts (Ghidra): `CPicSwf : CPicObj`, class size 308 B, `serialize` VA `0x9490400`.
 
 ```
 useClass("CPicSwf")
-instanceHeader            // §5.3: stateFlags(selected/locked), pad, transform-pt, F8 byte+cacheAsBitmap,
-                          //       instanceType, 24-byte matrix  (per-placement part; differs per instance)
-// SWF-intrinsic metadata block (CONSTANT across reuse of the same imported SWF) — [O]:
-u32 swfWidthTwips         // 0x10b6 = 4278 ≈ 213 px  (imported SWF stage width)
-u32 swfHeightTwips        // 0x6ec  = 1772 ≈  88 px
-... u32 size/bounds words // incl. 0x13cc6 (=81094) twice (content/byte size); 0xbe1, 0x5dc secondary bounds
-u32 ... counts/flags      // e.g. 0x1e, 01 00 00 00 markers
-BomString clipActions     // onClipEvent(...) handlers — imported SWFs carry instance scripts like any clip
-<decomposed SWF content>  // bulk (~900–5400 B): Flash's INTERNAL decomposition of the movie
-                          //   (NOT raw SWF bytes — no FWS/CWS signature present). [X]
+instanceHeader            // §5.3 (selected/locked, matrix) — per-placement; differs per instance
+// SWF-intrinsic metadata (constant across reuse) — [O]:
+u32 swfWidthTwips         // e.g. 0x10b6 = 4278 ≈ 213 px
+u32 swfHeightTwips        // e.g. 0x6ec  = 1772 ≈  88 px
+u32 sizeWordA             // e.g. 0x13cc6 (=81094); appears twice
+skip(N) [X]               // further bounds/count words (0xbe1, 0x5dc, 0x1e, markers) — exact layout unknown
+BomString clipActions     // onClipEvent(...) handlers
+skip(M) [X]               // decomposed-content bulk (~900-5400 B): Flash's internal movie repr (NOT raw SWF)
 ```
 
-**Why it can't be reproduced (legacy record):** in Flash 8, `Import to Stage` of a `.swf`
-**breaks the movie apart** into shapes/symbols on the timeline — it does *not* create a single
-`CPicSwf` object (verified: a manual Flash 8 import produces no `CPicSwf`). `CPicSwf` is a
-**legacy** form from older Flash, where an imported SWF was kept as one linked object; Magnet's
-records ("Claw.swft"/"claw2.swft") were authored that way and upgraded. So the record cannot be
-freshly generated by Flash 8 at all, headless or interactive.
-
-**Residual:** the placement header + SWF-metadata block + clip-actions are decoded to **[O]**;
-the trailing decomposed-content bulk is **[X]** (Flash's internal movie representation, no
-byte-verified writer exists, not freshly producible). Imported SWFs are **out of the normal
-authoring round-trip** (the clone never emits them), so a reader need only resync past the
-record (next sibling class tag, §5.1). Fully decoding the bulk would require Ghidra at the cited
-VA on `flash.exe` — disproportionate for a legacy, out-of-scope record.
+**Residual.** Header/metadata/clip-actions are **[O]**; the trailing bulk is **[X]** — a reader
+must resync past the record (§7), never byte-walk it. Full decode would require Ghidra at the
+cited VA; disproportionate for a legacy, out-of-scope record.
 
 ---
 
-## 17. Color transform & accessibility
+## 19. Color transform, accessibility, scale-9
 
-### 17.1 Color effect
-
-See §12.2 (the inline instance color effect). [V]
-
-### 17.2 Accessibility — `writeAccessibleData` — **[V]**
-
-Called for button/sprite instances, text, and the main document. If no accessibility data:
-emit a single `0x00` (main document only), else nothing.
+### 19.1 Color effect — [V]
 
 ```
-u8 accessibilityVersion = 2, u8 0x00
-00 00, u8 silent, 00 00 00            // silent = "make object accessible" inverted
-BomString name
-BomString description
-BomString shortcut
->= MX2004: BomString tabIndex (as string), BomString ""
-u8 forceSimple, 00 00 00              // "make child objects accessible" inverted
-mainDocument only: u8 (autoLabeling?0:1)
+if (>= F3):
+  u16 alphaMul, alphaOffset, redMul, redOffset, greenMul, greenOffset, blueMul, blueOffset
+  u8 type, u8 0x00
+  u16 valuePercent
+  u8 effectColor R,G,B,A
 ```
 
-### 17.3 scale9Grid — **[V]**
+Multipliers are s16 with **256 = 1.0**. `type`: 0 none, 1 brightness, 2 tint, 3 advanced, 4
+alpha. (Brightness → RGB-mul `round((1-|b|)*256)`; tint → RGB-mul `round((1-amt)*256)`, RGB-off
+`round(color*amt)`; alpha → alphaMul `round(a*256)`; advanced → muls `round(v*256)`, offsets
+verbatim.)
 
-In the symbol-definition `CDocumentPage` (F8+, 20 bytes):
+### 19.2 Accessibility — `writeAccessibleData` — [V]
+
+If no data: a single `0x00` (main document only), else nothing. Else:
 
 ```
-if any edge != 0:  u32 1; u32 right*20; u32 left*20; u32 bottom*20; u32 top*20   // order R,L,B,T
-else:              u32 0; (00 00 00 80) ×4
+u8 accessibilityVersion = 2;  u8 0x00
+skip(2); u8 silent; skip(3)              // silent = "make object accessible" inverted
+BomString name;  BomString description;  BomString shortcut
+if (>= MX2004) { BomString tabIndex; BomString "" }     // tabIndex stored as string
+u8 forceSimple; skip(3)                  // "make child objects accessible" inverted
+if (mainDocument) u8 (autoLabeling ? 0 : 1)
+```
+
+### 19.3 scale-9 grid — [V] (F8+, in the symbol `fixedPageTail`)
+
+```
+if (any edge != 0):  u32 1;  u32 right*20;  u32 left*20;  u32 bottom*20;  u32 top*20
+else:                u32 0;  (s32 0x80000000) x4
 ```
 
 ---
 
-## 18. Gap status
+## 20. Gap status
 
-Every gap from the prior revision is now resolved against the byte-verified writer and/or the
-oracle, except one bounded residual.
+Every gap from revision 1 is resolved to **[V]** except the legacy `CPicSwf` bulk.
 
-| Area | Prior | Now | Resolution |
-|------|-------|-----|------------|
-| `CPicObjBase`/instance flags | [X] | **[V]** | selected(0x02)/locked(0x04)/floating(0x01) authoring state — §5.3 |
-| Contents structured layout | [X] | **[V]** | full `FlaConverter.convert` walk — §6 |
-| Stage dims/bg/fps | [X] | **[V]** | §6.6, verified by oracle ramps |
-| Symbol linkage flag bytes | [I] | **[V]** | two packed bitfield bytes (flagsA/flagsB) — §6.4 |
-| scale9Grid | [O] | **[V]** | 20-byte R/L/B/T block — §17.3 |
-| `CMediaSound` | [O] | **[V]** | §6.5 |
-| `Font N` interior | [X] | **[V]** | §6.7 |
-| `CPicFrame` tail fs>15 | [X] | **[V]** | useSingleEaseCurve/hasCustomEase/CS4 motion XML — §9 |
-| Ease-curve point format | [O] | **[V]** | 6 slots, double pairs, endpoint doubled — §9.2 |
-| orientToPath/snap bits | [I] | **[V]** | keyMode high bits — §9.1 |
-| 0x20 fill subtype | [X] | **[V]** | no such subtype; 0x10 grad / 0x40 bitmap — §10.1 |
-| Shape cubic post-stream | [O] | **[V]** | F5+ 32-byte entries — §10.4 |
-| `CMorphCurve` unknowns | [X] | **[V]** | isLine + pad + terminator — §11 |
-| Morph fill/stroke tables | [O] | **[V]** | §11.1/11.2 |
-| `CPicSwf` variable tail | [X] | **[O] header / [X] bulk** | header+metadata+clip-actions decoded from Magnet's 4 samples; decomposed-content bulk needs Ghidra — §16.3 |
-| `CPicVideo` (embedded) | [I] | **[V]** for `CPicVideoStream` | stream form fully decoded; embedded variant remains [I] — §16.2 |
-| FLA filter interior constants | [X] | **[V]** | filter-ID tags + constants enumerated — §14.2 |
-| Component metadata XML | [X] | **[V]** | BomString of `<component>` XML — §13 |
-| Accessibility byte layout | [I] | **[V]** | §17.2 |
-| `CPicText` scrollable/selectable | [I]/[O] | **[V]** | staticFlags bit0 / MX-tail byte — §15 |
-| Layer trailer | [X] | **[V]** | parent encodedUI + open/autoNamed — §8.2 |
-| `CPicPage` tail tables | [X] | **[V]** | ruler-guides table — §8.1 |
-| Flash ≤4 frame actions | [X] | **[O]** | structured `writeScript` record format (F4-) — §9.3 |
-| Pre-MX2004 ASCII coverage | [O] | **[V]** | gated by `unicode=false` + per-version schema (§3/§4.1) |
-
-**Net: one residual [X]** — the imported-SWF (`CPicSwf`) body, which is out of the authoring
-round-trip and only requires resync. Everything else is [V].
+| Area | Now | Where |
+|------|-----|-------|
+| instance/placement flags (old "CPicObjBase.flags") | [V] | §5.3 |
+| Contents catalog (preamble/scenes/symbols/media/fonts/folders) | [V] | §8 |
+| stage W/H/bg/fps | [V] (oracle-verified) | §8.4 |
+| symbol linkage flag bytes | [V] | §8.5 |
+| scale-9 grid | [V] | §19.3 |
+| sound / font / media entries | [V] | §8.5/8.9 |
+| CPicFrame fields (incl. ease, keyMode) | [V] fields; [O] tail interleave | §11 |
+| custom-ease point count | [V] (`numPoints+2` pairs) | §11.2 |
+| 0x20 fill subtype | [V] (no such subtype) | §12.1 |
+| shape cubic post-stream | [V] | §12.4 |
+| morph curve/segment/fills/strokes | [V] | §13 |
+| FLA-authoring filters | [V] | §16.2 |
+| component metadata | [V] | §15 |
+| accessibility / text scrollable+selectable | [V] | §17/§19.2 |
+| layer trailer / CPicPage guides table | [V] | §10 |
+| `CPicVideoStream` | [V] (embedded `CPicVideo` [I]) | §18.2 |
+| `CPicSwf` body | header [O] / bulk [X] (legacy, out of scope) | §18.3 |
 
 ---
 
-## 19. Verification & round-trip proof
+## 21. Verification
 
-The spec is proven by reading and (round-trip) writing real FLAs:
-
-- **Reader:** `tools/flashdrv/flaparse.py` walks the CFB container (`fla_cfb.py`) and the
-  document catalog + CArchive class inventory per this spec; verified on Magnet (6 scenes,
-  61 symbols, 16 classes), golden, and evaporatingdrip (`findings/read-proof.txt`).
-- **Timeline byte-walk:** `findings/timeline-bytewalk.md` reconciles every byte of a real
-  empty Page stream against §5/§8/§9/§10.
-- **Round-trip:** `tools/flashdrv/flaroundtrip.py` re-serializes a parsed stream and asserts
-  byte-equality with the original (volatile bytes masked per `FLA-RE-PLAN.md`). Validated
-  against real **Flash 8-authored** FLAs from the flashdrv oracle (`corpus/`) and the sample
-  fixtures (`fixtures/Magnet.fla`, `golden.fla`, `evaporatingdrip.fla`).
-- **Oracle:** `tools/flashdrv/` drives a real Flash 8 install as a differential oracle; the
-  stage-block decode (§6.6) was confirmed this way. See `FLA-RE-PLAN.md` for the operational
-  log of what worked / what didn't (notably: JSFL linkage edits hang session-0 Flash, so the
-  linkage block is verified from flacomdoc rather than the oracle).
-
-Recorded proofs live in `tools/flashdrv/findings/`.
+* **Reader** `tools/flashdrv/flaparse.py` parses the §8 catalog + CArchive class inventory of
+  Magnet (6 scenes in play order, 61 symbols, 16 classes), golden, and evaporatingdrip
+  (`findings/read-proof.txt`).
+* **Timeline byte-walk** `findings/timeline-bytewalk.md` reconciles every byte of a real empty
+  Page stream against §5/§10/§11/§12.
+* **Stage block** §8.4 confirmed by oracle ramps (`corpus/stage`, `fladiff.py`).
+* **Write round-trip** `flapatch.py` rewrites §8.4 stage fields by this spec; real Flash 8 reads
+  them back exactly (640×480, 30fps, `#123456`) — `findings/write-proof.txt`.
 
 ---
 
-## 20. Provenance
+## 22. Provenance
 
-- **JPEXS `flacomdoc`** (`tools/refs/flacomdoc/`) — byte-verified XFL→binary-FLA writer.
-  `FlaWriter`/`FlaConverter`/`TimelineConverter`/`FlaFormatVersion` are the authoritative field
-  order, encoding, and schema gates.
-- **`eddiemoore/fla-decoder`** (`tools/refs/fla-decoder/`) — Ghidra RE of `flash.exe`; confirms
-  the CArchive protocol, class table, and schema gates from the reader side.
-- **flashdrv oracle** (`tools/flashdrv/`) — real Flash 8 differential oracle (Win7 VM).
-- **Ruffle `swf` crate** — SWF-wire filter/shape encodings the FLA reuses.
-- **Microsoft [MS-CFB]** — OLE2 container. **Adobe SWF spec** — twips/fixed-point/filters.
+* **JPEXS `flacomdoc`** — byte-verified XFL→binary-FLA writer (authoritative field order).
+* **`eddiemoore/fla-decoder`** — Ghidra RE of `flash.exe` (CArchive protocol, schema gates).
+* **flashdrv oracle** — real Flash 8 differential oracle (Win7 VM).
+* **Ruffle `swf` crate** — SWF-wire filter/shape encodings the FLA reuses.
+* **[MS-CFB]** — OLE2 container. **Adobe SWF spec** — twips/fixed-point/filters.

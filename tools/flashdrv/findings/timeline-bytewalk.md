@@ -1,6 +1,6 @@
 # Byte-walk of an empty timeline stream — `corpus/noise/base_a.fla` `Page 1` (274 B)
 
-Manual reconciliation of docs/21 §5/§8/§9/§10 against real Flash 8 bytes. Every offset below
+Manual reconciliation of docs/21 §5/§10/§11/§12 against real Flash 8 bytes. Every offset below
 matched the spec; this is direct read-proof for the timeline records (not just the catalog).
 
 ```
