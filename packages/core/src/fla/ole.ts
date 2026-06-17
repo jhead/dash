@@ -340,6 +340,45 @@ function skeletonDocument(): FlashDocument {
  * Write-back to real FLA is explicitly out of scope; the returned document
  * should be treated as a read-only import.
  */
+/**
+ * TEST-ONLY: read every stream's raw bytes via the same FAT/mini-FAT path as
+ * `tryLoadRealFla`. Used by `cfb-write-difat.test.ts` to assert byte-identical
+ * readback of writer output (including the >109-FAT-sector DIFAT path) without
+ * going through the higher-level document parser.
+ */
+export function __readAllStreamsForTest(bytes: Uint8Array): Map<string, Uint8Array> {
+  const out = new Map<string, Uint8Array>();
+  if (!isOle2(bytes)) return out;
+  const header = parseHeader(bytes);
+  const fat = buildFat(bytes, header);
+  const dirData = readStream(
+    bytes,
+    fat,
+    header.firstDirSector,
+    followChain(fat, header.firstDirSector).length * header.sectorSize,
+    header.sectorSize,
+  );
+  const dirEntries = parseDirectoryEntries(dirData);
+  const streamEntries = collectStreamEntries(dirEntries);
+  const miniFat = buildMiniFat(bytes, fat, header);
+  let miniStream: Uint8Array = new Uint8Array(0);
+  const root = dirEntries[0];
+  if (root && miniFat.length > 0) {
+    miniStream = readStream(bytes, fat, root.startSector, root.size, header.sectorSize);
+  }
+  const readEntry = (entry: DirectoryEntry): Uint8Array => {
+    if (entry.size < header.miniStreamCutoff && miniStream.length > 0) {
+      return readMiniStream(miniStream, miniFat, entry.startSector, entry.size, header.miniSectorSize);
+    }
+    return readStream(bytes, fat, entry.startSector, entry.size, header.sectorSize);
+  };
+  for (const entry of streamEntries) {
+    if (entry.size === 0) continue;
+    out.set(entry.name.replace(/\0+$/, ""), readEntry(entry));
+  }
+  return out;
+}
+
 export function tryLoadRealFla(bytes: Uint8Array): FlashDocument | null {
   if (!isOle2(bytes)) return null;
 

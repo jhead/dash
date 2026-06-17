@@ -115,6 +115,41 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 
 ### Binary FLA import (Flash 5–CS4 OLE2 format)
 
+- **CFB writer DIFAT bug (`cfb-write.ts`): a FLA needing > 109 FAT sectors lost its
+  overflow FAT-sector pointers.** The CFB header has only 109 in-line DIFAT slots; when the
+  body exceeds ~7.6 MB (e.g. a doc with embedded media) the FAT needs > 109 sectors and the
+  surplus pointers MUST spill into a chain of DIFAT sectors (127 pointers + 1 next-pointer
+  each, header `firstDifat`@68 / `difatCount`@72 set, sectors marked `DIFSECT=0xFFFFFFFC` in
+  the FAT). The original writer silently dropped the overflow, so FAT sectors past the 109th
+  — and every stream whose data they index — were unreachable; the importer read zeros and
+  threw "unexpected root marker 0x0 (expected 0x01)". Smaller files (Magnet re-save ≈6 MB)
+  never tripped it, which is why round-trip tests with empty/tiny timelines passed. Fixed by
+  emitting DIFAT sectors and growing the FAT/DIFAT counts to a fixed point. Guarded by
+  `cfb-write-difat.test.ts` (>109-FAT-sector round-trip) and cross-checked byte-for-byte with
+  `tools/flashdrv/fla_cfb.py`. The container writer is otherwise byte-correct across all
+  64-byte / 4096-cutoff / multi-sector-mini-FAT boundaries (400-trial fuzz, all readers agree).
+- **The writer's Contents catalog is now spec-faithful enough for `flaparse.py`.** Scenes and
+  symbols are emitted as real `CDocumentPage` records (`documentPageVersion 0x17` + String
+  "Page N"/"Symbol N" + BomString display name + `u16 symbolId, u16 0, u8 symbolType`), and
+  the §8.1 preamble (23 bytes) + §8.4 stage/document-properties block are byte-exact to
+  flacomdoc `FlaConverter.writeStage` (rulerUnits, w*20, h*20, gridSpacing*20, previewMode,
+  playOptions<<4|viewOptions, the 29-byte const run, bg+FF, grid+FF, fps 8.8 frac-then-int,
+  `00 03 b4 00 00 00` anchor). Before this, the writer emitted no `0x17` and no symbolId
+  trailer, so `flaparse.py catalog` found 0 records even though the importer's pattern-scan
+  read it. Adding the `0x17`/trailer keeps the importer's forward scan working (it anchors on
+  the UTF-16 stream-name string, not the version byte). Pinned by `writer-spec-bytes.test.ts`.
+- **Writer↔importer share an edge/instance-header model that is NOT byte-identical to real
+  Flash 8, only numerically/round-trip equivalent.** The importer reads shape-edge coordinate
+  deltas as raw `s16`/`s32`/`s16<<7` at the 5120-units-per-px scale (`readCoordDelta`), and the
+  writer emits the `s32` ("type 2") form to match — but docs/21 §12.3 says real Flash uses
+  Point8_8 / short(×2) / fraction+s24 float forms. Likewise the placement/`CPicObjBase` header
+  (schema, flags, child-list, regpoint tail) differs in framing from spec §5.3's stateFlags /
+  transform-point / cacheAsBitmap layout. These are inverse-oracle-consistent (the importer
+  reads real Magnet.fla/evaporatingdrip.fla correctly and round-trips the writer) but the exact
+  on-wire encoding of edges and the instance-header interleaving remain UNVERIFIED against a
+  real Flash 8 oracle. Rewriting the edge codec to emit Point8_8/short forms would require
+  changing the importer's reader too and re-validating the traced-bitmap shape tests — out of
+  scope until a Win7 Flash-8 oracle confirms the byte forms.
 - **Scene PLAY ORDER is the Contents-stream order, NOT the "Page N" stream number.**
   The OLE2 "Page N" suffix is creation/storage order (the first scene authored is "Page 1"
   and keeps that stream name even when dragged elsewhere in the Scenes panel). The authored

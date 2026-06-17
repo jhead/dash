@@ -13,9 +13,18 @@
  *   - each symbol: length-prefixed UTF-16 "Symbol N" + BomString display name,
  *     stream number, type byte, linkage block (§8.5 writeAsLinkage), scale9Grid
  *
- * Confidence: the catalog structure is reconstructed to satisfy the importer's
- * scanners. It is [O]-faithful (parses cleanly + round-trips), NOT byte-verified
- * against a Win7 Flash 8 oracle.
+ * Confidence:
+ *   - §8.1 preamble (23 bytes) and §8.4 stage/document-properties block are
+ *     byte-exact to flacomdoc FlaConverter.writeStage and decode cleanly with
+ *     the spec-faithful tools/flashdrv/flaparse.py (stage W/H/fps/bg) — [V].
+ *   - Scenes/symbols are emitted as real CDocumentPage records (documentPageVersion
+ *     0x17 + String name + BomString display name + symbolId/type trailer), which
+ *     flaparse.py's catalog walker recognises AND the importer's forward scan
+ *     resolves. The CArchive object structure of the property maps, color table,
+ *     QuickTime settings, font/folder lists and version trailer that real Flash
+ *     writes AFTER the stage block (§8.4 tail) is NOT reproduced — only the
+ *     library catalog the importer consumes. So the catalog is [V] for what is
+ *     emitted but does not reproduce the full post-stage tail.
  */
 
 import { ByteWriter, writeBomString } from "./carchive-write.js";
@@ -72,45 +81,73 @@ function writeUtf16StreamName(w: ByteWriter, name: string): void {
 export function writeContents(input: ContentsInput): Uint8Array {
   const w = new ByteWriter(512);
 
-  // -- Preamble (§8.1): formatVersion byte + a small fixed header. ------------
-  w.u8(input.formatVersion);
-  // A short padding/header run. The reader anchors everything else by pattern,
-  // so the exact bytes here are not significant beyond formatVersion at [0].
-  w.raw(0x00, 0x00, 0x00);
+  // -- Preamble (§8.1): contentsVersion byte. -------------------------------
+  // formatVersion is Contents[0]; the importer keys 0x49 => Flash 8 (>= 0x38
+  // unicode, >= 0x3F scale9). The remaining 22 bytes of the 23-byte Flash 8
+  // preamble are zero (the per-release skip + version-gated u32 zeros of §8.1).
+  // §8.1: contentsVersion(=formatVersion), contentsVersionB=1, skip(3),
+  // F3 skip(1), F4 skip(1), then F5/MX/MX2004/F8 each a u32 0. Total 23 bytes.
+  w.u8(input.formatVersion); // 0x49 for Flash 8
+  w.u8(1); // contentsVersionB
+  w.raw(0x00, 0x00, 0x00); // skip(3)
+  w.u8(0x00); // F3 skip(1)
+  w.u8(0x00); // F4 skip(1)
+  w.u32(0).u32(0).u32(0).u32(0); // F5, MX, MX2004, F8 -> 4 x u32 0
 
-  // -- Stage dimensions block. The reader looks for: u16 w*20, 6 zero bytes,
-  //    u16 h*20, 4 zero bytes within 256 bytes before the bg/fps anchor. ------
+  // -- Stage + document properties block (§8.4), byte-exact to flacomdoc
+  //    FlaConverter.writeStage. Offsets in the comments are relative to the
+  //    start of this block (the rulerUnits descriptor). ----------------------
+  const bg = parseHexColor(input.backgroundHex);
+  const grid = { r: 0x94, g: 0x94, b: 0x94 }; // flacomdoc default grid color
   const w20 = Math.round(input.widthPx) * 20;
   const h20 = Math.round(input.heightPx) * 20;
-  w.u16(w20);
-  w.raw(0, 0, 0, 0, 0, 0); // 6 zero bytes
-  w.u16(h20);
-  w.raw(0, 0, 0, 0); // 4 zero bytes
-
-  // A few filler bytes between dims and the bg/fps anchor (must stay < 256 and
-  // must not accidentally form another dims match closer to the anchor).
-  w.raw(0x01, 0x02, 0x03, 0x04);
-
-  // -- Background color + frame rate, ending in the `03 B4 00 00 00` anchor. --
-  // Reader reads backwards from the anchor:
-  //   bgR bgG bgB FF  gridR gridG gridB FF  00  fpsFrac fpsInt  00 00 00  anchor
-  const bg = parseHexColor(input.backgroundHex);
+  const gridSpacingX = 10;
+  const previewMode = 3; // "anti alias text" (flacomdoc default)
+  const rulerVisible = 0;
+  const pageTabsVisible = 0;
+  const viewOptions = 1 + 4; // animation control + pasteboard (flacomdoc default)
+  const playOptions = 1 + 2 + 4 + 8; // loop + play pages + frame actions + sounds
   const fpsInt = Math.floor(input.frameRate);
   const fpsFrac = Math.round((input.frameRate - fpsInt) * 256) & 0xff;
-  w.u8(bg.r).u8(bg.g).u8(bg.b).u8(0xff); // background RGB + FF
-  w.u8(0xc0).u8(0xc0).u8(0xc0).u8(0xff); // grid color RGB + FF
-  w.u8(0x00);
-  w.u8(fpsFrac).u8(fpsInt);
-  w.raw(0x00, 0x00, 0x00);
-  w.raw(0x03, 0xb4, 0x00, 0x00, 0x00); // anchor
 
-  // -- Scenes (§8.2). Each: length-prefixed UTF-16 "Page N" + BomString name.
+  w.u8(5).u8(0x00).u8(0).u8(0x00); // rulerUnitType=pixels(5), 00, gridVisible?3:0=0, 00  @+0
+  w.raw(0x00, 0x00, 0x00); //                                                         @+4
+  w.u16(w20); //                                                                      @+7
+  w.raw(0, 0, 0, 0, 0, 0); //                                                         @+9
+  w.u16(h20); //                                                                      @+15
+  w.raw(0, 0, 0, 0); //                                                               @+17
+  w.u16(gridSpacingX * 20); //                                                        @+21
+  w.u8(previewMode).u8(rulerVisible).u8(pageTabsVisible); //                          @+23
+  w.u8(((playOptions << 4) | viewOptions) & 0xff); //                                 @+26
+  // 29-byte constant run (§8.4 skip(29)).                                            @+27
+  w.raw(
+    0x00, 0x68, 0x01, 0x00, 0x00, 0x68, 0x01, 0x00, 0x00, 0x68, 0x01, 0x00, 0x00, 0x68,
+    0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+  );
+  w.u8(bg.r).u8(bg.g).u8(bg.b).u8(0xff); // background + alpha constant            @+56
+  w.u8(grid.r).u8(grid.g).u8(grid.b).u8(0xff); // grid color + FF                  @+60
+  w.u8(0x00); //                                                                   @+64
+  w.u8(fpsFrac).u8(fpsInt); // frame rate 8.8 (fraction first)                     @+65
+  w.raw(0x00, 0x00); //                                                            @+67
+  w.raw(0x00, 0x03, 0xb4, 0x00, 0x00, 0x00); // trailing anchor                    @+69
+
+  // -- Scenes (§8.2). A scene is a CDocumentPage record:
+  //      u8  documentPageVersion = 0x17
+  //      String    pageName    ("Page N", u8 len + UTF-16LE)
+  //      BomString sceneName
+  //      u16 symbolId = 0, u16 0, u8 symbolType = 0
   //    Emit order == authored play order (the reader keys sceneNames Map by it).
+  //    The leading 0x17 + the symbolId/type trailer make the record a real
+  //    CDocumentPage that flaparse.py recognises; the importer's forward
+  //    string-scan still resolves the "Page N" name + BomString unchanged.
   for (const s of input.scenes) {
+    w.u8(0x17); // documentPageVersion
     writeUtf16StreamName(w, s.pageStreamName);
     writeBomString(w, s.sceneName);
-    // A couple of separator bytes so adjacent scene names don't run together in
-    // a way that confuses the scanner.
+    w.u16(0); // symbolId = 0 for a scene
+    w.u16(0); // reserved
+    w.u8(0); // symbolType = 0 for a scene
+    // Trailing separator so adjacent records don't run together for the scanner.
     w.raw(0x00, 0x00);
   }
 
@@ -128,6 +165,10 @@ export function writeContents(input: ContentsInput): Uint8Array {
 }
 
 function writeSymbolEntry(w: ByteWriter, sym: ContentsSymbolEntry, formatVersion: number): void {
+  // CDocumentPage symbol record (§8.3). Leading documentPageVersion byte makes
+  // it a real CDocumentPage for flaparse.py; the importer's forward scan keys on
+  // the "Symbol N" string and the BomString name that follow.
+  w.u8(0x17); // documentPageVersion
   // length-prefixed UTF-16 "Symbol N"
   writeUtf16StreamName(w, `Symbol ${sym.num}`);
   // BomString display name. The reader then reads, at name.end:
