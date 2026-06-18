@@ -1,0 +1,10 @@
+{
+  "id": "1203-gradient-glow-gradient-bevel-filters-gradient-ed",
+  "title": "Gradient Glow & Gradient Bevel filters: gradient editor UI + render + SWF encode",
+  "description": "Implement Gradient Glow and Gradient Bevel filters per docs/08-filters-blend-modes.md. FIRST verify current filter support in packages/authoring-ui/src/FiltersPanel.tsx and the filter model/render path. Scope: (1) when a Gradient Glow/Bevel filter is added, FiltersPanel shows a multi-stop gradient editor (color+alpha+ratio per stop, add/remove stops) plus the standard blur/strength/quality/angle/distance/knockout/type controls; (2) stage renderer (packages/core engine renderer) approximates the gradient filter via an offscreen/composite pass blending across stops (not just brightest stop); (3) SWF encode the GRADIENTGLOWFILTER/GRADIENTBEVELFILTER records via PlaceObject3 in packages/swf. Primary files: packages/authoring-ui/src/FiltersPanel.tsx, packages/core engine renderer + filter model, packages/swf compiler (filters/characters). DONE = author can add+edit gradient filters, stage shows gradient blend, SWF round-trips the filter record (unit test), typecheck + 3 unit suites green. Update docs/08 if detail changes.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:09:58Z",
+  "updated_at": "2026-06-18T23:09:58Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "1202-accessibility-panel-object-name-description-shor",
+  "title": "Accessibility panel: object name/description/shortcut + screen-reader exposure",
+  "description": "Implement the Accessibility panel per docs/17-advanced-specialized.md (Accessibility section). FIRST verify the current state of packages/authoring-ui/src/AccessibilityPanel.tsx (it may be a stub) and the DisplayObject model. Scope: (1) UI fields for selected object's accessible name, description, shortcut, tab index, and an 'make object accessible' checkbox; (2) persist these fields on the display-object/document model (core) so FLA save/load round-trips them; (3) emit them at publish into the SWF as _accProps (AS2) or accessibility metadata in packages/swf (assemble.ts or a dedicated pass). Primary files: packages/authoring-ui/src/AccessibilityPanel.tsx, packages/core model types, packages/swf compiler. DONE = panel edits persist on the model, unit tests cover the model round-trip + SWF emit, typecheck + all three unit suites (swf/core/authoring-ui) green. Update docs/17 if behavior detail changes.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:09:58Z",
+  "updated_at": "2026-06-18T23:09:58Z"
+}
