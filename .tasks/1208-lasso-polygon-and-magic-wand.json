@@ -1,0 +1,10 @@
+{
+  "id": "1208-lasso-polygon-and-magic-wand",
+  "title": "Lasso Polygon mode + Magic Wand selection (threshold/smoothing)",
+  "description": "Implement per docs/04-toolbox.md (Lasso + Magic Wand). FIRST verify actual current state of the Lasso tool and selection model in packages/authoring-ui (StageArea/tool handlers + ToolsPanel options) and packages/core engine \u2014 much may already exist (the codebase is mature; verify before building, and if a sub-part is already done, narrow scope to the genuine gap and note it in the task). Scope: (1) Lasso Polygon mode \u2014 click successive vertices, double-click/Enter closes the polygon selection (toggle in tool options); (2) Magic Wand \u2014 seed-point contiguous selection by color distance with a Threshold control (default ~20) and a Smoothing enum (pixels/rough/normal/smooth); a flood-fill over the rasterized stage region (new packages/core/src/engine helper). Both feed the existing selection/merge-draw pipeline. Primary files: packages/authoring-ui StageArea + ToolsPanel, new packages/core/src/engine selection/flood-fill helper + tests. DONE = both modes produce correct selection masks (unit tests on the flood-fill + polygon close logic), typecheck + core + authoring-ui suites green (modulo the KNOWN pre-existing core fails: missing fixtures/flash8-empty.fla and /Users/jhead Magnet paths \u2014 add NO new failures). Update docs/04 if behavior detail changes.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:32:25Z",
+  "updated_at": "2026-06-18T23:32:25Z"
+}
