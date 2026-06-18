@@ -45,6 +45,15 @@ import {
   type WColor,
   type WMatrix,
 } from "./carchive-write.js";
+import { PAGE_FRAME_BODY, PAGE_TAIL } from "./empty-templates.js";
+
+/**
+ * Deterministic frameId stamped into the big-endian frameId field of an empty
+ * keyframe body. The real fixture stores 0xE14A; a fixed value keeps Flash happy.
+ */
+const FIXED_FRAME_ID = 0xe14a;
+/** Big-endian frameId offset within PAGE_FRAME_BODY. */
+const FRAME_BODY_FRAMEID_OFFSET = 0x57;
 
 const INT_MIN = 0x80000000;
 /** Shape edge coordinates are 8.8 fixed-point twips: 1 px = 20*256 = 5120. */
@@ -68,9 +77,14 @@ export function writeTimelineStream(timeline: Timeline, idx: WriteIndex): Uint8A
   const w = new ByteWriter(1024);
   const ct = new ClassTable();
   w.u8(0x01); // root marker
-  ct.useClass(w, "CPicPage", 4);
+  ct.useClass(w, "CPicPage", 1);
   writeCPicPage(w, ct, timeline, idx);
   return w.finish();
+}
+
+/** True for a default empty keyframe (no display objects). */
+function isEmptyKeyframe(f: Frame): boolean {
+  return f.isEmpty || f.displayObjects.length === 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,24 +118,23 @@ function closeObjBase(w: ByteWriter, ct: ClassTable, reg?: { x: number; y: numbe
 // ---------------------------------------------------------------------------
 
 function writeCPicPage(w: ByteWriter, ct: ClassTable, timeline: Timeline, idx: WriteIndex): void {
-  openObjBaseHeader(w);
+  // §10.1: u8 pageVersion = 0x04, u8 0x00.
+  w.u8(0x04).u8(0x00);
   // Children: layers BOTTOM-TO-TOP. The model stores top-to-bottom (li=0 = top),
-  // so reverse for the binary.
+  // so reverse for the binary (§9).
   const bottomToTop = [...timeline.layers].reverse();
   for (const layer of bottomToTop) {
-    ct.useClass(w, "CPicLayer", 4);
+    ct.useClass(w, "CPicLayer", 1);
     writeCPicLayer(w, ct, layer, idx);
   }
-  closeObjBase(w, ct);
-  // CPicPage tail (§8.1): page schema byte. Use ps=4 so the reader's
-  // `if (ps !== 4) skip(2)` / `>=5` / `>=7` gates are all skipped; `ps >= 3`
-  // reads a u32 marker-table count which we set to 0.
-  w.u8(4); // ps
-  w.u32(0); // marker/label table count = 0
+  // CPicPage tail (§10.1). Byte-matches the genuine empty fixture: the null child
+  // tag, sentinel registration point, F8 skip(2), pageVersionB, nextLayerId,
+  // currentFrame, and guide count.
+  w.bytes(PAGE_TAIL);
 }
 
 // ---------------------------------------------------------------------------
-// CPicLayer (§8.2)
+// CPicLayer (§10.2)
 // ---------------------------------------------------------------------------
 
 const LAYER_TYPE_BYTE: Record<Layer["type"], number> = {
@@ -134,7 +147,8 @@ const LAYER_TYPE_BYTE: Record<Layer["type"], number> = {
 };
 
 function writeCPicLayer(w: ByteWriter, ct: ClassTable, layer: Layer, idx: WriteIndex): void {
-  openObjBaseHeader(w);
+  // §10.2: u8 layerVersion = 0x04, u8 0x00.
+  w.u8(0x04).u8(0x00);
   // Children: frames (only keyframes become CPicFrame records).
   const keyframes = layer.frames.filter((f) => f.isKeyframe);
   const frameList = keyframes.length > 0 ? keyframes : [layer.frames[0]!];
@@ -142,32 +156,35 @@ function writeCPicLayer(w: ByteWriter, ct: ClassTable, layer: Layer, idx: WriteI
     const f = frameList[i]!;
     const next = frameList[i + 1];
     const span = next ? next.index - f.index : Math.max(1, layer.frameCount - f.index);
-    ct.useClass(w, "CPicFrame", 19);
+    ct.useClass(w, "CPicFrame", 1);
     writeCPicFrame(w, ct, f, Math.max(1, span), idx);
   }
-  closeObjBase(w, ct);
-
-  // CPicLayer tail. ls=4 (Flash 4+ path in the reader).
-  w.u8(4); // ls (layer schema)
+  // Post-frames lead-in (§10.2): null child tag, sentinel regpoint, F8 skip(2).
+  ct.writeNull(w); // 00 00
+  w.u32(INT_MIN).u32(INT_MIN); // sentinel registration point
+  w.raw(0x00, 0x00); // F8 skip(2)
+  // u8 layerVersionB = 0x0B, then the layer name BomString.
+  w.u8(0x0b);
   writeBomString(w, layer.name);
-  // F4+ block: isSelected, hidden, locked, u32 0xFFFFFFFF, RGBA outline,
-  // showOutlines, 7 bytes (heightMultiplier at [3]), layerType.
-  w.u8(0); // isSelected
+  // F4+ properties block. Defaults match a genuine new layer.
+  w.u8(layer.locked || !layer.visible ? 0 : 1); // isSelected (a fresh layer is selected)
   w.u8(layer.visible ? 0 : 1); // hidden
   w.u8(layer.locked ? 1 : 0); // locked
-  w.u32(0xffffffff); // sentinel
-  writeRGBA(w, parseHexColor(layer.outlineColor));
+  w.u32(0xffffffff); // skip(4) sentinel
+  writeRGBA(w, parseHexColor(layer.outlineColor)); // outline color RGBA
   w.u8(layer.outlineMode ? 1 : 0); // showOutlines
-  // 7 bytes: 00 00 00 heightMultiplier 00 00 00
-  w.u8(0).u8(0).u8(0).u8(1).u8(0).u8(0).u8(0);
+  w.raw(0x00, 0x00, 0x00); // skip(3)
+  w.u8(Math.max(1, Math.round((layer.height || 20) / 20)) || 1); // heightMultiplier
+  w.raw(0x00, 0x00, 0x00); // skip(3)
   w.u8(LAYER_TYPE_BYTE[layer.type] ?? 0); // layerType
-  // Trailer: parentLayerRef (0 = none). The reader peeks the first 2 bytes here
-  // then scans forward to the next CPicLayer backref / NEWCLASS / object-tail.
-  w.u16(0);
+  // MX block: parent reference (0 = none), open, autoNamed.
+  w.u16(0); // parentReference (u16 0 when no parent)
+  w.u8(1); // open
+  w.u8(1); // autoNamed
 }
 
 // ---------------------------------------------------------------------------
-// CPicFrame (§9)
+// CPicFrame (§11)
 // ---------------------------------------------------------------------------
 
 function writeCPicFrame(
@@ -177,61 +194,60 @@ function writeCPicFrame(
   duration: number,
   idx: WriteIndex,
 ): void {
-  openObjBaseHeader(w);
-  // Children: the frame's display objects (non-shape elements + any raw shapes).
+  // §11: u8 frameVersion = 0x04, u8 0x00.
+  w.u8(0x04).u8(0x00);
+
+  if (isEmptyKeyframe(frame)) {
+    // Empty keyframe: emit the genuine empty-keyframe body verbatim (the null
+    // child tag, sentinel regpoint, inherited empty CPicShape, and the frame
+    // fields). The big-endian frameId is stamped deterministically. The duration
+    // for the default empty doc is the fixture's value; for a custom span we
+    // patch the duration field too.
+    const body = new Uint8Array(PAGE_FRAME_BODY);
+    body[FRAME_BODY_FRAMEID_OFFSET] = (FIXED_FRAME_ID >>> 8) & 0xff;
+    body[FRAME_BODY_FRAMEID_OFFSET + 1] = FIXED_FRAME_ID & 0xff;
+    w.bytes(body);
+    return;
+  }
+
+  // Non-empty keyframe: real serialization. Children = the frame's display objects.
   for (const obj of frame.displayObjects) {
     writeElement(w, ct, obj, idx);
   }
-  closeObjBase(w, ct);
+  ct.writeNull(w); // end of children
+  w.u32(INT_MIN).u32(INT_MIN); // sentinel registration point
 
-  // Inherited CPicShape body: schema + matrix + empty shape data. We keep raw
-  // shapes as child CPicShape records (above), so the frame's own merge-shape is
-  // empty. shapeSchema = 1 (<=2 => no caps; reader reads legacy/empty fills).
+  // Inherited CPicShape body: schema + matrix + empty shape data (raw shapes are
+  // child CPicShape records, so the frame's own merge-shape is empty).
   w.u8(1); // shapeSchema
   writeMatrix(w, identity());
   writeEmptyShapeData(w);
 
-  // Frame fields. Use fs (frame schema) = 19 so the reader takes the MX+ tail
-  // (label + TimelineSubObject script + rotate/comment/morph/... fields). 19 is
-  // the minimum that enables script extraction (`fs >= 19`).
-  const fs = 19;
+  // Frame fields. fs (frame schema) = 0x18 (frameVersionB).
+  const fs = 0x18;
   w.u8(fs);
   w.u16(Math.max(1, duration));
-  // fs > 2 => keyMode (u16). Base idle bits 0x600; OR the tween bit.
+  // keyMode (§11.1). Base idle bits 0x600; OR the tween bit.
   let keyMode = 0x600;
   if (frame.tweenType === "motion") keyMode |= 0x0001;
   else if (frame.tweenType === "shape") keyMode |= 0x0002;
   if (frame.tweenType === "motion" && !frame.motionScale) keyMode |= 0x0400;
   if (frame.tweenType === "motion" && frame.motionSync) keyMode |= 0x0800;
   w.u16(keyMode);
-  // fs > 1 => motionEase (s16). Sign encodes ease direction.
-  w.s16(easeAccel(frame));
-  // fs > 4 => soundId (u16). No frame sounds in scope.
-  w.u16(0);
-  // fs > 5 => sound envelope: u16 count = 0.
-  w.u16(0);
-  // fs > 6 => soundLoop u16, soundSync u8, inPoint u32, outPoint u32.
-  w.u16(0).u8(0).u32(0).u32(0);
-  // fs > 7 => soundZoomLevel (skip 2).
-  w.u16(0);
-  // fs > 8 => label (CString) + (fs>=19) TimelineSubObject + post-script fields.
+  w.s16(easeAccel(frame)); // acceleration
+  w.u16(0); // soundId
+  w.u16(0); // sound envelope count
+  w.u16(0).u8(0).u32(0).u32(0); // soundLoop, soundSync, inPoint, outPoint
+  w.u16(0); // soundZoom
   writeBomString(w, frame.label);
   writeTimelineSubObject(w, frame.script);
-  // fs > 10: rotateFla u32 (1=none 2=auto 3=cw 4=ccw), motionRotateCount u32.
   w.u32(rotateFlaValue(frame.motionRotate));
   w.u32(frame.motionRotateCount | 0);
-  // fs > 11: labelType u32 (1=comment 2=anchor).
   w.u32(frame.labelType === "comment" ? 1 : frame.labelType === "anchor" ? 2 : 0);
-  // fs > 12: morphTag u16. 0 = no morph (we never emit CPicMorphShape).
-  w.u16(0);
-  // fs > 13: orientSnap u32.
+  w.u16(0); // morphTag
   w.u32((frame.motionOrientToPath ? 0x01 : 0) | (frame.motionSnap ? 0x02 : 0));
-  // fs > 14: oblistTag u16 = 0.
-  w.u16(0);
-  // fs > 15: tweenInstanceName (CString).
-  writeBomString(w, "");
-  // fs > 19 / > 20 / >= 22 are gated on fs > 19, fs=19 so none apply.
-  // fs >= 24 (ease curve) would require fs>=24; we use fs=19 to avoid it.
+  w.u16(0); // oblistTag
+  writeBomString(w, ""); // tweenInstanceName
 }
 
 function easeAccel(frame: Frame): number {

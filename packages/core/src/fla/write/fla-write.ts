@@ -127,6 +127,8 @@ export function saveRealFla(doc: FlashDocument): Uint8Array {
     heightPx: doc.properties.height,
     frameRate: doc.properties.frameRate,
     backgroundHex: doc.properties.backgroundColor,
+    gridHex: doc.properties.grid?.gridColor,
+    gridSpacingPx: doc.properties.grid?.gridWidth,
     scenes: sceneEntries,
     symbols: symbolCatalog,
     media: mediaEntries,
