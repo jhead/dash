@@ -1,0 +1,10 @@
+{
+  "id": "1210-timeline-effects-transform-blur",
+  "title": "Timeline Effects: Insert > Timeline Effects (Transform + Blur) with dialog + keyframe synthesis",
+  "description": "Implement per docs/02-timeline-and-animation.md and docs/17-advanced-specialized.md (Timeline Effects). FIRST verify ground truth \u2014 read any existing Insert menu Timeline Effects handlers in packages/authoring-ui, the timeline model in packages/core (model/timeline.ts), and the tween/frame emit in packages/swf (compiler/frames.ts). If parts exist, narrow scope and note findings. Scope (2 effects as the proof slice): (1) Transform \u2014 position/scale/rotate/alpha interpolated over N frames with an easing control; (2) Blur \u2014 blur-filter tween (0 -> max -> 0). Flow: author selects a shape/symbol, Insert > Timeline Effects > {Transform|Blur} opens a dialog (duration in frames, easing), OK synthesizes the keyframes (and filter steps for Blur) on the object's timeline; the result plays on stage and publishes to a smooth SWF tween. Primary files: new packages/authoring-ui TimelineEffectsDialog + Insert-menu wiring, packages/core model/timeline.ts (effect synthesis), packages/swf compiler/frames.ts (tween emission). DONE = selecting an object + applying an effect produces interpolated keyframes that render on stage and compile to a tween (unit tests on the synthesized keyframes + emitted tween), typecheck + core + swf + authoring-ui green (modulo KNOWN pre-existing core fails: missing fixtures/flash8-empty.fla, task 1207). Update docs/02 or docs/17 as behavior is defined.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:35:51Z",
+  "updated_at": "2026-06-18T23:35:51Z"
+}
