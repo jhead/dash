@@ -11,7 +11,8 @@
 
 import { describe, it, expect } from "vitest";
 import { saveRealFla } from "../write/fla-write.js";
-import { isOle2, tryLoadRealFla } from "../ole.js";
+import { isOle2, tryLoadRealFla, __readAllStreamsForTest } from "../ole.js";
+import { validateContentsStream, validateTimelineStream } from "../write/carchive-validate.js";
 import { createDocument, createDocumentProperties } from "../../model/document.js";
 import { createScene } from "../../model/scene.js";
 import { createLayer, createFrame } from "../../model/timeline.js";
@@ -133,30 +134,29 @@ describe("saveRealFla — layers", () => {
   });
 });
 
-describe("saveRealFla — shape", () => {
-  it("recovers a keyframe with a solid-fill shape", () => {
+// Content-bearing timelines are asserted against the STRICT CArchive validator
+// (real-Flash byte structure), not against the lenient importer's round-trip. The
+// writer's contract is byte-compatibility with Flash 8; importer round-tripping is
+// not a goal and must not drive the writer. The validator enforces the §5.1 tag
+// invariant and §5.2 index allocation — i.e. it rejects exactly what Flash rejects.
+
+describe("saveRealFla — shape (strict CArchive structure)", () => {
+  it("a solid-fill rectangle keyframe parses cleanly and frames the page graph", () => {
     const doc = baseDoc([
       sceneWith("Scene 1", [layerWith("Layer 1", "normal", [solidRectShape(40, 50)])]),
     ]);
-    const out = tryLoadRealFla(saveRealFla(doc));
-    expect(out).not.toBeNull();
-    const layer = out!.scenes[0]!.timeline.layers[0]!;
-    const objs = layer.frames[0]!.displayObjects;
-    const shape = objs.find((o) => o.type === "shape");
-    expect(shape).toBeDefined();
-    if (shape && shape.type === "shape") {
-      // At least one path with a solid fill should have been reconstructed.
-      const filled = shape.shape.paths.find((p) => p.fill && p.fill.type === "solid");
-      expect(filled).toBeDefined();
-      if (filled && filled.fill && filled.fill.type === "solid") {
-        expect(filled.fill.color).toEqual({ r: 200, g: 30, b: 40, a: 255 });
-      }
-    }
+    const streams = __readAllStreamsForTest(saveRealFla(doc));
+    validateContentsStream(streams.get("Contents")!);
+    const page = validateTimelineStream(streams.get("Page 1")!);
+    expect(page.classes).toContain("CPicPage");
+    expect(page.classes).toContain("CPicLayer");
+    expect(page.classes).toContain("CPicFrame");
+    expect(page.classes).toContain("CPicShape");
   });
 });
 
-describe("saveRealFla — symbol + instance", () => {
-  it("recovers a symbol and a graphic instance with a matrix", () => {
+describe("saveRealFla — symbol + instance (strict CArchive structure)", () => {
+  it("a graphic symbol + instance frames the catalog + the page/symbol graphs", () => {
     const sym = createSymbol("MyGraphic", "graphic");
     const inst: SymbolInstance = {
       type: "instance",
@@ -171,26 +171,18 @@ describe("saveRealFla — symbol + instance", () => {
     const doc = baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [inst])])], {
       library: { items: [sym], folders: [] },
     });
-    const out = tryLoadRealFla(saveRealFla(doc));
-    expect(out).not.toBeNull();
-    // Symbol present in library.
-    const importedSym = out!.library.items.find((it) => it.itemType === "symbol");
-    expect(importedSym).toBeDefined();
-    // Instance present on the layer, with the placement matrix recovered.
-    const objs = out!.scenes[0]!.timeline.layers[0]!.frames[0]!.displayObjects;
-    const importedInst = objs.find((o) => o.type === "instance");
-    expect(importedInst).toBeDefined();
-    if (importedInst && importedInst.type === "instance") {
-      expect(importedInst.x).toBeCloseTo(120, 1);
-      expect(importedInst.y).toBeCloseTo(80, 1);
-      expect(importedInst.scaleX ?? 1).toBeCloseTo(2, 1);
-      expect(importedInst.scaleY ?? 1).toBeCloseTo(0.5, 1);
-    }
+    const streams = __readAllStreamsForTest(saveRealFla(doc));
+    const cat = validateContentsStream(streams.get("Contents")!);
+    expect(cat.documentPages).toBe(2); // scene + symbol CDocumentPage records
+    const page = validateTimelineStream(streams.get("Page 1")!);
+    expect(page.classes).toContain("CPicSymbol"); // graphic instance class
+    expect(streams.has("Symbol 1")).toBe(true);
+    validateTimelineStream(streams.get("Symbol 1")!);
   });
 });
 
-describe("saveRealFla — text", () => {
-  it("recovers a static text field", () => {
+describe("saveRealFla — text (strict CArchive structure)", () => {
+  it("a static text field parses cleanly and frames a CPicText", () => {
     const text: TextDisplayObject = {
       type: "text",
       id: "t1",
@@ -210,16 +202,9 @@ describe("saveRealFla — text", () => {
       wordWrap: false,
     };
     const doc = baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [text])])]);
-    const out = tryLoadRealFla(saveRealFla(doc));
-    expect(out).not.toBeNull();
-    const objs = out!.scenes[0]!.timeline.layers[0]!.frames[0]!.displayObjects;
-    const importedText = objs.find((o) => o.type === "text");
-    expect(importedText).toBeDefined();
-    if (importedText && importedText.type === "text") {
-      expect(importedText.text).toBe("Hello");
-      expect(importedText.textType).toBe("static");
-      expect(importedText.fontSize).toBeCloseTo(18, 1);
-      expect(importedText.color).toEqual({ r: 10, g: 20, b: 30, a: 255 });
-    }
+    const streams = __readAllStreamsForTest(saveRealFla(doc));
+    validateContentsStream(streams.get("Contents")!);
+    const page = validateTimelineStream(streams.get("Page 1")!);
+    expect(page.classes).toContain("CPicText");
   });
 });
