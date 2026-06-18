@@ -62,3 +62,6 @@ coverage/
 __pycache__/
 *.pyc
 /corpus/**/*.fla
+
+# Claude Code local agent worktrees / state
+.claude/
