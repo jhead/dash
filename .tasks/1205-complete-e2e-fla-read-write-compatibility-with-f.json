@@ -1,0 +1,10 @@
+{
+  "id": "1205-complete-e2e-fla-read-write-compatibility-with-f",
+  "title": "Complete e2e FLA read/write compatibility with Flash 8 based on spec 21",
+  "description": "Renumbered off a duplicate 1201 id (concurrent-pusher counter collision; original was empty-description). Implement full end-to-end FLA read AND write round-trip compatibility with real Flash 8 per docs/21-fla-binary-format.md, validated by carchive-validate.ts and the real fixtures (Magnet.fla, evaporatingdrip.fla, flash8-empty.fla). See CLAUDE.md 'Binary FLA writer' learnings.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:13:29Z",
+  "updated_at": "2026-06-18T23:13:29Z"
+}
