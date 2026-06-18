@@ -1191,22 +1191,21 @@ function convertElement(
       };
     }
     case "swf": {
-      // CPicSwf places an external SWF asset imported via File > Import.
-      // The binary parser extracts only the fixed header (placement matrix);
-      // the variable-length tail (instance name, AS2 clip-event scripts, source
-      // SWF filename, color transforms) is skipped by skipToNextBoundary() and
-      // is not decoded.  There is no library-symbol linkage id in the decoded
-      // record, so there is no existing model type to map this to — mapping to
-      // SymbolInstance would require a symbolId, and VideoDisplayObject requires
-      // a videoItemId.  A new dedicated model type would be needed for full
-      // support.  For now, emit a descriptive warning and drop the element.
+      // CPicSwf places an external SWF asset imported via File > Import (a legacy
+      // record; see binary-FLA spec §18.3). The raw record bytes ARE preserved at
+      // the document level as `flaSwfBlobs` (see collectSwfBlobs) so a re-export can
+      // reproduce them; they are not lost. What is dropped here is only the on-stage
+      // *rendered* representation: the decoded header carries just a placement matrix
+      // (the instance name / AS2 clip-event scripts / source SWF filename / color
+      // transform live in the undecoded variable tail), and there is no model
+      // display-object type to map an embedded SWF placement to. So the element is
+      // omitted from the rendered stage while its bytes survive for round-trip.
       const { scaleX, scaleY, rotation } = decompose(el.matrix);
       console.warn(
-        `[FLA import] CPicSwf skipped — embedded SWF display objects are not yet supported. ` +
+        `[FLA import] CPicSwf placement not rendered on stage (bytes preserved in flaSwfBlobs for re-export). ` +
           `Placement: x=${el.matrix.tx.toFixed(0)}, y=${el.matrix.ty.toFixed(0)}, ` +
           `scaleX=${scaleX.toFixed(3)}, scaleY=${scaleY.toFixed(3)}, ` +
-          `rotation=${rotation.toFixed(1)}°. ` +
-          `The source SWF filename and instance name are in the undecoded variable tail.`,
+          `rotation=${rotation.toFixed(1)}°.`,
       );
       return null;
     }
