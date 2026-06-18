@@ -313,7 +313,7 @@ describe("AdjustColorFilter canvas approximation", () => {
 // ---------------------------------------------------------------------------
 
 describe("GradientGlowFilter canvas approximation", () => {
-  it("sets shadowColor and shadowBlur from the highest-alpha gradient stop", () => {
+  it("draws one glow shadow pass per gradient stop, blending across ALL stops", () => {
     const filter: GradientGlowFilter = {
       type: "gradientGlow",
       distance: 0,
@@ -346,10 +346,20 @@ describe("GradientGlowFilter canvas approximation", () => {
     const renderer = new CanvasRenderer(canvas);
     renderer.render(makeSceneWithFilters(filter), { x: 0, y: 0, width: 550, height: 400 });
 
-    expect(snapshots.length).toBeGreaterThanOrEqual(1);
-    // The stop with highest alpha is #00ff00 at alpha=0.9 → rgba(0,255,0,0.9000)
-    expect(snapshots[snapshots.length - 1].shadowColor).toContain("rgba(0,255,0");
-    expect(snapshots[snapshots.length - 1].shadowBlur).toBe(8);
+    // 3 stop passes + 1 main draw = 4 fill() calls.
+    expect(snapshots.length).toBe(4);
+    const stopColors = snapshots.map((s) => s.shadowColor);
+    // ALL three stop colors must appear — proving the blend spans every stop,
+    // not just the brightest one.
+    expect(stopColors.some((c) => c.includes("rgba(255,0,0"))).toBe(true);
+    expect(stopColors.some((c) => c.includes("rgba(0,255,0"))).toBe(true);
+    expect(stopColors.some((c) => c.includes("rgba(0,0,255"))).toBe(true);
+    // The widest (ratio=255) stop is drawn first with the largest blur; the
+    // tightest (ratio=0) stop with the smallest blur.
+    const blurs = snapshots.slice(0, 3).map((s) => s.shadowBlur);
+    expect(blurs[0]).toBeGreaterThan(blurs[2]);
+    // Final draw is the object itself with shadow cleared (ctx.restore).
+    expect(snapshots[3].shadowColor).toBe("");
   });
 });
 
@@ -458,6 +468,47 @@ describe("GradientBevelFilter canvas approximation", () => {
     renderer.render(makeSceneWithFilters(filter), { x: 0, y: 0, width: 550, height: 400 });
 
     expect(fillCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("blends ACROSS all gradient stops (one pass per stop, not just first/last)", () => {
+    // 4 stops: 2 on the shadow side (t<0.5), 2 on the highlight side (t>=0.5).
+    const filter: GradientBevelFilter = {
+      type: "gradientBevel",
+      distance: 4,
+      angle: 45,
+      gradient: [
+        { color: "#110000", alpha: 1, ratio: 0 },
+        { color: "#220000", alpha: 1, ratio: 100 },
+        { color: "#003300", alpha: 1, ratio: 160 },
+        { color: "#004400", alpha: 1, ratio: 255 },
+      ],
+      blurX: 4,
+      blurY: 4,
+      strength: 1,
+      quality: 1,
+      inner: false,
+      knockout: false,
+      compositeSource: true,
+      enabled: true,
+    };
+
+    const shadowColors: string[] = [];
+    const { ctx } = makeMockCtx();
+    (ctx as unknown as { fill: () => void }).fill = () => {
+      shadowColors.push((ctx as unknown as { shadowColor: string }).shadowColor);
+    };
+
+    const canvas = makeTestCanvas(ctx);
+    const renderer = new CanvasRenderer(canvas);
+    renderer.render(makeSceneWithFilters(filter), { x: 0, y: 0, width: 550, height: 400 });
+
+    // 4 stop passes + 1 main draw = 5 fill() calls.
+    expect(shadowColors.length).toBe(5);
+    // Every stop color must show up, proving the across-stop blend.
+    expect(shadowColors.some((c) => c.includes("rgba(17,0,0"))).toBe(true);
+    expect(shadowColors.some((c) => c.includes("rgba(34,0,0"))).toBe(true);
+    expect(shadowColors.some((c) => c.includes("rgba(0,51,0"))).toBe(true);
+    expect(shadowColors.some((c) => c.includes("rgba(0,68,0"))).toBe(true);
   });
 });
 

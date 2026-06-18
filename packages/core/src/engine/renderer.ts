@@ -773,23 +773,52 @@ function adjustColorToCSSFilter(f: AdjustColorFilter): string {
   return parts.join(" ");
 }
 
+/** A parsed gradient stop with numeric RGB channels. */
+interface ParsedStop {
+  r: number;
+  g: number;
+  b: number;
+  alpha: number;
+  /** Normalized ratio 0–1 (ratio/255). */
+  t: number;
+}
+
 /**
- * Picks the most visually prominent (highest-alpha) stop from a gradient array
- * and returns its color as a CSS rgba() string.  Falls back to opaque red if
- * the gradient is empty.
+ * Parses a gradient stop ({ color: "#rrggbb", alpha, ratio }) into numeric
+ * RGB channels + a normalized 0–1 ratio.
  */
-function gradientPrimaryColor(
+function parseGradientStop(stop: {
+  color: string;
+  alpha: number;
+  ratio: number;
+}): ParsedStop {
+  const hex = stop.color.replace("#", "");
+  return {
+    r: parseInt(hex.substring(0, 2), 16) || 0,
+    g: parseInt(hex.substring(2, 4), 16) || 0,
+    b: parseInt(hex.substring(4, 6), 16) || 0,
+    alpha: stop.alpha,
+    t: Math.max(0, Math.min(1, stop.ratio / 255)),
+  };
+}
+
+/** Renders a ParsedStop as a CSS rgba() string. */
+function stopToCss(s: ParsedStop): string {
+  return `rgba(${s.r},${s.g},${s.b},${s.alpha.toFixed(4)})`;
+}
+
+/**
+ * Returns the gradient stops sorted by ascending ratio, with a stable parse.
+ * Empty gradients fall back to a single opaque-red stop so callers always have
+ * at least one pass to draw.
+ */
+function sortedGradientStops(
   gradient: ReadonlyArray<{ color: string; alpha: number; ratio: number }>
-): string {
-  if (gradient.length === 0) return "rgba(255,0,0,1)";
-  // Pick the stop with the highest alpha value.
-  const best = gradient.reduce((a, b) => (b.alpha > a.alpha ? b : a));
-  // best.color is a CSS hex string like "#rrggbb"; append alpha.
-  const hex = best.color.replace("#", "");
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-  return `rgba(${r},${g},${b},${best.alpha.toFixed(4)})`;
+): ParsedStop[] {
+  if (gradient.length === 0) {
+    return [{ r: 255, g: 0, b: 0, alpha: 1, t: 1 }];
+  }
+  return gradient.map(parseGradientStop).sort((a, b) => a.t - b.t);
 }
 
 /**
@@ -823,8 +852,13 @@ function drawBevelPass(
  *  - DropShadowFilter     → ctx.shadow* properties
  *  - GlowFilter           → ctx.shadow* properties with zero offset
  *  - BevelFilter          → two shadow passes (highlight + shadow side)
- *  - GradientGlowFilter   → glow approximation using the brightest gradient stop
- *  - GradientBevelFilter  → bevel approximation using first/last gradient stops
+ *  - GradientGlowFilter   → one glow shadow pass PER gradient stop, with each
+ *                           stop's blur radius scaled by its ratio, so the
+ *                           visible glow blends ACROSS all stops (concentric
+ *                           color rings) instead of using a single stop.
+ *  - GradientBevelFilter  → bevel passes blending ACROSS the gradient: stops
+ *                           below the 0.5 ratio drive the shadow side, stops at
+ *                           or above drive the highlight side.
  *  - AdjustColorFilter    → CSS filter: brightness/contrast/saturate/hue-rotate
  *
  * Exact Flash fidelity requires off-screen render-to-texture passes (stretch goal).
@@ -840,14 +874,17 @@ function applyFilters(
     return;
   }
 
-  // Separate bevel/gradientBevel filters (require multi-pass draws) from the
-  // rest (single-pass state mutations).
+  // Separate multi-pass filters (bevel/gradientBevel/gradientGlow — each draws
+  // the object several times to layer colors) from single-pass state mutations.
   const bevelFilters: Array<BevelFilter | GradientBevelFilter> = [];
+  const gradientGlowFilters: GradientGlowFilter[] = [];
   const singlePassFilters: FlashFilter[] = [];
 
   for (const filter of active) {
     if (filter.type === "bevel" || filter.type === "gradientBevel") {
       bevelFilters.push(filter);
+    } else if (filter.type === "gradientGlow") {
+      gradientGlowFilters.push(filter);
     } else {
       singlePassFilters.push(filter);
     }
@@ -875,26 +912,43 @@ function applyFilters(
       ctx.shadowBlur = (filter.blurX + filter.blurY) / 2;
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 0;
-    } else if (filter.type === "gradientGlow") {
-      // Approximate: use the highest-alpha gradient stop as the glow color.
-      const f = filter as GradientGlowFilter;
-      ctx.shadowColor = gradientPrimaryColor(f.gradient);
-      ctx.shadowBlur = (f.blurX + f.blurY) / 2;
-      const dx = Math.cos((f.angle * Math.PI) / 180) * f.distance;
-      const dy = Math.sin((f.angle * Math.PI) / 180) * f.distance;
-      ctx.shadowOffsetX = dx;
-      ctx.shadowOffsetY = dy;
     } else if (filter.type === "adjustColor") {
       const cssFilter = adjustColorToCSSFilter(filter as AdjustColorFilter);
       if (cssFilter) cssFilterParts.push(cssFilter);
     }
-    // gradientBevel is handled in the bevel pass below.
+    // gradientGlow / gradientBevel are handled in the multi-pass loops below.
   }
 
   if (cssFilterParts.length > 0) {
     ctx.filter = cssFilterParts.join(" ");
   }
 
+  // ---------- gradient glow (multi-stop blend) ----------
+  // Draw one glow shadow pass per gradient stop BEFORE the main draw so the
+  // passes layer behind the object.  Each stop's blur radius is scaled by its
+  // ratio: low-ratio stops form a tight inner halo, high-ratio stops a wide
+  // outer halo.  Together they blend ACROSS all stops rather than echoing a
+  // single brightest stop.  Outer (widest) stops are drawn first so the inner,
+  // tighter stops paint on top.
+  for (const filter of gradientGlowFilters) {
+    const baseBlur = (filter.blurX + filter.blurY) / 2;
+    const angleRad = (filter.angle * Math.PI) / 180;
+    const dx = Math.cos(angleRad) * filter.distance;
+    const dy = Math.sin(angleRad) * filter.distance;
+    const stops = sortedGradientStops(filter.gradient);
+
+    // Widest (highest-ratio) first → tightest last (painted on top).
+    for (let s = stops.length - 1; s >= 0; s--) {
+      const stop = stops[s];
+      if (stop.alpha <= 0) continue; // fully transparent stop contributes nothing
+      // Scale blur by the stop's normalized ratio so the colors fan out into
+      // concentric rings. A small floor keeps near-zero-ratio stops visible.
+      const stopBlur = baseBlur * (0.15 + 0.85 * stop.t);
+      drawBevelPass(ctx, stopToCss(stop), stopBlur, dx, dy, drawFn);
+    }
+  }
+
+  // ---------- bevel / gradient bevel (highlight + shadow sides) ----------
   // Draw the bevel shadow passes BEFORE the main draw so they appear behind the
   // object.  Each bevel filter contributes a highlight pass (opposite side) and
   // a shadow pass (on the light side).
@@ -904,35 +958,51 @@ function applyFilters(
     const dx = Math.cos(angleRad) * filter.distance;
     const dy = Math.sin(angleRad) * filter.distance;
 
-    let highlightColor: string;
-    let shadowColor: string;
-
     if (filter.type === "bevel") {
       const f = filter as BevelFilter;
-      highlightColor = colorToCSSWithAlpha(f.highlightColor, f.highlightAlpha);
-      shadowColor = colorToCSSWithAlpha(f.shadowColor, f.shadowAlpha);
+      const highlightColor = colorToCSSWithAlpha(f.highlightColor, f.highlightAlpha);
+      const shadowColor = colorToCSSWithAlpha(f.shadowColor, f.shadowAlpha);
+      // Highlight: offset at the opposite (light-source) side.
+      drawBevelPass(ctx, highlightColor, blurPx, -dx, -dy, drawFn);
+      // Shadow: offset at the shadow side.
+      drawBevelPass(ctx, shadowColor, blurPx, dx, dy, drawFn);
     } else {
-      // gradientBevel: first stop = shadow side, last stop = highlight side
-      // (conventional gradient bevel layout).
+      // gradientBevel: blend ACROSS the gradient. Stops below the 0.5 ratio
+      // midpoint drive the shadow side (positive offset); stops at/above 0.5
+      // drive the highlight side (negative offset).  Each side's stops are
+      // layered from the edge inward so the full color ramp is visible.
       const f = filter as GradientBevelFilter;
-      const g = f.gradient;
-      if (g.length === 0) continue;
-      // Use last stop as highlight, first stop as shadow.
-      const hlStop = g[g.length - 1];
-      const shStop = g[0];
-      const hlHex = hlStop.color.replace("#", "");
-      const shHex = shStop.color.replace("#", "");
-      highlightColor = `rgba(${parseInt(hlHex.substring(0, 2), 16)},${parseInt(hlHex.substring(2, 4), 16)},${parseInt(hlHex.substring(4, 6), 16)},${hlStop.alpha.toFixed(4)})`;
-      shadowColor = `rgba(${parseInt(shHex.substring(0, 2), 16)},${parseInt(shHex.substring(2, 4), 16)},${parseInt(shHex.substring(4, 6), 16)},${shStop.alpha.toFixed(4)})`;
-    }
+      const stops = sortedGradientStops(f.gradient);
 
-    // Highlight: offset at the opposite (light-source) side.
-    drawBevelPass(ctx, highlightColor, blurPx, -dx, -dy, drawFn);
-    // Shadow: offset at the shadow side.
-    drawBevelPass(ctx, shadowColor, blurPx, dx, dy, drawFn);
+      // Shadow side: low-ratio stops, drawn outermost (lowest ratio) first.
+      const shadowStops = stops.filter((s) => s.t < 0.5);
+      for (const stop of shadowStops) {
+        if (stop.alpha <= 0) continue;
+        // Closer to the midpoint (t→0.5) → tighter blur.
+        const scale = 0.3 + 0.7 * (1 - stop.t / 0.5);
+        drawBevelPass(ctx, stopToCss(stop), blurPx * scale, dx, dy, drawFn);
+      }
+
+      // Highlight side: high-ratio stops, drawn outermost (highest ratio) first.
+      const highlightStops = stops.filter((s) => s.t >= 0.5).reverse();
+      for (const stop of highlightStops) {
+        if (stop.alpha <= 0) continue;
+        const scale = 0.3 + 0.7 * ((stop.t - 0.5) / 0.5);
+        drawBevelPass(ctx, stopToCss(stop), blurPx * scale, -dx, -dy, drawFn);
+      }
+
+      // Guarantee at least one shadow + one highlight pass even for degenerate
+      // gradients (all stops on one side), so the bevel reads as two-sided.
+      if (shadowStops.length === 0 && stops.length > 0) {
+        drawBevelPass(ctx, stopToCss(stops[0]), blurPx, dx, dy, drawFn);
+      }
+      if (highlightStops.length === 0 && stops.length > 0) {
+        drawBevelPass(ctx, stopToCss(stops[stops.length - 1]), blurPx, -dx, -dy, drawFn);
+      }
+    }
   }
 
-  // Main draw (the actual object, on top of bevel shadows).
+  // Main draw (the actual object, on top of bevel/glow shadows).
   drawFn();
 
   ctx.restore();

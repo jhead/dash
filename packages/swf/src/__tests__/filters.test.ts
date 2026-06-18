@@ -1168,4 +1168,153 @@ describe("SWF filter encoding", () => {
     // Flags1 bit 5 (HasName) should be 0
     expect(body[0] & 0x20).toBe(0);
   });
+
+  // -------------------------------------------------------------------------
+  // Round-trip tests: decode the encoded GradientGlow / GradientBevel record
+  // bytes back into colors / ratios / flags and assert they match the input.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Locate the FILTERLIST in a PlaceObject3 body and decode a single gradient
+   * (GradientGlow ID=4 / GradientBevel ID=7) filter record.
+   *
+   * Layout of a single-gradient FILTERLIST tail:
+   *   UI8  FilterCount (== 1)
+   *   UI8  FilterID (4 or 7)
+   *   UI8  numColors
+   *   numColors × RGBA (4 bytes each)
+   *   numColors × ratio (1 byte each)
+   *   FIXED16 blurX, blurY, angle, distance (4 bytes each)
+   *   FIXED8  strength (2 bytes)
+   *   UI8     flags
+   *
+   * We scan for the `[FilterCount=1, FilterID]` pair, decode forward, and
+   * require the decoded record to end exactly at the body boundary — proving
+   * we read the real FILTERLIST and not a coincidental byte pattern.
+   */
+  function decodeGradientFilter(
+    body: Uint8Array,
+    filterId: number
+  ): {
+    colors: Array<{ r: number; g: number; b: number; a: number }>;
+    ratios: number[];
+    blurX: number;
+    blurY: number;
+    distance: number;
+    flags: number;
+  } | null {
+    const readFixed16 = (off: number): number => {
+      const v =
+        body[off] | (body[off + 1] << 8) | (body[off + 2] << 16) | (body[off + 3] << 24);
+      return v / 65536;
+    };
+    // Try each plausible FilterCount position.
+    for (let i = 2; i < body.length - 2; i++) {
+      if (body[i] !== 1 || body[i + 1] !== filterId) continue;
+      let p = i + 2;
+      const numColors = body[p++];
+      if (numColors < 1 || numColors > 16) continue;
+      const recordEnd = p + numColors * 4 + numColors * 1 + 4 * 4 + 2 + 1;
+      if (recordEnd !== body.length) continue; // record must end at body end
+      const colors: Array<{ r: number; g: number; b: number; a: number }> = [];
+      for (let c = 0; c < numColors; c++) {
+        colors.push({ r: body[p], g: body[p + 1], b: body[p + 2], a: body[p + 3] });
+        p += 4;
+      }
+      const ratios: number[] = [];
+      for (let c = 0; c < numColors; c++) ratios.push(body[p++]);
+      const blurX = readFixed16(p); p += 4;
+      const blurY = readFixed16(p); p += 4;
+      p += 4; // angle
+      const distance = readFixed16(p); p += 4;
+      p += 2; // strength (FIXED8)
+      const flags = body[p];
+      return { colors, ratios, blurX, blurY, distance, flags };
+    }
+    return null;
+  }
+
+  it("GradientGlow filter round-trips colors / ratios / flags (FilterID=4)", () => {
+    const filter: GradientGlowFilter = {
+      type: "gradientGlow",
+      distance: 6,
+      angle: 45,
+      gradient: [
+        { color: "#102030", alpha: 0, ratio: 0 },
+        { color: "#ff8800", alpha: 0.5, ratio: 128 },
+        { color: "#abcdef", alpha: 1, ratio: 255 },
+      ],
+      blurX: 8,
+      blurY: 12,
+      strength: 2,
+      quality: 2,
+      inner: true,
+      knockout: false,
+      compositeSource: true,
+      enabled: true,
+    };
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+    const decoded = decodeGradientFilter(body, 4);
+    expect(decoded).not.toBeNull();
+    const d = decoded!;
+
+    // Colors (RGBA) in stop order.
+    expect(d.colors).toEqual([
+      { r: 0x10, g: 0x20, b: 0x30, a: 0 },     // alpha 0 → 0
+      { r: 0xff, g: 0x88, b: 0x00, a: 128 },   // alpha 0.5 → ~128
+      { r: 0xab, g: 0xcd, b: 0xef, a: 255 },   // alpha 1 → 255
+    ]);
+    // Ratios preserved.
+    expect(d.ratios).toEqual([0, 128, 255]);
+    // Blur preserved (FIXED16).
+    expect(d.blurX).toBeCloseTo(8, 3);
+    expect(d.blurY).toBeCloseTo(12, 3);
+    expect(d.distance).toBeCloseTo(6, 3);
+    // Flags: inner (bit7) + compositeSource (bit5) + passes (quality 2 in bits 0-3).
+    expect(d.flags & (1 << 7)).toBe(1 << 7); // inner
+    expect(d.flags & (1 << 6)).toBe(0);      // knockout clear
+    expect(d.flags & (1 << 5)).toBe(1 << 5); // compositeSource
+    expect(d.flags & 0x0f).toBe(2);          // passes / quality
+  });
+
+  it("GradientBevel filter round-trips colors / ratios / flags (FilterID=7)", () => {
+    const filter: GradientBevelFilter = {
+      type: "gradientBevel",
+      distance: 5,
+      angle: 90,
+      gradient: [
+        { color: "#000000", alpha: 1, ratio: 0 },
+        { color: "#7f7f7f", alpha: 1, ratio: 128 },
+        { color: "#ffffff", alpha: 0.25, ratio: 255 },
+      ],
+      blurX: 4,
+      blurY: 4,
+      strength: 1,
+      quality: 3,
+      inner: false,
+      knockout: true,
+      compositeSource: true,
+      bevelType: "full",
+      enabled: true,
+    };
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+    const decoded = decodeGradientFilter(body, 7);
+    expect(decoded).not.toBeNull();
+    const d = decoded!;
+
+    expect(d.colors).toEqual([
+      { r: 0x00, g: 0x00, b: 0x00, a: 255 },
+      { r: 0x7f, g: 0x7f, b: 0x7f, a: 255 },
+      { r: 0xff, g: 0xff, b: 0xff, a: 64 }, // alpha 0.25 → round(63.75) = 64
+    ]);
+    expect(d.ratios).toEqual([0, 128, 255]);
+    expect(d.distance).toBeCloseTo(5, 3);
+    // Flags: knockout (bit6) + compositeSource (bit5) + ON_TOP (bit4, "full")
+    //        + passes (quality 3 in bits 0-3). inner (bit7) clear.
+    expect(d.flags & (1 << 7)).toBe(0);      // inner clear
+    expect(d.flags & (1 << 6)).toBe(1 << 6); // knockout
+    expect(d.flags & (1 << 5)).toBe(1 << 5); // compositeSource
+    expect(d.flags & (1 << 4)).toBe(1 << 4); // ON_TOP (bevelType "full")
+    expect(d.flags & 0x0f).toBe(3);          // passes / quality
+  });
 });

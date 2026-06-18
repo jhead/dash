@@ -70,6 +70,22 @@ Blend modes map to the SWF `PlaceObject3` blend-mode field and `MovieClip.blendM
 - Each filter = one or more **render-to-texture shader passes** over the clip's cached
   bitmap: separable Gaussian blur for blur/shadow/glow; gradient ramps for gradient
   glow/bevel; a 4×5 **color matrix** for Adjust Color; bevel via blurred height/edge masks.
+- **Gradient Glow / Gradient Bevel** carry a multi-stop gradient (per stop: color +
+  alpha + ratio 0–255). The authoring **FiltersPanel** exposes an inline stop editor
+  (add/remove stops, edit color/alpha/ratio per stop) alongside blurX/blurY/strength/
+  quality/angle/distance/knockout/type. The Canvas-2D **stage preview** approximates the
+  gradient by blending ACROSS every stop, not just the brightest one: Gradient Glow draws
+  one glow shadow pass per stop with the blur radius scaled by the stop's ratio (low ratio
+  = tight inner halo, high ratio = wide outer halo, widest painted first); Gradient Bevel
+  splits the stops at the 0.5 ratio midpoint — stops below drive the shadow side, stops at
+  or above drive the highlight side — and layers each side's stops from the edge inward.
+  Fully transparent stops (alpha 0) contribute no pass. The exact (GPU render-to-texture)
+  gradient ramp remains the stretch goal; the SWF encoder is exact.
+- **SWF serialization** writes GRADIENTGLOWFILTER (FilterID 4) and GRADIENTBEVELFILTER
+  (FilterID 7) through **PlaceObject3** (tag 70): `numColors`, then all RGBA stop colors,
+  then all ratio bytes, then blurX/blurY/angle/distance (FIXED16) + strength (FIXED8) +
+  a flags byte (inner=bit7, knockout=bit6, compositeSource=bit5, onTop=bit4 for the
+  "full"/ON_TOP bevel, passes/quality=bits 0-3). Round-tripped by `filters.test.ts`.
 - Blend modes = GPU blend-state + custom fragment composites; Layer forces an offscreen group
   buffer so Alpha/Erase operate on the composited group.
 - Keep a filter/blend pipeline cache keyed on parameters + source bitmap hash.
