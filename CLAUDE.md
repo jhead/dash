@@ -113,6 +113,46 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   (`golden-fla-oracle.spec.ts`) is what surfaced this — the structural harness can't see
   glyph-layout defects, so always eyeball the actual render.
 
+### Binary FLA writer (real Flash 8 byte-compatibility)
+
+- **The writer's ONLY contract is byte-compatibility with real Flash 8, NOT importer
+  round-tripping.** The keystone is `fixtures/flash8-empty.fla` (genuine empty doc, WIN
+  8,0,0,478): its `Contents` is **17312 B** and `Page 1` is **274 B**. `saveRealFla(
+  createDocument())` now produces a **byte-perfect** Contents (modulo 2 volatile u32
+  timestamps which equal the fixture's value, so 0 diffs in practice) and a Page 1 that
+  differs only at the 2-byte big-endian frameId (absolute offset 0x8a). Gate test:
+  `empty-bytematch.test.ts`.
+- **contentsVersion is 0x3F, not 0x49.** The old stub used 0x49 (a Flash-9/CS3-ish value)
+  and Flash aborted. Real Flash 8 stamps `contentsVersion=0x3F, contentsVersionB=1` (§8.1).
+- **Contents object-by-object (empty doc)**: (1) §8.1 preamble 23 B; (2) one CDocumentPage
+  per SCENE — NEWCLASS CDocumentPage schema 1 / `0x17` version / "Page N" String (no BOM) /
+  sceneName BomString / symbolId u16 + reserved u16 + symbolType u8 / empty BomString / a
+  **317-byte FixedPageTail** const run (§8.7) with two volatile u32 timeCreated/ItemID at
+  tail-relative 0x18 and 0x5C; (3) one CDocumentPage per SYMBOL (same shape, real symbolId/
+  type); (4) §8.4 stage block (model-derived W*20/H*20/gridSpacing*20/bg/grid/fps-8.8); (5) a
+  **16837-byte post-stage default template** — property maps, the `CColorDef` palette,
+  `CQTAudioSettings`, publish/print/font defaults, and the `mobileSettings` XML/version
+  trailer. The whole Contents has exactly **3 NEWCLASS decls**: CDocumentPage, CColorDef,
+  CQTAudioSettings; scenes/symbols after the first reuse CDocumentPage by **backref** (§5.2).
+- **The post-stage template is position-independent**: it self-declares CColorDef/
+  CQTAudioSettings via NEWCLASS and contains no backrefs to CDocumentPage, so prepending
+  extra scene/symbol records (which advance the §5.2 counter) never invalidates it.
+- **The model-vs-Flash default divergences (NOT volatile, NOT bugs)**: grid color (Flash
+  `#c0c0c0` vs `createGridSettings` `#999999`) and new-layer outline color (Flash `#4fff4f`
+  vs `createLayer` `#0000ff`). A correct serializer emits whatever the model carries; the
+  byte-match test builds the doc with Flash's defaults to isolate volatile bytes.
+- **Timeline records use VERSION-byte lead-ins, not an ObjBase header.** After the class
+  tag, CPicPage is `04 00` (pageVersion=4,0), CPicLayer is `04 00`, CPicFrame is `04 00`
+  (§10.1/§10.2/§11) — NOT the stub's `01 00` (schema=1,flags=0). CPicPage/CPicLayer/CPicFrame
+  NEWCLASS schema is **1** (stub used 4). An empty keyframe body (143 B) + the layer
+  post-frames lead-in + CPicPage tail are constant templates in `empty-templates.ts`.
+- **`carchive-validate.ts` is a STRICT sequential CArchive reader** (modeled on fla-decoder's
+  ArchiveReader, not the lenient importer): enforces the §5.1 tag invariant + §5.2 running
+  index allocator, throws on invalid tag words / undeclared backrefs / implausible class
+  decls. Proven faithful by cleanly parsing the real fixtures and rejecting corruption; it is
+  the acceptance bar for content docs (the lenient importer is NOT). Templates were extracted
+  with `tools/flashdrv/fla_cfb.py` + `__readAllStreamsForTest` in `ole.ts`.
+
 ### Binary FLA import (Flash 5–CS4 OLE2 format)
 
 - **CFB writer DIFAT bug (`cfb-write.ts`): a FLA needing > 109 FAT sectors lost its
