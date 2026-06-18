@@ -31,7 +31,6 @@ import type {
   BitmapDisplayObject,
   Fill,
   Stroke,
-  ShapePath,
   PathSegment,
   Point,
 } from "../../engine/types.js";
@@ -210,18 +209,56 @@ function writeCPicFrame(
     return;
   }
 
-  // Non-empty keyframe: real serialization. Children = the frame's display objects.
+  // Non-empty keyframe: real serialization.
+  //
+  // Real Flash stores a frame's raw vector graphics as the frame's OWN inline
+  // shape body (part of the CPicFrame/CPicShape serialization), NOT as separate
+  // tagged CPicShape children. Only PLACED objects (instances, text, bitmaps,
+  // groups) are tagged children in the frame's child list. So:
+  //   1. Partition displayObjects into raw shapes vs placed objects.
+  //   2. Emit ONLY the placed objects as tagged children.
+  //   3. Write the merged raw-shape geometry as the frame's INLINE shape body.
+  // This keeps the running CArchive class table to {CPicPage,CPicLayer,CPicFrame}
+  // for a shape-only doc (no spurious CPicShape NEWCLASS that derails the reader).
+  const rawShapes: ShapeDisplayObject[] = [];
+  const placed: DisplayObject[] = [];
   for (const obj of frame.displayObjects) {
+    if (obj.type === "shape") {
+      rawShapes.push(obj);
+    } else if (obj.type === "drawing-object") {
+      // A drawing object's geometry merges into the inline shape too (it has no
+      // separate placeable identity in this writer).
+      rawShapes.push({ type: "shape", id: obj.id, shape: obj.shape, x: obj.x, y: obj.y });
+    } else {
+      placed.push(obj);
+    }
+  }
+
+  // Children = placed objects only (shapes are skipped — they go inline below).
+  for (const obj of placed) {
     writeElement(w, ct, obj, idx);
   }
+  // Close the frame's CPicObjBase (schema=4, from the `04 00` header above): end
+  // of children, sentinel registration point, then the schema>2 / schema>3 skip
+  // bytes the reader consumes for a schema-4 base.
   ct.writeNull(w); // end of children
   w.u32(INT_MIN).u32(INT_MIN); // sentinel registration point
+  w.u8(0x00); // schema > 2 skip(1)
+  w.u8(0x00); // schema > 3 skip(1)
 
-  // Inherited CPicShape body: schema + matrix + empty shape data (raw shapes are
-  // child CPicShape records, so the frame's own merge-shape is empty).
-  w.u8(1); // shapeSchema
+  // Inherited inline CPicShape body (NO ObjBase/instance-header/matrix-tag wrapper —
+  // it is part of the frame's own serialization). Lead-in: u8 shapeSchema=0x03,
+  // then an identity matrix, then the merged shape geometry. The geometry of all
+  // the frame's raw shapes is merged into ONE inline shape (Flash merges raw
+  // graphics on a layer/keyframe into a single editable shape). Zero raw shapes =>
+  // an empty inline shape, byte-matching the genuine empty keyframe.
+  w.u8(0x03); // shapeSchema (matches the real fixture's inline-shape lead-in)
   writeMatrix(w, identity());
-  writeEmptyShapeData(w);
+  if (rawShapes.length === 0) {
+    writeEmptyShapeData(w);
+  } else {
+    writeMergedShapeGeometry(w, rawShapes);
+  }
 
   // Frame fields. fs (frame schema) = 0x18 (frameVersionB).
   const fs = 0x18;
@@ -291,39 +328,45 @@ function writeTimelineSubObject(w: ByteWriter, script: string): void {
 // Shape data (§10.4) + edges (§10.5)
 // ---------------------------------------------------------------------------
 
-/** An empty shape body: schema, edge-count hint, 0 fills, 0 lines, edge terminator. */
+/**
+ * An empty inline shape body, byte-matching the genuine empty keyframe fixture:
+ * internal schema 0x05, edge-count hint 0, 0 fills, 0 lines, edge terminator, and
+ * the schema>4 cubic-bezier post-stream count (0). (14 bytes, identical to the
+ * `05 00000000 0000 0000 00 00000000` run in flash8-empty.fla's Page 1.)
+ */
 function writeEmptyShapeData(w: ByteWriter): void {
-  w.u8(3); // schema (>=2 so the reader looks for an edge stream)
+  w.u8(0x05); // internal shape-data schema (>4 => cubic post-stream present)
   w.u32(0); // edge count hint
   w.u16(0); // fillCount
   w.u16(0); // lineCount
   w.u8(0); // edge terminator (flags == 0)
+  w.u32(0); // cubicCount (schema > 4 post-edge stream)
 }
 
 // ---------------------------------------------------------------------------
 // CPicShape (§10.1)
 // ---------------------------------------------------------------------------
 
-function writeCPicShape(w: ByteWriter, ct: ClassTable, obj: ShapeDisplayObject, _idx: WriteIndex): void {
-  openObjBaseHeader(w);
-  closeObjBase(w, ct, obj.x !== 0 || obj.y !== 0 ? { x: obj.x, y: obj.y } : undefined);
-
-  // shapeSchema > 2 => F8-era caps strokes/fills.
-  w.u8(3);
-  // Placement translation goes in the matrix (tx/ty). Edge coords are relative
-  // to the shape origin; the importer adds matrix.tx/ty back as the object x/y.
-  writeMatrix(w, { a: 1, b: 0, c: 0, d: 1, tx: obj.x, ty: obj.y });
-  writeShapeGeometry(w, obj.shape.paths);
-}
-
 /**
- * Serialize a shape's paths as a fill/line style table + edge stream
- * (caps = true / F8). Each closed fill path is emitted with its fill on the
- * `fill1` (right) side so the importer reconstructs a closed loop. Strokes are
- * emitted as open style-runs on the `line` index.
+ * Serialize the merged geometry of one or more raw shapes as a fill/line style
+ * table + edge stream (caps = true / F8), in the REAL inline-shape format decoded
+ * from `fixtures/square-canon.fla`:
+ *
+ *   u8  schema = 0x05              // internal shape-data schema (>4)
+ *   u32 edgeCountHint = 0
+ *   u16 fillCount;   FillStyle[]   // §12.1 solid = RGBA + 00 00
+ *   u16 strokeCount; LineStyle[]   // F8 caps stroke (22 bytes each)
+ *   <edge stream> ... u8 0         // edge terminator
+ *   u32 cubicCount = 0             // schema>4 cubic-bezier post-stream
+ *
+ * Flash merges all raw graphics on a layer/keyframe into ONE editable shape, so
+ * when several raw shapes share a frame their fills/strokes/edges are concatenated
+ * into a single table here (1-based, in shape-then-path order). Each shape's x/y
+ * offset is baked into its edge coordinates because the inline shape carries an
+ * identity matrix (the offset is NOT a separate placement).
  */
-function writeShapeGeometry(w: ByteWriter, paths: readonly ShapePath[]): void {
-  // Build de-duplicated fill + stroke style tables (1-based indices).
+function writeMergedShapeGeometry(w: ByteWriter, shapes: readonly ShapeDisplayObject[]): void {
+  // Build merged fill + stroke style tables (1-based indices) across all shapes.
   const fills: Fill[] = [];
   const strokes: Stroke[] = [];
   const fillIndexOf = (f: Fill): number => {
@@ -341,18 +384,29 @@ function writeShapeGeometry(w: ByteWriter, paths: readonly ShapePath[]): void {
     line: number;
     start: Point;
     segs: readonly PathSegment[];
+    /** per-shape pixel offset baked into edge coords (identity inline matrix). */
+    ox: number;
+    oy: number;
   }
   const runs: EdgeRun[] = [];
-  for (const p of paths) {
-    const fill0 = 0;
-    const fill1 = p.fill ? fillIndexOf(p.fill) : 0;
-    const line = p.stroke ? strokeIndexOf(p.stroke) : 0;
-    if (fill1 === 0 && line === 0) continue;
-    runs.push({ fill0, fill1, line, start: p.start, segs: p.segments });
+  for (const shape of shapes) {
+    for (const p of shape.shape.paths) {
+      const fill0 = 0;
+      const fill1 = p.fill ? fillIndexOf(p.fill) : 0;
+      const line = p.stroke ? strokeIndexOf(p.stroke) : 0;
+      if (fill1 === 0 && line === 0) continue;
+      runs.push({ fill0, fill1, line, start: p.start, segs: p.segments, ox: shape.x, oy: shape.y });
+    }
   }
 
-  w.u8(3); // shape data schema (>= 3 => F8 fill/line styles)
-  w.u32(0); // edge count hint
+  // edgeCountHint = total segment count across all runs (Flash stores the real
+  // edge count here; the reader skips it, but the genuine fixture populates it —
+  // e.g. square-canon's 4-segment rectangle stores 0x04).
+  let edgeCount = 0;
+  for (const run of runs) edgeCount += run.segs.length;
+
+  w.u8(0x05); // internal shape-data schema (>4 => cubic post-stream present)
+  w.u32(edgeCount); // edge count hint
   w.u16(fills.length);
   for (const f of fills) writeFillStyle(w, f);
   w.u16(strokes.length);
@@ -363,10 +417,12 @@ function writeShapeGeometry(w: ByteWriter, paths: readonly ShapePath[]): void {
   let curX = 0;
   let curY = 0;
   for (const run of runs) {
+    const offX = Math.round(run.ox * EDGE_UNIT);
+    const offY = Math.round(run.oy * EDGE_UNIT);
     // Style change (bit 0x40) + "no selection info" (bit 0x80): order line,
     // fill0, fill1. Combine with a move (delta1) to the run start.
-    const startX = Math.round(run.start.x * EDGE_UNIT);
-    const startY = Math.round(run.start.y * EDGE_UNIT);
+    const startX = offX + Math.round(run.start.x * EDGE_UNIT);
+    const startY = offY + Math.round(run.start.y * EDGE_UNIT);
     // flags: 0x40 style change, 0x80 no-sel, delta1 type 2 (s32 move).
     w.u8(0x40 | 0x80 | 0x02);
     w.u8(run.line & 0xff);
@@ -379,8 +435,8 @@ function writeShapeGeometry(w: ByteWriter, paths: readonly ShapePath[]): void {
 
     for (const seg of run.segs) {
       if (seg.type === "line") {
-        const tx = Math.round(seg.to.x * EDGE_UNIT);
-        const ty = Math.round(seg.to.y * EDGE_UNIT);
+        const tx = offX + Math.round(seg.to.x * EDGE_UNIT);
+        const ty = offY + Math.round(seg.to.y * EDGE_UNIT);
         // delta1 (from) type 0 = stay; delta3 (to) type 2; delta2 (ctrl) type 0.
         w.u8(0x20); // bits[5:4]=10 -> delta3 type 2
         w.s32(tx - curX);
@@ -388,10 +444,10 @@ function writeShapeGeometry(w: ByteWriter, paths: readonly ShapePath[]): void {
         curX = tx;
         curY = ty;
       } else {
-        const cx = Math.round(seg.control.x * EDGE_UNIT);
-        const cy = Math.round(seg.control.y * EDGE_UNIT);
-        const tx = Math.round(seg.to.x * EDGE_UNIT);
-        const ty = Math.round(seg.to.y * EDGE_UNIT);
+        const cx = offX + Math.round(seg.control.x * EDGE_UNIT);
+        const cy = offY + Math.round(seg.control.y * EDGE_UNIT);
+        const tx = offX + Math.round(seg.to.x * EDGE_UNIT);
+        const ty = offY + Math.round(seg.to.y * EDGE_UNIT);
         // delta2 (ctrl) type 2 (bits[3:2]=10 => 0x08), delta3 (to) type 2 (0x20).
         w.u8(0x08 | 0x20);
         w.s32(cx - curX); // control delta (from = cur, since d1 type 0)
@@ -404,6 +460,7 @@ function writeShapeGeometry(w: ByteWriter, paths: readonly ShapePath[]): void {
     }
   }
   w.u8(0); // edge terminator
+  w.u32(0); // cubicCount (schema > 4 post-edge stream)
 }
 
 function writeFillStyle(w: ByteWriter, fill: Fill): void {
@@ -461,18 +518,12 @@ function writeLineStyle(w: ByteWriter, s: Stroke): void {
 function writeElement(w: ByteWriter, ct: ClassTable, obj: DisplayObject, idx: WriteIndex): void {
   switch (obj.type) {
     case "shape":
-      ct.useClass(w, "CPicShape", 4);
-      writeCPicShape(w, ct, obj, idx);
-      return;
     case "drawing-object":
-      // Treat a drawing object like a raw shape.
-      ct.useClass(w, "CPicShape", 4);
-      writeCPicShape(
-        w,
-        ct,
-        { type: "shape", id: obj.id, shape: obj.shape, x: obj.x, y: obj.y },
-        idx,
-      );
+      // Raw shapes / drawing objects are NOT tagged children: their geometry is
+      // merged into the frame's own inline shape body (see writeCPicFrame). They
+      // are partitioned out before writeElement is called, so reaching here would
+      // be a caller bug — never emit a CPicShape class (it would corrupt the §5.2
+      // running index that later backrefs depend on). Skip defensively.
       return;
     case "instance":
       writeInstance(w, ct, obj, idx);

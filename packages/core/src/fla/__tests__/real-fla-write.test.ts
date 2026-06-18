@@ -141,17 +141,33 @@ describe("saveRealFla — layers", () => {
 // invariant and §5.2 index allocation — i.e. it rejects exactly what Flash rejects.
 
 describe("saveRealFla — shape (strict CArchive structure)", () => {
-  it("a solid-fill rectangle keyframe parses cleanly and frames the page graph", () => {
+  it("a solid-fill rectangle keyframe stores its geometry INLINE (no CPicShape class)", () => {
+    // Real Flash keeps a frame's raw vector graphics as the frame's own inline
+    // shape body — NOT a tagged CPicShape child. A shape-only doc's Page 1 must
+    // therefore declare exactly {CPicPage, CPicLayer, CPicFrame} and nothing else;
+    // a stray CPicShape NEWCLASS corrupts the §5.2 running index and Flash refuses
+    // to open the doc.
     const doc = baseDoc([
       sceneWith("Scene 1", [layerWith("Layer 1", "normal", [solidRectShape(40, 50)])]),
     ]);
     const streams = __readAllStreamsForTest(saveRealFla(doc));
     validateContentsStream(streams.get("Contents")!);
     const page = validateTimelineStream(streams.get("Page 1")!);
-    expect(page.classes).toContain("CPicPage");
-    expect(page.classes).toContain("CPicLayer");
-    expect(page.classes).toContain("CPicFrame");
-    expect(page.classes).toContain("CPicShape");
+    expect(page.classes.sort()).toEqual(["CPicFrame", "CPicLayer", "CPicPage"]);
+    expect(page.classes).not.toContain("CPicShape");
+  });
+
+  it("two raw shapes on one frame merge into ONE inline shape (still no CPicShape)", () => {
+    const doc = baseDoc([
+      sceneWith("Scene 1", [
+        layerWith("Layer 1", "normal", [solidRectShape(10, 10), solidRectShape(120, 80)]),
+      ]),
+    ]);
+    const streams = __readAllStreamsForTest(saveRealFla(doc));
+    validateContentsStream(streams.get("Contents")!);
+    const page = validateTimelineStream(streams.get("Page 1")!);
+    expect(page.classes.sort()).toEqual(["CPicFrame", "CPicLayer", "CPicPage"]);
+    expect(page.classes).not.toContain("CPicShape");
   });
 });
 
