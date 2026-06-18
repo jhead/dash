@@ -412,51 +412,81 @@ function writeMergedShapeGeometry(w: ByteWriter, shapes: readonly ShapeDisplayOb
   w.u16(strokes.length);
   for (const s of strokes) writeLineStyle(w, s);
 
-  // Edge stream: for each run emit a style change then its edges. Deltas are in
-  // 8.8 twips relative to the running pen.
-  let curX = 0;
-  let curY = 0;
+  // Edge stream (§12.3) — Flash's canonical encoding. Two fixes vs the old
+  // emitter (which crashed Flash): (1) the initial moveTo is FOLDED into the
+  // first edge record's FROM field — a record always carries a TO — so N
+  // segments produce exactly N edge records == edgeCount (the old code wrote a
+  // standalone FROM-only move record + one per segment = N+1 records, so Flash
+  // read edgeCount records, hit the surplus record where it expected the
+  // terminator+cubicCount, read a garbage cubic count, and crashed). (2) Coords
+  // use the smallest form that fits: SHORT (s16 = round(px*40), 15.1 twips) when
+  // in range, else FLOAT (s32 of round(px*5120) = u8 frac + s24 int, 8.8 twips).
+  // For a plain rectangle this reproduces real Flash's exact type bytes
+  // (0xF3, 0x30, 0x30, 0x30) — verified against square-canon.fla.
+  const SHORT = 3;
+  const FLOAT = 2;
+  const SHORT_UNIT = EDGE_UNIT / 128; // 40 = px -> 15.1 twips
+  const formOf = (dx: number, dy: number): number => {
+    const sx = Math.round(dx * SHORT_UNIT);
+    const sy = Math.round(dy * SHORT_UNIT);
+    return sx >= -32768 && sx <= 32767 && sy >= -32768 && sy <= 32767 ? SHORT : FLOAT;
+  };
+  const emitDelta = (form: number, dx: number, dy: number): void => {
+    if (form === SHORT) {
+      w.s16(Math.round(dx * SHORT_UNIT)).s16(Math.round(dy * SHORT_UNIT));
+    } else {
+      w.s32(Math.round(dx * EDGE_UNIT)).s32(Math.round(dy * EDGE_UNIT));
+    }
+  };
+  let penX = 0;
+  let penY = 0;
   for (const run of runs) {
-    const offX = Math.round(run.ox * EDGE_UNIT);
-    const offY = Math.round(run.oy * EDGE_UNIT);
-    // Style change (bit 0x40) + "no selection info" (bit 0x80): order line,
-    // fill0, fill1. Combine with a move (delta1) to the run start.
-    const startX = offX + Math.round(run.start.x * EDGE_UNIT);
-    const startY = offY + Math.round(run.start.y * EDGE_UNIT);
-    // flags: 0x40 style change, 0x80 no-sel, delta1 type 2 (s32 move).
-    w.u8(0x40 | 0x80 | 0x02);
-    w.u8(run.line & 0xff);
-    w.u8(run.fill0 & 0xff);
-    w.u8(run.fill1 & 0xff);
-    w.s32(startX - curX);
-    w.s32(startY - curY);
-    curX = startX;
-    curY = startY;
-
+    const sx = run.ox + run.start.x;
+    const sy = run.oy + run.start.y;
+    let first = true;
     for (const seg of run.segs) {
-      if (seg.type === "line") {
-        const tx = offX + Math.round(seg.to.x * EDGE_UNIT);
-        const ty = offY + Math.round(seg.to.y * EDGE_UNIT);
-        // delta1 (from) type 0 = stay; delta3 (to) type 2; delta2 (ctrl) type 0.
-        w.u8(0x20); // bits[5:4]=10 -> delta3 type 2
-        w.s32(tx - curX);
-        w.s32(ty - curY);
-        curX = tx;
-        curY = ty;
+      const tx = run.ox + seg.to.x;
+      const ty = run.oy + seg.to.y;
+      if (first) {
+        // First record: style change (0x40) + no-sel (0x80), the folded move
+        // (FROM = pen -> run start, omitted if zero), then the first edge.
+        const fdx = sx - penX;
+        const fdy = sy - penY;
+        const hasFrom = Math.round(fdx * SHORT_UNIT) !== 0 || Math.round(fdy * SHORT_UNIT) !== 0;
+        const fForm = hasFrom ? formOf(fdx, fdy) : 0;
+        if (seg.type === "line") {
+          const tForm = formOf(tx - sx, ty - sy);
+          w.u8(0x80 | 0x40 | (tForm << 4) | fForm);
+          w.u8(run.line & 0xff).u8(run.fill0 & 0xff).u8(run.fill1 & 0xff);
+          if (hasFrom) emitDelta(fForm, fdx, fdy);
+          emitDelta(tForm, tx - sx, ty - sy);
+        } else {
+          const cx = run.ox + seg.control.x;
+          const cy = run.oy + seg.control.y;
+          const cForm = formOf(cx - sx, cy - sy);
+          const tForm = formOf(tx - cx, ty - cy);
+          w.u8(0x80 | 0x40 | (tForm << 4) | (cForm << 2) | fForm);
+          w.u8(run.line & 0xff).u8(run.fill0 & 0xff).u8(run.fill1 & 0xff);
+          if (hasFrom) emitDelta(fForm, fdx, fdy);
+          emitDelta(cForm, cx - sx, cy - sy);
+          emitDelta(tForm, tx - cx, ty - cy);
+        }
+        first = false;
+      } else if (seg.type === "line") {
+        const tForm = formOf(tx - penX, ty - penY);
+        w.u8(tForm << 4);
+        emitDelta(tForm, tx - penX, ty - penY);
       } else {
-        const cx = offX + Math.round(seg.control.x * EDGE_UNIT);
-        const cy = offY + Math.round(seg.control.y * EDGE_UNIT);
-        const tx = offX + Math.round(seg.to.x * EDGE_UNIT);
-        const ty = offY + Math.round(seg.to.y * EDGE_UNIT);
-        // delta2 (ctrl) type 2 (bits[3:2]=10 => 0x08), delta3 (to) type 2 (0x20).
-        w.u8(0x08 | 0x20);
-        w.s32(cx - curX); // control delta (from = cur, since d1 type 0)
-        w.s32(cy - curY);
-        w.s32(tx - cx); // to delta (relative to control, since to = from + d3, from=cur)
-        w.s32(ty - cy);
-        curX = tx;
-        curY = ty;
+        const cx = run.ox + seg.control.x;
+        const cy = run.oy + seg.control.y;
+        const cForm = formOf(cx - penX, cy - penY);
+        const tForm = formOf(tx - cx, ty - cy);
+        w.u8((tForm << 4) | (cForm << 2));
+        emitDelta(cForm, cx - penX, cy - penY);
+        emitDelta(tForm, tx - cx, ty - cy);
       }
+      penX = tx;
+      penY = ty;
     }
   }
   w.u8(0); // edge terminator
