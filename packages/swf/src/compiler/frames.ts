@@ -251,6 +251,12 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
           tabOrderActions.push("_root.tabChildren = false;");
         }
 
+        // Collect _accProps DoAction scripts for newly-placed instances with accessibility
+        // name / description / shortcut / forceSimple fields set.
+        // Flash 8 uses the _accProps object on a MovieClip to expose accessibility info
+        // to MSAA screen readers (equivalent to AS2 `mc._accProps.name = "..."` etc.).
+        const accPropsActions: string[] = [];
+
         // Collect _quality initialization script for scene 0 / frame 0.
         // Flash Player default is "HIGH"; only emit when explicitly set to something else.
         const qualityActions: string[] = [];
@@ -952,6 +958,52 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
               );
             }
 
+            // If this is a newly-placed instance with _accProps fields (name,
+            // description, shortcut, forceSimple), emit an AS2 DoAction to set
+            // the _accProps object on the instance. Flash 8 exposes these to
+            // MSAA screen readers via the _accProps MovieClip property.
+            // Requires an instanceName to address the object (_root.name).
+            if (
+              displayObj.type === "instance" &&
+              displayObj.instanceName &&
+              displayObj.instanceName.length > 0 &&
+              displayObj.accessibility != null
+            ) {
+              const acc = displayObj.accessibility;
+              const hasName = acc.name != null && acc.name !== "";
+              const hasDesc = acc.description != null && acc.description !== "";
+              const hasShortcut = acc.shortcut != null && acc.shortcut !== "";
+              const hasForceSimple = acc.forceSimple != null;
+              if (hasName || hasDesc || hasShortcut || hasForceSimple) {
+                const iname = displayObj.instanceName;
+                // Build the _accProps script:
+                //   var _ap = new Object();
+                //   _ap.name = "...";          // optional
+                //   _ap.description = "...";   // optional
+                //   _ap.shortcut = "...";       // optional
+                //   _ap.forceSimple = true;     // optional
+                //   _root.iname._accProps = _ap;
+                const parts: string[] = ["var _ap = new Object();"];
+                if (hasName) {
+                  const escaped = (acc.name as string).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+                  parts.push(`_ap.name = "${escaped}";`);
+                }
+                if (hasDesc) {
+                  const escaped = (acc.description as string).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+                  parts.push(`_ap.description = "${escaped}";`);
+                }
+                if (hasShortcut) {
+                  const escaped = (acc.shortcut as string).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+                  parts.push(`_ap.shortcut = "${escaped}";`);
+                }
+                if (hasForceSimple) {
+                  parts.push(`_ap.forceSimple = ${acc.forceSimple ? "true" : "false"};`);
+                }
+                parts.push(`_root.${iname}._accProps = _ap;`);
+                accPropsActions.push(parts.join(""));
+              }
+            }
+
             depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
           } else if (posChanged) {
             // Object moved, scaled, rotated, or replaced — emit PlaceObject2+Move
@@ -1474,6 +1526,17 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
         // Emit DoAction for tab-order scripts (accessibility.tabIndex / useCustomTabOrder).
         // Global script (_root.tabChildren = false) is first, then per-object scripts.
         for (const script of tabOrderActions) {
+          const actionBytes = compileAS2(script);
+          if (actionBytes.length > 0) {
+            const doActionBody = new Uint8Array(actionBytes.length + 1);
+            doActionBody.set(actionBytes);
+            // doActionBody[actionBytes.length] is already 0x00 (EndAction)
+            writer.writeTag(Tag.DoAction, doActionBody);
+          }
+        }
+
+        // Emit DoAction for _accProps scripts (accessibility name/description/shortcut).
+        for (const script of accPropsActions) {
           const actionBytes = compileAS2(script);
           if (actionBytes.length > 0) {
             const doActionBody = new Uint8Array(actionBytes.length + 1);

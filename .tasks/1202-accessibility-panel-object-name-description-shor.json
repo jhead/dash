@@ -1,10 +1,10 @@
 {
   "id": "1202-accessibility-panel-object-name-description-shor",
   "title": "Accessibility panel: object name/description/shortcut + screen-reader exposure",
-  "description": "Implement the Accessibility panel per docs/17-advanced-specialized.md (Accessibility section). FIRST verify the current state of packages/authoring-ui/src/AccessibilityPanel.tsx (it may be a stub) and the DisplayObject model. Scope: (1) UI fields for selected object's accessible name, description, shortcut, tab index, and an 'make object accessible' checkbox; (2) persist these fields on the display-object/document model (core) so FLA save/load round-trips them; (3) emit them at publish into the SWF as _accProps (AS2) or accessibility metadata in packages/swf (assemble.ts or a dedicated pass). Primary files: packages/authoring-ui/src/AccessibilityPanel.tsx, packages/core model types, packages/swf compiler. DONE = panel edits persist on the model, unit tests cover the model round-trip + SWF emit, typecheck + all three unit suites (swf/core/authoring-ui) green. Update docs/17 if behavior detail changes.",
-  "status": "open",
+  "description": "Implementation complete (task 1202).\n\nSCOPE:\n1. UI: AccessibilityPanel.tsx already fully implemented (floating panel with doc + object sections).\n2. Model: DocumentAccessibility + ObjectAccessibility types already in packages/core. Added accessibility.test.ts with 14 model round-trip tests.\n3. SWF emit: Added _accProps emission in packages/swf/src/compiler/frames.ts. When an instance has accessibility.name/description/shortcut/forceSimple + instanceName, emits a DoAction setting _root.name._accProps = {...}. Added 6 new _accProps unit tests to accessibility.test.ts.\n\nTEST RESULTS:\n- pnpm --filter @flash/swf run test -- --run: 1354 passed, 2 skipped, 1 todo (only failure: pre-existing Magnet.fla fixture path at /Users/jhead/...)\n- pnpm --filter @flash/core run test -- --run: 5172 passed (14 failed = pre-existing Magnet/golden FLA fixture paths only, same as before)\n- pnpm --filter @flash/authoring-ui run test -- --run: 665 passed (42 test files, all green)\n- pnpm -r typecheck: all packages pass\n\nFILES CHANGED:\n- packages/swf/src/compiler/frames.ts: added _accProps DoAction emission\n- packages/swf/src/__tests__/accessibility.test.ts: added 6 _accProps tests (22 total now)\n- packages/core/src/model/__tests__/accessibility.test.ts: NEW - 14 model round-trip tests\n- docs/17-advanced-specialized.md: updated Accessibility section with implementation status",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-18T23:09:58Z",
-  "updated_at": "2026-06-18T23:09:58Z"
+  "updated_at": "2026-06-18T23:33:31Z"
 }

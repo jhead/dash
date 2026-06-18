@@ -5,14 +5,29 @@ These are real parity targets but reasonable to schedule in later phases.
 
 ## Accessibility
 
-- **Accessibility panel** — expose `name`, `description`, `shortcut`, and whether an object
-  is accessible to **screen readers** (MSAA on Windows).
+**Status: implemented (task 1202)**
+
+- **Accessibility panel** — `Window > Accessibility` floating panel. Document section:
+  "Make movie accessible", "Make child objects accessible", "Use custom tab order" checkboxes.
+  Object section (shown when a SymbolInstance or text object is selected): "Make object
+  accessible" checkbox, Name, Description, Shortcut, Tab index fields, and "Force simple"
+  checkbox.
+- **Model**: `DocumentAccessibility` on `FlashDocument.accessibility`; `ObjectAccessibility`
+  on `SymbolInstance.accessibility` / `TextDisplayObject.accessibility`. Both are pure-data
+  interfaces in `packages/core`. Changes propagate through history via `pushDoc`.
+- **SWF emit** (`packages/swf/src/compiler/frames.ts`):
+  - `useCustomTabOrder=true` → emits a DoAction `_root.tabChildren = false;` on frame 0.
+  - Instance with `accessibility.tabIndex` + `instanceName` → emits DoAction
+    `_root.name.tabEnabled = T; _root.name.tabIndex = N;` when first placed.
+  - Instance with `accessibility.name/description/shortcut/forceSimple` + `instanceName`
+    → emits a DoAction that sets `_accProps` on the instance:
+    `var _ap=new Object(); _ap.name="…"; … _root.name._accProps=_ap;`
 - Per-object and per-document accessibility settings; `_accProps` via ActionScript;
   `System.capabilities.hasAccessibility`.
 - **Tab order / reading order** — author tab index for keyboard navigation; Accessibility
   panel tab-order tools (Pro).
 - Accessible v2 components (`enableAccessibility()`); captions/text alternatives for
-  hearing-impaired users.
+  hearing-impaired users — **not yet implemented**.
 
 ## Screens — Slides & Forms (Pro only)
 

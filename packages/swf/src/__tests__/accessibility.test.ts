@@ -528,3 +528,161 @@ describe("Tab-order DoAction emission", () => {
     expect(doActionContains(tags, "comboClip")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests: _accProps DoAction emission
+// ---------------------------------------------------------------------------
+
+describe("_accProps DoAction emission", () => {
+  it("instance with accessibility.name emits _accProps DoAction containing the name", () => {
+    const sym = makeSymbol("sym-acc-name");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-acc-name",
+      symbolId: "sym-acc-name",
+      x: 0,
+      y: 0,
+      instanceName: "myButton",
+      accessibility: {
+        enabled: true,
+        name: "Submit Button",
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "_accProps")).toBe(true);
+    expect(doActionContains(tags, "Submit Button")).toBe(true);
+    expect(doActionContains(tags, "myButton")).toBe(true);
+  });
+
+  it("instance with accessibility.description emits _accProps DoAction containing the description", () => {
+    const sym = makeSymbol("sym-acc-desc");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-acc-desc",
+      symbolId: "sym-acc-desc",
+      x: 0,
+      y: 0,
+      instanceName: "descClip",
+      accessibility: {
+        enabled: true,
+        description: "Activates the main menu",
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "_accProps")).toBe(true);
+    expect(doActionContains(tags, "Activates the main menu")).toBe(true);
+    expect(doActionContains(tags, "descClip")).toBe(true);
+  });
+
+  it("instance with accessibility.shortcut emits _accProps DoAction containing the shortcut", () => {
+    const sym = makeSymbol("sym-acc-sc");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-acc-sc",
+      symbolId: "sym-acc-sc",
+      x: 0,
+      y: 0,
+      instanceName: "scClip",
+      accessibility: {
+        enabled: true,
+        shortcut: "Alt+M",
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "_accProps")).toBe(true);
+    expect(doActionContains(tags, "Alt+M")).toBe(true);
+    expect(doActionContains(tags, "scClip")).toBe(true);
+  });
+
+  it("instance with all _accProps fields emits them all in the DoAction", () => {
+    const sym = makeSymbol("sym-acc-all");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-acc-all",
+      symbolId: "sym-acc-all",
+      x: 0,
+      y: 0,
+      instanceName: "fullClip",
+      accessibility: {
+        enabled: true,
+        name: "Nav Button",
+        description: "Opens navigation",
+        shortcut: "Ctrl+N",
+        forceSimple: true,
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "_accProps")).toBe(true);
+    expect(doActionContains(tags, "Nav Button")).toBe(true);
+    expect(doActionContains(tags, "Opens navigation")).toBe(true);
+    expect(doActionContains(tags, "Ctrl+N")).toBe(true);
+    expect(doActionContains(tags, "forceSimple")).toBe(true);
+    expect(doActionContains(tags, "fullClip")).toBe(true);
+  });
+
+  it("instance WITHOUT instanceName does NOT emit _accProps DoAction", () => {
+    const sym = makeSymbol("sym-acc-noname");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-acc-noname",
+      symbolId: "sym-acc-noname",
+      x: 0,
+      y: 0,
+      // no instanceName
+      accessibility: {
+        enabled: true,
+        name: "Hidden Name",
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "_accProps")).toBe(false);
+  });
+
+  it("instance with accessibility.enabled=true but no name/description/shortcut/forceSimple does NOT emit _accProps", () => {
+    const sym = makeSymbol("sym-acc-empty");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-acc-empty",
+      symbolId: "sym-acc-empty",
+      x: 0,
+      y: 0,
+      instanceName: "emptyClip",
+      accessibility: {
+        enabled: true,
+        // no name, description, shortcut, forceSimple
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "_accProps")).toBe(false);
+  });
+});
