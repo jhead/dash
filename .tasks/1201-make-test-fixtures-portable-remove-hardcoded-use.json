@@ -1,0 +1,10 @@
+{
+  "id": "1201-make-test-fixtures-portable-remove-hardcoded-use",
+  "title": "Make test fixtures portable (remove hardcoded /Users/jhead absolute paths)",
+  "description": "Six test/spec failures on any non-author machine stem from a hardcoded macOS absolute path '/Users/jhead/dev/flash/packages/core/fixtures/Magnet.fla' (and siblings). Affected files: packages/core/src/fla/__tests__/verify-sounds-debug.test.ts, packages/core/src/fla/__tests__/magnet-inspect.test.ts, packages/swf/src/__tests__/magnet-charids.test.ts, apps/desktop/e2e/magnet-fla-oracle.spec.ts, apps/desktop/e2e/golden-fla-oracle.spec.ts. Replace every hardcoded /Users/jhead path with a path resolved relative to the test file (e.g. fileURLToPath(import.meta.url) + path.resolve) or the repo root, pointing at the in-repo fixtures (fixtures/Magnet.fla and packages/core/fixtures/Magnet.fla, fixtures/golden/). DONE = grep -r '/Users/jhead' packages apps returns nothing AND 'pnpm --filter @flash/core run test -- --run' and 'pnpm --filter @flash/swf run test -- --run' are fully green (0 failed test files). Do not weaken/skip the tests; make them resolve the bundled fixtures.",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-18T23:09:02Z",
+  "updated_at": "2026-06-18T23:09:02Z"
+}
