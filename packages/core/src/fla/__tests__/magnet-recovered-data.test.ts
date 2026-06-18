@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { tryLoadRealFla } from "../ole.js";
 import type { FlaItemId, LibraryItem } from "../../model/types.js";
 
@@ -14,7 +16,7 @@ import type { FlaItemId, LibraryItem } from "../../model/types.js";
  */
 function loadMagnet() {
   const bytes = new Uint8Array(
-    readFileSync("/Users/jhead/dev/flash/packages/core/fixtures/Magnet.fla"),
+    readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/Magnet.fla")),
   );
   const doc = tryLoadRealFla(bytes);
   if (!doc) throw new Error("failed to load Magnet.fla");

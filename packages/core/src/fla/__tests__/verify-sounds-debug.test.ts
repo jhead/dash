@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { parseFla8Contents } from "../flash8-binary";
 
 // Access internal OLE2 parsing via flash8-import which uses ole.ts
@@ -23,7 +25,7 @@ describe("Magnet.fla Contents stream debug", () => {
     
     // Can't monkey-patch exported functions easily in ESM
     // Instead, let's just use tryLoadRealFla and check the library
-    const flaBytes = new Uint8Array(readFileSync("/Users/jhead/dev/flash/fixtures/Magnet.fla").buffer);
+    const flaBytes = new Uint8Array(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../fixtures/Magnet.fla")).buffer);
     
     const warnings: string[] = [];
     const origWarn = console.warn;

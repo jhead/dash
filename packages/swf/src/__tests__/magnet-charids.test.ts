@@ -15,11 +15,13 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { loadFla } from "@flash/core";
 import { compileDocument } from "../compile.js";
 
 function fixture(name: string): Uint8Array {
-  return new Uint8Array(readFileSync(`/Users/jhead/dev/flash/packages/core/fixtures/${name}`));
+  return new Uint8Array(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../../core/fixtures", name)));
 }
 
 // ---------------------------------------------------------------------------

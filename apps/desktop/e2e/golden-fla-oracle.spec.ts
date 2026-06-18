@@ -14,6 +14,8 @@
 import { test, expect } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { readFileSync, writeFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 
 function countContentPixels(buf: Buffer): { dark: number; colored: number; white: number; total: number } {
   const img = PNG.sync.read(buf);
@@ -69,7 +71,7 @@ test.describe('golden.fla Ruffle rendering oracle (task 1190)', () => {
     });
 
     // Load golden.fla via the __flashTest bridge
-    const flaBase64 = readFileSync('/Users/jhead/dev/flash/fixtures/golden/golden.fla').toString('base64');
+    const flaBase64 = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/golden/golden.fla')).toString('base64');
     await page.evaluate((b64) => {
       (window as unknown as { __flashTest: { loadFlaBytes: (b: string) => void } }).__flashTest.loadFlaBytes(b64);
     }, flaBase64);

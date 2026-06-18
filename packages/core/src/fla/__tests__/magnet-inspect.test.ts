@@ -1,11 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { tryLoadRealFla } from "../ole.js";
 import type { Layer } from "../../model/types.js";
 
+const MAGNET_FLA = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/Magnet.fla");
+
 describe("Magnet.fla inspection", () => {
   it("has 6 scenes in authored play order (Contents-stream order, not Page-N order)", () => {
-    const bytes = new Uint8Array(readFileSync("/Users/jhead/dev/flash/packages/core/fixtures/Magnet.fla"));
+    const bytes = new Uint8Array(readFileSync(MAGNET_FLA));
     const doc = tryLoadRealFla(bytes);
     if (!doc) throw new Error("failed to load");
 
@@ -25,7 +29,7 @@ describe("Magnet.fla inspection", () => {
   });
 
   it("has 'menu' frame label in Scene 5 at frame 1", () => {
-    const bytes = new Uint8Array(readFileSync("/Users/jhead/dev/flash/packages/core/fixtures/Magnet.fla"));
+    const bytes = new Uint8Array(readFileSync(MAGNET_FLA));
     const doc = tryLoadRealFla(bytes);
     if (!doc) throw new Error("failed to load");
 
@@ -46,7 +50,7 @@ describe("Magnet.fla inspection", () => {
   });
 
   it("scene AA (scene 0) has Ball/Walls/Magnets as masked under Layer 5 mask", () => {
-    const bytes = new Uint8Array(readFileSync("/Users/jhead/dev/flash/packages/core/fixtures/Magnet.fla"));
+    const bytes = new Uint8Array(readFileSync(MAGNET_FLA));
     const doc = tryLoadRealFla(bytes);
     if (!doc) throw new Error("failed to load");
 
@@ -78,7 +82,7 @@ describe("Magnet.fla inspection", () => {
   });
 
   it("ballmask symbol (Symbol 27) has gotoAndPlay navigation script at frame 9", () => {
-    const bytes = new Uint8Array(readFileSync("/Users/jhead/dev/flash/packages/core/fixtures/Magnet.fla"));
+    const bytes = new Uint8Array(readFileSync(MAGNET_FLA));
     const doc = tryLoadRealFla(bytes);
     if (!doc) throw new Error("failed to load");
 
