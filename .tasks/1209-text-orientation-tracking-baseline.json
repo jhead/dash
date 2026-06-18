@@ -1,0 +1,10 @@
+{
+  "id": "1209-text-orientation-tracking-baseline",
+  "title": "Text typography: vertical orientation + tracking (letter-spacing) + baseline shift",
+  "description": "Implement per docs/06-text-typography.md. FIRST verify ground truth \u2014 this codebase is mature; read the text model + PropertiesPanel text section in packages/authoring-ui, the text render path in packages/core engine renderer, and the SWF text encode in packages/swf (text.ts / DefineText/EditText). If any sub-part already exists, NARROW scope to the genuine gap and note findings in the task. Scope (the missing typography controls): (1) Orientation \u2014 horizontal, vertical left-to-right, vertical right-to-left (radio in Properties text section; stage render rotates the text block accordingly; persist on model); (2) Tracking (letter-spacing) \u2014 numeric control applied as a per-glyph advance delta on stage AND in DefineText advances; (3) Baseline shift (superscript/subscript) \u2014 numeric control applied as a glyph y-offset on stage AND in the text record. Persist all three on the text model so FLA save/load round-trips them. Primary files: packages/authoring-ui PropertiesPanel (text section) + text model, packages/core engine renderer (text), packages/swf text.ts. DONE = the three controls visibly affect the stage render and are encoded into the SWF text record (unit tests on advance-delta + y-offset + orientation), typecheck + core + swf + authoring-ui suites green (modulo KNOWN pre-existing core fails: missing fixtures/flash8-empty.fla \u2014 task 1207; add NO new failures). Update docs/06 if behavior detail changes.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:34:00Z",
+  "updated_at": "2026-06-18T23:34:00Z"
+}
