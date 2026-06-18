@@ -504,7 +504,7 @@ export function MenuBar({
   simpleButtonsEnabled = false,
 }: MenuBarProps = {}): React.ReactElement {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const { newDocument, openDocument, saveDocument, saveDocumentAs } =
+  const { newDocument, openDocument, saveDocument, saveDocumentAs, exportBinaryFla } =
     useFileActions();
 
   const closeMenu = useCallback(() => setOpenMenu(null), []);
@@ -533,6 +533,11 @@ export function MenuBar({
     if (savedPath) onFilePathChange?.(savedPath);
   }, [document, filePath, saveDocumentAs, onFilePathChange]);
 
+  const handleExportBinaryFla = useCallback(async () => {
+    if (!document) return;
+    await exportBinaryFla(document, filePath);
+  }, [document, filePath, exportBinaryFla]);
+
   const MENUS: MenuDefinition[] = [
     {
       name: "File",
@@ -541,6 +546,7 @@ export function MenuBar({
         { label: "Open...", action: () => { void handleOpen(); } },
         { label: "Save", action: () => { void handleSave(); }, separator: true },
         { label: "Save As...", action: () => { void handleSaveAs(); } },
+        { label: "Export Flash 8 (.fla binary)...", action: () => { void handleExportBinaryFla(); } },
         { label: "Import to Library...", action: () => { onImportToLibrary?.(); }, separator: true },
         { label: "Import to Stage...", action: () => { onImportToStage?.(); } },
         { label: "Import Sound...", action: () => { onImportSound?.(); } },

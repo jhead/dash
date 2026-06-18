@@ -1,7 +1,7 @@
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { readFile, writeFile } from "@tauri-apps/plugin-fs";
 import { createDocument, createBitmap, createSound, createVideo } from "@flash/core";
-import { saveFla, loadFla } from "@flash/core";
+import { saveFla, saveRealFla, loadFla } from "@flash/core";
 import type { BitmapItem, SoundItem, VideoItem, FlashDocument } from "@flash/core";
 
 const FLA_FILTERS = [{ name: "Dash Document", extensions: ["fla"] }];
@@ -215,6 +215,69 @@ export function useFileActions() {
     } catch (err) {
       const msg = `Failed to write file "${savePath}". Make sure the Tauri app has file-system permissions.`;
       console.error("[useFileActions] writeFile failed:", err);
+      alert(msg);
+      return null;
+    }
+  }
+
+  /**
+   * Export the document as a genuine Macromedia Flash 8 BINARY .fla
+   * (OLE2 / MFC-CArchive format) that real Flash / Animate can open — as
+   * opposed to Save / Save As, which write this app's own lossless ZIP+JSON
+   * .fla format.
+   *
+   * EXPERIMENTAL: the binary writer is spec-faithful for the container,
+   * Contents catalog and stage block, but its shape-edge and instance-header
+   * encodings are not yet byte-verified against real Flash 8. Treat the output
+   * as a test artifact, not a production save.
+   *
+   * In the Tauri desktop app this uses the native save dialog; in browser mode
+   * (pnpm dev:browser) it triggers a download. Returns the chosen path/name, or
+   * null if the user cancelled.
+   */
+  async function exportBinaryFla(
+    doc: FlashDocument,
+    currentPath?: string
+  ): Promise<string | null> {
+    const base = basenameOf(currentPath, "untitled.fla").replace(/\.fla$/i, "");
+    const suggested = `${base}-flash8.fla`;
+
+    if (!isTauri()) {
+      const answer = window.prompt("Export Flash 8 binary .fla as:", suggested);
+      if (answer === null) return null; // user cancelled
+      const name = answer.trim() || suggested;
+      const filename = name.endsWith(".fla") ? name : `${name}.fla`;
+      const bytes = saveRealFla(doc);
+      downloadFla(bytes, filename);
+      return filename;
+    }
+
+    let chosen: string | null;
+    try {
+      chosen = await dialogSave({
+        title: "Export Flash 8 Binary Document",
+        filters: FLA_FILTERS,
+        defaultPath: suggested,
+      });
+    } catch (err) {
+      const msg =
+        "File dialogs require the Tauri desktop app. " +
+        "Run `pnpm dev` (not `pnpm dev:browser`) to save files to disk.";
+      console.error("[useFileActions] exportBinaryFla dialog failed:", err);
+      alert(msg);
+      return null;
+    }
+
+    if (!chosen) return null;
+
+    const savePath = chosen.endsWith(".fla") ? chosen : `${chosen}.fla`;
+    try {
+      const bytes = saveRealFla(doc);
+      await writeFile(savePath, bytes);
+      return savePath;
+    } catch (err) {
+      const msg = `Failed to write file "${savePath}". Make sure the Tauri app has file-system permissions.`;
+      console.error("[useFileActions] exportBinaryFla writeFile failed:", err);
       alert(msg);
       return null;
     }
@@ -455,5 +518,5 @@ export function useFileActions() {
     return { item, dataUri };
   }
 
-  return { newDocument, openDocument, saveDocument, saveDocumentAs, importToLibrary, importSoundToLibrary, importVideoToLibrary };
+  return { newDocument, openDocument, saveDocument, saveDocumentAs, exportBinaryFla, importToLibrary, importSoundToLibrary, importVideoToLibrary };
 }
