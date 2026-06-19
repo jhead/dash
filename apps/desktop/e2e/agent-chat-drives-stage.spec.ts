@@ -122,10 +122,30 @@ test.describe("Agent Chat drives the stage", () => {
       page.locator('[data-testid="agent-tool-name"]').first()
     ).toHaveText("stage_add_shape");
 
-    // THE ORACLE: the live document gained a shape — the chat drove authoring.
-    await expect
-      .poll(() => countShapes(page), { timeout: 10_000 })
-      .toBe(before + 1);
+    // Wait for the turn to fully settle. While the agent is `running` the
+    // composer shows a Stop button; once the model loop reaches its terminal
+    // `stop` the Send button comes back. Waiting for that swap is the correct
+    // deterministic settle point — by here the shape count is FINAL, not a
+    // mid-flight snapshot. (A polling-only assertion can pass by catching a
+    // transient count of 1 during a multi-dispatch storm; we want the settled
+    // count so a regression to per-step re-emit would FAIL here.)
+    await expect(page.locator('[data-testid="agent-stop"]')).toHaveCount(0, {
+      timeout: 15_000,
+    });
+    await expect(page.locator('[data-testid="agent-send"]')).toBeVisible();
+
+    // THE ORACLE: the live document gained EXACTLY ONE shape — the chat drove
+    // authoring with a single tool call. A correct single-action turn calls
+    // stage_add_shape ONCE; if the stubbed model re-emitted the tool call on
+    // every step (the bug this spec guards against), the count would be N
+    // (== the stepCount cap), not before+1. Asserting the exact settled count
+    // (not just >before) is what proves one-and-only-one dispatch.
+    expect(await countShapes(page)).toBe(before + 1);
+
+    // And exactly one tool-call chip rendered — one model tool round, one chip.
+    await expect(
+      page.locator('[data-testid="agent-tool-chip"]')
+    ).toHaveCount(1);
 
     // Sanity: the tool chip resolved successfully (no error state).
     await expect(

@@ -42,34 +42,62 @@ export function makeStubRunTurn(
   toolCalls: StubToolCall[]
 ): (options: RunAgentOptions) => Promise<RunAgentResult> {
   return (options: RunAgentOptions): Promise<RunAgentResult> => {
+    // A realistic single-action turn is TWO model steps:
+    //   step 0: emit the scripted tool call(s) → AI SDK auto-executes them →
+    //           appends the tool result(s) to the message history → loops.
+    //   step 1: with the tool result(s) in context, emit a final plain-text
+    //           answer and finishReason:'stop' (NO tool-call) so the
+    //           `stopWhen: stepCountIs` loop terminates after exactly one tool
+    //           round. This is what a real model does — call the tool once,
+    //           then summarize. The old stub re-emitted the tool call on EVERY
+    //           doStream invocation, so the loop ran to the stepCount cap and
+    //           dispatched the tool N times (N rectangles). The call index in
+    //           this closure is what makes the turn terminate after one round.
+    let stepIndex = 0;
     const model = new MockLanguageModelV3({
       doStream: async () => {
+        const isFirstStep = stepIndex === 0;
+        stepIndex += 1;
         const callId = `stub-${Math.random().toString(36).slice(2)}`;
         const parts: unknown[] = [{ type: "stream-start", warnings: [] }];
-        for (let i = 0; i < toolCalls.length; i++) {
-          const tc = toolCalls[i];
-          const id = `${callId}-${i}`;
-          if (tc.text) {
-            parts.push({ type: "text-start", id });
-            parts.push({ type: "text-delta", id, delta: tc.text });
-            parts.push({ type: "text-end", id });
+
+        if (isFirstStep) {
+          // First step: the scripted assistant text + tool call(s).
+          for (let i = 0; i < toolCalls.length; i++) {
+            const tc = toolCalls[i];
+            const id = `${callId}-${i}`;
+            if (tc.text) {
+              parts.push({ type: "text-start", id });
+              parts.push({ type: "text-delta", id, delta: tc.text });
+              parts.push({ type: "text-end", id });
+            }
+            parts.push({
+              type: "tool-call",
+              toolCallId: id,
+              toolName: tc.toolName,
+              input: JSON.stringify(tc.args),
+            });
           }
           parts.push({
-            type: "tool-call",
-            toolCallId: id,
-            toolName: tc.toolName,
-            input: JSON.stringify(tc.args),
+            type: "finish",
+            finishReason: "tool-calls",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          });
+        } else {
+          // Subsequent step(s): after the tool result is in context, emit a
+          // final plain-text answer and STOP — no further tool calls. This
+          // terminates the multi-step loop after exactly one tool round.
+          const id = `${callId}-final`;
+          parts.push({ type: "text-start", id });
+          parts.push({ type: "text-delta", id, delta: "Done." });
+          parts.push({ type: "text-end", id });
+          parts.push({
+            type: "finish",
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
           });
         }
-        parts.push({
-          type: "finish",
-          finishReason: "tool-calls",
-          usage: {
-            inputTokens: 1,
-            outputTokens: 1,
-            totalTokens: 2,
-          },
-        });
+
         return {
           // simulateReadableStream yields the parts as a ReadableStream the AI
           // SDK consumes exactly like a real provider stream. Zero delays keep
