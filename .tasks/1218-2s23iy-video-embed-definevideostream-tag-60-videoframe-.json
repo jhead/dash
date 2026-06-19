@@ -1,0 +1,10 @@
+{
+  "id": "1218-2s23iy-video-embed-definevideostream-tag-60-videoframe-",
+  "title": "Video embed: DefineVideoStream (tag 60) + VideoFrame (tag 61) SWF emit",
+  "description": "Implement embedded video in the SWF compiler. videostream.test.ts (tests 6-8 skipped) documents that compile does NOT emit tag 60 (DefineVideoStream) or tag 61 (VideoFrame) and tags.ts lacks those Tag enum entries. Add the tag definitions, a VideoItem encode path, and wire it through the symbol/media compiler. VERIFY ground truth first (decoder/model may partly exist). Scope: packages/swf/src/tags.ts, packages/swf/src/compiler/{symbols,media}.ts, new video encode module. Un-skip and satisfy the videostream tests. Build + tests green; update docs/11-video.md.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T00:48:14Z",
+  "updated_at": "2026-06-19T00:48:14Z"
+}
