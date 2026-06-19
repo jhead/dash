@@ -1367,14 +1367,32 @@ export function Shell(): React.ReactElement {
 
   /** Handle rotation from TransformHandles overlay. */
   const handleFreeTransformRotate = useCallback(
-    (deltaAngle: number, _originX: number, _originY: number) => {
+    (deltaAngle: number, originX: number, originY: number) => {
       if (!selectedShapeId || !selectedDisplayObject) return;
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
       if (!layerId) return;
-      const origRotation = (selectedDisplayObject as { rotation?: number }).rotation ?? 0;
+      const obj = selectedDisplayObject as { rotation?: number; x: number; y: number };
+      const origRotation = obj.rotation ?? 0;
       const newRotation = origRotation + deltaAngle;
+      // The renderer rotates the shape about its LOCAL origin (obj.x, obj.y), but the
+      // transform handle pivots about the bounding-box center (originX, originY). Rotating
+      // only `rotation` would orbit the shape around its local origin, drifting its visual
+      // position. To pivot in place, rotate the object's origin offset from the pivot by
+      // deltaAngle about the pivot and write back the new origin alongside the rotation, so
+      // the point that was at (originX, originY) stays fixed after the rotation.
+      const rad = (deltaAngle * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const dx = obj.x - originX;
+      const dy = obj.y - originY;
+      const newX = originX + dx * cos - dy * sin;
+      const newY = originY + dx * sin + dy * cos;
       pushDoc(withTimeline((t) =>
-        updateDisplayObject(t, layerId, currentFrame, selectedShapeId, { rotation: newRotation })
+        updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
+          rotation: newRotation,
+          x: newX,
+          y: newY,
+        })
       ));
     },
     [selectedShapeId, selectedDisplayObject, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
