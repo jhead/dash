@@ -1,0 +1,10 @@
+{
+  "id": "1302-6mrs3t-as2-classes-p4-classes-panel-ui-bottom-dock-tab-",
+  "title": "AS2 classes P4: Classes panel UI (bottom-dock tab: file tree + .as editor)",
+  "description": "Human UI to define/edit/add/remove .as class files. Depends on P0 (model/mutations) + P2 (VFS). (1) New packages/authoring-ui/src/ClassesPanel.tsx: a two-pane panel \u2014 a file TREE (left: package folders + .as files, with add/remove/rename actions) and the REUSED ScriptEditor component from ActionsPanel.tsx (~327) on the right for editing the selected .as file (gets AS2 syntax highlighting + live parse-error gutter for free). (2) Dock as a NEW BOTTOM-DOCK tab 'Classes' (user decision) alongside Actions/Library: Shell.tsx BOTTOM_TABS (~517) + bottomTab state (~762) + mount the panel. (3) Wire reads/writes through the VFS (P2) + the doc mutations (P0) via pushDoc (history-safe); reflect changes in doc.asClasses. Keep desktop+narrow responsive behavior intact. VERIFY: build + authoring-ui tests green (only ~3 task-1207 fixtures acceptable); tests for tree add/remove/rename + editor load/save wiring. Conflict hotspot: Shell.tsx (BOTTOM_TABS/bottomTab). Depends on P0+P2; parallel with P3. ACQUIRE lock; commit incl task file; push rebase-retry.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-19T22:31:23Z",
+  "updated_at": "2026-06-19T22:31:23Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "1300-5zqrwv-as2-classes-p2-cross-platform-vfs-web-opfs-index",
+  "title": "AS2 classes P2: cross-platform VFS (web OPFS + IndexedDB fallback; Tauri native FS with disk mirror)",
+  "description": "Virtual filesystem for .as files working on BOTH web and Tauri. Depends on P0. (1) packages/core/src/vfs/: a pure ClassVfs interface (list/read/write/remove/exists over classpath-relative paths) \u2014 no DOM/Tauri imports (keep @flash/core portable). (2) packages/authoring-ui/src/vfs/ backends: WebClassVfs using OPFS (navigator.storage.getDirectory -> nested getDirectoryHandle/getFileHandle/createWritable; maps 1:1 to classpath packages), with an IndexedDB-backed fallback when OPFS is unavailable (navigator.storage?.getDirectory undefined). TauriClassVfs using @tauri-apps/plugin-fs rooted at the project classes/ dir. Mirror the isTauri() platform pattern in hooks/useFileActions.ts. (3) DESKTOP DISK MIRROR (user decision): on Tauri, .as files are written as REAL files on disk under a classes/ dir (Flash 8 external-classpath style, editable in external editors) and reconciled into the project on save; web uses OPFS + the .fla-embedded copy. (4) Hydrate/sync helpers: on project open, populate the VFS from doc.asClasses; on edit/save, sync VFS contents back into doc.asClasses (the .fla embed stays authoritative for portability; disk mirror reconciled on Tauri). VERIFY: build + authoring-ui tests green (only ~3 task-1207 fixtures acceptable); unit tests for the OPFS backend (or IndexedDB fallback in jsdom) + Tauri backend (mock plugin-fs) + hydrate/sync round-trip. Can parallelize with P1 (independent files). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: core/vfs + authoring-ui/vfs (+tests).",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-19T22:30:53Z",
+  "updated_at": "2026-06-19T22:30:53Z"
+}

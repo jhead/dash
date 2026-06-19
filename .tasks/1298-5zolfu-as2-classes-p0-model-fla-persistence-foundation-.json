@@ -1,0 +1,10 @@
+{
+  "id": "1298-5zolfu-as2-classes-p0-model-fla-persistence-foundation-",
+  "title": "AS2 classes P0: model + .fla persistence foundation (asClasses/classpaths) \u2014 preserve Flash 8 export",
+  "description": "Foundation for AS2 class support. Add to the document model + dash project persistence; ship invisibly behind tests. (1) packages/core/src/model/types.ts: add OPTIONAL fields to FlashDocument: asClasses (array of {path, source}; path is classpath-relative e.g. com/example/Foo.as) and classpaths (string[], default ['.']). Optional like publishProfiles/accessibility so existing fixtures/tests/binary-FLA writer are unaffected. (2) Persist in dash own zip .fla: packages/core/src/fla/zip.ts + serialize.ts/deserialize.ts \u2014 write each class as a classes/<path> zip entry AND keep asClasses in document.json; on load prefer zip entries (authoritative) else document.json; default classpaths ['.']. Bump SCHEMA_VERSION (loader already warns on newer). (3) Doc mutations in model/document-mutations.ts: addAsClass/updateAsClass/removeAsClass (history-safe). (4) CRITICAL Flash 8 export compatibility: verify adding these fields does NOT break the existing binary Flash 8 .fla EXPORT or any FLA round-trip; run the FLA writer/round-trip tests; the binary export should ignore asClasses for now (handled later in the export-compat phase) but MUST remain valid. VERIFY: build + core tests green (only ~3 task-1207 fixture failures acceptable); add unit tests for asClasses zip round-trip + mutations + that binary FLA export is unaffected. ACQUIRE lock; commit incl task file; push rebase-retry. Scope: core types/fla/mutations (+tests). Everything else (compile pass, VFS, tools, UI) depends on this.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-19T22:30:53Z",
+  "updated_at": "2026-06-19T22:30:53Z"
+}

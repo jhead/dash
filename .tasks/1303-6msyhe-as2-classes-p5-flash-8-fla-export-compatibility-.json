@@ -1,0 +1,10 @@
+{
+  "id": "1303-6msyhe-as2-classes-p5-flash-8-fla-export-compatibility-",
+  "title": "AS2 classes P5: Flash 8 .fla export compatibility (className linkage) + linkage autocomplete + capstone e2e",
+  "description": "Final phase: true Flash 8 export compatibility + UX polish + end-to-end capstone. Depends on P1+P2+P3+P4. (1) FLASH 8 FLA EXPORT COMPATIBILITY (user-emphasized): ensure a dash project with AS2 classes exports to a binary Flash 8 .fla that opens correctly in real Flash 8 \u2014 the compat-critical piece is writing the per-symbol 'AS 2.0 class' linkage (SymbolLinkage.className) into the binary FLA Symbol stream on export (real Flash 8 stores className in the Symbol-N stream; CLAUDE.md task 0863 notes className is currently NOT decoded/encoded). Treat .as files as EXTERNAL classpath files (the desktop disk mirror from P2) \u2014 document the classpath expectation; do NOT try to embed .as inside the binary .fla (Flash 8 keeps them external). Investigate the binary FLA writer; emit className linkage compatibly; round-trip test (write className -> read back). If full binary Symbol-stream className encoding proves infeasible, STOP and report findings rather than shipping a broken/incompatible export. (2) Linkage UX: class-name autocomplete in SymbolLinkageDialog.tsx sourced from the class list. (3) CAPSTONE Ruffle e2e: author a .as class on web (OPFS) via the UI, link it to a library MovieClip, publish, and verify runtime behavior (method call + trace) in Ruffle + the Output panel. VERIFY: build + all tests green (only ~3 task-1207 fixtures acceptable); capstone e2e passes; binary-FLA className round-trip test passes (or documented findings if infeasible). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: binary FLA writer/reader (className), SymbolLinkageDialog, capstone e2e.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-19T22:31:23Z",
+  "updated_at": "2026-06-19T22:31:23Z"
+}

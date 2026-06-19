@@ -1,0 +1,10 @@
+{
+  "id": "1301-6mqk55-as2-classes-p3-agent-tools-class-list-get-set-ch",
+  "title": "AS2 classes P3: agent tools (class_list/get/set/check/remove) + linkage",
+  "description": "Expose AS2 class authoring to the dash agent chat via tools. Depends on P0 (asClasses + mutations). The chat tool bridge auto-generates from COMMAND_SCHEMAS/COMMAND_DESCRIPTIONS (packages/authoring-ui/src/agentchat/tools.ts) so new commands reach the chat with zero per-tool code. Add to packages/agent-protocol/src/index.ts (ALL_COMMANDS + COMMAND_SCHEMAS + COMMAND_DESCRIPTIONS) and a handler each in packages/authoring-ui/src/agent/registry.ts (handlers map; each uses cb.getDoc()+cb.pushDoc(), history-safe; script_set ~1586 and script_check ~1600 are templates): class_list {} -> [{path, className}] from doc.asClasses; class_get {path} -> {source}; class_set {path, source} -> validate via parse() (AS2 parser), write via pushDoc, return {ok, rev, diagnostics}; class_remove {path} -> remove + pushDoc; class_check {source} -> parse-only diagnostics. Verify library_set_linkage (index.ts ~547, handler ~1798) sets className (not only linkageId) so the agent can link a class to a symbol; extend its schema if needed. VERIFY: build + agent-protocol/authoring-ui tests green (only ~3 task-1207 fixtures acceptable); unit tests that the tool set covers the new commands and each handler mutates the doc correctly (mock callbacks); the chat tool bridge picks them up. Conflict hotspots: agent-protocol/index.ts, registry.ts. Depends on P0; can parallelize with P4. ACQUIRE lock; commit incl task file; push rebase-retry.",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-19T22:31:23Z",
+  "updated_at": "2026-06-19T22:31:23Z"
+}
