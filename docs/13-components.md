@@ -345,5 +345,69 @@ editable `input` EditText carries the editable flags, confirmed by both the unit
 decode and the runtime `type=="input"` probe). The oracle does **not** synthesize keypresses
 and assert the field mutated — that path is acknowledged as not headless-drivable, not faked.
 
-**Still OUT OF SCOPE:** the niche long tail (List / ComboBox / DataGrid / Tree / containers /
-data-binding) and the real Halo skin assets remain gated on demand.
+**Still OUT OF SCOPE (after Part 2.4):** the selection controls (List / ComboBox) — closed
+by Part 2.5 below — and the remaining long tail (DataGrid / Tree / containers / data-binding)
+plus the real Halo skin assets.
+
+## Functional List + ComboBox (task 1235, Part 2.5)
+
+Part 2.5 closes the standard-controls slice with the two **selection controls** on the SAME
+`CONTROL_REGISTRY`. Unlike every prior control these need a **repeated-row skin**: the flat
+compile-time model does not know the author's item count (delivered live via the `labels`/
+`dataProvider`/`data` param), so the registry gains two declarative hooks and the skin emits a
+**fixed pool of named row EditText children** plus a movable selection highlight.
+
+1. **New registry plumbing (still declarative — no per-control if-chains):**
+   - `extraTextFields(w,h)` on `ControlSpec` — extra named EditText skin children beyond the
+     primary `label_txt`. List/ComboBox supply the row pool `row0_txt`..`row{N-1}_txt`
+     (`LIST_ROW_POOL = 8`), each with its own placement + read-only `dynamic` type. Items
+     beyond the pool are **not rendered** (scrolling is the deferred follow-on).
+   - `SkinMark` gains an optional `(x,y)` placement so the selection-highlight shape
+     (`hl_mk`) is placed on the first row and **re-positioned at runtime** by the class.
+   - A new `faceKind: "list"` draws the bordered white field box (same `buildInputFaceShape`).
+   - `encodeComponentSkinSprite` now layers depths so the highlight sits **below** the row
+     text (rows read on top of the blue band) and the ComboBox arrow on top: face(1) →
+     `hl_mk` → `label_txt` → row pool → remaining marks (`arrow_mk`).
+   - `controlKindFor` resolves `List`/`ComboBox` leaf names; everything else still → `button`.
+
+2. **Item delivery is the GENERIC param path — no new frames.ts plumbing.** The catalog
+   `labels`/`data` params are `array`-typed; `paramValueLiteral` already delivers them as the
+   model's comma-joined string via `setComponentParam`. Each control overrides
+   `setComponentParam` to split that string (`__splitItems`) and call `setItems`, which seeds
+   the row fields (`__seedRows`, hiding unused rows) and resets selection.
+
+3. **Class behaviour** (self-authored AS2, bound via the same registerClass DoInitAction;
+   shared row/selection machinery in `authorRowPoolHelpers`):
+   - **List** — rows render stacked from y=0; `label_txt` is hidden (the rows are the
+     content). A bbox-gated `onMouseDown` resolves the clicked row (`__rowAtMouse`) and
+     `setSelectedIndex` reflects it into a movable `hl_mk` highlight. Exposes
+     `getSelectedIndex`/`getSelectedItem`/`selectedIndex`/`selectedItem`, `getLength`,
+     `getItemAt`, and a `change` broadcast (`addEventListener`/`onChange`).
+   - **ComboBox** — a collapsed single-row display (`label_txt`) + a ▼ `arrow_mk` toggle;
+     the row pool is the **dropdown**, placed one row below and hidden until opened.
+     Clicking the collapsed row opens the dropdown (`__setOpen(true)`); clicking a dropdown
+     row selects it, updates the collapsed label, and closes; a click-away closes it. Same
+     selection API as List plus `isOpen`/`open`/`close`.
+
+**Verification.** Structural unit tests (`component-place.test.ts`, "functional selection
+controls") decode our own SWF and assert, per control: ExportAssets under the FQ class name, a
+class-definition DoInitAction (DefineFunction2) **before** registerClass, the **fixed row pool**
+of `label_txt + 8` placed EditTexts plus the highlight (List = face+highlight; ComboBox =
+face+highlight+arrow), and that the author's `labels` reach `setComponentParam`. The Ruffle
+acceptance oracle (`component-oracle.spec.ts`, "v2 selection controls runtime oracle") proves
+runtime behaviour with the RED→BLUE pattern: the author's items reach + parse into the live
+instance (`getItemAt(0)` == first item), a **List row click selects it** (`getSelectedIndex()`
+== clicked row), and the **ComboBox toggle opens the dropdown** (`isOpen()`).
+
+**Render-oracle note (explicit):** the field box is a white fill on a white
+`SetBackgroundColor`, so a raw non-white pixel count is an unreliable render signal for these
+controls (it reads ~0). The oracle therefore probes the **live item/selection model**
+(RED→BLUE) rather than counting pixels — the meaningful proof that items rendered into the rows
+AND selection/toggle work. Not faked: the model probe runs in real Ruffle.
+
+**DEFERRED as follow-on (NOT built):** a live scrollbar / scrolling for lists longer than the
+fixed row pool, and keyboard navigation (arrow-key row movement). Both are explicitly out of
+this slice's scope.
+
+**Still OUT OF SCOPE:** DataGrid / Tree / DateChooser / ScrollPane / Window / containers /
+data-binding, and the real Halo skin assets remain gated on demand.

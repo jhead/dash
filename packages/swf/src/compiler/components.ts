@@ -76,8 +76,27 @@
  * input/editable flags) — the Ruffle oracle asserts the author text RENDERS and that the
  * field is structurally editable, not that a synthesized keypress mutates it.
  *
+ * PART 2.5 (task 1235) extends the SAME registry to the two SELECTION controls —
+ * `mx.controls.List` and `mx.controls.ComboBox` — the final standard-controls slice.
+ * Unlike every prior control these need a REPEATED-ROW skin: a fixed POOL of named
+ * row EditText children (`row0_txt`..`rowN_txt`) plus a movable selection-highlight
+ * shape (`hl_mk`). The registry gains two declarative hooks for this:
+ *   - `extraTextFields(w,h)` — extra named EditText skin children beyond `label_txt`
+ *     (the List/ComboBox rows). Each carries its own placement (x,y,w,h) + type.
+ *   - a mark may carry an (x,y) placement offset (the highlight starts on row 0).
+ * The author's items arrive via the GENERIC param path: `dataProvider`/`labels` is a
+ * comma-joined string delivered by `setComponentParam`; the class splits it and seeds
+ * the row fields + manages selection. List renders the rows stacked, click-to-select
+ * highlights a row and exposes `selectedIndex`/`selectedItem`/`getSelectedItem`.
+ * ComboBox collapses to a single row + a ▼ toggle; the toggle shows/hides the row pool
+ * (the dropdown), selecting a row collapses it and updates the collapsed label.
+ * SCOPE: static items from the param + click selection + ComboBox show/hide. DEFERRED
+ * as follow-on (NOT built): live scrollbar/scrolling for long lists (the row pool is a
+ * fixed size — items beyond the pool are not shown) and keyboard navigation.
+ *
  * EXPLICITLY OUT OF SCOPE (later waves): the full `mx.controls.*` AS2 framework,
- * Halo skins, and the niche long tail (List / ComboBox / DataGrid / Tree / containers).
+ * Halo skins, and the remaining long tail (DataGrid / Tree / DateChooser / ScrollPane /
+ * Window / containers / data-binding).
  */
 import type {
   Color,
@@ -140,6 +159,9 @@ const LABEL_COLOR: Color = { r: 0x00, g: 0x00, b: 0x00, a: 0xff };
 /** Indicator box/circle fill (white) + the tick/dot mark colour (dark) for toggles. */
 const BOX_FILL_COLOR: Color = { r: 0xff, g: 0xff, b: 0xff, a: 0xff };
 const MARK_COLOR: Color = { r: 0x00, g: 0x33, b: 0x99, a: 0xff };
+
+/** Selection-highlight fill (Halo light blue) behind a selected List/ComboBox row. */
+const HIGHLIGHT_COLOR: Color = { r: 0x7d, g: 0xa6, b: 0xe0, a: 0xff };
 
 /** Corner radius (px) of the rounded-rect face. */
 const CORNER_RADIUS = 6;
@@ -204,7 +226,9 @@ export type ControlKind =
   | "radiobutton"
   | "label"
   | "textinput"
-  | "textarea";
+  | "textarea"
+  | "list"
+  | "combobox";
 
 /** Resolve a control's kind from its (possibly dotted) class name. */
 export function controlKindFor(className: string): ControlKind {
@@ -214,8 +238,24 @@ export function controlKindFor(className: string): ControlKind {
   if (leaf === "Label") return "label";
   if (leaf === "TextInput") return "textinput";
   if (leaf === "TextArea") return "textarea";
+  if (leaf === "List") return "list";
+  if (leaf === "ComboBox") return "combobox";
   return "button";
 }
+
+// ---------------------------------------------------------------------------
+// Selection-control (List / ComboBox) row-pool geometry (task 1235, Part 2.5)
+// ---------------------------------------------------------------------------
+
+/** Height (px) of one List/ComboBox row (matches the catalog rowHeight default). */
+const ROW_HEIGHT = 20;
+/**
+ * Size of the fixed row POOL for the repeated-row skin. The flat compile-time model
+ * does not know the author's item count (delivered live via `labels`), so we emit a
+ * fixed pool of named EditText children and the class shows only as many as there are
+ * items. Items beyond the pool are NOT rendered (scrolling is the deferred follow-on).
+ */
+const LIST_ROW_POOL = 8;
 
 /**
  * How a control's skin face/box is drawn:
@@ -224,7 +264,7 @@ export function controlKindFor(className: string): ControlKind {
  *   - "input"   — a bordered white text-field box (TextInput / TextArea).
  *   - "none"    — no face at all; the EditText is the only visible child (Label).
  */
-export type FaceKind = "button" | "toggle" | "input" | "none";
+export type FaceKind = "button" | "toggle" | "input" | "none" | "list";
 
 /**
  * Descriptor for the control's skin EditText (`label_txt`). Selects the SWF
@@ -252,6 +292,27 @@ interface SkinMark {
   readonly name: string;
   /** The mark geometry (origin-relative; placed at depth>face). */
   readonly shape: Shape;
+  /** Optional placement offset (px) — defaults to (0,0). The List/ComboBox highlight
+   *  is placed on the first row and re-positioned at runtime by the class. */
+  readonly x?: number;
+  readonly y?: number;
+}
+
+/**
+ * An extra named EditText skin child beyond the primary `label_txt` (the List/ComboBox
+ * row pool). Each carries its own placement + the text type so the class can resolve
+ * `this.<name>` and seed/show it from the delivered items.
+ */
+interface ExtraTextField {
+  /** PlaceObject2 instance name (e.g. `row0_txt`). */
+  readonly name: string;
+  /** Placement + size (px), origin-relative. */
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  /** SWF text type ("dynamic" read-only display for rows). */
+  readonly textType: "dynamic" | "input";
 }
 
 /** Per-control description driving skin + class emission (replaces per-control if-chains). */
@@ -277,6 +338,12 @@ interface ControlSpec {
    * to make TextInput/TextArea editable and TextArea multi-line.
    */
   readonly textField?: TextFieldSpec;
+  /**
+   * Extra named EditText skin children beyond the primary `label_txt`. Selection
+   * controls (List/ComboBox) supply the repeated row pool here. Empty/omitted for
+   * every other control.
+   */
+  extraTextFields?(width: number, height: number): ExtraTextField[];
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +642,250 @@ ${fqn}.prototype.dispatchChange = function() {
 `;
 }
 
+/**
+ * Shared AS2 helpers for the row-pool selection controls (List + ComboBox). Both
+ * split the delivered `labels`/`dataProvider` comma-string into items, seed the named
+ * row EditText pool from them (hiding unused rows), and manage a click-to-select index
+ * reflected into a movable `hl_mk` highlight. Authored as a string fragment appended to
+ * the per-control body so List + ComboBox share the same row/selection machinery.
+ *
+ * `rowPool` is the fixed number of row fields emitted in the skin (LIST_ROW_POOL). Rows
+ * beyond the pool are not rendered (scrolling is the deferred follow-on).
+ * `rowHeight` is the per-row height (px). `rowTop` is the y of row 0 (0 for List; one
+ * row down for ComboBox so the collapsed label_txt sits on top).
+ */
+function authorRowPoolHelpers(fqn: string, rowPool: number, rowHeight: number, rowTop: number): string {
+  return `
+${fqn}.prototype.__rowPool = ${rowPool};
+${fqn}.prototype.__rowHeight = ${rowHeight};
+${fqn}.prototype.__rowTop = ${rowTop};
+${fqn}.prototype.__splitItems = function(s) {
+  var out = [];
+  if (s == undefined || s == "") { return out; }
+  var cur = "";
+  var i = 0;
+  while (i < s.length) {
+    var ch = s.charAt(i);
+    if (ch == ",") { out.push(cur); cur = ""; } else { cur = cur + ch; }
+    i++;
+  }
+  out.push(cur);
+  return out;
+};
+${fqn}.prototype.__rowField = function(i) {
+  return this["row" + i + "_txt"];
+};
+${fqn}.prototype.__seedRows = function() {
+  var n = this.__items.length;
+  var i = 0;
+  while (i < this.__rowPool) {
+    var f = this.__rowField(i);
+    if (f != undefined) {
+      if (i < n) { f.text = this.__items[i]; f._visible = true; }
+      else { f.text = ""; f._visible = false; }
+    }
+    i++;
+  }
+};
+${fqn}.prototype.setItems = function(arr) {
+  this.__items = arr;
+  this.__seedRows();
+  if (this.selectedIndex >= this.__items.length) { this.selectedIndex = -1; }
+  this.__refresh();
+};
+${fqn}.prototype.getLength = function() {
+  return this.__items.length;
+};
+${fqn}.prototype.getItemAt = function(i) {
+  return this.__items[i];
+};
+${fqn}.prototype.getSelectedIndex = function() {
+  return this.selectedIndex;
+};
+${fqn}.prototype.getSelectedItem = function() {
+  if (this.selectedIndex >= 0 && this.selectedIndex < this.__items.length) {
+    return this.__items[this.selectedIndex];
+  }
+  return undefined;
+};
+${fqn}.prototype.setSelectedIndex = function(i) {
+  if (i >= -1 && i < this.__items.length) {
+    this.selectedIndex = i;
+    this.selectedItem = this.getSelectedItem();
+    this.__refresh();
+    this.dispatchChange();
+  }
+};
+${fqn}.prototype.addEventListener = function(event, fn) {
+  if (event == "change") { this.__changeListener = fn; }
+};
+${fqn}.prototype.dispatchChange = function() {
+  if (this.__changeListener != undefined) {
+    this.__changeListener({ type: "change", target: this, index: this.selectedIndex });
+  }
+  if (this.onChange != undefined) { this.onChange(this); }
+};
+${fqn}.prototype.__rowYForIndex = function(i) {
+  return this.__rowTop + i * this.__rowHeight;
+};
+${fqn}.prototype.__rowAtMouse = function() {
+  // Which visible row the parent-space mouse Y lands on (-1 = none / outside).
+  var my = this._parent._ymouse - this._y;
+  var rel = my - this.__rowTop;
+  if (rel < 0) { return -1; }
+  var idx = Math.floor(rel / this.__rowHeight);
+  if (idx < 0 || idx >= this.__rowPool || idx >= this.__items.length) { return -1; }
+  return idx;
+};
+`;
+}
+
+/**
+ * List: a stacked-row selection control. Rows render from the delivered `labels`/
+ * `dataProvider` items; clicking a row selects it (a movable `hl_mk` highlight marks the
+ * selection) and exposes `selectedIndex`/`selectedItem`. `label_txt` is unused for the
+ * List (the rows are the content) so it is hidden. The author's items arrive via the
+ * generic param path (`setComponentParam("labels"|"dataProvider", "...")` → setItems).
+ */
+function authorListClassBody(fqn: string): string {
+  return (
+    authorRowPoolHelpers(fqn, LIST_ROW_POOL, ROW_HEIGHT, 0) +
+    `
+${fqn}.prototype.__init = function() {
+  this.__items = [];
+  this.selectedIndex = -1;
+  this.selectedItem = undefined;
+  if (this.label_txt != undefined) { this.label_txt._visible = false; }
+};
+${fqn}.prototype.setComponentParam = function(name, value) {
+  if (name == "labels" || name == "dataProvider" || name == "data") {
+    this.setItems(this.__splitItems(value));
+    return;
+  }
+  this[name] = value;
+};
+${fqn}.prototype.__refresh = function() {
+  if (this.hl_mk != undefined) {
+    if (this.selectedIndex >= 0) {
+      this.hl_mk._visible = true;
+      this.hl_mk._y = this.__rowYForIndex(this.selectedIndex);
+    } else {
+      this.hl_mk._visible = false;
+    }
+  }
+};
+${fqn}.prototype.__handleClick = function() {
+  var idx = this.__rowAtMouse();
+  if (idx >= 0) {
+    this.setSelectedIndex(idx);
+    trace("[component] list select index=" + idx + " item=" + this.getSelectedItem());
+  }
+};
+${fqn}.prototype.onMouseDown = function() {
+  // The row-pool spans the full List bbox; gate the click on the bbox then resolve the row.
+  if (this.__inBounds()) { this.__handleClick(); }
+};
+`
+  );
+}
+
+/**
+ * ComboBox: a collapsed single-row display (`label_txt`) + a ▼ toggle (`arrow_mk`) that
+ * shows/hides the dropdown (the row pool, placed one row below). Clicking the collapsed
+ * row (or the arrow) toggles the dropdown open/closed; clicking a dropdown row selects
+ * it, updates the collapsed label, and closes the dropdown. Exposes the same
+ * selectedIndex/selectedItem API as List.
+ */
+function authorComboBoxClassBody(fqn: string): string {
+  return (
+    authorRowPoolHelpers(fqn, LIST_ROW_POOL, ROW_HEIGHT, ROW_HEIGHT) +
+    `
+${fqn}.prototype.__init = function() {
+  this.__items = [];
+  this.selectedIndex = -1;
+  this.selectedItem = undefined;
+  this.__open = false;
+  this.__setOpen(false);
+};
+${fqn}.prototype.setComponentParam = function(name, value) {
+  if (name == "labels" || name == "dataProvider" || name == "data") {
+    this.setItems(this.__splitItems(value));
+    return;
+  }
+  this[name] = value;
+};
+${fqn}.prototype.__setOpen = function(v) {
+  this.__open = (v == true);
+  var i = 0;
+  while (i < this.__rowPool) {
+    var f = this.__rowField(i);
+    if (f != undefined) {
+      f._visible = (this.__open && i < this.__items.length);
+    }
+    i++;
+  }
+  this.__refresh();
+};
+${fqn}.prototype.isOpen = function() {
+  return this.__open;
+};
+${fqn}.prototype.open = function() { this.__setOpen(true); };
+${fqn}.prototype.close = function() { this.__setOpen(false); };
+${fqn}.prototype.__refresh = function() {
+  // Collapsed label shows the selected item (or empty).
+  if (this.label_txt != undefined) {
+    this.label_txt.text = (this.selectedIndex >= 0) ? this.getSelectedItem() : "";
+  }
+  // Highlight only while open + something selected.
+  if (this.hl_mk != undefined) {
+    if (this.__open && this.selectedIndex >= 0) {
+      this.hl_mk._visible = true;
+      this.hl_mk._y = this.__rowYForIndex(this.selectedIndex);
+    } else {
+      this.hl_mk._visible = false;
+    }
+  }
+};
+${fqn}.prototype.__inCollapsed = function() {
+  // Parent-space hit test of the collapsed row (the top __rowHeight band of the bbox).
+  var mx = this._parent._xmouse;
+  var my = this._parent._ymouse;
+  return (mx >= this._x && mx <= this._x + this._width && my >= this._y && my <= this._y + this.__rowHeight);
+};
+${fqn}.prototype.__handleClick = function() {
+  if (!this.__open) {
+    // Collapsed: a press on the collapsed row / arrow opens the dropdown.
+    if (this.__inCollapsed()) {
+      this.__setOpen(true);
+      trace("[component] combobox open");
+    }
+    return;
+  }
+  // Open: a press on a dropdown row selects it and closes; elsewhere just closes.
+  var idx = this.__rowAtMouse();
+  if (idx >= 0) {
+    this.setSelectedIndex(idx);
+    trace("[component] combobox select index=" + idx + " item=" + this.getSelectedItem());
+  }
+  this.__setOpen(false);
+};
+${fqn}.prototype.onMouseDown = function() {
+  // Gate on the bbox (collapsed row OR the open dropdown area both lie within _width;
+  // the open dropdown extends below, still inside the skin bbox since rows are children).
+  var mx = this._parent._xmouse;
+  var my = this._parent._ymouse;
+  var bottom = this._y + this.__rowTop + (this.__open ? this.__items.length * this.__rowHeight : 0);
+  if (mx >= this._x && mx <= this._x + this._width && my >= this._y && my <= bottom + this.__rowHeight) {
+    this.__handleClick();
+  } else if (this.__open) {
+    // Click-away closes the open dropdown.
+    this.__setOpen(false);
+  }
+};
+`
+  );
+}
+
 const CONTROL_REGISTRY: Record<ControlKind, ControlSpec> = {
   button: {
     buildMarks: () => [],
@@ -607,6 +918,26 @@ const CONTROL_REGISTRY: Record<ControlKind, ControlSpec> = {
     authorClassBody: authorTextFieldClassBody,
     faceKind: "input",
     textField: { textType: "input", multiline: true, wordWrap: true },
+  },
+  list: {
+    // The selection highlight sits behind the rows, placed on row 0 (y=0) initially and
+    // moved/hidden at runtime by the class.
+    buildMarks: (w) => [{ name: "hl_mk", shape: buildHighlightShape(w, ROW_HEIGHT), x: 0, y: 0 }],
+    authorClassBody: (fqn) => authorListClassBody(fqn),
+    faceKind: "list",
+    // The List has no single label; rows are the content (label_txt is hidden at init).
+    extraTextFields: (w) => buildRowPoolFields(w, 0),
+  },
+  combobox: {
+    // Highlight starts on the first dropdown row (one row below the collapsed display).
+    buildMarks: (w) => [
+      { name: "hl_mk", shape: buildHighlightShape(w, ROW_HEIGHT), x: 0, y: ROW_HEIGHT },
+      { name: "arrow_mk", shape: buildArrowShape(w), x: 0, y: 0 },
+    ],
+    authorClassBody: (fqn) => authorComboBoxClassBody(fqn),
+    faceKind: "list",
+    // Rows form the dropdown, placed one row below the collapsed label.
+    extraTextFields: (w) => buildRowPoolFields(w, ROW_HEIGHT),
   },
 };
 
@@ -806,6 +1137,74 @@ function buildInputFaceShape(width: number, height: number): Shape {
 }
 
 /**
+ * A selection-highlight rectangle (light blue fill) drawn behind the selected List/
+ * ComboBox row. Origin (0,0), one row tall; the class repositions its `_y` to the
+ * selected row and toggles `_visible`.
+ */
+function buildHighlightShape(width: number, height: number): Shape {
+  return {
+    id: "row-highlight",
+    paths: [
+      {
+        start: { x: 0, y: 0 },
+        segments: [
+          { type: "line", to: { x: width, y: 0 } },
+          { type: "line", to: { x: width, y: height } },
+          { type: "line", to: { x: 0, y: height } },
+          { type: "line", to: { x: 0, y: 0 } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: HIGHLIGHT_COLOR },
+      },
+    ],
+  };
+}
+
+/** The ComboBox ▼ toggle arrow: a small downward filled triangle at the right edge. */
+function buildArrowShape(width: number): Shape {
+  const boxW = 16;
+  const cx = width - boxW / 2;
+  const cy = ROW_HEIGHT / 2;
+  const r = 4;
+  return {
+    id: "combo-arrow",
+    paths: [
+      {
+        start: { x: cx - r, y: cy - r / 2 },
+        segments: [
+          { type: "line", to: { x: cx + r, y: cy - r / 2 } },
+          { type: "line", to: { x: cx, y: cy + r } },
+          { type: "line", to: { x: cx - r, y: cy - r / 2 } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: MARK_COLOR },
+      },
+    ],
+  };
+}
+
+/**
+ * Build the fixed pool of named row EditText descriptors (`row0_txt`..`rowN_txt`) for a
+ * List/ComboBox skin. Stacked from `topY`, one ROW_HEIGHT each, full control width
+ * (inset 2px). All read-only `dynamic` rows — the class seeds + shows/hides them from
+ * the delivered items.
+ */
+function buildRowPoolFields(width: number, topY: number): ExtraTextField[] {
+  const fields: ExtraTextField[] = [];
+  for (let i = 0; i < LIST_ROW_POOL; i++) {
+    fields.push({
+      name: `row${i}_txt`,
+      x: 4,
+      y: topY + i * ROW_HEIGHT + 2,
+      width: Math.max(10, width - 8),
+      height: ROW_HEIGHT,
+      textType: "dynamic",
+    });
+  }
+  return fields;
+}
+
+/**
  * Resolve the face Shape for a control, or `null` when it draws no face at all (Label —
  * the EditText is the only visible child). The face kind is read from the registry spec;
  * the toggle kind additionally needs the control kind to pick box (CheckBox) vs circle
@@ -819,6 +1218,9 @@ function buildFaceShape(kind: ControlKind, width: number, height: number): Shape
     case "toggle":
       return buildToggleFaceShape(kind === "radiobutton" ? "radiobutton" : "checkbox", width, height);
     case "input":
+      return buildInputFaceShape(width, height);
+    case "list":
+      // A bordered white box, same as an input field — the row pool draws on top.
       return buildInputFaceShape(width, height);
     case "button":
     default:
@@ -965,6 +1367,17 @@ function encodeTagRecord(tagType: number, body: Uint8Array): Uint8Array {
 interface PlacedMark {
   readonly name: string;
   readonly charId: number;
+  /** Placement offset (px); defaults to (0,0). */
+  readonly x?: number;
+  readonly y?: number;
+}
+
+/** A named extra EditText (List/ComboBox row) hoisted to a char id, placed in the sprite. */
+interface PlacedTextField {
+  readonly name: string;
+  readonly charId: number;
+  readonly x: number;
+  readonly y: number;
 }
 
 /**
@@ -986,6 +1399,7 @@ export function encodeComponentSkinSprite(
   labelCharId: number,
   labelObj: TextDisplayObject,
   marks: readonly PlacedMark[] = [],
+  rows: readonly PlacedTextField[] = [],
 ): Uint8Array {
   const bw = new BitWriter();
   bw.writeUI16LE(spriteId);
@@ -997,23 +1411,51 @@ export function encodeComponentSkinSprite(
     bw.writeBytes(encodeTagRecord(Tag.PlaceObject2, encodePlaceObject2(faceCharId, 1, 0, 0)));
   }
 
-  // Place the named label EditText at depth 2 — the instance name makes
-  // `this.label_txt` resolvable from the class methods.
-  bw.writeBytes(
-    encodeTagRecord(
-      Tag.PlaceObject2,
-      encodePlaceObject2WithName(labelCharId, 2, labelObj.x, labelObj.y, labelObj.instanceName!),
-    ),
-  );
+  // Depth ordering: face(1) < selection highlight (a mark, behind text) < label_txt +
+  // rows < the rest. The highlight must sit BELOW the row text so the row labels read on
+  // top of the blue band; we place highlight marks first (low depth), then the text, then
+  // any non-highlight marks (e.g. the ComboBox arrow) on top.
+  let depth = 2;
 
-  // Place each named overlay mark at depth 3+ — the instance name makes
-  // `this.check_mk` / `this.dot_mk` resolvable so the class can toggle `_visible`.
-  let depth = 3;
+  // Highlight marks first (behind the text rows).
   for (const mark of marks) {
+    if (mark.name !== "hl_mk") continue;
     bw.writeBytes(
       encodeTagRecord(
         Tag.PlaceObject2,
-        encodePlaceObject2WithName(mark.charId, depth, 0, 0, mark.name),
+        encodePlaceObject2WithName(mark.charId, depth, mark.x ?? 0, mark.y ?? 0, mark.name),
+      ),
+    );
+    depth++;
+  }
+
+  // Place the named label EditText — the instance name makes `this.label_txt` resolvable.
+  bw.writeBytes(
+    encodeTagRecord(
+      Tag.PlaceObject2,
+      encodePlaceObject2WithName(labelCharId, depth, labelObj.x, labelObj.y, labelObj.instanceName!),
+    ),
+  );
+  depth++;
+
+  // Place each extra named EditText (List/ComboBox row pool) on top of the highlight.
+  for (const row of rows) {
+    bw.writeBytes(
+      encodeTagRecord(
+        Tag.PlaceObject2,
+        encodePlaceObject2WithName(row.charId, depth, row.x, row.y, row.name),
+      ),
+    );
+    depth++;
+  }
+
+  // Place remaining (non-highlight) marks on top — the check tick / radio dot / combo arrow.
+  for (const mark of marks) {
+    if (mark.name === "hl_mk") continue;
+    bw.writeBytes(
+      encodeTagRecord(
+        Tag.PlaceObject2,
+        encodePlaceObject2WithName(mark.charId, depth, mark.x ?? 0, mark.y ?? 0, mark.name),
       ),
     );
     depth++;
@@ -1118,12 +1560,40 @@ export function runComponentPass(input: ComponentPassInput): ComponentPassResult
     // No embedded font id → device-font rendering (HasFont unset); text still seeded.
     writer.writeTag(Tag.DefineEditText, encodeDefineEditText(labelCharId, labelObj));
 
-    // Hoist each control mark's DefineShape4 (check tick / radio dot) above the sprite.
+    // Hoist each control mark's DefineShape4 (check tick / radio dot / row highlight /
+    //    combo arrow) above the sprite, carrying its placement offset.
     const placedMarks: PlacedMark[] = [];
     for (const mark of spec.buildMarks(width, height)) {
       const markCharId = writer.nextCharId();
       writer.writeTag(Tag.DefineShape4, encodeDefineShape4(markCharId, mark.shape));
-      placedMarks.push({ name: mark.name, charId: markCharId });
+      placedMarks.push({ name: mark.name, charId: markCharId, x: mark.x, y: mark.y });
+    }
+
+    // Hoist each extra named EditText (List/ComboBox row pool) above the sprite.
+    const placedRows: PlacedTextField[] = [];
+    for (const field of spec.extraTextFields?.(width, height) ?? []) {
+      const rowCharId = writer.nextCharId();
+      const rowObj: TextDisplayObject = {
+        type: "text",
+        id: field.name,
+        x: field.x,
+        y: field.y,
+        width: field.width,
+        height: field.height,
+        text: "",
+        textType: field.textType,
+        fontFamily: "Arial",
+        fontSize: 12,
+        bold: false,
+        italic: false,
+        color: LABEL_COLOR,
+        align: "left",
+        multiline: false,
+        wordWrap: false,
+        instanceName: field.name,
+      };
+      writer.writeTag(Tag.DefineEditText, encodeDefineEditText(rowCharId, rowObj));
+      placedRows.push({ name: field.name, charId: rowCharId, x: field.x, y: field.y });
     }
 
     // 2. The skin DefineSprite, registered under the ComponentItem id so the stage
@@ -1132,7 +1602,7 @@ export function runComponentPass(input: ComponentPassInput): ComponentPassResult
     charIdMap.set(component.id, spriteId);
     writer.writeTag(
       Tag.DefineSprite,
-      encodeComponentSkinSprite(spriteId, faceCharId, labelCharId, labelObj, placedMarks),
+      encodeComponentSkinSprite(spriteId, faceCharId, labelCharId, labelObj, placedMarks, placedRows),
     );
 
     // 3. ExportAssets entry under the linkage identifier (defaults to class name).

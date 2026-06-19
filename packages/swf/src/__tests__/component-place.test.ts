@@ -1136,3 +1136,152 @@ describe("functional text controls: Label + TextInput + TextArea (task 1234, Par
     expect(strings).toContain("user typed");
   });
 });
+
+describe("functional selection controls: List + ComboBox (task 1235, Part 2.5)", () => {
+  /** The fixed row-pool size emitted in the List/ComboBox skin (LIST_ROW_POOL). */
+  const ROW_POOL = 8;
+
+  /**
+   * Compile a single-instance doc for the named selection control. Returns parsed tags,
+   * the control's skin sprite char id, and the char ids placed inside that sprite.
+   */
+  function compileSelectionControl(
+    componentName: string,
+    className: string,
+    params?: Record<string, string>,
+    instanceName = "ctrl"
+  ) {
+    const component = makeComponent({ componentName, name: componentName, packageName: "mx.controls" });
+    const base = makeInstance(component.id);
+    const instance: SymbolInstance = params
+      ? ({ ...base, instanceName, componentParameters: params } as SymbolInstance)
+      : { ...base, instanceName };
+    const doc = makeDoc(component, instance);
+    const tags = parseSWF(compileDocument(doc));
+
+    const exports = tags
+      .filter((t) => t.code === TAG_EXPORT_ASSETS)
+      .flatMap((t) => parseExportAssets(t.body));
+    const exportEntry = exports.find((e) => e.name === className);
+
+    let innerPlacedIds: number[] = [];
+    if (exportEntry) {
+      const spriteTag = tags.find(
+        (t) => t.code === TAG_DEFINE_SPRITE && defineSpriteId(t.body) === exportEntry.charId
+      );
+      if (spriteTag) {
+        innerPlacedIds = parseSpriteInnerTags(spriteTag.body)
+          .filter((t) => t.code === TAG_PLACE_OBJECT2)
+          .map((t) => placeObject2CharId(t.body))
+          .filter((id): id is number => id !== null);
+      }
+    }
+    return { tags, exportEntry, innerPlacedIds };
+  }
+
+  for (const ctrl of [
+    { componentName: "List", className: "mx.controls.List" },
+    { componentName: "ComboBox", className: "mx.controls.ComboBox" },
+  ]) {
+    describe(ctrl.componentName, () => {
+      it(`emits ExportAssets + a registerClass DoInitAction for ${ctrl.className}`, () => {
+        const { tags, exportEntry } = compileSelectionControl(ctrl.componentName, ctrl.className);
+        expect(exportEntry, `ExportAssets must list ${ctrl.className}`).toBeDefined();
+        const spriteId = exportEntry!.charId;
+
+        const initForComponent = tags.filter(
+          (t) => t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === spriteId
+        );
+        const registerInit = initForComponent.find((t) => pushedStrings(t.body).includes("registerClass"));
+        expect(registerInit, "a DoInitAction must register the class").toBeDefined();
+        const strings = pushedStrings(registerInit!.body);
+        expect(strings).toContain("Object");
+        expect(strings).toContain("registerClass");
+        expect(strings).toContain(ctrl.className);
+      });
+
+      it("emits the class-definition DoInitAction (DefineFunction2) BEFORE registerClass", () => {
+        const { tags, exportEntry } = compileSelectionControl(ctrl.componentName, ctrl.className);
+        const spriteId = exportEntry!.charId;
+
+        const initIndices: { idx: number; tag: SWFTag }[] = [];
+        tags.forEach((t, idx) => {
+          if (t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === spriteId) {
+            initIndices.push({ idx, tag: t });
+          }
+        });
+        expect(initIndices.length).toBe(2);
+
+        const classInit = initIndices.find((e) => bytecodeHasDefineFunction2(e.tag.body));
+        const registerInit = initIndices.find((e) => pushedStrings(e.tag.body).includes("registerClass"));
+        expect(classInit, "class DoInitAction must define functions via DefineFunction2").toBeDefined();
+        expect(registerInit, "registerClass DoInitAction must exist").toBeDefined();
+        expect(classInit!.idx).toBeLessThan(registerInit!.idx);
+      });
+
+      it("emits the fixed row-pool of named EditText children + a highlight shape", () => {
+        const { tags, exportEntry, innerPlacedIds } = compileSelectionControl(
+          ctrl.componentName,
+          ctrl.className
+        );
+        expect(exportEntry).toBeDefined();
+
+        const editTextCharIds = new Set(
+          tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT).map((t) => t.body[0] | (t.body[1] << 8))
+        );
+        const shapeCharIds = new Set(
+          tags.filter((t) => t.code === TAG_DEFINE_SHAPE4).map((t) => t.body[0] | (t.body[1] << 8))
+        );
+
+        // The skin places: face shape + highlight shape (+ combo arrow), label_txt, and
+        // the fixed row pool of EditTexts. Count the placed EditTexts: label_txt + ROW_POOL.
+        const placedTexts = innerPlacedIds.filter((id) => editTextCharIds.has(id));
+        const placedShapes = innerPlacedIds.filter((id) => shapeCharIds.has(id));
+        expect(placedTexts.length, "label_txt + the fixed row pool").toBe(1 + ROW_POOL);
+        // Face + highlight (List); face + highlight + arrow (ComboBox).
+        const expectedShapes = ctrl.componentName === "ComboBox" ? 3 : 2;
+        expect(placedShapes.length, "face + highlight (+ arrow for ComboBox)").toBe(expectedShapes);
+      });
+    });
+  }
+
+  it("List delivers the author's items via setComponentParam(labels, ...)", () => {
+    const component = makeComponent({ componentName: "List", name: "List", packageName: "mx.controls" });
+    const instance: SymbolInstance = {
+      ...makeInstance(component.id),
+      instanceName: "myList",
+      componentParameters: { labels: "Red,Green,Blue" },
+    } as SymbolInstance;
+    const tags = parseSWF(compileDocument(makeDoc(component, instance)));
+
+    const paramAction = tags
+      .filter((t) => t.code === 12 /* DoAction */)
+      .map((t) => t.body)
+      .find((b) => doActionPushedStrings(b).includes("setComponentParam"));
+    expect(paramAction, "a non-default 'labels' must be delivered").toBeDefined();
+    const strings = doActionPushedStrings(paramAction!);
+    expect(strings).toContain("myList");
+    expect(strings).toContain("labels");
+    expect(strings).toContain("Red,Green,Blue");
+  });
+
+  it("ComboBox delivers the author's items + the dropdown row pool is hidden initially in source", () => {
+    const component = makeComponent({ componentName: "ComboBox", name: "ComboBox", packageName: "mx.controls" });
+    const instance: SymbolInstance = {
+      ...makeInstance(component.id),
+      instanceName: "myCombo",
+      componentParameters: { labels: "One,Two,Three" },
+    } as SymbolInstance;
+    const tags = parseSWF(compileDocument(makeDoc(component, instance)));
+
+    const paramAction = tags
+      .filter((t) => t.code === 12 /* DoAction */)
+      .map((t) => t.body)
+      .find((b) => doActionPushedStrings(b).includes("setComponentParam"));
+    expect(paramAction, "a non-default 'labels' must be delivered").toBeDefined();
+    const strings = doActionPushedStrings(paramAction!);
+    expect(strings).toContain("myCombo");
+    expect(strings).toContain("labels");
+    expect(strings).toContain("One,Two,Three");
+  });
+});

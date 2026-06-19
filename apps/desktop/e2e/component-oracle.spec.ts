@@ -773,3 +773,248 @@ _root.onEnterFrame = function() {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Part 2.5 (task 1235): functional selection controls List / ComboBox
+// ---------------------------------------------------------------------------
+
+test.describe('v2 selection controls runtime oracle (task 1235, Part 2.5)', () => {
+  test.skip(!!process.env.CI, 'Ruffle WASM infra not set up in CI yet');
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('canvas', { timeout: 15000 });
+    const ready = await page.evaluate(
+      () => typeof (window as unknown as { __flashTest?: unknown }).__flashTest !== 'undefined'
+    );
+    expect(ready).toBe(true);
+  });
+
+  /** A placed selection control with an authored `labels` param at (x,y). */
+  function selectionInstance(itemId: string, name: string, x: number, y: number, labels: string) {
+    return {
+      type: 'instance', id: `inst-${name}`, symbolId: itemId,
+      x, y, scaleX: 1, scaleY: 1, rotation: 0, instanceName: name,
+      componentParameters: { labels },
+    };
+  }
+
+  /**
+   * A 2-frame doc whose frame-0 root script advances RED→BLUE only once the placed
+   * selection control reports the AUTHOR's first item (`getItemAt(0) == firstItem`). This
+   * is the runtime proof that the author's `labels` reached the live instance AND were
+   * parsed into the row model. (The bordered white field-box on a white SetBackgroundColor
+   * is visually near-invisible, so a raw non-white pixel count is an unreliable render
+   * signal for these controls; we probe the live item model instead — the same RED→BLUE
+   * acceptance pattern the other component oracles use.)
+   */
+  function makeItemsDeliveredDoc(componentName: string, labels: string, firstItem: string) {
+    const item = controlItem(`comp-${componentName}`, componentName);
+    const inst = selectionInstance(`comp-${componentName}`, 'sc', 225, 30, labels);
+    const bgLayerFrames = [
+      frame({
+        index: 0,
+        script: `stop();
+_root.onEnterFrame = function() {
+  var c = _root.sc;
+  if (c != undefined && c.getLength() > 0 && c.getItemAt(0) == "${firstItem}") {
+    _root.gotoAndStop(2);
+    delete _root.onEnterFrame;
+  }
+};`,
+        displayObjects: [centeredRect('bg-red', 255, 0, 0)],
+      }),
+      frame({ index: 1, script: 'stop();', displayObjects: [centeredRect('bg-blue', 0, 0, 255)] }),
+    ];
+    const compLayerFrames = [
+      frame({ index: 0, displayObjects: [inst] }),
+      frame({ index: 1, displayObjects: [inst] }),
+    ];
+    return {
+      id: `sel-items-${componentName}`, properties: BASE_PROPS,
+      scenes: [{
+        id: 'scene-1', name: 'Scene 1',
+        timeline: { layers: [
+          { id: 'comp-layer', name: 'Component', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#00ff00', height: 20, parentFolderId: null,
+            frameCount: 2, frames: compLayerFrames },
+          { id: 'bg-layer', name: 'Background', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#0000ff', height: 20, parentFolderId: null,
+            frameCount: 2, frames: bgLayerFrames },
+        ] },
+      }],
+      library: { items: [item], folders: [] },
+    };
+  }
+
+  /**
+   * A 2-frame List doc: a root onEnterFrame advances RED→BLUE only once the List reports
+   * selectedIndex == 1 (the second row). The List starts with nothing selected, so a blue
+   * end-state can ONLY come from a click selecting a row (proves click-to-select).
+   */
+  function makeListSelectDoc() {
+    const item = controlItem('comp-List', 'List');
+    // Place at (225,30); rows render from y=0 inside the skin, 20px each.
+    const inst = selectionInstance('comp-List', 'lst', 225, 30, 'Alpha,Beta,Gamma');
+    const bgLayerFrames = [
+      frame({
+        index: 0,
+        script: `stop();
+_root.onEnterFrame = function() {
+  if (_root.lst != undefined && _root.lst.getSelectedIndex() == 1) {
+    _root.gotoAndStop(2);
+    delete _root.onEnterFrame;
+  }
+};`,
+        displayObjects: [centeredRect('bg-red', 255, 0, 0)],
+      }),
+      frame({ index: 1, script: 'stop();', displayObjects: [centeredRect('bg-blue', 0, 0, 255)] }),
+    ];
+    const compLayerFrames = [
+      frame({ index: 0, displayObjects: [inst] }),
+      frame({ index: 1, displayObjects: [inst] }),
+    ];
+    return {
+      id: 'list-select-doc', properties: BASE_PROPS,
+      scenes: [{
+        id: 'scene-1', name: 'Scene 1',
+        timeline: { layers: [
+          { id: 'comp-layer', name: 'Component', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#00ff00', height: 20, parentFolderId: null,
+            frameCount: 2, frames: compLayerFrames },
+          { id: 'bg-layer', name: 'Background', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#0000ff', height: 20, parentFolderId: null,
+            frameCount: 2, frames: bgLayerFrames },
+        ] },
+      }],
+      library: { items: [item], folders: [] },
+    };
+  }
+
+  /**
+   * A 2-frame ComboBox doc: a root onEnterFrame advances RED→BLUE only once the combo is
+   * OPEN (isOpen() == true). The combo starts collapsed, so a blue end-state can ONLY come
+   * from a click on the collapsed row toggling the dropdown open (proves show/hide).
+   */
+  function makeComboToggleDoc() {
+    const item = controlItem('comp-ComboBox', 'ComboBox');
+    const inst = selectionInstance('comp-ComboBox', 'cmb', 225, 30, 'One,Two,Three');
+    const bgLayerFrames = [
+      frame({
+        index: 0,
+        script: `stop();
+_root.onEnterFrame = function() {
+  if (_root.cmb != undefined && _root.cmb.isOpen() == true) {
+    _root.gotoAndStop(2);
+    delete _root.onEnterFrame;
+  }
+};`,
+        displayObjects: [centeredRect('bg-red', 255, 0, 0)],
+      }),
+      frame({ index: 1, script: 'stop();', displayObjects: [centeredRect('bg-blue', 0, 0, 255)] }),
+    ];
+    const compLayerFrames = [
+      frame({ index: 0, displayObjects: [inst] }),
+      frame({ index: 1, displayObjects: [inst] }),
+    ];
+    return {
+      id: 'combo-toggle-doc', properties: BASE_PROPS,
+      scenes: [{
+        id: 'scene-1', name: 'Scene 1',
+        timeline: { layers: [
+          { id: 'comp-layer', name: 'Component', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#00ff00', height: 20, parentFolderId: null,
+            frameCount: 2, frames: compLayerFrames },
+          { id: 'bg-layer', name: 'Background', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#0000ff', height: 20, parentFolderId: null,
+            frameCount: 2, frames: bgLayerFrames },
+        ] },
+      }],
+      library: { items: [item], folders: [] },
+    };
+  }
+
+  for (const componentName of ['List', 'ComboBox']) {
+    test(`${componentName} delivers + parses the author items live (getItemAt(0) → RED→BLUE)`, async ({ page }, testInfo: TestInfo) => {
+      const swf = await publish(page, makeItemsDeliveredDoc(componentName, 'Apple,Banana,Cherry', 'Apple'));
+      await ensureRuffleLoaded(page);
+      const id = `__ruffle_sel_items_${componentName}__`;
+      await injectRufflePlayer(page, swf, id);
+      await page.waitForTimeout(2500);
+      await hideRuffleOverlays(page, id);
+
+      const after = await page.locator(`#${id}`).screenshot();
+      await testInfo.attach(`sel-items-${componentName}`, { body: after, contentType: 'image/png' });
+      const afterC = colorCounts(after);
+      await removeRufflePlayer(page, id);
+
+      console.log(`[1235] ${componentName} items after red=${afterC.red} blue=${afterC.blue}`);
+      // setComponentParam("labels","Apple,...") reached the live instance and parsed into
+      // the row model → getItemAt(0)=="Apple" → onEnterFrame advanced RED→BLUE.
+      expect(afterC.blue, `${componentName} author items must reach the live instance → blue`).toBeGreaterThan(500);
+      expect(afterC.red, 'red must be gone once the items are delivered').toBeLessThan(200);
+    });
+  }
+
+  test('List click selects a row (selectedIndex==1 → RED→BLUE only after the click)', async ({ page }, testInfo: TestInfo) => {
+    const swf = await publish(page, makeListSelectDoc());
+    await ensureRuffleLoaded(page);
+    const id = '__ruffle_list_select__';
+    await injectRufflePlayer(page, swf, id);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    // BEFORE the click: nothing selected → background must still be RED.
+    const before = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('list-before', { body: before, contentType: 'image/png' });
+    const beforeC = colorCounts(before);
+    expect(beforeC.red, 'list must start with no selection (background red)').toBeGreaterThan(500);
+    expect(beforeC.blue, 'must not be blue before the click').toBeLessThan(200);
+
+    // Click the SECOND row. List at (225,30); rows from y=0, 20px each → row 1 spans
+    // stage y 50..70. Click mid-row.
+    await clickStage(page, id, 260, 60);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    const after = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('list-after', { body: after, contentType: 'image/png' });
+    const afterC = colorCounts(after);
+    await removeRufflePlayer(page, id);
+
+    console.log(`[1235] list before red=${beforeC.red} blue=${beforeC.blue} | after red=${afterC.red} blue=${afterC.blue}`);
+    expect(afterC.blue, 'clicking row 1 must select it → background advances to blue').toBeGreaterThan(500);
+    expect(afterC.red, 'red must be gone after the selection').toBeLessThan(200);
+  });
+
+  test('ComboBox toggle opens the dropdown (isOpen → RED→BLUE only after the click)', async ({ page }, testInfo: TestInfo) => {
+    const swf = await publish(page, makeComboToggleDoc());
+    await ensureRuffleLoaded(page);
+    const id = '__ruffle_combo_toggle__';
+    await injectRufflePlayer(page, swf, id);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    // BEFORE the click: combo collapsed → background must still be RED.
+    const before = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('combo-before', { body: before, contentType: 'image/png' });
+    const beforeC = colorCounts(before);
+    expect(beforeC.red, 'combo must start collapsed (background red)').toBeGreaterThan(500);
+    expect(beforeC.blue, 'must not be blue before the click').toBeLessThan(200);
+
+    // Click the collapsed row (top 20px band). Combo at (225,30) → collapsed row spans
+    // stage y 30..50. Click mid-row.
+    await clickStage(page, id, 260, 40);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    const after = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('combo-after', { body: after, contentType: 'image/png' });
+    const afterC = colorCounts(after);
+    await removeRufflePlayer(page, id);
+
+    console.log(`[1235] combo before red=${beforeC.red} blue=${beforeC.blue} | after red=${afterC.red} blue=${afterC.blue}`);
+    expect(afterC.blue, 'clicking the collapsed row must open the dropdown → blue').toBeGreaterThan(500);
+    expect(afterC.red, 'red must be gone after the toggle').toBeLessThan(200);
+  });
+});
