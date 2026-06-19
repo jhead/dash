@@ -431,23 +431,64 @@ export function subtractPolygon(subjectIn: readonly Point[], clipIn: readonly Po
 
   // A valid difference trace must yield an even number of crossings on each
   // ring; a degenerate (vertex-on-edge / collinear) configuration can drop a
-  // crossing and produce a null or empty/garbage trace.  Detect that and retry
-  // on a tiny perturbed clip until the result is sane.
+  // crossing and produce a null or empty/garbage trace.
+  //
+  // The classic degeneracy the eraser hits is a clip edge COLLINEAR with a
+  // subject edge (e.g. an eraser capsule whose side runs along — or whose
+  // corner sits exactly on — an axis-aligned fill's boundary edge): the naive
+  // trace finds an ODD number of crossings, walks the entire subject ring, and
+  // returns the subject ESSENTIALLY UNCHANGED (full area, no cut). A bounds-only
+  // sanity check accepts that no-op (its area is ≤ the subject's), so the eraser
+  // silently removes nothing — the under-erase reported for strokes that cross a
+  // shape's boundary edge.
+  //
+  // The difference op is MONOTONE: subtracting a clip can only shrink (never
+  // grow) the survivor area. The degenerate no-op returns the LARGEST possible
+  // survivor (≈ the whole subject); a correct cut returns less; and tiny
+  // perturbations of an only-touching clip all return ≈ the whole subject too.
+  // So rather than accept the first structurally-sane trace, run eps=0 AND each
+  // perturbation and keep the SMALLEST-area sane result. A real edge-crossing
+  // cut wins over the degenerate full-subject trace; a mere tangency stays ≈ the
+  // subject (nothing removed); a genuine no-overlap yields only null traces and
+  // falls through to the containment logic below.
   const expectedArea = Math.abs(signedArea(subject)); // upper bound on survivor
-  const looksSane = (loops: Point[][] | null): boolean => {
-    if (loops === null) return false;
-    if (loops.length === 0) return false; // overlapping clip should leave/remove something detectably
+  // A trace is structurally usable if it is non-null, has at least one loop, and
+  // does not blow past the subject's area (a garbage self-overlapping trace).
+  const isStructural = (loops: Point[][] | null): loops is Point[][] => {
+    if (loops === null || loops.length === 0) return false;
     const total = loops.reduce((a, l) => a + Math.abs(signedArea(l)), 0);
     return total <= expectedArea * 1.05 + 1e-6;
   };
+  const totalArea = (loops: Point[][]): number =>
+    loops.reduce((a, l) => a + Math.abs(signedArea(l)), 0);
 
-  let res = greinerHormann(subject, clip);
-  if (!looksSane(res)) {
-    for (const eps of [1e-4, 7e-4, 3e-3, 1.3e-2, 5.1e-2]) {
-      const attempt = greinerHormann(subject, perturb(clip, eps));
-      if (looksSane(attempt)) { res = attempt; break; }
-      if (res === null && attempt !== null) res = attempt;
+  let res: Point[][] | null = null;
+  let bestArea = Infinity;
+  for (const eps of [0, 1e-4, 7e-4, 3e-3, 1.3e-2, 5.1e-2]) {
+    const attempt = greinerHormann(subject, eps === 0 ? clip : perturb(clip, eps));
+    if (!isStructural(attempt)) continue;
+    const a = totalArea(attempt);
+    // Prefer the smallest-area sane cut; the degenerate full-subject trace and
+    // tangent-only perturbations both score ≈ expectedArea and lose to a real
+    // cut. The `< bestArea - 1e-6` guard keeps the first such result stable.
+    if (a < bestArea - 1e-6) {
+      bestArea = a;
+      res = attempt;
     }
+  }
+
+  // A best trace that removed only a negligible amount means the clip merely
+  // grazed the boundary (tangency / shared edge with no interior bite): the
+  // perturbed cuts only jittered the outline by sub-pixel amounts. Treat that as
+  // "nothing removed" and return the pristine subject so a tangent stroke does
+  // not carve a spurious sliver. The floor scales with the clip size — a real
+  // edge-crossing cut by an eraser of clip-area A removes on the order of A, far
+  // above this threshold; perturbation jitter of a tangent is bounded by the
+  // perturbation epsilon times the clip perimeter (≪ 0.1% of the clip area).
+  const clipArea = Math.abs(signedArea(clip));
+  const noOpFloor = Math.max(1e-3, clipArea * 1e-3);
+  if (res !== null && expectedArea - bestArea <= noOpFloor) {
+    res = null;
   }
 
   if (res === null || res.length === 0) {
