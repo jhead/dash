@@ -6,6 +6,15 @@ import { createOvalShape, createRectShape, createLineShape, createPolygonShape, 
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 
+// Text-edit overlay (<textarea>) chrome. The textarea's text content box is inset from
+// its top-left by border + padding; the canvas paints text with its top-left exactly at
+// the object origin (textBaseline:"top"). To align the overlay text with where the canvas
+// would draw, the overlay box is shifted up-left by this inset (and grown so its content
+// region still covers the object). See the textarea overlay in StageArea.
+const TEXT_OVERLAY_BORDER = 1;
+const TEXT_OVERLAY_PADDING = 2;
+const TEXT_OVERLAY_INSET = TEXT_OVERLAY_BORDER + TEXT_OVERLAY_PADDING; // 3px
+
 // ---------------------------------------------------------------------------
 // Pencil tool helpers
 // ---------------------------------------------------------------------------
@@ -1490,7 +1499,7 @@ export function StageArea({
   textDisplayObjects = [],
   onTextCreated,
   onTextPlace,
-  editingTextId: _editingTextId,
+  editingTextId,
   onTextEdit,
   onTextEditEnd,
   textFormat = {
@@ -3448,6 +3457,12 @@ export function StageArea({
       }
     }
 
+    // While a text object is being edited, the HTML <textarea> overlay draws it; the
+    // canvas must NOT also paint the model object or it double-renders (a canvas copy
+    // under the overlay). Prefer StageArea's own textEditState.editingId (the source of
+    // truth inside this component) and fall back to the editingTextId prop round-trip.
+    const inEditTextId = textEditState?.editingId ?? editingTextId ?? null;
+
     // Build SceneGraph: use the multi-layer scene graph from the parent when provided,
     // otherwise fall back to a synthetic single-layer graph from the flat prop arrays.
     let sceneGraph: SceneGraph = propSceneGraph ?? {
@@ -3461,6 +3476,17 @@ export function StageArea({
         },
       ],
     };
+
+    // Exclude the in-edit text object from the canvas render (it is drawn by the overlay).
+    if (inEditTextId) {
+      sceneGraph = {
+        ...sceneGraph,
+        layers: sceneGraph.layers.map((layer) => ({
+          ...layer,
+          objects: layer.objects.filter((obj) => obj.id !== inEditTextId),
+        })),
+      };
+    }
 
     // Enable Simple Buttons: patch firstFrame on button SymbolInstances to show Over/Down/Up state.
     if (simpleButtonsEnabled && library && (hoveredButtonId || pressedButtonId)) {
@@ -4029,7 +4055,7 @@ export function StageArea({
       ctx.fillRect(r.x, r.y, r.width, r.height);
       ctx.restore();
     }
-  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId, symbolInstanceDisplayObjects]);
+  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId, symbolInstanceDisplayObjects, editingTextId, textEditState]);
 
   // CSS filter for view modes
   const stageFilter =
@@ -4542,18 +4568,23 @@ export function StageArea({
                 defaultValue={textEditState.initialText}
                 style={{
                   position: "absolute",
-                  left: textEditState.stageX,
-                  top: textEditState.stageY,
-                  width: editWidth,
-                  height: editHeight,
+                  // The canvas paints text with its top-left exactly at the object's
+                  // (x, y) (textBaseline:"top" in renderTextObject). The textarea's text
+                  // content box is inset by its border (1px) + padding (2px), so shift the
+                  // box up-left by that 3px inset to make the overlay text sit exactly
+                  // where the canvas would have drawn it (no slight offset).
+                  left: textEditState.stageX - TEXT_OVERLAY_INSET,
+                  top: textEditState.stageY - TEXT_OVERLAY_INSET,
+                  width: editWidth + TEXT_OVERLAY_INSET * 2,
+                  height: editHeight + TEXT_OVERLAY_INSET * 2,
                   font,
                   color: editColor,
                   background: "rgba(255,255,255,0.1)",
-                  border: `1px dashed ${themeHalo.haloBlue}`,
+                  border: `${TEXT_OVERLAY_BORDER}px dashed ${themeHalo.haloBlue}`,
                   outline: "none",
                   resize: "both",
                   zIndex: 50,
-                  padding: 2,
+                  padding: TEXT_OVERLAY_PADDING,
                   boxSizing: "border-box",
                   overflow: "hidden",
                 }}
@@ -4570,8 +4601,10 @@ export function StageArea({
                       type: "text",
                       x: textEditState.stageX,
                       y: textEditState.stageY,
-                      width: e.currentTarget.offsetWidth || 200,
-                      height: e.currentTarget.offsetHeight || 80,
+                      // offsetWidth/Height include the INSET*2 we added to the box; strip
+                      // it back out so the model dimensions match the canvas text region.
+                      width: (e.currentTarget.offsetWidth || 200) - TEXT_OVERLAY_INSET * 2,
+                      height: (e.currentTarget.offsetHeight || 80) - TEXT_OVERLAY_INSET * 2,
                       text,
                       textType: "static",
                       fontFamily: textFormat.fontFamily,
