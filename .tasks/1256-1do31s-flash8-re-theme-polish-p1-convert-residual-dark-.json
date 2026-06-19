@@ -1,10 +1,10 @@
 {
   "id": "1256-1do31s-flash8-re-theme-polish-p1-convert-residual-dark-",
   "title": "Flash8 re-theme polish P1: convert residual dark shell strips (StatusBar, Shell zoom/scenes strip, SceneSwitcher, Rulers)",
-  "description": "Visual audit found these always-visible strips still DARK (illegible) after the re-theme. Convert to light Flash 8 via packages/authoring-ui/src/theme/flash8Theme.ts, mirroring the converted Shell/Timeline. Files: (1) packages/authoring-ui/src/StatusBar.tsx (~23-42: #2d2d2d bg, #1a1a1a border, #888/#555 text) \u2192 chrome.panelBg/insetFieldStrip bg, chrome.separator border, chrome.textDefault/textDisabled, chromeFont(). (2) packages/authoring-ui/src/Shell.tsx ZOOM/SCENES control strip only (~3290-3360: #2a2a2a bg, #3a3a3a/#333 buttons, #ccc/#ddd text, active #1a6ea8) \u2192 insetFieldStrip bg, buttonStyle() buttons, halo.haloBlue active, inputStyle() zoom select. DO NOT disturb the already-converted Shell styles object. (3) packages/authoring-ui/src/SceneSwitcher.tsx (#2a2a2a/#333, active #1a6ea8, borders #1a1a1a) \u2192 panelBg + halo accents. (4) packages/authoring-ui/src/Rulers.tsx (~325: #3c3c3c bg, #00aaff guide) \u2192 chrome.insetFieldStrip bg + content.guide. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: those 4 files (+ read-only theme import).",
-  "status": "open",
+  "description": "DONE (agent-1256). Converted 4 residual dark strips to Flash 8 light theme via flash8Theme tokens. (1) StatusBar.tsx: bg->chrome.insetFieldStrip, border->chrome.separator, text->chrome.textDefault/textDisabled, chromeFont(). (2) Shell.tsx zoom/scenes strip ONLY (~3290-3378): bg->insetFieldStrip+separator, buttons->buttonStyle(), Scenes-active->halo.haloBlue border + halo.textSelected, zoom select->inputStyle(); other Shell styles untouched. (3) SceneSwitcher.tsx: panelBg/insetFieldStrip surfaces, separator borders, chromeFont, active row->halo.selectionColor(#7FCEFF)+textSelected, rename input->halo.inputBg/inputBorder, toolbar/arrow btns->chrome tokens. (4) Rulers.tsx: corner square + canvas ruler face->chrome.insetFieldStrip, ticks/labels->chrome.textDefault, border->chrome.separator, all 4 guide markers (#00aaff)->content.guide. VERIFY: pnpm --filter './packages/**' build green; authoring-ui 44 files/653 tests ALL PASS (0 failures). Zero residual dark hex in all 4 scopes. Screenshot deferred (pure token swap; build+tests are the gate).",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-19T06:23:04Z",
-  "updated_at": "2026-06-19T06:23:04Z"
+  "updated_at": "2026-06-19T06:29:17Z"
 }

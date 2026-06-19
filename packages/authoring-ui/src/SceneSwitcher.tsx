@@ -2,7 +2,7 @@
  * SceneSwitcher — inline scene switcher panel, shown near the Timeline.
  *
  * Displays the list of scenes with navigation, add, delete, duplicate, rename,
- * and up/down reorder buttons. Matches the dark panel style of the authoring UI.
+ * and up/down reorder buttons. Uses the Flash 8 light theme (see theme/flash8Theme).
  */
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
@@ -14,6 +14,7 @@ import {
   duplicateScene,
 } from "@flash/core";
 import type { FlashDocument } from "@flash/core";
+import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -166,15 +167,13 @@ export function SceneSwitcher({
   return (
     <div
       style={{
-        background: "#2a2a2a",
-        borderTop: "1px solid #1a1a1a",
+        background: chrome.panelBg,
+        borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
         flexShrink: 0,
         display: "flex",
         flexDirection: "column",
         maxHeight: "160px",
-        fontFamily: "Arial, sans-serif",
-        fontSize: "11px",
-        color: "#d0d0d0",
+        ...chromeFont(),
       }}
     >
       {/* Header row */}
@@ -184,14 +183,14 @@ export function SceneSwitcher({
           alignItems: "center",
           justifyContent: "space-between",
           padding: "2px 8px",
-          background: "#333",
-          borderBottom: "1px solid #444",
+          background: chrome.insetFieldStrip,
+          borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
           flexShrink: 0,
           height: "20px",
           userSelect: "none",
         }}
       >
-        <span style={{ fontWeight: "bold", fontSize: "10px", color: "#bbb" }}>
+        <span style={{ ...chromeFont(), fontWeight: "bold", color: chrome.textDefault }}>
           Scenes
         </span>
         {/* Toolbar: add, duplicate, delete */}
@@ -239,8 +238,8 @@ export function SceneSwitcher({
                 display: "flex",
                 alignItems: "center",
                 padding: "2px 4px",
-                background: isActive ? "#1a6ea8" : "transparent",
-                color: isActive ? "#fff" : "#d0d0d0",
+                background: isActive ? halo.selectionColor : "transparent",
+                color: isActive ? halo.textSelected : chrome.textDefault,
                 cursor: "default",
                 userSelect: "none",
                 gap: 2,
@@ -292,9 +291,9 @@ export function SceneSwitcher({
                   onClick={(e) => e.stopPropagation()}
                   style={{
                     flex: 1,
-                    background: "#1a1a1a",
-                    color: "#fff",
-                    border: "1px solid #888",
+                    background: halo.inputBg,
+                    color: halo.text,
+                    border: `1px solid ${halo.inputBorder}`,
                     borderRadius: "2px",
                     fontSize: "11px",
                     padding: "1px 3px",
@@ -331,9 +330,9 @@ export function SceneSwitcher({
 function toolbarBtnStyle(disabled: boolean): React.CSSProperties {
   return {
     background: "transparent",
-    border: "1px solid #555",
+    border: `1px solid ${chrome.separator}`,
     borderRadius: 2,
-    color: disabled ? "#555" : "#ccc",
+    color: disabled ? chrome.textDisabled : chrome.textDefault,
     cursor: disabled ? "default" : "pointer",
     fontSize: "13px",
     lineHeight: "1",
@@ -349,7 +348,7 @@ function arrowBtnStyle(disabled: boolean): React.CSSProperties {
   return {
     background: "transparent",
     border: "none",
-    color: disabled ? "#444" : "#999",
+    color: disabled ? chrome.textDisabled : chrome.textDefault,
     cursor: disabled ? "default" : "pointer",
     fontSize: "8px",
     lineHeight: "1",

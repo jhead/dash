@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from "react";
 import type { Guide, RulerUnits } from "@flash/core";
+import { chrome, content } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -73,7 +74,7 @@ function drawRuler(
   ctx.clearRect(0, 0, w, h);
 
   // Background
-  ctx.fillStyle = "#4a4a4a";
+  ctx.fillStyle = chrome.insetFieldStrip;
   ctx.fillRect(0, 0, w, h);
 
   // --- Calculate tick spacing in stage pixels ---
@@ -91,8 +92,8 @@ function drawRuler(
   const containerCenter = containerSize / 2 - rulerSize / 2;
   const stageOriginScreen = containerCenter + panOffset * zoom - (stageSize / 2) * zoom;
 
-  ctx.strokeStyle = "#cccccc";
-  ctx.fillStyle = "#cccccc";
+  ctx.strokeStyle = chrome.textDefault;
+  ctx.fillStyle = chrome.textDefault;
   ctx.font = "9px sans-serif";
   ctx.textAlign = axis === "horizontal" ? "center" : "left";
   ctx.textBaseline = axis === "horizontal" ? "top" : "middle";
@@ -144,7 +145,7 @@ function drawRuler(
   }
 
   // Border
-  ctx.strokeStyle = "#333333";
+  ctx.strokeStyle = chrome.separator;
   ctx.lineWidth = 1;
   ctx.strokeRect(0, 0, w, h);
 }
@@ -322,9 +323,9 @@ export function Rulers({
           left: 0,
           width: rulerSize,
           height: rulerSize,
-          background: "#3c3c3c",
-          borderRight: "1px solid #333",
-          borderBottom: "1px solid #333",
+          background: chrome.insetFieldStrip,
+          borderRight: `1px solid ${chrome.separator}`,
+          borderBottom: `1px solid ${chrome.separator}`,
           pointerEvents: "auto",
           zIndex: 51,
         }}
@@ -375,7 +376,7 @@ export function Rulers({
                   left: rulerSize,
                   right: 0,
                   height: 1,
-                  background: "#00aaff",
+                  background: content.guide,
                   opacity: 0.8,
                 }
               : {
@@ -383,7 +384,7 @@ export function Rulers({
                   top: rulerSize,
                   bottom: 0,
                   width: 1,
-                  background: "#00aaff",
+                  background: content.guide,
                   opacity: 0.8,
                 }),
             pointerEvents: "none",
@@ -410,7 +411,7 @@ export function Rulers({
                 left: screenX,
                 width: 1,
                 height: rulerSize,
-                background: "#00aaff",
+                background: content.guide,
                 pointerEvents: "none",
                 zIndex: 52,
               }}
@@ -431,7 +432,7 @@ export function Rulers({
                 top: screenY,
                 width: rulerSize,
                 height: 1,
-                background: "#00aaff",
+                background: content.guide,
                 pointerEvents: "none",
                 zIndex: 52,
               }}

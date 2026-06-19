@@ -1,4 +1,5 @@
 import React from "react";
+import { chrome, chromeFont } from "./theme/flash8Theme.js";
 
 export interface StatusBarProps {
   zoom?: number;
@@ -20,25 +21,26 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "row",
     alignItems: "center",
     height: "20px",
-    background: "#2d2d2d",
-    borderTop: "1px solid #1a1a1a",
+    background: chrome.insetFieldStrip,
+    borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
     padding: "0 6px",
     flexShrink: 0,
     userSelect: "none",
     gap: "12px",
+    ...chromeFont(),
   },
   item: {
-    fontSize: "10px",
-    color: "#888",
+    ...chromeFont(),
+    color: chrome.textDefault,
     whiteSpace: "nowrap",
   },
   separator: {
-    fontSize: "10px",
-    color: "#555",
+    ...chromeFont(),
+    color: chrome.textDisabled,
   },
   zoomSelect: {
-    fontSize: "10px",
-    color: "#888",
+    ...chromeFont(),
+    color: chrome.textDefault,
     background: "transparent",
     border: "none",
     outline: "none",

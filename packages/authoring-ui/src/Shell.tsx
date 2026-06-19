@@ -87,7 +87,7 @@ import { ShellDialogs } from "./layout/ShellDialogs.js";
 import { ShellPanels } from "./layout/ShellPanels.js";
 import { ManageCommandsDialog } from "./layout/ManageCommandsDialog.js";
 import { ShellOverlays } from "./layout/ShellOverlays.js";
-import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
+import { chrome, halo, chromeFont, buttonStyle, inputStyle } from "./theme/flash8Theme.js";
 import { useToolHandlers } from "./hooks/useToolHandlers.js";
 import { useTimelineEffectHandlers } from "./hooks/useTimelineEffectHandlers.js";
 import { nextInstanceId, nextBitmapId, nextVideoId } from "./idgen.js";
@@ -3293,8 +3293,8 @@ export function Shell(): React.ReactElement {
                 alignItems: "center",
                 gap: 4,
                 padding: "2px 8px",
-                background: "#2a2a2a",
-                borderTop: "1px solid #444",
+                background: chrome.insetFieldStrip,
+                borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
                 flexShrink: 0,
                 userSelect: "none",
               }}
@@ -3304,13 +3304,10 @@ export function Shell(): React.ReactElement {
                 onClick={() => setShowScenes((v) => !v)}
                 title="Show/hide Scenes panel"
                 style={{
-                  background: showScenes ? "#1a6ea8" : "#3a3a3a",
-                  color: showScenes ? "#fff" : "#ccc",
-                  border: "1px solid #555",
-                  borderRadius: 2,
-                  cursor: "pointer",
-                  fontSize: 10,
-                  lineHeight: 1,
+                  ...buttonStyle(showScenes ? "down" : "up"),
+                  ...(showScenes
+                    ? { borderColor: halo.haloBlue, color: halo.textSelected }
+                    : {}),
                   padding: "1px 6px",
                   fontWeight: showScenes ? "bold" : "normal",
                   marginRight: 4,
@@ -3322,13 +3319,7 @@ export function Shell(): React.ReactElement {
                 onClick={() => setZoom((z) => Math.max(0.25, z / 2))}
                 title="Zoom Out (Ctrl+-)"
                 style={{
-                  background: "#3a3a3a",
-                  color: "#ccc",
-                  border: "1px solid #555",
-                  borderRadius: 2,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  lineHeight: 1,
+                  ...buttonStyle("up"),
                   padding: "1px 5px",
                   fontWeight: "bold",
                 }}
@@ -3343,12 +3334,7 @@ export function Shell(): React.ReactElement {
                 }}
                 title="Zoom level (Ctrl+0 to reset)"
                 style={{
-                  background: "#333",
-                  color: "#ddd",
-                  border: "1px solid #555",
-                  borderRadius: 2,
-                  fontSize: 11,
-                  padding: "1px 4px",
+                  ...inputStyle(),
                   cursor: "pointer",
                 }}
               >
@@ -3363,13 +3349,7 @@ export function Shell(): React.ReactElement {
                 onClick={() => setZoom((z) => Math.min(4, z * 2))}
                 title="Zoom In (Ctrl+=)"
                 style={{
-                  background: "#3a3a3a",
-                  color: "#ccc",
-                  border: "1px solid #555",
-                  borderRadius: 2,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  lineHeight: 1,
+                  ...buttonStyle("up"),
                   padding: "1px 5px",
                   fontWeight: "bold",
                 }}
