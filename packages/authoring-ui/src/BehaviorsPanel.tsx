@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { BEHAVIORS, getBehaviorsByCategory } from "./behaviors.js";
 import type { Behavior } from "./behaviors.js";
 import type { AttachedBehavior, Frame } from "@flash/core";
+import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
 
 // Re-export so callers that imported AttachedBehavior from here continue to work.
 export type { AttachedBehavior };
@@ -56,11 +57,15 @@ function ParamForm({ behavior, onConfirm, onCancel }: ParamFormProps): React.Rea
   const handleOk = () => onConfirm(values);
 
   const inputStyle: React.CSSProperties = {
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    borderRadius: "3px",
-    color: "#d4d4d4",
-    fontSize: "12px",
+    ...chromeFont(),
+    background: halo.inputBg,
+    color: halo.text,
+    borderStyle: "solid",
+    borderWidth: 1,
+    borderTopColor: halo.inputBorderDark,
+    borderLeftColor: halo.inputBorderDark,
+    borderRightColor: halo.inputBorderLight,
+    borderBottomColor: halo.inputBorderLight,
     padding: "3px 6px",
     outline: "none",
     width: "100%",
@@ -82,13 +87,14 @@ function ParamForm({ behavior, onConfirm, onCancel }: ParamFormProps): React.Rea
     >
       <div
         style={{
-          background: "#2d2d2d",
-          border: "1px solid #555",
+          ...chromeFont(),
+          background: chrome.panelBg,
+          border: `${chrome.borderThin}px solid ${chrome.separator}`,
           borderRadius: "4px",
           minWidth: "300px",
           maxWidth: "400px",
           padding: "0",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
           display: "flex",
           flexDirection: "column",
         }}
@@ -96,12 +102,12 @@ function ParamForm({ behavior, onConfirm, onCancel }: ParamFormProps): React.Rea
         {/* Title bar */}
         <div
           style={{
+            ...chromeFont(),
             padding: "8px 12px",
-            borderBottom: "1px solid #444",
-            fontSize: "12px",
+            borderBottom: `${chrome.borderThin}px solid ${halo.headerDivider}`,
             fontWeight: "bold",
-            color: "#e0e0e0",
-            background: "#333",
+            color: chrome.textDefault,
+            background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
           }}
         >
           {behavior.name}
@@ -110,10 +116,11 @@ function ParamForm({ behavior, onConfirm, onCancel }: ParamFormProps): React.Rea
         {/* Description */}
         <div
           style={{
+            ...chromeFont(),
             padding: "8px 12px",
-            fontSize: "11px",
-            color: "#aaa",
-            borderBottom: behavior.params.length > 0 ? "1px solid #3a3a3a" : undefined,
+            color: chrome.textDefault,
+            background: halo.panelContentBg,
+            borderBottom: behavior.params.length > 0 ? `${chrome.borderThin}px solid ${chrome.separator}` : undefined,
           }}
         >
           {behavior.description}
@@ -121,11 +128,11 @@ function ParamForm({ behavior, onConfirm, onCancel }: ParamFormProps): React.Rea
 
         {/* Parameter fields */}
         {behavior.params.length > 0 && (
-          <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: "8px", background: halo.panelContentBg }}>
             {behavior.params.map((p) => (
               <div key={p.key}>
                 <label
-                  style={{ display: "block", fontSize: "11px", color: "#ccc", marginBottom: "3px" }}
+                  style={{ ...chromeFont(), display: "block", color: chrome.textDefault, marginBottom: "3px" }}
                 >
                   {p.label}
                 </label>
@@ -152,18 +159,19 @@ function ParamForm({ behavior, onConfirm, onCancel }: ParamFormProps): React.Rea
             justifyContent: "flex-end",
             gap: "6px",
             padding: "8px 12px",
-            borderTop: "1px solid #444",
+            borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
+            background: chrome.panelBg,
           }}
         >
           <button
             onClick={onCancel}
             style={{
-              background: "transparent",
-              border: "1px solid #555",
-              borderRadius: "3px",
-              color: "#ccc",
+              ...chromeFont(),
+              background: `linear-gradient(${chrome.bevelLight}, ${chrome.insetFieldStrip})`,
+              border: `1px solid ${halo.borderColor}`,
+              borderRadius: halo.cornerRadius,
+              color: halo.buttonColor,
               cursor: "pointer",
-              fontSize: "12px",
               padding: "4px 12px",
             }}
           >
@@ -172,12 +180,12 @@ function ParamForm({ behavior, onConfirm, onCancel }: ParamFormProps): React.Rea
           <button
             onClick={handleOk}
             style={{
-              background: "#0078d7",
-              border: "1px solid #005ba1",
-              borderRadius: "3px",
-              color: "#fff",
+              ...chromeFont(),
+              background: "linear-gradient(#D8F0FF, #99D7FF)",
+              border: `1px solid ${halo.haloBlue}`,
+              borderRadius: halo.cornerRadius,
+              color: halo.textSelected,
               cursor: "pointer",
-              fontSize: "12px",
               padding: "4px 12px",
             }}
           >
@@ -216,17 +224,16 @@ function AddDropdown({ onSelect, onClose, anchorRef }: AddDropdownProps): React.
       />
       <div
         style={{
+          ...chromeFont(),
           position: "fixed",
           top,
           left,
           minWidth: "220px",
-          background: "#2d2d2d",
-          border: "1px solid #555",
+          background: halo.panelContentBg,
+          border: `${chrome.borderThin}px solid ${chrome.separator}`,
           borderRadius: "3px",
-          boxShadow: "2px 4px 12px rgba(0,0,0,0.6)",
+          boxShadow: "2px 4px 12px rgba(0,0,0,0.3)",
           zIndex: 3999,
-          fontFamily: "system-ui, -apple-system, sans-serif",
-          fontSize: "12px",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -235,13 +242,14 @@ function AddDropdown({ onSelect, onClose, anchorRef }: AddDropdownProps): React.
             {/* Category header */}
             <div
               style={{
+                ...chromeFont(),
                 padding: "4px 10px 2px",
-                fontSize: "10px",
-                color: "#888",
+                fontSize: 10,
+                color: chrome.textDisabled,
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
                 userSelect: "none",
-                borderTop: "1px solid #3a3a3a",
+                borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
               }}
             >
               {category}
@@ -268,10 +276,11 @@ function BehaviorMenuItem({
   return (
     <div
       style={{
+        ...chromeFont(),
         padding: "4px 10px 4px 20px",
-        color: "#d4d4d4",
+        color: chrome.textDefault,
         cursor: "default",
-        background: hovered ? "#0078d7" : "transparent",
+        background: hovered ? halo.rollOverColor : "transparent",
         userSelect: "none",
       }}
       onMouseEnter={() => setHovered(true)}
@@ -399,29 +408,29 @@ export function BehaviorsPanel({
   // -------------------------------------------------------------------------
 
   const panelStyle: React.CSSProperties = {
+    ...chromeFont(),
     position: "fixed",
     bottom: "40px",
     right: "260px",
     width: "300px",
     height: "280px",
-    background: "#1e1e1e",
-    border: "1px solid #444",
-    boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
+    background: chrome.panelBg,
+    border: `${chrome.borderThin}px solid ${chrome.separator}`,
+    boxShadow: "0 4px 24px rgba(0,0,0,0.35)",
     display: "flex",
     flexDirection: "column",
     zIndex: 2000,
-    fontFamily: "system-ui, -apple-system, sans-serif",
-    fontSize: "12px",
-    color: "#d4d4d4",
+    color: chrome.textDefault,
     borderRadius: "4px",
     overflow: "visible",
   };
 
   const toolBtnStyle: React.CSSProperties = {
+    ...chromeFont(),
     background: "transparent",
     border: "1px solid transparent",
     borderRadius: "3px",
-    color: "#ccc",
+    color: halo.buttonColor,
     cursor: "pointer",
     fontSize: "14px",
     padding: "1px 6px",
@@ -441,15 +450,15 @@ export function BehaviorsPanel({
             alignItems: "center",
             justifyContent: "space-between",
             height: "24px",
-            background: "#2d2d2d",
-            borderBottom: "1px solid #444",
+            background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+            borderBottom: `${chrome.borderThin}px solid ${halo.headerDivider}`,
             padding: "0 8px",
             flexShrink: 0,
             userSelect: "none",
             borderRadius: "4px 4px 0 0",
           }}
         >
-          <span style={{ fontSize: "11px", color: "#ccc" }}>Behaviors</span>
+          <span style={{ ...chromeFont(), fontWeight: "bold", color: chrome.textDefault }}>Behaviors</span>
           <button
             style={{ ...toolBtnStyle, fontSize: "12px" }}
             onClick={onClose}
@@ -465,8 +474,8 @@ export function BehaviorsPanel({
             display: "flex",
             alignItems: "center",
             height: "26px",
-            background: "#252526",
-            borderBottom: "1px solid #333",
+            background: chrome.panelBg,
+            borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
             padding: "0 4px",
             gap: "2px",
             flexShrink: 0,
@@ -499,36 +508,36 @@ export function BehaviorsPanel({
           style={{
             display: "flex",
             height: "20px",
-            background: "#252526",
-            borderBottom: "1px solid #2a2a2a",
+            background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+            borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
             flexShrink: 0,
             userSelect: "none",
           }}
         >
           <div
             style={{
+              ...chromeFont(),
               flex: "0 0 100px",
               padding: "2px 8px",
-              fontSize: "10px",
-              color: "#888",
-              borderRight: "1px solid #333",
+              color: chrome.textDefault,
+              borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
             }}
           >
             Event
           </div>
-          <div style={{ flex: 1, padding: "2px 8px", fontSize: "10px", color: "#888" }}>
+          <div style={{ ...chromeFont(), flex: 1, padding: "2px 8px", color: chrome.textDefault }}>
             Action
           </div>
         </div>
 
         {/* Behavior rows */}
-        <div style={{ flex: 1, overflowY: "auto", background: "#1e1e1e" }}>
+        <div style={{ flex: 1, overflowY: "auto", background: halo.panelContentBg }}>
           {rows.length === 0 ? (
             <div
               style={{
+                ...chromeFont(),
                 padding: "12px 10px",
-                color: "#666",
-                fontSize: "11px",
+                color: chrome.textDisabled,
                 fontStyle: "italic",
               }}
             >
@@ -544,8 +553,8 @@ export function BehaviorsPanel({
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    background: isSelected ? "#094771" : "transparent",
-                    borderBottom: "1px solid #2a2a2a",
+                    background: isSelected ? halo.selectionColor : "transparent",
+                    borderBottom: `${chrome.borderThin}px solid ${halo.separator}`,
                     cursor: "default",
                     userSelect: "none",
                   }}
@@ -553,11 +562,11 @@ export function BehaviorsPanel({
                 >
                   <div
                     style={{
+                      ...chromeFont(),
                       flex: "0 0 100px",
                       padding: "4px 8px",
-                      borderRight: "1px solid #2a2a2a",
-                      fontSize: "11px",
-                      color: isSelected ? "#fff" : "#ccc",
+                      borderRight: `${chrome.borderThin}px solid ${halo.separator}`,
+                      color: isSelected ? halo.textSelected : chrome.textDefault,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
@@ -567,10 +576,10 @@ export function BehaviorsPanel({
                   </div>
                   <div
                     style={{
+                      ...chromeFont(),
                       flex: 1,
                       padding: "4px 8px",
-                      fontSize: "11px",
-                      color: isSelected ? "#fff" : "#aaa",
+                      color: isSelected ? halo.textSelected : chrome.textDefault,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
@@ -587,13 +596,14 @@ export function BehaviorsPanel({
         {/* Status bar */}
         <div
           style={{
+            ...chromeFont(),
             height: "22px",
-            background: "#007acc",
+            background: `linear-gradient(${halo.footerGrad[0]}, ${halo.footerGrad[1]})`,
+            borderTop: `${chrome.borderThin}px solid ${halo.headerDivider}`,
             display: "flex",
             alignItems: "center",
             padding: "0 8px",
-            fontSize: "11px",
-            color: "#fff",
+            color: chrome.textDefault,
             flexShrink: 0,
             borderRadius: "0 0 4px 4px",
           }}

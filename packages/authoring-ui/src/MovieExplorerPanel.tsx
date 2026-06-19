@@ -7,6 +7,7 @@ import type {
   Layer,
   Scene,
 } from "@flash/core";
+import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Explorer node types
@@ -318,20 +319,19 @@ export function filterExplorerTree(
 // ---------------------------------------------------------------------------
 
 const panelStyle: React.CSSProperties = {
+  ...chromeFont(),
   position: "fixed",
   top: "60px",
   left: "60px",
   width: "340px",
   height: "480px",
-  background: "#1e1e1e",
-  border: "1px solid #444",
-  boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
+  background: chrome.panelBg,
+  border: `${chrome.borderThin}px solid ${chrome.separator}`,
+  boxShadow: "0 4px 24px rgba(0,0,0,0.35)",
   display: "flex",
   flexDirection: "column",
   zIndex: 2000,
-  fontFamily: "system-ui, -apple-system, sans-serif",
-  fontSize: "12px",
-  color: "#d4d4d4",
+  color: chrome.textDefault,
   borderRadius: "4px",
   overflow: "hidden",
 };
@@ -384,7 +384,7 @@ function TreeNode({ node, depth, onSelect }: TreeNodeProps): React.ReactElement 
           userSelect: "none",
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLDivElement).style.background = "#2a3a4a";
+          (e.currentTarget as HTMLDivElement).style.background = halo.rollOverColor;
         }}
         onMouseLeave={(e) => {
           (e.currentTarget as HTMLDivElement).style.background = "transparent";
@@ -399,7 +399,7 @@ function TreeNode({ node, depth, onSelect }: TreeNodeProps): React.ReactElement 
           style={{
             width: "12px",
             fontSize: "10px",
-            color: "#888",
+            color: halo.iconColor,
             flexShrink: 0,
             lineHeight: "1",
           }}
@@ -412,7 +412,7 @@ function TreeNode({ node, depth, onSelect }: TreeNodeProps): React.ReactElement 
           style={{
             width: "16px",
             fontSize: "10px",
-            color: "#888",
+            color: halo.iconColor,
             flexShrink: 0,
             textAlign: "center",
           }}
@@ -423,12 +423,12 @@ function TreeNode({ node, depth, onSelect }: TreeNodeProps): React.ReactElement 
         {/* Label */}
         <span
           style={{
+            ...chromeFont(),
             flex: 1,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
-            fontSize: "11px",
-            color: "#d4d4d4",
+            color: chrome.textDefault,
           }}
         >
           {node.label}
@@ -464,10 +464,13 @@ function FilterButton({ label, title, active, onToggle }: FilterButtonProps): Re
       title={title}
       onClick={onToggle}
       style={{
-        background: active ? "#0078d7" : "transparent",
-        border: `1px solid ${active ? "#005ba1" : "#555"}`,
-        borderRadius: "3px",
-        color: active ? "#fff" : "#bbb",
+        ...chromeFont(),
+        background: active
+          ? "linear-gradient(#D8F0FF, #99D7FF)"
+          : `linear-gradient(${chrome.bevelLight}, ${chrome.insetFieldStrip})`,
+        border: `1px solid ${active ? halo.haloBlue : halo.borderColor}`,
+        borderRadius: halo.cornerRadius,
+        color: active ? halo.textSelected : halo.buttonColor,
         cursor: "pointer",
         fontSize: "10px",
         fontWeight: "bold",
@@ -519,10 +522,11 @@ export function MovieExplorerPanel({
   };
 
   const toolBtnStyle: React.CSSProperties = {
+    ...chromeFont(),
     background: "transparent",
     border: "1px solid transparent",
     borderRadius: "3px",
-    color: "#ccc",
+    color: halo.buttonColor,
     cursor: "pointer",
     fontSize: "14px",
     padding: "1px 6px",
@@ -541,15 +545,15 @@ export function MovieExplorerPanel({
           alignItems: "center",
           justifyContent: "space-between",
           height: "24px",
-          background: "#2d2d2d",
-          borderBottom: "1px solid #444",
+          background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+          borderBottom: `${chrome.borderThin}px solid ${halo.headerDivider}`,
           padding: "0 8px",
           flexShrink: 0,
           userSelect: "none",
           borderRadius: "4px 4px 0 0",
         }}
       >
-        <span style={{ fontSize: "11px", color: "#ccc" }}>Movie Explorer</span>
+        <span style={{ ...chromeFont(), fontWeight: "bold", color: chrome.textDefault }}>Movie Explorer</span>
         <button
           style={{ ...toolBtnStyle, fontSize: "12px" }}
           onClick={onClose}
@@ -565,8 +569,8 @@ export function MovieExplorerPanel({
           display: "flex",
           alignItems: "center",
           height: "28px",
-          background: "#252526",
-          borderBottom: "1px solid #333",
+          background: chrome.panelBg,
+          borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
           padding: "0 6px",
           gap: "3px",
           flexShrink: 0,
@@ -616,13 +620,17 @@ export function MovieExplorerPanel({
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search..."
           style={{
+            ...chromeFont(),
             flex: 1,
             marginLeft: "4px",
-            background: "#1e1e1e",
-            border: "1px solid #444",
-            borderRadius: "3px",
-            color: "#d4d4d4",
-            fontSize: "11px",
+            background: halo.inputBg,
+            color: halo.text,
+            borderStyle: "solid",
+            borderWidth: 1,
+            borderTopColor: halo.inputBorderDark,
+            borderLeftColor: halo.inputBorderDark,
+            borderRightColor: halo.inputBorderLight,
+            borderBottomColor: halo.inputBorderLight,
             padding: "2px 6px",
             outline: "none",
           }}
@@ -635,15 +643,15 @@ export function MovieExplorerPanel({
           flex: 1,
           overflowY: "auto",
           overflowX: "hidden",
-          background: "#1e1e1e",
+          background: halo.panelContentBg,
         }}
       >
         {filteredTree.length === 0 ? (
           <div
             style={{
+              ...chromeFont(),
               padding: "12px 10px",
-              color: "#666",
-              fontSize: "11px",
+              color: chrome.textDisabled,
               fontStyle: "italic",
             }}
           >
@@ -659,13 +667,14 @@ export function MovieExplorerPanel({
       {/* Status bar */}
       <div
         style={{
+          ...chromeFont(),
           height: "22px",
-          background: "#007acc",
+          background: `linear-gradient(${halo.footerGrad[0]}, ${halo.footerGrad[1]})`,
+          borderTop: `${chrome.borderThin}px solid ${halo.headerDivider}`,
           display: "flex",
           alignItems: "center",
           padding: "0 8px",
-          fontSize: "11px",
-          color: "#fff",
+          color: chrome.textDefault,
           flexShrink: 0,
           borderRadius: "0 0 4px 4px",
         }}

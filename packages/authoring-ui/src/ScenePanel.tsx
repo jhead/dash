@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useRef, useCallback } from "react";
+import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -32,50 +33,53 @@ const panelStyle: React.CSSProperties = {
   top: "80px",
   right: "10px",
   width: "200px",
-  background: "#2a2a2a",
-  border: "1px solid #555",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+  background: chrome.panelBg,
+  border: `${chrome.borderThin}px solid ${chrome.separator}`,
+  boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
   display: "flex",
   flexDirection: "column",
   zIndex: 1800,
-  fontFamily: "Arial, sans-serif",
-  fontSize: "11px",
-  color: "#d0d0d0",
+  ...chromeFont(),
+  color: chrome.textDefault,
   borderRadius: "3px",
   overflow: "hidden",
 };
 
+// Header uses the Halo panel-header gradient + divider.
 const headerStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
   padding: "4px 8px",
-  background: "#333",
-  borderBottom: "1px solid #555",
+  background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+  borderBottom: `${chrome.borderThin}px solid ${halo.headerDivider}`,
   flexShrink: 0,
   height: "22px",
 };
 
+// White content list area.
 const listStyle: React.CSSProperties = {
   flex: 1,
   overflowY: "auto",
   minHeight: "60px",
   maxHeight: "240px",
+  background: halo.panelContentBg,
 };
 
 const footerStyle: React.CSSProperties = {
   display: "flex",
   flexDirection: "row",
-  borderTop: "1px solid #555",
+  borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
   flexShrink: 0,
+  background: chrome.panelBg,
 };
 
 const footerBtnStyle = (disabled?: boolean): React.CSSProperties => ({
   flex: 1,
   background: "transparent",
   border: "none",
-  borderRight: "1px solid #555",
-  color: disabled ? "#555" : "#ccc",
+  borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
+  color: disabled ? chrome.textDisabled : halo.buttonColor,
   cursor: disabled ? "default" : "pointer",
   fontSize: "16px",
   padding: "3px 0",
@@ -181,12 +185,12 @@ export function ScenePanel({
     <div style={panelStyle}>
       {/* Header */}
       <div style={headerStyle}>
-        <span style={{ fontWeight: "bold", fontSize: "11px", color: "#e0e0e0" }}>Scene</span>
+        <span style={{ ...chromeFont(), fontWeight: "bold", color: chrome.textDefault }}>Scene</span>
         <button
           style={{
             background: "transparent",
             border: "none",
-            color: "#aaa",
+            color: halo.buttonColor,
             cursor: "pointer",
             fontSize: "13px",
             padding: "0 2px",
@@ -213,11 +217,12 @@ export function ScenePanel({
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, index)}
               style={{
+                ...chromeFont(),
                 display: "flex",
                 alignItems: "center",
                 padding: "3px 6px",
-                background: isActive ? "#1a6ea8" : "transparent",
-                color: isActive ? "#fff" : "#d0d0d0",
+                background: isActive ? halo.selectionColor : "transparent",
+                color: isActive ? halo.textSelected : chrome.textDefault,
                 cursor: "default",
                 userSelect: "none",
               }}
@@ -234,7 +239,7 @@ export function ScenePanel({
               <span
                 style={{
                   marginRight: "6px",
-                  color: isActive ? "#cce0f5" : "#555",
+                  color: isActive ? halo.textSelected : halo.disabledIcon,
                   fontSize: "10px",
                   cursor: "grab",
                   flexShrink: 0,
@@ -253,12 +258,16 @@ export function ScenePanel({
                   onKeyDown={handleRenameKeyDown}
                   onBlur={commitRename}
                   style={{
+                    ...chromeFont(),
                     flex: 1,
-                    background: "#1a1a1a",
-                    color: "#fff",
-                    border: "1px solid #888",
-                    borderRadius: "2px",
-                    fontSize: "11px",
+                    background: halo.inputBg,
+                    color: halo.text,
+                    borderStyle: "solid",
+                    borderWidth: 1,
+                    borderTopColor: halo.inputBorderDark,
+                    borderLeftColor: halo.inputBorderDark,
+                    borderRightColor: halo.inputBorderLight,
+                    borderBottomColor: halo.inputBorderLight,
                     padding: "1px 3px",
                     outline: "none",
                   }}
@@ -285,14 +294,14 @@ export function ScenePanel({
       {/* Footer toolbar */}
       <div style={footerStyle}>
         <button
-          style={{ ...footerBtnStyle(false), borderRight: "1px solid #555" }}
+          style={{ ...footerBtnStyle(false), borderRight: `${chrome.borderThin}px solid ${chrome.separator}` }}
           title="Add Scene"
           onClick={onAddScene}
         >
           +
         </button>
         <button
-          style={{ ...footerBtnStyle(false), borderRight: "1px solid #555" }}
+          style={{ ...footerBtnStyle(false), borderRight: `${chrome.borderThin}px solid ${chrome.separator}` }}
           title="Duplicate Scene"
           onClick={() => {
             if (onDuplicateScene) {

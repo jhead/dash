@@ -26,6 +26,7 @@ import {
   defaultGradientBevel,
   defaultGradientGlow,
 } from "@flash/core";
+import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -43,68 +44,72 @@ export interface FiltersPanelProps {
 // ---------------------------------------------------------------------------
 
 const panel: React.CSSProperties = {
+  ...chromeFont(),
   position: "fixed",
   top: "80px",
   right: "220px",
   width: "320px",
-  background: "#2a2a2a",
-  border: "1px solid #555",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+  background: chrome.panelBg,
+  border: `${chrome.borderThin}px solid ${chrome.separator}`,
+  boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
   display: "flex",
   flexDirection: "column",
   zIndex: 1800,
-  fontFamily: "Arial, sans-serif",
-  fontSize: "11px",
-  color: "#d0d0d0",
+  color: chrome.textDefault,
   borderRadius: "3px",
   overflow: "hidden",
 };
 
 const titleBar: React.CSSProperties = {
+  ...chromeFont(),
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
   height: "22px",
-  background: "#3a3a3a",
-  borderBottom: "1px solid #1a1a1a",
+  background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+  borderBottom: `${chrome.borderThin}px solid ${halo.headerDivider}`,
   padding: "0 6px",
   flexShrink: 0,
   userSelect: "none",
-  fontSize: "11px",
   fontWeight: "bold",
-  color: "#c0c0c0",
+  color: chrome.textDefault,
 };
 
 const closeBtn: React.CSSProperties = {
   background: "transparent",
   border: "none",
-  color: "#999",
+  color: halo.buttonColor,
   cursor: "pointer",
   fontSize: "13px",
   lineHeight: "1",
   padding: "0 2px",
 };
 
+// White content list area.
 const filterList: React.CSSProperties = {
   minHeight: "60px",
   maxHeight: "140px",
   overflowY: "auto",
-  borderBottom: "1px solid #1a1a1a",
+  background: halo.panelContentBg,
+  borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
   flexShrink: 0,
 };
 
 const filterRow: React.CSSProperties = {
+  ...chromeFont(),
   display: "flex",
   alignItems: "center",
   height: "22px",
   padding: "0 4px",
   gap: "4px",
   cursor: "default",
+  color: chrome.textDefault,
 };
 
 const filterRowSelected: React.CSSProperties = {
   ...filterRow,
-  background: "#1a5280",
+  background: halo.selectionColor,
+  color: halo.textSelected,
 };
 
 const addBar: React.CSSProperties = {
@@ -113,26 +118,29 @@ const addBar: React.CSSProperties = {
   height: "24px",
   padding: "0 4px",
   gap: "4px",
-  borderBottom: "1px solid #1a1a1a",
-  background: "#303030",
+  borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
+  background: chrome.panelBg,
   flexShrink: 0,
 };
 
+// Halo button: light raised fill, control-grey border + label.
 const addBtnStyle: React.CSSProperties = {
-  background: "#3a3a3a",
-  border: "1px solid #555",
-  color: "#d0d0d0",
+  ...chromeFont(),
+  background: `linear-gradient(${chrome.bevelLight}, ${chrome.insetFieldStrip})`,
+  border: `1px solid ${halo.borderColor}`,
+  color: halo.buttonColor,
   cursor: "pointer",
   fontSize: "13px",
   lineHeight: "1",
   padding: "1px 6px",
-  borderRadius: "2px",
+  borderRadius: halo.cornerRadius,
 };
 
 const paramsArea: React.CSSProperties = {
   flex: 1,
   padding: "6px",
   overflowY: "auto",
+  background: chrome.panelBg,
 };
 
 const row: React.CSSProperties = {
@@ -143,47 +151,58 @@ const row: React.CSSProperties = {
 };
 
 const label: React.CSSProperties = {
+  ...chromeFont(),
   width: "90px",
   flexShrink: 0,
-  color: "#999",
-  fontSize: "11px",
+  color: chrome.textDefault,
 };
 
+// White inset field with the Halo sunken border.
 const numInput: React.CSSProperties = {
+  ...chromeFont(),
   width: "60px",
-  fontSize: "11px",
-  background: "#222",
-  color: "#e0e0e0",
-  border: "1px solid #444",
+  background: halo.inputBg,
+  color: halo.text,
+  borderStyle: "solid",
+  borderWidth: 1,
+  borderTopColor: halo.inputBorderDark,
+  borderLeftColor: halo.inputBorderDark,
+  borderRightColor: halo.inputBorderLight,
+  borderBottomColor: halo.inputBorderLight,
   padding: "1px 4px",
 };
 
 const colorInput: React.CSSProperties = {
   width: "36px",
   height: "18px",
-  border: "1px solid #444",
+  border: `1px solid ${halo.inputBorder}`,
   padding: "0",
   cursor: "pointer",
 };
 
 const checkboxStyle: React.CSSProperties = {
   cursor: "pointer",
-  accentColor: "#1a6ea8",
+  accentColor: halo.haloBlue,
 };
 
 const selectStyle: React.CSSProperties = {
-  fontSize: "11px",
-  background: "#222",
-  color: "#e0e0e0",
-  border: "1px solid #444",
+  ...chromeFont(),
+  background: halo.inputBg,
+  color: halo.text,
+  borderStyle: "solid",
+  borderWidth: 1,
+  borderTopColor: halo.inputBorderDark,
+  borderLeftColor: halo.inputBorderDark,
+  borderRightColor: halo.inputBorderLight,
+  borderBottomColor: halo.inputBorderLight,
   padding: "1px 2px",
 };
 
 const emptyNote: React.CSSProperties = {
+  ...chromeFont(),
   padding: "6px",
-  color: "#666",
+  color: chrome.textDisabled,
   fontStyle: "italic",
-  fontSize: "11px",
 };
 
 // ---------------------------------------------------------------------------
@@ -296,7 +315,7 @@ function ColorField({
           if (!isNaN(n)) onAlphaChange(Math.max(0, Math.min(1, n / 100)));
         }}
       />
-      <span style={{ color: "#666", fontSize: "10px" }}>%</span>
+      <span style={{ color: chrome.textDisabled, fontSize: "10px" }}>%</span>
     </div>
   );
 }
@@ -528,9 +547,9 @@ function GradientGlowParams({
       <CheckField lbl="Inner Glow" value={filter.inner} onChange={(v) => upd({ inner: v })} />
       <CheckField lbl="Knockout" value={filter.knockout} onChange={(v) => upd({ knockout: v })} />
       {/* Gradient stops */}
-      <div style={{ marginTop: "6px", borderTop: "1px solid #444", paddingTop: "4px" }}>
+      <div style={{ marginTop: "6px", borderTop: `${chrome.borderThin}px solid ${chrome.separator}`, paddingTop: "4px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-          <span style={{ color: "#999", fontSize: "11px" }}>Gradient Stops</span>
+          <span style={{ ...chromeFont(), color: chrome.textDefault }}>Gradient Stops</span>
           <button style={addBtnStyle} onClick={addStop} title="Add gradient stop">+</button>
         </div>
         {filter.gradient.map((stop, i) => (
@@ -566,7 +585,7 @@ function GradientGlowParams({
               }}
             />
             <button
-              style={{ background: "transparent", border: "none", color: "#666", cursor: "pointer", fontSize: "11px", padding: "0 2px" }}
+              style={{ background: "transparent", border: "none", color: halo.buttonColor, cursor: "pointer", fontSize: "11px", padding: "0 2px" }}
               onClick={() => removeStop(i)}
               disabled={filter.gradient.length <= 2}
               title="Remove stop"
@@ -633,9 +652,9 @@ function GradientBevelParams({
       <CheckField lbl="Inner" value={filter.inner} onChange={(v) => upd({ inner: v })} />
       <CheckField lbl="Knockout" value={filter.knockout} onChange={(v) => upd({ knockout: v })} />
       {/* Gradient stops */}
-      <div style={{ marginTop: "6px", borderTop: "1px solid #444", paddingTop: "4px" }}>
+      <div style={{ marginTop: "6px", borderTop: `${chrome.borderThin}px solid ${chrome.separator}`, paddingTop: "4px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-          <span style={{ color: "#999", fontSize: "11px" }}>Gradient Stops</span>
+          <span style={{ ...chromeFont(), color: chrome.textDefault }}>Gradient Stops</span>
           <button style={addBtnStyle} onClick={addStop} title="Add gradient stop">+</button>
         </div>
         {filter.gradient.map((stop, i) => (
@@ -671,7 +690,7 @@ function GradientBevelParams({
               }}
             />
             <button
-              style={{ background: "transparent", border: "none", color: "#666", cursor: "pointer", fontSize: "11px", padding: "0 2px" }}
+              style={{ background: "transparent", border: "none", color: halo.buttonColor, cursor: "pointer", fontSize: "11px", padding: "0 2px" }}
               onClick={() => removeStop(i)}
               disabled={filter.gradient.length <= 2}
               title="Remove stop"
@@ -820,7 +839,7 @@ export function FiltersPanel({
               style={{
                 background: "transparent",
                 border: "none",
-                color: "#888",
+                color: halo.buttonColor,
                 cursor: "pointer",
                 fontSize: "12px",
                 padding: "0 2px",
@@ -854,11 +873,11 @@ export function FiltersPanel({
                 position: "absolute",
                 top: "22px",
                 left: 0,
-                background: "#3c3c3c",
-                border: "1px solid #555",
+                background: halo.panelContentBg,
+                border: `${chrome.borderThin}px solid ${chrome.separator}`,
                 zIndex: 100,
                 minWidth: "130px",
-                boxShadow: "2px 2px 6px rgba(0,0,0,0.5)",
+                boxShadow: "2px 2px 6px rgba(0,0,0,0.3)",
               }}
             >
               {(
@@ -881,7 +900,7 @@ export function FiltersPanel({
             </div>
           )}
         </div>
-        <span style={{ color: "#666", fontSize: "10px" }}>Add filter</span>
+        <span style={{ ...chromeFont(), color: chrome.textDisabled, fontSize: "10px" }}>Add filter</span>
       </div>
 
       {/* Parameters area */}
@@ -893,12 +912,12 @@ export function FiltersPanel({
           <>
             <div
               style={{
-                fontSize: "11px",
+                ...chromeFont(),
                 fontWeight: "bold",
-                color: "#c0c0c0",
+                color: chrome.textDefault,
                 marginBottom: "6px",
                 paddingBottom: "4px",
-                borderBottom: "1px solid #444",
+                borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
               }}
             >
               {filterLabel(selectedFilter)}
@@ -967,11 +986,11 @@ function FilterDropdownItem({
   return (
     <div
       style={{
+        ...chromeFont(),
         padding: "4px 12px",
-        fontSize: "11px",
-        color: "#e0e0e0",
+        color: chrome.textDefault,
         cursor: "default",
-        background: hovered ? "#0078d7" : "transparent",
+        background: hovered ? halo.rollOverColor : "transparent",
         userSelect: "none",
       }}
       onMouseEnter={() => setHovered(true)}

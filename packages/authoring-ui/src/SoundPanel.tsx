@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
 import type { Frame, SoundEffect, SoundItem, SoundLinkage } from "@flash/core";
+import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,11 +33,12 @@ type EffectMode = SoundEffect;
 const panelStyle: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  background: "#2d2d2d",
-  borderTop: "1px solid #1a1a1a",
+  background: chrome.panelBg,
+  borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
   padding: "6px 8px",
   gap: 4,
   flexShrink: 0,
+  ...chromeFont(),
 };
 
 const rowStyle: React.CSSProperties = {
@@ -47,19 +49,24 @@ const rowStyle: React.CSSProperties = {
 };
 
 const labelStyle: React.CSSProperties = {
-  fontSize: 10,
-  color: "#aaa",
+  ...chromeFont(),
+  color: chrome.textDefault,
   width: 44,
   flexShrink: 0,
 };
 
+// White inset field with the Halo sunken border (dark top/left, light bottom/right).
 const selectStyle: React.CSSProperties = {
-  fontSize: 10,
-  background: "#1a1a1a",
-  color: "#e0e0e0",
-  border: "1px solid #555",
+  ...chromeFont(),
+  background: halo.inputBg,
+  color: halo.text,
+  borderStyle: "solid",
+  borderWidth: 1,
+  borderTopColor: halo.inputBorderDark,
+  borderLeftColor: halo.inputBorderDark,
+  borderRightColor: halo.inputBorderLight,
+  borderBottomColor: halo.inputBorderLight,
   padding: "1px 2px",
-  borderRadius: 2,
   outline: "none",
   flex: 1,
   minWidth: 0,
@@ -67,28 +74,35 @@ const selectStyle: React.CSSProperties = {
 
 const numberInputStyle: React.CSSProperties = {
   width: 48,
-  fontSize: 10,
-  background: "#1a1a1a",
-  color: "#ffffff",
-  border: "1px solid #555",
+  ...chromeFont(),
+  background: halo.inputBg,
+  color: halo.text,
+  borderStyle: "solid",
+  borderWidth: 1,
+  borderTopColor: halo.inputBorderDark,
+  borderLeftColor: halo.inputBorderDark,
+  borderRightColor: halo.inputBorderLight,
+  borderBottomColor: halo.inputBorderLight,
   padding: "1px 4px",
-  borderRadius: 2,
   outline: "none",
 };
 
+// Halo button: light raised fill, control-grey border + label, 4px radius.
 const btnStyle: React.CSSProperties = {
-  fontSize: 10,
-  background: "#444",
-  color: "#ccc",
-  border: "1px solid #555",
+  ...chromeFont(),
+  background: `linear-gradient(${chrome.bevelLight}, ${chrome.insetFieldStrip})`,
+  color: halo.buttonColor,
+  borderStyle: "solid",
+  borderWidth: 1,
+  borderColor: halo.borderColor,
   padding: "1px 5px",
-  borderRadius: 2,
+  borderRadius: halo.cornerRadius,
   cursor: "pointer",
 };
 
 const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 10,
-  color: "#c0c0c0",
+  ...chromeFont(),
+  color: chrome.textDefault,
   fontWeight: "bold",
   marginBottom: 2,
 };
@@ -244,7 +258,7 @@ export function SoundPanel({
             style={numberInputStyle}
             title="Repeat count (0 = loop)"
           />
-          <span style={{ fontSize: 9, color: "#666" }}>0=loop</span>
+          <span style={{ fontSize: 9, color: chrome.textDisabled }}>0=loop</span>
         </div>
       )}
     </div>

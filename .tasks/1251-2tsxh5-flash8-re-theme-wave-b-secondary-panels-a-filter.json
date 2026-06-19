@@ -1,10 +1,10 @@
 {
   "id": "1251-2tsxh5-flash8-re-theme-wave-b-secondary-panels-a-filter",
   "title": "Flash8 re-theme Wave B: secondary panels A (Filters, Behaviors, Sound, Scene, MovieExplorer)",
-  "description": "Convert these 5 panels to the Flash 8 light theme via packages/authoring-ui/src/theme/flash8Theme.ts (chrome.*/halo.*), mirroring Shell.tsx and the converted panels (Timeline/Library/Color): packages/authoring-ui/src/FiltersPanel.tsx, BehaviorsPanel.tsx, SoundPanel.tsx, ScenePanel.tsx, MovieExplorerPanel.tsx. Replace all dark hex with tokens \u2192 light #ECECEC chrome, white content/list areas, near-black Tahoma text, halo row selection #7FCEFF + hover #B2E1FF, #B7BABC inset inputs, #999999 separators, halo buttons. Re-pick any accent chosen for a dark bg so it reads on light. Keep all functionality intact. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: those 5 files only (+ read-only theme import).",
-  "status": "open",
+  "description": "DONE. Converted 5 secondary panels to Flash 8 light Halo theme via flash8Theme chrome.*/halo.* tokens + chromeFont(): FiltersPanel.tsx, BehaviorsPanel.tsx, SoundPanel.tsx, ScenePanel.tsx, MovieExplorerPanel.tsx. Light #ECECEC chrome, white (halo.panelContentBg) content/list areas, near-black Tahoma text, halo selection #7FCEFF / hover #B2E1FF, #B7BABC-bordered white inset inputs (Halo sunken edges), #999999 separators, Halo buttons (raised light fill, control-grey border/label), halo accent (#D8F0FF->#99D7FF) for default/active toggle buttons re-picked to read on light. Functionality unchanged (data values like filter gradient-stop colors preserved). VERIFY: pnpm --filter './packages/**' build = clean (authoring-ui tsc passes); pnpm --filter @flash/authoring-ui test --run = 44 files / 653 tests PASS, 0 failures (the noted ~3 task-1207 fixture failures did not occur). Screenshot deferred: panels are conditionally-rendered floating overlays needing live UI state; no headless harness available in this bg env.",
+  "status": "done",
   "effort": "high",
   "priority": "medium",
   "created_at": "2026-06-19T06:03:59Z",
-  "updated_at": "2026-06-19T06:03:59Z"
+  "updated_at": "2026-06-19T06:14:18Z"
 }
