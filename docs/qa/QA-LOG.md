@@ -44,5 +44,36 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   defaults (`quality:1`, `compositeSource:true`) avoid the invisible-passes pitfall. The
   CanvasRenderer gradient-filter passes are a documented editor-preview approximation (Ruffle
   is the authoritative render path).
-</content>
-</invoke>
+
+---
+
+## 2026-06-19 — golden-parity now runnable locally; SHAPE GEOMETRY hard-fail
+
+- **HEAD:** `09997b8cc4e040186886ca78e8c166de0036fc25`
+- **Toolchain:** The Rust toolchain is now available locally (rustc/cargo 1.96.0 via
+  rustup at `~/.cargo/bin`), the `ruffle/` clone is present (swf crate **0.2.2**, matching
+  `tools/swf-dump/Cargo.lock`), and `tools/swf-dump/target/debug/swf-dump` is built. The
+  2026-06-18 sweep could NOT run golden-parity for lack of this toolchain; it now runs.
+  One-time setup is documented in `docs/qa/golden-parity-setup.md` (note: `ruffle/` and
+  `target/` are gitignored and do not survive a clean checkout).
+- **Run:** `export PATH="$HOME/.cargo/bin:$PATH"; node tools/golden-parity.mjs`
+- **Result:** **exit 1** — `SHAPE GEOMETRY` reports `DIFF`. Three of our `DefineShape`
+  records have no record-signature match in golden.swf:
+  `shape(fills=1,-545..545)`, `shape(fills=1,-220..220)`, `shape(fills=1,-1229..1231)`.
+  Bounds match golden exactly; the edge-record sequence does not. SELF-DETERMINISM,
+  HEADER/STAGE, TAG INVENTORY and PLACEMENTS all PASS; TEXT PARITY and DECOMPRESSED BYTES
+  are the documented `KNOWN-GAP`s.
+- **Verdict:** **REGRESSION** (not a documented gap). The parity-harness intro commit
+  `7186f68` (2026-06-13) states all hard dimensions PASS on golden. Bisect (rebuild
+  core+swf dist per commit) pins the introducing SHA to
+  **`035796d` "fix(fla-import): reconstruct closed fill loops from fill0/fill1 edge
+  model"** — `035796d^` is exit 0, `035796d` is exit 1 with the identical 3-shape diff.
+  Hypothesis: `convertShape` now emits a fill+stroke loop as two duplicate closed paths
+  (doubling the edge-record count vs Flash's single combined fill+stroke loop); a
+  secondary fidelity bug is round cap/join lost on import (ours None/Bevel vs golden
+  Round/Round).
+- **Findings (tasks filed):**
+  - **1213** (high) — golden-parity SHAPE GEOMETRY hard-fail: 3 DefineShape records
+    unmatched; regression, introduced by `035796d`. Full bounds, bisect verdict,
+    root-cause hypothesis and repro in the task.
+
