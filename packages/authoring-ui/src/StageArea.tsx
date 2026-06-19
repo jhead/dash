@@ -4240,6 +4240,10 @@ export function StageArea({
     alignItems: "center",
     justifyContent: "center",
     cursor: handleCursor ?? (simpleButtonsEnabled && hoveredButtonId ? "pointer" : getToolCursor(activeTool, spaceHeld)),
+    // Own all touch gestures on the interaction surface so the browser does not
+    // claim a finger drag for native pan/zoom/scroll — without this, pointer
+    // handlers are pre-empted mid-stroke on touch devices (task 1275).
+    touchAction: "none",
   };
 
   const stageContainerStyle: React.CSSProperties = {
@@ -4387,10 +4391,23 @@ export function StageArea({
       style={workAreaStyle}
       onWheelCapture={onWheelCapture}
       onWheel={onWheel}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={(e) => { onMouseUp(e); setEraserCursorPos(null); setHoveredButtonId(null); setPressedButtonId(null); }}
+      onPointerDown={(e) => {
+        // Capture the pointer so a drag that leaves the element still delivers
+        // move/up here (robust off-element drags on both mouse and touch).
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* unsupported */ }
+        onMouseDown(e);
+      }}
+      onPointerMove={onMouseMove}
+      onPointerUp={(e) => {
+        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* unsupported */ }
+        onMouseUp(e);
+      }}
+      onPointerCancel={(e) => { onMouseUp(e); setEraserCursorPos(null); setHoveredButtonId(null); setPressedButtonId(null); }}
+      onPointerLeave={(e) => {
+        // With pointer capture active a real off-element leave won't fire until
+        // release; this still covers the non-captured hover-exit case.
+        onMouseUp(e); setEraserCursorPos(null); setHoveredButtonId(null); setPressedButtonId(null);
+      }}
       onClick={onZoomToolClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={(e) => {
