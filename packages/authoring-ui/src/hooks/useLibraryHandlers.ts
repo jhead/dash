@@ -11,13 +11,15 @@ import {
   type DocumentProperties,
   type BitmapDisplayObject,
   type BitmapItem,
+  type VideoDisplayObject,
   type SymbolType,
   type Symbol,
   type CanvasRenderer,
 } from "@flash/core";
 import { useFileActions } from "./useFileActions.js";
-import { nextBitmapId } from "../idgen.js";
+import { nextBitmapId, nextVideoId } from "../idgen.js";
 import type { SymbolPropertiesData } from "../SymbolPropertiesDialog";
+import type { VideoImportResult } from "../VideoImportDialog";
 import type { UiStoreApi, EditContext } from "../store/index.js";
 
 export interface LibraryHandlersDeps {
@@ -32,6 +34,7 @@ export interface LibraryHandlersDeps {
   bitmapPropsItem: BitmapItem | null;
   pushDoc: (doc: FlashDocument) => void;
   withLibrary: (updater: (lib: Library) => Library) => FlashDocument;
+  withTimeline: (updater: (t: TimelineModel) => TimelineModel) => FlashDocument;
   rendererRef: MutableRefObject<CanvasRenderer | null>;
 }
 
@@ -43,7 +46,7 @@ export interface LibraryHandlersDeps {
 export function useLibraryHandlers(deps: LibraryHandlersDeps) {
   const {
     uiStore, library, timeline, docProperties, editContext, activeSceneIndex,
-    safeActiveLayerIndex, currentFrame, bitmapPropsItem, pushDoc, withLibrary, rendererRef,
+    safeActiveLayerIndex, currentFrame, bitmapPropsItem, pushDoc, withLibrary, withTimeline, rendererRef,
   } = deps;
   const setSelectedLibraryItemId = uiStore.getState().setSelectedLibraryItemId;
   const setInstances = uiStore.getState().setInstances;
@@ -52,7 +55,8 @@ export function useLibraryHandlers(deps: LibraryHandlersDeps) {
   const setEditPath = uiStore.getState().setEditPath;
   const setCurrentFrame = uiStore.getState().setCurrentFrame;
   const setActiveLayerIndex = uiStore.getState().setActiveLayerIndex;
-  const { importToLibrary, importSoundToLibrary, importVideoToLibrary } = useFileActions();
+  const { importToLibrary, importSoundToLibrary, probeVideoFile } = useFileActions();
+  const setVideoImportPending = uiStore.getState().setVideoImportPending;
 
   const handleImportToLibrary = useCallback(async () => {
     const result = await importToLibrary();
@@ -129,12 +133,61 @@ export function useLibraryHandlers(deps: LibraryHandlersDeps) {
     pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
   }, [importSoundToLibrary, pushDoc, withLibrary]);
 
+  // File > Import > Import Video: open a file picker, probe the container, and
+  // hand off to the VideoImportDialog wizard (which surfaces codec/dimensions/
+  // frame metadata and collects the embed target before the item is created).
   const handleImportVideo = useCallback(async () => {
-    const result = await importVideoToLibrary();
-    if (!result) return;
-    const { item } = result;
-    pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
-  }, [importVideoToLibrary, pushDoc, withLibrary]);
+    const pending = await probeVideoFile();
+    if (!pending) return;
+    setVideoImportPending(pending);
+  }, [probeVideoFile, setVideoImportPending]);
+
+  // Wizard confirm: create the VideoItem library entry and, when the user chose
+  // the stage target, place a VideoDisplayObject at the video's native size on
+  // the active layer. Both flow into the existing publish pipeline.
+  const handleVideoImportConfirm = useCallback(
+    (result: VideoImportResult) => {
+      const { item, target } = result;
+      setVideoImportPending(null);
+      if (target === "stage") {
+        const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+        if (layerId) {
+          const w = item.width > 0 ? item.width : 320;
+          const h = item.height > 0 ? item.height : 240;
+          const stageW = docProperties.width;
+          const stageH = docProperties.height;
+          const obj: VideoDisplayObject = {
+            type: "video",
+            id: nextVideoId(),
+            videoItemId: item.id,
+            x: Math.round((stageW - w) / 2),
+            y: Math.round((stageH - h) / 2),
+            width: w,
+            height: h,
+          };
+          // Place on the active timeline, then add the library item to whatever
+          // library state results (symbol-edit mode mutates library too).
+          const docAfterPlace = withTimeline((t) =>
+            addDisplayObject(t, layerId, currentFrame, obj)
+          );
+          pushDoc({
+            ...docAfterPlace,
+            library: addLibraryItem(docAfterPlace.library, item),
+          });
+          return;
+        }
+      }
+      pushDoc(withLibrary((lib) => addLibraryItem(lib, item)));
+    },
+    [
+      setVideoImportPending, timeline, safeActiveLayerIndex, docProperties,
+      currentFrame, withLibrary, withTimeline, pushDoc,
+    ]
+  );
+
+  const handleVideoImportCancel = useCallback(() => {
+    setVideoImportPending(null);
+  }, [setVideoImportPending]);
 
   const handleCreateSymbol = useCallback((name: string, type: SymbolType) => {
     pushDoc(withLibrary((lib) => {
@@ -260,6 +313,8 @@ export function useLibraryHandlers(deps: LibraryHandlersDeps) {
     handleImportToStage,
     handleImportSound,
     handleImportVideo,
+    handleVideoImportConfirm,
+    handleVideoImportCancel,
     handleCreateSymbol,
     handleDeleteLibraryItem,
     handleRenameLibraryItem,

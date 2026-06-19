@@ -418,3 +418,122 @@ export function demuxFlv(buf: Uint8Array): FlvVideoStream | null {
 
   return { codecId, frames, width, height };
 }
+
+// ---------------------------------------------------------------------------
+// FLV probe (Import Video wizard)
+// ---------------------------------------------------------------------------
+
+/** Human-readable codec label for a SWF/FLV CodecID (used by the import wizard). */
+export function videoCodecName(codecId: number): string {
+  switch (codecId) {
+    case VideoCodec.None:
+      return "None";
+    case VideoCodec.H263:
+      return "Sorenson Spark (H.263)";
+    case VideoCodec.ScreenVideo:
+      return "Screen Video";
+    case VideoCodec.Vp6:
+      return "On2 VP6";
+    case VideoCodec.Vp6WithAlpha:
+      return "On2 VP6 (alpha)";
+    case VideoCodec.ScreenVideoV2:
+      return "Screen Video V2";
+    case VideoCodec.H264:
+      return "H.264";
+    default:
+      return `Unknown (${codecId})`;
+  }
+}
+
+/**
+ * Lenient scan for a single AMF0 Number keyed by `wantKey` inside an FLV
+ * `onMetaData` script-tag payload. Unlike `parseFlvMetaDims` (which bails on
+ * any unrecognized AMF0 type), this walks the whole buffer looking for the
+ * `UI16(len) + key + UI8(0x00) + Float64-BE` signature, so it survives arrays
+ * that interleave types it doesn't model. Returns null if not found.
+ */
+function scanFlvMetaNumber(buf: Uint8Array, wantKey: string): number | null {
+  const keyBytes: number[] = [];
+  for (let i = 0; i < wantKey.length; i++) keyBytes.push(wantKey.charCodeAt(i));
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const limit = buf.length - (2 + wantKey.length + 1 + 8);
+  for (let p = 0; p <= limit; p++) {
+    const keyLen = (buf[p]! << 8) | buf[p + 1]!;
+    if (keyLen !== wantKey.length) continue;
+    let match = true;
+    for (let i = 0; i < keyLen; i++) {
+      if (buf[p + 2 + i] !== keyBytes[i]) {
+        match = false;
+        break;
+      }
+    }
+    if (!match) continue;
+    const typePos = p + 2 + keyLen;
+    if (buf[typePos] !== 0x00 /* AMF0 Number */) continue;
+    const value = view.getFloat64(typePos + 1, false /* big-endian */);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+/** Result of probing a video container for the Import Video wizard. */
+export interface VideoProbe {
+  /** SWF/FLV CodecID of the video stream. */
+  codecId: number;
+  /** Human-readable codec label. */
+  codecName: string;
+  /** Frame width in pixels. */
+  width: number;
+  /** Frame height in pixels. */
+  height: number;
+  /** Number of decoded video frames. */
+  frameCount: number;
+  /** Frame rate from FLV metadata, or null if not present. */
+  frameRate: number | null;
+}
+
+/**
+ * Probe a video container for the Import Video wizard.
+ *
+ * For FLV input this demuxes the stream and reads `framerate` from the
+ * `onMetaData` script tag. Returns `null` for non-FLV / undecodable input
+ * (the wizard falls back to user-editable defaults in that case).
+ */
+export function probeFlv(buf: Uint8Array): VideoProbe | null {
+  const stream = demuxFlv(buf);
+  if (!stream) return null;
+
+  // framerate lives in the onMetaData Script tag (AMF0 Number).
+  let frameRate: number | null = null;
+  // Re-walk the FLV looking at the first Script tag for `framerate`.
+  if (buf.length >= 9 && buf[0] === 0x46 && buf[1] === 0x4c && buf[2] === 0x56) {
+    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const dataOffset = view.getUint32(5, false);
+    let pos = (dataOffset >= 9 ? dataOffset : 9) + 4;
+    while (pos + 11 <= buf.length) {
+      const tagType = buf[pos]!;
+      const dataSize =
+        (buf[pos + 1]! << 16) | (buf[pos + 2]! << 8) | buf[pos + 3]!;
+      const dataStart = pos + 11;
+      const dataEnd = dataStart + dataSize;
+      if (dataEnd > buf.length) break;
+      if (tagType === FLV_TAG_SCRIPT && dataSize > 0) {
+        const fr = scanFlvMetaNumber(buf.slice(dataStart, dataEnd), "framerate");
+        if (fr !== null && fr > 0 && fr <= 240) {
+          frameRate = Math.round(fr * 1000) / 1000;
+          break;
+        }
+      }
+      pos = dataEnd + 4;
+    }
+  }
+
+  return {
+    codecId: stream.codecId,
+    codecName: videoCodecName(stream.codecId),
+    width: stream.width,
+    height: stream.height,
+    frameCount: stream.frames.length,
+    frameRate,
+  };
+}

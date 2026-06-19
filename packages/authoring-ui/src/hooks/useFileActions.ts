@@ -1,8 +1,10 @@
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { readFile, writeFile } from "@tauri-apps/plugin-fs";
-import { createDocument, createBitmap, createSound, createVideo } from "@flash/core";
+import { createDocument, createBitmap, createSound } from "@flash/core";
 import { saveFla, saveRealFla, loadFla } from "@flash/core";
-import type { BitmapItem, SoundItem, VideoItem, FlashDocument } from "@flash/core";
+import type { BitmapItem, SoundItem, FlashDocument } from "@flash/core";
+import type { VideoProbe } from "@flash/swf";
+import type { PendingVideoImport } from "../store/uiStore.js";
 
 const FLA_FILTERS = [{ name: "Dash Document", extensions: ["fla"] }];
 
@@ -433,18 +435,21 @@ export function useFileActions() {
   }
 
   /**
-   * Open a native file-open dialog filtered to video files (FLV/MP4/AVI).
-   * Reads the selected file, converts to a data URI, and returns a VideoItem
-   * along with the data URI.
-   * Returns `null` if the user cancels the dialog.
+   * Open a native file-open dialog filtered to video files (FLV/MP4/AVI),
+   * read the selected file, convert it to a data URI, and probe its
+   * codec/dimensions/frame metadata (FLV only).
+   *
+   * Returns a {@link PendingVideoImport} for the VideoImportDialog wizard to
+   * present, or `null` if the user cancels or the file can't be read. Does NOT
+   * create a library item — that happens when the wizard is confirmed.
    *
    * Throws a user-visible error if Tauri APIs are unavailable (browser mode).
    */
-  async function importVideoToLibrary(): Promise<{ item: VideoItem; dataUri: string } | null> {
+  async function probeVideoFile(): Promise<PendingVideoImport | null> {
     let selected: string | null;
     try {
       selected = await dialogOpen({
-        title: "Import Video to Library",
+        title: "Import Video",
         filters: [{ name: "Video Files", extensions: ["flv", "mp4", "avi"] }],
         multiple: false,
         directory: false,
@@ -453,7 +458,7 @@ export function useFileActions() {
       const msg =
         "File dialogs require the Tauri desktop app. " +
         "Run `pnpm dev` (not `pnpm dev:browser`) to import files from disk.";
-      console.error("[useFileActions] importVideoToLibrary dialog failed:", err);
+      console.error("[useFileActions] probeVideoFile dialog failed:", err);
       alert(msg);
       return null;
     }
@@ -491,32 +496,20 @@ export function useFileActions() {
     // Derive name from filename (last path segment, no extension)
     const segments = path.replace(/\\/g, "/").split("/");
     const fileName = segments[segments.length - 1] ?? "video";
-    const name = fileName.replace(/\.[^.]+$/, "");
+    const suggestedName = fileName.replace(/\.[^.]+$/, "");
 
-    // Try to parse FLV header for frame count; fall back to defaults
-    let frameCount = 1;
-    if (lowerPath.endsWith(".flv")) {
-      try {
-        const { demuxFlv } = await import("@flash/swf");
-        const stream = demuxFlv(bytes);
-        if (stream) {
-          frameCount = stream.frames.length || 1;
-        }
-      } catch {
-        // Non-critical: fall back to defaults
-      }
+    // Probe the container for codec/dimensions/frame metadata (FLV only).
+    let probe: VideoProbe | null = null;
+    try {
+      const { probeFlv } = await import("@flash/swf");
+      probe = probeFlv(bytes);
+    } catch {
+      // Non-critical: a non-FLV container yields null and the wizard falls
+      // back to user-editable defaults.
     }
 
-    const item = createVideo(name, {
-      dataUri,
-      frameCount,
-      frameRate: 12,
-      width: 320,
-      height: 240,
-    });
-
-    return { item, dataUri };
+    return { dataUri, probe, suggestedName, fileName };
   }
 
-  return { newDocument, openDocument, saveDocument, saveDocumentAs, exportBinaryFla, importToLibrary, importSoundToLibrary, importVideoToLibrary };
+  return { newDocument, openDocument, saveDocument, saveDocumentAs, exportBinaryFla, importToLibrary, importSoundToLibrary, probeVideoFile };
 }

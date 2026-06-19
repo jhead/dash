@@ -23,10 +23,12 @@ export {
   encodeDefineVideoStream,
   encodeVideoFrame,
   demuxFlv,
+  probeFlv,
+  videoCodecName,
   flvCodecToSwfCodec,
   VideoCodec,
 } from "./video.js";
-export type { FlvVideoFrame, FlvVideoStream, VideoCodecId } from "./video.js";
+export type { FlvVideoFrame, FlvVideoStream, VideoProbe, VideoCodecId } from "./video.js";
 export {
   resolveFontGlyphSources,
   bundledGlyphSource,

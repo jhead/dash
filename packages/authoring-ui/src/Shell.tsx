@@ -1684,12 +1684,13 @@ export function Shell(): React.ReactElement {
   // Library + import handlers — see hooks/useLibraryHandlers.
   const {
     handleImportToLibrary, handleImportToStage, handleImportSound, handleImportVideo,
+    handleVideoImportConfirm, handleVideoImportCancel,
     handleCreateSymbol, handleDeleteLibraryItem, handleRenameLibraryItem, handleDuplicateLibraryItem,
     handleAddFolder, handleMoveItemToFolder, handleUpdateFolder, handleSetLinkage,
     handleSetSymbolProperties, handleBitmapPropsSave, handleEditInPlace, handleExitEditInPlace,
   } = useLibraryHandlers({
     uiStore, library, timeline, docProperties, editContext, activeSceneIndex,
-    safeActiveLayerIndex, currentFrame, bitmapPropsItem, pushDoc, withLibrary, rendererRef,
+    safeActiveLayerIndex, currentFrame, bitmapPropsItem, pushDoc, withLibrary, withTimeline, rendererRef,
   });
 
   // ---------------------------------------------------------------------------
@@ -3716,6 +3717,8 @@ export function Shell(): React.ReactElement {
         onBitmapPropsSave={handleBitmapPropsSave}
         onSwapBitmapConfirm={handleSwapBitmapConfirm}
         onTraceBitmapConfirm={handleTraceBitmapConfirm}
+        onVideoImportConfirm={handleVideoImportConfirm}
+        onVideoImportCancel={handleVideoImportCancel}
       />
 
       {/* Manage Saved Commands modal (open-state + list in uiStore) */}

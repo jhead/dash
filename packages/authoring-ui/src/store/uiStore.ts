@@ -1,6 +1,6 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { SymbolType, TextAlign, BitmapItem } from "@flash/core";
-import type { FrameSizeReport } from "@flash/swf";
+import type { FrameSizeReport, VideoProbe } from "@flash/swf";
 import type { PlacedInstance } from "../PropertiesPanel";
 import type { ViewMode } from "../StageArea";
 import type { TextFormat } from "../EditBar";
@@ -36,6 +36,23 @@ export interface SelectedFrameRange {
   layerId: string;
   start: number;
   end: number;
+}
+
+/**
+ * A video file the user selected via File > Import > Import Video, held while
+ * the VideoImportDialog wizard surfaces its metadata and collects the embed
+ * target. `probe` is null when the container could not be demuxed (the wizard
+ * falls back to user-editable defaults).
+ */
+export interface PendingVideoImport {
+  /** Base64 data URI of the source file bytes. */
+  dataUri: string;
+  /** Probed codec/dimensions/frame metadata, or null if undecodable. */
+  probe: VideoProbe | null;
+  /** Suggested library item name (source file name, no extension). */
+  suggestedName: string;
+  /** Source file basename (for display). */
+  fileName: string;
 }
 
 /** Default tool state (moved out of Shell so the store owns the tool slice). */
@@ -162,6 +179,7 @@ export interface UiData {
   swapBitmapDialogOpen: boolean;
   swapBitmapTargetId: string | null;
   traceBitmapOpen: boolean;
+  videoImportPending: PendingVideoImport | null;
   exportGifOpen: boolean;
   bandwidthProfilerVisible: boolean;
   bandwidthProfilerReport: FrameSizeReport | null;
@@ -242,6 +260,7 @@ export interface UiActions {
   setSwapBitmapDialogOpen: ReactSetter<boolean>;
   setSwapBitmapTargetId: ReactSetter<string | null>;
   setTraceBitmapOpen: ReactSetter<boolean>;
+  setVideoImportPending: ReactSetter<PendingVideoImport | null>;
   setExportGifOpen: ReactSetter<boolean>;
   setBandwidthProfilerVisible: ReactSetter<boolean>;
   setBandwidthProfilerReport: ReactSetter<FrameSizeReport | null>;
@@ -347,6 +366,7 @@ const DEFAULTS: UiData = {
   swapBitmapDialogOpen: false,
   swapBitmapTargetId: null,
   traceBitmapOpen: false,
+  videoImportPending: null,
   exportGifOpen: false,
   bandwidthProfilerVisible: false,
   bandwidthProfilerReport: null,
@@ -432,6 +452,7 @@ export function createUiStore(init?: Partial<UiData>): UiStoreApi {
     setSwapBitmapDialogOpen: rs(set, get, "swapBitmapDialogOpen"),
     setSwapBitmapTargetId: rs(set, get, "swapBitmapTargetId"),
     setTraceBitmapOpen: rs(set, get, "traceBitmapOpen"),
+    setVideoImportPending: rs(set, get, "videoImportPending"),
     setExportGifOpen: rs(set, get, "exportGifOpen"),
     setBandwidthProfilerVisible: rs(set, get, "bandwidthProfilerVisible"),
     setBandwidthProfilerReport: rs(set, get, "bandwidthProfilerReport"),

@@ -22,6 +22,7 @@ import { PublishSettingsDialog } from "../PublishSettingsDialog";
 import { BitmapPropertiesDialog } from "../BitmapPropertiesDialog";
 import { SwapBitmapDialog } from "../SwapBitmapDialog";
 import { TraceBitmapDialog } from "../TraceBitmapDialog";
+import { VideoImportDialog, type VideoImportResult } from "../VideoImportDialog";
 import type { Preferences } from "../preferences";
 
 /**
@@ -47,6 +48,8 @@ export interface ShellDialogsProps {
   onBitmapPropsSave: (changes: Partial<BitmapItem>) => void;
   onSwapBitmapConfirm: (bitmapId: string) => void;
   onTraceBitmapConfirm: (options: TraceBitmapOptions) => void;
+  onVideoImportConfirm: (result: VideoImportResult) => void;
+  onVideoImportCancel: () => void;
 }
 
 export function ShellDialogs(props: ShellDialogsProps): React.ReactElement {
@@ -67,6 +70,8 @@ export function ShellDialogs(props: ShellDialogsProps): React.ReactElement {
     onBitmapPropsSave,
     onSwapBitmapConfirm,
     onTraceBitmapConfirm,
+    onVideoImportConfirm,
+    onVideoImportCancel,
   } = props;
 
   // Open flags + dialog-local state + their setters live in uiStore.
@@ -97,6 +102,7 @@ export function ShellDialogs(props: ShellDialogsProps): React.ReactElement {
   const setSwapBitmapTargetId = useUiStore((s) => s.setSwapBitmapTargetId);
   const traceBitmapOpen = useUiStore((s) => s.traceBitmapOpen);
   const setTraceBitmapOpen = useUiStore((s) => s.setTraceBitmapOpen);
+  const videoImportPending = useUiStore((s) => s.videoImportPending);
 
   return (
     <>
@@ -185,6 +191,12 @@ export function ShellDialogs(props: ShellDialogsProps): React.ReactElement {
         open={traceBitmapOpen}
         onConfirm={onTraceBitmapConfirm}
         onClose={() => setTraceBitmapOpen(false)}
+      />
+
+      <VideoImportDialog
+        pending={videoImportPending}
+        onConfirm={onVideoImportConfirm}
+        onClose={onVideoImportCancel}
       />
     </>
   );

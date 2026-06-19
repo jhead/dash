@@ -115,3 +115,36 @@ dims), falling back to 320×240. Non-FLV or empty input returns `null`.
 
 The standalone encoder (re-encoding source media to Spark/VP6 FLV) remains a later phase;
 the emit path above consumes an already-FLV-encoded `dataUri`.
+
+## Import Video wizard (implemented)
+
+**File > Import > Import Video...** opens the Import Video wizard
+(`packages/authoring-ui/src/VideoImportDialog.tsx`). The flow:
+
+1. `useFileActions.probeVideoFile()` opens a native file dialog filtered to
+   `.flv`/`.mp4`/`.avi`, reads the bytes, builds a base64 `dataUri`, and probes the
+   container via `probeFlv()` (`packages/swf/src/video.ts`). The result is held in
+   `uiStore.videoImportPending` (a `PendingVideoImport`).
+2. The wizard surfaces the probed **codec** (`videoCodecName()` label), **dimensions**,
+   **frame count**, and **frame rate** (from the FLV `onMetaData` `framerate` key). The
+   user can edit the library item **name**, native **width/height**, and **frame rate**,
+   and choose the **embed target**:
+   - *Embed to Library only* — creates the `VideoItem` library entry.
+   - *Embed to Library and place on Stage* — also drops a `VideoDisplayObject` centered on
+     the stage on the active layer/frame.
+3. Confirming builds the `VideoItem` (`buildVideoItem()` → `createVideo()`), which the
+   media compiler pass (`runMediaPass`) automatically encodes into `DefineVideoStream` +
+   `VideoFrame` tags at publish time.
+
+`probeFlv()` returns a `VideoProbe` (`codecId`, `codecName`, `width`, `height`,
+`frameCount`, `frameRate`) or `null` for a non-FLV / undecodable container. When the probe
+is null the wizard warns and falls back to user-editable defaults (320×240, 12 fps); the
+item still embeds as a stub whose `frameCount` advances one empty `VideoFrame` per
+`ShowFrame`. Probe dimensions come from FLV `onMetaData` (preferred) or the Sorenson H.263
+bitstream — this replaces the old hardcoded 320×240 silent import. Gates:
+`packages/swf/src/__tests__/videoprobe.test.ts` and
+`packages/authoring-ui/src/__tests__/videoImportDialog.test.ts`.
+
+**Out of scope (deferred):** live FLV streaming / progressive-download deployment, the
+cue-point editor (Event/Navigation), encoding-profile controls (data rate / quality /
+keyframe interval / re-encode to Spark/VP6), crop & trim, and the FLVPlayback skin picker.
