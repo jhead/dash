@@ -1,8 +1,0 @@
-{
-  "id": "0532-as2-flash-filters-package-filter-class-tests",
-  "title": "AS2 flash.filters package filter class tests",
-  "description": "Test import flash.filters.DropShadowFilter, new DropShadowFilter(dist,angle,color,alpha), GlowFilter, BlurFilter, BevelFilter instantiation and property access.",
-  "status": "done",
-  "created_at": "2026-06-09T22:05:28Z",
-  "updated_at": "2026-06-09T22:06:52Z"
-}

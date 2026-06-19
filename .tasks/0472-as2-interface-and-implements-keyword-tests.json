@@ -1,8 +1,0 @@
-{
-  "id": "0472-as2-interface-and-implements-keyword-tests",
-  "title": "AS2 interface and implements keyword tests",
-  "description": "Test interface declaration (interface IFoo { method(): Void; }), class implements IFoo, multiple interfaces. These compile to no-op in AVM1 but parser must handle them cleanly.",
-  "status": "done",
-  "created_at": "2026-06-09T21:52:16Z",
-  "updated_at": "2026-06-09T21:53:24Z"
-}

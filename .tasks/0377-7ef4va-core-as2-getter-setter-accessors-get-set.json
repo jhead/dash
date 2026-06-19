@@ -1,0 +1,8 @@
+{
+  "id": "0377-7ef4va-core-as2-getter-setter-accessors-get-set",
+  "title": "Core: AS2 getter/setter accessors (get/set)",
+  "description": "Test compilation of AS2 getter/setter syntax: class Foo { get name():String { return _name; } set name(v:String) { _name = v; } }. Also test Object.prototype.__defineGetter__ and __defineSetter__ usage. Test that compiled bytecode contains the property name string and ActionDefineFunction2 (0x8E) for the getter/setter bodies. Test that get/set as identifiers (not keywords) also work.",
+  "status": "done",
+  "created_at": "2026-06-09T21:27:04Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

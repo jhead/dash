@@ -1,0 +1,10 @@
+{
+  "id": "1113-9mw05u-as2-compiler-add-string-concatenation-keyword-no",
+  "title": "AS2 compiler: 'add' string concatenation keyword not implemented",
+  "description": "Flash AS2 (targeting SWF version 4+) supports the `add` keyword as a string concatenation operator: `x add y` should emit ActionStringAdd (opcode 0x21). This is distinct from `+` (ActionAdd2, 0x47) which coerces both operands to numbers when both are numeric.\n\n**Current state:**\n- `add` is not in the `AS2_KEYWORDS` set in `tokenizer.ts`, so it is tokenized as an identifier rather than a keyword.\n- `parseAdditive()` in `parser.ts` only recognizes `+` and `-` operators; there is no check for `identifier 'add'`.\n- `compileBinaryExpr()` in `compiler.ts` has no case for an `'add'` operator string.\n\n**Fix needed:**\n1. Add `'add'` to `AS2_KEYWORDS` in `tokenizer.ts`.\n2. In `parseAdditive()`, add a branch to consume a keyword token with value `'add'` and emit a `BinaryExpr` node with operator `'add'`.\n3. In `compileBinaryExpr()`, add `case 'add': this.emit(0x21); break; // ActionStringAdd`.\n\n**Priority note:** `add` was deprecated in Flash 5 in favour of `+`, so it rarely appears in Flash 8 AS2 authoring \u2014 but it is valid syntax that the compiler should not crash on.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T04:36:36Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

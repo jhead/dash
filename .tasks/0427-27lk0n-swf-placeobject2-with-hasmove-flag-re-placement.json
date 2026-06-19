@@ -1,0 +1,8 @@
+{
+  "id": "0427-27lk0n-swf-placeobject2-with-hasmove-flag-re-placement",
+  "title": "SWF: PlaceObject2 with HasMove flag (re-placement)",
+  "description": "Test that PlaceObject2 with only a new position (no character change) sets HasMove flag (0x10) but NOT HasCharacter (0x02). This is used for motion tweens where a character was already placed and only its transform updates. Verify: (1) HasMove-only PlaceObject2 has flags=0x12 (HasMove|HasMatrix), (2) it does NOT reference a new character ID, (3) a first placement has HasCharacter set, (4) subsequent tween frames use HasMove without HasCharacter.",
+  "status": "done",
+  "created_at": "2026-06-09T21:38:35Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

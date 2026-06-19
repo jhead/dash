@@ -1,0 +1,8 @@
+{
+  "id": "0563-6cv4ct-as2-number-class-formatting-method-tests",
+  "title": "AS2 Number class formatting method tests",
+  "description": "Tests for Number class: new Number(n), Number(str) conversion, n.toFixed(digits), n.toPrecision(digits), n.toExponential(digits), n.toString(radix), Number.MAX_VALUE, Number.MIN_VALUE, Number.POSITIVE_INFINITY, Number.NaN, isNaN(), isFinite().",
+  "status": "done",
+  "created_at": "2026-06-09T22:14:28Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

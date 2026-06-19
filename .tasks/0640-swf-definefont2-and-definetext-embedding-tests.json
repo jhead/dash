@@ -1,8 +1,0 @@
-{
-  "id": "0640-swf-definefont2-and-definetext-embedding-tests",
-  "title": "SWF DefineFont2 and DefineText embedding tests",
-  "description": "Test compileDocument emits DefineFont2 (48) when FontItem with embedded=true exists. Verify DefineText2 (33) tag links to correct font charId. Basic text layout: x/y coords, glyph indices.",
-  "status": "done",
-  "created_at": "2026-06-09T22:39:39Z",
-  "updated_at": "2026-06-09T22:41:31Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0252-core-as2-stage-and-mouse-class-compilation",
-  "title": "Core: AS2 Stage and Mouse class compilation",
-  "description": "Verify Stage and Mouse built-in class usage compiles. Stage.width, Stage.height, Stage.align, Stage.scaleMode, Stage.showMenu, Stage.addListener(l), Stage.removeListener(l). Mouse.hide(), Mouse.show(), Mouse.addListener(l). Tests in packages/core/src/as2/__tests__/stageMouse.test.ts: all compile without error.",
-  "status": "done",
-  "created_at": "2026-06-09T20:56:49Z",
-  "updated_at": "2026-06-09T20:59:13Z"
-}

@@ -1,0 +1,8 @@
+{
+  "id": "0227-2jegr7-as2-class-static-members-and-methods",
+  "title": "AS2: Class static members and methods",
+  "description": "Verify static class members and methods compile correctly in the AS2 compiler. Static methods should be placed on the class constructor function directly (Foo.method = function(){}), not on Foo.prototype. Tests: a class with static method and static property compiles, static method bytecode does NOT reference 'prototype', static property is accessible as Foo.prop.",
+  "status": "done",
+  "created_at": "2026-06-09T20:47:31Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

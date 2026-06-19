@@ -1,0 +1,10 @@
+{
+  "id": "1154-5s2wbo-definebitsjpeg3-alpha-path-dead-photo-bitmaps-ne",
+  "title": "DefineBitsJPEG3 alpha path dead: photo bitmaps never decoded into bitmapPixels",
+  "description": "buildBitmapPixels in packages/authoring-ui/src/hooks/usePublish.ts (line 45-47) filters to lossless items only, so photo (JPEG) bitmaps are never decoded. In compile.ts the hasTransparency check requires bitmapPixels for photo bitmaps but the map never contains them, so the DefineBitsJPEG3 (tag 35) branch is never reached. JPEGs with transparency are silently emitted as DefineBitsJPEG2 (tag 21), dropping alpha. Fix: decode photo bitmaps in buildBitmapPixels too. Affected: packages/authoring-ui/src/hooks/usePublish.ts line 44-47; packages/swf/src/compile.ts lines 437-450 and 1230-1254.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T09:57:05Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

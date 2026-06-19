@@ -1,0 +1,8 @@
+{
+  "id": "0293-802gug-core-as2-externalinterface-compilation",
+  "title": "Core: AS2 ExternalInterface compilation",
+  "description": "Verify AS2 ExternalInterface compiles: ExternalInterface.available (property), ExternalInterface.call('jsFunction', arg1, arg2), ExternalInterface.addCallback('methodName', instance, method). Tests in packages/core/src/as2/__tests__/externalinterface.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:07:19Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

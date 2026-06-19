@@ -1,0 +1,10 @@
+{
+  "id": "0903-1620ex-test-movie-renders-completely-black-all-content",
+  "title": "Test Movie renders completely black \u2014 all content invisible despite SWF loading without Ruffle errors",
+  "description": "After recent import fixes (0885, 0890, 0901, 0902 all fixed), Magnet.fla now imports correctly (6 layers, 53 frames, real content in scene AA). However Test Movie still renders a completely black player canvas.\n\nObserved in QA run 6 (2026-06-10):\n- Console: ZERO Ruffle errors or warnings (DefineShape4 fix working, JPEG EOI fix working, readCPicSwf fix working)\n- Output tab: \"New Ruffle instance created ... Loading SWF file blob:...\" only \u2014 no errors\n- Screen: Solid black, 0% visible content\n- Duration: Black for 10+ seconds, no preloader progress visible\n- Interaction: Click, Enter, Space, Arrow keys produce no visual change\n- The SWF loads silently; Ruffle does not log any shape/fill/bitmap errors\n\nImport state (from doc_summary):\n- Scene AA (first scene): 6 layers (Layer 7, Layer 3, M Layer 5, Magnets, Walls), 53 frames\n- Magnets layer has AS2 scripts on every keyframe\n- Library: 25 bitmaps, 62 symbols, 4 sounds\n\nPossible causes (for fix team, not QA):\n- JPEG bitmap pixel data may be all-black (EOI fix added the marker but underlying pixel data may still be wrong)\n- SetBackgroundColor SWF tag may be emitted as black\n- All vector shapes may now have valid-but-black fill styles after the 0890 fix\n- Layer depth ordering may place a black overlay on top of all content\n\nScreenshots: test-movie-run6.png, test-movie-run6e.png (both show solid black)",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T18:42:09Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

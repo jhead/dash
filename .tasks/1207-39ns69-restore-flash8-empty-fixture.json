@@ -1,0 +1,10 @@
+{
+  "id": "1207-39ns69-restore-flash8-empty-fixture",
+  "title": "Restore missing fixtures/flash8-empty.fla (breaks 14 core FLA-writer tests on fresh clone)",
+  "description": "BLOCKER on fresh clones: fixtures/flash8-empty.fla is referenced by 8 files (packages/core/src/fla/write/{empty-templates,carchive-validate,timeline-write,contents-write}.ts and tests empty-bytematch/carchive-validate/writer-spec-bytes/contents-structure) but is NOT committed to the repo and NOT gitignored \u2014 it was simply never added. This causes ~14 ENOENT failures in 'pnpm --filter @flash/core run test -- --run'. The file is a genuine real-Flash-8 empty document (WIN 8,0,0,478; Contents=17312B, Page1=274B per CLAUDE.md). An agent CANNOT fabricate a byte-real Flash 8 file. RESOLUTION OPTIONS: (1) the author commits the real fixtures/flash8-empty.fla (preferred \u2014 it exists on the original author's machine); OR (2) if it cannot be supplied, guard the dependent tests to skip-with-clear-reason when the fixture is absent (matching the visual-oracle CI-skip pattern in CLAUDE.md) so a fresh clone is green \u2014 but do NOT weaken assertions when the fixture IS present. SEQUENCING: option (2) edits the external FLA-writer files that are under ACTIVE concurrent development; only pursue it once that work settles, to avoid prohibitive merge conflicts. DONE = fresh clone runs core suite with 0 ENOENT-for-flash8-empty failures.",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-18T23:32:25Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

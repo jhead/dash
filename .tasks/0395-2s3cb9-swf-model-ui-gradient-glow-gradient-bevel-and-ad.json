@@ -1,0 +1,8 @@
+{
+  "id": "0395-2s3cb9-swf-model-ui-gradient-glow-gradient-bevel-and-ad",
+  "title": "SWF + model + UI: Gradient Glow, Gradient Bevel, and Adjust Color (ColorMatrix) filters",
+  "description": "Flash 8 exposes 7 filters; only 4 are implemented (drop-shadow, blur, glow, bevel). Missing three:\n- Gradient Glow (SWF filter ID 4)\n- Gradient Bevel (SWF filter ID 7)\n- Adjust Color / ColorMatrix (SWF filter ID 6)\n\nGaps:\n1. packages/core/src/engine/filters.ts \u2014 union type has no GradientGlowFilter, GradientBevelFilter, AdjustColorFilter variants\n2. packages/swf/src/filters.ts \u2014 encoder has no branches for IDs 4, 6, 7\n3. packages/authoring-ui/src/FiltersPanel.tsx \u2014 UI only offers 4 filter types\n4. packages/core/src/engine/renderer.ts \u2014 CanvasRenderer has no CSS-filter path for these types\n\nAcceptance:\n- All three filter types can be added and edited in the Filters panel.\n- A document with each filter type compiles to a SWF with the correct FILTERLIST record (verify filter ID byte with parse-back).\n- CanvasRenderer renders a reasonable approximation (exact parity with Ruffle is ideal; approximation is acceptable for the authoring preview).\n- Add tests to packages/swf/src/__tests__/filters.test.ts for each new filter type.",
+  "status": "done",
+  "created_at": "2026-06-09T21:31:15Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

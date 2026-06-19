@@ -1,8 +1,0 @@
-{
-  "id": "0338-swf-definemorphshape-for-shape-tweens",
-  "title": "SWF: DefineMorphShape for shape tweens",
-  "description": "Unit test for DefineMorphShape (tag 46) encoding. A layer with tweenType='shape' between two keyframes should produce a DefineMorphShape tag in the SWF. Check compile.ts for shape tween handling. Tests in packages/swf/src/__tests__/morphshape.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:16:54Z",
-  "updated_at": "2026-06-09T21:17:45Z"
-}

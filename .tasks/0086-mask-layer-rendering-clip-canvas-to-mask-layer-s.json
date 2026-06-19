@@ -1,8 +1,0 @@
-{
-  "id": "0086-mask-layer-rendering-clip-canvas-to-mask-layer-s",
-  "title": "Mask layer rendering: clip canvas to mask layer shapes",
-  "description": "Flash 8 mask layers (type='mask') clip the rendering of their associated 'masked' layers beneath them. Implement in the Canvas 2D renderer (packages/core/src/engine/renderer.ts): (1) When iterating layers for rendering, identify mask+masked layer pairs: a mask layer clips all consecutive masked layers directly below it in the layer stack; (2) For each mask layer, render its shapes into a separate off-screen canvas, then use ctx.clip() or globalCompositeOperation='destination-in' to restrict the masked layers to only paint within the mask shape bounds; (3) Mask layer itself is not visible \u2014 only the clipping region counts; (4) The mask only clips during SWF playback/export too \u2014 update packages/swf/src/compile.ts to emit PlaceObject2 with ClipDepth field for masked layers (ClipDepth = depth of the last masked layer). Layer.type values: 'mask' (the clipper) and 'masked' (clipped by the mask above). Wire guide layer visibility too: 'guide' and 'guided' layers \u2014 the guide layer itself is not rendered in SWF output (only guides during authoring). Add tests: packages/core/src/engine/__tests__/mask.test.ts \u2014 verify mask layer causes render isolation, verify guide layer excluded from SWF output. Only touches packages/core/src/engine/ and packages/swf/src/ \u2014 no authoring-ui changes needed.",
-  "status": "done",
-  "created_at": "2026-06-09T19:20:16Z",
-  "updated_at": "2026-06-09T19:23:57Z"
-}

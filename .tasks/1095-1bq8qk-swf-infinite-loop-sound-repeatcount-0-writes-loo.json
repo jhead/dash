@@ -1,0 +1,10 @@
+{
+  "id": "1095-1bq8qk-swf-infinite-loop-sound-repeatcount-0-writes-loo",
+  "title": "SWF: infinite-loop sound (repeatCount=0) writes LoopCount=0, sound never plays",
+  "description": "In packages/swf/src/sounds.ts lines 156-157, bw.writeUI16LE(opts.loops!) writes 0 when opts.loops===0 (infinite repeat). Ruffle's mixer treats num_loops=0 as 'don't play'. Fix: write 0xFFFF when opts.loops===0 to indicate infinite loops, matching SWF spec \u00a7Sound.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T03:13:56Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

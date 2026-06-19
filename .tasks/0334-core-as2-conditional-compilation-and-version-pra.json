@@ -1,8 +1,0 @@
-{
-  "id": "0334-core-as2-conditional-compilation-and-version-pra",
-  "title": "Core: AS2 conditional compilation and version pragmas",
-  "description": "Verify AS2 #include-style conditional compilation pragmas don't crash the compiler. If the compiler doesn't support #include, it should throw a meaningful error or skip. Also verify: var x:Number (typed variable), function f(x:String, y:Number):Boolean typed params/return. Tests in packages/core/src/as2/__tests__/typedsyntax.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:15:41Z",
-  "updated_at": "2026-06-09T21:20:54Z"
-}

@@ -1,0 +1,8 @@
+{
+  "id": "0030-7ctk0t-lasso-freetransform-polystar",
+  "title": "Lasso & Free Transform enhancements",
+  "description": "Lasso tool (L): freeform drag selection, Polygon Mode for straight-edged, Magic Wand for bitmap regions. Free Transform enhancements: Distort mode (drag corner to skew), Envelope mode (9-point mesh warp). PolyStar tool: polygon/star shapes with configurable sides/points. See docs/04-toolbox.md.",
+  "status": "done",
+  "created_at": "2026-06-09T17:43:05Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

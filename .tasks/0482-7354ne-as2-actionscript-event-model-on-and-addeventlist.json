@@ -1,0 +1,8 @@
+{
+  "id": "0482-7354ne-as2-actionscript-event-model-on-and-addeventlist",
+  "title": "AS2 ActionScript event model: on() and addEventListener",
+  "description": "Test on(press/release/rollOver/rollOut/keyPress/enterFrame) handlers on buttons, addEventListener/removeEventListener pattern, EventDispatcher class usage.",
+  "status": "done",
+  "created_at": "2026-06-09T21:54:49Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

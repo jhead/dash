@@ -1,0 +1,10 @@
+{
+  "id": "0963-29w01p-swf-compile-groupobject-on-timeline-silently-dro",
+  "title": "SWF compile: GroupObject on timeline silently dropped",
+  "description": "GroupObject on timeline is now handled via flattenDisplayObjects() helper in compile.ts. The helper recursively expands groups into their children with accumulated x/y offsets. Applied at all frame.displayObjects iteration sites: video scan, font pre-pass, character pre-pass, depth pre-pass, frame loop pass 1, and mask clipDepth computation. Changes are in commit d93576c (landed as part of 0957 stash merge). All tests pass (1225 pass, 1 pre-existing failure in magnet-charids).",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T21:54:18Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

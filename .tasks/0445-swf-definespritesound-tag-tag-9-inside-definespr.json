@@ -1,8 +1,0 @@
-{
-  "id": "0445-swf-definespritesound-tag-tag-9-inside-definespr",
-  "title": "SWF: DefineSpriteSound tag (tag 9 inside DefineSprite)",
-  "description": "Test that a MovieClip symbol with a frame that has sound linkage (SoundLinkage with syncMode='event') produces the correct sound tags within the sprite's DoAction. Verify StartSound (tag 15) appears inside the DefineSprite body. Also verify that the root timeline's sound and symbol timeline's sound don't interfere with each other.",
-  "status": "done",
-  "created_at": "2026-06-09T21:43:20Z",
-  "updated_at": "2026-06-09T21:46:51Z"
-}

@@ -1,0 +1,8 @@
+{
+  "id": "0270-1no8kx-swf-actionscript-doaction-tag-encoding",
+  "title": "SWF: ActionScript DoAction tag encoding",
+  "description": "Unit test that AS2 scripts attached to frame keyframes are correctly compiled into DoAction (tag 12) in the SWF output. Create a FlashDocument with a frame that has a script (e.g. 'trace(\"hello\");'), export to SWF, parse the binary to locate a DoAction tag (type 12), verify it contains non-empty ActionScript bytecode (at minimum an ActionEnd 0x00 byte). Tests in packages/swf/src/__tests__/doaction.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:02:23Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

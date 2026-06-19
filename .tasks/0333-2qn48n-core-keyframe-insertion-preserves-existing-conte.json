@@ -1,0 +1,8 @@
+{
+  "id": "0333-2qn48n-core-keyframe-insertion-preserves-existing-conte",
+  "title": "Core: Keyframe insertion preserves existing content",
+  "description": "Unit tests verifying that insertKeyframe at position N preserves all display objects from the previous keyframe (Flash 8 behavior: inserting a keyframe copies the content of the previous keyframe). Also test insertBlankKeyframe which inserts an empty keyframe. Tests in packages/core/src/engine/__tests__/keyframe-content.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:15:40Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

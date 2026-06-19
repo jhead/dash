@@ -1,0 +1,10 @@
+{
+  "id": "0987-3mewss-fla-import-event-sound-and-stream-sound-not-deco",
+  "title": "FLA import: event sound and stream sound not decoded from binary",
+  "description": "In packages/core/src/fla/flash8-binary.ts, there is a Fla8SoundInfo interface and a sounds map (line 569, 603-604) but no actual decoding of sound payloads from binary streams. Flash 8 FLA files store sound assets in the binary. Task: (1) investigate how CPicLayer or the Contents stream references sounds, (2) decode sound metadata (sound name, linkage) from wherever it appears in the binary, (3) populate Fla8SoundInfo with decoded data, (4) forward through flash8-import.ts to the document model (sounds in the library). Reference flacomdoc or eddiemoore/fla-decoder for the binary format. Note: actual audio data (PCM/MP3) may not be embedded in the FLA binary \u2014 just the reference/metadata may be there.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T22:35:47Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0790-0mqoyn-frame-script-mini-compiler-gotoandstop-play-by-l",
+  "title": "frame-script mini-compiler: gotoAndStop/Play by label and nextFrame/prevFrame actions",
+  "description": "The frame-script mini-compiler in packages/swf/src/actions.ts (compileFrameScript) only handles gotoAndStop(N) and gotoAndPlay(N) with integer frame numbers, emitting ActionGotoFrame (0x81). It does NOT handle:\n\n  - gotoAndStop('labelName')  / gotoAndPlay('labelName')  \u2192 must emit ActionGotoFrame2 (0x9F) with a push + GotoFrame2 record\n  - nextFrame() / prevFrame()  \u2192 ActionNextFrame (0x04) / ActionPrevFrame (0x05)\n  - nextScene() / prevScene()  \u2192 push scene name + ActionGotoExpression (multi-step)\n\nThis is a real authoring gap: nearly all Flash tutorials use named labels for navigation (stop(); on frame 'end'; gotoAndStop('game') from a button). Currently the compiler silently skips these lines (the 'unknown line: skip' path), so the published SWF does nothing on those frames.\n\nWork items:\n1. Add nextFrame() \u2192 ActionNextFrame (0x04, no-payload).\n2. Add prevFrame() \u2192 ActionPrevFrame (0x05, no-payload).\n3. Add gotoAndStop('label') / gotoAndPlay('label') \u2192 ActionPush string + ActionGotoFrame2 (0x9F) with PlayFlag bit 0 set/clear. ActionGotoFrame2 flags = 0x01 for play, 0x00 for stop (per CLAUDE.md AVM1 notes: 'PlayFlag is bit 0, not bit 1').\n4. Add unit tests in packages/swf/src/__tests__/ that verify the emitted byte sequences against opcode values from ruffle/swf/src/avm1/opcode.rs.\n5. Extend ActionsPanel snippet list (packages/authoring-ui/src/ActionsPanel.tsx) to include nextFrame/prevFrame/gotoAndStop('label') snippets.\n\nAcceptance: a document with a frame labeled 'game' and a stop() frame script that transitions via gotoAndStop('game') from a button compiles and navigates correctly in Ruffle (E2E or visual-oracle test).",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T10:33:24Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

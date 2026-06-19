@@ -1,0 +1,8 @@
+{
+  "id": "0205-7nfcib-swf-definebitslossless2-for-bitmap-library-items",
+  "title": "SWF: DefineBitsLossless2 for bitmap library items",
+  "description": "When compiling a document with BitmapItem library items that have dataUri, emit DefineBitsLossless2 (tag 36) tags for each bitmap. Parse the PNG/GIF data URI, encode as ARGB32 pixels with zlib compression, write the tag. Also emit DefineBitsJPEG3 (tag 35) for JPEG images. Tests: a doc with a small bitmap library item compiles to a SWF containing tag 36 (lossless) or 35 (JPEG).",
+  "status": "done",
+  "created_at": "2026-06-09T20:39:03Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0164-core-onion-skinning-frame-range",
-  "title": "Core: onion skinning frame range",
-  "description": "Implement onion skinning support in packages/core/src/engine/onionskin.ts. Function: getOnionSkinFrames(doc, sceneIdx, layerIdx, currentFrame, before, after) returns an array of {frameIdx, alpha} objects for the frames to show as onion skin ghosts. Alpha = 0.25 for outermost frames, 0.5 for middle frames, based on distance from current frame. 'before' and 'after' are how many frames to include. Add unit tests.",
-  "status": "done",
-  "created_at": "2026-06-09T20:18:23Z",
-  "updated_at": "2026-06-09T20:20:44Z"
-}

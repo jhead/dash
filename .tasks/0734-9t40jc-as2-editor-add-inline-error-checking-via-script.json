@@ -1,0 +1,10 @@
+{
+  "id": "0734-9t40jc-as2-editor-add-inline-error-checking-via-script",
+  "title": "AS2 editor: add inline error checking via script_check",
+  "description": "ActionsPanel.tsx has a plain textarea + syntax highlighter but no error checking. The script_check MCP tool (or equivalent AS2 compile-check function) exists. Add a debounced (500ms) compile check that runs on each edit and displays syntax errors inline below the editor (red error banner showing line/column + message). Use the AS2 compiler's parse/check function directly (not MCP) for in-process checking without needing the server.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T06:00:36Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

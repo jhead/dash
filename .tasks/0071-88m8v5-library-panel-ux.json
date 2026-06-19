@@ -1,0 +1,8 @@
+{
+  "id": "0071-88m8v5-library-panel-ux",
+  "title": "Library panel: drag-to-stage, context menu, rename",
+  "description": "Library panel gaps: (1) Symbols can only be placed via Insert menu or double-click \u2014 add drag from library item to stage (HTML5 drag-and-drop or mousedown+mousemove tracking) that creates a SymbolInstance at drop position; (2) Right-click context menu on library items: Rename, Duplicate, Delete, Properties, Edit (enters edit-in-place); (3) Library panel header sort (by name/type/use count); (4) Folder creation and item drag-into-folder in the library; (5) Library item preview thumbnail for bitmaps/symbols. The most critical is (1) and (2). See packages/authoring-ui/src/LibraryPanel.tsx (or Library.tsx), docs/07-symbols-and-library.md.",
+  "status": "done",
+  "created_at": "2026-06-09T18:47:32Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

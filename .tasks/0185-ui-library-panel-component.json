@@ -1,8 +1,0 @@
-{
-  "id": "0185-ui-library-panel-component",
-  "title": "UI: Library panel component",
-  "description": "Implement LibraryPanel.tsx in packages/authoring-ui/src/LibraryPanel.tsx. Shows library items in a list with: icon (symbol/bitmap/sound), name, type label. Clicking selects item. Double-clicking a symbol opens it for editing. Has a search/filter input at top. Props: { doc, selectedItemId, onSelectItem, onEditSymbol, onDeleteItem, onRenameItem }. Render it in Shell.tsx in the right panel area (check current right panel structure). Build must pass.",
-  "status": "done",
-  "created_at": "2026-06-09T20:29:23Z",
-  "updated_at": "2026-06-09T20:30:30Z"
-}

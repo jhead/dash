@@ -1,8 +1,0 @@
-{
-  "id": "0286-core-as2-bitmapdata-and-bitmap-class-compilation",
-  "title": "Core: AS2 BitmapData and Bitmap class compilation",
-  "description": "Verify AS2 BitmapData and flash.display.BitmapData compile: new BitmapData(w, h, transparent, fillColor), bd.setPixel(x, y, color), bd.getPixel(x, y), bd.fillRect(rect, color), bd.copyPixels(src, srcRect, destPoint), bd.draw(source), bd.dispose(), bd.width, bd.height. Tests in packages/core/src/as2/__tests__/bitmapdata.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:06:19Z",
-  "updated_at": "2026-06-09T21:07:30Z"
-}

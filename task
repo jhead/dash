@@ -1,16 +1,44 @@
 #!/usr/bin/env python3
-"""File-backed task manager with safe concurrency and agent locks."""
+"""File-backed task manager with collision-free, concurrent-safe IDs and agent locks.
+
+ID scheme (task 1206)
+=====================
+Task IDs are ``<NNNN>-<TOKEN>-<slug>`` where:
+
+* ``NNNN`` is a zero-padded, monotonically-increasing *sequence hint* (human-friendly,
+  sortable, the number agents cite in commits e.g. "task 1217").
+* ``TOKEN`` is a short collision-resistant base36 token (timestamp + randomness).
+* ``slug`` is a filesystem-safe slug derived from the title.
+
+Why a token and not a bare counter? Agents run in **independent git worktrees**, each with
+its own ``.tasks/.counter`` and its own ``.mutex``. A per-file lock (``fcntl.flock``) only
+serializes creates *within one worktree*; two worktrees read the same committed counter and
+mint the SAME ``NNNN`` -> duplicate IDs that collide when the worktrees merge to main. There
+is no shared lock at create time across worktrees (they only converge at git-merge time), so
+a pure counter can never be collision-free here. The ``TOKEN`` guarantees uniqueness even
+when two worktrees pick the same ``NNNN``: the full IDs differ, the filenames differ, and the
+two task files merge cleanly with no git conflict. The ``NNNN`` is kept only as a sortable,
+citable hint -- the ``TOKEN`` is the authority for uniqueness.
+
+Lookups (show/update/acquire/delete/release/renew) resolve an exact id first; a bare prefix
+(e.g. ``1217`` or a partial id) resolves only if it matches exactly one task -- an ambiguous
+prefix FAILS LOUDLY and lists the matches, so an agent can never silently act on the wrong
+task.
+"""
 
 from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import sys
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,7 +51,18 @@ MUTEX_FILE = TASKS_DIR / ".mutex"
 COUNTER_FILE = TASKS_DIR / ".counter"
 DEFAULT_TTL = 3600
 ID_WIDTH = 4
+# A modern id: NNNN-TOKEN-slug. TOKEN is exactly TOKEN_LEN base36 chars and ALWAYS starts
+# with a digit, which makes it unambiguously distinguishable from a slug word (title-derived
+# slug words effectively never start with a digit). This guards migration's idempotency
+# detection: a legacy id like ``1213-golden-...`` is NOT mistaken for an already-tokenized id.
+TOKEN_LEN = 6
+ID_FULL_RE = re.compile(
+    r"^(\d{" + str(ID_WIDTH) + r"})-(\d[0-9a-z]{" + str(TOKEN_LEN - 1) + r"})-(.*)$"
+)
+# A legacy id (pre-1206): NNNN-slug  (no token).
+ID_LEGACY_RE = re.compile(r"^(\d{" + str(ID_WIDTH) + r"})-(.*)$")
 ID_PREFIX_RE = re.compile(r"^\d{" + str(ID_WIDTH) + r"}-")
+_BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 STATUSES = frozenset({"open", "in_progress", "done", "cancelled"})
 EFFORTS = frozenset({"default", "high", "extreme"})
 PRIORITIES = frozenset({"low", "medium", "high"})
@@ -57,14 +96,63 @@ def slugify(text: str) -> str:
 
 
 def normalize_slug(raw: str) -> str:
-    """Strip an existing numeric prefix and return a filesystem-safe slug."""
-    slug = ID_PREFIX_RE.sub("", raw.strip())
-    slug = re.sub(r"[^a-z0-9-]+", "-", slug.lower()).strip("-")
+    """Strip an existing id prefix (NNNN- or NNNN-TOKEN-) and return a safe slug."""
+    raw = raw.strip()
+    full = ID_FULL_RE.match(raw)
+    if full:
+        raw = full.group(3)
+    else:
+        raw = ID_PREFIX_RE.sub("", raw)
+    slug = re.sub(r"[^a-z0-9-]+", "-", raw.lower()).strip("-")
     return slug[:48] or "task"
 
 
-def make_task_id(number: int, slug: str) -> str:
-    return f"{number:0{ID_WIDTH}d}-{slug}"
+def _base36(n: int, width: int) -> str:
+    if n <= 0:
+        return "0" * width
+    chars = []
+    while n > 0:
+        n, rem = divmod(n, 36)
+        chars.append(_BASE36[rem])
+    s = "".join(reversed(chars))
+    return s[-width:] if len(s) >= width else s.rjust(width, "0")
+
+
+def new_token() -> str:
+    """A short, time-sortable, collision-resistant base36 token.
+
+    First 4 chars: the low 4 base36 digits of the current ms timestamp (monotone within a
+    ~36^4 ms window, so freshly-created ids sort by time). Remaining chars:
+    cryptographically-random base36 -- two worktrees minting the same NNNN in the same
+    millisecond still get distinct ids with overwhelming probability.
+    """
+    ms = int(time.time() * 1000)
+    time_part = _base36(ms, 4)[-4:]
+    rand_part = "".join(secrets.choice(_BASE36) for _ in range(TOKEN_LEN - 4))
+    return _force_leading_digit(time_part + rand_part)
+
+
+def _force_leading_digit(token: str) -> str:
+    """Ensure the token starts with a digit (see ID_FULL_RE)."""
+    if token and token[0].isdigit():
+        return token
+    # Map the leading base36 char into the digit range deterministically.
+    return str(_BASE36.index(token[0]) % 10) + token[1:]
+
+
+def make_task_id(number: int, token: str, slug: str) -> str:
+    return f"{number:0{ID_WIDTH}d}-{token}-{slug}"
+
+
+def id_sort_key(task_id: str) -> tuple[int, str]:
+    """Sort by numeric prefix then full id, for stable time-ish ordering."""
+    full = ID_FULL_RE.match(task_id)
+    if full:
+        return (int(full.group(1)), task_id)
+    legacy = ID_LEGACY_RE.match(task_id)
+    if legacy:
+        return (int(legacy.group(1)), task_id)
+    return (10**9, task_id)
 
 
 def read_counter() -> int:
@@ -80,8 +168,23 @@ def write_counter(value: int) -> None:
     COUNTER_FILE.write_text(f"{max(1, value)}\n", encoding="utf-8")
 
 
+def max_existing_number() -> int:
+    """Highest NNNN seen across all task files (counter is only a per-worktree hint)."""
+    highest = 0
+    for path in TASKS_DIR.glob("*.json"):
+        m = ID_LEGACY_RE.match(path.stem)
+        if m:
+            highest = max(highest, int(m.group(1)))
+    return highest
+
+
 def allocate_task_number() -> int:
-    number = read_counter()
+    """Sequence hint = max(counter, highest-on-disk) + 1.
+
+    The hint is NOT relied on for uniqueness (the token guarantees that); we just keep it
+    monotone within a worktree and never below what is already on disk.
+    """
+    number = max(read_counter(), max_existing_number() + 1)
     write_counter(number + 1)
     return number
 
@@ -112,6 +215,45 @@ def global_mutex():
             yield
         finally:
             fcntl.flock(mutex.fileno(), fcntl.LOCK_UN)
+
+
+def all_task_ids() -> list[str]:
+    return sorted((p.stem for p in TASKS_DIR.glob("*.json")), key=id_sort_key)
+
+
+def resolve_id(raw: str) -> str:
+    """Resolve a user-supplied id or bare prefix to exactly one task id.
+
+    Exact id match always wins. Otherwise a prefix that matches exactly one task resolves;
+    a prefix matching multiple tasks FAILS LOUDLY listing the matches, and no match errors.
+    Accepts a bare numeric prefix ("1217") or any leading substring of an id.
+    """
+    raw = raw.strip()
+    if not raw:
+        die("empty task id")
+
+    # Exact id (filename) match wins outright.
+    if task_path(raw).is_file():
+        return raw
+
+    ids = all_task_ids()
+
+    # A bare numeric prefix like "1217" matches the NNNN component.
+    if re.fullmatch(r"\d{1,%d}" % ID_WIDTH, raw):
+        num = int(raw)
+        matches = [tid for tid in ids if id_sort_key(tid)[0] == num]
+    else:
+        matches = [tid for tid in ids if tid == raw or tid.startswith(raw)]
+
+    if not matches:
+        die(f"task not found: {raw}")
+    if len(matches) > 1:
+        listing = "\n  ".join(matches)
+        die(
+            f"ambiguous task id '{raw}' matches {len(matches)} tasks; "
+            f"specify the full id:\n  {listing}"
+        )
+    return matches[0]
 
 
 def read_task(task_id: str) -> dict[str, Any]:
@@ -192,10 +334,14 @@ def cmd_create(args: argparse.Namespace) -> None:
     with global_mutex():
         number = allocate_task_number()
         slug = normalize_slug(args.id) if args.id else slugify(args.title)
-        task_id = make_task_id(number, slug)
-        path = task_path(task_id)
-        if path.exists():
-            die(f"task already exists: {task_id}")
+        # The token guarantees uniqueness; retry on the astronomically-unlikely clash.
+        for _ in range(8):
+            token = new_token()
+            task_id = make_task_id(number, token, slug)
+            if not task_path(task_id).exists():
+                break
+        else:
+            die("failed to allocate a unique task id")
         ts = now_iso()
         task: dict[str, Any] = {
             "id": task_id,
@@ -225,7 +371,7 @@ def cmd_list(args: argparse.Namespace) -> None:
             die(f"invalid status(es): {', '.join(sorted(invalid))}. valid: {', '.join(sorted(STATUSES))}")
         statuses = frozenset(requested)
     tasks = []
-    for path in sorted(TASKS_DIR.glob("*.json")):
+    for path in sorted(TASKS_DIR.glob("*.json"), key=lambda p: id_sort_key(p.stem)):
         task = json.loads(path.read_text(encoding="utf-8"))
         if statuses is not None and task.get("status") not in statuses:
             continue
@@ -236,6 +382,8 @@ def cmd_list(args: argparse.Namespace) -> None:
         task["lock"] = active_lock(task["id"])
         tasks.append(task)
 
+    # Stable sort: priority first, falling back to chronological id order.
+    tasks.sort(key=lambda t: id_sort_key(t["id"]))
     tasks.sort(key=priority_sort_key)
 
     if args.json:
@@ -246,20 +394,20 @@ def cmd_list(args: argparse.Namespace) -> None:
         print("No tasks.")
         return
 
-    print(f"{'ID':<40} {'STATUS':<12} {'PRI':<8} {'EFFORT':<10} {'LOCK':<24} TITLE")
-    print("-" * 114)
+    print(f"{'ID':<56} {'STATUS':<12} {'PRI':<8} {'EFFORT':<10} {'LOCK':<24} TITLE")
+    print("-" * 130)
     for task in tasks:
         lock = task.get("lock")
         lock_str = lock["holder"] if lock else "-"
         title = task.get("title", "")[:40]
         pri = task.get("priority") or "-"
         effort = task.get("effort") or "-"
-        print(f"{task['id']:<40} {task.get('status', ''):<12} {pri:<8} {effort:<10} {lock_str:<24} {title}")
+        print(f"{task['id']:<56} {task.get('status', ''):<12} {pri:<8} {effort:<10} {lock_str:<24} {title}")
 
 
 def cmd_show(args: argparse.Namespace) -> None:
     ensure_dirs()
-    task = task_with_lock(args.id)
+    task = task_with_lock(resolve_id(args.id))
     if args.json:
         print(json.dumps(task, indent=2))
         return
@@ -288,7 +436,8 @@ def cmd_update(args: argparse.Namespace) -> None:
         die("update requires at least one field")
 
     with global_mutex():
-        task = read_task(args.id)
+        task_id = resolve_id(args.id)
+        task = read_task(task_id)
         if args.title:
             task["title"] = args.title
         if args.description is not None:
@@ -301,35 +450,37 @@ def cmd_update(args: argparse.Namespace) -> None:
             task["priority"] = args.priority
         task["updated_at"] = now_iso()
         write_task(task)
-    print(f"updated: {args.id}")
+    print(f"updated: {task_id}")
 
 
 def cmd_delete(args: argparse.Namespace) -> None:
     with global_mutex():
-        read_task(args.id)
-        directory = lock_dir(args.id)
-        if directory.is_dir() and not cleanup_stale_lock(args.id):
+        task_id = resolve_id(args.id)
+        read_task(task_id)
+        directory = lock_dir(task_id)
+        if directory.is_dir() and not cleanup_stale_lock(task_id):
             if not args.force:
                 die("task is locked; use --force to delete anyway")
             shutil.rmtree(directory, ignore_errors=True)
-        task_path(args.id).unlink(missing_ok=True)
-    print(f"deleted: {args.id}")
+        task_path(task_id).unlink(missing_ok=True)
+    print(f"deleted: {task_id}")
 
 
 def cmd_acquire(args: argparse.Namespace) -> None:
     holder = args.holder or default_holder()
     with global_mutex():
-        task = read_task(args.id)
-        directory = lock_dir(args.id)
+        task_id = resolve_id(args.id)
+        task = read_task(task_id)
+        directory = lock_dir(task_id)
 
         if directory.is_dir():
-            if cleanup_stale_lock(args.id):
+            if cleanup_stale_lock(task_id):
                 pass
             else:
-                current = read_lock_meta(args.id)
+                current = read_lock_meta(task_id)
                 current_holder = current.get("holder", "") if current else ""
                 if current_holder == holder:
-                    write_lock_meta(args.id, holder, args.ttl)
+                    write_lock_meta(task_id, holder, args.ttl)
                     print(f"lock renewed for existing holder: {holder}")
                     return
                 die(f"task locked by: {current_holder}")
@@ -337,48 +488,75 @@ def cmd_acquire(args: argparse.Namespace) -> None:
         try:
             directory.mkdir(parents=False, exist_ok=False)
         except FileExistsError:
-            die(f"failed to acquire lock (contention on {args.id})")
+            die(f"failed to acquire lock (contention on {task_id})")
 
-        write_lock_meta(args.id, holder, args.ttl)
+        write_lock_meta(task_id, holder, args.ttl)
         if task.get("status") == "open":
             task["status"] = "in_progress"
             task["updated_at"] = now_iso()
             write_task(task)
 
-    print(f"acquired: {args.id} (holder={holder}, ttl={args.ttl}s)")
+    print(f"acquired: {task_id} (holder={holder}, ttl={args.ttl}s)")
 
 
 def cmd_release(args: argparse.Namespace) -> None:
     holder = args.holder or default_holder()
     with global_mutex():
-        directory = lock_dir(args.id)
+        task_id = resolve_id(args.id)
+        directory = lock_dir(task_id)
         if not directory.is_dir():
-            die(f"no lock held on: {args.id}")
+            die(f"no lock held on: {task_id}")
         if not args.force:
-            current = read_lock_meta(args.id)
+            current = read_lock_meta(task_id)
             current_holder = current.get("holder", "") if current else ""
             if current_holder != holder:
                 die(f"lock held by {current_holder}, not {holder}")
         shutil.rmtree(directory, ignore_errors=True)
-    print(f"released: {args.id}")
+    print(f"released: {task_id}")
 
 
 def cmd_renew(args: argparse.Namespace) -> None:
     holder = args.holder or default_holder()
     with global_mutex():
-        directory = lock_dir(args.id)
+        task_id = resolve_id(args.id)
+        directory = lock_dir(task_id)
         if not directory.is_dir():
-            die(f"no lock held on: {args.id}")
-        current = read_lock_meta(args.id)
+            die(f"no lock held on: {task_id}")
+        current = read_lock_meta(task_id)
         current_holder = current.get("holder", "") if current else ""
         if current_holder != holder:
             die(f"lock held by {current_holder}, not {holder}")
-        write_lock_meta(args.id, holder, args.ttl)
-    print(f"renewed: {args.id} (ttl={args.ttl}s)")
+        write_lock_meta(task_id, holder, args.ttl)
+    print(f"renewed: {task_id} (ttl={args.ttl}s)")
+
+
+def _deterministic_token(task: dict[str, Any], number: int, salt: str = "") -> str:
+    """A stable token derived from immutable task data, so migration is idempotent.
+
+    Re-running migrate on an already-migrated task produces the SAME id (no churn). Uses
+    created_at for the time-sortable head, and a content hash for the random tail.
+    """
+    created = task.get("created_at", "")
+    try:
+        ms = int(parse_iso(created).timestamp() * 1000) if created else 0
+    except ValueError:
+        ms = 0
+    time_part = _base36(ms, 4)[-4:] if ms else "0000"
+    seed = f"{number}|{created}|{task.get('title', '')}|{normalize_slug(task.get('id', ''))}|{salt}"
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    tail = _base36(int(digest[:12], 16), TOKEN_LEN - 4)[: TOKEN_LEN - 4]
+    return _force_leading_digit(time_part + tail)
 
 
 def cmd_migrate(args: argparse.Namespace) -> None:
-    """Assign numeric ID prefixes to legacy task files and sync the counter."""
+    """Migrate every task to the collision-free ``NNNN-TOKEN-slug`` scheme.
+
+    Idempotent and re-runnable: a task already in the new scheme is left untouched (its id
+    is stable). Legacy ``NNNN-slug`` ids (including duplicate-prefix collisions) get a
+    deterministic token appended, which makes colliding tasks distinct WITHOUT changing
+    their human-facing number. Filenames, the ``id`` field, and lock dirs are all moved
+    together; task data/status/history are preserved.
+    """
     with global_mutex():
         entries: list[tuple[Path, dict[str, Any]]] = []
         for path in sorted(TASKS_DIR.glob("*.json")):
@@ -388,24 +566,45 @@ def cmd_migrate(args: argparse.Namespace) -> None:
             print("no tasks to migrate")
             return
 
-        entries.sort(key=lambda item: item[1].get("created_at", ""))
-        next_number = 1
+        # Migrate oldest-first so any never-numbered legacy tasks get sensible numbers.
+        entries.sort(key=lambda item: (item[1].get("created_at", ""), item[1].get("id", "")))
+        next_number = max_existing_number() + 1
         migrated = 0
+        used_ids: set[str] = set()
 
         for path, task in entries:
             old_id = task["id"]
-            if ID_PREFIX_RE.match(old_id):
-                next_number = max(next_number, int(old_id.split("-", 1)[0]) + 1)
+            full = ID_FULL_RE.match(old_id)
+            if full:
+                # Already new-scheme; keep as-is.
+                used_ids.add(old_id)
                 continue
 
-            slug = normalize_slug(old_id)
-            new_id = make_task_id(next_number, slug)
+            legacy = ID_LEGACY_RE.match(old_id)
+            if legacy:
+                number = int(legacy.group(1))
+                slug = normalize_slug(old_id)
+            else:
+                number = next_number
+                next_number += 1
+                slug = normalize_slug(old_id)
+
+            token = _deterministic_token(task, number)
+            new_id = make_task_id(number, token, slug)
+            # Guard against the vanishingly-rare token clash within this migration.
+            attempt = 0
+            while new_id in used_ids or (task_path(new_id).exists() and new_id != old_id):
+                attempt += 1
+                token = _deterministic_token(task, number, salt=str(attempt))
+                new_id = make_task_id(number, token, slug)
+            used_ids.add(new_id)
+
             task["id"] = new_id
             task["updated_at"] = now_iso()
 
             old_lock = lock_dir(old_id)
             new_lock = lock_dir(new_id)
-            if old_lock.is_dir():
+            if old_lock.is_dir() and old_lock != new_lock:
                 if new_lock.exists():
                     shutil.rmtree(new_lock, ignore_errors=True)
                 old_lock.rename(new_lock)
@@ -424,19 +623,18 @@ def cmd_migrate(args: argparse.Namespace) -> None:
 
             print(f"migrated: {old_id} -> {new_id}")
             migrated += 1
-            next_number += 1
 
-        write_counter(max(next_number, read_counter()))
+        write_counter(max(next_number, max_existing_number() + 1, read_counter()))
         if migrated:
-            print(f"migrated {migrated} task(s); next id = {read_counter():0{ID_WIDTH}d}")
+            print(f"migrated {migrated} task(s); next number hint = {read_counter():0{ID_WIDTH}d}")
         else:
-            print("all tasks already use numeric prefixes")
+            print("all tasks already use the collision-free id scheme")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="task",
-        description="File-backed task manager with safe concurrency and agent locks.",
+        description="File-backed task manager with collision-free ids and agent locks.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -497,7 +695,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     migrate = sub.add_parser(
         "migrate",
-        help="Assign numeric ID prefixes to legacy task files",
+        help="Migrate all task files to the collision-free NNNN-TOKEN-slug id scheme",
     )
     migrate.set_defaults(func=cmd_migrate)
 

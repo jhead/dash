@@ -1,0 +1,8 @@
+{
+  "id": "0099-92mg0z-as2-array-and-string-built-in-method-compilation",
+  "title": "AS2 array and string built-in method compilation",
+  "description": "Flash 8 AS2 code commonly uses Array and String methods. Add compiler built-in support so these compile to efficient AVM1 bytecode: (1) Array methods: push(v) \u2192 ActionPush 'push', ActionCallMethod; pop() \u2192 'pop'; shift()/unshift(v); splice(i,n,...); join(sep); reverse(); sort(); slice(i,j); concat(...); Array.from is not needed; (2) String methods: split(sep) \u2192 'split' CallMethod; indexOf(str,from); lastIndexOf; charAt(i); charCodeAt(i); substring(i,j); toUpperCase/toLowerCase(); trim is not in Flash 8; String.fromCharCode(n) \u2192 ActionMbStringExtract or ActionStringExtract; (3) Math object: Math.floor/ceil/round/abs/min/max/sqrt/pow/random \u2192 ActionCallFunction or ActionGetVariable 'Math' + CallMethod; (4) These do NOT require new opcodes \u2014 they're all compiled as regular method calls (ActionGetVariable + ActionGetMember + ActionCall). The point is to verify the compiler handles chained method calls like arr.push(1) correctly. Write tests in packages/core/src/as2/__tests__/builtins.test.ts verifying these compile to valid bytecode. Only touches packages/core/src/as2/.",
+  "status": "done",
+  "created_at": "2026-06-09T19:28:37Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

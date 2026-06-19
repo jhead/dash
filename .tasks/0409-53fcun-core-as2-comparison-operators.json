@@ -1,0 +1,8 @@
+{
+  "id": "0409-53fcun-core-as2-comparison-operators",
+  "title": "Core: AS2 comparison operators (<, >, <=, >=)",
+  "description": "Test compilation of comparison operators: a < b (ActionLess2 0x48), a > b (ActionGreater 0x67), a <= b (ActionGreater + ActionNot), a >= b (ActionLess2 + ActionNot). Test with strings: 'a' < 'b'. Test with mixed types. Test chained comparisons: 0 < x && x < 10. Verify each emits the correct AVM1 opcode.",
+  "status": "done",
+  "created_at": "2026-06-09T21:33:03Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

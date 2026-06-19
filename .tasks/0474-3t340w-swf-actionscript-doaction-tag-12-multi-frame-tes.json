@@ -1,0 +1,8 @@
+{
+  "id": "0474-3t340w-swf-actionscript-doaction-tag-12-multi-frame-tes",
+  "title": "SWF ActionScript DoAction tag 12 multi-frame tests",
+  "description": "Test DoAction (tag 12) emitted once per keyframe with a script. Multiple keyframes \u2192 multiple DoAction tags. Script bytes contain ActionPush + ActionCallFunction pattern.",
+  "status": "done",
+  "created_at": "2026-06-09T21:52:16Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

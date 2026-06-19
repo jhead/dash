@@ -1,0 +1,10 @@
+{
+  "id": "1142-3djkop-fix-filters-gradientbevelfilter-missing-ontop-be",
+  "title": "fix(filters): GradientBevelFilter missing onTop/bevelType field and ON_TOP bit not set in SWF encoder",
+  "description": "Three related issues, all in the GradientBevel pipeline:\n\n1. GradientBevelFilter model type (packages/core/src/engine/filters.ts) lacks an onTop or bevelType field. The BevelFilter type has bevelType: 'inner'|'outer'|'full' but GradientBevelFilter has neither, so 'full' bevel placement is inexpressible.\n\n2. flash8-import.ts convertFilter() for 'gradient-bevel' (line ~637) silently drops onTop from Fla8FilterGradientBevel \u2014 the binary reader (flash8-binary.ts) does read onTop correctly at line 1763.\n\n3. writeGradientBevelFilter in packages/swf/src/filters.ts never sets the ON_TOP bit (bit 4) in the flags byte. Compare to Ruffle GradientFilterFlags::ON_TOP = 1<<4 (ruffle/swf/src/gradient_filter.rs) which is set when bevelType == 'full'. The comment on line 211 even acknowledges 'bit 4: onTop' but never writes it.\n\nFix path: (a) Add bevelType: 'inner'|'outer'|'full' to GradientBevelFilter interface; (b) propagate onTop from flash8-import using f.onTop to set bevelType; (c) in writeGradientBevelFilter, add: if (f.bevelType === 'full') flags |= 1 << 4; and (d) add defaultGradientBevel() to default it to 'outer' for symmetry with BevelFilter.\n\nNote: GradientGlowFilter's encoder also has the comment '// bits 0-3: passes (quality), bit 4: onTop' but correctly does not set it (GradientGlow has no 'full' placement concept \u2014 only GradientBevel uses ON_TOP). The comment is misleading but not a bug.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T08:31:14Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

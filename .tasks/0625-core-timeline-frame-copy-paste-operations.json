@@ -1,8 +1,0 @@
-{
-  "id": "0625-core-timeline-frame-copy-paste-operations",
-  "title": "Core timeline frame copy/paste operations",
-  "description": "Implement copyFrames(layer, startIndex, endIndex) and pasteFrames(layer, frames, atIndex) pure functions. Tests: copy range of frames, paste preserves keyframe flags, paste at end appends, paste in middle inserts correctly.",
-  "status": "done",
-  "created_at": "2026-06-09T22:35:46Z",
-  "updated_at": "2026-06-09T22:37:16Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0296-core-as2-movieclip-hittest-and-getbounds",
-  "title": "Core: AS2 MovieClip hitTest and getBounds",
-  "description": "Verify AS2 MovieClip geometry methods compile: mc.hitTest(x, y, shapeFlag), mc.hitTest(target), mc.getBounds(coordinateSpace), mc.localToGlobal(pt), mc.globalToLocal(pt), mc.getBytesLoaded(), mc.getBytesTotal(), mc.getURL(url, window). Tests in packages/core/src/as2/__tests__/mcgeometry.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:08:02Z",
-  "updated_at": "2026-06-09T21:09:26Z"
-}

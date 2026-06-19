@@ -1,8 +1,0 @@
-{
-  "id": "0599-swf-multi-scene-document-with-per-scene-frames-t",
-  "title": "SWF multi-scene document with per-scene frames tests",
-  "description": "Tests for multi-scene SWF compilation: 2-scene document, scene 2 frames appended after scene 1 ShowFrame sequence. Verify total ShowFrame count = sum of scene frame counts. SceneAndFrameLabelData tag if present.",
-  "status": "done",
-  "created_at": "2026-06-09T22:25:07Z",
-  "updated_at": "2026-06-09T22:29:01Z"
-}

@@ -1,0 +1,8 @@
+{
+  "id": "0267-0l3cbz-core-fla-round-trip-serialization-bitmap-sound-a",
+  "title": "Core: FLA round-trip serialization (bitmap + sound assets)",
+  "description": "Unit tests for saveFla/loadFla round-trip with binary assets. Create a FlashDocument with a BitmapItem (base64 PNG data URI) and a SoundItem (base64 MP3 data URI). saveFla() to bytes, loadFla(bytes) back, verify the dataUri fields are restored correctly. Tests in packages/core/src/fla/__tests__/roundtrip-assets.test.ts. Import saveFla, loadFla from @flash/core/fla/zip.",
+  "status": "done",
+  "created_at": "2026-06-09T21:01:33Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

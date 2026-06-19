@@ -1,0 +1,8 @@
+{
+  "id": "0435-5hnkig-core-as2-actionscript-version-pragma-as3-use-nam",
+  "title": "Core: AS2 ActionScript version pragma (#as3 / use namespace)",
+  "description": "Test AS2 version pragmas and namespace declarations: 'use strict', 'use namespace flash.utils', 'import flash.utils.getTimer'. These may not be supported but should produce meaningful parse/compile errors rather than crashes. Also test Flash 8 import statement: 'import mx.utils.Delegate' (class import). Verify error messages are helpful.",
+  "status": "done",
+  "created_at": "2026-06-09T21:41:08Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

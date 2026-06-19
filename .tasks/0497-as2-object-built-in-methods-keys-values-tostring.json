@@ -1,8 +1,0 @@
-{
-  "id": "0497-as2-object-built-in-methods-keys-values-tostring",
-  "title": "AS2 Object built-in methods: keys, values, toString",
-  "description": "Test Object.toString(), Object.valueOf(), obj.hasOwnProperty(), obj.isPrototypeOf(), obj.propertyIsEnumerable(), delete operator, in operator. Compile-without-crash.",
-  "status": "done",
-  "created_at": "2026-06-09T21:58:17Z",
-  "updated_at": "2026-06-09T21:59:59Z"
-}

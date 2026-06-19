@@ -1,0 +1,8 @@
+{
+  "id": "0680-5zm0y1-as2-numeric-edge-cases-nan-infinity-parseint-par",
+  "title": "AS2 numeric edge cases: NaN, Infinity, parseInt/parseFloat",
+  "description": "Test NaN, isNaN(), Infinity, isFinite(), parseInt(), parseFloat(), Number.MAX_VALUE, Number.MIN_VALUE, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN all compile.",
+  "status": "done",
+  "created_at": "2026-06-09T22:49:57Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

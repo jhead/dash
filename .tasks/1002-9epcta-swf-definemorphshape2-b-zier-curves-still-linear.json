@@ -1,0 +1,10 @@
+{
+  "id": "1002-9epcta-swf-definemorphshape2-b-zier-curves-still-linear",
+  "title": "SWF: DefineMorphShape2 B\u00e9zier curves still linearized (control points dropped)",
+  "description": "In packages/swf/src/morphshape.ts, pathToVertices() (lines 619-648) drops B\u00e9zier control points and treats all curve segments as straight lines (only seg.to is used, control point discarded). There is no writeCurvedEdge equivalent. Shape tweens with B\u00e9zier curves render as faceted polygons. Fix: implement curved edge emission in the morph shape encoder. SWF MORPHEDGERECORD for curves needs: CurvedEdgeFlag=1, control delta (cx-ax, cy-ay), anchor delta (tx-cx, ty-cy). Both start-state and end-state edge lists need curved edges. This is analogous to how shapes.ts handles curved edges but applied to the morph shape format.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T23:00:30Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

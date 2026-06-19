@@ -1,8 +1,0 @@
-{
-  "id": "0055-as2-avm1-compiler",
-  "title": "AS2 to AVM1 bytecode: compile real frame actions into DoAction",
-  "description": "0045 emits frame scripts as trace stubs only \u2014 stop(), play(), gotoAndPlay() still do nothing in Test Movie, so even a stop-on-frame-1 interaction cannot be authored. Build on the AS2 tokenizer (0041) and parser (0043): compile the timeline-control subset to real AVM1 bytecode \u2014 stop, play, gotoAndPlay/gotoAndStop (frame number and label), nextFrame/prevFrame, stopAllSounds, getURL, plus trace \u2014 and emit proper DoAction tags replacing the stub. Emit FrameLabel tags from Frame.label (Tag.FrameLabel defined in tags.ts:16, never used) so goto-by-label works. Full AVM1 (variables, functions, MovieClip API) is follow-up scope, not this story. See docs/12-actionscript.md.",
-  "status": "done",
-  "created_at": "2026-06-09T18:06:35Z",
-  "updated_at": "2026-06-09T18:20:00Z"
-}

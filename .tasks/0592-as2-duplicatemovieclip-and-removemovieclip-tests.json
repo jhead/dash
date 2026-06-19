@@ -1,8 +1,0 @@
-{
-  "id": "0592-as2-duplicatemovieclip-and-removemovieclip-tests",
-  "title": "AS2 duplicateMovieClip and removeMovieClip tests",
-  "description": "Tests for clip lifecycle: duplicateMovieClip(mc, name, depth), mc.duplicateMovieClip(name, depth), mc.removeMovieClip(), removeMovieClip(mc), attachMovie(id, name, depth), attachMovie with initObj. Also MovieClip._name, _target, _url.",
-  "status": "done",
-  "created_at": "2026-06-09T22:23:16Z",
-  "updated_at": "2026-06-09T22:25:51Z"
-}

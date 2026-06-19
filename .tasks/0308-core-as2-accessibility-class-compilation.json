@@ -1,8 +1,0 @@
-{
-  "id": "0308-core-as2-accessibility-class-compilation",
-  "title": "Core: AS2 Accessibility class compilation",
-  "description": "Verify AS2 Accessibility class compiles: Accessibility.isActive(), Accessibility.updateProperties(), Accessibility.sendEvent(component, childID, event, nonHTML). mc.accessibilityProperties = new AccessibilityProperties(), ap.name, ap.description, ap.shortcut, ap.silent. Tests in packages/core/src/as2/__tests__/accessibility.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:11:07Z",
-  "updated_at": "2026-06-09T21:12:15Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0132-core-snapshot-offscreencanvas",
-  "title": "Core: document snapshot export (PNG via OffscreenCanvas)",
-  "description": "Add snapshotFrame(doc, sceneIndex, frameIndex, width, height): Promise<Blob|null> to packages/core. Uses OffscreenCanvas + CanvasRenderer to render a single frame to PNG Blob without a DOM canvas. If OffscreenCanvas unavailable (Node), return null. Export from packages/core/src/index.ts. Add 4 tests verifying the function signature. See renderer.ts for CanvasRenderer API.",
-  "status": "done",
-  "created_at": "2026-06-09T19:54:49Z",
-  "updated_at": "2026-06-09T19:58:01Z"
-}

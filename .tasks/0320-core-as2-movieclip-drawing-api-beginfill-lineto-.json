@@ -1,8 +1,0 @@
-{
-  "id": "0320-core-as2-movieclip-drawing-api-beginfill-lineto-",
-  "title": "Core: AS2 MovieClip drawing API (beginFill, lineTo, etc)",
-  "description": "Verify AS2 MovieClip drawing API compiles: mc.beginFill(color, alpha), mc.beginGradientFill(fillType, colors, alphas, ratios, matrix), mc.endFill(), mc.moveTo(x, y), mc.lineTo(x, y), mc.curveTo(cx, cy, ax, ay), mc.lineStyle(thickness, color, alpha), mc.lineGradientStyle(fillType, colors, alphas, ratios, matrix), mc.clear(). Tests in packages/core/src/as2/__tests__/drawingapi.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:13:22Z",
-  "updated_at": "2026-06-09T21:15:02Z"
-}

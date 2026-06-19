@@ -1,0 +1,8 @@
+{
+  "id": "0004-38gonh-initial-toolbox-mvp",
+  "title": "Initial toolbox (core draw tools)",
+  "description": "Tools panel with MVP subset: Selection (V), Line (N), Oval (O), Rectangle (R), Pencil (Y), Paint Bucket (K), Hand (H), Zoom (Z); stroke/fill color swatches and No Color. Object Drawing toggle (J) for shape tools. See docs/04-toolbox.md, docs/05-color-strokes-fills.md. Depends on vector-engine-mvp, stage-view-mvp.",
+  "status": "done",
+  "created_at": "2026-06-09T16:31:27Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

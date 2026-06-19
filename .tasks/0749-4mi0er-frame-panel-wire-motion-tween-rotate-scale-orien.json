@@ -1,0 +1,10 @@
+{
+  "id": "0749-4mi0er-frame-panel-wire-motion-tween-rotate-scale-orien",
+  "title": "Frame panel: wire motion tween Rotate/Scale/Orient/Sync controls into Timeline bottom bar",
+  "description": "The model keyframe (types.ts) has four motion-tween properties that are fully wired through getTweenedFrame/interpolateTween but are completely inaccessible from the authoring UI:\n\n- motionRotate: \"none\" | \"auto\" | \"cw\" | \"ccw\" \u2014 controls whether rotation is interpolated (auto = shortest path, cw/ccw = enforced direction)\n- motionRotateCount: number \u2014 extra full rotations to add on top of interpolated angle\n- motionOrientToPath: boolean \u2014 aligns object tangent to its motion guide path\n- motionScale: boolean \u2014 whether scale is interpolated (true by default)\n\nThe Timeline bottom bar (Timeline.tsx ~L1713) currently only exposes Ease (number input) and Custom... (ease curve dialog) for motion tweens. Flash 8's Frame properties panel also shows: Rotate select (none/auto/CW/CCW), Rotate count spinner, Orient to path checkbox, Sync checkbox, and Scale checkbox.\n\n## Work\n1. Extend the motion-tween row in Timeline.tsx to add:\n   - Rotate dropdown (none/auto/CW/CCW) + count input (only when rotate \u2260 none)\n   - Orient to path checkbox (only when layer type is 'guided')\n   - Scale checkbox\n   - Sync checkbox\n2. Wire each control back to setMotionTween (or a thin model mutation that patches the keyframe fields).\n3. Extend timeline_set_tween MCP tool in agent/registry.ts to accept rotate/rotateCount/orientToPath/sync/scale in the props bag so agents can set these.\n\n## Acceptance\n- Flash 8 FLA with motionRotate='cw' + rotateCount=2 round-trips correctly through the UI.\n- orient-to-path checkbox is visible only on guided layers and affects canvas preview rotation.\n- All new controls call onTimelineChange (history entry created).",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T07:20:33Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

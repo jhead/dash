@@ -1,8 +1,0 @@
-{
-  "id": "0063-dev-loop-workspace-builds",
-  "title": "Dev loop: live workspace sources in Vite, document Tauri entry point",
-  "description": "The dev loop silently serves stale code: workspace packages resolve via exports to compiled dist/ (packages/*/package.json), apps/desktop/vite.config.ts has no resolve.alias to src, no package has a watch script, and root pnpm dev runs only Vite \u2014 edits to package sources are invisible until a manual pnpm build, and a fresh clone fails to start (no dist). authoring-ui dist is stale right now. Fix: point Vite at package src (resolve.alias or exports development condition) or add orchestrated tsc --watch. Also: root pnpm dev launches browser-only Vite where every Tauri dialog/fs call rejects with no user-facing error \u2014 add a root script for pnpm --filter @flash/desktop tauri dev and document it as the real entry point; surface Tauri-API failures in usePublish/useFileActions instead of silent rejection.",
-  "status": "done",
-  "created_at": "2026-06-09T18:07:11Z",
-  "updated_at": "2026-06-09T18:16:41Z"
-}

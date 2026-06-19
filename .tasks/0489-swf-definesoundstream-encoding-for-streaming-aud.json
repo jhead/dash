@@ -1,8 +1,0 @@
-{
-  "id": "0489-swf-definesoundstream-encoding-for-streaming-aud",
-  "title": "SWF DefineSoundStream encoding for streaming audio",
-  "description": "Test SoundStreamHead (tag 18) and SoundStreamBlock (tag 19) emitted when a symbol or frame uses stream sync mode. Verify header: codecId, samplesPerBlock, sampleRate.",
-  "status": "done",
-  "created_at": "2026-06-09T21:55:53Z",
-  "updated_at": "2026-06-09T21:58:43Z"
-}

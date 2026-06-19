@@ -1,0 +1,8 @@
+{
+  "id": "0389-0m5s4b-core-as2-labeled-statements-and-break-continue-w",
+  "title": "Core: AS2 labeled statements and break/continue with labels",
+  "description": "Test compilation of labeled loop statements: outer: for (...) { inner: for (...) { break outer; continue outer; break inner; continue inner; } }. Verify ActionJump (0x99) emitted for break/continue with label. Test that label names are correctly scoped and that a break with an unknown label produces a meaningful error (not crash).",
+  "status": "done",
+  "created_at": "2026-06-09T21:29:34Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

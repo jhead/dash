@@ -1,8 +1,0 @@
-{
-  "id": "0569-core-tween-interpolation-property-tests",
-  "title": "Core tween interpolation property tests",
-  "description": "Tests for motion tween interpolation: interpolateTween(startFrame, endFrame, ratio) for x, y, scaleX, scaleY, rotation with easing. Verify output at ratio=0, 0.5, 1.0. Test ease-in, ease-out behavior. motionEase -100 to 100.",
-  "status": "done",
-  "created_at": "2026-06-09T22:16:10Z",
-  "updated_at": "2026-06-09T22:19:08Z"
-}

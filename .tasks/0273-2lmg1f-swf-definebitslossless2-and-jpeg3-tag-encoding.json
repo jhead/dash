@@ -1,0 +1,8 @@
+{
+  "id": "0273-2lmg1f-swf-definebitslossless2-and-jpeg3-tag-encoding",
+  "title": "SWF: DefineBitsLossless2 and JPEG3 tag encoding",
+  "description": "Unit tests for bitmap tag encoding in packages/swf. Import encodeDefineBitsLossless2 and encodeDefineBitsJPEG3 from packages/swf/src/bitmap.ts. Test: encodeDefineBitsLossless2 produces a tag starting with correct type byte (36), has correct width/height in header, pixel data is zlib-compressed. encodeDefineBitsJPEG3 produces type 35 tag. Tests in packages/swf/src/__tests__/bitmap.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:03:07Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

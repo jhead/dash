@@ -1,0 +1,10 @@
+{
+  "id": "1208-39nsrk-lasso-polygon-and-magic-wand",
+  "title": "Lasso Polygon mode + Magic Wand selection (threshold/smoothing)",
+  "description": "DONE. GROUND TRUTH: Lasso Polygon mode + Magic Wand (threshold/smoothing/flood-fill) were ALREADY functionally implemented inline in packages/authoring-ui/src/StageArea.tsx (floodFillPixels, traceBoundary, douglasPeucker, chaikin, AABB/contour polygon, magicWandSelect; ToolsPanel options + uiStore ToolState fields lassoPolygonMode/lassoMagicWand/magicWandThreshold(20)/magicWandSmoothing). GENUINE GAPS fixed: (1) the pure algorithms were NOT in core and the only 'tests' were inline COPIES in lassoMagicWand.test.ts (drift-prone, never imported the source); (2) the polygon double-click/near-start CLOSE logic had no test; (3) Enter did NOT close an in-progress polygon (only toggled playback). WORK: new packages/core/src/engine/magicWand.ts (DOM-free helpers: rgbDistance, floodFillPixels, buildMask, traceBoundary, douglasPeucker, chaikin, aabbPolygon, selectedPixelsToBoundingPolygon, magicWandSelectPixels, shouldClosePolygon, pointInPolygon) exported from engine/index; StageArea refactored to import these (removed ~330 lines of inline dup) and now closes polygons via shouldClosePolygon and on Enter (suppressing playback toggle while a polygon is in progress); authoring-ui test rewritten to import core; docs/04 updated. VERIFY: pnpm -r build GREEN (full typecheck incl apps/desktop). New core test packages/core/src/engine/__tests__/magicWand.test.ts = 36/36 PASS. authoring-ui full suite = 637/637 PASS. core full suite: only the 3 KNOWN pre-existing fails remain (missing fixtures/flash8-empty.fla, task 1207) \u2014 no new failures introduced.",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:32:25Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

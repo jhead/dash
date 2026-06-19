@@ -1,0 +1,8 @@
+{
+  "id": "0157-2noouh-core-scene-management-add-delete-reorder-rename",
+  "title": "Core: scene management (add, delete, reorder, rename)",
+  "description": "Implement scene management in packages/core/src/engine/scenes.ts. Functions: addScene(doc, afterIdx?), deleteScene(doc, sceneIdx), reorderScene(doc, fromIdx, toIdx), renameScene(doc, sceneIdx, name), duplicateScene(doc, sceneIdx). All immutable, return new FlashDocument. Guard: can't delete last scene. New scene has 1 layer with 1 blank keyframe. Add unit tests in packages/core/src/engine/__tests__/scenes.test.ts. Export from engine/index.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:14:57Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

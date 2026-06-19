@@ -1,8 +1,0 @@
-{
-  "id": "0218-core-layer-mask-rendering-support",
-  "title": "Core: Layer mask rendering support",
-  "description": "Implement mask layer rendering in packages/core/src/renderer/. When a layer has type 'mask', use its display objects as a clipping mask for the 'masked' layers below it. In the canvas renderer, use ctx.save(), draw mask shape as clip path, draw masked content, ctx.restore(). Tests: a mask layer clips content to its shape area.",
-  "status": "done",
-  "created_at": "2026-06-09T20:44:31Z",
-  "updated_at": "2026-06-09T20:45:30Z"
-}

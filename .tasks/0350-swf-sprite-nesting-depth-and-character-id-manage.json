@@ -1,8 +1,0 @@
-{
-  "id": "0350-swf-sprite-nesting-depth-and-character-id-manage",
-  "title": "SWF: Sprite nesting depth and character ID management",
-  "description": "Unit tests for correct character ID assignment when SWF has nested sprites. Two symbols placed on stage should get distinct character IDs. A symbol defined inside another should also have a unique ID. Verify no ID collisions across all DefineSprite, DefineShape, DefineBitsLossless2 tags. Tests in packages/swf/src/__tests__/charids.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:19:20Z",
-  "updated_at": "2026-06-09T21:22:26Z"
-}

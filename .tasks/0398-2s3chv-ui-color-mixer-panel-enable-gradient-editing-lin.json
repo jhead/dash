@@ -1,0 +1,8 @@
+{
+  "id": "0398-2s3chv-ui-color-mixer-panel-enable-gradient-editing-lin",
+  "title": "UI: Color Mixer panel \u2014 enable gradient editing (linear, radial, focal radial)",
+  "description": "ColorMixerPanel.tsx lines 479\u2013481 render the fill-type options 'Linear Gradient', 'Radial Gradient', and 'Bitmap' as disabled. The gradient stop editor, color band, and focal-point control are completely absent.\n\nAuthors cannot create or edit gradient fills from the Color Mixer even though gradient fills are fully supported in the model and SWF compiler (task 0058 done).\n\nAcceptance:\n- Selecting 'Linear Gradient' or 'Radial Gradient' in the fill-type selector activates the gradient editor.\n- The gradient editor shows a color band with draggable stops; clicking a stop opens a color picker; clicking the band adds a new stop.\n- Stop position (0\u2013255), color, and alpha are editable.\n- 'Radial Gradient' exposes a focal-point offset control.\n- Changes commit to the selected shape's fill in the document model and re-render on stage.\n- The fill round-trips through FLA save/load and SWF export (gradient transform matrix preserved).\n\nKey file: packages/authoring-ui/src/ColorMixerPanel.tsx.",
+  "status": "done",
+  "created_at": "2026-06-09T21:31:15Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

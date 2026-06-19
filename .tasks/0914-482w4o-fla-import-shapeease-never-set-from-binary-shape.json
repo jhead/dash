@@ -1,0 +1,10 @@
+{
+  "id": "0914-482w4o-fla-import-shapeease-never-set-from-binary-shape",
+  "title": "FLA import: shapeEase never set from binary \u2014 shape tweens always import as linear",
+  "description": "flash8-import.ts forwards motionEase as shapeEase when tweenType=shape.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T20:16:17Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

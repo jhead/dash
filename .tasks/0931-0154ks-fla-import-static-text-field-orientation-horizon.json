@@ -1,0 +1,10 @@
+{
+  "id": "0931-0154ks-fla-import-static-text-field-orientation-horizon",
+  "title": "FLA import: static text field orientation (horizontal/vertical/vertical-LR) not decoded from binary",
+  "description": "Fixed in commit 823cbec. Decoded CPicText per-run vertical/rtl bytes into Fla8TextOrientation (horizontal|vertical-rtl|vertical-ltr) in flash8-binary.ts and forwarded through convertFla8Text in flash8-import.ts. Added orientation to engine/types.ts TextDisplayObject. DefineEditText has no orientation flag \u2014 documented in swf/src/text.ts comment. All tests pass.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:41:01Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

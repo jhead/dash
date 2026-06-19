@@ -1,0 +1,10 @@
+{
+  "id": "1190-7jpchb-critical-fla-import-visible-flag-decode-inverted",
+  "title": "CRITICAL: FLA import visible-flag decode inverted \u2014 every display object imports hidden, published SWF is blank",
+  "description": "FIXED. Root cause confirmed: visibleFromObjBaseFlags read bit0 of the CPicObjBase flags byte as per-object visible, but golden fixtures have flags=0x0 on 17/19 objects (all scene objects) and golden.swf renders them ALL visible -> bit0 is NOT a visible flag. Flash has no per-display-object hide (visibility is a layer property / runtime _visible). Fix: visibleFromObjBaseFlags now always returns true (packages/core/src/fla/flash8-binary.ts). Result: no zero-alpha CXForms emitted; all 4 scene objects place visible. ACCEPTANCE: apps/desktop/e2e/golden-fla-oracle.spec.ts renders the published golden SWF in Ruffle -> 96.7% white / 2.6% colored / 0.7% dark (non-blank), shows 'Test Game' + 'Click to Play' button. Reference golden.swf renders 96.6/2.6/0.9 (matching distribution). Tests updated for corrected semantics (3 task-0932 tests). All 5132 core tests pass. Supersedes 0932.",
+  "status": "done",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-14T00:29:36Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0822-6214jy-animated-gif-export-file-export-movie-as-gif",
+  "title": "Animated GIF export \u2014 File > Export Movie as .gif",
+  "description": "Add animated GIF output to the existing Export Movie flow (handleExportMovie). The PNG-sequence path exists; integrate a GIF encoder (gifenc or gif.js), add an export-options dialog (loop count, frame rate, dithering), and produce a single .gif blob from per-frame renders.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T12:21:49Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

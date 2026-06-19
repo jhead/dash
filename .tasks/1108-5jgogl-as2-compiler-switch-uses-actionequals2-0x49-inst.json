@@ -1,0 +1,10 @@
+{
+  "id": "1108-5jgogl-as2-compiler-switch-uses-actionequals2-0x49-inst",
+  "title": "AS2 compiler: switch uses ActionEquals2 (0x49) instead of ActionStrictEquals (0x66)",
+  "description": "In compiler.ts compileSwitchStmt(), line 1063 emits 0x49 (ActionEquals2, abstract == equality) for case comparisons. JavaScript switch uses === (strict equality), which is ActionStrictEquals (0x66).\n\nThe comment on that line even says 'ActionEquals2 \u2014 strict equality' which is self-contradicting \u2014 0x49 is abstract equality, not strict equality.\n\nImpact: switch(x) { case 1: ... } will match when x is '1' (a string), '1.0', true (for case 1), or 1 (number) due to type coercion. For example, switch('1') { case 1: ... } would match case 1, which should NOT match under strict equality semantics.\n\nFix: change line 1063 from this.emit(0x49) to this.emit(0x66) (ActionStrictEquals). Also update all three test files (switch.test.ts, switchstmt.test.ts, switchcase.test.ts) that assert 0x49 is present \u2014 they should assert 0x66 instead.\n\nVerified: ActionEquals2 = 0x49 and ActionStrictEquals = 0x66 confirmed against ruffle/swf/src/avm1/opcode.rs. The binary expression compiler already correctly uses 0x49 for == and 0x66 for ===.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T04:28:45Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0937-2bpcu2-fla-import-symbol-instance-accprops-accessibilit",
+  "title": "FLA import: symbol instance AccProps (accessibility name/description, tabIndex, tabEnabled) not decoded",
+  "description": "Cherry-picked f0451d3. 3 AccProps tests pass.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:42:48Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

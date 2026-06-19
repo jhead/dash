@@ -1,8 +1,0 @@
-{
-  "id": "0022-rulers-guides",
-  "title": "Rulers and guides",
-  "description": "Horizontal and vertical pixel rulers along stage edges (View > Rulers). Drag from rulers to create guide lines; drag guide off stage to delete. Snap-to-guides (View > Snapping). Store guides in DocumentProperties.guides array. See docs/01-documents-stage-scenes.md (Rulers/Guides). Depends on stage-view-mvp, document-model-mvp.",
-  "status": "done",
-  "created_at": "2026-06-09T17:28:46Z",
-  "updated_at": "2026-06-09T17:36:54Z"
-}

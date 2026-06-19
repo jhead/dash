@@ -1,8 +1,0 @@
-{
-  "id": "0480-swf-setbackgroundcolor-tag-9-and-framerate-encod",
-  "title": "SWF SetBackgroundColor tag 9 and FrameRate encoding",
-  "description": "Test SetBackgroundColor (tag 9) in SWF output matches document backgroundColor. Test SWF header frameRate field encoding (8.8 fixed-point) and frame dimensions in RECT.",
-  "status": "done",
-  "created_at": "2026-06-09T21:53:23Z",
-  "updated_at": "2026-06-09T21:56:57Z"
-}

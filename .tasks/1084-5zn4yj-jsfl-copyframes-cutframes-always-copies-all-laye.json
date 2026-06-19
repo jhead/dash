@@ -1,0 +1,10 @@
+{
+  "id": "1084-5zn4yj-jsfl-copyframes-cutframes-always-copies-all-laye",
+  "title": "JSFL copyFrames/cutFrames always copies all layers, ignores setSelectedLayers",
+  "description": "In runtime.ts, copyFrames passes [] (empty layer array) to copyFramesDoc, which treats it as copy-all-layers. Flash's real JSFL copies only the selected layers. Any JSFL script that calls timeline.setSelectedLayers(n) followed by timeline.copyFrames() gets all layers instead of just the selected one. Fix: pass [state.currentLayerIndex] (or the multi-selection array) instead of [].",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T02:49:34Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

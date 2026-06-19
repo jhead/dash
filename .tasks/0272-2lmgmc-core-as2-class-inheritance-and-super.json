@@ -1,0 +1,8 @@
+{
+  "id": "0272-2lmgmc-core-as2-class-inheritance-and-super",
+  "title": "Core: AS2 class inheritance and super",
+  "description": "Verify AS2 class inheritance compiles: class Dog extends Animal { function Dog() { super(); } function speak() { return super.speak() + ' woof'; } }. Verify ActionNew (0x4a), prototype chain setup, and super() calls compile. Also test interface keyword is silently ignored. Tests in packages/core/src/as2/__tests__/inheritance.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:03:07Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

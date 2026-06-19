@@ -1,0 +1,10 @@
+{
+  "id": "1209-5ayoak-text-orientation-tracking-baseline",
+  "title": "Text typography: vertical orientation + tracking (letter-spacing) + baseline shift",
+  "description": "DONE. Ground truth: orientation+letterSpacing model fields already existed (types.ts); letterSpacing UI + FLA round-trip + runtime DoAction existed; baselineShift was completely missing. GAPS implemented: (1) renderer.ts renderTextObject now applies letterSpacing (per-glyph advance), baselineShift (y offset), and orientation (vertical-ltr/rtl stacked-column layout); (2) swf text.ts encodeDefineText extended with typography opts \u2014 letterSpacing baked into per-glyph advances, baselineShift subtracted from TEXTRECORD YOffset, vertical orientation emits one one-glyph TEXTRECORD per glyph with descending YOffset; wired in compiler/characters.ts; (3) added baselineShift model field (types.ts) + DisplayObjectUpdates; (4) PropertiesPanel: new Baseline (px) NumInput + Orientation dropdown. Tests: swf text.test.ts +7 (advance-delta, y-offset, vertical records) all green (108 files/1366); core text-typography-render.test.ts +9 (render fillText x/y/per-glyph) green; authoring-ui 42/665 green; full build typecheck clean. Only failures are 2 pre-existing fixtures/flash8-empty.fla ENOENT (task 1207, unrelated). Docs/06 updated.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:34:00Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

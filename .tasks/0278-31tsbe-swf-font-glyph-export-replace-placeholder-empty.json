@@ -1,0 +1,8 @@
+{
+  "id": "0278-31tsbe-swf-font-glyph-export-replace-placeholder-empty",
+  "title": "SWF font glyph export: replace placeholder empty glyphs with real outlines",
+  "description": "packages/swf/src/fonts.ts emits 95 placeholder glyphs (all with empty contour arrays) for every embedded font. Text in published SWFs is invisible or substituted by Ruffle because no glyph outlines exist in DefineFont2/DefineFont3.\n\nFlash 8's canonical approach: use the browser Canvas 2D API to extract glyph outlines \u2014 fill a canvas with a single character using the chosen font, then trace the pixels into bezier paths, or use the measureText/fontBoundingBox metrics to construct synthetic outlines. Alternatively, use opentype.js (already a common approach for web SWF tools) to parse a bundled font file and extract real contours.\n\nAcceptance criteria:\n- DefineFont2 tags in published SWFs contain non-empty GlyphShapeTable records for ASCII 32-126.\n- Static text objects using a standard font (Arial, Times New Roman, Verdana) are visible and legible when played in Ruffle.\n- Existing font.test.ts passes and gains at least one test asserting glyphShapes[0].records.length > 0 for a common font.\n\nKey files: packages/swf/src/fonts.ts (encodeDefineFont2, glyph generation), packages/swf/src/text.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:03:28Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

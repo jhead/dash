@@ -1,0 +1,10 @@
+{
+  "id": "1119-3fvcpu-sprite-ts-text-in-symbol-timelines-has-wrong-fon",
+  "title": "sprite.ts: text in symbol timelines has wrong font size (HasFont=0, fontCharId not passed)",
+  "description": "Fixed in commit 0066cea: compile.ts now has a symbol-timeline font pre-pass (lines 661-690) that scans all symbol timelines for text objects and registers their fonts in fontCharIdMap. encodeDefineSprite() now accepts fontCharIdMap as an optional parameter (sprite.ts line 86) and is passed it from compile.ts (lines 750, 772). encodeDefineEditText is called with the embedded font ID (sprite.ts line 124). This mirrors the fix for buttons.ts (task 1083).",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T12:35:27Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0200-5j1c5u-as2-switch-case-compilation",
+  "title": "AS2: switch/case compilation",
+  "description": "Ensure switch/case/default statements in the AS2 compiler generate correct AVM1 bytecode. Flash 8 switch uses ActionStrictEquals (0xAC) + ActionJump (0x99) chains. Test: simple switch, fall-through, default clause, break inside case, string and number discriminants.",
+  "status": "done",
+  "created_at": "2026-06-09T20:37:24Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

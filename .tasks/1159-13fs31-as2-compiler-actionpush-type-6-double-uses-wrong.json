@@ -1,0 +1,10 @@
+{
+  "id": "1159-13fs31-as2-compiler-actionpush-type-6-double-uses-wrong",
+  "title": "AS2 compiler: ActionPush type-6 double uses wrong byte order (standard LE, not Flash middle-endian)",
+  "description": "packages/core/src/as2/compiler.ts pushNumber() emits floating-point literals using standard IEEE 754 little-endian byte order (DataView.setFloat64(offset, n, true)), but Flash/Ruffle stores ActionPush type-6 doubles in a mixed-endian format: the HIGH 32 bits of the f64 are stored first (as LE UI32), then the LOW 32 bits (as LE UI32). This is documented in Ruffle's write_f64_me() (swf/src/avm1/write.rs:73-77): n.to_bits().rotate_left(32) stored as LE u64. Effect: every floating-point literal that does not fit in SI32 (e.g. 1.5, 3.14, 0.1, NaN, Infinity) is encoded with swapped high/low 32-bit words and decodes to the wrong value in Ruffle. For example, 1.0 (bits=0x3FF0000000000000) would be emitted as bytes [00 00 00 00 00 00 F0 3F] but should be [00 00 F0 3F 00 00 00 00]. This affects all AS2 floating-point arithmetic and comparisons. Fix: in pushNumber(), compute hi = (bits >>> 32) and lo = (bits & 0xFFFFFFFF) and write [hi_LE, lo_LE] instead of standard setFloat64(littleEndian=true). Since JS BigInt or DataView tricks are needed to handle 64-bit ints, the simplest fix is: getFloat64 in big-endian, extract hi/lo as two UI32 BE values, write each as UI32 LE.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T10:01:13Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

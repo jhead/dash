@@ -1,0 +1,8 @@
+{
+  "id": "0439-0iowb9-swf-definesound-tag-tag-14-and-startsound-tag-15",
+  "title": "SWF: DefineSound tag (tag 14) and StartSound (tag 15)",
+  "description": "Test that a SoundItem placed as an event sound on a keyframe produces DefineSound (tag 14) and StartSound (tag 15) tags. Verify: (1) tag 14 appears before the frame that plays it, (2) tag 14 has sound format byte and sample rate, (3) StartSound body has soundId UI16 matching DefineSound charId and SoundInfo flags, (4) syncMode='event' produces SOUNDINFO with NoMultiple=0. Use .todo for unimplemented features.",
+  "status": "done",
+  "created_at": "2026-06-09T21:41:56Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

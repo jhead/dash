@@ -1,0 +1,10 @@
+{
+  "id": "0815-1vm0fq-lasso-magic-wand-bitmap-region-selection-by-colo",
+  "title": "Lasso Magic Wand \u2014 bitmap-region selection by color threshold",
+  "description": "Add Magic Wand sub-mode to the Lasso tool: contiguous pixel-color region selection on a broken-apart bitmap (Threshold and Smoothing properties). Currently absent from tool implementation and StageArea hit-testing. Needed for extracting shapes from imported bitmaps.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T11:58:21Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

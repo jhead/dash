@@ -1,0 +1,8 @@
+{
+  "id": "0677-5zm02m-as2-mouse-class-and-cursor-tests",
+  "title": "AS2 Mouse class and cursor tests",
+  "description": "Test Mouse.show(), Mouse.hide(), Mouse.addListener, Mouse.removeListener, onMouseMove/Down/Up callbacks, _xmouse/_ymouse properties on _root and movie clips.",
+  "status": "done",
+  "created_at": "2026-06-09T22:49:57Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

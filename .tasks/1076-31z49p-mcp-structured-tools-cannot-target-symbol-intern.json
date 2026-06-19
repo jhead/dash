@@ -1,0 +1,10 @@
+{
+  "id": "1076-31z49p-mcp-structured-tools-cannot-target-symbol-intern",
+  "title": "MCP: structured tools cannot target symbol-internal timelines",
+  "description": "getActiveTimeline() in packages/authoring-ui/src/agent/registry.ts (line 222) unconditionally returns doc.scenes[sceneIndex].timeline and ignores editingSymbolId. All structured MCP tools (script_set, stage_add_shape, stage_place_instance, timeline_insert_keyframe, etc.) therefore always operate on the scene timeline. The JSFL runtime does support symbol timelines via makeSymbolTimelineProxy (task 1063 wired this up), but the MCP registry layer never routes to it. Fix: add an optional symbolId parameter to relevant MCP tools (or auto-detect from editingSymbolId in runtime state), and have getActiveTimeline() check the current editingSymbolId.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T02:27:04Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

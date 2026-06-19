@@ -1,8 +1,0 @@
-{
-  "id": "0115-motion-guide-path-following-guided-layer-tween",
-  "title": "Motion guide path following: guided layer tween",
-  "description": "When a layer has type='guided' and there is an adjacent 'guide' layer containing a path, motion tweens on the guided layer should follow that path. In the renderer (renderer.ts renderFrame): if a SymbolInstance is on a guided layer with an active motion tween, sample the guide path at ratio t=frame/totalFrames using quadratic bezier t-parameter and set the instance's position to that point. If motionOrientToPath=true, also rotate the instance to the tangent angle. In compile.ts: generate PlaceObject2 records with the path-sampled positions (bake the path into per-frame transforms). Add 4 unit tests. See docs/06-tweens-and-animation.md.",
-  "status": "done",
-  "created_at": "2026-06-09T19:44:08Z",
-  "updated_at": "2026-06-09T19:49:51Z"
-}

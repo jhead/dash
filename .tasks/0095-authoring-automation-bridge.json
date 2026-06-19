@@ -1,8 +1,0 @@
-{
-  "id": "0095-authoring-automation-bridge",
-  "title": "Authoring automation bridge (window.__flashTest) + Playwright e2e suite",
-  "description": "Layer 2 of docs/18-verification-and-automation.md. (1) Dev/test-only window.__flashTest bridge installed by Shell (import.meta.env.DEV or VITE_FLASH_TEST=1) with read surface getDocument()/getSelection()/getEditContext()/getViewState()/getHistoryDepth() and act surface selectTool/setColors/stageGesture (synthesizes real PointerEvents on the stage canvas, converting STAGE coords to screen via live zoom/pan)/menu(path)/timeline(cmd)/publish() returning bytes/screenshotStage(). HARD RULE: the bridge calls only the same code paths the UI calls \u2014 real events and real command handlers, never direct model mutation, or it stops testing the UI. (2) FileIO seam: put @tauri-apps/plugin-dialog//plugin-fs behind an interface with an in-memory test implementation so e2e runs against browser-mode Vite with no Tauri runtime. (3) apps/desktop/e2e/ Playwright suite covering the 8 canonical flows in docs/18 Layer 2: per-tool draw asserts document shape; transform matrices; F5/F6/F7 + layer ops per docs/02; draw-F8-edit-in-place-place-instance per docs/07; tween create/scrub/publish; undo-redo round-trip across every mutation class; save-new-open round-trip via FileIO mock; publish then layer-1 decode + trace assertion. Wire pnpm e2e (starts Vite, runs headless). Depends on swf-verification-harness for the decode step in flow 8; coordinate with 0051 (document owner) and 0053 (symbols, in progress).",
-  "status": "done",
-  "created_at": "2026-06-09T19:27:17Z",
-  "updated_at": "2026-06-09T19:37:28Z"
-}

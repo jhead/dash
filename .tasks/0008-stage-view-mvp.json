@@ -1,8 +1,0 @@
-{
-  "id": "0008-stage-view-mvp",
-  "title": "Stage view",
-  "description": "Stage canvas with work area/pasteboard, background color, zoom (fit, marquee, presets), pan (Hand/Space), pixel grid, snap-to-grid/pixels. View modes: Outlines and Anti-alias. See docs/01-documents-stage-scenes.md (Stage). Depends on authoring-ui-shell-mvp, document-model-mvp.",
-  "status": "done",
-  "created_at": "2026-06-09T16:31:27Z",
-  "updated_at": "2026-06-09T16:57:53Z"
-}

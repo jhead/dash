@@ -1,8 +1,0 @@
-{
-  "id": "0421-core-as2-number-arithmetic-operators",
-  "title": "Core: AS2 number arithmetic operators (+, -, *, /, %)",
-  "description": "Test compilation of arithmetic: a + b (ActionAdd2 0x47 or ActionAdd), a - b (ActionSubtract 0x0b), a * b (ActionMultiply 0x0c), a / b (ActionDivide 0x0d), a % b (ActionModulo 0x3f or 0x63). Test integer and float literals. Test operator precedence: 2 + 3 * 4 vs (2+3)*4. Test ActionNegate (0x18) for unary minus. Verify each correct opcode.",
-  "status": "done",
-  "created_at": "2026-06-09T21:37:45Z",
-  "updated_at": "2026-06-09T21:41:01Z"
-}

@@ -1,0 +1,10 @@
+{
+  "id": "1093-5wigo0-stage-add-shape-mcp-tool-does-not-support-bitmap",
+  "title": "stage_add_shape MCP tool does not support bitmap fills",
+  "description": "The model's Fill type includes BitmapFill (type: 'bitmap', bitmapId, repeat, smooth, matrix) but buildFill() in registry.ts only handles solid and gradient fills. Agents cannot create shapes with bitmap fills via stage_add_shape and must resort to jsfl_run. Fix: add a BitmapFillParam case to buildFill that accepts { type: 'bitmap', bitmapId, repeat?, smooth?, matrix? }.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T03:09:43Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

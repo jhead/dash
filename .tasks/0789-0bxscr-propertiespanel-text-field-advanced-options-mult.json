@@ -1,0 +1,10 @@
+{
+  "id": "0789-0bxscr-propertiespanel-text-field-advanced-options-mult",
+  "title": "PropertiesPanel text field advanced options (multiline, word wrap, instance name)",
+  "description": "The TextView section in PropertiesPanel (packages/authoring-ui/src/PropertiesPanel.tsx lines 922-1058) exposes Font, Size, Bold, Italic, Color, Align, and Type \u2014 but the TextDisplayObject data model also carries multiline, wordWrap, underline, letterSpacing, scrollable, and instanceName fields that have no authoring UI at all.\n\nGap: switching a text field to 'dynamic' or 'input' type should unlock extra options (multiline toggle, word wrap toggle, max chars, variable/instance name) that Flash 8 shows in the Properties panel. Without instanceName there is no way to target the field from AS2 (_root.scoreText.text = ...) through the UI (agents can set it via script_set/stage_update, but not via the panel).\n\nWork items:\n1. Add a Multiline toggle button (visible for dynamic/input type) that toggles obj.multiline.\n2. Add a Word Wrap toggle button (enabled only when multiline is true) that toggles obj.wordWrap.\n3. Add an Underline toggle button (B/I/U row) that toggles obj.underline.\n4. Add a Var / Instance Name text input that reads/writes obj.instanceName (show for dynamic/input text).\n5. Add a Letter Spacing numeric field (optional, nice-to-have) for obj.letterSpacing.\n6. Wire the Scrollable checkbox for dynamic text.\n\nNo new model fields are needed \u2014 all properties already exist in TextDisplayObject in packages/core/src/engine/types.ts.\n\nAcceptance: the PropertiesPanel for a dynamic text field shows multiline, word wrap, and instance name controls. Setting instanceName via the panel and publishing a SWF makes _root.<name>.text = 'hello' resolve correctly in Ruffle (reuse the test harness from task 0519).",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T10:33:10Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

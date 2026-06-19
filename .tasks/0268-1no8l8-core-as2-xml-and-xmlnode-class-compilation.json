@@ -1,0 +1,8 @@
+{
+  "id": "0268-1no8l8-core-as2-xml-and-xmlnode-class-compilation",
+  "title": "Core: AS2 XML and XMLNode class compilation",
+  "description": "Verify AS2 XML and XMLNode compile correctly: new XML(), new XML('<root/>'), x.load(url), x.parseXML(str), x.toString(), x.firstChild, x.childNodes, x.attributes, x.nodeName, x.nodeValue, x.nodeType, x.parentNode, x.nextSibling, x.previousSibling. XMLNode: new XMLNode(1, 'tag'), n.appendChild(child), n.removeNode(), n.cloneNode(true). x.onLoad = function(success){}. Tests in packages/core/src/as2/__tests__/xmlclass.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:02:23Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

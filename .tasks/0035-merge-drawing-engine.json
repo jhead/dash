@@ -1,8 +1,0 @@
-{
-  "id": "0035-merge-drawing-engine",
-  "title": "Merge drawing: boolean path operations",
-  "description": "Implement Flash's merge-drawing model in packages/core/src/engine/: path intersection detection (line-line, line-curve, curve-curve), polygon union for same-color fills, subtraction (different color top shape cuts away bottom), and stroke segment splitting. Entry point: mergeDraw(existingShapes: Shape[], newShape: Shape): Shape[] \u2014 returns the resulting merged shapes. Purely packages/core/src/engine/. See docs/03-drawing-vector-graphics.md.",
-  "status": "done",
-  "created_at": "2026-06-09T17:51:25Z",
-  "updated_at": "2026-06-09T17:54:06Z"
-}

@@ -1,0 +1,10 @@
+{
+  "id": "0871-4us85u-rich-text-multi-run-formatting-only-first-run-st",
+  "title": "Rich text multi-run formatting: only first run styling kept on FLA import",
+  "description": "flash8-binary.ts line 1728-1729: when a text field has multiple formatting runs, only the first run's formatting is kept (if (!run) run = thisRun) while subsequent runs' styling is discarded. Text content is concatenated correctly but per-run font/size/color styling is lost. Requires extending Fla8Text with runs[] field and model/SWF encoder support.",
+  "status": "done",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-10T16:20:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

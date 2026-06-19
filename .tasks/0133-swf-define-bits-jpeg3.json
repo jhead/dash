@@ -1,8 +1,0 @@
-{
-  "id": "0133-swf-define-bits-jpeg3",
-  "title": "SWF: DefineBitsJPEG3 (tag 35) for JPEG with alpha channel",
-  "description": "Add DefineBitsJPEG3 encoder in packages/swf/src/bitmaps.ts. Tag 35 stores: UI16 CharacterId, UI32 AlphaDataOffset, raw JPEG bytes, then zlib-compressed alpha channel bytes. Used when a BitmapItem has transparency. Currently DefineBitsJPEG2 (tag 21) is used for all bitmaps; it has no alpha channel support. Detect transparent bitmaps via compressionType='lossless' or if alpha data is present in bitmapPixels (from DefineBitsLossless2 task). Add encodeDefineBitsJpeg3(charId, jpegBytes, alphaBytes) function and wire in compile.ts when appropriate. Add 6 tests in __tests__/bitmaps-jpeg3.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T19:57:05Z",
-  "updated_at": "2026-06-09T19:59:58Z"
-}

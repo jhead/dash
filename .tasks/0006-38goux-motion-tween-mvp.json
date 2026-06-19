@@ -1,0 +1,8 @@
+{
+  "id": "0006-38goux-motion-tween-mvp",
+  "title": "Motion tween (basic)",
+  "description": "Classic motion tween between two keyframes on a single instance: position, scale, rotation, alpha. Property inspector ease (\u2212100\u2026100). Exported as PlaceObject2 with ratio. Post-core-MVP animation slice. See docs/02-timeline-and-animation.md (Motion tween). Depends on timeline-mvp, symbols-library-mvp, swf-compiler-mvp.",
+  "status": "done",
+  "created_at": "2026-06-09T16:31:27Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

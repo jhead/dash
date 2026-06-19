@@ -1,8 +1,0 @@
-{
-  "id": "0397-ui-gradient-transform-tool-f-key-move-rotate-sca",
-  "title": "UI: Gradient Transform tool (F key) \u2014 move/rotate/scale gradient fills",
-  "description": "Flash 8 toolbox tool F: select a shape with a gradient or bitmap fill and drag to reposition the gradient center, drag handles to scale or rotate it. Currently the tool is absent from ToolId, ToolsPanel.tsx, and StageArea.tsx.\n\nAcceptance:\n1. ToolId enum in packages/core/src/engine/tools/types.ts includes 'gradientTransform'.\n2. ToolsPanel.tsx renders the Gradient Transform button in the correct Flash 8 position (bottom of fill-tool group).\n3. When the tool is active and a gradient-filled shape is selected, StageArea.tsx shows the gradient transform handles (center circle, edge handle for scale, corner handle for rotation).\n4. Dragging the handles updates the gradient matrix in the shape's fill, which re-renders live on the stage.\n5. The updated gradient matrix round-trips through FLA save/load and SWF export.\n\nKey files: packages/authoring-ui/src/tools/types.ts, packages/authoring-ui/src/ToolsPanel.tsx, packages/authoring-ui/src/StageArea.tsx.",
-  "status": "done",
-  "created_at": "2026-06-09T21:31:15Z",
-  "updated_at": "2026-06-09T21:41:05Z"
-}

@@ -1,0 +1,8 @@
+{
+  "id": "0159-2nooz2-swf-sceneandframelabeldata-tag-tag-86",
+  "title": "SWF: SceneAndFrameLabelData tag (tag 86)",
+  "description": "SWF v9+ uses tag 86 to store scene names and frame labels for ActionScript access. For Flash 8 SWF v8, this tag is optional but useful. Implement encodeSceneAndFrameLabelData in packages/swf/src/scenelabels.ts that encodes all scene names and frame labels. Emit it after FileAttributes in compile.ts. Body format: NumScenes (encoded U32), then for each scene: offset (U32) + name (null-terminated string); then NumFrameLabels (U32), then for each label: frameNum (U32) + label string. Add tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:14:57Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

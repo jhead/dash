@@ -1,0 +1,10 @@
+{
+  "id": "0887-3j40fq-fla-import-frame-sound-ids-not-resolved-from-lib",
+  "title": "FLA import: frame sound IDs not resolved from library (includes suspicious ID 19072)",
+  "description": "Loading Magnet.fla logs 4 sound-not-found warnings from flash8-import.ts:622:\n- 'frame sound id 16 not found in library; skipping'\n- 'frame sound id 19 not found in library; skipping'\n- 'frame sound id 19072 not found in library; skipping'\n- 'frame sound id 32 not found in library; skipping'\n\nSound ID 19072 is suspicious \u2014 this is far outside the normal range for a 87-item library, suggesting either a corrupt byte read or a misalignment in the sound reference parsing.\n\n## Expected\nSound items referenced by frames should be found in the library. The large ID (19072) likely indicates a parsing bug where the sound ID field is being misread (wrong byte count or offset). Sounds in library: none imported (the FLA has sounds but the parser may not be loading them as SoundItems).",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T17:48:00Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

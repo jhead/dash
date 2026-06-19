@@ -1,8 +1,0 @@
-{
-  "id": "0449-as2-prototype-chain-and-property-lookup-tests",
-  "title": "AS2 prototype chain and property lookup tests",
-  "description": "Test AVM1 prototype chain traversal: __proto__ access, hasOwnProperty, isPrototypeOf, inherited method calls, property shadowing. Also test Object.prototype built-ins.",
-  "status": "done",
-  "created_at": "2026-06-09T21:46:25Z",
-  "updated_at": "2026-06-09T21:47:54Z"
-}

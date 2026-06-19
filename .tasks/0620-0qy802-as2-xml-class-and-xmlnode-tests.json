@@ -1,0 +1,8 @@
+{
+  "id": "0620-0qy802-as2-xml-class-and-xmlnode-tests",
+  "title": "AS2 XML class and XMLNode tests",
+  "description": "Test new XML(), XML.load, XMLNode traversal, createElement/createTextNode, firstChild/nextSibling, appendChild, attributes access, XML.toString() all compile correctly.",
+  "status": "done",
+  "created_at": "2026-06-09T22:33:26Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

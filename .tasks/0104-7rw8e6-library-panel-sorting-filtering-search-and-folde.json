@@ -1,0 +1,8 @@
+{
+  "id": "0104-7rw8e6-library-panel-sorting-filtering-search-and-folde",
+  "title": "Library panel: sorting, filtering, search, and folder management",
+  "description": "Improve the LibraryPanel.tsx component with Flash 8 library features: (1) Search/filter input at the top that filters items by name in real-time; (2) Sortable column headers: Name, Type, Use Count (click to sort asc/desc); (3) Folder tree view: library items can be placed in LibraryFolders; show folder rows with expand/collapse triangles; items inside folders indented; drag item to folder; (4) Context menu on right-click: Rename, Duplicate, Move to New Folder, Delete, Properties (shows linkage dialog); (5) New Folder button creates a LibraryFolder; (6) Item type icons: movie clip icon (\u2b1c), button icon (\u2b21), graphic icon (\u25b3), bitmap icon (\ud83d\uddbc), sound icon (\u266a), font icon (A), video icon (\u25b6); (7) Selection highlight on click, multi-select with Ctrl/Shift; (8) Use count: count how many times each library item is referenced as SymbolInstance across all scene timelines. This is self-contained in LibraryPanel.tsx + possibly LibraryFolderDialog.tsx \u2014 check if Shell.tsx already passes the needed callbacks (onRenameLibraryItem, onDeleteLibraryItem, etc) before adding new props. See docs/08-library-assets.md.",
+  "status": "done",
+  "created_at": "2026-06-09T19:35:23Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

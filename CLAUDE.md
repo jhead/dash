@@ -37,6 +37,23 @@ pnpm --filter @flash/desktop e2e
 Concise, permanent takeaways from completed work. Update this section when finishing a
 task if something non-obvious was discovered. Goal: avoid re-researching the same ground.
 
+### Task system
+
+- **Duplicate task ids came from PER-WORKTREE counters, not a broken in-process lock (task
+  1206).** The `./task` CLI already serialized `create` with an `fcntl.flock` on
+  `.tasks/.mutex`, so intra-worktree creates never collided. But each git worktree has its
+  OWN `.tasks/.counter` + `.mutex`; two worktrees read the same committed counter and minted
+  the same `NNNN` (e.g. 1213/1217), which only collided when they merged to `main`. A shared
+  lock is impossible across worktrees at create time (they converge only at git-merge), so a
+  pure counter can never be collision-free. Fix: ids are now `NNNN-TOKEN-slug`, where `TOKEN`
+  is a 6-char base36 timestamp+random token (always digit-leading). `NNNN` stays a sortable,
+  citable hint; `TOKEN` is the uniqueness authority — same-`NNNN` creates get distinct ids/
+  filenames and merge with no conflict. Lookups resolve exact id first, then a unique prefix;
+  an ambiguous bare prefix fails loudly listing matches. `./task migrate` is idempotent
+  (already-tokenized ids untouched; legacy/colliding tokens derived deterministically). The
+  digit-leading token is what lets migrate tell a real token from a slug word like `golden`
+  (which has no leading digit). Gate: `tools/task-concurrency.test.py` (`pnpm test:task`).
+
 ### Test harness
 
 - **esbuild parallel-build race**: running all three vitest packages in parallel (`&`)

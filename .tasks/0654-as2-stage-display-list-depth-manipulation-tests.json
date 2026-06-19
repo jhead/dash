@@ -1,8 +1,0 @@
-{
-  "id": "0654-as2-stage-display-list-depth-manipulation-tests",
-  "title": "AS2 stage display list depth manipulation tests",
-  "description": "Test createEmptyMovieClip, attachMovie, duplicateMovieClip, removeMovieClip, swapDepths, getDepth, getNextHighestDepth, getInstanceAtDepth all compile correctly.",
-  "status": "done",
-  "created_at": "2026-06-09T22:43:23Z",
-  "updated_at": "2026-06-09T22:46:29Z"
-}

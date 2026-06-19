@@ -1,0 +1,8 @@
+{
+  "id": "0198-4i003p-core-rectangle-and-oval-shape-drawing",
+  "title": "Core: Rectangle and oval shape drawing",
+  "description": "Implement draw-rectangle and draw-oval engine functions. addRectangle(doc, sceneIdx, layerIdx, frameIdx, x, y, w, h, fillColor, strokeColor, strokeWidth) and addOval similarly. Create ShapeDisplayObjects with proper ShapePaths. Used by the rectangle and oval tools in the authoring UI.",
+  "status": "done",
+  "created_at": "2026-06-09T20:36:36Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

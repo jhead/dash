@@ -1,8 +1,0 @@
-{
-  "id": "0631-swf-framelabel-tag-encoding-tests",
-  "title": "SWF FrameLabel tag encoding tests",
-  "description": "Test compileDocument emits FrameLabel tag (43) for frames with non-empty label field. Verify label string matches, LabelType 'name'/'comment'/'anchor' handled correctly, multiple labels in multi-frame doc.",
-  "status": "done",
-  "created_at": "2026-06-09T22:37:26Z",
-  "updated_at": "2026-06-09T22:39:07Z"
-}

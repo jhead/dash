@@ -1,8 +1,0 @@
-{
-  "id": "0169-core-shape-pen-tool-path-builder",
-  "title": "Core: shape pen tool path builder",
-  "description": "Implement a pen tool path-building helper in packages/core/src/engine/pentool.ts. This is the state machine for the pen tool: beginPath(), addAnchorPoint(x,y), addCurvePoint(x,y,cx,cy), closePath() -> ShapePath. The output is a ShapePath with proper moveTo/lineTo/curveTo/close commands. Also implement addPointToPath(path, point, isSmooth) for adding bezier curve handles. This is purely data transformation \u2014 no UI. Add unit tests.",
-  "status": "done",
-  "created_at": "2026-06-09T20:21:48Z",
-  "updated_at": "2026-06-09T20:24:15Z"
-}

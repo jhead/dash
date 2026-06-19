@@ -1,0 +1,8 @@
+{
+  "id": "0165-12mwfq-swf-definespritesymbol-for-movieclip-library-ite",
+  "title": "SWF: DefineSpriteSymbol for MovieClip library items",
+  "description": "Library Symbol items with symbolType='movieclip' should be encoded as DefineSprite (tag 39) in the SWF. Check packages/swf/src/compile.ts \u2014 search for 'DefineSprite', 'symbol', 'movieclip'. If not yet implemented: encode each Symbol's timeline as a nested DefineSprite (charId assigned from charIdMap, then the symbol's layers/frames encode their own displaylist inside). The top-level scene then places the sprite via PlaceObject2. This is a major feature \u2014 if already implemented, add unit tests verifying DefineSprite is emitted for symbols.",
+  "status": "done",
+  "created_at": "2026-06-09T20:18:23Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

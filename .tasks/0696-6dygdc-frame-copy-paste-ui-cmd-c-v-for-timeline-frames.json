@@ -1,0 +1,8 @@
+{
+  "id": "0696-6dygdc-frame-copy-paste-ui-cmd-c-v-for-timeline-frames",
+  "title": "Frame copy/paste UI: Cmd+C/V for timeline frames",
+  "description": "Wired copyFrames/pasteFrames to Cmd+C/V/X in Timeline. Tests passed (281 core, 174 authoring-ui).",
+  "status": "done",
+  "created_at": "2026-06-10T00:22:01Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

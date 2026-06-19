@@ -1,8 +1,0 @@
-{
-  "id": "0174-core-timeline-frame-operations-insert-remove-fra",
-  "title": "Core: timeline frame operations (insert/remove frames)",
-  "description": "Check packages/core/src/model/timeline.ts or engine/timeline.ts for insertFrame, removeFrame, insertKeyframe, insertBlankKeyframe operations. If they exist, add comprehensive unit tests. If missing, implement: insertFrame(doc, sceneIdx, layerIdx, atFrame) - inserts a regular frame; removeFrame - removes a frame; these shift frame indices. All immutable. Tests in packages/core/src/model/__tests__/timeline.test.ts or engine/__tests__/frames.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T20:23:11Z",
-  "updated_at": "2026-06-09T20:25:48Z"
-}

@@ -1,0 +1,8 @@
+{
+  "id": "0182-2wk842-core-undo-redo-wiring-in-shell-tsx",
+  "title": "Core: undo/redo wiring in Shell.tsx",
+  "description": "Shell.tsx uses a pushDoc pattern but the useHistory hook (packages/authoring-ui/src/hooks/useHistory.ts) is already implemented. Check if Shell.tsx is actually using useHistory for undo/redo. Read Shell.tsx \u2014 search for useHistory, undo, redo. If it's not wired up (undo/redo may be broken), wire it: replace manual doc state with useHistory, connect Ctrl+Z/Ctrl+Y keyboard shortcuts to undo/redo. Do not break anything. Build must pass.",
+  "status": "done",
+  "created_at": "2026-06-09T20:27:35Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

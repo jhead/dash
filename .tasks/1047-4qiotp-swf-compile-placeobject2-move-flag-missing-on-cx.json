@@ -1,0 +1,10 @@
+{
+  "id": "1047-4qiotp-swf-compile-placeobject2-move-flag-missing-on-cx",
+  "title": "SWF compile: PlaceObject2 Move flag missing on CXForm updates and text+CXForm drops instanceName",
+  "description": "Two related SWF encoder bugs in packages/swf/src/compile.ts:\n\nBUG 1 \u2014 PlaceObject2 Move flag missing on CXForm/color-effect updates:\nWhen a SymbolInstance with a colorEffect changes between frames (posChanged=true, isFirst=false), the encode path uses encodePlaceObject2WithCXForm without the Move flag. This replaces the character at that depth instead of modifying it in place \u2014 wrong behavior, Ruffle will flash or duplicate the object. The fix: when posChanged=false (or the character is already placed) and only the color effect changes, use a variant that sets HasMove flag. Study how encodePlaceObject2Move works and add a similar CXForm-with-Move variant or add Move flag to the existing CXForm encoder. Look at compile.ts lines ~1840-1900.\n\nBUG 2 \u2014 Named text field with colorEffect loses instanceName:\nWhen a text field has BOTH a non-null colorEffect AND an instanceName, the code selects the CXForm path (encodePlaceObject2WithCXForm) which has no name parameter. The result: the text field loses its AS2-addressable instance name. Fix: add a new encoder variant encodePlaceObject2WithCXFormAndName, or use PlaceObject3 (tag 70) with HasColorTransform + HasName flags. Look at compile.ts lines ~1783-1805 and the encoder helpers in packages/swf/src/shapes.ts. PlaceObject3 already handles filters; check if it can also handle name + CXForm.\n\nAfter fixing, run: pnpm --filter @flash/swf run test -- --run AND pnpm --filter @flash/authoring-ui run test -- --run\nTests must stay at their current counts (no regressions).\nCommit: fix(swf): PlaceObject2 Move flag on CXForm updates; text+CXForm preserves instanceName",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T00:36:24Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

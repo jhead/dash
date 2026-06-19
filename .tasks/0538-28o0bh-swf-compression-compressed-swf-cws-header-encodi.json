@@ -1,0 +1,8 @@
+{
+  "id": "0538-28o0bh-swf-compression-compressed-swf-cws-header-encodi",
+  "title": "SWF compression: compressed SWF CWS header encoding",
+  "description": "Test that compile() with compression option produces CWS magic bytes (0x43 0x57 0x53). Verify uncompressed FWS fallback. Decompress CWS output and verify inner content matches FWS.",
+  "status": "done",
+  "created_at": "2026-06-09T22:06:36Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

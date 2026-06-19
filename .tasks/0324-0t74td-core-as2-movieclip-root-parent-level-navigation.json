@@ -1,0 +1,8 @@
+{
+  "id": "0324-0t74td-core-as2-movieclip-root-parent-level-navigation",
+  "title": "Core: AS2 MovieClip _root _parent _level navigation",
+  "description": "Verify AS2 MovieClip path navigation compiles: _root, _parent, _level0, _level1. _root.mc, _parent.mc, mc._name, mc._target, mc._url. Also verify eval(path) and the :: namespace separator. Tests in packages/core/src/as2/__tests__/mcpaths.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:14:10Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0507-4mqw8a-as2-loadvars-and-loadvarswatcher-network-class-t",
+  "title": "AS2 LoadVars and LoadVarsWatcher network class tests",
+  "description": "Test LoadVars construction, LoadVars.load('url'), LoadVars.send(), LoadVars.onLoad handler, LoadVars.getBytesLoaded(), getBytesTotal(). Compile-without-crash tests for Flash 8 HTTP/form-post class.",
+  "status": "done",
+  "created_at": "2026-06-09T22:00:41Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

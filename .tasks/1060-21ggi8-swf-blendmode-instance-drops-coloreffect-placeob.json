@@ -1,0 +1,10 @@
+{
+  "id": "1060-21ggi8-swf-blendmode-instance-drops-coloreffect-placeob",
+  "title": "SWF: blendMode instance drops colorEffect (PlaceObject3 missing CXForm)",
+  "description": "When a SymbolInstance has both blendMode (non-normal) and colorEffect set, the initial placement path (compile.ts:1972) calls encodePlaceObject3WithBlendMode in filters.ts, which has no CXForm parameter and never sets HasColorTransform (bit 3 of flags1). The colorEffect is silently lost. Same gap affects: (a) single-frame loopMode instances (encodePlaceObject2WithRatio at line 1970 also has no CXForm), (b) cacheAsBitmap instances (encodePlaceObject3WithCacheAsBitmap at line ~2006 has no CXForm). Fix: add an optional cxform parameter to encodePlaceObject3WithBlendMode in filters.ts, set HasColorTransform (0x08) in flags1 when present, write CXForm bytes after MATRIX, and update all affected call sites in compile.ts.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T01:38:04Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

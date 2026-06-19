@@ -1,0 +1,10 @@
+{
+  "id": "0936-1uoo3b-swf-compile-docproperties-quality-not-emitted-as",
+  "title": "SWF compile: docProperties.quality not emitted as _quality AS2 initialization",
+  "description": "swf tests 1219 passed.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:02:39Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

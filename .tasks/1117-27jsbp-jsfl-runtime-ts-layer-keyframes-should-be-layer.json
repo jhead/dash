@@ -1,0 +1,10 @@
+{
+  "id": "1117-27jsbp-jsfl-runtime-ts-layer-keyframes-should-be-layer",
+  "title": "jsfl/runtime.ts: layer.keyframes should be layer.frames \u2014 production code bug",
+  "description": "packages/authoring-ui/src/jsfl/runtime.ts line 2207 uses 'layer.keyframes' which does not exist on the Layer type (Layer has 'frames', not 'keyframes'). TypeScript reports TS2551: Property 'keyframes' does not exist on type 'Layer'. Did you mean 'frames'? This is a PRODUCTION CODE BUG \u2014 any JSFL script that exercises this code path will hit a TypeError at runtime. Fix: change both occurrences of '.keyframes' at line 2207 to '.frames'.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T12:26:43Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

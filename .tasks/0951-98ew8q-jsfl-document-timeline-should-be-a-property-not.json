@@ -1,0 +1,10 @@
+{
+  "id": "0951-98ew8q-jsfl-document-timeline-should-be-a-property-not",
+  "title": "JSFL: document.timeline should be a property, not only getTimeline() method",
+  "description": "In packages/authoring-ui/src/jsfl/runtime.ts, the Flash 8 JSFL API defines document.timeline as a property accessor, but currently only doc.getTimeline() is exposed as a method. Real-world JSFL scripts use doc.timeline.layers \u2014 accessing doc.timeline returns undefined.layers and throws. Fix: add a get timeline() getter to the JsflDocument proxy that delegates to the same JsflTimeline object that getTimeline() returns.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T21:36:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

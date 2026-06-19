@@ -1,0 +1,8 @@
+{
+  "id": "0042-2uqo75-swf-matrix-transforms",
+  "title": "SWF: full MATRIX transform in PlaceObject2/3",
+  "description": "Extend encodePlaceObject2 (and PlaceObject3) in packages/swf/src/shapes.ts to support scale, rotation, and skew via the Matrix2D/toSWFMatrix utilities from @flash/core. Add encodePlaceObject2WithTransform(charId, depth, x, y, scaleX?, scaleY?, rotation?) overload. Update compile.ts to pass ShapeDisplayObject transform fields (scaleX, scaleY, rotation) when present. Purely packages/swf/ \u2014 import toSWFMatrix from @flash/core.",
+  "status": "done",
+  "created_at": "2026-06-09T17:59:48Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

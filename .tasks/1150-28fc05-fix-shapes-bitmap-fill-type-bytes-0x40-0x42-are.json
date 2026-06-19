@@ -1,0 +1,10 @@
+{
+  "id": "1150-28fc05-fix-shapes-bitmap-fill-type-bytes-0x40-0x42-are",
+  "title": "fix(shapes): bitmap fill type bytes 0x40/0x42 are swapped (smooth vs non-smooth inverted)",
+  "description": "## Bug\n\nBoth packages/swf/src/shapes.ts and packages/swf/src/morphshape.ts use an inverted mapping for bitmap fill type bytes. The smooth vs non-smooth variants are swapped.\n\n## Root cause\n\nBoth files contain:\n\n  if (fill.repeat && fill.smooth) fillTypeByte = 0x42;       // WRONG: should be 0x40\n  else if (fill.repeat && !fill.smooth) fillTypeByte = 0x40; // WRONG: should be 0x42\n  else if (!fill.repeat && fill.smooth) fillTypeByte = 0x43; // WRONG: should be 0x41\n  else fillTypeByte = 0x41;                                  // WRONG: should be 0x43\n\n## Correct mapping (per ruffle swf/src/write.rs lines 1569-1573)\n\n  (smoothed=true,  repeating=true)  -> 0x40\n  (smoothed=true,  repeating=false) -> 0x41\n  (smoothed=false, repeating=true)  -> 0x42\n  (smoothed=false, repeating=false) -> 0x43\n\nConfirmed by ruffle write.rs (lines 1569-1573) and unit tests (read.rs lines 2962-2983).\n\nThe bug exists in both shapes.ts (lines 546-549) and morphshape.ts writeMorphFillStyleArray (lines 430-433).\n\n## Effect\n\nAny bitmap fill with smooth=true is emitted with the non-smoothed type byte and vice-versa. Ruffle renders bitmap fills with incorrect smoothing. The wrong comments in both files caused the incorrect implementation.\n\n## Fix\n\nIn both shapes.ts and morphshape.ts, correct the mapping to:\n\n  if (fill.repeat && fill.smooth) fillTypeByte = 0x40;\n  else if (fill.repeat && !fill.smooth) fillTypeByte = 0x42;\n  else if (!fill.repeat && fill.smooth) fillTypeByte = 0x41;\n  else fillTypeByte = 0x43;\n\nAnd update the comments to match ruffle's write.rs semantics.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T09:46:33Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

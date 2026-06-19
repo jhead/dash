@@ -1,0 +1,10 @@
+{
+  "id": "1148-3myon5-swf-cacheasbitmap-silently-dropped-when-object-a",
+  "title": "SWF: cacheAsBitmap silently dropped when object also has filters or blend mode",
+  "description": "When a ShapeDisplayObject or SymbolInstance has both `cacheAsBitmap=true` AND enabled filters (or a non-normal blend mode), the compile path at `compile.ts` takes the filter/blend branch first (else-if chain at ~line 1734 and ~line 2018), bypassing the `cacheAsBitmap` branch entirely. `encodePlaceObject3WithFilters` hardcodes `HasCacheAsBitmap=0` (bit 2 of flags2) and `encodePlaceObject3WithBlendMode` likewise never sets `0x04`. This means any object with filters+cacheAsBitmap has cacheAsBitmap silently dropped in the SWF output, causing Ruffle to not cache the object as bitmap.\n\nFiles affected:\n- `packages/swf/src/compile.ts` lines ~1734, ~2018 \u2014 else-if chain ordering\n- `packages/swf/src/filters.ts` `encodePlaceObject3WithFilters` (hardcodes flags2 bit2=0) and `encodePlaceObject3WithBlendMode` (flags2 never sets 0x04)\n\nFix: when an object has cacheAsBitmap=true, set the HasCacheAsBitmap bit (0x04) in flags2 of the PlaceObject3 tag regardless of whether filters or blend mode are also present. Both `encodePlaceObject3WithFilters` and `encodePlaceObject3WithBlendMode` need a `cacheAsBitmap?: boolean` parameter that ORs `0x04` into their flags2 byte. The call sites in compile.ts should pass `!!displayObj.cacheAsBitmap`.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T09:35:12Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

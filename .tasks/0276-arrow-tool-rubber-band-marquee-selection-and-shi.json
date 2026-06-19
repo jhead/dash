@@ -1,8 +1,0 @@
-{
-  "id": "0276-arrow-tool-rubber-band-marquee-selection-and-shi",
-  "title": "Arrow tool: rubber-band marquee selection and Shift-click multi-select",
-  "description": "The Selection/Arrow tool (V) cannot select multiple objects. Shell.tsx line ~2009 comments 'multi-select is not yet supported; select any for now.' Flash 8 core workflow:\n1. Drag on empty stage draws a rubber-band rectangle; release selects all display objects that intersect or are enclosed.\n2. Shift-click toggles individual objects in/out of the selection set.\n3. With multiple objects selected: Transform, Align, Group, Cut, Copy all operate on the full set.\n\nAcceptance criteria:\n- Drag on empty stage draws a visible dashed selection rect.\n- All display objects intersecting the rect on release are added to selectedIds.\n- Shift-click adds/removes a single object from selection.\n- Existing single-click selection behaviour is unchanged.\n- Selection handles (bounding box) enclose the union of all selected objects.\n\nKey files: packages/authoring-ui/src/StageArea.tsx (mouse events), packages/authoring-ui/src/Shell.tsx (selectedIds state).",
-  "status": "done",
-  "created_at": "2026-06-09T21:03:28Z",
-  "updated_at": "2026-06-09T21:07:31Z"
-}

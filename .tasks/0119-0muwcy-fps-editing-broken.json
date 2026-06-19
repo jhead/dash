@@ -1,0 +1,8 @@
+{
+  "id": "0119-0muwcy-fps-editing-broken",
+  "title": "Cannot edit document FPS",
+  "description": "User report: FPS cannot be changed. 0083 (document properties dialog with fps field) is marked done, so something is broken end to end: verify Modify > Document opens the dialog, the frame-rate input accepts and commits values, the committed value lands in docProperties/FlashDocument, timeline playback uses it (frame interval), and the published SWF header FrameRate matches (add a 0094-harness assertion). Also check the Properties panel fps shortcut Flash 8 has when nothing is selected (stage properties show Frame rate; double-click opens Document Properties). See docs/01-documents-stage-scenes.md.",
+  "status": "done",
+  "created_at": "2026-06-09T19:45:23Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

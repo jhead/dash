@@ -1,8 +1,0 @@
-{
-  "id": "0131-swf-cxform-placeobject",
-  "title": "SWF: color transform (CXForm) on PlaceObject",
-  "description": "Encode ColorEffect (brightness/tint/alpha/advanced) as CXFormWithAlpha in PlaceObject2 tags. Check packages/swf/src/compile.ts: when a SymbolInstance has colorEffect set, encode it as CXFORMWITHALPHA in the PlaceObject2 HasColorTransform flag. CXForm: RedMult/GreenMult/BlueMult/AlphaMult (8.8 fixed = 256 means 1.0), RedAdd/GreenAdd/BlueAdd/AlphaAdd (S16). Map ColorEffect: brightness (adjust mult+add), tint (blend), alpha (alphaMult only), advanced (all 8 fields). Add 8 tests in __tests__/cxform.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T19:54:48Z",
-  "updated_at": "2026-06-09T19:59:49Z"
-}

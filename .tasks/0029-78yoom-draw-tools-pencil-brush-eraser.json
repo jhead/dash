@@ -1,0 +1,8 @@
+{
+  "id": "0029-78yoom-draw-tools-pencil-brush-eraser",
+  "title": "Pencil, Brush, Ink Bottle, Paint Bucket, Eraser",
+  "description": "Pencil tool (Y): freehand strokes with Straighten/Smooth/Ink modes. Brush tool (B): paint fills (solid shapes), brush size/shape, paint modes (Normal/Fills/Behind/Selection/Inside). Ink Bottle (S): apply stroke to shapes. Paint Bucket (K): fill enclosed areas, gap size options. Eraser (E): erase fills/strokes, erase modes, Faucet. See docs/04-toolbox.md.",
+  "status": "done",
+  "created_at": "2026-06-09T17:43:00Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

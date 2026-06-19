@@ -1,0 +1,8 @@
+{
+  "id": "0566-6dmwwv-core-timeline-layer-reorder-move-operations-test",
+  "title": "Core timeline layer reorder move operations tests",
+  "description": "Tests for layer reorder operations: moveLayerUp(timeline, layerId), moveLayerDown(timeline, layerId), moveLayerToTop(timeline, layerId), moveLayerToBottom(timeline, layerId), moveLayerBefore(timeline, layerId, targetId). All immutable.",
+  "status": "done",
+  "created_at": "2026-06-09T22:14:29Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0047-swf-tag-encoding-fixes",
-  "title": "Fix SWF tag/record encoding bugs (MATRIX, EditText, filters, audio)",
-  "description": "Published SWFs are byte-malformed. Fixes in packages/swf/src: (1) MATRIX writes a nonexistent hasTranslate flag bit \u2014 translate fields are unconditional per spec (shapes.ts:495-567, duplicated in text.ts:185-195, filters.ts:252-261); this corrupts every PlaceObject2/3. (2) writeFixed8 byte order reversed + negative handling broken \u2014 should be round(v*256) as SI16 LE (bits.ts:89-98). (3) Filter scalars written as FLOAT32 instead of FIXED 16.16; Passes=0; Passes/flag bits misplaced (filters.ts:42-140). (4) PlaceObject3 sets HasImage (1<<4) instead of HasFilterList (0x01) (filters.ts:236). (5) DefineEditText flag bits mirrored within bytes; HasLayout block missing Indent UI16 (text.ts:105-145). (6) SOUNDINFO HasLoops written to HasOutPoint bit \u2014 should be <<2 not <<1 (audio.ts:124-128). (7) MP3 SoundData missing leading SeekSamples SI16; SoundSampleCount hardcoded 0 (audio.ts:85-93). (8) Style-change records never reset fill/line to 0 so styles leak across paths (shapes.ts:424-430). (9) Edge/move nBits can overflow UB[4] for deltas >= 2^16 twips \u2014 clamp/split (shapes.ts:207-260). (10) writeString not UTF-8 (bits.ts:112-118). Consolidate the 4 duplicated px/writeRect/writeMatrix helpers into bits.ts so fixes land once. Include byte-level golden tests + parse-back verification (package currently has zero tests). See docs/15-file-formats-fla-swf.md.",
-  "status": "done",
-  "created_at": "2026-06-09T18:05:10Z",
-  "updated_at": "2026-06-09T18:12:18Z"
-}

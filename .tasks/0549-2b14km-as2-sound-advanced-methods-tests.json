@@ -1,0 +1,8 @@
+{
+  "id": "0549-2b14km-as2-sound-advanced-methods-tests",
+  "title": "AS2 Sound advanced methods tests",
+  "description": "Tests for Sound class advanced methods: setVolume(vol), getVolume(), setPan(pan), getPan(), setTransform(), getTransform(), duration property, position property, ID3 object access (id3.songname, id3.artist, id3.album).",
+  "status": "done",
+  "created_at": "2026-06-09T22:11:19Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

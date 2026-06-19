@@ -1,0 +1,8 @@
+{
+  "id": "0455-8vm8df-as2-try-catch-finally-and-throw-statement-tests",
+  "title": "AS2 try-catch-finally and throw statement tests",
+  "description": "Test ActionTry (0x8F) and ActionThrow (0x2A) opcodes: throw new Error, try/catch, try/finally, try/catch/finally, re-throw, catch variable binding.",
+  "status": "done",
+  "created_at": "2026-06-09T21:48:26Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

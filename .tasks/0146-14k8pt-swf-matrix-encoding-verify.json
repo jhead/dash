@@ -1,0 +1,8 @@
+{
+  "id": "0146-14k8pt-swf-matrix-encoding-verify",
+  "title": "SWF: MATRIX encoding accuracy for rotated/skewed instances",
+  "description": "Verify that MATRIX encoding in PlaceObject2 correctly encodes rotation and skew for SymbolInstances. SWF MATRIX is bit-packed: HasScale (scaleX/scaleY), HasRotate (skewX/skewY), translateX/Y. Check packages/swf/src/compile.ts or shapes.ts where matrices are encoded. For a 45-degree rotation, verify the skew fields contain cos(45\u00b0)*65536 and sin(45\u00b0)*65536 (fixed-point). Add 6 tests in __tests__/matrix.test.ts: identity, scale, rotation at 0/45/90, combined scale+rotation, translation only.",
+  "status": "done",
+  "created_at": "2026-06-09T20:05:59Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

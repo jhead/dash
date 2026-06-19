@@ -1,0 +1,8 @@
+{
+  "id": "0384-9pr4fn-swf-sceneandframelabeldata-tag-tag-86-encoding",
+  "title": "SWF: SceneAndFrameLabelData tag (tag 86) encoding",
+  "description": "Test that a multi-scene FlashDocument (doc.scenes.length > 1) produces SceneAndFrameLabelData (tag 86). Verify: (1) tag 86 appears for multi-scene documents, (2) scene count matches doc.scenes.length, (3) scene names are encoded as null-terminated strings, (4) frame offsets are correct cumulative frame counts, (5) single-scene docs may omit tag 86 (optional).",
+  "status": "done",
+  "created_at": "2026-06-09T21:28:52Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

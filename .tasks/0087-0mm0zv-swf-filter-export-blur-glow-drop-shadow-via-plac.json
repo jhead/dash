@@ -1,0 +1,8 @@
+{
+  "id": "0087-0mm0zv-swf-filter-export-blur-glow-drop-shadow-via-plac",
+  "title": "SWF filter export: blur/glow/drop-shadow via PlaceObject3 + FILTERLIST",
+  "description": "SymbolInstance objects can have filters (blur, glow, drop shadow). Export them to SWF via PlaceObject3 (tag 70, Flash 8+) with FILTERLIST. (1) PlaceObject3 extends PlaceObject2 with an extra flags byte; bit 0 of extra byte = HasFilterList; (2) FILTERLIST: UI8 count, then for each filter a FilterID byte + filter body; (3) BlurFilter (id=1): BlurX/BlurY FIXED (4 bytes each), Passes UI8 = quality<<3; (4) GlowFilter (id=2): 6-byte RGBA color, BlurX/BlurY FIXED, Strength UI16, flags (inner/outer/composite); (5) DropShadowFilter (id=0): RGBA, BlurX/BlurY, angle FLOAT, distance FLOAT, strength UI16, flags; (6) In compile.ts: when placing a SymbolInstance that has non-empty filters array, use PlaceObject3 encoding instead of PlaceObject2. Add filter encoding functions to packages/swf/src/filters.ts (new file). Add tests in packages/swf/src/__tests__/filters.test.ts \u2014 verify tag code 70, filter count, blur filter bytes. Only touches packages/swf/src/ \u2014 no authoring-ui changes.",
+  "status": "done",
+  "created_at": "2026-06-09T19:22:03Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

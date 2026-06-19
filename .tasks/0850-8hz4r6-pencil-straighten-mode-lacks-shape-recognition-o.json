@@ -1,0 +1,10 @@
+{
+  "id": "0850-8hz4r6-pencil-straighten-mode-lacks-shape-recognition-o",
+  "title": "Pencil straighten mode lacks shape recognition (only line detection)",
+  "description": "pencilPointsToShape in StageArea.tsx only checks if a stroke looks like a line (first/last point distance). Flash 8 straighten mode detects circles, ovals, rectangles, triangles and snaps to the nearest geometric primitive. Smooth mode works but straighten shape recognition is missing.",
+  "status": "done",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-10T14:23:28Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

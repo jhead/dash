@@ -1,0 +1,10 @@
+{
+  "id": "1211-0jyo6c-swf-a11y-object-make-accessible-false-enabled-fa",
+  "title": "SWF a11y: object 'Make accessible'=false (enabled:false) never emits _accProps.silent \u2014 disabled objects stay in screen-reader tree",
+  "description": "DONE (this commit). Fixed the _accProps emit gap in packages/swf/src/compiler/frames.ts: added hasSilent = (acc.enabled === false) to the emit gate and parts.push('_ap.silent = true;') when enabled===false, so unchecking 'Make object accessible' now hides the instance from MSAA via _accProps.silent=true. Emitted ALONGSIDE other a11y fields (Flash silences even when name/desc/shortcut/forceSimple are also set) \u2014 silent is merged, not exclusive. Added 2 unit tests in packages/swf/src/__tests__/accessibility.test.ts: (1) enabled=false alone -> _accProps + silent + instanceName present; (2) enabled=false + name/description -> silent kept alongside name/desc. Updated docs/17-advanced-specialized.md. Document-level DocumentAccessibility.enabled left out of scope as specified.\n\nVERIFICATION (worktree agent-aca79c468142ec80b):\n  pnpm -r build => all packages Done (tsc typecheck passes for @flash/swf).\n  cd packages/swf && npx vitest run src/__tests__/accessibility.test.ts => Test Files 1 passed; Tests 24 passed (24), incl. both new 'silent' tests.\n  pnpm --filter @flash/swf run test -- --run => Test Files 108 passed (108); Tests 1360 passed | 1 todo. Zero failures.\n  pnpm --filter @flash/core run test -- --run => 2 failed across 3 files, ALL from missing fixtures/flash8-empty.fla (ENOENT) = task 1207 pre-existing, unrelated. No new failures.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:58:18Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

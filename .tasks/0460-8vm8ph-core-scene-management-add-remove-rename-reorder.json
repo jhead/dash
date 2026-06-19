@@ -1,0 +1,8 @@
+{
+  "id": "0460-8vm8ph-core-scene-management-add-remove-rename-reorder",
+  "title": "Core scene management: add, remove, rename, reorder scenes",
+  "description": "Test addScene, removeScene, renameScene, moveScene utilities. Each returns updated FlashDocument. Flash 8 allows multiple scenes in main timeline.",
+  "status": "done",
+  "created_at": "2026-06-09T21:48:26Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

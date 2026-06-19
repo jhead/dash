@@ -1,0 +1,8 @@
+{
+  "id": "0168-2two4i-swf-soundinfo-encoding-for-event-sounds",
+  "title": "SWF: SoundInfo encoding for event sounds",
+  "description": "Encode SoundInfo struct in PlaceSoundObject (tag 15) / StartSound (tag 15) for event sounds. Currently sounds may be placed without SoundInfo. SoundInfo allows: inPoint, outPoint, loopCount, envelope. Implement encodeSoundInfo helper in packages/swf/src/sounds.ts. Check compile.ts for where SoundLinkage/syncMode='event' sounds are emitted. Add SoundInfo encoding. Add unit tests for the SoundInfo byte layout.",
+  "status": "done",
+  "created_at": "2026-06-09T20:19:45Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

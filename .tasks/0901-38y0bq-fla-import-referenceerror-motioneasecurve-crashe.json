@@ -1,0 +1,10 @@
+{
+  "id": "0901-38y0bq-fla-import-referenceerror-motioneasecurve-crashe",
+  "title": "FLA import: ReferenceError motionEaseCurve crashes all symbol and scene stream parsing \u2014 entire doc blank",
+  "description": "FIXED as of QA run 5 (2026-06-10). The motionEaseCurve ReferenceError is no longer present \u2014 symbol streams and most page streams now parse successfully. A new but related ReferenceError has appeared: \"readCPicSwf is not defined\" at flash8-import.ts:835, crashing pages 1/6/7/8. Tracked in new task 0902.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T18:23:33Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

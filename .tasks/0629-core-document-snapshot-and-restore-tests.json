@@ -1,8 +1,0 @@
-{
-  "id": "0629-core-document-snapshot-and-restore-tests",
-  "title": "Core document snapshot and restore tests",
-  "description": "Test that FlashDocument is fully serializable to/from JSON via JSON.stringify/parse (structuredClone semantics). All nested arrays/objects must survive. No circular refs, no class instances.",
-  "status": "done",
-  "created_at": "2026-06-09T22:36:14Z",
-  "updated_at": "2026-06-09T22:38:32Z"
-}

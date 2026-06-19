@@ -1,8 +1,0 @@
-{
-  "id": "0233-core-snap-to-objects-distance-threshold",
-  "title": "Core: Snap to objects distance threshold",
-  "description": "Verify packages/core/src/engine/snapObjects.ts works correctly. Test snapToObjects: snapping to the edge of another object within threshold, snapping to center, no snap when outside threshold, multiple candidate objects (nearest wins). Add 10+ tests in packages/core/src/engine/__tests__/snap.test.ts if they don't exist.",
-  "status": "done",
-  "created_at": "2026-06-09T20:50:00Z",
-  "updated_at": "2026-06-09T20:51:23Z"
-}

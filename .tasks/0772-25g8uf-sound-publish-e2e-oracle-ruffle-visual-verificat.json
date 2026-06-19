@@ -1,0 +1,10 @@
+{
+  "id": "0772-25g8uf-sound-publish-e2e-oracle-ruffle-visual-verificat",
+  "title": "Sound publish E2E oracle: Ruffle visual verification for StartSound frame event",
+  "description": "Added apps/desktop/e2e/sound-roundtrip.spec.ts. Three tests verify: (1) SWF with StartSound (event sync) compiles and Ruffle renders non-blank stage (panic=false, redPixels=10000), (2) SWF with custom inPoint/outPoint/envelope points loads without panic, (3) SWF with fadeIn effect preset loads without panic. CI-skipped per visual oracle pattern. All 3 pass locally.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T08:50:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

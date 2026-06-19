@@ -1,0 +1,10 @@
+{
+  "id": "0947-1ax41z-swf-compile-autosize-text-field-property-not-in",
+  "title": "SWF compile: autoSize text field property not in model or emitted",
+  "description": "autoSize is not in the Symbol/DisplayObject model (packages/core/src/model/types.ts), not decoded from FLA binary (flash8-binary.ts readCPicText), and not emitted in DefineEditText (packages/swf/src/text.ts). In SWF, DefineEditText flag bit 14 is AutoSize. Fix: (1) add autoSize?: 'none'|'left'|'center'|'right' to the text field model type, (2) decode from FLA binary CPicText \u2014 find the byte that controls auto-resize behavior, (3) emit in DefineEditText flag bit 14 when autoSize is not 'none'. The SWF spec only has a boolean AutoSize flag; the direction (left/center/right) affects alignment but the SWF flag is just on/off.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:30:13Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

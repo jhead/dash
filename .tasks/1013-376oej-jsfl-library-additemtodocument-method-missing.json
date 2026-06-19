@@ -1,0 +1,10 @@
+{
+  "id": "1013-376oej-jsfl-library-additemtodocument-method-missing",
+  "title": "JSFL: library.addItemToDocument() method missing",
+  "description": "In packages/authoring-ui/src/jsfl/runtime.ts, the JsflLibrary interface and proxy (lines 776-787) do NOT have addItemToDocument(). In Flash 8 JSFL, fl.getDocumentDOM().library.addItemToDocument(itemName, x, y) places a library item instance onto the current frame of the active timeline at the given stage coordinates. Fix: add addItemToDocument(itemName: string, x: number, y: number): void to JsflLibrary interface and proxy. Implementation: find the library symbol by name (search doc.library for matching name), create a SymbolInstance displayObject at (x, y), and add it to the current frame using the existing model mutation functions (similar to how stage_place_instance works in registry.ts). Must handle cases where itemName is not found (throw or warn).",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T23:19:00Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

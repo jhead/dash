@@ -1,0 +1,10 @@
+{
+  "id": "0994-5gc8pd-stage-place-instance-mcp-tool-missing-creation-t",
+  "title": "stage_place_instance MCP tool missing creation-time visual properties",
+  "description": "packages/vite-plugin-agent-mcp/src/index.ts stage_place_instance schema (lines ~394-409) only accepts symbolId, x, y, name, layerId, frameIndex. SymbolInstance model supports scaleX, scaleY, rotation, blendMode, filters, colorEffect, loopMode, clipActions \u2014 none reachable via stage_place_instance. Agents must follow with separate stage_update calls. Fix: extend the MCP schema to accept these optional fields and pass them through to the createSymbolInstance call.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T22:44:59Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

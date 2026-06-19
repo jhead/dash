@@ -1,0 +1,10 @@
+{
+  "id": "0824-0rcouc-publish-profiles-named-save-load-publish-configu",
+  "title": "Publish Profiles \u2014 named save/load publish configurations",
+  "description": "Add profile management to PublishSettingsDialog: name, save, load, duplicate, import/export presets. Add publishProfiles array to FlashDocument model and persist in FLA round-trip. Flash 8 stores publish profiles in the FLA per docs/15.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T12:33:15Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

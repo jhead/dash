@@ -1,0 +1,10 @@
+{
+  "id": "0904-4veo2n-fix-pre-existing-flash-swf-parse-back-test-failu",
+  "title": "Fix pre-existing @flash/swf parse-back test failure: DoAction body starts with 0x88 (ActionConstantPool) instead of expected 0x96 (ActionPush)",
+  "description": "parse-back.test.ts assertion 'DoAction: gotoAndPlay(2) script \u2192 body first byte is ActionPush (0x96)' fails: expected 150 (0x96=ActionPush), got 136 (0x88=ActionConstantPool). This may be an expected outcome of task 0898 (ActionConstantPool auto-emit) where the compiler now correctly emits a constant pool for scripts with multiple string constants. If so, update the test expectation. If not, investigate why the first byte is ActionConstantPool instead of ActionPush for a simple gotoAndPlay(2) call.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T19:20:48Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

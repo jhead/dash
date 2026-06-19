@@ -1,0 +1,10 @@
+{
+  "id": "0979-00e89b-timeline-setlayertype-should-auto-pair-guide-gui",
+  "title": "Timeline: setLayerType should auto-pair guide/guided neighbor layers",
+  "description": "In packages/core/src/model/timeline.ts, the setLayerType function just changes the layer type field without auto-pairing. Flash 8 behavior: when setting a layer to 'guided', if the layer directly above is type 'guide', do nothing (already paired). If above layer is 'normal', auto-convert it to 'guide'. When setting a layer to 'guide' or back to 'normal', un-pair any adjacent 'guided' layers below. Add this pairing logic in setLayerType.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T22:20:32Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

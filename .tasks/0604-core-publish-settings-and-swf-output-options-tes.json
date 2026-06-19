@@ -1,8 +1,0 @@
-{
-  "id": "0604-core-publish-settings-and-swf-output-options-tes",
-  "title": "Core publish settings and SWF output options tests",
-  "description": "Tests for publish configuration: compileDocument with options object (compress:true/false, version:8, protect:false, debugPassword:''). Verify options affect output. Check PublishSettings type if it exists in types.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T22:26:57Z",
-  "updated_at": "2026-06-09T22:30:37Z"
-}

@@ -1,0 +1,8 @@
+{
+  "id": "0408-53fc1m-core-as2-bitwise-operators",
+  "title": "Core: AS2 bitwise operators (&, |, ^, <<, >>, >>>)",
+  "description": "Test compilation of bitwise operators: a & b (ActionBitAnd 0x60), a | b (ActionBitOr 0x61), a ^ b (ActionBitXor 0x62), a << b (ActionBitLShift 0x69), a >> b (ActionBitRShift 0x6A), a >>> b (ActionBitURShift 0x6B), ~a (ActionBitXor 0x62 with -1). Test compound assignments: &=, |=, ^=, <<=, >>=, >>>=. Verify each correct opcode.",
+  "status": "done",
+  "created_at": "2026-06-09T21:33:03Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

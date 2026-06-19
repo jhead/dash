@@ -1,8 +1,0 @@
-{
-  "id": "0106-swf-definebitslossless2-png-lossless-bitmap-expo",
-  "title": "SWF DefineBitsLossless2: PNG/lossless bitmap export",
-  "description": "Currently BitmapItem export uses DefineBitsJPEG2 (tag 35) for all bitmaps. For PNG/lossless bitmaps (compressionType='lossless'), use DefineBitsLossless2 (tag 36) instead to preserve transparency (alpha channel). DefineBitsLossless2 format: BitmapId UI16, BitmapFormat UI8 (3=24bit, 5=32bit ARGB), BitmapWidth/Height UI16, BitmapData=ZLIB-compressed rows of ARGB pixels. Implementation: (1) In packages/swf/src/bitmaps.ts, add encodeDefineBitsLossless2(charId, imageBytes, mimeType) \u2014 detect if the dataUri is PNG (mimeType='image/png') or data is lossless; decode PNG to raw pixels using a simple approach (in Node.js test environment: use the 'pngjs' or 'sharp' npm if available, or just use the raw dataUri bytes in a fallback); for JPEG images continue using DefineBitsJPEG2; (2) To avoid DOM/browser dependency in tests, use a simple approach: if running in Node.js environment where Image constructor is unavailable, fall back to DefineBitsJPEG2 for all types and add a TODO; (3) In compile.ts: when bitmap.compressionType === 'lossless', use DefineBitsLossless2; otherwise use DefineBitsJPEG2; (4) Test in packages/swf/src/__tests__/bitmaps-lossless.test.ts: verify lossless bitmap emits tag 36, JPEG bitmap emits tag 35, BitmapFormat byte correct. Only touches packages/swf/src/ \u2014 no authoring-ui changes.",
-  "status": "done",
-  "created_at": "2026-06-09T19:36:50Z",
-  "updated_at": "2026-06-09T19:41:24Z"
-}

@@ -1,0 +1,10 @@
+{
+  "id": "0915-4i40vu-fla-import-folder-layer-parentfolderid-not-recon",
+  "title": "FLA import: folder layer parentFolderId not reconstructed \u2014 all layers imported as flat",
+  "description": "convertTimeline() in flash8-import.ts never assigns parentFolderId to any layer. In FLA binaries, the parent-child relationship between folder layers and their children is positional (children follow the folder in the binary layer list). The convertTimeline function must reconstruct this hierarchy by scanning layer types: when a folder layer (type 3) is followed by normal/guide/mask layers, those child layers should get parentFolderId set to the folder layer's id. Without this, all layers appear at the top level after FLA import, losing all folder organization in the Timeline UI.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:16:30Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

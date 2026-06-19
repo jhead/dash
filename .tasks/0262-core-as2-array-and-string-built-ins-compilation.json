@@ -1,8 +1,0 @@
-{
-  "id": "0262-core-as2-array-and-string-built-ins-compilation",
-  "title": "Core: AS2 Array and String built-ins compilation",
-  "description": "Verify AS2 Array and String built-in methods compile: a.push(), a.pop(), a.shift(), a.unshift(), a.splice(), a.join(), a.sort(), a.reverse(), a.slice(), a.concat(), a.indexOf(). String.fromCharCode(), s.charCodeAt(), s.charAt(), s.indexOf(), s.lastIndexOf(), s.split(), s.substr(), s.substring(), s.toUpperCase(), s.toLowerCase(). Tests in packages/core/src/as2/__tests__/builtins.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:00:30Z",
-  "updated_at": "2026-06-09T21:02:55Z"
-}

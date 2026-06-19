@@ -1,8 +1,0 @@
-{
-  "id": "0403-core-as2-string-built-in-methods-charat-indexof-",
-  "title": "Core: AS2 String built-in methods (charAt, indexOf, split)",
-  "description": "Test compilation of String methods: s.charAt(n), s.charCodeAt(n), String.fromCharCode(65), s.indexOf('sub'), s.lastIndexOf('sub'), s.split(','), s.split('', 3), s.substring(1,4), s.substr(1,3), s.toUpperCase(), s.toLowerCase(), s.trim(), s.trimLeft(), s.trimRight(), s.slice(1,4), s.concat(other). Each should compile. Verify ActionCallMethod (0x52).",
-  "status": "done",
-  "created_at": "2026-06-09T21:31:25Z",
-  "updated_at": "2026-06-09T21:33:04Z"
-}

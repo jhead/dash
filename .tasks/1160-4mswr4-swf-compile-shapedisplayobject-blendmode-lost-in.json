@@ -1,0 +1,10 @@
+{
+  "id": "1160-4mswr4-swf-compile-shapedisplayobject-blendmode-lost-in",
+  "title": "SWF compile: ShapeDisplayObject blendMode lost in posChanged branch and missing from colorEffectKey",
+  "description": "Two related gaps left unfixed by task 0988:\n\nBug A \u2014 posChanged branch (compile.ts):\nIn the main-timeline compile loop, the posChanged branch for shapes (lines ~2186-2253) handles filters and alpha but never checks blendMode. When a ShapeDisplayObject with a non-normal blend mode changes position/scale/rotation, the code falls through to encodePlaceObject2Move, emitting PlaceObject2 which cannot carry blend mode. The blend mode is silently dropped for all subsequent frames after the first.\nCompare: the instance posChanged path at line ~2353 correctly checks hasBlend and emits PlaceObject3 \u2014 the same pattern is missing for shapes.\n\nBug B \u2014 colorEffectKey (compile.ts):\ncolorEffectKey() for shape type only tracks alpha (lines ~907-912). It does not include blendMode or filters. This means a shape that ONLY changes blend mode across frames (without a position change) will NOT set posChanged = true, so the new blend mode is never re-emitted. The first frame's blend mode stays encoded permanently.\n\nBug C \u2014 sprite.ts posChanged shape path:\nThe sprite.ts posChanged branch for shapes (lines ~419-435) has the same gap: only visible === false and filters are checked; blendMode is missing. The fix from task 1110 covered bitmap and instance in sprite.ts but not shape.\n\nFix:\n1. In colorEffectKey() for shape type, also include blendMode in the returned key \u2014 e.g. blend:${shp.blendMode} when set and non-normal.\n2. In compile.ts posChanged shape branch, add a hasBlend check mirroring the instance path and emit encodePlaceObject3WithBlendMode(..., true) (move=true).\n3. In sprite.ts posChanged shape branch (after the filters check), add the same hasBlend check.\n\nFiles: packages/swf/src/compile.ts, packages/swf/src/sprite.ts",
+  "status": "cancelled",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T10:08:38Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

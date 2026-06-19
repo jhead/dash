@@ -1,0 +1,10 @@
+{
+  "id": "1049-9eq8o8-tween-motionscale-false-flag-not-applied-scale-a",
+  "title": "Tween: motionScale=false flag not applied \u2014 scale always interpolated",
+  "description": "The motionTweenScale flag (decoded from FLA in flash8-binary.ts line 2522, stored as Frame.motionScale) is never applied during tween interpolation.\n\nTwo files to fix:\n\n1. packages/core/src/tween/types.ts \u2014 Add motionScale?: boolean to TweenConfig interface.\n\n2. packages/core/src/tween/interpolate.ts \u2014 In interpolateTween(), when motionScale===false, replace the lerped scaleX/scaleY with the start-frame values (from.scaleX, from.scaleY) instead of interpolating. Same for the 'to' frame: at t=1 still use from.scaleX/from.scaleY since the scale should be frozen.\n\n3. packages/core/src/timeline-query.ts \u2014 In getTweenedFrame() (around line 252-305), pass the frame's motionScale flag (from the governing keyframe's motionScale field) into the TweenConfig object.\n\nAfter fixing, run:\npnpm --filter @flash/core run test -- --run\npnpm --filter @flash/authoring-ui run test -- --run\nBoth must pass at current counts.\nCommit: fix(tween): respect motionScale=false flag \u2014 freeze scale during tween span",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T00:40:02Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0622-as2-moviecliploader-and-loadmovie-tests",
-  "title": "AS2 MovieClipLoader and loadMovie tests",
-  "description": "Test MovieClipLoader class: new MovieClipLoader(), loadClip, onLoadComplete, onLoadInit, onLoadError, onLoadProgress, getProgress. Also loadMovie, unloadMovie, loadVariables global functions.",
-  "status": "done",
-  "created_at": "2026-06-09T22:33:27Z",
-  "updated_at": "2026-06-09T22:37:15Z"
-}

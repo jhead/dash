@@ -1,0 +1,8 @@
+{
+  "id": "0178-1pco6c-swf-blend-mode-encoding-in-placeobject2",
+  "title": "SWF: blend mode encoding in PlaceObject2",
+  "description": "Flash 8 supports 14 blend modes (Normal, Layer, Multiply, Screen, Lighten, Darken, Difference, Add, Subtract, Invert, Alpha, Erase, Overlay, HardLight). In SWF v8+, PlaceObject2 (tag 26) was extended to PlaceObject3 (tag 70) which includes blend mode. Check packages/swf/src/compile.ts and packages/swf/src/place.ts \u2014 does blendMode get encoded? If SymbolInstance has a blendMode property, encode it in PlaceObject3 (tag 70) with the HasBlendMode flag. Map Flash blend mode names to SWF uint8 values (Normal=0, Layer=2, Multiply=4, etc.). Add unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:26:39Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

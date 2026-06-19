@@ -1,0 +1,10 @@
+{
+  "id": "0940-7qx45u-as2-compiler-ord-s-and-chr-n-built-ins-not-speci",
+  "title": "AS2 compiler: ord(s) and chr(n) built-ins not special-cased \u2014 should emit ActionOrd/ActionChr",
+  "description": "In AVM1, chr(n) emits ActionChr (0x33) and ord(s) emits ActionOrd (0x32). String.fromCharCode() is already special-cased to emit ActionMBChr (0x63). The legacy Flash functions chr() and ord() are not special-cased: chr() falls through to ActionCallFunction, ord() falls through to ActionCallFunction. Fix: in compiler.ts, add two more special cases: Identifier('chr') with 1 arg \u2192 compile arg, emit 0x33; Identifier('ord') with 1 arg \u2192 compile arg, emit 0x32.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:47:01Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0500-core-guide-layer-rendering-exclusion-tests",
-  "title": "Core guide layer rendering exclusion tests",
-  "description": "Test getRenderedLayers(timeline): excludes guide-type layers from rendering output. Mask layers render as clip source. Normal and masked layers always render.",
-  "status": "done",
-  "created_at": "2026-06-09T21:58:17Z",
-  "updated_at": "2026-06-09T22:03:19Z"
-}

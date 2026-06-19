@@ -1,8 +1,0 @@
-{
-  "id": "0529-core-document-properties-change-utilities-tests",
-  "title": "Core document properties change utilities tests",
-  "description": "Test setDocumentWidth(doc, w), setDocumentHeight(doc, h), setFrameRate(doc, fps), setBackgroundColor(doc, hex), setRulerUnits(doc, unit) \u2014 each returns updated FlashDocument.",
-  "status": "done",
-  "created_at": "2026-06-09T22:04:11Z",
-  "updated_at": "2026-06-09T22:07:19Z"
-}

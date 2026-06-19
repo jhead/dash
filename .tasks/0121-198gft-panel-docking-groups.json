@@ -1,0 +1,8 @@
+{
+  "id": "0121-198gft-panel-docking-groups",
+  "title": "Panel docking/grouping system + Flash 8 default workspace layout",
+  "description": "User report: the Actions window pops open free-floating instead of belonging to a pane/group. Build the generic panel system Flash 8 had: panels live in collapsible groups docked to screen edges (title bar with collapse arrow + gripper, drag a panel tab to regroup/undock, double-click title to collapse). Then match the Flash 8 default workspace: Tools left; Timeline top; Properties/Filters/Parameters group docked BOTTOM with Actions grouped there too (collapsed by default in a fresh install); Color Mixer/Color Swatches and Library docked right. Window menu toggles each panel; Window > Workspace Layout > Default restores it. This is the structural fix for floating one-off panels (Actions, Align, Scene, Color Mixer all currently ad hoc). See docs/00 (UI shell) and docs/04/12 panel references.",
+  "status": "done",
+  "created_at": "2026-06-09T19:45:52Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0368-swf-definebitslossless2-encoding-for-bitmap-libr",
-  "title": "SWF: DefineBitsLossless2 encoding for bitmap library items",
-  "description": "Test that BitmapItem with compressionType='lossless' produces DefineBitsLossless2 (tag 36) in exported SWF. Verify: (1) tag 36 appears when BitmapItem is placed on stage, (2) character ID is unique, (3) tag format field is 3 (32-bit ARGB) for PNG-style data, (4) BitmapItem with compressionType='photo' produces DefineBitsJPEG3 (tag 35) instead.",
-  "status": "done",
-  "created_at": "2026-06-09T21:25:20Z",
-  "updated_at": "2026-06-09T21:28:06Z"
-}

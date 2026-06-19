@@ -1,8 +1,0 @@
-{
-  "id": "0126-core-frame-clipboard-cut-copy-paste-frames",
-  "title": "Core: frame clipboard \u2014 cut/copy/paste frames",
-  "description": "Implement frame-level clipboard operations in packages/core/src/engine/mutations.ts (or equivalent): copyFrames(doc, layerId, startFrame, endFrame) -> FrameClipboard, pasteFrames(doc, layerId, atFrame, clipboard), cutFrames(doc, layerId, start, end). These are separate from object-level copy/paste (0068). The Timeline panel needs Edit > Cut Frames / Copy Frames / Paste Frames. The clipboard is in-memory only (no OS clipboard). Store clipboard state in Shell.tsx as useState<FrameClipboard|null>. Wire to Edit menu and timeline right-click context menu. Add 8 unit tests in packages/core.",
-  "status": "done",
-  "created_at": "2026-06-09T19:47:37Z",
-  "updated_at": "2026-06-09T19:54:50Z"
-}

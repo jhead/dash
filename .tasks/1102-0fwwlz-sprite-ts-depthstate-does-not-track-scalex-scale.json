@@ -1,0 +1,10 @@
+{
+  "id": "1102-0fwwlz-sprite-ts-depthstate-does-not-track-scalex-scale",
+  "title": "sprite.ts: DepthState does not track scaleX/scaleY/rotation \u2014 Move tag not emitted for transform-only tweens",
+  "description": "In encodeDefineSprite() (packages/swf/src/sprite.ts), the DepthState interface (line 183) only stores { objId, x, y }. The posChanged check at line 225 only compares x/y/objId. If a motion tween changes only scaleX, scaleY, or rotation without changing x/y (e.g., a scale-in or spin animation), posChanged evaluates to false and no PlaceObject2 Move tag is emitted. The symbol plays back without the scale/rotation animation.\\n\\ncompile.ts's equivalent DepthState (line 927) tracks scaleX, scaleY, rotation, skewX, skewY, ratio, and colorEffectKey in addition to x/y. sprite.ts needs to be updated to match.\\n\\nFix: add scaleX, scaleY, rotation, skewX, skewY to sprite.ts's DepthState interface and posChanged comparison. Also pass scaleX/scaleY/rotation/skewX/skewY from the (interpolated) display object to the PlaceObject2/Move encoder.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T04:09:14Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

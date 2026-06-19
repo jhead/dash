@@ -1,8 +1,0 @@
-{
-  "id": "0072-timeline-layer-mgmt",
-  "title": "Timeline: add/delete/reorder layers, layer properties",
-  "description": "Timeline layer management is incomplete: (1) + button to add a new normal layer above the active layer (currently may exist but verify it calls addLayer correctly); (2) \u2212 button to delete the active layer (with confirmation if it has content); (3) Drag layer rows to reorder; (4) Double-click layer name to rename inline; (5) Layer type UI: right-click or icon to convert between Normal/Guide/Mask; (6) Layer height resize (drag row border); (7) Add Layer Folder button. Wire all to pushDoc mutations on the FlashDocument. The Timeline.tsx already has layer row UI but most mutations call stubs. See docs/02-timeline-animation.md.",
-  "status": "done",
-  "created_at": "2026-06-09T18:47:32Z",
-  "updated_at": "2026-06-09T18:57:11Z"
-}

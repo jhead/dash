@@ -1,0 +1,10 @@
+{
+  "id": "0816-1ybc9k-movie-explorer-panel-searchable-document-structu",
+  "title": "Movie Explorer panel \u2014 searchable document-structure tree",
+  "description": "Add Window > Movie Explorer panel showing a filtered tree of text, symbols, scripts, sounds, bitmaps, and video in the document. Needs MovieExplorerPanel component, menu entry, and model traversal. Core authoring navigation tool for find-in-library, select-on-stage, and inspect scripts.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T12:10:51Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

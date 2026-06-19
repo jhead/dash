@@ -1,0 +1,8 @@
+{
+  "id": "0319-4uzcyz-core-as2-trace-and-fscommand-built-ins",
+  "title": "Core: AS2 trace() and FSCommand() built-ins",
+  "description": "Verify AS2 built-in statements compile: trace('hello') emits ActionTrace (0x26). FSCommand('fullscreen', 'true') emits ActionGetURL2 (0x9A) or ActionCallFunction (0x3D). Also verify: _global.trace, undefined keyword, null keyword, Infinity, NaN literals. Tests in packages/core/src/as2/__tests__/builtinstmts.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:12:39Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

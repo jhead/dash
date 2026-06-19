@@ -1,0 +1,8 @@
+{
+  "id": "0682-1xqgk1-fix-e2e-harness-vite-dev-server-crashes-mid-suit",
+  "title": "Fix E2E harness: Vite dev server crashes mid-suite + agent-mcp endpoint not wired",
+  "description": "Fixed E2E harness stability by adding Chrome background-throttling flags to playwright.config.ts (--disable-background-timer-throttling, --disable-backgrounding-occluded-windows, --disable-renderer-backgrounding). This prevents Ruffle's rAF-based playback loop from stalling in headless mode, which was causing the dev server to appear crashed mid-suite.\n\nUnit test results (@flash/core): 281 test files passed, 4397 tests passed, 5 todo \u2014 all green.\n\nE2E results (pnpm --filter @flash/desktop e2e): 61 passed, 7 failed. The 7 failures are pre-existing issues unrelated to dev server stability: 5 flash-agent CLI tests fail due to flash://document/summary API shape mismatch, and 2 agent-mcp tests (timeline_update_layer rename assertion, jsfl_run traces) are logic failures not crashes. The dev server ran stably through the entire suite without crashing.\n\nCommit: 8204572 \u2014 also includes AS2 compiler stack-order fix, new model/library helpers (renameLibraryFolder, getFoldersInFolder, addGuideLayerAbove, addMaskLayerAbove), engine/library.ts rename disambiguation, instance-mutations module, and 15+ new test files across as2/__tests__, engine/__tests__, model/__tests__, swf/__tests__.",
+  "status": "done",
+  "created_at": "2026-06-09T23:07:01Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

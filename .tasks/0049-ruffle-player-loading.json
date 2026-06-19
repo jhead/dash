@@ -1,8 +1,0 @@
-{
-  "id": "0049-ruffle-player-loading",
-  "title": "Fix Ruffle player loading: script URL never resolves, wasm assets missing from build",
-  "description": "Test Movie shows a black window: new URL(\"@ruffle-rs/ruffle/ruffle.js\", import.meta.url) in packages/player/src/RufflePlayer.tsx:58-80 uses a bare specifier Vite does not rewrite \u2014 404 in dev and prod, ensureRuffle rejects, createAndLoad fails silently. Also ruffle.js sibling assets (core.ruffle.*.js chunks + .wasm) are never copied into the build output. Fix resolution (import the package properly or vite asset handling), ship the wasm/chunks, and surface load errors to the user instead of console.error. See docs/16-player-runtime.md.",
-  "status": "done",
-  "created_at": "2026-06-09T18:05:10Z",
-  "updated_at": "2026-06-09T18:09:39Z"
-}

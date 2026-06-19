@@ -1,0 +1,8 @@
+{
+  "id": "0531-0rfcd1-as2-flash-geom-colortransform-class-tests",
+  "title": "AS2 flash.geom.ColorTransform class tests",
+  "description": "Test import flash.geom.ColorTransform, new ColorTransform(rM,gM,bM,aM,rO,gO,bO,aO), ct.concat(), ct.invert(), mc.transform.colorTransform = ct. Flash 8 color effect API.",
+  "status": "done",
+  "created_at": "2026-06-09T22:05:27Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

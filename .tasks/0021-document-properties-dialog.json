@@ -1,8 +1,0 @@
-{
-  "id": "0021-document-properties-dialog",
-  "title": "Document properties dialog",
-  "description": "Modify > Document (Ctrl+J): dialog to edit stage size (W\u00d7H), frame rate, background color, ruler units, match contents button. Reads from and writes to FlashDocument.properties. See docs/01-documents-stage-scenes.md (Document properties). Depends on document-model-mvp, authoring-ui-shell-mvp.",
-  "status": "done",
-  "created_at": "2026-06-09T17:28:46Z",
-  "updated_at": "2026-06-09T17:34:53Z"
-}

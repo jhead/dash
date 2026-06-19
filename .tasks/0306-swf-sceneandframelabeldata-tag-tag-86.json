@@ -1,8 +1,0 @@
-{
-  "id": "0306-swf-sceneandframelabeldata-tag-tag-86",
-  "title": "SWF: SceneAndFrameLabelData tag (tag 86)",
-  "description": "Flash 8 SWF v8 documents can include SceneAndFrameLabelData (tag 86) for scene names. Unit test that a multi-scene FlashDocument exports a tag 86 in the SWF with correct scene count and names. Tests in packages/swf/src/__tests__/sceneframes.test.ts. Check if compile.ts emits tag 86.",
-  "status": "done",
-  "created_at": "2026-06-09T21:10:21Z",
-  "updated_at": "2026-06-09T21:13:13Z"
-}

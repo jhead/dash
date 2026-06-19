@@ -1,8 +1,0 @@
-{
-  "id": "0369-core-as2-number-and-boolean-class-conversions",
-  "title": "Core: AS2 Number and Boolean class conversions",
-  "description": "Test compilation of: Number(x), Number('123'), String(n), String(true), Boolean(0), Boolean(''), Boolean(null), parseInt('0xFF', 16), parseFloat('3.14'), isNaN(x), isFinite(x), Number.MAX_VALUE, Number.MIN_VALUE, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY. Each should compile. Verify typeof-related opcodes.",
-  "status": "done",
-  "created_at": "2026-06-09T21:25:20Z",
-  "updated_at": "2026-06-09T21:28:12Z"
-}

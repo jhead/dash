@@ -1,8 +1,0 @@
-{
-  "id": "0180-core-drag-to-place-library-item-on-stage",
-  "title": "Core: drag-to-place library item on stage",
-  "description": "Implement a pure function for placing a library item onto a frame: placeLibraryItem(doc, sceneIdx, layerIdx, frameIdx, libraryItemId, x, y): FlashDocument. For Symbol items: creates a SymbolInstance at (x,y). For BitmapItem: creates a BitmapDisplayObject (if that type exists) or a shape with the bitmap fill. Returns new FlashDocument. Check packages/core/src/engine/types.ts for BitmapDisplayObject. Add it if missing. Add unit tests in packages/core/src/engine/__tests__/library-place.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T20:26:39Z",
-  "updated_at": "2026-06-09T20:28:59Z"
-}

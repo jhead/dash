@@ -1,0 +1,8 @@
+{
+  "id": "0138-2ojsa0-core-rotated-bbox",
+  "title": "Core: axis-aligned bounding box for rotated/scaled shapes",
+  "description": "The current getBounds or bounding box helpers likely return width/height without accounting for rotation or scale transforms. Add/fix getTransformedBounds(obj: DisplayObject): {x,y,width,height} in packages/core/src/engine/ that computes the axis-aligned bounding box for a rotated+scaled shape or symbol instance. Used by AlignPanel, snapping, and selection hit testing. A rotated 100x50 rect at 45 degrees should have an AABB of roughly 106x106. Add 6 tests.",
+  "status": "done",
+  "created_at": "2026-06-09T19:59:25Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

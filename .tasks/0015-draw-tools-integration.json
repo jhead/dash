@@ -1,8 +1,0 @@
-{
-  "id": "0015-draw-tools-integration",
-  "title": "Draw tools \u2192 shape creation",
-  "description": "Wire oval, rectangle, line, and pencil tools to create ShapePath objects in the document model. On mousedown+drag on stage, create a preview shape; on mouseup, commit it to the current layer/frame as a Shape in the scene graph. Uses vector engine types (ShapePath, SolidFill, SolidStroke). Selection tool: click to select shape, drag to move, delete key to remove. Depends on vector-engine-mvp, initial-toolbox-mvp, stage-view-mvp.",
-  "status": "done",
-  "created_at": "2026-06-09T17:18:04Z",
-  "updated_at": "2026-06-09T17:23:33Z"
-}

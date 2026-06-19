@@ -1,8 +1,0 @@
-{
-  "id": "0332-core-as2-string-escape-sequences-and-unicode",
-  "title": "Core: AS2 string escape sequences and unicode",
-  "description": "Verify AS2 string literals with escape sequences compile: '\\n', '\\t', '\\r', '\\\\', '\\'', '\\\"', '\\0', unicode escape '\\u0041'. Also verify string comparison operators: ==, !=, <, >, <=, >= on string values. Tests in packages/core/src/as2/__tests__/stringliterals.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:15:40Z",
-  "updated_at": "2026-06-09T21:19:15Z"
-}

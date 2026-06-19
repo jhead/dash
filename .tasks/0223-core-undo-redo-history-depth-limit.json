@@ -1,8 +1,0 @@
-{
-  "id": "0223-core-undo-redo-history-depth-limit",
-  "title": "Core: Undo/redo history depth limit",
-  "description": "Verify the useHistory hook in packages/authoring-ui/src/hooks/useHistory.ts has a max history depth. Flash 8 supports up to 100 undo levels by default. Add a maxDepth parameter (default 100) and test that pushing 101 items drops the oldest. Also verify undo/redo at boundaries (at start, at end) are no-ops.",
-  "status": "done",
-  "created_at": "2026-06-09T20:45:11Z",
-  "updated_at": "2026-06-09T20:48:37Z"
-}

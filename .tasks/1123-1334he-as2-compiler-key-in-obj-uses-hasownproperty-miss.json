@@ -1,0 +1,10 @@
+{
+  "id": "1123-1334he-as2-compiler-key-in-obj-uses-hasownproperty-miss",
+  "title": "AS2 compiler: 'key in obj' uses hasOwnProperty (misses prototype chain)",
+  "description": "The 'in' binary operator (key in obj) is implemented in packages/core/src/as2/compiler.ts (~line 1773) by emitting ActionCallMethod (0x52) to call obj.hasOwnProperty(key). This is semantically wrong: in AS2/ECMAScript, 'key in obj' should check the full prototype chain, not just own properties. For example, '\"toString\" in {}' should return true (inherited from Object.prototype) but the current implementation returns false.\n\nThere is no ActionIn opcode in AVM1 (0x60 is ActionBitAnd). Task 0085 noted '(6) in operator \u2014 ActionEnumerate + linear search (approximation)' but the implemented approach uses hasOwnProperty which behaves differently. A correct approximation would need to walk the prototype chain using __proto__ or check via 'prop' in obj using ActionGetMember approach.\n\nFix approach: emit a GetMember probe \u2014 push obj, push key, ActionGetMember; then check if the result is undefined (note: distinguishing 'not present' from 'present but undefined' is hard in AVM1 without ActionIn; the hasOwnProperty approach may be acceptable for own-property cases if documented, but any code relying on inherited property detection will be wrong). Alternatively, document as a known limitation if the fix is too invasive.\n\nLocation: packages/core/src/as2/compiler.ts, compileBinaryExpr(), the 'in' branch at ~line 1773.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T05:49:16Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

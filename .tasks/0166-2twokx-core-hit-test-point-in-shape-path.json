@@ -1,0 +1,8 @@
+{
+  "id": "0166-2twokx-core-hit-test-point-in-shape-path",
+  "title": "Core: hit-test point in shape path",
+  "description": "Implement point-in-shape hit testing in packages/core/src/engine/hittest.ts. Function: hitTestPoint(obj: DisplayObject, x: number, y: number): boolean. For ShapeDisplayObject: use ray-casting algorithm against shape paths. For SymbolInstance: use bounding box (x/y/width/height with rotation). For TextDisplayObject: bounding box. For GroupObject: recursively test children. Export from engine/index.ts. Add unit tests with simple shapes.",
+  "status": "done",
+  "created_at": "2026-06-09T20:19:45Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

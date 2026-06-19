@@ -1,0 +1,8 @@
+{
+  "id": "0317-4uzcz0-core-renderer-hidpi-canvas-scaling-and-device-pi",
+  "title": "Core: Renderer - HiDPI canvas scaling and device pixel ratio",
+  "description": "Unit tests for the HiDPI/devicePixelRatio handling in the canvas renderer. The renderer should set canvas.width = logicalWidth * dpr, canvas.height = logicalHeight * dpr, ctx.scale(dpr, dpr). Test initCanvas(canvas, width, height, dpr) at dpr=1 and dpr=2. Tests in packages/core/src/engine/__tests__/hidpi.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:12:39Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

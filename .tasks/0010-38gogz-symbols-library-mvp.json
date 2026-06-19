@@ -1,0 +1,8 @@
+{
+  "id": "0010-38gogz-symbols-library-mvp",
+  "title": "Symbols & Library MVP",
+  "description": "Library panel; create Graphic and MovieClip symbols; drag/place instances on stage; edit-in-place with breadcrumb. Instance transform independent of master. See docs/07-symbols-instances-library.md. Depends on timeline-mvp, vector-engine-mvp, initial-toolbox-mvp.",
+  "status": "done",
+  "created_at": "2026-06-09T16:31:27Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

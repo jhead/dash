@@ -1,0 +1,10 @@
+{
+  "id": "1186-8jo8rw-swf-size-auto-subset-embedded-static-text-fonts",
+  "title": "SWF size: auto-subset embedded static-text fonts to glyphs actually used",
+  "description": "DONE. Auto-subset static-text fonts to glyphs actually used (compile.ts embedCodePointsByKey): static text with no embedRanges -> {space} U {its text}; dynamic/input with no embedRanges -> not embedded (device font, contributes nothing; full-set fallback only if a font is used solely by such fields); explicit embedRanges unchanged (task 1182). DefineText glyph-index map rebuilt from the subsetted code table (proven by decode test: 'Cab' -> indices [1,2,3] in table {space,C,a,b}). Results for golden.fla: DefineFont3 16 glyphs (was 95), font body 2302B, DefineFontAlignZones 163B (was 953B); total uncompressed SWF 15805B -> 4422B. golden-report: 0 tag-count mismatches, SELF-DETERMINISM PASS (6058f6b160f75951). swf tests 1312 pass. text-rendering e2e: 2/2 pass (static+dynamic render in Ruffle).",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-14T00:02:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

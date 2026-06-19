@@ -1,8 +1,0 @@
-{
-  "id": "0130-as2-getter-setter",
-  "title": "AS2: getter/setter property syntax (get/set)",
-  "description": "Implement AS2 getter and setter properties in the compiler. AS2 syntax: 'function get width():Number { return _w; }' and 'function set width(v:Number):Void { _w = v; }' inside a class. AVM1 implementation: emit ActionDefineFunction2 (0x8E) for the getter/setter body, then emit code equivalent to Object.prototype.__defineGetter__('width', fn) / __defineSetter__. In the compiler, detect FunctionDecl with isGetter/isSetter flag. Read parser.ts to see if get/set modifiers are already parsed. Add 6 tests in __tests__/getset.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T19:54:48Z",
-  "updated_at": "2026-06-09T19:57:30Z"
-}

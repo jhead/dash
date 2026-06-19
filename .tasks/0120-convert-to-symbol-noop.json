@@ -1,8 +1,0 @@
-{
-  "id": "0120-convert-to-symbol-noop",
-  "title": "Convert to Symbol menu item does nothing",
-  "description": "User report: Insert/Modify > Convert to Symbol does nothing (0053 symbol-instances marked done, 0101 fixed menu dispatch, so actions now fire). Trace the path: MenuBar onConvertToSymbol prop -> does Shell pass a handler? -> does the handler require a selection and silently no-op without one (Flash 8 shows the Convert to Symbol dialog whenever something is selected; greys the item out otherwise)? Expected Flash 8 behavior: with a selection, F8/menu opens the Convert to Symbol dialog (name, behavior MovieClip/Button/Graphic, registration point grid), replaces the selection with an instance of the new symbol and adds it to the Library. Verify with the 0095 bridge: draw, select, convert, assert library + instance in document. See docs/07-symbols-instances-library.md.",
-  "status": "done",
-  "created_at": "2026-06-09T19:45:23Z",
-  "updated_at": "2026-06-09T19:59:35Z"
-}

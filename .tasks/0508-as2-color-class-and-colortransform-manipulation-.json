@@ -1,8 +1,0 @@
-{
-  "id": "0508-as2-color-class-and-colortransform-manipulation-",
-  "title": "AS2 Color class and ColorTransform manipulation tests",
-  "description": "Test new Color(mc), Color.setTransform({ra,rb,ga,gb,ba,bb,aa,ab}), Color.getTransform(), Color.setRGB(0xFF0000), Color.getRGB(). Flash 8 color manipulation API.",
-  "status": "done",
-  "created_at": "2026-06-09T22:00:41Z",
-  "updated_at": "2026-06-09T22:01:33Z"
-}

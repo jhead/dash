@@ -1,8 +1,0 @@
-{
-  "id": "0217-swf-export-complete-document-as-downloadable-swf",
-  "title": "SWF: Export complete document as downloadable SWF",
-  "description": "Add a compile-and-download function in packages/swf/src/index.ts: exportSWF(doc, options?) returns Uint8Array. This is a convenience wrapper that calls compile(doc, options) and returns the bytes. Also add triggerDownload(bytes: Uint8Array, filename: string) that creates a blob URL and clicks an anchor. Tests: exportSWF returns non-empty Uint8Array starting with 'FWS' or 'CWS'.",
-  "status": "done",
-  "created_at": "2026-06-09T20:43:08Z",
-  "updated_at": "2026-06-09T20:45:46Z"
-}

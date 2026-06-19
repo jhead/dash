@@ -1,8 +1,0 @@
-{
-  "id": "0468-swf-defineedittext-tag-37-encoding",
-  "title": "SWF DefineEditText tag 37 encoding",
-  "description": "Test DefineEditText (tag 37): static text, dynamic text (variable name), input text. Test HasText, HasFont, HasLayout, IsHTML bits. Verify tag 37 emitted for TextDisplayObject in the library.",
-  "status": "done",
-  "created_at": "2026-06-09T21:51:07Z",
-  "updated_at": "2026-06-09T21:52:28Z"
-}

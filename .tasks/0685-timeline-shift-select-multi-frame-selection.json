@@ -1,8 +1,0 @@
-{
-  "id": "0685-timeline-shift-select-multi-frame-selection",
-  "title": "Timeline shift-select: multi-frame selection",
-  "description": "Implemented shift-click frame range selection in Timeline.tsx. Plain click sets an anchor and selects a single frame; shift+click extends the range from the anchor to the clicked frame. Selected frames are highlighted in Flash 8 blue (rgba(50,100,220,0.55)). The selection range is stored as { layerId, start, end } local state, with an anchorFrameRef tracking the last non-shift click. Copy/cut context-menu actions now use the selection range when the right-clicked frame shares the same layer. All 174 unit tests pass; TypeScript builds clean.",
-  "status": "done",
-  "created_at": "2026-06-10T00:00:29Z",
-  "updated_at": "2026-06-10T00:10:56Z"
-}

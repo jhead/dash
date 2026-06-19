@@ -1,0 +1,8 @@
+{
+  "id": "0231-4gugly-swf-compressed-swf-output-cws-zlib",
+  "title": "SWF: Compressed SWF output (CWS zlib)",
+  "description": "Add zlib compression option to the SWF compiler. When CompileOptions.compress=true, compress the SWF body (everything after the 8-byte header) with zlib/deflate and change the signature from FWS to CWS. Use fflate's deflateSync. Tests: compile with compress=true \u2192 first 3 bytes are CWS, decompress body \u2192 valid SWF content, compress=false \u2192 FWS unchanged.",
+  "status": "done",
+  "created_at": "2026-06-09T20:49:01Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

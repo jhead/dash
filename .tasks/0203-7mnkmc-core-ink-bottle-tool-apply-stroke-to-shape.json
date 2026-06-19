@@ -1,0 +1,8 @@
+{
+  "id": "0203-7mnkmc-core-ink-bottle-tool-apply-stroke-to-shape",
+  "title": "Core: Ink bottle tool (apply stroke to shape)",
+  "description": "Implement applyInkBottle(doc, sceneIdx, layerIdx, frameIdx, objectId, strokeColor, strokeWidth) in packages/core/src/engine/inkbottle.ts. Finds the target ShapeDisplayObject and adds or replaces the stroke on all its ShapePaths. Returns updated document immutably. Tests: apply stroke to path with no stroke, replace existing stroke, verify color and width.",
+  "status": "done",
+  "created_at": "2026-06-09T20:39:02Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

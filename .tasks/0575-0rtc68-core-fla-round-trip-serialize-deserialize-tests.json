@@ -1,0 +1,8 @@
+{
+  "id": "0575-0rtc68-core-fla-round-trip-serialize-deserialize-tests",
+  "title": "Core FLA round-trip serialize deserialize tests",
+  "description": "Tests for FLA save/load round-trip via saveFla/loadFla: FlashDocument with layers, keyframes, display objects, library symbols, sounds. Verify all fields survive round-trip. Test OLE2 detection path. Test missing asset entries throw.",
+  "status": "done",
+  "created_at": "2026-06-09T22:17:54Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

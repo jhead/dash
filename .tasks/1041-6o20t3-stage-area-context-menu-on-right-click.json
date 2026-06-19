@@ -1,0 +1,10 @@
+{
+  "id": "1041-6o20t3-stage-area-context-menu-on-right-click",
+  "title": "Stage area context menu on right-click",
+  "description": "Add a right-click context menu to the stage area in packages/authoring-ui/src/StageArea.tsx.\n\nThe stage canvas (lines 4110-4182) has no onContextMenu handler. Add one that shows a popup with context-sensitive items:\n\nWhen objects are selected:\n- Cut (Cmd+X)\n- Copy (Cmd+C)  \n- Paste in Place (Cmd+Shift+V)\n- Delete\n- Select All (Cmd+A)\n- separator\n- Group (Cmd+G) \u2014 only if multiple objects selected\n- Ungroup (Cmd+Shift+G) \u2014 only if a group is selected\n- Convert to Symbol...\n- separator\n- Arrange submenu: Bring to Front, Bring Forward, Send Backward, Send to Back\n- separator\n- Properties...\n\nWhen nothing is selected:\n- Select All\n- Paste (if clipboard has content)\n- separator\n- Insert Frame (F5)\n- Insert Keyframe (F6)\n\nImplementation approach: Look at how the Timeline ContextMenuPopup works (Timeline.tsx:2307) and follow the same pattern. The context menu should be a floating div positioned at the mouse cursor coordinates, dismissible by clicking outside (same pattern as timeline context menu). Wire to existing Shell.tsx handlers: onCut, onCopy, onPaste, onSelectAll, onGroup, onUngroup, onDeleteSelected, onConvertToSymbol, onArrange.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T00:22:21Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

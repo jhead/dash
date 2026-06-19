@@ -1,0 +1,10 @@
+{
+  "id": "0721-5r945a-rebrand-tauri-app-icon-to-d-same-red-background",
+  "title": "Rebrand Tauri app icon to 'd' (same red-background Dash icon)",
+  "description": "The favicon/browser icon was updated to a red background with bold 'd' in white (task 0719). The Tauri desktop app icon at apps/desktop/src-tauri/icons/ still shows the old Flash 'F' icon. Replace ALL Tauri icon variants (32x32.png, 128x128.png, 128x128@2x.png, icon.icns, icon.ico, icon.png) with the new Dash 'd' branding: red (#cc0000) background, bold white 'd'. Use a proper raster/vector approach \u2014 generate each PNG size programmatically (canvas/sharp/node-canvas or similar), then use Tauri's icon generation if available, or just provide the PNG files. The icon.icns and icon.ico should ideally be regenerated too. Acceptance: running the Tauri desktop app shows the red-d icon in the dock/taskbar.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T04:17:55Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

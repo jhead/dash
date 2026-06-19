@@ -1,0 +1,8 @@
+{
+  "id": "0648-5tvclc-swf-setbackgroundcolor-and-stage-color-tests",
+  "title": "SWF SetBackgroundColor and stage color tests",
+  "description": "Test that SetBackgroundColor tag (9) is emitted with correct RGB bytes matching doc.properties.backgroundColor. Test white, black, custom colors. Tag must appear before first ShowFrame.",
+  "status": "done",
+  "created_at": "2026-06-09T22:42:03Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

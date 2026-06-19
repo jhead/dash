@@ -1,0 +1,10 @@
+{
+  "id": "0939-92psvj-fla-binary-import-sharedurl-not-decoded-from-con",
+  "title": "FLA binary import: sharedUrl not decoded from Contents stream for importForRuntimeSharing symbols",
+  "description": "The model's LibrarySymbol has sharedUrl field but flash8-import.ts never sets it. When importForRuntimeSharing=true, the Contents stream should have the source URL. Research: parseFla8Contents in flash8-binary.ts already reads importForRuntimeSharing flag (4 bytes after linkageIdentifier). The 5th field after the 4 flags should be the sharedUrl string. Check the binary layout of the Contents stream symbol entry: after exportInFirstFrame, exportForActionScript, exportForRuntimeSharing, importForRuntimeSharing flags, is there a BomString for the source URL? If so, decode it and forward through flash8-import.ts to LibrarySymbol.sharedUrl.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:08:16Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

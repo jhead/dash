@@ -1,0 +1,10 @@
+{
+  "id": "1135-5ro0oi-sprite-ts-shape-text-bitmap-with-filters-missing",
+  "title": "sprite.ts: shape/text/bitmap with filters missing PlaceFlagMove on posChanged",
+  "description": "In sprite.ts (encodeSprite), the posChanged branch emits PlaceObject3WithFilters for shape, text, and bitmap display objects but forgets to pass move=true. This means HasCharacter is set and HasMove is NOT set \u2014 Ruffle treats the tag as a new placement, allocates a new character at that depth, and doubles up the display list object instead of updating the existing one.\n\nAffected lines (posChanged branch, else block around line 410):\n- shape with filters (line ~424): encodePlaceObject3WithFilters(charId, depth, x, y, filters!, objTransform) \u2014 missing move=true as 9th argument\n- text with filters (line ~433): encodePlaceObject3WithFilters(charId, depth, x, y, filters!) \u2014 missing move=true\n- bitmap with filters (line ~459): encodePlaceObject3WithFilters(charId, depth, x, y, filters!) \u2014 missing move=true\n- bitmap with blendMode (line ~458): encodePlaceObject3WithBlendMode(charId, depth, x, y, blendMode, filters, undefined, undefined, bmpCXForm) \u2014 missing move=true as 10th argument\n\nThe instance type (line ~479-480) correctly passes move=true. Fix: pass true as the move parameter in each of the above calls.\n\nNote: compile.ts has a parallel bug for shapes with filters (see separate task).",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T08:05:06Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

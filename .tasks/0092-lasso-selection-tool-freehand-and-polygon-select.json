@@ -1,8 +1,0 @@
-{
-  "id": "0092-lasso-selection-tool-freehand-and-polygon-select",
-  "title": "Lasso selection tool: freehand and polygon selection modes",
-  "description": "Add Lasso selection tool (L key): (1) Freehand lasso \u2014 drag to draw freehand selection area; release to close; any display objects whose bounds intersect the lasso polygon are selected; (2) Polygon lasso \u2014 click to add vertices, double-click to close. Selection logic: use point-in-polygon test (ray casting) against the lasso path to determine which display objects' center points are inside. Wire in StageArea.tsx: when activeTool==='lasso', handle mouse events. Show the lasso outline as a canvas overlay during drawing (dashed line). On close: compute selected objects, call onSelectionChange with the matching object IDs. Wire L key shortcut in Shell.tsx to set activeTool='lasso'. See docs/03-drawing-tools.md.",
-  "status": "done",
-  "created_at": "2026-06-09T19:25:32Z",
-  "updated_at": "2026-06-09T19:31:46Z"
-}

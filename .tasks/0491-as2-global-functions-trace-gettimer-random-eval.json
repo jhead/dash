@@ -1,8 +1,0 @@
-{
-  "id": "0491-as2-global-functions-trace-gettimer-random-eval",
-  "title": "AS2 global functions: trace, getTimer, random, eval",
-  "description": "Test global function calls: trace(val), getTimer(), random(n), eval(str), escape/unescape, ord/chr \u2014 all compile without error, map to AVM1 built-in calls.",
-  "status": "done",
-  "created_at": "2026-06-09T21:55:53Z",
-  "updated_at": "2026-06-09T21:58:44Z"
-}

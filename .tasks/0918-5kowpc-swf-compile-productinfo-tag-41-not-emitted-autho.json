@@ -1,0 +1,10 @@
+{
+  "id": "0918-5kowpc-swf-compile-productinfo-tag-41-not-emitted-autho",
+  "title": "SWF compile: ProductInfo (tag 41) not emitted \u2014 authoring tool metadata missing from published SWFs",
+  "description": "buildProductInfo() emits tag 41 in compile.ts; productinfo.test.ts passes.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:17:20Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

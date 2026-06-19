@@ -1,0 +1,10 @@
+{
+  "id": "1025-8rrczz-jsfl-selectnone-doc-save-doc-undo-redo-fl-undo-r",
+  "title": "JSFL: selectNone, doc.save, doc.undo/redo, fl.undo/redo, doc.revert stubs + doc.duplicateSelection impl",
+  "description": "Add to packages/authoring-ui/src/jsfl/runtime.ts:\n\n1. doc.selectNone(): void - clears selection: state.selectedIds = [] (or use existing selection setter). Add to JsflDocument interface + makeDocumentProxy.\n2. doc.save(fileURL?: string): boolean - delegates to fl.saveDocument(this, fileURL) internally, or just calls exportSWF. Add to JsflDocument interface + proxy. Return true.\n3. doc.undo(): void - console.warn('doc.undo: history managed at UI layer'). Add stub.\n4. doc.redo(): void - same stub.\n5. fl.undo(): void - console.warn stub. Add to JsflFl interface + makeFlProxy.\n6. fl.redo(): void - same stub.\n7. doc.revert(): void - console.warn('doc.revert: not supported') stub.\n8. doc.duplicateSelection(): void - REAL implementation: get state.selectedIds, for each selected display object deep-copy it (JSON parse/stringify the displayObject or use a clone utility if one exists), assign new unique id, offset by {x+10, y+10}, add to current frame's displayObjects, update selection to the new copies. Look at how deleteSelection and addItem work to understand the model mutation pattern.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T23:43:33Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0363-45woqm-core-as2-date-class-built-in-methods",
+  "title": "Core: AS2 Date class built-in methods",
+  "description": "Test compilation of AS2 Date class: var d = new Date(), new Date(year, month, day), d.getTime(), d.getFullYear(), d.getMonth(), d.getDate(), d.getDay(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds(), d.setTime(n), Date.UTC(y,m,d), Date.now(). Each should compile without error and emit ActionNew (0x4a) or ActionCallMethod (0x52).",
+  "status": "done",
+  "created_at": "2026-06-09T21:24:33Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

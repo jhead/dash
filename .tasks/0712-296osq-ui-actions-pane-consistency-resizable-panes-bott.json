@@ -1,0 +1,10 @@
+{
+  "id": "0712-296osq-ui-actions-pane-consistency-resizable-panes-bott",
+  "title": "UI: Actions pane consistency, resizable panes, bottom tab group with collapse",
+  "description": "Several related layout improvements: (1) Actions window/pane should look and behave like other panels (consistent header, background, padding, font); (2) All panes should be resizable via drag handles between them; (3) Bottom area should group Actions, Timeline, Sound, Properties as tabs that are collapsible \u2014 clicking the active tab collapses/expands the bottom panel. This is a significant layout refactor of Shell.tsx. Start by auditing the current layout: where are the panels rendered, what controls their sizing, and what the current tab behavior looks like.",
+  "status": "done",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-10T03:47:12Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

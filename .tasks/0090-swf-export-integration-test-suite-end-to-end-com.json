@@ -1,8 +1,0 @@
-{
-  "id": "0090-swf-export-integration-test-suite-end-to-end-com",
-  "title": "SWF export integration test suite: end-to-end compile+parse validation",
-  "description": "Add comprehensive end-to-end integration tests for the SWF compiler that compile real FlashDocument objects and parse the resulting SWF binary to verify correctness. Create packages/swf/src/__tests__/integration.test.ts covering: (1) Complete document round-trip: compile a doc with shapes on multiple layers, parse SWF, verify all tag types present in correct order (FileAttributes, SetBackgroundColor, DefineShape, PlaceObject2, ShowFrame, End); (2) Frame rate: verify SWF header FrameRate field matches doc.properties.frameRate; (3) Stage dimensions: verify SWF header FrameSize RECT matches doc.properties.width/height (in twips = px * 20); (4) Multi-layer: 3 layers produce 3 depths at correct PlaceObject2 depths; (5) Tween: compile doc with motion tween, verify all interpolated frames are present; (6) Symbol instance: compile doc with a SymbolInstance placed from library, verify DefineSprite before PlaceObject2; (7) Bitmap: compile doc with a BitmapDisplayObject, verify DefineBitsJPEG2 + bitmap fill shape; (8) Text: compile doc with TextDisplayObject, verify DefineEditText tag present; (9) Script: compile doc with frame script, verify DoAction tag present with valid bytecode; (10) Empty doc: compile minimal doc (no shapes), verify well-formed SWF with End tag. Use a simple SWF tag parser helper (read record headers iteratively) within the test file itself. Only touches packages/swf/src/__tests__/ \u2014 no production code changes needed.",
-  "status": "done",
-  "created_at": "2026-06-09T19:24:12Z",
-  "updated_at": "2026-06-09T19:26:46Z"
-}

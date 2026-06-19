@@ -1,8 +1,0 @@
-{
-  "id": "0535-as2-netconnection-and-netstream-video-class-test",
-  "title": "AS2 NetConnection and NetStream video class tests",
-  "description": "Test new NetConnection(), nc.connect(null), new NetStream(nc), ns.play('video.flv'), ns.pause(), ns.seek(seconds), ns.onStatus handler, ns.time property. Flash 8 video API.",
-  "status": "done",
-  "created_at": "2026-06-09T22:05:28Z",
-  "updated_at": "2026-06-09T22:09:20Z"
-}

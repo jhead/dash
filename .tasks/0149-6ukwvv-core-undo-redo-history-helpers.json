@@ -1,0 +1,8 @@
+{
+  "id": "0149-6ukwvv-core-undo-redo-history-helpers",
+  "title": "Core: undo/redo history helpers",
+  "description": "Add useHistory hook and pushDoc helper to packages/core/src/engine/ (or packages/authoring-ui if needed). The hook manages a documents[] stack + cursor. pushDoc(newDoc) adds to history. undo()/redo() move the cursor. Max history depth: 50. Return {doc, pushDoc, undo, redo, canUndo, canRedo}. Must be pure immutable logic. Shell.tsx already uses a pushDoc pattern \u2014 standardize it. Add unit tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:10:26Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

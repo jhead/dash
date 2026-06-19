@@ -1,0 +1,8 @@
+{
+  "id": "0502-33yo9f-as2-number-formatting-and-locale-methods-tests",
+  "title": "AS2 Number formatting and locale methods tests",
+  "description": "Test Number.toLocaleString(), Number.toPrecision(), Number.toExponential(), various numeric edge cases: Infinity arithmetic, NaN propagation, -0, MAX_VALUE/MIN_VALUE.",
+  "status": "done",
+  "created_at": "2026-06-09T21:59:30Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

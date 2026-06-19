@@ -1,0 +1,10 @@
+{
+  "id": "1091-5rvsiy-tool-select-mcp-accepts-freetranform-misspelled",
+  "title": "tool_select MCP accepts 'freeTranform' (misspelled) instead of 'free-transform'",
+  "description": "In registry.ts, the validTools array contains 'freeTranform' (missing 's', no hyphen). The actual tool ID used throughout the codebase (ToolsPanel.tsx, StageArea.tsx, types.ts) is 'free-transform'. An MCP agent calling tool_select({ toolId: 'free-transform' }) gets an 'Unknown toolId' error. Fix: replace 'freeTranform' with 'free-transform' in the validTools array.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T03:09:37Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

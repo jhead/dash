@@ -1,8 +1,0 @@
-{
-  "id": "0117-toolbox-flash8-icons",
-  "title": "Faithful Flash 8 toolbox icons (replace hand-rolled SVGs)",
-  "description": "User report: current toolbox icons look like hand-rolled SVGs and read poorly. Accuracy-first goal (docs/00) demands the toolbox look like Flash 8. Recreate the Flash 8 tool icons (Arrow, Subselection, Free Transform, Gradient Transform, Line, Lasso, Pen, Text, Oval, Rectangle/PolyStar, Pencil, Brush, Ink Bottle, Paint Bucket, Eyedropper, Eraser, Hand, Zoom + color swatch controls) as faithful pixel-art assets at the original small raster sizes, not freehand vector approximations. Do not copy Macromedia binaries; recreate pixel-by-pixel from reference screenshots. Replace the inline SVGs in ToolsPanel.tsx; include hover/pressed/selected states per Flash 8. See docs/04-toolbox.md.",
-  "status": "done",
-  "created_at": "2026-06-09T19:45:23Z",
-  "updated_at": "2026-06-09T19:51:35Z"
-}

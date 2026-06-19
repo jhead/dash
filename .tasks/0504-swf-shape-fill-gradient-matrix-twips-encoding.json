@@ -1,8 +1,0 @@
-{
-  "id": "0504-swf-shape-fill-gradient-matrix-twips-encoding",
-  "title": "SWF shape fill gradient matrix twips encoding",
-  "description": "Test that linear/radial gradient fill matrices are encoded correctly in twips (1px = 20 twips). The gradient matrix uses a 32768x32768 gradient square mapped to shape bounds.",
-  "status": "done",
-  "created_at": "2026-06-09T21:59:30Z",
-  "updated_at": "2026-06-09T22:04:43Z"
-}

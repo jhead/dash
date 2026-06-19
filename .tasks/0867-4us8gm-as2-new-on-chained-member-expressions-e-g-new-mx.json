@@ -1,0 +1,10 @@
+{
+  "id": "0867-4us8gm-as2-new-on-chained-member-expressions-e-g-new-mx",
+  "title": "AS2 new on chained member expressions (e.g. new mx.transitions.easing.Strong())",
+  "description": "compileNewExpr in compiler.ts likely handles only simple new ClassName() (identifier) but not dotted paths like new pkg.subpkg.ClassName(). Flash 8 tween class instantiation uses this pattern constantly. Fix: for NewExpr with a MemberExpr callee, emit chained GetMember calls to resolve the constructor, then ActionNewObject.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T16:20:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

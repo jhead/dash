@@ -1,8 +1,0 @@
-{
-  "id": "0193-core-z-order-operations-bring-to-front-back-forw",
-  "title": "Core: z-order operations (bring to front/back/forward/backward)",
-  "description": "Implement z-order operations in packages/core/src/engine/zorder.ts. Functions: bringToFront(doc, sceneIdx, layerIdx, frameIdx, objectId), sendToBack(...), bringForward(...), sendBackward(...). In Flash 8, display object order within a keyframe.displayObjects array determines z-order (last = on top). These operations reorder the array. All immutable. Export from engine/index.ts. Add unit tests.",
-  "status": "done",
-  "created_at": "2026-06-09T20:32:31Z",
-  "updated_at": "2026-06-09T20:34:30Z"
-}

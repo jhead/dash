@@ -1,0 +1,8 @@
+{
+  "id": "0274-2lmgqg-core-renderer-motion-tween-interpolation",
+  "title": "Core: Renderer - motion tween interpolation",
+  "description": "Unit tests for motion tween interpolation in the renderer. The engine should interpolate x, y, scaleX, scaleY, rotation, alpha between keyframes when tweenType='motion'. Create a scene with two keyframes (frame 0 and frame 9) containing a SymbolInstance at different positions, then call getInterpolatedFrame(scene, layerIdx, 4) (or equivalent) and verify the interpolated values are midway. Tests in packages/core/src/engine/__tests__/tween-interp.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:03:07Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

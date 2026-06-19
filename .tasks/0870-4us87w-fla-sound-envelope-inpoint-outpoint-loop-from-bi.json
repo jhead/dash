@@ -1,0 +1,10 @@
+{
+  "id": "0870-4us87w-fla-sound-envelope-inpoint-outpoint-loop-from-bi",
+  "title": "FLA sound envelope inPoint/outPoint/loop from binary import silently skipped",
+  "description": "flash8-binary.ts line 1856-1863 reads soundLoop, soundSync, inPoint44, outPoint44 from frame sound records, but Fla8SoundInfo only stores sound name; envelope points are skipped (r.skip(cnt*8)). Fix: decode and store soundLoop, syncMode, inPoint, outPoint in Fla8SoundInfo and pass them to SoundLinkage in flash8-import.ts.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T16:20:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

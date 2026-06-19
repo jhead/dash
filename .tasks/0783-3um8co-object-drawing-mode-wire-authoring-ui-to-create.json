@@ -1,0 +1,10 @@
+{
+  "id": "0783-3um8co-object-drawing-mode-wire-authoring-ui-to-create",
+  "title": "Object Drawing mode: wire authoring UI to create drawing-object type",
+  "description": "The Object Drawing mode toggle (the circle icon in ToolsPanel) is wired to toolState.objectDrawing, but handleShapeCreated in Shell.tsx always produces type:\"shape\" regardless of the toggle state. The DrawingObject type (type:\"drawing-object\") is fully supported in the core model (types.ts), CanvasRenderer (renderer.ts), and SWF compiler (compile.ts) \u2014 it was just never hooked up in the authoring path. Scope: When toolState.objectDrawing===true and the active tool is a drawing tool (rect, oval, line, polystar, pencil, brush, pen), handleShapeCreated should emit a DrawingObject instead of a ShapeDisplayObject. A DrawingObject sits on the stage as a self-contained unit (like a mini-symbol): it is not merged with adjacent shapes by the boolean merge/ink-bottle tools, it can be moved independently, and its bounding box is always tight to its shape. The DrawingObject model fields are shape, x, y, scaleX, scaleY, rotation (same as ShapeDisplayObject). Acceptance: (1) Drawing a rect with Object Drawing ON produces a non-merging DrawingObject in the layer's displayObjects array; (2) the renderer shows it correctly on canvas; (3) the SWF compiler publishes it identically to an equivalent ShapeDisplayObject (rendering should match); (4) selecting and moving it works in the Selection tool; (5) break-apart (Ctrl+B) on a DrawingObject converts it back to a ShapeDisplayObject.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T10:00:08Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

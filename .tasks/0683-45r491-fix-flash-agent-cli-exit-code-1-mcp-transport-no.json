@@ -1,0 +1,8 @@
+{
+  "id": "0683-45r491-fix-flash-agent-cli-exit-code-1-mcp-transport-no",
+  "title": "Fix flash-agent CLI: exit code 1, MCP transport not connecting (0613-0617 follow-up)",
+  "description": "Root cause: the /__agent WebSocket bridge is a singleton. With 8 parallel Playwright workers, each worker's page.goto('/') disconnected the previous worker's bridge, producing 'Editor page disconnected before responding' errors. Fix: added workers:1 to playwright.config.ts to serialise the full E2E suite. Results: 15/15 flash-agent CLI tests passing, 68/69 total (1 remaining failure is the pre-existing onClipEvent(load) pixelDiff=0 under task 0663).",
+  "status": "done",
+  "created_at": "2026-06-10T00:00:04Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0617-6jps3t-agent-bridge-follow-ups-event-stream-watch-mode",
+  "title": "Agent MCP follow-ups: resource subscriptions and packaged-Tauri hosting",
+  "description": "Post-MVP follow-ups from docs/19-agent-interface.md \u00a7MVP scope (Out). Do not start until 0613/0614/0615 are done. (1) MCP resource subscriptions / change notifications: notify subscribed clients on doc-changed (with rev), selection-changed, and playhead moves via standard MCP resource update notifications; add flash-agent sugar to stream them as JSON lines. (2) Packaged-Tauri hosting: serve the same MCP server without the Vite dev server (Rust MCP implementation in apps/desktop/src-tauri or a Node sidecar) reusing @flash/agent-protocol and the editor-side registry unchanged. (3) Optional: multi-editor session routing (named sessions) and MCP prompts for canned authoring recipes. Split into separate tasks if scope grows.",
+  "status": "done",
+  "created_at": "2026-06-09T22:30:10Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

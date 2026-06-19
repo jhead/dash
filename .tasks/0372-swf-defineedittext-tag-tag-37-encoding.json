@@ -1,8 +1,0 @@
-{
-  "id": "0372-swf-defineedittext-tag-tag-37-encoding",
-  "title": "SWF: DefineEditText tag (tag 37) encoding",
-  "description": "Test that a Frame with a TextDisplayObject (if it exists) or simulated EditText definition produces DefineEditText (tag 37). Verify: tag 37 body has HasText flag when initial text is non-empty, HasMaxLength flag, HasFont flag referencing a font ID, InitialText stored as null-terminated string. Check what text display objects look like in engine/types.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:26:10Z",
-  "updated_at": "2026-06-09T21:27:25Z"
-}

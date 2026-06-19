@@ -1,0 +1,8 @@
+{
+  "id": "0037-16i8hc-stroke-styles-advanced",
+  "title": "Advanced stroke styles: dashed, dotted, ragged, hatched",
+  "description": "Extend the Flash 8 stroke rendering in packages/core/src/engine/renderer.ts to support all stroke styles: Solid (done), Dashed, Dotted, Ragged, Stippled, Hatched. Add StrokeStyle type to engine/types.ts stroke interfaces. Implement using Canvas 2D setLineDash + custom path rendering for ragged/stippled/hatched. Purely packages/core/src/engine/ \u2014 no UI changes. See docs/03-drawing-vector-graphics.md and docs/05-color-strokes-fills.md.",
+  "status": "done",
+  "created_at": "2026-06-09T17:53:50Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

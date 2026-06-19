@@ -1,0 +1,8 @@
+{
+  "id": "0340-5jq04i-core-as2-array-prototype-advanced-methods",
+  "title": "Core: AS2 Array.prototype advanced methods",
+  "description": "Verify AS2 advanced Array methods compile: a.filter(fn) (AS2 may not have filter \u2014 test what exists), a.map(fn), a.forEach(fn), a.every(fn), a.some(fn), a.reduce(fn, init). Also Array.isArray(x). If these don't exist in AS2 (they're AS3 features), verify they fail gracefully and document. Tests in packages/core/src/as2/__tests__/arrayadvanced.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:17:51Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

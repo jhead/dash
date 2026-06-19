@@ -1,0 +1,10 @@
+{
+  "id": "0916-4ivsi2-fla-import-shapeblend-distributive-angular-never",
+  "title": "FLA import: shapeBlend (distributive/angular) never decoded from binary; always defaults to distributive",
+  "description": "The Frame model has shapeBlend: 'distributive' | 'angular' but flash8-binary.ts never decodes this field from CPicFrame. The binary likely stores a blend mode byte alongside the keyMode/ease fields. Without decoding it, all imported shape tweens use distributive blending regardless of the FLA's setting. Requires: (1) find the shapeBlend byte position in flash8-binary.ts CPicFrame reading, (2) decode and carry it through Fla8Frame, (3) forward in flash8-import.ts createFrame call, (4) also verify compile.ts passes shapeBlend to encodeDefineMorphShape2.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:16:31Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

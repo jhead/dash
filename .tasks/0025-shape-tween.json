@@ -1,8 +1,0 @@
-{
-  "id": "0025-shape-tween",
-  "title": "Shape tween",
-  "description": "Shape tween between two keyframes: morphs one shape into another over time. Uses shape blend (distributive/angular). Visual: green band in timeline (vs blue for motion). Property inspector ease and blend mode. Interpolate path points between start/end keyframes. See docs/02-timeline-and-animation.md (Shape tween). Depends on motion-tween-mvp, draw-tools-integration.",
-  "status": "done",
-  "created_at": "2026-06-09T17:34:44Z",
-  "updated_at": "2026-06-09T17:40:09Z"
-}

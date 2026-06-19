@@ -1,8 +1,0 @@
-{
-  "id": "0488-as2-label-statements-and-goto-style-loops",
-  "title": "AS2 label statements and goto-style loops",
-  "description": "Test labeled break (break outerLoop), labeled continue (continue outerLoop), nested loop control flow with labels. Flash 8 AS2 supports labeled break/continue.",
-  "status": "done",
-  "created_at": "2026-06-09T21:55:53Z",
-  "updated_at": "2026-06-09T21:59:07Z"
-}

@@ -1,0 +1,10 @@
+{
+  "id": "1175-4n54ww-sprite-ts-clipactionskey-in-depthstate-is-write",
+  "title": "sprite.ts: clipActionsKey in DepthState is write-only \u2014 clip-action changes across symbol-timeline keyframes not detected",
+  "description": "Build/fidelity gap discovered while unblocking the @flash/swf build. Commit 3571ebf (task 1150) added clipActionsKey to sprite.ts's DepthState interface but did NOT wire it into the two object literals at the call sites (lines ~575, ~977), shipping @flash/swf non-compiling on main (tsc TS2345: Property 'clipActionsKey' is missing). Build-unblock commit set clipActionsKey: null at both sites \u2014 this is behavior-neutral because the field is WRITE-ONLY: sprite.ts's posChanged check (lines 558-571) never reads prev.clipActionsKey, unlike compile.ts (line 1809: prev.clipActionsKey !== thisClipActionsKey). Two follow-ups: (1) Either remove the dead field or wire it. (2) Real gap: symbol timelines don't re-emit PlaceObject2 when an object's clipActions/onClipEvent handlers CHANGE between keyframes at the same depth (only first-placement clip actions are emitted, task 1124). Mirror compile.ts: compute thisClipActionsKey via a computeClipActionsKey() helper, include prev.clipActionsKey !== thisClipActionsKey in posChanged, and store the real key in depthState. Process note: a non-compiling commit reached main \u2014 build is not gating commits.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-13T20:35:37Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

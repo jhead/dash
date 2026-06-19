@@ -1,0 +1,8 @@
+{
+  "id": "0102-2v740o-blend-modes-for-symbol-instances-renderer-swf-pl",
+  "title": "Blend modes for symbol instances: renderer + SWF PlaceObject3 BlendMode",
+  "description": "Flash 8 symbol instances support blend modes (Normal, Layer, Multiply, Screen, Lighten, Darken, Difference, Add, Subtract, Invert, Alpha, Erase, Overlay, Hardlight). Add support: (1) Add blendMode?: string field to SymbolInstance in packages/core/src/engine/types.ts (values: 'normal'|'layer'|'multiply'|'screen'|'lighten'|'darken'|'difference'|'add'|'subtract'|'invert'|'alpha'|'erase'|'overlay'|'hardlight'); (2) Apply blend mode in packages/core/src/engine/renderer.ts when rendering SymbolInstances \u2014 map Flash blend mode names to Canvas 2D globalCompositeOperation equivalents (multiply='multiply', screen='screen', lighten='lighter', darken='darken', difference='difference', add='lighter', overlay='overlay', hardlight='hard-light'; for unsupported ones fall back to 'source-over'); wrap in ctx.save()/ctx.restore(); (3) In packages/swf/src/compile.ts, when placing a SymbolInstance with a non-normal blend mode, use PlaceObject3 (tag 70) with HasBlendMode flag (Flags2 bit 1 = 0x02) and write BlendMode UI8 byte after filters (or as the only extra field); Flash blend mode byte values: Normal=0, Layer=1, Multiply=2, Screen=3, Lighten=4, Darken=5, Difference=6, Add=7, Subtract=8, Invert=9, Alpha=10, Erase=11, Overlay=12, Hardlight=13; (4) Add tests in packages/swf/src/__tests__/blendmode.test.ts and packages/core/src/engine/__tests__/blendmode.test.ts. Only touches packages/core/src/engine/, packages/swf/src/ \u2014 no authoring-ui needed.",
+  "status": "done",
+  "created_at": "2026-06-09T19:31:34Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

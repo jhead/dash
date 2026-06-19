@@ -1,0 +1,8 @@
+{
+  "id": "0241-8v0w2k-swf-actionscript-date-object-compilation",
+  "title": "SWF: ActionScript Date object compilation",
+  "description": "Verify Date object usage compiles correctly: new Date(), Date.now(), d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getTime(), d.setFullYear(y). All should compile as ActionNew + ActionCallMethod. Tests in packages/core/src/as2/__tests__/date.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:52:26Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

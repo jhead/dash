@@ -1,0 +1,10 @@
+{
+  "id": "0727-3t3sbi-library-add-symbol-linkage-dialog-export-for-act",
+  "title": "Library: add Symbol Linkage dialog (export for ActionScript, identifier, export-in-first-frame)",
+  "description": "The core model has SymbolLinkage with linkageIdentifier but there is no UI to set it. Flash 8 had a Linkage dialog accessed via Library panel context menu (right-click > Linkage...) that lets users: enable 'Export for ActionScript', set the AS2 class identifier (used for attachMovie/new ClassName), enable 'Export in first frame'. Implement this dialog and wire it into the Library panel context menu. The SWF compiler should already respect the identifier via ExportAssets tag if it exists \u2014 verify that too.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T05:35:43Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

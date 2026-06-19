@@ -1,0 +1,8 @@
+{
+  "id": "0374-7ef4ol-core-as2-object-class-built-in-methods",
+  "title": "Core: AS2 Object class built-in methods",
+  "description": "Test compilation of Object class: var o = new Object(), Object.registerClass('id', MyClass), Object.registerClass (with AS2 class attachment to MovieClip), obj.hasOwnProperty('key'), obj.isPrototypeOf(other), obj.propertyIsEnumerable('key'), obj.toString(), obj.valueOf(), obj.constructor. Verify ActionNew (0x4a), ActionCallMethod (0x52). Also test Object.watch(prop, fn) and Object.unwatch(prop).",
+  "status": "done",
+  "created_at": "2026-06-09T21:27:04Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

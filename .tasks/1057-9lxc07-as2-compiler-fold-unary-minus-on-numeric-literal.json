@@ -1,0 +1,10 @@
+{
+  "id": "1057-9lxc07-as2-compiler-fold-unary-minus-on-numeric-literal",
+  "title": "AS2 compiler: fold unary minus on numeric literals into direct negative push",
+  "description": "The compiler emits `Push int(0)` + `Push f64(v)` + `ActionSubtract` for unary minus applied to a numeric literal (e.g. `-.5`, `-0.5`, `-180`). This is semantically correct but generates 3 extra instructions per negative literal vs. pushing the negative value directly.\n\nFound by: analysis of the MagSave game script (task 1057 analysis trace). Example: `_root.meteor.grav = -.5;` emits 10 opcodes instead of the optimal 7.\n\nRoot cause: `compileUnaryExpr` for operator `'-'` always emits `pushInt(0) + compileExpr(operand) + Subtract`, even when the operand is a constant Literal. It should short-circuit when `operand.type === 'Literal' && typeof operand.value === 'number'` and instead call `pushNumber(-operand.value)` directly.\n\nFix: In `compileUnaryExpr`, case `'-'`: check if operand is a Literal number, and if so emit `this.pushNumber(-operand.value)` directly. Otherwise fall back to the current `0 - operand` pattern.\n\nThis is a perf/size optimization only \u2014 there are no known correctness failures from the current behavior. Priority: low.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T01:28:24Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

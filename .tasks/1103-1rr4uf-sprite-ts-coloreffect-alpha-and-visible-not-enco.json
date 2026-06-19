@@ -1,0 +1,10 @@
+{
+  "id": "1103-1rr4uf-sprite-ts-coloreffect-alpha-and-visible-not-enco",
+  "title": "sprite.ts: colorEffect, alpha, and visible not encoded for instances/shapes inside symbol timelines",
+  "description": "encodeDefineSprite() in packages/swf/src/sprite.ts emits plain encodePlaceObject2() for all display objects (shape, text, bitmap, instance) regardless of colorEffect, alpha, visible=false, or blendMode properties. For example, a SymbolInstance inside a library symbol that has colorEffect.type='alpha' will render at full opacity in the SWF.\\n\\ncompile.ts handles all of these for scene timelines: colorEffectToCXForm() \u2192 encodePlaceObject2WithCXForm(); visible=false \u2192 zero-alpha CXForm; blendMode \u2192 encodePlaceObject3WithBlendMode(); filters \u2192 encodePlaceObject3WithFilters().\\n\\nFix: mirror compile.ts's PlaceObject2/3 selection logic in sprite.ts's placement pass. At minimum: (1) pass colorEffect/alpha \u2192 CXForm for instances, shapes, and text; (2) encode visible=false as zero-alpha CXForm; (3) pass filters \u2192 PlaceObject3. The compile.ts code at around lines 1997\u20132116 is the reference implementation.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T04:10:16Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

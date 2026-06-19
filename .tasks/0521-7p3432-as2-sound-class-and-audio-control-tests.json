@@ -1,0 +1,8 @@
+{
+  "id": "0521-7p3432-as2-sound-class-and-audio-control-tests",
+  "title": "AS2 Sound class and audio control tests",
+  "description": "Test new Sound(mc), sound.attachSound(id), sound.start(offset, loops), sound.stop(), sound.setVolume(n), sound.getVolume(), sound.onSoundComplete handler. Flash 8 Sound API.",
+  "status": "done",
+  "created_at": "2026-06-09T22:03:04Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

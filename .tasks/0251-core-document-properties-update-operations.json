@@ -1,8 +1,0 @@
-{
-  "id": "0251-core-document-properties-update-operations",
-  "title": "Core: Document properties update operations",
-  "description": "Verify document properties can be updated. Create withProperties(doc, partialProps): FlashDocument that returns a new doc with merged properties. Test: changing fps, backgroundColor, width/height, grid settings, snap settings. Also test that changes are immutable (original doc unchanged). 10+ tests in packages/core/src/engine/__tests__/docprops.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T20:55:34Z",
-  "updated_at": "2026-06-09T20:58:43Z"
-}

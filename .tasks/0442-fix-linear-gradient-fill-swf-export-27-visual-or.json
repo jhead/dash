@@ -1,8 +1,0 @@
-{
-  "id": "0442-fix-linear-gradient-fill-swf-export-27-visual-or",
-  "title": "Fix linear gradient fill SWF export: 27% visual oracle mismatch (over 20% threshold)",
-  "description": "The new visual-oracle E2E fixture 'linear gradient fill renders consistently' (apps/desktop/e2e/visual-oracle.spec.ts) fails with 27% pixel mismatch \u2014 above the 20% threshold.\n\nThe fixture creates a rectangle with a red-to-blue horizontal linear gradient fill and compares CanvasRenderer vs Ruffle output. A 27% mismatch on a simple gradient suggests a coordinate system or color stop encoding issue rather than a complete failure.\n\nLikely causes to investigate:\n1. Gradient matrix / transform encoding: the SWF GRADIENT record's focal point, spread mode, or interpolation mode may differ from what the Canvas renderer uses. Check packages/swf/src/shapes.ts encodeGradient() \u2014 specifically the MATRIX record for the gradient transform (should map the canonical gradient space [-16384, 16384] twips to the shape's bounding box).\n2. Color stop positions off-by-one: SWF gradient color stops use 0-255 range; verify the ratio-to-byte mapping in the encoder.\n3. Spread mode mismatch: if the gradient matrix maps larger than the shape, the spread mode (pad/reflect/repeat) determines edge behavior \u2014 default should be 'pad' (0).\n4. Linear vs radial selection: confirm the SWF GRADIENT fillStyle byte is 0x10 (linear) not 0x12 (radial).\n\nDebug: save attached PNGs from the failing test run. Compare gradient direction and color coverage between CanvasRenderer and Ruffle screenshots.\n\nAcceptance: the linear gradient fixture passes at <= 20% mismatch.",
-  "status": "done",
-  "created_at": "2026-06-09T21:42:15Z",
-  "updated_at": "2026-06-09T22:07:14Z"
-}

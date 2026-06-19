@@ -1,0 +1,10 @@
+{
+  "id": "0818-1ybccl-bandwidth-profiler-per-frame-swf-size-graph",
+  "title": "Bandwidth Profiler \u2014 per-frame SWF size graph",
+  "description": "Add View > Bandwidth Profiler in Test Movie mode showing a bar chart of bytes per frame and simulated download progress at modem speeds. SWF compiler already produces per-frame tag data; add frame-byte accounting and a bar-chart panel.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T12:10:51Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

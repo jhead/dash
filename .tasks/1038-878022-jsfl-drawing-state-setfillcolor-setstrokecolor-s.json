@@ -1,0 +1,10 @@
+{
+  "id": "1038-878022-jsfl-drawing-state-setfillcolor-setstrokecolor-s",
+  "title": "JSFL drawing state: setFillColor, setStrokeColor, setStrokeSize, setStrokeStyle",
+  "description": "Add drawing tool state to packages/authoring-ui/src/jsfl/runtime.ts so scripted shape creation respects color/stroke settings.\n\n1. Add runtime state: _currentFillColor: string = '#000000', _currentStrokeColor: string = '#000000', _currentStrokeSize: number = 1, _currentStrokeStyle: string = 'solid' to the state object (or as local variables in makeDocumentProxy closure).\n\n2. doc.setFillColor(colorString: string): sets _currentFillColor, return void. Flash passes '#RRGGBB' strings.\n\n3. doc.setStrokeColor(colorString: string): sets _currentStrokeColor, return void.\n\n4. doc.setStrokeSize(size: number): sets _currentStrokeSize, return void.\n\n5. doc.setStrokeStyle(style: string): sets _currentStrokeStyle ('solid', 'dashed', etc.), return void.\n\n6. Update addNewOval and addNewRectangle to USE _currentFillColor and _currentStrokeColor when calling createOvalShape/createRectShape (currently they use hardcoded defaults). Pass _currentFillColor as the fill color and _currentStrokeColor + _currentStrokeSize as stroke params.\n\n7. Add getters doc.fillColor, doc.strokeColor, doc.strokeSize so scripts can read back the current state.\n\nAdd all to JsflDocument interface.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T00:11:06Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

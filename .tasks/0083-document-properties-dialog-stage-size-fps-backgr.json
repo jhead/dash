@@ -1,8 +1,0 @@
-{
-  "id": "0083-document-properties-dialog-stage-size-fps-backgr",
-  "title": "Document properties dialog: stage size, FPS, background color",
-  "description": "Ctrl+J opens a modal dialog (DocumentPropertiesDialog.tsx) to edit: Stage Width/Height (px), Frame Rate (fps 1-120), Background Color (color picker), Ruler Units (px/inches/cm/mm/points). On OK: call pushDoc to update doc.properties. Match width is set in properties is constrained to multiples of 1; fractional fps allowed. The dialog should be a centered modal overlay with OK/Cancel buttons. Wire: Modify > Document menu item (Ctrl+J) in MenuBar.tsx, docPropsVisible state in Shell.tsx. The renderer and SWF compiler already read doc.properties.width/height/frameRate/backgroundColor \u2014 no other wiring needed. See docs/01-documents-stage-scenes.md.",
-  "status": "done",
-  "created_at": "2026-06-09T19:17:09Z",
-  "updated_at": "2026-06-09T19:19:59Z"
-}

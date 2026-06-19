@@ -1,0 +1,8 @@
+{
+  "id": "0305-1wi0m8-core-as2-object-and-function-prototype-methods",
+  "title": "Core: AS2 Object and Function prototype methods",
+  "description": "Verify Object and Function prototype methods compile: obj.hasOwnProperty('prop'), obj.isPrototypeOf(proto), obj.toString(), obj.valueOf(), Function.prototype.call(thisObj, arg), Function.prototype.apply(thisObj, args). Also verify typeof, instanceof operators compile to correct opcodes. Tests in packages/core/src/as2/__tests__/objectproto.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:10:21Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

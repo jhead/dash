@@ -1,0 +1,8 @@
+{
+  "id": "0209-9yrcoh-core-shape-tween-interpolation",
+  "title": "Core: Shape tween interpolation",
+  "description": "Implement shape tween interpolation between two keyframes in packages/core/src/model/timeline-query.ts. Flash 8 shape tweens interpolate between matching vertices of two ShapeDisplayObjects. Simple approach: linear interpolation of path vertices (same count), blending x/y coords at t=frameIndex/spanLength. If vertex counts differ, skip interpolation (show start frame). Tests: shape tween at t=0.5 returns midpoint coords, t=0 returns start, t=1 returns end.",
+  "status": "done",
+  "created_at": "2026-06-09T20:40:51Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

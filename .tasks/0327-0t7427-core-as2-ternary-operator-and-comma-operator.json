@@ -1,0 +1,8 @@
+{
+  "id": "0327-0t7427-core-as2-ternary-operator-and-comma-operator",
+  "title": "Core: AS2 ternary operator and comma operator",
+  "description": "Verify AS2 ternary and comma operators compile: x ? a : b, (a, b, c) (comma expression). Also verify compound assignment operators: +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=, >>>=. Tests in packages/core/src/as2/__tests__/operators.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:14:10Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

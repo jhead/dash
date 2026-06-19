@@ -1,0 +1,8 @@
+{
+  "id": "0360-2u2grm-core-as2-sound-class-built-in-methods",
+  "title": "Core: AS2 Sound class built-in methods",
+  "description": "Test AS2 Sound class compilation: var s = new Sound(mc), s.attachSound('id'), s.start(offset, loops), s.stop(), s.setVolume(n), s.getVolume(), s.setPan(n), s.getPan(), s.getBytesLoaded(), s.getBytesTotal(), s.loadSound(url, isStream), s.onLoad = function(){}, s.onSoundComplete = function(){}. Each call should compile without error and emit correct ActionNew (0x4a) / ActionCallMethod (0x52) opcodes.",
+  "status": "done",
+  "created_at": "2026-06-09T21:23:31Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

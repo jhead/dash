@@ -1,0 +1,8 @@
+{
+  "id": "0142-99fkkq-core-paste-in-place",
+  "title": "Core: paste in place (preserve original coordinates)",
+  "description": "Add pasteInPlace(doc, sceneIndex, layerIndex, frameIndex, objects): FlashDocument to packages/core/src/engine/mutations.ts. Flash 8's Edit > Paste in Place pastes objects at their ORIGINAL coordinates (same x/y as when they were copied), unlike regular Paste which centers at stage. The clipboard (from 0068/clipboard-ops) currently pastes at center \u2014 add a variant that skips the centering offset. Also add copyWithPosition() that records absolute position alongside the clipboard. Add 5 tests in __tests__/pasteInPlace.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:04:32Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

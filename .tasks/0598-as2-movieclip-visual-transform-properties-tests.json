@@ -1,8 +1,0 @@
-{
-  "id": "0598-as2-movieclip-visual-transform-properties-tests",
-  "title": "AS2 MovieClip visual transform properties tests",
-  "description": "Tests for MC transform properties: mc._visible, mc._alpha (0-100), mc._xscale/yscale, mc._rotation (-180 to 180), mc._width/_height (read), mc._x/_y, mc._xmouse/_ymouse (read-only), mc._parent, mc._root, mc._level.",
-  "status": "done",
-  "created_at": "2026-06-09T22:25:07Z",
-  "updated_at": "2026-06-09T22:28:19Z"
-}

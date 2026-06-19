@@ -1,8 +1,0 @@
-{
-  "id": "0633-core-layer-visibility-toggle-and-outline-mode-te",
-  "title": "Core layer visibility toggle and outline mode tests",
-  "description": "Test setLayerVisible, setLayerLocked, setLayerOutlineMode, toggleLayerLock pure functions. Verify immutability (return new timeline), bulk toggle helpers, getVisibleLayers filter.",
-  "status": "done",
-  "created_at": "2026-06-09T22:37:26Z",
-  "updated_at": "2026-06-09T22:40:04Z"
-}

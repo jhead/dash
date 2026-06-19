@@ -1,8 +1,0 @@
-{
-  "id": "0373-core-as2-array-built-in-methods-slice-splice-ind",
-  "title": "Core: AS2 Array built-in methods (slice, splice, indexOf, sort)",
-  "description": "Test compilation of Array methods: arr.slice(start, end), arr.splice(start, count), arr.splice(start, count, item1), arr.indexOf(item), arr.lastIndexOf(item), arr.sort(), arr.sort(fn), arr.sortOn('field'), arr.sortOn(['f1','f2']), arr.every(fn), arr.some(fn), arr.filter(fn), arr.map(fn). All should compile without error. Verify ActionCallMethod (0x52) + method name string in bytecode.",
-  "status": "done",
-  "created_at": "2026-06-09T21:26:10Z",
-  "updated_at": "2026-06-09T21:27:28Z"
-}

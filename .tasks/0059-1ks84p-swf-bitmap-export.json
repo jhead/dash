@@ -1,0 +1,8 @@
+{
+  "id": "0059-1ks84p-swf-bitmap-export",
+  "title": "SWF bitmap export: real DefineBitsLossless2/JPEG2 instead of gray placeholders",
+  "description": "Imported bitmaps publish as gray placeholder rectangles (compile.ts:246-259, acknowledged TODO) and are skipped entirely inside sprites (sprite.ts:126), so Test Movie does not reflect imported artwork even though import/stage placement (0024) and FLA asset storage (0033) work. Decode the library item dataUri, emit DefineBitsLossless2 (PNG/GIF) or DefineBitsJPEG2 (JPEG) plus a shape with a clipped-bitmap fill referencing the character, and place that. Honor allowSmoothing and compressionType from BitmapItem. Note 0031 was marked done but this gap remained. See docs/09-bitmaps-imported-artwork.md, docs/15.",
+  "status": "done",
+  "created_at": "2026-06-09T18:06:35Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

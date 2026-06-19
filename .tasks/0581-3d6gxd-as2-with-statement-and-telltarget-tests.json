@@ -1,0 +1,8 @@
+{
+  "id": "0581-3d6gxd-as2-with-statement-and-telltarget-tests",
+  "title": "AS2 with statement and tellTarget tests",
+  "description": "Tests for with() statement: with(mc) { x=0; y=0; } compiles to ActionWith (0x94). Also tellTarget() legacy: tellTarget('path') { startDrag(); }. Both should emit correct AVM1 opcodes.",
+  "status": "done",
+  "created_at": "2026-06-09T22:19:55Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

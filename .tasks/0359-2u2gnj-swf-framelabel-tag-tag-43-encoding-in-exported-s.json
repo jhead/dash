@@ -1,0 +1,8 @@
+{
+  "id": "0359-2u2gnj-swf-framelabel-tag-tag-43-encoding-in-exported-s",
+  "title": "SWF: FrameLabel tag (tag 43) encoding in exported SWF",
+  "description": "Test that keyframes with non-empty .label fields produce FrameLabel (tag 43) records in the SWF byte stream. Verify: (1) tag type 43, (2) label string stored as null-terminated ASCII, (3) correct placement order relative to PlaceObject2 tags. Also test that label with labelType='anchor' emits FrameLabel2 (tag 43 with extra byte 0x01) per SWF spec.",
+  "status": "done",
+  "created_at": "2026-06-09T21:23:31Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

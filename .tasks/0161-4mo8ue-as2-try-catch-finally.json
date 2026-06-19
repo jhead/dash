@@ -1,0 +1,8 @@
+{
+  "id": "0161-4mo8ue-as2-try-catch-finally",
+  "title": "AS2: try/catch/finally",
+  "description": "Implement try/catch/finally in the AS2 compiler (packages/core/src/as2/compiler.ts). AVM1 uses ActionTry (0x8F) which has: catchInRegister flag, catchTarget (register # or variable name), tryBody, catchBody, finallyBody \u2014 all backpatched sizes. Read packages/core/src/as2/compiler.ts to see if ActionTry is handled. If not, implement compileTryCatchStmt: emit ActionTry header, compile tryBody, compile catchBody (bind error to catch var), compile finallyBody. Add tests.",
+  "status": "done",
+  "created_at": "2026-06-09T20:16:29Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

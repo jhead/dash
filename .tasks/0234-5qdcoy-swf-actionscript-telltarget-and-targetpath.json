@@ -1,0 +1,8 @@
+{
+  "id": "0234-5qdcoy-swf-actionscript-telltarget-and-targetpath",
+  "title": "SWF: ActionScript tellTarget and targetPath",
+  "description": "Verify tellTarget/targetPath compile correctly. tellTarget(target) { ... } compiles to ActionWith (0x94). _root._name compiles as property path access. Tests: tellTarget compiles and contains 0x94, _root access compiles, _parent access compiles, /movieclip:property dot notation compiles.",
+  "status": "done",
+  "created_at": "2026-06-09T20:50:00Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

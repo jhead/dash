@@ -1,0 +1,10 @@
+{
+  "id": "0937-53740w-fla-binary-import-as2-classname-not-decoded-from",
+  "title": "FLA binary import: AS2 className not decoded from CPicPage afterData",
+  "description": "DONE \u2014 className was already decoded as part of task 0874 (commit 3f979de). flash8-binary.ts reads className from the writeAsLinkage block in the Contents stream (s.end+41 offset, BomString sequence: linkageIdentifier, linkageURL, className). Fla8SymbolInfo.className is forwarded to SymbolLinkage.className via createSymbolLinkage() in flash8-import.ts line 1309. Three unit tests cover this in flash8-import.test.ts (lines 1355-1385). The CLAUDE.md note that 'className is NOT in the Contents stream' was written before 0874 was filed; it lives in the writeAsLinkage block of the Contents stream, not CPicPage afterData.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:05:10Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

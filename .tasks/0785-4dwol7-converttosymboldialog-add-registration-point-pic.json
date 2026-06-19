@@ -1,0 +1,10 @@
+{
+  "id": "0785-4dwol7-converttosymboldialog-add-registration-point-pic",
+  "title": "ConvertToSymbolDialog: add registration point picker (3x3 anchor grid)",
+  "description": "The Convert to Symbol dialog (packages/authoring-ui/src/ConvertToSymbolDialog.tsx) only has Name and Type fields. Flash 8 shows a 3\u00d73 grid of 9 anchor positions (top-left, top-center, top-right, center-left, center, center-right, bottom-left, bottom-center, bottom-right) that determines where the symbol's registration point (0,0 in symbol-local space) is placed relative to the selected content's bounding box. Currently the dialog always passes no registration info and handleConvertToSymbolConfirm (Shell.tsx:2128) hard-codes center placement (avgX/avgY). The MCP agent registry tool library_convert_to_symbol already accepts a registration param, showing the model supports it. Scope: (1) Add a 9-button registration grid UI to ConvertToSymbolDialog (compact 3\u00d73 pixel-art style, highlight selected, default=top-left to match Flash 8 default), (2) extend the onConfirm callback signature to pass registration: \"topLeft\"|\"topCenter\"|...|\"bottomRight\", (3) update handleConvertToSymbolConfirm in Shell.tsx to compute the correct symbol origin offset for the chosen registration position (e.g. topLeft places origin at bounding box top-left so all objects are offset by -minX, -minY; center places origin at bounding box center). Acceptance: creating a symbol with registration=top-left places the instance such that its (0,0) aligns with the original content's top-left corner; center registration preserves current behavior.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T10:00:33Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

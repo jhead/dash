@@ -1,0 +1,10 @@
+{
+  "id": "1153-0qr43a-jsfl-fl-gettimer-not-implemented-throws-typeerro",
+  "title": "JSFL fl.getTimer() not implemented \u2014 throws TypeError",
+  "description": "fl.getTimer() is missing from both the JsflFl TypeScript interface and the makeFlProxy implementation in packages/authoring-ui/src/jsfl/runtime.ts. Any JSFL script calling fl.getTimer() throws TypeError: fl.getTimer is not a function. Flash 8 JSFL defines fl.getTimer() to return milliseconds elapsed since IDE start \u2014 a common pattern for timing loops. Fix: capture _startTime = Date.now() at top of makeFlProxy, add getTimer(): number to the JsflFl interface, and implement it as Date.now() - _startTime in the returned proxy object.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T09:53:10Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0190-swf-doinitaction-for-symbol-initialization",
-  "title": "SWF: DoInitAction for symbol initialization",
-  "description": "Symbols with linkage.exportForActionScript=true and a className should emit DoInitAction (tag 59) in frame 1 to register the class: DoInitAction body = AS2 bytecode for Object.registerClass('ClassName', ClassName). Check packages/swf/src/compile.ts for 'DoInitAction', 'tag 59', 'registerClass'. If already implemented, add tests. If missing, implement it: after ExportAssets, for each exported symbol with className, emit DoInitAction with Object.registerClass bytecode.",
-  "status": "done",
-  "created_at": "2026-06-09T20:30:36Z",
-  "updated_at": "2026-06-09T20:32:53Z"
-}

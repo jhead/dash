@@ -1,0 +1,10 @@
+{
+  "id": "0898-44yocg-as2-compiler-actionconstantpool-auto-emit-for-sc",
+  "title": "AS2 compiler: ActionConstantPool auto-emit for scripts over ~20 unique strings to reduce SWF size and prevent Ruffle push-limit warnings",
+  "description": "Task 0879 (in_progress) is tackling this for simple cases. This task is the full story: the AS2 compiler currently pushes ALL strings inline via ActionPush, even when a script has dozens of repeated string constants. Flash Professional always emits ActionConstantPool (0x88) for any script with >= ~5 unique string values.\n\nRuffle handles inline pushes fine, but:\n- Published SWFs are significantly larger (each string repeated verbatim)\n- Some real Flash content decompilers assume the pool exists\n- When ActionConstantPool index references exceed 255, Ruffle issues warnings\n\nThe compiler's string-pool infrastructure exists (see compiler.ts around line 547: 'pool is shared with all sub-compilers so at least one string to pool'). What is missing is the threshold-based auto-promotion: if a DoAction/DoInitAction block accumulates >= N unique strings, emit ActionConstantPool at the top and replace inline strings with pool-index pushes.\n\nNote: coordinate with task 0879 to avoid duplicate work; this task is for the broader auto-emit policy, not the base infrastructure.",
+  "status": "done",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-10T18:11:48Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

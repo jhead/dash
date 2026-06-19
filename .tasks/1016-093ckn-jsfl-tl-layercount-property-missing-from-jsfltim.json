@@ -1,0 +1,10 @@
+{
+  "id": "1016-093ckn-jsfl-tl-layercount-property-missing-from-jsfltim",
+  "title": "JSFL: tl.layerCount property missing from JsflTimeline",
+  "description": "In packages/authoring-ui/src/jsfl/runtime.ts, the JsflTimeline interface (line 403+) has frameCount (line 407) and layers array (line 408) but lacks a layerCount property. Flash 8 JSFL uses tl.layerCount to get the number of layers. Fix: add 'readonly layerCount: number' to the JsflTimeline interface, and add a getter in makeTimelineProxy() that returns the layers array length (equivalent to tl.layers.length). 2-3 lines total.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T23:29:09Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

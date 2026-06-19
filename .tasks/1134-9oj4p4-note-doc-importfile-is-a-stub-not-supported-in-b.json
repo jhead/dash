@@ -1,0 +1,10 @@
+{
+  "id": "1134-9oj4p4-note-doc-importfile-is-a-stub-not-supported-in-b",
+  "title": "note: doc.importFile is a stub \u2014 not supported in browser context",
+  "description": "In packages/authoring-ui/src/jsfl/runtime.ts, `doc.importFile(fileURL, importToLibrary)` is a stub that only logs a console warning:\n\n```ts\nimportFile(_fileURL: string, _importToLibrary?: boolean): void {\n  console.warn('doc.importFile: not supported in browser context');\n}\n```\n\n**Impact:** Any JSFL script that calls `fl.getDocumentDOM().importFile(url)` to import bitmaps, sounds, or other assets into the document will silently do nothing. This affects automated workflows and JSFL-driven authoring scripts.\n\n**Scope for a real implementation:** For the browser/Electron context, the implementation would need to:\n1. Accept a file URL or path\n2. Load the file (bitmap/sound/video) as binary data\n3. Add it to the document library as the appropriate item type (BitmapItem/SoundItem/etc.)\n\nThis is a known limitation. If JSFL-driven asset import is needed for the capstone or agent workflows, this needs to be implemented.\n\n**Priority:** Low unless a specific workflow needs it; file as a known gap.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T08:00:22Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

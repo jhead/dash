@@ -1,0 +1,10 @@
+{
+  "id": "0864-6k9kj7-startsound2-tag-89-missing-named-sound-class-eve",
+  "title": "StartSound2 (tag 89) missing \u2014 named sound class events broken",
+  "description": "Tag 89 (StartSound2) is absent from tags.ts and the compile path. All frame-sound emission uses StartSound (tag 15, by charId). StartSound2 triggers a sound by its linkage class name rather than character ID and is needed for attachSound/sound class linkage. Add tag 89 to tags.ts and add emission in compile.ts alongside StartSound.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T15:58:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

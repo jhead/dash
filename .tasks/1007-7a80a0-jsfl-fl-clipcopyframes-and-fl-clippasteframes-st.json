@@ -1,0 +1,10 @@
+{
+  "id": "1007-7a80a0-jsfl-fl-clipcopyframes-and-fl-clippasteframes-st",
+  "title": "JSFL: fl.clipCopyFrames and fl.clipPasteFrames stubs missing",
+  "description": "The fl object in packages/authoring-ui/src/jsfl/runtime.ts (makeFlProxy ~line 1345) does not expose clipCopyFrames() or clipPasteFrames(). In Flash 8 JSFL these copy/paste clip properties (position, scale, rotation, alpha, filters, blendMode etc.) across keyframes \u2014 different from frame-clipboard operations. Fix: add clipCopyFrames(startFrame, endFrame, keyframeArray) and clipPasteFrames(startFrame, keyframeArray) stubs to both the JsflFl interface and the proxy. For now, stubs can log a warning and return undefined. Priority: low.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T23:14:24Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0595-01x4zs-as2-setinterval-clearinterval-and-timer-tests",
+  "title": "AS2 setInterval clearInterval and timer tests",
+  "description": "Tests for timer functions: setInterval(fn, ms), setInterval(obj, 'method', ms), clearInterval(id), setTimeout(fn, ms), clearTimeout(id). Verify they compile and emit correct AVM1. Also _global.setInterval pattern.",
+  "status": "done",
+  "created_at": "2026-06-09T22:25:07Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

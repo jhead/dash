@@ -1,0 +1,10 @@
+{
+  "id": "0746-55vsws-canvas-preview-for-bevel-gradientglow-gradientbe",
+  "title": "Canvas preview for Bevel, GradientGlow, GradientBevel, and AdjustColor filters",
+  "description": "The FiltersPanel and SWF encoder support all 7 Flash 8 filters, but the authoring-stage canvas renderer (packages/core/src/engine/renderer.ts applyFilters()) silently skips four of them:\\n- BevelFilter \u2014 explicitly commented 'not yet rendered'\\n- GradientGlowFilter \u2014 not handled\\n- GradientBevelFilter \u2014 not handled\\n- AdjustColorFilter (Brightness/Contrast/Saturation/Hue) \u2014 not handled\\n\\nOnly BlurFilter, DropShadowFilter, and GlowFilter produce visible results in the authoring canvas. Authors setting any of the four unrendered filters get no feedback until they publish.\\n\\nScope:\\n1. AdjustColor: apply a CSS filter string (brightness/contrast/saturate/hue-rotate) or a manual pixel-level color-matrix pass using an offscreen canvas. CSS filters: brightness(b) contrast(c) saturate(s) hue-rotate(h). Map Flash -100..100/hue -180..180 to CSS percentages/degrees.\\n2. Bevel: approximate with two ctx.shadowColor passes (highlight above-left, shadow below-right) similar to how drop-shadow works.\\n3. GradientGlow / GradientBevel: approximate with a single ctx.shadowColor using the first/last gradient stop colors and the filter's blurX/Y/distance/angle params.\\n\\nAll approximations are acceptable \u2014 exact per-pixel fidelity is a stretch goal; the goal is that authors get recognizable visual feedback. The SWF output is already correct (filters.ts encodes all 7 filter IDs properly).\\n\\nAcceptance: manual test \u2014 place a shape with each of the 4 filter types, verify the authoring canvas shows a visible change (not identical to the shape with no filter applied).",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T07:05:25Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0452-6b0wq2-swf-framelabel-tag-43-and-doinitaction-tag-59-en",
+  "title": "SWF FrameLabel tag 43 and DoInitAction tag 59 encoding",
+  "description": "Test FrameLabel (tag 43) emitted when frame.label is set, DoInitAction (tag 59) emitted for symbol linkage exportInFirstFrame. Both are in the main timeline tag stream.",
+  "status": "done",
+  "created_at": "2026-06-09T21:46:26Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

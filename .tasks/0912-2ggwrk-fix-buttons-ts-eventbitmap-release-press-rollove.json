@@ -1,0 +1,10 @@
+{
+  "id": "0912-2ggwrk-fix-buttons-ts-eventbitmap-release-press-rollove",
+  "title": "Fix buttons.ts eventBitMap: release/press/rollOver bit values are all wrong",
+  "description": "eventBitMap values corrected in buttons.ts (verified: rollOver=0x0001, press=0x0004, release=0x0008, etc). pnpm --filter @flash/swf run test -- --run: 1210 passed.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T20:07:08Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

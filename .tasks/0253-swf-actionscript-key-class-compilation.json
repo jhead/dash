@@ -1,8 +1,0 @@
-{
-  "id": "0253-swf-actionscript-key-class-compilation",
-  "title": "SWF: ActionScript Key class compilation",
-  "description": "Verify Key class AS2 usage compiles. Key.isDown(code), Key.getCode(), Key.getAscii(), Key.addListener(l), Key.removeListener(l), Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.ENTER, Key.SPACE (constant access). Tests in packages/core/src/as2/__tests__/keyclass.test.ts: all compile without error.",
-  "status": "done",
-  "created_at": "2026-06-09T20:56:49Z",
-  "updated_at": "2026-06-09T20:59:01Z"
-}

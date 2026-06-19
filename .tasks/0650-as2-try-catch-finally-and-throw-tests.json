@@ -1,8 +1,0 @@
-{
-  "id": "0650-as2-try-catch-finally-and-throw-tests",
-  "title": "AS2 try/catch/finally and throw tests",
-  "description": "Test try/catch/finally blocks with Error objects, throw new Error('msg'), throw custom objects, nested try blocks, re-throw, finally always runs. Verify correct AVM1 ActionTry/ActionThrow opcodes emitted.",
-  "status": "done",
-  "created_at": "2026-06-09T22:42:03Z",
-  "updated_at": "2026-06-09T22:44:48Z"
-}

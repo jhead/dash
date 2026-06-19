@@ -1,8 +1,0 @@
-{
-  "id": "0627-swf-definemorphshape2-shape-tween-encoding",
-  "title": "SWF DefineMorphShape2 shape tween encoding",
-  "description": "Test compileDocument emits DefineMorphShape2 (tag 84) for shape-tweened layers. Verify start/end shape records present, LINESTYLE2 data preserved, tag 84 not legacy tag 46.",
-  "status": "done",
-  "created_at": "2026-06-09T22:36:14Z",
-  "updated_at": "2026-06-09T22:38:24Z"
-}

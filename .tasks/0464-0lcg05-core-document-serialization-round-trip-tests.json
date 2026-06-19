@@ -1,0 +1,8 @@
+{
+  "id": "0464-0lcg05-core-document-serialization-round-trip-tests",
+  "title": "Core document serialization round-trip tests",
+  "description": "Test saveFla() + loadFla() round-trip: document properties, scenes, library items, bitmap assets. Verify deserialized doc is deep-equal to original.",
+  "status": "done",
+  "created_at": "2026-06-09T21:49:46Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

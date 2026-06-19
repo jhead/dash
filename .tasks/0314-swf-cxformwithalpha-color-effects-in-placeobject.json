@@ -1,8 +1,0 @@
-{
-  "id": "0314-swf-cxformwithalpha-color-effects-in-placeobject",
-  "title": "SWF: CXFormWithAlpha color effects in PlaceObject2",
-  "description": "Unit tests for color effect encoding in SWF PlaceObject2 tags. Create a SymbolInstance with colorEffect: {type:'tint', tintColor:'#FF0000', tintMultiplier:0.5}, export to SWF, verify PlaceObject2 has HasColorTransform flag and CXFormWithAlpha encodes the correct multiplier/add values. Tests in packages/swf/src/__tests__/colorxform.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:11:52Z",
-  "updated_at": "2026-06-09T21:14:31Z"
-}

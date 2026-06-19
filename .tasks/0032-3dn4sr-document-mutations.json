@@ -1,0 +1,8 @@
+{
+  "id": "0032-3dn4sr-document-mutations",
+  "title": "Document-level mutations (scenes, properties)",
+  "description": "Add pure model helpers to packages/core for document-level operations: addScene, removeScene, renameScene, reorderScenes, duplicateScene (on FlashDocument). Also updateDocumentProperties (returns new FlashDocument with merged properties), updateGridSettings, addGuide, removeGuide, moveGuide. Export from packages/core/src/index.ts. No UI changes \u2014 pure model/core only. See docs/01-documents-stage-scenes.md.",
+  "status": "done",
+  "created_at": "2026-06-09T17:47:46Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

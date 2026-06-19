@@ -1,8 +1,0 @@
-{
-  "id": "0475-core-display-object-z-order-management",
-  "title": "Core display object z-order management",
-  "description": "Test moveDisplayObjectUp, moveDisplayObjectDown, moveDisplayObjectToTop, moveDisplayObjectToBottom utilities \u2014 each returns updated Frame with reordered displayObjects array.",
-  "status": "done",
-  "created_at": "2026-06-09T21:52:16Z",
-  "updated_at": "2026-06-09T21:55:20Z"
-}

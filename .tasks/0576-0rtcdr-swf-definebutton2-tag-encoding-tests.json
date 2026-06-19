@@ -1,0 +1,8 @@
+{
+  "id": "0576-0rtcdr-swf-definebutton2-tag-encoding-tests",
+  "title": "SWF DefineButton2 tag encoding tests",
+  "description": "Tests for DefineButton2 (tag 34): ButtonId UI16, ReservedFlags, TrackAsMenu flag, ActionOffset UI16, button records (ButtonRecord type with state flags HitTest/Down/Over/Up), condition action records.",
+  "status": "done",
+  "created_at": "2026-06-09T22:17:54Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

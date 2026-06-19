@@ -1,8 +1,0 @@
-{
-  "id": "0031-swf-export-bitmaps-filters-text",
-  "title": "SWF export: bitmaps, filters, text",
-  "description": "Extend SWF compiler to emit BitmapDisplayObject as DefineBitsLossless2 + PlaceObject2, FlashFilter effects as SWF filter tags (DefineShape4 filter list, DropShadowFilter/GlowFilter/BlurFilter SWF structs), and TextDisplayObject as DefineText/DefineEditText tags. Requires extending packages/swf/src/compile.ts and adding new encoder files. See docs/14-publishing-export.md and docs/15-file-formats-fla-swf.md.",
-  "status": "done",
-  "created_at": "2026-06-09T17:43:08Z",
-  "updated_at": "2026-06-09T17:46:12Z"
-}

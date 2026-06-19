@@ -1,8 +1,0 @@
-{
-  "id": "0492-as2-error-class-and-custom-error-subclasses-test",
-  "title": "AS2 Error class and custom error subclasses tests",
-  "description": "Test new Error('msg'), Error.message, Error.name properties. Custom error: class MyError extends Error { function MyError(msg) { super(msg); } }. ActionThrow + ActionTry verification.",
-  "status": "done",
-  "created_at": "2026-06-09T21:57:11Z",
-  "updated_at": "2026-06-09T21:58:15Z"
-}

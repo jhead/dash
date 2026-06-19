@@ -1,8 +1,0 @@
-{
-  "id": "0039-color-utilities",
-  "title": "Color utilities: CSS parsing, mixing, conversion",
-  "description": "Pure color utility functions in packages/core/src/engine/color-utils.ts: cssToColor(css: string): Color (parse #rrggbb, #rgb, rgba(), rgb()), colorToCss(c: Color): string, mixColors(a, b, t): Color (linear blend), lighten/darken/saturate/desaturate helpers, toHSV/fromHSV, toHSL/fromHSL. Export from packages/core/src/engine/index.ts. No UI. See docs/05-color-strokes-fills.md.",
-  "status": "done",
-  "created_at": "2026-06-09T17:55:28Z",
-  "updated_at": "2026-06-09T17:58:21Z"
-}

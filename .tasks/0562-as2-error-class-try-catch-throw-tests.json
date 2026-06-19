@@ -1,8 +1,0 @@
-{
-  "id": "0562-as2-error-class-try-catch-throw-tests",
-  "title": "AS2 Error class try catch throw tests",
-  "description": "Tests for Error class: new Error(msg), error.message, error.name, throw new Error(), throw custom class, try/catch/finally block structure, error instanceof checks, AS2 AVM1 ActionTry (0x8f) and ActionThrow (0x2a) bytecode.",
-  "status": "done",
-  "created_at": "2026-06-09T22:14:28Z",
-  "updated_at": "2026-06-09T22:16:06Z"
-}

@@ -1,0 +1,10 @@
+{
+  "id": "0882-1gow5v-fla-import-text-field-instance-coloreffect-not-f",
+  "title": "FLA import: text-field instance colorEffect not forwarded to TextDisplayObject",
+  "description": "In flash8-import.ts text element branch (~line 739), the colorEffect read by readCPicSymbolBaseFields is not passed to TextDisplayObject. Instance-level tint/brightness/advanced color effects on text fields are silently lost on FLA import. Fix: call toColorEffect(el.colorEffect) and set colorEffect on the TextDisplayObject.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T17:13:44Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0594-7o9su6-core-library-item-duplication-and-symbol-edit-te",
+  "title": "Core library item duplication and symbol edit tests",
+  "description": "Tests for library operations: duplicateLibraryItem(library, itemId), editSymbol(library, symbolId, mutator), addBitmapItem(library, item), removeBitmapItem(library, itemId), library item count predicates by type.",
+  "status": "done",
+  "created_at": "2026-06-09T22:23:16Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

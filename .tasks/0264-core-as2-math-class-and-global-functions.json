@@ -1,8 +1,0 @@
-{
-  "id": "0264-core-as2-math-class-and-global-functions",
-  "title": "Core: AS2 Math class and global functions",
-  "description": "Verify AS2 Math class and global functions compile: Math.abs, Math.ceil, Math.floor, Math.round, Math.sqrt, Math.pow, Math.min, Math.max, Math.random, Math.PI, Math.E, Math.sin, Math.cos, Math.atan2, Math.log. Global: parseInt(), parseFloat(), isNaN(), isFinite(), Number(), Boolean(), typeof operator. Tests in packages/core/src/as2/__tests__/mathglobals.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:01:33Z",
-  "updated_at": "2026-06-09T21:03:11Z"
-}

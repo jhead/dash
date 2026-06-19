@@ -1,0 +1,10 @@
+{
+  "id": "1085-5zn4ph-jsfl-insertframes-removeframes-only-operates-on",
+  "title": "JSFL insertFrames/removeFrames only operates on active layer, not all selected layers",
+  "description": "In runtime.ts, insertFrames(n, fi) calls insertFrame only on the current layer (getActiveLayerId()). Flash's timeline.insertFrames() simultaneously inserts frames on all selected layers to keep them synchronized. After calling insertFrames, all non-active layers remain out of sync, desynchronizing multi-layer content. Fix: apply frame insertion across all selected layers (or all layers) in a single mutation.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T02:49:34Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

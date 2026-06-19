@@ -1,8 +1,0 @@
-{
-  "id": "0618-fla-serialization-round-trip-tests",
-  "title": "FLA serialization round-trip tests",
-  "description": "Test saveFla/loadFla round-trip fidelity: all layer types, timeline, library items (bitmap/sound), multi-scene docs. Verify document properties, frame scripts, button actions survive zip+unzip.",
-  "status": "done",
-  "created_at": "2026-06-09T22:33:26Z",
-  "updated_at": "2026-06-09T22:36:53Z"
-}

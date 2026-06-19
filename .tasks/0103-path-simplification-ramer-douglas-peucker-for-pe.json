@@ -1,8 +1,0 @@
-{
-  "id": "0103-path-simplification-ramer-douglas-peucker-for-pe",
-  "title": "Path simplification: Ramer-Douglas-Peucker for pencil tool smoothing",
-  "description": "Freehand pencil drawing produces paths with too many anchor points. Add a path simplification step in packages/core/src/engine/shapes.ts using the Ramer-Douglas-Peucker algorithm: (1) Add simplifyPath(points: Array<{x:number,y:number}>, epsilon: number): Array<{x:number,y:number}> function that reduces the number of points while preserving shape; (2) Add smoothPath(path: ShapePath): ShapePath that converts sharp-corner line segments to quadratic bezier curves using Catmull-Rom spline approximation \u2014 this gives the pencil tool its characteristic smooth look; (3) Wire simplifyPath+smoothPath into the pencil tool output \u2014 after a pencil stroke finishes, apply simplifyPath(pts, 2.0) then smoothPath to the path before creating the shape; (4) Add a createSimplifiedPencilShape(points, fill, stroke) helper that applies both transforms. Add tests in packages/core/src/engine/__tests__/simplify.test.ts: verify simplifyPath removes collinear points, verify epsilon=0 removes nothing, verify a diagonal line with intermediate collinear points reduces to 2 points, verify smoothPath produces curve segments. Only touches packages/core/src/engine/ \u2014 no authoring-ui changes.",
-  "status": "done",
-  "created_at": "2026-06-09T19:33:18Z",
-  "updated_at": "2026-06-09T19:35:22Z"
-}

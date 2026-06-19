@@ -1,0 +1,10 @@
+{
+  "id": "1005-1sowp5-core-model-setframelabel-missing-labeltype-param",
+  "title": "core model: setFrameLabel missing labelType parameter",
+  "description": "packages/core/src/model/timeline.ts setFrameLabel() (lines 501-517) only accepts label: string and always leaves labelType unchanged (it spreads whatever was there). There is no way to set labelType on a frame via any timeline function after creation. Fix: add an optional labelType parameter to setFrameLabel(timeline, layerId, frameIndex, label, labelType?) that updates the frame's labelType field. The SWF compiler already encodes anchor labels correctly when the model field is set (compile.ts lines 2318-2342). Ensure the new parameter is also exported from model barrel (packages/core/src/model/index.ts) and used in the JSFL setFrameProperty handler (task 1004).",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T23:10:08Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

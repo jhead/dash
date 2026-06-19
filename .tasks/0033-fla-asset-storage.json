@@ -1,8 +1,0 @@
-{
-  "id": "0033-fla-asset-storage",
-  "title": "FLA asset storage (bitmaps & sounds in zip)",
-  "description": "Improve FLA zip to store BitmapItem/SoundItem data URIs as separate binary entries (assets/bitmaps/<id>.png, assets/sounds/<id>.mp3) instead of inline in document.json. Update saveFla to extract asset data and write as zip entries; update loadFla to reconstitute dataUri fields from zip entries. Keeps document.json small and avoids base64 bloat. Only touches packages/core/src/fla/. See docs/15-file-formats-fla-swf.md.",
-  "status": "done",
-  "created_at": "2026-06-09T17:48:51Z",
-  "updated_at": "2026-06-09T17:49:48Z"
-}

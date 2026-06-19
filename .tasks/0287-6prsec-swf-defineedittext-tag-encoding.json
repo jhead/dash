@@ -1,0 +1,8 @@
+{
+  "id": "0287-6prsec-swf-defineedittext-tag-encoding",
+  "title": "SWF: DefineEditText tag encoding",
+  "description": "Unit tests for DefineEditText (tag 37) encoding in packages/swf. A TextDisplayObject on stage should produce a DefineEditText tag in the SWF output. Verify tag type 37, correct bounds, font ID reference, and text content in the tag body. Tests in packages/swf/src/__tests__/edittextag.test.ts. Check packages/swf/src/compile.ts for existing DefineEditText handling.",
+  "status": "done",
+  "created_at": "2026-06-09T21:06:19Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

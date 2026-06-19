@@ -1,0 +1,10 @@
+{
+  "id": "0957-055s04-fla-import-library-folder-structure-hardcoded-em",
+  "title": "FLA import: library folder structure hardcoded empty \u2014 not decoded from binary",
+  "description": "In flash8-import.ts, the library output is always { items, folders: [] } \u2014 the folders array is hardcoded empty. The model already supports LibraryFolder with id/name/parentFolderId. The FLA binary likely encodes folder structure in the Contents stream. Fix: in flash8-binary.ts, examine the Contents stream parsing code to find where library folder groups are stored (they may be encoded as a special stream entry type or as part of the item list). Decode folder entries and return them via Fla8Contents. In flash8-import.ts, convert them to LibraryFolder objects.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:44:52Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

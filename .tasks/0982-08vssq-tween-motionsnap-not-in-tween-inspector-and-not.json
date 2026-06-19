@@ -1,0 +1,10 @@
+{
+  "id": "0982-08vssq-tween-motionsnap-not-in-tween-inspector-and-not",
+  "title": "Tween: motionSnap not in tween inspector and not applied in getTweenedFrame",
+  "description": "The motionSnap field is decoded from FLA binary (flash8-binary.ts line 2549) but: (1) the tween inspector in Timeline.tsx (line 1963) has no Snap checkbox, and (2) getTweenedFrame in timeline-query.ts (line 229) ignores it. Fix: (1) add a Snap checkbox to the tween inspector that toggles kf.motionSnap, (2) in getTweenedFrame when traversing a motion guide path, if motionSnap=true clamp t to exactly 0.0 at the start frame and 1.0 at the end frame of the span.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T22:20:43Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

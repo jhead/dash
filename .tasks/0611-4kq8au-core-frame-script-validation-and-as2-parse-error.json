@@ -1,0 +1,8 @@
+{
+  "id": "0611-4kq8au-core-frame-script-validation-and-as2-parse-error",
+  "title": "Core frame script validation and AS2 parse error reporting tests",
+  "description": "Tests for frame script validation: validateFrameScript(script) returns null for valid AS2, returns error info {line, col, message} for syntax errors. Test common errors: unclosed braces, missing semicolons, undefined reference detection.",
+  "status": "done",
+  "created_at": "2026-06-09T22:28:38Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

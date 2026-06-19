@@ -1,0 +1,10 @@
+{
+  "id": "0829-2qaomg-view-menu-quality-modes-outlines-fast-anti-alias",
+  "title": "View menu quality modes \u2014 Outlines / Fast / Anti-alias toggles",
+  "description": "Wire viewMode state setter in Shell.tsx (currently frozen at 'normal') to View menu items: Outlines, Fast, Anti-alias, Anti-alias Text. StageArea already supports these modes; they just need menu items with checkmarks and a Shell handler.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T12:55:00Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

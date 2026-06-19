@@ -1,0 +1,8 @@
+{
+  "id": "0094-7cw8g0-swf-verification-harness",
+  "title": "SWF verification harness: parse-back oracle + trace-based Ruffle runtime tests",
+  "description": "Layer 1 of docs/18-verification-and-automation.md. Builds on 0090 (done), which added integration tests using a self-written tag-header parser inside the test file \u2014 i.e. the encoder still grades its own homework at the record level. This story adds INDEPENDENT oracles in a new workspace package packages/swf-verify: (1a) Parse-back \u2014 decode every published SWF with a third-party decoder (swf-parser npm as primary; JPEXS FFDec CLI optional in CI only) and assert on the fully-decoded tag tree (style fields, matrices, frame counts, balanced place/remove depths); migrate/extend 0090s cases onto it. A decode error like failed-to-fill-whole-buffer fails with byte offset \u2014 catches the 0047/0067 bug class structurally. (1b) Trace-based runtime tests, Ruffle-regression-suite style: author docs whose frame scripts trace() assertions, publish, load in the vendored @ruffle-rs/ruffle inside headless Playwright, capture trace output, compare to expected.txt \u2014 verifies AVM1 (0055/0066/0080/0082/0085), timeline control, display-list semantics as pure text. Also establish the fixtures/docs/*.json corpus (one serialized FlashDocument per feature axis: each fill type, cap/join combo, gradients, text, bitmap, sound, sprite, tween span, multi-layer, mask). Wire pnpm verify:swf (no browser) and pnpm verify:runtime under root pnpm verify. Subsumes the test-harness half of 0067 (the LINESTYLE2 fix itself stays in 0067). See docs/18 Layer 1.",
+  "status": "done",
+  "created_at": "2026-06-09T19:27:17Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

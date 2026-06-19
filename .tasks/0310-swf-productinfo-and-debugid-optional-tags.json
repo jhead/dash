@@ -1,8 +1,0 @@
-{
-  "id": "0310-swf-productinfo-and-debugid-optional-tags",
-  "title": "SWF: ProductInfo and DebugId optional tags",
-  "description": "Flash 8 SWF export can include ProductInfo (tag 41) and DebugId (tag 63) tags. Check if compile.ts emits them. Write tests in packages/swf/src/__tests__/productinfo.test.ts verifying: (1) SWF compiles without error; (2) if ProductInfo tag exists, its body is non-empty; (3) document these optional tags with todos if not yet emitted.",
-  "status": "done",
-  "created_at": "2026-06-09T21:11:07Z",
-  "updated_at": "2026-06-09T21:12:19Z"
-}

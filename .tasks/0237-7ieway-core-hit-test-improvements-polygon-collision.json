@@ -1,0 +1,8 @@
+{
+  "id": "0237-7ieway-core-hit-test-improvements-polygon-collision",
+  "title": "Core: Hit test improvements (polygon collision)",
+  "description": "Improve packages/core/src/engine/hittest.ts hitTestPoint to use actual polygon ray-casting for ShapeDisplayObjects instead of just AABB. For a ShapePath with line segments, use point-in-polygon ray casting. For text and symbol instances, keep AABB. Tests: a point inside a triangle returns true, a point outside returns false, a point on the edge returns correct result.",
+  "status": "done",
+  "created_at": "2026-06-09T20:51:23Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

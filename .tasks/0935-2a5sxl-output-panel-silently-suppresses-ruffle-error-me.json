@@ -1,0 +1,10 @@
+{
+  "id": "0935-2a5sxl-output-panel-silently-suppresses-ruffle-error-me",
+  "title": "Output panel silently suppresses Ruffle ERROR messages \u2014 critical SWF errors not visible to user",
+  "description": "Cherry-picked 0866054 to main. ruffleLogFilter.ts forwards ERROR/WARN; 7 player tests pass.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T20:42:46Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

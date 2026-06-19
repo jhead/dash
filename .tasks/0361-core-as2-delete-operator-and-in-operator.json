@@ -1,8 +1,0 @@
-{
-  "id": "0361-core-as2-delete-operator-and-in-operator",
-  "title": "Core: AS2 delete operator and in operator",
-  "description": "Test compilation of: (1) delete obj.prop \u2014 should emit ActionDeleteMember or ActionDelete2; (2) delete arr[i] \u2014 array element deletion; (3) 'key' in obj \u2014 ActionEnumerate2 or membership test; (4) for..in loop: for (var k in obj) \u2014 emits ActionEnumerate2 (0x55) + ActionNextMember (0x19); (5) delete local variable: delete x. Document which opcodes are actually emitted by the compiler.",
-  "status": "done",
-  "created_at": "2026-06-09T21:23:31Z",
-  "updated_at": "2026-06-09T21:27:04Z"
-}

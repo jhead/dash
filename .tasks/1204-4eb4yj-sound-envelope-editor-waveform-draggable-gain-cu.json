@@ -1,0 +1,10 @@
+{
+  "id": "1204-4eb4yj-sound-envelope-editor-waveform-draggable-gain-cu",
+  "title": "Sound envelope editor: waveform + draggable gain curve, trim, channels",
+  "description": "Implement the Edit Envelope sound editor per docs/10-sound.md. DONE. (1) Modal editor (SoundEnvelopeEditDialog.tsx) shows the decoded audio waveform behind two independent L/R gain curves with draggable nodes (click band to add, drag to move amplitude, right-click interior node to remove). (2) In/Out trim markers + time-zoom (1x/2x/4x/8x) with horizontal scroll slider; zoom changes only the view, not stored values. (3) Envelope persists on SoundLinkage.customEnvelope (SoundEnvelopePoint[] pos44/leftLevel/rightLevel) via Shell.handleEnvelopeConfirm. (4) Encoded at publish into SWF SoundInfo (HasEnvelope) by packages/swf compiler (frames.ts/sprite.ts -> sounds.ts). New pure-TS RIFF/WAVE PCM peak decoder: packages/core/src/audio/waveform.ts (8/16/24/32-bit PCM + IEEE float); MP3/AAC fall back to flat placeholder. Tests GREEN: @flash/core audio waveform 7/7; @flash/authoring-ui soundEnvelopeDialog 8/8 (665 total pass); @flash/swf soundinfo+startsound+sound 86/86; typecheck core+authoring-ui pass; full builds green. Only pre-existing failures are the 3 missing-fixtures/flash8-empty.fla suites (task 1207, out of scope).",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-18T23:09:58Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

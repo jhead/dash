@@ -1,8 +1,0 @@
-{
-  "id": "0236-remove-stale-ci-skip-guard-from-jsfl-spec-ts",
-  "title": "Remove stale CI skip guard from jsfl.spec.ts",
-  "description": "apps/desktop/e2e/jsfl.spec.ts line 3 has: test.skip(!!process.env.CI, 'skip until fully wired')\n\nThis skip was added before the JSFL bridge was implemented. Task 0097 (JSFL scripting subset) is now done and all 3 JSFL tests pass locally. The skip guard is stale and will silently suppress all JSFL e2e tests the moment any CI environment is wired up.\n\nFix: remove line 3 entirely. Then verify the three JSFL tests still pass:\n  cd apps/desktop && pnpm e2e -- e2e/jsfl.spec.ts\n\nThe visual-oracle skip (visual-oracle.spec.ts line 178) is intentional \u2014 Ruffle WASM is not yet set up for CI \u2014 and should be left in place.",
-  "status": "done",
-  "created_at": "2026-06-09T20:50:22Z",
-  "updated_at": "2026-06-09T20:53:30Z"
-}

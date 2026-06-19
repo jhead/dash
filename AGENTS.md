@@ -168,28 +168,60 @@ export TASK_AGENT_ID="cursor-$(hostname)"
 
 Add `--json` to `list` or `show` for machine-readable output.
 
+`show`/`update`/`delete`/`acquire`/`release`/`renew` accept either the **full id** or any
+**unambiguous prefix** (e.g. the bare number `1217`, or a leading substring). If a bare
+prefix matches more than one task the command **fails loudly and lists the matches** — it
+never silently acts on the wrong task. Cite the full id in commits when ambiguity is
+possible.
+
+## ID scheme & concurrency guarantees
+
+Task IDs and filenames are `<NNNN>-<TOKEN>-<slug>` (e.g.
+`1217-77w0co-shape-geometry-golden-parity-regression`):
+
+- **`NNNN`** — a zero-padded, monotonically-increasing **sequence hint**. Human-friendly,
+  sortable, and the number you cite in commits ("task 1217"). It is a *hint*, not the
+  uniqueness authority.
+- **`TOKEN`** — a 6-char collision-resistant base36 token (millisecond timestamp + random;
+  always starts with a digit). This is what makes ids unique.
+- **`slug`** — the title-derived slug. `--id` sets the slug portion only.
+
+**Why a token (task 1206).** Agents run in **independent git worktrees**, each with its own
+`.tasks/.counter` and `.mutex`. A per-file lock only serializes creates *within one
+worktree*; two worktrees read the same committed counter and mint the **same `NNNN`** →
+duplicate ids that collided when the worktrees merged to `main` (this produced the 1213/1217,
+1201, 1211/1212 collisions). There is no shared lock across worktrees at create time, so a
+pure counter can never be collision-free here. The `TOKEN` guarantees uniqueness even when
+two worktrees pick the same `NNNN`: the full ids differ, the filenames differ, and the two
+task files merge cleanly with **no git conflict and no duplicate**.
+
+**Guarantee.** N concurrent `./task create` calls — in one worktree or across many — always
+produce N distinct ids. `./task list` stays sorted by `NNNN` (then full id), preserving the
+human-friendly numeric ordering. Proven by `tools/task-concurrency.test.py`
+(`pnpm test:task`).
+
+`./task migrate` upgrades any legacy `NNNN-slug` task (and resolves duplicate-prefix
+collisions) to the `NNNN-TOKEN-slug` scheme. It is **idempotent / re-runnable**: already-
+tokenized tasks are left untouched (stable ids), tokens for legacy tasks are derived
+deterministically from immutable task data, and no task's data/status/history is lost.
+
 ## Storage layout
 
 ```
 .tasks/
-  <NNNN>-<slug>.json   # task record (tracked in git); NNNN = auto-increment id
-  .counter             # next auto-increment number (tracked in git)
+  <NNNN>-<TOKEN>-<slug>.json   # task record (tracked in git)
+  .counter                     # per-worktree sequence-hint counter (tracked in git)
   locks/
-    <NNNN>-<slug>/
-      meta.json        # runtime lock metadata (gitignored)
-  .mutex               # runtime global lock file (gitignored)
+    <NNNN>-<TOKEN>-<slug>/
+      meta.json                # runtime lock metadata (gitignored)
+  .mutex                       # runtime global lock file (gitignored)
 ```
-
-Task IDs and filenames always use a **4-digit auto-increment prefix** plus a slug
-(e.g. `0007-stage-view-mvp`). `./task create` assigns the next number automatically;
-`--id` sets the slug portion only. Legacy tasks without a prefix can be fixed with
-`./task migrate`.
 
 Task JSON shape:
 
 ```json
 {
-  "id": "0007-stage-view-mvp",
+  "id": "0007-3kq1az-stage-view-mvp",
   "title": "Stage MVP",
   "description": "Minimal stage: canvas, zoom, pan. See docs/01-documents-stage-scenes.md",
   "status": "open",
@@ -204,7 +236,7 @@ Lock metadata (written by `acquire`, not edited manually):
 
 ```json
 {
-  "task_id": "0007-stage-view-mvp",
+  "task_id": "0007-3kq1az-stage-view-mvp",
   "holder": "cursor-my-machine",
   "pid": 12345,
   "hostname": "my-machine",

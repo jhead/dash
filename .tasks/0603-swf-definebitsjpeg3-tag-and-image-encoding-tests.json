@@ -1,8 +1,0 @@
-{
-  "id": "0603-swf-definebitsjpeg3-tag-and-image-encoding-tests",
-  "title": "SWF DefineBitsJPEG3 tag and image encoding tests",
-  "description": "Tests for DefineBitsJPEG3 (tag 35): CharacterId UI16, AlphaDataOffset UI32, JPEG data bytes + alpha (zlib-compressed). Verify when compressionType='photo' BitmapItem uses tag 35 not tag 36. Test CharID is non-zero and output is valid.",
-  "status": "done",
-  "created_at": "2026-06-09T22:26:57Z",
-  "updated_at": "2026-06-09T22:30:36Z"
-}

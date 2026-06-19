@@ -1,8 +1,0 @@
-{
-  "id": "0024-bitmap-import",
-  "title": "Bitmap import & stage placement",
-  "description": "File > Import to Library: open PNG/JPEG/GIF file dialog, convert to BitmapItem in library (data URI). Drag from library to stage creates BitmapDisplayObject. Render bitmap on stage canvas using ctx.drawImage. Store BitmapDisplayObject in frame displayObjects. See docs/09-bitmaps-imported-artwork.md. Depends on symbols-library-mvp, stage-shape-rendering.",
-  "status": "done",
-  "created_at": "2026-06-09T17:34:44Z",
-  "updated_at": "2026-06-09T17:44:00Z"
-}

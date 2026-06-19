@@ -1,0 +1,8 @@
+{
+  "id": "0160-4mo824-as2-switch-statement",
+  "title": "AS2: switch statement",
+  "description": "The AS2 compiler (packages/core/src/as2/compiler.ts) may lack switch/case support. In AVM1, switch compiles using jump tables or if-else chains. Implement switch compilation: compileSwitchStmt should iterate cases, emit comparison pushes + conditional jumps, with break handled via backpatched jumps. Handle default case. Add unit tests in packages/core/src/as2/__tests__/switch.test.ts covering: single case, multiple cases, default case, fall-through (no break), break within case, nested switch.",
+  "status": "done",
+  "created_at": "2026-06-09T20:16:29Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

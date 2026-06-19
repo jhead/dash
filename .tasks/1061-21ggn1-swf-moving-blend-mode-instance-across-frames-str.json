@@ -1,0 +1,10 @@
+{
+  "id": "1061-21ggn1-swf-moving-blend-mode-instance-across-frames-str",
+  "title": "SWF: moving blend-mode instance across frames strips blend mode (PO2 Move)",
+  "description": "In compile.ts, the posChanged update branch for type='instance' (around lines 2245-2294) has no hasBlend check. It emits either encodePlaceObject2WithCXForm (if colorEffect present) or encodePlaceObject2Move \u2014 both PO2 tags with no blend mode field \u2014 stripping the blend mode after any frame-to-frame position/scale/rotation change. The blend mode is visible on frame 1 (isFirst path correctly uses PO3) but disappears on frame 2+ when the object moves. Fix: add a hasBlend check in the posChanged instance branch and emit a PO3 Move tag (add a move=true or isMove flag to encodePlaceObject3WithBlendMode in filters.ts, or create a new variant).",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T01:38:04Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

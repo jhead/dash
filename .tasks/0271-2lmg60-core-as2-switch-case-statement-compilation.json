@@ -1,0 +1,8 @@
+{
+  "id": "0271-2lmg60-core-as2-switch-case-statement-compilation",
+  "title": "Core: AS2 switch/case statement compilation",
+  "description": "Verify AS2 switch/case compiles correctly to AVM1 bytecode. switch(x) { case 1: break; case 2: break; default: } should compile using ActionStrictEquals (0xAC) comparisons and branch jumps. Test fall-through (no break), string cases, and nested switch. Tests in packages/core/src/as2/__tests__/switchcase.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:03:07Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

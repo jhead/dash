@@ -1,0 +1,10 @@
+{
+  "id": "1090-5rvsyb-filter-add-mcp-tool-throws-for-gradientglow-grad",
+  "title": "filter_add MCP tool throws for gradientGlow/gradientBevel/colorMatrix types",
+  "description": "In registry.ts, the filter_add tool's parameter signature lists 'gradientGlow', 'gradientBevel', 'colorMatrix' as valid types, but the implementation only handles 'dropshadow', 'blur', 'glow', 'bevel'. The three missing constructors (defaultGradientGlow, defaultGradientBevel, defaultAdjustColor) already exist and are exported from @flash/core. Fix: add three else-if branches for the missing filter types.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T03:09:37Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0417-6m7kd7-swf-defineshape4-tag-tag-83-fill-and-stroke-styl",
+  "title": "SWF: DefineShape4 tag (tag 83) fill and stroke styles",
+  "description": "Test that a ShapeDisplayObject with fill produces DefineShape4 (tag 83) with correct FillStyleArray. Verify: (1) solid fill style type=0x00 with RGB color bytes, (2) no fill \u2192 no FillStyle record, (3) stroke (line style) with width and color encoded as UI16 thickness + RGB, (4) FillStyleCount > 0 for filled shapes, (5) ShapeHasNewStyles bit set for DefineShape4.",
+  "status": "done",
+  "created_at": "2026-06-09T21:34:14Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

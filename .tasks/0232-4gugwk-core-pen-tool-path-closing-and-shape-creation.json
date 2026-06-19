@@ -1,0 +1,8 @@
+{
+  "id": "0232-4gugwk-core-pen-tool-path-closing-and-shape-creation",
+  "title": "Core: Pen tool path closing and shape creation",
+  "description": "Verify the pen tool state machine in packages/core/src/engine/pentool.ts. Specifically test: closePenPath creates a closed ShapePath, penStateToShapePath produces a valid ShapeDisplayObject, adding 3+ anchor points produces correct cubic bezier curves, smooth vs corner points produce different handle angles. Add 10+ tests in packages/core/src/engine/__tests__/pentool.test.ts if they don't already exist.",
+  "status": "done",
+  "created_at": "2026-06-09T20:49:01Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

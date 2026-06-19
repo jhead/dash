@@ -1,0 +1,8 @@
+{
+  "id": "0096-7cw8t2-renderer-ruffle-visual-oracle",
+  "title": "Visual cross-check oracle: stage CanvasRenderer vs Ruffle rendering of published SWF",
+  "description": "Layer 3 of docs/18-verification-and-automation.md. For each fixture document and frame N: render via authoring CanvasRenderer to PNG, publish via compileDocument and render the same frame in Ruffle (headless Playwright), perceptual-diff (pixelmatch/odiff) with tuned threshold \u2014 agreement between the two independent renderers is the oracle, no hand-maintained golden images. Disagreement = stage lied or export lied (the Test-Movie-does-not-match-stage bug class). Determinism: software GL in CI (swiftshader / Ruffle canvas renderer fallback), fixed viewport, devicePixelRatio 1, report mismatch percentage. Scope initially to shapes/gradients/transforms/tween frames; exclude text and filters via per-fixture flags until FlashType/filter parity work. On failure write actual-stage.png, actual-ruffle.png, diff.png artifacts. Reuses the layer-1 fixture corpus. Wire pnpm verify:visual (CI + on demand). Build AFTER swf-verification-harness and authoring-automation-bridge are green. See docs/18 Layer 3.",
+  "status": "done",
+  "created_at": "2026-06-09T19:27:17Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

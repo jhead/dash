@@ -1,0 +1,8 @@
+{
+  "id": "0321-5s5szd-core-layer-crud-operations-add-delete-reorder-re",
+  "title": "Core: Layer CRUD operations (add, delete, reorder, rename)",
+  "description": "Unit tests for layer management operations beyond what already exists. Test: addLayer at specific index (not just end), deleteLayer that is a folder (with children), reorderLayer across folder boundaries, renameLayer idempotent update. Tests in packages/core/src/engine/__tests__/layer-advanced-crud.test.ts. Use functions from packages/core/src/engine/layers.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:13:22Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

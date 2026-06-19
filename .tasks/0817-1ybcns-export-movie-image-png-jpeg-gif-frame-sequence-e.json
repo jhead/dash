@@ -1,0 +1,10 @@
+{
+  "id": "0817-1ybcns-export-movie-image-png-jpeg-gif-frame-sequence-e",
+  "title": "Export Movie/Image \u2014 PNG/JPEG/GIF frame-sequence export",
+  "description": "Add File > Export Movie (image sequence, animated GIF) and File > Export Image (current frame to PNG/JPEG) to MenuBar and Shell. GPU render engine already draws frames; main work is wiring frame iteration \u2192 canvas \u2192 file encoder.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T12:10:51Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

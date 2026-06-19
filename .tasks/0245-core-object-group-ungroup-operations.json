@@ -1,8 +1,0 @@
-{
-  "id": "0245-core-object-group-ungroup-operations",
-  "title": "Core: Object group/ungroup operations",
-  "description": "Verify groupObjects and ungroupObjects in packages/core/src/engine/ work correctly. groupObjects: wraps selected objects in a GroupDisplayObject (or converts to a symbol). ungroupObjects: expands a group back to individual objects. Tests: grouping 2 shapes creates a group, ungrouping restores the 2 shapes with correct positions, immutability. 10+ tests.",
-  "status": "done",
-  "created_at": "2026-06-09T20:53:12Z",
-  "updated_at": "2026-06-09T20:55:56Z"
-}

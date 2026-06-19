@@ -1,8 +1,0 @@
-{
-  "id": "0457-swf-exportassets-tag-56-and-importassets2-tag-71",
-  "title": "SWF ExportAssets tag 56 and ImportAssets2 tag 71 encoding",
-  "description": "Test ExportAssets (tag 56) emitted for symbols with exportForActionScript=true and linkageIdentifier set. ImportAssets2 (tag 71) emitted for importForRuntimeSharing symbols.",
-  "status": "done",
-  "created_at": "2026-06-09T21:48:26Z",
-  "updated_at": "2026-06-09T21:50:04Z"
-}

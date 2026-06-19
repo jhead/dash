@@ -1,0 +1,8 @@
+{
+  "id": "0687-30woi7-bug-symbol-instance-not-selectable-on-stage-afte",
+  "title": "Bug: symbol instance not selectable on stage after Convert to Symbol",
+  "description": "Fixed: added getSymbolInstanceBounds() helper in StageArea.tsx, widened single-click hit-test to include type=instance and type=text. Also auto-selects new instance after Convert to Symbol in Shell.tsx. 174/174 unit tests pass. Commit a441424.",
+  "status": "done",
+  "created_at": "2026-06-10T00:03:51Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

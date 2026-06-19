@@ -1,0 +1,8 @@
+{
+  "id": "0080-0quogu-as2-class-declarations-class-extends-super-this",
+  "title": "AS2 class declarations: class/extends/super/this compiler support",
+  "description": "The AS2 compiler (packages/core/src/as2/compiler.ts) handles functions and basic statements but not class declarations. Add Flash 8 AS2 class support: (1) class Foo { } \u2014 compiles to a constructor function + prototype assignments; (2) class Foo extends Bar { } \u2014 sets up prototype chain (Foo.prototype = new Bar()); (3) method declarations compile to Foo.prototype.methodName = function(...) { ... }; (4) this keyword in instance methods refers to the object; (5) super() call in constructor chains to parent constructor; (6) static method declarations (static function foo(){}) compile to Foo.foo = function(){...}; (7) public/private keywords are parsed but ignored (AS2 doesn't enforce them at runtime). The compiler should emit AVM1 bytecode sequences for all of the above. Add tests in packages/core/src/as2/__tests__/classes.test.ts covering each case. Only touches packages/core/src/as2/ \u2014 no authoring-ui changes.",
+  "status": "done",
+  "created_at": "2026-06-09T19:09:42Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0144-swf-background-color-scenes",
-  "title": "SWF: SetBackgroundColor consistent across multi-scene documents",
-  "description": "Verify that SetBackgroundColor (tag 9) is emitted exactly once per SWF (in the first frame), not once per scene. Also verify: if doc.properties.backgroundColor changes between test documents, the compiled SWF contains the correct RGB value. Check compile.ts: find where SetBackgroundColor is emitted and ensure it's not duplicated in subsequent scenes. Add 4 tests in __tests__/backgroundcolor.test.ts: (1) one SetBackgroundColor per doc, (2) correct RGB bytes, (3) multi-scene doc has only one tag, (4) white background encodes correctly.",
-  "status": "done",
-  "created_at": "2026-06-09T20:04:32Z",
-  "updated_at": "2026-06-09T20:07:48Z"
-}

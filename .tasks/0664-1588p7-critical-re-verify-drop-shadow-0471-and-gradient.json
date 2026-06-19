@@ -1,0 +1,8 @@
+{
+  "id": "0664-1588p7-critical-re-verify-drop-shadow-0471-and-gradient",
+  "title": "CRITICAL: re-verify drop-shadow (0471) and gradient (0442) closures with a real visual-oracle run",
+  "description": "Oracle run completed 2026-06-09. All 9 Visual oracle tests pass (9 passed, 0 failed). Drop-shadow filter test: PASSED (mismatch < 20% threshold \u2014 no screenshot artifacts attached, confirming pass). Linear gradient fill test: PASSED (gradient-debug spec confirmed mismatch = 0/220000 = 0.0000%). The FIXED16 fix in commit 1179962 (filters.ts encoding BlurX/BlurY/Angle/Distance as writeFixed16 not writeFloat) is confirmed working. Full E2E suite: 64 passed, 6 failed (unrelated: flash-agent CLI x3, agent-mcp x2, interactivity 0663 x1).",
+  "status": "done",
+  "created_at": "2026-06-09T22:46:11Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

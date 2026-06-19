@@ -1,8 +1,0 @@
-{
-  "id": "0358-core-as2-stage-and-key-class-built-ins",
-  "title": "Core: AS2 Stage and Key class built-ins",
-  "description": "Test compilation of Stage class: Stage.width, Stage.height, Stage.align, Stage.scaleMode, Stage.addListener(obj), Stage.removeListener(obj). Test Key class: Key.isDown(code), Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.ENTER, Key.SPACE, Key.SHIFT. Test Mouse class: Mouse.hide(), Mouse.show(). All should compile without error and emit ActionGetVariable (0x1c) + ActionGetMember (0x4f) for property access.",
-  "status": "done",
-  "created_at": "2026-06-09T21:23:31Z",
-  "updated_at": "2026-06-09T21:25:43Z"
-}

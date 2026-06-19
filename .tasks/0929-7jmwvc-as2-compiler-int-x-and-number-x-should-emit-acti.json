@@ -1,0 +1,10 @@
+{
+  "id": "0929-7jmwvc-as2-compiler-int-x-and-number-x-should-emit-acti",
+  "title": "AS2 compiler: int(x) and Number(x) should emit ActionToInteger/ActionToNumber not ActionCallFunction",
+  "description": "In compiler.ts, int(x) and Number(x) fall through to generic ActionCallFunction (0x3D) which does a global function lookup at runtime. Flash Professional emits native AVM1 type-coercion opcodes instead: int(x) \u2192 ActionToInteger (0x18), Number(x) \u2192 ActionToNumber (0x30). Fix: in compileCallExpression, detect CallExpression with callee=Identifier('int') and emit: compile arg + ActionToInteger (0x18). Same for Number(x) \u2192 ActionToNumber (0x30). Note: Math.round(x) and Math.floor(x) are separate \u2014 only bare int() and Number() coercion calls are affected.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T20:39:05Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "1104-4ffkcf-as2-compiler-loadmovie-and-loadmovienum-push-url",
+  "title": "AS2 compiler: loadMovie() and loadMovieNum() push url and target in wrong order",
+  "description": "In packages/core/src/as2/compiler.ts, the loadMovie() and loadMovieNum() builtins push their stack arguments in the wrong order for ActionGetURL2 (0x9A).\\n\\nRuffle's action_get_url_2 pops target_val FIRST (from top of stack), then url_val SECOND (below). So the correct stack layout is [url (deeper), target (top)].\\n\\nCurrent loadMovie implementation:\\n  compileExpr(args[1])  // target \u2014 pushed first, goes deeper\\n  compileExpr(args[0])  // url \u2014 pushed second, on top\\n  \u2192 stack: [target, url] with url on top\\n  \u2192 ActionGetURL2 interprets: target=url, url=target (WRONG)\\n\\nFix for loadMovie: push args[0] (url) first, args[1] (target) second:\\n  compileExpr(args[0])  // url first (deeper)\\n  compileExpr(args[1])  // target second (top)\\n\\nFor loadMovieNum(url, level): the computed '_level'+level target string is built first (deeper) and url is pushed second (top). Same bug \u2014 the url and target are swapped. Fix: compute the level target string AFTER pushing url:\\n  compileExpr(args[0])  // url first\\n  pushString('_level'); compileExpr(args[1]); emit(ActionAdd2)  // target on top\\n\\nNote: getURL(url, window) has the CORRECT order (url pushed first, window on top) since window maps to target in ActionGetURL2.\\n\\nThe existing test in packages/core/src/as2/__tests__/loadmovie.test.ts only checks that ActionGetURL2 is emitted, not the stack layout.",
+  "status": "cancelled",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T04:12:20Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

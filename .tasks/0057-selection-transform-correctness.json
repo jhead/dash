@@ -1,8 +1,0 @@
-{
-  "id": "0057-selection-transform-correctness",
-  "title": "Fix selection transform pipeline: center-based scale/rotate, transformed bounds",
-  "description": "Transform math contradicts the renderer, so rotate/resize makes shapes orbit/leap away (StageArea.tsx:1046-1095): stage-drawn shapes have absolute path coords with obj.x=obj.y=0, and the renderer applies translate/rotate/scale about the stage ORIGIN (renderer.ts:410-424), but the rotate handle computes angles about the bounds center and resize assumes in-place scaling. Also shapeBounds ignores scaleX/scaleY/rotation entirely (engine/shapes.ts), so selection box, handles, and hit-testing desync from the rendered shape after any transform. Define transform-about-center semantics (or bake a registration point), make bounds/hit-testing transform-aware, and ensure publish carries the resulting matrix (0042 added MATRIX support). Distort/Envelope modes remain 0030 scope. See docs/04-toolbox.md Free Transform.",
-  "status": "done",
-  "created_at": "2026-06-09T18:06:35Z",
-  "updated_at": "2026-06-09T18:34:44Z"
-}

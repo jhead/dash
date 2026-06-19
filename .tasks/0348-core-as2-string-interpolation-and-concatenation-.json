@@ -1,8 +1,0 @@
-{
-  "id": "0348-core-as2-string-interpolation-and-concatenation-",
-  "title": "Core: AS2 string interpolation and concatenation patterns",
-  "description": "Verify AS2 string operations compile efficiently: string concatenation with +, string + number coercion, multi-part string build via multiple + operators, String(n) conversion, str += 'more'. ActionAdd2 (0x47) should be emitted. Tests in packages/core/src/as2/__tests__/stringops.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:19:20Z",
-  "updated_at": "2026-06-09T21:22:02Z"
-}

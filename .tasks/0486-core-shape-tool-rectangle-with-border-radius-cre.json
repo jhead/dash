@@ -1,8 +1,0 @@
-{
-  "id": "0486-core-shape-tool-rectangle-with-border-radius-cre",
-  "title": "Core shape tool: rectangle with border-radius creation",
-  "description": "Test createRoundedRectShape() utility: creates a ShapeDisplayObject with rounded corner path data, correct bounding box, fill and stroke properties.",
-  "status": "done",
-  "created_at": "2026-06-09T21:54:49Z",
-  "updated_at": "2026-06-09T21:59:06Z"
-}

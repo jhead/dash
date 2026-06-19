@@ -1,8 +1,0 @@
-{
-  "id": "0672-as2-button-event-wiring-compile-tests",
-  "title": "AS2 Button event wiring compile tests",
-  "description": "Test on(press){} on(release){} on(rollOver){} on(rollOut){} on(dragOver){} on(dragOut){} on(releaseOutside){} each produce correct BUTTONCONDACTION event bits in AVM1 bytecode when compiled as button timeline scripts.",
-  "status": "done",
-  "created_at": "2026-06-09T22:47:48Z",
-  "updated_at": "2026-06-09T22:51:05Z"
-}

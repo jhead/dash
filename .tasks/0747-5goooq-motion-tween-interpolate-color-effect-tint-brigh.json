@@ -1,0 +1,10 @@
+{
+  "id": "0747-5goooq-motion-tween-interpolate-color-effect-tint-brigh",
+  "title": "Motion tween: interpolate color effect (tint/brightness/alpha/advanced) across keyframes",
+  "description": "Flash 8 motion tweens interpolate not just position/scale/rotation/alpha but also color effects (tint, brightness, advanced color transform) on symbol instances. The current TweenTarget type (packages/core/src/tween/types.ts) only has {x, y, scaleX, scaleY, rotation, alpha} \u2014 tint color and brightness are absent.\\n\\nCurrent behavior: if you put a red-tinted instance on frame 1 and a blue-tinted instance on frame 20 with a motion tween, the tween snaps between the two tints instead of interpolating the RGB components. Only alpha animates through the tween (because it's in TweenTarget).\\n\\nScope:\\n1. Extend TweenTarget to include colorEffect: ColorEffect | null (matching the ColorEffect type in engine/types.ts \u2014 brightness, tint, alpha, advanced).\\n2. In interpolateTween (packages/core/src/tween/interpolate.ts) add interpolation for each color effect variant:\\n   - alpha: lerp the alpha percentage\\n   - tint: lerp tintPercent + lerp R/G/B of tintColor\\n   - brightness: lerp brightness\\n   - advanced: lerp each of the 8 multiplier/offset components\\n3. In displayObjectToTweenTarget (packages/core/src/model/timeline-query.ts) extract colorEffect from SymbolInstance.\\n4. In the tween result reconstruction, apply the interpolated colorEffect back to the SymbolInstance.\\n5. In the SWF compiler (packages/swf/src/compile.ts), emit CXFormWithAlpha from the interpolated colorEffect at each motion-tweened frame \u2014 currently it only emits a static CXForm from the keyframe's colorEffect (line ~1167).\\n\\nAcceptance: a 2-keyframe motion tween between a tinted (red 50%) instance and an untinted instance shows smooth color fade in both the authoring canvas and the published SWF in Ruffle.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T07:05:39Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0154-swf-fileattributes-tag-tag-69",
-  "title": "SWF: FileAttributes tag (tag 69)",
-  "description": "SWF v8+ requires a FileAttributes tag (tag 69) as the very first tag after the SWF header. Without it, Ruffle may treat the SWF as v7. FileAttributes body is a 4-byte flags uint32: bit 0 = UseNetwork (0), bit 3 = HasMetadata (0), bit 4 = ActionScript3 (0 for v8). Emit FileAttributes immediately after the SWF header bytes in packages/swf/src/compile.ts, before SetBackgroundColor. Add a unit test verifying the first tag in the SWF output is tag 69.",
-  "status": "done",
-  "created_at": "2026-06-09T20:13:36Z",
-  "updated_at": "2026-06-09T20:15:02Z"
-}

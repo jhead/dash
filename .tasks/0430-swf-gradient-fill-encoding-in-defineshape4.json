@@ -1,8 +1,0 @@
-{
-  "id": "0430-swf-gradient-fill-encoding-in-defineshape4",
-  "title": "SWF: Gradient fill encoding in DefineShape4",
-  "description": "Test that a ShapeDisplayObject with a gradient fill (linearGradient or radialGradient) produces a DefineShape4 (tag 83) with gradient fill style type 0x10 (linear) or 0x12 (radial). Verify: (1) FillStyle type byte is 0x10 for linear, 0x12 for radial, (2) gradient stops (color/ratio/alpha) appear in body, (3) gradient matrix encoded as SWF MATRIX record after the GRADIENT record.",
-  "status": "done",
-  "created_at": "2026-06-09T21:39:24Z",
-  "updated_at": "2026-06-09T21:41:35Z"
-}

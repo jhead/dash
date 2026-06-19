@@ -1,0 +1,8 @@
+{
+  "id": "0499-1jmw1z-swf-placeobject3-filters-list-encoding-verificat",
+  "title": "SWF PlaceObject3 filters list encoding verification",
+  "description": "Test that PlaceObject3 (tag 70) with multiple filters encodes all filter IDs correctly: FILTER_LIST byte, count byte, then filter ID bytes for DropShadow(0), Blur(1), Glow(2), Bevel(3).",
+  "status": "done",
+  "created_at": "2026-06-09T21:58:17Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

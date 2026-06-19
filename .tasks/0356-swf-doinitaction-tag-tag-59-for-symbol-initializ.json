@@ -1,8 +1,0 @@
-{
-  "id": "0356-swf-doinitaction-tag-tag-59-for-symbol-initializ",
-  "title": "SWF: DoInitAction tag (tag 59) for symbol initialization",
-  "description": "Test that symbols with exportForActionScript=true emit DoInitAction (tag 59) after DefineSprite. DoInitAction body should contain ActionScript bytecode for the symbol's init script (class registration). Verify: (1) tag 59 appears in SWF, (2) it references the correct sprite character ID (SI16 field), (3) the body contains AVM1 opcodes for class setup.",
-  "status": "done",
-  "created_at": "2026-06-09T21:23:31Z",
-  "updated_at": "2026-06-09T21:24:28Z"
-}

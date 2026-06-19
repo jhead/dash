@@ -1,8 +1,0 @@
-{
-  "id": "0284-core-as2-error-class-and-custom-errors",
-  "title": "Core: AS2 Error class and custom errors",
-  "description": "Verify AS2 Error class compiles: new Error('msg'), e.message, e.name. Subclassing: class MyError extends Error { function MyError(m:String) { super(m); this.name = 'MyError'; } }. throw new MyError('oops') in a try/catch. Tests in packages/core/src/as2/__tests__/errorclass.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:05:30Z",
-  "updated_at": "2026-06-09T21:07:06Z"
-}

@@ -1,0 +1,8 @@
+{
+  "id": "0556-4asg8w-as2-math-class-advanced-trigonometry-tests",
+  "title": "AS2 Math class advanced trigonometry tests",
+  "description": "Tests for Math class advanced: Math.sin/cos/tan/asin/acos/atan/atan2, Math.pow, Math.sqrt, Math.exp, Math.log, Math.ceil/floor/round, Math.random, Math.max/min with many args, Math.PI, Math.E constants.",
+  "status": "done",
+  "created_at": "2026-06-09T22:12:52Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

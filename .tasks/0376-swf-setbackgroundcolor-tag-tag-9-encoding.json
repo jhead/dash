@@ -1,8 +1,0 @@
-{
-  "id": "0376-swf-setbackgroundcolor-tag-tag-9-encoding",
-  "title": "SWF: SetBackgroundColor tag (tag 9) encoding",
-  "description": "Test that FlashDocument.properties.backgroundColor produces SetBackgroundColor (tag 9) at the start of the SWF. Verify: (1) tag 9 appears in exported SWF, (2) body is exactly 3 bytes (RGB), (3) white #ffffff \u2192 bytes [0xFF, 0xFF, 0xFF], (4) black #000000 \u2192 bytes [0x00, 0x00, 0x00], (5) red #FF0000 \u2192 bytes [0xFF, 0x00, 0x00], (6) changing backgroundColor changes the tag body.",
-  "status": "done",
-  "created_at": "2026-06-09T21:27:04Z",
-  "updated_at": "2026-06-09T21:28:09Z"
-}

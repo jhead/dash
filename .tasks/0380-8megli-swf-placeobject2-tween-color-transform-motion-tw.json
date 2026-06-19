@@ -1,0 +1,8 @@
+{
+  "id": "0380-8megli-swf-placeobject2-tween-color-transform-motion-tw",
+  "title": "SWF: PlaceObject2 tween color transform (motion tween)",
+  "description": "Test that a layer with motion tween and keyframe color changes produces PlaceObject2 with HasColorTransform flag (0x08) set. Verify: (1) the CXFormWithAlpha is encoded with correct Nbits, (2) multiply values in range [0, 256] use 10-bit fields, (3) add values use signed fields, (4) a fully transparent tween (alpha=0) produces aa_mult=0, (5) normal (no color change) tween has no CXForm.",
+  "status": "done",
+  "created_at": "2026-06-09T21:28:01Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

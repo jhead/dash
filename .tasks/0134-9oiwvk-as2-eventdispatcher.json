@@ -1,0 +1,8 @@
+{
+  "id": "0134-9oiwvk-as2-eventdispatcher",
+  "title": "AS2: EventDispatcher base class and addEventListener compile pattern",
+  "description": "Flash 8 AS2 had mx.events.EventDispatcher as the base class for event handling. Goal: (1) verify the AS2 compiler correctly compiles 'import mx.events.EventDispatcher; class Foo extends EventDispatcher {}' \u2014 this is standard class inheritance, should already work; (2) verify addEventListener/removeEventListener/dispatchEvent method calls compile correctly (these are just ActionCallMethod sequences); (3) add 6 tests in __tests__/eventdispatcher.test.ts verifying that the common EventDispatcher patterns compile without error and emit correct ActionCallMethod opcodes. No runtime implementation needed \u2014 Flash Player provides the actual EventDispatcher.",
+  "status": "done",
+  "created_at": "2026-06-09T19:57:05Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

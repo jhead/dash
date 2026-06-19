@@ -1,8 +1,0 @@
-{
-  "id": "0343-core-as2-event-model-dispatchevent-eventdispatch",
-  "title": "Core: AS2 event model (dispatchEvent, EventDispatcher)",
-  "description": "Verify AS2 EventDispatcher pattern compiles: obj.dispatchEvent({type:'click'}), obj.addEventListener('click', handler), obj.removeEventListener('click', handler), obj.hasEventListener('click'). Also: new mx.events.EventDispatcher(). Tests in packages/core/src/as2/__tests__/eventdispatcher.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:17:52Z",
-  "updated_at": "2026-06-09T21:19:29Z"
-}

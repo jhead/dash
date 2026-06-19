@@ -1,8 +1,0 @@
-{
-  "id": "0593-swf-defineedittext-tag-encoding-field-tests",
-  "title": "SWF DefineEditText tag encoding field tests",
-  "description": "Tests for DefineEditText (tag 37): CharacterID, Bounds RECT, HasText/WordWrap/Multiline/Password/ReadOnly/HasTextColor/HasMaxLength/HasFont/HasLayout/NoSelect/Border/WasStatic/HTML/UseOutlines flags, FontID, FontHeight, InitialText string0.",
-  "status": "done",
-  "created_at": "2026-06-09T22:23:16Z",
-  "updated_at": "2026-06-09T22:27:03Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0294-core-library-item-crud-operations",
-  "title": "Core: Library item CRUD operations",
-  "description": "Unit tests for adding, removing, and updating library items (Symbol, BitmapItem, SoundItem) on a FlashDocument. Look for addLibraryItem / removeLibraryItem / updateLibraryItem in packages/core/src/engine/. If not implemented, add them to packages/core/src/engine/library.ts and export from index.ts. Tests in packages/core/src/engine/__tests__/library-crud.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:07:19Z",
-  "updated_at": "2026-06-09T21:08:53Z"
-}

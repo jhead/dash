@@ -1,8 +1,0 @@
-{
-  "id": "0028-pen-subselection-tool",
-  "title": "Pen tool & subselection (B\u00e9zier paths)",
-  "description": "Pen tool (P): click to add anchor points, drag for handles, close path. Add Anchor (=), Delete Anchor (-), Convert Anchor (C) sub-tools. Subselection tool (A): drag to select anchor points, drag handles to reshape curves. Uses existing quadratic B\u00e9zier CurveSegment in engine. See docs/04-toolbox.md \u00a7Pen.",
-  "status": "done",
-  "created_at": "2026-06-09T17:42:57Z",
-  "updated_at": "2026-06-09T17:54:50Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0387-swf-fileattributes-tag-tag-69-encoding",
-  "title": "SWF: FileAttributes tag (tag 69) encoding",
-  "description": "Test that exported SWF contains FileAttributes (tag 69) as the first tag. Verify: (1) tag 69 appears before any other tags, (2) flags byte has HasMetadata=0, ActionScript3=0, UseDirectBlit=0, UseGPU=0 for a standard Flash 8 SWF, (3) FileAttributes (tag 69) is always 4 bytes body, (4) the tag is present for all exported SWFs regardless of content.",
-  "status": "done",
-  "created_at": "2026-06-09T21:29:34Z",
-  "updated_at": "2026-06-09T21:31:59Z"
-}

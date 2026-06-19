@@ -1,8 +1,0 @@
-{
-  "id": "0316-core-as2-number-formatting-and-conversions",
-  "title": "Core: AS2 Number formatting and conversions",
-  "description": "Verify AS2 Number formatting compiles: n.toString(radix) (binary, hex, octal), n.toFixed(decimals), n.toPrecision(digits), n.toExponential(digits). Also verify Number.MAX_VALUE, Number.MIN_VALUE, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN constants. Tests in packages/core/src/as2/__tests__/numberformat.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:12:39Z",
-  "updated_at": "2026-06-09T21:13:06Z"
-}

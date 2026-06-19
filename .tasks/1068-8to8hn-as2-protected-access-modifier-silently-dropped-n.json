@@ -1,0 +1,10 @@
+{
+  "id": "1068-8to8hn-as2-protected-access-modifier-silently-dropped-n",
+  "title": "AS2: 'protected' access modifier silently dropped (not in keyword list)",
+  "description": "'protected' is not in AS2_KEYWORDS in the tokenizer, so it is emitted as an identifier token. parseClassMember sees an unknown identifier and skips past it (the 'Unknown token \u2014 skip' path), then parses the following var/function declaration on the next iteration with access=null. No error or warning is emitted. Fix: add 'protected' to AS2_KEYWORDS and handle it in parseClassMember the same way 'public'/'private' are handled \u2014 as an access modifier that is stripped (AVM1 ignores access modifiers). Location: packages/core/src/as2/tokenizer.ts line ~22 and packages/core/src/as2/parser.ts line ~331.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T01:55:47Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

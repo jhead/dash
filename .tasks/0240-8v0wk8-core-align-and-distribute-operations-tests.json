@@ -1,0 +1,8 @@
+{
+  "id": "0240-8v0wk8-core-align-and-distribute-operations-tests",
+  "title": "Core: Align and distribute operations tests",
+  "description": "Verify packages/core/src/engine/align.ts alignObjects and distributeObjects work correctly. Tests: alignLeft moves all objects to leftmost edge, alignRight to rightmost, alignTop/Bottom, hCenter/vCenter to center of selection bbox. distributeObjects spaces objects evenly. 12+ tests covering all alignment directions and distribution axes.",
+  "status": "done",
+  "created_at": "2026-06-09T20:52:26Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

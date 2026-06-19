@@ -1,8 +1,0 @@
-{
-  "id": "0667-core-display-object-property-mutation-helpers",
-  "title": "Core display object property mutation helpers",
-  "description": "Implement setInstanceProperty(frame, instanceId, prop, value) and setInstanceTransform(frame, instanceId, transform) pure functions. Tests verify immutability and correct field updates.",
-  "status": "done",
-  "created_at": "2026-06-09T22:46:38Z",
-  "updated_at": "2026-06-09T22:49:45Z"
-}

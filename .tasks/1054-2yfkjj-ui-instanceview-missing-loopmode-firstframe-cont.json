@@ -1,0 +1,10 @@
+{
+  "id": "1054-2yfkjj-ui-instanceview-missing-loopmode-firstframe-cont",
+  "title": "UI: InstanceView missing loopMode/firstFrame controls for graphic symbols",
+  "description": "In packages/authoring-ui/src/PropertiesPanel.tsx, the InstanceView component (lines ~776-979) shows position, size, rotation, blend, colorEffect but has no loopMode or firstFrame fields.\n\nThese fields exist on SymbolInstance in the model. The separate InstancePanel.tsx already renders them for graphic symbols (around lines 423-452).\n\nFix: inside InstanceView, look up the symbol type from the library. The InstanceView already has access to doc (passed as prop). Find the library symbol using obj.symbolId. If the symbol's type is 'graphic', render:\n- A loopMode dropdown/select with options: 'loop', 'play-once', 'single-frame'\n- A firstFrame number input (for 'single-frame' mode, which frame to display)\n\nDispatch updates via updateDisplayObject(doc, layerId, kfIndex, obj.id, { loopMode: newMode }) and updateDisplayObject(..., { firstFrame: newFrame }).\n\nLook at how InstancePanel.tsx renders these controls and replicate the same UI pattern. You may be able to import/reuse the same sub-component if one exists.\n\nRun: pnpm --filter @flash/authoring-ui run test -- --run (must stay at 612)\nCommit: feat(ui): InstanceView loopMode/firstFrame controls for graphic symbol instances",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T00:55:14Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

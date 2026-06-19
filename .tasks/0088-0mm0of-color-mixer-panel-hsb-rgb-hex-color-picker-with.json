@@ -1,0 +1,8 @@
+{
+  "id": "0088-0mm0of-color-mixer-panel-hsb-rgb-hex-color-picker-with",
+  "title": "Color mixer panel: HSB/RGB/hex color picker with alpha",
+  "description": "Add a Flash 8 Color Mixer panel (Window > Color Mixer, Shift+F9). The panel allows selecting fill and stroke colors with fine control. Build ColorMixerPanel.tsx: (1) Stroke/Fill toggle tabs (click to select which color you're editing); (2) Color type dropdown: None, Solid, Linear gradient, Radial gradient, Bitmap; (3) For Solid: RGB sliders (R/G/B 0-255), HSB sliders (H 0-360, S/B 0-100), hex input (#RRGGBB); (4) Alpha slider 0-100% and input; (5) Color preview swatch; (6) Current colors display (fill swatch + stroke swatch with swap button). Wire in Shell.tsx: colorMixerVisible state, current fill/stroke color state (these may already exist as strokeColor/fillColor in Shell.tsx \u2014 check first), pass onFillColorChange/onStrokeColorChange to the panel. The panel updates the active tool's color. Also wire MenuBar Window > Color Mixer (Shift+F9) menu item. See docs/03-drawing-tools.md for color context.",
+  "status": "done",
+  "created_at": "2026-06-09T19:22:03Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

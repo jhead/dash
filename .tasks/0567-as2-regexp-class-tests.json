@@ -1,8 +1,0 @@
-{
-  "id": "0567-as2-regexp-class-tests",
-  "title": "AS2 RegExp class tests",
-  "description": "Tests for RegExp: new RegExp(pattern, flags), /pattern/flags literal, re.test(str), re.exec(str), re.global, re.ignoreCase, re.multiline, re.source, re.lastIndex (stateful), global match with while loop.",
-  "status": "done",
-  "created_at": "2026-06-09T22:16:10Z",
-  "updated_at": "2026-06-09T22:17:37Z"
-}

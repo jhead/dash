@@ -1,0 +1,10 @@
+{
+  "id": "1074-34q0cc-swf-graphic-symbol-single-frame-ratio-ignored-by",
+  "title": "SWF: graphic symbol single-frame ratio ignored by Ruffle MovieClip (use gotoAndStop clip action instead)",
+  "description": "compile.ts correctly encodes the HasRatio field in PlaceObject2 for single-frame graphic symbol instances (ratio = Math.round(firstFrame / (totalFrames-1) * 65535)). However, Ruffle's MovieClip does not implement on_ratio_changed \u2014 it falls back to a no-op default in display_object.rs. So the ratio is stored but never applied; the instance always plays from frame 1 regardless of ratio. Fix: instead of (or in addition to) the ratio field, emit an onClipEvent(load){ gotoAndStop(firstFrame+1); } clip action on the DefineSprite placement. This is a well-known pattern for Flash 8 single-frame graphic symbols. The clip action approach works because gotoAndStop is AVM1 and fires on load. See existing clip-action encoding in compile.ts. Note: check if emitting clip actions on PlaceObject2 for a DefineSprite symbol is supported \u2014 may need PlaceObject3 with HasClipActions.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T02:19:21Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

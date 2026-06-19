@@ -1,0 +1,8 @@
+{
+  "id": "0644-49jkmk-swf-definebitslossless-palette-mode-tests",
+  "title": "SWF DefineBitsLossless palette mode tests",
+  "description": "Test DefineBitsLossless2 (tag 36) for indexed-color (palette mode) bitmaps: 8-bit palette with 1-256 colors, ColorTableSize field, ZLIB-compressed indexed pixel data layout.",
+  "status": "done",
+  "created_at": "2026-06-09T22:40:50Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

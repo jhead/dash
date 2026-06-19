@@ -1,0 +1,8 @@
+{
+  "id": "0060-1ks8d3-text-rendering-fonts",
+  "title": "Text pipeline: stage align/multiline rendering, real font handling in SWF",
+  "description": "Stage side (packages/core/src/engine/renderer.ts:276-316): ctx.textAlign is set from obj.align but text always draws at obj.x (box left edge), so center/right text hangs outside the left of its box \u2014 draw at x+width/2 / x+width; wrapText splits only on spaces so explicit newlines are ignored and multiline/wordWrap flags are unused. SWF side (packages/swf/src/text.ts:117-118): DefineEditText sets HasFont with FontID=0, a dangling reference to a never-defined character \u2014 for MVP use device fonts (UseOutlines=0, font name) or emit a minimal DefineFont2; fontFamily/bold/italic are currently ignored. EditText flag-bit encoding bugs themselves are 0047 scope. See docs/06-text-typography.md.",
+  "status": "done",
+  "created_at": "2026-06-09T18:06:35Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "0733-9t405r-wire-smooth-optimize-path-operations-into-modify",
+  "title": "Wire Smooth / Optimize path operations into Modify > Shape menu",
+  "description": "smoothPath and simplifyPath (optimizePath) exist in packages/core/src/engine/simplify.ts but are not exposed in the UI. Add a 'Modify > Shape' submenu to MenuBar.tsx with: 'Smooth' (applies Chaikin/corner-rounding to selected shape paths) and 'Optimize...' (opens a dialog with a slider for simplification tolerance). Wire them through Shell.tsx \u2192 core functions \u2192 pushDoc. Also consider 'Straighten' if a straighten function exists.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T06:00:36Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

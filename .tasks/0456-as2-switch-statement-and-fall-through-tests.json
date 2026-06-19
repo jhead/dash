@@ -1,8 +1,0 @@
-{
-  "id": "0456-as2-switch-statement-and-fall-through-tests",
-  "title": "AS2 switch statement and fall-through tests",
-  "description": "Test switch/case/default/break compilation: string switch, numeric switch, fall-through behavior, empty cases, nested switch.",
-  "status": "done",
-  "created_at": "2026-06-09T21:48:26Z",
-  "updated_at": "2026-06-09T21:49:24Z"
-}

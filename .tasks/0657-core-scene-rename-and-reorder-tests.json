@@ -1,8 +1,0 @@
-{
-  "id": "0657-core-scene-rename-and-reorder-tests",
-  "title": "Core scene rename and reorder tests",
-  "description": "Test renameScene(doc, sceneId, newName), moveScene(doc, sceneId, newIndex), addScene, removeScene pure functions. Verify immutability, scene count, ordering.",
-  "status": "done",
-  "created_at": "2026-06-09T22:44:25Z",
-  "updated_at": "2026-06-09T22:46:45Z"
-}

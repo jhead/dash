@@ -1,0 +1,8 @@
+{
+  "id": "0225-1ancae-ui-onion-skin-controls-in-timeline",
+  "title": "UI: Onion skin controls in timeline",
+  "description": "Add onion skin toggle and range controls to the timeline toolbar in Shell.tsx. Flash 8 has: onion skin on/off button, onion skin outlines button, always show markers, edit multiple frames. Show 2 frames before and after by default. Wire to existing getOnionSkinFrames in packages/core/src/engine/onionskin.ts and the StageArea onion skin rendering.",
+  "status": "done",
+  "created_at": "2026-06-09T20:46:33Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

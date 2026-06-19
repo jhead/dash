@@ -1,0 +1,10 @@
+{
+  "id": "1063-2xv43x-jsfl-symbol-timeline-editing-stub-entereditmode",
+  "title": "JSFL: symbol timeline editing stub (enterEditMode/getTimeline broken)",
+  "description": "doc.enterEditMode() and doc.exitEditMode() are no-ops (console.warn only). doc.getTimeline() always returns the active scene timeline even after entering symbol-edit mode. doc.timelines only exposes scene timelines. Any JSFL script that enters symbol-edit mode to manipulate a symbol's layers/keyframes silently operates on the wrong timeline. Fix: add an editingSymbolId field to RuntimeState (packages/authoring-ui/src/Shell.tsx state). Make enterEditMode() set editingSymbolId from the current selection's first instance. Make exitEditMode() clear it. Make getTimeline() and the timeline proxy return the symbol's timeline (looked up from state.doc.library) when editingSymbolId is set. Make currentTimeline return the editing depth (0=scene, 1+=symbol). Make timelines[] also expose symbol timelines when in edit mode. Location: packages/authoring-ui/src/jsfl/runtime.ts around lines 2337-2342 and 1921-1948.",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-11T01:38:46Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

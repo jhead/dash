@@ -1,0 +1,10 @@
+{
+  "id": "1191-7jpc0c-swf-compile-symbol-instance-placement-collapses",
+  "title": "SWF compile: symbol-instance placement collapses to (0,0) \u2014 registrationPoint over-subtracted after origin normalization",
+  "description": "FIXED. compile.ts subtracted registrationPoint from instance x/y; import stored registrationPoint from binary absolute regX/Y which equals the placement position, so 5388-5388=0 -> all instances stacked at (0,0). Fix: removed the registrationPoint subtraction for instances (packages/swf/src/compile.ts ~1911). ACCEPTANCE via tools/golden-parity.mjs PLACEMENTS dimension: playButton now tx=5388,ty=4158 and player tx=1895,ty=3775 (exact golden match); 4/4 placements match position+scale+name+relative-z-order. golden-v2 also 3/3. Ruffle render (golden-fla-oracle.spec.ts) shows button at correct centre position. All swf+core tests pass.",
+  "status": "done",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-14T00:29:36Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

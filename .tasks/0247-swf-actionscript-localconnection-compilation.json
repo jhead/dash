@@ -1,8 +1,0 @@
-{
-  "id": "0247-swf-actionscript-localconnection-compilation",
-  "title": "SWF: ActionScript LocalConnection compilation",
-  "description": "Verify LocalConnection class usage compiles correctly. new LocalConnection(), lc.connect(name), lc.send(connName, method, args), lc.close(). Tests in packages/core/src/as2/__tests__/localconnection.test.ts: all compile without error. These are just standard method calls via ActionNew + ActionCallMethod.",
-  "status": "done",
-  "created_at": "2026-06-09T20:54:46Z",
-  "updated_at": "2026-06-09T20:57:19Z"
-}

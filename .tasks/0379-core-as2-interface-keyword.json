@@ -1,8 +1,0 @@
-{
-  "id": "0379-core-as2-interface-keyword",
-  "title": "Core: AS2 interface keyword",
-  "description": "Test compilation of AS2 interface declarations: interface IShape { function area():Number; function perimeter():Number; }. Class implementing interface: class Square implements IShape { ... }. Class implementing multiple interfaces: class Foo implements IBar, IBaz {}. Test that interface keyword compiles without error, and that implements clause is handled correctly.",
-  "status": "done",
-  "created_at": "2026-06-09T21:28:01Z",
-  "updated_at": "2026-06-09T21:28:56Z"
-}

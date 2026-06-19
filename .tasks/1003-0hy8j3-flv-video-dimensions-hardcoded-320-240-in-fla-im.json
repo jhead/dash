@@ -1,0 +1,10 @@
+{
+  "id": "1003-0hy8j3-flv-video-dimensions-hardcoded-320-240-in-fla-im",
+  "title": "FLV video: dimensions hardcoded 320\u00d7240 in FLA import (never extracted from bitstream)",
+  "description": "In flash8-import.ts, when a Media N stream is detected as FLV, width/height are unconditionally set to 320\u00d7240 (lines ~1493-1494). The demuxFlv() function strips raw VideoData payloads but never parses codec-specific bitstream headers to extract actual frame dimensions. For Sorenson H.263 (codecId=2) frame size is encoded in bits 17-30 of the first video tag; for VP6 (codecId=4/5) it is in the deblock header bytes. Without real dimensions, DefineVideoStream is emitted with 320\u00d7240 causing Ruffle to scale/crop any video that isn't exactly that size. Fix: in demuxFlv() (packages/swf/src/video.ts), parse the first video frame's codec header to extract width/height and return them alongside the frames. Then use the real dimensions in flash8-import.ts instead of the hardcoded stub.",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-11T01:41:32Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

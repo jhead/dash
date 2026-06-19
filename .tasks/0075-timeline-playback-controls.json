@@ -1,8 +1,0 @@
-{
-  "id": "0075-timeline-playback-controls",
-  "title": "Timeline playback controls: play/stop/rewind + frame counter",
-  "description": "Stage scrubbing works but there are no playback controls. Add below-timeline transport: (1) Play (Enter/Return) \u2014 animates from currentFrame forward at fps, using requestAnimationFrame and the document frameRate; (2) Stop (Enter again or Esc) \u2014 halts playback and returns to where it started; (3) Rewind to frame 1 button (|\u25c1); (4) Frame counter input (read/write) \u2014 type a frame number to jump to it; (5) FPS display. State: isPlaying boolean in Shell.tsx; a useInterval or requestAnimationFrame loop that increments currentFrame each tick. At the last frame, wrap to frame 1 (loop) or stop. The play loop should use getTweenedFrame for interpolated stage display. Wire Enter/Space key to toggle play/stop in StageArea.tsx. See docs/02-timeline-animation.md.",
-  "status": "done",
-  "created_at": "2026-06-09T18:58:49Z",
-  "updated_at": "2026-06-09T19:06:31Z"
-}

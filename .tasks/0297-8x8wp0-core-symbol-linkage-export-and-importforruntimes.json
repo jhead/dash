@@ -1,0 +1,8 @@
+{
+  "id": "0297-8x8wp0-core-symbol-linkage-export-and-importforruntimes",
+  "title": "Core: Symbol linkage export and importForRuntimeSharing",
+  "description": "Unit tests for symbol linkage in SWF export. A Symbol with linkage.exportForActionScript=true and linkage.linkageIdentifier='MyClip' should appear in the SWF ExportAssets tag (type 56). A symbol with importForRuntimeSharing=true should generate ImportAssets tags. Tests in packages/swf/src/__tests__/symbolexport.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:08:02Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

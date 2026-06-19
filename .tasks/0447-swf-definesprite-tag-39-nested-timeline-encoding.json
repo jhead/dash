@@ -1,8 +1,0 @@
-{
-  "id": "0447-swf-definesprite-tag-39-nested-timeline-encoding",
-  "title": "SWF: DefineSprite (tag 39) nested timeline encoding",
-  "description": "Test that a Symbol containing multiple frames with display objects produces a DefineSprite (tag 39) with the correct nested ShowFrame sequence. Verify: (1) DefineSprite body has its own PlaceObject2/ShowFrame tags, (2) frame count in DefineSprite header matches actual frame count, (3) display objects inside sprite have independent depths (starting from 1), (4) sprite's timeline DoAction tags appear inside DefineSprite body.",
-  "status": "done",
-  "created_at": "2026-06-09T21:44:02Z",
-  "updated_at": "2026-06-09T21:45:45Z"
-}

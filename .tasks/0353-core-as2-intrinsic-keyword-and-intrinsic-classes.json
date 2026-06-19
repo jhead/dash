@@ -1,8 +1,0 @@
-{
-  "id": "0353-core-as2-intrinsic-keyword-and-intrinsic-classes",
-  "title": "Core: AS2 Intrinsic keyword and intrinsic classes",
-  "description": "Verify AS2 intrinsic keyword compiles without error. In Flash 8 AS2, 'intrinsic class Array {}' is used for type annotations. Test that intrinsic keyword in class/function declarations is silently ignored. Tests in packages/core/src/as2/__tests__/intrinsic.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:20:01Z",
-  "updated_at": "2026-06-09T21:24:54Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0407-core-as2-eventdispatcher-pattern-addeventlistene",
-  "title": "Core: AS2 EventDispatcher pattern (addEventListener)",
-  "description": "Test compilation of Flash 8 EventDispatcher-style patterns: EventDispatcher.initialize(obj), obj.addEventListener('event', handler), obj.removeEventListener('event', handler), obj.dispatchEvent({type:'event'}). Also test the alternative AsBroadcaster pattern: AsBroadcaster.initialize(obj), obj.addListener(listener), obj.removeListener(listener), obj.broadcastMessage('onLoad', arg). Each should compile without error.",
-  "status": "done",
-  "created_at": "2026-06-09T21:32:21Z",
-  "updated_at": "2026-06-09T21:33:25Z"
-}

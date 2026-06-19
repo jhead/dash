@@ -1,8 +1,0 @@
-{
-  "id": "0280-core-as2-try-catch-finally-compilation",
-  "title": "Core: AS2 try/catch/finally compilation",
-  "description": "Verify try/catch/finally compiles to ActionTry (0x8F). try { risky(); } catch(e:Error) { trace(e); } finally { cleanup(); } should emit ActionTry. Multiple catch clauses, rethrow (throw e), and try without finally should all compile. Tests in packages/core/src/as2/__tests__/trycatch.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:03:57Z",
-  "updated_at": "2026-06-09T21:05:06Z"
-}

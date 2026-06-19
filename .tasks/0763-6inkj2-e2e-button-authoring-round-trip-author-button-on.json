@@ -1,0 +1,10 @@
+{
+  "id": "0763-6inkj2-e2e-button-authoring-round-trip-author-button-on",
+  "title": "E2E: button authoring round-trip \u2014 author button on-stage, attach on(release) handler, publish, verify Ruffle executes it",
+  "description": "## Test output\n\n```\nRunning 8 tests using 1 worker\n\n[0763] release before: red=10000 blue=0\n[0763] release after:  red=0 blue=10000\n[0763] release pixelDiff=10000\n  \u2713  1 button-roundtrip.spec.ts \u203a button on(release) action fires in Ruffle: click advances frame red\u2192blue (4.1s)\n[0763] press before: red=10000 blue=0\n[0763] press after:  red=0 blue=10000\n[0763] press pixelDiff=10000\n  \u2713  2 button-roundtrip.spec.ts \u203a button on(press) action fires in Ruffle: mousedown advances frame red\u2192blue (4.1s)\n[0763] noaction before: red=10000 blue=0\n[0763] noaction after:  red=10000 blue=0\n[0763] noaction pixelDiff=0\n  \u2713  3 button-roundtrip.spec.ts \u203a button with empty buttonActions: click does NOT change frame (oracle integrity) (4.1s)\n[0763] mcp-release before: red=10000 blue=0\n[0763] mcp-release after:  red=0 blue=10000\n[0763] mcp-release pixelDiff=10000\n  \u2713  4 button-roundtrip.spec.ts \u203a MCP doc_load + publish_swf: on(release) fires in Ruffle (3.8s)\n\n  8 passed (33.0s)\n```",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T08:10:14Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

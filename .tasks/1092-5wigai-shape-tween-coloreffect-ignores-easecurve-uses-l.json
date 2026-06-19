@@ -1,0 +1,10 @@
+{
+  "id": "1092-5wigai-shape-tween-coloreffect-ignores-easecurve-uses-l",
+  "title": "shape tween colorEffect ignores easeCurve \u2014 uses linearT",
+  "description": "In timeline-query.ts, the shape tween branch calls interpolateColorEffect(fromCE, toCE, linearT) with raw linearT, bypassing the span's ease curve. The motion tween path correctly calls easedT(config.easeForColor). Fix: apply applyEase(linearT, span.ease, span.easeCurve) before passing to interpolateColorEffect in the shape tween branch.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T03:09:43Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

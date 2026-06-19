@@ -1,8 +1,0 @@
-{
-  "id": "0671-core-document-property-validation-tests",
-  "title": "Core document property validation tests",
-  "description": "Test validateDocumentProperties: width/height must be 1-2880, frameRate 0.01-120, backgroundColor must be valid CSS hex. Test defaults are all valid. Test boundary values.",
-  "status": "done",
-  "created_at": "2026-06-09T22:47:48Z",
-  "updated_at": "2026-06-09T22:51:02Z"
-}

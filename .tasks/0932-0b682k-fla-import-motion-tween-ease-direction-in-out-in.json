@@ -1,0 +1,10 @@
+{
+  "id": "0932-0b682k-fla-import-motion-tween-ease-direction-in-out-in",
+  "title": "FLA import: motion tween ease direction (in/out/inOut/none) not decoded from binary",
+  "description": "False positive. The binary FLA format (Flash 5-8) encodes ease as a single s16 motionEase value (-100..100) where sign encodes direction (negative=ease-in, positive=ease-out, 0=linear). There is no separate easeType/easeDirection byte in the CPicFrame binary layout. The task confused the XFL format's <Ease method='cubicInOut'/> attribute (Flash CS5+) with the binary format. The motionEase s16 already correctly represents all Flash 8 ease semantics. Flash 8+ custom per-property easing is handled via the Bezier curve system (useSingleEaseCurve/hasCustomEase at fs>=24), not a direction byte.",
+  "status": "cancelled",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:41:14Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

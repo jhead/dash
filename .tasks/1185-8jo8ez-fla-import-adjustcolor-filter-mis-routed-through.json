@@ -1,0 +1,10 @@
+{
+  "id": "1185-8jo8ez-fla-import-adjustcolor-filter-mis-routed-through",
+  "title": "FLA import: AdjustColor filter mis-routed through ColorMatrix decoder yields NaN",
+  "description": "FIXED. Added Fla8FilterAdjustColor intermediate type (kind='adjust-color') in flash8-binary.ts. Binary reader case 0x06 now emits {kind:'adjust-color', brightness, contrast, saturation, hue} directly instead of routing through a fake color-matrix with 4 elements. In flash8-import.ts, toFlashFilter() handles 'adjust-color' by passing the four values straight to an AdjustColorFilter model object \u2014 no matrix math, no NaN. The 'color-matrix' path (for genuine 20-element matrices) is untouched. 4 new unit tests added covering: round-trip with authored values (no NaN), identity (all zeros), extreme values, and a regression check for the 20-element color-matrix path. All 5132 tests pass; golden self-determinism PASS.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-14T00:02:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

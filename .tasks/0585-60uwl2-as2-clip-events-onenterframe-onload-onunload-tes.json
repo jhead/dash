@@ -1,0 +1,8 @@
+{
+  "id": "0585-60uwl2-as2-clip-events-onenterframe-onload-onunload-tes",
+  "title": "AS2 clip events onEnterFrame onLoad onUnload tests",
+  "description": "Tests for MovieClip clip events: mc.onEnterFrame = fn, mc.onLoad = fn, mc.onUnload = fn, mc.onMouseMove/Down/Up = fn, mc.onPress = fn, mc.onRelease/ReleaseOutside = fn, mc.onRollOver/Out = fn, mc.onDragOver/Out = fn. These attach to instances, not frames.",
+  "status": "done",
+  "created_at": "2026-06-09T22:21:59Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0228-swf-actionscript-2-interface-keyword-support",
-  "title": "SWF: ActionScript 2 interface keyword support",
-  "description": "Verify 'interface' keyword in AS2 compiles without error. Interfaces in AVM1 are compile-time only (no runtime representation). The compiler should accept interface declarations and simply ignore them (emit no bytecode). Tests: an interface declaration compiles to empty/minimal bytecode, implements keyword on a class compiles without error.",
-  "status": "done",
-  "created_at": "2026-06-09T20:47:31Z",
-  "updated_at": "2026-06-09T20:50:36Z"
-}

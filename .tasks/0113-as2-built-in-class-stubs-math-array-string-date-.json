@@ -1,8 +1,0 @@
-{
-  "id": "0113-as2-built-in-class-stubs-math-array-string-date-",
-  "title": "AS2 built-in class stubs: Math, Array, String, Date AVM1",
-  "description": "Implement AVM1 bytecode emitters for AS2 built-in class method calls so that compiled code can call Math.round(), Array.sort(), String.charAt(), Date.getFullYear(), etc. Strategy: for each known method call on a built-in class, emit the correct sequence of ActionPush + ActionCallMethod opcodes. No VM needed; the SWF player (Ruffle) handles actual execution. The compiler currently treats these as ordinary method calls and emits ActionCallMethod, which is correct \u2014 but test coverage is needed. Add unit tests in packages/as2/src/__tests__ (or packages/core/src/as2/__tests__) for: Math.floor/ceil/round/abs/max/min/random, Array.push/pop/splice/join/length, String.split/slice/indexOf/toLowerCase, Number/Boolean/parseInt/parseFloat. Ensure compileExpr emits correct ActionCallMethod sequence for each.",
-  "status": "done",
-  "created_at": "2026-06-09T19:44:08Z",
-  "updated_at": "2026-06-09T19:45:36Z"
-}

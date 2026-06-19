@@ -1,8 +1,0 @@
-{
-  "id": "0485-swf-definebitsjpeg3-and-definebitslossless2-enco",
-  "title": "SWF DefineBitsJPEG3 and DefineBitsLossless2 encoding",
-  "description": "Test bitmap export: DefineBitsJPEG3 (tag 35) for JPEG bitmaps and DefineBitsLossless2 (tag 36) for PNG/GIF bitmaps. Verify tags emitted for BitmapItem in library.",
-  "status": "done",
-  "created_at": "2026-06-09T21:54:49Z",
-  "updated_at": "2026-06-09T21:56:29Z"
-}

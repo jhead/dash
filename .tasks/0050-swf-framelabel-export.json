@@ -1,8 +1,0 @@
-{
-  "id": "0050-swf-framelabel-export",
-  "title": "SWF FrameLabel & ExportAssets tags",
-  "description": "Extend SWF compiler to emit FrameLabel (tag 43) for keyframes with non-empty frame.label, and ExportAssets (tag 56) for Symbol library items with exportForActionScript=true (includes linkageIdentifier). Both purely in packages/swf/. FrameLabel: UI8[] null-terminated string. ExportAssets: UI16 count + (UI16 charId + string name) per export. See docs/15-file-formats-fla-swf.md.",
-  "status": "done",
-  "created_at": "2026-06-09T18:05:40Z",
-  "updated_at": "2026-06-09T18:06:39Z"
-}

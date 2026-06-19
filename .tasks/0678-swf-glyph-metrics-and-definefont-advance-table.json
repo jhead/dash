@@ -1,8 +1,0 @@
-{
-  "id": "0678-swf-glyph-metrics-and-definefont-advance-table",
-  "title": "SWF glyph metrics and DefineFont advance table",
-  "description": "Test DefineFont2/3 advance table encoding: AdvanceTable array, KerningCount, CodeTableOffset. Verify glyph advance widths are non-zero for printable ASCII characters.",
-  "status": "done",
-  "created_at": "2026-06-09T22:49:57Z",
-  "updated_at": "2026-06-09T22:53:23Z"
-}

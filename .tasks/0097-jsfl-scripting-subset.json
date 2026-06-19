@@ -1,8 +1,0 @@
-{
-  "id": "0097-jsfl-scripting-subset",
-  "title": "JSFL scripting subset: Flash 8 automation API as agent/test surface",
-  "description": "Layer 4 of docs/18-verification-and-automation.md \u2014 on-theme long-term automation surface (JSFL is also a Flash 8 fidelity feature, docs/17). Implement the read/mutation core: fl.getDocumentDOM(), document.addNewRectangle/addNewOval/addNewText, selectAll/selection, convertToSymbol, timeline.insertFrames/convertToKeyframes/createMotionTween, document.publish(), fl.trace(). Thin adapter over the SAME command layer the UI and window.__flashTest use (never direct model access); expose runJSFL(source) on the bridge so Playwright specs and agents can execute scenario scripts \u2014 human-readable, replayable, version-controlled instead of coordinate sequences. Grow toward the documented Flash 8 JSFL DOM as authoring features mature. Build after the symbol/timeline command layer settles (post 0053/0056) and after authoring-automation-bridge lands. See docs/18 Layer 4.",
-  "status": "done",
-  "created_at": "2026-06-09T19:27:17Z",
-  "updated_at": "2026-06-09T19:48:01Z"
-}

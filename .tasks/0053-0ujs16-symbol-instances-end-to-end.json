@@ -1,0 +1,8 @@
+{
+  "id": "0053-0ujs16-symbol-instances-end-to-end",
+  "title": "Symbol instances end-to-end: model, rendering, placement, edit-in-place",
+  "description": "The core authoring flow (draw -> F8 convert to symbol -> edit inside -> place instances) is impossible. Gaps: (1) SymbolInstance is a stub with only id/symbolId/x/y (packages/core/src/engine/types.ts:228-234) \u2014 needs scale, rotation, color effect (alpha/tint), filters, graphic loop mode per docs/07 and docs/02; (2) CanvasRenderer skips instance objects entirely (renderer.ts:445-448) \u2014 render the symbol timeline content recursively; instances currently draw as 60x40 blue placeholder divs in StageArea; (3) Create New Symbol makes an empty husk and Edit in Place only sets a breadcrumb \u2014 StageArea keeps editing the document timeline; edit context must swap the timeline being edited to the symbol timeline (Shell.tsx:621-632, also fix setEditContext being called inside a setLibrary updater \u2014 impure updater double-fires under StrictMode); (4) no Convert to Symbol (F8) command at all; add Insert/Modify menu items. Depends on 0051-shell-document-owner for instances living in the timeline. Motion tweens (docs/02) target instances, so this blocks tween authoring.",
+  "status": "done",
+  "created_at": "2026-06-09T18:06:01Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

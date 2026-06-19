@@ -1,8 +1,0 @@
-{
-  "id": "0011-timeline-mvp",
-  "title": "Timeline MVP",
-  "description": "Timeline panel: layers (add/delete/reorder, show/hide, lock), keyframes and frame spans, playhead scrubbing, insert frame (F5)/keyframe (F6)/blank keyframe (F7), frame labels. Playback controls (play/stop, loop). Single scene for MVP; scene panel deferred. See docs/02-timeline-and-animation.md. Depends on document-model-mvp, authoring-ui-shell-mvp.",
-  "status": "done",
-  "created_at": "2026-06-09T16:31:27Z",
-  "updated_at": "2026-06-09T16:59:45Z"
-}

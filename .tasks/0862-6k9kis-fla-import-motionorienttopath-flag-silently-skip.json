@@ -1,0 +1,10 @@
+{
+  "id": "0862-6k9kis-fla-import-motionorienttopath-flag-silently-skip",
+  "title": "FLA import: motionOrientToPath flag silently skipped at line 1837",
+  "description": "flash8-binary.ts r.skip(4) at line 1837 (inside fs>13 block) discards the motionTweenSnap/orient-to-path u32 flag. flash8-import.ts never sets motionOrientToPath on a keyframe so it's always false for real FLAs. Model, interpolator (timeline-query.ts:223), and Timeline.tsx checkbox are all wired up \u2014 just the FLA read is missing. Fix: decode u32 and pass motionOrientToPath to createFrame.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T15:58:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

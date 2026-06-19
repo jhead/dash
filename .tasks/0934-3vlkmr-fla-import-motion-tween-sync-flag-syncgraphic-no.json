@@ -1,0 +1,10 @@
+{
+  "id": "0934-3vlkmr-fla-import-motion-tween-sync-flag-syncgraphic-no",
+  "title": "FLA import: motion tween sync flag (syncGraphic) not decoded from binary",
+  "description": "Cherry-picked d2c8dc1. motionSync from keyMode bit 0x0800; 4 sync tests pass.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:51:47Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

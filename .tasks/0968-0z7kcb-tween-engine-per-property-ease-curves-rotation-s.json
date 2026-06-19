@@ -1,0 +1,10 @@
+{
+  "id": "0968-0z7kcb-tween-engine-per-property-ease-curves-rotation-s",
+  "title": "Tween engine: per-property ease curves (rotation/scale/color/filter) discarded",
+  "description": "Flash 8 stores up to 6 ease curves per keyframe (useSingleEaseCurve + easeForPosition/rotation/scale/color/filters). timeline-query.ts only forwards the position/all curve to interpolateTween(). Fix: thread all 6 curves through TweenConfig and apply per-property curves in interpolate.ts rotation/scale/color/filter interpolation.",
+  "status": "done",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-10T22:05:44Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

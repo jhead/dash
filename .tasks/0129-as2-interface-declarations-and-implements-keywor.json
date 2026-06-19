@@ -1,8 +1,0 @@
-{
-  "id": "0129-as2-interface-declarations-and-implements-keywor",
-  "title": "AS2: interface declarations and implements keyword",
-  "description": "Implement AS2 interface declarations in the compiler (packages/core/src/as2/). The parser may already handle 'interface Foo { function bar():Void; }' and 'class Baz implements Foo'. Verify: (1) interface declarations compile to a no-op (interfaces are compile-time only in AS2/AVM1 \u2014 no runtime bytecode needed). (2) 'implements Foo' on a class is parsed and validated but generates no bytecode. (3) Add 6 tests in __tests__/interfaces.test.ts: interface compiles without error, implements keyword parsed, class still works, interface method signatures don't emit bytecode.",
-  "status": "done",
-  "created_at": "2026-06-09T19:50:41Z",
-  "updated_at": "2026-06-09T19:52:37Z"
-}

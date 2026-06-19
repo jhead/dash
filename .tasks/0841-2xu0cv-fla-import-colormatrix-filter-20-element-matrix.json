@@ -1,0 +1,10 @@
+{
+  "id": "0841-2xu0cv-fla-import-colormatrix-filter-20-element-matrix",
+  "title": "FLA import: ColorMatrix filter 20-element matrix decode",
+  "description": "When opening a real FLA with Adjust Color / ColorMatrix filter, flash8-import.ts warns and substitutes an identity filter. Decode the 20-element matrix from flash8-binary.ts into brightness/contrast/saturation/hue model fields so the filter is preserved on import.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T13:51:09Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0052-timeline-frame-spans",
-  "title": "Timeline frame model: spans + exact F5/F6/F7 semantics",
-  "description": "Core model cannot represent frame spans (packages/core/src/model/timeline.ts): layer length is derived as maxKeyframeIndex+1, so insertFrame (F5) at/past the end of a layer is a no-op \u2014 a fresh layer can never be extended, which blocks creating any tween span. Specific bugs: (1) insertKeyframe (timeline.ts:216-243) copies only the isEmpty flag, not displayObjects \u2014 F6 produces a keyframe claiming content that renders nothing; it also shifts later keyframes right, but Flash F6 converts in place without shifting. (2) insertFrame shifts the keyframe AT frameIndex itself (>=), so F5 on a keyframe moves it instead of extending the preceding span. (3) removeFrame can delete the keyframe at frame 0 leaving earlier frames with no governing keyframe \u2014 addDisplayObject/setFrameScript then silently no-op (timeline.ts:276-298); Flash always keeps a keyframe at layer start. Add per-layer duration/span representation, fix F5/F6/F7 to match docs/02-timeline-and-animation.md exactly, update Timeline UI, FLA serialize, and SWF compile frame counting to consume it. Coordinates with 0048.",
-  "status": "done",
-  "created_at": "2026-06-09T18:06:00Z",
-  "updated_at": "2026-06-09T18:10:20Z"
-}

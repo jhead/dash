@@ -1,0 +1,10 @@
+{
+  "id": "0857-5vnssy-skew-dropped-in-fla-import-decompose-and-compile",
+  "title": "Skew dropped in FLA import decompose() and compile.ts PlaceObject2",
+  "description": "flash8-import.ts decompose() extracts only scale/rotation from affine matrix and discards independent skewX/skewY. Fix: compute skewX=atan2(m.c,m.d) and skewY=atan2(m.b,m.a) separately. Then wire skewX/skewY through compile.ts PlaceObject2 transform (MATRIX encoder already supports skew via the rotateSkew fields).",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T15:17:25Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

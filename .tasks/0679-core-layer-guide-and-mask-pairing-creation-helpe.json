@@ -1,8 +1,0 @@
-{
-  "id": "0679-core-layer-guide-and-mask-pairing-creation-helpe",
-  "title": "Core layer guide and mask pairing creation helpers",
-  "description": "Implement addGuideLayerAbove(timeline, layerId) and addMaskLayerAbove(timeline, layerId). These create a new guide/mask layer above the target and set the target layer type to guided/masked.",
-  "status": "done",
-  "created_at": "2026-06-09T22:49:57Z",
-  "updated_at": "2026-06-09T22:52:40Z"
-}

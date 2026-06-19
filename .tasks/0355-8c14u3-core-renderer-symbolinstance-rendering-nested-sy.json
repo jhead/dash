@@ -1,0 +1,8 @@
+{
+  "id": "0355-8c14u3-core-renderer-symbolinstance-rendering-nested-sy",
+  "title": "Core: Renderer - SymbolInstance rendering (nested symbol)",
+  "description": "Unit tests for SymbolInstance rendering in the canvas renderer. A SymbolInstance on stage should recursively render its symbol's timeline at the correct transform. Find the renderer, test that a SymbolInstance pointing to a symbol with shapes causes the renderer to draw those shapes with the instance's transform applied. Tests in packages/core/src/engine/__tests__/symbol-render.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:20:01Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

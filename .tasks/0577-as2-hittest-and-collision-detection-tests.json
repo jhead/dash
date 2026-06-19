@@ -1,8 +1,0 @@
-{
-  "id": "0577-as2-hittest-and-collision-detection-tests",
-  "title": "AS2 hitTest and collision detection tests",
-  "description": "Tests for hitTest: mc.hitTest(x, y, shapeFlag), mc.hitTest(target), mc.hitTestObject(target), mc.hitTestPoint(x, y, shapeFlag). Also getBounds(coordinateSpace), globalToLocal, localToGlobal coordinate transform.",
-  "status": "done",
-  "created_at": "2026-06-09T22:17:54Z",
-  "updated_at": "2026-06-09T22:21:37Z"
-}

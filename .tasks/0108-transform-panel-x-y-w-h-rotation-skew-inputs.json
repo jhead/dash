@@ -1,8 +1,0 @@
-{
-  "id": "0108-transform-panel-x-y-w-h-rotation-skew-inputs",
-  "title": "Transform panel: X/Y/W/H/rotation/skew inputs",
-  "description": "Implement a Transform panel matching Flash 8's Transform panel. Shows exact X, Y, W, H (in px), rotation (degrees), and skew (horizontal/vertical degrees) for the current selection. Inputs are editable: typing a value transforms the selection. Constrain proportions checkbox for W/H. Reset button. Wire to selection change in Shell.tsx. See docs/02-tools-selection-transform.md for Flash 8 transform behavior. Place in a collapsible panel next to Properties.",
-  "status": "done",
-  "created_at": "2026-06-09T19:43:10Z",
-  "updated_at": "2026-06-09T20:06:48Z"
-}

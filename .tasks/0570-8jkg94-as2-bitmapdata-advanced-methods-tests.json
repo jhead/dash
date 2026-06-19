@@ -1,0 +1,8 @@
+{
+  "id": "0570-8jkg94-as2-bitmapdata-advanced-methods-tests",
+  "title": "AS2 BitmapData advanced methods tests",
+  "description": "Tests for BitmapData advanced: copyPixels(src,rect,destPoint), draw(source), fillRect(rect, color), floodFill(x,y,color), getPixel(x,y), setPixel(x,y,color), getPixel32, setPixel32, lock/unlock, colorTransform, threshold.",
+  "status": "done",
+  "created_at": "2026-06-09T22:16:10Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

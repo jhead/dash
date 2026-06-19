@@ -1,0 +1,10 @@
+{
+  "id": "0977-49lsuv-as2-compiler-instanceof-operator-not-implemented",
+  "title": "AS2 compiler: instanceof operator not implemented",
+  "description": "The AS2 compiler in packages/core/src/as2/compiler.ts does not handle the instanceof binary operator (e.g. x instanceof MyClass). In AVM1, ActionInstanceOf (opcode 0x54) performs this check: push(x), push(MyClass), ActionInstanceOf leaves a boolean on stack. Check if it's already handled; if not, add a case in the BinaryExpr visitor for operator 'instanceof'.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T22:16:04Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

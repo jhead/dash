@@ -1,8 +1,0 @@
-{
-  "id": "0564-as2-string-class-regex-and-search-methods-tests",
-  "title": "AS2 String class regex and search methods tests",
-  "description": "Tests for String advanced: str.split(sep), str.split(regex), str.match(re), str.replace(re,str), str.replace(re,fn), str.search(re), str.toUpperCase/toLowerCase, str.trim (if supported), str.charCodeAt, String.fromCharCode.",
-  "status": "done",
-  "created_at": "2026-06-09T22:14:28Z",
-  "updated_at": "2026-06-09T22:16:13Z"
-}

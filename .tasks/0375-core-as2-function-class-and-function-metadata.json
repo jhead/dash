@@ -1,8 +1,0 @@
-{
-  "id": "0375-core-as2-function-class-and-function-metadata",
-  "title": "Core: AS2 Function class and function metadata",
-  "description": "Test compilation of: fn.call(ctx, arg1, arg2), fn.apply(ctx, argsArray), fn.length (property), fn.toString(). Also test: function.caller (within a function body), arguments.callee, arguments.length. Each should compile. Verify ActionCallMethod (0x52) for .call/.apply, ActionGetMember (0x4f) for .length.",
-  "status": "done",
-  "created_at": "2026-06-09T21:27:04Z",
-  "updated_at": "2026-06-09T21:29:47Z"
-}

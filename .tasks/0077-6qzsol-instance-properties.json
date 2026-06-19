@@ -1,0 +1,8 @@
+{
+  "id": "0077-6qzsol-instance-properties",
+  "title": "Symbol instance properties: name, color effect, loop mode",
+  "description": "When a SymbolInstance is selected, users need to set: (1) Instance Name (for AS2 addressability: _root.myClip.gotoAndPlay(2)) \u2014 stored as instanceName on SymbolInstance; (2) Color Effect \u2014 None/Brightness/Tint/Alpha/Advanced; each mode has its own CXFORM parameters; update SymbolInstance.colorEffect (already has tint/alpha). (3) Loop mode \u2014 Loop/Play Once/Single Frame + First Frame number (for graphic symbols). Show these in a Properties panel or in the existing right-panel area when a SymbolInstance is selected. Also add instanceName to the SWF compile path: PlaceObject2 with HasName flag (0x20) and name string. See docs/07-symbols-and-library.md, packages/core/src/engine/types.ts SymbolInstance.",
+  "status": "done",
+  "created_at": "2026-06-09T18:58:49Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0536-28o0kn-as2-accessibility-class-and-screen-reader-suppor",
+  "title": "AS2 Accessibility class and screen reader support tests",
+  "description": "Test import flash.accessibility.Accessibility, Accessibility.isActive(), Accessibility.sendEvent(mc, id, eventType). Also AccessibilityProperties constructor and properties.",
+  "status": "done",
+  "created_at": "2026-06-09T22:06:36Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "0357-2u2gms-core-as2-movieclip-built-in-methods-attachmovie",
+  "title": "Core: AS2 MovieClip built-in methods (attachMovie, createEmptyMovieClip, gotoAndPlay)",
+  "description": "Test compilation of MovieClip method calls: mc.attachMovie('id',name,depth), mc.createEmptyMovieClip(name,depth), mc.gotoAndPlay(n), mc.gotoAndStop(n), mc.play(), mc.stop(), mc.nextFrame(), mc.prevFrame(), mc.removeMovieClip(), mc._x, mc._y, mc._width, mc._height, mc._xscale, mc._yscale, mc._alpha, mc._visible, mc._rotation. Each should emit ActionCallMethod (0x52) or ActionGetMember (0x4f) + ActionSetMember (0x4e) appropriately.",
+  "status": "done",
+  "created_at": "2026-06-09T21:23:31Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

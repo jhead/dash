@@ -1,0 +1,10 @@
+{
+  "id": "1189-8wsg7d-fla-import-decode-cpictext-color-effects-tint-al",
+  "title": "FLA import: decode CPicText color effects (Tint/Alpha/Brightness) \u2014 currently always null",
+  "description": "RESOLVED \u2014 NOT APPLICABLE (was fixture-blocked; investigated to a definitive conclusion). Flash 8 text fields CANNOT carry an instance color effect (Tint/Brightness/Alpha) \u2014 it is an instance/bitmap-only property (the Properties panel has no color-effect control for static/dynamic/input text; text colour is per-character fillColor). Proof: the flacomdoc XFL->binary-FLA writer (byte-verified vs real Flash) has NO color-effect code in handleText, while handleSymbolInstance/handleBitmapInstance write the colorEffect block; and the no-effect fixture flash8-nested-textfields.fla (ts=0x0D) has no colorEffect pad in its CPicText body (task 1050 investigation). Therefore CPicText.colorEffect being always null is CORRECT, not a dropped value \u2014 the task premise ('a text field with a color effect') cannot occur. No fixture needs to be created and no decode is required. Code comment at flash8-binary.ts readCPicText updated to record this conclusion (replacing the speculative TODO(1050)). To tint text, put it in a symbol and tint the INSTANCE \u2014 that path is CPicSymbol.colorEffect, already decoded.",
+  "status": "cancelled",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-14T00:02:40Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

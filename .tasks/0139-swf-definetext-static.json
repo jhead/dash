@@ -1,8 +1,0 @@
-{
-  "id": "0139-swf-definetext-static",
-  "title": "SWF: DefineText (tag 11) for static text fields",
-  "description": "Static text (textType='static') in Flash 8 should use DefineText (tag 11) rather than DefineEditText (tag 37). DefineText renders text as vector-like glyphs at runtime, matching Flash 8 behavior. The DefineText format: CharacterId, TextBounds RECT, TextMatrix MATRIX, GlyphBits (UI8), AdvanceBits (UI8), then TEXTRECORD array. Each TEXTRECORD has optional style changes (font/color/xOffset/yOffset) then glyph entries (index+advance pairs). Implement encodeDefineText() in packages/swf/src/text.ts, selecting it for textType='static' in compile.ts. Fall back to DefineEditText for dynamic/input. Add 6 tests.",
-  "status": "done",
-  "created_at": "2026-06-09T20:02:32Z",
-  "updated_at": "2026-06-09T20:07:30Z"
-}

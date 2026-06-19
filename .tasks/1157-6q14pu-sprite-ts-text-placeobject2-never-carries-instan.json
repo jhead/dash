@@ -1,0 +1,10 @@
+{
+  "id": "1157-6q14pu-sprite-ts-text-placeobject2-never-carries-instan",
+  "title": "sprite.ts: text PlaceObject2 never carries instanceName in symbol timelines",
+  "description": "In packages/swf/src/sprite.ts, all PlaceObject2 paths for TextDisplayObject inside symbol timelines drop the instanceName. Line 343 calls encodePlaceObject2ForText which has no name parameter. Line 341 calls encodePlaceObject2WithCXForm also without a name. The move paths (lines 433-445) also drop the name. This means _root.myMc.myTextField.text = 'x' never resolves for text fields inside movie clips, because PlaceObject2 for them never carries HasName. The main-timeline compile.ts path (lines 1844-1846) correctly uses encodePlaceObject2WithName when instanceName is set. Fix: in sprite.ts, read displayObj.instanceName and pass it to the place encoders \u2014 use encodePlaceObject2WithName for the no-filter no-cxform case, and pass name to encodePlaceObject2WithCXForm and encodePlaceObject3WithFilters for the cxform and filter cases respectively. File: packages/swf/src/sprite.ts lines 330, 341, 343, 433, 442-445.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T09:57:49Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

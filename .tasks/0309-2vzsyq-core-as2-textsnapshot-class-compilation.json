@@ -1,0 +1,8 @@
+{
+  "id": "0309-2vzsyq-core-as2-textsnapshot-class-compilation",
+  "title": "Core: AS2 TextSnapshot class compilation",
+  "description": "Verify AS2 TextSnapshot compiles: var ts = mc.getTextSnapshot(), ts.getText(startIndex, endIndex, includeLineEndings), ts.getCount(), ts.setSelectColor(color), ts.setSelected(startIndex, endIndex, select), ts.getSelected(startIndex, endIndex). Tests in packages/core/src/as2/__tests__/textsnapshot.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:11:07Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

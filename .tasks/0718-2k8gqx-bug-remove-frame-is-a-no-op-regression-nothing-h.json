@@ -1,0 +1,10 @@
+{
+  "id": "0718-2k8gqx-bug-remove-frame-is-a-no-op-regression-nothing-h",
+  "title": "Bug: Remove Frame is a no-op (regression, nothing happens on keyboard Delete or context menu)",
+  "description": "After recent layout changes (task 0712 moved Timeline to a top dock), Remove Frame does nothing \u2014 neither keyboard Delete/Backspace nor the context menu 'Remove Frame/Frames' action removes any frames. Likely regression: the onRemoveFrames prop from Shell.tsx is not being passed through to the new top-docked Timeline, OR the Timeline is no longer receiving keyboard focus so Delete key events don't fire. Check: (1) is onRemoveFrames wired from Shell.tsx to the Timeline in the new dock? (2) does the Timeline container have tabIndex=-1 and onKeyDown? (3) did the 0712 layout refactor break the prop wiring?",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T04:10:46Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

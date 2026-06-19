@@ -1,0 +1,8 @@
+{
+  "id": "0346-6j7suo-swf-placeobject2-with-name-field-instance-naming",
+  "title": "SWF: PlaceObject2 with name field (instance naming)",
+  "description": "Unit test that a SymbolInstance with instanceName set produces a PlaceObject2 tag with HasName flag and the correct null-terminated name string in the body. Tests in packages/swf/src/__tests__/instancename.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:18:37Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

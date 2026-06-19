@@ -1,8 +1,0 @@
-{
-  "id": "0605-as2-stage-resize-and-display-state-tests",
-  "title": "AS2 stage resize and display state tests",
-  "description": "Tests for full-screen and resize handling: Stage.displayState='fullScreen', Stage.onResize listener detects dimension changes, Stage.scaleMode interactions, Stage.fullScreenSourceRect (if Flash 9 forward-compat). Also Key.HOME/END/PAGE_UP/PAGE_DOWN constants.",
-  "status": "done",
-  "created_at": "2026-06-09T22:26:57Z",
-  "updated_at": "2026-06-09T22:34:11Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0632-as2-array-methods-comprehensive-tests",
-  "title": "AS2 Array methods comprehensive tests",
-  "description": "Test Array.push, pop, shift, unshift, splice, slice, concat, join, reverse, sort, sortOn, indexOf, length property. Test Array constructor with initial items, nested arrays, typed array patterns.",
-  "status": "done",
-  "created_at": "2026-06-09T22:37:26Z",
-  "updated_at": "2026-06-09T22:40:03Z"
-}

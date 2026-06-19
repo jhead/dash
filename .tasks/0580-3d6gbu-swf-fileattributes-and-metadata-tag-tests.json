@@ -1,0 +1,8 @@
+{
+  "id": "0580-3d6gbu-swf-fileattributes-and-metadata-tag-tests",
+  "title": "SWF FileAttributes and metadata tag tests",
+  "description": "Tests for FileAttributes tag (69): first tag in SWF, body is UI32 flags. Bit 0=UseNetwork, bit 3=HasMetadata, bit 4=ActionScript3. For Flash 8 (AS2) verify bit 4=0. Also MetaData tag (77) if doc.metadata present.",
+  "status": "done",
+  "created_at": "2026-06-09T22:19:55Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

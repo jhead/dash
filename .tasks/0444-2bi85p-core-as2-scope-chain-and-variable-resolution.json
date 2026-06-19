@@ -1,0 +1,8 @@
+{
+  "id": "0444-2bi85p-core-as2-scope-chain-and-variable-resolution",
+  "title": "Core: AS2 scope chain and variable resolution",
+  "description": "Test compilation of: (1) local var shadows outer var, (2) function parameter shadows outer var, (3) global variable access via _global.x, (4) this.x vs x (member vs local), (5) with(obj) { x } resolves to obj.x, (6) ActionGetVariable (0x1c) for local/global, ActionGetMember (0x4f) for member. Test that the compiler emits correct opcodes for each scope resolution.",
+  "status": "done",
+  "created_at": "2026-06-09T21:43:20Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

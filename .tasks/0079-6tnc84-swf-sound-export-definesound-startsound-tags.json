@@ -1,0 +1,8 @@
+{
+  "id": "0079-6tnc84-swf-sound-export-definesound-startsound-tags",
+  "title": "SWF sound export: DefineSound + StartSound tags",
+  "description": "The SWF compiler currently ignores SoundItem library items and frame SoundLinkage. Add sound export: (1) DefineSound tag (tag 14) for each SoundItem in the library \u2014 MP3 data encoded as raw bytes from the dataUri, header fields: SoundId, SoundFormat=2 (MP3), SoundRate/SoundSize/SoundType from item metadata, SoundSampleCount; (2) StartSound tag (tag 15) per keyframe that has a non-null sound field \u2014 SoundId + SoundInfo (SyncStop, SyncNoMultiple, HasEnvelope/HasLoops/HasOutPoint/HasInPoint flags as needed); (3) StopSound via SoundInfo.SyncStop flag. For MP3 format (compressionType='mp3'): SoundFormat=2, write SeekSamples UI16 (0) then raw MP3 bytes. For ADPCM: SoundFormat=1. For raw: SoundFormat=0. Wire into compile.ts pre-pass alongside existing DefineShape/DefineFont passes. See SWF spec tags 14+15. Only touches packages/swf/src/ \u2014 no authoring-ui changes needed.",
+  "status": "done",
+  "created_at": "2026-06-09T19:06:39Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

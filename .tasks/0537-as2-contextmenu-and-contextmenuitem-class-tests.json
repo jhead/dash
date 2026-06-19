@@ -1,8 +1,0 @@
-{
-  "id": "0537-as2-contextmenu-and-contextmenuitem-class-tests",
-  "title": "AS2 ContextMenu and ContextMenuItem class tests",
-  "description": "Test new ContextMenu(), cm.items, new ContextMenuItem('label', handler), cm.hideBuiltInItems(), ContextMenu.isSupported. Flash 8 right-click context menu API.",
-  "status": "done",
-  "created_at": "2026-06-09T22:06:36Z",
-  "updated_at": "2026-06-09T22:08:07Z"
-}

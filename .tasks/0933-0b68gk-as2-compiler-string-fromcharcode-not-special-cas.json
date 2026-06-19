@@ -1,0 +1,10 @@
+{
+  "id": "0933-0b68gk-as2-compiler-string-fromcharcode-not-special-cas",
+  "title": "AS2 compiler: String.fromCharCode() not special-cased \u2014 should emit ActionMBStringExtract or ActionChr",
+  "description": "In Flash AS2/AVM1, String.fromCharCode(n) converts a character code to a string. The AS2 compiler does not special-case this call \u2014 it falls through to generic ActionCallFunction (0x3D). The correct AVM1 encoding: String.fromCharCode(n) \u2192 push n, ActionMBChr (0x63) for multibyte or ActionChr (0x33) for single-byte. Flash Professional emits ActionMBChr (0x63). Fix in compiler.ts: detect CallExpression with callee MemberExpression(Identifier('String'), 'fromCharCode') and 1 argument \u2014 compile the argument then emit opcode 0x63 (ActionMBChr).",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T20:41:14Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

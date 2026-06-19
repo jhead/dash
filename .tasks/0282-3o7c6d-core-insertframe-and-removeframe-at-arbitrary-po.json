@@ -1,0 +1,8 @@
+{
+  "id": "0282-3o7c6d-core-insertframe-and-removeframe-at-arbitrary-po",
+  "title": "Core: insertFrame and removeFrame at arbitrary positions",
+  "description": "Unit tests for insertFrame(doc, sceneIdx, layerIdx, frameIdx, count) and removeFrame(doc, sceneIdx, layerIdx, frameIdx, count) at non-zero frame positions. Test: inserting frames in the middle shifts subsequent keyframes, removing frames merges spans correctly, frameCount stays in sync. These functions are in packages/core/src/engine/frames.ts. Tests in packages/core/src/engine/__tests__/frame-insert-remove.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:03:57Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

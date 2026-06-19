@@ -1,8 +1,0 @@
-{
-  "id": "0226-core-symbol-instance-9-slice-scaling",
-  "title": "Core: Symbol instance 9-slice scaling",
-  "description": "Implement 9-slice grid scaling for SymbolInstance display objects in the renderer. When the symbol has scale9Grid set and the instance is scaled, use 9-slice scaling to avoid distorting corners. Read the scale9Grid from the Symbol definition and apply ctx.drawImage-style 9-slice rendering. Tests: a symbol with scale9Grid renders with correct slice boundaries.",
-  "status": "done",
-  "created_at": "2026-06-09T20:46:33Z",
-  "updated_at": "2026-06-09T20:50:47Z"
-}

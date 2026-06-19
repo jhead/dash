@@ -1,0 +1,10 @@
+{
+  "id": "0876-48so15-swf-displacementmapfilter-filterid-8-not-encoded",
+  "title": "SWF: DisplacementMapFilter (FilterID 8) not encoded",
+  "description": "DisplacementMapFilter is absent from both FlashFilter union (packages/core/src/engine/filters.ts) and SWF encoder (packages/swf/src/filters.ts). All 7 other Flash 8 filters are implemented. Needs new model interface, FLA binary decoder case 8, and SWF encoder writing FilterID=8 header with mapBitmap/mapPoint/componentX/componentY/scaleX/scaleY/mode/color/clamp fields per SWF spec.",
+  "status": "done",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-10T16:32:21Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

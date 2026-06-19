@@ -1,8 +1,0 @@
-{
-  "id": "0459-core-library-item-management-crud-operations",
-  "title": "Core library item management CRUD operations",
-  "description": "Test addLibraryItem, removeLibraryItem, renameLibraryItem, moveLibraryItemToFolder utilities in packages/core. Returns updated Library (immutable).",
-  "status": "done",
-  "created_at": "2026-06-09T21:48:26Z",
-  "updated_at": "2026-06-09T21:51:53Z"
-}

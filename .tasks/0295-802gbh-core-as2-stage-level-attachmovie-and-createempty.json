@@ -1,0 +1,8 @@
+{
+  "id": "0295-802gbh-core-as2-stage-level-attachmovie-and-createempty",
+  "title": "Core: AS2 stage-level attachMovie and createEmptyMovieClip",
+  "description": "Verify AS2 attachMovie and createEmptyMovieClip compile: _root.attachMovie('linkageId', 'name', depth), _root.createEmptyMovieClip('name', depth), mc.removeMovieClip(), mc.duplicateMovieClip('name', depth), mc.swapDepths(target). Tests in packages/core/src/as2/__tests__/attachmovie.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:07:19Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0199-swf-definebutton2-and-button-symbol-compilation",
-  "title": "SWF: DefineButton2 and button symbol compilation",
-  "description": "Compile Symbol items with symbolType=button to SWF DefineButton2 (tag 34) tags. A button has 4 frames: up, over, down, hit. Encode ButtonRecord array (characterId, layers, states flags). Wire up button state transitions in the compiled output. Tests: button with 2-state frames compiles to tag 34 with correct structure.",
-  "status": "done",
-  "created_at": "2026-06-09T20:36:36Z",
-  "updated_at": "2026-06-09T20:41:11Z"
-}

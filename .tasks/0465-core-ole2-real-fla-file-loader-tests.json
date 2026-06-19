@@ -1,8 +1,0 @@
-{
-  "id": "0465-core-ole2-real-fla-file-loader-tests",
-  "title": "Core OLE2 real FLA file loader tests",
-  "description": "Test tryLoadRealFla() in packages/core/src/fla/ole.ts: OLE2 detection by magic bytes (D0 CF 11 E0), basic property extraction, graceful error handling for truncated files.",
-  "status": "done",
-  "created_at": "2026-06-09T21:49:46Z",
-  "updated_at": "2026-06-09T21:51:45Z"
-}

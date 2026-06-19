@@ -1,0 +1,10 @@
+{
+  "id": "0942-03nspy-fla-import-color-effect-tint-brightness-not-dist",
+  "title": "FLA import: color effect tint/brightness not distinguished from advanced",
+  "description": "In flash8-binary.ts, toColorEffect() maps CXFORM data to either {type:'alpha'} (pure-alpha case) or {type:'advanced'} for everything else. Flash UI exposes 4 distinct types: none, tint, brightness, alpha, advanced. Tint: all 3 color multipliers equal, all 3 color offsets equal (and offsets define the tint color mixed with the mult). Brightness: all 3 multipliers equal, offsets = (1-mult)*255 clamped. Alpha: only alpha channel modified. Fix: add detection logic in toColorEffect() to identify tint vs brightness vs alpha vs advanced from the CXFORM components, and produce the appropriate named type. Reference the core model's ColorEffect type to ensure all named types are supported. Also fix: text field instances explicitly hardcode colorEffect: null (line ~2212 in flash8-binary.ts) \u2014 fix this to actually decode the color effect for text instances.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T21:24:37Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

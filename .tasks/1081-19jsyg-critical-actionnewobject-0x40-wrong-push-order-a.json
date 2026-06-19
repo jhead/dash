@@ -1,0 +1,10 @@
+{
+  "id": "1081-19jsyg-critical-actionnewobject-0x40-wrong-push-order-a",
+  "title": "CRITICAL: ActionNewObject (0x40) wrong push order \u2014 all new Foo(args) calls broken at AVM1 runtime",
+  "description": "compileNewExpr() in compiler.ts pushes className first (deepest), then nArgs, then args (args on top). But Ruffle's action_new_object() pops className first (expects it on TOP). For new Array(1,2,3) the emitted sequence is: push 'Array', push 3, push 3, push 2, push 1, ActionNewObject \u2014 Ruffle pops class-name=1 and num_args=2. The fix: push args reversed (deepest first), then push nArgs, then push className LAST (same as compileCallExpr puts the function name on top). compileRegExpLiteral() has the same bug. The comment in newexpr.test.ts:6 correctly documents the right order but the code contradicts it. No e2e oracle covers this.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T02:38:07Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

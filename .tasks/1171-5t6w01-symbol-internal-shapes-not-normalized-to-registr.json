@@ -1,0 +1,10 @@
+{
+  "id": "1171-5t6w01-symbol-internal-shapes-not-normalized-to-registr",
+  "title": "Symbol-internal shapes not normalized to registration origin (retain absolute authoring coords)",
+  "description": "DONE. Wired symbol-internal shape normalization in packages/swf/src/sprite.ts. Pre-pass now shifts each non-morph shape's DefineShape4 path coords (and gradient matrices) by (+disp.x,+disp.y) via shiftShapePaths so geometry is origin-relative; records the shift in shapeNormOrigin; the frame loop subtracts the same shift from the PlaceObject2 translation so the residual is 0,0 for non-tweened shapes (tween delta for motion tweens). Verified vs golden.swf: ours Coin DefineShape now bounds +/-210 twips (golden +/-220), Box +/-535 (golden +/-545); sprite-internal PlaceObject2 tx/ty=0,0 matching golden. Tests: pnpm --filter @flash/swf run test --run => 107 files / 1285 pass / 1 todo. golden-report golden.fla: SELF-DETERMINISM PASS, 0 tag-count mismatches (DefineShape 3=3, DefineSprite 2=2, PlaceObject2 4=4). golden-v2 mismatches are pre-existing (verified identical with change stashed).",
+  "status": "done",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-13T20:24:05Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

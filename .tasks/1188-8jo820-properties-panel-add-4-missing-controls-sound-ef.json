@@ -1,0 +1,10 @@
+{
+  "id": "1188-8jo820-properties-panel-add-4-missing-controls-sound-ef",
+  "title": "Properties-panel: add 4 missing controls (sound Effect, text Restrict, Track-as-Menu, cacheAsBitmap)",
+  "description": "Audit Task E \u2014 high value/low effort: model + compile already support all four; only the panel UI is missing. (1) Sound frame 'Effect' dropdown (None/Left/Right/Fade In/Out/L->R/R->L/Custom): FrameSoundSection PropertiesPanel.tsx:2176-2283; model SoundLinkage.effect (model/types.ts:103); compile.ts:2883. (2) Input-text 'Restrict' field: PropertiesPanel.tsx:1668-1692; model TextDisplayObject.restrict (engine/types.ts:676); compile.ts:1757. (3) Button-instance 'Track as Menu Item' toggle: model SymbolInstance.trackAsMenu (engine/types.ts:518); compile.ts:2240 / buttons.ts:189. (4) Instance 'Use runtime bitmap caching' (cacheAsBitmap) checkbox: model SymbolInstance.cacheAsBitmap (engine/types.ts:525); compile.ts:2013/2167. Files: packages/authoring-ui/src/PropertiesPanel.tsx (+ InstancePanel.tsx for instance controls). Acceptance: each control renders for its object type and round-trips to the model (unit or Playwright): Effect='left' -> frame.sound.effect==='left'; Restrict '0-9' -> obj.restrict==='0-9'; Track-as-Menu -> instance.trackAsMenu===true; cache -> instance.cacheAsBitmap===true; button/cache controls render only for matching symbol type. Source: discovery audit Task E.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-14T00:02:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

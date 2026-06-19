@@ -1,0 +1,8 @@
+{
+  "id": "0195-98ygix-swf-actiongeturl-and-actiongeturl2-for-loadmovie",
+  "title": "SWF: ActionGetURL and ActionGetURL2 for loadMovie",
+  "description": "Verify ActionGetURL (0x83) and ActionGetURL2 (0x9A) compile correctly for loadMovie(), loadMovieNum(), getURL(). In AS2: loadMovie('url', target) \u2192 ActionGetURL2; getURL('url', '_blank') \u2192 ActionGetURL. Check packages/core/src/as2/compiler.ts for these. Fix if missing. Add tests in packages/core/src/as2/__tests__/loadmovie.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:32:31Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

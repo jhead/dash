@@ -1,8 +1,0 @@
-{
-  "id": "0493-as2-function-object-methods-call-apply-bind-test",
-  "title": "AS2 Function object methods: call, apply, bind tests",
-  "description": "Test Function.prototype.call(thisObj, args), Function.prototype.apply(thisObj, [args]), Function.length property. Maps to ActionCallMethod with explicit this.",
-  "status": "done",
-  "created_at": "2026-06-09T21:57:11Z",
-  "updated_at": "2026-06-09T21:58:16Z"
-}

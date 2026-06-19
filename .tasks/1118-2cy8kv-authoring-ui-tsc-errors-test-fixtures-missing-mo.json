@@ -1,0 +1,10 @@
+{
+  "id": "1118-2cy8kv-authoring-ui-tsc-errors-test-fixtures-missing-mo",
+  "title": "authoring-ui tsc errors: test fixtures missing motionEaseType/motionSnap/shapeEaseType, wrong symbol type string",
+  "description": "packages/authoring-ui has 19 TypeScript errors in test and production files:\\n\\n1. movieExplorer.test.ts lines 167, 243, 379: Frame object literals missing motionEaseType, motionSnap, shapeEaseType required fields (same pattern as task 1165 fixed for @flash/swf). Fix: add motionEaseType: 'none', motionSnap: false, shapeEaseType: 'none' to all inline Frame literals.\\n\\n2. PropertiesPanel.tsx line 2287: comparison uses 'drawing' but the type union is 'drawing-object'. Fix: change 'drawing' to 'drawing-object'.\\n\\n3. Timeline.tsx line 936: unused variable 'layerId'. Fix: remove or prefix with _.\\n\\n4. registry.ts line 1578: Type 'false' not assignable to type 'true' \u2014 production type error. Read the context to determine the correct fix.\\n\\n5. registry.test.ts: several type assertions using 'movie-clip' (should be 'movieclip'?) and LibraryItem type assertion issues. Read and fix.\\n\\n6. propertiesPanelGroup.test.ts line 44: Expected 6 arguments but got 5. Read to fix.\\n\\n7. useKeyboardShortcuts.test.ts line 109: Missing onDuplicate, onRemoveFrame, onClearKeyframe handlers in test. Read to fix.\\n\\nRun: cd packages/authoring-ui && npx tsc --noEmit to verify all 19 errors are resolved.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T12:26:50Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

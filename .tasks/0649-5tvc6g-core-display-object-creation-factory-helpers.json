@@ -1,0 +1,8 @@
+{
+  "id": "0649-5tvc6g-core-display-object-creation-factory-helpers",
+  "title": "Core display object creation factory helpers",
+  "description": "Implement createSymbolInstance(symbolId, instanceName, x, y), createTextInstance(text, x, y), createShapeInstance(shapeId, x, y) factory functions. Tests verify field values and immutability.",
+  "status": "done",
+  "created_at": "2026-06-09T22:42:03Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

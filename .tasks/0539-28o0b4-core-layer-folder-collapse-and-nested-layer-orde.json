@@ -1,0 +1,8 @@
+{
+  "id": "0539-28o0b4-core-layer-folder-collapse-and-nested-layer-orde",
+  "title": "Core layer folder collapse and nested layer ordering",
+  "description": "Test layersInFolder(timeline, folderId): returns child layers. getLayerDepth(timeline, layerId): returns visual depth. setFolderCollapsed(timeline, folderId, collapsed): returns updated Timeline.",
+  "status": "done",
+  "created_at": "2026-06-09T22:06:36Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

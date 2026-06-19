@@ -1,8 +1,0 @@
-{
-  "id": "0298-ui-stage-grid-snap-and-snap-to-guides-interactio",
-  "title": "UI: Stage grid snap and snap-to-guides interaction",
-  "description": "Unit/integration tests for the snap-to-grid and snap-to-guides behavior in the authoring UI. The engine snapPointToGrid(x, y, gridWidth, gridHeight) and snapPointToGuides(x, y, guides, threshold) functions should already exist or need creating in packages/core/src/engine/snap.ts. Tests in packages/core/src/engine/__tests__/snap.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:08:02Z",
-  "updated_at": "2026-06-09T21:10:47Z"
-}

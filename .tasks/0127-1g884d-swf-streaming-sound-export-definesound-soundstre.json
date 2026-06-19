@@ -1,0 +1,8 @@
+{
+  "id": "0127-1g884d-swf-streaming-sound-export-definesound-soundstre",
+  "title": "SWF: streaming sound export (DefineSound + SoundStreamBlock)",
+  "description": "Improve audio export: currently SoundItem.compressionType='mp3' emits raw MP3 bytes in DefineSound (tag 14) which works for event sounds. Add SoundStreamHead (tag 18) + SoundStreamBlock (tag 19) support for 'stream' sync mode \u2014 needed for audio synced to timeline frames. Also fix: DefineSound currently uses compressionType 2 (MP3) for all audio; add compressionType mapping for 'adpcm' (1), 'raw' (0), 'speech' (6). Write 8 tests in packages/swf/src/__tests__/sound-stream.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T19:50:41Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

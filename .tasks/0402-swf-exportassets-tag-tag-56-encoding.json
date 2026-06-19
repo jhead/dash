@@ -1,8 +1,0 @@
-{
-  "id": "0402-swf-exportassets-tag-tag-56-encoding",
-  "title": "SWF: ExportAssets tag (tag 56) encoding",
-  "description": "Test that symbols with exportForActionScript=true produce ExportAssets (tag 56) in the SWF. Verify: (1) tag 56 appears, (2) count field is correct number of exported symbols, (3) each entry has characterId (UI16) + name (null-terminated string), (4) linkageIdentifier appears as the export name, (5) symbols without exportForActionScript do NOT appear in tag 56.",
-  "status": "done",
-  "created_at": "2026-06-09T21:31:25Z",
-  "updated_at": "2026-06-09T21:32:29Z"
-}

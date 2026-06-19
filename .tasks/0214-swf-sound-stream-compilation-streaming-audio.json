@@ -1,8 +1,0 @@
-{
-  "id": "0214-swf-sound-stream-compilation-streaming-audio",
-  "title": "SWF: Sound stream compilation (streaming audio)",
-  "description": "Verify SoundStreamHead (tag 18) and SoundStreamBlock (tag 19) are emitted when a scene has stream-sync sounds. Read compile.ts to find existing stream sound handling. If missing, add: when a Frame has sound.syncMode === 'stream', emit SoundStreamHead before the first frame and SoundStreamBlock per frame. Tests: a doc with a stream sound compiles to SWF containing tags 18 and 19.",
-  "status": "done",
-  "created_at": "2026-06-09T20:41:42Z",
-  "updated_at": "2026-06-09T20:43:29Z"
-}

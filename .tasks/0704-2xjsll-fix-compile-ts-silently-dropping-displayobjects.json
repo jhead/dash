@@ -1,0 +1,10 @@
+{
+  "id": "0704-2xjsll-fix-compile-ts-silently-dropping-displayobjects",
+  "title": "Fix compile.ts silently dropping displayObjects on isEmpty frames",
+  "description": "Found by the 0519 capstone (CLAUDE.md Learnings, never tasked): packages/swf/src/compile.ts skips emitting displayObjects for frames whose keyframe isEmpty flag is set, silently losing content at publish time. Silent data loss is never acceptable: either the model should prevent displayObjects existing on isEmpty frames (enforce invariant at mutation layer + migrate), or compile must emit them (or fail loudly). Decide the invariant, implement, add a regression test reproducing the original capstone symptom.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T01:15:19Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

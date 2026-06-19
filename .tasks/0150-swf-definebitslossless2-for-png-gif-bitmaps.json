@@ -1,8 +1,0 @@
-{
-  "id": "0150-swf-definebitslossless2-for-png-gif-bitmaps",
-  "title": "SWF: DefineBitsLossless2 for PNG/GIF bitmaps",
-  "description": "BitmapItem with compressionType='lossless' should encode as DefineBitsLossless2 (tag 36) in compile.ts. Currently all bitmaps may go through JPEG path. Add logic: if compressionType=lossless, decode the dataUri PNG to RGBA pixels, encode as ZLIB-compressed DefineBitsLossless2 with colorTableSize=0 (32bpp ARGB). Place the bitmap via PlaceObject2 on the correct frame. Add unit tests in packages/swf/src/__tests__/bitslossless.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T20:10:26Z",
-  "updated_at": "2026-06-09T20:11:50Z"
-}

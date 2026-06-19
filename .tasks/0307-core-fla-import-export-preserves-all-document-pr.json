@@ -1,8 +1,0 @@
-{
-  "id": "0307-core-fla-import-export-preserves-all-document-pr",
-  "title": "Core: FLA import/export preserves all document properties",
-  "description": "Round-trip serialization test that all DocumentProperties fields survive saveFla/loadFla: frameRate, width, height, backgroundColor, rulerUnits, grid.showGrid, grid.gridWidth, grid.gridHeight, grid.gridColor, guides (with orientation and position), snapToObjects, snapToPixels, snapToGuides. Tests in packages/core/src/fla/__tests__/docprops-roundtrip.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:10:21Z",
-  "updated_at": "2026-06-09T21:13:20Z"
-}

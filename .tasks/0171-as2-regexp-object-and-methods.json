@@ -1,8 +1,0 @@
-{
-  "id": "0171-as2-regexp-object-and-methods",
-  "title": "AS2: RegExp object and methods",
-  "description": "Add RegExp literal support to the AS2 compiler (packages/core/src/as2). Parser: parse /pattern/flags as a RegExpLiteral node. Compiler: compile to ActionPush 'RegExp' + ActionGetVariable + ActionPush pattern + ActionPush flags + ActionPush 2 + ActionNew (0x40) to create a RegExp instance. Also support .test(), .exec(), .match() method calls (these just compile as regular method calls via ActionCallMethod). Add parser tests and compiler tests.",
-  "status": "done",
-  "created_at": "2026-06-09T20:21:48Z",
-  "updated_at": "2026-06-09T20:25:35Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0425-core-as2-capabilities-class-system-capabilities",
-  "title": "Core: AS2 Capabilities class (System.capabilities)",
-  "description": "Test compilation of Flash 8 System/Capabilities object: System.capabilities.os, System.capabilities.playerType, System.capabilities.version, System.capabilities.screenResolutionX, System.capabilities.screenResolutionY, System.capabilities.hasAudio, System.capabilities.hasVideo, System.capabilities.language, System.setClipboard(str), System.showSettings(panel). Each should compile. Verify ActionGetMember (0x4f) for property reads.",
-  "status": "done",
-  "created_at": "2026-06-09T21:38:35Z",
-  "updated_at": "2026-06-09T21:40:00Z"
-}

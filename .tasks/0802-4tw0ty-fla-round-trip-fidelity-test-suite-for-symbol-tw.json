@@ -1,0 +1,10 @@
+{
+  "id": "0802-4tw0ty-fla-round-trip-fidelity-test-suite-for-symbol-tw",
+  "title": "FLA round-trip fidelity test suite for symbol/tween documents",
+  "description": "E2E test that opens a known FLA fixture with symbols/tweens/scripts, publishes a SWF, loads it in Ruffle, and asserts pixel parity against a reference capture. This is the regression harness called out in docs/00-overview-and-architecture.md accuracy strategy. Gates against regressions across the full author\u2192compile\u2192play pipeline.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T11:17:06Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

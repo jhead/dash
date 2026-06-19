@@ -1,0 +1,10 @@
+{
+  "id": "1070-4pv4o2-button-model-missing-overdowntoidle-and-idletoov",
+  "title": "Button model missing overDownToIdle and idleToOverDown event types",
+  "description": "Ruffle's ButtonActionCondition defines 9 event bits. The Flash 8 clone's ButtonAction.event union type (types.ts:295-303) and the encoder's eventBitMap (buttons.ts:412-420) expose only 7. Missing: 'overDownToIdle' (bit 8 = 0x100, fired when mouse leaves button while held down) and 'idleToOverDown' (bit 7 = 0x80, fired when button is directly pressed without a rollover). Fix: add both event names to the ButtonAction.event union type and add entries to the eventBitMap with correct bit values 0x100 and 0x80.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T02:00:22Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

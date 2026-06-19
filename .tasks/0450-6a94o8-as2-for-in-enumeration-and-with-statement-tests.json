@@ -1,0 +1,8 @@
+{
+  "id": "0450-6a94o8-as2-for-in-enumeration-and-with-statement-tests",
+  "title": "AS2 for..in enumeration and with statement tests",
+  "description": "Test for-in loop over object, for-in with prototype properties, with(obj){} statement scope wrapping, nested with. Maps to ActionEnumerate2 (0x55) and ActionWith (0x94) opcodes.",
+  "status": "done",
+  "created_at": "2026-06-09T21:46:25Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

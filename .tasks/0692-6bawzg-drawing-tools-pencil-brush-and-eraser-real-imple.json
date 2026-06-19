@@ -1,0 +1,8 @@
+{
+  "id": "0692-6bawzg-drawing-tools-pencil-brush-and-eraser-real-imple",
+  "title": "Drawing tools: pencil, brush, and eraser real implementation",
+  "description": "Implemented pencil (stroke path), brush (filled path), eraser (removes overlapping shapes). Unit tests pass.",
+  "status": "done",
+  "created_at": "2026-06-10T00:14:11Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

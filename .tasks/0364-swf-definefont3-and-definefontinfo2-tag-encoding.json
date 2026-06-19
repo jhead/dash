@@ -1,8 +1,0 @@
-{
-  "id": "0364-swf-definefont3-and-definefontinfo2-tag-encoding",
-  "title": "SWF: DefineFont3 and DefineFontInfo2 tag encoding",
-  "description": "Test that FontItem library items produce DefineFont3 (tag 75) or DefineFontInfo2 (tag 62) tags in exported SWF. Verify: (1) tag 75 appears when a font is used in a text field, (2) font name is encoded correctly as counted string, (3) bold/italic flags set correctly in FontFlagsItalic/FontFlagsBold bits. Also test that an unused font does NOT produce DefineFont3 tags.",
-  "status": "done",
-  "created_at": "2026-06-09T21:24:33Z",
-  "updated_at": "2026-06-09T21:26:48Z"
-}

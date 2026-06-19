@@ -1,8 +1,0 @@
-{
-  "id": "0404-core-as2-for-in-loop-enumeration",
-  "title": "Core: AS2 for-in loop enumeration",
-  "description": "Test compilation of for-in loops: for (var k in obj) { trace(k); }, for (var k in arr) { trace(arr[k]); }, for (var k in this) { }. Verify ActionEnumerate2 (0x55) and ActionNextMember (0x19) opcodes. Test for-in with hasOwnProperty guard: for (var k in obj) { if (obj.hasOwnProperty(k)) { ... } }. Test for-in over null/undefined (should compile).",
-  "status": "done",
-  "created_at": "2026-06-09T21:32:21Z",
-  "updated_at": "2026-06-09T21:34:01Z"
-}

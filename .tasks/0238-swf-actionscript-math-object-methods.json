@@ -1,8 +1,0 @@
-{
-  "id": "0238-swf-actionscript-math-object-methods",
-  "title": "SWF: ActionScript Math object methods",
-  "description": "Verify Math object calls compile correctly: Math.abs(x), Math.floor(x), Math.ceil(x), Math.round(x), Math.sqrt(x), Math.pow(x,y), Math.min(a,b), Math.max(a,b), Math.sin(x), Math.cos(x), Math.PI, Math.random(). These all compile as ActionGetVariable('Math') + ActionGetMember + ActionCall. Tests in packages/core/src/as2/__tests__/mathmethods.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T20:51:23Z",
-  "updated_at": "2026-06-09T20:54:12Z"
-}

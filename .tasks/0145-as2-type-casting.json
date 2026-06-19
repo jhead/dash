@@ -1,8 +1,0 @@
-{
-  "id": "0145-as2-type-casting",
-  "title": "AS2: type casting functions Number(), String(), Boolean()",
-  "description": "Verify and test AS2 type casting in the AVM1 compiler. In AS2, Number(x), String(x), Boolean(x) are global constructor calls that convert values. In AVM1: Number(x) \u2192 ActionPush x, ActionPush 1, ActionPush 'Number', ActionCallFunction (0x3D); similarly for String/Boolean. Test that these compile to ActionCallFunction (not ActionCallMethod). Also test: 'x as Number' type assertion (compile-time only, no bytecode). Add 6 tests in __tests__/typecasting.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T20:05:58Z",
-  "updated_at": "2026-06-09T20:07:50Z"
-}

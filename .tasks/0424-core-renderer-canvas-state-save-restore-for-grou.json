@@ -1,8 +1,0 @@
-{
-  "id": "0424-core-renderer-canvas-state-save-restore-for-grou",
-  "title": "Core: Renderer canvas state (save/restore for groups)",
-  "description": "Test that the canvas renderer correctly saves/restores context state when rendering layered content. Verify: (1) save() called before applying transform, (2) restore() called after, (3) globalAlpha set correctly for display objects with alpha < 1, (4) the rendering depth stack does not leak state across objects, (5) a hidden (visible=false) object does not emit drawing calls.",
-  "status": "done",
-  "created_at": "2026-06-09T21:37:45Z",
-  "updated_at": "2026-06-09T21:43:15Z"
-}

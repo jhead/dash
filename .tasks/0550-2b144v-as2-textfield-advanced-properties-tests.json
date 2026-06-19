@@ -1,0 +1,8 @@
+{
+  "id": "0550-2b144v-as2-textfield-advanced-properties-tests",
+  "title": "AS2 TextField advanced properties tests",
+  "description": "Tests for TextField advanced: htmlText, multiline, wordWrap, selectable, password, autoSize ('left'|'right'|'center'|'none'), restrict, maxChars, getLineMetrics(), getTextFormat(begin,end), setNewTextFormat().",
+  "status": "done",
+  "created_at": "2026-06-09T22:11:19Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

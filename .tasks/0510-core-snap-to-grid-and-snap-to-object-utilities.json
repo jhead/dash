@@ -1,8 +1,0 @@
-{
-  "id": "0510-core-snap-to-grid-and-snap-to-object-utilities",
-  "title": "Core snap-to-grid and snap-to-object utilities",
-  "description": "Test snapToGrid(x, y, gridW, gridH): rounds to nearest grid intersection. snapToObjects(point, objects, threshold): snaps to nearest object edge or center within threshold px.",
-  "status": "done",
-  "created_at": "2026-06-09T22:00:41Z",
-  "updated_at": "2026-06-09T22:04:09Z"
-}

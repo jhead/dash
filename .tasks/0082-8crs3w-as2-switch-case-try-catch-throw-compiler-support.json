@@ -1,0 +1,8 @@
+{
+  "id": "0082-8crs3w-as2-switch-case-try-catch-throw-compiler-support",
+  "title": "AS2 switch/case/try/catch/throw compiler support",
+  "description": "The AS2 compiler is missing switch/case and try/catch/throw statement support. Add both: (1) switch(expr){case val: ... break; default: ...} \u2014 compiles to: evaluate expr, then for each case: ActionPush case_value, ActionEquals, ActionNot, ActionIf(skip_body); body; ActionJump(end); default falls through. Use backpatching for break; (2) try{...}catch(e){...}finally{...} \u2014 ActionTry opcode (0x8F): flags byte (hasCatch|hasFinally), catchVar string, trySize UI16, catchSize UI16, finallySize UI16, then try-body, catch-body, finally-body. All sizes must be pre-computed via sub-compiler buffers then patched in; (3) throw expr \u2014 ActionThrow opcode (0x2A): push expression then emit 0x2A. Add tests in packages/core/src/as2/__tests__/switch-try.test.ts covering: switch with fall-through, switch with break, default case, try/catch, try/finally, try/catch/finally, throw, nested try. Only touches packages/core/src/as2/ \u2014 no authoring-ui changes.",
+  "status": "done",
+  "created_at": "2026-06-09T19:15:37Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

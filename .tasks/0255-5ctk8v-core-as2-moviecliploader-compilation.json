@@ -1,0 +1,8 @@
+{
+  "id": "0255-5ctk8v-core-as2-moviecliploader-compilation",
+  "title": "Core: AS2 MovieClipLoader compilation",
+  "description": "Verify MovieClipLoader AS2 class compiles correctly. new MovieClipLoader(), mcl.loadClip(url, target), mcl.unloadClip(target), mcl.getProgress(target), mcl.addListener(l), mcl.onLoadStart, mcl.onLoadProgress, mcl.onLoadComplete, mcl.onLoadError callbacks. Tests in packages/core/src/as2/__tests__/moviecliploader.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T20:57:29Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

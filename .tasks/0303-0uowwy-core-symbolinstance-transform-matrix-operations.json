@@ -1,0 +1,8 @@
+{
+  "id": "0303-0uowwy-core-symbolinstance-transform-matrix-operations",
+  "title": "Core: SymbolInstance transform matrix operations",
+  "description": "Unit tests for transform matrix operations on SymbolInstances. Create a SymbolInstance with x=10, y=20, scaleX=1.5, scaleY=2.0, rotation=45. Compute the affine matrix. Test that getTransformMatrix(instance) returns the correct [a,b,c,d,tx,ty] 2D affine matrix. Test matrix inversion and point transformation. Tests in packages/core/src/engine/__tests__/transform-matrix.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:09:32Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

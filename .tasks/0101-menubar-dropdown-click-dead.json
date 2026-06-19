@@ -1,8 +1,0 @@
-{
-  "id": "0101-menubar-dropdown-click-dead",
-  "title": "MenuBar: dropdown item clicks never fire (mousedown unmounts item before click)",
-  "description": "All menu items under File/Edit/View/Insert/etc. close the menu but never run their action, in all browsers. Root cause: the dropdown renders inside the top-level menu div which has onMouseDown={isOpen ? onClose : onOpen} (MenuBar.tsx:145); mousedown on a dropdown item bubbles to the parent, onClose unmounts the dropdown before mouseup, so the item onClick (the only caller of item.action()) never fires. Fix: stop mousedown propagation at the dropdown container so pressing an item does not toggle the parent; keep click-outside close (document mousedown listener already uses ref.contains). Verify by driving the app.",
-  "status": "done",
-  "created_at": "2026-06-09T19:30:31Z",
-  "updated_at": "2026-06-09T19:32:01Z"
-}

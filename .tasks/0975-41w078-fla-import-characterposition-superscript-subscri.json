@@ -1,0 +1,10 @@
+{
+  "id": "0975-41w078-fla-import-characterposition-superscript-subscri",
+  "title": "FLA import: characterPosition (superscript/subscript) skipped in readTextRunFields",
+  "description": "In packages/core/src/fla/flash8-binary.ts, readTextRunFields() skips the characterPosition byte (superscript/subscript). Around the text style fields, there should be a u8 for characterPosition (0=normal, 1=superscript, 2=subscript). Decode it and add to Fla8TextRun. Forward through flash8-import.ts to the TextFormat model (if TextFormat has a corresponding field, otherwise add one). In SWF encoding (packages/swf/src/text.ts), DefineEditText does not have a superscript field \u2014 this is typically stored in HTML text with <sup>/<sub> tags. For now, just capture it in the model.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-10T22:15:54Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

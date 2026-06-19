@@ -1,0 +1,8 @@
+{
+  "id": "0163-12mw8d-swf-enabledebugger2-protect-tags",
+  "title": "SWF: EnableDebugger2 + Protect tags",
+  "description": "Implement EnableDebugger2 (tag 64) and Protect (tag 24) tags in packages/swf/src/compile.ts. EnableDebugger2: when a debugPassword is set in CompileOptions, emit tag 64 with MD5 hash of password after FileAttributes. Protect (tag 24): when protect=true in CompileOptions, emit tag 24 with empty body after FileAttributes. Add unit tests verifying these tags appear in output when options are set, and do NOT appear when options are absent.",
+  "status": "done",
+  "created_at": "2026-06-09T20:18:23Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

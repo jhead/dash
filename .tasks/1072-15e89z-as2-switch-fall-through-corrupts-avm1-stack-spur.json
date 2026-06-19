@@ -1,0 +1,10 @@
+{
+  "id": "1072-15e89z-as2-switch-fall-through-corrupts-avm1-stack-spur",
+  "title": "AS2: switch fall-through corrupts AVM1 stack (spurious ActionPop)",
+  "description": "When case N falls through to case N+1 (no break), the fall-through ActionJump patches to bodyStart \u2014 which is BEFORE case N+1's discriminant-popping ActionPop (0x17). In the match path the discriminant is still on the stack when entering a case body, so ActionPop is needed. In the fall-through path the discriminant was already consumed by the prior case's pop, so arriving before another ActionPop consumes an unrelated stack value, corrupting subsequent code. Fix: fall-through jumps should skip the ActionPop and land directly at the case body statements, not at bodyStart. Track a separate 'bodyBodyStart' position (after the ActionPop) as the fall-through target. Location: packages/core/src/as2/compiler.ts:1071 in the switch compilation.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-11T02:10:02Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

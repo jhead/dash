@@ -1,8 +1,0 @@
-{
-  "id": "0084-rulers-and-guides-canvas-ruler-overlay-drag-to-c",
-  "title": "Rulers and guides: canvas ruler overlay + drag-to-create guides",
-  "description": "Add pixel rulers along the top and left edges of the stage canvas, matching Flash 8. (1) RulerOverlay component rendered over StageArea: horizontal ruler at top (x-axis ticks) and vertical ruler at left (y-axis ticks); rulers show coordinates in doc.properties.rulerUnits; tick marks and labels scale with zoom; (2) Click+drag from a ruler to create a guide line (horizontal from top ruler, vertical from left ruler) \u2014 appended to doc.properties.guides via pushDoc; (3) Existing guides rendered as dashed lines over the stage; (4) Drag a guide to reposition (mousedown on guide line, mousemove, mouseup = pushDoc update); (5) Double-click a guide to delete. Guide snap: when snapToGuides is true in doc.properties, dragged objects snap to within 5px of any guide. Wire showRulers state in Shell.tsx. See docs/01-documents-stage-scenes.md.",
-  "status": "done",
-  "created_at": "2026-06-09T19:17:09Z",
-  "updated_at": "2026-06-09T19:24:23Z"
-}

@@ -1,0 +1,10 @@
+{
+  "id": "1140-5quovl-script-set-mcp-tool-stores-invalid-as2-scripts-s",
+  "title": "script_set MCP tool stores invalid AS2 scripts silently (ok:true even on compile error)",
+  "description": "The script_set tool in packages/authoring-ui/src/agent/registry.ts always stores the script and always returns ok:true, even when compileCheckScript() returns diagnostics with severity:error. The compile check is explicitly marked non-blocking (line 1582). An agent that checks only the ok field will silently store a broken script that will fail at publish time. Fix: either (a) make ok:false when diagnostics contain errors and skip the pushDoc, or (b) at minimum document that agents MUST inspect diagnostics even when ok:true. The safer fix is (a) \u2014 match the user mental model that script_set succeeds only when the script is valid.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T08:25:18Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

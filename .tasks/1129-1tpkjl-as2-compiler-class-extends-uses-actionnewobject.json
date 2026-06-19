@@ -1,0 +1,10 @@
+{
+  "id": "1129-1tpkjl-as2-compiler-class-extends-uses-actionnewobject",
+  "title": "AS2 compiler: class extends uses ActionNewObject instead of ActionExtends (0x69) \u2014 calls super constructor during prototype setup",
+  "description": "In compileClassDecl(), when a class has a superClass, the compiler emits:\n  push 0 (nArgs), push superName, ActionNewObject (0x40) \u2192 assigns to ClassName.prototype\n\nThis is WRONG. ActionNewObject CALLS the superclass constructor with 0 args, causing side effects (e.g. throws if constructor requires args, initializes unintended state).\n\nThe correct AVM1 opcode is ActionExtends (0x69), which creates a properly linked prototype object WITHOUT calling the constructor. Ruffle's action_extends() (activation.rs:1054):\n  - pops: superclass, then subclass\n  - creates a new sub_prototype whose __proto__ is superclass.prototype\n  - sets sub_prototype.__constructor__ = superclass (this is the CRITICAL link \u2014 used by super() to find the right superclass constructor)\n  - sets subclass.prototype = sub_prototype\n\nThe current new SuperClass() approach also MISSES setting __constructor__, which breaks:\n  - Ruffle's super() handling that resolves via __proto__.__constructor__\n  - instanceof checks that walk the prototype chain via __constructor__\n\nFix in packages/core/src/as2/compiler.ts compileClassDecl():\n  Replace the 'Emit prototype chain if extends' block with:\n    push className, ActionGetVariable (subclass)\n    push superName, ActionGetVariable (superclass)\n    emit 0x69 (ActionExtends)\n  Remove the ActionNewObject-based prototype assignment and the manual constructor= restoration (ActionExtends handles __constructor__ automatically).\n\nReferences:\n  - ruffle/core/src/avm1/activation.rs fn action_extends() (line 1054)\n  - ruffle/swf/src/avm1/opcode.rs: Extends = 0x69",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T06:02:17Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

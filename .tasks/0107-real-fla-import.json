@@ -1,8 +1,0 @@
-{
-  "id": "0107-real-fla-import",
-  "title": "Open real Macromedia Flash 8 .fla files (OLE compound document import)",
-  "description": "User-hit gap: opening a genuine Flash 8 FLA (e.g. blur.fla, magic D0CF11E0 = OLE2 Compound Document) fails \u2014 loadFla only reads this clones zip/JSON format. Project goal (docs/README, docs/15-file-formats-fla-swf.md) includes FLA I/O with the real format. Story: (1) parse the OLE2/CFB container (npm cfb package or hand-rolled reader); (2) reverse-engineer/implement the Flash 8 binary record streams (Contents stream: document properties, timelines/layers/frames, library symbols, media \u2014 the format is undocumented; JPEXS FFDec source is the best reference implementation for reading pre-CS5 FLA); (3) map onto FlashDocument, importing what we support and reporting what was dropped; (4) keep saving in the native zip format (write-back to real FLA is out of scope). Until this lands, the Open dialog error now explains real FLAs are unsupported (useFileActions.ts). Consider scoping a first slice to: stage size/fps/background + shapes + timeline keyframes only.",
-  "status": "done",
-  "created_at": "2026-06-09T19:37:37Z",
-  "updated_at": "2026-06-09T19:45:50Z"
-}

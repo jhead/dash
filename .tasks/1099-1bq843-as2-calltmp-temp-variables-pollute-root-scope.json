@@ -1,0 +1,10 @@
+{
+  "id": "1099-1bq843-as2-calltmp-temp-variables-pollute-root-scope",
+  "title": "AS2: __callTmp temp variables pollute _root scope",
+  "description": "In packages/core/src/as2/compiler.ts around lines 2339-2348, complex callees store temporary objects in __callTmp0, __callTmp1, etc. via ActionSetVariable at frame/DoAction scope, which permanently pollutes _root. Fix: use ActionDefineLocal (scoped to current frame) instead of ActionSetVariable, or ActionDelete2 after the call to clean up.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-11T03:13:56Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

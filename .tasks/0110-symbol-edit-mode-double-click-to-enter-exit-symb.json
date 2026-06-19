@@ -1,8 +1,0 @@
-{
-  "id": "0110-symbol-edit-mode-double-click-to-enter-exit-symb",
-  "title": "Symbol edit mode: double-click to enter/exit symbol",
-  "description": "Flash 8 allows double-clicking a symbol instance on stage to enter Edit-in-Place mode: the stage dims, the symbol's own timeline is shown in the Timeline panel, and you edit the symbol directly. Double-clicking outside or pressing Escape exits back to the parent timeline. This requires Shell.tsx to track an editPath stack (array of {symbolId, instanceId}) and a matching withSymbolTimeline helper. The stage should show parent dimmed with an onion-skin-style overlay. See docs/05-symbols-library.md \u00a7 Edit in Place.",
-  "status": "done",
-  "created_at": "2026-06-09T19:43:10Z",
-  "updated_at": "2026-06-09T20:22:49Z"
-}

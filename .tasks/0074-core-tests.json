@@ -1,8 +1,0 @@
-{
-  "id": "0074-core-tests",
-  "title": "packages/core test suite: timeline, tween, model mutations",
-  "description": "packages/core has no test files (vitest exists per package.json but zero specs). Add coverage for the most bug-prone subsystems: (1) timeline.ts: insertFrame/insertKeyframe/insertBlankKeyframe/removeFrame F5/F6/F7 semantics + layerFrameCount; (2) timeline-query.ts: getGoverningKeyframe, getTweenSpans, getTweenedFrame; (3) tween/interpolate.ts: interpolateTween motion (ease, rotation modes cw/ccw/auto/none), interpolateShapeTween first-segment start fallback; (4) model/document-mutations.ts: addScene/removeScene/renameScene; (5) fla/zip.ts round-trip (already has tests from 0062 \u2014 extend to cover 3-scene document, symbols in library). Target: 40+ assertions across these 5 areas. See packages/core/package.json for existing vitest config.",
-  "status": "done",
-  "created_at": "2026-06-09T18:53:40Z",
-  "updated_at": "2026-06-09T18:56:43Z"
-}

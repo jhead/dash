@@ -1,0 +1,8 @@
+{
+  "id": "0054-0ujswt-tween-playback-and-baking",
+  "title": "Tween playback: stage scrub/play + bake into published SWF",
+  "description": "Tweens are a timeline paint job today: Create Motion/Shape Tween sets tweenType and colors the span, but Shell derives stage content from the governing keyframe only (Shell.tsx:725-733) and the SWF compiler re-places governing-keyframe objects each frame (compile.ts:204-292) \u2014 nothing consumes core tween/interpolate.ts. Make stage scrubbing/playback interpolate between keyframes, and bake interpolated placements into the SWF (matrix updates per frame via PlaceObject2 Move). Fix interpolation bugs while there: (1) lerpSegments first-segment implied point falls back to origin (0,0) instead of path.start, yanking shape morphs toward origin (interpolate.ts:179-191); (2) Frame stores motionRotate/motionRotateCount but TweenConfig only carries ease \u2014 rotate cw/ccw/count options are ignored and none still rotates (interpolate.ts:50-58, model/types.ts:86-87). Depends on 0052-timeline-frame-spans (spans must exist) and 0048-swf-display-list-frames (Move semantics). See docs/02.",
+  "status": "done",
+  "created_at": "2026-06-09T18:06:01Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

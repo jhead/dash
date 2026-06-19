@@ -1,0 +1,8 @@
+{
+  "id": "0009-38gotf-swf-compiler-mvp",
+  "title": "SWF v8 compiler & publish",
+  "description": "Walk document model \u2192 SWF tag stream: header, FileAttributes, DefineShape/DefineShape4, DefineSprite, PlaceObject2, ShowFrame, End. Correct twips, tag ordering, scene concatenation. Publish (Ctrl/Cmd+Enter) writes .swf. See docs/14-publishing-export.md, docs/15-file-formats-fla-swf.md. Depends on document-model-mvp, vector-engine-mvp, symbols-library-mvp.",
+  "status": "done",
+  "created_at": "2026-06-09T16:31:27Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

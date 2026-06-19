@@ -1,8 +1,0 @@
-{
-  "id": "0337-core-as2-multiple-return-values-via-object",
-  "title": "Core: AS2 multiple return values via object",
-  "description": "Verify AS2 function returning an object literal compiles and the properties are accessible: function getCoords() { return {x:10, y:20}; } var c = getCoords(); trace(c.x). Also test returning multiple values via array. Tests in packages/core/src/as2/__tests__/returnobject.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:16:54Z",
-  "updated_at": "2026-06-09T21:18:26Z"
-}

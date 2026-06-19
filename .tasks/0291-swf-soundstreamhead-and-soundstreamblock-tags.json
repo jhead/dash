@@ -1,8 +1,0 @@
-{
-  "id": "0291-swf-soundstreamhead-and-soundstreamblock-tags",
-  "title": "SWF: SoundStreamHead and SoundStreamBlock tags",
-  "description": "Unit tests for sound stream tag encoding in packages/swf. Check packages/swf/src/compile.ts for SoundStreamHead (tag 18) and SoundStreamBlock (tag 19) handling. Create a FlashDocument with a SoundItem in stream sync mode attached to a frame, export to SWF, verify SoundStreamHead tag exists (type 18). Tests in packages/swf/src/__tests__/soundstream.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:06:25Z",
-  "updated_at": "2026-06-09T21:10:25Z"
-}

@@ -1,0 +1,8 @@
+{
+  "id": "0349-7ge8ym-core-fla-round-trip-preserves-symbol-timeline-co",
+  "title": "Core: FLA round-trip preserves symbol timeline content",
+  "description": "Round-trip test that FLA save/load preserves a Symbol's full timeline: a MovieClip symbol with 3 layers, 5 frames, frame labels, a ShapeDisplayObject on frame 0. After loadFla, verify symbol exists in library, has correct layerCount, frameCount, displayObjects at frame 0. Tests in packages/core/src/fla/__tests__/symbol-timeline-roundtrip.test.ts.",
+  "status": "done",
+  "created_at": "2026-06-09T21:19:20Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

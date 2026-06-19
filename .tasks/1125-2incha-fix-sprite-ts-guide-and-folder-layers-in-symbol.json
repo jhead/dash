@@ -1,0 +1,10 @@
+{
+  "id": "1125-2incha-fix-sprite-ts-guide-and-folder-layers-in-symbol",
+  "title": "fix(sprite.ts): guide and folder layers in symbol timelines render as visible content",
+  "description": "sprite.ts encodeDefineSprite does not filter out guide and folder layer types before iterating frames. compile.ts explicitly skips these layers in every loop (e.g., lines 626-627, 671-672, 1119-1120, 1381-1382, 1616-1617) with 'if (layer.type === guide) continue; if (layer.type === folder) continue;', but sprite.ts has no equivalent guards anywhere in its code.\n\nAffected code paths in sprite.ts (packages/swf/src/sprite.ts):\n1. Pre-pass depth-seed loop (lines 196-203): guide/folder layers get depths assigned, wasting depth slots.\n2. Frame loop (lines 230-240 and onward): objects on guide layers are placed via PlaceObject2 as if they were normal visible content. A motion-guide path shape drawn on a guide layer inside a symbol will appear visibly rendered in Ruffle.\n\nThe compile.ts symbol-font pre-pass (line 671-672) correctly skips guide/folder layers in its font enumeration, proving the intent is to exclude these layers -- sprite.ts just omits the guards.\n\nFix: add the following guards at the TOP of both the pre-pass loop body (after 'const layer = layers[li]') and at the start of the frame-loop layer-iteration body:\n  if (layer.type === 'guide' || layer.type === 'folder') continue;\n\nThis matches the compile.ts pattern exactly. guided layers (type='guided') must still be processed normally (they carry the actual animated objects).",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T12:54:57Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

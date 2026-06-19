@@ -1,8 +1,0 @@
-{
-  "id": "0220-swf-compile-multi-scene-documents",
-  "title": "SWF: Compile multi-scene documents",
-  "description": "Verify that a FlashDocument with multiple scenes compiles all scenes into a single flat SWF timeline. Each scene's frames follow the previous scene's frames. FrameLabel and SceneAndFrameLabelData tags correctly reference scene boundaries. Tests: 2-scene doc with 3 frames each \u2192 SWF with 6 ShowFrame tags, correct scene labels at frames 0 and 3.",
-  "status": "done",
-  "created_at": "2026-06-09T20:44:31Z",
-  "updated_at": "2026-06-09T20:47:51Z"
-}

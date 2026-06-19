@@ -1,8 +1,0 @@
-{
-  "id": "0610-as2-on-keypress-with-named-key-tests",
-  "title": "AS2 on keyPress with named key tests",
-  "description": "Tests for on(keyPress) with key names: on(keyPress '<Enter>'){}, on(keyPress '<Escape>'){}, on(keyPress '<Tab>'){}, on(keyPress '<Space>'){}, on(keyPress '<Left>'){}, on(keyPress 'a'){} (character key). Each should compile successfully.",
-  "status": "done",
-  "created_at": "2026-06-09T22:28:38Z",
-  "updated_at": "2026-06-09T22:35:34Z"
-}

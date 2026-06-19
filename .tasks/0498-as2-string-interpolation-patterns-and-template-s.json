@@ -1,8 +1,0 @@
-{
-  "id": "0498-as2-string-interpolation-patterns-and-template-s",
-  "title": "AS2 string interpolation patterns and template strings",
-  "description": "Test string concatenation patterns common in Flash 8: 'x=' + x, multi-part concat, toString() coercion, + with mixed types, String(obj) + '' patterns.",
-  "status": "done",
-  "created_at": "2026-06-09T21:58:17Z",
-  "updated_at": "2026-06-09T22:00:00Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0354-swf-blendmode-encoding-in-placeobject3",
-  "title": "SWF: BlendMode encoding in PlaceObject3",
-  "description": "Flash 8 introduced blend modes. A SymbolInstance with blendMode set should produce a PlaceObject3 (tag 70) instead of PlaceObject2. Test: blendMode='multiply' produces PlaceObject3 with HasBlendMode flag. Tests in packages/swf/src/__tests__/blendmode.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:20:01Z",
-  "updated_at": "2026-06-09T21:21:03Z"
-}

@@ -1,8 +1,0 @@
-{
-  "id": "0156-core-motion-tween-easing",
-  "title": "Core: motion tween easing",
-  "description": "The getTweenedFrame function in packages/core/src/engine/tween.ts (or similar) currently interpolates motion tweens linearly (t=0..1). Implement Flash 8 easing: when frame.motionEase !== 0, apply the ease curve. Flash 8 ease: ease > 0 = ease-out, ease < 0 = ease-in. The formula: if ease > 0, t = 1 - (1-t)^(1 + ease/100 * 3); if ease < 0, t = t^(1 - ease/100 * 3). Find where linear interpolation happens and add easing. Add unit tests.",
-  "status": "done",
-  "created_at": "2026-06-09T20:13:36Z",
-  "updated_at": "2026-06-09T20:16:25Z"
-}

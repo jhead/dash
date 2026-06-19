@@ -1,0 +1,10 @@
+{
+  "id": "1184-0spkr2-ui-timeline-frame-counter-shows-padded-min-visib",
+  "title": "UI: timeline frame counter shows padded MIN_VISIBLE_FRAMES (48) instead of actual content frame count",
+  "description": "Fixed: extracted contentFrameCount() (unpadded) from totalFrameCount() (padded to MIN_VISIBLE_FRAMES=48). The FrameCounterInput now receives displayFrameCount (unpadded) so the readout shows the real content length (e.g. '1 / 2' for golden.fla) while the grid still renders all 48 padding columns. Also exported contentFrameCount and added timelineFrameCounter.test.ts with 4 unit tests. All 632 tests pass, tsc clean.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-13T22:04:23Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

@@ -1,8 +1,0 @@
-{
-  "id": "0242-core-layer-folder-collapse-expand",
-  "title": "Core: Layer folder collapse/expand",
-  "description": "Implement layer folder collapse/expand in the document model. When a folder layer is collapsed, its child layers are hidden in the timeline UI (but still present in the data). Add collapseFolder(doc, sceneIdx, layerIdx): FlashDocument and expandFolder(...) that toggle a collapsed state on folder layers. Tests: toggle collapsed state, children still present, immutability.",
-  "status": "done",
-  "created_at": "2026-06-09T20:52:26Z",
-  "updated_at": "2026-06-09T20:56:01Z"
-}

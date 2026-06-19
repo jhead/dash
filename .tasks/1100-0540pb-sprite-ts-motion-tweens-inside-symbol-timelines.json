@@ -1,0 +1,10 @@
+{
+  "id": "1100-0540pb-sprite-ts-motion-tweens-inside-symbol-timelines",
+  "title": "sprite.ts: motion tweens inside symbol timelines not interpolated",
+  "description": "encodeDefineSprite() in packages/swf/src/sprite.ts uses findGoverningKeyframe() (returns the static keyframe) instead of getTweenedFrame() for per-frame position lookup. As a result, any motion tween defined inside a library symbol timeline is silently dropped: every frame of the symbol shows the start-keyframe position, making the symbol appear to jump rather than smoothly animate.\\n\\nFix: replace the findGoverningKeyframe() call at line 199 with getTweenedFrame(layer, frameIdx, timeline). getTweenedFrame() is already exported from @flash/core and used correctly in compile.ts for scene timelines. The symbol's own timeline object should be passed as the third argument so guide-path interpolation still works for guided layers inside symbols.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T04:09:00Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

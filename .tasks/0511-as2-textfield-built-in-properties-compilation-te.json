@@ -1,8 +1,0 @@
-{
-  "id": "0511-as2-textfield-built-in-properties-compilation-te",
-  "title": "AS2 TextField built-in properties compilation tests",
-  "description": "Test TextField property assignments: _tf.text, _tf.htmlText, _tf.html, _tf.multiline, _tf.wordWrap, _tf.autoSize, _tf.border, _tf.background, _tf.scroll, _tf.maxscroll.",
-  "status": "done",
-  "created_at": "2026-06-09T22:00:41Z",
-  "updated_at": "2026-06-09T22:04:09Z"
-}

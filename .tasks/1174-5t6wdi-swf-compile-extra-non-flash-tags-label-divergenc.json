@@ -1,0 +1,10 @@
+{
+  "id": "1174-5t6wdi-swf-compile-extra-non-flash-tags-label-divergenc",
+  "title": "SWF compile: extra non-Flash tags & label divergence (ScriptLimits, DefineFontInfo, scene labels) + 2.7x size",
+  "description": "Golden-pair oracle / reproducibility deviation. Our published SWF is byte-deterministic across recompiles (verified by golden-report [1]) but structurally diverges from Flash 8's reference output: (a) we emit ScriptLimits (golden: none), DefineFontInfo (golden: none \u2014 Flash relies on DefineFont2+AlignZones), and DefineSceneAndFrameLabelData plus a spurious 'Scene 1' FrameLabel (golden: only the real 'menu'/'game' FrameLabel tags). golden-report: ScriptLimits 1/0, DefineFontInfo 1/0, DefineSceneAndFrameLabelData 1/0, FrameLabel 3/2. (b) Tag ORDERING: we hoist ALL character definitions to the top; Flash interleaves each definition just before its first-use frame (see golden-report [3] ordering signature). (c) Our SWF is 15.5KB vs golden 5.7KB (~2.7x), largely from the extra font tag + verbose encoding. Reconcile the emitted tag set, frame-label/scene encoding, and (optionally) definition ordering with Flash 8; triage which are correctness bugs vs benign. Acceptance: golden-report inventory diffs for these four tag types resolved.",
+  "status": "done",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-13T20:24:05Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

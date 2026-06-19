@@ -1,0 +1,10 @@
+{
+  "id": "1071-15e8ig-as2-string-xnn-and-uxxxx-escape-sequences-produc",
+  "title": "AS2: string \\xNN and \\uXXXX escape sequences produce wrong output",
+  "description": "The tokenizer (packages/core/src/as2/tokenizer.ts:91) copies the raw char-after-backslash without decoding hex escapes. The parser string literal handler (parser.ts:1032) replaces \\n, \\t, \\r, \\', \\\", \\\\ but NOT \\xNN hex escapes or \\uXXXX unicode escapes. So var s = '\\x41' produces the 4-char literal '\\x41' instead of 'A', and '\\u0041' produces a 6-char literal instead of 'A'. Fix: in the string literal parser, add cases for \\x (read 2 hex digits, decode to char) and \\u (read 4 hex digits, decode to UTF-16 char). String.fromCharCode(parseInt('41', 16)) pattern. Also add an \\0 (null char) case. The test at stringliterals.test.ts:63 only calls compilesOk \u2014 add assertions checking the decoded byte value.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T02:10:02Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

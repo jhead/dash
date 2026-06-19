@@ -1,8 +1,0 @@
-{
-  "id": "0344-core-as2-instanceof-and-class-type-checking",
-  "title": "Core: AS2 instanceof and class type checking",
-  "description": "Verify AS2 type-checking patterns compile: x instanceof Array, x instanceof MovieClip, x instanceof MyClass, typeof x === 'object', typeof x === 'function'. Also: class casting via MyClass(obj) and as-operator if supported. Tests in packages/core/src/as2/__tests__/typecheck.test.ts.",
-  "status": "done",
-  "created_at": "2026-06-09T21:18:36Z",
-  "updated_at": "2026-06-09T21:20:42Z"
-}

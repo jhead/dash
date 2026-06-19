@@ -1,8 +1,0 @@
-{
-  "id": "0224-ui-actions-panel-frame-script-code-editor",
-  "title": "UI: Actions panel (frame script code editor)",
-  "description": "Add an Actions panel to the authoring UI. When a frame is selected, show its script in a code editor panel. Use a simple <textarea> or a basic Monaco/CodeMirror-lite editor. Changes update frame.script via pushDoc. Wire a toggle button (F9 or toolbar) to show/hide the panel. The panel should appear at the bottom of the UI, collapsible.",
-  "status": "done",
-  "created_at": "2026-06-09T20:46:33Z",
-  "updated_at": "2026-06-09T20:47:36Z"
-}

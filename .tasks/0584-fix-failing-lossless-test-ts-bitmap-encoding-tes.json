@@ -1,8 +1,0 @@
-{
-  "id": "0584-fix-failing-lossless-test-ts-bitmap-encoding-tes",
-  "title": "Fix failing lossless.test.ts bitmap encoding tests",
-  "description": "Task 0565 created lossless.test.ts but 5 tests are currently failing. The agent noted that frames need sound:null (not undefined). Fix the test file and the compile.ts bitmap encoding path so all 9 lossless tests pass. Run full SWF suite to verify no regressions.",
-  "status": "done",
-  "created_at": "2026-06-09T22:21:59Z",
-  "updated_at": "2026-06-09T22:38:22Z"
-}

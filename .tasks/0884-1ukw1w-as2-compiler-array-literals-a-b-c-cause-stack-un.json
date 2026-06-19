@@ -1,0 +1,10 @@
+{
+  "id": "0884-1ukw1w-as2-compiler-array-literals-a-b-c-cause-stack-un",
+  "title": "AS2 compiler: array literals [a,b,c] cause stack underflow",
+  "description": "Array literals in expressions like display_mc.filters = [f1, f2] cause AVM1 stack underflow. ActionInitArray (0x42) must push elements in reverse order then count last; current code pushes count first causing Ruffle to pop the count as element[0]. Same bug in compileObjectLiteral. Verified by evaporatingdrip.fla Avm1::pop: Stack underflow warnings.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-10T17:14:02Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

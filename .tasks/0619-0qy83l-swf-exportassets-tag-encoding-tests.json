@@ -1,0 +1,8 @@
+{
+  "id": "0619-0qy83l-swf-exportassets-tag-encoding-tests",
+  "title": "SWF ExportAssets tag encoding tests",
+  "description": "Test compileDocument produces ExportAssets tag (56) for symbols with exportForActionScript=true. Verify character ID, linkage identifier string, and that non-exported symbols are absent.",
+  "status": "done",
+  "created_at": "2026-06-09T22:33:26Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

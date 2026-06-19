@@ -1,0 +1,8 @@
+{
+  "id": "0172-78uwhf-core-document-export-to-image-snapshotframe",
+  "title": "Core: document export to image (snapshotFrame)",
+  "description": "The snapshotFrame function in packages/core/src/engine/snapshot.ts should work end-to-end: render a frame to an OffscreenCanvas using the renderer, return as a Blob. Check if it's fully wired up by reading the file. If it uses the Canvas renderer, make sure it calls the same renderFrame/getTweenedFrame pipeline that the authoring UI uses. If OffscreenCanvas is unavailable (Node.js), return null. Add unit tests using a mock canvas if needed.",
+  "status": "done",
+  "created_at": "2026-06-09T20:23:11Z",
+  "updated_at": "2026-06-19T00:37:56Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "1158-8e7sp5-parseclipactions-parsebuttonhandlers-brace-match",
+  "title": "parseClipActions / parseButtonHandlers: brace-matching fails on string literals containing braces",
+  "description": "Both parseClipActions() (flash8-import.ts:307-313) and parseButtonHandlers() (flash8-import.ts:385-391) use a naive character-by-character brace depth counter to extract handler body text. This counter does not skip string literals or comments, so any AS2 script that contains a brace inside a string literal (e.g. on(release){ var s = \"hello {world}\"; }) will cause the depth counter to reach zero at the wrong closing brace, truncating the body. Real-world FLA files that use template strings, i18n messages, or regex-like patterns in button or clip-action scripts will silently import with corrupted handler bodies. Fix: track whether the scanner is inside a single-quoted or double-quoted string literal (tracking escape chars) and skip depth increments/decrements while inside a string. Affects: FLA binary import of button symbols and movie clip instance scripts.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-11T09:59:07Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}

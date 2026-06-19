@@ -1,8 +1,0 @@
-{
-  "id": "0041-as2-tokenizer",
-  "title": "ActionScript 2 tokenizer/lexer",
-  "description": "Implement an AS2 tokenizer in packages/core/src/as2/tokenizer.ts: Token types (keyword, identifier, number, string, operator, punctuation, comment, whitespace), tokenize(source: string): Token[], plus token position info (line/col). Keywords: var, function, if, else, for, while, do, return, new, delete, this, typeof, instanceof, true, false, null, undefined, class, extends, implements, interface, import, dynamic, intrinsic, private, public, static, _global, with, switch, case, break, continue, try, catch, finally, throw. Export from packages/core/src/index.ts via new barrel packages/core/src/as2/index.ts. No UI. See docs/12-actionscript.md.",
-  "status": "done",
-  "created_at": "2026-06-09T17:58:33Z",
-  "updated_at": "2026-06-09T18:00:03Z"
-}

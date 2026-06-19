@@ -1,0 +1,10 @@
+{
+  "id": "0894-29u04i-fla-import-bitmap-placements-reference-unknown-m",
+  "title": "FLA import: bitmap placements reference unknown media IDs (12-15) \u2014 stage objects silently dropped",
+  "description": "\n## Root Cause\n\nBefore commit b3eb5e6 (MFC CArchive class-reference indexing fix, task 0889), CPicSwf entries in Magnet.fla were being misidentified as CPicBitmapRef due to class-tag confusion. Combined with missing CMediaSound detection (task 0887), media IDs 12\u201315 (which are bitmap streams in Magnet.fla) had no corresponding library items, causing:\n\n  [FLA import] bitmap placement references unknown media #12; skipping\n  (similarly for #13, #14, #15)\n\n## What Was Fixed (by other agents, gates/preconditions for this task)\n\n1. **Task 0889 (b3eb5e6)**: Fixed MFC CArchive class-reference indexing \u2014 CPicSwf entries no longer misidentified as CPicBitmapRef.\n2. **Task 0887 (691cdc5)**: Added CMediaSound detection in parseFla8Contents \u2014 sounds stored via CMediaSound objects in the Contents stream (like Magnet.fla's sounds at media IDs 16\u201321, 32) are now registered before media-stream decoding, so the bitmap decoder only runs against non-sound Media N streams (including 12\u201315 which contain Flash lossless bitmap data).\n\n## What This Task Added\n\nTask 0894 verified the fix and added regression tests:\n\n1. **** \u2014 new test asserting:\n   - No 'bitmap placement references unknown media' warnings when loading Magnet.fla\n   - Bitmap library items for media IDs 12\u201315 are present in the imported document\n\n2. **** \u2014 fixed absolute path to use  pattern consistent with the rest of the test suite; removed unused  import.\n\n## Evidence\n\nAll 306 test files pass (4788 tests):\n  pnpm --filter @flash/core run test -- --run\n  Test Files  306 passed (306)\n  Tests  4788 passed | 5 todo (4793)\n\nThe bitmap-debug.test.ts passes, confirming:\n- No unresolved bitmap media placements\n- Bitmap 12, 13, 14, 15 all present in Magnet.fla import\n",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-10T18:10:21Z",
+  "updated_at": "2026-06-19T00:37:57Z"
+}
