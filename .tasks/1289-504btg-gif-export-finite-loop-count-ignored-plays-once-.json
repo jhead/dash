@@ -1,0 +1,10 @@
+{
+  "id": "1289-504btg-gif-export-finite-loop-count-ignored-plays-once-",
+  "title": "GIF export: finite Loop count ignored (plays once instead of N times)",
+  "description": "ExportGifDialog exposes a 'Loop count' number input (1-65535, shown when 'Loop forever' is unchecked), but the value has ZERO effect on the produced GIF.\n\nRepro/evidence (validated against gifenc 1.0.3, the real encoder):\n- packages/authoring-ui/src/hooks/useExportHandlers.ts:162 sets `const repeat = options.loopForever ? 0 : -1;` and passes `repeat` only on frame 0 (line 185).\n- gifenc treats repeat=-1 as 'write NO NETSCAPE2.0 application extension'. With no extension, a GIF plays exactly ONCE regardless of options.loopCount.\n- Parsed a 2-frame GIF encoded with loopForever=false: NO NETSCAPE2.0 extension present (netscapeLoop=null) -> plays once. options.loopCount (e.g. 5) is never encoded anywhere.\n\nExpected vs actual:\n- Expected: loopForever=false + loopCount=N -> NETSCAPE2.0 extension with loop iteration count = N (the 2-byte LE loop count field in the NETSCAPE sub-block; 0 = forever, N = repeat N additional times).\n- Actual: no extension emitted; loopCount discarded; GIF plays once.\n\nFix sketch: gifenc's GIFEncoder.writeFrame repeat param maps directly to the NETSCAPE loop count when >= 0 (0=forever, N=finite). Pass `repeat = options.loopForever ? 0 : options.loopCount` on the first frame instead of -1. Verify the emitted NETSCAPE2.0 sub-block carries the count. (gifenc DOES support finite counts via a non-negative repeat; the code comment at useExportHandlers.ts:159-161 claiming it 'does not natively encode finite loop counts' is incorrect.)\n\nNote: this is the ONLY functional defect found in a proactive QA of GIF export; header/dims/frame-count/per-frame-delay/loop-forever/pixel-capture all validate correctly. Found by e2e QA agent (HEAD ff50e93).",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-19T20:05:29Z",
+  "updated_at": "2026-06-19T20:05:29Z"
+}
