@@ -682,3 +682,33 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   - **1227** — Trace Bitmap marching-squares walker traces only ~half of non-rectangular
     regions. Still unaddressed.
   - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
+
+
+---
+
+## 2026-06-19 — Proactive exploratory audit: Blend modes (idle window, no new worker code)
+
+- **Watermark (last fully-QA'd SHA):** unchanged at `475c2042e4a8ab3fcd09ab1fa9bcfc5894b82566`.
+  No new worker code landed this cycle; this is a proactive idle-window sweep, so the
+  watermark does NOT advance.
+- **Proactive audit — Blend modes: HEALTHY, nothing filed.** Implemented end-to-end (NOT
+  the editor-only drop class): `blendMode` field on all DisplayObject variants
+  (`engine/types.ts` shape ~L384 / instance ~L545 / bitmap ~L863, 14 Flash 8 modes,
+  default `'normal'` in `libraryplace.ts:128`) → UI pickers (`PropertiesPanel.tsx` L775/964,
+  `InstancePanel.tsx` L176/404) → `encodePlaceObject3WithBlendMode` (`filters.ts`;
+  `SWF_BLEND_MODE` enum ~L676 maps to SPEC values with NO off-by-one:
+  multiply=3 … overlay=13, hardlight=14) consumed in both the main path (`frames.ts`
+  L537/685/875/1151/1351 — place + move + shape) and the `sprite.ts` symbol-internal path,
+  all gated on `blendMode !== "normal"` → PlaceObject3 (tag 70); normal stays PlaceObject2.
+  swf-dump proof: 7 modes (multiply/screen/overlay/hardlight/add/difference/invert) all
+  decode to the correct named BlendMode on tag 70. Unit coverage: `blendmode.test.ts`
+  (swf + core/engine) green; full swf suite 1416 pass.
+- **Two non-fileable observations:** (a) no Ruffle visual-oracle for blend COMPOSITING
+  (coverage nicety; byte emit proven). (b) latent `?? 0` fallback in
+  `encodePlaceObject3WithBlendMode` for an unknown mode name → would write invalid
+  BlendMode=0, but unreachable behind the typed-model non-normal gate.
+- **Logged as "proactively audited & healthy"** so future idle-cycle sweeps skip it.
+  Running "audited & healthy" list now: Sound Envelope (1204), **Blend modes**.
+- **Still open for workers (running list, unchanged):** 1216, 1227 open; 1223 remains a
+  close candidate (resolved by 1225, doc-wording nuance only); component part 2.4
+  (task 1234) queued / not-yet-implemented.
