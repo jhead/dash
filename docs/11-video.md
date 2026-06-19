@@ -59,3 +59,59 @@ profiles (Spark/VP6, alpha, cue points).
   uploaded to GPU textures; alpha video composited like any RGBA source.
 - External playback modeled on `NetConnection`/`NetStream` (AVM1) feeding the `Video` object.
 - The standalone encoder maps to a CLI/batch mode of the media pipeline (later phase).
+
+## Embedded-video SWF emit (implemented)
+
+Embedded video — a library `VideoItem` published into the SWF timeline — is fully wired
+through the compiler. The pipeline emits **DefineVideoStream (tag 60)** to declare each
+video character and **VideoFrame (tag 61)** to deliver each compressed frame.
+
+### Tag byte layouts
+
+Verified against `ruffle/swf/src/{read,write}.rs` and pinned by
+`packages/swf/src/__tests__/videostream.test.ts` (30 tests). Encoders live in
+`packages/swf/src/video.ts`; `Tag.DefineVideoStream = 60` / `Tag.VideoFrame = 61` in
+`packages/swf/src/tags.ts`.
+
+- **`DefineVideoStream` (tag 60)** — exactly 10 bytes:
+  `UI16 CharacterID`, `UI16 NumFrames`, `UI16 Width`, `UI16 Height`,
+  `UI8 Flags = (Deblocking << 1) | IsSmoothed` (top 4 bits reserved), `UI8 CodecID`.
+- **`VideoFrame` (tag 61)** — `UI16 StreamID` (references the stream's CharacterID),
+  `UI16 FrameNum` (0-based), then the raw compressed `VIDEODATA` payload for that frame.
+
+### Codec mapping
+
+`VideoCodec` (`video.ts`) mirrors Ruffle's `VideoCodec` enum: `None=0`, `H263=2`
+(Sorenson Spark), `ScreenVideo=3`, `Vp6=4` (On2 VP6), `Vp6WithAlpha=5`,
+`ScreenVideoV2=6`, `H264=7`. `flvCodecToSwfCodec()` passes the FLV video-tag CodecId
+nibble through (they line up 1:1), defaulting to H.263.
+
+### FLV demux
+
+`demuxFlv()` parses an FLV container (`"FLV"` magic) and returns the ordered video
+frames (each with `frameNum`, `frameType`, `codecId`, and the raw `data` including the
+leading FrameType/CodecId nibble byte) plus the stream's `width`/`height`/`codecId`.
+Dimensions come from (in priority order) the `onMetaData` Script-tag width/height, else
+the Sorenson H.263 bitstream `psize` field (CIF/QCIF/SubQCIF/320×240 or custom 8/16-bit
+dims), falling back to 320×240. Non-FLV or empty input returns `null`.
+
+### Compiler wiring
+
+- **`compiler/media.ts` `runMediaPass`** filters library `VideoItem`s, demuxes each
+  `dataUri`, and emits one `DefineVideoStream` per item. When the dataURI demuxes to real
+  frames, `NumFrames`/`Width`/`Height`/`CodecID` come from the demuxed stream and one
+  `VideoFrame` payload is collected per decoded frame. When the dataURI is an undecodable
+  stub (or absent), it synthesizes `VideoItem.frameCount` empty `VideoFrame` payloads so
+  the stream still advances one frame per `ShowFrame`. It returns a `videoCharIdMap`
+  (VideoItem id → character id) and `videoStreams` (per-stream payloads) for downstream
+  passes (`compiler/symbols.ts` and the frame loop consume them).
+- **`VideoFrame` (tag 61)** records are emitted during the frame loop, one per
+  `ShowFrame`, advancing each placed stream; `StreamID` matches the owning
+  `DefineVideoStream` CharacterID.
+- **Placement**: a `VideoDisplayObject` on the timeline places its stream at the model
+  position/depth (not a legacy fixed depth); `videoFitTransform` (`media.ts`) scales the
+  native stream dimensions to the placed box. Library videos with no on-stage placement
+  still emit their `DefineVideoStream`.
+
+The standalone encoder (re-encoding source media to Spark/VP6 FLV) remains a later phase;
+the emit path above consumes an already-FLV-encoded `dataUri`.
