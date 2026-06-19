@@ -4,6 +4,7 @@ import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges } from "@flash/core";
 import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
+import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 
 // ---------------------------------------------------------------------------
 // Pencil tool helpers
@@ -549,7 +550,8 @@ function drawMotionPaths(
       if (!guidePath) continue;
 
       ctx.save();
-      ctx.strokeStyle = "#00AAFF";
+      // Guide-layer path overlay — cyan guides (System C content.guide).
+      ctx.strokeStyle = themeContent.guide;
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
@@ -1274,12 +1276,13 @@ function StageContextMenu({
           position: "fixed",
           left: x,
           top: y,
-          background: "#2e2e2e",
-          border: "1px solid #555",
+          // Flash 8 / XP light context menu.
+          background: themeChrome.panelBg,
+          border: `1px solid ${themeChrome.separator}`,
           borderRadius: 3,
           zIndex: 9999,
           minWidth: 180,
-          boxShadow: "2px 4px 12px rgba(0,0,0,0.5)",
+          boxShadow: "2px 4px 12px rgba(0,0,0,0.35)",
           padding: "3px 0",
         }}
       >
@@ -1290,7 +1293,7 @@ function StageContextMenu({
                 key={item.action}
                 style={{
                   height: 1,
-                  background: "#444",
+                  background: themeChrome.separator,
                   margin: "3px 0",
                 }}
               />
@@ -1312,21 +1315,26 @@ function StageContextMenu({
                 alignItems: "center",
                 padding: "4px 12px",
                 fontSize: 11,
-                color: isDisabled ? "#666" : "#ddd",
+                color: isDisabled ? themeChrome.textDisabled : themeChrome.textDefault,
                 cursor: isDisabled ? "default" : "pointer",
                 gap: 16,
               }}
               onMouseEnter={(e) => {
-                if (!isDisabled)
-                  (e.currentTarget as HTMLElement).style.background = "#4060a0";
+                if (!isDisabled) {
+                  (e.currentTarget as HTMLElement).style.background = themeHalo.haloBlue;
+                  (e.currentTarget as HTMLElement).style.color = "#ffffff";
+                }
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLElement).style.background = "transparent";
+                (e.currentTarget as HTMLElement).style.color = isDisabled
+                  ? themeChrome.textDisabled
+                  : themeChrome.textDefault;
               }}
             >
               <span>{item.label}</span>
               {item.shortcut && (
-                <span style={{ fontSize: 10, color: "#888" }}>{item.shortcut}</span>
+                <span style={{ fontSize: 10, color: themeChrome.textDisabled }}>{item.shortcut}</span>
               )}
             </div>
           );
@@ -3480,7 +3488,7 @@ export function StageArea({
           const bounds = transformedShapeBounds(obj);
           if (bounds.width > 0 || bounds.height > 0) {
             // Dashed bounding box
-            ctx.strokeStyle = "#0099ff";
+            ctx.strokeStyle = themeHalo.haloBlue;
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 2]);
             ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
@@ -3491,7 +3499,7 @@ export function StageArea({
               const handles = getHandlePositions(bounds);
               for (const h of handles) {
                 ctx.fillStyle = "white";
-                ctx.strokeStyle = "#0099ff";
+                ctx.strokeStyle = themeHalo.haloBlue;
                 ctx.lineWidth = 1;
                 ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
                 ctx.strokeRect(h.x - 4, h.y - 4, 8, 8);
@@ -3503,14 +3511,14 @@ export function StageArea({
               ctx.beginPath();
               ctx.moveTo(rotHandleX, bounds.y);
               ctx.lineTo(rotHandleX, rotHandleY);
-              ctx.strokeStyle = "#0099ff";
+              ctx.strokeStyle = themeHalo.haloBlue;
               ctx.lineWidth = 1;
               ctx.stroke();
               ctx.beginPath();
               ctx.arc(rotHandleX, rotHandleY, 5, 0, Math.PI * 2);
               ctx.fillStyle = "white";
               ctx.fill();
-              ctx.strokeStyle = "#0099ff";
+              ctx.strokeStyle = themeHalo.haloBlue;
               ctx.stroke();
             }
           }
@@ -3523,7 +3531,7 @@ export function StageArea({
             const bounds = { x: selectedGenericObj.x, y: selectedGenericObj.y, width: selectedGenericObj.width, height: selectedGenericObj.height };
 
             // Dashed bounding box
-            ctx.strokeStyle = "#0099ff";
+            ctx.strokeStyle = themeHalo.haloBlue;
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 2]);
             ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
@@ -3534,7 +3542,7 @@ export function StageArea({
               const handles = getHandlePositions(bounds);
               for (const h of handles) {
                 ctx.fillStyle = "white";
-                ctx.strokeStyle = "#0099ff";
+                ctx.strokeStyle = themeHalo.haloBlue;
                 ctx.lineWidth = 1;
                 ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
                 ctx.strokeRect(h.x - 4, h.y - 4, 8, 8);
@@ -3638,8 +3646,8 @@ export function StageArea({
         for (let i = 0; i < anchPoints.length; i++) {
           const ap = anchPoints[i];
           const isSelected = subselState.selectedAnchorIndex === i;
-          ctx.fillStyle = isSelected ? "#0099ff" : "white";
-          ctx.strokeStyle = "#0099ff";
+          ctx.fillStyle = isSelected ? themeHalo.haloBlue : "white";
+          ctx.strokeStyle = themeHalo.haloBlue;
           ctx.lineWidth = 1;
           ctx.fillRect(ap.x - 4, ap.y - 4, 8, 8);
           ctx.strokeRect(ap.x - 4, ap.y - 4, 8, 8);
@@ -3697,7 +3705,7 @@ export function StageArea({
         ctx.beginPath();
         ctx.moveTo(dragStart.x, dragStart.y);
         ctx.lineTo(currentHandleOut.x, currentHandleOut.y);
-        ctx.strokeStyle = "#0099ff";
+        ctx.strokeStyle = themeHalo.haloBlue;
         ctx.lineWidth = 1;
         ctx.setLineDash([]);
         ctx.stroke();
@@ -3705,7 +3713,7 @@ export function StageArea({
         ctx.beginPath();
         ctx.arc(currentHandleOut.x, currentHandleOut.y, 4, 0, Math.PI * 2);
         ctx.fillStyle = "white";
-        ctx.strokeStyle = "#0099ff";
+        ctx.strokeStyle = themeHalo.haloBlue;
         ctx.fill();
         ctx.stroke();
       }
@@ -3726,13 +3734,13 @@ export function StageArea({
           ctx.beginPath();
           ctx.moveTo(anchor.x, anchor.y);
           ctx.lineTo(anchor.handleOut.x, anchor.handleOut.y);
-          ctx.strokeStyle = "#0099ff";
+          ctx.strokeStyle = themeHalo.haloBlue;
           ctx.lineWidth = 1;
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(anchor.handleOut.x, anchor.handleOut.y, 3, 0, Math.PI * 2);
           ctx.fillStyle = "white";
-          ctx.strokeStyle = "#0099ff";
+          ctx.strokeStyle = themeHalo.haloBlue;
           ctx.fill();
           ctx.stroke();
         }
@@ -3952,7 +3960,8 @@ export function StageArea({
 
   const workAreaStyle: React.CSSProperties = {
     flex: 1,
-    background: "#808080",
+    // Flash 8 pasteboard / work area: light gray (System C content.pasteboard #D0D0D0).
+    background: themeContent.pasteboard,
     overflow: "hidden",
     position: "relative",
     display: "flex",
@@ -3963,7 +3972,9 @@ export function StageArea({
 
   const stageContainerStyle: React.CSSProperties = {
     position: "relative",
-    boxShadow: "2px 2px 8px rgba(0,0,0,0.5)",
+    // Flash 8 stage edge: a crisp ~1px hairline drop-shadow (offset ~1px, NO soft blur)
+    // in content.stageEdgeShadow (#CDCDCD) — the white stage sits on the gray pasteboard.
+    boxShadow: `1px 1px 0 0 ${themeContent.stageEdgeShadow}`,
     transformOrigin: "center center",
     transform,
     willChange: "transform",
@@ -4152,7 +4163,7 @@ export function StageArea({
               opacity: inst.alpha,
               background: "transparent",
               border: isSelected
-                ? "2px solid #4af"
+                ? `2px solid ${themeHalo.haloBlue}`
                 : "1px dashed rgba(80,140,220,0.5)",
               boxSizing: "border-box",
               cursor: "pointer",
@@ -4504,7 +4515,7 @@ export function StageArea({
                   top: guide.position,
                   width: "100%",
                   height: 1,
-                  background: "#00aaff",
+                  background: themeContent.guide,
                   cursor: "row-resize",
                   zIndex: 30,
                   pointerEvents: "auto",
@@ -4515,7 +4526,7 @@ export function StageArea({
                   left: guide.position,
                   width: 1,
                   height: "100%",
-                  background: "#00aaff",
+                  background: themeContent.guide,
                   cursor: "col-resize",
                   zIndex: 30,
                   pointerEvents: "auto",
@@ -4546,7 +4557,8 @@ export function StageArea({
               top: 2,
               right: 4,
               fontSize: 9,
-              color: "#aaa",
+              // Readable dark label on the light pasteboard.
+              color: themeChrome.textDisabled,
               pointerEvents: "none",
               userSelect: "none",
             }}

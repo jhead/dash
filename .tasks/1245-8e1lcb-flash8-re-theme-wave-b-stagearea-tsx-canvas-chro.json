@@ -2,9 +2,9 @@
   "id": "1245-8e1lcb-flash8-re-theme-wave-b-stagearea-tsx-canvas-chro",
   "title": "Flash8 re-theme Wave B: StageArea.tsx canvas + chrome \u2192 Flash 8 colors",
   "description": "Convert packages/authoring-ui/src/StageArea.tsx to Flash 8 colors using flash8Theme.ts (content.*/chrome.*) per docs/30-flash8-ui-spec.md \u00a73.3. This file has BOTH React inline styles (overlay chrome) AND HTML5 canvas fillStyle/strokeStyle drawing \u2014 convert both. Targets: pasteboard/work-area gray content.pasteboard #D0D0D0; stage fill #FFFFFF with a ~1px #CDCDCD edge drop-shadow (offset ~1px, no blur); rulers gray with dark ticks; guides cyan; selection outline + transform gizmo + bezier-handle colors should adopt the Halo/Flash palette (selection use haloBlue #009DFF family or the Flash selection blue \u2014 match spec; keep selection clearly visible on the new light bg). IMPORTANT: many canvas colors were chosen for a DARK bg; re-pick them to read correctly on the LIGHT pasteboard/white stage (e.g. dark gridlines/handles on white). Build+core/authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: StageArea.tsx only (+ read-only theme import).",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-19T05:44:58Z",
-  "updated_at": "2026-06-19T05:44:58Z"
+  "updated_at": "2026-06-19T05:54:15Z"
 }
