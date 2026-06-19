@@ -195,6 +195,25 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   decls. Proven faithful by cleanly parsing the real fixtures and rejecting corruption; it is
   the acceptance bar for content docs (the lenient importer is NOT). Templates were extracted
   with `tools/flashdrv/fla_cfb.py` + `__readAllStreamsForTest` in `ole.ts`.
+- **The §11 frame-record sound sub-block is now WRITTEN, not zeroed (task 1205).** The CPicFrame
+  serializer (`timeline-write.ts`) used to hardcode the whole sound block —
+  `soundId, pointCount, soundLoop, soundSync, inPoint, outPoint, soundZoom` — to zero, silently
+  dropping every frame sound attachment on save even though the model carries `Frame.sound`
+  (`SoundLinkage`) and the binary reader (`flash8-binary.ts parseFrame`) decodes it. `writeFrameSound()`
+  now emits the real fields: `soundId = mediaNumById.get(sound.libraryItemId)`, the custom-envelope
+  point list (`{u32 pos; u16 left; u16 right}`), `soundLoop = repeatCount`, the soundSync byte
+  (event/start/stop/stream = 0/1/2/3, inverse of import's `SOUND_SYNC_MODES`), and `inPoint`/`outPoint`.
+  The exact byte layout is verified by round-tripping the written `Page N` stream back through the
+  importer's own reader (`parseFla8Timeline`) in `real-fla-write.test.ts`. Two coupled rules:
+  (1) `isEmptyKeyframe()` returns false when `frame.sound` is set, so a sound-on-an-otherwise-empty
+  keyframe takes the full-serialization path (the empty-keyframe `PAGE_FRAME_BODY` template hardcodes
+  the zero sound block); `createDocument`'s frames have `sound:null` so `empty-bytematch` is unaffected.
+  (2) Full importer round-trip (`tryLoadRealFla`) needs the Contents `CMediaSound` catalog record
+  (the importer resolves `soundId → libraryItemId` via a `Media N` catalog scan); the writer does
+  NOT yet emit that catalog (the `media` field passed to `writeContents` is currently unused), so a
+  saved frame sound is byte-correct but its library link is not yet rebuilt on a full re-import. That
+  Contents media-catalog (CMediaSound/CMediaBits NEWCLASS objects) is the remaining gap — tracked as a
+  follow-up task; it is byte-unverified against a real oracle and must not be guessed.
 
 ### Binary FLA import (Flash 5–CS4 OLE2 format)
 

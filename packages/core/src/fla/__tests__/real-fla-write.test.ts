@@ -13,11 +13,12 @@ import { describe, it, expect } from "vitest";
 import { saveRealFla } from "../write/fla-write.js";
 import { isOle2, tryLoadRealFla, __readAllStreamsForTest } from "../ole.js";
 import { validateContentsStream, validateTimelineStream } from "../write/carchive-validate.js";
+import { parseFla8Timeline } from "../flash8-binary.js";
 import { createDocument, createDocumentProperties } from "../../model/document.js";
 import { createScene } from "../../model/scene.js";
 import { createLayer, createFrame } from "../../model/timeline.js";
-import { createSymbol } from "../../model/library.js";
-import type { FlashDocument, Frame, Layer, Scene } from "../../model/types.js";
+import { createSymbol, createSound } from "../../model/library.js";
+import type { FlashDocument, Frame, Layer, Scene, SoundLinkage } from "../../model/types.js";
 import type {
   ShapeDisplayObject,
   SymbolInstance,
@@ -222,5 +223,113 @@ describe("saveRealFla — text (strict CArchive structure)", () => {
     validateContentsStream(streams.get("Contents")!);
     const page = validateTimelineStream(streams.get("Page 1")!);
     expect(page.classes).toContain("CPicText");
+  });
+});
+
+// The §11 frame-record sound sub-block (soundId, envelope, soundLoop, soundSync,
+// inPoint, outPoint, soundZoom) was previously hardcoded to zeros, silently
+// dropping every frame sound attachment on save even though the model carries it
+// (Frame.sound: SoundLinkage) and the binary reader decodes it. These tests assert
+// the written bytes round-trip through the SAME reader the importer uses
+// (parseFla8Timeline) — proving the on-wire layout matches — and that the strict
+// CArchive validator still accepts a sound-bearing frame as a structurally valid
+// timeline stream.
+describe("saveRealFla — frame sound (§11 sound sub-block)", () => {
+  function docWithFrameSound(sound: SoundLinkage | null) {
+    const snd = createSound("boom.mp3");
+    const frame = createFrame(0, { isKeyframe: true, isEmpty: true, sound });
+    const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount: 1 });
+    return baseDoc([sceneWith("Scene 1", [layer])], {
+      library: { items: [snd], folders: [] },
+    });
+  }
+
+  it("a sound-bearing keyframe still validates as a strict CArchive timeline", () => {
+    const snd = createSound("boom.mp3");
+    const sound: SoundLinkage = { libraryItemId: snd.id, syncMode: "event", repeatCount: 1 };
+    const frame = createFrame(0, { isKeyframe: true, isEmpty: true, sound });
+    const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount: 1 });
+    const doc = baseDoc([sceneWith("Scene 1", [layer])], {
+      library: { items: [snd], folders: [] },
+    });
+    const streams = __readAllStreamsForTest(saveRealFla(doc));
+    validateContentsStream(streams.get("Contents")!);
+    const page = validateTimelineStream(streams.get("Page 1")!);
+    expect(page.classes.sort()).toEqual(["CPicFrame", "CPicLayer", "CPicPage"]);
+  });
+
+  it("soundId / syncMode / repeatCount / in-out points round-trip through parseFla8Timeline", () => {
+    const snd = createSound("boom.mp3");
+    const sound: SoundLinkage = {
+      libraryItemId: snd.id,
+      syncMode: "start",
+      repeatCount: 3,
+      inPoint: 100,
+      outPoint: 5000,
+    };
+    const frame = createFrame(0, { isKeyframe: true, isEmpty: true, sound });
+    const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount: 1 });
+    const doc = baseDoc([sceneWith("Scene 1", [layer])], {
+      library: { items: [snd], folders: [] },
+    });
+    const streams = __readAllStreamsForTest(saveRealFla(doc));
+    const tl = parseFla8Timeline(streams.get("Page 1")!);
+    const f = tl.layers[0]!.frames[0]!;
+    // mediaNumById allocates the lone sound stream number 1.
+    expect(f.soundId).toBe(1);
+    expect(f.soundSync).toBe(1); // "start" => 1
+    expect(f.soundLoop).toBe(3);
+    expect(f.inPoint).toBe(100);
+    expect(f.outPoint).toBe(5000);
+  });
+
+  it("each syncMode maps to its §11 soundSync byte (event/start/stop/stream = 0/1/2/3)", () => {
+    const cases: Array<[SoundLinkage["syncMode"], number]> = [
+      ["event", 0],
+      ["start", 1],
+      ["stop", 2],
+      ["stream", 3],
+    ];
+    for (const [mode, expected] of cases) {
+      const snd = createSound("s.mp3");
+      const sound: SoundLinkage = { libraryItemId: snd.id, syncMode: mode, repeatCount: 1 };
+      const frame = createFrame(0, { isKeyframe: true, isEmpty: true, sound });
+      const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount: 1 });
+      const doc = baseDoc([sceneWith("Scene 1", [layer])], {
+        library: { items: [snd], folders: [] },
+      });
+      const tl = parseFla8Timeline(__readAllStreamsForTest(saveRealFla(doc)).get("Page 1")!);
+      expect(tl.layers[0]!.frames[0]!.soundSync).toBe(expected);
+    }
+  });
+
+  it("a custom volume envelope round-trips point-for-point", () => {
+    const snd = createSound("boom.mp3");
+    const sound: SoundLinkage = {
+      libraryItemId: snd.id,
+      syncMode: "event",
+      repeatCount: 1,
+      customEnvelope: [
+        { pos44: 0, leftLevel: 32768, rightLevel: 16000 },
+        { pos44: 2205, leftLevel: 0, rightLevel: 0 },
+      ],
+    };
+    const frame = createFrame(0, { isKeyframe: true, isEmpty: true, sound });
+    const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount: 1 });
+    const doc = baseDoc([sceneWith("Scene 1", [layer])], {
+      library: { items: [snd], folders: [] },
+    });
+    const tl = parseFla8Timeline(__readAllStreamsForTest(saveRealFla(doc)).get("Page 1")!);
+    const env = tl.layers[0]!.frames[0]!.envelopePoints;
+    expect(env).toEqual([
+      { pos: 0, leftLevel: 32768, rightLevel: 16000 },
+      { pos: 2205, leftLevel: 0, rightLevel: 0 },
+    ]);
+  });
+
+  it("a soundless keyframe writes the all-zero sub-block (soundId 0)", () => {
+    const doc = docWithFrameSound(null);
+    const tl = parseFla8Timeline(__readAllStreamsForTest(saveRealFla(doc)).get("Page 1")!);
+    expect(tl.layers[0]!.frames[0]!.soundId).toBe(0);
   });
 });

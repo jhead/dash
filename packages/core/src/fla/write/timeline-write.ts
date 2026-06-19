@@ -83,6 +83,11 @@ export function writeTimelineStream(timeline: Timeline, idx: WriteIndex): Uint8A
 
 /** True for a default empty keyframe (no display objects). */
 function isEmptyKeyframe(f: Frame): boolean {
+  // A keyframe that carries a frame sound is NOT empty for serialization
+  // purposes: the empty-keyframe template (PAGE_FRAME_BODY) hardcodes the §11
+  // sound sub-block to zero, so a soundless template would silently drop the
+  // attachment. Force the full path so writeFrameSound() emits the soundId.
+  if (f.sound) return false;
   return f.isEmpty || f.displayObjects.length === 0;
 }
 
@@ -272,10 +277,7 @@ function writeCPicFrame(
   if (frame.tweenType === "motion" && frame.motionSync) keyMode |= 0x0800;
   w.u16(keyMode);
   w.s16(easeAccel(frame)); // acceleration
-  w.u16(0); // soundId
-  w.u16(0); // sound envelope count
-  w.u16(0).u8(0).u32(0).u32(0); // soundLoop, soundSync, inPoint, outPoint
-  w.u16(0); // soundZoom
+  writeFrameSound(w, frame, idx); // §11 sound sub-block (soundId..soundZoom)
   writeBomString(w, frame.label);
   writeTimelineSubObject(w, frame.script);
   w.u32(rotateFlaValue(frame.motionRotate));
@@ -291,6 +293,62 @@ function easeAccel(frame: Frame): number {
   if (frame.tweenType === "shape") return clampEase(frame.shapeEase);
   if (frame.tweenType === "motion") return clampEase(frame.motionEase);
   return 0;
+}
+
+/**
+ * Inverse of `flash8-import.ts` `SOUND_SYNC_MODES`: the §11 frame-record
+ * `soundSync` byte. event=0, start=1, stop=2, stream=3.
+ */
+const SOUND_SYNC_BYTE: Record<string, number> = {
+  event: 0,
+  start: 1,
+  stop: 2,
+  stream: 3,
+};
+
+/**
+ * §11 frame sound sub-block — the inverse of `parseFrame`'s sound read in
+ * `flash8-binary.ts` (fields gated on frame schema `fs=0x18`):
+ *
+ *   u16 soundId                       // media stream number, 0 = no sound
+ *   u16 envelopeCount; { u32 pos44; u16 leftLevel; u16 rightLevel }[]
+ *   u16 soundLoop                     // repeat count
+ *   u8  soundSync                     // event/start/stop/stream
+ *   u32 inPoint44; u32 outPoint44     // sample offsets at 44100 Hz
+ *   u16 soundZoom                     // soundZoomLevel (always 0)
+ *
+ * When `frame.sound` is null OR its library item has no media number (the
+ * importer's `soundIdByIndex` would not resolve it either), the whole block is
+ * the all-zero "no sound" form, byte-identical to the previous writer and to a
+ * genuine soundless keyframe.
+ */
+function writeFrameSound(w: ByteWriter, frame: Frame, idx: WriteIndex): void {
+  const sound = frame.sound;
+  const soundId = sound ? idx.mediaNumById.get(sound.libraryItemId) ?? 0 : 0;
+  if (!sound || soundId === 0) {
+    w.u16(0); // soundId = 0 (no sound)
+    w.u16(0); // envelope count = 0
+    w.u16(0).u8(0).u32(0).u32(0); // soundLoop, soundSync, inPoint, outPoint
+    w.u16(0); // soundZoom
+    return;
+  }
+  w.u16(soundId);
+  const env = sound.customEnvelope ?? [];
+  w.u16(env.length);
+  for (const p of env) {
+    w.u32(Math.max(0, Math.round(p.pos44)));
+    w.u16(clampLevel(p.leftLevel));
+    w.u16(clampLevel(p.rightLevel));
+  }
+  w.u16(Math.max(0, Math.min(0xffff, sound.repeatCount | 0))); // soundLoop
+  w.u8(SOUND_SYNC_BYTE[sound.syncMode] ?? 0); // soundSync
+  w.u32(Math.max(0, Math.round(sound.inPoint ?? 0))); // inPoint44
+  w.u32(Math.max(0, Math.round(sound.outPoint ?? 0))); // outPoint44
+  w.u16(0); // soundZoom (soundZoomLevel)
+}
+
+function clampLevel(v: number): number {
+  return Math.max(0, Math.min(32768, Math.round(v || 0)));
 }
 
 function clampEase(v: number): number {
