@@ -419,5 +419,57 @@ AND selection/toggle work. Not faked: the model probe runs in real Ruffle.
 fixed row pool, and keyboard navigation (arrow-key row movement). Both are explicitly out of
 this slice's scope.
 
+## Functional NumericStepper + ProgressBar (task 1288, Part 2.6)
+
+Part 2.6 adds the two remaining COMMON standard controls on the SAME `CONTROL_REGISTRY` — no
+per-control hand-coding beyond a registry entry + an `authorClassBody`.
+
+1. **Skin.** Both reuse the shared hoisted-definition + DefineSprite path.
+   - **NumericStepper** (catalog 60×22): `faceKind: "input"` (a bordered white field box) +
+     a read-only `dynamic` `label_txt` VALUE field whose width is shrunk by the right-hand
+     `STEPPER_BTN_WIDTH` (16px) arrow column, plus two arrow marks `up_mk` (top half) and
+     `down_mk` (bottom half).
+   - **ProgressBar** (catalog 150×16): `faceKind: "progressbar"` (a bordered GREY track
+     groove) + a single `fill_mk` blue bar authored at FULL inner width. `label_txt` is
+     hidden (the bar is the content).
+   - `controlKindFor` resolves the `NumericStepper`/`ProgressBar` leaf names; everything else
+     still → `button`.
+
+2. **Class behaviour (registry `authorClassBody`).**
+   - **NumericStepper** seeds the author's `value`/`minimum`/`maximum`/`stepSize` (catalog
+     params, guarded for `undefined`), clamps `value` into `[minimum, maximum]`, and renders
+     `String(value)` into `label_txt`. Its OVERRIDDEN `setComponentParam` re-clamps + re-renders
+     when `value`/`minimum`/`maximum` arrive live. The shared manual-bbox `onMouseDown` gate is
+     refined to count ONLY presses in the right arrow column (`mx >= _x + _width - btnWidth`):
+     the top half `stepUp()` (+`stepSize`, clamped), the bottom half `stepDown()`. Exposes
+     `getValue`/`setValue`/`stepUp`/`stepDown` + a `change` broadcast.
+   - **ProgressBar** is NON-interactive. It has NO `value`/`maximum` CATALOG param, so progress
+     is driven at RUNTIME (Flash's `manual` mode) via `setProgress(done, total)` / `setValue(v)`
+     / `setMaximum(m)`; `value`/`maximum` default to 0/100. `__render` scales `fill_mk._xscale`
+     to `value/maximum` (clamped to 0..100%) so the bar length is proportional, and honors the
+     author's `direction` param ("left" pins the bar's right edge to the track's right edge).
+     Exposes `getValue`/`getMaximum`/`getPercentComplete`.
+
+3. **Verification.** Structural unit tests (`component-place.test.ts`, "functional NumericStepper
+   + ProgressBar controls") decode our own SWF and assert, per control: ExportAssets under the FQ
+   class name, a class-definition DoInitAction (DefineFunction2) **before** registerClass, and the
+   skin shapes placed inside the sprite (NumericStepper = track face + up_mk + down_mk = 3 shapes
+   + 1 EditText; ProgressBar = track face + fill_mk = 2 shapes + 1 EditText). Source-level
+   assertions pin the clamp/step/getValue-setValue (NumericStepper) and the `_xscale`-proportional
+   fill / setProgress / direction handling (ProgressBar). The Ruffle acceptance oracle
+   (`component-oracle.spec.ts`, "v2 NumericStepper + ProgressBar runtime oracle") proves runtime
+   behaviour with the RED→BLUE pattern: the **NumericStepper UP-button click increments** the
+   value (`getValue() > 0` after the click on the up arrow), and **ProgressBar `setProgress(80,
+   100)` reflects into the fill** (`getPercentComplete() >= 75`).
+
+**Render-oracle note (explicit):** as with the selection controls, a raw non-white pixel count is
+an unreliable render signal here — the z-indexed headless wgpu-webgl player returns a blank
+capture for the small top-left skin (both `page.screenshot` and `locator().screenshot()`). The
+oracle therefore probes the **live behaviour** (RED→BLUE: up-click increments; setProgress fills)
+rather than counting pixels, which is the meaningful proof the skins render AND react. The static
+skin shapes are covered structurally in the swf unit tests. NumericStepper keyboard entry into
+the value field is NOT exercised (headless Ruffle cannot be reliably driven to type into a field);
+the value is changed via the arrow buttons + `setValue` instead.
+
 **Still OUT OF SCOPE:** DataGrid / Tree / DateChooser / ScrollPane / Window / containers /
-data-binding, and the real Halo skin assets remain gated on demand.
+Accordion / Menu / data-binding, and the real Halo skin assets remain gated on demand.

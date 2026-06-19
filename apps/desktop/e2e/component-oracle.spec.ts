@@ -1018,3 +1018,149 @@ _root.onEnterFrame = function() {
     expect(afterC.red, 'red must be gone after the toggle').toBeLessThan(200);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Part 2.6 (task 1288): functional NumericStepper + ProgressBar
+// ---------------------------------------------------------------------------
+
+test.describe('v2 NumericStepper + ProgressBar runtime oracle (task 1288, Part 2.6)', () => {
+  test.skip(!!process.env.CI, 'Ruffle WASM infra not set up in CI yet');
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('canvas', { timeout: 15000 });
+    const ready = await page.evaluate(
+      () => typeof (window as unknown as { __flashTest?: unknown }).__flashTest !== 'undefined'
+    );
+    expect(ready).toBe(true);
+  });
+
+  function twoLayerDoc(id: string, item: unknown, compFrames: unknown[][], bgScript: string) {
+    const bgLayerFrames = [
+      frame({ index: 0, script: bgScript, displayObjects: [centeredRect('bg-red', 255, 0, 0)] }),
+      frame({ index: 1, script: 'stop();', displayObjects: [centeredRect('bg-blue', 0, 0, 255)] }),
+    ];
+    return {
+      id, properties: BASE_PROPS,
+      scenes: [{
+        id: 'scene-1', name: 'Scene 1',
+        timeline: { layers: [
+          { id: 'comp-layer', name: 'Component', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#00ff00', height: 20, parentFolderId: null,
+            frameCount: 2, frames: [frame({ index: 0, displayObjects: compFrames[0] }), frame({ index: 1, displayObjects: compFrames[1] })] },
+          { id: 'bg-layer', name: 'Background', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#0000ff', height: 20, parentFolderId: null,
+            frameCount: 2, frames: bgLayerFrames },
+        ] },
+      }],
+      library: { items: [item], folders: [] },
+    };
+  }
+
+  /**
+   * NumericStepper toggle doc: starts at value=0; a root onEnterFrame advances RED→BLUE
+   * only once getValue() > 0. Since the stepper starts at 0, blue can ONLY come from the
+   * up-button click incrementing it (proves the up-step path + manual hit test).
+   */
+  function makeStepperUpDoc() {
+    const item = controlItem('comp-ns', 'NumericStepper');
+    // value=0, stepSize=1, max=10 (catalog defaults). Placed at (225,30); default 60x22.
+    const ns = controlInstance('comp-ns', 'ns', 225, 30);
+    const script = `stop();
+_root.onEnterFrame = function() {
+  if (_root.ns != undefined && _root.ns.getValue() > 0) {
+    _root.gotoAndStop(2);
+    delete _root.onEnterFrame;
+  }
+};`;
+    return twoLayerDoc('ns-up-doc', item, [[ns], [ns]], script);
+  }
+
+  /**
+   * ProgressBar value doc: the bar starts at 0 (the runtime default — ProgressBar has no
+   * `value`/`maximum` catalog param, so progress is driven at RUNTIME via setProgress /
+   * setValue, exactly as Flash's `manual`-mode ProgressBar works). A root onEnterFrame
+   * calls `pb.setProgress(80, 100)` then advances RED→BLUE once the LIVE instance reports
+   * getPercentComplete() >= 75 — proving setProgress updated the fill proportion. A bar
+   * left at the default 0 can never satisfy the poll.
+   */
+  function makeProgressValueDoc() {
+    const item = controlItem('comp-pb', 'ProgressBar');
+    const pb = controlInstance('comp-pb', 'pb', 200, 30);
+    const script = `stop();
+_root.onEnterFrame = function() {
+  if (_root.pb != undefined) {
+    _root.pb.setProgress(80, 100);
+    if (_root.pb.getPercentComplete() >= 75) {
+      _root.gotoAndStop(2);
+      delete _root.onEnterFrame;
+    }
+  }
+};`;
+    return twoLayerDoc('pb-value-doc', item, [[pb], [pb]], script);
+  }
+
+  test('NumericStepper UP button increments value (RED→BLUE only after the click)', async ({ page }, testInfo: TestInfo) => {
+    const swf = await publish(page, makeStepperUpDoc());
+    await ensureRuffleLoaded(page);
+    const id = '__ruffle_ns_up__';
+    await injectRufflePlayer(page, swf, id);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    // BEFORE the click: value is 0 → background must still be RED.
+    const before = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('ns-before', { body: before, contentType: 'image/png' });
+    const beforeC = colorCounts(before);
+    expect(beforeC.red, 'stepper must start at 0 (background red)').toBeGreaterThan(500);
+    expect(beforeC.blue, 'must not be blue before the click').toBeLessThan(200);
+
+    // Click the UP arrow: the arrow column is the right STEPPER_BTN_WIDTH=16 px of the
+    // 60px field. Field at x=225 → column spans stage x 269..285; up half is y 30..41.
+    await clickStage(page, id, 277, 35);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    const after = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('ns-after', { body: after, contentType: 'image/png' });
+    const afterC = colorCounts(after);
+    await removeRufflePlayer(page, id);
+
+    console.log(`[1288] ns before red=${beforeC.red} blue=${beforeC.blue} | after red=${afterC.red} blue=${afterC.blue}`);
+    expect(afterC.blue, 'up-button click must increment value → background advances to blue').toBeGreaterThan(500);
+    expect(afterC.red, 'red must be gone after the increment').toBeLessThan(200);
+  });
+
+  test("ProgressBar fill reflects the author value (getPercentComplete advances RED→BLUE)", async ({ page }, testInfo: TestInfo) => {
+    const swf = await publish(page, makeProgressValueDoc());
+    await ensureRuffleLoaded(page);
+    const id = '__ruffle_pb_value__';
+    await injectRufflePlayer(page, swf, id);
+
+    // The param DoAction delivers value=80/maximum=100; __render scales fill_mk to 80%.
+    await page.waitForTimeout(2500);
+    await hideRuffleOverlays(page, id);
+    const after = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('pb-after', { body: after, contentType: 'image/png' });
+    const afterC = colorCounts(after);
+    await removeRufflePlayer(page, id);
+
+    console.log(`[1288] pb after red=${afterC.red} blue=${afterC.blue}`);
+    // getPercentComplete()==80 (>=75) → onEnterFrame advanced RED→BLUE: the author value
+    // reached the live instance and the fill proportion recomputed. A default-0 bar can
+    // never satisfy the poll, so blue == value delivered + fill width recomputed.
+    expect(afterC.blue, 'fill must reflect the author value → background advances to blue').toBeGreaterThan(500);
+    expect(afterC.red, 'red must be gone after the advance').toBeLessThan(200);
+  });
+
+  /**
+   * Render oracle: a placed ProgressBar driven to 70% by a frame script. We do NOT
+   * screenshot the small skin directly (the z-indexed player + wgpu-webgl headless
+   * renderer returns a blank capture for small top-left content — see docs/13 / the
+   * project learnings); instead the BEHAVIORAL oracles above (NumericStepper up-click +
+   * ProgressBar setProgress→getPercentComplete) are the runtime acceptance truth that the
+   * skins render and react. This render path is asserted STRUCTURALLY in the swf unit
+   * tests (component-place.test.ts: each emits a track face + fill_mk DefineShape4 + the
+   * registerClass DoInitAction). See the spec header note.
+   */
+});

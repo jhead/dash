@@ -19,7 +19,13 @@
 
 import { describe, it, expect } from "vitest";
 import { compileDocument } from "../compile.js";
-import { authorComboBoxClassBody, ROW_HEIGHT } from "../compiler/components.js";
+import {
+  authorComboBoxClassBody,
+  authorNumericStepperClassBody,
+  authorProgressBarClassBody,
+  ROW_HEIGHT,
+  STEPPER_BTN_WIDTH,
+} from "../compiler/components.js";
 import type {
   ComponentItem,
   FlashDocument,
@@ -1349,5 +1355,221 @@ describe("functional selection controls: List + ComboBox (task 1235, Part 2.5)",
     const src = authorComboBoxClassBody("_global.Foo");
     expect(src).toContain("if (this.arrow_mk != undefined)");
     expect(src).toContain("this.arrow_mk._visible = !this.__open;");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Part 2.6 (task 1288): functional NumericStepper + ProgressBar
+// ---------------------------------------------------------------------------
+
+describe("functional NumericStepper + ProgressBar controls (task 1288, Part 2.6)", () => {
+  /**
+   * Compile a single-instance doc for the named control. Returns the parsed tags, the
+   * control's skin sprite char id (from ExportAssets), and the char ids placed inside
+   * that sprite.
+   */
+  function compileControl(
+    componentName: string,
+    className: string,
+    params?: Record<string, string>,
+    instanceName = "ctrl"
+  ) {
+    const component = makeComponent({ componentName, name: componentName, packageName: "mx.controls" });
+    const base = makeInstance(component.id);
+    const instance: SymbolInstance = params
+      ? ({ ...base, instanceName, componentParameters: params } as SymbolInstance)
+      : { ...base, instanceName };
+    const doc = makeDoc(component, instance);
+    const tags = parseSWF(compileDocument(doc));
+
+    const exports = tags
+      .filter((t) => t.code === TAG_EXPORT_ASSETS)
+      .flatMap((t) => parseExportAssets(t.body));
+    const exportEntry = exports.find((e) => e.name === className);
+
+    let innerPlacedIds: number[] = [];
+    if (exportEntry) {
+      const spriteTag = tags.find(
+        (t) => t.code === TAG_DEFINE_SPRITE && defineSpriteId(t.body) === exportEntry.charId
+      );
+      if (spriteTag) {
+        innerPlacedIds = parseSpriteInnerTags(spriteTag.body)
+          .filter((t) => t.code === TAG_PLACE_OBJECT2)
+          .map((t) => placeObject2CharId(t.body))
+          .filter((id): id is number => id !== null);
+      }
+    }
+    return { tags, exportEntry, innerPlacedIds };
+  }
+
+  for (const ctrl of [
+    { componentName: "NumericStepper", className: "mx.controls.NumericStepper" },
+    { componentName: "ProgressBar", className: "mx.controls.ProgressBar" },
+  ]) {
+    describe(ctrl.componentName, () => {
+      it(`emits ExportAssets + a registerClass DoInitAction for ${ctrl.className}`, () => {
+        const { tags, exportEntry } = compileControl(ctrl.componentName, ctrl.className);
+        expect(exportEntry, `ExportAssets must list ${ctrl.className}`).toBeDefined();
+        const spriteId = exportEntry!.charId;
+
+        const initForComponent = tags.filter(
+          (t) => t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === spriteId
+        );
+        const registerInit = initForComponent.find((t) => pushedStrings(t.body).includes("registerClass"));
+        expect(registerInit, "a DoInitAction must register the class").toBeDefined();
+        const strings = pushedStrings(registerInit!.body);
+        expect(strings).toContain("Object");
+        expect(strings).toContain("registerClass");
+        expect(strings).toContain(ctrl.className);
+      });
+
+      it("emits the class-definition DoInitAction (DefineFunction2) BEFORE registerClass", () => {
+        const { tags, exportEntry } = compileControl(ctrl.componentName, ctrl.className);
+        const spriteId = exportEntry!.charId;
+
+        const initIndices: { idx: number; tag: SWFTag }[] = [];
+        tags.forEach((t, idx) => {
+          if (t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === spriteId) {
+            initIndices.push({ idx, tag: t });
+          }
+        });
+        expect(initIndices.length).toBe(2);
+
+        const classInit = initIndices.find((e) => bytecodeHasDefineFunction2(e.tag.body));
+        const registerInit = initIndices.find((e) => pushedStrings(e.tag.body).includes("registerClass"));
+        expect(classInit, "class DoInitAction must define functions via DefineFunction2").toBeDefined();
+        expect(registerInit, "registerClass DoInitAction must exist").toBeDefined();
+        expect(classInit!.idx).toBeLessThan(registerInit!.idx);
+      });
+
+      it("emits a real skin sprite (face shape + named EditText + marks)", () => {
+        const { tags, exportEntry, innerPlacedIds } = compileControl(ctrl.componentName, ctrl.className);
+        expect(exportEntry).toBeDefined();
+
+        const editTextCharIds = new Set(
+          tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT).map((t) => t.body[0] | (t.body[1] << 8))
+        );
+        const shapeCharIds = new Set(
+          tags.filter((t) => t.code === TAG_DEFINE_SHAPE4).map((t) => t.body[0] | (t.body[1] << 8))
+        );
+        const placedTexts = innerPlacedIds.filter((id) => editTextCharIds.has(id));
+        const placedShapes = innerPlacedIds.filter((id) => shapeCharIds.has(id));
+
+        // Both controls place exactly one EditText (the value field / hidden label).
+        expect(placedTexts.length, "one label_txt EditText").toBe(1);
+        if (ctrl.componentName === "NumericStepper") {
+          // track face + up arrow + down arrow = 3 shapes.
+          expect(placedShapes.length, "face + up_mk + down_mk").toBe(3);
+        } else {
+          // track face + fill bar = 2 shapes.
+          expect(placedShapes.length, "track face + fill_mk").toBe(2);
+        }
+      });
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // NumericStepper class behaviour (source-level structural assertions).
+  // -------------------------------------------------------------------------
+  it("NumericStepper honors author min/max/stepSize/value + clamps + steps", () => {
+    const src = authorNumericStepperClassBody("_global.Foo");
+    // Constructor seeds the four author params (guarded for undefined).
+    expect(src).toContain("if (this.value == undefined)");
+    expect(src).toContain("if (this.minimum == undefined)");
+    expect(src).toContain("if (this.maximum == undefined)");
+    expect(src).toContain("if (this.stepSize == undefined)");
+    // Clamp keeps value within [minimum, maximum].
+    expect(src).toContain("if (this.value < this.minimum)");
+    expect(src).toContain("if (this.value > this.maximum)");
+    // Steps adjust by stepSize and re-clamp.
+    expect(src).toContain("dir * Number(this.stepSize)");
+    // getValue/setValue API.
+    expect(src).toContain("prototype.getValue = function");
+    expect(src).toContain("prototype.setValue = function");
+    // The up half steps up, the bottom half steps down; only the right column counts.
+    expect(src).toContain("this.stepUp()");
+    expect(src).toContain("this.stepDown()");
+    expect(src).toContain("this._width - this.__btnWidth");
+  });
+
+  it("NumericStepper delivers author 'value' via setComponentParam (non-default)", () => {
+    const component = makeComponent({
+      componentName: "NumericStepper",
+      name: "NumericStepper",
+      packageName: "mx.controls",
+    });
+    const instance: SymbolInstance = {
+      ...makeInstance(component.id),
+      instanceName: "myStepper",
+      componentParameters: { value: "5", maximum: "20" },
+    } as SymbolInstance;
+    const tags = parseSWF(compileDocument(makeDoc(component, instance)));
+
+    const paramAction = tags
+      .filter((t) => t.code === 12 /* DoAction */)
+      .map((t) => t.body)
+      .find((b) => doActionPushedStrings(b).includes("setComponentParam"));
+    expect(paramAction, "a non-default 'value'/'maximum' must be delivered").toBeDefined();
+    const strings = doActionPushedStrings(paramAction!);
+    expect(strings).toContain("myStepper");
+    expect(strings).toContain("value");
+    expect(strings).toContain("maximum");
+  });
+
+  it("NumericStepper value field reserves the arrow-button column (narrower than full width)", () => {
+    // The value field width = controlWidth - inset(2) - inset(2) - STEPPER_BTN_WIDTH.
+    // Decode the placed value EditText bounds from our own SWF and assert it is narrower
+    // than a full-width field would be.
+    const { tags, innerPlacedIds } = compileControl("NumericStepper", "mx.controls.NumericStepper");
+    const editTexts = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    const placedEditText = editTexts.find((t) => innerPlacedIds.includes(t.body[0] | (t.body[1] << 8)));
+    expect(placedEditText, "the value EditText must be placed").toBeDefined();
+    // Sanity: the constant is wired and positive.
+    expect(STEPPER_BTN_WIDTH).toBeGreaterThan(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // ProgressBar class behaviour (source-level structural assertions).
+  // -------------------------------------------------------------------------
+  it("ProgressBar scales fill_mk proportionally to value/maximum + setProgress/setValue", () => {
+    const src = authorProgressBarClassBody("_global.Foo");
+    // Runtime value/maximum defaults (no catalog value/maximum param).
+    expect(src).toContain("if (this.value == undefined)");
+    expect(src).toContain("if (this.maximum == undefined)");
+    // Percent = value/maximum, clamped to [0,1].
+    expect(src).toContain("Number(this.value) / m");
+    // The fill bar width is driven by _xscale (proportional fill).
+    expect(src).toContain("this.fill_mk._xscale = p * 100");
+    // setProgress(done,total) + setValue(v) update the fill.
+    expect(src).toContain("prototype.setProgress = function");
+    expect(src).toContain("prototype.setValue = function");
+    // The collapsed label is hidden (fill bar is the content).
+    expect(src).toContain("this.label_txt._visible = false");
+    // Honors the author's direction param.
+    expect(src).toContain('this.direction == "left"');
+  });
+
+  it("ProgressBar delivers a non-default author 'direction' via setComponentParam", () => {
+    const component = makeComponent({
+      componentName: "ProgressBar",
+      name: "ProgressBar",
+      packageName: "mx.controls",
+    });
+    const instance: SymbolInstance = {
+      ...makeInstance(component.id),
+      instanceName: "myBar",
+      componentParameters: { direction: "left" },
+    } as SymbolInstance;
+    const tags = parseSWF(compileDocument(makeDoc(component, instance)));
+
+    const paramAction = tags
+      .filter((t) => t.code === 12 /* DoAction */)
+      .map((t) => t.body)
+      .find((b) => doActionPushedStrings(b).includes("setComponentParam"));
+    expect(paramAction, "a non-default 'direction' must be delivered").toBeDefined();
+    const strings = doActionPushedStrings(paramAction!);
+    expect(strings).toContain("myBar");
+    expect(strings).toContain("direction");
+    expect(strings).toContain("left");
   });
 });

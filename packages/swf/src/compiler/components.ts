@@ -228,7 +228,9 @@ export type ControlKind =
   | "textinput"
   | "textarea"
   | "list"
-  | "combobox";
+  | "combobox"
+  | "numericstepper"
+  | "progressbar";
 
 /** Resolve a control's kind from its (possibly dotted) class name. */
 export function controlKindFor(className: string): ControlKind {
@@ -240,8 +242,21 @@ export function controlKindFor(className: string): ControlKind {
   if (leaf === "TextArea") return "textarea";
   if (leaf === "List") return "list";
   if (leaf === "ComboBox") return "combobox";
+  if (leaf === "NumericStepper") return "numericstepper";
+  if (leaf === "ProgressBar") return "progressbar";
   return "button";
 }
+
+// ---------------------------------------------------------------------------
+// NumericStepper / ProgressBar geometry (task 1288, Part 2.6)
+// ---------------------------------------------------------------------------
+
+/** Width (px) of the NumericStepper's up/down arrow-button column on the right. */
+export const STEPPER_BTN_WIDTH = 16;
+/** Fill color of the ProgressBar's progress bar (Halo blue). */
+const PROGRESS_FILL_COLOR: Color = { r: 0x33, g: 0x66, b: 0xcc, a: 0xff };
+/** Track (groove) color behind the ProgressBar fill. */
+const PROGRESS_TRACK_COLOR: Color = { r: 0xd0, g: 0xd0, b: 0xd0, a: 0xff };
 
 // ---------------------------------------------------------------------------
 // Selection-control (List / ComboBox) row-pool geometry (task 1235, Part 2.5)
@@ -264,7 +279,7 @@ export const LIST_ROW_POOL = 8;
  *   - "input"   — a bordered white text-field box (TextInput / TextArea).
  *   - "none"    — no face at all; the EditText is the only visible child (Label).
  */
-export type FaceKind = "button" | "toggle" | "input" | "none" | "list";
+export type FaceKind = "button" | "toggle" | "input" | "none" | "list" | "progressbar";
 
 /**
  * Descriptor for the control's skin EditText (`label_txt`). Selects the SWF
@@ -895,6 +910,158 @@ ${fqn}.prototype.onMouseDown = function() {
   );
 }
 
+/**
+ * NumericStepper: a read-only value field (`label_txt`) + an up/down arrow-button
+ * column on the right. Honors the author's `value`/`minimum`/`maximum`/`stepSize`
+ * params (seeded in `__init`, applied live via the OVERRIDDEN `setComponentParam`).
+ * Clicking the up half of the arrow column increments `value` by `stepSize` (clamped
+ * to `maximum`); the down half decrements (clamped to `minimum`); the field text is
+ * re-rendered each change. Exposes `getValue`/`setValue`.
+ *
+ * The hit test reuses the shared manual-bbox `onMouseDown` broadcast (the reliable
+ * headless click path): a press inside the bbox resolves to up vs down by the mouse Y
+ * relative to the control's vertical midpoint, and only counts when the press is in the
+ * right-hand arrow column (`mx >= _x + (_width - btnWidth)`).
+ */
+export function authorNumericStepperClassBody(fqn: string): string {
+  return `
+${fqn}.prototype.__btnWidth = ${STEPPER_BTN_WIDTH};
+${fqn}.prototype.__init = function() {
+  if (this.value == undefined) { this.value = 0; }
+  if (this.minimum == undefined) { this.minimum = 0; }
+  if (this.maximum == undefined) { this.maximum = 10; }
+  if (this.stepSize == undefined) { this.stepSize = 1; }
+  this.__clamp();
+  this.__render();
+};
+${fqn}.prototype.__clamp = function() {
+  if (this.value < this.minimum) { this.value = this.minimum; }
+  if (this.value > this.maximum) { this.value = this.maximum; }
+};
+${fqn}.prototype.__render = function() {
+  if (this.label_txt != undefined) {
+    this.label_txt.text = String(this.value);
+  }
+};
+${fqn}.prototype.getValue = function() {
+  return this.value;
+};
+${fqn}.prototype.setValue = function(v) {
+  this.value = Number(v);
+  this.__clamp();
+  this.__render();
+};
+${fqn}.prototype.__step = function(dir) {
+  this.value = Number(this.value) + dir * Number(this.stepSize);
+  this.__clamp();
+  this.__render();
+  this.dispatchChange();
+};
+${fqn}.prototype.stepUp = function() { this.__step(1); };
+${fqn}.prototype.stepDown = function() { this.__step(-1); };
+${fqn}.prototype.addEventListener = function(event, fn) {
+  if (event == "change") { this.__changeListener = fn; }
+};
+${fqn}.prototype.dispatchChange = function() {
+  if (this.__changeListener != undefined) {
+    this.__changeListener({ type: "change", target: this, value: this.value });
+  }
+  if (this.onChange != undefined) { this.onChange(this); }
+};
+${fqn}.prototype.setComponentParam = function(name, value) {
+  this[name] = value;
+  if (name == "value" || name == "minimum" || name == "maximum") {
+    this.value = Number(this.value);
+    this.minimum = Number(this.minimum);
+    this.maximum = Number(this.maximum);
+    this.__clamp();
+    this.__render();
+  }
+};
+${fqn}.prototype.__handleClick = function() {
+  var mx = this._parent._xmouse;
+  var my = this._parent._ymouse;
+  // Only the right-hand arrow column steps the value.
+  if (mx < this._x + this._width - this.__btnWidth) { return; }
+  if (my < this._y + this._height / 2) {
+    this.stepUp();
+    trace("[component] stepper up value=" + this.value);
+  } else {
+    this.stepDown();
+    trace("[component] stepper down value=" + this.value);
+  }
+};
+`;
+}
+
+/**
+ * ProgressBar: a track (the bordered box face) + a movable `fill_mk` bar whose width
+ * reflects `value / maximum`. The fill shape is authored at FULL control width and
+ * scaled horizontally via `_xscale` (0..100) so the fill bar length is proportional.
+ * Honors the author's `direction` param ("left" anchors the fill to the right edge).
+ * Runtime `value`/`maximum` default to 0/100; `setProgress(done,total)` and
+ * `setValue(v)`/`setMaximum(m)` update the fill. Non-interactive (no click handler).
+ */
+export function authorProgressBarClassBody(fqn: string): string {
+  return `
+${fqn}.prototype.__init = function() {
+  if (this.value == undefined) { this.value = 0; }
+  if (this.maximum == undefined) { this.maximum = 100; }
+  if (this.direction == undefined) { this.direction = "right"; }
+  if (this.label_txt != undefined) { this.label_txt._visible = false; }
+  this.__fillBaseX = (this.fill_mk != undefined) ? this.fill_mk._x : 0;
+  // Capture the authored (unscaled) fill width before any _xscale is applied.
+  this.__fullWidth = (this.fill_mk != undefined) ? this.fill_mk._width : 0;
+  this.__render();
+};
+${fqn}.prototype.__pct = function() {
+  var m = Number(this.maximum);
+  if (m <= 0) { return 0; }
+  var p = Number(this.value) / m;
+  if (p < 0) { p = 0; }
+  if (p > 1) { p = 1; }
+  return p;
+};
+${fqn}.prototype.__render = function() {
+  if (this.fill_mk == undefined) { return; }
+  var p = this.__pct();
+  this.fill_mk._xscale = p * 100;
+  // "left" direction grows the bar from the RIGHT edge leftward: pin the bar's right
+  // edge to the track's right edge (after the _xscale shrinks its width, _width is the
+  // scaled width). "right" (default) anchors the bar's left edge to the track origin.
+  if (this.direction == "left") {
+    this.fill_mk._x = this.__fillBaseX + this.__fullWidth - this.fill_mk._width;
+  } else {
+    this.fill_mk._x = this.__fillBaseX;
+  }
+};
+${fqn}.prototype.getValue = function() { return this.value; };
+${fqn}.prototype.getMaximum = function() { return this.maximum; };
+${fqn}.prototype.getPercentComplete = function() { return this.__pct() * 100; };
+${fqn}.prototype.setValue = function(v) {
+  this.value = Number(v);
+  this.__render();
+};
+${fqn}.prototype.setMaximum = function(m) {
+  this.maximum = Number(m);
+  this.__render();
+};
+${fqn}.prototype.setProgress = function(done, total) {
+  this.value = Number(done);
+  this.maximum = Number(total);
+  this.__render();
+};
+${fqn}.prototype.setComponentParam = function(name, value) {
+  this[name] = value;
+  if (name == "value" || name == "maximum") {
+    this.value = Number(this.value);
+    this.maximum = Number(this.maximum);
+    this.__render();
+  }
+};
+`;
+}
+
 const CONTROL_REGISTRY: Record<ControlKind, ControlSpec> = {
   button: {
     buildMarks: () => [],
@@ -947,6 +1114,22 @@ const CONTROL_REGISTRY: Record<ControlKind, ControlSpec> = {
     faceKind: "list",
     // Rows form the dropdown, placed one row below the collapsed label.
     extraTextFields: (w) => buildRowPoolFields(w, ROW_HEIGHT),
+  },
+  numericstepper: {
+    // The up + down arrow triangles in the right-hand button column.
+    buildMarks: (w, h) => buildStepperArrowMarks(w, h),
+    authorClassBody: (fqn) => authorNumericStepperClassBody(fqn),
+    // A bordered white field box (same as an input field) behind the value text.
+    faceKind: "input",
+    // The value field is a read-only single-line dynamic display.
+    textField: { textType: "dynamic", multiline: false, wordWrap: false },
+  },
+  progressbar: {
+    // The movable fill bar (authored at full width, scaled at runtime).
+    buildMarks: (w, h) => [{ name: "fill_mk", shape: buildProgressFillShape(w, h), x: 0, y: 0 }],
+    authorClassBody: (fqn) => authorProgressBarClassBody(fqn),
+    // The bordered box face IS the track groove.
+    faceKind: "progressbar",
   },
 };
 
@@ -1193,6 +1376,113 @@ function buildArrowShape(width: number): Shape {
 }
 
 /**
+ * Build the NumericStepper up + down arrow marks. The right-hand button column spans
+ * `STEPPER_BTN_WIDTH` px; the up triangle sits in the top half, the down triangle in
+ * the bottom half. Each is a small filled triangle (origin-relative, placed at (0,0)).
+ */
+function buildStepperArrowMarks(width: number, height: number): SkinMark[] {
+  const colX = width - STEPPER_BTN_WIDTH;
+  const cx = colX + STEPPER_BTN_WIDTH / 2;
+  const r = Math.min(4, STEPPER_BTN_WIDTH / 3);
+  const upCy = height * 0.25;
+  const downCy = height * 0.75;
+  const upArrow: Shape = {
+    id: "stepper-up",
+    paths: [
+      {
+        start: { x: cx - r, y: upCy + r / 2 },
+        segments: [
+          { type: "line", to: { x: cx + r, y: upCy + r / 2 } },
+          { type: "line", to: { x: cx, y: upCy - r } },
+          { type: "line", to: { x: cx - r, y: upCy + r / 2 } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: MARK_COLOR },
+      },
+    ],
+  };
+  const downArrow: Shape = {
+    id: "stepper-down",
+    paths: [
+      {
+        start: { x: cx - r, y: downCy - r / 2 },
+        segments: [
+          { type: "line", to: { x: cx + r, y: downCy - r / 2 } },
+          { type: "line", to: { x: cx, y: downCy + r } },
+          { type: "line", to: { x: cx - r, y: downCy - r / 2 } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: MARK_COLOR },
+      },
+    ],
+  };
+  return [
+    { name: "up_mk", shape: upArrow, x: 0, y: 0 },
+    { name: "down_mk", shape: downArrow, x: 0, y: 0 },
+  ];
+}
+
+/**
+ * ProgressBar track groove: a bordered grey rectangle spanning the full control. The
+ * `fill_mk` progress bar draws on top of it.
+ */
+function buildProgressTrackShape(width: number, height: number): Shape {
+  return {
+    id: "progress-track",
+    paths: [
+      {
+        start: { x: 0, y: 0 },
+        segments: [
+          { type: "line", to: { x: width, y: 0 } },
+          { type: "line", to: { x: width, y: height } },
+          { type: "line", to: { x: 0, y: height } },
+          { type: "line", to: { x: 0, y: 0 } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: PROGRESS_TRACK_COLOR },
+        stroke: {
+          type: "solid",
+          color: BORDER_COLOR,
+          width: 1,
+          caps: "round",
+          joints: "round",
+          miterLimit: 3,
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * ProgressBar fill bar: a solid blue rectangle authored at the FULL inner track width
+ * (inset 2px from the border). The class scales it via `_xscale` (0..100) so its visible
+ * width reflects `value / maximum`.
+ */
+function buildProgressFillShape(width: number, height: number): Shape {
+  const inset = 2;
+  const x0 = inset;
+  const y0 = inset;
+  const x1 = width - inset;
+  const y1 = height - inset;
+  return {
+    id: "progress-fill",
+    paths: [
+      {
+        start: { x: x0, y: y0 },
+        segments: [
+          { type: "line", to: { x: x1, y: y0 } },
+          { type: "line", to: { x: x1, y: y1 } },
+          { type: "line", to: { x: x0, y: y1 } },
+          { type: "line", to: { x: x0, y: y0 } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: PROGRESS_FILL_COLOR },
+      },
+    ],
+  };
+}
+
+/**
  * Build the fixed pool of named row EditText descriptors (`row0_txt`..`rowN_txt`) for a
  * List/ComboBox skin. Stacked from `topY`, one ROW_HEIGHT each, full control width
  * (inset 2px). All read-only `dynamic` rows — the class seeds + shows/hides them from
@@ -1231,6 +1521,9 @@ function buildFaceShape(kind: ControlKind, width: number, height: number): Shape
     case "list":
       // A bordered white box, same as an input field — the row pool draws on top.
       return buildInputFaceShape(width, height);
+    case "progressbar":
+      // A bordered grey track groove; the fill bar draws on top.
+      return buildProgressTrackShape(width, height);
     case "button":
     default:
       return buildButtonFaceShape(width, height);
@@ -1334,12 +1627,16 @@ function buildLabelTextObject(
   // Button centers its label; everything else is left-aligned (Flash field/label layout).
   const align: TextDisplayObject["align"] = faceKind === "button" ? "center" : "left";
 
+  // The NumericStepper's value field must NOT extend under the right-hand arrow column;
+  // shrink its width by the button column so the value sits left of the up/down arrows.
+  const rightReserve = kind === "numericstepper" ? STEPPER_BTN_WIDTH : 0;
+
   return {
     type: "text",
     id: "label_txt",
     x: labelX,
     y: labelY,
-    width: Math.max(10, width - labelX - inset),
+    width: Math.max(10, width - labelX - inset - rightReserve),
     height: Math.max(10, height - labelY - inset),
     text: label,
     textType: field.textType,
