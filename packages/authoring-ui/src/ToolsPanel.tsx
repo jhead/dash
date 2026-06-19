@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { FreeTransformMode, PolyStarOptions, ToolId, ToolState } from "./tools/types";
 import { OBJECT_DRAWING_TOOLS } from "./tools/types";
 import type { Fill } from "@flash/core";
@@ -283,6 +283,28 @@ const PANEL_WIDTH = metrics.toolsPanelWidth; // ~67px
 //   - glyph colour           → chrome.textDefault (currentColor)
 //   - separators / borders   → chrome.separator (1px)
 // ---------------------------------------------------------------------------
+/**
+ * The flat "up" border for a state-toggled button: a 1px transparent border on
+ * all FOUR sides, written as LONGHAND props (matching bevel()'s output).
+ *
+ * Why longhand: when a button toggles active→up, React rewrites only the style
+ * keys that changed. If "up" used the `border` shorthand and "active" used
+ * bevel()'s `borderTop/Left/Right/Bottom` longhands, React would set the
+ * shorthand but never clear the stale longhands it had set while active — the
+ * browser keeps the leftover bevel longhand values and renders a 2px outset
+ * frame stuck on every previously-selected tool (the f27bb24 regression).
+ * Keeping every state on the SAME four longhand keys means a toggle only ever
+ * overwrites colours, never strands a property.
+ */
+function transparentBorder(): React.CSSProperties {
+  return {
+    borderTop: "1px solid transparent",
+    borderLeft: "1px solid transparent",
+    borderRight: "1px solid transparent",
+    borderBottom: "1px solid transparent",
+  };
+}
+
 const styles: Record<string, React.CSSProperties> = {
   panel: {
     display: "flex",
@@ -314,12 +336,22 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     color: chrome.textDefault,
     cursor: "default",
-    border: "1px solid transparent",
+    // Flat "up" state: 1px transparent longhand border (see transparentBorder).
+    ...transparentBorder(),
     background: "transparent",
     padding: 0,
     boxSizing: "border-box",
     lineHeight: 1,
     justifySelf: "center",
+  },
+  toolBtnHover: {
+    // Subtle Halo roll-over highlight on a NON-active button: light-blue fill
+    // (rollOverColor) + a raised bevel for tactile feedback. Pure longhand
+    // borders (raised) so it diffs cleanly against both the flat up state and
+    // the sunken active state. (docs/30 §B rollOverColor #B2E1FF.)
+    background: halo.rollOverColor,
+    color: chrome.textDefault,
+    ...bevel("raised"),
   },
   toolBtnActive: {
     // Depressed / sunken 3D bevel over the recessed strip = the pressed tool.
@@ -396,7 +428,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "8px",
     color: chrome.textDefault,
     cursor: "pointer",
-    border: "1px solid transparent",
+    // Longhand transparent border — same shorthand/longhand-mix avoidance as toolBtn.
+    ...transparentBorder(),
     background: "transparent",
     padding: 0,
     lineHeight: 1,
@@ -405,6 +438,11 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     marginTop: "2px",
     flexShrink: 0,
+  },
+  objectDrawingBtnHover: {
+    background: halo.rollOverColor,
+    color: chrome.textDefault,
+    ...bevel("raised"),
   },
   objectDrawingBtnActive: {
     background: chrome.insetFieldStrip,
@@ -472,15 +510,22 @@ function NoColorX(): React.ReactElement {
 const BRUSH_SIZES = [2, 4, 8, 16, 32];
 const ERASER_SIZES = [8, 16, 24, 32, 48];
 
-// Small tool-option toggle button: light chrome, sunken bevel when active.
-function optBtnStyle(active: boolean): React.CSSProperties {
+// Small tool-option toggle button: light chrome, sunken bevel when active,
+// raised Halo highlight on hover. All three states use LONGHAND borders (bevel
+// or transparentBorder) so React never strands a stale longhand when toggling
+// — the same shorthand/longhand-mix bug that hit the main tool buttons.
+function optBtnStyle(active: boolean, hover = false): React.CSSProperties {
+  const stateBorderAndBg: React.CSSProperties = active
+    ? { background: chrome.insetFieldStrip, ...bevel("sunken") }
+    : hover
+      ? { background: halo.rollOverColor, ...bevel("raised") }
+      : { background: "transparent", ...transparentBorder() };
   return {
     width: "30px",
     height: "12px",
     fontSize: "7px",
     color: chrome.textDefault,
-    background: active ? chrome.insetFieldStrip : "transparent",
-    ...(active ? bevel("sunken") : { border: "1px solid transparent" }),
+    ...stateBorderAndBg,
     cursor: "pointer",
     padding: 0,
     lineHeight: 1,
@@ -522,6 +567,15 @@ export function ToolsPanel({
 }: ToolsPanelProps): React.ReactElement {
   const strokeInputRef = useRef<HTMLInputElement>(null);
   const fillInputRef = useRef<HTMLInputElement>(null);
+  // Roll-over state. Inline styles can't carry :hover, so we track the hovered
+  // control id locally and apply the Halo highlight to non-active buttons.
+  const [hovered, setHovered] = useState<string | null>(null);
+  // Mouse-enter/leave handlers for a hover-tracked control `key`.
+  const hoverProps = (key: string) => ({
+    onMouseEnter: () => setHovered(key),
+    onMouseLeave: () => setHovered((h) => (h === key ? null : h)),
+  });
+  const isHovered = (key: string) => hovered === key;
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -561,14 +615,21 @@ export function ToolsPanel({
         {TOOL_ROWS.map((row) =>
           row.map((tool) => {
             const isActive = toolState.activeTool === tool.id;
+            const isHovered = !isActive && hovered === `tool:${tool.id}`;
             return (
               <button
                 key={tool.id}
                 style={{
                   ...styles.toolBtn,
-                  ...(isActive ? styles.toolBtnActive : {}),
+                  ...(isActive
+                    ? styles.toolBtnActive
+                    : isHovered
+                      ? styles.toolBtnHover
+                      : {}),
                 }}
                 onClick={() => onToolChange(tool.id)}
+                onMouseEnter={() => setHovered(`tool:${tool.id}`)}
+                onMouseLeave={() => setHovered((h) => (h === `tool:${tool.id}` ? null : h))}
                 title={tool.title}
                 type="button"
               >
@@ -585,9 +646,15 @@ export function ToolsPanel({
           type="button"
           style={{
             ...styles.objectDrawingBtn,
-            ...(toolState.objectDrawing ? styles.objectDrawingBtnActive : {}),
+            ...(toolState.objectDrawing
+              ? styles.objectDrawingBtnActive
+              : hovered === "od"
+                ? styles.objectDrawingBtnHover
+                : {}),
           }}
           onClick={onObjectDrawingToggle}
+          onMouseEnter={() => setHovered("od")}
+          onMouseLeave={() => setHovered((h) => (h === "od" ? null : h))}
           title="Object Drawing (J)"
         >
           OD
@@ -601,20 +668,24 @@ export function ToolsPanel({
       {/* Tool options area */}
       {toolState.activeTool === "pencil" && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px", padding: "2px 0", width: "100%" }}>
-          {(["straighten", "smooth", "ink"] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              style={{
-                ...optBtnStyle((toolState.pencilMode ?? "ink") === mode),
-                textTransform: "capitalize",
-              }}
-              onClick={() => onPencilModeChange?.(mode)}
-              title={`Pencil mode: ${mode}`}
-            >
-              {mode.slice(0, 3)}
-            </button>
-          ))}
+          {(["straighten", "smooth", "ink"] as const).map((mode) => {
+            const active = (toolState.pencilMode ?? "ink") === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                style={{
+                  ...optBtnStyle(active, isHovered(`pencil:${mode}`)),
+                  textTransform: "capitalize",
+                }}
+                onClick={() => onPencilModeChange?.(mode)}
+                {...hoverProps(`pencil:${mode}`)}
+                title={`Pencil mode: ${mode}`}
+              >
+                {mode.slice(0, 3)}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -677,8 +748,9 @@ export function ToolsPanel({
               <button
                 key={mode}
                 type="button"
-                style={optBtnStyle(active)}
+                style={optBtnStyle(active, isHovered(`ft:${mode}`))}
                 onClick={() => onFreeTransformModeChange?.(mode)}
+                {...hoverProps(`ft:${mode}`)}
                 title={fullLabel}
               >
                 {label}
@@ -699,8 +771,9 @@ export function ToolsPanel({
               <button
                 key={String(polyMode)}
                 type="button"
-                style={optBtnStyle(active)}
+                style={optBtnStyle(active, isHovered(`lasso:${polyMode}`))}
                 onClick={() => { onLassoPolygonModeChange?.(polyMode); onLassoMagicWandChange?.(false); }}
+                {...hoverProps(`lasso:${polyMode}`)}
                 title={polyMode ? "Polygon Mode" : "Freehand Mode"}
               >
                 {label}
@@ -710,8 +783,9 @@ export function ToolsPanel({
           {/* Magic Wand sub-mode button */}
           <button
             type="button"
-            style={optBtnStyle(toolState.lassoMagicWand ?? false)}
+            style={optBtnStyle(toolState.lassoMagicWand ?? false, isHovered("lasso:wand"))}
             onClick={() => onLassoMagicWandChange?.(!(toolState.lassoMagicWand ?? false))}
+            {...hoverProps("lasso:wand")}
             title="Magic Wand — select by color"
           >
             Wand
@@ -762,8 +836,9 @@ export function ToolsPanel({
                 <button
                   key={type}
                   type="button"
-                  style={{ ...optBtnStyle(active), textTransform: "capitalize" }}
+                  style={{ ...optBtnStyle(active, isHovered(`polystar:${type}`)), textTransform: "capitalize" }}
                   onClick={() => onPolyStarOptionsChange?.({ shapeType: type })}
+                  {...hoverProps(`polystar:${type}`)}
                   title={type === "polygon" ? "Polygon" : "Star"}
                 >
                   {type === "polygon" ? "Poly" : "Star"}
