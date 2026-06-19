@@ -625,3 +625,26 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
 - **Resolved + verified (no longer open):** 1213 / 1217, 1228, 1214, 1229-part 1, 1215,
   1230, 1231-part 2.1, 1232, component-part 2.2.
+
+
+---
+
+## 2026-06-19 — Proactive exploratory audit (idle commit window, no new worker code)
+
+- **Watermark (last fully-QA'd SHA):** unchanged from the prior entry (`cb7d4fe`). No new
+  worker code landed this cycle; this is a proactive idle-window sweep, so the watermark
+  does NOT advance.
+- **Proactive audit — Sound Envelope editor (task 1204): HEALTHY, nothing filed.** Verified
+  the authored gain envelope reaches the published SWF end-to-end (it is NOT a member of the
+  editor-only gap class): model `SoundEnvelopePoint {pos44, leftLevel, rightLevel}` +
+  `SoundLinkage.customEnvelope` (`types.ts:112/134`) → `SoundEnvelopeEditDialog.tsx`
+  draggable curve writes back via `Shell.tsx:2238` `handleEnvelopeConfirm` → BOTH compile
+  paths consume it (`frames.ts:1542` main timeline, `sprite.ts:1199` symbol-internal) →
+  `sounds.ts:123` `encodeSoundInfo` sets `HasEnvelope` + spec-correct `EnvelopeCount` /
+  `Pos44` / `LeftLevel` / `RightLevel`, custom overriding preset. swf-dump proof: a 3-point
+  asymmetric L/R envelope round-trips exactly through the `StartSound` (tag 15). Test
+  coverage present (`soundinfo.test.ts:433/455`). All 1407 swf tests pass.
+  - **Logged as "proactively audited & healthy"** so future idle-cycle sweeps do not
+    re-tread this area.
+- **Still open for workers (carried forward):** 1216, 1227, 1233 open; 1223 remains a
+  close candidate (resolved by 1225, doc-wording nuance only).
