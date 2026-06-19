@@ -1,0 +1,10 @@
+{
+  "id": "1226-3h6pn3-swf-runtime-sharing-scale9-complete-byte-verify-",
+  "title": "SWF runtime-sharing + Scale9: complete & byte-verify ImportAssets2/ExportAssets/DefineScalingGrid",
+  "description": "Static analysis found three SWF tag emissions that EXIST but are UNVERIFIED/possibly-incomplete (tests use .todo/.soft fallbacks that pass on non-emission). VERIFY ground truth first, then complete + harden each: (1) ImportAssets2 (tag 71) \u2014 importassets.test.ts:319 .todo says 'tag body contains the sharedUrl string (not yet implemented)'; confirm encodeImportAssets2 (symbols.ts ~86-127) emits the correct body and replace the .todo with a hard byte-level assertion. (2) ExportAssets (tag 56) \u2014 importassets.test.ts:430-452 has fallback logic skipping assertions when the tag isn't emitted; confirm encodeExportAssets emits correctly for exportForRuntimeSharing symbols and add hard assertions. (3) DefineScalingGrid (tag 78) \u2014 scalinggrid.test.ts:279,311 use .expect.soft that pass on non-emission; confirm encodeDefineScalingGrid (symbols.ts ~141, called ~269) actually emits tag 78 with correct Scale9 rect structure and add a hard positive assertion. Self-verify structurally by decoding our own SWF output (and golden-parity where applicable); do NOT require an external Flash binary. Scope: packages/swf/src/compiler/symbols.ts + the three test files. Build + tests green; no new failures (only the ~3 task-1207 fixture failures acceptable). Update docs if encoding behavior changes.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T01:16:46Z",
+  "updated_at": "2026-06-19T01:16:46Z"
+}
