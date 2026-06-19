@@ -114,6 +114,25 @@ Blend modes map to the SWF `PlaceObject3` blend-mode field and `MovieClip.blendM
   unreachable from the authoring model/UI (no FiltersPanel entry, no FLA-import decoder, no
   tween interpolation), so nothing constructs one in practice. Gate:
   `__tests__/displacement-filter.test.ts`.
+- **A shape carrying BOTH a filter and a non-normal blendMode must emit ONE PlaceObject3
+  with HasFilterList AND HasBlendMode (task 1240, follow-up to 1238).** A
+  `ShapeDisplayObject` has independent optional `blendMode` and `filters` fields, so a raw
+  shape can have both set. The `compiler/frames.ts` initial-placement branch used to test
+  `hasEnabledFilters()` FIRST and emit a filters-only PlaceObject3
+  (`encodePlaceObject3WithFilters`, which writes no blend byte); the shape blend-mode branch
+  was `else if`, only reachable with no filters — so a shape with both silently DROPPED the
+  blend (byte-confirmed: shape PO3 had `filters:[…]` and no `blendMode`, vs the instance PO3
+  which had both). `encodePlaceObject3WithBlendMode` already accepts an optional `filters`
+  arg and writes the **FILTERLIST then the blend-mode byte** (SWF PlaceObject3 field order:
+  filters precede blend mode), so the fix is purely call-site routing: the two shape branches
+  were unified into one (gated on `hasEnabledFilters || non-normal blendMode`) that, when a
+  blend is present, calls `encodePlaceObject3WithBlendMode(charId, depth, x, y, blendMode,
+  filters, …)` to carry both — mirroring the already-correct instance path in the same file.
+  Filters-only and blend-only fall through to the matching single-feature encoder. The
+  frames.ts shape MOVE branch was already correct (it checks `hasBlend` first and passes the
+  filter list). Gates: `__tests__/blendmode.test.ts` tests 7–9 (shape filter+blend → one PO3
+  with both flags + correct blend byte + intact FILTERLIST; filters-only and blend-only stay
+  correct; encoder writes filters before the blend byte).
 - Blend modes = GPU blend-state + custom fragment composites; Layer forces an offscreen group
   buffer so Alpha/Erase operate on the composited group.
 - Keep a filter/blend pipeline cache keyed on parameters + source bitmap hash.

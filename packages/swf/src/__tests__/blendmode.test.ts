@@ -328,4 +328,167 @@ describe("SWF blend mode encoding", () => {
     expect(tagFlags2 & 0x01).toBe(0x01); // HasFilterList (PlaceFlag 1<<8)
     expect(tagFlags2 & 0x10).toBe(0); // HasImage must NOT be set
   });
+
+  // -------------------------------------------------------------------------
+  // Shape display-object cases (task 1240): a ShapeDisplayObject carries
+  // blendMode and filters as independent optional fields, so a raw shape can
+  // have BOTH set. The frames.ts initial-placement branch used to check
+  // filters FIRST and emit a filters-only PlaceObject3, silently dropping the
+  // blend. These tests pin the fix: a shape with both must emit ONE
+  // PlaceObject3 carrying HasFilterList AND HasBlendMode with the correct
+  // blend byte, matching the instance path; filters-only and blend-only stay
+  // correct.
+  // -------------------------------------------------------------------------
+
+  function makeShapeObj(
+    id: string,
+    extra: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return {
+      id,
+      type: "shape" as const,
+      shape: {
+        id: `${id}-shape`,
+        paths: [
+          {
+            start: { x: 100, y: 100 },
+            segments: [
+              { type: "line" as const, to: { x: 200, y: 100 } },
+              { type: "line" as const, to: { x: 200, y: 200 } },
+              { type: "line" as const, to: { x: 100, y: 200 } },
+            ],
+            closed: true,
+            fill: {
+              type: "solid" as const,
+              color: { r: 255, g: 0, b: 0, a: 255 },
+            },
+          },
+        ],
+      },
+      x: 0,
+      y: 0,
+      ...extra,
+    };
+  }
+
+  /**
+   * Test 7 (task 1240): a SHAPE with BOTH a filter and a non-normal blendMode
+   * emits a single PlaceObject3 with HasFilterList (0x01) AND HasBlendMode
+   * (0x02) both set, and the blend byte present (= multiply = 3). This is the
+   * exact regression: previously the shape PlaceObject3 carried only the
+   * filter list and the blend was dropped.
+   */
+  it("7. Shape with filter + blendMode='multiply' emits ONE PlaceObject3 with both flags (task 1240)", () => {
+    const blur = makeBlurFilter();
+    const shapeObj = makeShapeObj("shape-both", {
+      blendMode: "multiply" as const,
+      filters: [blur],
+    });
+
+    const doc = makeDoc([
+      makeScene([makeLayer("layer", [makeFrame([shapeObj])])]),
+    ]);
+
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const placeObject3Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT3);
+    const placeObject2Tags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+
+    // Exactly one PlaceObject3, no PlaceObject2 for this shape.
+    expect(placeObject3Tags.length).toBe(1);
+    expect(placeObject2Tags.length).toBe(0);
+
+    const flags2 = placeObject3Tags[0].body[1];
+    expect(flags2 & 0x01).toBe(0x01); // HasFilterList
+    expect(flags2 & 0x02).toBe(0x02); // HasBlendMode — was dropped before the fix
+    expect(flags2 & 0x10).toBe(0); // HasImage must NOT be set
+
+    // The blend byte (multiply = 3) is the last byte of the PO3 body (no
+    // cacheAsBitmap trailer here); the FILTERLIST precedes it.
+    const body = placeObject3Tags[0].body;
+    expect(body[body.length - 1]).toBe(SWF_BLEND_MODE["multiply"]);
+
+    // The FILTERLIST (FilterCount=1, FilterID=1=Blur) must still be intact,
+    // sitting before the blend byte.
+    let foundBlur = false;
+    for (let i = 7; i < body.length - 2; i++) {
+      if (body[i] === 1 /* FilterCount=1 */ && body[i + 1] === 1 /* FilterID=1=Blur */) {
+        foundBlur = true;
+        break;
+      }
+    }
+    expect(foundBlur).toBe(true);
+  });
+
+  /**
+   * Test 8 (task 1240): the encoder writes FILTERLIST then the blend byte (SWF
+   * PlaceObject3 field order: filters before blend mode). Verified directly on
+   * encodePlaceObject3WithBlendMode so the combined shape path produces
+   * spec-correct ordering.
+   */
+  it("8. encodePlaceObject3WithBlendMode writes FILTERLIST before the blend byte", () => {
+    const blur = makeBlurFilter();
+    const body = encodePlaceObject3WithBlendMode(1, 1, 0, 0, "multiply", [blur]);
+
+    const flags2 = body[1];
+    expect(flags2 & 0x01).toBe(0x01); // HasFilterList
+    expect(flags2 & 0x02).toBe(0x02); // HasBlendMode
+
+    // Blend byte is the final byte; the Blur FILTERLIST entry (count=1, id=1)
+    // appears earlier in the body, confirming filters-then-blend ordering.
+    expect(body[body.length - 1]).toBe(SWF_BLEND_MODE["multiply"]);
+    let blurOffset = -1;
+    for (let i = 7; i < body.length - 2; i++) {
+      if (body[i] === 1 && body[i + 1] === 1) {
+        blurOffset = i;
+        break;
+      }
+    }
+    expect(blurOffset).toBeGreaterThan(0);
+    expect(blurOffset).toBeLessThan(body.length - 1); // filters precede blend
+  });
+
+  /**
+   * Test 9 (task 1240): regression guard — a shape with ONLY a filter still
+   * emits a filters-only PlaceObject3 (HasFilterList set, HasBlendMode clear),
+   * and a shape with ONLY a non-normal blendMode emits a blend PlaceObject3
+   * (HasBlendMode set, HasFilterList clear). The combined-branch refactor must
+   * not regress either single case.
+   */
+  it("9. Shape with only a filter (no blend) and only a blend (no filter) stay correct", () => {
+    // Filter-only shape.
+    const filterOnly = makeShapeObj("shape-filter-only", {
+      filters: [makeBlurFilter()],
+    });
+    {
+      const doc = makeDoc([
+        makeScene([makeLayer("layer", [makeFrame([filterOnly])])]),
+      ]);
+      const tags = parseTags(compileDocument(doc));
+      const po3 = tags.filter((t) => t.code === TAG_PLACE_OBJECT3);
+      expect(po3.length).toBe(1);
+      const flags2 = po3[0].body[1];
+      expect(flags2 & 0x01).toBe(0x01); // HasFilterList
+      expect(flags2 & 0x02).toBe(0); // HasBlendMode clear
+    }
+
+    // Blend-only shape.
+    const blendOnly = makeShapeObj("shape-blend-only", {
+      blendMode: "screen" as const,
+    });
+    {
+      const doc = makeDoc([
+        makeScene([makeLayer("layer", [makeFrame([blendOnly])])]),
+      ]);
+      const tags = parseTags(compileDocument(doc));
+      const po3 = tags.filter((t) => t.code === TAG_PLACE_OBJECT3);
+      expect(po3.length).toBe(1);
+      const flags2 = po3[0].body[1];
+      expect(flags2 & 0x02).toBe(0x02); // HasBlendMode
+      expect(flags2 & 0x01).toBe(0); // HasFilterList clear
+      // Blend byte (screen = 4) is the final byte.
+      expect(po3[0].body[po3[0].body.length - 1]).toBe(SWF_BLEND_MODE["screen"]);
+    }
+  });
 });

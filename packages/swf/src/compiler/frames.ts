@@ -509,8 +509,24 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                     clipDepth
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
-                } else if (hasEnabledFilters(displayObj.filters)) {
-                  const shapeObj = displayObj as { colorEffect?: import("@flash/core").ColorEffect; visible?: boolean; alpha?: number; cacheAsBitmap?: boolean };
+                } else if (
+                  hasEnabledFilters(displayObj.filters) ||
+                  (displayObj.type === "shape" && !!displayObj.blendMode && displayObj.blendMode !== "normal")
+                ) {
+                  // Filters and/or a non-normal blend mode both require
+                  // PlaceObject3 (tag 70). A shape can carry BOTH simultaneously
+                  // (ShapeDisplayObject.filters + .blendMode are independent
+                  // fields), so they must be combined into ONE PlaceObject3 that
+                  // sets HasFilterList (flags2 0x01) AND HasBlendMode (0x02),
+                  // writing the FILTERLIST then the blend-mode byte (SWF field
+                  // order). The previous else-if chain checked filters FIRST and
+                  // emitted a filters-only PO3, silently dropping the blend when
+                  // both were set (task 1240, follow-up to 1238). This mirrors the
+                  // instance path below: when blend is present use
+                  // encodePlaceObject3WithBlendMode and pass the filter list as the
+                  // `filters` arg so a single PO3 carries both; otherwise fall to
+                  // the filters-only encoder.
+                  const shapeObj = displayObj as { colorEffect?: import("@flash/core").ColorEffect; visible?: boolean; alpha?: number; cacheAsBitmap?: boolean; blendMode?: string };
                   let shapeCXForm = shapeObj.colorEffect
                     ? colorEffectToCXForm(shapeObj.colorEffect) ?? undefined
                     : undefined;
@@ -520,36 +536,35 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                   if (!shapeCXForm && shapeObj.alpha !== undefined && shapeObj.alpha !== 1) {
                     shapeCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, shapeObj.alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
                   }
-                  const placeBody = encodePlaceObject3WithFilters(
-                    charId,
-                    depth,
-                    x,
-                    y,
-                    displayObj.filters!,
-                    objTransform,
-                    undefined,
-                    undefined,
-                    undefined,
-                    !!shapeObj.cacheAsBitmap,
-                    shapeCXForm
-                  );
-                  writer.writeTag(Tag.PlaceObject3, placeBody);
-                } else if (displayObj.type === "shape" && displayObj.blendMode && displayObj.blendMode !== "normal") {
-                  // blend mode requires PlaceObject3 (tag 70) with HasBlendMode bit set.
-                  const placeBody = encodePlaceObject3WithBlendMode(
-                    charId,
-                    depth,
-                    x,
-                    y,
-                    displayObj.blendMode,
-                    displayObj.filters,
-                    objTransform,
-                    undefined,
-                    undefined,
-                    undefined,
-                    undefined,
-                    !!displayObj.cacheAsBitmap
-                  );
+                  const shapeHasBlend = shapeObj.blendMode !== undefined && shapeObj.blendMode !== "normal";
+                  const placeBody = shapeHasBlend
+                    ? encodePlaceObject3WithBlendMode(
+                        charId,
+                        depth,
+                        x,
+                        y,
+                        shapeObj.blendMode!,
+                        displayObj.filters,
+                        objTransform,
+                        undefined,
+                        shapeCXForm,
+                        undefined,
+                        undefined,
+                        !!shapeObj.cacheAsBitmap
+                      )
+                    : encodePlaceObject3WithFilters(
+                        charId,
+                        depth,
+                        x,
+                        y,
+                        displayObj.filters!,
+                        objTransform,
+                        undefined,
+                        undefined,
+                        undefined,
+                        !!shapeObj.cacheAsBitmap,
+                        shapeCXForm
+                      );
                   writer.writeTag(Tag.PlaceObject3, placeBody);
                 } else if (displayObj.type === "shape" && displayObj.cacheAsBitmap) {
                   // cacheAsBitmap requires PlaceObject3 (tag 70) with HasCacheAsBitmap bit set.
