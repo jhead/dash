@@ -130,6 +130,7 @@ export interface UiData {
   alignPanelVisible: boolean;
   scenePanelVisible: boolean;
   swatchesPanelVisible: boolean;
+  componentsPanelVisible: boolean;
   swatches: string[];
   behaviorsPanelVisible: boolean;
   movieExplorerVisible: boolean;
@@ -213,6 +214,7 @@ export interface UiActions {
   setAlignPanelVisible: ReactSetter<boolean>;
   setScenePanelVisible: ReactSetter<boolean>;
   setSwatchesPanelVisible: ReactSetter<boolean>;
+  setComponentsPanelVisible: ReactSetter<boolean>;
   setSwatches: ReactSetter<string[]>;
   setBehaviorsPanelVisible: ReactSetter<boolean>;
   setMovieExplorerVisible: ReactSetter<boolean>;
@@ -306,6 +308,7 @@ const DEFAULTS: UiData = {
   alignPanelVisible: false,
   scenePanelVisible: false,
   swatchesPanelVisible: false,
+  componentsPanelVisible: false,
   swatches: [],
   behaviorsPanelVisible: false,
   movieExplorerVisible: false,
@@ -401,6 +404,7 @@ export function createUiStore(init?: Partial<UiData>): UiStoreApi {
     setAlignPanelVisible: rs(set, get, "alignPanelVisible"),
     setScenePanelVisible: rs(set, get, "scenePanelVisible"),
     setSwatchesPanelVisible: rs(set, get, "swatchesPanelVisible"),
+    setComponentsPanelVisible: rs(set, get, "componentsPanelVisible"),
     setSwatches: rs(set, get, "swatches"),
     setBehaviorsPanelVisible: rs(set, get, "behaviorsPanelVisible"),
     setMovieExplorerVisible: rs(set, get, "movieExplorerVisible"),

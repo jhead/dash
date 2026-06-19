@@ -335,6 +335,10 @@ export interface MenuBarProps {
   onSwatchesPanelToggle?: () => void;
   /** Whether the Color Swatches panel is currently visible (for checkmark display). */
   swatchesPanelVisible?: boolean;
+  /** Called when Window > Components is toggled. */
+  onComponentsPanelToggle?: () => void;
+  /** Whether the Components panel is currently visible (for checkmark display). */
+  componentsPanelVisible?: boolean;
   /** Called when Window > Behaviors is toggled. */
   onBehaviorsPanelToggle?: () => void;
   /** Whether the Behaviors panel is currently visible (for checkmark display). */
@@ -475,6 +479,8 @@ export function MenuBar({
   colorMixerVisible = false,
   onSwatchesPanelToggle,
   swatchesPanelVisible = false,
+  onComponentsPanelToggle,
+  componentsPanelVisible = false,
   onBehaviorsPanelToggle,
   behaviorsPanelVisible = false,
   onMovieExplorerToggle,
@@ -929,6 +935,10 @@ export function MenuBar({
         {
           label: "Filters",
           action: () => { onFiltersPanelToggle?.(); },
+        },
+        {
+          label: `${componentsPanelVisible ? "+ " : "  "}Components  Ctrl+F7`,
+          action: () => { onComponentsPanelToggle?.(); },
         },
         {
           label: `${scenePanelVisible ? "+ " : "  "}Scene  Ctrl+Shift+S`,

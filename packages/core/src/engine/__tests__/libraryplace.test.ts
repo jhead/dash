@@ -5,7 +5,8 @@
 import { describe, it, expect } from "vitest";
 import { placeLibraryItem } from "../libraryplace.js";
 import { createDocument } from "../../model/document.js";
-import { createSymbol, createBitmap, createSound } from "../../model/library.js";
+import { createSymbol, createBitmap, createSound, createComponent } from "../../model/library.js";
+import { getComponentDef } from "../../model/components.js";
 import { createFrame, createLayer, createTimeline } from "../../model/timeline.js";
 import type { FlashDocument } from "../../model/types.js";
 import type { BitmapDisplayObject, DisplayObject, SymbolInstance } from "../types.js";
@@ -243,5 +244,50 @@ describe("placeLibraryItem — multiple instances", () => {
     expect(objects[0].y).toBe(60);
     expect(objects[1].x).toBe(70);
     expect(objects[1].y).toBe(80);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Component placement (task 1222): a ComponentItem becomes a SymbolInstance
+// referencing the component, carrying the component's default parameters.
+// ---------------------------------------------------------------------------
+
+describe("placeLibraryItem — component", () => {
+  it("creates a SymbolInstance referencing the component item", () => {
+    const comp = createComponent("Button", "Button", "mx.controls");
+    const doc = makeDoc([comp]);
+
+    const result = placeLibraryItem(doc, 0, 0, 0, comp.id, 30, 40);
+    const objects = getObjects(result);
+    expect(objects).toHaveLength(1);
+    const inst = objects[0] as SymbolInstance;
+    expect(inst.type).toBe("instance");
+    expect(inst.symbolId).toBe(comp.id);
+    expect(inst.x).toBe(30);
+    expect(inst.y).toBe(40);
+  });
+
+  it("seeds default component parameters from the catalog", () => {
+    const comp = createComponent("Button", "Button", "mx.controls");
+    const doc = makeDoc([comp]);
+
+    const result = placeLibraryItem(doc, 0, 0, 0, comp.id, 0, 0);
+    const inst = getObjects(result)[0] as SymbolInstance;
+    const def = getComponentDef("Button")!;
+    expect(inst.componentParameters).toBeDefined();
+    expect(inst.componentParameters!.label).toBe("Button");
+    expect(Object.keys(inst.componentParameters!).length).toBe(def.parameters.length);
+    // natural size comes from the catalog's default size
+    expect(inst.naturalWidth).toBe(def.defaultWidth);
+    expect(inst.naturalHeight).toBe(def.defaultHeight);
+  });
+
+  it("falls back to an empty parameter map for an unknown component", () => {
+    const comp = createComponent("Frobnicator", "Frobnicator", "custom.pkg");
+    const doc = makeDoc([comp]);
+
+    const result = placeLibraryItem(doc, 0, 0, 0, comp.id, 0, 0);
+    const inst = getObjects(result)[0] as SymbolInstance;
+    expect(inst.componentParameters).toEqual({});
   });
 });

@@ -577,6 +577,13 @@ export interface SymbolInstance {
   readonly visible?: boolean;
   /** Registration point in pixels (relative to symbol origin). Absent when (0,0). */
   readonly registrationPoint?: { x: number; y: number };
+  /**
+   * v2 component instance parameters (parameter name → value, serialized as a
+   * string). Present only when this instance is a placed built-in component
+   * (its `symbolId` references a `ComponentItem`). Edited in the Component
+   * Inspector's Parameters tab. See docs/13-components.md.
+   */
+  readonly componentParameters?: Record<string, string>;
 }
 
 /**

@@ -198,6 +198,18 @@ export {
   setSymbolLinkage,
 } from "./library.js";
 
+// Built-in v2 component catalog
+export type {
+  ComponentDef,
+  ComponentParamDef,
+  ComponentParamType,
+} from "./components.js";
+export {
+  BUILTIN_COMPONENTS,
+  getComponentDef,
+  defaultComponentParameters,
+} from "./components.js";
+
 // Find and Replace
 export type {
   FindReplaceType,

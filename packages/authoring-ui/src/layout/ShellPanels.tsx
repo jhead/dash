@@ -17,6 +17,7 @@ import { SwatchesPanel } from "../SwatchesPanel";
 import { BehaviorsPanel } from "../BehaviorsPanel";
 import { MovieExplorerPanel } from "../MovieExplorerPanel";
 import { ScenePanel } from "../ScenePanel";
+import { ComponentsPanel } from "../ComponentsPanel";
 
 /**
  * The floating Window-menu panels. Visibility flags + color/swatch/tool state
@@ -51,6 +52,7 @@ export interface ShellPanelsProps {
   onRenameScene: React.ComponentProps<typeof ScenePanel>["onRenameScene"];
   onReorderScene: React.ComponentProps<typeof ScenePanel>["onReorderScene"];
   onDuplicateScene: React.ComponentProps<typeof ScenePanel>["onDuplicateScene"];
+  onInstantiateComponent: React.ComponentProps<typeof ComponentsPanel>["onInstantiate"];
 }
 
 export function ShellPanels(props: ShellPanelsProps): React.ReactElement {
@@ -81,6 +83,7 @@ export function ShellPanels(props: ShellPanelsProps): React.ReactElement {
     onRenameScene,
     onReorderScene,
     onDuplicateScene,
+    onInstantiateComponent,
   } = props;
 
   const toolState = useUiStore((s) => s.toolState);
@@ -107,6 +110,8 @@ export function ShellPanels(props: ShellPanelsProps): React.ReactElement {
   const setMovieExplorerVisible = useUiStore((s) => s.setMovieExplorerVisible);
   const scenePanelVisible = useUiStore((s) => s.scenePanelVisible);
   const setScenePanelVisible = useUiStore((s) => s.setScenePanelVisible);
+  const componentsPanelVisible = useUiStore((s) => s.componentsPanelVisible);
+  const setComponentsPanelVisible = useUiStore((s) => s.setComponentsPanelVisible);
 
   return (
     <>
@@ -210,6 +215,13 @@ export function ShellPanels(props: ShellPanelsProps): React.ReactElement {
           onReorderScene={onReorderScene}
           onDuplicateScene={onDuplicateScene}
           onClose={() => setScenePanelVisible(false)}
+        />
+      )}
+
+      {componentsPanelVisible && (
+        <ComponentsPanel
+          onInstantiate={onInstantiateComponent}
+          onClose={() => setComponentsPanelVisible(false)}
         />
       )}
     </>

@@ -3,12 +3,14 @@
  * to the specified keyframe on the stage.
  *
  * Supported item types:
- *   - 'symbol'  → SymbolInstance
- *   - 'bitmap'  → BitmapDisplayObject
- *   - all others → doc returned unchanged (not placeable on stage directly)
+ *   - 'symbol'    → SymbolInstance
+ *   - 'bitmap'    → BitmapDisplayObject
+ *   - 'component' → SymbolInstance (carrying default component parameters)
+ *   - all others  → doc returned unchanged (not placeable on stage directly)
  */
 
 import type { FlashDocument, Frame, Layer, Scene } from '../model/types.js';
+import { getComponentDef, defaultComponentParameters } from '../model/components.js';
 import type { BitmapDisplayObject, DisplayObject, SymbolInstance } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -138,8 +140,24 @@ export function placeLibraryItem(
       height: item.originalHeight,
     };
     newObj = bitmapObj;
+  } else if (item.itemType === 'component') {
+    const def = getComponentDef(item.componentName);
+    const instance: SymbolInstance = {
+      id: crypto.randomUUID(),
+      type: 'instance',
+      symbolId: item.id,
+      x,
+      y,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      instanceName: '',
+      ...(def ? { naturalWidth: def.defaultWidth, naturalHeight: def.defaultHeight } : {}),
+      componentParameters: def ? defaultComponentParameters(def) : {},
+    };
+    newObj = instance;
   } else {
-    // SoundItem, VideoItem, FontItem, ComponentItem — not placeable on stage.
+    // SoundItem, VideoItem, FontItem — not placeable on stage.
     return doc;
   }
 

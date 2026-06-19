@@ -19,6 +19,10 @@ import {
   getUnionBounds,
   saveFla,
   loadFla,
+  addLibraryItem,
+  createComponent,
+  getComponentDef,
+  defaultComponentParameters,
 } from "@flash/core";
 import { useCommandKeyboard } from "./dispatch/keyboard.js";
 import { TransformHandles } from "./TransformHandles";
@@ -119,6 +123,7 @@ import {
 import { TransformPanel } from "./TransformPanel";
 import type { TransformUpdates } from "./TransformPanel";
 import { InstancePanel } from "./InstancePanel";
+import { ComponentInspectorPanel } from "./ComponentInspectorPanel";
 import { AlignPanel } from "./AlignPanel";
 import { SceneSwitcher } from "./SceneSwitcher";
 import { DEFAULT_SWATCHES } from "./SwatchesPanel";
@@ -639,6 +644,7 @@ export function Shell(): React.ReactElement {
     alignPanelVisible, setAlignPanelVisible,
     scenePanelVisible, setScenePanelVisible,
     swatchesPanelVisible, setSwatchesPanelVisible,
+    componentsPanelVisible, setComponentsPanelVisible,
     behaviorsPanelVisible, setBehaviorsPanelVisible,
     movieExplorerVisible, setMovieExplorerVisible,
     historyPanelVisible, setHistoryPanelVisible,
@@ -1743,6 +1749,37 @@ export function Shell(): React.ReactElement {
     (libraryItemId: string, x: number, y: number) => {
       // Check if the dropped item is a BitmapItem
       const libItem = library.items.find((i) => i.id === libraryItemId);
+
+      // ComponentItem: place a SymbolInstance referencing the component item,
+      // carrying the component's default parameters.
+      if (libItem && libItem.itemType === "component") {
+        const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+        if (!layerId) return;
+        const def = getComponentDef(libItem.componentName);
+        const w = def?.defaultWidth ?? 100;
+        const h = def?.defaultHeight ?? 22;
+        const instId = nextInstanceId();
+        const compInst: SymbolInstance = {
+          type: "instance",
+          id: instId,
+          symbolId: libraryItemId,
+          x: x - w / 2,
+          y: y - h / 2,
+          naturalWidth: w,
+          naturalHeight: h,
+          componentParameters: def ? defaultComponentParameters(def) : {},
+        };
+        pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, compInst)));
+        const inst: PlacedInstance = {
+          id: instId, libraryItemId, instanceName: "",
+          x: x - w / 2, y: y - h / 2, scaleX: 1, scaleY: 1, rotation: 0, alpha: 1,
+        };
+        setInstances((prev) => [...prev, inst]);
+        setSelectedInstanceId(inst.id);
+        setRightTab("properties");
+        return;
+      }
+
       if (libItem && libItem.itemType === "bitmap") {
         const bitmapItem = libItem as BitmapItem;
         const layerId = timeline.layers[safeActiveLayerIndex]?.id;
@@ -1849,6 +1886,79 @@ export function Shell(): React.ReactElement {
       }
     },
     [library, timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
+  );
+
+  /**
+   * Instantiate a built-in v2 component (Components panel double-click). Ensures
+   * a single library ComponentItem exists for the component class (reused across
+   * instances), then places a SymbolInstance centered on the stage carrying the
+   * component's default parameters. Library add + display-object add happen in
+   * one undoable document mutation.
+   */
+  const handleInstantiateComponent = useCallback(
+    (componentName: string, dropX?: number, dropY?: number) => {
+      const def = getComponentDef(componentName);
+      if (!def) return;
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+
+      const w = def.defaultWidth;
+      const h = def.defaultHeight;
+      // Drop coordinates target the component's center; otherwise center on stage.
+      const cx = dropX !== undefined ? dropX - w / 2 : docProperties.width / 2 - w / 2;
+      const cy = dropY !== undefined ? dropY - h / 2 : docProperties.height / 2 - h / 2;
+      const instId = nextInstanceId();
+
+      // Reuse an existing library ComponentItem for this class if present; mint
+      // one otherwise. Resolved up front so the selection-side PlacedInstance can
+      // carry the real library id.
+      const existing = doc.library.items.find(
+        (i) => i.itemType === "component" && i.componentName === def.className
+      );
+      const compItem = existing ?? createComponent(def.name, def.className, def.packageName);
+      const compItemId = compItem.id;
+
+      pushDoc((() => {
+        const lib = existing ? doc.library : addLibraryItem(doc.library, compItem);
+        const compInst: SymbolInstance = {
+          type: "instance",
+          id: instId,
+          symbolId: compItemId,
+          x: cx,
+          y: cy,
+          naturalWidth: w,
+          naturalHeight: h,
+          componentParameters: defaultComponentParameters(def),
+        };
+        const withLib: FlashDocument = { ...doc, library: lib };
+        // Apply the timeline mutation against the library-updated doc.
+        if (editContext.mode === "symbol" && editContext.symbolId) {
+          const sid = editContext.symbolId;
+          const items = withLib.library.items.map((item) =>
+            item.id === sid && item.itemType === "symbol"
+              ? { ...item, timeline: addDisplayObject(item.timeline, layerId, currentFrame, compInst) }
+              : item
+          );
+          return { ...withLib, library: { ...withLib.library, items } };
+        }
+        const sIdx = Math.min(activeSceneIndex, withLib.scenes.length - 1);
+        const scenes = withLib.scenes.map((s, i) =>
+          i === sIdx
+            ? { ...s, timeline: addDisplayObject(s.timeline, layerId, currentFrame, compInst) }
+            : s
+        );
+        return { ...withLib, scenes };
+      })());
+
+      const inst: PlacedInstance = {
+        id: instId, libraryItemId: compItemId, instanceName: "",
+        x: cx, y: cy, scaleX: 1, scaleY: 1, rotation: 0, alpha: 1,
+      };
+      setInstances((prev) => [...prev, inst]);
+      setSelectedInstanceId(instId);
+      setRightTab("properties");
+    },
+    [doc, timeline, currentFrame, activeLayerIndex, activeSceneIndex, editContext, docProperties, pushDoc]
   );
 
   const handleInstanceSelect = useCallback((id: string | null) => {
@@ -2884,6 +2994,8 @@ export function Shell(): React.ReactElement {
         colorMixerVisible={colorMixerVisible}
         onSwatchesPanelToggle={() => setSwatchesPanelVisible((v) => !v)}
         swatchesPanelVisible={swatchesPanelVisible}
+        onComponentsPanelToggle={() => setComponentsPanelVisible((v) => !v)}
+        componentsPanelVisible={componentsPanelVisible}
         onBehaviorsPanelToggle={() => setBehaviorsPanelVisible((v) => !v)}
         behaviorsPanelVisible={behaviorsPanelVisible}
         onMovieExplorerToggle={() => setMovieExplorerVisible((v) => !v)}
@@ -3043,6 +3155,7 @@ export function Shell(): React.ReactElement {
                 onPanChange={handlePanChange}
                 onCursorMove={handleCursorMove}
                 onDrop={handleStageDrop}
+                onDropComponent={handleInstantiateComponent}
                 onInstanceSelect={handleInstanceSelect}
                 currentFrame={currentFrame}
                 shapeDisplayObjects={shapeDisplayObjects}
@@ -3459,6 +3572,24 @@ export function Shell(): React.ReactElement {
                   </PanelGroup>
                 );
               })()}
+              {selectedDisplayObject?.type === "instance" && (() => {
+                const inst = selectedDisplayObject as SymbolInstance;
+                const compItem = doc.library.items.find(
+                  (i) => i.id === inst.symbolId && i.itemType === "component"
+                );
+                if (!compItem || compItem.itemType !== "component") return null;
+                return (
+                  <PanelGroup title="Component Inspector">
+                    <ComponentInspectorPanel
+                      componentName={compItem.componentName}
+                      values={inst.componentParameters ?? {}}
+                      onChange={(values) =>
+                        handleUpdateInstance(inst.id, { componentParameters: values })
+                      }
+                    />
+                  </PanelGroup>
+                );
+              })()}
               <PanelGroup title="Align" defaultCollapsed>
                 <AlignPanel
                   visible={true}
@@ -3549,6 +3680,7 @@ export function Shell(): React.ReactElement {
         onRenameScene={handleRenameScene}
         onReorderScene={handleReorderScene}
         onDuplicateScene={handleDuplicateScene}
+        onInstantiateComponent={handleInstantiateComponent}
       />
 
       {/* Floating overlays (player, history, profiler, accessibility, export — flags in uiStore) */}

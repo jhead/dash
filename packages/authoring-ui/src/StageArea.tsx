@@ -678,6 +678,8 @@ export interface StageAreaProps {
   onZoomChange?: (zoom: number) => void;
   onPanChange?: (x: number, y: number) => void;
   onDrop?: (libraryItemId: string, x: number, y: number) => void;
+  /** A built-in component (by class/display name) was dragged from the Components panel. */
+  onDropComponent?: (componentName: string, x: number, y: number) => void;
   onInstanceSelect?: (id: string | null) => void;
   // Drawing tool props
   currentFrame?: number;
@@ -1354,6 +1356,7 @@ export function StageArea({
   onZoomChange,
   onPanChange,
   onDrop,
+  onDropComponent,
   onInstanceSelect,
   currentFrame: _currentFrame = 0,
   shapeDisplayObjects = [],
@@ -3981,7 +3984,10 @@ export function StageArea({
 
   // Handle drag-over and drop for library items
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer.types.includes("application/flash-library-item")) {
+    if (
+      e.dataTransfer.types.includes("application/flash-library-item") ||
+      e.dataTransfer.types.includes("application/flash-component")
+    ) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
     }
@@ -3990,7 +3996,10 @@ export function StageArea({
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       const itemId = e.dataTransfer.getData("application/flash-library-item");
-      if (!itemId || !onDrop) return;
+      const componentName = e.dataTransfer.getData("application/flash-component");
+      if (!itemId && !componentName) return;
+      if (itemId && !onDrop) return;
+      if (componentName && !onDropComponent) return;
       e.preventDefault();
 
       // Convert screen coordinates to stage coordinates
@@ -4009,9 +4018,13 @@ export function StageArea({
       const stageX = (e.clientX - stageCenterScreenX) / internalZoom + stageWidth / 2;
       const stageY = (e.clientY - stageCenterScreenY) / internalZoom + stageHeight / 2;
 
-      onDrop(itemId, stageX, stageY);
+      if (componentName) {
+        onDropComponent?.(componentName, stageX, stageY);
+      } else if (itemId) {
+        onDrop?.(itemId, stageX, stageY);
+      }
     },
-    [onDrop, internalPanX, internalPanY, internalZoom, stageWidth, stageHeight]
+    [onDrop, onDropComponent, internalPanX, internalPanY, internalZoom, stageWidth, stageHeight]
   );
 
   // Double-click on pen tool: finalize path as open
