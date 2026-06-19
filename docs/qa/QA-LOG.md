@@ -458,3 +458,63 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
     passing still limited (see WATCH-ITEM above).
   - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
 - **Resolved + verified (no longer open):** 1213 / 1217, 1228, 1214, 1229-part 1.
+
+
+---
+
+## 2026-06-19 — Verify 1215 + 1230; investigate symbol-internal Free-Transform warp gap
+
+- **Watermark (last fully-QA'd SHA):** `6f816e1` — current repo HEAD. Advances the
+  watermark to include everything through 1215 (`07ad764`) and 1230 (`c145922`), now
+  both VERIFIED below. Resolved + verified set now includes: 1213/1217, 1228, 1214,
+  1229-part1, **1215**, **1230**.
+- **`07ad764` / task 1215 — interactivity-autoplay harness fix: VERIFIED genuinely
+  resolved.** `injectRufflePlayer` now passes `autoplay:'on'` + `unmuteOverlay:'hidden'`
+  and runs a `hideRuffleOverlays()` shadow-DOM walker (recursively `display:none` on the
+  HW-accel / play-button / panic overlays) so the player actually PLAYS and screenshots
+  composite the real WebGL surface. The three button oracles (release / press / capstone)
+  now pass with REAL `diffPixels=10000` — no masking: no threshold relaxed, no `test.skip`,
+  no assertion loosened (the fix is purely making the player run + screenshot cleanly).
+  Adjacent specs (button-roundtrip, keyboard) stay green.
+- **`c145922` / task 1230 — Free-Transform warp + affine double-transform: VERIFIED
+  genuinely + completely resolved.** BOTH the PLACE path (`frames.ts` ~474) and the MOVE
+  path (~1069) gate `objTransform` to identity (scale=1 / rotation=0) for warped shapes,
+  so the baked-warp DefineShape geometry is not double-transformed by the PlaceObject2
+  matrix. swf-dump proof: warp+scale and warp+rotation both emit identity scale/rotation
+  with the correct tx/ty; the un-warped control keeps its affine. golden-parity exit 0;
+  1394 swf unit tests pass.
+  - **Minor non-blocking note:** `warp-affine-double-transform.test.ts` uses single-frame
+    docs, so the IN-TEST coverage only exercises the PLACE path; the MOVE path is
+    byte-proven correct via swf-dump but not by the unit test. (Documentation of test
+    coverage, not a defect.)
+- **Symbol-internal Free-Transform warp — NEW DEFECT, FILED as task `1232`
+  (`1232-6mgjzs`, priority medium).** SAME defect class as 1228/1230 but on the SPRITE
+  (symbol-internal) publish path. A Distort/Envelope warp authored on a shape INSIDE a
+  movieclip/graphic symbol is DROPPED from the published `DefineShape` inside the
+  `DefineSprite` — stage shows the warp, published symbol does not.
+  - **Reachability CONFIRMED:** in symbol-edit / edit-in-place mode `Shell.tsx` `timeline`
+    (~751) resolves to the symbol's timeline; `handleShapeWarp` (~1291) → `withTimeline`
+    → `withSymbolTimeline` (~698) writes `{ warp }` onto a `ShapeDisplayObject` that lives
+    inside a `DefineSprite` symbol. So `obj.warp` CAN be non-null on a symbol-internal shape.
+  - **Byte-proof CONFIRMED** (decoded DefineShape4 ShapeBounds, same method as
+    `warp-bake.test.ts`): a movieclip containing a 100×100 square at (50,50) with a Distort
+    warp (SE corner → (300,250)) published with bounds `{1000,3000,1000,3000}` twips = a
+    PRISTINE square (warp dropped, only `shiftShapePaths` applied), vs the scene-level
+    control `{0,5000,0,4000}` twips (warp correctly baked by 1228).
+  - **Root cause:** `packages/swf/src/sprite.ts` ~338 uses `shiftShapePaths(obj.shape,…)`
+    and ignores `obj.warp` (then emits an affine PO2 at ~705/936). The scene path
+    (`characters.ts` `bakeWarpIntoShape` ~81) does the bake; the sprite path does not.
+  - **Fix direction (per task 1232):** call `bakeWarpIntoShape` in the sprite char pass
+    when `obj.warp` is set; mirror the 1230 identity-gating on the sprite-internal
+    objTransform; add a regression test decoding the DefineShape4 inside the DefineSprite.
+- **Still open for workers (carried forward + new):**
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+  - **1227** — Trace Bitmap marching-squares walker traces only ~half of non-rectangular
+    regions (needs Moore-neighbor rewrite + diagonal tests).
+  - **1231** — Component Part 2.1: AS2 class-emission infra + functional Button; param
+    passing still limited.
+  - **1232** — Free-Transform warp dropped for symbol-internal shapes (NEW, filed this
+    sweep; sprite.ts doesn't bake warp).
+  - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
+- **Resolved + verified (no longer open):** 1213 / 1217, 1228, 1214, 1229-part 1, 1215, 1230.
