@@ -31,6 +31,29 @@ export interface LibraryPanelProps {
 // Helpers
 // ----------------------------------------------------------------------------
 
+/**
+ * Fully-qualified AS2 class names available in the document, for the Symbol
+ * Linkage dialog's "AS2 Class" autocomplete. Derived from `doc.asClasses`: each
+ * `.as` file maps to a dotted class name from its classpath-relative path
+ * (`com/example/Foo.as` → `com.example.Foo`). Returns a sorted, de-duplicated list.
+ */
+export function deriveAsClassNames(doc: FlashDocument | undefined): string[] {
+  const classes = doc?.asClasses;
+  if (!classes || classes.length === 0) return [];
+  const names = new Set<string>();
+  for (const file of classes) {
+    const path = file.path;
+    if (!path.endsWith(".as")) continue;
+    const dotted = path
+      .slice(0, -".as".length)
+      .replace(/\\/g, "/")
+      .replace(/^\/+/, "")
+      .replace(/\//g, ".");
+    if (dotted.length > 0) names.add(dotted);
+  }
+  return Array.from(names).sort();
+}
+
 function itemTypeLabel(item: LibraryItem): string {
   if (item.itemType === "symbol") {
     switch (item.symbolType) {
@@ -323,6 +346,7 @@ function ContextMenu({
 
   const MenuItemEl = ({ id, label, onClick }: { id: string; label: string; onClick: () => void }) => (
     <div
+      data-testid={`library-menu-${id}`}
       style={hovered === id ? menuItemHoverStyle : menuItemStyle}
       onMouseEnter={() => setHovered(id)}
       onMouseLeave={() => setHovered(null)}
@@ -462,6 +486,9 @@ export function LibraryPanel({
   const [linkageDialog, setLinkageDialog] = useState<{
     item: Symbol;
   } | null>(null);
+
+  // AS2 class names for the linkage dialog's "AS2 Class" autocomplete.
+  const asClassNames = useMemo(() => deriveAsClassNames(doc), [doc]);
 
   // Symbol Properties dialog state
   const [symbolPropertiesDialog, setSymbolPropertiesDialog] = useState<{
@@ -927,6 +954,7 @@ export function LibraryPanel({
     return (
       <div
         key={item.id}
+        data-testid={`library-item-${item.name}`}
         style={getRowStyle(isSelected, isUnused, isHovered)}
         onClick={() => handleRowClick(item)}
         onContextMenu={(e) => handleRowContextMenu(e, item)}
@@ -1212,6 +1240,7 @@ export function LibraryPanel({
           open={true}
           symbolName={linkageDialog.item.name}
           linkage={linkageDialog.item.linkage}
+          classNames={asClassNames}
           onConfirm={handleLinkageConfirm}
           onClose={() => setLinkageDialog(null)}
         />

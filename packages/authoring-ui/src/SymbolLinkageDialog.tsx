@@ -12,7 +12,16 @@ export interface SymbolLinkageDialogProps {
   linkage: SymbolLinkage;
   onConfirm: (linkage: SymbolLinkage) => void;
   onClose: () => void;
+  /**
+   * Fully-qualified AS2 class names available in the document (from
+   * `doc.asClasses`), offered as autocomplete suggestions for the AS2 Class
+   * field. Optional — when absent the field is a plain text input.
+   */
+  classNames?: string[];
 }
+
+/** Unique id for the AS2-class autocomplete <datalist>. */
+const CLASS_DATALIST_ID = "symbol-linkage-class-suggestions";
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -142,6 +151,7 @@ export function SymbolLinkageDialog({
   linkage,
   onConfirm,
   onClose,
+  classNames,
 }: SymbolLinkageDialogProps): React.ReactElement | null {
   const [exportForAS, setExportForAS] = useState(linkage.exportForActionScript);
   const [identifier, setIdentifier] = useState(linkage.linkageIdentifier);
@@ -203,16 +213,23 @@ export function SymbolLinkageDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, exportForAS, identifier, className, exportInFirstFrame]);
 
+  // Sorted, de-duplicated class-name suggestions for the AS2 Class autocomplete.
+  const classSuggestions = React.useMemo(
+    () => Array.from(new Set((classNames ?? []).filter((c) => c.length > 0))).sort(),
+    [classNames],
+  );
+
   if (!open) return null;
 
   return (
     <div
       style={styles.overlay}
+      data-testid="symbol-linkage-overlay"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div style={styles.dialog} onMouseDown={(e) => e.stopPropagation()}>
+      <div style={styles.dialog} data-testid="symbol-linkage-dialog" onMouseDown={(e) => e.stopPropagation()}>
         {/* Title bar */}
         <div style={styles.titleBar}>
           <span style={styles.titleText}>Symbol Linkage Properties</span>
@@ -236,6 +253,7 @@ export function SymbolLinkageDialog({
               type="checkbox"
               checked={exportForAS}
               onChange={(e) => handleExportForASChange(e.target.checked)}
+              data-testid="symbol-linkage-export"
               style={{ margin: 0, cursor: "pointer" }}
             />
             Export for ActionScript
@@ -250,6 +268,7 @@ export function SymbolLinkageDialog({
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               disabled={!exportForAS}
+              data-testid="symbol-linkage-identifier"
               style={exportForAS ? styles.input : styles.inputDisabled}
               placeholder="e.g. MyClip"
             />
@@ -263,9 +282,19 @@ export function SymbolLinkageDialog({
               value={className}
               onChange={(e) => setClassName(e.target.value)}
               disabled={!exportForAS}
+              data-testid="symbol-linkage-classname"
               style={exportForAS ? styles.input : styles.inputDisabled}
-              placeholder="e.g. MyClipClass"
+              placeholder="e.g. com.example.MyClip"
+              list={classSuggestions.length > 0 ? CLASS_DATALIST_ID : undefined}
+              autoComplete="off"
             />
+            {classSuggestions.length > 0 && (
+              <datalist id={CLASS_DATALIST_ID}>
+                {classSuggestions.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            )}
           </div>
 
           {/* Export in first frame */}
@@ -284,10 +313,10 @@ export function SymbolLinkageDialog({
 
           {/* Buttons */}
           <div style={styles.btnRow}>
-            <button style={styles.btn} onClick={onClose}>
+            <button style={styles.btn} onClick={onClose} data-testid="symbol-linkage-cancel">
               Cancel
             </button>
-            <button style={styles.btnPrimary} onClick={handleOk}>
+            <button style={styles.btnPrimary} onClick={handleOk} data-testid="symbol-linkage-ok">
               OK
             </button>
           </div>

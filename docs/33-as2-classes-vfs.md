@@ -238,6 +238,84 @@ To bind a symbol to a class, `library_set_linkage` accepts a `className` (alongs
 `linkageId` and the export flags), wired through `setSymbolLinkage`
 (`SymbolLinkage.className`).
 
+## Binary Flash 8 `.fla` export compatibility (P5)
+
+A `dash` project with AS2 classes can be exported to a **genuine binary Flash 8
+`.fla`** (`saveRealFla`, the OLE2/CArchive writer — distinct from the portable
+`.fla` zip) that opens in real Macromedia Flash 8. Two pieces matter for class
+support, and they are handled very differently:
+
+### 1. The `.as` class files are EXTERNAL classpath files — not embedded
+
+Real Flash 8 does **not** store `.as` source inside the binary `.fla`. It keeps
+classes as external files on the classpath (typically a `classes/` directory
+beside the `.fla`, the same package-directory convention `doc.classpaths` /
+`deriveClassesRoot` model). The binary writer therefore **does not** embed
+`doc.asClasses` into the binary `.fla`. The classpath expectation on export:
+
+- On **desktop (Tauri)** the classes already live as real files under
+  `<flaDir>/classes/` (the disk mirror), so a binary `.fla` exported next to them
+  finds them on the default classpath `.` — exactly how Flash 8 resolves classes.
+- For the **portable** workflow keep using the `.fla` **zip** (which embeds the
+  classes); the binary `.fla` is the interchange-with-real-Flash artifact and
+  assumes the classpath files are present beside it.
+
+### 2. The per-symbol `AS 2.0 class` linkage (`className`) IS written into the Symbol record
+
+The compat-critical field is the per-symbol **AS 2.0 class** binding
+(`SymbolLinkage.className`) that Flash 8 stores in the Contents-stream
+`CDocumentPage` record for each symbol (the *writeAsLinkage* block). The writer
+(`packages/core/src/fla/write/contents-write.ts`, `writeSymbolTail`) encodes it:
+
+- **Empty-linkage symbols** emit the exact constant `FixedPageTail`
+  byte-for-byte, so the **byte-exact Flash 8 oracle** (`empty-bytematch.test.ts`,
+  a class-free empty doc) is preserved by construction (the symbol-linkage write
+  path is never taken for a class-free document).
+- **Symbols with a className** get the className spliced into the empty className
+  `BomString` slot of the writeAsLinkage block (offset `tail+0x31`), and the
+  flags byte (offset `tail+0x25`) set (`bit0`=exportForActionScript,
+  `bit1`=importForRuntimeSharing). The block's length field (`tail+0x1C`) counts
+  only the linkageIdentifier+URL BomStrings (both kept empty here), so it is
+  unchanged — the change is strictly additive.
+
+The reader (`flash8-binary.ts parseFla8Contents`) decodes className back from the
+same block. Round-trip is gated by
+`packages/core/src/fla/__tests__/classname-binary-roundtrip.test.ts`
+(set className → write → read back → equal; plus deterministic re-save and the
+strict `validateContentsStream` CArchive acceptance check).
+
+### Verification scope / known limit
+
+The writeAsLinkage byte layout (zero-prefix → version `0x07` → flags →
+linkageIdentifier/URL/className BomStrings) is **verified against a real Flash 8
+fixture** — `fixtures/golden/golden.fla`'s "Coin" symbol (a genuine
+`exportForActionScript` symbol), whose `className` happens to be empty there. No
+available real fixture carries a **non-empty** className, so the non-empty
+className splice is validated by (a) our own decoder round-trip and (b) the strict
+sequential CArchive reader accepting the stream — the strongest evidence short of
+a real Flash 8 oracle. The conservative encoding (only the className BomString is
+filled; identifier/URL stay empty; the length field is unchanged; empty-linkage
+symbols are byte-identical) was chosen specifically so that the change **cannot**
+corrupt the byte-exact oracle or the empty-document export. The fuller Flash 8
+linkage tail (the post-className `version + UI32 + sourceFlaPath + fullLibraryPath`
+sub-record and the variable length field that golden's "Coin" carries) was
+investigated but **not** reproduced byte-for-byte, because its length-field
+semantics could not be generalized from a single empty-className fixture and a
+wrong value risks an export real Flash 8 would reject. The runtime class binding
+(className → SWF `Object.registerClass` DoInitAction → `attachMovie`) is
+independent of the binary `.fla` and is proven end-to-end by
+`apps/desktop/e2e/as2-class-attach.spec.ts` and the P5 capstone
+`apps/desktop/e2e/as2-class-capstone.spec.ts`.
+
+### Linkage dialog autocomplete (P5)
+
+The Symbol Linkage dialog's **AS2 Class** field offers autocomplete suggestions
+(a native `<datalist>`) sourced from `doc.asClasses`: `deriveAsClassNames`
+(`LibraryPanel.tsx`) maps each classpath-relative `.as` path to its dotted
+fully-qualified class name (`com/example/Foo.as` → `com.example.Foo`),
+de-duplicated and sorted. So after authoring a class in the Classes panel you can
+pick it by name when linking a library symbol.
+
 ## Tests
 
 - `@flash/core` `src/vfs/__tests__/vfs-core.test.ts` — path normalization +
@@ -257,3 +335,13 @@ To bind a symbol to a class, `library_set_linkage` accepts a `className` (alongs
     editor load/save all update BOTH the VFS and `doc.asClasses` via `pushDoc`.
   - `editorLayout.test.ts` — the `"classes"` bottom-dock tab round-trips through
     layout persistence.
+  - `symbolLinkageClassAutocomplete.test.ts` — `deriveAsClassNames`: `.as` path →
+    dotted class name, de-dup + sort, non-`.as` ignored, empty when no classes.
+- `@flash/core` `src/fla/__tests__/classname-binary-roundtrip.test.ts` — binary
+  Flash 8 `.fla` className linkage: write `SymbolLinkage.className` → read back
+  equal (dotted + bare names, importForRuntimeSharing flag, multiple symbols),
+  strict-CArchive acceptance, empty-linkage byte-unchanged, deterministic re-save.
+- `apps/desktop/e2e/as2-class-capstone.spec.ts` — the P5 capstone: author a `.as`
+  class through the Classes panel UI, link it to a library MovieClip via the
+  Symbol Linkage dialog (export + identifier + className autocomplete), publish,
+  and assert the attached instance's `speak()` `trace()` arrives in real Ruffle.

@@ -752,6 +752,7 @@ export function ScriptEditor({
         </div>
         <textarea
           ref={textareaRef}
+          data-testid="script-editor-textarea"
           style={textareaStyle}
           value={script}
           spellCheck={false}

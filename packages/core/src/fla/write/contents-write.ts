@@ -45,6 +45,38 @@ export const FIXED_TIMESTAMP = 0x6a3377d5;
 /** Volatile u32 offsets inside CONTENTS_SCENE_TAIL (relative to its start). */
 const SCENE_TAIL_TS_OFFSETS = [0x18, 0x5c];
 
+/**
+ * writeAsLinkage block offsets INSIDE the FixedPageTail (CONTENTS_SCENE_TAIL),
+ * relative to the tail start. Verified byte-for-byte against the genuine
+ * `flash8-empty.fla` scene tail AND against `fixtures/golden/golden.fla`'s
+ * "Coin" symbol record (a real Flash 8 symbol with `exportForActionScript`
+ * linkage). The block layout (matching the `flash8-binary.ts` decoder, which is
+ * itself verified against golden.fla's "Coin" record and flacomdoc
+ * `FlaConverter.writeAsLinkage`) is:
+ *
+ *   tail+0x20 (32): UI32 00 00 00 00  zero prefix (decoder anchor)
+ *   tail+0x24 (36): UI8 asLinkageVersion (0x07 = Flash 8)
+ *   tail+0x25 (37): UI8 flags  (bit0 = exportForActionScript, bit1 = importForRuntimeSharing)
+ *   tail+0x26 (38): 00 00 00   (3 zero bytes)
+ *   tail+0x29 (41): BomString(linkageIdentifier)   ← empty `FF FE FF 00` in the empty tail
+ *   tail+0x2D (45): BomString(linkageURL)           ← empty
+ *   tail+0x31 (49): BomString(className)            ← empty in the empty tail; we inject here
+ *
+ * The UI32 length field at tail+0x1C counts only the linkageIdentifier +
+ * linkageURL BomStrings (=0x0C when both are empty), NOT the className, so
+ * injecting a className does not change it. We keep linkageIdentifier/URL empty
+ * IN THIS BLOCK (the heuristic linkageIdentifier copy decoded elsewhere is
+ * unaffected) — exactly the shape golden.fla's "Coin" record carries — and only
+ * splice in the className BomString plus set the flags byte. This is a strictly
+ * additive change scoped to symbols that actually carry an AS2 className; the
+ * empty-linkage tail is emitted byte-identically (preserving the empty-bytematch
+ * Flash 8 oracle). See docs/33-as2-classes-vfs.md (export-compat section) for the
+ * full byte-level investigation and the limits of this approach.
+ */
+const TAIL_LINKAGE_FLAGS_OFF = 0x25; // 37 — writeAsLinkage flags byte
+const TAIL_CLASSNAME_BOM_OFF = 0x31; // 49 — start of the empty className `FF FE FF 00`
+const EMPTY_BOMSTRING_LEN = 4; // FF FE FF 00
+
 export interface ContentsSceneEntry {
   /** "Page N" stream name (creation order). */
   pageStreamName: string;
@@ -98,16 +130,71 @@ function writeUtf16String(w: ByteWriter, name: string): void {
   for (let i = 0; i < name.length; i++) w.u16(name.charCodeAt(i));
 }
 
-/** Append the CDocumentPage FixedPageTail constant run with deterministic timestamps. */
-function writeSceneTail(w: ByteWriter): void {
-  const tail = new Uint8Array(CONTENTS_SCENE_TAIL);
+/** Stamp the deterministic timestamp into a tail copy at its volatile u32 offsets. */
+function stampTimestamps(tail: Uint8Array): void {
   for (const off of SCENE_TAIL_TS_OFFSETS) {
     tail[off] = FIXED_TIMESTAMP & 0xff;
     tail[off + 1] = (FIXED_TIMESTAMP >>> 8) & 0xff;
     tail[off + 2] = (FIXED_TIMESTAMP >>> 16) & 0xff;
     tail[off + 3] = (FIXED_TIMESTAMP >>> 24) & 0xff;
   }
+}
+
+/** Append the CDocumentPage FixedPageTail constant run with deterministic timestamps. */
+function writeSceneTail(w: ByteWriter): void {
+  const tail = new Uint8Array(CONTENTS_SCENE_TAIL);
+  stampTimestamps(tail);
   w.bytes(tail);
+}
+
+/**
+ * Encode a BomString (`FF FE FF <len> <UTF-16LE>`) as a byte array. Mirrors
+ * `writeBomString` in carchive-write but returns bytes for splicing into the tail.
+ */
+function bomStringBytes(s: string): number[] {
+  const out: number[] = [0xff, 0xfe, 0xff, s.length & 0xff];
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    out.push(c & 0xff, (c >>> 8) & 0xff);
+  }
+  return out;
+}
+
+/**
+ * Append the symbol FixedPageTail. For a symbol with NO AS2 className the tail is
+ * byte-identical to {@link writeSceneTail} (empty linkage). For a symbol WITH a
+ * className the className BomString is spliced into the empty className slot of
+ * the writeAsLinkage block and the flags byte is set — see the offset constants
+ * above. This is the only place the binary FLA writer encodes the per-symbol
+ * `AS 2.0 class` (className) linkage that real Flash 8 reads back from the Symbol
+ * stream's CDocumentPage record.
+ */
+function writeSymbolTail(w: ByteWriter, sym: ContentsSymbolEntry): void {
+  const className = sym.className ?? "";
+  // No className → emit the exact empty-linkage tail (preserves byte-compat).
+  if (className.length === 0) {
+    writeSceneTail(w);
+    return;
+  }
+
+  const base = new Uint8Array(CONTENTS_SCENE_TAIL);
+  stampTimestamps(base);
+
+  // Set the writeAsLinkage flags byte (exportForActionScript | importForRuntimeSharing).
+  let flags = 0;
+  if (sym.exportForActionScript) flags |= 0x01;
+  if (sym.importForRuntimeSharing) flags |= 0x02;
+  base[TAIL_LINKAGE_FLAGS_OFF] = flags;
+
+  // Splice the className BomString into the empty className slot, keeping every
+  // byte before it and after it intact (the length field at +0x1C is unchanged
+  // because it counts only linkageIdentifier+linkageURL, both still empty).
+  const cn = bomStringBytes(className);
+  const head = base.subarray(0, TAIL_CLASSNAME_BOM_OFF);
+  const tailAfter = base.subarray(TAIL_CLASSNAME_BOM_OFF + EMPTY_BOMSTRING_LEN);
+  w.bytes(head);
+  w.bytes(cn);
+  w.bytes(tailAfter);
 }
 
 export function writeContents(input: ContentsInput): Uint8Array {
@@ -142,11 +229,10 @@ export function writeContents(input: ContentsInput): Uint8Array {
     w.u16(0);
     w.u8(sym.typeByte); // 0 graphic, 1 button, 2 movieclip
     w.u8(0xff).u8(0xfe).u8(0xff).u8(0); // empty BomString
-    // Reuse the same FixedPageTail constant run; symbol-specific linkage lives in
-    // the AsLinkage region of the tail. For a symbol with no custom linkage this
-    // matches the scene tail's empty-linkage layout. (Custom linkage is a
-    // documented gap — see report.)
-    writeSceneTail(w);
+    // FixedPageTail: empty-linkage symbols emit the constant run byte-for-byte;
+    // symbols with an AS2 className get the className spliced into the
+    // writeAsLinkage block (the per-symbol "AS 2.0 class" Flash 8 reads back).
+    writeSymbolTail(w, sym);
   }
 
   // -- §8.4 stage + document properties block --------------------------------
