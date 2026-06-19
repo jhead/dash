@@ -181,6 +181,23 @@ bumped on every `pushDoc`); reads include the `rev` they observed.
 | `script_check` | `{ script }` | `{ diagnostics }` — compile-check without mutating |
 | `script_list` | — | all `(sceneIndex, layerId, frameIndex)` triples carrying scripts, with first-line previews |
 
+### AS2 external classes (`doc.asClasses` VFS)
+
+External `.as` class files attached to the document (the same surface the editor's class
+VFS edits — see `docs/33-as2-classes-vfs.md`). Paths are classpath-relative with forward
+slashes (e.g. `com/example/Foo.as`). The `.fla` embed (`doc.asClasses`) stays
+authoritative. `class_set`/`class_check` run the AS2 **parser only** (parse-only
+diagnostics) — class files declare `class`/`interface` constructs the frame-script
+bytecode compiler does not emit.
+
+| Tool | Params | Result |
+|------|--------|--------|
+| `class_list` | — | `{ classes: [{ path, className }], rev }` — `className` from the parsed class decl, falling back to the dotted path |
+| `class_get` | `{ path }` | `{ path, source, rev }` (errors if no class at that path) |
+| `class_set` | `{ path, source }` | `{ ok, rev, diagnostics }` — parse-checks, then upserts via `addAsClass`/`updateAsClass`. Saved **regardless** of parse errors (Flash 8 parity); inspect `diagnostics` |
+| `class_remove` | `{ path }` | `{ ok, rev }` (errors if no class at that path) |
+| `class_check` | `{ source }` | `{ diagnostics }` — parse-only check without mutating |
+
 ### Library & symbols
 
 | Tool | Params | Result |
@@ -189,6 +206,7 @@ bumped on every `pushDoc`); reads include the `rev` they observed.
 | `library_create_symbol` | `{ name, symbolType }` | `{ symbolId, rev }` |
 | `library_convert_to_symbol` | `{ ids, name, symbolType }` | `{ symbolId, instanceId, rev }` |
 | `library_rename` / `library_remove` | `{ itemId, name? }` | `{ ok, rev }` |
+| `library_set_linkage` | `{ symbolId, linkageId?, className?, exportForActionScript?, exportInFirstFrame? }` | `{ ok, rev }` — set `className` to bind a symbol to an external AS2 class file (`class_set`) |
 
 ### Output & escape hatches
 

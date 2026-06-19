@@ -35,6 +35,21 @@ describe("buildAgentTools — coverage", () => {
     expect(toolNames).toEqual(commandNames);
   });
 
+  it("exposes the AS2 class authoring tools to the chat bridge", () => {
+    const tools = buildAgentTools();
+    const classCommands: AgentCommand[] = [
+      "class_list",
+      "class_get",
+      "class_set",
+      "class_remove",
+      "class_check",
+    ];
+    for (const name of classCommands) {
+      expect(tools[name], name).toBeDefined();
+      expect(typeof tools[name].description, name).toBe("string");
+    }
+  });
+
   it("gives every tool a non-empty description and an inputSchema", () => {
     const tools = buildAgentTools();
     for (const name of ALL_COMMANDS) {

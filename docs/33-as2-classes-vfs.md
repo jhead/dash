@@ -209,6 +209,35 @@ union (`store/uiStore.ts`), the persisted `BOTTOM_TABS` allowlist
 switch mounts `<ClassesPanel doc pushDoc flaPath onClose />`. Desktop + narrow
 responsive behavior (task 1280) is unchanged — Classes is just another dock tab.
 
+## Agent chat tools (P3)
+
+The agent (MCP + in-browser chat) authors classes through five commands that read
+and mutate `doc.asClasses` directly via the P0 mutations (`addAsClass`,
+`updateAsClass`, `removeAsClass`) and `cb.getDoc()`/`cb.pushDoc()` (history-safe).
+They operate on the same classpath-relative paths as the VFS. The chat tool bridge
+(`packages/authoring-ui/src/agentchat/tools.ts`) auto-generates these from
+`COMMAND_SCHEMAS`/`COMMAND_DESCRIPTIONS`, so they reach the chat with no per-tool
+code.
+
+| Command | Behavior |
+|---------|----------|
+| `class_list` | `[{ path, className }]` derived from `doc.asClasses` (`className` from the parsed `class`/`interface` decl, else the dotted path) |
+| `class_get {path}` | `{ source }` (not-found error) |
+| `class_set {path, source}` | parse-checks (parser only — see below), upserts via `addAsClass`/`updateAsClass` + `pushDoc`, returns `{ ok, rev, diagnostics }` |
+| `class_remove {path}` | `removeAsClass` + `pushDoc` (not-found error) |
+| `class_check {source}` | parse-only diagnostics, no write |
+
+Parse-only diagnostics: `class_set`/`class_check` run **only** the AS2 parser
+(`@flash/core` `parse`), not the AVM1 bytecode compiler — class files declare
+`class`/`interface` constructs the frame-script compiler does not emit. Like
+`script_set`, a class is saved even when it has parse errors (Flash 8 parity);
+callers inspect `diagnostics`. The parser accepts fully-qualified packaged class
+names (`class com.example.Enemy`), matching real AS2.
+
+To bind a symbol to a class, `library_set_linkage` accepts a `className` (alongside
+`linkageId` and the export flags), wired through `setSymbolLinkage`
+(`SymbolLinkage.className`).
+
 ## Tests
 
 - `@flash/core` `src/vfs/__tests__/vfs-core.test.ts` — path normalization +

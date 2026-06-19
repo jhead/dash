@@ -1008,6 +1008,48 @@ describe("library_set_linkage", () => {
     }
   });
 
+  it("sets the className linking a symbol to an AS2 class", async () => {
+    const { symbolId } = await dispatchAgentCommand("library_create_symbol", {
+      name: "Enemy",
+      symbolType: "movieclip",
+    }) as { symbolId: string };
+
+    const result = await dispatchAgentCommand("library_set_linkage", {
+      symbolId,
+      className: "com.example.Enemy",
+      exportForActionScript: true,
+    }) as Record<string, unknown>;
+
+    expect(result["ok"]).toBe(true);
+    const sym = state.doc.library.items.find((i) => i.id === symbolId);
+    if (sym?.itemType === "symbol") {
+      expect(sym.linkage.className).toBe("com.example.Enemy");
+      expect(sym.linkage.exportForActionScript).toBe(true);
+    }
+  });
+
+  it("className update leaves linkageId untouched", async () => {
+    const { symbolId } = await dispatchAgentCommand("library_create_symbol", {
+      name: "Boss",
+      symbolType: "movieclip",
+    }) as { symbolId: string };
+
+    await dispatchAgentCommand("library_set_linkage", {
+      symbolId,
+      linkageId: "BossMC",
+    });
+    await dispatchAgentCommand("library_set_linkage", {
+      symbolId,
+      className: "com.game.Boss",
+    });
+
+    const sym = state.doc.library.items.find((i) => i.id === symbolId);
+    if (sym?.itemType === "symbol") {
+      expect(sym.linkage.linkageIdentifier).toBe("BossMC");
+      expect(sym.linkage.className).toBe("com.game.Boss");
+    }
+  });
+
   it("errors on unknown symbolId", async () => {
     await expect(
       dispatchAgentCommand("library_set_linkage", {
@@ -1031,6 +1073,135 @@ describe("library_set_linkage", () => {
         linkageId: "bg",
       })
     ).rejects.toThrow(/symbol/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AS2 external classes
+// ---------------------------------------------------------------------------
+
+describe("class_list / class_get / class_set / class_remove / class_check", () => {
+  it("class_list is empty for a fresh document", async () => {
+    const result = await dispatchAgentCommand("class_list", {}) as {
+      classes: Array<{ path: string; className: string }>;
+    };
+    expect(result.classes).toEqual([]);
+  });
+
+  it("class_set creates a class, mutates the doc, and returns no diagnostics for valid source", async () => {
+    const result = await dispatchAgentCommand("class_set", {
+      path: "com/example/Enemy.as",
+      source: "class com.example.Enemy extends MovieClip { var hp:Number = 100; }",
+    }) as { ok: boolean; diagnostics: unknown[] };
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+    expect(state.doc.asClasses?.length).toBe(1);
+    expect(state.doc.asClasses?.[0].path).toBe("com/example/Enemy.as");
+    // Saving pushed a new document onto history.
+    expect(state.undoHistory.length).toBeGreaterThan(0);
+  });
+
+  it("class_list derives the className from the class declaration", async () => {
+    await dispatchAgentCommand("class_set", {
+      path: "com/example/Enemy.as",
+      source: "class com.example.Enemy { }",
+    });
+    const result = await dispatchAgentCommand("class_list", {}) as {
+      classes: Array<{ path: string; className: string }>;
+    };
+    expect(result.classes).toEqual([
+      { path: "com/example/Enemy.as", className: "com.example.Enemy" },
+    ]);
+  });
+
+  it("class_list falls back to the path when there is no class declaration", async () => {
+    await dispatchAgentCommand("class_set", {
+      path: "util/Helpers.as",
+      source: "// just a comment, no class",
+    });
+    const result = await dispatchAgentCommand("class_list", {}) as {
+      classes: Array<{ path: string; className: string }>;
+    };
+    expect(result.classes[0].className).toBe("util.Helpers");
+  });
+
+  it("class_get returns the source for an existing class", async () => {
+    await dispatchAgentCommand("class_set", {
+      path: "Foo.as",
+      source: "class Foo { }",
+    });
+    const result = await dispatchAgentCommand("class_get", { path: "Foo.as" }) as {
+      source: string;
+    };
+    expect(result.source).toBe("class Foo { }");
+  });
+
+  it("class_get errors when the path is not found", async () => {
+    await expect(
+      dispatchAgentCommand("class_get", { path: "Missing.as" })
+    ).rejects.toThrow(/Missing\.as/);
+  });
+
+  it("class_set updates an existing class in place (upsert by path)", async () => {
+    await dispatchAgentCommand("class_set", {
+      path: "Foo.as",
+      source: "class Foo { var a:Number; }",
+    });
+    await dispatchAgentCommand("class_set", {
+      path: "Foo.as",
+      source: "class Foo { var b:Number; }",
+    });
+    expect(state.doc.asClasses?.length).toBe(1);
+    const got = await dispatchAgentCommand("class_get", { path: "Foo.as" }) as {
+      source: string;
+    };
+    expect(got.source).toBe("class Foo { var b:Number; }");
+  });
+
+  it("class_set returns diagnostics for invalid AS2 but still saves the class", async () => {
+    const result = await dispatchAgentCommand("class_set", {
+      path: "Bad.as",
+      source: "class Bad {{{ syntax error",
+    }) as { ok: boolean; diagnostics: Array<{ message: string }> };
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.length).toBeGreaterThan(0);
+    expect(result.diagnostics[0].message).toMatch(/Parse error/i);
+    // Saved despite the error (Flash 8 parity).
+    expect(state.doc.asClasses?.[0].path).toBe("Bad.as");
+  });
+
+  it("class_check returns diagnostics without writing the document", async () => {
+    const bad = await dispatchAgentCommand("class_check", {
+      source: "class Bad {{{ nope",
+    }) as { diagnostics: unknown[] };
+    expect(bad.diagnostics.length).toBeGreaterThan(0);
+    // No class was written.
+    expect(state.doc.asClasses ?? []).toEqual([]);
+
+    const ok = await dispatchAgentCommand("class_check", {
+      source: "class Good { function go():Void {} }",
+    }) as { diagnostics: unknown[] };
+    expect(ok.diagnostics).toEqual([]);
+  });
+
+  it("class_remove deletes a class and mutates the doc", async () => {
+    await dispatchAgentCommand("class_set", { path: "Foo.as", source: "class Foo { }" });
+    await dispatchAgentCommand("class_set", { path: "Bar.as", source: "class Bar { }" });
+
+    const result = await dispatchAgentCommand("class_remove", { path: "Foo.as" }) as {
+      ok: boolean;
+    };
+    expect(result.ok).toBe(true);
+    const paths = (state.doc.asClasses ?? []).map((c) => c.path);
+    expect(paths).toEqual(["Bar.as"]);
+  });
+
+  it("class_remove errors when the path is not found", async () => {
+    await expect(
+      dispatchAgentCommand("class_remove", { path: "Nope.as" })
+    ).rejects.toThrow(/Nope\.as/);
   });
 });
 

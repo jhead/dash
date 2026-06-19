@@ -468,6 +468,81 @@ export const ScriptListResultSchema = z.object({
 export type ScriptListResult = z.infer<typeof ScriptListResultSchema>;
 
 // ---------------------------------------------------------------------------
+// AS2 external classes (doc.asClasses VFS)
+// ---------------------------------------------------------------------------
+
+/** A classpath-relative `.as` path, e.g. `com/example/Foo.as`. */
+const ClassPathSchema = z
+  .string()
+  .min(1)
+  .describe("Classpath-relative path with forward slashes, e.g. com/example/Foo.as");
+
+export const ClassListParamsSchema = z.object({}).strict();
+
+export const ClassListItemSchema = z.object({
+  /** Classpath-relative path of the `.as` file. */
+  path: z.string(),
+  /** Fully-qualified AS2 class name (e.g. com.example.Foo), derived from the
+   *  parsed class declaration or, failing that, from the path. */
+  className: z.string(),
+});
+export type ClassListItem = z.infer<typeof ClassListItemSchema>;
+
+export const ClassListResultSchema = z.object({
+  classes: z.array(ClassListItemSchema),
+  rev: RevSchema,
+});
+export type ClassListResult = z.infer<typeof ClassListResultSchema>;
+
+export const ClassGetParamsSchema = z.object({
+  path: ClassPathSchema,
+});
+export type ClassGetParams = z.infer<typeof ClassGetParamsSchema>;
+
+export const ClassGetResultSchema = z.object({
+  path: z.string(),
+  source: z.string(),
+  rev: RevSchema,
+});
+export type ClassGetResult = z.infer<typeof ClassGetResultSchema>;
+
+export const ClassSetParamsSchema = z.object({
+  path: ClassPathSchema,
+  source: z.string().describe("Full UTF-8 source text of the .as file"),
+});
+export type ClassSetParams = z.infer<typeof ClassSetParamsSchema>;
+
+export const ClassSetResultSchema = z.object({
+  /** Always true — the class is saved regardless of parse errors (Flash 8
+   *  parity with script_set). Inspect `diagnostics` for parse errors/warnings. */
+  ok: z.literal(true),
+  rev: RevSchema,
+  diagnostics: z.array(DiagnosticSchema),
+});
+export type ClassSetResult = z.infer<typeof ClassSetResultSchema>;
+
+export const ClassRemoveParamsSchema = z.object({
+  path: ClassPathSchema,
+});
+export type ClassRemoveParams = z.infer<typeof ClassRemoveParamsSchema>;
+
+export const ClassRemoveResultSchema = z.object({
+  ok: z.literal(true),
+  rev: RevSchema,
+});
+export type ClassRemoveResult = z.infer<typeof ClassRemoveResultSchema>;
+
+export const ClassCheckParamsSchema = z.object({
+  source: z.string().describe("AS2 class source to parse-check (not written)"),
+});
+export type ClassCheckParams = z.infer<typeof ClassCheckParamsSchema>;
+
+export const ClassCheckResultSchema = z.object({
+  diagnostics: z.array(DiagnosticSchema),
+});
+export type ClassCheckResult = z.infer<typeof ClassCheckResultSchema>;
+
+// ---------------------------------------------------------------------------
 // Library
 // ---------------------------------------------------------------------------
 
@@ -547,11 +622,16 @@ export type LibraryRemoveParams = z.infer<typeof LibraryRemoveParamsSchema>;
 export const LibrarySetLinkageParamsSchema = z.object({
   symbolId: z.string(),
   linkageId: z.string().optional().describe("attachMovie / new ClassName identifier"),
+  className: z.string().optional().describe("AS2 class name to associate with this symbol (e.g. com.example.Enemy), linking it to an external AS2 class file"),
   exportForActionScript: z.boolean().optional().describe("Export this symbol for ActionScript (enables attachMovie / new ClassName)"),
   exportInFirstFrame: z.boolean().optional().describe("Export the symbol in the first frame of the SWF"),
 }).refine(
-  (data) => data.linkageId !== undefined || data.exportForActionScript !== undefined || data.exportInFirstFrame !== undefined,
-  { message: "At least one of linkageId, exportForActionScript, or exportInFirstFrame must be provided" }
+  (data) =>
+    data.linkageId !== undefined ||
+    data.className !== undefined ||
+    data.exportForActionScript !== undefined ||
+    data.exportInFirstFrame !== undefined,
+  { message: "At least one of linkageId, className, exportForActionScript, or exportInFirstFrame must be provided" }
 );
 export type LibrarySetLinkageParams = z.infer<typeof LibrarySetLinkageParamsSchema>;
 
@@ -856,6 +936,12 @@ export const ALL_COMMANDS = [
   "script_set",
   "script_check",
   "script_list",
+  // AS2 external classes
+  "class_list",
+  "class_get",
+  "class_set",
+  "class_remove",
+  "class_check",
   // library
   "library_list",
   "library_create_symbol",
@@ -957,6 +1043,12 @@ export const COMMAND_SCHEMAS = {
   script_set: ScriptSetParamsSchema,
   script_check: ScriptCheckParamsSchema,
   script_list: ScriptListParamsSchema,
+  // AS2 external classes
+  class_list: ClassListParamsSchema,
+  class_get: ClassGetParamsSchema,
+  class_set: ClassSetParamsSchema,
+  class_remove: ClassRemoveParamsSchema,
+  class_check: ClassCheckParamsSchema,
   // library
   library_list: LibraryListParamsSchema,
   library_create_symbol: LibraryCreateSymbolParamsSchema,
@@ -1059,6 +1151,16 @@ export const COMMAND_DESCRIPTIONS = {
   script_set: "Set the AS2 frame/object script at a given location. Returns ok and rev.",
   script_check: "Compile-check an AS2 script, returning diagnostics (errors/warnings) without applying it.",
   script_list: "List all scripts in the document with their locations.",
+  // AS2 external classes
+  class_list:
+    "List the document's external AS2 class files: each entry has the classpath-relative path (e.g. com/example/Foo.as) and the fully-qualified class name.",
+  class_get:
+    "Read the source of an external AS2 class file by its classpath-relative path. Errors if no class exists at that path.",
+  class_set:
+    "Create or replace an external AS2 class file at a classpath-relative path. Parse-checks the source (the class is saved regardless, Flash 8 parity) and returns ok, rev, and diagnostics.",
+  class_remove: "Remove an external AS2 class file by its classpath-relative path. Returns ok and rev.",
+  class_check:
+    "Parse-check AS2 class source, returning diagnostics (errors/warnings) without writing it.",
   // library
   library_list: "Read the library contents (symbols, bitmaps, sounds, etc.) with ids, names, and types.",
   library_create_symbol:
@@ -1072,7 +1174,7 @@ export const COMMAND_DESCRIPTIONS = {
   library_import_sound:
     "Import base64-encoded audio into the library as a SoundItem. Returns the new item id and rev.",
   library_set_linkage:
-    "Set AS2 linkage on a symbol (linkageId + export flags) for attachMovie / new ClassName. Returns ok and rev.",
+    "Set AS2 linkage on a symbol (linkageId, className, and export flags) for attachMovie / new ClassName. Set className to bind the symbol to an external AS2 class file. Returns ok and rev.",
   // filters
   filter_add:
     "Add a filter (dropShadow, blur, glow, bevel, gradientGlow, gradientBevel, colorMatrix) to the selected/given objects. Returns ok and rev.",

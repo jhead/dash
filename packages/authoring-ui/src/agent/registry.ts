@@ -32,6 +32,11 @@ import type {
   ScriptSetResult,
   ScriptCheckResult,
   ScriptListResult,
+  ClassListResult,
+  ClassGetResult,
+  ClassSetResult,
+  ClassRemoveResult,
+  ClassCheckResult,
   LibraryListResult,
   LibraryCreateSymbolResult,
   LibraryConvertToSymbolResult,
@@ -96,6 +101,9 @@ import {
   getGoverningKeyframe,
   compileAS2,
   parse as parseAS2,
+  addAsClass,
+  updateAsClass,
+  removeAsClass,
   addScene,
   removeScene,
   renameScene,
@@ -509,6 +517,42 @@ function compileCheckScript(script: string): DiagnosticItem[] {
     const line = lineMatch ? parseInt(lineMatch[1], 10) : undefined;
     return [{ message: msg, line, severity: "error" }];
   }
+}
+
+/**
+ * Parse-only diagnostics for AS2 class source. Unlike `compileCheckScript`,
+ * this does NOT run the AVM1 bytecode compiler — external class files declare
+ * `class`/`interface` constructs that the frame-script compiler does not emit,
+ * so we surface only the parser's syntax diagnostics (the AS2 parser handles
+ * full class declarations). An empty source is valid (no diagnostics).
+ */
+function parseCheckClass(source: string): DiagnosticItem[] {
+  if (!source.trim()) return [];
+  try {
+    parseAS2(source);
+    return [];
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const lineMatch = /line (\d+)/i.exec(msg);
+    const line = lineMatch ? parseInt(lineMatch[1], 10) : undefined;
+    return [{ message: msg, line, severity: "error" }];
+  }
+}
+
+/**
+ * Derive a fully-qualified AS2 class name for a `.as` file. Prefers the
+ * declared `class`/`interface` name (with `dynamic`/`intrinsic` modifiers and
+ * any leading package path handled by the parser's declared name), falling back
+ * to the dotted path with the `.as` extension stripped (e.g.
+ * `com/example/Foo.as` -> `com.example.Foo`).
+ */
+function deriveClassName(path: string, source: string): string {
+  const declMatch =
+    /\b(?:class|interface)\s+([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)/.exec(
+      source
+    );
+  if (declMatch) return declMatch[1].replace(/\s+/g, "");
+  return path.replace(/\.as$/i, "").replace(/\//g, ".");
 }
 
 // ---------------------------------------------------------------------------
@@ -1627,6 +1671,67 @@ const handlers: Record<string, AnyHandler> = {
   },
 
   // =========================================================================
+  // AS2 external classes (doc.asClasses VFS)
+  // =========================================================================
+
+  class_list(): ClassListResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    const classes = (doc.asClasses ?? []).map((c) => ({
+      path: c.path,
+      className: deriveClassName(c.path, c.source),
+    }));
+    return { classes, rev: _rev };
+  },
+
+  class_get(params: { path: string }): ClassGetResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    const file = (doc.asClasses ?? []).find((c) => c.path === params.path);
+    if (!file) {
+      const known = (doc.asClasses ?? []).map((c) => c.path).join(", ");
+      throw new Error(
+        `No AS2 class at path "${params.path}". Known: ${known || "(none)"}`
+      );
+    }
+    return { path: file.path, source: file.source, rev: _rev };
+  },
+
+  class_set(params: { path: string; source: string }): ClassSetResult {
+    const cb = requireCallbacks();
+    // Parse-only validation (Flash 8 parity: the class is saved regardless of
+    // parse errors; callers must inspect `diagnostics`).
+    const diagnostics = parseCheckClass(params.source);
+    const doc = cb.getDoc();
+    const exists = (doc.asClasses ?? []).some((c) => c.path === params.path);
+    // `addAsClass` is a safe upsert (replaces on matching path); use
+    // `updateAsClass` when the path already exists so the intent is explicit.
+    const newDoc = exists
+      ? updateAsClass(doc, params.path, params.source)
+      : addAsClass(doc, { path: params.path, source: params.source });
+    cb.pushDoc(newDoc);
+    return { ok: true, rev: _rev, diagnostics };
+  },
+
+  class_remove(params: { path: string }): ClassRemoveResult {
+    const cb = requireCallbacks();
+    const doc = cb.getDoc();
+    const exists = (doc.asClasses ?? []).some((c) => c.path === params.path);
+    if (!exists) {
+      const known = (doc.asClasses ?? []).map((c) => c.path).join(", ");
+      throw new Error(
+        `No AS2 class at path "${params.path}". Known: ${known || "(none)"}`
+      );
+    }
+    cb.pushDoc(removeAsClass(doc, params.path));
+    return { ok: true, rev: _rev };
+  },
+
+  class_check(params: { source: string }): ClassCheckResult {
+    return { diagnostics: parseCheckClass(params.source) };
+  },
+
+  // =========================================================================
   // Library
   // =========================================================================
 
@@ -1798,6 +1903,7 @@ const handlers: Record<string, AnyHandler> = {
   library_set_linkage(params: {
     symbolId: string;
     linkageId?: string;
+    className?: string;
     exportForActionScript?: boolean;
     exportInFirstFrame?: boolean;
   }): LibrarySetLinkageResult {
@@ -1817,6 +1923,7 @@ const handlers: Record<string, AnyHandler> = {
     }
     const newLibrary = setSymbolLinkage(doc.library, params.symbolId, {
       linkageId: params.linkageId,
+      className: params.className,
       exportForActionScript: params.exportForActionScript,
       exportInFirstFrame: params.exportInFirstFrame,
     });

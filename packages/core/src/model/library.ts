@@ -457,6 +457,7 @@ export function setSymbolLinkage(
   symbolId: string,
   linkageProps: {
     linkageId?: string;
+    className?: string;
     exportForActionScript?: boolean;
     exportInFirstFrame?: boolean;
   }
@@ -471,6 +472,9 @@ export function setSymbolLinkage(
     ...sym.linkage,
     ...(linkageProps.linkageId !== undefined
       ? { linkageIdentifier: linkageProps.linkageId }
+      : {}),
+    ...(linkageProps.className !== undefined
+      ? { className: linkageProps.className }
       : {}),
     ...(linkageProps.exportForActionScript !== undefined
       ? { exportForActionScript: linkageProps.exportForActionScript }
