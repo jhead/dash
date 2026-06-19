@@ -15,6 +15,20 @@ export interface Preferences {
    * [UI_SCALE_MIN, UI_SCALE_MAX].
    */
   uiScale: number;
+
+  /**
+   * OpenRouter API key for the (fully client-side) Agent Chat pane. Stored ONLY
+   * in this browser's localStorage — there is no Dash server; the key travels
+   * directly from the browser to openrouter.ai. Absent until the user sets one.
+   */
+  openrouterApiKey?: string;
+
+  /**
+   * OpenRouter model id selected for the Agent Chat (e.g.
+   * "anthropic/claude-sonnet-4.5"). Absent until the user picks one; the agent
+   * loop (later phase) chooses a default when unset.
+   */
+  agentModel?: string;
 }
 
 export const UI_SCALE_MIN = 0.25;
@@ -31,14 +45,30 @@ function clampUiScale(n: number): number {
   return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, n));
 }
 
+/**
+ * Coerce a stored value into an optional non-empty trimmed string. Blank/
+ * whitespace-only values normalize to `undefined` so an empty key/model never
+ * persists (and `updatePreferences({ openrouterApiKey: "" })` clears it).
+ */
+function normalizeOptionalString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /** Normalize an arbitrary parsed object into a complete Preferences value. */
 function normalize(raw: unknown): Preferences {
   const obj = (raw && typeof raw === "object" ? raw : {}) as Partial<Preferences>;
-  return {
+  const prefs: Preferences = {
     uiScale: clampUiScale(
       typeof obj.uiScale === "number" ? obj.uiScale : DEFAULT_PREFERENCES.uiScale
     ),
   };
+  const openrouterApiKey = normalizeOptionalString(obj.openrouterApiKey);
+  if (openrouterApiKey !== undefined) prefs.openrouterApiKey = openrouterApiKey;
+  const agentModel = normalizeOptionalString(obj.agentModel);
+  if (agentModel !== undefined) prefs.agentModel = agentModel;
+  return prefs;
 }
 
 /** Read preferences from localStorage, falling back to defaults. */
@@ -53,11 +83,15 @@ export function loadPreferences(): Preferences {
   }
 }
 
-/** Persist preferences to localStorage (no-op when storage is unavailable). */
+/**
+ * Persist preferences to localStorage (no-op when storage is unavailable).
+ * Normalizes first so blank/whitespace key/model values are dropped rather than
+ * written (an empty OpenRouter key must never be persisted).
+ */
 export function savePreferences(prefs: Preferences): void {
   if (typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalize(prefs)));
   } catch {
     // Ignore quota / privacy-mode write failures.
   }

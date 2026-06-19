@@ -23,3 +23,17 @@ export type { UseHistoryResult } from "./hooks/useHistory";
 // (setThemeMode / activeTheme / getThemeColor / subscribeTheme), value-sets
 // (flash8Light / flash8Dark), and the optional ThemeProvider / useTheme. DEFAULT = light.
 export * from "./theme/index.js";
+
+// Preferences (localStorage-backed): UI scale + Agent Chat key/model (task 1276 P1).
+export {
+  loadPreferences,
+  savePreferences,
+  usePreferences,
+  DEFAULT_PREFERENCES,
+  UI_SCALE_MIN,
+  UI_SCALE_MAX,
+} from "./preferences.js";
+export type { Preferences, UsePreferences } from "./preferences.js";
+
+// Agent Chat foundation (task 1276 P1): client-side OpenRouter client + settings.
+export * from "./agentchat/index.js";
