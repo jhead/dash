@@ -32,6 +32,22 @@ import {
   setShapeTween,
 } from "@flash/core";
 import { EaseCurveDialog } from "./EaseCurveDialog";
+import { chrome, content, halo, chromeFont } from "./theme/flash8Theme.js";
+
+// ---------------------------------------------------------------------------
+// Flash 8 light-theme conversion
+// ---------------------------------------------------------------------------
+// REFERENCE CONVERSION: Shell.tsx. Every value comes from theme/flash8Theme.ts
+// tokens (no hardcoded hex). Flash 8's Timeline is a LIGHT panel:
+//   - panel / layer column chrome → chrome.panelBg (#ECECEC), gutters / ruler
+//     header / footers → chrome.insetFieldStrip (#D4D4D4)
+//   - 1px separators / gridlines  → chrome.separator (#999999)
+//   - chrome text (Tahoma 11px)   → chrome.textDefault / textDisabled
+//   - Flash-drawn frame pixels (content.*): empty frame #FFFFFF, gridline
+//     #EBE9ED, keyframe filled #000000 / hollow #FFFFFF, motion tween #CCCCFF,
+//     shape tween #CCFFCC, selected #335EA8, playhead #CC0000.
+// Colours previously chosen to read on the DARK panel are re-picked to read on
+// the LIGHT timeline.
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -260,31 +276,34 @@ function FrameCell({
   onDoubleClick?: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
-  // Background color logic: tween state overrides normal span color
+  // Background color logic: tween state overrides normal span color.
+  // Flash 8 paints the timeline LIGHT: empty frames are white, spans pick up
+  // their content tint (motion #CCCCFF, shape #CCFFCC), the selection is the
+  // #335EA8 highlight, and the playhead column is a faint red wash.
   let bg: string;
   if (isPlayhead) {
-    bg = "rgba(255,40,40,0.55)";
+    bg = "rgba(204,0,0,0.18)";  // faint wash of content.playhead (#CC0000)
   } else if (isSelected) {
-    bg = "rgba(50,100,220,0.55)";  // Flash 8 blue highlight for selected frames
+    bg = content.selectedFrame;  // #335EA8 — Flash 8 selected-frame highlight
   } else if (tweenState === "motion-tween") {
-    bg = "#3a4a70";  // blue-purple band for motion tween
+    bg = content.motionTween;  // #CCCCFF motion-tween span
   } else if (tweenState === "broken-tween") {
-    bg = "#5a4a20";  // orange/yellow-ish for broken motion tween
+    bg = "#FFE0B0";  // pale orange wash for a broken motion tween (light theme)
   } else if (tweenState === "shape-tween") {
-    bg = "#1e4a1e";  // green band for shape tween
+    bg = content.shapeTween;  // #CCFFCC shape-tween span
   } else if (tweenState === "broken-shape-tween") {
-    bg = "#3a3010";  // dark orange/brown for broken shape tween
+    bg = "#E6F5C8";  // pale yellow-green wash for a broken shape tween
   } else if (state === "span") {
-    bg = "#4a6080";
+    bg = "#E8E8E8";  // light-gray frame span (extends a keyframe)
   } else if (state === "keyframe" || state === "blank-keyframe") {
-    bg = "#3a3a3a";
+    bg = content.emptyFrame;  // #FFFFFF — keyframe cell ground
   } else {
-    bg = "#383838";
+    bg = content.emptyFrame;  // #FFFFFF — empty frame cell
   }
 
   const border = isPlayhead
-    ? "1px solid #cc0000"
-    : "1px solid #252525";
+    ? `1px solid ${content.playhead}`
+    : `1px solid ${content.timelineGridline}`;  // #EBE9ED vertical gridline
 
   return (
     <div
@@ -318,8 +337,13 @@ function FrameCell({
             width: dotSize,
             height: dotSize,
             borderRadius: "50%",
-            background: state === "keyframe" ? "#222" : "transparent",
-            border: "1px solid #222",
+            // Filled keyframe = solid black dot; blank keyframe = hollow white
+            // circle (both outlined in black), per Flash 8 content tokens.
+            background:
+              state === "keyframe"
+                ? content.keyframeFilled
+                : content.keyframeHollow,
+            border: `1px solid ${content.keyframeFilled}`,
             boxSizing: "border-box",
             flexShrink: 0,
             zIndex: 1,
@@ -335,7 +359,7 @@ function FrameCell({
             left: 0,
             width: 0,
             height: 0,
-            borderLeft: "5px solid #e03030",
+            borderLeft: `5px solid ${content.playhead}`,
             borderBottom: "5px solid transparent",
             pointerEvents: "none",
             zIndex: 3,
@@ -349,7 +373,7 @@ function FrameCell({
             top: 0,
             left: 1,
             fontSize: 6,
-            color: "#40a0e0",
+            color: halo.haloBlue,
             pointerEvents: "none",
             zIndex: 3,
             lineHeight: 1,
@@ -367,7 +391,9 @@ function FrameCell({
             top: 1,
             left: 1,
             fontSize: 7,
-            color: labelType === "comment" ? "#60c060" : labelType === "anchor" ? "#40a0e0" : "#f0c040",
+            // Flash 8 frame label text: green-ish comment, blue anchor, red name.
+            // Re-picked to read on the LIGHT timeline.
+            color: labelType === "comment" ? "#0A7A0A" : labelType === "anchor" ? halo.haloBlue : content.playhead,
             whiteSpace: "nowrap",
             pointerEvents: "none",
             zIndex: 2,
@@ -382,7 +408,7 @@ function FrameCell({
         <span
           style={{
             fontSize: 8,
-            color: "#333",
+            color: chrome.textDefault,
             position: "absolute",
             bottom: 0,
             left: 2,
@@ -399,7 +425,7 @@ function FrameCell({
         <span
           style={{
             fontSize: 7,
-            color: "#44aaff",
+            color: "#1A6FB0",
             position: "absolute",
             bottom: 0,
             right: 1,
@@ -421,7 +447,7 @@ function FrameCell({
             top: "50%",
             transform: "translateY(-50%)",
             fontSize: 8,
-            color: "#8ab4e8",
+            color: content.keyframeFilled,  // black centerline arrow over #CCCCFF span
             pointerEvents: "none",
             zIndex: 2,
             lineHeight: 1,
@@ -439,7 +465,7 @@ function FrameCell({
             top: "50%",
             transform: "translateY(-50%)",
             fontSize: 8,
-            color: "#6ecf6e",
+            color: content.keyframeFilled,  // black centerline arrow over #CCFFCC span
             pointerEvents: "none",
             zIndex: 2,
             lineHeight: 1,
@@ -457,14 +483,16 @@ function FrameCell({
             left: 0,
             right: 0,
             height: 2,
+            // Broken tween: dashed line (content.brokenTween). Dark dashes read
+            // on the pale broken-tween wash.
             backgroundImage:
-              "repeating-linear-gradient(90deg,#c08020 0,#c08020 2px,transparent 2px,transparent 4px)",
+              "repeating-linear-gradient(90deg,#000000 0,#000000 2px,transparent 2px,transparent 4px)",
             pointerEvents: "none",
             zIndex: 2,
           }}
         />
       )}
-      {/* Broken shape tween dashed underline indicator (green dashes) */}
+      {/* Broken shape tween dashed underline indicator (dashed line) */}
       {tweenState === "broken-shape-tween" && (
         <div
           style={{
@@ -474,7 +502,7 @@ function FrameCell({
             right: 0,
             height: 2,
             backgroundImage:
-              "repeating-linear-gradient(90deg,#5aaa30 0,#5aaa30 2px,transparent 2px,transparent 4px)",
+              "repeating-linear-gradient(90deg,#000000 0,#000000 2px,transparent 2px,transparent 4px)",
             pointerEvents: "none",
             zIndex: 2,
           }}
@@ -489,7 +517,7 @@ function FrameCell({
             top: "20%",
             bottom: "20%",
             width: 1,
-            background: "#6080a0",
+            background: chrome.separator,
           }}
         />
       )}
@@ -521,7 +549,7 @@ function PlayheadMarker({ frame, colWidth = BASE_FRAME_W }: { frame: number; col
           height: 0,
           borderLeft: "4px solid transparent",
           borderRight: "4px solid transparent",
-          borderTop: "7px solid #ff3030",
+          borderTop: `7px solid ${content.playhead}`,
           position: "absolute",
           left: Math.floor(colWidth / 2) - 4,
           top: 2,
@@ -534,7 +562,7 @@ function PlayheadMarker({ frame, colWidth = BASE_FRAME_W }: { frame: number; col
           top: 9,
           width: 1,
           height: RULER_H - 9,
-          background: "#ff3030",
+          background: content.playhead,
         }}
       />
     </div>
@@ -1162,11 +1190,12 @@ export function Timeline({
         height: "100%",
         minHeight: 0,
         flex: 1,
-        background: "#2d2d2d",
-        borderTop: "1px solid #1a1a1a",
+        background: chrome.panelBg,
+        borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
         outline: "none",
         userSelect: "none",
         position: "relative",
+        ...chromeFont(),
       }}
     >
       {/* No internal title bar — the Shell's docking tab already labels this
@@ -1186,10 +1215,10 @@ export function Timeline({
           style={{
             width: LAYER_COL_WIDTH,
             flexShrink: 0,
-            borderRight: "1px solid #1a1a1a",
+            borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
             display: "flex",
             flexDirection: "column",
-            background: "#2d2d2d",
+            background: chrome.panelBg,
           }}
         >
           {/* Layer column headers (aligns with ruler): show / lock / outline.
@@ -1197,8 +1226,8 @@ export function Timeline({
           <div
             style={{
               height: RULER_H,
-              background: "#333",
-              borderBottom: "1px solid #1a1a1a",
+              background: chrome.insetFieldStrip,
+              borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
               flexShrink: 0,
               display: "flex",
               flexDirection: "row",
@@ -1217,7 +1246,7 @@ export function Timeline({
                 for (const l of timeline.layers) t = setLayerVisible(t, l.id, !anyVisible);
                 onTimelineChange(t);
               }}
-              style={{ ...iconButtonStyle, color: "#c0c0c0" }}
+              style={{ ...iconButtonStyle, color: chrome.textDefault }}
             >
               👁
             </button>
@@ -1230,7 +1259,7 @@ export function Timeline({
                 for (const l of timeline.layers) t = setLayerLocked(t, l.id, anyUnlocked);
                 onTimelineChange(t);
               }}
-              style={{ ...iconButtonStyle, color: "#c0c0c0" }}
+              style={{ ...iconButtonStyle, color: chrome.textDefault }}
             >
               🔒
             </button>
@@ -1248,7 +1277,7 @@ export function Timeline({
                 width: 11,
                 height: 11,
                 minWidth: 11,
-                border: "1px solid #c0c0c0",
+                border: `1px solid ${chrome.separator}`,
                 background: "transparent",
                 borderRadius: 0,
               }}
@@ -1290,16 +1319,16 @@ export function Timeline({
                   alignItems: "center",
                   padding: "0 4px",
                   paddingLeft: 4 + indentPx,
-                  borderBottom: "1px solid #1a1a1a",
-                  fontSize: 10,
-                  color: "#c0c0c0",
+                  borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
+                  fontSize: 11,
+                  color: chrome.textDefault,
                   cursor: "grab",
                   gap: 2,
                   background:
                     dragOverIndex === idx
-                      ? "#3a5080"
+                      ? halo.rollOverColor
                       : idx === activeLayerIndex
-                      ? "#2a4060"
+                      ? halo.selectionColor
                       : "transparent",
                   boxSizing: "border-box",
                 }}
@@ -1315,7 +1344,7 @@ export function Timeline({
                     style={{
                       ...iconButtonStyle,
                       fontSize: 8,
-                      color: "#c0c0c0",
+                      color: chrome.textDefault,
                     }}
                   >
                     {layer.collapsed ? "▶" : "▼"}
@@ -1334,12 +1363,12 @@ export function Timeline({
                     textAlign: "center",
                     color:
                       layer.type === "guide" || layer.type === "guided"
-                        ? "#70a0ff"
+                        ? "#1A5FB4"
                         : layer.type === "mask" || layer.type === "masked"
-                        ? "#ff7070"
+                        ? "#B02020"
                         : layer.type === "folder"
-                        ? "#d0c060"
-                        : "#999",
+                        ? "#8A6D00"
+                        : chrome.textDisabled,
                   }}
                 >
                   {layer.type === "folder" ? "📁"
@@ -1362,10 +1391,10 @@ export function Timeline({
                     }}
                     style={{
                       flex: 1,
-                      fontSize: 10,
-                      background: "#1a1a1a",
-                      color: "#ffffff",
-                      border: "1px solid #5050ff",
+                      fontSize: 11,
+                      background: halo.inputBg,
+                      color: halo.text,
+                      border: `1px solid ${halo.haloBlue}`,
                       padding: "0 2px",
                       outline: "none",
                       minWidth: 0,
@@ -1394,7 +1423,7 @@ export function Timeline({
                     textAlign: "center",
                     fontSize: 9,
                     lineHeight: 1,
-                    color: "#e0b020",
+                    color: "#8A6D00",
                     visibility: idx === activeLayerIndex ? "visible" : "hidden",
                   }}
                   title="Active layer"
@@ -1410,7 +1439,7 @@ export function Timeline({
                       setLayerVisible(timeline, layer.id, !layer.visible)
                     );
                   }}
-                  style={{ ...iconButtonStyle, color: layer.visible ? "#888" : "#c04040" }}
+                  style={{ ...iconButtonStyle, color: layer.visible ? chrome.textDisabled : content.playhead }}
                 >
                   {layer.visible ? "•" : "✕"}
                 </button>
@@ -1423,7 +1452,7 @@ export function Timeline({
                       setLayerLocked(timeline, layer.id, !layer.locked)
                     );
                   }}
-                  style={{ ...iconButtonStyle, color: layer.locked ? "#c0c0c0" : "#888" }}
+                  style={{ ...iconButtonStyle, color: layer.locked ? chrome.textDefault : chrome.textDisabled }}
                 >
                   {layer.locked ? "🔒" : "•"}
                 </button>
@@ -1500,8 +1529,10 @@ export function Timeline({
                 display: "flex",
                 flexDirection: "row",
                 height: RULER_H,
-                background: isButtonMode ? "#2a2a2a" : "#3a3a3a",
-                borderBottom: "1px solid #1a1a1a",
+                // Frame ruler header: ~23px light gray with a darker bottom
+                // border (Flash 8). RULER_H is fixed chrome here.
+                background: chrome.insetFieldStrip,
+                borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
                 flexShrink: 0,
                 cursor: isButtonMode ? "default" : "col-resize",
               }}
@@ -1515,7 +1546,7 @@ export function Timeline({
                         width: BUTTON_STATE_W,
                         height: RULER_H,
                         flexShrink: 0,
-                        borderRight: "1px solid #1a1a1a",
+                        borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
                         boxSizing: "border-box",
                         background: i === currentFrame
                           ? state.color
@@ -1547,10 +1578,12 @@ export function Timeline({
                         width: FRAME_W,
                         height: RULER_H,
                         flexShrink: 0,
+                        // Every 5th frame line is the darker separator; the
+                        // in-between ticks are the faint timeline gridline.
                         borderRight:
                           (i + 1) % 5 === 0
-                            ? "1px solid #555"
-                            : "1px solid #2a2a2a",
+                            ? `1px solid ${chrome.separator}`
+                            : `1px solid ${content.timelineGridline}`,
                         boxSizing: "border-box",
                         display: "flex",
                         alignItems: "flex-end",
@@ -1563,7 +1596,7 @@ export function Timeline({
                         <span
                           style={{
                             fontSize: 7,
-                            color: "#888",
+                            color: chrome.textDefault,
                             lineHeight: 1,
                             pointerEvents: "none",
                           }}
@@ -1580,7 +1613,7 @@ export function Timeline({
                 <>
                   <OnionRangeMarker
                     frame={Math.max(0, currentFrame - onionBefore)}
-                    color="#4466cc"
+                    color="#1A5FB4"
                     label="["
                     onDrag={(delta) => {
                       const newBefore = Math.max(0, onionBefore - delta);
@@ -1592,7 +1625,7 @@ export function Timeline({
                   />
                   <OnionRangeMarker
                     frame={Math.min(frameCount - 1, currentFrame + onionAfter)}
-                    color="#44aa55"
+                    color="#0A7A0A"
                     label="]"
                     onDrag={(delta) => {
                       const newAfter = Math.max(0, onionAfter + delta);
@@ -1617,7 +1650,8 @@ export function Timeline({
                   flexDirection: "row",
                   height: FRAME_H,
                   position: "relative",
-                  background: idx === activeLayerIndex ? "rgba(42,64,96,0.35)" : "transparent",
+                  // Subtle wash on the active layer's frame row (Halo selection tint).
+                  background: idx === activeLayerIndex ? "rgba(127,206,255,0.30)" : "transparent",
                 }}
               >
                 {isButtonMode
@@ -1637,7 +1671,7 @@ export function Timeline({
                             width: BUTTON_STATE_W,
                             height: FRAME_H,
                             flexShrink: 0,
-                            borderRight: "1px solid #1a1a1a",
+                            borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
                             boxSizing: "border-box",
                             cursor: "pointer",
                             display: "flex",
@@ -1745,7 +1779,7 @@ export function Timeline({
           display: "flex",
           flexDirection: "row",
           flexShrink: 0,
-          borderTop: "1px solid #1a1a1a",
+          borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
         }}
       >
         {/* Layer footer: Insert Layer · Add Motion Guide · Insert Layer Folder
@@ -1755,8 +1789,8 @@ export function Timeline({
             width: LAYER_COL_WIDTH,
             flexShrink: 0,
             height: STATUS_BAR_H,
-            background: "#333",
-            borderRight: "1px solid #1a1a1a",
+            background: chrome.insetFieldStrip,
+            borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
             display: "flex",
             alignItems: "center",
             padding: "0 5px",
@@ -1789,7 +1823,7 @@ export function Timeline({
                 disabled={timeline.layers.length <= 1}
                 style={{
                   ...layerFooterBtnStyle,
-                  color: timeline.layers.length <= 1 ? "#666" : "#c0c0c0",
+                  color: timeline.layers.length <= 1 ? chrome.textDisabled : chrome.textDefault,
                   cursor: timeline.layers.length <= 1 ? "default" : "pointer",
                 }}
               >
@@ -1808,7 +1842,7 @@ export function Timeline({
             flex: 1,
             minWidth: 0,
             height: STATUS_BAR_H,
-            background: "#333",
+            background: chrome.insetFieldStrip,
             padding: "0 6px",
             gap: 4,
           }}
@@ -1829,13 +1863,13 @@ export function Timeline({
               &gt;
             </PlayBtn>
             <div style={{ width: 8 }} />
-            <span style={{ fontSize: 10, color: "#aaa" }}>
-              Button state: <strong style={{ color: BUTTON_STATES[currentFrame]?.titleColor ?? "#aaa" }}>
+            <span style={{ fontSize: 11, color: chrome.textDefault }}>
+              Button state: <strong style={{ color: BUTTON_STATES[currentFrame]?.titleColor ?? chrome.textDefault }}>
                 {BUTTON_STATES[currentFrame]?.label ?? "Up"}
               </strong>
             </span>
             <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 9, color: "#666" }}>
+            <span style={{ fontSize: 9, color: chrome.textDisabled }}>
               Click a state column to edit its content
             </span>
           </>
@@ -1893,9 +1927,9 @@ export function Timeline({
                     position: "absolute",
                     bottom: STATUS_BAR_H - 2,
                     left: 0,
-                    background: "#2d2d2d",
-                    border: "1px solid #1a1a1a",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+                    background: chrome.panelBg,
+                    border: `1px solid ${chrome.separator}`,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
                     zIndex: 20,
                     minWidth: 130,
                     padding: "2px 0",
@@ -1914,13 +1948,13 @@ export function Timeline({
                         setOnionMenuOpen(false);
                       }}
                       style={{
-                        fontSize: 10,
-                        color: "#c0c0c0",
+                        fontSize: 11,
+                        color: chrome.textDefault,
                         padding: "3px 10px",
                         cursor: "pointer",
                         whiteSpace: "nowrap",
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#3a5080")}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = halo.rollOverColor)}
                       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                     >
                       {label}
@@ -1981,14 +2015,14 @@ export function Timeline({
               flexDirection: "row",
               alignItems: "center",
               height: 22,
-              background: "#333",
-              borderTop: "1px solid #1a1a1a",
+              background: chrome.insetFieldStrip,
+              borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
               flexShrink: 0,
               padding: "0 8px",
               gap: 6,
             }}
           >
-            <span style={{ fontSize: 10, color: "#aaa" }}>Ease:</span>
+            <span style={{ fontSize: 11, color: chrome.textDefault }}>Ease:</span>
             <input
               type="number"
               min={-100}
@@ -2027,26 +2061,26 @@ export function Timeline({
               }}
               style={{
                 width: 56,
-                fontSize: 10,
-                background: "#1a1a1a",
-                color: "#ffffff",
-                border: "1px solid #555",
+                fontSize: 11,
+                background: halo.inputBg,
+                color: halo.text,
+                border: `1px solid ${halo.inputBorder}`,
                 padding: "1px 4px",
                 borderRadius: 2,
                 outline: "none",
               }}
             />
-            <span style={{ fontSize: 9, color: "#777" }}>(-100 to 100)</span>
+            <span style={{ fontSize: 9, color: chrome.textDisabled }}>(-100 to 100)</span>
             {/* Custom ease button — only for motion tweens */}
             {!isShape && (
               <>
                 <button
                   onClick={() => setEaseCurveDialogOpen(true)}
                   style={{
-                    fontSize: 10,
-                    background: kf.motionEaseCurve ? "#225522" : "#2a2a2a",
-                    border: `1px solid ${kf.motionEaseCurve ? "#44aa44" : "#555"}`,
-                    color: kf.motionEaseCurve ? "#88ee88" : "#cccccc",
+                    fontSize: 11,
+                    background: kf.motionEaseCurve ? "#D6F0D6" : chrome.panelBg,
+                    border: `1px solid ${kf.motionEaseCurve ? "#0A7A0A" : chrome.separator}`,
+                    color: kf.motionEaseCurve ? "#0A5A0A" : chrome.textDefault,
                     cursor: "pointer",
                     padding: "1px 6px",
                     borderRadius: 2,
@@ -2072,7 +2106,7 @@ export function Timeline({
                       fontSize: 9,
                       background: "none",
                       border: "none",
-                      color: "#888",
+                      color: chrome.textDisabled,
                       cursor: "pointer",
                       padding: "1px 4px",
                     }}
@@ -2082,7 +2116,7 @@ export function Timeline({
                   </button>
                 )}
                 {/* Rotate direction */}
-                <span style={{ fontSize: 10, color: "#aaa", marginLeft: 8 }}>Rotate:</span>
+                <span style={{ fontSize: 11, color: chrome.textDefault, marginLeft: 8 }}>Rotate:</span>
                 <select
                   value={kf.motionRotate}
                   onChange={(e) => {
@@ -2095,10 +2129,10 @@ export function Timeline({
                     onTimelineChange(newTimeline);
                   }}
                   style={{
-                    fontSize: 10,
-                    background: "#1a1a1a",
-                    color: "#ffffff",
-                    border: "1px solid #555",
+                    fontSize: 11,
+                    background: halo.inputBg,
+                    color: halo.text,
+                    border: `1px solid ${halo.inputBorder}`,
                     padding: "1px 2px",
                     borderRadius: 2,
                     outline: "none",
@@ -2113,7 +2147,7 @@ export function Timeline({
                 {/* Extra rotation turns — only visible when rotate is CW or CCW */}
                 {(kf.motionRotate === "cw" || kf.motionRotate === "ccw") && (
                   <>
-                    <span style={{ fontSize: 10, color: "#aaa" }}>×</span>
+                    <span style={{ fontSize: 11, color: chrome.textDefault }}>×</span>
                     <input
                       type="number"
                       min={0}
@@ -2131,10 +2165,10 @@ export function Timeline({
                       }}
                       style={{
                         width: 36,
-                        fontSize: 10,
-                        background: "#1a1a1a",
-                        color: "#ffffff",
-                        border: "1px solid #555",
+                        fontSize: 11,
+                        background: halo.inputBg,
+                        color: halo.text,
+                        border: `1px solid ${halo.inputBorder}`,
                         padding: "1px 4px",
                         borderRadius: 2,
                         outline: "none",
@@ -2145,7 +2179,7 @@ export function Timeline({
                 )}
                 {/* Scale checkbox */}
                 <label
-                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#aaa", marginLeft: 8, cursor: "pointer" }}
+                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: chrome.textDefault, marginLeft: 8, cursor: "pointer" }}
                   title="Interpolate scale during tween"
                 >
                   <input
@@ -2166,7 +2200,7 @@ export function Timeline({
                 </label>
                 {/* Orient to path checkbox */}
                 <label
-                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#aaa", cursor: "pointer" }}
+                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: chrome.textDefault, cursor: "pointer" }}
                   title="Orient symbol to motion path direction"
                 >
                   <input
@@ -2187,7 +2221,7 @@ export function Timeline({
                 </label>
                 {/* Sync checkbox */}
                 <label
-                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#aaa", cursor: "pointer" }}
+                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: chrome.textDefault, cursor: "pointer" }}
                   title="Sync symbol animation with parent timeline"
                 >
                   <input
@@ -2208,7 +2242,7 @@ export function Timeline({
                 </label>
                 {/* Snap checkbox */}
                 <label
-                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#aaa", cursor: "pointer" }}
+                  style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: chrome.textDefault, cursor: "pointer" }}
                   title="Snap object registration point to motion guide path"
                 >
                   <input
@@ -2232,7 +2266,7 @@ export function Timeline({
             {/* Blend mode selector — only for shape tweens */}
             {isShape && (
               <>
-                <span style={{ fontSize: 10, color: "#aaa", marginLeft: 8 }}>Blend:</span>
+                <span style={{ fontSize: 11, color: chrome.textDefault, marginLeft: 8 }}>Blend:</span>
                 <select
                   value={kf.shapeBlend}
                   onChange={(e) => {
@@ -2253,10 +2287,10 @@ export function Timeline({
                     );
                   }}
                   style={{
-                    fontSize: 10,
-                    background: "#1a1a1a",
-                    color: "#ffffff",
-                    border: "1px solid #555",
+                    fontSize: 11,
+                    background: halo.inputBg,
+                    color: halo.text,
+                    border: `1px solid ${halo.inputBorder}`,
                     padding: "1px 2px",
                     borderRadius: 2,
                     outline: "none",
@@ -2340,7 +2374,7 @@ export function Timeline({
 const iconButtonStyle: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#888",
+  color: chrome.textDisabled,
   cursor: "pointer",
   padding: 0,
   fontSize: 10,
@@ -2357,7 +2391,7 @@ const iconButtonStyle: React.CSSProperties = {
 const layerFooterBtnStyle: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#c0c0c0",
+  color: chrome.textDefault,
   cursor: "pointer",
   padding: "2px 3px",
   fontSize: 13,
@@ -2371,11 +2405,11 @@ const layerFooterBtnStyle: React.CSSProperties = {
 /** Inset/sunken numeric readout used in the timeline status bar. */
 const insetReadoutStyle: React.CSSProperties = {
   fontSize: 9,
-  color: "#222",
-  background: "#cfcfcf",
-  border: "1px solid #888",
-  borderTopColor: "#555",
-  borderLeftColor: "#555",
+  color: chrome.textDefault,
+  background: halo.inputBg,
+  border: `1px solid ${halo.inputBorderLight}`,
+  borderTopColor: halo.inputBorderDark,
+  borderLeftColor: halo.inputBorderDark,
   borderRadius: 1,
   padding: "1px 0",
   lineHeight: "14px",
@@ -2428,10 +2462,10 @@ function FrameCounterInput({
         style={{
           width,
           boxSizing: "border-box",
-          fontSize: 10,
-          background: "#1a1a1a",
-          color: "#ffffff",
-          border: "1px solid #5050ff",
+          fontSize: 11,
+          background: halo.inputBg,
+          color: halo.text,
+          border: `1px solid ${halo.haloBlue}`,
           padding: "1px 3px",
           borderRadius: 2,
           outline: "none",
@@ -2469,9 +2503,9 @@ function PlayBtn({
       title={title}
       onClick={onClick}
       style={{
-        background: active ? "#5050aa" : "#444",
-        border: `1px solid ${active ? "#7070cc" : "#555"}`,
-        color: "#ddd",
+        background: active ? halo.selectionColor : chrome.panelBg,
+        border: `1px solid ${active ? halo.haloBlue : chrome.separator}`,
+        color: chrome.textDefault,
         cursor: "pointer",
         fontSize: 11,
         padding: "1px 5px",
@@ -2535,8 +2569,8 @@ function HScrollBar({
         flex: 1,
         minWidth: 40,
         height: 14,
-        background: "#222",
-        border: "1px solid #1a1a1a",
+        background: halo.inputBg,
+        border: `1px solid ${chrome.separator}`,
         borderRadius: 2,
         overflow: "hidden",
       }}
@@ -2549,8 +2583,8 @@ function HScrollBar({
           bottom: 1,
           left: `${leftPct}%`,
           width: `${thumbPct}%`,
-          background: hasOverflow ? "#6a6a6a" : "#444",
-          border: "1px solid #808080",
+          background: hasOverflow ? halo.borderColor : chrome.insetFieldStrip,
+          border: `1px solid ${chrome.separator}`,
           borderRadius: 2,
           cursor: hasOverflow ? "grab" : "default",
         }}
@@ -2650,13 +2684,14 @@ function ContextMenuPopup({
         position: "fixed",
         left: x,
         top: y,
-        background: "#2e2e2e",
-        border: "1px solid #555",
+        background: chrome.panelBg,
+        border: `1px solid ${chrome.separator}`,
         borderRadius: 3,
         zIndex: 9999,
         minWidth: 180,
-        boxShadow: "2px 4px 12px rgba(0,0,0,0.5)",
+        boxShadow: "2px 4px 12px rgba(0,0,0,0.3)",
         padding: "3px 0",
+        ...chromeFont(),
       }}
     >
       {items.map((item) => {
@@ -2666,7 +2701,7 @@ function ContextMenuPopup({
               key={item.action + Math.random()}
               style={{
                 height: 1,
-                background: "#444",
+                background: chrome.separator,
                 margin: "3px 0",
               }}
             />
@@ -2683,21 +2718,24 @@ function ContextMenuPopup({
               alignItems: "center",
               padding: "4px 12px",
               fontSize: 11,
-              color: isDisabled ? "#666" : "#ddd",
+              color: isDisabled ? chrome.textDisabled : chrome.textDefault,
               cursor: isDisabled ? "default" : "pointer",
               gap: 16,
             }}
             onMouseEnter={(e) => {
-              if (!isDisabled)
-                (e.currentTarget as HTMLElement).style.background = "#4060a0";
+              if (!isDisabled) {
+                (e.currentTarget as HTMLElement).style.background = halo.haloBlue;
+                (e.currentTarget as HTMLElement).style.color = halo.inputBg;
+              }
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLElement).style.background = "transparent";
+              (e.currentTarget as HTMLElement).style.color = isDisabled ? chrome.textDisabled : chrome.textDefault;
             }}
           >
             <span>{item.label}</span>
             {item.shortcut && (
-              <span style={{ fontSize: 10, color: "#888" }}>{item.shortcut}</span>
+              <span style={{ fontSize: 10, color: chrome.textDisabled }}>{item.shortcut}</span>
             )}
           </div>
         );
@@ -2740,21 +2778,22 @@ function LayerTypeMenuPopup({
         position: "fixed",
         left: x,
         top: y,
-        background: "#2e2e2e",
-        border: "1px solid #555",
+        background: chrome.panelBg,
+        border: `1px solid ${chrome.separator}`,
         borderRadius: 3,
         zIndex: 9999,
         minWidth: 160,
-        boxShadow: "2px 4px 12px rgba(0,0,0,0.5)",
+        boxShadow: "2px 4px 12px rgba(0,0,0,0.3)",
         padding: "3px 0",
+        ...chromeFont(),
       }}
     >
       <div
         style={{
           padding: "3px 12px 4px",
           fontSize: 10,
-          color: "#888",
-          borderBottom: "1px solid #444",
+          color: chrome.textDisabled,
+          borderBottom: `1px solid ${chrome.separator}`,
           marginBottom: 3,
         }}
       >
@@ -2768,17 +2807,19 @@ function LayerTypeMenuPopup({
           alignItems: "center",
           padding: "4px 12px",
           fontSize: 11,
-          color: "#ddd",
+          color: chrome.textDefault,
           cursor: "pointer",
           gap: 8,
-          borderBottom: "1px solid #444",
+          borderBottom: `1px solid ${chrome.separator}`,
           marginBottom: 3,
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.background = "#4060a0";
+          (e.currentTarget as HTMLElement).style.background = halo.haloBlue;
+          (e.currentTarget as HTMLElement).style.color = halo.inputBg;
         }}
         onMouseLeave={(e) => {
           (e.currentTarget as HTMLElement).style.background = "transparent";
+          (e.currentTarget as HTMLElement).style.color = chrome.textDefault;
         }}
       >
         <span>Add Motion Guide</span>
@@ -2793,20 +2834,22 @@ function LayerTypeMenuPopup({
             justifyContent: "space-between",
             padding: "4px 12px",
             fontSize: 11,
-            color: currentType === type ? "#8ab4e8" : "#ddd",
+            color: currentType === type ? halo.haloBlue : chrome.textDefault,
             cursor: "pointer",
             gap: 8,
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = "#4060a0";
+            (e.currentTarget as HTMLElement).style.background = halo.haloBlue;
+            (e.currentTarget as HTMLElement).style.color = halo.inputBg;
           }}
           onMouseLeave={(e) => {
             (e.currentTarget as HTMLElement).style.background = "transparent";
+            (e.currentTarget as HTMLElement).style.color = currentType === type ? halo.haloBlue : chrome.textDefault;
           }}
         >
           <span>{label}</span>
           {currentType === type && (
-            <span style={{ fontSize: 10, color: "#8ab4e8" }}>*</span>
+            <span style={{ fontSize: 10, color: halo.haloBlue }}>*</span>
           )}
         </div>
       ))}
