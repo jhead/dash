@@ -1757,6 +1757,41 @@ function TextView({
 
       <div style={S.separator} />
 
+      {/* Baseline shift (continuous vertical glyph offset, in px) */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Baseline:</span>
+        <NumInput
+          value={obj.baselineShift ?? 0}
+          min={-100}
+          max={100}
+          style={{ width: 40 }}
+          onChange={(v) => onUpdateObject(obj.id, { baselineShift: Math.round(v) } as Partial<DisplayObject>)}
+        />
+        <span style={S.label}>px</span>
+      </div>
+
+      <div style={S.separator} />
+
+      {/* Orientation — horizontal / vertical (left-to-right) / vertical (right-to-left) */}
+      <div style={S.fieldGroup}>
+        <span style={S.label}>Orientation:</span>
+        <select
+          style={{ ...S.select, maxWidth: 150 }}
+          value={obj.orientation ?? "horizontal"}
+          onChange={(e) =>
+            onUpdateObject(obj.id, {
+              orientation: e.target.value as "horizontal" | "vertical-rtl" | "vertical-ltr",
+            } as Partial<DisplayObject>)
+          }
+        >
+          <option value="horizontal">Horizontal</option>
+          <option value="vertical-ltr">Vertical, left to right</option>
+          <option value="vertical-rtl">Vertical, right to left</option>
+        </select>
+      </div>
+
+      <div style={S.separator} />
+
       {/* Anti-alias mode */}
       <div style={S.fieldGroup}>
         <span style={S.label}>Anti-alias:</span>

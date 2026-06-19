@@ -581,6 +581,20 @@ export interface TextDisplayObject {
   /** Letter spacing / tracking in pixels. Default 0. */
   readonly letterSpacing?: number;
   /**
+   * Baseline shift in pixels: a continuous vertical glyph offset applied to the
+   * whole run. Positive raises the glyphs above the baseline (superscript-style),
+   * negative lowers them below it (subscript-style). Default 0.
+   *
+   * This is independent of the discrete {@link characterPosition} super/subscript
+   * (which Flash stores as a charPos byte and emits via HTML <sup>/<sub>):
+   * baselineShift is a free numeric nudge of the run's vertical origin.
+   *
+   * Stage renderer: subtracts baselineShift from each line's y (canvas +y is down,
+   * so a positive shift moves text up). SWF DefineText: subtracted from the
+   * TEXTRECORD YOffset (twips), shifting the whole glyph run's baseline.
+   */
+  readonly baselineShift?: number;
+  /**
    * Extra line spacing in pixels (added between lines). Default 0.
    * Maps to the DefineEditText HasLayout Leading field (SI16, in twips = px * 20).
    */

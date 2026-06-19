@@ -16,6 +16,9 @@ type DisplayObjectUpdates = Partial<
     underline: boolean;
     align: "left" | "center" | "right" | "justify";
     letterSpacing: number;
+    baselineShift: number;
+    orientation: "horizontal" | "vertical-rtl" | "vertical-ltr";
+    characterPosition: 0 | 1 | 2;
     scrollable: boolean;
     selectable: boolean;
     autoKern: boolean;

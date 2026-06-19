@@ -148,7 +148,24 @@ export function encodeDefineText(
    * historical behavior. When the font has been subsetted to a chosen embed range,
    * pass the map so glyph indices point at the right entries in the subset table.
    */
-  glyphIndexByCode?: ReadonlyMap<number, number>
+  glyphIndexByCode?: ReadonlyMap<number, number>,
+  /**
+   * Optional typography controls (task 1209). All values are in TWIPS already.
+   *  - `letterSpacingTwips`: tracking added to every glyph's advance (and, in
+   *    vertical orientation, to the inter-glyph vertical step). Default 0.
+   *  - `baselineShiftTwips`: shifts the whole run's baseline. Positive raises the
+   *    glyphs (subtracted from the TEXTRECORD YOffset). Default 0.
+   *  - `orientation`: "horizontal" (default), "vertical-ltr", or "vertical-rtl".
+   *    Vertical orientations stack each glyph in its own one-glyph TEXTRECORD with
+   *    a descending YOffset (top-to-bottom), zero horizontal advance, and columns
+   *    advancing left-to-right or right-to-left. DefineText has no orientation
+   *    flag, so Flash-style vertical text is realised purely via per-glyph layout.
+   */
+  typography?: {
+    readonly letterSpacingTwips?: number;
+    readonly baselineShiftTwips?: number;
+    readonly orientation?: "horizontal" | "vertical-rtl" | "vertical-ltr";
+  }
 ): Uint8Array {
   const GLYPH_BITS = 8;
   // Advances are in twips and can exceed an 8-bit signed range for larger text
@@ -188,8 +205,51 @@ export function encodeDefineText(
   bw.writeUI8(GLYPH_BITS);
   bw.writeUI8(ADVANCE_BITS);
 
+  // Typography controls (task 1209). letterSpacing and baselineShift are already
+  // in twips; orientation selects horizontal vs vertical glyph layout.
+  const letterSpacingTwips = Math.round(typography?.letterSpacingTwips ?? 0);
+  const baselineShiftTwips = Math.round(typography?.baselineShiftTwips ?? 0);
+  const orientation = typography?.orientation ?? "horizontal";
+  const rgb = parseHexColor(color);
+  const glyphIndexFor = (code: number): number => {
+    const mappedIndex = glyphIndexByCode?.get(code);
+    return (mappedIndex ?? Math.max(0, code - 32)) & 0xff;
+  };
+  const advMask = (1 << ADVANCE_BITS) - 1;
+
+  if (orientation === "vertical-rtl" || orientation === "vertical-ltr") {
+    // Vertical text: DefineText has no orientation flag, so each glyph is emitted
+    // as its own one-glyph TEXTRECORD positioned by XOffset (column) and YOffset
+    // (row). Glyphs stack top-to-bottom; columns advance left-to-right or
+    // right-to-left. The per-glyph horizontal advance is 0 (a single glyph in the
+    // record), and the vertical step is fontSize + letterSpacing. Baseline shift
+    // nudges every column horizontally (toward the reading start).
+    const colStep = fontSize; // one column per source line; single line here
+    const baseColX = orientation === "vertical-rtl" ? x + colStep : x;
+    let glyphY = y;
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      // newline: reset row, advance column.
+      bw.writeUI8(0x8f); // style-change: font|color|yoff|xoff
+      bw.writeUI16LE(fontId);
+      bw.writeUI8(rgb.r);
+      bw.writeUI8(rgb.g);
+      bw.writeUI8(rgb.b);
+      bw.writeSI16LE(baseColX - baselineShiftTwips); // XOffset (column)
+      bw.writeSI16LE(glyphY); // YOffset (row), absolute
+      bw.writeUI16LE(fontSize); // TextHeight
+      bw.writeUI8(1); // GlyphCount = 1
+      bw.writeBits(glyphIndexFor(code), GLYPH_BITS);
+      bw.writeBits(0, ADVANCE_BITS); // advance 0: each record stands alone
+      bw.flushBits();
+      glyphY += fontSize + letterSpacingTwips;
+    }
+    bw.writeUI8(0x00); // TEXTRECORD terminator
+    return bw.getBytes();
+  }
+
   // ---------------------------------------------------------------------------
-  // TEXTRECORD (single record with all glyphs)
+  // TEXTRECORD (single record with all glyphs) — horizontal layout
   // ---------------------------------------------------------------------------
   // First byte is a GlyphStyleChange record. The style flags are (per SWF spec
   // §16, matching Ruffle's read_text_record):
@@ -217,7 +277,6 @@ export function encodeDefineText(
   bw.writeUI16LE(fontId);
 
   // TextColor: RGB (3 bytes for DefineText tag 11)
-  const rgb = parseHexColor(color);
   bw.writeUI8(rgb.r);
   bw.writeUI8(rgb.g);
   bw.writeUI8(rgb.b);
@@ -225,8 +284,9 @@ export function encodeDefineText(
   // XOffset: SI16 LE
   bw.writeSI16LE(x);
 
-  // YOffset: SI16 LE
-  bw.writeSI16LE(y);
+  // YOffset: SI16 LE. Baseline shift raises (positive) or lowers (negative) the
+  // run; canvas/SWF +y is down, so a positive shift subtracts from YOffset.
+  bw.writeSI16LE(y - baselineShiftTwips);
 
   // TextHeight: UI16 LE (font size in twips) — comes after the offsets.
   bw.writeUI16LE(fontSize);
@@ -237,13 +297,9 @@ export function encodeDefineText(
   // Glyph entries: UB[GlyphBits] GlyphIndex, SB[AdvanceBits] GlyphAdvance.
   // Advance is per-glyph in twips, derived from the embedded font's EM metrics
   // so the spacing matches the real glyph outlines.
-  const advMask = (1 << ADVANCE_BITS) - 1;
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
-    // Glyph index into the (possibly subsetted) font glyph table. With the full
-    // default table this is `code - 32`; with a subset, look it up in the map.
-    const mappedIndex = glyphIndexByCode?.get(code);
-    const glyphIndex = (mappedIndex ?? Math.max(0, code - 32)) & 0xff;
+    const glyphIndex = glyphIndexFor(code);
     let advance = glyphAdvanceTwips(code, fontSize);
     // Bake pair kerning into this glyph's advance (Flash-accurate static kerning):
     // the adjustment for (this glyph, next glyph) is added in the same EM space
@@ -252,6 +308,9 @@ export function encodeDefineText(
       const km = kerningAdjustEm(code, text.charCodeAt(i + 1));
       if (km !== 0) advance += Math.round((km / FONT_EM) * fontSize);
     }
+    // Letter spacing (tracking): add a fixed advance delta after every glyph
+    // except the last (no trailing space).
+    if (i + 1 < text.length) advance += letterSpacingTwips;
     // Clamp to a non-negative advance so a large kern cannot wrap the SI16.
     if (advance < 0) advance = 0;
     bw.writeBits(glyphIndex, GLYPH_BITS);

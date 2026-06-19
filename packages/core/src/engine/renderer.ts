@@ -581,25 +581,11 @@ function renderTextObject(
   ctx.font = `${fontStyle}${fontWeight}${obj.fontSize}px ${obj.fontFamily}`;
   ctx.fillStyle = colorToCss(obj.color);
 
-  const canvasAlign = obj.align === "justify" ? "left" : obj.align;
-  ctx.textAlign = canvasAlign;
-  ctx.textBaseline = "top";
-
-  // Compute the X anchor for the chosen alignment.
-  let drawX: number;
-  switch (obj.align) {
-    case "center":
-      drawX = obj.x + obj.width / 2;
-      break;
-    case "right":
-      drawX = obj.x + obj.width;
-      break;
-    default: // left or justify
-      drawX = obj.x;
-      break;
-  }
-
   const lineHeight = obj.fontSize * 1.2;
+  const letterSpacing = obj.letterSpacing ?? 0;
+  // Baseline shift: positive raises text (canvas +y is down, so subtract).
+  const baselineShift = obj.baselineShift ?? 0;
+  const orientation = obj.orientation ?? "horizontal";
 
   // Build the list of visual lines to render.
   let lines: string[];
@@ -619,10 +605,83 @@ function renderTextObject(
     }
   }
 
-  // Render each line.
-  let lineY = obj.y;
+  if (orientation === "vertical-rtl" || orientation === "vertical-ltr") {
+    // Vertical text: each "line" becomes a column of stacked glyphs running
+    // top-to-bottom; columns advance left-to-right (vertical-ltr) or
+    // right-to-left (vertical-rtl, the Flash default for vertical CJK text).
+    // Letter spacing adds vertical advance between glyphs; baseline shift nudges
+    // each column horizontally.
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const colWidth = obj.fontSize * 1.2;
+    let colX =
+      orientation === "vertical-rtl"
+        ? obj.x + obj.width - colWidth / 2
+        : obj.x + colWidth / 2;
+    const colStep = orientation === "vertical-rtl" ? -colWidth : colWidth;
+    for (const line of lines) {
+      let glyphY = obj.y;
+      for (const ch of line) {
+        // Baseline shift moves glyphs along the writing-direction-perpendicular
+        // (horizontal) axis for vertical text; positive shifts toward the
+        // reading start.
+        ctx.fillText(ch, colX - baselineShift, glyphY);
+        glyphY += obj.fontSize + letterSpacing;
+      }
+      colX += colStep;
+    }
+    ctx.restore();
+    return;
+  }
+
+  // Horizontal text.
+  const canvasAlign = obj.align === "justify" ? "left" : obj.align;
+  ctx.textBaseline = "top";
+
+  // Compute the X anchor for the chosen alignment.
+  let drawX: number;
+  switch (obj.align) {
+    case "center":
+      drawX = obj.x + obj.width / 2;
+      break;
+    case "right":
+      drawX = obj.x + obj.width;
+      break;
+    default: // left or justify
+      drawX = obj.x;
+      break;
+  }
+
+  let lineY = obj.y - baselineShift;
+  if (letterSpacing === 0) {
+    // Fast path: the native fillText with alignment, no per-glyph layout.
+    ctx.textAlign = canvasAlign;
+    for (const line of lines) {
+      ctx.fillText(line, drawX, lineY);
+      lineY += lineHeight;
+    }
+    ctx.restore();
+    return;
+  }
+
+  // Letter-spacing path: lay out glyph-by-glyph so the tracking delta is added
+  // after every glyph's advance. Alignment is applied by pre-measuring the line
+  // width (including the per-glyph spacing) and shifting the start X.
+  ctx.textAlign = "left";
+  const lineWidth = (line: string): number => {
+    let w = 0;
+    for (const ch of line) w += ctx.measureText(ch).width + letterSpacing;
+    return line.length > 0 ? w - letterSpacing : 0;
+  };
   for (const line of lines) {
-    ctx.fillText(line, drawX, lineY);
+    let startX = drawX;
+    if (obj.align === "center") startX = drawX - lineWidth(line) / 2;
+    else if (obj.align === "right") startX = drawX - lineWidth(line);
+    let penX = startX;
+    for (const ch of line) {
+      ctx.fillText(ch, penX, lineY);
+      penX += ctx.measureText(ch).width + letterSpacing;
+    }
     lineY += lineHeight;
   }
 

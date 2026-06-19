@@ -435,6 +435,137 @@ describe("Static text — emits DefineText (tag 11), glyph-indexed", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Task 1209 — orientation + tracking (letterSpacing) + baseline shift
+// ---------------------------------------------------------------------------
+describe("Static text typography (task 1209): tracking + baseline shift + orientation", () => {
+  /**
+   * Decode the first TEXTRECORD of a DefineText body. Layout after the style
+   * flag (0x8F) byte: FontID UI16, RGB(3), XOffset SI16, YOffset SI16,
+   * TextHeight UI16, GlyphCount UI8, then GlyphCount × (GlyphBits index +
+   * AdvanceBits advance). GlyphBits/AdvanceBits are emitted as the two bytes
+   * immediately before the first 0x8F flag; this encoder always uses 8/16.
+   */
+  function readSI16(body: Uint8Array, off: number): number {
+    const v = body[off] | (body[off + 1] << 8);
+    return v & 0x8000 ? v - 0x10000 : v;
+  }
+  function decodeFirstRecord(body: Uint8Array): {
+    xOffset: number;
+    yOffset: number;
+    textHeight: number;
+    glyphCount: number;
+    advances: number[];
+  } {
+    const flagIdx = body.indexOf(0x8f);
+    let p = flagIdx + 1;
+    p += 2; // FontID
+    p += 3; // RGB
+    const xOffset = readSI16(body, p); p += 2;
+    const yOffset = readSI16(body, p); p += 2;
+    const textHeight = body[p] | (body[p + 1] << 8); p += 2;
+    const glyphCount = body[p]; p += 1;
+    // GlyphBits=8, AdvanceBits=16 → each glyph entry is 8+16=24 bits = 3 bytes,
+    // byte-aligned because 8 is a byte boundary.
+    // Glyph entries are bit-packed via BitWriter (MSB-first): 8-bit index then
+    // 16-bit advance. Because 8 is byte-aligned, each entry occupies 3 bytes:
+    // [index], [advance hi], [advance lo] (big-endian advance within the stream).
+    const advances: number[] = [];
+    for (let g = 0; g < glyphCount; g++) {
+      p += 1; // skip the 8-bit glyph index
+      const adv = (body[p] << 8) | body[p + 1];
+      advances.push(adv & 0x8000 ? adv - 0x10000 : adv);
+      p += 2;
+    }
+    return { xOffset, yOffset, textHeight, glyphCount, advances };
+  }
+  function countStyleRecords(body: Uint8Array): number {
+    let n = 0;
+    for (const b of body) if (b === 0x8f) n++;
+    return n;
+  }
+  const compileText = (o: Partial<TextDisplayObject>) =>
+    parseSWFTags(compileDocument(makeDoc([makeText({ textType: "static", ...o })])))
+      .find((t) => t.code === TAG_DEFINE_TEXT)!.body;
+
+  it("tracking: positive letterSpacing increases every non-final glyph advance", () => {
+    const base = decodeFirstRecord(compileText({ text: "AB", letterSpacing: 0 }));
+    const tracked = decodeFirstRecord(compileText({ text: "AB", letterSpacing: 5 }));
+    // letterSpacing 5px = 100 twips added to the advance of the first glyph
+    // (the last glyph gets no trailing tracking).
+    expect(tracked.advances[0] - base.advances[0]).toBe(100);
+    // The final glyph's advance is unchanged (no trailing space).
+    expect(tracked.advances[1]).toBe(base.advances[1]);
+  });
+
+  it("tracking: negative letterSpacing decreases the advance (clamped ≥ 0)", () => {
+    const base = decodeFirstRecord(compileText({ text: "AB", letterSpacing: 0, fontSize: 40 }));
+    const tracked = decodeFirstRecord(compileText({ text: "AB", letterSpacing: -3, fontSize: 40 }));
+    // -3px = -60 twips on the first glyph advance.
+    expect(tracked.advances[0]).toBe(Math.max(0, base.advances[0] - 60));
+  });
+
+  it("baseline shift: positive shift raises the run (YOffset decreases by shift*20)", () => {
+    const base = decodeFirstRecord(compileText({ text: "Hi", baselineShift: 0 }));
+    const shifted = decodeFirstRecord(compileText({ text: "Hi", baselineShift: 4 }));
+    expect(base.yOffset - shifted.yOffset).toBe(80); // 4px * 20 twips
+  });
+
+  it("baseline shift: negative shift lowers the run (YOffset increases)", () => {
+    const base = decodeFirstRecord(compileText({ text: "Hi", baselineShift: 0 }));
+    const shifted = decodeFirstRecord(compileText({ text: "Hi", baselineShift: -6 }));
+    expect(shifted.yOffset - base.yOffset).toBe(120); // 6px * 20 twips
+  });
+
+  it("orientation horizontal: a single TEXTRECORD holds all glyphs", () => {
+    const body = compileText({ text: "ABC", orientation: "horizontal" });
+    expect(countStyleRecords(body)).toBe(1);
+    expect(decodeFirstRecord(body).glyphCount).toBe(3);
+  });
+
+  it("orientation vertical: one TEXTRECORD per glyph, stacked top-to-bottom", () => {
+    const body = compileText({ text: "ABC", orientation: "vertical-ltr", fontSize: 20 });
+    // One style-change record per glyph.
+    expect(countStyleRecords(body)).toBe(3);
+    // Decode all three records' YOffsets and confirm they increase by ~fontSize.
+    const yOffsets: number[] = [];
+    let idx = -1;
+    for (let r = 0; r < 3; r++) {
+      idx = body.indexOf(0x8f, idx + 1);
+      // YOffset is at idx + 1 + FontID(2) + RGB(3) + XOffset(2)
+      yOffsets.push(readSI16(body, idx + 1 + 2 + 3 + 2));
+    }
+    const fontTwips = 20 * 20;
+    expect(yOffsets[1] - yOffsets[0]).toBe(fontTwips);
+    expect(yOffsets[2] - yOffsets[1]).toBe(fontTwips);
+  });
+
+  it("orientation vertical-rtl vs vertical-ltr: columns start on opposite sides", () => {
+    const readFirstX = (body: Uint8Array) => {
+      const idx = body.indexOf(0x8f);
+      return readSI16(body, idx + 1 + 2 + 3); // XOffset
+    };
+    const ltr = readFirstX(compileText({ text: "X", orientation: "vertical-ltr", x: 0 }));
+    const rtl = readFirstX(compileText({ text: "X", orientation: "vertical-rtl", x: 0 }));
+    // RTL starts one column-width (fontSize twips) to the right of LTR.
+    expect(rtl).toBeGreaterThan(ltr);
+  });
+
+  it("vertical orientation factors letterSpacing into the row step", () => {
+    const readYAt = (body: Uint8Array, r: number) => {
+      let idx = -1;
+      for (let k = 0; k <= r; k++) idx = body.indexOf(0x8f, idx + 1);
+      return readSI16(body, idx + 1 + 2 + 3 + 2);
+    };
+    const fontSize = 20;
+    const tight = compileText({ text: "AB", orientation: "vertical-ltr", fontSize, letterSpacing: 0 });
+    const loose = compileText({ text: "AB", orientation: "vertical-ltr", fontSize, letterSpacing: 5 });
+    const tightStep = readYAt(tight, 1) - readYAt(tight, 0);
+    const looseStep = readYAt(loose, 1) - readYAt(loose, 0);
+    expect(looseStep - tightStep).toBe(100); // 5px * 20 twips
+  });
+});
+
 describe("DefineEditText flags — dynamic text", () => {
   it("dynamic text: HasText flag (bit 0) is set", () => {
     const decoded = compileAndDecode(makeText({ textType: "dynamic", text: "Score: 0" }));

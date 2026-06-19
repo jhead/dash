@@ -39,6 +39,24 @@ Flash Player 8. Anti-alias options (Property inspector):
 - Alignment (left/center/right/justify), margins, indent, line spacing (leading).
 - **Orientation** — horizontal, vertical (left-to-right), vertical (right-to-left).
 - **Selectable** toggle (allow text selection at runtime).
+
+> **Tracking, baseline shift & orientation (implementation).** These three controls live
+> on `TextDisplayObject` and round-trip through save/load.
+> - **Tracking (`letterSpacing`, px)** — Properties "Spacing". On stage it is a per-glyph
+>   horizontal advance delta (the renderer lays out glyph-by-glyph when spacing ≠ 0); in
+>   `DefineText` it is baked into each non-final glyph's advance (twips = px × 20). Named
+>   dynamic/input fields also get a runtime `TextFormat.letterSpacing` DoAction.
+> - **Baseline shift (`baselineShift`, px)** — Properties "Baseline". A *continuous*
+>   vertical run offset, independent of the discrete super/subscript `characterPosition`.
+>   Positive raises the glyphs: on stage it subtracts from each line's y, and in
+>   `DefineText` it subtracts from the TEXTRECORD YOffset (twips = px × 20).
+> - **Orientation (`orientation`)** — Properties "Orientation": `horizontal` (default),
+>   `vertical-ltr`, `vertical-rtl`. Vertical modes stack each glyph in its own row
+>   (top-to-bottom) with columns advancing L→R or R→L. The stage renderer draws stacked
+>   columns; `DefineText` emits one one-glyph TEXTRECORD per glyph with descending
+>   YOffsets and zero advance — SWF text has no orientation flag, so vertical text is
+>   realised purely via per-glyph layout. `orientation`/`letterSpacing` also persist in
+>   the binary FLA CPicText vertical/rtl/letterSpacing fields.
 - **Render as HTML** (dynamic/input) — supports `<a> <b> <i> <u> <font> <p> <br> <img> <li>`
   and `<textformat>`; CSS via `TextField.styleSheet`.
 - **Border/background** for dynamic/input fields.

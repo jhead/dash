@@ -308,7 +308,12 @@ export function runCharacterPass(input: CharacterPassInput): CharacterPassResult
                 xOffsetTwips,
                 fontSizeTwips,
                 obj.autoKern === true,
-                glyphIndexByCode
+                glyphIndexByCode,
+                {
+                  letterSpacingTwips: Math.round((obj.letterSpacing ?? 0) * 20),
+                  baselineShiftTwips: Math.round((obj.baselineShift ?? 0) * 20),
+                  orientation: obj.orientation ?? "horizontal",
+                }
               );
               writer.writeTag(Tag.DefineText, textBody);
             } else {
