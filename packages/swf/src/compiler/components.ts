@@ -45,8 +45,24 @@
  * controls (CheckBox/List/...) get author params for free. See
  * `buildComponentParamScript()` below.
  *
+ * PART 2.3 (task 1233) extends the SAME infra to two more form controls —
+ * `mx.controls.CheckBox` and `mx.controls.RadioButton` — and GENERALIZES the
+ * class/skin emission so adding a control is registry-driven (see `CONTROL_REGISTRY`).
+ * Each control is described by a `ControlSpec`:
+ *   - `kind`              — discriminant resolved from the class name.
+ *   - `buildMarks(...)`   — the NAMED OVERLAY MARKS (e.g. a check tick / radio dot)
+ *                          drawn as extra named children so the class can toggle their
+ *                          `_visible` when `selected` changes.
+ *   - `authorClassBody(fqn,labelLit)` — the control-specific AS2 method bodies appended
+ *                          to the shared base class (constructor seeds + setComponentParam
+ *                          + label mirroring are shared).
+ * CheckBox toggles a boolean `selected` on release (reflecting it into the `check_mk`
+ * mark's visibility) and honours the author's `selected`/`label`. RadioButton adds
+ * `groupName` mutual-exclusivity: selecting one deselects its group siblings via a
+ * `_root.__radioGroups` registry, and carries `data`/`value`.
+ *
  * EXPLICITLY OUT OF SCOPE (later waves): the full `mx.controls.*` AS2 framework,
- * Halo skins, and other controls (CheckBox / List / ComboBox / ...).
+ * Halo skins, and the niche long tail (List / ComboBox / DataGrid / Tree / containers).
  */
 import type {
   Color,
@@ -106,8 +122,17 @@ const FACE_COLOR: Color = { r: 0xe6, g: 0xe6, b: 0xe6, a: 0xff };
 const BORDER_COLOR: Color = { r: 0x66, g: 0x66, b: 0x66, a: 0xff };
 const LABEL_COLOR: Color = { r: 0x00, g: 0x00, b: 0x00, a: 0xff };
 
+/** Indicator box/circle fill (white) + the tick/dot mark colour (dark) for toggles. */
+const BOX_FILL_COLOR: Color = { r: 0xff, g: 0xff, b: 0xff, a: 0xff };
+const MARK_COLOR: Color = { r: 0x00, g: 0x33, b: 0x99, a: 0xff };
+
 /** Corner radius (px) of the rounded-rect face. */
 const CORNER_RADIUS = 6;
+
+/** Side length (px) of a CheckBox/RadioButton indicator box, left-aligned and centered vertically. */
+const INDICATOR_SIZE = 13;
+/** Left inset (px) of the indicator box. */
+const INDICATOR_INSET = 1;
 
 /**
  * Fully-qualified AS2 class name for a component, e.g. `mx.controls.Button`.
@@ -133,10 +158,65 @@ export function componentDefFor(item: ComponentItem): ComponentDef | undefined {
   );
 }
 
-/** The label text statically seeded into the skin's EditText (defaults to the item name). */
+/**
+ * The label text statically seeded into the skin's EditText. Prefers the catalog's
+ * default `label`/`text` param (e.g. "CheckBox", "Radio Button") so the seeded text
+ * matches Flash's default, falling back to the item/class name.
+ */
 export function componentLabel(item: ComponentItem): string {
+  const def = componentDefFor(item);
+  if (def) {
+    const labelParam = def.parameters.find((p) => p.name === "label" || p.name === "text");
+    if (labelParam && labelParam.defaultValue) return labelParam.defaultValue;
+  }
   const cls = item.componentName?.trim() || item.name;
   return cls || "Button";
+}
+
+// ---------------------------------------------------------------------------
+// Control registry (task 1233, Part 2.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Which built-in control a placed component is. Resolved from the class name's
+ * trailing identifier so an explicit dotted `linkage.className` still classifies.
+ * Everything that is not a recognised toggle control falls back to `"button"`
+ * (the Part-2.1 behaviour), so existing controls + the long tail are unaffected.
+ */
+export type ControlKind = "button" | "checkbox" | "radiobutton";
+
+/** Resolve a control's kind from its (possibly dotted) class name. */
+export function controlKindFor(className: string): ControlKind {
+  const leaf = className.split(".").pop() || className;
+  if (leaf === "CheckBox") return "checkbox";
+  if (leaf === "RadioButton") return "radiobutton";
+  return "button";
+}
+
+/**
+ * A named overlay mark (besides the face + label) placed as an extra named child in
+ * the skin sprite so the AS2 class can toggle its `_visible`. e.g. the check tick or
+ * the radio dot. Each carries its own DefineShape4 geometry (hoisted top-level).
+ */
+interface SkinMark {
+  /** PlaceObject2 instance name (resolvable as `this.<name>` from the class). */
+  readonly name: string;
+  /** The mark geometry (origin-relative; placed at depth>face). */
+  readonly shape: Shape;
+}
+
+/** Per-control description driving skin + class emission (replaces per-control if-chains). */
+interface ControlSpec {
+  /** Named overlay marks (check tick / radio dot). Empty for a plain Button. */
+  buildMarks(width: number, height: number): SkinMark[];
+  /**
+   * Control-specific AS2 method/handler bodies appended to the shared base class.
+   * `fqn` is the fully-qualified `_global.<class>` path; `labelLit` the seeded label.
+   * The shared base already defines the constructor, setLabel/getLabel, setText,
+   * setComponentParam (label/text mirroring), onLoad, onRollOver/Out. A control adds
+   * its selection state + click handler here.
+   */
+  authorClassBody(fqn: string, labelLit: string): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,49 +287,23 @@ export function buildComponentParamScript(
 // ---------------------------------------------------------------------------
 
 /**
- * Author a FLAT, self-contained AS2 class for a placed component and return the
- * compiled AVM1 bytecode (via @flash/core's `compileAS2`).
+ * The SHARED base-class AS2 source common to every control: constructor (label
+ * seed + mirror), setLabel/getLabel, setText, the generic setComponentParam shim
+ * (label/text mirroring + a `selected` reflection hook), onLoad, and roll hover.
  *
- * The class is authored as plain dotted-global assignments rather than `class`
- * syntax. The AS2 compiler's `compileClassDecl` only supports a single-identifier
- * class name (it emits `Name = function ...` via ActionSetVariable), but a
- * component's class name is dotted (`mx.controls.Button`). Authoring it as
- * `_global.mx.controls.Button = function(){...}` lets the existing registerClass
- * DoInitAction (`ActionGetVariable "mx.controls.Button"`) resolve the constructor:
- * AVM1's GetVariable walks the dotted path and falls back to `_global`.
- *
- * The class implements:
- *   - constructor:  seeds `this.label`, mirrors it into the named `label_txt`
- *                   child (the EditText placed in the skin sprite).
- *   - setLabel(s):  param-driven update of both `this.label` and `label_txt.text`.
- *   - getLabel():   accessor.
- *   - onLoad:       re-asserts the label once the child is attached (clip-event
- *                   parity for the Ruffle oracle).
- *   - onRollOver / onRollOut: dim/restore the face alpha on hover.
- *   - onRelease:    runtime click handler (sprites with onRelease become buttons
- *                   in AVM1) — restores alpha and traces, proving the instance is live.
+ * `setComponentParam` here also forwards a `selected` param to `this.setSelected`
+ * when the subclass defines one — so the generic Part-2.2 param delivery
+ * (`_root.<name>.setComponentParam("selected", true)`) drives the toggle controls
+ * without any control-specific param plumbing in frames.ts.
  */
-export function authorComponentClassBytecode(className: string, label: string): Uint8Array {
-  // Build the namespace guards + the fully-qualified global path. e.g.
-  // mx.controls.Button → ensure _global.mx and _global.mx.controls exist first.
-  const parts = className.split(".");
-  const guards: string[] = [];
-  let path = "_global";
-  for (let i = 0; i < parts.length - 1; i++) {
-    path += "." + parts[i];
-    guards.push(`if (${path} == undefined) { ${path} = {}; }`);
-  }
-  const fqn = "_global." + className;
-  // JSON.stringify gives a correctly quoted/escaped AS2 string literal.
-  const labelLit = JSON.stringify(label);
-
-  const src = `
-${guards.join("\n")}
+function authorBaseClassBody(fqn: string, labelLit: string): string {
+  return `
 ${fqn} = function() {
   this.label = ${labelLit};
   if (this.label_txt != undefined) {
     this.label_txt.text = this.label;
   }
+  if (this.__init != undefined) { this.__init(); }
 };
 ${fqn}.prototype.setLabel = function(s) {
   this.label = s;
@@ -267,6 +321,10 @@ ${fqn}.prototype.setText = function(s) {
   }
 };
 ${fqn}.prototype.setComponentParam = function(name, value) {
+  if (name == "selected" && this.setSelected != undefined) {
+    this.setSelected(value);
+    return;
+  }
   this[name] = value;
   if ((name == "label" || name == "text") && this.label_txt != undefined) {
     this.label_txt.text = value;
@@ -276,6 +334,7 @@ ${fqn}.prototype.onLoad = function() {
   if (this.label_txt != undefined) {
     this.label_txt.text = this.label;
   }
+  if (this.__refresh != undefined) { this.__refresh(); }
 };
 ${fqn}.prototype.onRollOver = function() {
   this._alpha = 70;
@@ -283,11 +342,173 @@ ${fqn}.prototype.onRollOver = function() {
 ${fqn}.prototype.onRollOut = function() {
   this._alpha = 100;
 };
-${fqn}.prototype.onRelease = function() {
+${fqn}.prototype.__inBounds = function() {
+  // Manual point-in-bbox test in PARENT (_root) coords. We do NOT use
+  // MovieClip.hitTest: the bundled Ruffle build returns false for a registerClass'd
+  // movieclip's bbox/shape hitTest, so we compare the parent-space mouse position to
+  // the clip's own _x/_y/_width/_height (all in parent space). This is the reliable
+  // headless click path; broadcast onMouseDown delivers the event to every clip.
+  var mx = this._parent._xmouse;
+  var my = this._parent._ymouse;
+  return (mx >= this._x && mx <= this._x + this._width && my >= this._y && my <= this._y + this._height);
+};
+${fqn}.prototype.onMouseDown = function() {
+  // Broadcast mouse handler (Ruffle dispatches onMouseDown to EVERY movieclip that
+  // defines it). Gate on the manual bbox test so only a press ON THIS control toggles
+  // it. (Real Flash would use the button-mode onPress; this manual path matches it and
+  // also fires in headless Ruffle.)
+  if (this.__inBounds()) {
+    this.__handleClick();
+  }
+};
+`;
+}
+
+/** Button's runtime click handler (Part 2.1 behaviour, unchanged trace). */
+function authorButtonClassBody(fqn: string, _labelLit: string): string {
+  return `
+${fqn}.prototype.__handleClick = function() {
   this._alpha = 100;
   trace("[component] " + this.label + " released");
 };
 `;
+}
+
+/**
+ * CheckBox: a boolean `selected` that toggles on each click. `setSelected` reflects
+ * the value into both `this.selected` and the named `check_mk` tick child's
+ * `_visible` (the observable pixel change for the Ruffle oracle). `__init`/`__refresh`
+ * seed the initial (deselected) visual.
+ */
+function authorCheckBoxClassBody(fqn: string, _labelLit: string): string {
+  return `
+${fqn}.prototype.__init = function() {
+  this.selected = false;
+};
+${fqn}.prototype.setSelected = function(v) {
+  this.selected = (v == true);
+  this.__refresh();
+};
+${fqn}.prototype.getSelected = function() {
+  return this.selected;
+};
+${fqn}.prototype.__refresh = function() {
+  if (this.check_mk != undefined) {
+    this.check_mk._visible = this.selected;
+  }
+};
+${fqn}.prototype.__handleClick = function() {
+  this.setSelected(!this.selected);
+  trace("[component] " + this.label + " selected=" + this.selected);
+};
+`;
+}
+
+/**
+ * RadioButton: like CheckBox but selection is MUTUALLY EXCLUSIVE within a
+ * `groupName`. A `_root.__radioGroups` registry maps groupName → the currently
+ * selected member; selecting one deselects the prior member of its group. Carries
+ * `data`/`value`. Clicking an already-selected radio keeps it selected (Flash
+ * behaviour — a radio cannot toggle itself off by clicking).
+ */
+function authorRadioButtonClassBody(fqn: string, _labelLit: string): string {
+  return `
+${fqn}.prototype.__init = function() {
+  this.selected = false;
+  if (this.groupName == undefined) { this.groupName = "radioGroup"; }
+};
+${fqn}.prototype.setSelected = function(v) {
+  if (v == true) {
+    this.__selectInGroup();
+  } else {
+    this.selected = false;
+    this.__refresh();
+  }
+};
+${fqn}.prototype.getSelected = function() {
+  return this.selected;
+};
+${fqn}.prototype.getValue = function() {
+  if (this.value != undefined) { return this.value; }
+  return this.data;
+};
+${fqn}.prototype.__refresh = function() {
+  if (this.dot_mk != undefined) {
+    this.dot_mk._visible = this.selected;
+  }
+};
+${fqn}.prototype.__selectInGroup = function() {
+  if (_root.__radioGroups == undefined) { _root.__radioGroups = {}; }
+  var prev = _root.__radioGroups[this.groupName];
+  if (prev != undefined && prev != this) {
+    prev.selected = false;
+    prev.__refresh();
+  }
+  _root.__radioGroups[this.groupName] = this;
+  this.selected = true;
+  this.__refresh();
+};
+${fqn}.prototype.__handleClick = function() {
+  this.__selectInGroup();
+  trace("[component] radio " + this.label + " group=" + this.groupName + " selected");
+};
+`;
+}
+
+const CONTROL_REGISTRY: Record<ControlKind, ControlSpec> = {
+  button: {
+    buildMarks: () => [],
+    authorClassBody: authorButtonClassBody,
+  },
+  checkbox: {
+    buildMarks: (w, h) => [{ name: "check_mk", shape: buildCheckMarkShape(w, h) }],
+    authorClassBody: authorCheckBoxClassBody,
+  },
+  radiobutton: {
+    buildMarks: (w, h) => [{ name: "dot_mk", shape: buildRadioDotShape(w, h) }],
+    authorClassBody: authorRadioButtonClassBody,
+  },
+};
+
+/**
+ * Author a FLAT, self-contained AS2 class for a placed component and return the
+ * compiled AVM1 bytecode (via @flash/core's `compileAS2`).
+ *
+ * The class is authored as plain dotted-global assignments rather than `class`
+ * syntax. The AS2 compiler's `compileClassDecl` only supports a single-identifier
+ * class name (it emits `Name = function ...` via ActionSetVariable), but a
+ * component's class name is dotted (`mx.controls.Button`). Authoring it as
+ * `_global.mx.controls.Button = function(){...}` lets the existing registerClass
+ * DoInitAction (`ActionGetVariable "mx.controls.Button"`) resolve the constructor:
+ * AVM1's GetVariable walks the dotted path and falls back to `_global`.
+ *
+ * Shared base methods (constructor/label/setComponentParam/onLoad/hover) are emitted
+ * for EVERY control; the registry-selected `authorClassBody` appends the control's
+ * selection state + click handler (toggle for CheckBox, group-exclusive for
+ * RadioButton, trace-only for Button).
+ */
+export function authorComponentClassBytecode(className: string, label: string): Uint8Array {
+  // Build the namespace guards + the fully-qualified global path. e.g.
+  // mx.controls.Button → ensure _global.mx and _global.mx.controls exist first.
+  const parts = className.split(".");
+  const guards: string[] = [];
+  let path = "_global";
+  for (let i = 0; i < parts.length - 1; i++) {
+    path += "." + parts[i];
+    guards.push(`if (${path} == undefined) { ${path} = {}; }`);
+  }
+  const fqn = "_global." + className;
+  // JSON.stringify gives a correctly quoted/escaped AS2 string literal.
+  const labelLit = JSON.stringify(label);
+
+  const spec = CONTROL_REGISTRY[controlKindFor(className)];
+  const src =
+    "\n" +
+    guards.join("\n") +
+    "\n" +
+    authorBaseClassBody(fqn, labelLit) +
+    spec.authorClassBody(fqn, labelLit) +
+    "\n";
   return compileAS2(src);
 }
 
@@ -343,18 +564,161 @@ function buildButtonFaceShape(width: number, height: number): Shape {
   };
 }
 
+/** Geometry of a toggle control's left indicator (box for CheckBox, circle for RadioButton). */
+function indicatorBox(height: number): { x0: number; y0: number; size: number } {
+  const size = Math.min(INDICATOR_SIZE, height - 2);
+  return { x0: INDICATOR_INSET, y0: (height - size) / 2, size };
+}
+
 /**
- * Build a centered dynamic-text TextDisplayObject for the component label. It is
- * given the instance name `label_txt` at PLACEMENT time (PlaceObject2 name); the
- * DefineEditText itself carries the statically seeded initial text.
+ * CheckBox / RadioButton face: a small left indicator (a square outline box for the
+ * CheckBox, a circle for the RadioButton) — the clickable visual that the tick/dot
+ * mark overlays. Origin (0,0); the label EditText is placed to its right.
  */
-function buildLabelTextObject(label: string, width: number, height: number): TextDisplayObject {
+function buildToggleFaceShape(kind: "checkbox" | "radiobutton", _width: number, height: number): Shape {
+  const { x0, y0, size } = indicatorBox(height);
+  const stroke = {
+    type: "solid" as const,
+    color: BORDER_COLOR,
+    width: 1,
+    caps: "round" as const,
+    joints: "round" as const,
+    miterLimit: 3,
+  };
+
+  if (kind === "radiobutton") {
+    // A circle approximated by 4 quadratic arcs (radius = size/2).
+    const cx = x0 + size / 2;
+    const cy = y0 + size / 2;
+    const r = size / 2;
+    const k = r; // quadratic control offset for a near-circular arc
+    return {
+      id: "component-face",
+      paths: [
+        {
+          start: { x: cx + r, y: cy },
+          segments: [
+            { type: "curve", control: { x: cx + k, y: cy + k }, to: { x: cx, y: cy + r } },
+            { type: "curve", control: { x: cx - k, y: cy + k }, to: { x: cx - r, y: cy } },
+            { type: "curve", control: { x: cx - k, y: cy - k }, to: { x: cx, y: cy - r } },
+            { type: "curve", control: { x: cx + k, y: cy - k }, to: { x: cx + r, y: cy } },
+          ],
+          closed: true,
+          fill: { type: "solid", color: BOX_FILL_COLOR },
+          stroke,
+        },
+      ],
+    };
+  }
+
+  // CheckBox: a square outline box.
+  const x1 = x0 + size;
+  const y1 = y0 + size;
+  return {
+    id: "component-face",
+    paths: [
+      {
+        start: { x: x0, y: y0 },
+        segments: [
+          { type: "line", to: { x: x1, y: y0 } },
+          { type: "line", to: { x: x1, y: y1 } },
+          { type: "line", to: { x: x0, y: y1 } },
+          { type: "line", to: { x: x0, y: y0 } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: BOX_FILL_COLOR },
+        stroke,
+      },
+    ],
+  };
+}
+
+/** Resolve the face Shape for a control kind. */
+function buildFaceShape(kind: ControlKind, width: number, height: number): Shape {
+  if (kind === "checkbox" || kind === "radiobutton") return buildToggleFaceShape(kind, width, height);
+  return buildButtonFaceShape(width, height);
+}
+
+/** The check tick (a filled ✓ chevron) drawn inside the CheckBox indicator box. */
+function buildCheckMarkShape(_width: number, height: number): Shape {
+  const { x0, y0, size } = indicatorBox(height);
+  // A bold tick: down-stroke to the elbow, up-stroke to the top-right, traced as a
+  // filled quad outline so it survives Ruffle's tessellator (no thin 1px fills).
+  const lx = x0 + size * 0.22; // left arm start
+  const ly = y0 + size * 0.52;
+  const mx = x0 + size * 0.42; // elbow
+  const my = y0 + size * 0.74;
+  const rx = x0 + size * 0.82; // top-right tip
+  const ry = y0 + size * 0.2;
+  const t = Math.max(1.6, size * 0.16); // stroke thickness baked into the fill
+  return {
+    id: "check-mark",
+    paths: [
+      {
+        start: { x: lx, y: ly },
+        segments: [
+          { type: "line", to: { x: mx, y: my } },
+          { type: "line", to: { x: rx, y: ry } },
+          { type: "line", to: { x: rx - t * 0.7, y: ry - t * 0.7 } },
+          { type: "line", to: { x: mx, y: my - t } },
+          { type: "line", to: { x: lx + t * 0.7, y: ly - t * 0.7 } },
+          { type: "line", to: { x: lx, y: ly } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: MARK_COLOR },
+      },
+    ],
+  };
+}
+
+/** The radio dot (a filled circle) drawn inside the RadioButton indicator circle. */
+function buildRadioDotShape(_width: number, height: number): Shape {
+  const { x0, y0, size } = indicatorBox(height);
+  const cx = x0 + size / 2;
+  const cy = y0 + size / 2;
+  const r = size * 0.28;
+  const k = r;
+  return {
+    id: "radio-dot",
+    paths: [
+      {
+        start: { x: cx + r, y: cy },
+        segments: [
+          { type: "curve", control: { x: cx + k, y: cy + k }, to: { x: cx, y: cy + r } },
+          { type: "curve", control: { x: cx - k, y: cy + k }, to: { x: cx - r, y: cy } },
+          { type: "curve", control: { x: cx - k, y: cy - k }, to: { x: cx, y: cy - r } },
+          { type: "curve", control: { x: cx + k, y: cy - k }, to: { x: cx + r, y: cy } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: MARK_COLOR },
+      },
+    ],
+  };
+}
+
+/**
+ * Build a dynamic-text TextDisplayObject for the component label. It is given the
+ * instance name `label_txt` at PLACEMENT time (PlaceObject2 name); the DefineEditText
+ * itself carries the statically seeded initial text.
+ *
+ * A plain Button centers its label across the whole face. A CheckBox/RadioButton
+ * left-aligns the label to the RIGHT of the indicator box (matching Flash's layout).
+ */
+function buildLabelTextObject(
+  kind: ControlKind,
+  label: string,
+  width: number,
+  height: number,
+): TextDisplayObject {
+  const toggle = kind === "checkbox" || kind === "radiobutton";
+  const { x0, size } = indicatorBox(height);
+  const labelX = toggle ? x0 + size + 4 : 0;
   return {
     type: "text",
     id: "label_txt",
-    x: 0,
+    x: labelX,
     y: 0,
-    width,
+    width: Math.max(10, width - labelX),
     height,
     text: label,
     textType: "dynamic",
@@ -363,7 +727,7 @@ function buildLabelTextObject(label: string, width: number, height: number): Tex
     bold: false,
     italic: false,
     color: LABEL_COLOR,
-    align: "center",
+    align: toggle ? "left" : "center",
     multiline: false,
     wordWrap: false,
     instanceName: "label_txt",
@@ -387,21 +751,31 @@ function encodeTagRecord(tagType: number, body: Uint8Array): Uint8Array {
   return bw.getBytes();
 }
 
+/** A named overlay mark already hoisted to a char id, to be placed inside the skin sprite. */
+interface PlacedMark {
+  readonly name: string;
+  readonly charId: number;
+}
+
 /**
  * Build the DefineSprite tag *body* for the component skin: a single-frame
- * timeline that places the face shape (depth 1) and the named label EditText
- * (depth 2, instance name `label_txt`), then ShowFrame + End.
+ * timeline that places the face shape (depth 1), the named label EditText
+ * (depth 2, instance name `label_txt`), and any NAMED OVERLAY MARKS (depth 3+,
+ * e.g. `check_mk` / `dot_mk`), then ShowFrame + End.
  *
- * The face shape and EditText characters must be defined at TOP LEVEL before this
+ * The face shape, EditText, and mark shapes must be defined at TOP LEVEL before this
  * sprite (definition tags are forbidden inside a sprite), so the caller hoists
  * `encodeDefineShape4` / `encodeDefineEditText` first; this body only carries the
- * two PlaceObject2 control tags.
+ * PlaceObject2 control tags. The marks are placed VISIBLE at compile time; the
+ * registerClass-bound AS2 class hides them via `_visible = selected` in its
+ * constructor/`__refresh` (initial state deselected).
  */
 export function encodeComponentSkinSprite(
   spriteId: number,
   faceCharId: number,
   labelCharId: number,
   labelObj: TextDisplayObject,
+  marks: readonly PlacedMark[] = [],
 ): Uint8Array {
   const bw = new BitWriter();
   bw.writeUI16LE(spriteId);
@@ -418,6 +792,19 @@ export function encodeComponentSkinSprite(
       encodePlaceObject2WithName(labelCharId, 2, labelObj.x, labelObj.y, labelObj.instanceName!),
     ),
   );
+
+  // Place each named overlay mark at depth 3+ — the instance name makes
+  // `this.check_mk` / `this.dot_mk` resolvable so the class can toggle `_visible`.
+  let depth = 3;
+  for (const mark of marks) {
+    bw.writeBytes(
+      encodeTagRecord(
+        Tag.PlaceObject2,
+        encodePlaceObject2WithName(mark.charId, depth, 0, 0, mark.name),
+      ),
+    );
+    depth++;
+  }
 
   bw.writeBytes(encodeTagRecord(Tag.ShowFrame, new Uint8Array(0)));
   bw.writeBytes(encodeTagRecord(Tag.End, new Uint8Array(0)));
@@ -496,17 +883,29 @@ export function runComponentPass(input: ComponentPassInput): ComponentPassResult
     const className = componentClassName(component);
     const linkageId = componentLinkageIdentifier(component);
     const label = componentLabel(component);
-    const width = DEFAULT_BUTTON_WIDTH;
-    const height = DEFAULT_BUTTON_HEIGHT;
+    const kind = controlKindFor(className);
+    const spec = CONTROL_REGISTRY[kind];
+    // Default placement size from the catalog when known (falls back to the Button size).
+    const def = componentDefFor(component);
+    const width = def?.defaultWidth ?? DEFAULT_BUTTON_WIDTH;
+    const height = def?.defaultHeight ?? DEFAULT_BUTTON_HEIGHT;
 
     // 1. Hoisted skin definitions (top-level, BEFORE the DefineSprite).
     const faceCharId = writer.nextCharId();
-    writer.writeTag(Tag.DefineShape4, encodeDefineShape4(faceCharId, buildButtonFaceShape(width, height)));
+    writer.writeTag(Tag.DefineShape4, encodeDefineShape4(faceCharId, buildFaceShape(kind, width, height)));
 
-    const labelObj = buildLabelTextObject(label, width, height);
+    const labelObj = buildLabelTextObject(kind, label, width, height);
     const labelCharId = writer.nextCharId();
     // No embedded font id → device-font rendering (HasFont unset); text still seeded.
     writer.writeTag(Tag.DefineEditText, encodeDefineEditText(labelCharId, labelObj));
+
+    // Hoist each control mark's DefineShape4 (check tick / radio dot) above the sprite.
+    const placedMarks: PlacedMark[] = [];
+    for (const mark of spec.buildMarks(width, height)) {
+      const markCharId = writer.nextCharId();
+      writer.writeTag(Tag.DefineShape4, encodeDefineShape4(markCharId, mark.shape));
+      placedMarks.push({ name: mark.name, charId: markCharId });
+    }
 
     // 2. The skin DefineSprite, registered under the ComponentItem id so the stage
     //    SymbolInstance resolves to it.
@@ -514,7 +913,7 @@ export function runComponentPass(input: ComponentPassInput): ComponentPassResult
     charIdMap.set(component.id, spriteId);
     writer.writeTag(
       Tag.DefineSprite,
-      encodeComponentSkinSprite(spriteId, faceCharId, labelCharId, labelObj),
+      encodeComponentSkinSprite(spriteId, faceCharId, labelCharId, labelObj, placedMarks),
     );
 
     // 3. ExportAssets entry under the linkage identifier (defaults to class name).

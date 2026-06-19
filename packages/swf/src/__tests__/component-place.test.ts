@@ -721,3 +721,153 @@ describe("live component parameter delivery (task 1232, Part 2.2)", () => {
     expect(strings).toContain("Hello World");
   });
 });
+
+describe("functional CheckBox + RadioButton controls (task 1233, Part 2.3)", () => {
+  /**
+   * Compile a single-instance doc for the named control and recover its skin sprite
+   * char id + the structural tags around it. Shared across the CheckBox/RadioButton
+   * assertions below.
+   */
+  function compileControl(componentName: string, className: string, instanceName = "ctrl") {
+    const component = makeComponent({ componentName, name: componentName, packageName: "mx.controls" });
+    const instance: SymbolInstance = { ...makeInstance(component.id), instanceName };
+    const doc = makeDoc(component, instance);
+    const tags = parseSWF(compileDocument(doc));
+
+    const exports = tags
+      .filter((t) => t.code === TAG_EXPORT_ASSETS)
+      .flatMap((t) => parseExportAssets(t.body));
+    const exportEntry = exports.find((e) => e.name === className);
+    return { tags, exports, exportEntry };
+  }
+
+  for (const ctrl of [
+    { componentName: "CheckBox", className: "mx.controls.CheckBox", mark: "check_mk" },
+    { componentName: "RadioButton", className: "mx.controls.RadioButton", mark: "dot_mk" },
+  ]) {
+    describe(ctrl.componentName, () => {
+      it(`emits ExportAssets + a registerClass DoInitAction for ${ctrl.className}`, () => {
+        const { tags, exportEntry } = compileControl(ctrl.componentName, ctrl.className);
+        expect(exportEntry, `ExportAssets must list ${ctrl.className}`).toBeDefined();
+        const spriteId = exportEntry!.charId;
+
+        const initForComponent = tags.filter(
+          (t) => t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === spriteId
+        );
+        const registerInit = initForComponent.find((t) =>
+          pushedStrings(t.body).includes("registerClass")
+        );
+        expect(registerInit, "a DoInitAction must register the class").toBeDefined();
+        const strings = pushedStrings(registerInit!.body);
+        expect(strings).toContain("Object");
+        expect(strings).toContain("registerClass");
+        expect(strings).toContain(ctrl.className);
+      });
+
+      it("emits the class-definition DoInitAction (DefineFunction2) BEFORE registerClass", () => {
+        const { tags, exportEntry } = compileControl(ctrl.componentName, ctrl.className);
+        const spriteId = exportEntry!.charId;
+
+        const initIndices: { idx: number; tag: SWFTag }[] = [];
+        tags.forEach((t, idx) => {
+          if (t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === spriteId) {
+            initIndices.push({ idx, tag: t });
+          }
+        });
+        expect(initIndices.length).toBe(2);
+
+        const classInit = initIndices.find((e) => bytecodeHasDefineFunction2(e.tag.body));
+        const registerInit = initIndices.find((e) =>
+          pushedStrings(e.tag.body).includes("registerClass")
+        );
+        expect(classInit, "class DoInitAction must define functions via DefineFunction2").toBeDefined();
+        expect(registerInit, "registerClass DoInitAction must exist").toBeDefined();
+        // Class definition is ordered before registerClass.
+        expect(classInit!.idx).toBeLessThan(registerInit!.idx);
+      });
+
+      it(`emits a skin sprite with a DefineShape4 face, a named EditText, and the ${ctrl.mark} mark`, () => {
+        const { tags, exportEntry } = compileControl(ctrl.componentName, ctrl.className);
+        const spriteId = exportEntry!.charId;
+
+        const spriteTag = tags.find(
+          (t) => t.code === TAG_DEFINE_SPRITE && defineSpriteId(t.body) === spriteId
+        );
+        expect(spriteTag, "control skin DefineSprite must exist").toBeDefined();
+
+        // The face + mark are DefineShape4; the label is a DefineEditText (all hoisted).
+        const shapeTags = tags.filter((t) => t.code === TAG_DEFINE_SHAPE4);
+        const editTextTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+        // Two DefineShape4s for a toggle control: the indicator face + the tick/dot mark.
+        expect(shapeTags.length).toBeGreaterThanOrEqual(2);
+        expect(editTextTags.length).toBeGreaterThanOrEqual(1);
+
+        // The skin sprite places THREE named/positioned children: face, label, mark.
+        const innerTags = parseSpriteInnerTags(spriteTag!.body);
+        const innerPlaced = innerTags
+          .filter((t) => t.code === TAG_PLACE_OBJECT2)
+          .map((t) => placeObject2CharId(t.body))
+          .filter((id): id is number => id !== null);
+        expect(innerPlaced.length).toBe(3);
+
+        const shapeCharIds = new Set(shapeTags.map((t) => defineSpriteId(t.body)));
+        const editTextCharIds = new Set(editTextTags.map((t) => t.body[0] | (t.body[1] << 8)));
+        // Two of the three placements are DefineShape4 (face + mark); one is the EditText.
+        const placedShapes = innerPlaced.filter((id) => shapeCharIds.has(id));
+        const placedTexts = innerPlaced.filter((id) => editTextCharIds.has(id));
+        expect(placedShapes.length).toBe(2);
+        expect(placedTexts.length).toBe(1);
+      });
+    });
+  }
+
+  it("a CheckBox toggle clicks deliver no extra param when 'selected' is default-false", () => {
+    // Sanity: the default-deselected CheckBox emits no param DoAction (toggle is runtime-only).
+    const component = makeComponent({ componentName: "CheckBox", name: "CheckBox", packageName: "mx.controls" });
+    const instance: SymbolInstance = { ...makeInstance(component.id), instanceName: "cb" };
+    const tags = parseSWF(compileDocument(makeDoc(component, instance)));
+    const hasParam = tags
+      .filter((t) => t.code === TAG_DO_ACTION)
+      .some((t) => doActionPushedStrings(t.body).includes("setComponentParam"));
+    expect(hasParam).toBe(false);
+  });
+
+  it("delivers a non-default author 'selected' param to a CheckBox via setComponentParam", () => {
+    const component = makeComponent({ componentName: "CheckBox", name: "CheckBox", packageName: "mx.controls" });
+    const instance: SymbolInstance = {
+      ...makeInstance(component.id),
+      instanceName: "cb",
+      componentParameters: { selected: "true" },
+    } as SymbolInstance;
+    const tags = parseSWF(compileDocument(makeDoc(component, instance)));
+    const paramAction = tags
+      .filter((t) => t.code === TAG_DO_ACTION)
+      .map((t) => t.body)
+      .find((b) => doActionPushedStrings(b).includes("setComponentParam"));
+    expect(paramAction, "a non-default 'selected' must be delivered").toBeDefined();
+    const strings = doActionPushedStrings(paramAction!);
+    expect(strings).toContain("cb");
+    expect(strings).toContain("selected");
+  });
+
+  it("delivers a RadioButton's non-default groupName param", () => {
+    const component = makeComponent({ componentName: "RadioButton", name: "RadioButton", packageName: "mx.controls" });
+    const instance: SymbolInstance = {
+      ...makeInstance(component.id),
+      instanceName: "rb",
+      componentParameters: { groupName: "colors", data: "blue" },
+    } as SymbolInstance;
+    const tags = parseSWF(compileDocument(makeDoc(component, instance)));
+    const paramAction = tags
+      .filter((t) => t.code === TAG_DO_ACTION)
+      .map((t) => t.body)
+      .find((b) => doActionPushedStrings(b).includes("setComponentParam"));
+    expect(paramAction).toBeDefined();
+    const strings = doActionPushedStrings(paramAction!);
+    expect(strings).toContain("rb");
+    expect(strings).toContain("groupName");
+    expect(strings).toContain("colors");
+    expect(strings).toContain("data");
+    expect(strings).toContain("blue");
+  });
+});

@@ -440,3 +440,197 @@ test.describe('v2 component LIVE parameter delivery (task 1232, Part 2.2)', () =
     expect(afterC.red, 'red must be gone after the advance').toBeLessThan(200);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Part 2.3 (task 1233): functional CheckBox + RadioButton
+// ---------------------------------------------------------------------------
+
+/** A generic component item for an arbitrary control. */
+function controlItem(id: string, componentName: string) {
+  return { id, name: componentName, itemType: 'component', componentName, packageName: 'mx.controls' };
+}
+
+/** A placed control instance at (x,y) with an instance name. */
+function controlInstance(itemId: string, name: string, x: number, y: number) {
+  return {
+    type: 'instance', id: `inst-${name}`, symbolId: itemId,
+    x, y, scaleX: 1, scaleY: 1, rotation: 0, instanceName: name,
+  };
+}
+
+/**
+ * Click the Ruffle player at SWF-stage coords. The player element is the 550x400
+ * stage, so a locator-relative click at (x,y) lands on stage pixel (x,y). The full
+ * IDLE→OVER_UP→OVER_DOWN→OVER_UP transition drives the skin clip's `onRelease`
+ * button handler (button-mode movieclip, same headless path proven by
+ * button-roundtrip.spec.ts), toggling the control.
+ */
+async function clickStage(page: Page, playerId: string, x: number, y: number): Promise<void> {
+  await page.locator(`#${playerId}`).click({ position: { x, y } });
+}
+
+test.describe('v2 CheckBox + RadioButton runtime oracle (task 1233, Part 2.3)', () => {
+  test.skip(!!process.env.CI, 'Ruffle WASM infra not set up in CI yet');
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('canvas', { timeout: 15000 });
+    const ready = await page.evaluate(
+      () => typeof (window as unknown as { __flashTest?: unknown }).__flashTest !== 'undefined'
+    );
+    expect(ready).toBe(true);
+  });
+
+  /**
+   * A 2-frame CheckBox doc: a root onEnterFrame advances RED→BLUE only once the
+   * checkbox reports selected==true. The checkbox starts deselected, so a blue
+   * end-state can ONLY come from the click toggling it on (proves the toggle path).
+   */
+  function makeCheckBoxToggleDoc() {
+    const item = controlItem('comp-cb', 'CheckBox');
+    const cb = controlInstance('comp-cb', 'cb', 225, 30);
+    const bgLayerFrames = [
+      frame({
+        index: 0,
+        script: `stop();
+_root.onEnterFrame = function() {
+  if (_root.cb != undefined && _root.cb.getSelected() == true) {
+    _root.gotoAndStop(2);
+    delete _root.onEnterFrame;
+  }
+};`,
+        displayObjects: [centeredRect('bg-red', 255, 0, 0)],
+      }),
+      frame({ index: 1, script: 'stop();', displayObjects: [centeredRect('bg-blue', 0, 0, 255)] }),
+    ];
+    const compLayerFrames = [
+      frame({ index: 0, displayObjects: [cb] }),
+      frame({ index: 1, displayObjects: [cb] }),
+    ];
+    return {
+      id: 'cb-toggle-doc', properties: BASE_PROPS,
+      scenes: [{
+        id: 'scene-1', name: 'Scene 1',
+        timeline: { layers: [
+          { id: 'comp-layer', name: 'Component', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#00ff00', height: 20, parentFolderId: null,
+            frameCount: 2, frames: compLayerFrames },
+          { id: 'bg-layer', name: 'Background', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#0000ff', height: 20, parentFolderId: null,
+            frameCount: 2, frames: bgLayerFrames },
+        ] },
+      }],
+      library: { items: [item], folders: [] },
+    };
+  }
+
+  /**
+   * Two RadioButtons (A, B) in the SAME group. A starts selected (author param).
+   * A root onEnterFrame advances RED→BLUE only once B is selected AND A is NOT —
+   * i.e. clicking B deselected A (the group mutual-exclusivity proof). A negative
+   * pre-state check is implicit: the doc starts with A selected / B not, so blue
+   * can only appear after the click flips the group.
+   */
+  function makeRadioGroupDoc() {
+    const item = controlItem('comp-rb', 'RadioButton');
+    // A at top, B below it (non-overlapping hit areas).
+    const a = { ...controlInstance('comp-rb', 'rbA', 225, 20), componentParameters: { groupName: 'g', selected: 'true' } };
+    const b = { ...controlInstance('comp-rb', 'rbB', 225, 60), componentParameters: { groupName: 'g' } };
+    const bgLayerFrames = [
+      frame({
+        index: 0,
+        script: `stop();
+_root.onEnterFrame = function() {
+  if (_root.rbB != undefined && _root.rbB.getSelected() == true && _root.rbA.getSelected() == false) {
+    _root.gotoAndStop(2);
+    delete _root.onEnterFrame;
+  }
+};`,
+        displayObjects: [centeredRect('bg-red', 255, 0, 0)],
+      }),
+      frame({ index: 1, script: 'stop();', displayObjects: [centeredRect('bg-blue', 0, 0, 255)] }),
+    ];
+    const compLayerFrames = [
+      frame({ index: 0, displayObjects: [a, b] }),
+      frame({ index: 1, displayObjects: [a, b] }),
+    ];
+    return {
+      id: 'rb-group-doc', properties: BASE_PROPS,
+      scenes: [{
+        id: 'scene-1', name: 'Scene 1',
+        timeline: { layers: [
+          { id: 'comp-layer', name: 'Component', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#00ff00', height: 20, parentFolderId: null,
+            frameCount: 2, frames: compLayerFrames },
+          { id: 'bg-layer', name: 'Background', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#0000ff', height: 20, parentFolderId: null,
+            frameCount: 2, frames: bgLayerFrames },
+        ] },
+      }],
+      library: { items: [item], folders: [] },
+    };
+  }
+
+  test('CheckBox TOGGLES selected on click (RED→BLUE only after the click)', async ({ page }, testInfo: TestInfo) => {
+    const swf = await publish(page, makeCheckBoxToggleDoc());
+    await ensureRuffleLoaded(page);
+    const id = '__ruffle_cb_toggle__';
+    await injectRufflePlayer(page, swf, id);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    // BEFORE the click: checkbox is deselected → background must still be RED.
+    const before = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('cb-before', { body: before, contentType: 'image/png' });
+    const beforeC = colorCounts(before);
+    expect(beforeC.red, 'checkbox must start deselected (background red)').toBeGreaterThan(500);
+    expect(beforeC.blue, 'must not be blue before the click').toBeLessThan(200);
+
+    // Click the checkbox label area (within the clip's hit bounds) — the on(release)
+    // handler toggles selected. (Placed at x=225,y=30; the label spans ~x18..100.)
+    await clickStage(page, id, 260, 41);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    const after = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('cb-after', { body: after, contentType: 'image/png' });
+    const afterC = colorCounts(after);
+    await removeRufflePlayer(page, id);
+
+    console.log(`[1233] cb before red=${beforeC.red} blue=${beforeC.blue} | after red=${afterC.red} blue=${afterC.blue}`);
+    expect(afterC.blue, 'checkbox click must toggle selected → background advances to blue').toBeGreaterThan(500);
+    expect(afterC.red, 'red must be gone after the toggle').toBeLessThan(200);
+  });
+
+  test('RadioButton group enforces single-selection (clicking B deselects A → RED→BLUE)', async ({ page }, testInfo: TestInfo) => {
+    const swf = await publish(page, makeRadioGroupDoc());
+    await ensureRuffleLoaded(page);
+    const id = '__ruffle_rb_group__';
+    await injectRufflePlayer(page, swf, id);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    // BEFORE: A selected, B not → the (B && !A) condition is false → still RED.
+    const before = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('rb-before', { body: before, contentType: 'image/png' });
+    const beforeC = colorCounts(before);
+    expect(beforeC.red, 'group must start with A selected, B not (background red)').toBeGreaterThan(500);
+    expect(beforeC.blue).toBeLessThan(200);
+
+    // Click radio B (placed at x=225,y=60). Click its label area. Selecting B must
+    // deselect A (the group registry flips the prior member off).
+    await clickStage(page, id, 260, 71);
+    await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, id);
+
+    const after = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('rb-after', { body: after, contentType: 'image/png' });
+    const afterC = colorCounts(after);
+    await removeRufflePlayer(page, id);
+
+    console.log(`[1233] rb before red=${beforeC.red} blue=${beforeC.blue} | after red=${afterC.red} blue=${afterC.blue}`);
+    // B selected AND A deselected → onEnterFrame advanced RED→BLUE: single-selection enforced.
+    expect(afterC.blue, 'selecting B must deselect A (group exclusivity) → blue').toBeGreaterThan(500);
+    expect(afterC.red, 'red must be gone after the group flip').toBeLessThan(200);
+  });
+});

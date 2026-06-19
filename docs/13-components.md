@@ -236,3 +236,59 @@ and the actual behaviours of params beyond `label`/`text` (e.g. `toggle`/`select
 state, `data`/`labels` list population) — Part 2.2 guarantees the author's value *reaches*
 `_root.<name>.<param>`; wiring each param into real control behaviour is per-control work,
 gated on demand. Other controls (CheckBox / List / ComboBox / …) likewise await their skins.
+
+## Functional CheckBox + RadioButton (task 1233, Part 2.3)
+
+Part 2.3 extends the proven Part-2.1/2.2 infrastructure to two more form controls so the
+tool has a usable minimal set (**Button / CheckBox / RadioButton**), and **generalizes the
+class/skin emission so adding a control is registry-driven** rather than per-control
+copy-paste. The new machinery lives in `packages/swf/src/compiler/components.ts`:
+
+1. **A `ControlKind` discriminant** (`controlKindFor(className)`) resolved from the class
+   name's trailing identifier (`CheckBox` → `checkbox`, `RadioButton` → `radiobutton`, else
+   `button` — so the long tail and existing controls are unaffected).
+
+2. **A `CONTROL_REGISTRY`** mapping each kind to a `ControlSpec`:
+   - `buildMarks(w,h)` returns the control's **named overlay marks** — extra named children
+     (`check_mk` tick / `dot_mk` dot) placed in the skin sprite at depth 3+. The skin sprite
+     emitter (`encodeComponentSkinSprite`) now places face (depth 1) + `label_txt` (depth 2)
+     + each mark (depth 3+). Marks carry their own hoisted `DefineShape4`.
+   - `authorClassBody(fqn,labelLit)` returns the **control-specific AS2 method bodies**
+     appended to a SHARED base class (constructor + label mirroring + `setComponentParam` +
+     hover are emitted once for every control). The base `setComponentParam` forwards a
+     `selected` param to `this.setSelected(...)` so the generic Part-2.2 delivery drives the
+     toggle controls with **no control-specific plumbing in `frames.ts`**.
+
+3. **Toggle skins**: CheckBox draws a small white indicator **box** at the left with a left-
+   aligned label to its right; RadioButton draws an indicator **circle**. The check tick /
+   radio dot are separate `DefineShape4` marks toggled via `_visible = selected`.
+
+4. **Selection behaviour** (self-authored AS2, bound via the same registerClass DoInitAction):
+   - **CheckBox** — a boolean `selected` toggled on each click; `setSelected` mirrors it into
+     `check_mk._visible`. Honours author `selected`/`label`.
+   - **RadioButton** — mutual exclusivity within a `groupName`: a `_root.__radioGroups`
+     registry maps groupName → the currently-selected member, and selecting one deselects the
+     prior member of its group. Carries `data`/`value` (`getValue()` prefers `value`). A radio
+     cannot toggle itself off by clicking (Flash behaviour).
+
+**Click path (headless-Ruffle constraint).** Button-mode `onPress`/`onRelease` are not
+dispatched to a `registerClass`'d movieclip in the bundled Ruffle build, and that build's
+`MovieClip.hitTest(x,y,flag)` returns false for these clips. The reliable path: a **broadcast
+`onMouseDown`** (Ruffle dispatches it to every movieclip defining it) gated on a **manual
+point-in-bbox test** (`__inBounds()` compares `_parent._xmouse/_ymouse` to the clip's
+`_x/_y/_width/_height` — all in parent space). This was isolated empirically (a root `Mouse`
+listener + manual bbox advances the frame; `hitTest` does not).
+
+**Verification.** Structural unit tests (`component-place.test.ts`, "functional CheckBox +
+RadioButton controls") decode our own SWF and assert each control emits its class-definition
+DoInitAction (DefineFunction2) **before** registerClass, ExportAssets under the FQ class name,
+a skin sprite that places a `DefineShape4` face + a named `DefineEditText` + the control's
+mark (3 placements; 2 shapes), and that author `selected`/`groupName`/`data` params are
+delivered via `setComponentParam`. The Ruffle acceptance oracle (`component-oracle.spec.ts`,
+"v2 CheckBox + RadioButton runtime oracle") proves runtime behaviour: a placed CheckBox starts
+deselected (background RED) and a click toggles `selected` → background advances RED→BLUE; a
+two-member RadioButton group starts with A selected, and clicking B deselects A
+(`rbB.getSelected() && !rbA.getSelected()`) → RED→BLUE, confirming single-selection.
+
+**Still OUT OF SCOPE:** the niche long tail (List / ComboBox / DataGrid / Tree / containers /
+data-binding) and the real Halo skin assets remain gated on demand.
