@@ -279,6 +279,84 @@ function doActionPushedStrings(body: Uint8Array): string[] {
   return strings;
 }
 
+/**
+ * Decode the DefineEditText (tag 37) flags + InitialText for a control's skin field.
+ *
+ * Body layout (matching encodeDefineEditText / Ruffle read.rs):
+ *   UI16 charId, RECT bounds (byte-aligned after), UI16 flags, [FontID+FontHeight if
+ *   HasFont], RGBA color, [MaxLength if HasMaxLength], HasLayout block (Align UI8 +
+ *   4×UI16/SI16 margins/indent/leading), STRING VariableName, [STRING InitialText if
+ *   HasText]. We skip the RECT by re-reading its bit-packed NBits header.
+ *
+ * Flag bits (Ruffle EditTextFlag): HasFont=0, HasMaxLength=1, HasTextColor=2,
+ * ReadOnly=3, Password=4, Multiline=5, WordWrap=6, HasText=7, UseOutlines=8, HTML=9,
+ * WasStatic=10, Border=11, NoSelect=12, HasLayout=13, AutoSize=14, HasFontClass=15.
+ */
+interface EditTextDecoded {
+  charId: number;
+  flags: number;
+  readOnly: boolean;
+  multiline: boolean;
+  wordWrap: boolean;
+  noSelect: boolean;
+  hasText: boolean;
+  hasFont: boolean;
+  initialText: string;
+}
+
+function decodeEditText(body: Uint8Array): EditTextDecoded {
+  const charId = body[0] | (body[1] << 8);
+  // RECT starts at byte 2: UB[5] NBits, then 4×SB[NBits]. Read just enough to find the
+  // byte-aligned position after the RECT.
+  let bitPos = 16; // bits consumed so far (2 bytes for charId)
+  const readBits = (n: number): number => {
+    let v = 0;
+    for (let i = 0; i < n; i++) {
+      const byteIdx = bitPos >> 3;
+      const bitIdx = 7 - (bitPos & 7);
+      v = (v << 1) | ((body[byteIdx] >> bitIdx) & 1);
+      bitPos++;
+    }
+    return v;
+  };
+  const nBits = readBits(5);
+  readBits(nBits); // xMin
+  readBits(nBits); // xMax
+  readBits(nBits); // yMin
+  readBits(nBits); // yMax
+  // Byte-align to the flags UI16.
+  let pos = Math.ceil(bitPos / 8);
+  const flags = body[pos] | (body[pos + 1] << 8);
+  pos += 2;
+  const has = (bit: number) => (flags & (1 << bit)) !== 0;
+  if (has(0)) pos += 4; // FontID(2) + FontHeight(2)
+  pos += 4; // RGBA color (HasTextColor always set by our encoder)
+  if (has(1)) pos += 2; // MaxLength
+  // HasLayout (bit 13) is always set by our encoder: Align(1)+LMargin+RMargin+Indent(3×2)+Leading SI16(2)
+  if (has(13)) pos += 1 + 2 + 2 + 2 + 2;
+  // VariableName: NUL-terminated.
+  let s = pos;
+  while (s < body.length && body[s] !== 0) s++;
+  pos = s + 1;
+  let initialText = "";
+  if (has(7)) {
+    let t = pos;
+    while (t < body.length && body[t] !== 0) t++;
+    initialText = new TextDecoder().decode(body.slice(pos, t));
+  }
+  return {
+    charId,
+    flags,
+    readOnly: has(3),
+    multiline: has(5),
+    wordWrap: has(6),
+    noSelect: has(12),
+    hasText: has(7),
+    hasFont: has(0),
+    initialText,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------------
@@ -869,5 +947,192 @@ describe("functional CheckBox + RadioButton controls (task 1233, Part 2.3)", () 
     expect(strings).toContain("colors");
     expect(strings).toContain("data");
     expect(strings).toContain("blue");
+  });
+});
+
+describe("functional text controls: Label + TextInput + TextArea (task 1234, Part 2.4)", () => {
+  /**
+   * Compile a single-instance doc for the named text control. Returns the parsed tags
+   * and the control's skin sprite char id + the EditText decoded from inside the sprite.
+   */
+  function compileTextControl(
+    componentName: string,
+    className: string,
+    params?: Record<string, string>,
+    instanceName = "ctrl"
+  ) {
+    const component = makeComponent({ componentName, name: componentName, packageName: "mx.controls" });
+    const base = makeInstance(component.id);
+    const instance: SymbolInstance = params
+      ? ({ ...base, instanceName, componentParameters: params } as SymbolInstance)
+      : { ...base, instanceName };
+    const doc = makeDoc(component, instance);
+    const tags = parseSWF(compileDocument(doc));
+
+    const exports = tags
+      .filter((t) => t.code === TAG_EXPORT_ASSETS)
+      .flatMap((t) => parseExportAssets(t.body));
+    const exportEntry = exports.find((e) => e.name === className);
+
+    // The EditText placed INSIDE the control's skin sprite (the field that IS the control).
+    let skinEditText: EditTextDecoded | undefined;
+    if (exportEntry) {
+      const spriteTag = tags.find(
+        (t) => t.code === TAG_DEFINE_SPRITE && defineSpriteId(t.body) === exportEntry.charId
+      );
+      const allEditTexts = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT).map((t) => decodeEditText(t.body));
+      if (spriteTag) {
+        const innerPlacedIds = new Set(
+          parseSpriteInnerTags(spriteTag.body)
+            .filter((t) => t.code === TAG_PLACE_OBJECT2)
+            .map((t) => placeObject2CharId(t.body))
+            .filter((id): id is number => id !== null)
+        );
+        skinEditText = allEditTexts.find((et) => innerPlacedIds.has(et.charId));
+      }
+    }
+    return { tags, exportEntry, skinEditText };
+  }
+
+  for (const ctrl of [
+    { componentName: "Label", className: "mx.controls.Label" },
+    { componentName: "TextInput", className: "mx.controls.TextInput" },
+    { componentName: "TextArea", className: "mx.controls.TextArea" },
+  ]) {
+    describe(ctrl.componentName, () => {
+      it(`emits ExportAssets + a registerClass DoInitAction for ${ctrl.className}`, () => {
+        const { tags, exportEntry } = compileTextControl(ctrl.componentName, ctrl.className);
+        expect(exportEntry, `ExportAssets must list ${ctrl.className}`).toBeDefined();
+        const spriteId = exportEntry!.charId;
+
+        const initForComponent = tags.filter(
+          (t) => t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === spriteId
+        );
+        const registerInit = initForComponent.find((t) => pushedStrings(t.body).includes("registerClass"));
+        expect(registerInit, "a DoInitAction must register the class").toBeDefined();
+        const strings = pushedStrings(registerInit!.body);
+        expect(strings).toContain("Object");
+        expect(strings).toContain("registerClass");
+        expect(strings).toContain(ctrl.className);
+      });
+
+      it("emits the class-definition DoInitAction (DefineFunction2) BEFORE registerClass", () => {
+        const { tags, exportEntry } = compileTextControl(ctrl.componentName, ctrl.className);
+        const spriteId = exportEntry!.charId;
+
+        const initIndices: { idx: number; tag: SWFTag }[] = [];
+        tags.forEach((t, idx) => {
+          if (t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === spriteId) {
+            initIndices.push({ idx, tag: t });
+          }
+        });
+        expect(initIndices.length).toBe(2);
+
+        const classInit = initIndices.find((e) => bytecodeHasDefineFunction2(e.tag.body));
+        const registerInit = initIndices.find((e) => pushedStrings(e.tag.body).includes("registerClass"));
+        expect(classInit, "class DoInitAction must define functions via DefineFunction2").toBeDefined();
+        expect(registerInit, "registerClass DoInitAction must exist").toBeDefined();
+        expect(classInit!.idx).toBeLessThan(registerInit!.idx);
+      });
+
+      it("statically seeds the skin EditText with text and sets HasText", () => {
+        // The DefineEditText InitialText is statically seeded from the catalog default
+        // text (or the class-name fallback when the default is empty). The AUTHOR's live
+        // `text` param is delivered separately via a per-instance DoAction (asserted by
+        // the setComponentParam test below), not baked into the DefineEditText.
+        const { skinEditText } = compileTextControl(ctrl.componentName, ctrl.className);
+        expect(skinEditText, "the skin must place an EditText").toBeDefined();
+        expect(skinEditText!.hasText).toBe(true);
+        expect(skinEditText!.initialText.length).toBeGreaterThan(0);
+      });
+    });
+  }
+
+  it("Label's skin EditText is READ-ONLY (dynamic), single-line", () => {
+    const { skinEditText } = compileTextControl("Label", "mx.controls.Label");
+    expect(skinEditText).toBeDefined();
+    // Dynamic display text → ReadOnly set, NoSelect NOT forced editable, single-line.
+    expect(skinEditText!.readOnly, "Label is read-only display text").toBe(true);
+    expect(skinEditText!.multiline).toBe(false);
+    expect(skinEditText!.wordWrap).toBe(false);
+  });
+
+  it("Label draws NO face shape (the EditText is its only skin child)", () => {
+    const { tags, exportEntry } = compileTextControl("Label", "mx.controls.Label");
+    const spriteTag = tags.find(
+      (t) => t.code === TAG_DEFINE_SPRITE && defineSpriteId(t.body) === exportEntry!.charId
+    );
+    const innerPlaced = parseSpriteInnerTags(spriteTag!.body)
+      .filter((t) => t.code === TAG_PLACE_OBJECT2)
+      .map((t) => placeObject2CharId(t.body))
+      .filter((id): id is number => id !== null);
+    // Only ONE placement (the EditText) — no face shape, no marks.
+    expect(innerPlaced.length).toBe(1);
+    const editTextCharIds = new Set(
+      tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT).map((t) => t.body[0] | (t.body[1] << 8))
+    );
+    expect(editTextCharIds.has(innerPlaced[0])).toBe(true);
+  });
+
+  it("TextInput's skin EditText is EDITABLE (input), single-line", () => {
+    const { skinEditText } = compileTextControl("TextInput", "mx.controls.TextInput");
+    expect(skinEditText).toBeDefined();
+    // Input text → NOT read-only (editable), single-line, no word-wrap.
+    expect(skinEditText!.readOnly, "TextInput is editable (input text)").toBe(false);
+    expect(skinEditText!.multiline).toBe(false);
+    expect(skinEditText!.wordWrap).toBe(false);
+  });
+
+  it("TextArea's skin EditText is EDITABLE (input), MULTILINE + WORDWRAP", () => {
+    const { skinEditText } = compileTextControl("TextArea", "mx.controls.TextArea");
+    expect(skinEditText).toBeDefined();
+    expect(skinEditText!.readOnly, "TextArea is editable (input text)").toBe(false);
+    expect(skinEditText!.multiline, "TextArea is multi-line").toBe(true);
+    expect(skinEditText!.wordWrap, "TextArea word-wraps").toBe(true);
+  });
+
+  it("TextInput/TextArea draw a bordered input-box face + the editable field", () => {
+    for (const ctrl of [
+      { componentName: "TextInput", className: "mx.controls.TextInput" },
+      { componentName: "TextArea", className: "mx.controls.TextArea" },
+    ]) {
+      const { tags, exportEntry } = compileTextControl(ctrl.componentName, ctrl.className);
+      const spriteTag = tags.find(
+        (t) => t.code === TAG_DEFINE_SPRITE && defineSpriteId(t.body) === exportEntry!.charId
+      );
+      const innerPlaced = parseSpriteInnerTags(spriteTag!.body)
+        .filter((t) => t.code === TAG_PLACE_OBJECT2)
+        .map((t) => placeObject2CharId(t.body))
+        .filter((id): id is number => id !== null);
+      // TWO placements: the bordered face shape + the editable EditText.
+      expect(innerPlaced.length, `${ctrl.componentName} places face + field`).toBe(2);
+      const shapeCharIds = new Set(
+        tags.filter((t) => t.code === TAG_DEFINE_SHAPE4).map((t) => t.body[0] | (t.body[1] << 8))
+      );
+      const editTextCharIds = new Set(
+        tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT).map((t) => t.body[0] | (t.body[1] << 8))
+      );
+      expect(innerPlaced.some((id) => shapeCharIds.has(id)), "places the bordered face").toBe(true);
+      expect(innerPlaced.some((id) => editTextCharIds.has(id)), "places the editable field").toBe(true);
+    }
+  });
+
+  it("delivers a non-default author 'text' param to a TextInput via setComponentParam", () => {
+    const component = makeComponent({ componentName: "TextInput", name: "TextInput", packageName: "mx.controls" });
+    const instance: SymbolInstance = {
+      ...makeInstance(component.id),
+      instanceName: "ti",
+      componentParameters: { text: "user typed" },
+    } as SymbolInstance;
+    const tags = parseSWF(compileDocument(makeDoc(component, instance)));
+    const paramAction = tags
+      .filter((t) => t.code === TAG_DO_ACTION)
+      .map((t) => t.body)
+      .find((b) => doActionPushedStrings(b).includes("setComponentParam"));
+    expect(paramAction, "a non-default 'text' must be delivered").toBeDefined();
+    const strings = doActionPushedStrings(paramAction!);
+    expect(strings).toContain("ti");
+    expect(strings).toContain("text");
+    expect(strings).toContain("user typed");
   });
 });

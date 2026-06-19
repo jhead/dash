@@ -61,6 +61,21 @@
  * `groupName` mutual-exclusivity: selecting one deselects its group siblings via a
  * `_root.__radioGroups` registry, and carries `data`/`value`.
  *
+ * PART 2.4 (task 1234) extends the SAME registry to the three standard TEXT controls —
+ * `mx.controls.Label`, `mx.controls.TextInput`, and `mx.controls.TextArea`. Unlike the
+ * button-family controls these have NO indicator-overlay mark; the EditText skin child
+ * IS the control. The `ControlSpec` now carries a `textField` descriptor selecting the
+ * skin EditText's `textType` (dynamic = read-only for Label; input = editable for
+ * TextInput/TextArea), its `multiline`/`wordWrap` flags, and a `faceKind` ("none" for
+ * Label — text only, no box; "input" — a bordered white field box for TextInput/TextArea).
+ * The author's `text` param is statically pre-seeded into the EditText and mirrored live
+ * via the shared `setComponentParam` (which already forwards `text`/`label` to
+ * `label_txt.text`); the controls add `getText`/`setText` and a `change` broadcast on
+ * edit. NOTE: headless Ruffle cannot be reliably driven to type keystrokes into an input
+ * field, so keyboard EDITING is verified STRUCTURALLY (the editable EditText carries the
+ * input/editable flags) — the Ruffle oracle asserts the author text RENDERS and that the
+ * field is structurally editable, not that a synthesized keypress mutates it.
+ *
  * EXPLICITLY OUT OF SCOPE (later waves): the full `mx.controls.*` AS2 framework,
  * Halo skins, and the niche long tail (List / ComboBox / DataGrid / Tree / containers).
  */
@@ -183,14 +198,48 @@ export function componentLabel(item: ComponentItem): string {
  * Everything that is not a recognised toggle control falls back to `"button"`
  * (the Part-2.1 behaviour), so existing controls + the long tail are unaffected.
  */
-export type ControlKind = "button" | "checkbox" | "radiobutton";
+export type ControlKind =
+  | "button"
+  | "checkbox"
+  | "radiobutton"
+  | "label"
+  | "textinput"
+  | "textarea";
 
 /** Resolve a control's kind from its (possibly dotted) class name. */
 export function controlKindFor(className: string): ControlKind {
   const leaf = className.split(".").pop() || className;
   if (leaf === "CheckBox") return "checkbox";
   if (leaf === "RadioButton") return "radiobutton";
+  if (leaf === "Label") return "label";
+  if (leaf === "TextInput") return "textinput";
+  if (leaf === "TextArea") return "textarea";
   return "button";
+}
+
+/**
+ * How a control's skin face/box is drawn:
+ *   - "button"  — the rounded-rect button face (default).
+ *   - "toggle"  — the CheckBox box / RadioButton circle indicator.
+ *   - "input"   — a bordered white text-field box (TextInput / TextArea).
+ *   - "none"    — no face at all; the EditText is the only visible child (Label).
+ */
+export type FaceKind = "button" | "toggle" | "input" | "none";
+
+/**
+ * Descriptor for the control's skin EditText (`label_txt`). Selects the SWF
+ * DefineEditText `textType` (which the encoder turns into ReadOnly vs editable) plus
+ * the `multiline`/`wordWrap` flags so a TextInput is a single-line editable field and
+ * a TextArea is a multi-line word-wrapping editable field. Label uses a read-only
+ * `dynamic` field.
+ */
+interface TextFieldSpec {
+  /** SWF text type: "dynamic" → read-only display; "input" → editable field. */
+  readonly textType: "dynamic" | "input";
+  /** Multi-line field (TextArea). */
+  readonly multiline: boolean;
+  /** Word-wrap within the field bounds (TextArea). */
+  readonly wordWrap: boolean;
 }
 
 /**
@@ -207,7 +256,7 @@ interface SkinMark {
 
 /** Per-control description driving skin + class emission (replaces per-control if-chains). */
 interface ControlSpec {
-  /** Named overlay marks (check tick / radio dot). Empty for a plain Button. */
+  /** Named overlay marks (check tick / radio dot). Empty for a plain Button or text control. */
   buildMarks(width: number, height: number): SkinMark[];
   /**
    * Control-specific AS2 method/handler bodies appended to the shared base class.
@@ -217,6 +266,17 @@ interface ControlSpec {
    * its selection state + click handler here.
    */
   authorClassBody(fqn: string, labelLit: string): string;
+  /**
+   * Which skin face/box to draw. Defaults to "button" when omitted; the toggle
+   * controls override to "toggle", the text controls to "input"/"none".
+   */
+  readonly faceKind?: FaceKind;
+  /**
+   * Overrides the skin EditText's type/flags. When omitted the field is a read-only
+   * single-line `dynamic` label (the button-family default). Text controls supply this
+   * to make TextInput/TextArea editable and TextArea multi-line.
+   */
+  readonly textField?: TextFieldSpec;
 }
 
 // ---------------------------------------------------------------------------
@@ -455,6 +515,66 @@ ${fqn}.prototype.__handleClick = function() {
 `;
 }
 
+/**
+ * Label: a STATIC display control. The skin EditText is `dynamic` (read-only), so the
+ * field only shows text. `getText`/`setText` mirror `this.text` into `label_txt.text`
+ * (the shared `setText`/`setComponentParam` already do the mirroring; we add `getText`
+ * + the `text` constructor seed). No click/selection handler — Label is non-interactive.
+ */
+function authorLabelClassBody(fqn: string, _labelLit: string): string {
+  return `
+${fqn}.prototype.__init = function() {
+  this.text = this.label;
+};
+${fqn}.prototype.getText = function() {
+  return this.text;
+};
+`;
+}
+
+/**
+ * TextInput / TextArea: an EDITABLE field. The skin EditText is `input` (the encoder
+ * sets the editable/selectable flags). `getText` reads the live `label_txt.text`,
+ * `setText` writes it (and `this.text`); an `onChanged` handler bound to the field
+ * broadcasts a `change` event (mirrors Flash's mx change broadcast — a `change`
+ * listener / `_root`-visible callback). `__init` seeds the field's initial text +
+ * installs the change relay. Shared between TextInput and TextArea (the multi-line
+ * difference is purely the EditText flags, not the class behaviour).
+ */
+function authorTextFieldClassBody(fqn: string, _labelLit: string): string {
+  return `
+${fqn}.prototype.__init = function() {
+  this.text = this.label;
+  if (this.label_txt != undefined) {
+    this.label_txt.text = this.text;
+    var self = this;
+    this.label_txt.onChanged = function() {
+      self.text = this.text;
+      self.dispatchChange();
+    };
+  }
+};
+${fqn}.prototype.getText = function() {
+  if (this.label_txt != undefined) { return this.label_txt.text; }
+  return this.text;
+};
+${fqn}.prototype.setText = function(s) {
+  this.text = s;
+  if (this.label_txt != undefined) { this.label_txt.text = s; }
+};
+${fqn}.prototype.addEventListener = function(event, fn) {
+  if (event == "change") { this.__changeListener = fn; }
+};
+${fqn}.prototype.dispatchChange = function() {
+  this.__changed = true;
+  if (this.__changeListener != undefined) {
+    this.__changeListener({ type: "change", target: this });
+  }
+  if (this.onChange != undefined) { this.onChange(this); }
+};
+`;
+}
+
 const CONTROL_REGISTRY: Record<ControlKind, ControlSpec> = {
   button: {
     buildMarks: () => [],
@@ -463,10 +583,30 @@ const CONTROL_REGISTRY: Record<ControlKind, ControlSpec> = {
   checkbox: {
     buildMarks: (w, h) => [{ name: "check_mk", shape: buildCheckMarkShape(w, h) }],
     authorClassBody: authorCheckBoxClassBody,
+    faceKind: "toggle",
   },
   radiobutton: {
     buildMarks: (w, h) => [{ name: "dot_mk", shape: buildRadioDotShape(w, h) }],
     authorClassBody: authorRadioButtonClassBody,
+    faceKind: "toggle",
+  },
+  label: {
+    buildMarks: () => [],
+    authorClassBody: authorLabelClassBody,
+    faceKind: "none",
+    textField: { textType: "dynamic", multiline: false, wordWrap: false },
+  },
+  textinput: {
+    buildMarks: () => [],
+    authorClassBody: authorTextFieldClassBody,
+    faceKind: "input",
+    textField: { textType: "input", multiline: false, wordWrap: false },
+  },
+  textarea: {
+    buildMarks: () => [],
+    authorClassBody: authorTextFieldClassBody,
+    faceKind: "input",
+    textField: { textType: "input", multiline: true, wordWrap: true },
   },
 };
 
@@ -633,10 +773,57 @@ function buildToggleFaceShape(kind: "checkbox" | "radiobutton", _width: number, 
   };
 }
 
-/** Resolve the face Shape for a control kind. */
-function buildFaceShape(kind: ControlKind, width: number, height: number): Shape {
-  if (kind === "checkbox" || kind === "radiobutton") return buildToggleFaceShape(kind, width, height);
-  return buildButtonFaceShape(width, height);
+/**
+ * A bordered white input-field box (TextInput / TextArea face): a plain rectangle
+ * outline with a white fill, sized to the field. Origin (0,0). Distinct from the
+ * rounded button face — input fields are square-cornered in Flash 8's Halo skin.
+ */
+function buildInputFaceShape(width: number, height: number): Shape {
+  return {
+    id: "component-face",
+    paths: [
+      {
+        start: { x: 0, y: 0 },
+        segments: [
+          { type: "line", to: { x: width, y: 0 } },
+          { type: "line", to: { x: width, y: height } },
+          { type: "line", to: { x: 0, y: height } },
+          { type: "line", to: { x: 0, y: 0 } },
+        ],
+        closed: true,
+        fill: { type: "solid", color: BOX_FILL_COLOR },
+        stroke: {
+          type: "solid",
+          color: BORDER_COLOR,
+          width: 1,
+          caps: "round",
+          joints: "round",
+          miterLimit: 3,
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Resolve the face Shape for a control, or `null` when it draws no face at all (Label —
+ * the EditText is the only visible child). The face kind is read from the registry spec;
+ * the toggle kind additionally needs the control kind to pick box (CheckBox) vs circle
+ * (RadioButton).
+ */
+function buildFaceShape(kind: ControlKind, width: number, height: number): Shape | null {
+  const faceKind = CONTROL_REGISTRY[kind].faceKind ?? "button";
+  switch (faceKind) {
+    case "none":
+      return null;
+    case "toggle":
+      return buildToggleFaceShape(kind === "radiobutton" ? "radiobutton" : "checkbox", width, height);
+    case "input":
+      return buildInputFaceShape(width, height);
+    case "button":
+    default:
+      return buildButtonFaceShape(width, height);
+  }
 }
 
 /** The check tick (a filled ✓ chevron) drawn inside the CheckBox indicator box. */
@@ -697,12 +884,24 @@ function buildRadioDotShape(_width: number, height: number): Shape {
 }
 
 /**
- * Build a dynamic-text TextDisplayObject for the component label. It is given the
- * instance name `label_txt` at PLACEMENT time (PlaceObject2 name); the DefineEditText
- * itself carries the statically seeded initial text.
+ * Build the skin's text TextDisplayObject (`label_txt`). It is given the instance name
+ * `label_txt` at PLACEMENT time (PlaceObject2 name); the DefineEditText itself carries
+ * the statically seeded initial text.
  *
- * A plain Button centers its label across the whole face. A CheckBox/RadioButton
- * left-aligns the label to the RIGHT of the indicator box (matching Flash's layout).
+ * Layout + type vary by control kind:
+ *   - Button: centered single-line read-only (dynamic) label across the whole face.
+ *   - CheckBox/RadioButton: left-aligned single-line dynamic label to the RIGHT of the
+ *     indicator box.
+ *   - Label: left-aligned single-line read-only dynamic text spanning the full box (no
+ *     face), so it reads as a plain static label.
+ *   - TextInput: left-aligned single-line EDITABLE (input) field, inset 2px inside the
+ *     bordered box.
+ *   - TextArea: left-aligned multi-line word-wrapping EDITABLE (input) field, inset.
+ *
+ * The `textType`/`multiline`/`wordWrap` come from the registry's `textField` spec; the
+ * encoder turns `input` into an editable/selectable field and `dynamic` into a read-only
+ * one (see encodeDefineEditText), and sets the Multiline/WordWrap SWF flags from those
+ * booleans.
  */
 function buildLabelTextObject(
   kind: ControlKind,
@@ -710,26 +909,37 @@ function buildLabelTextObject(
   width: number,
   height: number,
 ): TextDisplayObject {
-  const toggle = kind === "checkbox" || kind === "radiobutton";
+  const spec = CONTROL_REGISTRY[kind];
+  const faceKind = spec.faceKind ?? "button";
+  const field = spec.textField ?? { textType: "dynamic" as const, multiline: false, wordWrap: false };
+
+  const toggle = faceKind === "toggle";
   const { x0, size } = indicatorBox(height);
-  const labelX = toggle ? x0 + size + 4 : 0;
+  // Toggle controls inset the label past the indicator; input fields inset 2px inside
+  // the border; plain Button/Label start at the left edge.
+  const inset = faceKind === "input" ? 2 : 0;
+  const labelX = toggle ? x0 + size + 4 : inset;
+  const labelY = inset;
+  // Button centers its label; everything else is left-aligned (Flash field/label layout).
+  const align: TextDisplayObject["align"] = faceKind === "button" ? "center" : "left";
+
   return {
     type: "text",
     id: "label_txt",
     x: labelX,
-    y: 0,
-    width: Math.max(10, width - labelX),
-    height,
+    y: labelY,
+    width: Math.max(10, width - labelX - inset),
+    height: Math.max(10, height - labelY - inset),
     text: label,
-    textType: "dynamic",
+    textType: field.textType,
     fontFamily: "Arial",
     fontSize: 12,
     bold: false,
     italic: false,
     color: LABEL_COLOR,
-    align: toggle ? "left" : "center",
-    multiline: false,
-    wordWrap: false,
+    align,
+    multiline: field.multiline,
+    wordWrap: field.wordWrap,
     instanceName: "label_txt",
   };
 }
@@ -772,7 +982,7 @@ interface PlacedMark {
  */
 export function encodeComponentSkinSprite(
   spriteId: number,
-  faceCharId: number,
+  faceCharId: number | null,
   labelCharId: number,
   labelObj: TextDisplayObject,
   marks: readonly PlacedMark[] = [],
@@ -781,8 +991,11 @@ export function encodeComponentSkinSprite(
   bw.writeUI16LE(spriteId);
   bw.writeUI16LE(1); // FrameCount
 
-  // Place the face shape at depth 1.
-  bw.writeBytes(encodeTagRecord(Tag.PlaceObject2, encodePlaceObject2(faceCharId, 1, 0, 0)));
+  // Place the face shape at depth 1 — unless the control has no face (Label), where the
+  // EditText is the only child.
+  if (faceCharId !== null) {
+    bw.writeBytes(encodeTagRecord(Tag.PlaceObject2, encodePlaceObject2(faceCharId, 1, 0, 0)));
+  }
 
   // Place the named label EditText at depth 2 — the instance name makes
   // `this.label_txt` resolvable from the class methods.
@@ -890,9 +1103,15 @@ export function runComponentPass(input: ComponentPassInput): ComponentPassResult
     const width = def?.defaultWidth ?? DEFAULT_BUTTON_WIDTH;
     const height = def?.defaultHeight ?? DEFAULT_BUTTON_HEIGHT;
 
-    // 1. Hoisted skin definitions (top-level, BEFORE the DefineSprite).
-    const faceCharId = writer.nextCharId();
-    writer.writeTag(Tag.DefineShape4, encodeDefineShape4(faceCharId, buildFaceShape(kind, width, height)));
+    // 1. Hoisted skin definitions (top-level, BEFORE the DefineSprite). A control with
+    //    no face (Label) skips the face DefineShape4 entirely; the EditText is its only
+    //    visible child.
+    const faceShape = buildFaceShape(kind, width, height);
+    let faceCharId: number | null = null;
+    if (faceShape !== null) {
+      faceCharId = writer.nextCharId();
+      writer.writeTag(Tag.DefineShape4, encodeDefineShape4(faceCharId, faceShape));
+    }
 
     const labelObj = buildLabelTextObject(kind, label, width, height);
     const labelCharId = writer.nextCharId();

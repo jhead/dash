@@ -634,3 +634,142 @@ _root.onEnterFrame = function() {
     expect(afterC.red, 'red must be gone after the group flip').toBeLessThan(200);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Part 2.4 (task 1234): functional text controls Label / TextInput / TextArea
+// ---------------------------------------------------------------------------
+
+test.describe('v2 text controls runtime oracle (task 1234, Part 2.4)', () => {
+  test.skip(!!process.env.CI, 'Ruffle WASM infra not set up in CI yet');
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('canvas', { timeout: 15000 });
+    const ready = await page.evaluate(
+      () => typeof (window as unknown as { __flashTest?: unknown }).__flashTest !== 'undefined'
+    );
+    expect(ready).toBe(true);
+  });
+
+  /** A placed text control with an authored `text` param at (x,y). */
+  function textControlInstance(itemId: string, name: string, x: number, y: number, text: string) {
+    return {
+      type: 'instance', id: `inst-${name}`, symbolId: itemId,
+      x, y, scaleX: 1, scaleY: 1, rotation: 0, instanceName: name,
+      componentParameters: { text },
+    };
+  }
+
+  /**
+   * A single-frame doc placing one text control with an authored `text`. The render
+   * oracle: the author text must paint visible (non-white) pixels in the field region.
+   */
+  function makeTextRenderDoc(componentName: string, text: string) {
+    const item = controlItem(`comp-${componentName}`, componentName);
+    const inst = textControlInstance(`comp-${componentName}`, 'tc', 60, 60, text);
+    return {
+      id: `text-render-${componentName}`, properties: BASE_PROPS,
+      scenes: [{
+        id: 'scene-1', name: 'Scene 1',
+        timeline: { layers: [{
+          id: 'l1', name: 'L1', type: 'normal', visible: true, locked: false,
+          outlineMode: false, outlineColor: '#0000ff', height: 20, parentFolderId: null,
+          frameCount: 1, frames: [frame({ index: 0, script: 'stop();', displayObjects: [inst] })],
+        }] },
+      }],
+      library: { items: [item], folders: [] },
+    };
+  }
+
+  /**
+   * A 2-frame doc whose frame-0 root script advances RED→BLUE only when the placed
+   * control's skin field reports the editable input type (`label_txt.type == "input"`).
+   * This is the runtime proof that TextInput/TextArea contain an EDITABLE EditText.
+   * (We poll the field type rather than driving keystrokes: headless Ruffle cannot be
+   * reliably driven to type into an input field — see the spec note.)
+   */
+  function makeEditableProbeDoc(componentName: string) {
+    const item = controlItem(`comp-${componentName}`, componentName);
+    const inst = textControlInstance(`comp-${componentName}`, 'tc', 60, 60, 'edit me');
+    const bgLayerFrames = [
+      frame({
+        index: 0,
+        script: `stop();
+_root.onEnterFrame = function() {
+  var c = _root.tc;
+  if (c != undefined && c.label_txt != undefined && c.label_txt.type == "input") {
+    _root.gotoAndStop(2);
+    delete _root.onEnterFrame;
+  }
+};`,
+        displayObjects: [centeredRect('bg-red', 255, 0, 0)],
+      }),
+      frame({ index: 1, script: 'stop();', displayObjects: [centeredRect('bg-blue', 0, 0, 255)] }),
+    ];
+    const compLayerFrames = [
+      frame({ index: 0, displayObjects: [inst] }),
+      frame({ index: 1, displayObjects: [inst] }),
+    ];
+    return {
+      id: `editable-probe-${componentName}`, properties: BASE_PROPS,
+      scenes: [{
+        id: 'scene-1', name: 'Scene 1',
+        timeline: { layers: [
+          { id: 'comp-layer', name: 'Component', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#00ff00', height: 20, parentFolderId: null,
+            frameCount: 2, frames: compLayerFrames },
+          { id: 'bg-layer', name: 'Background', type: 'normal', visible: true, locked: false,
+            outlineMode: false, outlineColor: '#0000ff', height: 20, parentFolderId: null,
+            frameCount: 2, frames: bgLayerFrames },
+        ] },
+      }],
+      library: { items: [item], folders: [] },
+    };
+  }
+
+  for (const componentName of ['Label', 'TextInput', 'TextArea']) {
+    test(`${componentName} renders its author text (non-blank pixels)`, async ({ page }, testInfo: TestInfo) => {
+      const swf = await publish(page, makeTextRenderDoc(componentName, `Hi ${componentName}`));
+      await ensureRuffleLoaded(page);
+      const id = `__ruffle_text_render_${componentName}__`;
+      await injectRufflePlayer(page, swf, id);
+      await page.waitForTimeout(2000);
+      await hideRuffleOverlays(page, id);
+
+      const shot = await page.locator(`#${id}`).screenshot();
+      await testInfo.attach(`text-render-${componentName}`, { body: shot, contentType: 'image/png' });
+      await removeRufflePlayer(page, id);
+
+      const nonWhite = nonWhitePixels(shot);
+      console.log(`[1234] ${componentName} render non-white pixels=${nonWhite}`);
+      // The author text (plus the bordered box for TextInput/TextArea) must paint
+      // visible pixels — a blank-white load fails the gate.
+      expect(nonWhite, `${componentName} author text must render visible pixels`).toBeGreaterThan(100);
+    });
+  }
+
+  for (const componentName of ['TextInput', 'TextArea']) {
+    test(`${componentName} contains an EDITABLE EditText (label_txt.type=="input")`, async ({ page }, testInfo: TestInfo) => {
+      const swf = await publish(page, makeEditableProbeDoc(componentName));
+      await ensureRuffleLoaded(page);
+      const id = `__ruffle_editable_${componentName}__`;
+      await injectRufflePlayer(page, swf, id);
+      await page.waitForTimeout(2500);
+      await hideRuffleOverlays(page, id);
+
+      const after = await page.locator(`#${id}`).screenshot();
+      await testInfo.attach(`editable-${componentName}`, { body: after, contentType: 'image/png' });
+      const afterC = colorCounts(after);
+      await removeRufflePlayer(page, id);
+
+      console.log(`[1234] ${componentName} editable after red=${afterC.red} blue=${afterC.blue}`);
+      // The skin field's runtime type is "input" → onEnterFrame advanced RED→BLUE,
+      // proving the EditText is editable. A read-only (dynamic) field reports
+      // type=="dynamic" and could never advance. NOTE: keystroke ENTRY itself is not
+      // driven here (headless Ruffle can't reliably type into a focused input field);
+      // the editable nature is verified by the field type + the structural unit tests.
+      expect(afterC.blue, `${componentName} field must be editable input → blue`).toBeGreaterThan(500);
+      expect(afterC.red, 'red must be gone once the editable field is confirmed').toBeLessThan(200);
+    });
+  }
+});

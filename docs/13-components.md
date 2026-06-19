@@ -290,5 +290,60 @@ deselected (background RED) and a click toggles `selected` → background advanc
 two-member RadioButton group starts with A selected, and clicking B deselects A
 (`rbB.getSelected() && !rbA.getSelected()`) → RED→BLUE, confirming single-selection.
 
+## Functional Label + TextInput + TextArea (task 1234, Part 2.4)
+
+Part 2.4 adds the three standard **text controls** on the SAME `CONTROL_REGISTRY` — no
+per-control if-chains. These differ from the button family in two ways the registry now
+expresses declaratively: they have **no indicator-overlay mark** (the EditText child *is*
+the control), and their skin EditText must select its **editable/multiline flags** per
+control.
+
+1. **Two new `ControlSpec` fields:**
+   - `faceKind` (`"button" | "toggle" | "input" | "none"`) — how/whether the skin draws a
+     face. Button → rounded face; CheckBox/RadioButton → toggle box/circle; TextInput/
+     TextArea → a **bordered white input box** (`buildInputFaceShape`); **Label → `none`**
+     (no face shape is emitted at all; the EditText is the sprite's only child).
+   - `textField` (`{ textType, multiline, wordWrap }`) — overrides the skin EditText's
+     SWF flags. Label uses a read-only `dynamic` field; TextInput uses an editable `input`
+     single-line field; TextArea uses an editable `input` **multi-line + word-wrapping**
+     field. `encodeDefineEditText` turns `input` into an editable/selectable field (ReadOnly
+     clear) and `dynamic` into read-only (ReadOnly set), and emits the Multiline/WordWrap
+     bits from the booleans. `buildLabelTextObject` reads these from the registry so the
+     field's type/layout follows the spec (Button centers; Label/inputs left-align, inputs
+     inset 2px inside the border).
+
+2. **`controlKindFor`** now also resolves `Label`/`TextInput`/`TextArea` leaf names to the
+   new kinds; everything else still falls back to `button`.
+
+3. **Class behaviour** (self-authored AS2, bound via the same registerClass DoInitAction):
+   - **Label** — static display text. `__init` seeds `this.text` from the label; `getText`
+     returns it. No click/selection handler (non-interactive). The shared
+     `setComponentParam`/`setText` already mirror `text` into `label_txt.text`, so the live
+     `text` param updates the display.
+   - **TextInput / TextArea** — editable fields (shared class body). `getText` reads the
+     live `label_txt.text`; `setText` writes it. `__init` installs an `onChanged` relay on
+     the field that mirrors edits back into `this.text` and calls `dispatchChange()`, which
+     fires an `addEventListener("change", …)` listener / `onChange` callback (Flash's mx
+     change-broadcast shape). The multi-line difference between the two is purely the
+     EditText flags, not the class.
+
+**Verification.** Structural unit tests (`component-place.test.ts`, "functional text
+controls") decode our own SWF and assert, for each control: ExportAssets under the FQ class
+name, a class-definition DoInitAction (DefineFunction2) **before** registerClass, and the
+skin EditText's decoded flags — **Label** read-only/single-line with **no face shape** (one
+placement), **TextInput** editable/single-line, **TextArea** editable/**multiline+wordwrap**,
+both with a bordered face + the editable field (two placements) — plus that a non-default
+author `text` param is delivered via `setComponentParam`. The Ruffle acceptance oracle
+(`component-oracle.spec.ts`, "v2 text controls runtime oracle") proves runtime behaviour:
+each control's author text **renders** as non-blank pixels, and a root `onEnterFrame` polls
+`label_txt.type == "input"` for TextInput/TextArea → RED→BLUE, confirming the EditText is
+**editable** at runtime (a read-only `dynamic` field could never satisfy it).
+
+**Keyboard-entry caveat (explicit):** headless Ruffle cannot be reliably driven to type
+keystrokes into a focused input field, so keyboard EDITING is verified **structurally** (the
+editable `input` EditText carries the editable flags, confirmed by both the unit test flag
+decode and the runtime `type=="input"` probe). The oracle does **not** synthesize keypresses
+and assert the field mutated — that path is acknowledged as not headless-drivable, not faked.
+
 **Still OUT OF SCOPE:** the niche long tail (List / ComboBox / DataGrid / Tree / containers /
 data-binding) and the real Halo skin assets remain gated on demand.
