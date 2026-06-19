@@ -789,3 +789,65 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   swap) — all open; **1223** remains a candidate-for-close (resolved by 1225, doc-wording
   nuance only); component part 2.5 (List + ComboBox, task **1235**) queued /
   not-yet-implemented.
+
+---
+
+## 2026-06-19 — Verify 1236 (Convolution fix) + 1235 Part 2.5 (List/ComboBox); CRITICAL new defect 1238 (filters runtime-dropped)
+
+- **Watermark (last fully-QA'd SHA):** advanced to `f934f2e6dab70e033b19dcc7a79eb110da9d58e7`
+  (current HEAD). Verified code commits this cycle: `14704b4` (task 1235 List+ComboBox)
+  and `4e267be` (task 1236 ConvolutionFilter fix). `git diff --stat 4e267be..origin/main`
+  over `:(exclude).tasks/**` + `:(exclude)docs/**` is EMPTY — the only commits after
+  `4e267be` are task/doc commits (`f934f2e` filing task 1238, `05f311f` queuing component
+  polish), so no unverified code lands between `4e267be` and HEAD; watermark = HEAD.
+- **HEAD at audit:** `f934f2e6dab70e033b19dcc7a79eb110da9d58e7`.
+- **Cleanup-verify:** working tree clean; `tools/swf-dump/Cargo.toml` had NO uncommitted
+  modification and the temp QA proof binary `tools/swf-dump/src/conv_proof.rs` did NOT
+  exist. Nothing to restore/remove.
+
+- **Task 1236 (commit `4e267be`, ConvolutionFilter CLAMP/PRESERVE_ALPHA bit-swap fix)
+  VERIFIED genuinely resolved.** Encoder now writes `preserveAlpha |= 1<<0` /
+  `clamp |= 1<<1`, matching Ruffle's `read.rs` (`PRESERVE_ALPHA = 1<<0`, `CLAMP = 1<<1`).
+  The prior wrong-layout test was CORRECTED in place (not masked/deleted), and a new
+  4-combo round-trip test was added. swf-crate decode of all four (clamp×preserveAlpha)
+  combinations is correct. golden-parity exit 0; 1440 swf tests pass.
+
+- **CRITICAL NEW DEFECT — task 1238 (filed high, commit `f934f2e`): PlaceObject3
+  HasFilterList encoded at the WRONG flags2 bit.** `encodePlaceObject3WithFilters`
+  (`filters.ts:584`) sets flags2 bit 4 (`0x10` = HAS_IMAGE) for HasFilterList, but
+  Ruffle's swf crate reads HAS_FILTER_LIST at flags2 bit 0 (`0x01`). Consequence: a REAL
+  `compileDocument()` SWF carrying ANY filter (all 9 types) decodes in Ruffle as
+  PlaceObject3 `filters=None` — the ENTIRE filter list is silently dropped at runtime.
+  Proven: patching ONLY the flags2 byte `0x10`→`0x01` makes the identical bytes decode the
+  filter; cacheAsBitmap (flags2=`0x04`) is the working control; `cacheasbitmap.test.ts:262`
+  documents the flags2-bitN→crate-bit-(8+N) mapping confirming `0x10` is misplaced.
+  Pre-existing (NOT introduced by 1236). Masked by byte-presence tests
+  (`blur-tween.test.ts`, `convolution-filter.test.ts:279`, `displacement-filter.test.ts`)
+  that assert `flags2 & 0x10` — the same mutual-masking pattern.
+
+- **AMENDMENT/CORRECTION to the prior "Filters 8/9 healthy" proactive-audit entry
+  (2026-06-19 idle-window sweep above):** that audit verified the filter RECORD encoding
+  (FILTERLIST contents / flag bits) but did NOT verify the PlaceObject3 TAG-level
+  HasFilterList flag, so its "healthy" conclusion was INCOMPLETE — per task 1238, filters
+  do not actually reach Ruffle at runtime at all. The editor-based visual-oracle did not
+  catch this because it renders via the editor CanvasRenderer, not Ruffle. Net: filter
+  RECORD encoding is correct (8/9, Convolution fixed by 1236), but filters are
+  RUNTIME-DROPPED until 1238 is fixed.
+
+- **Task 1235 Part 2.5 (commit `14704b4`, List + ComboBox) VERIFIED functional.** Both
+  render author items + prove state changes in Ruffle (List click-select →
+  `getSelectedIndex()==1` RED→BLUE; ComboBox open → `isOpen()==true`), per-instance
+  dataProvider, registerClass. 1440 swf tests; component-oracle 15/15; golden-parity
+  exit 0. One minor finding (ComboBox `onMouseDown` hit-area off-by-one at
+  `components.ts:877-878`) already tracked by task 1237 (+ arrow_mk-never-toggled,
+  extraTextFields signature nits) — no dup filed. Coverage note: oracle proves ComboBox
+  open but NOT dropdown-item-select; List/ComboBox per-instance-dataProvider not
+  oracle-tested across two instances (behavior implemented, oracle breadth gap).
+
+- **Still open for workers (running list):** **1238** (CRITICAL — filters dropped at
+  runtime), **1216** (motion-tween/guide/bitmap), **1227** (trace-bitmap marching-squares
+  half-region), **1237** (ComboBox polish: hitTest / arrow_mk / signature) — all open;
+  **1223** remains a candidate-for-close.
+- **Audited & healthy (running list):** Sound Envelope (1204), Blend modes, **Filters**
+  (RECORD encoding 8/9 ok, Convolution fixed — BUT tag-level HasFilterList broken → 1238,
+  so filters are runtime-dropped pending fix).
