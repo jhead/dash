@@ -315,10 +315,57 @@ describe("ImportAssets2 (tag 71) — importForRuntimeSharing", () => {
     expect(() => compileDocument(doc)).not.toThrow();
   });
 
-  // Test 2: If ImportAssets2 (tag 71) is emitted, it must contain the URL string.
-  it.todo(
-    "ImportAssets2 tag body contains the sharedUrl string (not yet implemented)"
-  );
+  // Test 2: ImportAssets2 (tag 71) IS emitted and its body is byte-exact per the
+  // SWF spec: STRING url (NUL-term), UI8 reserved=1, UI8 reserved=0, UI16 count,
+  // then {UI16 charId, STRING name(NUL-term)} per imported symbol.
+  it("emits a byte-exact ImportAssets2 (tag 71) body for an importForRuntimeSharing symbol", () => {
+    const sharedUrl = "http://example.com/shared.swf";
+    const linkageIdentifier = "SharedClip";
+
+    const sym = makeSymbol({
+      linkage: {
+        ...DEFAULT_LINKAGE,
+        importForRuntimeSharing: true,
+        sharedUrl,
+        linkageIdentifier,
+      },
+    });
+    const doc = makeDoc([sym]);
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    // Exactly one ImportAssets2 tag must be present.
+    const importTags = tags.filter((t) => t.code === TAG_IMPORT_ASSETS2);
+    expect(importTags.length).toBe(1);
+    const body = importTags[0].body;
+
+    // --- Build the expected body byte-for-byte and compare exactly. ---
+    const urlBytes = Array.from(new TextEncoder().encode(sharedUrl));
+    const nameBytes = Array.from(new TextEncoder().encode(linkageIdentifier));
+    // We don't hard-code the charId here (it is allocation-order dependent), so
+    // read it back and assert it round-trips, then assemble the expected bytes
+    // around it.
+    const charIdLo = body[urlBytes.length + 1 /*NUL*/ + 2 /*reserved*/ + 2 /*count*/];
+    const charIdHi = body[urlBytes.length + 1 + 2 + 2 + 1];
+    const charId = charIdLo | (charIdHi << 8);
+    expect(charId).toBeGreaterThanOrEqual(1);
+
+    const expected = [
+      ...urlBytes, 0, // STRING url + NUL
+      1, 0, // reserved bytes (1, 0)
+      1, 0, // UI16 count = 1 (LE)
+      charId & 0xff, (charId >> 8) & 0xff, // UI16 charId (LE)
+      ...nameBytes, 0, // STRING name + NUL
+    ];
+    expect(Array.from(body)).toEqual(expected);
+
+    // And the structural parser agrees on the decoded values.
+    const parsed = parseImportAssets2(body);
+    expect(parsed.url).toBe(sharedUrl);
+    expect(parsed.entries.length).toBe(1);
+    expect(parsed.entries[0].name).toBe(linkageIdentifier);
+    expect(parsed.entries[0].charId).toBe(charId);
+  });
 
   // Test 3: When ImportAssets2 is NOT emitted, compile still produces a valid SWF.
   it("SWF bytes are non-empty for importForRuntimeSharing=true symbol", () => {
@@ -355,14 +402,9 @@ describe("ImportAssets2 (tag 71) — importForRuntimeSharing", () => {
     const bytes = compileDocument(doc);
     const tags = parseSWF(bytes);
 
+    // Hard assertion: ImportAssets2 IS emitted (no skip fallback).
     const importTags = tags.filter((t) => t.code === TAG_IMPORT_ASSETS2);
-    if (importTags.length === 0) {
-      // ImportAssets2 not yet implemented — skip structural assertions
-      return;
-    }
-
-    // If it IS emitted, verify structure
-    expect(importTags.length).toBeGreaterThan(0);
+    expect(importTags.length).toBe(1);
     const parsed = parseImportAssets2(importTags[0].body);
     expect(parsed.url).toBe(sharedUrl);
     const names = parsed.entries.map((e) => e.name);
@@ -425,14 +467,16 @@ describe("ExportAssets (tag 56) — exportForRuntimeSharing", () => {
     expect(() => compileDocument(doc)).not.toThrow();
   });
 
-  // Test 2 (conditional): If ExportAssets is emitted for exportForRuntimeSharing,
-  // it should contain the linkageIdentifier.
-  it("if ExportAssets is emitted for exportForRuntimeSharing, it contains the linkageIdentifier", () => {
+  // Test 2: ExportAssets (tag 56) IS emitted for an exportForRuntimeSharing symbol,
+  // and its body is byte-exact per the SWF spec: UI16 count, then {UI16 charId,
+  // STRING name(NUL-term)} per exported symbol.
+  it("emits a byte-exact ExportAssets (tag 56) body for an exportForRuntimeSharing symbol", () => {
+    const linkageIdentifier = "SharedClip";
     const sym = makeSymbol({
       linkage: {
         ...DEFAULT_LINKAGE,
         exportForRuntimeSharing: true,
-        linkageIdentifier: "SharedClip",
+        linkageIdentifier,
         sharedUrl: "http://example.com/shared.swf",
       },
     });
@@ -440,15 +484,30 @@ describe("ExportAssets (tag 56) — exportForRuntimeSharing", () => {
     const bytes = compileDocument(doc);
     const tags = parseSWF(bytes);
 
+    // Exactly one ExportAssets tag must be present (hard — no non-emission fallback).
     const exportTags = tags.filter((t) => t.code === TAG_EXPORT_ASSETS);
-    if (exportTags.length === 0) {
-      // exportForRuntimeSharing export not yet implemented — skip structural assertions
-      return;
-    }
+    expect(exportTags.length).toBe(1);
+    const body = exportTags[0].body;
 
-    const entries = parseExportAssets(exportTags[0].body);
-    const names = entries.map((e) => e.name);
-    expect(names).toContain("SharedClip");
+    // count is the first UI16; charId follows.
+    const count = body[0] | (body[1] << 8);
+    expect(count).toBe(1);
+    const charId = body[2] | (body[3] << 8);
+    expect(charId).toBeGreaterThanOrEqual(1);
+
+    const nameBytes = Array.from(new TextEncoder().encode(linkageIdentifier));
+    const expected = [
+      1, 0, // UI16 count = 1 (LE)
+      charId & 0xff, (charId >> 8) & 0xff, // UI16 charId (LE)
+      ...nameBytes, 0, // STRING name + NUL
+    ];
+    expect(Array.from(body)).toEqual(expected);
+
+    // And the structural parser agrees.
+    const entries = parseExportAssets(body);
+    expect(entries.length).toBe(1);
+    expect(entries[0].name).toBe(linkageIdentifier);
+    expect(entries[0].charId).toBe(charId);
   });
 
   // Test 3: exportForRuntimeSharing=false does not produce ExportAssets (unless exportForActionScript is also set).

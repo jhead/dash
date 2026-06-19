@@ -401,6 +401,22 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **DefineScalingGrid (tag 78)**: must immediately follow the `DefineSprite` tag for
   any symbol whose model has `scale9Grid != null`; omitting it causes Ruffle to apply
   uniform scaling and distort 9-slice corners.
+- **Runtime-sharing / Scale9 tag bodies are byte-verified (task 1226)**: the three
+  linkage/grid encoders in `compiler/symbols.ts` are emitted by the orchestrator
+  (`compiler/frames.ts` emits ExportAssets→ImportAssets2→DoInitAction in scene-0 frame-0;
+  the symbol pass emits DefineScalingGrid right after each DefineSprite) and their exact
+  bodies are now pinned by hard byte-level assertions (`importassets.test.ts`,
+  `scalinggrid.test.ts` — no more `.todo`/`.expect.soft`/non-emission fallbacks). Layouts,
+  all UI16 little-endian, STRING = NUL-terminated UTF-8:
+  - **ExportAssets (56)** `exportForActionScript || exportForRuntimeSharing` (needs a
+    `linkageIdentifier`): `UI16 count` then `{UI16 charId, STRING name}×count`.
+  - **ImportAssets2 (71)** one tag per distinct `sharedUrl`, for
+    `importForRuntimeSharing && sharedUrl && linkageIdentifier`: `STRING url`, `UI8 1`,
+    `UI8 0` (the two reserved bytes), `UI16 count`, then `{UI16 charId, STRING name}×count`.
+  - **DefineScalingGrid (78)**: `UI16 spriteId` then a byte-aligned `RECT` of the grid in
+    twips (xMin=`x*20`, xMax=`(x+width)*20`, yMin=`y*20`, yMax=`(y+height)*20`); the RECT
+    consumes the entire remainder of the body. Verified structurally by decoding our own
+    compiled SWF — no external Flash binary required.
 - **Multi-frame movies**: emit `RemoveObject2` when an object leaves the display list;
   set the `Move` flag on `PlaceObject2` for objects that persist across frames; hoist
   all character definitions before the first `ShowFrame`.

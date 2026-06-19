@@ -274,12 +274,9 @@ describe("DefineScalingGrid (tag 78) — 9-slice scaling", () => {
     const bytes = compileDocument(doc);
     const tags = parseTags(bytes);
 
+    // Hard assertion: exactly one DefineScalingGrid (tag 78) must be emitted.
     const gridTags = tags.filter((t) => t.code === TAG_DEFINE_SCALING_GRID);
-    if (gridTags.length === 0) {
-      // DefineScalingGrid not yet implemented — skip remainder with .todo semantics
-      expect.soft(gridTags.length).toBeGreaterThanOrEqual(1);
-      return;
-    }
+    expect(gridTags.length).toBe(1);
 
     // Find the DefineSprite tag and extract its character ID
     const spriteTag = tags.find((t) => t.code === TAG_DEFINE_SPRITE);
@@ -306,12 +303,9 @@ describe("DefineScalingGrid (tag 78) — 9-slice scaling", () => {
     const bytes = compileDocument(doc);
     const tags = parseTags(bytes);
 
+    // Hard assertion: exactly one DefineScalingGrid (tag 78) must be emitted.
     const gridTags = tags.filter((t) => t.code === TAG_DEFINE_SCALING_GRID);
-    if (gridTags.length === 0) {
-      // DefineScalingGrid not yet implemented — skip remainder with .todo semantics
-      expect.soft(gridTags.length).toBeGreaterThanOrEqual(1);
-      return;
-    }
+    expect(gridTags.length).toBe(1);
 
     const gridBody = gridTags[0].body;
     // Skip charId (2 bytes) then read the RECT
@@ -324,6 +318,10 @@ describe("DefineScalingGrid (tag 78) — 9-slice scaling", () => {
     expect(rect.xMax).toBe((grid.x + grid.width) * 20);
     expect(rect.yMin).toBe(grid.y * 20);
     expect(rect.yMax).toBe((grid.y + grid.height) * 20);
+
+    // The RECT must consume the entire remainder of the body (charId + RECT, no
+    // trailing/padding bytes beyond the byte-aligned RECT).
+    expect(2 + rect.bytesConsumed).toBe(gridBody.length);
   });
 
   // -------------------------------------------------------------------------
@@ -336,11 +334,9 @@ describe("DefineScalingGrid (tag 78) — 9-slice scaling", () => {
     const bytes = compileDocument(doc);
     const tags = parseTags(bytes);
 
+    // Hard assertion: exactly one DefineScalingGrid (tag 78) must be emitted.
     const gridTags = tags.filter((t) => t.code === TAG_DEFINE_SCALING_GRID);
-    if (gridTags.length === 0) {
-      expect.soft(gridTags.length).toBeGreaterThanOrEqual(1);
-      return;
-    }
+    expect(gridTags.length).toBe(1);
 
     // Find index of DefineSprite and verify DefineScalingGrid follows it
     const spriteIdx = tags.findIndex((t) => t.code === TAG_DEFINE_SPRITE);
