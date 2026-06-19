@@ -69,6 +69,21 @@ backend; the only network calls go **directly from your browser to
   command's own Zod schema, and its `execute` calls `dispatchAgentCommand(name,
   args)`. Errors are caught and returned as a structured `{ error }` object (so a
   failed tool — including the "editor not ready" guard — never crashes the loop).
+  - **Vision / `stage_screenshot` (image tool results).** Most tools return a
+    JSON object that the AI SDK serializes as a *text* (`type:'json'`)
+    tool-result. `stage_screenshot` is special: its result carries a rendered PNG
+    as base64 (`{ pngBase64, width, height }`), and base64 in a text tool-result
+    is undecodable by the model (a vision model cannot *see* it, and the blob
+    wastes context). So image-producing commands (the `IMAGE_RESULT_COMMANDS`
+    set) get a per-tool **`toModelOutput`** override that maps the result to a
+    real image content part — AI SDK v6's `{ type:'content', value:[{ type:'text',
+    text:'…(WxH)' }, { type:'image-data', data: pngBase64, mediaType:'image/png'
+    }] }`. A multimodal model receives an actual image; a short text note carries
+    the dimensions so a text-only model still gets something. The base64 never
+    enters the plain-text channel. **Vision is model-dependent:** OpenRouter
+    routes to the model you pick — a text-only model will ignore/reject the image
+    part, so the system prompt tells the model to rely on structured reads when it
+    is not multimodal.
 - **`systemPrompt.ts`** — `AGENT_SYSTEM_PROMPT` describing the Dash model, the
   tool surface, and a *read-before-write* working style.
 - **`agentLoop.ts`** — `runAgentTurn()` runs one turn through the AI SDK v6
@@ -78,7 +93,11 @@ backend; the only network calls go **directly from your browser to
 - **`AgentChatPanel.tsx`** — the panel: collapsible Settings, the **thread
   switcher** (`New chat` + a dropdown of past conversations), the transcript
   (user bubbles + assistant turns with streamed text, *thinking*, tool-call
-  chips, step markers), and the composer with the **Send / Stop** button. The
+  chips, step markers), and the composer with the **Send / Stop** button. A
+  tool-call chip's *result* section pretty-prints the JSON result, except a
+  screenshot result (a `{ pngBase64, width, height }` object) renders as a
+  `screenshot (W×H)` label plus a small thumbnail `<img>` — the base64 is never
+  dumped as text into the chip. The
   panel is a thin view over `threadStore` — it holds no conversation state of its
   own, so leaving and returning to the Agent tab (or reloading) shows the same
   conversation.

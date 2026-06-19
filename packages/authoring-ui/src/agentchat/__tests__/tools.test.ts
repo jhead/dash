@@ -124,6 +124,78 @@ describe("buildAgentTools — error handling (never throws past the loop)", () =
   });
 });
 
+describe("buildAgentTools — stage_screenshot delivers an image, not base64 text", () => {
+  const PNG_BASE64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+
+  it("maps the screenshot result to an image-data content part (round-trips base64)", async () => {
+    const dispatch = vi.fn(async () => ({
+      pngBase64: PNG_BASE64,
+      width: 550,
+      height: 400,
+    }));
+
+    const tools = buildAgentTools({ dispatch });
+    const screenshot = tools.stage_screenshot;
+
+    // The tool must define a toModelOutput override (without it the AI SDK
+    // serializes the result as JSON text — base64 the model can't decode).
+    expect(typeof screenshot.toModelOutput).toBe("function");
+
+    const output = await screenshot.execute!({}, {} as never);
+
+    const modelOutput = await screenshot.toModelOutput!({
+      toolCallId: "call-1",
+      input: {},
+      output,
+    });
+
+    // Model-facing output is a content array, NOT a text/json base64 blob.
+    expect(modelOutput.type).toBe("content");
+    if (modelOutput.type !== "content") throw new Error("expected content");
+
+    const imagePart = modelOutput.value.find((p) => p.type === "image-data");
+    expect(imagePart, "an image-data content part must be present").toBeDefined();
+    if (!imagePart || imagePart.type !== "image-data")
+      throw new Error("expected image-data part");
+    // The base64 round-trips through to the image part with the PNG media type.
+    expect(imagePart.data).toBe(PNG_BASE64);
+    expect(imagePart.mediaType).toBe("image/png");
+
+    // A short text note carries the dimensions (helps text-only models), but
+    // the base64 string must NOT appear anywhere in the text channel.
+    const textParts = modelOutput.value.filter((p) => p.type === "text");
+    for (const p of textParts) {
+      if (p.type !== "text") continue;
+      expect(p.text).not.toContain(PNG_BASE64);
+      expect(p.text).toMatch(/550.*400/);
+    }
+  });
+
+  it("passes a structured dispatch error through as JSON (not as an image)", async () => {
+    const dispatch = vi.fn(async () => {
+      throw new Error("Editor not ready: agent callbacks not wired");
+    });
+
+    const tools = buildAgentTools({ dispatch });
+    const output = await tools.stage_screenshot.execute!({}, {} as never);
+
+    const modelOutput = await tools.stage_screenshot.toModelOutput!({
+      toolCallId: "call-2",
+      input: {},
+      output,
+    });
+
+    expect(modelOutput.type).toBe("json");
+  });
+
+  it("does NOT add toModelOutput to non-image tools (they stay JSON text)", () => {
+    const tools = buildAgentTools();
+    expect(tools.stage_add_shape.toModelOutput).toBeUndefined();
+    expect(tools.doc_summary.toModelOutput).toBeUndefined();
+  });
+});
+
 describe("buildAgentTools — injectable dispatch", () => {
   it("uses the provided dispatch override instead of the registry", async () => {
     const injected = vi.fn(

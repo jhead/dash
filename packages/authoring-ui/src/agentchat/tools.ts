@@ -59,6 +59,36 @@ export interface BuildAgentToolsOptions {
 }
 
 /**
+ * Commands whose result carries a rendered image as base64 PNG, so the tool
+ * must deliver it to the model as a real image content part (not text base64).
+ * Today only `stage_screenshot` qualifies; the per-tool override below is keyed
+ * on this set so any future image-producing command can opt in by name.
+ */
+const IMAGE_RESULT_COMMANDS = new Set<AgentCommand>(["stage_screenshot"]);
+
+/**
+ * The (subset of the) shape a tool that returns a base64 image produces. The
+ * registry's `stage_screenshot` handler returns exactly this. Narrowed via a
+ * runtime guard so the `toModelOutput` mapping is total/safe even if dispatch
+ * returns a structured error instead of a screenshot.
+ */
+interface ImageToolResult {
+  pngBase64: string;
+  width: number;
+  height: number;
+}
+
+function isImageToolResult(value: unknown): value is ImageToolResult {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.pngBase64 === "string" &&
+    typeof v.width === "number" &&
+    typeof v.height === "number"
+  );
+}
+
+/**
  * The generated tool set, keyed by command name. This is the value P3 passes to
  * the AI SDK agent loop as `{ tools }`.
  */
@@ -84,23 +114,62 @@ export function buildAgentTools(options: BuildAgentToolsOptions = {}): AgentTool
     const inputSchema = COMMAND_SCHEMAS[name];
     const description = COMMAND_DESCRIPTIONS[name];
 
-    tools[name] = tool({
-      description,
-      inputSchema,
-      execute: async (args: unknown): Promise<unknown> => {
-        try {
-          // The model always produces an object for an object schema; coerce a
-          // missing/undefined arg (paramless tools) to an empty object.
-          const params = (args ?? {}) as Record<string, unknown>;
-          const result = await dispatch(name, params);
-          // Return the command result directly so the model can react to it.
-          // It is already JSON-serializable (the registry returns plain data).
-          return result;
-        } catch (err) {
-          return toToolError(name, err);
-        }
-      },
-    });
+    const execute = async (args: unknown): Promise<unknown> => {
+      try {
+        // The model always produces an object for an object schema; coerce a
+        // missing/undefined arg (paramless tools) to an empty object.
+        const params = (args ?? {}) as Record<string, unknown>;
+        const result = await dispatch(name, params);
+        // Return the command result directly so the model can react to it.
+        // It is already JSON-serializable (the registry returns plain data).
+        return result;
+      } catch (err) {
+        return toToolError(name, err);
+      }
+    };
+
+    if (IMAGE_RESULT_COMMANDS.has(name)) {
+      // Image-producing tools (stage_screenshot): the raw `execute` result
+      // still carries `pngBase64` (so `toModelOutput` has the data and the UI
+      // can summarize it), but WITHOUT `toModelOutput` the AI SDK would
+      // serialize that object as a `type:'json'` tool-result — the model would
+      // receive the base64 as undecodable TEXT (vision unusable + a huge blob
+      // wasting context). `toModelOutput` instead maps the result to a proper
+      // image content part so multimodal models actually SEE the screenshot.
+      tools[name] = tool({
+        description,
+        inputSchema,
+        execute,
+        toModelOutput: ({ output }) => {
+          if (!isImageToolResult(output)) {
+            // Dispatch returned a structured error (e.g. editor not ready) —
+            // pass it through as JSON so the model can read and react to it.
+            return { type: "json", value: (output ?? null) as never };
+          }
+          // AI SDK v6 multimodal tool-result API: a `type:'content'` output
+          // with an `image-data` part (base64 + IANA media type) is the part a
+          // multimodal model decodes as an image. A short text note carries the
+          // dimensions so text-only models still get something useful, and the
+          // base64 itself never lands in the plain-text channel.
+          return {
+            type: "content",
+            value: [
+              {
+                type: "text",
+                text: `Rendered stage screenshot (${output.width}x${output.height}).`,
+              },
+              {
+                type: "image-data",
+                data: output.pngBase64,
+                mediaType: "image/png",
+              },
+            ],
+          };
+        },
+      });
+    } else {
+      tools[name] = tool({ description, inputSchema, execute });
+    }
   }
 
   return tools;

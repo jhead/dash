@@ -688,9 +688,13 @@ function ToolChip({ entry }: { entry: AgentToolEntry }): React.JSX.Element {
           ) : entry.status === "result" ? (
             <>
               <div style={styles.toolSectionLabel}>result</div>
-              <pre style={styles.toolPre} data-testid="agent-tool-result">
-                {prettyJson(entry.output)}
-              </pre>
+              {isImageToolOutput(entry.output) ? (
+                <ScreenshotResult output={entry.output} />
+              ) : (
+                <pre style={styles.toolPre} data-testid="agent-tool-result">
+                  {prettyJson(entry.output)}
+                </pre>
+              )}
             </>
           ) : null}
         </div>
@@ -726,6 +730,52 @@ export function formatThreadTime(ts: number, now: number = Date.now()): string {
   } catch {
     return `${day}d`;
   }
+}
+
+/** A tool result that carries a rendered image as a base64 PNG (stage_screenshot). */
+interface ImageToolOutput {
+  pngBase64: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * Detect a screenshot-style tool result so the chip can show a compact
+ * `screenshot (WxH)` summary + thumbnail instead of dumping tens-of-KB of
+ * base64 into the chip body.
+ */
+function isImageToolOutput(value: unknown): value is ImageToolOutput {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.pngBase64 === "string" &&
+    typeof v.width === "number" &&
+    typeof v.height === "number"
+  );
+}
+
+/**
+ * Render a screenshot tool result as a label + small thumbnail. The base64 PNG
+ * is shown as an <img>, never as raw text — the giant base64 string stays out
+ * of the chip body.
+ */
+function ScreenshotResult({
+  output,
+}: {
+  output: ImageToolOutput;
+}): React.JSX.Element {
+  return (
+    <div data-testid="agent-tool-result">
+      <div style={styles.toolPre}>
+        screenshot ({output.width}×{output.height})
+      </div>
+      <img
+        src={`data:image/png;base64,${output.pngBase64}`}
+        alt={`Stage screenshot ${output.width}×${output.height}`}
+        style={styles.toolScreenshot}
+      />
+    </div>
+  );
 }
 
 function prettyJson(value: unknown): string {
@@ -1021,6 +1071,14 @@ const styles: Record<string, React.CSSProperties> = {
     wordBreak: "break-word",
     maxHeight: 160,
     overflowY: "auto",
+  },
+  toolScreenshot: {
+    display: "block",
+    marginTop: 4,
+    maxWidth: "100%",
+    maxHeight: 160,
+    border: `1px solid ${chrome.separator}`,
+    objectFit: "contain",
   },
   statusLine: {
     display: "flex",
