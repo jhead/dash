@@ -98,13 +98,24 @@ dims), falling back to 320×240. Non-FLV or empty input returns `null`.
 ### Compiler wiring
 
 - **`compiler/media.ts` `runMediaPass`** filters library `VideoItem`s, demuxes each
-  `dataUri`, and emits one `DefineVideoStream` per item. When the dataURI demuxes to real
-  frames, `NumFrames`/`Width`/`Height`/`CodecID` come from the demuxed stream and one
-  `VideoFrame` payload is collected per decoded frame. When the dataURI is an undecodable
-  stub (or absent), it synthesizes `VideoItem.frameCount` empty `VideoFrame` payloads so
-  the stream still advances one frame per `ShowFrame`. It returns a `videoCharIdMap`
-  (VideoItem id → character id) and `videoStreams` (per-stream payloads) for downstream
-  passes (`compiler/symbols.ts` and the frame loop consume them).
+  `dataUri`, and emits one `DefineVideoStream` per item. The emitted tag-60 fields come
+  from different sources:
+  - **`Width`/`Height`** always come from the `VideoItem` model
+    (`Math.round(videoItem.width)` / `videoItem.height`), regardless of whether the demux
+    succeeds. The demuxed FLV dimensions returned by `demuxFlv()` (the `onMetaData` /
+    H.263 `psize` extraction described above) are **not** consumed by the compiler today —
+    they are advisory and currently unused for the emitted stream.
+  - **`NumFrames`** is the payload count: the number of decoded FLV frames when the demux
+    yields real frames, otherwise `VideoItem.frameCount` (the empty-payload fallback).
+  - **`CodecID`** comes from the demuxed stream (`flvCodecToSwfCodec(flv.codecId)`) when
+    the demux succeeds, otherwise defaults to H.263.
+
+  When the dataURI demuxes to real frames one `VideoFrame` payload is collected per
+  decoded frame. When the dataURI is an undecodable stub (or absent), it synthesizes
+  `VideoItem.frameCount` empty `VideoFrame` payloads so the stream still advances one
+  frame per `ShowFrame`. It returns a `videoCharIdMap` (VideoItem id → character id) and
+  `videoStreams` (per-stream payloads) for downstream passes (`compiler/symbols.ts` and
+  the frame loop consume them).
 - **`VideoFrame` (tag 61)** records are emitted during the frame loop, one per
   `ShowFrame`, advancing each placed stream; `StreamID` matches the owning
   `DefineVideoStream` CharacterID.
