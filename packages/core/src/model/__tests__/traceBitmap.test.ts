@@ -102,14 +102,23 @@ describe("traceBitmap", () => {
     }
   });
 
-  it("each returned path forms a rectangle (4 line segments)", () => {
+  it("each axis-aligned region traces to a 4-line rectangle (corners preserved)", () => {
+    // Axis-aligned square quadrants: marching squares yields a clean 4-vertex
+    // contour; the 90° corners exceed the corner threshold so they stay sharp
+    // line segments (no curve rounding) and Douglas-Peucker keeps all 4.
     const imageData = makeQuadrantImage();
     const shapes = traceBitmap(imageData, { ...DEFAULT_TRACE_OPTIONS, minimumArea: 1 });
     for (const path of shapes) {
+      expect(path.closed).toBe(true);
       expect(path.segments.length).toBe(4);
       for (const seg of path.segments) {
         expect(seg.type).toBe("line");
       }
+      // Each quadrant spans a 5×5 pixel area.
+      const xs = [path.start.x, ...path.segments.map((s) => s.to.x)];
+      const ys = [path.start.y, ...path.segments.map((s) => s.to.y)];
+      expect(Math.max(...xs) - Math.min(...xs)).toBe(5);
+      expect(Math.max(...ys) - Math.min(...ys)).toBe(5);
     }
   });
 

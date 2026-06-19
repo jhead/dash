@@ -261,3 +261,24 @@ export {
   shouldClosePolygon,
   pointInPolygon,
 } from "./magicWand.js";
+
+// Bitmap tracing — Modify > Bitmap > Trace Bitmap (marching squares + Douglas-Peucker)
+export type {
+  BitmapTraceOptions,
+  BitmapTraceImageData,
+  TraceCurveFit,
+  TraceCornerThreshold,
+} from "./bitmapTrace.js";
+export {
+  DEFAULT_BITMAP_TRACE_OPTIONS,
+  traceBitmapToPaths,
+  tracedPathsToShape,
+  marchingSquaresContour,
+  simplifyPolyline,
+  simplifyClosedPolygon,
+  polygonToShapePath,
+  curveFitEpsilon,
+  curveFitSmooths,
+  cornerThresholdAngle,
+  nextTraceShapeId,
+} from "./bitmapTrace.js";

@@ -1,10 +1,10 @@
 {
   "id": "1220-33opvw-bitmap-trace-modify-bitmap-trace-bitmap",
   "title": "Bitmap Trace (Modify > Bitmap > Trace Bitmap)",
-  "description": "Trace Bitmap (docs/09) has no backend: no vectorization (threshold/min-area/curve-fit/corner-threshold). Implement a new pure-TS tracer (marching-squares contour + Douglas-Peucker simplification, reuse patterns from engine/magicWand). VERIFY ground truth first. Scope: new packages/core/src/engine/bitmapTrace.ts (+export), a Trace Bitmap dialog + Modify menu wiring in authoring-ui. Build + tests green (add unit tests); update docs/09.",
-  "status": "open",
+  "description": "Bitmap Trace (Modify > Bitmap > Trace Bitmap). GROUND TRUTH: a bounding-box MVP tracer + dialog + menu wiring already existed (task 0825, model/traceBitmap.ts produced blocky AABB rectangles per region; curveFit/cornerThreshold were documented no-ops). GENUINE GAP implemented: new pure-TS contour tracer packages/core/src/engine/bitmapTrace.ts (marching-squares contour extraction + Douglas-Peucker simplification + quadratic curve fitting + corner detection), honoring all 4 params (color threshold, min area, curve fit, corner threshold). Exported from engine/index.ts; the legacy model/traceBitmap.ts traceBitmap() now delegates to it so the existing dialog/menu/handler emit real contour shapes with zero UI changes. Added 24 engine unit tests (src/engine/__tests__/bitmapTrace.test.ts) + updated the model test for contour output. TESTS: pnpm --filter './packages/**' build = green; @flash/core = 5261 passed, only the 3 pre-existing flash8-empty.fla fixture failures (empty-bytematch, carchive-validate, contents-structure \u2014 task 1207, fixture genuinely absent on disk); @flash/authoring-ui = 639 passed (42 files). docs/09 updated.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-19T00:48:29Z",
-  "updated_at": "2026-06-19T00:48:29Z"
+  "updated_at": "2026-06-19T01:06:39Z"
 }
