@@ -54,3 +54,4 @@ Start with `00-overview-and-architecture.md`, then read by domain.
 | 21 | [Binary FLA Format](./21-fla-binary-format.md) | Reverse-engineering spec for the proprietary `.fla` import (OLE2 + CArchive), with explicit confidence tags |
 | 30 | [Flash 8 UI Spec](./30-flash8-ui-spec.md) | Authoritative color/metric spec for the light "Halo" re-theme (Systems A/B/C) |
 | 31 | [Theming](./31-theming.md) | Swappable light/dark theme system; how to enable dark mode later |
+| 32 | [Agent Chat (in-app)](./32-agent-chat.md) | Client-side BYOK chat panel: AI SDK v6 + OpenRouter driving the editor via the agent-protocol tools |

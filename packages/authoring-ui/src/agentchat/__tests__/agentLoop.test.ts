@@ -13,6 +13,7 @@ import {
   initialAgentRunState,
   drivePartStream,
   agentErrorMessage,
+  classifyAgentError,
   type AgentRunState,
   type AgentToolEntry,
   type AgentTextEntry,
@@ -250,5 +251,74 @@ describe("agentErrorMessage", () => {
     expect(agentErrorMessage("s")).toBe("s");
     expect(agentErrorMessage({ a: 1 })).toBe('{"a":1}');
     expect(agentErrorMessage(null)).toBe("Unknown error");
+  });
+
+  it("digs the message out of AI-SDK-style nested error objects", () => {
+    expect(agentErrorMessage({ message: "top-level msg" })).toBe(
+      "top-level msg"
+    );
+    expect(
+      agentErrorMessage({ error: { message: "nested provider msg" } })
+    ).toBe("nested provider msg");
+    expect(agentErrorMessage({ responseBody: "raw body text" })).toBe(
+      "raw body text"
+    );
+  });
+});
+
+describe("classifyAgentError — actionable error buckets", () => {
+  it("reports a missing key before anything else", () => {
+    const f = classifyAgentError(new Error("whatever"), {
+      hasKey: false,
+      hasModel: true,
+    });
+    expect(f.kind).toBe("missing-key");
+    expect(f.openSettings).toBe(true);
+    expect(f.message).toMatch(/api key/i);
+  });
+
+  it("reports a missing model when a key is present", () => {
+    const f = classifyAgentError(null, { hasKey: true, hasModel: false });
+    expect(f.kind).toBe("model");
+    expect(f.openSettings).toBe(true);
+    expect(f.message).toMatch(/model/i);
+  });
+
+  it("classifies a 401 as an auth failure", () => {
+    const f = classifyAgentError({ statusCode: 401, message: "Unauthorized" });
+    expect(f.kind).toBe("auth");
+    expect(f.openSettings).toBe(true);
+  });
+
+  it("classifies an invalid-key message (no status) as auth", () => {
+    const f = classifyAgentError(new Error("Invalid API key provided"));
+    expect(f.kind).toBe("auth");
+  });
+
+  it("classifies a 429 as rate-limit and does not nudge settings", () => {
+    const f = classifyAgentError({ statusCode: 429, message: "Too Many Requests" });
+    expect(f.kind).toBe("rate-limit");
+    expect(f.openSettings).toBe(false);
+  });
+
+  it("classifies a fetch/CORS failure as network", () => {
+    const f = classifyAgentError(new TypeError("Failed to fetch"));
+    expect(f.kind).toBe("network");
+    expect(f.message).toMatch(/openrouter\.ai|internet/i);
+  });
+
+  it("classifies a bad model id as a model error", () => {
+    const f = classifyAgentError({
+      statusCode: 400,
+      message: "model not found: foo/bar",
+    });
+    expect(f.kind).toBe("model");
+    expect(f.openSettings).toBe(true);
+  });
+
+  it("falls back to unknown with the raw message", () => {
+    const f = classifyAgentError(new Error("some weird thing"));
+    expect(f.kind).toBe("unknown");
+    expect(f.message).toBe("some weird thing");
   });
 });

@@ -32,15 +32,20 @@ export { AGENT_SYSTEM_PROMPT, buildAgentSystemPrompt } from "./systemPrompt.js";
 
 // Phase 3: the chat panel UI + the agent run loop (streamText fullStream ->
 // renderable transcript). The Shell docks AgentChatPanel in the right pane.
-export { AgentChatPanel } from "./AgentChatPanel.js";
-export type { AgentChatPanelProps } from "./AgentChatPanel.js";
+export { AgentChatPanel, DEFAULT_AGENT_MODEL } from "./AgentChatPanel.js";
+export type {
+  AgentChatPanelProps,
+  AgentChatTestHook,
+} from "./AgentChatPanel.js";
 export {
   runAgentTurn,
   drivePartStream,
   reduceAgentEvent,
   initialAgentRunState,
   agentErrorMessage,
+  classifyAgentError,
 } from "./agentLoop.js";
+export type { AgentErrorKind, FriendlyAgentError } from "./agentLoop.js";
 export type {
   AgentRunState,
   AgentRunStatus,

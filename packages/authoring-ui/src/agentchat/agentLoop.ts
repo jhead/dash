@@ -101,11 +101,145 @@ export function agentErrorMessage(err: unknown): string {
   if (err == null) return "Unknown error";
   if (err instanceof Error) return err.message;
   if (typeof err === "string") return err;
+  // AI SDK errors carry their detail on `.message`; many providers nest the
+  // useful text under `.message`, `.responseBody`, or `.error.message`.
+  if (typeof err === "object") {
+    const o = err as Record<string, unknown>;
+    if (typeof o.message === "string" && o.message.length > 0) return o.message;
+    if (
+      o.error &&
+      typeof o.error === "object" &&
+      typeof (o.error as Record<string, unknown>).message === "string"
+    ) {
+      return (o.error as Record<string, string>).message;
+    }
+    if (typeof o.responseBody === "string" && o.responseBody.length > 0) {
+      return o.responseBody;
+    }
+  }
   try {
     return JSON.stringify(err);
   } catch {
     return String(err);
   }
+}
+
+/**
+ * Classification of a run failure into one of a few user-facing buckets, used by
+ * the panel to render a clear, ACTIONABLE error state (vs. an opaque stack).
+ */
+export type AgentErrorKind =
+  | "missing-key" // no API key configured
+  | "auth" // invalid key / 401 / 403
+  | "network" // network down / CORS / DNS / fetch failed
+  | "rate-limit" // 429
+  | "model" // bad model id / 400 / provider-side model error
+  | "unknown";
+
+export interface FriendlyAgentError {
+  kind: AgentErrorKind;
+  /** A short, human-readable, actionable message for the transcript. */
+  message: string;
+  /** When true, the panel should nudge the user toward Settings. */
+  openSettings: boolean;
+}
+
+/** HTTP status, if the error object carries one (AI SDK / fetch errors do). */
+function statusOf(err: unknown): number | undefined {
+  if (err && typeof err === "object") {
+    const o = err as Record<string, unknown>;
+    for (const k of ["statusCode", "status"]) {
+      const v = o[k];
+      if (typeof v === "number") return v;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Map a raw run error into a friendly, actionable {@link FriendlyAgentError}.
+ *
+ * Pure + dependency-free so it is exhaustively unit-testable. The panel calls
+ * this for its terminal error message; missing-key is detected upstream (before
+ * any request) but is included here for completeness.
+ */
+export function classifyAgentError(
+  err: unknown,
+  ctx: { hasKey: boolean; hasModel: boolean } = { hasKey: true, hasModel: true }
+): FriendlyAgentError {
+  if (!ctx.hasKey) {
+    return {
+      kind: "missing-key",
+      message:
+        "No OpenRouter API key set. Open Settings above and paste your key (it stays in this browser).",
+      openSettings: true,
+    };
+  }
+  if (!ctx.hasModel) {
+    return {
+      kind: "model",
+      message:
+        "No model selected. Open Settings above and choose a model to chat with.",
+      openSettings: true,
+    };
+  }
+
+  const raw = agentErrorMessage(err);
+  const lower = raw.toLowerCase();
+  const status = statusOf(err);
+
+  if (status === 401 || status === 403 || /\b(401|403)\b/.test(lower) || /invalid api key|no auth|unauthor|forbidden|user not found/.test(lower)) {
+    return {
+      kind: "auth",
+      message:
+        "OpenRouter rejected the API key (auth failed). Check the key in Settings — it may be wrong, revoked, or out of credits.",
+      openSettings: true,
+    };
+  }
+
+  if (status === 429 || /\b429\b|rate limit|too many requests/.test(lower)) {
+    return {
+      kind: "rate-limit",
+      message:
+        "Rate limited by OpenRouter (429). Wait a moment and try again, or pick a less busy model.",
+      openSettings: false,
+    };
+  }
+
+  if (
+    /failed to fetch|networkerror|network error|load failed|cors|err_network|fetch failed|enotfound|econnrefused|dns|offline|net::/.test(
+      lower
+    )
+  ) {
+    return {
+      kind: "network",
+      message:
+        "Couldn't reach openrouter.ai. Check your internet connection (and that a browser extension / firewall isn't blocking the request).",
+      openSettings: false,
+    };
+  }
+
+  if (
+    status === 400 ||
+    status === 404 ||
+    /\b(400|404)\b|model.*(not found|not available|invalid|unknown)|no endpoints found|not a valid model/.test(
+      lower
+    )
+  ) {
+    return {
+      kind: "model",
+      message: `The model couldn't process this request${
+        raw ? ` (${raw})` : ""
+      }. Try a different model in Settings.`,
+      openSettings: true,
+    };
+  }
+
+  return {
+    kind: "unknown",
+    message: raw || "Something went wrong running the agent. Try again.",
+    openSettings: false,
+  };
 }
 
 /**

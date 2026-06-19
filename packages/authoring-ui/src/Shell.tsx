@@ -2891,6 +2891,32 @@ export function Shell(): React.ReactElement {
   ]);
 
   // ---------------------------------------------------------------------------
+  // Agent Chat e2e stub (DEV / VITE_FLASH_TEST=1 only).
+  //
+  // Exposes a factory the Agent-Chat e2e oracle uses to drive the chat with a
+  // STUBBED model (no real key/network). The stub module imports `ai/test`, so
+  // it is loaded lazily and ONLY in test mode — never in a production bundle.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const metaEnv = (import.meta as any).env as Record<string, unknown> | undefined;
+    const isTestEnv =
+      metaEnv?.["DEV"] === true || metaEnv?.["VITE_FLASH_TEST"] === "1";
+    if (!isTestEnv) return;
+    let cancelled = false;
+    void import("./agentchat/testStub.js").then((m) => {
+      if (cancelled) return;
+      (window as unknown as Record<string, unknown>).__agentChatTestStub = {
+        makeStubRunTurn: m.makeStubRunTurn,
+      };
+    });
+    return () => {
+      cancelled = true;
+      delete (window as unknown as Record<string, unknown>).__agentChatTestStub;
+    };
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Agent MCP bridge (DEV / VITE_FLASH_TEST=1 only)
   // ---------------------------------------------------------------------------
 
