@@ -3609,6 +3609,7 @@ export function Shell(): React.ReactElement {
           <SoundEnvelopeEditDialog
             totalSamples={totalSamples}
             initial={initial}
+            dataUri={soundItem?.dataUri}
             onConfirm={handleEnvelopeConfirm}
             onClose={() => {
               setEnvelopeDialogOpen(false);

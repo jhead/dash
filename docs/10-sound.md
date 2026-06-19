@@ -26,9 +26,22 @@ Sounds attach to keyframes on a layer (Property inspector with a keyframe select
 
 The in-panel **Edit Envelope** dialog:
 
-- Drag envelope handles to shape left/right channel volume over time.
-- Trim start/end (time-in / time-out) of the clip.
-- Switch between seconds and frames display; zoom.
+- Shows the decoded **audio waveform** behind the envelope. Uncompressed WAV
+  sources are decoded to per-channel min/max peaks (`decodeWavPeaks` in
+  `@flash/core`, a pure-TS RIFF/WAVE PCM reader supporting 8/16/24/32-bit PCM and
+  IEEE float). Compressed sources (MP3/AAC/OGG) cannot be decoded in pure TS, so a
+  flat grey placeholder is drawn instead.
+- Drag envelope handles to shape left/right channel volume over time. Click a
+  channel band to add a node; right-click an interior node to remove it.
+- Trim start/end (time-in / time-out) of the clip via the In/Out markers.
+- **Time-zoom** control (1× / 2× / 4× / 8×) with a horizontal scroll slider to
+  magnify the visible time window for precise editing of dense envelopes. Zoom
+  changes only the view; the stored envelope/in/out values are unaffected.
+
+The envelope persists on the frame's sound instance (`SoundLinkage.customEnvelope`
+as `SoundEnvelopePoint[]` with `pos44`/`leftLevel`/`rightLevel`) and is encoded at
+publish into the SWF `SoundInfo` envelope points (HasEnvelope flag); see
+`packages/swf/src/sounds.ts`.
 
 ## Sounds on buttons
 

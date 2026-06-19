@@ -1,10 +1,10 @@
 {
   "id": "1204-sound-envelope-editor-waveform-draggable-gain-cu",
   "title": "Sound envelope editor: waveform + draggable gain curve, trim, channels",
-  "description": "Implement the Edit Envelope sound editor per docs/10-sound.md (Edit Envelope section). FIRST verify current SoundPanel/sound model state in packages/authoring-ui (SoundPanel) and packages/core sound/media model. Scope: (1) modal editor showing the audio waveform with a draggable gain envelope (handles add/move/remove) for left and right channels independently; (2) trim in/out point handles and a time-zoom control; (3) persist the envelope on the frame's sound instance model; (4) apply the envelope at publish in the SWF SoundInfo/DefineSound path in packages/swf. Primary files: packages/authoring-ui SoundPanel + new envelope editor component, packages/core sound model, packages/swf compiler media/sound-stream. DONE = author can shape a gain curve that persists and is encoded into SoundInfo envelope points (unit test on encode), typecheck + 3 unit suites green. Update docs/10 if detail changes.",
-  "status": "open",
+  "description": "Implement the Edit Envelope sound editor per docs/10-sound.md. DONE. (1) Modal editor (SoundEnvelopeEditDialog.tsx) shows the decoded audio waveform behind two independent L/R gain curves with draggable nodes (click band to add, drag to move amplitude, right-click interior node to remove). (2) In/Out trim markers + time-zoom (1x/2x/4x/8x) with horizontal scroll slider; zoom changes only the view, not stored values. (3) Envelope persists on SoundLinkage.customEnvelope (SoundEnvelopePoint[] pos44/leftLevel/rightLevel) via Shell.handleEnvelopeConfirm. (4) Encoded at publish into SWF SoundInfo (HasEnvelope) by packages/swf compiler (frames.ts/sprite.ts -> sounds.ts). New pure-TS RIFF/WAVE PCM peak decoder: packages/core/src/audio/waveform.ts (8/16/24/32-bit PCM + IEEE float); MP3/AAC fall back to flat placeholder. Tests GREEN: @flash/core audio waveform 7/7; @flash/authoring-ui soundEnvelopeDialog 8/8 (665 total pass); @flash/swf soundinfo+startsound+sound 86/86; typecheck core+authoring-ui pass; full builds green. Only pre-existing failures are the 3 missing-fixtures/flash8-empty.fla suites (task 1207, out of scope).",
+  "status": "done",
   "effort": "high",
   "priority": "medium",
   "created_at": "2026-06-18T23:09:58Z",
-  "updated_at": "2026-06-18T23:09:58Z"
+  "updated_at": "2026-06-19T00:17:52Z"
 }

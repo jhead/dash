@@ -2,10 +2,15 @@
  * Sound Envelope Edit dialog — Flash 8 style.
  *
  * Shows a 400×120 canvas with:
- *   - A grey waveform bar (placeholder — no decoded PCM needed)
+ *   - The decoded audio waveform (per-channel min/max peaks) when the source is
+ *     an uncompressed WAV; a flat grey placeholder otherwise (MP3/AAC, which we
+ *     can't decode in pure TS).
  *   - Draggable In/Out point vertical markers
  *   - Two independent volume curves (Left + Right channel) each with
  *     draggable amplitude nodes
+ *   - A time-zoom control (1× / 2× / 4× / 8×) that magnifies the start of the
+ *     clip so dense envelopes can be edited precisely. Zoom only changes the
+ *     visible time window — the underlying envelope/in/out values are unchanged.
  *
  * Coordinate convention:
  *   X axis → time (sample 0 at left, totalSamples at right)
@@ -14,8 +19,9 @@
  * SWF levels are 0-32768; we display as 0-100% and convert on OK.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { SoundEnvelopePoint } from "@flash/core";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SoundEnvelopePoint, WaveformPeaks } from "@flash/core";
+import { decodeWavPeaks } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -35,6 +41,11 @@ export interface SoundEnvelopeEditDialogProps {
   totalSamples: number;
   /** Initial envelope state. */
   initial: EnvelopeState;
+  /**
+   * Optional source audio data URI (WAV/MP3/…). When it is an uncompressed WAV
+   * the real waveform is drawn; otherwise a flat placeholder is used.
+   */
+  dataUri?: string;
   /** Called with the confirmed envelope. */
   onConfirm: (result: {
     inPoint: number;
@@ -59,14 +70,23 @@ const INNER_H = (CH - PAD_T - PAD_B) / 2 - 4; // half height per channel minus g
 
 const NODE_R = 5; // node hit radius in px
 
-/** Convert normalised [0,1] t to canvas X */
-function tToX(t: number): number {
-  return PAD_L + t * INNER_W;
+/** Number of waveform peak buckets to decode (oversampled vs INNER_W for zoom). */
+const PEAK_BUCKETS = INNER_W * 8;
+
+/** Available zoom factors (the time window shown = full / zoom). */
+const ZOOM_LEVELS = [1, 2, 4, 8] as const;
+
+/**
+ * The visible time window is [viewStart, viewStart + 1/zoom] in normalised
+ * full-clip time. `tToX`/`xToT` map between normalised full-clip t and canvas X
+ * through that window. Nodes/in/out store full-clip t regardless of zoom.
+ */
+function tToX(t: number, viewStart: number, zoom: number): number {
+  return PAD_L + (t - viewStart) * zoom * INNER_W;
 }
 
-/** Convert canvas X to normalised [0,1] t */
-function xToT(x: number): number {
-  return Math.max(0, Math.min(1, (x - PAD_L) / INNER_W));
+function xToT(x: number, viewStart: number, zoom: number): number {
+  return Math.max(0, Math.min(1, viewStart + (x - PAD_L) / (zoom * INNER_W)));
 }
 
 /** Convert amplitude [0,1] to canvas Y for a channel band starting at yTop */
@@ -148,7 +168,41 @@ type ActiveItem =
   | { kind: "out" }
   | { kind: "node"; channel: "left" | "right"; index: number };
 
-function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState): void {
+interface ViewParams {
+  viewStart: number;
+  zoom: number;
+  peaks: WaveformPeaks | null;
+}
+
+/** Draw the waveform peaks for one channel band, clipped to the visible window. */
+function drawWaveform(
+  ctx: CanvasRenderingContext2D,
+  peaks: WaveformPeaks,
+  channelIdx: number,
+  yTop: number,
+  viewStart: number,
+  zoom: number,
+): void {
+  const mid = yTop + INNER_H / 2;
+  const chan = peaks.channels[channelIdx] ?? peaks.channels[0];
+  if (!chan) return;
+  ctx.fillStyle = "#5a6a7a";
+  // For each canvas X column inside the band, sample the corresponding peak.
+  for (let px = 0; px < INNER_W; px++) {
+    // Map this column back to full-clip normalised t, then to a bucket index.
+    const t = viewStart + px / (zoom * INNER_W);
+    if (t > 1) break;
+    const bucket = Math.min(chan.length - 1, Math.floor(t * chan.length));
+    const [mn, mx] = chan[bucket];
+    const yMax = mid - mx * (INNER_H / 2);
+    const yMin = mid - mn * (INNER_H / 2);
+    const h = Math.max(1, yMin - yMax);
+    ctx.fillRect(PAD_L + px, yMax, 1, h);
+  }
+}
+
+function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState, view: ViewParams): void {
+  const { viewStart, zoom, peaks } = view;
   ctx.clearRect(0, 0, CW, CH);
 
   // Background
@@ -166,24 +220,33 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState): void {
   ctx.fillText("L", PAD_L - 18, LEFT_TOP + INNER_H / 2 + 3);
   ctx.fillText("R", PAD_L - 18, RIGHT_TOP + INNER_H / 2 + 3);
 
-  // Waveform placeholder (simple grey fill)
-  ctx.fillStyle = "#383838";
-  ctx.fillRect(PAD_L + 1, LEFT_TOP + 2, INNER_W - 2, INNER_H - 4);
-  ctx.fillRect(PAD_L + 1, RIGHT_TOP + 2, INNER_W - 2, INNER_H - 4);
+  // Waveform — real peaks if available, else a flat placeholder.
+  if (peaks) {
+    drawWaveform(ctx, peaks, 0, LEFT_TOP, viewStart, zoom);
+    drawWaveform(ctx, peaks, peaks.channelCount > 1 ? 1 : 0, RIGHT_TOP, viewStart, zoom);
+  } else {
+    ctx.fillStyle = "#383838";
+    ctx.fillRect(PAD_L + 1, LEFT_TOP + 2, INNER_W - 2, INNER_H - 4);
+    ctx.fillRect(PAD_L + 1, RIGHT_TOP + 2, INNER_W - 2, INNER_H - 4);
+  }
 
   // In/out dimming
-  const inX = tToX(s.inPoint);
-  const outX = tToX(s.outPoint);
+  const inX = tToX(s.inPoint, viewStart, zoom);
+  const outX = tToX(s.outPoint, viewStart, zoom);
   ctx.fillStyle = "rgba(0,0,0,0.5)";
   // Before in-point
   if (inX > PAD_L) {
-    ctx.fillRect(PAD_L, LEFT_TOP, inX - PAD_L, INNER_H);
-    ctx.fillRect(PAD_L, RIGHT_TOP, inX - PAD_L, INNER_H);
+    const w = Math.min(inX, PAD_L + INNER_W) - PAD_L;
+    if (w > 0) {
+      ctx.fillRect(PAD_L, LEFT_TOP, w, INNER_H);
+      ctx.fillRect(PAD_L, RIGHT_TOP, w, INNER_H);
+    }
   }
   // After out-point
   if (outX < PAD_L + INNER_W) {
-    ctx.fillRect(outX, LEFT_TOP, PAD_L + INNER_W - outX, INNER_H);
-    ctx.fillRect(outX, RIGHT_TOP, PAD_L + INNER_W - outX, INNER_H);
+    const x = Math.max(PAD_L, outX);
+    ctx.fillRect(x, LEFT_TOP, PAD_L + INNER_W - x, INNER_H);
+    ctx.fillRect(x, RIGHT_TOP, PAD_L + INNER_W - x, INNER_H);
   }
 
   // Grid lines (25%, 50%, 75% amplitude)
@@ -198,6 +261,7 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState): void {
   }
   ctx.setLineDash([]);
 
+  // Clip drawing of the envelope to the band rect so off-window nodes don't bleed.
   // Draw envelope curve for each channel
   function drawCurve(nodes: Array<[number, number]>, yTop: number, color: string): void {
     if (nodes.length < 2) return;
@@ -206,7 +270,7 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState): void {
     ctx.beginPath();
     for (let i = 0; i < nodes.length; i++) {
       const [t, amp] = nodes[i];
-      const x = tToX(t);
+      const x = tToX(t, viewStart, zoom);
       const y = ampToY(amp, yTop);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -224,7 +288,8 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState): void {
     channel: "left" | "right",
   ): void {
     nodes.forEach(([t, amp], i) => {
-      const x = tToX(t);
+      const x = tToX(t, viewStart, zoom);
+      if (x < PAD_L - NODE_R || x > PAD_L + INNER_W + NODE_R) return;
       const y = ampToY(amp, yTop);
       const isActive =
         s.activeItem?.kind === "node" &&
@@ -243,44 +308,48 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState): void {
   drawNodes(s.leftNodes, LEFT_TOP, "left");
   drawNodes(s.rightNodes, RIGHT_TOP, "right");
 
-  // In-point marker
-  const inActive = s.activeItem?.kind === "in";
-  ctx.strokeStyle = inActive ? "#ffdd00" : "#00ff88";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(inX, PAD_T);
-  ctx.lineTo(inX, PAD_T + INNER_H * 2 + 8);
-  ctx.stroke();
-  // Triangle top indicator
-  ctx.fillStyle = inActive ? "#ffdd00" : "#00ff88";
-  ctx.beginPath();
-  ctx.moveTo(inX, PAD_T);
-  ctx.lineTo(inX + 6, PAD_T - 5);
-  ctx.lineTo(inX - 6, PAD_T - 5);
-  ctx.closePath();
-  ctx.fill();
+  // In-point marker (only if within view)
+  if (inX >= PAD_L - 1 && inX <= PAD_L + INNER_W + 1) {
+    const inActive = s.activeItem?.kind === "in";
+    ctx.strokeStyle = inActive ? "#ffdd00" : "#00ff88";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(inX, PAD_T);
+    ctx.lineTo(inX, PAD_T + INNER_H * 2 + 8);
+    ctx.stroke();
+    // Triangle top indicator
+    ctx.fillStyle = inActive ? "#ffdd00" : "#00ff88";
+    ctx.beginPath();
+    ctx.moveTo(inX, PAD_T);
+    ctx.lineTo(inX + 6, PAD_T - 5);
+    ctx.lineTo(inX - 6, PAD_T - 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#555";
+    ctx.font = "9px Tahoma, Arial, sans-serif";
+    ctx.fillText("In", inX + 2, CH - 5);
+  }
 
-  // Out-point marker
-  const outActive = s.activeItem?.kind === "out";
-  ctx.strokeStyle = outActive ? "#ffdd00" : "#ff6633";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(outX, PAD_T);
-  ctx.lineTo(outX, PAD_T + INNER_H * 2 + 8);
-  ctx.stroke();
-  ctx.fillStyle = outActive ? "#ffdd00" : "#ff6633";
-  ctx.beginPath();
-  ctx.moveTo(outX, PAD_T);
-  ctx.lineTo(outX + 6, PAD_T - 5);
-  ctx.lineTo(outX - 6, PAD_T - 5);
-  ctx.closePath();
-  ctx.fill();
-
-  // Bottom label
-  ctx.fillStyle = "#555";
-  ctx.font = "9px Tahoma, Arial, sans-serif";
-  ctx.fillText("In", inX + 2, CH - 5);
-  ctx.fillText("Out", outX + 2, CH - 5);
+  // Out-point marker (only if within view)
+  if (outX >= PAD_L - 1 && outX <= PAD_L + INNER_W + 1) {
+    const outActive = s.activeItem?.kind === "out";
+    ctx.strokeStyle = outActive ? "#ffdd00" : "#ff6633";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(outX, PAD_T);
+    ctx.lineTo(outX, PAD_T + INNER_H * 2 + 8);
+    ctx.stroke();
+    ctx.fillStyle = outActive ? "#ffdd00" : "#ff6633";
+    ctx.beginPath();
+    ctx.moveTo(outX, PAD_T);
+    ctx.lineTo(outX + 6, PAD_T - 5);
+    ctx.lineTo(outX - 6, PAD_T - 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#555";
+    ctx.font = "9px Tahoma, Arial, sans-serif";
+    ctx.fillText("Out", outX + 2, CH - 5);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -292,10 +361,23 @@ const MARKER_HIT = 8; // px hit width for in/out markers
 export function SoundEnvelopeEditDialog({
   totalSamples,
   initial,
+  dataUri,
   onConfirm,
   onClose,
 }: SoundEnvelopeEditDialogProps): React.ReactElement {
   const safe = totalSamples > 0 ? totalSamples : 44100;
+
+  // Decode the waveform peaks once (null if not a decodable WAV).
+  const peaks = useMemo<WaveformPeaks | null>(
+    () => (dataUri ? decodeWavPeaks(dataUri, PEAK_BUCKETS) : null),
+    [dataUri],
+  );
+
+  // Zoom + horizontal scroll window (normalised full-clip time).
+  const [zoom, setZoom] = useState(1);
+  const [viewStart, setViewStart] = useState(0);
+  const viewRef = useRef({ viewStart: 0, zoom: 1 });
+  viewRef.current = { viewStart, zoom };
 
   // Normalise initial state to [0,1] t
   const [state, setState] = useState<DrawState>(() => {
@@ -315,24 +397,34 @@ export function SoundEnvelopeEditDialog({
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Redraw when state changes
+  // Redraw when state, zoom, scroll, or peaks change
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    drawCanvas(ctx, state);
-  }, [state]);
+    drawCanvas(ctx, state, { viewStart, zoom, peaks });
+  }, [state, viewStart, zoom, peaks]);
+
+  // Clamp the scroll window whenever zoom changes.
+  const applyZoom = useCallback((z: number) => {
+    setZoom(z);
+    setViewStart((prev) => {
+      const maxStart = 1 - 1 / z;
+      return Math.max(0, Math.min(maxStart, prev));
+    });
+  }, []);
 
   // ---- hit testing --------------------------------------------------------
 
   const hitTest = useCallback(
     (cx: number, cy: number): ActiveItem | null => {
       const s = stateRef.current;
+      const { viewStart: vs, zoom: z } = viewRef.current;
 
       // Check in/out markers first (vertical lines — hit by X proximity)
-      const inX = tToX(s.inPoint);
-      const outX = tToX(s.outPoint);
+      const inX = tToX(s.inPoint, vs, z);
+      const outX = tToX(s.outPoint, vs, z);
       if (Math.abs(cx - inX) <= MARKER_HIT) return { kind: "in" };
       if (Math.abs(cx - outX) <= MARKER_HIT) return { kind: "out" };
 
@@ -342,7 +434,7 @@ export function SoundEnvelopeEditDialog({
         const yTop = channel === "left" ? LEFT_TOP : RIGHT_TOP;
         for (let i = 0; i < nodes.length; i++) {
           const [t, amp] = nodes[i];
-          const nx = tToX(t);
+          const nx = tToX(t, vs, z);
           const ny = ampToY(amp, yTop);
           if (Math.hypot(cx - nx, cy - ny) <= NODE_R + 3) {
             return { kind: "node", channel, index: i };
@@ -367,16 +459,16 @@ export function SoundEnvelopeEditDialog({
   const onMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const [cx, cy] = getCanvasXY(e);
+      const { viewStart: vs, zoom: z } = viewRef.current;
       const hit = hitTest(cx, cy);
       if (hit) {
         setState((prev) => ({ ...prev, activeItem: hit }));
         e.preventDefault();
         return;
       }
-      // Double-click adds a new node; single click on band adds node too
-      // Determine which channel band was clicked
+      // Click on a channel band adds a node at that time/amplitude.
       if (cy >= LEFT_TOP && cy <= LEFT_TOP + INNER_H) {
-        const t = xToT(cx);
+        const t = xToT(cx, vs, z);
         const amp = yToAmp(cy, LEFT_TOP);
         setState((prev) => {
           const nodes = insertNode(prev.leftNodes, t, amp);
@@ -389,7 +481,7 @@ export function SoundEnvelopeEditDialog({
         });
         e.preventDefault();
       } else if (cy >= RIGHT_TOP && cy <= RIGHT_TOP + INNER_H) {
-        const t = xToT(cx);
+        const t = xToT(cx, vs, z);
         const amp = yToAmp(cy, RIGHT_TOP);
         setState((prev) => {
           const nodes = insertNode(prev.rightNodes, t, amp);
@@ -415,12 +507,13 @@ export function SoundEnvelopeEditDialog({
       const rect = canvas.getBoundingClientRect();
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
+      const { viewStart: vs, zoom: z } = viewRef.current;
 
       if (active.kind === "in") {
-        const t = Math.max(0, Math.min(stateRef.current.outPoint - 0.01, xToT(cx)));
+        const t = Math.max(0, Math.min(stateRef.current.outPoint - 0.01, xToT(cx, vs, z)));
         setState((prev) => ({ ...prev, inPoint: t }));
       } else if (active.kind === "out") {
-        const t = Math.max(stateRef.current.inPoint + 0.01, Math.min(1, xToT(cx)));
+        const t = Math.max(stateRef.current.inPoint + 0.01, Math.min(1, xToT(cx, vs, z)));
         setState((prev) => ({ ...prev, outPoint: t }));
       } else if (active.kind === "node") {
         const { channel, index } = active;
@@ -494,7 +587,11 @@ export function SoundEnvelopeEditDialog({
       rightNodes: [[0, 1], [1, 1]],
       activeItem: null,
     });
+    setZoom(1);
+    setViewStart(0);
   };
+
+  const maxStart = 1 - 1 / zoom;
 
   return (
     <div
@@ -566,6 +663,51 @@ export function SoundEnvelopeEditDialog({
               }}
               onMouseDown={onMouseDown}
               onContextMenu={handleRemoveNode}
+            />
+          </div>
+
+          {/* Zoom + scroll controls */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              justifyContent: "center",
+              fontSize: 10,
+            }}
+          >
+            <span style={{ color: "#aaa" }}>Zoom:</span>
+            {ZOOM_LEVELS.map((z) => (
+              <button
+                key={z}
+                aria-label={`zoom-${z}x`}
+                onClick={() => applyZoom(z)}
+                style={{
+                  background: zoom === z ? "#0066cc" : "#555",
+                  border: "1px solid #888",
+                  color: "#e0e0e0",
+                  cursor: "pointer",
+                  fontSize: 10,
+                  padding: "1px 7px",
+                  borderRadius: 2,
+                  fontWeight: zoom === z ? "bold" : "normal",
+                }}
+              >
+                {z}×
+              </button>
+            ))}
+            <input
+              type="range"
+              aria-label="scroll"
+              min={0}
+              max={1000}
+              value={maxStart > 0 ? Math.round((viewStart / maxStart) * 1000) : 0}
+              disabled={zoom === 1}
+              onChange={(e) => {
+                const frac = Number(e.target.value) / 1000;
+                setViewStart(frac * maxStart);
+              }}
+              style={{ flex: 1, maxWidth: 140, opacity: zoom === 1 ? 0.4 : 1 }}
             />
           </div>
 
