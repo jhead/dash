@@ -1,0 +1,10 @@
+{
+  "id": "1247-2etb40-flash8-re-theme-wave-b-color-group-colorpanel-co",
+  "title": "Flash8 re-theme Wave B: Color group (ColorPanel + ColorMixerPanel + SwatchesPanel)",
+  "description": "Convert packages/authoring-ui/src/ColorPanel.tsx, ColorMixerPanel.tsx, SwatchesPanel.tsx to the Flash 8 light theme via packages/authoring-ui/src/theme/flash8Theme.ts (Wave A) per docs/30-flash8-ui-spec.md \u00a73.6 (Color Mixer) and \u00a73.7 (Swatches). Replace all dark hex with chrome.*/halo.* tokens (light #ECECEC panel, white content areas, Tahoma text, #B7BABC inset borders, halo inputs). Color Mixer: Type dropdown (Solid/Linear/Radial/Bitmap), stacked R/G/B + Alpha% + hex fields, rainbow spectrum + tint slider, gradient edit bar (selected pointer black / unselected white). Swatches: Web-216 grid (~12px cells, ~19-20/row, 1px separators) + gradient row below. Mirror Shell.tsx pattern. Keep functionality intact. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: those 3 files only (+ read-only theme import).",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-19T05:55:53Z",
+  "updated_at": "2026-06-19T05:55:53Z"
+}
