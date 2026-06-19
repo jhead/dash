@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { halo, chrome, widgetFont, inputStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -212,7 +213,7 @@ export function ColorPicker({
   const swatchStyle: React.CSSProperties = {
     width: 18,
     height: 14,
-    border: "1px solid #555",
+    border: `1px solid ${halo.borderCap}`,
     cursor: "pointer",
     flexShrink: 0,
     position: "relative",
@@ -236,7 +237,7 @@ export function ColorPicker({
       style={{ display: "inline-flex", alignItems: "center", gap: 4, position: "relative" }}
     >
       {label && (
-        <span style={{ fontSize: "11px", color: "#888", whiteSpace: "nowrap", userSelect: "none" }}>
+        <span style={{ ...widgetFont(), whiteSpace: "nowrap", userSelect: "none" }}>
           {label}:
         </span>
       )}
@@ -250,7 +251,7 @@ export function ColorPicker({
       <span
         style={{
           fontSize: "10px",
-          color: "#aaa",
+          color: chrome.textDefault,
           fontFamily: "monospace",
           userSelect: "none",
           cursor: "pointer",
@@ -268,7 +269,7 @@ export function ColorPicker({
           max={100}
           value={alphaDraft}
           onChange={handleInlineAlphaChange}
-          style={{ width: 48, accentColor: "#4a90e2", cursor: "pointer" }}
+          style={{ width: 48, accentColor: halo.haloBlue, cursor: "pointer" }}
           title={`Alpha: ${alphaDraft}%`}
         />
       )}
@@ -281,9 +282,9 @@ export function ColorPicker({
             top: "100%",
             left: 0,
             zIndex: 9999,
-            background: "#2a2a2a",
-            border: "1px solid #555",
-            boxShadow: "2px 4px 12px rgba(0,0,0,0.7)",
+            background: halo.panelContentBg,
+            border: `1px solid ${halo.borderColor}`,
+            boxShadow: "2px 4px 12px rgba(0,0,0,0.35)",
             padding: 8,
             minWidth: 200,
             userSelect: "none",
@@ -293,7 +294,7 @@ export function ColorPicker({
           {/* Recent colors row */}
           {recentColors.length > 0 && (
             <div style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: "10px", color: "#777", marginBottom: 3 }}>Recent</div>
+              <div style={{ fontSize: "10px", color: chrome.textDisabled, marginBottom: 3 }}>Recent</div>
               <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                 {recentColors.map((rc) => (
                   <div
@@ -304,7 +305,7 @@ export function ColorPicker({
                       width: 16,
                       height: 16,
                       background: rc,
-                      border: rc === hexValue ? "2px solid #fff" : "1px solid #555",
+                      border: rc === hexValue ? `2px solid ${halo.haloBlue}` : `1px solid ${halo.borderCap}`,
                       cursor: "pointer",
                       flexShrink: 0,
                       boxSizing: "border-box",
@@ -317,7 +318,7 @@ export function ColorPicker({
 
           {/* Web-safe color grid (6×36 = 216) */}
           <div style={{ marginBottom: 6 }}>
-            <div style={{ fontSize: "10px", color: "#777", marginBottom: 3 }}>Web Safe</div>
+            <div style={{ fontSize: "10px", color: chrome.textDisabled, marginBottom: 3 }}>Web Safe</div>
             <div
               style={{
                 display: "grid",
@@ -334,7 +335,7 @@ export function ColorPicker({
                     width: 12,
                     height: 12,
                     background: hex,
-                    border: hex === hexValue.toUpperCase() ? "1px solid #fff" : "1px solid transparent",
+                    border: hex === hexValue.toUpperCase() ? `1px solid ${halo.haloBlue}` : "1px solid transparent",
                     cursor: "pointer",
                     boxSizing: "border-box",
                   }}
@@ -345,7 +346,7 @@ export function ColorPicker({
 
           {/* Hex input */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: showAlpha ? 6 : 0 }}>
-            <span style={{ fontSize: "10px", color: "#888" }}>#</span>
+            <span style={{ fontSize: "10px", color: chrome.textDefault }}>#</span>
             <input
               type="text"
               value={hexDraft.replace(/^#/, "")}
@@ -354,11 +355,8 @@ export function ColorPicker({
               onKeyDown={handleHexKeyDown}
               maxLength={6}
               style={{
+                ...inputStyle(),
                 width: 56,
-                fontSize: "11px",
-                background: "#1a1a1a",
-                color: "#e0e0e0",
-                border: "1px solid #555",
                 padding: "1px 4px",
                 fontFamily: "monospace",
                 outline: "none",
@@ -372,7 +370,7 @@ export function ColorPicker({
                 backgroundImage: CHECKERBOARD_BG,
                 backgroundSize: "8px 8px",
                 position: "relative",
-                border: "1px solid #555",
+                border: `1px solid ${halo.borderCap}`,
               }}
             >
               <div
@@ -390,16 +388,16 @@ export function ColorPicker({
           {/* Alpha slider */}
           {showAlpha && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: "10px", color: "#888", width: 36, flexShrink: 0 }}>Alpha</span>
+              <span style={{ fontSize: "10px", color: chrome.textDefault, width: 36, flexShrink: 0 }}>Alpha</span>
               <input
                 type="range"
                 min={0}
                 max={100}
                 value={alphaDraft}
                 onChange={handleAlphaChange}
-                style={{ flex: 1, accentColor: "#4a90e2", cursor: "pointer" }}
+                style={{ flex: 1, accentColor: halo.haloBlue, cursor: "pointer" }}
               />
-              <span style={{ fontSize: "10px", color: "#aaa", width: 30, textAlign: "right" }}>
+              <span style={{ fontSize: "10px", color: chrome.textDefault, width: 30, textAlign: "right" }}>
                 {alphaDraft}%
               </span>
             </div>

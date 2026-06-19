@@ -1,4 +1,5 @@
 import React, { useCallback, useRef } from "react";
+import { halo } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // TransformHandles
@@ -243,7 +244,7 @@ export function TransformHandles({
         width={w}
         height={h}
         fill="none"
-        stroke="#0099ff"
+        stroke={halo.haloBlue}
         strokeWidth={strokeW}
         strokeDasharray={`${4 / zoom} ${2 / zoom}`}
         style={{ pointerEvents: "all", cursor: "move" }}
@@ -259,7 +260,7 @@ export function TransformHandles({
           width={HS * 2}
           height={HS * 2}
           fill="white"
-          stroke="#0099ff"
+          stroke={halo.haloBlue}
           strokeWidth={strokeW}
           style={{ pointerEvents: "all", cursor: CURSOR_MAP[h.id] }}
           onMouseDown={(e) => onHandleMouseDown(e, h.id)}
@@ -272,7 +273,7 @@ export function TransformHandles({
         y1={y}
         x2={rotCx}
         y2={rotCy}
-        stroke="#0099ff"
+        stroke={halo.haloBlue}
         strokeWidth={strokeW}
         style={{ pointerEvents: "none" }}
       />
@@ -283,7 +284,7 @@ export function TransformHandles({
         cy={rotCy}
         r={rotRadius}
         fill="white"
-        stroke="#0099ff"
+        stroke={halo.haloBlue}
         strokeWidth={strokeW}
         style={{ pointerEvents: "all", cursor: "crosshair" }}
         onMouseDown={(e) => onHandleMouseDown(e, "rotate")}

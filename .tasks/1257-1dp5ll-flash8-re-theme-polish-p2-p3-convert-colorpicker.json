@@ -1,10 +1,10 @@
 {
   "id": "1257-1dp5ll-flash8-re-theme-polish-p2-p3-convert-colorpicker",
   "title": "Flash8 re-theme polish P2/P3: convert ColorPicker + standardize accent blue to #009DFF + widget font/width nits",
-  "description": "Visual audit follow-ups. (1) MISS: packages/authoring-ui/src/ColorPicker.tsx still uses the dark palette \u2014 convert to light Flash 8 via flash8Theme tokens (chrome/halo), mirroring converted dialogs. (2) Standardize the ad-hoc accent blues to halo.haloBlue (#009DFF): replace #0099ff (TransformHandles.tsx), #0099cc/#2288cc/#1a6ea8 (SwatchesPanel.tsx + any others found via grep) \u2014 grep packages/authoring-ui/src for these and swap to the token where they mean 'accent/selection' (do NOT touch genuine content/data colors like layer outline swatches or System-C timeline colors). (3) Minor: where Halo widget controls set fontSize 11px, use widgetFont() (Verdana 10px) per spec; (4) optional: ToolsPanel width 44\u2192 metrics.toolsPanelWidth (67) ONLY if it doesn't crowd the icons \u2014 use judgment, skip if it looks worse. VERIFY against docs/30-flash8-ui-spec.md. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: ColorPicker.tsx + the specific accent-blue files; keep edits minimal and accent-only.",
-  "status": "open",
+  "description": "DONE. (1) ColorPicker.tsx converted to light Flash 8: popup bg #2a2a2a->halo.panelContentBg(white), borders #555->halo.borderColor/borderCap, dark hex input(#1a1a1a/#e0e0e0)->inputStyle() (white, Verdana 10px), labels #888/#777/#aaa->chrome.textDefault/textDisabled, selection borders #fff/#4a90e2->halo.haloBlue. Color-content (216 web-safe grid, recent swatches, checkerboard SVG) untouched. (2) Accent-blue swaps to halo.haloBlue(#009DFF): TransformHandles.tsx 4x #0099ff (selection bbox+8 handles+rotation line+circle), StageArea.tsx text-edit dashed border #0099ff. (3) widgetFont()/inputStyle() give Verdana 10px on ColorPicker label+hex input (was 11px). DELIBERATELY LEFT: SwatchesPanel #0099ff/#0099cc = DEFAULT_SWATCHES palette content data; SceneSwitcher/Shell #1a6ea8 = still-dark unconverted components + Shell is agent-1256 territory. VERIFY: pnpm --filter './packages/**' build green; authoring-ui 653/653 tests pass.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-19T06:23:04Z",
-  "updated_at": "2026-06-19T06:23:04Z"
+  "updated_at": "2026-06-19T06:29:03Z"
 }

@@ -4456,7 +4456,7 @@ export function StageArea({
                   font,
                   color: editColor,
                   background: "rgba(255,255,255,0.1)",
-                  border: "1px dashed #0099ff",
+                  border: `1px dashed ${themeHalo.haloBlue}`,
                   outline: "none",
                   resize: "both",
                   zIndex: 50,
