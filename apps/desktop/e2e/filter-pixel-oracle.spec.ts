@@ -29,6 +29,40 @@
  * delta collapses to ~0, and EVERY test in this file FAILS. That is the proof
  * the old oracles could not provide.
  *
+ * COVERAGE (task 1242 extends this to all 8 SWF filter types). There are two
+ * observable shapes, plus one player-limitation caveat:
+ *
+ *   A. OUTSIDE-BOUNDS PIXEL DELTA (real Ruffle render) — for filters that
+ *      produce a halo / offset edge AND that Ruffle's wgpu renderer implements:
+ *      DropShadow(0), Blur(1), Glow(2), Bevel(3). These render visibly and the
+ *      counterfactual (drop the filter) collapses the delta to ~0.
+ *
+ *   B. IN-BOUNDS COLOUR DELTA (real Ruffle render) — for ColorMatrix/
+ *      AdjustColor(6), which recolours the shape's pixels IN PLACE (no halo, so
+ *      the outside delta is ~0 with or without the filter). We assert the
+ *      interior fill colour shifts vs a no-filter control. Ruffle's wgpu
+ *      renderer implements ColorMatrix, so this is a real pixel oracle too.
+ *
+ *   C. STRUCTURAL FILTERLIST DECODE (publish path, no Ruffle render) — for the
+ *      three filters Ruffle 0.2.0 has NO renderer for: GradientGlow(4),
+ *      Convolution(5), GradientBevel(7). The bundled player parses these and
+ *      exposes the AS classes, but its render layer
+ *      (render/wgpu/src/filters/ has only bevel/blur/color_matrix/
+ *      displacement_map/glow) maps them to "Unsupported filter" and rasterises
+ *      NOTHING — a real pixel oracle would be a guaranteed false failure no
+ *      encoder change could fix (verified against the bundled .wasm strings).
+ *      So for these three we decode the FILTERLIST out of the actually-published
+ *      PlaceObject3 and assert HasFilterList is set, the correct FilterID is
+ *      present, and the load-bearing fields survive. This still guards the exact
+ *      regression classes the task targets: task-1238 (HasFilterList dropped →
+ *      no FILTERLIST at all) and task-1236 (Convolution CLAMP/PRESERVE_ALPHA
+ *      bits corrupted). Convolution had a REAL such masked bug, so this guard
+ *      matters most there. The counterfactual still holds: if the filter is
+ *      dropped (1238) the decode finds no FILTERLIST and the test FAILS.
+ *
+ * DisplacementMap(8) is intentionally NOT oracled: the SWF encoder does not emit
+ * it (task 1239 — it has no valid Flash 8 FilterID and would corrupt the list).
+ *
  * These tests require a running Vite dev server (port 1420) and the Ruffle build
  * served from public/ruffle. Like visual-oracle.spec.ts they are CI-skipped until
  * Ruffle WASM CI infra is wired. Run locally with:
@@ -37,6 +71,7 @@
 
 import { test, expect, TestInfo, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
+import { findSoleFilteredPlaceObject3 } from './helpers/swf-parse';
 
 // ---------------------------------------------------------------------------
 // Document fixture builder
@@ -174,6 +209,23 @@ async function renderDocInRuffle(page: Page, fixtureDoc: unknown): Promise<Buffe
   return shot;
 }
 
+/**
+ * Load a document into the app and publish it to SWF, returning the raw SWF
+ * bytes (decoded from the base64 the bridge returns). Used by the structural
+ * FILTERLIST oracles, which do NOT need a Ruffle render — they decode the
+ * published PlaceObject3 directly.
+ */
+async function publishDocToSwf(page: Page, fixtureDoc: unknown): Promise<Buffer> {
+  await page.evaluate((doc) => {
+    (window as unknown as { __flashTest: { loadDocument: (d: unknown) => void } }).__flashTest.loadDocument(doc);
+  }, fixtureDoc);
+  await page.waitForTimeout(300);
+  const swfBase64: string = await page.evaluate(() => {
+    return (window as unknown as { __flashTest: { publish: () => string | Promise<string> } }).__flashTest.publish();
+  });
+  return Buffer.from(swfBase64, 'base64');
+}
+
 // ---------------------------------------------------------------------------
 // Pixel analysis
 // ---------------------------------------------------------------------------
@@ -227,6 +279,54 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
     g: parseInt(h.slice(2, 4), 16),
     b: parseInt(h.slice(4, 6), 16),
   };
+}
+
+/**
+ * Mean RGB of the pixels strictly INSIDE `box` (deflated by `insetPx` so the
+ * shape's anti-aliased edge — and any edge-localised filter response — is never
+ * sampled). Used by the ColorMatrix/Convolution oracles, whose effect is a
+ * colour/tint shift WITHIN the shape rather than a halo outside it: a glow-style
+ * outside-bounds delta would be ~0 for these, so we assert the interior fill
+ * colour itself changes vs the no-filter control instead.
+ *
+ * Ruffle screenshots may be a different internal resolution than 550×400, so the
+ * box (given in stage px on a 550×400 stage) is scaled to the image dimensions.
+ */
+function meanRgbInsideBox(
+  img: PNG,
+  box: Box,
+  insetPx = 14,
+): { r: number; g: number; b: number; n: number } {
+  const STAGE_W = 550, STAGE_H = 400;
+  const sx = img.width / STAGE_W;
+  const sy = img.height / STAGE_H;
+  const ix0 = (box.x0 + insetPx) * sx;
+  const iy0 = (box.y0 + insetPx) * sy;
+  const ix1 = (box.x1 - insetPx) * sx;
+  const iy1 = (box.y1 - insetPx) * sy;
+
+  let sumR = 0, sumG = 0, sumB = 0, n = 0;
+  for (let y = 0; y < img.height; y++) {
+    for (let x = 0; x < img.width; x++) {
+      if (x < ix0 || x > ix1 || y < iy0 || y > iy1) continue; // only the deep interior
+      const idx = (y * img.width + x) * 4;
+      sumR += img.data[idx];
+      sumG += img.data[idx + 1];
+      sumB += img.data[idx + 2];
+      n++;
+    }
+  }
+  return n > 0
+    ? { r: sumR / n, g: sumG / n, b: sumB / n, n }
+    : { r: 0, g: 0, b: 0, n: 0 };
+}
+
+/** Sum of absolute per-channel mean differences between two interior samples. */
+function meanRgbDelta(
+  a: { r: number; g: number; b: number },
+  b: { r: number; g: number; b: number },
+): number {
+  return Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b);
 }
 
 // ---------------------------------------------------------------------------
@@ -421,5 +521,264 @@ test.describe('Filter pixel oracle: filters must change rendered pixels in Ruffl
     // Blur smears the edge well beyond the box.
     expect(blurOutside, 'blur must spread edge pixels beyond the shape box').toBeGreaterThan(1000);
     expect(blurOutside - controlOutside, 'blur vs control outside-box delta proves the filter rendered').toBeGreaterThan(800);
+  });
+
+  // -------------------------------------------------------------------------
+  // BEVEL: a "full" bevel (FilterID 3) blurs an offset highlight on one side
+  // and a shadow on the opposite side. With distance+blur both large the bevel
+  // edge response spills OUTSIDE the shape box — observable exactly like glow/
+  // shadow. Highlight=yellow, shadow=blue (both saturated, distinct from the
+  // grey bg and grey fill) so the spill is unambiguously the filter, not AA.
+  // OBSERVABLE: outside-bounds coloured pixels (delta vs no-filter control).
+  // -------------------------------------------------------------------------
+  test('bevel filter spills a highlight/shadow edge outside the shape (vs no-filter control)', async ({ page }, testInfo: TestInfo) => {
+    const bg = '#808080';
+    const bgRgb = hexToRgb(bg);
+    // Mid-grey fill on mid-grey bg: the shape body barely shows, so the only
+    // strongly-coloured pixels OUTSIDE the box are the bevel highlight/shadow.
+    const fill: RGBA = { r: 128, g: 128, b: 128, a: 255 };
+
+    const bevelDoc = makeFilteredRectDoc({
+      id: 'bevel-filtered', bgColor: bg, fill, ...SHAPE,
+      filters: [{
+        type: 'bevel',
+        distance: 12, angle: 45,
+        highlightColor: { r: 255, g: 255, b: 0, a: 255 }, // yellow highlight
+        highlightAlpha: 1,
+        shadowColor: { r: 0, g: 0, b: 255, a: 255 },      // blue shadow
+        shadowAlpha: 1,
+        blurX: 16, blurY: 16, strength: 4, quality: 3,
+        bevelType: 'full', knockout: false, enabled: true,
+      }],
+    });
+    const controlDoc = makeFilteredRectDoc({
+      id: 'bevel-control', bgColor: bg, fill, ...SHAPE, filters: [],
+    });
+
+    const bevelShot = await renderDocInRuffle(page, bevelDoc);
+    const controlShot = await renderDocInRuffle(page, controlDoc);
+
+    const bevelImg = PNG.sync.read(bevelShot);
+    const controlImg = PNG.sync.read(controlShot);
+
+    const THRESH = 50;
+    const bevelOutside = countFilterPixelsOutsideBox(bevelImg, SHAPE, bgRgb, THRESH);
+    const controlOutside = countFilterPixelsOutsideBox(controlImg, SHAPE, bgRgb, THRESH);
+
+    testInfo.annotations.push({
+      type: 'measurement',
+      description: `bevel outside-box pixels=${bevelOutside}, control=${controlOutside}`,
+    });
+    if (bevelOutside <= controlOutside + 300) {
+      await testInfo.attach('bevel-filtered', { body: bevelShot, contentType: 'image/png' });
+      await testInfo.attach('bevel-control', { body: controlShot, contentType: 'image/png' });
+    }
+
+    // Control: grey rect on grey bg → essentially nothing outside the box.
+    expect(controlOutside, 'no-filter control should be ~empty outside the shape box').toBeLessThan(300);
+    // Bevel: the blurred highlight + shadow light up many pixels outside the box.
+    expect(bevelOutside, 'bevel highlight/shadow must light up pixels outside the shape box').toBeGreaterThan(800);
+    // Dropped filter (task 1238 mode) → bevelOutside collapses to ~controlOutside.
+    expect(bevelOutside - controlOutside, 'bevel vs control outside-box delta proves the filter rendered').toBeGreaterThan(800);
+  });
+
+  // -------------------------------------------------------------------------
+  // GRADIENT GLOW (FilterID 4) — STRUCTURAL. Ruffle 0.2.0 has no wgpu renderer
+  // for this filter (it no-ops to zero pixels), so we decode the FILTERLIST out
+  // of the actually-published PlaceObject3 instead. Asserts: HasFilterList set,
+  // FilterID 4 present, the gradient's numColors byte and saturated stop colours
+  // survive (so the filter is not silently dropped — task 1238 — or mangled).
+  // -------------------------------------------------------------------------
+  test('gradient-glow filter is published into the FILTERLIST with id 4 and its gradient (structural)', async ({ page }, testInfo: TestInfo) => {
+    const bg = '#cccccc';
+    const fill: RGBA = { r: 255, g: 0, b: 0, a: 255 };
+
+    const ggDoc = makeFilteredRectDoc({
+      id: 'gradientglow-filtered', bgColor: bg, fill, ...SHAPE,
+      filters: [{
+        type: 'gradientGlow',
+        distance: 6, angle: 45,
+        gradient: [
+          { color: '#000000', alpha: 0, ratio: 0 },   // transparent inner stop
+          { color: '#ff00ff', alpha: 1, ratio: 128 }, // magenta mid
+          { color: '#00ffff', alpha: 1, ratio: 255 }, // cyan outer
+        ],
+        blurX: 20, blurY: 20, strength: 4, quality: 3,
+        inner: false, knockout: false, compositeSource: true, enabled: true,
+      }],
+    });
+
+    const swf = await publishDocToSwf(page, ggDoc);
+    const po3 = findSoleFilteredPlaceObject3(swf);
+
+    testInfo.annotations.push({
+      type: 'measurement',
+      description: `gradient-glow FILTERLIST ids=[${po3.filters.map((f) => f.id).join(',')}], hasFilterList=${po3.hasFilterList}`,
+    });
+
+    // task-1238 guard: the PlaceObject3 must actually carry a FILTERLIST.
+    expect(po3.hasFilterList, 'PlaceObject3 must set HasFilterList (task 1238 regression guard)').toBe(true);
+    const gg = po3.filters.find((f) => f.id === 4);
+    expect(gg, 'FILTERLIST must contain a GradientGlow (FilterID 4) entry').toBeDefined();
+    // numColors byte = first body byte; must be the 3 stops we authored.
+    expect(gg!.body[0], 'gradient-glow numColors must be the 3 authored stops').toBe(3);
+    // The magenta (#ff00ff) and cyan (#00ffff) stop colours must survive: the
+    // RGBA table starts at body[1]. Stop 2 (magenta) = body[5..8], stop 3
+    // (cyan) = body[9..12].
+    expect([gg!.body[5], gg!.body[6], gg!.body[7]], 'magenta stop colour must survive').toEqual([255, 0, 255]);
+    expect([gg!.body[9], gg!.body[10], gg!.body[11]], 'cyan stop colour must survive').toEqual([0, 255, 255]);
+  });
+
+  // -------------------------------------------------------------------------
+  // GRADIENT BEVEL (FilterID 7) — STRUCTURAL (same Ruffle no-render limitation).
+  // Asserts HasFilterList, FilterID 7, gradient stop count + colours, and the
+  // ON_TOP flag bit that bevelType:'full' must set (the task-1142 field).
+  // -------------------------------------------------------------------------
+  test('gradient-bevel filter is published into the FILTERLIST with id 7 and its gradient (structural)', async ({ page }, testInfo: TestInfo) => {
+    const bg = '#808080';
+    const fill: RGBA = { r: 128, g: 128, b: 128, a: 255 };
+
+    const gbDoc = makeFilteredRectDoc({
+      id: 'gradientbevel-filtered', bgColor: bg, fill, ...SHAPE,
+      filters: [{
+        type: 'gradientBevel',
+        distance: 14, angle: 45,
+        gradient: [
+          { color: '#ff0000', alpha: 1, ratio: 0 },   // red shadow side
+          { color: '#000000', alpha: 0, ratio: 128 }, // transparent middle
+          { color: '#00ff00', alpha: 1, ratio: 255 }, // green highlight side
+        ],
+        blurX: 18, blurY: 18, strength: 4, quality: 3,
+        inner: false, knockout: false, compositeSource: true,
+        bevelType: 'full', enabled: true,
+      }],
+    });
+
+    const swf = await publishDocToSwf(page, gbDoc);
+    const po3 = findSoleFilteredPlaceObject3(swf);
+
+    testInfo.annotations.push({
+      type: 'measurement',
+      description: `gradient-bevel FILTERLIST ids=[${po3.filters.map((f) => f.id).join(',')}], hasFilterList=${po3.hasFilterList}`,
+    });
+
+    expect(po3.hasFilterList, 'PlaceObject3 must set HasFilterList (task 1238 regression guard)').toBe(true);
+    const gb = po3.filters.find((f) => f.id === 7);
+    expect(gb, 'FILTERLIST must contain a GradientBevel (FilterID 7) entry').toBeDefined();
+    expect(gb!.body[0], 'gradient-bevel numColors must be the 3 authored stops').toBe(3);
+    // Red shadow stop (#ff0000) = body[1..4]; green highlight stop (#00ff00) = body[9..12].
+    expect([gb!.body[1], gb!.body[2], gb!.body[3]], 'red shadow stop colour must survive').toEqual([255, 0, 0]);
+    expect([gb!.body[9], gb!.body[10], gb!.body[11]], 'green highlight stop colour must survive').toEqual([0, 255, 0]);
+    // bevelType:'full' must set the ON_TOP flag (bit 4, 0x10) in the trailing
+    // flags byte (task 1142). The flags byte is the LAST body byte.
+    const flagsByte = gb!.body[gb!.body.length - 1];
+    expect(flagsByte & 0x10, 'gradient-bevel full bevelType must set ON_TOP bit (task 1142)').toBe(0x10);
+  });
+
+  // -------------------------------------------------------------------------
+  // COLOR MATRIX (AdjustColor, FilterID 6): does NOT produce a halo — it
+  // recolours the shape's pixels IN PLACE. So the outside-bounds delta is ~0;
+  // instead we assert the INTERIOR fill colour shifts vs the no-filter control.
+  // An aggressive hue rotation + max saturation + brightness/contrast turns the
+  // red fill into a clearly different colour. A dropped filter (task 1238 mode)
+  // leaves the interior identical to the control → in-bounds delta collapses.
+  // OBSERVABLE: in-bounds mean-RGB shift (the fill colour changes).
+  // -------------------------------------------------------------------------
+  test('color-matrix (adjustColor) filter shifts the fill colour in-bounds (vs no-filter control)', async ({ page }, testInfo: TestInfo) => {
+    const bg = '#ffffff';
+    const fill: RGBA = { r: 220, g: 30, b: 30, a: 255 }; // saturated red
+
+    const cmDoc = makeFilteredRectDoc({
+      id: 'colormatrix-filtered', bgColor: bg, fill, ...SHAPE,
+      filters: [{
+        type: 'adjustColor',
+        brightness: 30,
+        contrast: 60,
+        saturation: 100, // max saturation
+        hue: 150,        // strong hue rotation: red → green/cyan range
+        enabled: true,
+      }],
+    });
+    const controlDoc = makeFilteredRectDoc({
+      id: 'colormatrix-control', bgColor: bg, fill, ...SHAPE, filters: [],
+    });
+
+    const cmShot = await renderDocInRuffle(page, cmDoc);
+    const controlShot = await renderDocInRuffle(page, controlDoc);
+
+    const cmImg = PNG.sync.read(cmShot);
+    const controlImg = PNG.sync.read(controlShot);
+
+    const cmInside = meanRgbInsideBox(cmImg, SHAPE);
+    const controlInside = meanRgbInsideBox(controlImg, SHAPE);
+    const inDelta = meanRgbDelta(cmInside, controlInside);
+
+    testInfo.annotations.push({
+      type: 'measurement',
+      description: `colormatrix interior=(${cmInside.r.toFixed(0)},${cmInside.g.toFixed(0)},${cmInside.b.toFixed(0)}) `
+        + `control=(${controlInside.r.toFixed(0)},${controlInside.g.toFixed(0)},${controlInside.b.toFixed(0)}) delta=${inDelta.toFixed(0)}`,
+    });
+    if (inDelta < 60) {
+      await testInfo.attach('colormatrix-filtered', { body: cmShot, contentType: 'image/png' });
+      await testInfo.attach('colormatrix-control', { body: controlShot, contentType: 'image/png' });
+    }
+
+    // Sanity: both renders actually drew the shape (interior is not the white bg).
+    expect(meanRgbDelta(controlInside, { r: 255, g: 255, b: 255 }), 'control shape interior must be drawn (not white bg)').toBeGreaterThan(60);
+    expect(cmInside.n, 'interior sample must contain pixels').toBeGreaterThan(100);
+    // The colour-matrix must materially recolour the fill. A dropped filter
+    // leaves the interior identical to the red control → delta ≈ 0.
+    expect(inDelta, 'color-matrix must shift the in-bounds fill colour vs the no-filter control').toBeGreaterThan(60);
+  });
+
+  // -------------------------------------------------------------------------
+  // CONVOLUTION (FilterID 5) — STRUCTURAL (Ruffle 0.2.0 has no convolution
+  // renderer). This is the type that had a REAL masked bug — task 1236 swapped
+  // the CLAMP and PRESERVE_ALPHA flag bits — which a byte-presence test missed,
+  // so the structural decode here is the strongest available guard. Asserts:
+  // HasFilterList, FilterID 5, the matrix dimensions + kernel values survive,
+  // and the trailing flags byte has CLAMP (bit 1) set / PRESERVE_ALPHA (bit 0)
+  // clear for our authored clamp:true, preserveAlpha:false (the task-1236 bits).
+  // -------------------------------------------------------------------------
+  test('convolution filter is published into the FILTERLIST with id 5, its kernel, and correct CLAMP/PRESERVE_ALPHA bits (structural)', async ({ page }, testInfo: TestInfo) => {
+    const bg = '#ffffff';
+    const fill: RGBA = { r: 220, g: 30, b: 30, a: 255 };
+
+    const convDoc = makeFilteredRectDoc({
+      id: 'convolution-filtered', bgColor: bg, fill, ...SHAPE,
+      filters: [{
+        type: 'convolution',
+        matrixX: 3, matrixY: 3,
+        matrix: [-1, -1, -1, -1, 8, -1, -1, -1, -1], // edge-detect kernel
+        divisor: 1, bias: 0,
+        defaultColor: { r: 0, g: 0, b: 0, a: 0 },
+        clamp: true, preserveAlpha: false, enabled: true,
+      }],
+    });
+
+    const swf = await publishDocToSwf(page, convDoc);
+    const po3 = findSoleFilteredPlaceObject3(swf);
+
+    testInfo.annotations.push({
+      type: 'measurement',
+      description: `convolution FILTERLIST ids=[${po3.filters.map((f) => f.id).join(',')}], hasFilterList=${po3.hasFilterList}`,
+    });
+
+    expect(po3.hasFilterList, 'PlaceObject3 must set HasFilterList (task 1238 regression guard)').toBe(true);
+    const conv = po3.filters.find((f) => f.id === 5);
+    expect(conv, 'FILTERLIST must contain a Convolution (FilterID 5) entry').toBeDefined();
+    const b = conv!.body;
+    // body: matrixX(1) matrixY(1) divisor(4) bias(4) matrix(mx*my*4) RGBA(4) flags(1)
+    expect(b[0], 'convolution matrixX must be 3').toBe(3);
+    expect(b[1], 'convolution matrixY must be 3').toBe(3);
+    // Centre kernel value (index 4 in a 3×3) = 8. It is the 5th float, starting
+    // at offset 2 (mx,my) + 4 (divisor) + 4 (bias) + 4*4 (first 4 entries) = 26.
+    const centreKernel = b.readFloatLE(2 + 4 + 4 + 4 * 4);
+    expect(centreKernel, 'convolution edge-detect kernel centre value must survive as 8').toBeCloseTo(8, 3);
+    // task-1236 guard: flags byte is the LAST body byte. PRESERVE_ALPHA = bit 0
+    // (must be 0 for preserveAlpha:false), CLAMP = bit 1 (must be 1 for clamp:true).
+    const flagsByte = b[b.length - 1];
+    expect(flagsByte & 0x01, 'PRESERVE_ALPHA bit (0) must be clear for preserveAlpha:false (task 1236)').toBe(0x00);
+    expect(flagsByte & 0x02, 'CLAMP bit (1) must be set for clamp:true (task 1236)').toBe(0x02);
   });
 });
