@@ -81,6 +81,8 @@ import {
   selectCanRedo,
   selectUndoDepth,
   selectRedoDepth,
+  withSceneTimeline as withSceneTimelineDoc,
+  withSymbolTimeline as withSymbolTimelineDoc,
 } from "./store/index.js";
 import { ShellDialogs } from "./layout/ShellDialogs.js";
 import { ShellPanels } from "./layout/ShellPanels.js";
@@ -736,6 +738,29 @@ export function Shell(): React.ReactElement {
     [editContext, withSceneTimeline, withSymbolTimeline]
   );
 
+  /**
+   * Context-aware timeline updater that builds the next document from the LIVE
+   * store present (`documentStore.getState().history.present`) rather than the
+   * React-subscribed `doc` snapshot. Required by the incremental drag pipeline:
+   * StageArea dispatches many small `onShapeMove(dx,dy)` deltas back-to-back and
+   * re-baselines the mouse origin after each, so the model must accumulate every
+   * delta. Reading the stale React-closure `doc` (which only refreshes on the
+   * next render) made multiple mousemoves within one render frame all rebuild
+   * from the same base position, discarding accumulated movement and snapping the
+   * shape back. See CLAUDE.md "MCP agent stale-closure bug".
+   */
+  const withTimelineLive = useCallback(
+    (updater: (t: TimelineModel) => TimelineModel): FlashDocument => {
+      const present = documentStore.getState().history.present;
+      if (editContext.mode === "symbol" && editContext.symbolId) {
+        return withSymbolTimelineDoc(present, editContext.symbolId, updater);
+      }
+      const idx = Math.min(activeSceneIndex, present.scenes.length - 1);
+      return withSceneTimelineDoc(present, idx, updater);
+    },
+    [documentStore, editContext, activeSceneIndex]
+  );
+
   /** Produce a new document by updating the library. */
   const withLibrary = useCallback(
     (updater: (lib: Library) => Library): FlashDocument => ({
@@ -1199,14 +1224,19 @@ export function Shell(): React.ReactElement {
     (id: string, dx: number, dy: number) => {
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
       if (!layerId) return;
-      // Record pre-drag snapshot on the first move event in this gesture
+      // Record pre-drag snapshot on the first move event in this gesture. Read it
+      // from the LIVE store present (not the React-closure `doc`) so the undo
+      // entry captures the true position before the drag began.
       if (dragStartDocRef.current === null) {
-        dragStartDocRef.current = doc;
+        dragStartDocRef.current = documentStore.getState().history.present;
       }
       // Determine which IDs to move: if dragged id is selected, move all selected;
       // otherwise just move the dragged id alone.
       const idsToMove = selectedShapeIds.includes(id) ? selectedShapeIds : [id];
-      replaceDoc(withTimeline((prev) => {
+      // Build the next doc from the LIVE present via withTimelineLive: the drag is
+      // incremental (many small re-baselined deltas), so each onShapeMove must
+      // accumulate on the freshest store state, not the stale rendered snapshot.
+      replaceDoc(withTimelineLive((prev) => {
         const layer = prev.layers.find((l) => l.id === layerId);
         if (!layer) return prev;
         const kf = [...layer.frames]
@@ -1225,17 +1255,20 @@ export function Shell(): React.ReactElement {
         return result;
       }));
     },
-    [selectedShapeIds, timeline, currentFrame, activeLayerIndex, doc, replaceDoc, withTimeline]
+    [selectedShapeIds, timeline, currentFrame, activeLayerIndex, documentStore, replaceDoc, withTimelineLive]
   );
 
   /** Called by StageArea on mouse-up after a drag gesture. Commits to history. */
   const handleShapeMoveEnd = useCallback(() => {
     if (dragStartDocRef.current !== null) {
-      // Commit: record the pre-drag snapshot as the undo entry, final position as present.
-      commitDrag(dragStartDocRef.current, doc);
+      // Commit: record the pre-drag snapshot as the undo entry, final position as
+      // present. The final position MUST come from the live store present — if the
+      // last mousemove fired after the previous render, the React-closure `doc` is
+      // behind the store and would commit a stale (reverted) position.
+      commitDrag(dragStartDocRef.current, documentStore.getState().history.present);
       dragStartDocRef.current = null;
     }
-  }, [doc, commitDrag]);
+  }, [documentStore, commitDrag]);
 
   const handleShapeDelete = useCallback(
     (id: string) => {
