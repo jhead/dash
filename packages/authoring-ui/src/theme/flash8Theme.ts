@@ -13,29 +13,64 @@
  *
  * Panels MUST import from here — never hardcode hex. `Shell.tsx` is the reference
  * conversion; later panel waves mirror its idiom.
+ *
+ * ── SWAPPABLE THEME SYSTEM (task 1265) ──────────────────────────────────────────────
+ * The PUBLIC EXPORT SURFACE of this module is FROZEN: the same token names
+ * (`chrome.*` / `halo.*` / `content.*` / `metrics.*`), the same helper signatures
+ * (`panelStyle`, `titleBarStyle`, `buttonStyle`, `inputStyle`, `bevel`, `chromeFont`,
+ * `widgetFont`). ~40 components import these read-only and must keep compiling unchanged.
+ *
+ * Under the hood the COLOR values are now theme-aware (see `docs/31-theming.md`):
+ *   - DOM tokens (`chrome.*` / `halo.*` colors) resolve to CSS `var(--f8-…, <lightHex>)`.
+ *     A stylesheet defines light values on `:root` and dark values under
+ *     `[data-theme="dark"]`; flipping `document.documentElement.dataset.theme` swaps the
+ *     whole DOM UI with ZERO component edits. The light hex is the var fallback, so the
+ *     default appearance is byte-identical to before.
+ *   - Canvas tokens (`content.*` colors) are GETTERS that return the ACTIVE theme's
+ *     concrete hex (a `var()` is useless inside a 2D canvas context). They return the
+ *     light hex by default; after `setThemeMode("dark")` a canvas redraw reads dark hex.
+ *   - Non-color metrics (sizes, pitches, fonts, dimensions) are theme-invariant literals.
+ *
+ * Switch API lives in `./themeState` (`setThemeMode`, `activeTheme`, `getThemeColor`,
+ * `subscribeTheme`) and `./ThemeProvider` (`ThemeProvider`, `useTheme`). DEFAULT = light.
  */
 
 import type { CSSProperties } from "react";
 
+import { flash8Light } from "./themes.js";
+import { activeTheme } from "./themeState.js";
+import { cssVar, injectThemeStylesheet } from "./themeStylesheet.js";
+
+// Inject the light/dark CSS-variable stylesheet as a side-effect of importing the theme.
+// DOM-guarded + idempotent, so it is a no-op in the node test environment.
+injectThemeStylesheet();
+
+// `L` = the canonical light value-set; its hexes are the CSS-var fallbacks below, which
+// keeps the default appearance identical to the pre-theme-system hardcoded tokens.
+const L = flash8Light;
+
 // ---------------------------------------------------------------------------
 // System A — IDE chrome (light XP/Luna furniture). Best-estimate; see known gap.
+//
+// Color tokens resolve to CSS vars (light hex fallback) so they swap via `data-theme`.
+// Metric tokens (sizes/fonts) are theme-invariant literals.
 // ---------------------------------------------------------------------------
 
 export const chrome = {
   /** Application background / behind panels. */
-  appBg: "#ECECEC",
+  appBg: cssVar("chrome", "appBg", L.chrome.appBg),
   /** Default panel background. */
-  panelBg: "#ECECEC",
+  panelBg: cssVar("chrome", "panelBg", L.chrome.panelBg),
   /** Menu bar background. */
-  menuBg: "#ECECEC",
+  menuBg: cssVar("chrome", "menuBg", L.chrome.menuBg),
   /** Slightly darker recessed strip (tool wells, gutters). */
-  insetFieldStrip: "#D4D4D4",
+  insetFieldStrip: cssVar("chrome", "insetFieldStrip", L.chrome.insetFieldStrip),
   /** 1px panel/region separators (splitters, region borders). */
-  separator: "#999999",
+  separator: cssVar("chrome", "separator", L.chrome.separator),
   /** Near-black default text. */
-  textDefault: "#000000",
+  textDefault: cssVar("chrome", "textDefault", L.chrome.textDefault),
   /** Disabled / dimmed label text. */
-  textDisabled: "#808080",
+  textDisabled: cssVar("chrome", "textDisabled", L.chrome.textDisabled),
   /** Etched bevel thickness. */
   bevelEdge: 2,
   /** Thin border thickness. */
@@ -47,86 +82,101 @@ export const chrome = {
   /** Chrome line height. */
   lineHeight: 13,
   /** Light bevel highlight edge. */
-  bevelLight: "#FFFFFF",
+  bevelLight: cssVar("chrome", "bevelLight", L.chrome.bevelLight),
   /** Dark bevel shadow edge. */
-  bevelDark: "#808080",
+  bevelDark: cssVar("chrome", "bevelDark", L.chrome.bevelDark),
 } as const;
 
 // ---------------------------------------------------------------------------
 // System B — Halo widgets (confirmed from flex-sdk halo/defaults.css).
+//
+// Color tokens resolve to CSS vars (light hex fallback). Gradient/row tuples resolve to
+// tuples of CSS vars. Metric tokens are theme-invariant literals.
 // ---------------------------------------------------------------------------
 
 export const halo = {
   // Accent / state
   /** themeColor — Halo accent / focus. */
-  haloBlue: "#009DFF",
+  haloBlue: cssVar("halo", "haloBlue", L.halo.haloBlue),
   /** Selected list/data row. */
-  selectionColor: "#7FCEFF",
+  selectionColor: cssVar("halo", "selectionColor", L.halo.selectionColor),
   /** Hover row. */
-  rollOverColor: "#B2E1FF",
+  rollOverColor: cssVar("halo", "rollOverColor", L.halo.rollOverColor),
   /** Selection when control not focused. */
-  inactiveSelection: "#E8E8E8",
+  inactiveSelection: cssVar("halo", "inactiveSelection", L.halo.inactiveSelection),
   /** Disabled selection. */
-  selectionDisabled: "#DDDDDD",
+  selectionDisabled: cssVar("halo", "selectionDisabled", L.halo.selectionDisabled),
   /** Error highlight. */
-  error: "#FF0000",
+  error: cssVar("halo", "error", L.halo.error),
 
   // Text / icon
   /** Halo widget text (dark teal-black). */
-  text: "#0B333C",
+  text: cssVar("halo", "text", L.halo.text),
   /** Disabled widget text. */
-  disabledText: "#AAB3B3",
+  disabledText: cssVar("halo", "disabledText", L.halo.disabledText),
   /** Hover/selected text. */
-  textRollOver: "#2B333C",
-  textSelected: "#2B333C",
+  textRollOver: cssVar("halo", "textRollOver", L.halo.textRollOver),
+  textSelected: cssVar("halo", "textSelected", L.halo.textSelected),
   /** Icon glyph colour. */
-  iconColor: "#2B333C",
+  iconColor: cssVar("halo", "iconColor", L.halo.iconColor),
   /** Disabled icon. */
-  disabledIcon: "#999999",
+  disabledIcon: cssVar("halo", "disabledIcon", L.halo.disabledIcon),
   /** Button label colour. */
-  buttonColor: "#6F7777",
+  buttonColor: cssVar("halo", "buttonColor", L.halo.buttonColor),
 
   // Borders / structure
   /** Default control border. */
-  borderColor: "#B7BABC",
+  borderColor: cssVar("halo", "borderColor", L.halo.borderColor),
   /** Border cap / corner. */
-  borderCap: "#919999",
+  borderCap: cssVar("halo", "borderCap", L.halo.borderCap),
   /** Drop/inset shadow tint. */
-  shadow: "#EEEEEE",
+  shadow: cssVar("halo", "shadow", L.halo.shadow),
   /** Panel header divider line. */
-  headerDivider: "#AEAEAE",
+  headerDivider: cssVar("halo", "headerDivider", L.halo.headerDivider),
   /** Halo separator. */
-  separator: "#C4CCCC",
+  separator: cssVar("halo", "separator", L.halo.separator),
   /** Strong divider. */
-  divider: "#6F7777",
+  divider: cssVar("halo", "divider", L.halo.divider),
 
   // Backgrounds / gradients
   /** App background blue (flat). */
-  appBgBlue: "#869CA7",
+  appBgBlue: cssVar("halo", "appBgBlue", L.halo.appBgBlue),
   /** App background blue gradient stops (top → bottom). */
-  appBgBlueGrad: ["#9CB0BA", "#68808C"] as const,
+  appBgBlueGrad: [
+    cssVar("halo", "appBgBlueGrad-0", L.halo.appBgBlueGrad[0]),
+    cssVar("halo", "appBgBlueGrad-1", L.halo.appBgBlueGrad[1]),
+  ] as const,
   /** Panel content background. */
-  panelContentBg: "#FFFFFF",
+  panelContentBg: cssVar("halo", "panelContentBg", L.halo.panelContentBg),
   /** Panel header gradient stops (top → bottom). */
-  panelHeaderGrad: ["#E7E7E7", "#D9D9D9"] as const,
+  panelHeaderGrad: [
+    cssVar("halo", "panelHeaderGrad-0", L.halo.panelHeaderGrad[0]),
+    cssVar("halo", "panelHeaderGrad-1", L.halo.panelHeaderGrad[1]),
+  ] as const,
   /** Footer gradient stops (top → bottom). */
-  footerGrad: ["#E7E7E7", "#C7C7C7"] as const,
+  footerGrad: [
+    cssVar("halo", "footerGrad-0", L.halo.footerGrad[0]),
+    cssVar("halo", "footerGrad-1", L.halo.footerGrad[1]),
+  ] as const,
   /** Horizontal grid line. */
-  gridLineH: "#F7F7F7",
+  gridLineH: cssVar("halo", "gridLineH", L.halo.gridLineH),
   /** Vertical grid line. */
-  gridLineV: "#D5DDDD",
+  gridLineV: cssVar("halo", "gridLineV", L.halo.gridLineV),
   /** Alternating data rows (even / odd). */
-  alternatingRows: ["#F7F7F7", "#FFFFFF"] as const,
+  alternatingRows: [
+    cssVar("halo", "alternatingRows-0", L.halo.alternatingRows[0]),
+    cssVar("halo", "alternatingRows-1", L.halo.alternatingRows[1]),
+  ] as const,
 
   // Text input
   /** Text input background. */
-  inputBg: "#FFFFFF",
+  inputBg: cssVar("halo", "inputBg", L.halo.inputBg),
   /** Text input border. */
-  inputBorder: "#B7BABC",
+  inputBorder: cssVar("halo", "inputBorder", L.halo.inputBorder),
   /** Text input inset dark edge. */
-  inputBorderDark: "#6D6F70",
+  inputBorderDark: cssVar("halo", "inputBorderDark", L.halo.inputBorderDark),
   /** Text input inset light edge. */
-  inputBorderLight: "#D3D5D6",
+  inputBorderLight: cssVar("halo", "inputBorderLight", L.halo.inputBorderLight),
 
   // Metrics
   /** Halo corner radius. */
@@ -143,35 +193,41 @@ export const halo = {
 
 // ---------------------------------------------------------------------------
 // System C — Flash-drawn content (confirmed).
+//
+// Color tokens are GETTERS returning the ACTIVE theme's concrete hex (canvas code paints
+// with real hex, never a CSS var). They return light hex by default; after
+// `setThemeMode("dark")`, the next canvas redraw reads the dark hex. Metric tokens are
+// theme-invariant literals. The object SHAPE (keys) is unchanged, so importers that read
+// `content.playhead`, `content.framePitch`, etc. compile and behave identically.
 // ---------------------------------------------------------------------------
 
 export const content = {
   /** Motion (classic) tween span tint. */
-  motionTween: "#CCCCFF",
+  get motionTween(): string { return activeTheme().content.motionTween; },
   /** Shape tween span tint. */
-  shapeTween: "#CCFFCC",
+  get shapeTween(): string { return activeTheme().content.shapeTween; },
   /** Selected frame highlight. */
-  selectedFrame: "#335EA8",
+  get selectedFrame(): string { return activeTheme().content.selectedFrame; },
   /** Playhead line / marker. */
-  playhead: "#CC0000",
+  get playhead(): string { return activeTheme().content.playhead; },
   /** Timeline cell gridlines. */
-  timelineGridline: "#EBE9ED",
+  get timelineGridline(): string { return activeTheme().content.timelineGridline; },
   /** Empty frame cell. */
-  emptyFrame: "#FFFFFF",
+  get emptyFrame(): string { return activeTheme().content.emptyFrame; },
   /** Filled keyframe dot. */
-  keyframeFilled: "#000000",
+  get keyframeFilled(): string { return activeTheme().content.keyframeFilled; },
   /** Hollow (empty) keyframe dot. */
-  keyframeHollow: "#FFFFFF",
+  get keyframeHollow(): string { return activeTheme().content.keyframeHollow; },
   /** Work area around the stage. */
-  pasteboard: "#D0D0D0",
+  get pasteboard(): string { return activeTheme().content.pasteboard; },
   /** Stage background. */
-  stage: "#FFFFFF",
+  get stage(): string { return activeTheme().content.stage; },
   /** ~1px stage edge shadow. */
-  stageEdgeShadow: "#CDCDCD",
+  get stageEdgeShadow(): string { return activeTheme().content.stageEdgeShadow; },
   /** Guide lines (cyan). */
-  guide: "#00FFFF",
+  get guide(): string { return activeTheme().content.guide; },
 
-  // Metrics
+  // Metrics (theme-invariant)
   /** Timeline frame pitch (px). */
   framePitch: 8,
   /** Timeline layer row height (px). */
@@ -183,7 +239,7 @@ export const content = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Chrome metrics (used by helpers + panels).
+// Chrome metrics (used by helpers + panels). Theme-invariant.
 // ---------------------------------------------------------------------------
 
 export const metrics = {
@@ -203,6 +259,7 @@ export const metrics = {
 
 // ---------------------------------------------------------------------------
 // Style helpers — return React.CSSProperties so panels can spread them.
+// Signatures are unchanged; they compose the (now theme-aware) tokens above.
 // ---------------------------------------------------------------------------
 
 /**
@@ -373,3 +430,19 @@ export const flash8Theme = {
 } as const;
 
 export default flash8Theme;
+
+// ---------------------------------------------------------------------------
+// Re-export the swap API so existing `./theme/flash8Theme` importers can reach the
+// theme system through the same module if convenient. These are ADDITIVE — they do
+// not alter any pre-existing export.
+// ---------------------------------------------------------------------------
+
+export {
+  activeTheme,
+  activeMode,
+  getThemeColor,
+  setThemeMode,
+  subscribeTheme,
+} from "./themeState.js";
+export type { Theme, ThemeMode } from "./themes.js";
+export { flash8Light, flash8Dark, themes } from "./themes.js";
