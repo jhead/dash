@@ -648,3 +648,37 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
     re-tread this area.
 - **Still open for workers (carried forward):** 1216, 1227, 1233 open; 1223 remains a
   close candidate (resolved by 1225, doc-wording nuance only).
+
+
+---
+
+## 2026-06-19 — Task 1233 Part 2.3 verification (functional CheckBox + RadioButton)
+
+- **Watermark (last fully-QA'd SHA):** ADVANCED to current HEAD
+  `475c2042e4a8ab3fcd09ab1fa9bcfc5894b82566`. The resolved + verified set now includes:
+  1213 / 1217, 1228, 1214, 1229-part 1, 1215, 1230, 1231-part 2.1, 1232 (warp +
+  part 2.2 token), component-part 2.2, **1233-part 2.3**.
+- **Task 1233 Part 2.3 (commit `e334044`, functional CheckBox + RadioButton) VERIFIED
+  genuinely resolved.** Emission was generalized into a CONTROL_REGISTRY: a shared base
+  class plus per-control `authorClassBody`, authored at `_global.mx.controls.{CheckBox,
+  RadioButton}` and resolved by the `registerClass` DoInitAction (class-def DoInitAction
+  correctly ordered BEFORE `registerClass`; AVM1 sound — SetMember `0x4F`, DefineFunction2
+  framing correct, ActionEnd appended). Skins: CheckBox = box + `check_mk` tick + label
+  EditText; RadioButton = circle + `dot_mk` + label. STATEFUL BEHAVIOR proven (the
+  high-risk part): CheckBox `__handleClick` toggles `selected` and `__refresh` shows/hides
+  `check_mk`; RadioButton group mutual-exclusion IMPLEMENTED via `_root.__radioGroups`
+  registry + `__selectInGroup` deselecting the prior group member. Unit: 1416 swf tests
+  pass (component-place decodes ExportAssets + 2 ordered DoInitActions + skin 3-child
+  sprite + setComponentParam delivery). Ruffle component-oracle: CheckBox click toggles
+  deselected→true (blue=20010); RadioButton click on B deselects author-selected A
+  (blue=20038, gated on `rbB.selected && !rbA.selected`) — genuine group-exclusivity
+  proof. golden-parity exit 0; golden-fla / visual-oracle green. Nothing filed.
+- **Milestone:** the v2 components functional framework now spans Button + CheckBox +
+  RadioButton, all verified end-to-end (self-authored AS2 class + skin + `registerClass` +
+  live params + stateful behavior).
+- **Still open for workers (running list):**
+  - **1216** — motion-tween not moving / motion-guide apex / bitmap renders blank. Still
+    unaddressed.
+  - **1227** — Trace Bitmap marching-squares walker traces only ~half of non-rectangular
+    regions. Still unaddressed.
+  - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
