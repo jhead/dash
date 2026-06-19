@@ -1,0 +1,10 @@
+{
+  "id": "1235-4j7guh-component-part-2-5-functional-list-combobox-sele",
+  "title": "Component Part 2.5: functional List + ComboBox (selection controls)",
+  "description": "Final standard-controls slice on the registry-driven framework (Part 2.3/2.4, components.ts CONTROL_REGISTRY with ControlKind + faceKind + textField + buildMarks + authorClassBody + setComponentParam + manual bbox-click). Add the two common selection controls: (1) mx.controls.List \u2014 renders items from a dataProvider/labels param as stacked text rows, click-to-select with a visible selection highlight, exposes selectedIndex/selectedItem; (2) mx.controls.ComboBox \u2014 collapsed row showing the selected label + a toggle that shows/hides a List of items, selecting one collapses + updates the label. Reuse the EditText/skin + class framework; extend the registry declaratively where the flat-control model is insufficient (e.g. a repeated-row skin). VERIFY ground truth first (catalog packages/core/src/model/components.ts lists List/ComboBox + params; confirm not already done). SCOPE CONSERVATIVELY: static item list from the author param + click selection + (ComboBox) show/hide dropdown. DEFER (note as follow-on, do NOT build): live scrollbar/scrolling for long lists, keyboard nav. VERIFY (no real-Flash fixture): structural unit tests (decode own SWF \u2014 class DoInitAction + skin rows + registerClass + author items delivered) AND Ruffle oracle (items render; clicking a row changes selection RED\u2192BLUE; ComboBox toggle shows the list). Headless keyboard nav is structural-only if needed \u2014 state explicitly. Build+tests green (only ~3 task-1207 fixture failures acceptable). Update docs/13. STILL GATED after this (do NOT build): DataGrid/Tree/DateChooser/ScrollPane/Window/containers/data-binding.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T03:37:34Z",
+  "updated_at": "2026-06-19T03:37:34Z"
+}
