@@ -31,7 +31,7 @@ A Dash document is a Flash 8 movie:
 - Use doc_get with a JSON Pointer for a specific subtree; avoid fetching the entire document (it can be huge) — prefer doc_summary.
 - Every read result includes a 'rev' (revision) number; mutating results return the new rev. If rev jumps unexpectedly between reads, the user (or another agent) edited the document — re-read before continuing.
 - Prefer the specific structured tool over jsfl_run; only fall back to jsfl_run for operations no structured tool covers.
-- To verify visual results, use stage_screenshot — it returns the rendered stage as a real image you can inspect (only if your model supports vision; a text-only model cannot see it, so rely on structured reads instead). To test runtime behavior, publish_swf.
+- To verify visual results, use stage_screenshot — it returns the rendered stage as a real image you can inspect (only if your model supports vision; a text-only model cannot see it, so rely on structured reads instead). To test runtime behavior, publish_swf compiles the whole movie; it returns only a compact { ok, byteLength, width, height } summary (the SWF bytes are NOT returned to you), so reserve it for genuine runtime testing and confirming the movie compiles. For syntax/compile checks of a single script or AS2 class, prefer script_check / class_check (they return only diagnostics) instead of publishing.
 
 # Error handling
 - Tools never throw at you; a failed tool returns a JSON object with an 'error' field. If you see error containing 'editor not ready' (editorNotReady: true), the editor is still loading — wait briefly and retry rather than giving up.

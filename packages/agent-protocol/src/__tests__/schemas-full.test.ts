@@ -539,9 +539,18 @@ describe("StageScreenshotParamsSchema", () => {
 });
 
 describe("PublishSwfResultSchema", () => {
-  it("parses result with base64 and byte length", () => {
-    const result = PublishSwfResultSchema.parse({ swfBase64: "abc==", byteLength: 3 });
+  it("parses result with summary fields, byte length and base64", () => {
+    const result = PublishSwfResultSchema.parse({
+      ok: true,
+      width: 550,
+      height: 400,
+      byteLength: 3,
+      swfBase64: "abc==",
+    });
     expect(result.byteLength).toBe(3);
+    expect(result.ok).toBe(true);
+    expect(result.width).toBe(550);
+    expect(result.height).toBe(400);
   });
 });
 

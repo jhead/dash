@@ -690,6 +690,8 @@ function ToolChip({ entry }: { entry: AgentToolEntry }): React.JSX.Element {
               <div style={styles.toolSectionLabel}>result</div>
               {isImageToolOutput(entry.output) ? (
                 <ScreenshotResult output={entry.output} />
+              ) : isPublishSwfToolOutput(entry.output) ? (
+                <PublishSwfResult output={entry.output} />
               ) : (
                 <pre style={styles.toolPre} data-testid="agent-tool-result">
                   {prettyJson(entry.output)}
@@ -775,6 +777,53 @@ function ScreenshotResult({
         style={styles.toolScreenshot}
       />
     </div>
+  );
+}
+
+/**
+ * A publish_swf tool result. The raw result still carries the full `swfBase64`
+ * (the app/UI side uses it), so the chip must summarize it rather than dump the
+ * base64 blob into the chip body (task 1306).
+ */
+interface PublishSwfToolOutput {
+  byteLength: number;
+  width: number;
+  height: number;
+  swfBase64: string;
+}
+
+/** Detect a publish_swf tool result so the chip can show a compact summary. */
+function isPublishSwfToolOutput(value: unknown): value is PublishSwfToolOutput {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.swfBase64 === "string" &&
+    typeof v.byteLength === "number" &&
+    typeof v.width === "number" &&
+    typeof v.height === "number"
+  );
+}
+
+/** Format a byte count compactly (e.g. 5.7 KB) for the publish chip. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Render a publish_swf tool result as a one-line summary. The `swfBase64` blob
+ * is NEVER shown — only ok/size/dimensions, matching what the model receives.
+ */
+function PublishSwfResult({
+  output,
+}: {
+  output: PublishSwfToolOutput;
+}): React.JSX.Element {
+  return (
+    <pre style={styles.toolPre} data-testid="agent-tool-result">
+      {`compiled SWF — ${formatBytes(output.byteLength)} (${output.byteLength} bytes), ${output.width}×${output.height}`}
+    </pre>
   );
 }
 

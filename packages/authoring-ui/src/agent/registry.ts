@@ -2002,14 +2002,23 @@ const handlers: Record<string, AnyHandler> = {
 
   async publish_swf(): Promise<PublishSwfResult> {
     const cb = requireCallbacks();
+    const doc = cb.getDoc();
     const bytes = await cb.publishToBytes();
-    // Convert to base64
+    // Convert to base64. `swfBase64` is for the app/UI side (download / preview);
+    // the agent-chat tool's `toModelOutput` (tools.ts) strips it so the model
+    // only ever sees the { ok, byteLength, width, height } summary (task 1306).
     let binary = "";
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
     const swfBase64 = btoa(binary);
-    return { swfBase64, byteLength: bytes.length };
+    return {
+      ok: true,
+      width: doc.properties.width,
+      height: doc.properties.height,
+      byteLength: bytes.length,
+      swfBase64,
+    };
   },
 
   file_save_fla(): FileSaveFlaResult {

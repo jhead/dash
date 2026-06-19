@@ -211,6 +211,90 @@ describe("buildAgentTools — stage_screenshot delivers an image, not base64 tex
   });
 });
 
+describe("buildAgentTools — publish_swf summarizes (no base64 to the model)", () => {
+  // A stand-in for a real compiled SWF base64 (just needs to be long + unique so
+  // we can assert it never leaks into the model-facing output).
+  const SWF_BASE64 = "Q1dT" + "A".repeat(8000); // "CWS" + a big body
+
+  it("maps the publish result to a compact JSON summary WITHOUT swfBase64", async () => {
+    const dispatch = vi.fn(async () => ({
+      ok: true,
+      width: 550,
+      height: 400,
+      byteLength: 5712,
+      swfBase64: SWF_BASE64,
+    }));
+
+    const tools = buildAgentTools({ dispatch });
+    const publish = tools.publish_swf;
+
+    // The tool must define a toModelOutput override (without it the AI SDK
+    // serializes the whole result as JSON text — base64 the model can't use).
+    expect(typeof publish.toModelOutput).toBe("function");
+
+    const output = await publish.execute!({}, {} as never);
+
+    const modelOutput = await publish.toModelOutput!({
+      toolCallId: "call-pub-1",
+      input: {},
+      output,
+    });
+
+    // Model-facing output is the compact summary, never the SWF bytes.
+    expect(modelOutput.type).toBe("json");
+    if (modelOutput.type !== "json") throw new Error("expected json");
+
+    expect(modelOutput.value).toEqual({
+      ok: true,
+      byteLength: 5712,
+      width: 550,
+      height: 400,
+    });
+    // Crucially: no swfBase64 key, and the base64 string appears NOWHERE in the
+    // serialized model output.
+    expect(modelOutput.value).not.toHaveProperty("swfBase64");
+    expect(JSON.stringify(modelOutput.value)).not.toContain(SWF_BASE64);
+    expect(JSON.stringify(modelOutput.value)).not.toContain("AAAA");
+  });
+
+  it("the raw execute result still carries swfBase64 for the app/UI side", async () => {
+    const dispatch = vi.fn(async () => ({
+      ok: true,
+      width: 320,
+      height: 240,
+      byteLength: 42,
+      swfBase64: SWF_BASE64,
+    }));
+
+    const tools = buildAgentTools({ dispatch });
+    const output = (await tools.publish_swf.execute!({}, {} as never)) as {
+      swfBase64: string;
+    };
+    // The chip / app still gets the bytes; only the MODEL channel is stripped.
+    expect(output.swfBase64).toBe(SWF_BASE64);
+  });
+
+  it("passes a structured dispatch error through as JSON (no summary)", async () => {
+    const dispatch = vi.fn(async () => {
+      throw new Error("Editor not ready: agent callbacks not wired");
+    });
+
+    const tools = buildAgentTools({ dispatch });
+    const output = await tools.publish_swf.execute!({}, {} as never);
+
+    const modelOutput = await tools.publish_swf.toModelOutput!({
+      toolCallId: "call-pub-2",
+      input: {},
+      output,
+    });
+
+    expect(modelOutput.type).toBe("json");
+    if (modelOutput.type !== "json") throw new Error("expected json");
+    // The error object is passed through (so the model can react), not a summary.
+    expect(modelOutput.value).toMatchObject({ command: "publish_swf" });
+  });
+});
+
 describe("buildAgentTools — injectable dispatch", () => {
   it("uses the provided dispatch override instead of the registry", async () => {
     const injected = vi.fn(

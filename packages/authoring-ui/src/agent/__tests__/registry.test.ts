@@ -1228,10 +1228,16 @@ describe("stage_screenshot", () => {
 });
 
 describe("publish_swf", () => {
-  it("returns swf bytes as base64", async () => {
+  it("returns swf bytes as base64 plus a model-useful summary", async () => {
     const result = await dispatchAgentCommand("publish_swf", {}) as Record<string, unknown>;
+    // App/UI side: the actual SWF bytes are still here.
     expect(typeof result["swfBase64"]).toBe("string");
     expect(typeof result["byteLength"]).toBe("number");
+    // Summary fields (task 1306): the agent-chat tool's toModelOutput returns
+    // only these to the model, never swfBase64.
+    expect(result["ok"]).toBe(true);
+    expect(typeof result["width"]).toBe("number");
+    expect(typeof result["height"]).toBe("number");
   });
 });
 

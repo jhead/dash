@@ -708,8 +708,21 @@ export type StageScreenshotParams = z.infer<typeof StageScreenshotParamsSchema>;
 export const PublishSwfParamsSchema = z.object({}).strict();
 
 export const PublishSwfResultSchema = z.object({
-  swfBase64: z.string(),
+  /** Compile succeeded (the SWF bytes were produced). */
+  ok: z.boolean(),
+  /** Stage width in px (from doc.properties) — a model-useful summary field. */
+  width: z.number(),
+  /** Stage height in px (from doc.properties). */
+  height: z.number(),
+  /** Raw compiled SWF byte count. */
   byteLength: z.number(),
+  /**
+   * The ENTIRE compiled SWF, base64-encoded, for the app/UI side (download /
+   * preview). This is NOT delivered to the model: the agent-chat tool's
+   * `toModelOutput` returns only the `{ ok, byteLength, width, height }` summary,
+   * so this large blob never enters the model's text context (task 1306).
+   */
+  swfBase64: z.string(),
 });
 export type PublishSwfResult = z.infer<typeof PublishSwfResultSchema>;
 
@@ -1185,7 +1198,8 @@ export const COMMAND_DESCRIPTIONS = {
     "Run a JSFL script for operations not covered by a structured tool. Prefer structured tools where available. Returns the script result/logs.",
   stage_screenshot:
     "Render the current stage (optionally at a given frame) to a base64 PNG so you can visually inspect the result.",
-  publish_swf: "Compile the document to a SWF (for testing in Ruffle). Returns the SWF bytes/metadata.",
+  publish_swf:
+    "Compile the whole document to a SWF for runtime testing in Ruffle. The tool returns only a compact summary ({ ok, byteLength, width, height }); the SWF bytes themselves are kept on the app side (download/preview) and are NOT returned to you. Use this to confirm the movie compiles and to inspect its size, not to read the SWF contents.",
   file_save_fla: "Save the current document to a .fla file. Returns ok.",
   file_load_fla: "Load a .fla file as the current document. Returns ok and rev.",
   // scene management

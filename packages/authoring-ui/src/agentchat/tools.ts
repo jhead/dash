@@ -67,6 +67,19 @@ export interface BuildAgentToolsOptions {
 const IMAGE_RESULT_COMMANDS = new Set<AgentCommand>(["stage_screenshot"]);
 
 /**
+ * Commands whose result carries a large raw-bytes blob (base64) that the model
+ * cannot use and that would bloat the context window. For these the tool's
+ * `toModelOutput` returns ONLY a compact summary; the bytes stay on the app/UI
+ * side (download/preview) via the raw `execute` result the chip receives. Today
+ * only `publish_swf` qualifies — it returns the ENTIRE compiled SWF as
+ * `swfBase64` (a tiny golden movie is ~7.6K base64 chars; real movies with
+ * embedded fonts/bitmaps are 100K+ chars, easily blowing the context in one
+ * call). Same class of fix as `IMAGE_RESULT_COMMANDS` / task 1295 — "tool output
+ * must be model-useful, not raw bytes" (task 1306).
+ */
+const SUMMARY_RESULT_COMMANDS = new Set<AgentCommand>(["publish_swf"]);
+
+/**
  * The (subset of the) shape a tool that returns a base64 image produces. The
  * registry's `stage_screenshot` handler returns exactly this. Narrowed via a
  * runtime guard so the `toModelOutput` mapping is total/safe even if dispatch
@@ -86,6 +99,55 @@ function isImageToolResult(value: unknown): value is ImageToolResult {
     typeof v.width === "number" &&
     typeof v.height === "number"
   );
+}
+
+/**
+ * The model-facing summary of a `publish_swf` result. Deliberately OMITS
+ * `swfBase64`: the model gets only compile-ok + size/dimensions, never the SWF
+ * bytes. Built from the raw registry result by `summarizePublishSwf`.
+ */
+interface PublishSwfModelSummary {
+  ok: boolean;
+  byteLength: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The shape the registry's `publish_swf` handler returns. The runtime guard
+ * keeps the `toModelOutput` mapping total/safe even if dispatch returns a
+ * structured error instead of a publish result.
+ */
+interface PublishSwfToolResult extends PublishSwfModelSummary {
+  swfBase64: string;
+}
+
+function isPublishSwfToolResult(value: unknown): value is PublishSwfToolResult {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.swfBase64 === "string" &&
+    typeof v.byteLength === "number" &&
+    typeof v.width === "number" &&
+    typeof v.height === "number"
+  );
+}
+
+/**
+ * Reduce a raw `publish_swf` result to the model-facing summary, dropping
+ * `swfBase64` (and never serializing it into the model's text channel). If the
+ * `ok` flag is absent (older/partial result) we infer it from the presence of
+ * bytes. Exported for the unit test that pins "no base64 in the model output".
+ */
+export function summarizePublishSwf(
+  result: PublishSwfToolResult
+): PublishSwfModelSummary {
+  return {
+    ok: typeof result.ok === "boolean" ? result.ok : result.byteLength > 0,
+    byteLength: result.byteLength,
+    width: result.width,
+    height: result.height,
+  };
 }
 
 /**
@@ -164,6 +226,31 @@ export function buildAgentTools(options: BuildAgentToolsOptions = {}): AgentTool
                 mediaType: "image/png",
               },
             ],
+          };
+        },
+      });
+    } else if (SUMMARY_RESULT_COMMANDS.has(name)) {
+      // Byte-blob tools (publish_swf): the raw `execute` result still carries
+      // `swfBase64` (so the UI chip / app can offer download/preview), but
+      // WITHOUT `toModelOutput` the AI SDK would serialize that whole object —
+      // including the entire base64 SWF — as a `type:'json'` tool-result,
+      // dumping a huge undecodable blob into the model's text context. The
+      // `toModelOutput` below maps the result to a COMPACT JSON summary
+      // ({ ok, byteLength, width, height }) so the base64 never reaches the
+      // model (task 1306).
+      tools[name] = tool({
+        description,
+        inputSchema,
+        execute,
+        toModelOutput: ({ output }) => {
+          if (!isPublishSwfToolResult(output)) {
+            // Dispatch returned a structured error (e.g. editor not ready) —
+            // pass it through as JSON so the model can read and react to it.
+            return { type: "json", value: (output ?? null) as never };
+          }
+          return {
+            type: "json",
+            value: summarizePublishSwf(output) as never,
           };
         },
       });
