@@ -18,6 +18,42 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { EaseCurve } from "@flash/core";
+import {
+  chrome,
+  halo,
+  chromeFont,
+  buttonStyle,
+  type ButtonState,
+} from "./theme/flash8Theme.js";
+
+/** A Halo-skinned button that tracks its own hover/press state. */
+function DialogButton({
+  children,
+  onClick,
+  primary = false,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  primary?: boolean;
+}): React.ReactElement {
+  const [state, setState] = useState<ButtonState>("up");
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setState("over")}
+      onMouseLeave={() => setState("up")}
+      onMouseDown={() => setState("down")}
+      onMouseUp={() => setState("over")}
+      style={{
+        ...buttonStyle(state),
+        ...(primary ? { color: chrome.textDefault, fontWeight: "bold" } : {}),
+        padding: "3px 14px",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,12 +115,12 @@ function drawCurve(
 ): void {
   ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-  // Background
-  ctx.fillStyle = "#1a1a1a";
+  // Background — white content area (Flash 8 light theme).
+  ctx.fillStyle = halo.panelContentBg; // #FFFFFF
   ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-  // Grid lines
-  ctx.strokeStyle = "#2e2e2e";
+  // Grid lines — light gray, readable on white.
+  ctx.strokeStyle = "#CCCCCC";
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const t = i / 4;
@@ -104,8 +140,8 @@ function drawCurve(
     ctx.stroke();
   }
 
-  // Diagonal reference line (linear)
-  ctx.strokeStyle = "#3a3a3a";
+  // Diagonal reference line (linear) — medium gray, readable on white.
+  ctx.strokeStyle = chrome.separator; // #999999
   ctx.setLineDash([4, 3]);
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -116,8 +152,8 @@ function drawCurve(
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Control point stems
-  ctx.strokeStyle = "#555";
+  // Control point stems — medium gray.
+  ctx.strokeStyle = chrome.bevelDark; // #808080
   ctx.lineWidth = 1;
   const [p0x, p0y] = toCanvas(0, 0);
   const [p1x, p1y] = toCanvas(curve.x1, curve.y1);
@@ -134,16 +170,16 @@ function drawCurve(
   ctx.lineTo(p2x, p2y);
   ctx.stroke();
 
-  // Bézier curve
-  ctx.strokeStyle = "#00aaff";
+  // Bézier curve — Halo accent blue.
+  ctx.strokeStyle = halo.haloBlue; // #009DFF
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(p0x, p0y);
   ctx.bezierCurveTo(p1x, p1y, p2x, p2y, p3x, p3y);
   ctx.stroke();
 
-  // Implicit endpoints
-  ctx.fillStyle = "#888";
+  // Implicit endpoints — near-black so they read on white.
+  ctx.fillStyle = chrome.bevelDark; // #808080
   ctx.beginPath();
   ctx.arc(p0x, p0y, 4, 0, Math.PI * 2);
   ctx.fill();
@@ -151,24 +187,24 @@ function drawCurve(
   ctx.arc(p3x, p3y, 4, 0, Math.PI * 2);
   ctx.fill();
 
-  // Control handles
-  const handle1Color = activeHandle === 0 ? "#ffdd00" : "#ff8800";
-  const handle2Color = activeHandle === 1 ? "#ffdd00" : "#ff8800";
+  // Control handles — Halo blue, with a contrasting highlight when active.
+  const handle1Color = activeHandle === 0 ? "#FF6600" : halo.haloBlue;
+  const handle2Color = activeHandle === 1 ? "#FF6600" : halo.haloBlue;
 
   ctx.fillStyle = handle1Color;
   ctx.beginPath();
   ctx.arc(p1x, p1y, 5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 0.5;
+  ctx.strokeStyle = chrome.textDefault; // dark outline reads on white
+  ctx.lineWidth = 0.75;
   ctx.stroke();
 
   ctx.fillStyle = handle2Color;
   ctx.beginPath();
   ctx.arc(p2x, p2y, 5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 0.5;
+  ctx.strokeStyle = chrome.textDefault;
+  ctx.lineWidth = 0.75;
   ctx.stroke();
 }
 
@@ -272,7 +308,7 @@ export function EaseCurveDialog({ initialCurve, onConfirm, onClose }: EaseCurveD
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.55)",
+        background: "rgba(0,0,0,0.45)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -282,12 +318,10 @@ export function EaseCurveDialog({ initialCurve, onConfirm, onClose }: EaseCurveD
     >
       <div
         style={{
-          background: "#3c3c3c",
-          border: "1px solid #666",
-          boxShadow: "4px 4px 16px rgba(0,0,0,0.7)",
-          fontFamily: "Tahoma, Arial, sans-serif",
-          fontSize: 11,
-          color: "#e0e0e0",
+          background: chrome.panelBg,
+          border: `1px solid ${chrome.separator}`,
+          boxShadow: "4px 4px 16px rgba(0,0,0,0.4)",
+          ...chromeFont(),
           userSelect: "none",
           minWidth: 280,
         }}
@@ -298,8 +332,8 @@ export function EaseCurveDialog({ initialCurve, onConfirm, onClose }: EaseCurveD
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            background: "#2a2a2a",
-            borderBottom: "1px solid #555",
+            background: chrome.panelBg,
+            borderBottom: `1px solid ${chrome.separator}`,
             padding: "4px 6px",
           }}
         >
@@ -308,8 +342,8 @@ export function EaseCurveDialog({ initialCurve, onConfirm, onClose }: EaseCurveD
             onClick={onClose}
             style={{
               background: "none",
-              border: "1px solid #666",
-              color: "#ccc",
+              border: `1px solid ${halo.borderColor}`,
+              color: chrome.textDefault,
               cursor: "pointer",
               fontSize: 11,
               padding: "1px 5px",
@@ -321,18 +355,26 @@ export function EaseCurveDialog({ initialCurve, onConfirm, onClose }: EaseCurveD
         </div>
 
         {/* Body */}
-        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div
+          style={{
+            padding: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            background: halo.panelContentBg,
+          }}
+        >
           {/* Preset selector */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 11, color: "#aaa" }}>Preset:</span>
+            <span style={{ fontSize: 11, color: chrome.textDefault }}>Preset:</span>
             <select
               defaultValue={-1}
               onChange={onPresetChange}
               style={{
                 fontSize: 11,
-                background: "#1a1a1a",
-                color: "#ffffff",
-                border: "1px solid #555",
+                background: halo.inputBg,
+                color: halo.text,
+                border: `1px solid ${halo.inputBorder}`,
                 padding: "1px 4px",
                 borderRadius: 2,
                 outline: "none",
@@ -353,7 +395,7 @@ export function EaseCurveDialog({ initialCurve, onConfirm, onClose }: EaseCurveD
               height={CANVAS_SIZE}
               style={{
                 cursor: "crosshair",
-                border: "1px solid #555",
+                border: `1px solid ${halo.inputBorder}`,
                 display: "block",
               }}
               onMouseDown={onMouseDown}
@@ -367,55 +409,28 @@ export function EaseCurveDialog({ initialCurve, onConfirm, onClose }: EaseCurveD
               gridTemplateColumns: "1fr 1fr",
               gap: 6,
               fontSize: 10,
-              color: "#aaa",
+              color: chrome.textDefault,
             }}
           >
             <div>
-              <span style={{ color: "#ff8800" }}>Handle 1:</span>{" "}
+              <span style={{ color: halo.haloBlue }}>Handle 1:</span>{" "}
               ({curve.x1.toFixed(3)}, {curve.y1.toFixed(3)})
             </div>
             <div>
-              <span style={{ color: "#ff8800" }}>Handle 2:</span>{" "}
+              <span style={{ color: halo.haloBlue }}>Handle 2:</span>{" "}
               ({curve.x2.toFixed(3)}, {curve.y2.toFixed(3)})
             </div>
           </div>
 
           {/* Instructions */}
-          <div style={{ fontSize: 10, color: "#666", textAlign: "center" }}>
-            Drag the orange handles to shape the curve.
+          <div style={{ fontSize: 10, color: chrome.textDisabled, textAlign: "center" }}>
+            Drag the handles to shape the curve.
           </div>
 
           {/* OK / Cancel buttons */}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 4 }}>
-            <button
-              onClick={onClose}
-              style={{
-                background: "#555",
-                border: "1px solid #888",
-                color: "#e0e0e0",
-                cursor: "pointer",
-                fontSize: 11,
-                padding: "3px 14px",
-                borderRadius: 2,
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleOk}
-              style={{
-                background: "#0066cc",
-                border: "1px solid #0099ff",
-                color: "#ffffff",
-                cursor: "pointer",
-                fontSize: 11,
-                padding: "3px 14px",
-                borderRadius: 2,
-                fontWeight: "bold",
-              }}
-            >
-              OK
-            </button>
+            <DialogButton onClick={onClose}>Cancel</DialogButton>
+            <DialogButton onClick={handleOk} primary>OK</DialogButton>
           </div>
         </div>
       </div>

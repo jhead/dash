@@ -29,6 +29,44 @@ import type {
   FindReplaceType,
   MatchLocation,
 } from "@flash/core";
+import {
+  chrome,
+  halo,
+  chromeFont,
+  inputStyle,
+  buttonStyle,
+  type ButtonState,
+} from "./theme/flash8Theme.js";
+
+/** A Halo-skinned button that tracks its own hover/press state. */
+function DialogButton({
+  children,
+  onClick,
+  primary = false,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  primary?: boolean;
+}): React.ReactElement {
+  const [state, setState] = useState<ButtonState>("up");
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setState("over")}
+      onMouseLeave={() => setState("up")}
+      onMouseDown={() => setState("down")}
+      onMouseUp={() => setState("over")}
+      style={{
+        ...buttonStyle(state),
+        ...(primary ? { color: chrome.textDefault, fontWeight: "bold" } : {}),
+        padding: "3px 8px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -49,18 +87,17 @@ const S: Record<string, React.CSSProperties> = {
     top: "80px",
     right: "20px",
     width: "340px",
-    background: "#3c3c3c",
-    border: "1px solid #666",
-    boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
-    fontFamily: "Tahoma, Arial, sans-serif",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    background: chrome.panelBg,
+    border: `1px solid ${chrome.separator}`,
+    boxShadow: "4px 4px 12px rgba(0,0,0,0.4)",
+    ...chromeFont(),
     zIndex: 2001,
     pointerEvents: "all",
     userSelect: "none",
   },
   titleBar: {
-    background: "#555",
+    background: chrome.panelBg,
+    borderBottom: `1px solid ${chrome.separator}`,
     padding: "5px 8px",
     fontSize: "11px",
     fontWeight: "bold",
@@ -68,11 +105,12 @@ const S: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
+    color: chrome.textDefault,
   },
   closeBtn: {
     background: "none",
     border: "none",
-    color: "#e0e0e0",
+    color: chrome.textDefault,
     cursor: "pointer",
     fontSize: "13px",
     padding: "0 2px",
@@ -80,6 +118,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   body: {
     padding: "8px",
+    background: halo.panelContentBg,
   },
   typeRow: {
     display: "flex",
@@ -89,18 +128,18 @@ const S: Record<string, React.CSSProperties> = {
   typeTab: {
     flex: 1,
     padding: "3px 4px",
-    background: "#2a2a2a",
-    border: "1px solid #555",
-    color: "#b0b0b0",
+    background: chrome.panelBg,
+    border: `1px solid ${halo.borderColor}`,
+    color: chrome.textDefault,
     cursor: "pointer",
     fontSize: "10px",
     textAlign: "center" as const,
     borderRadius: "2px",
   },
   typeTabActive: {
-    background: "#0078d7",
+    background: halo.haloBlue,
     color: "#ffffff",
-    border: "1px solid #0066c0",
+    border: `1px solid ${halo.haloBlue}`,
   },
   row: {
     display: "flex",
@@ -111,34 +150,26 @@ const S: Record<string, React.CSSProperties> = {
   label: {
     width: "52px",
     flexShrink: 0,
-    color: "#c0c0c0",
+    color: chrome.textDefault,
     fontSize: "11px",
   },
   input: {
+    ...inputStyle(),
     flex: 1,
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
     padding: "2px 4px",
-    outline: "none",
   },
   colorInput: {
     width: "60px",
     height: "22px",
     padding: "0 2px",
-    background: "#1e1e1e",
-    border: "1px solid #555",
+    background: halo.inputBg,
+    border: `1px solid ${halo.inputBorder}`,
     cursor: "pointer",
   },
   select: {
+    ...inputStyle(),
     flex: 1,
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
     padding: "2px 4px",
-    outline: "none",
   },
   checkRow: {
     display: "flex",
@@ -152,7 +183,7 @@ const S: Record<string, React.CSSProperties> = {
     gap: "3px",
     cursor: "pointer",
     fontSize: "11px",
-    color: "#c0c0c0",
+    color: chrome.textDefault,
   },
   scopeRow: {
     display: "flex",
@@ -160,7 +191,7 @@ const S: Record<string, React.CSSProperties> = {
     gap: "6px",
     marginBottom: "8px",
     fontSize: "11px",
-    color: "#c0c0c0",
+    color: chrome.textDefault,
   },
   buttonRow: {
     display: "flex",
@@ -168,51 +199,37 @@ const S: Record<string, React.CSSProperties> = {
     marginBottom: "8px",
     flexWrap: "wrap" as const,
   },
-  btn: {
-    padding: "3px 8px",
-    background: "#555",
-    border: "1px solid #666",
-    color: "#e0e0e0",
-    cursor: "pointer",
-    fontSize: "11px",
-    borderRadius: "2px",
-    whiteSpace: "nowrap" as const,
-  },
-  btnPrimary: {
-    background: "#0078d7",
-    border: "1px solid #0066c0",
-    color: "#fff",
-  },
   resultsHeader: {
-    color: "#999",
+    color: chrome.textDisabled,
     fontSize: "10px",
     marginBottom: "3px",
-    borderTop: "1px solid #444",
+    borderTop: `1px solid ${chrome.separator}`,
     paddingTop: "5px",
   },
   resultsList: {
     maxHeight: "140px",
     overflowY: "auto" as const,
-    background: "#1e1e1e",
-    border: "1px solid #444",
+    background: halo.inputBg,
+    border: `1px solid ${halo.inputBorder}`,
     padding: "2px",
   },
   resultItem: {
     padding: "2px 4px",
     fontSize: "10px",
     cursor: "pointer",
-    color: "#c0c0c0",
+    color: chrome.textDefault,
     borderRadius: "2px",
   },
   resultItemActive: {
-    background: "#0078d7",
-    color: "#fff",
+    background: halo.selectionColor,
+    color: chrome.textDefault,
   },
   statusBar: {
     fontSize: "10px",
-    color: "#888",
+    color: chrome.textDisabled,
     padding: "0 8px 6px",
     minHeight: "14px",
+    background: halo.panelContentBg,
   },
 };
 
@@ -573,7 +590,7 @@ export function FindReplaceDialog({
                   value={colorSearch}
                   onChange={(e) => setColorSearch(e.target.value)}
                 />
-                <span style={{ color: "#888", fontSize: "10px", marginLeft: "4px" }}>
+                <span style={{ color: chrome.textDisabled, fontSize: "10px", marginLeft: "4px" }}>
                   {colorSearch}
                 </span>
               </div>
@@ -585,7 +602,7 @@ export function FindReplaceDialog({
                   value={colorReplace}
                   onChange={(e) => setColorReplace(e.target.value)}
                 />
-                <span style={{ color: "#888", fontSize: "10px", marginLeft: "4px" }}>
+                <span style={{ color: chrome.textDisabled, fontSize: "10px", marginLeft: "4px" }}>
                   {colorReplace}
                 </span>
               </div>
@@ -658,18 +675,10 @@ export function FindReplaceDialog({
 
           {/* Action buttons */}
           <div style={S.buttonRow}>
-            <button style={S.btn} onClick={handleFindNext}>
-              Find Next
-            </button>
-            <button style={S.btn} onClick={handleFindAll}>
-              Find All
-            </button>
-            <button style={{ ...S.btn, ...S.btnPrimary }} onClick={handleReplace}>
-              Replace
-            </button>
-            <button style={{ ...S.btn, ...S.btnPrimary }} onClick={handleReplaceAll}>
-              Replace All
-            </button>
+            <DialogButton onClick={handleFindNext}>Find Next</DialogButton>
+            <DialogButton onClick={handleFindAll}>Find All</DialogButton>
+            <DialogButton onClick={handleReplace} primary>Replace</DialogButton>
+            <DialogButton onClick={handleReplaceAll} primary>Replace All</DialogButton>
           </div>
 
           {/* Results list */}

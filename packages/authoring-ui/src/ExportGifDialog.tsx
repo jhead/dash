@@ -1,4 +1,42 @@
 import React, { useCallback, useEffect, useState } from "react";
+import {
+  chrome,
+  halo,
+  chromeFont,
+  inputStyle,
+  buttonStyle,
+  type ButtonState,
+} from "./theme/flash8Theme.js";
+
+/** A Halo-skinned button that tracks its own hover/press state. */
+function DialogButton({
+  children,
+  onClick,
+  primary = false,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  primary?: boolean;
+}): React.ReactElement {
+  const [state, setState] = useState<ButtonState>("up");
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setState("over")}
+      onMouseLeave={() => setState("up")}
+      onMouseDown={() => setState("down")}
+      onMouseUp={() => setState("over")}
+      style={{
+        ...buttonStyle(state),
+        ...(primary ? { color: chrome.textDefault, fontWeight: "bold" } : {}),
+        padding: "3px 14px",
+        minWidth: "58px",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,7 +81,7 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.5)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -51,34 +89,32 @@ const styles: Record<string, React.CSSProperties> = {
   },
   dialog: {
     position: "fixed",
-    background: "#3c3c3c",
-    border: "1px solid #666",
-    boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
+    background: chrome.panelBg,
+    border: `1px solid ${chrome.separator}`,
+    boxShadow: "4px 4px 12px rgba(0,0,0,0.4)",
     minWidth: "320px",
     zIndex: 1000,
-    fontFamily: "Tahoma, Arial, sans-serif",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
     userSelect: "none",
   },
   titleBar: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    background: "#2a2a2a",
-    borderBottom: "1px solid #555",
+    background: chrome.panelBg,
+    borderBottom: `1px solid ${chrome.separator}`,
     padding: "4px 6px",
     cursor: "default",
   },
   titleText: {
     fontSize: "11px",
     fontWeight: "bold",
-    color: "#e0e0e0",
+    color: chrome.textDefault,
   },
   closeBtn: {
-    background: "#666",
-    border: "1px solid #888",
-    color: "#e0e0e0",
+    background: "none",
+    border: `1px solid ${halo.borderColor}`,
+    color: chrome.textDefault,
     width: "14px",
     height: "14px",
     fontSize: "10px",
@@ -91,6 +127,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   body: {
     padding: "12px 14px",
+    background: halo.panelContentBg,
   },
   row: {
     display: "flex",
@@ -102,7 +139,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: "80px",
     flexShrink: 0,
     fontSize: "11px",
-    color: "#ccc",
+    color: chrome.textDefault,
   },
   radioGroup: {
     display: "flex",
@@ -117,35 +154,27 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "6px",
     cursor: "pointer",
     fontSize: "11px",
-    color: "#e0e0e0",
+    color: chrome.textDefault,
   },
   divider: {
     height: "1px",
-    background: "#555",
+    background: chrome.separator,
     margin: "10px 0",
   },
   sectionHeader: {
     fontSize: "11px",
-    color: "#aaa",
+    color: chrome.textDefault,
     marginBottom: "8px",
     fontStyle: "italic",
   },
   input: {
+    ...inputStyle(),
     width: "60px",
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
     padding: "2px 4px",
-    outline: "none",
   },
   select: {
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
+    ...inputStyle(),
     padding: "2px 4px",
-    outline: "none",
     cursor: "pointer",
   },
   btnRow: {
@@ -155,26 +184,8 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "6px",
     marginTop: "12px",
   },
-  btn: {
-    background: "#555",
-    border: "1px solid #777",
-    color: "#e0e0e0",
-    fontSize: "11px",
-    padding: "3px 14px",
-    cursor: "pointer",
-    minWidth: "58px",
-  },
-  btnPrimary: {
-    background: "#1a6ea8",
-    border: "1px solid #2288cc",
-    color: "#fff",
-    fontSize: "11px",
-    padding: "3px 14px",
-    cursor: "pointer",
-    minWidth: "58px",
-  },
   disabledLabel: {
-    color: "#666",
+    color: chrome.textDisabled,
   },
 };
 
@@ -257,7 +268,7 @@ export function ExportGifDialog({
         {/* Body */}
         <div style={styles.body}>
           {/* Format */}
-          <div style={{ marginBottom: "6px", fontSize: "11px", color: "#ccc" }}>
+          <div style={{ marginBottom: "6px", fontSize: "11px", color: chrome.textDefault }}>
             Format:
           </div>
           <div style={styles.radioGroup}>
@@ -317,7 +328,7 @@ export function ExportGifDialog({
             <span
               style={{
                 fontSize: "11px",
-                color: gifDisabled ? "#666" : "#aaa",
+                color: gifDisabled ? chrome.textDisabled : chrome.textDefault,
               }}
             >
               ms
@@ -402,12 +413,8 @@ export function ExportGifDialog({
 
           {/* Buttons */}
           <div style={styles.btnRow}>
-            <button style={styles.btn} onClick={onClose}>
-              Cancel
-            </button>
-            <button style={styles.btnPrimary} onClick={handleOk}>
-              OK
-            </button>
+            <DialogButton onClick={onClose}>Cancel</DialogButton>
+            <DialogButton onClick={handleOk} primary>OK</DialogButton>
           </div>
         </div>
       </div>

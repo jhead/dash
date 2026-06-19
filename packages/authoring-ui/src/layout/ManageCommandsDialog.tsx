@@ -1,5 +1,52 @@
-import React from "react";
+import React, { useState } from "react";
 import { useUiStore } from "../store/index.js";
+import {
+  chrome,
+  halo,
+  chromeFont,
+  buttonStyle,
+  type ButtonState,
+} from "../theme/flash8Theme.js";
+
+/** A Halo-skinned button that tracks its own hover/press state. */
+function DialogButton({
+  children,
+  onClick,
+  title,
+  testId,
+  primary = false,
+  danger = false,
+  style,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title?: string;
+  testId?: string;
+  primary?: boolean;
+  danger?: boolean;
+  style?: React.CSSProperties;
+}): React.ReactElement {
+  const [state, setState] = useState<ButtonState>("up");
+  return (
+    <button
+      data-testid={testId}
+      title={title}
+      onClick={onClick}
+      onMouseEnter={() => setState("over")}
+      onMouseLeave={() => setState("up")}
+      onMouseDown={() => setState("down")}
+      onMouseUp={() => setState("over")}
+      style={{
+        ...buttonStyle(state),
+        ...(primary ? { color: chrome.textDefault, fontWeight: "bold" } : {}),
+        ...(danger ? { color: halo.error } : {}),
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 /**
  * The "Manage Saved Commands" modal (Commands menu). Open-state + the saved
@@ -24,7 +71,7 @@ export function ManageCommandsDialog({ onRun, onDelete }: ManageCommandsDialogPr
         position: "fixed",
         inset: 0,
         zIndex: 3000,
-        background: "rgba(0,0,0,0.5)",
+        background: "rgba(0,0,0,0.45)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -33,18 +80,15 @@ export function ManageCommandsDialog({ onRun, onDelete }: ManageCommandsDialogPr
     >
       <div
         style={{
-          background: "#2d2d2d",
-          border: "1px solid #1a1a1a",
-          boxShadow: "2px 4px 12px rgba(0,0,0,0.5)",
-          fontFamily: "system-ui, sans-serif",
-          fontSize: "12px",
-          color: "#e0e0e0",
+          background: chrome.panelBg,
+          border: `1px solid ${chrome.separator}`,
+          boxShadow: "2px 4px 12px rgba(0,0,0,0.4)",
+          ...chromeFont(),
           minWidth: "280px",
           maxWidth: "400px",
           maxHeight: "480px",
           display: "flex",
           flexDirection: "column",
-          borderRadius: "2px",
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -56,8 +100,8 @@ export function ManageCommandsDialog({ onRun, onDelete }: ManageCommandsDialogPr
             justifyContent: "space-between",
             height: "28px",
             padding: "0 12px",
-            background: "#3c3c3c",
-            borderBottom: "1px solid #1a1a1a",
+            background: chrome.panelBg,
+            borderBottom: `1px solid ${chrome.separator}`,
             flexShrink: 0,
             userSelect: "none",
           }}
@@ -67,7 +111,7 @@ export function ManageCommandsDialog({ onRun, onDelete }: ManageCommandsDialogPr
             style={{
               background: "transparent",
               border: "none",
-              color: "#aaa",
+              color: chrome.textDefault,
               cursor: "pointer",
               fontSize: "14px",
               lineHeight: 1,
@@ -80,12 +124,20 @@ export function ManageCommandsDialog({ onRun, onDelete }: ManageCommandsDialogPr
           </button>
         </div>
         {/* Command list */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 0", minHeight: 0 }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "8px 0",
+            minHeight: 0,
+            background: halo.panelContentBg,
+          }}
+        >
           {savedCommands.length === 0 ? (
             <div
               style={{
                 padding: "16px",
-                color: "#777",
+                color: chrome.textDisabled,
                 textAlign: "center",
                 fontStyle: "italic",
               }}
@@ -111,41 +163,27 @@ export function ManageCommandsDialog({ onRun, onDelete }: ManageCommandsDialogPr
                   {cmd.name}
                 </span>
                 <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "8px" }}>
-                  <button
-                    style={{
-                      background: "#1a6ea8",
-                      border: "1px solid #0d5a8a",
-                      color: "#fff",
-                      cursor: "pointer",
-                      fontSize: "11px",
-                      padding: "1px 6px",
-                      borderRadius: "2px",
-                    }}
+                  <DialogButton
+                    primary
+                    style={{ padding: "1px 6px" }}
                     onClick={() => {
                       setManageCommandsOpen(false);
                       onRun(cmd.id);
                     }}
                     title={`Run "${cmd.name}"`}
-                    data-testid={`run-command-${cmd.id}`}
+                    testId={`run-command-${cmd.id}`}
                   >
                     Run
-                  </button>
-                  <button
-                    style={{
-                      background: "#5a2020",
-                      border: "1px solid #8a0d0d",
-                      color: "#fff",
-                      cursor: "pointer",
-                      fontSize: "11px",
-                      padding: "1px 6px",
-                      borderRadius: "2px",
-                    }}
+                  </DialogButton>
+                  <DialogButton
+                    danger
+                    style={{ padding: "1px 6px" }}
                     onClick={() => onDelete(cmd.id)}
                     title={`Delete "${cmd.name}"`}
-                    data-testid={`delete-command-${cmd.id}`}
+                    testId={`delete-command-${cmd.id}`}
                   >
                     Delete
-                  </button>
+                  </DialogButton>
                 </div>
               </div>
             ))
@@ -155,26 +193,19 @@ export function ManageCommandsDialog({ onRun, onDelete }: ManageCommandsDialogPr
         <div
           style={{
             padding: "8px 12px",
-            borderTop: "1px solid #1a1a1a",
+            borderTop: `1px solid ${chrome.separator}`,
             display: "flex",
             justifyContent: "flex-end",
             flexShrink: 0,
+            background: chrome.panelBg,
           }}
         >
-          <button
-            style={{
-              background: "#3a3a3a",
-              border: "1px solid #555",
-              color: "#ccc",
-              cursor: "pointer",
-              fontSize: "11px",
-              padding: "3px 12px",
-              borderRadius: "2px",
-            }}
+          <DialogButton
+            style={{ padding: "3px 12px" }}
             onClick={() => setManageCommandsOpen(false)}
           >
             Close
-          </button>
+          </DialogButton>
         </div>
       </div>
     </div>

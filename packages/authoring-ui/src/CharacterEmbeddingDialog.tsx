@@ -18,6 +18,49 @@
 
 import React, { useState } from "react";
 import type { EmbedRange } from "@flash/core";
+import {
+  chrome,
+  halo,
+  chromeFont,
+  inputStyle,
+  buttonStyle,
+  type ButtonState,
+} from "./theme/flash8Theme.js";
+
+/** A Halo-skinned button that tracks its own hover/press state. */
+function DialogButton({
+  children,
+  onClick,
+  primary = false,
+  testId,
+  style,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  primary?: boolean;
+  testId?: string;
+  style?: React.CSSProperties;
+}): React.ReactElement {
+  const [state, setState] = useState<ButtonState>("up");
+  return (
+    <button
+      data-testid={testId}
+      onClick={onClick}
+      onMouseEnter={() => setState("over")}
+      onMouseLeave={() => setState("up")}
+      onMouseDown={() => setState("down")}
+      onMouseUp={() => setState("over")}
+      style={{
+        ...buttonStyle(state),
+        ...(primary ? { color: chrome.textDefault, fontWeight: "bold" } : {}),
+        padding: "3px 12px",
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 export interface CharacterEmbeddingDialogProps {
   /** Currently selected named ranges (undefined = not opted into subsetting). */
@@ -86,7 +129,7 @@ export function CharacterEmbeddingDialog({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.55)",
+        background: "rgba(0,0,0,0.45)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -98,12 +141,10 @@ export function CharacterEmbeddingDialog({
     >
       <div
         style={{
-          background: "#3c3c3c",
-          border: "1px solid #666",
-          boxShadow: "4px 4px 16px rgba(0,0,0,0.7)",
-          fontFamily: "Tahoma, Arial, sans-serif",
-          fontSize: 11,
-          color: "#e0e0e0",
+          background: chrome.panelBg,
+          border: `1px solid ${chrome.separator}`,
+          boxShadow: "4px 4px 16px rgba(0,0,0,0.4)",
+          ...chromeFont(),
           userSelect: "none",
           minWidth: 300,
         }}
@@ -114,8 +155,8 @@ export function CharacterEmbeddingDialog({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            background: "#2a2a2a",
-            borderBottom: "1px solid #555",
+            background: chrome.panelBg,
+            borderBottom: `1px solid ${chrome.separator}`,
             padding: "4px 6px",
           }}
         >
@@ -124,8 +165,8 @@ export function CharacterEmbeddingDialog({
             onClick={onClose}
             style={{
               background: "none",
-              border: "1px solid #666",
-              color: "#ccc",
+              border: `1px solid ${halo.borderColor}`,
+              color: chrome.textDefault,
               cursor: "pointer",
               fontSize: 11,
               padding: "1px 5px",
@@ -137,7 +178,15 @@ export function CharacterEmbeddingDialog({
         </div>
 
         {/* Body */}
-        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div
+          style={{
+            padding: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            background: halo.panelContentBg,
+          }}
+        >
           <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input
               type="checkbox"
@@ -146,15 +195,15 @@ export function CharacterEmbeddingDialog({
             />
             <span>Embed only selected characters (subset font)</span>
           </label>
-          <div style={{ fontSize: 10, color: "#999", marginBottom: 4 }}>
+          <div style={{ fontSize: 10, color: chrome.textDisabled, marginBottom: 4 }}>
             When off, the full character set is embedded (default).
           </div>
 
           {/* Range multi-select list */}
           <div
             style={{
-              border: "1px solid #555",
-              background: "#2a2a2a",
+              border: `1px solid ${halo.inputBorder}`,
+              background: halo.inputBg,
               maxHeight: 140,
               overflowY: "auto",
               padding: 4,
@@ -182,10 +231,7 @@ export function CharacterEmbeddingDialog({
             <input
               data-testid="embed-specific-chars"
               style={{
-                background: "#2a2a2a",
-                border: "1px solid #555",
-                color: "#e0e0e0",
-                fontSize: 11,
+                ...inputStyle(),
                 padding: "3px 5px",
               }}
               value={chars}
@@ -205,36 +251,14 @@ export function CharacterEmbeddingDialog({
             justifyContent: "flex-end",
             gap: 6,
             padding: "8px 12px",
-            borderTop: "1px solid #555",
+            borderTop: `1px solid ${chrome.separator}`,
+            background: chrome.panelBg,
           }}
         >
-          <button
-            onClick={onClose}
-            style={{
-              background: "#555",
-              border: "1px solid #777",
-              color: "#e0e0e0",
-              cursor: "pointer",
-              fontSize: 11,
-              padding: "3px 12px",
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            data-testid="embed-dialog-ok"
-            onClick={handleOk}
-            style={{
-              background: "#1a6ea8",
-              border: "1px solid #2a8ec8",
-              color: "#fff",
-              cursor: "pointer",
-              fontSize: 11,
-              padding: "3px 12px",
-            }}
-          >
+          <DialogButton onClick={onClose}>Cancel</DialogButton>
+          <DialogButton testId="embed-dialog-ok" onClick={handleOk} primary>
             OK
-          </button>
+          </DialogButton>
         </div>
       </div>
     </div>

@@ -1,5 +1,43 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { GridSettings } from "@flash/core";
+import {
+  chrome,
+  halo,
+  chromeFont,
+  inputStyle,
+  buttonStyle,
+  type ButtonState,
+} from "./theme/flash8Theme.js";
+
+/** A Halo-skinned button that tracks its own hover/press state. */
+function DialogButton({
+  children,
+  onClick,
+  primary = false,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  primary?: boolean;
+}): React.ReactElement {
+  const [state, setState] = useState<ButtonState>("up");
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setState("over")}
+      onMouseLeave={() => setState("up")}
+      onMouseDown={() => setState("down")}
+      onMouseUp={() => setState("over")}
+      style={{
+        ...buttonStyle(state),
+        ...(primary ? { color: chrome.textDefault, fontWeight: "bold" } : {}),
+        padding: "3px 14px",
+        minWidth: "58px",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,7 +58,7 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.5)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -28,34 +66,32 @@ const styles: Record<string, React.CSSProperties> = {
   },
   dialog: {
     position: "fixed",
-    background: "#3c3c3c",
-    border: "1px solid #666",
-    boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
+    background: chrome.panelBg,
+    border: `1px solid ${chrome.separator}`,
+    boxShadow: "4px 4px 12px rgba(0,0,0,0.4)",
     minWidth: "300px",
     zIndex: 1000,
-    fontFamily: "Tahoma, Arial, sans-serif",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
     userSelect: "none",
   },
   titleBar: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    background: "#2a2a2a",
-    borderBottom: "1px solid #555",
+    background: chrome.panelBg,
+    borderBottom: `1px solid ${chrome.separator}`,
     padding: "4px 6px",
     cursor: "default",
   },
   titleText: {
     fontSize: "11px",
     fontWeight: "bold",
-    color: "#e0e0e0",
+    color: chrome.textDefault,
   },
   closeBtn: {
-    background: "#666",
-    border: "1px solid #888",
-    color: "#e0e0e0",
+    background: "none",
+    border: `1px solid ${halo.borderColor}`,
+    color: chrome.textDefault,
     width: "14px",
     height: "14px",
     fontSize: "10px",
@@ -68,6 +104,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   body: {
     padding: "10px 12px",
+    background: halo.panelContentBg,
   },
   row: {
     display: "flex",
@@ -78,26 +115,22 @@ const styles: Record<string, React.CSSProperties> = {
     width: "90px",
     flexShrink: 0,
     fontSize: "11px",
-    color: "#ccc",
+    color: chrome.textDefault,
   },
   inputSmall: {
+    ...inputStyle(),
     width: "55px",
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
     padding: "2px 4px",
-    outline: "none",
   },
   between: {
     margin: "0 6px",
-    color: "#aaa",
+    color: chrome.textDefault,
     fontSize: "11px",
   },
   colorSwatch: {
     width: "28px",
     height: "18px",
-    border: "1px solid #888",
+    border: `1px solid ${halo.borderColor}`,
     cursor: "pointer",
     flexShrink: 0,
   },
@@ -110,7 +143,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   divider: {
     height: "1px",
-    background: "#555",
+    background: chrome.separator,
     margin: "8px 0",
   },
   btnRow: {
@@ -119,24 +152,6 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "flex-end",
     gap: "6px",
     marginTop: "10px",
-  },
-  btn: {
-    background: "#555",
-    border: "1px solid #777",
-    color: "#e0e0e0",
-    fontSize: "11px",
-    padding: "3px 14px",
-    cursor: "pointer",
-    minWidth: "58px",
-  },
-  btnPrimary: {
-    background: "#1a6ea8",
-    border: "1px solid #2288cc",
-    color: "#fff",
-    fontSize: "11px",
-    padding: "3px 14px",
-    cursor: "pointer",
-    minWidth: "58px",
   },
 };
 
@@ -258,7 +273,7 @@ export function EditGridDialog({
               style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
               tabIndex={-1}
             />
-            <span style={{ ...styles.between, color: "#e0e0e0" }}>{gridColor}</span>
+            <span style={{ ...styles.between, color: chrome.textDefault }}>{gridColor}</span>
           </div>
 
           <div style={styles.divider} />
@@ -285,12 +300,8 @@ export function EditGridDialog({
 
           {/* Buttons */}
           <div style={styles.btnRow}>
-            <button style={styles.btn} onClick={onCancel}>
-              Cancel
-            </button>
-            <button style={styles.btnPrimary} onClick={handleOk}>
-              OK
-            </button>
+            <DialogButton onClick={onCancel}>Cancel</DialogButton>
+            <DialogButton onClick={handleOk} primary>OK</DialogButton>
           </div>
         </div>
       </div>
