@@ -574,7 +574,7 @@ export type ViewMode = "normal" | "outlines" | "antialias";
  * bounds, then applies the instance's x/y offset. Falls back to a 40×40 px
  * box centered on the instance origin when the symbol cannot be resolved.
  */
-function getSymbolInstanceBounds(
+export function getSymbolInstanceBounds(
   inst: SymbolInstance,
   library: Library | undefined
 ): { x: number; y: number; width: number; height: number } {
@@ -3764,13 +3764,25 @@ export function StageArea({
             }
           }
         } else {
-          // Check if the selected object is a text or bitmap display object
+          // Check if the selected object is a text or bitmap display object, or a
+          // symbol/MC instance. Instances are NOT in shapeDisplayObjects, so their
+          // bounds come from getSymbolInstanceBounds (the symbol's frame-0 geometry
+          // scaled by the instance transform) — the same AABB the hit-test, snapping,
+          // and Scale9Grid overlay already use.
           const textObj = textDisplayObjects.find((o) => o.id === selId);
           const bitmapObj = !textObj ? bitmapDisplayObjects.find((o) => o.id === selId) : undefined;
-          const selectedGenericObj = textObj ?? bitmapObj;
-          if (selectedGenericObj && selectedGenericObj.width > 0 && selectedGenericObj.height > 0) {
-            const bounds = { x: selectedGenericObj.x, y: selectedGenericObj.y, width: selectedGenericObj.width, height: selectedGenericObj.height };
-
+          const instObj = !textObj && !bitmapObj ? symbolInstanceDisplayObjects.find((o) => o.id === selId) : undefined;
+          let bounds: { x: number; y: number; width: number; height: number } | undefined;
+          if (textObj ?? bitmapObj) {
+            const g = (textObj ?? bitmapObj)!;
+            if (g.width > 0 && g.height > 0) {
+              bounds = { x: g.x, y: g.y, width: g.width, height: g.height };
+            }
+          } else if (instObj) {
+            const b = getSymbolInstanceBounds(instObj, library);
+            if (b.width > 0 && b.height > 0) bounds = b;
+          }
+          if (bounds) {
             // Dashed bounding box
             ctx.strokeStyle = themeHalo.haloBlue;
             ctx.lineWidth = 1;
@@ -3787,6 +3799,25 @@ export function StageArea({
                 ctx.lineWidth = 1;
                 ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
                 ctx.strokeRect(h.x - 4, h.y - 4, 8, 8);
+              }
+
+              // Rotation handle (circle above top-center) — instances support rotation
+              // via Free Transform, so draw it for instances to match the shape halo.
+              if (instObj) {
+                const rotHandleX = bounds.x + bounds.width / 2;
+                const rotHandleY = bounds.y - 20;
+                ctx.beginPath();
+                ctx.moveTo(rotHandleX, bounds.y);
+                ctx.lineTo(rotHandleX, rotHandleY);
+                ctx.strokeStyle = themeHalo.haloBlue;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(rotHandleX, rotHandleY, 5, 0, Math.PI * 2);
+                ctx.fillStyle = "white";
+                ctx.fill();
+                ctx.strokeStyle = themeHalo.haloBlue;
+                ctx.stroke();
               }
             }
           }
