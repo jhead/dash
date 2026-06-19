@@ -60,6 +60,17 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
     envelope Coons patch is sampled per vertex. Gate: `packages/swf/src/__tests__/warp-bake.test.ts`
     (compiles a warped shape and decodes the emitted DefineShape4 ShapeBounds to confirm the
     warp is in the geometry).
+  - **Warp supersedes affine (no double transform, task 1230)**: the baked warp geometry is
+    in ABSOLUTE stage space, so it already encodes the full scale/rotation/skew effect (the
+    warp corners are captured from the already scaled/rotated AABB). The frame loop
+    (`packages/swf/src/compiler/frames.ts`) therefore emits an **identity** PlaceObject2
+    matrix (translate-only) for a warped shape — re-applying `scaleX/scaleY/rotation` on top
+    would transform it twice. This matches the editor renderer, which ignores affine entirely
+    when `obj.warp` is set (`engine/renderer.ts`). Both the first-placement and the move emit
+    branches gate on `obj.warp`. Pure-warp (identity affine) and pure-affine (no warp) shapes
+    are unchanged. Gate: `packages/swf/src/__tests__/warp-affine-double-transform.test.ts`
+    (decodes the PlaceObject2 MATRIX from our own SWF: warp+scaleX=2 / warp+rotation=30 are
+    translate-only with un-doubled bounds; pure-affine still carries the scale/rotation).
 - **Lasso**: freeform drag; **Polygon Mode** for straight-edged selections (click successive
   vertices; close by double-clicking, clicking the start vertex, or pressing **Enter** —
   **Esc** cancels the in-progress polygon); **Magic Wand** selects contiguous bitmap regions

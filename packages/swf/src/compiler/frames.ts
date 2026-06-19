@@ -464,8 +464,15 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
               } else {
+                // A Distort/Envelope warp is baked into the DefineShape geometry in
+                // ABSOLUTE stage space (see bakeWarpIntoShape in characters.ts), so it
+                // already encodes the full scale/rotation effect. Emitting the affine
+                // scaleX/scaleY/rotation on top would transform it twice. The editor
+                // renderer ignores affine when a warp is present (renderer.ts: warp
+                // supersedes affine), so for warped shapes we emit an identity transform
+                // (PlaceObject2 tx/ty still position it) to match the stage exactly.
                 const objTransform =
-                  displayObj.type === "shape"
+                  displayObj.type === "shape" && !displayObj.warp
                     ? {
                         scaleX: displayObj.scaleX,
                         scaleY: displayObj.scaleY,
@@ -1055,8 +1062,12 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                 depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, filtersKey: thisFiltersKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
                 continue; // skip the generic depthState.set below
               }
+              // Warped shapes bake the warp into absolute-stage geometry, so the affine
+              // must NOT be re-applied here (it would double-transform). Match the editor
+              // renderer (warp supersedes affine) by emitting an identity transform on the
+              // move path too. See the place-path comment above and bakeWarpIntoShape.
               const objTransform =
-                displayObj.type === "shape"
+                displayObj.type === "shape" && !displayObj.warp
                   ? {
                       scaleX: displayObj.scaleX,
                       scaleY: displayObj.scaleY,

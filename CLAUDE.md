@@ -449,6 +449,25 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   the pristine un-distorted shape (`grep -rniw warp packages/swf/src` returned nothing).
   Gate: `warp-bake.test.ts` (compiles a warped shape, decodes the emitted DefineShape4
   ShapeBounds from our own SWF, asserts the warp is in the geometry).
+- **A warped shape must emit an IDENTITY PlaceObject2 matrix — warp supersedes affine
+  (task 1230).** The 1228 bake writes the warp into ABSOLUTE-stage DefineShape geometry
+  (then subtracts the placement offset), so the baked edges ALREADY encode the full
+  scale/rotation effect — the warp corners are captured from the already scaled/rotated
+  AABB and live in stage space. But the frame loop (`compiler/frames.ts`) still built
+  `objTransform={scaleX,scaleY,rotation}` for every shape, so a shape with BOTH a warp AND
+  non-identity scale/rotation got transformed TWICE in the SWF (baked warp + PlaceObject2
+  affine) while the editor renderer (`engine/renderer.ts`) draws ONLY the warp (the `if
+  (obj.warp)` branch supersedes the affine `else if` branch). Fix: gate the `objTransform`
+  construction on `displayObj.type === "shape" && !displayObj.warp` in BOTH emit branches
+  (first-placement ~467 and move ~1058); a warped shape gets `objTransform=undefined`
+  (identity scale/rotate, translate-only) so the baked warp is the sole geometry transform,
+  matching the stage exactly. PlaceObject2 tx/ty=(x,y) still positions it. Pure-warp
+  (identity affine) and pure-affine (no warp) are unchanged; `DrawingObject` already used
+  `objTransform=undefined`, so it was never affected. Gate:
+  `warp-affine-double-transform.test.ts` decodes the PlaceObject2 MATRIX from our own SWF
+  (warp+scaleX=2 / warp+rotation=30 → hasScale=hasRotate=false, un-doubled bounds;
+  pure-affine still sets hasScale/hasRotate). Decoding the SHAPE bounds alone would NOT
+  have caught this — the bug is in the placement matrix, not the baked geometry.
 - **DefineMorphShape2 (tag 84)**: use tag 84 (not legacy tag 46) for Flash 8 shape
   tweens so LINESTYLE2 cap/join data is preserved.
 - **DefineScalingGrid (tag 78)**: must immediately follow the `DefineSprite` tag for
