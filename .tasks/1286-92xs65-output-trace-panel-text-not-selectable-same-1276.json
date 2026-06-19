@@ -1,0 +1,10 @@
+{
+  "id": "1286-92xs65-output-trace-panel-text-not-selectable-same-1276",
+  "title": "Output/trace panel text not selectable \u2014 same 1276 user-select:none regression (and audit other copyable surfaces)",
+  "description": "Follow-up surfaced by task 1285: the global body{user-select:none} from task 1276 (apps/desktop/src/styles.css) over-applies to panels showing COPYABLE text, leaving them unselectable. 1285 fixed the Agent Chat transcript; the Output/trace panel has the same defect \u2014 OutputPanel.tsx (data-testid 'output-panel-messages') trace/error/compile output cannot be selected or copied. FIX: re-enable text selection scoped to the Output panel's message area (mirror 1285's approach: add the testid/container to the user-select:text allowlist in styles.css + set userSelect:'text' on the messages container style), WITHOUT regressing the 1276 mobile fix on surrounding chrome. ALSO quickly audit for other surfaces where users legitimately need to copy text and are blocked by the same rule (e.g. error/output/log/console-like areas \u2014 check OutputPanel, BandwidthProfiler stats readouts if textual, any compile-error displays); re-enable selection on those too, but keep buttons/labels/tabs/icons as user-select:none. Keep it bounded \u2014 message/output text areas only. VERIFY: build + authoring-ui tests green (only ~3 task-1207 fixture failures acceptable); confirm Output messages selectable, chrome still not. ACQUIRE lock; commit incl task file; push rebase-retry. Scope: OutputPanel.tsx + styles.css (+ any other clearly-copyable message area found).",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-19T19:04:53Z",
+  "updated_at": "2026-06-19T19:04:53Z"
+}
