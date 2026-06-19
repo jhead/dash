@@ -664,6 +664,39 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **Ruffle trace() output**: load the player with `logLevel: 'info'` in the load
   config to see AVM1 `trace()` in the browser console — invaluable for runtime
   debugging of published SWFs; the default log level hides traces.
+- **The editor Output panel must capture trace() via Ruffle's DEDICATED
+  `traceObserver`, NOT by scraping console.log (task 1259).** `RufflePlayer.tsx`
+  used to intercept console.log/console.warn and forward lines through
+  `shouldSuppressRuffleLog`, on the assumption (codified in a now-fixed
+  `ruffleLogFilter.test.ts` case) that AS2 `trace()` arrives as a PLAIN
+  console.log line. It does not. Ruffle emits `trace()` as a tracing **INFO**
+  event on the `avm_trace` target (web/src/log_adapter.rs `avm_trace`), which the
+  WASMLayer renders to the console as a styled `"%cINFO%c ... avm_trace ... <msg>"`
+  line. After CSS stripping that text starts with `"INFO"`, which matched the
+  `RUFFLE_SUPPRESSED_PREFIXES` `"info"`/`"avm"` entries → every trace line was
+  dropped before reaching `onTrace`/`handleTrace`, so the Output panel stayed
+  empty (only the placeholder). This NEVER worked (present since feat(0738)). Fix:
+  register Ruffle's dedicated trace observer — `player.traceObserver = (msg) =>
+  onTrace(msg)` (the `<ruffle-player>` element exposes a `traceObserver` setter
+  that forwards to the WASM `set_trace_observer`; bundled build supports it). The
+  observer fires ONLY for real avm_trace and bypasses the INFO console filter
+  entirely. **Timing gotcha (load-bearing):** the bundled setter is
+  `set traceObserver(e){ this.instance?.set_trace_observer(e) }` — `this.instance`
+  is null until `load()` creates it, so a pre-`load()` assignment is a SILENT
+  no-op. The binding that takes effect is the one set AFTER `load()` resolves;
+  RufflePlayer sets it both before (future-proofing) and after load. The
+  first-frame DoAction runs on the tick after load() resolves, so the post-load
+  set is in time to catch frame-1 trace(). console.warn ERROR/WARN scraping is
+  kept for diagnostics; avm_trace must NOT also be routed through the
+  INFO-suppressing console path (no double-delivery). The trace-routing helper is
+  `makeTraceObserver(getOnTrace)` in `ruffleLogFilter.ts` (lazy ref read so a
+  changing callback identity is always current). Distinct from task 1120 (JSFL
+  `fl.trace()`, a different source: `jsfl/runtime.ts state.traces`). Gates:
+  `ruffleLogFilter.test.ts` (observer forwards unfiltered; styled-INFO avm_trace
+  console line stays suppressed) + `apps/desktop/e2e/trace-output.spec.ts`
+  (publishes a SWF with `trace("hello")` on frame 1, runs it in the real bundled
+  Ruffle via the observer, AND drives the in-app Test Movie flow asserting the
+  line appears in OutputPanel `data-testid="output-panel-messages"`).
 - **`_root.onEnterFrame = function(){...}` DOES run in headless Ruffle.** The earlier
   claim that headless Ruffle "does not drive onEnterFrame game loops" was an artifact
   of the broken SetMember opcode + DefineFunction2 length bug; with both fixed, the

@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import type { RufflePlayerElement } from "./ruffle.d.ts";
-import { shouldSuppressRuffleLog, stripConsoleCssFormat } from "./ruffleLogFilter.js";
+import {
+  makeTraceObserver,
+  shouldSuppressRuffleLog,
+  stripConsoleCssFormat,
+} from "./ruffleLogFilter.js";
 
 export interface RufflePlayerProps {
   /** SWF bytes to play; null = blank/idle screen */
@@ -21,7 +25,8 @@ export interface RufflePlayerProps {
    */
   onError?: (message: string) => void;
   /**
-   * Called with each AS2 trace() line and Ruffle ERROR/WARN diagnostics.
+   * Called with each AS2 trace() line (via Ruffle's dedicated trace observer)
+   * and with Ruffle ERROR/WARN diagnostics (scraped from the console).
    * Low-severity Ruffle internal logs (DEBUG/INFO) are filtered out.
    */
   onTrace?: (line: string) => void;
@@ -146,12 +151,38 @@ export function RufflePlayer({
       container.appendChild(player);
       playerRef.current = player;
 
-      // Install console interceptors to capture AS2 trace() output.
-      // Ruffle emits trace() via console.log when logLevel:'info' is set, and
-      // emits its own diagnostic messages (WARN, ERROR, INFO, etc.) via
-      // console.warn with CSS format tokens (%c).
-      // Forward AS2 trace() output and Ruffle ERROR/WARN diagnostics to onTrace.
-      // Low-severity Ruffle logs (DEBUG/INFO) are suppressed; %c tokens are stripped.
+      // Capture AS2 trace() output via Ruffle's DEDICATED trace observer.
+      //
+      // This is the correct, reliable channel: Ruffle's `set_trace_observer`
+      // (exposed on the <ruffle-player> element as the `traceObserver` setter)
+      // fires ONCE per real AVM `trace()` call with the plain trace string. It
+      // is NOT routed through the console diagnostics, so it is immune to the
+      // log-level filtering that previously dropped every trace.
+      //
+      // IMPORTANT: the `traceObserver` setter forwards to the WASM player's
+      // `set_trace_observer`, which only takes effect once `load()` has created
+      // the underlying instance (`this.instance?.set_trace_observer(e)` in the
+      // bundled build — a no-op before the instance exists). So the binding that
+      // actually takes effect is the one set AFTER `load()` resolves (below); we
+      // also set it here pre-load to be robust against future Ruffle versions
+      // that may buffer the observer.
+      //
+      // (Historical note: trace() is emitted internally as a tracing `INFO`
+      // event on the `avm_trace` target, which the WASMLayer renders to the
+      // console as a styled "%cINFO%c ... avm_trace ... <msg>" line. The console
+      // scrape below suppresses anything starting with "INFO"/"avm", so trace()
+      // never reached the Output panel through the console route. The observer
+      // bypasses that filter entirely — see ruffleLogFilter.ts.)
+      const traceObserver = makeTraceObserver(() => onTraceRef.current);
+      player.traceObserver = traceObserver;
+
+      // Install console interceptors to capture Ruffle's own diagnostics.
+      // Ruffle emits its diagnostic messages (WARN, ERROR, INFO, etc.) via
+      // console.warn/console.log with CSS format tokens (%c). Only ERROR/WARN
+      // severity is forwarded to the Output panel; low-severity logs
+      // (DEBUG/INFO — which is also how avm_trace appears) are suppressed here,
+      // because trace() now arrives via the dedicated observer above and must
+      // NOT be double-delivered through the INFO console route.
       // Restore the originals on each new load (in case of reload).
       if (origConsoleLogRef.current) {
         console.log = origConsoleLogRef.current;
@@ -204,6 +235,12 @@ export function RufflePlayer({
           // to wait for and the preloader just flashes.
           preloader: false,
         });
+        // Register the trace observer now that load() has created the WASM
+        // instance — this is the binding that actually takes effect (the
+        // pre-load assignment above is a no-op until the instance exists). The
+        // first-frame DoAction runs on the tick after load() resolves, so this
+        // is in time to capture frame-1 trace() calls.
+        player.traceObserver = traceObserver;
         // A newer load started while this one was awaiting; remove this player
         // so the latest SWF is the only one left on screen.
         if (isStale() && container.contains(player)) {
