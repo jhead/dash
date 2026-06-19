@@ -141,3 +141,45 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   through `encodeDefineText`. Likely outdated since the task-1200 system-font embedding
   work. Do not edit CLAUDE.md from a QA sweep — left for a maintainer.
 
+---
+
+## 2026-06-19 — task 1217 SHAPE GEOMETRY fix independently VERIFIED; watermark advanced
+
+- **HEAD (watermark — last fully-QA'd SHA):** `a46121226bfc081d5498c5f47b5dc34dac323803`
+- **What changed since the prior watermark (`624141f`):** the 1217 fix landed as `dbdd979`
+  and the full-e2e baseline entry landed as `a461212` (current HEAD). This sweep
+  independently re-verifies the 1217 fix and advances the watermark to current HEAD.
+- **Task 1217 (commit `dbdd979`, "fix(swf): coalesce fill+stroke path pairs in
+  DefineShape") — VERIFIED genuinely resolved.** Rebuilt `@flash/core` + `@flash/swf`
+  dist, then `node tools/golden-parity.mjs` → **exit 0**. The two previously-unmatched
+  non-gradient shapes (`id1` ±545, `id3` ±220) now **record-match** golden (they no longer
+  appear in the SHAPE GEOMETRY diff); only the documented gradient-expansion shape
+  (`id8`, `shape(-1229..1231): fillStyles 1≠17`) remains, reported as **KNOWN-GAP**
+  (Flash explodes one linear-gradient FLA fill into 17 DefineShape fillStyles — a byte gap,
+  bounds match). SELF-DETERMINISM, HEADER/STAGE, TAG INVENTORY, PLACEMENTS all PASS.
+- **Confirmed a real ENCODER fix, NOT a weakened harness:**
+  - The fix is encoder-side: `packages/swf/src/shapes.ts` `coalesceFillStrokePairs()`
+    (shapes.ts:412, wired in at shapes.ts:444) merges an adjacent fill-only + coincident
+    (byte-identical-geometry) stroke-only path pair into ONE combined fill+stroke loop
+    before encoding, matching Flash's own single-loop DefineShape output (golden stroked
+    oval = 5 records, not the regressed 10). This is the correct root-cause fix for the
+    `035796d` fill0/fill1 closed-loop reconstruction regression.
+  - The new `golden-parity.mjs` bounds-only fallback is **gated** to
+    `(s.hasGradient || gb.hasGradient) && s.fills !== gb.fills` (golden-parity.mjs:194).
+    A non-gradient shape that failed record-signature matching would NOT hit this branch —
+    it falls through to the HARD `DIFF` path (golden-parity.mjs:217) and forces exit 1.
+    The fallback therefore **cannot mask a non-gradient SHAPE GEOMETRY regression**; it
+    only excuses the one documented gradient-expansion shape.
+- **No rendering regression:** the high-value Ruffle acceptance oracles
+  (visual-oracle, golden-fla, magnet-fla) are unaffected — the fix only collapses two
+  coincident closed loops into one combined loop, which Ruffle renders identically
+  (same fills + strokes, same winding); the e2e baseline established at `a461212`
+  (104 passed / 10 failed — see prior entry) is unchanged by this byte-level shape fix.
+- **Still open for workers (carried forward, not re-triaged this cycle):**
+  - **1214** — e2e harness: structural byte-parsers treat CWS (compressed) publish output
+    as FWS.
+  - **1215** — `interactivity.spec` `injectRufflePlayer` missing `autoplay:'on'` → clip
+    ticks never start, so `diffPixels=0` and the oracle falsely fails (harness bug).
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+

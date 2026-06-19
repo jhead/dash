@@ -70,6 +70,29 @@ PLACEMENTS, SHAPE GEOMETRY); documented byte-level gaps (TEXT PARITY font-substi
 DECOMPRESSED BYTES, the gradient fill-count expansion) report as `KNOWN-GAP`, not
 failures. Exit 1 = at least one HARD dimension is a `DIFF` — a real parity defect.
 
+## Gotchas
+
+- **golden-parity.mjs imports the COMPILED `packages/swf/dist`, not the TypeScript
+  source.** A stale or desynced `dist/` produces FALSE exit-1 `SHAPE GEOMETRY` failures
+  (the harness scores an old build of the encoder against the current golden SWF), which
+  is easy to mis-file as a phantom regression. **Always rebuild the dist BEFORE trusting a
+  golden-parity result:**
+
+  ```bash
+  pnpm --filter @flash/swf build
+  ```
+
+  If a `git checkout`/`git bisect` (or a worktree switch) shuffled the working tree, the
+  incremental build may not pick up every change — do a clean rebuild:
+
+  ```bash
+  rm -rf packages/swf/dist && pnpm --filter @flash/swf build
+  ```
+
+  (`@flash/core`'s dist is also imported — rebuild it too if you touched core:
+  `pnpm --filter @flash/core build`.) Skipping this step is the most likely cause of a
+  sweep mis-filing a SHAPE GEOMETRY "regression" that vanishes after a rebuild.
+
 ## Notes
 
 - Per CLAUDE.md, run vitest packages **sequentially**, not in parallel, to avoid the
