@@ -25,7 +25,7 @@ export type EditPathEntry = { symbolId: string; instanceId: string };
 
 export type BottomTab = "actions" | "sound" | "output";
 
-export type RightTab = "library" | "properties";
+export type RightTab = "library" | "properties" | "agent";
 
 export interface EnvelopeTarget {
   frameIdx: number;

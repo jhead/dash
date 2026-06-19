@@ -67,6 +67,7 @@ import { Timeline } from "./Timeline";
 import { usePreferences } from "./preferences";
 import type { PlacedInstance } from "./PropertiesPanel";
 import { LibraryPanel } from "./LibraryPanel";
+import { AgentChatPanel } from "./agentchat/AgentChatPanel";
 import { StatusBar } from "./StatusBar";
 import type { ToolId } from "./tools/types";
 import { usePublish } from "./hooks/usePublish";
@@ -3701,6 +3702,13 @@ export function Shell(): React.ReactElement {
             >
               Properties
             </button>
+            <button
+              style={tabBtnStyle(rightTab === "agent")}
+              onClick={() => setRightTab("agent")}
+              data-testid="right-tab-agent"
+            >
+              Agent
+            </button>
             {editContext.mode === "symbol" && (
               <button
                 style={{
@@ -3730,7 +3738,9 @@ export function Shell(): React.ReactElement {
             )}
           </div>
 
-          {rightTab === "library" ? (
+          {rightTab === "agent" ? (
+            <AgentChatPanel />
+          ) : rightTab === "library" ? (
             <LibraryPanel
               library={library}
               doc={doc}
