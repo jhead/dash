@@ -37,3 +37,8 @@ export type { Preferences, UsePreferences } from "./preferences.js";
 
 // Agent Chat foundation (task 1276 P1): client-side OpenRouter client + settings.
 export * from "./agentchat/index.js";
+
+// AS2 class virtual-filesystem (task 1300 P2): cross-platform backends
+// (OPFS / IndexedDB fallback / Tauri native FS disk mirror) + platform factory,
+// re-exporting the pure ClassVfs interface + hydrate/sync from @flash/core.
+export * from "./vfs/index.js";

@@ -745,6 +745,39 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   calls to fail with "Editor page disconnected". Set `workers: 1` in
   `playwright.config.ts`.
 
+### AS2 external classes / Class VFS (task 1300 P2)
+
+- **The ClassVfs INTERFACE + path helpers + hydrate/sync bridge are PURE and live in
+  `@flash/core/vfs`; the platform backends live in `@flash/authoring-ui/vfs`.** `@flash/core`
+  must import cleanly in Node/browser/Tauri-webview, so nothing in it may touch `navigator`,
+  the OPFS handle API, or `@tauri-apps/plugin-fs`. Core ships `ClassVfs`
+  (list/read/write/remove/exists over classpath-relative paths like `com/example/Foo.as`),
+  `normalizeClassPath` (the one gate — throws `InvalidClassPathError` on `..`/empty/NUL,
+  defending OPFS+Tauri roots from traversal), `MemoryClassVfs` (reference + headless
+  fallback), and `hydrateVfsFromDoc`/`syncDocFromVfs`. authoring-ui adds `WebClassVfs`
+  (OPFS), `IndexedDbClassVfs` (fallback), `TauriClassVfs` (disk mirror) + `createClassVfs`.
+- **`.fla` embed (`doc.asClasses`) stays authoritative; the VFS is only the editing
+  surface.** Open: `hydrateVfsFromDoc` copies embed -> VFS. Save: `syncDocFromVfs` reads VFS
+  -> doc via the P0 `addAsClass` mutation. `syncDocFromVfs` returns the SAME doc reference
+  when nothing changed (no history churn), drops classes deleted via the VFS, and ignores
+  non-`.as` files. `hydrateVfsFromDoc` does NOT prune extra VFS files by default (so a newer
+  external desktop edit survives a re-open) — pass `{prune:true}` for an exact mirror.
+- **OPFS maps a classpath 1:1 onto nested dirs** (getDirectoryHandle per package segment,
+  getFileHandle leaf, createWritable); `IndexedDbClassVfs` has NO dir tree — it keys ONE
+  object store by the slashed classpath string (the path IS the key). Factory order:
+  Tauri+known-path -> OPFS -> IndexedDB -> Memory; a pathless desktop doc falls through to
+  the web backend until saved.
+- **Desktop disk mirror**: on Tauri, classes are REAL files under `<flaDir>/classes/`
+  (`deriveClassesRoot`), editable in external editors / git, reconciled on save. `isTauri()`
+  is duplicated from `hooks/useFileActions.ts` (`"__TAURI_INTERNALS__" in window`).
+- **Test env is node, not jsdom**: OPFS handles `entries()`/`keys()` are NOT in TS's DOM lib
+  (structural-cast them); `navigator` is a getter-only global in Node so tests must override
+  it via `Object.defineProperty(globalThis,"navigator",{value,writable:true,configurable:true})`,
+  not assignment. The IndexedDB fallback is tested with `fake-indexeddb` (devDep) via the
+  backend's injectable `indexedDB` option; the OPFS backend with an in-memory fake handle
+  tree; the Tauri backend with a `vi.mock("@tauri-apps/plugin-fs")` in-memory FS. Design:
+  `docs/33-as2-classes-vfs.md`.
+
 ### SWF clip actions
 
 - **loopMode / firstFrame synthesis is GRAPHIC-ONLY** (`compile.ts` + `sprite.ts`,

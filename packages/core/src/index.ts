@@ -5,3 +5,4 @@ export * from "./history/index.js";
 export * from "./tween/index.js";
 export * from "./as2/index.js";
 export * from "./audio/index.js";
+export * from "./vfs/index.js";
