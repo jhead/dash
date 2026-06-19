@@ -250,3 +250,50 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   - **1223** — `docs/11-video.md` misstates `DefineVideoStream` Width/Height source (model,
     not FLV stream); FLV dimension extractors are dead code relative to the SWF (doc/cleanup).
 
+---
+
+## 2026-06-19 — QA of three feature commits that slipped past the watermark (1205/1219/1220)
+
+- **Watermark (last fully-QA'd SHA):** `04d07d9daabb8fffaf44384c43a46c65a159ec8d` (current
+  repo HEAD). This advances/affirms the watermark from `9e0b717` and, unlike that earlier
+  advance, GENUINELY includes the substantive feature commits below: the prior entry advanced
+  the watermark to `9e0b717` but flagged that two feature commits (`ee7c148`/1219,
+  `1d27ff3`/1220) had landed UNDER it without being QA'd. Those two — plus `a95a086`/1205 —
+  have now been independently QA'd and are recorded here, correcting the premature advance.
+- **`a95a086` / task 1205 — FLA writer §11 frame-sound block: HEALTHY, nothing filed.**
+  `writeFrameSound()` (`timeline-write.ts:325`) is a byte-exact inverse of the reader
+  (schema `fs=0x18`: soundId / envelope / loop / sync / in-out / zoom, correct field order
+  and sync-mode mapping); tests assert real recovered round-trip values; `carchive-validate`
+  passes; the empty-doc byte-match is intact (sound-bearing frames short-circuit the empty
+  path). Caveats (already tracked, not defects): no real-Flash frame-sound oracle fixture;
+  the media-catalog `soundId`→`libraryItem` link is task 1224.
+- **`1d27ff3` / task 1220 — Trace Bitmap vectorizer: BROKEN (filed task 1227, high).**
+  The marching-squares contour walker (`bitmapTrace.ts` `marchingSquaresContour` ~181–296)
+  ignores entry/travel direction, so it traces only ~half of any non-rectangular region
+  (40×40 disk: shoelace area 523 vs true ~1018; diamond 9 vs 13). Only axis-aligned
+  rectangles trace correctly. Unit tests passed only because they exclusively cover
+  rectangles / pixel / L-shape — none has an up-left diagonal. Output is valid-but-wrong
+  (compiles to a clean half-disk `DefineShape`). Needs a consistent-handedness
+  (Moore-neighbor) rewrite plus diagonal regression tests.
+- **`ee7c148` / task 1219 — Free-transform Distort/Envelope: editor-only, NOT baked into
+  the SWF (filed task 1228, medium / high-effort).** The `warp.ts` math, model persistence,
+  and editor-canvas render are correct (13 real geometric tests pass), but the SWF compiler
+  has ZERO warp consumption (`grep -rniw warp packages/swf/src/` = 0 hits; `characters.ts:260`
+  emits the un-warped `obj.shape`). A `PlaceObject` matrix is affine and cannot represent a
+  non-affine warp, so published movies show the pristine un-distorted shape. Fix: run
+  `warpShape` in the compiler char pass and emit warped `DefineShape` edges (handle morph
+  start/end too).
+- **Still open for workers (carried forward + new):**
+  - **1214** — e2e harness: structural byte-parsers treat CWS (compressed) publish output
+    as FWS.
+  - **1215** — `interactivity.spec` `injectRufflePlayer` missing `autoplay:'on'` → clip
+    ticks never start, so `diffPixels=0` and the oracle falsely fails (harness bug).
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+  - **1223** — `docs/11-video.md` misstates `DefineVideoStream` Width/Height source (model,
+    not FLV stream); FLV dimension extractors are dead code relative to the SWF (doc/cleanup).
+  - **1227** — Trace Bitmap marching-squares walker traces only ~half of non-rectangular
+    regions (direction-agnostic; needs Moore-neighbor rewrite + diagonal tests).
+  - **1228** — Free-transform Distort/Envelope warp is editor-only; SWF compiler never
+    consumes `warp` so published movies show the un-distorted shape.
+
