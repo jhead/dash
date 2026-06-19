@@ -1,0 +1,10 @@
+{
+  "id": "1250-6oy60a-flash8-re-theme-wave-b-actionspanel-outputpanel-",
+  "title": "Flash8 re-theme Wave B: ActionsPanel + OutputPanel \u2192 light Halo + code editor",
+  "description": "Convert packages/authoring-ui/src/ActionsPanel.tsx and OutputPanel.tsx to the Flash 8 light theme via packages/authoring-ui/src/theme/flash8Theme.ts per docs/30-flash8-ui-spec.md \u00a73.8 (Actions). Light #ECECEC chrome for panel frame/toolbox tree/navigator; WHITE code/script pane with a narrow light-gray line-number gutter on the left; syntax colors per spec (comments=gray #999999, keywords=blue #0000FF, strings\u2248green #009900, identifiers/foreground=black) on the white bg; toolbar (+, Find, Target path, Check Syntax, Auto Format, Code Hint, Debug, Script Assist, Reference). OutputPanel: light panel, readable message/error text on white/light bg (re-pick the dark-bg syntax/error colors). Replace all dark hex with chrome.*/halo.* tokens; mirror Shell.tsx. Keep functionality (code editing, syntax highlighting, output) intact. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: ActionsPanel.tsx + OutputPanel.tsx only (+ read-only theme import).",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-19T05:59:12Z",
+  "updated_at": "2026-06-19T05:59:12Z"
+}
