@@ -7,7 +7,13 @@
  * DefineBitsLossless2 (tag 36) embeds ZLIB-compressed ARGB pixel data.
  * BitmapFormat 5 = 32-bit ARGB; rows are stored top-to-bottom, no padding.
  */
-import { deflateSync } from "fflate";
+// SWF DefineBitsLossless2 (ZlibBitmapData) and the DefineBitsJPEG3 alpha block
+// are ZLIB streams (RFC 1950, 0x78 header) — NOT bare DEFLATE. fflate's
+// `deflateSync` emits a raw DEFLATE block (no zlib header/Adler checksum), which
+// Flash Player and Ruffle (flate2 ZlibDecoder) cannot decompress, so the bitmap
+// silently fails to decode and renders blank. `zlibSync` emits the proper zlib
+// stream — the same encoder used for the CWS movie body in assemble.ts.
+import { zlibSync } from "fflate";
 import { BitWriter } from "./bits.js";
 
 // ---------------------------------------------------------------------------
@@ -80,7 +86,7 @@ export function encodeDefineBitsJpeg3(
   alphaBytes: Uint8Array
 ): Uint8Array {
   const DefineBitsJPEG3 = 35;
-  const compressedAlpha = deflateSync(alphaBytes);
+  const compressedAlpha = zlibSync(alphaBytes);
 
   // Build tag body
   const body = new Uint8Array(2 + 4 + jpegBytes.length + compressedAlpha.length);
@@ -188,7 +194,7 @@ export function encodeDefineBitsLossless2(
       // Padding bytes remain 0 (already initialized)
     }
 
-    const compressed = deflateSync(uncompressed);
+    const compressed = zlibSync(uncompressed);
 
     // Tag body:
     //   UI16 charId + UI8 format + UI16 width + UI16 height + UI8 colorTableSize + compressed
@@ -219,7 +225,7 @@ export function encodeDefineBitsLossless2(
   const BitmapFormat32BitARGB = 5;
 
   // ZLIB-compress the pixel data
-  const compressed = deflateSync(pixels);
+  const compressed = zlibSync(pixels);
 
   // Build the tag body:
   //   UI16 charId + UI8 format + UI16 width + UI16 height + compressed bytes

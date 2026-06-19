@@ -1125,14 +1125,16 @@ export function encodeDefineSprite(
       spriteTags.push(encodeTag(Tag.FrameLabel, bw.getBytes()));
     }
 
-    // Emit DoAction for any keyframes with scripts at exactly this frame index
-    // DoAction must appear BEFORE ShowFrame so actions execute on frame entry
+    // Emit DoAction for any frame carrying a script at exactly this frame index.
+    // DoAction must appear BEFORE ShowFrame so actions execute on frame entry.
+    // Emitted regardless of `isKeyframe`: the SWF runtime executes a DoAction on
+    // whatever frame it sits, and a tween in-between frame can carry a script
+    // (e.g. a mid-tween `stop()`). Gating on isKeyframe silently dropped these.
     for (const layer of layers) {
       if (layer.type === "guide" || layer.type === "folder") continue;
       for (const frame of layer.frames) {
         if (
           frame.index === frameIdx &&
-          frame.isKeyframe &&
           frame.script?.trim()
         ) {
           const actionBytes = compileAS2(frame.script);

@@ -148,6 +148,47 @@ export function findGuideLayerAbove(
 }
 
 /**
+ * Geometric origin (top-left of the raw shape bounding box, in the object's
+ * own coordinate space) of a shape / drawing-object display object.
+ *
+ * A motion tween can encode movement two ways:
+ *   1. via the display-object transform (x/y change between keyframes), or
+ *   2. via the shape GEOMETRY itself (the same transform, but the path
+ *      coordinates sit at a different location in the two keyframes).
+ *
+ * For symbol instances and text the registration origin is the transform
+ * origin, so form (2) never applies; this returns {0,0} for them. For shapes /
+ * drawing objects the on-stage position is `transform.x + geometryOrigin`, so
+ * we must fold the geometry origin into the tween target to interpolate the
+ * TRUE on-stage position. Returns {0,0} when the shape has no paths.
+ */
+function shapeGeometryOrigin(obj: DisplayObject): { x: number; y: number } {
+  if (obj.type !== "shape" && obj.type !== "drawing-object") {
+    return { x: 0, y: 0 };
+  }
+  const shape = (obj as ShapeDisplayObject).shape;
+  if (!shape || !shape.paths || shape.paths.length === 0) {
+    return { x: 0, y: 0 };
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  for (const path of shape.paths) {
+    if (path.start.x < minX) minX = path.start.x;
+    if (path.start.y < minY) minY = path.start.y;
+    for (const seg of path.segments) {
+      if (seg.to.x < minX) minX = seg.to.x;
+      if (seg.to.y < minY) minY = seg.to.y;
+      if (seg.type === "curve") {
+        if (seg.control.x < minX) minX = seg.control.x;
+        if (seg.control.y < minY) minY = seg.control.y;
+      }
+    }
+  }
+  if (!isFinite(minX) || !isFinite(minY)) return { x: 0, y: 0 };
+  return { x: minX, y: minY };
+}
+
+/**
  * Extract a TweenTarget from a DisplayObject for motion tween interpolation.
  * Falls back to zero values for missing fields.
  */
@@ -251,6 +292,23 @@ export function getTweenedFrame(
 
       const from = displayObjectToTweenTarget(startObj);
       const to = displayObjectToTweenTarget(endObj);
+
+      // A motion tween may encode movement in the SHAPE GEOMETRY rather than in
+      // the transform (both keyframes share x/y=0 but the path coordinates sit
+      // at different locations). Fold each keyframe's geometric origin into the
+      // tween position so we interpolate the true ON-STAGE position. The
+      // in-between frames are rendered with the START keyframe's character
+      // (start geometry already baked in), so after interpolation we subtract
+      // the start origin back out, leaving the residual translation in x/y.
+      // When geometry is identical (the common transform-based tween) the origin
+      // delta is zero and this is a no-op.
+      const startOrigin = shapeGeometryOrigin(startObj);
+      const endOrigin = shapeGeometryOrigin(endObj);
+      from.x += startOrigin.x;
+      from.y += startOrigin.y;
+      to.x += endOrigin.x;
+      to.y += endOrigin.y;
+
       const result = interpolateTween(
         from,
         to,
@@ -271,8 +329,11 @@ export function getTweenedFrame(
         }
       );
 
-      let x = result.x;
-      let y = result.y;
+      // Subtract the start keyframe's geometry origin back out: the in-between
+      // frame reuses the start character, so its baked-in origin must not be
+      // double-counted. (No-op when geometry doesn't carry the movement.)
+      let x = result.x - startOrigin.x;
+      let y = result.y - startOrigin.y;
       let rotation = result.rotation;
 
       // Override position (and optionally rotation) with guide path sample

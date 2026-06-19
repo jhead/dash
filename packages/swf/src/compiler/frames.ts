@@ -1507,13 +1507,18 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
           }
         }
 
-        // Emit DoAction for any keyframes with scripts at exactly this frame index
-        // DoAction must appear BEFORE ShowFrame so actions execute on frame entry
+        // Emit DoAction for any frame carrying a script at exactly this frame
+        // index. DoAction must appear BEFORE ShowFrame so actions execute on
+        // frame entry. The script is emitted regardless of `isKeyframe`: while
+        // Flash's authoring UI only lets you attach a script to a keyframe, the
+        // SWF runtime executes a DoAction on whatever frame it sits, and a
+        // motion/shape tween's in-between frames can legitimately carry a script
+        // (e.g. a `stop()` parked mid-tween). Gating on isKeyframe silently
+        // dropped such scripts, so the movie never stopped on that frame.
         for (const layer of layers) {
           for (const frame of layer.frames) {
             if (
               frame.index === frameIdx &&
-              frame.isKeyframe &&
               frame.script?.trim()
             ) {
               const actionBytes = compileAS2(frame.script);

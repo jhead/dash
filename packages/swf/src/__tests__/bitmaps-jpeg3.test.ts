@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { decompressSync, deflateSync } from "fflate";
+import { decompressSync, zlibSync } from "fflate";
 import { encodeDefineBitsJpeg3 } from "../bitmaps.js";
 import { compileDocument } from "../compile.js";
 import type {
@@ -284,7 +284,9 @@ describe("encodeDefineBitsJpeg3", () => {
   it("total tag body length equals 6 + jpegBytes.length + compressedAlpha.length", () => {
     const tag = encodeDefineBitsJpeg3(charId, jpegBytes, alphaBytes);
     const { body } = parseTagRecord(tag);
-    const compressedAlpha = deflateSync(alphaBytes);
+    // SWF DefineBitsJPEG3 alpha is a ZLIB stream (not bare DEFLATE) — must match
+    // the encoder's zlibSync output, including the zlib header + Adler checksum.
+    const compressedAlpha = zlibSync(alphaBytes);
     const expectedBodyLength = 6 + jpegBytes.length + compressedAlpha.length;
     expect(body.length).toBe(expectedBodyLength);
   });

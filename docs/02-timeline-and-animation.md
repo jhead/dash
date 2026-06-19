@@ -113,6 +113,20 @@ result interpolates on stage (via `getTweenedFrame`) and compiles to a smooth SW
 
 - Tween engine evaluates property tracks per frame; motion-guide sampling matches Flash's
   path-length parameterization.
+- **Motion tweens fold each keyframe's shape geometric origin into the interpolated
+  position (task 1216).** A classic tween's on-stage position is `transform.x + geometryOrigin`;
+  when the movement is encoded in the path coordinates (both keyframes share `transform.x/y`
+  but the shape sits at a different place) `getTweenedFrame` adds the start/end geometry origin
+  into the tween target, interpolates the true on-stage position, then subtracts the START
+  origin back out (the in-between frames reuse the start character, whose origin is baked in).
+  Without this the matrix `tx` stayed constant and the compiler emitted no HasMove
+  `PlaceObject2` on the in-between frames, so the object never moved. No-op for the common
+  transform-based tween (and for symbol/text instances, whose origin is the registration point).
+- **Frame scripts emit a `DoAction` regardless of `isKeyframe` (task 1216).** The SWF runtime
+  executes a `DoAction` on whatever frame it sits, and a tween in-between frame can legitimately
+  carry a script (e.g. a `stop()` parked mid-tween). The compiler (`frames.ts`, `sprite.ts`)
+  emits the script for any frame whose `script` is non-empty; gating on `isKeyframe` silently
+  dropped these and the movie never stopped on that frame. Gate: `ruffle-oracle-defects.test.ts`.
 - Shape tweening requires point-correspondence solving honoring shape hints, then emitting
   morph data for SWF and interpolated geometry for the live stage.
 - Timeline Effects are macros that expand into the document model (symbols + tweens) so they

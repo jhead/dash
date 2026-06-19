@@ -54,6 +54,13 @@ The `flash.display.BitmapData` API enables programmatic raster work at runtime:
 
 ## Implementation notes
 
+- **`DefineBitsLossless2` `ZlibBitmapData` and the `DefineBitsJPEG3` alpha block are ZLIB
+  streams (RFC 1950, `0x78` header + Adler-32), NOT bare DEFLATE (task 1216).** Flash Player
+  and Ruffle decompress them with a strict zlib decoder (`flate2::ZlibDecoder`); a raw DEFLATE
+  block (fflate `deflateSync`, no header/checksum) silently fails to decode and the bitmap
+  renders blank. `packages/swf/src/bitmaps.ts` uses fflate `zlibSync` for all three lossless
+  paths (32-bit ARGB, 8-bit palette, JPEG3 alpha) — the same encoder used for the CWS movie
+  body. Gate: `bitmaps-jpeg3.test.ts`, `ruffle-oracle-defects.test.ts`.
 - Decoders/encoders (JPEG, PNG, GIF) run as wasm; alpha stored alongside JPEG as in Flash's
   `DefineBitsJPEG3` (separate zlib alpha).
 - BitmapData backed by GPU textures with a CPU-readable mirror for per-pixel APIs; `draw()`
