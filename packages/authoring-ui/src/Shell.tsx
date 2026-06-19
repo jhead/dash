@@ -87,6 +87,7 @@ import { ShellDialogs } from "./layout/ShellDialogs.js";
 import { ShellPanels } from "./layout/ShellPanels.js";
 import { ManageCommandsDialog } from "./layout/ManageCommandsDialog.js";
 import { ShellOverlays } from "./layout/ShellOverlays.js";
+import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
 import { useToolHandlers } from "./hooks/useToolHandlers.js";
 import { useTimelineEffectHandlers } from "./hooks/useTimelineEffectHandlers.js";
 import { nextInstanceId, nextBitmapId, nextVideoId } from "./idgen.js";
@@ -353,15 +354,27 @@ function getDisplayObjectPixelSize(
 // Styles
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Shell chrome styles — Flash 8 "Halo" LIGHT theme.
+//
+// REFERENCE CONVERSION: every value comes from theme/flash8Theme.ts tokens (no
+// hardcoded hex). Later per-panel waves mirror this idiom. See docs/30-flash8-ui-spec.md.
+//   - panel/region surfaces  → chrome.panelBg (light gray #ECECEC)
+//   - recessed strips/docks  → chrome.insetFieldStrip
+//   - separators / splitters → chrome.separator (1px)
+//   - text                   → chrome.textDefault (near-black) via chromeFont()
+//   - selection accent       → halo.haloBlue (#009DFF)
+// ---------------------------------------------------------------------------
 const styles: Record<string, React.CSSProperties> = {
   shell: {
     display: "flex",
     flexDirection: "column",
     height: "100%",
     width: "100%",
-    background: "#3c3c3c",
+    background: chrome.appBg,
     overflow: "hidden",
     position: "relative",
+    ...chromeFont(),
   },
   dropOverlay: {
     position: "absolute",
@@ -370,8 +383,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "rgba(0, 120, 215, 0.18)",
-    color: "#ffffff",
+    background: "rgba(0, 157, 255, 0.18)",
+    color: chrome.textDefault,
     fontSize: "20px",
     fontWeight: "bold",
     pointerEvents: "none",
@@ -400,16 +413,16 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     width: "240px",
     flexShrink: 0,
-    background: "#2d2d2d",
-    borderLeft: "1px solid #1a1a1a",
+    background: chrome.panelBg,
+    borderLeft: `${chrome.borderThin}px solid ${chrome.separator}`,
     overflow: "hidden",
   },
   rightPanelTabs: {
     display: "flex",
     flexDirection: "row",
     height: "22px",
-    background: "#333",
-    borderBottom: "1px solid #1a1a1a",
+    background: chrome.insetFieldStrip,
+    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
     flexShrink: 0,
   },
   // Vertical drag handle (resizes a left/right pane along the X axis)
@@ -417,29 +430,29 @@ const styles: Record<string, React.CSSProperties> = {
     width: "4px",
     flexShrink: 0,
     cursor: "col-resize",
-    background: "#1a1a1a",
+    background: chrome.separator,
   },
   // Horizontal drag handle (resizes a top/bottom pane along the Y axis)
   hResizeHandle: {
     height: "4px",
     flexShrink: 0,
     cursor: "row-resize",
-    background: "#1a1a1a",
+    background: chrome.separator,
   },
   bottomPanel: {
     display: "flex",
     flexDirection: "column",
     flexShrink: 0,
-    background: "#1e1e1e",
+    background: chrome.panelBg,
     overflow: "hidden",
   },
   bottomTabs: {
     display: "flex",
     flexDirection: "row",
     height: "24px",
-    background: "#2d2d2d",
-    borderTop: "1px solid #1a1a1a",
-    borderBottom: "1px solid #1a1a1a",
+    background: chrome.insetFieldStrip,
+    borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
+    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
     flexShrink: 0,
     alignItems: "stretch",
   },
@@ -2870,10 +2883,10 @@ export function Shell(): React.ReactElement {
     flex: 1,
     fontSize: "10px",
     fontWeight: active ? "bold" : "normal",
-    background: active ? "#2d2d2d" : "#333",
-    color: active ? "#e0e0e0" : "#999",
+    background: active ? chrome.panelBg : chrome.insetFieldStrip,
+    color: active ? chrome.textDefault : chrome.textDisabled,
     border: "none",
-    borderBottom: active ? "2px solid #1a6ea8" : "2px solid transparent",
+    borderBottom: active ? `2px solid ${halo.haloBlue}` : "2px solid transparent",
     cursor: "pointer",
     padding: "0 4px",
     userSelect: "none",
@@ -2885,11 +2898,11 @@ export function Shell(): React.ReactElement {
     minWidth: 72,
     fontSize: 11,
     fontWeight: active ? "bold" : "normal",
-    background: active ? "#1e1e1e" : "#2d2d2d",
-    color: active ? "#e0e0e0" : "#999",
+    background: active ? chrome.panelBg : chrome.insetFieldStrip,
+    color: active ? chrome.textDefault : chrome.textDisabled,
     border: "none",
-    borderRight: "1px solid #1a1a1a",
-    borderTop: active ? "2px solid #1a6ea8" : "2px solid transparent",
+    borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
+    borderTop: active ? `2px solid ${halo.haloBlue}` : "2px solid transparent",
     cursor: "pointer",
     padding: "0 12px",
     userSelect: "none",
