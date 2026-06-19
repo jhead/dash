@@ -356,7 +356,12 @@ function writeAdjustColorFilter(bw: BitWriter, f: AdjustColorFilter): void {
  *   FLOAT: bias
  *   matrixX*matrixY × FLOAT: matrix entries (row-major)
  *   RGBA: defaultColor (4 bytes)
- *   UI8:  flags (bit 0: clamp, bit 1: preserveAlpha)
+ *   UI8:  flags (bit 0: preserveAlpha, bit 1: clamp)
+ *
+ * Flag bit positions match the SWF FILTER spec and Ruffle's runtime decode
+ * (ruffle/swf/src/types/convolution_filter.rs):
+ *   PRESERVE_ALPHA = 1 << 0  (bit 0)
+ *   CLAMP          = 1 << 1  (bit 1)
  */
 function writeConvolutionFilter(bw: BitWriter, f: ConvolutionFilter): void {
   bw.writeUI8(f.matrixX);
@@ -369,8 +374,8 @@ function writeConvolutionFilter(bw: BitWriter, f: ConvolutionFilter): void {
   bw.writeUI8(f.defaultColor.b);
   bw.writeUI8(f.defaultColor.a);
   let flags = 0;
-  if (f.clamp) flags |= 1;
-  if (f.preserveAlpha) flags |= 2;
+  if (f.preserveAlpha) flags |= 1 << 0; // PRESERVE_ALPHA = bit 0
+  if (f.clamp) flags |= 1 << 1; // CLAMP = bit 1
   bw.writeUI8(flags);
 }
 

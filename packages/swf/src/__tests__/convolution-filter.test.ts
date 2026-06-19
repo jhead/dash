@@ -9,7 +9,12 @@
  *   FLOAT: bias    (IEEE 754 LE)
  *   matrixX*matrixY × FLOAT: matrix entries (row-major)
  *   RGBA:  defaultColor (4 bytes)
- *   UI8:   flags (bit 0 = clamp, bit 1 = preserveAlpha)
+ *   UI8:   flags (bit 0 = preserveAlpha, bit 1 = clamp)
+ *
+ * Flag bit positions are per the SWF FILTER spec and Ruffle's runtime decode
+ * (ruffle/swf/src/types/convolution_filter.rs):
+ *   PRESERVE_ALPHA = 1 << 0  (bit 0)
+ *   CLAMP          = 1 << 1  (bit 1)
  */
 
 import { describe, it, expect } from "vitest";
@@ -159,35 +164,72 @@ describe("ConvolutionFilter SWF encoding (FilterID=5)", () => {
   });
 
   /**
-   * Test 6: flags byte encodes clamp (bit 0) and preserveAlpha (bit 1).
+   * Test 6: flags byte encodes preserveAlpha (bit 0) and clamp (bit 1).
+   *
+   * These assertions pin the SWF-spec / Ruffle-runtime layout:
+   *   PRESERVE_ALPHA = 1 << 0 (bit 0, value 0x01)
+   *   CLAMP          = 1 << 1 (bit 1, value 0x02)
+   * (ruffle/swf/src/types/convolution_filter.rs ConvolutionFilterFlags.)
+   *
+   * The previous version of this test asserted the OPPOSITE (clamp on bit 0,
+   * preserveAlpha on bit 1). That codified the encoder's wrong bit layout, so
+   * a published ConvolutionFilter clamped / preserved-alpha BACKWARDS relative
+   * to the author's setting once Ruffle decoded it. The bits are now swapped to
+   * match the runtime, and these assertions guard against regressing back.
    */
-  it("ConvolutionFilter: flags byte encodes clamp and preserveAlpha correctly", () => {
+  it("ConvolutionFilter: flags byte encodes preserveAlpha (bit 0) and clamp (bit 1)", () => {
     // Layout: filterCount(1)+FilterID(1)+matX(1)+matY(1)+divisor(4)+bias(4)+matrix(36)+RGBA(4) = 52
     // flags is at start+52
     const flagsOffsetFor3x3 = (s: number) => s + 1 + 1 + 1 + 1 + 4 + 4 + 36 + 4; // = s + 52
 
-    // clamp=true, preserveAlpha=false → flags = 0x01
+    // clamp=true, preserveAlpha=false → flags = 0x02 (CLAMP = bit 1)
     const f1 = makeConvolutionFilter({ clamp: true, preserveAlpha: false });
     const body1 = encodePlaceObject3WithFilters(1, 1, 0, 0, [f1]);
     const start1 = findFilterListStart(body1, 1, 5);
     expect(start1).toBeGreaterThan(-1);
-    expect(body1[flagsOffsetFor3x3(start1)] & 0x01).toBe(1); // clamp bit
-    expect(body1[flagsOffsetFor3x3(start1)] & 0x02).toBe(0); // preserveAlpha bit clear
+    expect(body1[flagsOffsetFor3x3(start1)] & 0x02).toBe(2); // clamp bit (bit 1) set
+    expect(body1[flagsOffsetFor3x3(start1)] & 0x01).toBe(0); // preserveAlpha bit (bit 0) clear
 
-    // clamp=false, preserveAlpha=true → flags = 0x02
+    // clamp=false, preserveAlpha=true → flags = 0x01 (PRESERVE_ALPHA = bit 0)
     const f2 = makeConvolutionFilter({ clamp: false, preserveAlpha: true });
     const body2 = encodePlaceObject3WithFilters(1, 1, 0, 0, [f2]);
     const start2 = findFilterListStart(body2, 1, 5);
     expect(start2).toBeGreaterThan(-1);
-    expect(body2[flagsOffsetFor3x3(start2)] & 0x01).toBe(0); // clamp bit clear
-    expect(body2[flagsOffsetFor3x3(start2)] & 0x02).toBe(2); // preserveAlpha bit
+    expect(body2[flagsOffsetFor3x3(start2)] & 0x02).toBe(0); // clamp bit (bit 1) clear
+    expect(body2[flagsOffsetFor3x3(start2)] & 0x01).toBe(1); // preserveAlpha bit (bit 0) set
 
-    // clamp=true, preserveAlpha=true → flags = 0x03
+    // clamp=true, preserveAlpha=true → flags = 0x03 (both bits set)
     const f3 = makeConvolutionFilter({ clamp: true, preserveAlpha: true });
     const body3 = encodePlaceObject3WithFilters(1, 1, 0, 0, [f3]);
     const start3 = findFilterListStart(body3, 1, 5);
     expect(start3).toBeGreaterThan(-1);
     expect(body3[flagsOffsetFor3x3(start3)] & 0x03).toBe(3); // both bits set
+  });
+
+  /**
+   * Test 6b: round-trip via a decode mirroring Ruffle's read_convolution_filter
+   * (ConvolutionFilterFlags::from_bits_truncate) proves the author's clamp /
+   * preserveAlpha settings survive encode → runtime-decode unchanged.
+   */
+  it("ConvolutionFilter: clamp/preserveAlpha survive encode→Ruffle-decode round-trip", () => {
+    const PRESERVE_ALPHA = 1 << 0; // ruffle ConvolutionFilterFlags::PRESERVE_ALPHA
+    const CLAMP = 1 << 1; // ruffle ConvolutionFilterFlags::CLAMP
+    const flagsOffsetFor3x3 = (s: number) => s + 1 + 1 + 1 + 1 + 4 + 4 + 36 + 4;
+
+    for (const clamp of [false, true]) {
+      for (const preserveAlpha of [false, true]) {
+        const filter = makeConvolutionFilter({ clamp, preserveAlpha });
+        const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+        const start = findFilterListStart(body, 1, 5);
+        expect(start).toBeGreaterThan(-1);
+        const rawFlags = body[flagsOffsetFor3x3(start)];
+        // Decode exactly as Ruffle does.
+        const decodedClamp = (rawFlags & CLAMP) !== 0;
+        const decodedPreserveAlpha = (rawFlags & PRESERVE_ALPHA) !== 0;
+        expect(decodedClamp).toBe(clamp);
+        expect(decodedPreserveAlpha).toBe(preserveAlpha);
+      }
+    }
   });
 
   /**
