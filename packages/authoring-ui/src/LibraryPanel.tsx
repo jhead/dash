@@ -3,6 +3,7 @@ import type { BitmapItem, FlashDocument, Library, LibraryItem, LibraryFolder, Sy
 import { SymbolLinkageDialog } from "./SymbolLinkageDialog";
 import { SymbolPropertiesDialog } from "./SymbolPropertiesDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
+import { chrome, halo, chromeFont, titleBarStyle as themeTitleBar } from "./theme/flash8Theme.js";
 
 export interface LibraryPanelProps {
   library: Library;
@@ -62,19 +63,20 @@ function itemTypeShort(item: LibraryItem): string {
   return "?";
 }
 
-// Returns { text, color } for a colored badge next to the item name
+// Returns { text, color } for a colored type icon next to the item name. Colors are
+// dark enough to read on the white item list (Flash 8 Halo light surface).
 function itemBadge(item: LibraryItem): { text: string; color: string } | null {
   if (item.itemType === "symbol") {
     switch (item.symbolType) {
-      case "movieclip": return { text: "MC", color: "#4a9eff" };
-      case "button":    return { text: "Btn", color: "#5cb85c" };
-      case "graphic":   return { text: "Grfx", color: "#999999" };
+      case "movieclip": return { text: "MC", color: "#0066B3" };
+      case "button":    return { text: "Btn", color: "#2E7D32" };
+      case "graphic":   return { text: "Grfx", color: halo.iconColor };
     }
   }
-  if (item.itemType === "bitmap") return { text: "Img", color: "#cc8800" };
-  if (item.itemType === "sound")  return { text: "Snd", color: "#aa44cc" };
-  if (item.itemType === "video")  return { text: "Vid", color: "#e05050" };
-  if (item.itemType === "font")   return { text: "Font", color: "#888888" };
+  if (item.itemType === "bitmap") return { text: "Img", color: "#A66A00" };
+  if (item.itemType === "sound")  return { text: "Snd", color: "#7B2FA3" };
+  if (item.itemType === "video")  return { text: "Vid", color: "#B33636" };
+  if (item.itemType === "font")   return { text: "Font", color: halo.iconColor };
   return null;
 }
 
@@ -150,45 +152,48 @@ function NewSymbolDialog({ onConfirm, onCancel }: NewSymbolDialogProps): React.R
   };
 
   const dialogStyle: React.CSSProperties = {
-    background: "#3a3a3a",
-    border: "1px solid #555",
+    background: chrome.panelBg,
+    border: `${chrome.borderThin}px solid ${chrome.separator}`,
+    borderTop: `${chrome.borderThin}px solid ${chrome.bevelLight}`,
+    borderLeft: `${chrome.borderThin}px solid ${chrome.bevelLight}`,
     padding: "12px",
     minWidth: "220px",
     display: "flex",
     flexDirection: "column",
     gap: "8px",
+    ...chromeFont(),
   };
 
   const titleStyle: React.CSSProperties = {
-    fontSize: "11px",
+    ...chromeFont(),
     fontWeight: "bold",
-    color: "#e0e0e0",
+    color: chrome.textDefault,
     marginBottom: "4px",
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: "11px",
-    color: "#c0c0c0",
+    ...chromeFont(),
+    color: chrome.textDefault,
     width: "50px",
     flexShrink: 0,
   };
 
   const inputStyle: React.CSSProperties = {
-    fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #555",
+    ...chromeFont(),
+    background: halo.inputBg,
+    color: halo.text,
+    borderStyle: "solid",
+    borderWidth: 1,
+    borderTopColor: halo.inputBorderDark,
+    borderLeftColor: halo.inputBorderDark,
+    borderRightColor: halo.inputBorderLight,
+    borderBottomColor: halo.inputBorderLight,
     padding: "2px 4px",
     flex: 1,
   };
 
   const selectStyle: React.CSSProperties = {
-    fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #555",
-    padding: "2px 4px",
-    flex: 1,
+    ...inputStyle,
   };
 
   const rowStyle: React.CSSProperties = {
@@ -199,18 +204,24 @@ function NewSymbolDialog({ onConfirm, onCancel }: NewSymbolDialogProps): React.R
   };
 
   const btnStyle: React.CSSProperties = {
-    fontSize: "11px",
-    background: "#555",
-    color: "#e0e0e0",
-    border: "1px solid #666",
+    ...chromeFont(),
+    background: `linear-gradient(${chrome.bevelLight}, ${chrome.insetFieldStrip})`,
+    color: chrome.textDefault,
+    borderStyle: "solid",
+    borderWidth: 1,
+    borderTopColor: chrome.bevelLight,
+    borderLeftColor: chrome.bevelLight,
+    borderRightColor: chrome.bevelDark,
+    borderBottomColor: chrome.bevelDark,
+    borderRadius: halo.cornerRadius,
     padding: "3px 10px",
     cursor: "pointer",
   };
 
   const btnPrimaryStyle: React.CSSProperties = {
     ...btnStyle,
-    background: "#1a6ea8",
-    border: "1px solid #2288cc",
+    borderColor: halo.haloBlue,
+    background: `linear-gradient(${chrome.bevelLight}, ${halo.rollOverColor})`,
   };
 
   return (
@@ -275,35 +286,36 @@ function ContextMenu({
     position: "fixed",
     top: y,
     left: x,
-    background: "#3a3a3a",
-    border: "1px solid #555",
+    background: halo.panelContentBg,
+    border: `${chrome.borderThin}px solid ${chrome.separator}`,
     zIndex: 200,
     minWidth: "160px",
+    ...chromeFont(),
   };
 
   const menuItemStyle: React.CSSProperties = {
     padding: "4px 12px",
-    fontSize: "11px",
-    color: "#c0c0c0",
+    ...chromeFont(),
+    color: chrome.textDefault,
     cursor: "pointer",
     userSelect: "none",
   };
 
   const menuItemHoverStyle: React.CSSProperties = {
     ...menuItemStyle,
-    background: "#1a6ea8",
-    color: "#fff",
+    background: halo.selectionColor,
+    color: halo.textSelected,
   };
 
   const separatorStyle: React.CSSProperties = {
-    borderTop: "1px solid #555",
+    borderTop: `1px solid ${halo.separator}`,
     margin: "2px 0",
   };
 
   const subHeaderStyle: React.CSSProperties = {
     padding: "3px 12px",
-    fontSize: "10px",
-    color: "#777",
+    ...chromeFont(),
+    color: chrome.textDisabled,
     userSelect: "none",
   };
 
@@ -376,7 +388,7 @@ function ContextMenu({
           </>
         )}
         <div
-          style={hovered === "delete" ? { ...menuItemHoverStyle, color: "#ff6666" } : { ...menuItemStyle, color: "#ff8888" }}
+          style={hovered === "delete" ? { ...menuItemHoverStyle, color: halo.error } : { ...menuItemStyle, color: halo.error }}
           onMouseEnter={() => setHovered("delete")}
           onMouseLeave={() => setHovered(null)}
           onClick={() => { handleDelete(); onClose(); }}
@@ -462,6 +474,9 @@ export function LibraryPanel({
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const lastClickRef = useRef<{ id: string; time: number } | null>(null);
+
+  // Hovered row (for Halo roll-over highlight)
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   // Search
   const [search, setSearch] = useState("");
@@ -674,50 +689,47 @@ export function LibraryPanel({
     flexDirection: "column",
     flex: 1,
     minWidth: 0,
-    background: "#2d2d2d",
+    background: chrome.panelBg,
     position: "relative",
     overflow: "hidden",
+    ...chromeFont(),
   };
 
+  // Panel title bar: the shared Halo header gradient + gripper-dot idiom, plus the
+  // collapse caret laid out at the right (themeTitleBar handles font/border/gradient).
   const titleBarStyle: React.CSSProperties = {
-    display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
+    ...themeTitleBar(),
     justifyContent: "space-between",
-    height: "22px",
-    background: "#3a3a3a",
-    borderBottom: "1px solid #1a1a1a",
-    padding: "0 6px",
-    flexShrink: 0,
-    userSelect: "none",
     cursor: "pointer",
   };
 
   const titleLabelStyle: React.CSSProperties = {
-    fontSize: "11px",
-    color: "#c0c0c0",
+    ...chromeFont(),
+    color: chrome.textDefault,
     fontWeight: "bold",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   };
 
+  // Bottom toolbar (New Symbol / New Folder / Properties / Delete): recessed inset strip.
   const toolbarStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
     height: "24px",
-    background: "#333",
-    borderBottom: "1px solid #1a1a1a",
+    background: chrome.insetFieldStrip,
+    borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
     padding: "0 4px",
     flexShrink: 0,
     gap: "2px",
   };
 
   const toolBtnStyle: React.CSSProperties = {
+    ...chromeFont(),
     fontSize: "12px",
     background: "transparent",
-    color: "#c0c0c0",
+    color: chrome.textDefault,
     border: "1px solid transparent",
     padding: "0 4px",
     height: "18px",
@@ -726,13 +738,14 @@ export function LibraryPanel({
     alignItems: "center",
   };
 
+  // Preview pane / search strip sits above the white item list, on the light chrome.
   const searchBarStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
     height: "22px",
-    background: "#2a2a2a",
-    borderBottom: "1px solid #1a1a1a",
+    background: chrome.panelBg,
+    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
     padding: "0 4px",
     flexShrink: 0,
     gap: "2px",
@@ -740,19 +753,25 @@ export function LibraryPanel({
 
   const searchInputStyle: React.CSSProperties = {
     flex: 1,
+    ...chromeFont(),
     fontSize: "10px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
+    background: halo.inputBg,
+    color: halo.text,
+    borderStyle: "solid",
+    borderWidth: 1,
+    borderTopColor: halo.inputBorderDark,
+    borderLeftColor: halo.inputBorderDark,
+    borderRightColor: halo.inputBorderLight,
+    borderBottomColor: halo.inputBorderLight,
     padding: "1px 4px",
     height: "16px",
     outline: "none",
   };
 
   const clearBtnStyle: React.CSSProperties = {
-    fontSize: "11px",
+    ...chromeFont(),
     background: "transparent",
-    color: "#888",
+    color: chrome.textDisabled,
     border: "none",
     padding: "0 2px",
     cursor: "pointer",
@@ -760,52 +779,65 @@ export function LibraryPanel({
     flexShrink: 0,
   };
 
+  // Column header row (Name / Type / Use Count): light header gradient, divider below.
   const colHeaderStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
     height: "18px",
-    background: "#2a2a2a",
-    borderBottom: "1px solid #1a1a1a",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `${chrome.borderThin}px solid ${halo.headerDivider}`,
     flexShrink: 0,
     userSelect: "none",
   };
 
   const colHeaderCellStyle: React.CSSProperties = {
+    ...chromeFont(),
     fontSize: "10px",
-    color: "#888",
+    color: chrome.textDefault,
     padding: "0 4px",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
     cursor: "pointer",
+    borderRight: `${chrome.borderThin}px solid ${halo.separator}`,
   };
 
   const colHeaderCellActiveStyle: React.CSSProperties = {
     ...colHeaderCellStyle,
-    color: "#bbb",
+    color: chrome.textDefault,
     fontWeight: "bold",
   };
 
+  // White item list (Halo data grid content surface).
   const itemListStyle: React.CSSProperties = {
     flex: 1,
     overflowY: "auto",
+    background: halo.panelContentBg,
   };
 
-  const getRowStyle = (isSelected: boolean, isUnused: boolean): React.CSSProperties => ({
+  const getRowStyle = (
+    isSelected: boolean,
+    isUnused: boolean,
+    isHovered: boolean
+  ): React.CSSProperties => ({
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
     height: "20px",
-    background: isSelected ? "#1a5f8a" : "transparent",
+    background: isSelected
+      ? halo.selectionColor
+      : isHovered
+        ? halo.rollOverColor
+        : "transparent",
     cursor: "pointer",
     userSelect: "none",
     opacity: isUnused ? 0.55 : 1,
   });
 
   const rowNameStyle: React.CSSProperties = {
-    fontSize: "11px",
-    color: "#c0c0c0",
+    ...chromeFont(),
+    color: chrome.textDefault,
     flex: 1,
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -814,8 +846,9 @@ export function LibraryPanel({
   };
 
   const rowTypeStyle: React.CSSProperties = {
+    ...chromeFont(),
     fontSize: "10px",
-    color: "#888",
+    color: chrome.textDefault,
     width: "38px",
     flexShrink: 0,
     overflow: "hidden",
@@ -826,8 +859,9 @@ export function LibraryPanel({
   };
 
   const rowUsesStyle: React.CSSProperties = {
+    ...chromeFont(),
     fontSize: "10px",
-    color: "#666",
+    color: chrome.textDisabled,
     width: "24px",
     flexShrink: 0,
     textAlign: "right",
@@ -835,10 +869,10 @@ export function LibraryPanel({
   };
 
   const renameInputStyle: React.CSSProperties = {
-    fontSize: "11px",
-    background: "#1a3a5a",
-    color: "#e0e0e0",
-    border: "1px solid #4a9eff",
+    ...chromeFont(),
+    background: halo.inputBg,
+    color: halo.text,
+    border: `1px solid ${halo.haloBlue}`,
     padding: "0 2px",
     flex: 1,
     height: "16px",
@@ -847,8 +881,8 @@ export function LibraryPanel({
 
   const emptyStyle: React.CSSProperties = {
     padding: "8px 6px",
-    fontSize: "11px",
-    color: "#666",
+    ...chromeFont(),
+    color: chrome.textDisabled,
     fontStyle: "italic",
     textAlign: "center",
   };
@@ -858,15 +892,16 @@ export function LibraryPanel({
     flexDirection: "row",
     alignItems: "center",
     height: "20px",
-    background: "#353535",
+    background: halo.alternatingRows[0],
     cursor: "pointer",
     userSelect: "none",
-    borderBottom: "1px solid #2a2a2a",
+    borderBottom: `${chrome.borderThin}px solid ${halo.separator}`,
   };
 
+  // Sort triangle (▲ asc / ▼ desc) next to the active column header.
   const sortArrow = (field: SortField) => {
     if (sortField !== field) return "";
-    return sortDir === "asc" ? " ^" : " v";
+    return sortDir === "asc" ? " ▲" : " ▼";
   };
 
   // ---------------------------------------------------------------------------
@@ -878,15 +913,25 @@ export function LibraryPanel({
     const icon = getItemIcon(item);
     const isRenaming = renamingId === item.id;
     const isSelected = item.id === selectedItemId;
+    const isHovered = hoveredId === item.id && !isSelected;
     const useCount = useCounts.get(item.id) ?? 0;
     const isUnused = doc != null && useCount === 0 && item.itemType === "symbol";
+    // Linkage column: show the AS2 export identifier when the symbol is exported.
+    const linkageId =
+      item.itemType === "symbol" && item.linkage?.exportForActionScript
+        ? item.linkage.linkageIdentifier || ""
+        : "";
+    // Date Modified column: model carries no timestamp yet (spec column placeholder).
+    const dateModified = "";
 
     return (
       <div
         key={item.id}
-        style={getRowStyle(isSelected, isUnused)}
+        style={getRowStyle(isSelected, isUnused, isHovered)}
         onClick={() => handleRowClick(item)}
         onContextMenu={(e) => handleRowContextMenu(e, item)}
+        onMouseEnter={() => setHoveredId(item.id)}
+        onMouseLeave={() => setHoveredId((h) => (h === item.id ? null : h))}
         draggable={!isRenaming}
         onDragStart={(e) => handleRowDragStart(e, item)}
       >
@@ -902,12 +947,12 @@ export function LibraryPanel({
           justifyContent: "center",
           gap: "2px",
         }}>
-          {/* Unicode icon */}
+          {/* Unicode type icon — 16px per Flash 8 Library spec */}
           <span
             title={itemTypeLabel(item)}
             style={{
-              fontSize: "11px",
-              color: badge ? badge.color : "#888",
+              fontSize: "16px",
+              color: badge ? badge.color : halo.iconColor,
               lineHeight: 1,
               userSelect: "none",
             }}
@@ -932,10 +977,10 @@ export function LibraryPanel({
           <span style={rowNameStyle} title={item.name}>{item.name}</span>
         )}
 
-        {/* Type label (dimmer color) */}
+        {/* Type label */}
         {!isRenaming && (
           <span
-            style={{ ...rowTypeStyle, color: badge ? badge.color : "#666" }}
+            style={{ ...rowTypeStyle, width: "48px", color: badge ? badge.color : chrome.textDefault }}
             title={itemTypeLabel(item)}
           >
             {itemTypeShort(item)}
@@ -944,8 +989,22 @@ export function LibraryPanel({
 
         {/* Use count */}
         {!isRenaming && doc != null && (
-          <span style={{ ...rowUsesStyle, color: useCount === 0 ? "#555" : "#999" }}>
+          <span style={{ ...rowUsesStyle, width: "60px", color: useCount === 0 ? chrome.textDisabled : chrome.textDefault }}>
             {useCount}
+          </span>
+        )}
+
+        {/* Linkage */}
+        {!isRenaming && (
+          <span style={{ ...rowTypeStyle, width: "56px", textAlign: "left", paddingLeft: "4px", color: chrome.textDefault }}>
+            {linkageId}
+          </span>
+        )}
+
+        {/* Date Modified */}
+        {!isRenaming && (
+          <span style={{ ...rowTypeStyle, width: "90px", textAlign: "left", paddingLeft: "4px", color: chrome.textDisabled }}>
+            {dateModified}
           </span>
         )}
       </div>
@@ -977,13 +1036,13 @@ export function LibraryPanel({
           onClick={() => handleToggleFolder(folder.id)}
           title={folder.name}
         >
-          <div style={{ width: "28px", flexShrink: 0, textAlign: "center", fontSize: "9px", color: "#aaa" }}>
-            {isExpanded ? "v" : ">"}
+          <div style={{ width: "28px", flexShrink: 0, textAlign: "center", fontSize: "9px", color: chrome.textDefault }}>
+            {isExpanded ? "▼" : "▶"}
           </div>
-          <span style={{ fontSize: "11px", color: "#d4a017", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span style={{ ...chromeFont(), color: chrome.textDefault, fontWeight: "bold", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {folder.name}
           </span>
-          <span style={{ fontSize: "10px", color: "#666", paddingRight: "4px" }}>
+          <span style={{ ...chromeFont(), fontSize: "10px", color: chrome.textDisabled, paddingRight: "4px" }}>
             {folderItems.length}
           </span>
         </div>
@@ -1006,43 +1065,11 @@ export function LibraryPanel({
       {/* Title bar */}
       <div style={titleBarStyle} onClick={() => setCollapsed((c) => !c)}>
         <span style={titleLabelStyle}>Library - {documentName}</span>
-        <span style={{ fontSize: "10px", color: "#888" }}>{collapsed ? ">" : "v"}</span>
+        <span style={{ ...chromeFont(), fontSize: "10px", color: chrome.textDefault }}>{collapsed ? "▶" : "▼"}</span>
       </div>
 
       {!collapsed && (
         <>
-          {/* Toolbar */}
-          <div style={toolbarStyle}>
-            <button
-              style={toolBtnStyle}
-              title="New Symbol"
-              onClick={() => setShowNewSymbolDialog(true)}
-            >
-              +
-            </button>
-            <button
-              style={{
-                ...toolBtnStyle,
-                color: selectedItemId ? "#e05050" : "#555",
-                cursor: selectedItemId ? "pointer" : "default",
-              }}
-              title="Delete Item"
-              onClick={handleDeleteSelected}
-              disabled={!selectedItemId}
-            >
-              X
-            </button>
-            {onAddFolder && (
-              <button
-                style={{ ...toolBtnStyle, fontSize: "10px", color: "#d4a017" }}
-                title="New Folder"
-                onClick={handleAddFolder}
-              >
-                +Folder
-              </button>
-            )}
-          </div>
-
           {/* Search bar */}
           <div style={searchBarStyle}>
             <input
@@ -1058,7 +1085,7 @@ export function LibraryPanel({
             )}
           </div>
 
-          {/* Column headers */}
+          {/* Column headers: Name / Type / Use Count / Linkage / Date Modified */}
           <div style={colHeaderStyle}>
             <div style={{ width: "28px", flexShrink: 0 }} />
             <div
@@ -1069,7 +1096,7 @@ export function LibraryPanel({
               {"Name" + sortArrow("name")}
             </div>
             <div
-              style={{ ...(sortField === "type" ? colHeaderCellActiveStyle : colHeaderCellStyle), width: "38px", flexShrink: 0, textAlign: "right" }}
+              style={{ ...(sortField === "type" ? colHeaderCellActiveStyle : colHeaderCellStyle), width: "48px", flexShrink: 0, textAlign: "right" }}
               onClick={() => handleSortClick("type")}
               title="Sort by type"
             >
@@ -1077,16 +1104,22 @@ export function LibraryPanel({
             </div>
             {doc != null && (
               <div
-                style={{ ...(sortField === "useCount" ? colHeaderCellActiveStyle : colHeaderCellStyle), width: "24px", flexShrink: 0, textAlign: "right", paddingRight: "4px" }}
+                style={{ ...(sortField === "useCount" ? colHeaderCellActiveStyle : colHeaderCellStyle), width: "60px", flexShrink: 0, textAlign: "right", paddingRight: "4px" }}
                 onClick={() => handleSortClick("useCount")}
                 title="Sort by use count"
               >
-                {"#" + sortArrow("useCount")}
+                {"Use Count" + sortArrow("useCount")}
               </div>
             )}
+            <div style={{ ...colHeaderCellStyle, cursor: "default", width: "56px", flexShrink: 0 }} title="Linkage">
+              Linkage
+            </div>
+            <div style={{ ...colHeaderCellStyle, cursor: "default", width: "90px", flexShrink: 0, borderRight: "none" }} title="Date Modified">
+              Date Modified
+            </div>
           </div>
 
-          {/* Item list */}
+          {/* Item list (white Halo data-grid surface) */}
           <div style={itemListStyle}>
             {totalItems === 0 && library.folders.length === 0 ? (
               <div style={emptyStyle}>
@@ -1095,6 +1128,53 @@ export function LibraryPanel({
             ) : (
               renderTree()
             )}
+          </div>
+
+          {/* Bottom toolbar: New Symbol / New Folder / Properties / Delete */}
+          <div style={toolbarStyle}>
+            <button
+              style={toolBtnStyle}
+              title="New Symbol"
+              onClick={() => setShowNewSymbolDialog(true)}
+            >
+              +
+            </button>
+            {onAddFolder && (
+              <button
+                style={{ ...toolBtnStyle, fontSize: "10px" }}
+                title="New Folder"
+                onClick={handleAddFolder}
+              >
+                +Folder
+              </button>
+            )}
+            {onSetSymbolProperties && (
+              <button
+                style={{
+                  ...toolBtnStyle,
+                  fontSize: "10px",
+                  color: selectedItemId ? chrome.textDefault : chrome.textDisabled,
+                  cursor: selectedItemId ? "pointer" : "default",
+                }}
+                title="Properties"
+                onClick={() => selectedItemId && handleOpenSymbolProperties(selectedItemId)}
+                disabled={!selectedItemId}
+              >
+                Properties
+              </button>
+            )}
+            <button
+              style={{
+                ...toolBtnStyle,
+                color: selectedItemId ? halo.error : chrome.textDisabled,
+                cursor: selectedItemId ? "pointer" : "default",
+              }}
+              title="Delete Item"
+              onClick={handleDeleteSelected}
+              disabled={!selectedItemId}
+            >
+              X
+            </button>
           </div>
         </>
       )}

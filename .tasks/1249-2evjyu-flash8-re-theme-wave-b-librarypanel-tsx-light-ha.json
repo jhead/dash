@@ -1,10 +1,10 @@
 {
   "id": "1249-2evjyu-flash8-re-theme-wave-b-librarypanel-tsx-light-ha",
   "title": "Flash8 re-theme Wave B: LibraryPanel.tsx \u2192 light Halo",
-  "description": "Convert packages/authoring-ui/src/LibraryPanel.tsx to the Flash 8 light theme via flash8Theme.ts per docs/30-flash8-ui-spec.md \u00a73.5. Light #ECECEC chrome, white preview pane + white item list, column headers (Name/Type/Use Count/Linkage/Date Modified) with sort triangle, near-black Tahoma text, halo row selection (#7FCEFF) + hover (#B2E1FF), bottom toolbar (New Symbol/New Folder/Properties/Delete), 16px type icons. Replace all dark hex with tokens; mirror Shell.tsx. Keep functionality. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: LibraryPanel.tsx only (+ read-only theme import).",
-  "status": "open",
+  "description": "DONE. Converted packages/authoring-ui/src/LibraryPanel.tsx to Flash 8 light Halo theme via flash8Theme.ts tokens (chrome.*/halo.*, chromeFont, titleBarStyle). All dark hex replaced: light #ECECEC panel chrome, white preview/item-list (halo.panelContentBg), Halo header-gradient column headers (Name/Type/Use Count/Linkage/Date Modified) with \u25b2/\u25bc sort triangle, near-black Tahoma text (chromeFont), halo row selection #7FCEFF (halo.selectionColor) + hover #B2E1FF (halo.rollOverColor), bottom toolbar (New Symbol/New Folder/Properties/Delete) on chrome.insetFieldStrip, 16px type icons. Halo inputs/buttons + light dialog/context-menu. Mirrors Shell.tsx idiom. Functionality intact. Remaining hex are intentional per-type icon accent colors (MC/Btn/Img...) readable on white. Evidence: 'pnpm --filter ./packages/** build' green; 'pnpm --filter @flash/authoring-ui run test -- --run' => 44 files / 653 tests passed, 0 failures (no task-1207 fixture failures present in this package). Screenshot deferred (no LibraryPanel e2e harness; requires full Tauri/Playwright+Ruffle stack). Scope: LibraryPanel.tsx only.",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-19T05:55:53Z",
-  "updated_at": "2026-06-19T05:55:53Z"
+  "updated_at": "2026-06-19T06:02:43Z"
 }
