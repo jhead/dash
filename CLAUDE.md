@@ -18,6 +18,11 @@ tools|call|screenshot|publish|repl`). Full command list + tool surface: **AGENTS
 ## Running tests
 
 ```bash
+# Build workspace packages FIRST. Each @flash/* package resolves its "." export to
+# ./dist/index.js, so on a fresh checkout cross-package @flash/* imports (e.g. @flash/swf
+# importing @flash/core) fail in tests until dist/ exists.
+pnpm --filter './packages/**' build
+
 # Unit tests (run each package sequentially to avoid esbuild race)
 pnpm --filter @flash/swf run test -- --run
 pnpm --filter @flash/core run test -- --run

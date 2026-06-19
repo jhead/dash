@@ -42,6 +42,10 @@ pnpm build:browser
 ## Tests
 
 ```bash
+# Build workspace packages first — @flash/* packages resolve to ./dist/index.js, so
+# cross-package imports fail in tests until dist/ exists.
+pnpm --filter './packages/**' build
+
 # Unit tests (run sequentially to avoid esbuild race)
 pnpm --filter @flash/swf run test -- --run
 pnpm --filter @flash/core run test -- --run

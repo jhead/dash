@@ -1,0 +1,10 @@
+{
+  "id": "1211-claude-md-running-tests-omits-build-step",
+  "title": "DX: CLAUDE.md \"Running tests\" omits the required pnpm build step",
+  "description": "CLAUDE.md + README.md \"Running tests\"/\"Tests\" sections omitted the prerequisite workspace build. Each @flash/* package resolves its \".\" export to ./dist/index.js, so on a fresh checkout cross-package @flash/* imports fail in tests until dist/ exists. FIX (docs-only): added \"pnpm --filter './packages/**' build\" before the unit-test commands in both CLAUDE.md and README.md. VERIFIED in a fresh worktree (no node_modules/dist): repro showed 95 swf suites fail with \"Failed to resolve entry for package @flash/core\"; after the documented build step, swf suite = 108 test files passed, 1358 tests passed (0 resolve errors). Out of scope: task 1207 missing fixtures/flash8-empty.fla.",
+  "status": "done",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-19T00:07:35Z",
+  "updated_at": "2026-06-19T00:10:46Z"
+}
