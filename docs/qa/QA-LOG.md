@@ -350,3 +350,59 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   - **1223** — CANDIDATE FOR CLOSE/RE-SCOPE: `media.ts` doc-wording nuance only; FLV dimension
     extractors are now live (consumed by `probeFlv`/`demuxFlv` per task 1225), model dims
     derive from the probe.
+
+
+---
+
+## 2026-06-19 — Verify task 1228 (Free Transform warp baked into published SWF); file warp+affine double-transform gap
+
+- **Watermark (last fully-QA'd SHA):** `9fba499c8d7a540fc63f8c7d32746cef4df529bc` (current
+  repo HEAD). Advances the watermark from `463668b9` to include the warp-bake fix (1228,
+  `7056784`) and the intervening feature commits up to HEAD.
+- **`7056784` / task 1228 — "bake Free Transform Distort/Envelope warp into published
+  DefineShape": VERIFIED genuinely and completely resolved for its scope.**
+  - `bakeWarpIntoShape` (`packages/swf/src/compiler/characters.ts`) reuses the engine
+    `warpShape` mesh-mapping (no duplicated math) — same code path the editor stage draws.
+  - Distort + Envelope + curves (8-chord subdivision via `warpShape`) + morph start/end
+    keyframe shapes are all baked (`characters.ts` start/endMorphShape at ~254-258 and the
+    static-shape path at ~319).
+  - Origin-normalization is correct (no double-offset): `warpShape(shape, warp, x, y)` maps
+    into ABSOLUTE stage space, then the bake subtracts (x,y) back so PlaceObject2 tx/ty=(x,y)
+    re-applies the offset exactly once.
+  - `warp-bake.test.ts` + the full `@flash/swf` suite green (1386/1386); golden-parity exit 0
+    (un-warped shapes encode identically — no regression). End-to-end Ruffle proof: a distorted
+    shape fills the dragged region (4656 red px vs 0 px for the pristine shape).
+  - No regression: the shape-morph / motion-guide oracle failures reproduce on parent
+    `1a5d027` — pre-existing 1214-class harness issues, not introduced by 1228.
+- **New defect filed: `1230-0tgcaz-free-transform-warp-affine-warped-shape-with-sca`
+  (priority medium).** Discovered while verifying 1228. Root cause: the frame loop
+  (`packages/swf/src/compiler/frames.ts:467-474`, and the move path ~1058) emits PlaceObject2
+  with `objTransform={scaleX,scaleY,rotation}` for shapes UNCONDITIONALLY — even when the warp
+  was already baked into the DefineShape4 geometry — so a warped shape that also carries a
+  non-identity affine double-transforms in the SWF. The editor renderer
+  (`packages/core/src/engine/renderer.ts:~1574`) IGNORES affine when a warp is present (warp
+  supersedes affine), so the editor stage and the published SWF disagree (published is wrong).
+  Byte evidence: warp+scaleX=2 emits PlaceObject2 scaleX=2; warp+rotation=30 emits a rotation
+  matrix — both on top of the baked warp. Fix direction: for warped shapes emit an IDENTITY
+  objTransform (scaleX/scaleY=1, rotation=0) so the baked warp is the sole geometry transform,
+  matching the editor renderer. 1228 is correctly resolved for the primary (untransformed-shape)
+  workflow; 1230 is a separate, narrower gap.
+- **Still open for workers (carried forward + new):**
+  - **1214** — e2e harness: structural byte-parsers treat CWS (compressed) publish output
+    as FWS.
+  - **1215** — `interactivity.spec` `injectRufflePlayer` missing `autoplay:'on'` → clip
+    ticks never start, so `diffPixels=0` and the oracle falsely fails (harness bug).
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+  - **1227** — Trace Bitmap marching-squares walker traces only ~half of non-rectangular
+    regions (direction-agnostic; needs Moore-neighbor rewrite + diagonal tests).
+  - **1229** — Placed Components never reach the SWF (`ComponentItem` not in `charIdMap`;
+    params unconsumed); needs synthetic DefineSprite + linkage + `registerClass` DoInitAction.
+  - **1230** — Free-Transform warp + affine double-transform: a warped shape with non-identity
+    scaleX/scaleY/rotation double-transforms in the published SWF (frame loop emits PlaceObject2
+    affine on top of the baked warp; editor ignores affine when warp present). Fix: emit
+    identity objTransform for warped shapes.
+  - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only; FLV
+    dimension extractors are now live (consumed by `probeFlv`/`demuxFlv` per task 1225), model
+    dims derive from the probe.
+  - **1228** — RESOLVED + VERIFIED (see above); no longer open.
