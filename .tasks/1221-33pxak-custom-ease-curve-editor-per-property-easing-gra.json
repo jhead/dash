@@ -1,0 +1,10 @@
+{
+  "id": "1221-33pxak-custom-ease-curve-editor-per-property-easing-gra",
+  "title": "Custom Ease curve editor (per-property easing graph)",
+  "description": "docs/02 documents Custom ease in/out via a Custom Ease graph editor; only standard eases exist. Implement a CustomEaseDialog (draggable bezier curve) + curve-to-evaluator (lookup table/bezier solve) + per-property ease serialization in tween state. VERIFY ground truth first. Scope: new authoring-ui CustomEaseDialog, PropertiesPanel/timeline ease UI, light packages/core/src/engine/tween.ts. Build + tests green; update docs/02.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-19T00:48:29Z",
+  "updated_at": "2026-06-19T00:48:29Z"
+}
