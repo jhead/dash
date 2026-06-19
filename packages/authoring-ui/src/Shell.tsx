@@ -396,6 +396,8 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "row",
     flex: 1,
     overflow: "hidden",
+    // Anchor for the narrow-viewport right-pane overlay drawer + its backdrop.
+    position: "relative",
   },
   mainColumn: {
     display: "flex",
@@ -425,6 +427,51 @@ const styles: Record<string, React.CSSProperties> = {
     background: chrome.insetFieldStrip,
     borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
     flexShrink: 0,
+  },
+  // Narrow-viewport: the right pane floats over the center region as a drawer
+  // anchored to the right edge, so it never squeezes/obscures the stage column.
+  rightPanelOverlay: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 40,
+    maxWidth: "90%",
+    boxShadow: "-4px 0 12px rgba(0, 0, 0, 0.45)",
+  },
+  // Dimmed backdrop behind the drawer; tap to dismiss.
+  rightPanelBackdrop: {
+    position: "absolute",
+    inset: 0,
+    zIndex: 35,
+    background: "rgba(0, 0, 0, 0.35)",
+  },
+  // Floating control to (re)open the drawer when it is collapsed on narrow.
+  rightPaneOpenButton: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    zIndex: 30,
+    height: "26px",
+    minWidth: "26px",
+    padding: "0 8px",
+    fontSize: "12px",
+    cursor: "pointer",
+    background: chrome.insetFieldStrip,
+    color: chrome.textDefault,
+    border: `${chrome.borderThin}px solid ${chrome.separator}`,
+    borderRadius: "4px",
+  },
+  // Collapse/close control inside the pane's tab strip (pushed to the far right).
+  rightPaneCollapseButton: {
+    marginLeft: "auto",
+    fontSize: "12px",
+    lineHeight: "20px",
+    background: "transparent",
+    color: chrome.textDefault,
+    border: "none",
+    cursor: "pointer",
+    padding: "0 6px",
   },
   // Vertical drag handle (resizes a left/right pane along the X axis)
   vResizeHandle: {
@@ -496,38 +543,114 @@ function useResize(
    * docked toward the near edge (top) so dragging away from the origin grows it.
    */
   invert = false
-): { size: number; setSize: (n: number) => void; onMouseDown: (e: React.MouseEvent) => void } {
+): {
+  size: number;
+  setSize: (n: number) => void;
+  onPointerDown: (e: React.PointerEvent) => void;
+} {
   const [size, setSize] = useState(initial);
   const sizeRef = useRef(size);
   sizeRef.current = size;
 
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  // Pointer Events (not mouse-only) so the handle is draggable by touch/pen as
+  // well as mouse. Shared by the right-pane, timeline, and bottom-dock resizers,
+  // so this also enables touch-resize of all three.
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      // Only react to the primary pointer; ignore secondary touches mid-gesture.
+      if (!e.isPrimary) return;
       e.preventDefault();
       const start = axis === "x" ? e.clientX : e.clientY;
       const startSize = sizeRef.current;
+      const pointerId = e.pointerId;
+      const target = e.currentTarget as HTMLElement;
+      // Route all subsequent moves to this element even if the finger/cursor
+      // strays off the thin handle.
+      try {
+        target.setPointerCapture(pointerId);
+      } catch {
+        // setPointerCapture can throw if the pointer is already gone; ignore.
+      }
       const prevUserSelect = document.body.style.userSelect;
       const prevCursor = document.body.style.cursor;
+      const prevTouchAction = target.style.touchAction;
       document.body.style.userSelect = "none";
       document.body.style.cursor = axis === "x" ? "col-resize" : "row-resize";
-      const onMove = (ev: MouseEvent) => {
+      // Prevent the browser from scrolling/zooming while dragging on touch.
+      target.style.touchAction = "none";
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
         const cur = axis === "x" ? ev.clientX : ev.clientY;
         const delta = invert ? cur - start : start - cur;
         setSize(Math.max(min, Math.min(max, startSize + delta)));
       };
-      const onUp = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+      const cleanup = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
         document.body.style.userSelect = prevUserSelect;
         document.body.style.cursor = prevCursor;
+        target.style.touchAction = prevTouchAction;
+        try {
+          target.releasePointerCapture(pointerId);
+        } catch {
+          // already released
+        }
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        cleanup();
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
     },
     [axis, min, max, invert]
   );
 
-  return { size, setSize, onMouseDown };
+  return { size, setSize, onPointerDown };
+}
+
+/**
+ * Breakpoint (px) below which the editor is treated as a narrow/touch viewport:
+ * the right pane stops being an inline column (which would squeeze the stage)
+ * and becomes a collapsible overlay drawer. Chosen so a typical landscape phone
+ * / small tablet still leaves a usable stage column.
+ */
+export const NARROW_VIEWPORT_BREAKPOINT = 720;
+
+/**
+ * Tracks whether the viewport is narrower than `breakpoint` via `matchMedia`,
+ * reacting to viewport resizes/rotations. SSR/no-`matchMedia` environments fall
+ * back to `false` (desktop layout), so unit tests and the desktop app are
+ * unchanged.
+ */
+function useIsNarrowViewport(breakpoint = NARROW_VIEWPORT_BREAKPOINT): boolean {
+  const query = `(max-width: ${breakpoint}px)`;
+  const [isNarrow, setIsNarrow] = useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return false;
+    }
+    return window.matchMedia(query).matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    const mql = window.matchMedia(query);
+    const onChange = (e: MediaQueryListEvent) => setIsNarrow(e.matches);
+    setIsNarrow(mql.matches);
+    // addEventListener is the modern API; older Safari only has addListener.
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    }
+    mql.addListener(onChange);
+    return () => mql.removeListener(onChange);
+  }, [query]);
+
+  return isNarrow;
 }
 
 // ---------------------------------------------------------------------------
@@ -637,6 +760,7 @@ export function Shell(): React.ReactElement {
     rightTab, setRightTab,
     bottomTab, setBottomTab,
     timelineCollapsed, setTimelineCollapsed,
+    rightPaneCollapsed, setRightPaneCollapsed,
     setPreferencesOpen,
     instances, setInstances,
     selectedInstanceId, setSelectedInstanceId,
@@ -824,6 +948,23 @@ export function Shell(): React.ReactElement {
   // Fits several scaled Flash-8 rows + status bar chrome; user-resizable.
   const timelineResize = useResize(210, 100, 760, "y", true);
   const bottomResize = useResize(180, 80, 600, "y");
+
+  // Narrow/touch viewport: the right pane becomes a collapsible overlay drawer
+  // instead of an inline column so it doesn't squeeze/obscure the stage.
+  const isNarrowViewport = useIsNarrowViewport();
+  // Sync the pane's collapsed state to the viewport mode: collapsed on narrow,
+  // expanded on desktop. This runs on mount (so a page first loaded at a narrow
+  // width starts collapsed) AND whenever the viewport crosses the breakpoint. A
+  // user's manual toggle within a mode is preserved until the mode flips again
+  // (the ref guard makes this a no-op while the mode is unchanged). `null` is a
+  // mount sentinel so the very first effect run always applies.
+  const prevNarrowRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (prevNarrowRef.current !== isNarrowViewport) {
+      prevNarrowRef.current = isNarrowViewport;
+      setRightPaneCollapsed(isNarrowViewport);
+    }
+  }, [isNarrowViewport, setRightPaneCollapsed]);
 
   // Application preferences (UI scale, …) persisted to localStorage.
   const { preferences, updatePreferences, resetPreferences } = usePreferences();
@@ -3178,7 +3319,7 @@ export function Shell(): React.ReactElement {
           {!timelineCollapsed && (
             <div
               style={styles.hResizeHandle}
-              onMouseDown={timelineResize.onMouseDown}
+              onPointerDown={timelineResize.onPointerDown}
               title="Drag to resize"
               data-testid="timeline-resize-handle"
             />
@@ -3411,7 +3552,7 @@ export function Shell(): React.ReactElement {
           {bottomTab !== null && (
             <div
               style={styles.hResizeHandle}
-              onMouseDown={bottomResize.onMouseDown}
+              onPointerDown={bottomResize.onPointerDown}
               title="Drag to resize"
               data-testid="bottom-resize-handle"
             />
@@ -3496,16 +3637,57 @@ export function Shell(): React.ReactElement {
           </div>
         </div>
 
-        {/* Vertical resize handle between the main column and the right panel */}
-        <div
-          style={styles.vResizeHandle}
-          onMouseDown={rightResize.onMouseDown}
-          title="Drag to resize"
-          data-testid="right-resize-handle"
-        />
+        {/* Right-pane region. On a desktop-width viewport it is an inline,
+            drag-resizable column (unchanged). On a narrow/touch viewport it
+            collapses behind a toggle and, when open, floats as an overlay
+            drawer (with a tap-to-dismiss backdrop) so it never squeezes the
+            stage. The pane content itself is identical in both modes — only the
+            wrapper (handle vs. overlay/backdrop) differs — so adding a future
+            tab (e.g. Agent) needs no change here. */}
+        {!isNarrowViewport && (
+          /* Desktop: vertical resize handle between main column and right panel */
+          <div
+            style={styles.vResizeHandle}
+            onPointerDown={rightResize.onPointerDown}
+            title="Drag to resize"
+            data-testid="right-resize-handle"
+          />
+        )}
 
-        {/* Right panel: Library + Properties tabs */}
-        <div style={{ ...styles.rightPanel, width: rightResize.size }}>
+        {isNarrowViewport && rightPaneCollapsed && (
+          <button
+            type="button"
+            style={styles.rightPaneOpenButton}
+            onClick={() => setRightPaneCollapsed(false)}
+            title="Show panels"
+            data-testid="right-pane-open"
+          >
+            ☰
+          </button>
+        )}
+
+        {isNarrowViewport && !rightPaneCollapsed && (
+          /* Narrow: tap-to-dismiss backdrop behind the drawer */
+          <div
+            style={styles.rightPanelBackdrop}
+            onClick={() => setRightPaneCollapsed(true)}
+            data-testid="right-pane-backdrop"
+          />
+        )}
+
+        {/* Right panel: Library + Properties tabs.
+            Desktop → inline column at the resizable width.
+            Narrow → overlay drawer (only mounted when expanded). */}
+        {(!isNarrowViewport || !rightPaneCollapsed) && (
+        <div
+          style={
+            isNarrowViewport
+              ? { ...styles.rightPanel, ...styles.rightPanelOverlay, width: rightResize.size }
+              : { ...styles.rightPanel, width: rightResize.size }
+          }
+          data-testid="right-panel"
+          data-narrow={isNarrowViewport ? "true" : "false"}
+        >
           <div style={styles.rightPanelTabs}>
             <button
               style={tabBtnStyle(rightTab === "library")}
@@ -3531,6 +3713,17 @@ export function Shell(): React.ReactElement {
                 }}
                 title="Exit Edit-in-Place"
                 onClick={handleExitEditInPlace}
+              >
+                ✕
+              </button>
+            )}
+            {isNarrowViewport && (
+              <button
+                type="button"
+                style={styles.rightPaneCollapseButton}
+                onClick={() => setRightPaneCollapsed(true)}
+                title="Hide panels"
+                data-testid="right-pane-collapse"
               >
                 ✕
               </button>
@@ -3659,6 +3852,7 @@ export function Shell(): React.ReactElement {
             </div>
           )}
         </div>
+        )}
       </div>
       <StatusBar
         zoom={Math.round(zoom * 100)}

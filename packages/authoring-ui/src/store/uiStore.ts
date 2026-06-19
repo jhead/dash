@@ -115,6 +115,13 @@ export interface UiData {
   rightTab: RightTab;
   bottomTab: BottomTab | null;
   timelineCollapsed: boolean;
+  /**
+   * Whether the right pane (Library / Properties / future Agent dock) is
+   * collapsed. On a narrow/touch viewport it defaults collapsed and renders as
+   * a toggleable overlay drawer so it does not obscure or squeeze the stage; on
+   * a desktop-width viewport it is an inline column and this is false.
+   */
+  rightPaneCollapsed: boolean;
   preferencesOpen: boolean;
 
   // selection / instances
@@ -210,6 +217,7 @@ export interface UiActions {
   setRightTab: ReactSetter<RightTab>;
   setBottomTab: ReactSetter<BottomTab | null>;
   setTimelineCollapsed: ReactSetter<boolean>;
+  setRightPaneCollapsed: ReactSetter<boolean>;
   setPreferencesOpen: ReactSetter<boolean>;
   setInstances: ReactSetter<PlacedInstance[]>;
   setSelectedInstanceId: ReactSetter<string | null>;
@@ -305,6 +313,7 @@ const DEFAULTS: UiData = {
   rightTab: "library",
   bottomTab: "actions",
   timelineCollapsed: false,
+  rightPaneCollapsed: false,
   preferencesOpen: false,
   instances: [],
   selectedInstanceId: null,
@@ -402,6 +411,7 @@ export function createUiStore(init?: Partial<UiData>): UiStoreApi {
     setRightTab: rs(set, get, "rightTab"),
     setBottomTab: rs(set, get, "bottomTab"),
     setTimelineCollapsed: rs(set, get, "timelineCollapsed"),
+    setRightPaneCollapsed: rs(set, get, "rightPaneCollapsed"),
     setPreferencesOpen: rs(set, get, "preferencesOpen"),
     setInstances: rs(set, get, "instances"),
     setSelectedInstanceId: rs(set, get, "selectedInstanceId"),
