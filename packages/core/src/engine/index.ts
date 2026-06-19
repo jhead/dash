@@ -76,6 +76,10 @@ export {
 export { applyMergeDrawing, fillsEqual, mergeDraw, mergeShapes } from "./merge-drawing.js";
 export type { MergeResult } from "./merge-drawing.js";
 
+// Vector eraser (boolean subtract along the eraser path)
+export { buildEraserPolygon, subtractPolygon, eraseShape, pathToPolygon as eraserPathToPolygon } from "./eraser.js";
+export type { EraseOptions } from "./eraser.js";
+
 // Renderer
 export { CanvasRenderer, initCanvas } from "./renderer.js";
 

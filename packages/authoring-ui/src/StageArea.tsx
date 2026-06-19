@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges } from "@flash/core";
-import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp } from "@flash/core";
+import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 
@@ -22,6 +22,28 @@ const TEXT_OVERLAY_INSET = TEXT_OVERLAY_BORDER + TEXT_OVERLAY_PADDING; // 3px
 let _drawShapeCounter = 0;
 function nextDrawId(): string {
   return "draw-" + ++_drawShapeCounter + "-" + Date.now().toString(36);
+}
+
+/**
+ * Map a stage-space point into a shape display object's LOCAL coordinate space —
+ * the inverse of the renderer's transform order (translate(x,y) ∘ rotate ∘
+ * scale). Used by the vector eraser to subtract the eraser stamp from the
+ * shape's own untransformed geometry.
+ */
+function stageToShapeLocal(p: Point, obj: ShapeDisplayObject): Point {
+  const sx = obj.scaleX ?? 1;
+  const sy = obj.scaleY ?? 1;
+  const rad = ((obj.rotation ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  // Undo translation.
+  const dx = p.x - obj.x;
+  const dy = p.y - obj.y;
+  // Undo rotation (rotate by -θ).
+  const rx = dx * cos + dy * sin;
+  const ry = -dx * sin + dy * cos;
+  // Undo scale.
+  return { x: rx / (sx || 1), y: ry / (sy || 1) };
 }
 
 function smoothPoints(points: Point[], passes: number): Point[] {
@@ -2707,6 +2729,13 @@ export function StageArea({
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
         setEraserCursorPos({ stageX, stageY });
         if (eraserPointsRef.current) {
+          // The eraser stamp for THIS move is the swept segment from the
+          // previous sample to the current point (the prev point may equal the
+          // current at gesture start → a single disk).
+          const prev =
+            eraserPointsRef.current.length > 0
+              ? eraserPointsRef.current[eraserPointsRef.current.length - 1]
+              : { x: stageX, y: stageY };
           eraserPointsRef.current.push({ x: stageX, y: stageY });
           const allPts = eraserPointsRef.current;
           const minX = Math.min(...allPts.map((p) => p.x));
@@ -2715,21 +2744,54 @@ export function StageArea({
           const maxY = Math.max(...allPts.map((p) => p.y));
           const half = eraserSize / 2;
           setEraserPreview({ x: minX - half, y: minY - half, w: (maxX - minX) + eraserSize, h: (maxY - minY) + eraserSize });
-          // Erase shapes whose bounding box overlaps the eraser circle at the current position
-          if (onShapeDelete) {
-            const r = half;
-            for (const obj of shapeDisplayObjects) {
-              if (erasedIdsRef.current.has(obj.id)) continue;
-              const bounds = transformedShapeBounds(obj);
-              // Circle-AABB overlap: find the closest point on the AABB to the circle center,
-              // then check if the distance is within the radius.
-              const closestX = Math.max(bounds.x, Math.min(stageX, bounds.x + bounds.width));
-              const closestY = Math.max(bounds.y, Math.min(stageY, bounds.y + bounds.height));
-              const dist = Math.hypot(stageX - closestX, stageY - closestY);
-              if (dist <= r) {
-                erasedIdsRef.current.add(obj.id);
-                onShapeDelete(obj.id);
-              }
+
+          // Vector erase (Flash 8): boolean-subtract the eraser stamp from each
+          // overlapping shape's geometry (in the shape's LOCAL coordinate space),
+          // splitting/reshaping the vector rather than deleting the whole object.
+          // Only when the subtraction removes the entire shape do we fall back to
+          // onShapeDelete (the genuine fully-covered case).
+          const sweptStage: Point[] =
+            Math.hypot(stageX - prev.x, stageY - prev.y) < 0.01
+              ? [{ x: stageX, y: stageY }]
+              : [{ x: prev.x, y: prev.y }, { x: stageX, y: stageY }];
+
+          for (const obj of shapeDisplayObjects) {
+            if (erasedIdsRef.current.has(obj.id)) continue;
+            // Quick reject: stage-space circle-vs-AABB against the swept segment
+            // endpoints + midpoint (cheap pre-filter before the boolean op).
+            const bounds = transformedShapeBounds(obj);
+            const probes =
+              sweptStage.length === 2
+                ? [
+                    sweptStage[0],
+                    { x: (sweptStage[0].x + sweptStage[1].x) / 2, y: (sweptStage[0].y + sweptStage[1].y) / 2 },
+                    sweptStage[1],
+                  ]
+                : sweptStage;
+            const touches = probes.some((p) => {
+              const cx = Math.max(bounds.x, Math.min(p.x, bounds.x + bounds.width));
+              const cy = Math.max(bounds.y, Math.min(p.y, bounds.y + bounds.height));
+              return Math.hypot(p.x - cx, p.y - cy) <= half;
+            });
+            if (!touches) continue;
+
+            // Map the swept eraser path into the shape's LOCAL space (inverse of
+            // the display-object transform: translate(x,y) ∘ rotate ∘ scale).
+            const localPts = sweptStage.map((p) => stageToShapeLocal(p, obj));
+            // Radius in local space (account for scale; use the average so a
+            // uniformly-scaled shape still erases a round region).
+            const sx = obj.scaleX ?? 1;
+            const sy = obj.scaleY ?? 1;
+            const localR = half / ((Math.abs(sx) + Math.abs(sy)) / 2 || 1);
+            const eraserLoops = buildEraserPolygon(localPts, localR);
+
+            const next = eraseShape(obj.shape, eraserLoops);
+            if (next === null) {
+              // Whole shape covered → remove the display object.
+              erasedIdsRef.current.add(obj.id);
+              onShapeDelete?.(obj.id);
+            } else if (next !== obj.shape) {
+              onShapeUpdate?.(obj.id, next);
             }
           }
         }
@@ -3222,7 +3284,8 @@ export function StageArea({
       brushPointsRef.current = [];
       setBrushPreviewPoints([]);
 
-      // Eraser tool: finalize erase gesture (shapes already deleted incrementally in onMouseMove)
+      // Eraser tool: finalize erase gesture (geometry already vector-subtracted
+      // incrementally per move in onMouseMove)
       if (activeTool === "eraser") {
         eraserPointsRef.current = null;
         erasedIdsRef.current = new Set();
