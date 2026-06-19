@@ -69,11 +69,47 @@ describe("parseOpenRouterModels", () => {
   });
 
   it("skips malformed entries (no id / null / non-object / numeric id)", () => {
+    // The SAMPLE has 3 valid entries; the rest (no id, null, string, numeric
+    // id) are dropped. IDs are listed in the parser's ALPHABETICAL-by-name
+    // order (see the dedicated sort test below), not the raw payload order.
     const models = parseOpenRouterModels(SAMPLE);
-    expect(models.map((m) => m.id)).toEqual([
+    expect(models.map((m) => m.id).sort()).toEqual([
       "anthropic/claude-sonnet-4.5",
-      "openai/gpt-4o",
       "meta/llama-3",
+      "openai/gpt-4o",
+    ]);
+  });
+
+  it("returns the models sorted alphabetically by display name (task 1296)", () => {
+    // SAMPLE arrives in raw API order (claude, gpt-4o, llama-3) but the picker
+    // needs a predictable alphabetical list. Case-insensitive by name, with the
+    // missing-name entry sorted by its id-fallback label:
+    //   "Anthropic: Claude Sonnet 4.5" < "meta/llama-3" < "OpenAI: GPT-4o"
+    const models = parseOpenRouterModels(SAMPLE);
+    expect(models.map((m) => m.name)).toEqual([
+      "Anthropic: Claude Sonnet 4.5",
+      "meta/llama-3",
+      "OpenAI: GPT-4o",
+    ]);
+    // The list is genuinely non-descending case-insensitive.
+    const lower = models.map((m) => m.name.toLowerCase());
+    expect(lower).toEqual([...lower].sort());
+  });
+
+  it("sorts case-insensitively and breaks name ties stably by id", () => {
+    const models = parseOpenRouterModels({
+      data: [
+        { id: "z/zephyr", name: "zephyr" }, // lowercase must not sort last
+        { id: "a/alpha", name: "Alpha" },
+        { id: "openai/dup", name: "Dup" },
+        { id: "azure/dup", name: "Dup" }, // same name -> earlier id wins
+      ],
+    });
+    expect(models.map((m) => m.id)).toEqual([
+      "a/alpha",
+      "azure/dup",
+      "openai/dup",
+      "z/zephyr",
     ]);
   });
 

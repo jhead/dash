@@ -112,6 +112,13 @@ export class OpenRouterModelsError extends Error {
  * Parse the raw `/models` JSON payload into the trimmed `OpenRouterModel[]`.
  * Tolerant of unexpected shapes: skips entries without a string `id`, and
  * falls back to the id for a missing name. Exported for unit testing.
+ *
+ * The returned list is sorted **alphabetically** by display `name`
+ * (case-insensitive, locale-aware) with `id` as a stable tiebreak — OpenRouter's
+ * `/models` endpoint returns entries in an arbitrary API order, which makes the
+ * selector dropdown hard to scan. Sorting here means every consumer (the
+ * AgentSettings model picker, anything reusing the catalog) gets a predictable
+ * alphabetical order without each call site re-sorting.
  */
 export function parseOpenRouterModels(payload: unknown): OpenRouterModel[] {
   const data = (payload as { data?: unknown } | null)?.data;
@@ -134,6 +141,12 @@ export function parseOpenRouterModels(payload: unknown): OpenRouterModel[] {
         : undefined;
     models.push({ id, name, context_length, raw: obj });
   }
+  models.sort((a, b) => {
+    const byName = a.name.localeCompare(b.name, undefined, {
+      sensitivity: "base",
+    });
+    return byName !== 0 ? byName : a.id.localeCompare(b.id);
+  });
   return models;
 }
 
