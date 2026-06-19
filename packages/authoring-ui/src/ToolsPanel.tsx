@@ -2,27 +2,28 @@ import React, { useEffect, useRef } from "react";
 import type { FreeTransformMode, PolyStarOptions, ToolId, ToolState } from "./tools/types";
 import { OBJECT_DRAWING_TOOLS } from "./tools/types";
 import type { Fill } from "@flash/core";
+import { chrome, halo, chromeFont, bevel, metrics } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Flash 8 toolbox icons — 16×16 inline SVG, stroke="currentColor"
 // ---------------------------------------------------------------------------
 
 const ArrowIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M2 1 L2 13 L5.5 9.5 L8.5 14.5 L10.5 13.5 L7.5 8.5 L12 8.5 Z"
           stroke="currentColor" strokeWidth="1" fill="currentColor" strokeLinejoin="round"/>
   </svg>
 );
 
 const SubselectIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M2 1 L2 13 L5.5 9.5 L8.5 14.5 L10.5 13.5 L7.5 8.5 L12 8.5 Z"
           stroke="currentColor" strokeWidth="1" fill="none" strokeLinejoin="round"/>
   </svg>
 );
 
 const FreeTransformIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <rect x="4" y="4" width="8" height="8" stroke="currentColor" strokeWidth="1" strokeDasharray="2 1"/>
     <rect x="2.5" y="2.5" width="2" height="2" fill="currentColor"/>
     <rect x="11.5" y="2.5" width="2" height="2" fill="currentColor"/>
@@ -37,7 +38,7 @@ const FreeTransformIcon = () => (
 
 
 const LassoIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M8 3 C4 3 2 5 2 7 C2 10 5 12 8 12 C11 12 14 10 14 7 C14 5 12 3 8 3 Z"
           stroke="currentColor" strokeWidth="1" fill="none"/>
     <path d="M8 12 L6 16" stroke="currentColor" strokeWidth="1"/>
@@ -46,7 +47,7 @@ const LassoIcon = () => (
 );
 
 const PenIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M10 2 L14 6 L6 14 L2 14 L2 10 Z"
           stroke="currentColor" strokeWidth="1" fill="none" strokeLinejoin="round"/>
     <path d="M8 4 L12 8" stroke="currentColor" strokeWidth="1"/>
@@ -55,7 +56,7 @@ const PenIcon = () => (
 );
 
 const TextIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M3 3 L13 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     <path d="M8 3 L8 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     <path d="M5 13 L11 13" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
@@ -65,32 +66,32 @@ const TextIcon = () => (
 );
 
 const LineIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
   </svg>
 );
 
 const RectIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <rect x="2" y="4" width="12" height="8" stroke="currentColor" strokeWidth="1.5"/>
   </svg>
 );
 
 const OvalIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <ellipse cx="8" cy="8" rx="6" ry="5" stroke="currentColor" strokeWidth="1.5"/>
   </svg>
 );
 
 const PolyStarIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <polygon points="8,2 9.8,6.2 14.4,6.5 11,9.5 12.1,14 8,11.5 3.9,14 5,9.5 1.6,6.5 6.2,6.2"
              stroke="currentColor" strokeWidth="1" fill="none" strokeLinejoin="round"/>
   </svg>
 );
 
 const PencilIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M11 2 L14 5 L5 14 L2 14 L2 11 Z"
           stroke="currentColor" strokeWidth="1" fill="none" strokeLinejoin="round"/>
     <line x1="9" y1="4" x2="12" y2="7" stroke="currentColor" strokeWidth="1"/>
@@ -99,7 +100,7 @@ const PencilIcon = () => (
 );
 
 const BrushIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M12 2 L14 4 L6 12 C5 13 3 14 2 14 C2 13 3 11 4 10 Z"
           stroke="currentColor" strokeWidth="1" fill="none" strokeLinejoin="round"/>
     <line x1="10" y1="4" x2="12" y2="6" stroke="currentColor" strokeWidth="1"/>
@@ -108,7 +109,7 @@ const BrushIcon = () => (
 );
 
 const InkBottleIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <rect x="5" y="1" width="6" height="3" rx="0.5" stroke="currentColor" strokeWidth="1"/>
     <path d="M5 4 L4 7 L4 13 C4 13.5 4.5 14 5 14 L11 14 C11.5 14 12 13.5 12 13 L12 7 L11 4 Z"
           stroke="currentColor" strokeWidth="1" fill="none" strokeLinejoin="round"/>
@@ -118,7 +119,7 @@ const InkBottleIcon = () => (
 );
 
 const PaintBucketIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M2 6 L6 2 L12 8 L8 12 Z"
           stroke="currentColor" strokeWidth="1" fill="none" strokeLinejoin="round"/>
     <line x1="4" y1="4" x2="10" y2="10" stroke="currentColor" strokeWidth="1"/>
@@ -128,7 +129,7 @@ const PaintBucketIcon = () => (
 );
 
 const EyedropperIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M11 2 C12 1 14 2 13 4 L8 9 L7 12 L4 12 L4 9 L9 4 Z"
           stroke="currentColor" strokeWidth="1" fill="none" strokeLinejoin="round"/>
     <rect x="3" y="11" width="3" height="3" rx="0.5" stroke="currentColor" strokeWidth="1" fill="currentColor"/>
@@ -137,14 +138,14 @@ const EyedropperIcon = () => (
 );
 
 const EraserIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <rect x="2" y="5" width="12" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
     <line x1="7" y1="5" x2="7" y2="12" stroke="currentColor" strokeWidth="1"/>
   </svg>
 );
 
 const GradientTransformIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     {/* Gradient square */}
     <rect x="2" y="2" width="10" height="10" stroke="currentColor" strokeWidth="1" strokeDasharray="2 1"/>
     {/* Center circle */}
@@ -157,7 +158,7 @@ const GradientTransformIcon = () => (
 );
 
 const HandIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path d="M6 7 L6 3 C6 2.5 6.5 2 7 2 C7.5 2 8 2.5 8 3 L8 6"
           stroke="currentColor" strokeWidth="1" fill="none"/>
     <path d="M8 5.5 C8 5 8.5 4.5 9 4.5 C9.5 4.5 10 5 10 5.5 L10 7"
@@ -172,7 +173,7 @@ const HandIcon = () => (
 );
 
 const ZoomIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5"/>
     <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     <line x1="5" y1="7" x2="9" y2="7" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
@@ -270,28 +271,38 @@ for (const row of TOOL_ROWS) {
   }
 }
 
-const BTN_SIZE = 18;
-const PANEL_WIDTH = 44;
+const BTN_SIZE = metrics.toolCell; // ~22px square tool cells (spec §3.1)
+const PANEL_WIDTH = metrics.toolsPanelWidth; // ~67px
 
+// ---------------------------------------------------------------------------
+// Styles — Flash 8 "Halo" LIGHT theme via flash8Theme.ts tokens (no hardcoded
+// chrome hex); mirrors the Shell.tsx reference. See docs/30-flash8-ui-spec.md §3.1.
+//   - light ButtonFace panel → chrome.panelBg
+//   - single column ~22px square buttons with 16px monochrome dark glyphs
+//   - ACTIVE tool = sunken 3D bevel (bevel("sunken")) over insetFieldStrip
+//   - glyph colour           → chrome.textDefault (currentColor)
+//   - separators / borders   → chrome.separator (1px)
+// ---------------------------------------------------------------------------
 const styles: Record<string, React.CSSProperties> = {
   panel: {
     display: "flex",
     flexDirection: "column",
     width: `${PANEL_WIDTH}px`,
-    background: "#2d2d2d",
-    borderRight: "1px solid #1a1a1a",
+    background: chrome.panelBg,
+    borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
     flexShrink: 0,
     alignItems: "center",
     paddingTop: "4px",
     overflowY: "auto",
     overflowX: "hidden",
     userSelect: "none",
+    ...chromeFont(),
   },
   toolGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
+    gridTemplateColumns: `repeat(1, ${BTN_SIZE}px)`,
     gap: "1px",
-    width: "100%",
+    justifyContent: "center",
     padding: "0 1px",
     boxSizing: "border-box",
   },
@@ -301,11 +312,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "9px",
-    color: "#c0c0c0",
+    color: chrome.textDefault,
     cursor: "default",
     border: "1px solid transparent",
-    borderRadius: "1px",
     background: "transparent",
     padding: 0,
     boxSizing: "border-box",
@@ -313,14 +322,15 @@ const styles: Record<string, React.CSSProperties> = {
     justifySelf: "center",
   },
   toolBtnActive: {
-    background: "#5a5a5a",
-    border: "1px solid #888",
-    color: "#ffffff",
+    // Depressed / sunken 3D bevel over the recessed strip = the pressed tool.
+    background: chrome.insetFieldStrip,
+    color: chrome.textDefault,
+    ...bevel("sunken"),
   },
   divider: {
-    width: "24px",
+    width: "28px",
     height: "1px",
-    background: "#1a1a1a",
+    background: chrome.separator,
     margin: "3px 0",
     flexShrink: 0,
   },
@@ -332,21 +342,21 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     padding: "4px 0 2px",
     gap: "2px",
-    borderTop: "1px solid #1a1a1a",
+    borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
     flexShrink: 0,
   },
   colorStack: {
     position: "relative",
-    width: "22px",
-    height: "22px",
+    width: "26px",
+    height: "26px",
   },
   strokeSwatch: {
     position: "absolute",
     top: 0,
     left: 0,
-    width: "14px",
-    height: "14px",
-    border: "1px solid #888",
+    width: "16px",
+    height: "16px",
+    border: `1px solid ${chrome.separator}`,
     cursor: "pointer",
     boxSizing: "border-box",
     zIndex: 1,
@@ -355,9 +365,9 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     bottom: 0,
     right: 0,
-    width: "14px",
-    height: "14px",
-    border: "1px solid #888",
+    width: "16px",
+    height: "16px",
+    border: `1px solid ${chrome.separator}`,
     cursor: "pointer",
     boxSizing: "border-box",
     zIndex: 2,
@@ -367,10 +377,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "2px",
   },
   smallBtn: {
-    width: "10px",
-    height: "10px",
-    fontSize: "8px",
-    color: "#c0c0c0",
+    width: "12px",
+    height: "12px",
+    fontSize: "9px",
+    color: chrome.textDefault,
     cursor: "pointer",
     border: "none",
     background: "transparent",
@@ -381,13 +391,12 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
   },
   objectDrawingBtn: {
-    width: "26px",
-    height: "12px",
+    width: "30px",
+    height: "14px",
     fontSize: "8px",
-    color: "#c0c0c0",
+    color: chrome.textDefault,
     cursor: "pointer",
     border: "1px solid transparent",
-    borderRadius: "1px",
     background: "transparent",
     padding: 0,
     lineHeight: 1,
@@ -398,16 +407,16 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   objectDrawingBtnActive: {
-    background: "#4a7a4a",
-    border: "1px solid #5a9a5a",
-    color: "#aaffaa",
+    background: chrome.insetFieldStrip,
+    color: chrome.textDefault,
+    ...bevel("sunken"),
   },
   noColorBtn: {
-    width: "10px",
-    height: "10px",
+    width: "12px",
+    height: "12px",
     position: "relative",
     cursor: "pointer",
-    border: "1px solid #666",
+    border: `1px solid ${chrome.separator}`,
     background: "#fff",
     flexShrink: 0,
   },
@@ -462,6 +471,38 @@ function NoColorX(): React.ReactElement {
 
 const BRUSH_SIZES = [2, 4, 8, 16, 32];
 const ERASER_SIZES = [8, 16, 24, 32, 48];
+
+// Small tool-option toggle button: light chrome, sunken bevel when active.
+function optBtnStyle(active: boolean): React.CSSProperties {
+  return {
+    width: "30px",
+    height: "12px",
+    fontSize: "7px",
+    color: chrome.textDefault,
+    background: active ? chrome.insetFieldStrip : "transparent",
+    ...(active ? bevel("sunken") : { border: "1px solid transparent" }),
+    cursor: "pointer",
+    padding: 0,
+    lineHeight: 1,
+  };
+}
+
+// Small numeric/select field inside the tool options (white sunken input).
+function optFieldStyle(): React.CSSProperties {
+  return {
+    height: "13px",
+    fontSize: "7px",
+    background: halo.inputBg,
+    color: halo.text,
+    border: `1px solid ${halo.inputBorder}`,
+    padding: "0 1px",
+  };
+}
+
+// Tiny field label.
+function optLabelStyle(): React.CSSProperties {
+  return { fontSize: "6px", color: chrome.textDisabled };
+}
 
 export function ToolsPanel({
   toolState,
@@ -565,16 +606,7 @@ export function ToolsPanel({
               key={mode}
               type="button"
               style={{
-                width: "26px",
-                height: "10px",
-                fontSize: "7px",
-                color: (toolState.pencilMode ?? "ink") === mode ? "#fff" : "#aaa",
-                background: (toolState.pencilMode ?? "ink") === mode ? "#5a5a5a" : "transparent",
-                border: (toolState.pencilMode ?? "ink") === mode ? "1px solid #888" : "1px solid transparent",
-                borderRadius: "1px",
-                cursor: "pointer",
-                padding: 0,
-                lineHeight: 1,
+                ...optBtnStyle((toolState.pencilMode ?? "ink") === mode),
                 textTransform: "capitalize",
               }}
               onClick={() => onPencilModeChange?.(mode)}
@@ -595,8 +627,8 @@ export function ToolsPanel({
               style={{
                 width: Math.min(size, 26) + "px",
                 height: Math.min(size, 10) + "px",
-                background: (toolState.brushSize ?? 8) === size ? "#aaa" : "#555",
-                border: (toolState.brushSize ?? 8) === size ? "1px solid #ccc" : "1px solid #333",
+                background: (toolState.brushSize ?? 8) === size ? chrome.textDefault : chrome.bevelDark,
+                border: `1px solid ${chrome.separator}`,
                 borderRadius: "50%",
                 cursor: "pointer",
                 padding: 0,
@@ -619,8 +651,8 @@ export function ToolsPanel({
               style={{
                 width: Math.min(size / 2, 26) + "px",
                 height: Math.min(size / 2, 10) + "px",
-                background: (toolState.eraserSize ?? 16) === size ? "#aaa" : "#555",
-                border: (toolState.eraserSize ?? 16) === size ? "1px solid #ccc" : "1px solid #333",
+                background: (toolState.eraserSize ?? 16) === size ? chrome.textDefault : chrome.bevelDark,
+                border: `1px solid ${chrome.separator}`,
                 cursor: "pointer",
                 padding: 0,
                 margin: "1px auto",
@@ -645,18 +677,7 @@ export function ToolsPanel({
               <button
                 key={mode}
                 type="button"
-                style={{
-                  width: "26px",
-                  height: "10px",
-                  fontSize: "7px",
-                  color: active ? "#fff" : "#aaa",
-                  background: active ? "#5a5a5a" : "transparent",
-                  border: active ? "1px solid #888" : "1px solid transparent",
-                  borderRadius: "1px",
-                  cursor: "pointer",
-                  padding: 0,
-                  lineHeight: 1,
-                }}
+                style={optBtnStyle(active)}
                 onClick={() => onFreeTransformModeChange?.(mode)}
                 title={fullLabel}
               >
@@ -678,18 +699,7 @@ export function ToolsPanel({
               <button
                 key={String(polyMode)}
                 type="button"
-                style={{
-                  width: "26px",
-                  height: "10px",
-                  fontSize: "7px",
-                  color: active ? "#fff" : "#aaa",
-                  background: active ? "#5a5a5a" : "transparent",
-                  border: active ? "1px solid #888" : "1px solid transparent",
-                  borderRadius: "1px",
-                  cursor: "pointer",
-                  padding: 0,
-                  lineHeight: 1,
-                }}
+                style={optBtnStyle(active)}
                 onClick={() => { onLassoPolygonModeChange?.(polyMode); onLassoMagicWandChange?.(false); }}
                 title={polyMode ? "Polygon Mode" : "Freehand Mode"}
               >
@@ -700,18 +710,7 @@ export function ToolsPanel({
           {/* Magic Wand sub-mode button */}
           <button
             type="button"
-            style={{
-              width: "26px",
-              height: "10px",
-              fontSize: "7px",
-              color: (toolState.lassoMagicWand ?? false) ? "#fff" : "#aaa",
-              background: (toolState.lassoMagicWand ?? false) ? "#5a5a5a" : "transparent",
-              border: (toolState.lassoMagicWand ?? false) ? "1px solid #888" : "1px solid transparent",
-              borderRadius: "1px",
-              cursor: "pointer",
-              padding: 0,
-              lineHeight: 1,
-            }}
+            style={optBtnStyle(toolState.lassoMagicWand ?? false)}
             onClick={() => onLassoMagicWandChange?.(!(toolState.lassoMagicWand ?? false))}
             title="Magic Wand — select by color"
           >
@@ -724,7 +723,7 @@ export function ToolsPanel({
       {toolState.activeTool === "lasso" && (toolState.lassoMagicWand ?? false) && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", padding: "2px 0", width: "100%" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-            <span style={{ fontSize: "6px", color: "#aaa" }}>Thr</span>
+            <span style={optLabelStyle()}>Thr</span>
             <input
               type="number"
               min={1}
@@ -732,34 +731,16 @@ export function ToolsPanel({
               value={toolState.magicWandThreshold ?? 20}
               onChange={(e) => onMagicWandThresholdChange?.(Math.min(200, Math.max(1, parseInt(e.target.value) || 20)))}
               title="Threshold (1–200)"
-              style={{
-                width: "28px",
-                height: "12px",
-                fontSize: "7px",
-                background: "#222",
-                color: "#ccc",
-                border: "1px solid #555",
-                borderRadius: "1px",
-                padding: "0 1px",
-                textAlign: "center",
-              }}
+              style={{ ...optFieldStyle(), width: "28px", textAlign: "center" }}
             />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
-            <span style={{ fontSize: "6px", color: "#aaa" }}>Smo</span>
+            <span style={optLabelStyle()}>Smo</span>
             <select
               value={toolState.magicWandSmoothing ?? "pixels"}
               onChange={(e) => onMagicWandSmoothingChange?.(e.target.value as "pixels" | "rough" | "normal" | "smooth")}
               title="Smoothing"
-              style={{
-                height: "12px",
-                fontSize: "6px",
-                background: "#222",
-                color: "#ccc",
-                border: "1px solid #555",
-                borderRadius: "1px",
-                padding: "0 1px",
-              }}
+              style={optFieldStyle()}
             >
               <option value="pixels">Pixels</option>
               <option value="rough">Rough</option>
@@ -781,19 +762,7 @@ export function ToolsPanel({
                 <button
                   key={type}
                   type="button"
-                  style={{
-                    width: "26px",
-                    height: "10px",
-                    fontSize: "7px",
-                    color: active ? "#fff" : "#aaa",
-                    background: active ? "#5a5a5a" : "transparent",
-                    border: active ? "1px solid #888" : "1px solid transparent",
-                    borderRadius: "1px",
-                    cursor: "pointer",
-                    padding: 0,
-                    lineHeight: 1,
-                    textTransform: "capitalize",
-                  }}
+                  style={{ ...optBtnStyle(active), textTransform: "capitalize" }}
                   onClick={() => onPolyStarOptionsChange?.({ shapeType: type })}
                   title={type === "polygon" ? "Polygon" : "Star"}
                 >
@@ -802,29 +771,19 @@ export function ToolsPanel({
               );
             })}
             <div style={{ display: "flex", alignItems: "center", gap: "2px", marginTop: "1px" }}>
-              <span style={{ fontSize: "6px", color: "#aaa" }}>Sides</span>
+              <span style={optLabelStyle()}>Sides</span>
               <input
                 type="number"
                 min={3}
                 max={32}
                 value={opts.sides}
                 onChange={(e) => onPolyStarOptionsChange?.({ sides: Math.min(32, Math.max(3, parseInt(e.target.value) || 5)) })}
-                style={{
-                  width: "22px",
-                  height: "12px",
-                  fontSize: "7px",
-                  background: "#222",
-                  color: "#ccc",
-                  border: "1px solid #555",
-                  borderRadius: "1px",
-                  padding: "0 1px",
-                  textAlign: "center",
-                }}
+                style={{ ...optFieldStyle(), width: "22px", textAlign: "center" }}
               />
             </div>
             {opts.shapeType === "star" && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
-                <span style={{ fontSize: "6px", color: "#aaa" }}>Depth</span>
+                <span style={optLabelStyle()}>Depth</span>
                 <input
                   type="range"
                   min={0}
@@ -926,7 +885,7 @@ export function ToolsPanel({
             type="button"
             style={{
               ...styles.smallBtn,
-              color: toolState.fillColor === null ? "#ff6666" : "#c0c0c0",
+              color: toolState.fillColor === null ? halo.error : chrome.textDefault,
             }}
             title="No fill color"
             onClick={() => onFillColorChange(null)}

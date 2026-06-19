@@ -1,5 +1,6 @@
 import React, { useRef } from "react";
 import type { TextAlign } from "@flash/core";
+import { chrome, halo, chromeFont, inputStyle } from "./theme/flash8Theme.js";
 
 export interface TextFormat {
   fontFamily: string;
@@ -29,42 +30,52 @@ export interface EditBarProps {
 
 const FONT_FAMILIES = ["Arial", "Times New Roman", "Courier New", "Verdana", "Georgia"];
 
+// ---------------------------------------------------------------------------
+// Styles — Flash 8 "Halo" LIGHT theme via flash8Theme.ts tokens (no hardcoded
+// chrome hex); mirrors the Shell.tsx reference. See docs/30-flash8-ui-spec.md.
+//   - light-gray bar        → chrome.menuBg
+//   - breadcrumb labels     → chrome.textDisabled (inactive) / chrome.textDefault (active)
+//   - thin gray separators  → chrome.separator
+//   - active text button    → halo.haloBlue selection accent
+// ---------------------------------------------------------------------------
 const styles: Record<string, React.CSSProperties> = {
   editBar: {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
     height: "22px",
-    background: "#4a4a4a",
-    borderBottom: "1px solid #1a1a1a",
+    background: chrome.menuBg,
+    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
     padding: "0 6px",
     flexShrink: 0,
     userSelect: "none",
     gap: "4px",
     overflow: "hidden",
+    ...chromeFont(),
   },
   breadcrumb: {
-    fontSize: "11px",
-    color: "#c0c0c0",
+    ...chromeFont(),
+    color: chrome.textDisabled,
   },
   separator: {
-    fontSize: "11px",
-    color: "#888",
+    ...chromeFont(),
+    color: chrome.textDisabled,
   },
   active: {
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
+    color: chrome.textDefault,
+    fontWeight: "bold",
   },
   divider: {
     width: "1px",
     height: "14px",
-    background: "#666",
+    background: chrome.separator,
     margin: "0 4px",
     flexShrink: 0,
   },
   textControlLabel: {
-    fontSize: "10px",
-    color: "#aaa",
+    ...chromeFont(),
+    color: chrome.textDisabled,
     flexShrink: 0,
   },
 };
@@ -85,14 +96,20 @@ export function EditBar({
 }: EditBarProps): React.ReactElement {
   const colorInputRef = useRef<HTMLInputElement>(null);
 
+  // Small chrome toggle button: raised light-gray when off, sunken Luna-blue
+  // selection when on (mirrors Flash 8 toolbar option toggles).
   const btnStyle = (active: boolean): React.CSSProperties => ({
     padding: "1px 5px",
-    fontSize: "11px",
+    ...chromeFont(),
     fontWeight: active ? "bold" : "normal",
-    background: active ? "#1a6ea8" : "#555",
-    color: active ? "#fff" : "#ccc",
-    border: "1px solid #333",
-    borderRadius: "2px",
+    background: active ? halo.haloBlue : chrome.panelBg,
+    color: active ? "#FFFFFF" : chrome.textDefault,
+    borderStyle: "solid",
+    borderWidth: 1,
+    borderTopColor: active ? chrome.bevelDark : chrome.bevelLight,
+    borderLeftColor: active ? chrome.bevelDark : chrome.bevelLight,
+    borderRightColor: active ? chrome.bevelLight : chrome.bevelDark,
+    borderBottomColor: active ? chrome.bevelLight : chrome.bevelDark,
     cursor: "pointer",
     flexShrink: 0,
     lineHeight: "14px",
@@ -128,12 +145,8 @@ export function EditBar({
             value={textFont}
             onChange={(e) => onTextFormatChange?.({ fontFamily: e.target.value })}
             style={{
-              fontSize: "10px",
-              background: "#555",
-              color: "#e0e0e0",
-              border: "1px solid #333",
-              borderRadius: "2px",
-              padding: "1px 2px",
+              ...inputStyle(),
+              ...chromeFont(),
               cursor: "pointer",
               maxWidth: "120px",
             }}
@@ -153,13 +166,9 @@ export function EditBar({
               if (!isNaN(val) && val > 0) onTextFormatChange?.({ fontSize: val });
             }}
             style={{
+              ...inputStyle(),
+              ...chromeFont(),
               width: "40px",
-              fontSize: "10px",
-              background: "#555",
-              color: "#e0e0e0",
-              border: "1px solid #333",
-              borderRadius: "2px",
-              padding: "1px 2px",
               textAlign: "right",
             }}
           />
@@ -196,8 +205,7 @@ export function EditBar({
               width: "18px",
               height: "14px",
               background: textColor,
-              border: "1px solid #888",
-              borderRadius: "2px",
+              border: `1px solid ${chrome.separator}`,
               cursor: "pointer",
               flexShrink: 0,
             }}

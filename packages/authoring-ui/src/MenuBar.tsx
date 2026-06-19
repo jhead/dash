@@ -1,6 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useFileActions } from "./hooks/useFileActions";
 import type { FlashDocument } from "@flash/core";
+import { chrome, chromeFont } from "./theme/flash8Theme.js";
+
+// Luna selection blue (Flash 8 dropdown hover highlight). See docs/30-flash8-ui-spec.md §4.1.
+const LUNA_BLUE = "#316AC5";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,6 +16,8 @@ interface MenuItem {
   action: () => void;
   /** Show a horizontal separator above this item. */
   separator?: boolean;
+  /** Dimmed + non-interactive when true. */
+  disabled?: boolean;
 }
 
 interface MenuDefinition {
@@ -23,58 +29,90 @@ interface MenuDefinition {
 // Styles
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Styles — Flash 8 "Halo" LIGHT theme. Every value comes from flash8Theme.ts
+// tokens (no hardcoded chrome hex); mirrors the Shell.tsx reference conversion.
+// See docs/30-flash8-ui-spec.md §4.1 (menu bar).
+//   - flat light-gray bar   → chrome.menuBg (#ECECEC)
+//   - black labels          → chrome.textDefault via chromeFont()
+//   - dropdown white surface → halo.panelContentBg (#FFFFFF)
+//   - blue hover highlight   → LUNA_BLUE (#316AC5)
+//   - thin gray separators   → chrome.separator
+//   - gray disabled/shortcut → chrome.textDisabled
+// ---------------------------------------------------------------------------
 const styles: Record<string, React.CSSProperties> = {
   menuBar: {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-    height: "22px",
-    background: "#3c3c3c",
-    borderBottom: "1px solid #1a1a1a",
+    height: "20px",
+    background: chrome.menuBg,
+    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
     flexShrink: 0,
     userSelect: "none",
     position: "relative",
     zIndex: 1000,
+    ...chromeFont(),
   },
   menuItem: {
     padding: "0 8px",
     height: "100%",
     display: "flex",
     alignItems: "center",
-    fontSize: "12px",
-    color: "#e0e0e0",
+    ...chromeFont(),
+    color: chrome.textDefault,
     cursor: "default",
     whiteSpace: "nowrap",
     position: "relative",
   },
   menuItemActive: {
-    background: "#555555",
+    background: LUNA_BLUE,
+    color: chrome.bevelLight,
   },
   dropdown: {
     position: "absolute",
-    top: "22px",
+    top: "20px",
     left: 0,
-    minWidth: "160px",
-    background: "#3c3c3c",
-    border: "1px solid #1a1a1a",
-    boxShadow: "2px 2px 6px rgba(0,0,0,0.5)",
+    minWidth: "180px",
+    background: "#FFFFFF",
+    border: `${chrome.borderThin}px solid ${chrome.separator}`,
+    boxShadow: "2px 2px 4px rgba(0,0,0,0.28)",
+    padding: "2px 0",
     zIndex: 1001,
   },
   dropdownItem: {
-    padding: "4px 16px",
-    fontSize: "12px",
-    color: "#e0e0e0",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "24px",
+    padding: "2px 22px 2px 22px",
+    ...chromeFont(),
+    color: chrome.textDefault,
     cursor: "default",
     whiteSpace: "nowrap",
   },
   dropdownItemHover: {
-    background: "#0078d7",
-    color: "#ffffff",
+    background: LUNA_BLUE,
+    color: "#FFFFFF",
+  },
+  dropdownItemDisabled: {
+    color: chrome.textDisabled,
+    cursor: "default",
+  },
+  dropdownLabel: {
+    flex: 1,
+  },
+  dropdownShortcut: {
+    color: chrome.textDisabled,
+    paddingLeft: "16px",
+  },
+  dropdownShortcutHover: {
+    color: "#E0E8F8",
   },
   separator: {
     height: "1px",
-    background: "#555555",
-    margin: "2px 0",
+    background: chrome.separator,
+    margin: "3px 1px",
   },
 };
 
@@ -87,8 +125,22 @@ interface DropdownItemProps {
   onActivate: () => void;
 }
 
+/**
+ * Splits a Flash-8 menu label into ["Command", "Shortcut"] on the double-space
+ * separator the MENUS table uses (e.g. "Undo  Ctrl+Z"). Labels with no shortcut
+ * return [label, ""].
+ */
+function splitLabel(label: string): [string, string] {
+  const idx = label.indexOf("  ");
+  if (idx === -1) return [label.trimEnd(), ""];
+  return [label.slice(0, idx).trimEnd(), label.slice(idx).trim()];
+}
+
 function DropdownItem({ item, onActivate }: DropdownItemProps): React.ReactElement {
   const [hovered, setHovered] = useState(false);
+  const disabled = item.disabled === true;
+  const [text, shortcut] = splitLabel(item.label);
+  const showHover = hovered && !disabled;
 
   return (
     <>
@@ -96,13 +148,24 @@ function DropdownItem({ item, onActivate }: DropdownItemProps): React.ReactEleme
       <div
         style={{
           ...styles.dropdownItem,
-          ...(hovered ? styles.dropdownItemHover : {}),
+          ...(disabled ? styles.dropdownItemDisabled : {}),
+          ...(showHover ? styles.dropdownItemHover : {}),
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        onClick={onActivate}
+        onClick={disabled ? undefined : onActivate}
       >
-        {item.label}
+        <span style={styles.dropdownLabel}>{text}</span>
+        {shortcut && (
+          <span
+            style={{
+              ...styles.dropdownShortcut,
+              ...(showHover ? styles.dropdownShortcutHover : {}),
+            }}
+          >
+            {shortcut}
+          </span>
+        )}
       </div>
     </>
   );

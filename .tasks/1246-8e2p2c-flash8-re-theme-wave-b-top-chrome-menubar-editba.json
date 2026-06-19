@@ -1,10 +1,10 @@
 {
   "id": "1246-8e2p2c-flash8-re-theme-wave-b-top-chrome-menubar-editba",
   "title": "Flash8 re-theme Wave B: top chrome (MenuBar + EditBar + ToolsPanel) \u2192 light Halo",
-  "description": "Convert packages/authoring-ui/src/MenuBar.tsx, EditBar.tsx, and ToolsPanel.tsx to the Flash 8 light theme via flash8Theme.ts per docs/30-flash8-ui-spec.md \u00a73.1/\u00a74.1. MenuBar: flat light-gray bar #ECECEC, black labels, dropdown white bg with blue (#316AC5 Luna / haloBlue) hover highlight, thin gray separators, gray disabled/shortcut text, ~19-20px bar height (spec \u00a74.1). ToolsPanel: light system-gray ButtonFace bg, single-column ~22px square tool buttons with 16px monochrome dark glyphs, ACTIVE tool = depressed/sunken 3D bevel (use bevel helper), Colors section swatches, ~67px width (spec \u00a73.1). EditBar: light chrome to match. Replace all dark hex with chrome.* tokens; mirror Shell.tsx pattern. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). Screenshot if feasible. ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: MenuBar.tsx + EditBar.tsx + ToolsPanel.tsx (+ read-only theme import).",
-  "status": "open",
+  "description": "DONE \u2014 converted MenuBar.tsx, EditBar.tsx, ToolsPanel.tsx to Flash 8 light Halo theme via flash8Theme.ts tokens (mirrors Shell.tsx). MenuBar: flat #ECECEC bar (chrome.menuBg) 20px, black labels (chromeFont), white dropdowns with Luna #316AC5 hover, 1px gray separators (chrome.separator), right-aligned gray shortcut + disabled text (chrome.textDisabled). ToolsPanel: chrome.panelBg ButtonFace, single-column 22px (metrics.toolCell) square buttons, 16px dark glyphs (currentColor=chrome.textDefault), ACTIVE tool=bevel('sunken') over insetFieldStrip, 67px width (metrics.toolsPanelWidth), light Colors swatches. EditBar: chrome.menuBg bar, chrome.textDefault/textDisabled breadcrumbs, inputStyle() fields, haloBlue active toggles. Verify: pnpm --filter './packages/**' build = green; pnpm --filter @flash/authoring-ui test --run = 44 files / 653 tests PASSED, 0 failures (the only stderr is an intentional fetch-failure test asserting graceful handling). Screenshot deferred (concurrent QA/agents on port 1420). Scope: 3 source files + read-only theme import.",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-19T05:44:58Z",
-  "updated_at": "2026-06-19T05:44:58Z"
+  "updated_at": "2026-06-19T05:54:18Z"
 }
