@@ -65,6 +65,13 @@ import type { ViewMode, OnionFrame } from "./StageArea";
 import { Rulers } from "./Rulers";
 import { Timeline } from "./Timeline";
 import { usePreferences } from "./preferences";
+import {
+  loadEditorLayout,
+  saveEditorLayout,
+  layoutToUiInit,
+  uiStateToLayout,
+  type EditorLayout,
+} from "./editorLayout";
 import type { PlacedInstance } from "./PropertiesPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { AgentChatPanel } from "./agentchat/AgentChatPanel";
@@ -75,6 +82,7 @@ import { useStore } from "zustand";
 import {
   createStores,
   StoreProvider,
+  DEFAULT_TOOL_STATE,
   type Stores,
   type BottomTab,
   selectDoc,
@@ -543,7 +551,13 @@ function useResize(
    * so dragging the handle toward the origin grows it. When true the panel is
    * docked toward the near edge (top) so dragging away from the origin grows it.
    */
-  invert = false
+  invert = false,
+  /**
+   * Optional callback fired (with the final clamped size) when a drag-resize
+   * gesture ENDS, so the caller can persist the new size. We persist on
+   * gesture-end rather than on every pointermove to avoid thrashing storage.
+   */
+  onResizeEnd?: (size: number) => void
 ): {
   size: number;
   setSize: (n: number) => void;
@@ -552,6 +566,8 @@ function useResize(
   const [size, setSize] = useState(initial);
   const sizeRef = useRef(size);
   sizeRef.current = size;
+  const onResizeEndRef = useRef(onResizeEnd);
+  onResizeEndRef.current = onResizeEnd;
 
   // Pointer Events (not mouse-only) so the handle is draggable by touch/pen as
   // well as mouse. Shared by the right-pane, timeline, and bottom-dock resizers,
@@ -601,6 +617,8 @@ function useResize(
       const onUp = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
         cleanup();
+        // Persist the final size once the gesture ends (not per-move).
+        onResizeEndRef.current?.(sizeRef.current);
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -677,10 +695,27 @@ export function Shell(): React.ReactElement {
   // bridges) read the live doc via documentStore.getState(), which replaces the
   // old latestDocRef stale-closure workaround.
   // ---------------------------------------------------------------------------
+  // Restore the persisted editor layout / view preferences (task 1297) ONCE, up
+  // front, so the store + the three resize hooks below seed from the same
+  // snapshot. `rightPaneCollapsed` is clamped to the viewport: a layout persisted
+  // from a desktop session can't leave the right pane expanded in narrow mode
+  // (task 1280). The initial-narrow check uses matchMedia directly (the
+  // useIsNarrowViewport hook keeps it in sync afterward).
+  const persistedLayoutRef = useRef<EditorLayout | null>(null);
+  if (!persistedLayoutRef.current) {
+    const initialNarrow =
+      typeof window !== "undefined" && typeof window.matchMedia === "function"
+        ? window.matchMedia(`(max-width: ${NARROW_VIEWPORT_BREAKPOINT}px)`).matches
+        : false;
+    persistedLayoutRef.current = loadEditorLayout(initialNarrow);
+  }
+  const persistedLayout = persistedLayoutRef.current;
+
   const storesRef = useRef<Stores | null>(null);
   if (!storesRef.current) {
     // Inject the UI defaults that depend on view-module *values* so the store
-    // module keeps only type-level imports from view components.
+    // module keeps only type-level imports from view components, plus the
+    // restored durable layout/view-preference fields (task 1297).
     storesRef.current = createStores(_initialDoc, {
       swatches: [...DEFAULT_SWATCHES],
       savedCommands: loadCommands(),
@@ -695,6 +730,7 @@ export function Shell(): React.ReactElement {
         debugPassword: "",
         html: DEFAULT_HTML_OPTIONS,
       },
+      ...layoutToUiInit(persistedLayout, DEFAULT_TOOL_STATE),
     });
   }
   const stores = storesRef.current;
@@ -944,11 +980,67 @@ export function Shell(): React.ReactElement {
   // Remember the last expanded bottom tab so re-expanding restores it.
   const lastBottomTabRef = useRef<BottomTab>("actions");
 
+  // Persist the durable editor layout (uiStore slice + the three pane sizes) to
+  // localStorage (task 1297). Reads the live pane sizes via refs so it can be
+  // called from the resize-end callbacks (which fire BEFORE the new size has
+  // round-tripped through React state) by passing an override for the dragged
+  // pane. The uiStore-change subscription below also calls this on tab/visibility/
+  // view-pref changes.
+  const sizeRefs = useRef({ rightPaneWidth: 240, timelineHeight: 210, bottomDockHeight: 180 });
+  const persistLayout = useCallback(
+    (sizeOverride?: Partial<typeof sizeRefs.current>) => {
+      const sizes = { ...sizeRefs.current, ...sizeOverride };
+      saveEditorLayout(uiStateToLayout(uiStore.getState(), sizes));
+    },
+    [uiStore]
+  );
+
   // Resizable panes: right panel width, top timeline height, bottom dock height.
-  const rightResize = useResize(240, 160, 600, "x");
+  // Seeded from the restored layout; each persists its final size on drag-end.
+  const rightResize = useResize(
+    persistedLayout.rightPaneWidth, 160, 600, "x", false,
+    (size) => persistLayout({ rightPaneWidth: size })
+  );
   // Fits several scaled Flash-8 rows + status bar chrome; user-resizable.
-  const timelineResize = useResize(210, 100, 760, "y", true);
-  const bottomResize = useResize(180, 80, 600, "y");
+  const timelineResize = useResize(
+    persistedLayout.timelineHeight, 100, 760, "y", true,
+    (size) => persistLayout({ timelineHeight: size })
+  );
+  const bottomResize = useResize(
+    persistedLayout.bottomDockHeight, 80, 600, "y", false,
+    (size) => persistLayout({ bottomDockHeight: size })
+  );
+  // Keep the size refs current so persistLayout always reads live sizes.
+  sizeRefs.current = {
+    rightPaneWidth: rightResize.size,
+    timelineHeight: timelineResize.size,
+    bottomDockHeight: bottomResize.size,
+  };
+
+  // Persist the durable uiStore slice (tabs, collapse state, view prefs, panel
+  // visibility, last tool) whenever one of those fields changes (task 1297). We
+  // subscribe to the raw store and compare a serialized DURABLE key so transient
+  // changes (selection, dialogs, playback, hover, …) never trigger a write.
+  useEffect(() => {
+    let prevKey: string | null = null;
+    const durableKey = (s: ReturnType<typeof uiStore.getState>): string =>
+      JSON.stringify(
+        uiStateToLayout(s, {
+          rightPaneWidth: 0, // sizes excluded from the change key; they persist on drag-end
+          timelineHeight: 0,
+          bottomDockHeight: 0,
+        })
+      );
+    prevKey = durableKey(uiStore.getState());
+    const unsub = uiStore.subscribe((s) => {
+      const key = durableKey(s);
+      if (key !== prevKey) {
+        prevKey = key;
+        persistLayout();
+      }
+    });
+    return unsub;
+  }, [uiStore, persistLayout]);
 
   // Narrow/touch viewport: the right pane becomes a collapsible overlay drawer
   // instead of an inline column so it doesn't squeeze/obscure the stage.

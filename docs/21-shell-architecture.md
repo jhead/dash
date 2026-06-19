@@ -67,6 +67,25 @@ packages/authoring-ui/src/
   and take only document data + action handlers as props. Derive handler prop
   types from the child component with `React.ComponentProps<typeof X>["onY"]` so
   they stay compatible by construction.
+- **Durable editor layout / view preferences persist to localStorage** under
+  `flash8.editorLayout`, owned by `editorLayout.ts` (versioned key
+  `{ version, layout }` + a `EDITOR_LAYOUT_SCHEMA_VERSION`; try/catch on every
+  read+write; `normalize()` clamps/validates every field so a corrupt or
+  schema-mismatched payload degrades to defaults — same hygiene as
+  `preferences.ts`/`threadStore.ts`). It persists the DURABLE chrome subset:
+  the three pane sizes (right-pane width, timeline height, bottom-dock height —
+  clamped to each `useResize` `[min,max]`), `rightPaneCollapsed`/`timelineCollapsed`,
+  the active right-pane + bottom-dock tabs, view toggles (`snapToPixels`,
+  `showRulers`, `viewMode`), the floating-panel/dock visibility flags, and the
+  last-used tool. It does NOT persist transient/per-doc state (selection, dialog
+  open flags, playback/agent-run state, hover/cursor, document content). Shell
+  restores it ONCE up front: the uiStore slice seeds `createUiStore` via
+  `layoutToUiInit`, the pane sizes seed the `useResize` hooks, and writes happen
+  on drag-end (sizes) and on a durable-slice change subscription (tabs/toggles).
+  **Responsive clamp (task 1280):** `loadEditorLayout(isNarrowViewport)` forces
+  `rightPaneCollapsed=true` on a narrow viewport so a layout persisted from a
+  desktop session can never leave the right pane expanded and squeezing the stage
+  in narrow mode.
 
 ## Status
 
