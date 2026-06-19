@@ -30,8 +30,14 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
 
 - **Free Transform modes**: Rotate and Skew, Scale, Distort, Envelope. Holding modifiers:
   Shift = constrain; Alt/Option = transform from center; corner vs edge handles differ.
-- **Lasso**: freeform drag; **Polygon Mode** for straight-edged selections; **Magic Wand**
-  selects contiguous bitmap regions by color (Threshold + Smoothing in Magic Wand Properties).
+- **Lasso**: freeform drag; **Polygon Mode** for straight-edged selections (click successive
+  vertices; close by double-clicking, clicking the start vertex, or pressing **Enter** —
+  **Esc** cancels the in-progress polygon); **Magic Wand** selects contiguous bitmap regions
+  by color (Threshold, default 20, + Smoothing — pixels/rough/normal/smooth — in Magic Wand
+  Properties). The pure selection algorithms (flood fill, contour trace, polygon-close logic)
+  live in `@flash/core` `engine/magicWand` (`floodFillPixels`, `magicWandSelectPixels`,
+  `selectedPixelsToBoundingPolygon`, `shouldClosePolygon`); the authoring-ui `StageArea` only
+  rasterizes the bitmap and feeds the result into the existing selection pipeline.
 - **Pen sub-tools**: Pen (add point on path), Add Anchor (`=`), Delete Anchor (`-`),
   Convert Anchor (`C`). Cursor feedback for closing paths / continuing.
 - **Brush paint modes**: Paint Normal, Paint Fills, Paint Behind, Paint Selection, Paint Inside.

@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
-import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel } from "@flash/core";
-import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove } from "@flash/core";
+import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing } from "@flash/core";
+import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 
 // ---------------------------------------------------------------------------
@@ -354,21 +354,13 @@ function anchorsToShapePath(
 
 // ---------------------------------------------------------------------------
 // Lasso tool helpers
+//
+// The pure selection algorithms (flood fill, contour tracing, polygon close
+// logic, point-in-polygon) live in @flash/core's engine/magicWand so they can
+// be unit-tested without a DOM and shared with any consumer. This module keeps
+// only the thin DOM-bound wrapper that rasterizes a bitmap before delegating to
+// the core helper, plus the document-aware shape hit test.
 // ---------------------------------------------------------------------------
-
-/**
- * Point-in-polygon test using the ray-casting algorithm.
- */
-function pointInPolygon(px: number, py: number, polygon: Point[]): boolean {
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].x, yi = polygon[i].y;
-    const xj = polygon[j].x, yj = polygon[j].y;
-    const intersect = ((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
 
 /**
  * Given a closed lasso polygon, find the first ShapeDisplayObject whose center
@@ -387,333 +379,13 @@ function findShapeInLasso(polygon: Point[], objects: ShapeDisplayObject[]): stri
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Magic Wand flood-fill helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Compute the Euclidean RGB distance between two pixels (ignoring alpha).
- */
-function rgbDistance(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number): number {
-  const dr = r1 - r2;
-  const dg = g1 - g2;
-  const db = b1 - b2;
-  return Math.sqrt(dr * dr + dg * dg + db * db);
-}
-
-/**
- * 4-connected flood fill on RGBA pixel data.
- * Returns a Set of pixel indices (y * width + x) that belong to the selected region.
- */
-function floodFillPixels(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  startX: number,
-  startY: number,
-  threshold: number,
-): Set<number> {
-  const selected = new Set<number>();
-  const sx = Math.round(startX);
-  const sy = Math.round(startY);
-  if (sx < 0 || sx >= width || sy < 0 || sy >= height) return selected;
-
-  const startIdx = (sy * width + sx) * 4;
-  const seedR = data[startIdx];
-  const seedG = data[startIdx + 1];
-  const seedB = data[startIdx + 2];
-
-  const queue: number[] = [sy * width + sx];
-  selected.add(sy * width + sx);
-
-  while (queue.length > 0) {
-    const pixelIdx = queue.pop()!;
-    const px = pixelIdx % width;
-    const py = Math.floor(pixelIdx / width);
-
-    const neighbors = [
-      [px - 1, py], [px + 1, py], [px, py - 1], [px, py + 1],
-    ];
-    for (const [nx, ny] of neighbors) {
-      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
-      const ni = ny * width + nx;
-      if (selected.has(ni)) continue;
-      const nDataIdx = ni * 4;
-      const dist = rgbDistance(data[nDataIdx], data[nDataIdx + 1], data[nDataIdx + 2], seedR, seedG, seedB);
-      if (dist <= threshold) {
-        selected.add(ni);
-        queue.push(ni);
-      }
-    }
-  }
-  return selected;
-}
-
-// ---------------------------------------------------------------------------
-// Contour tracing helpers (for magic wand rough/smooth modes)
-// ---------------------------------------------------------------------------
-
-/**
- * Build a boolean mask (Uint8Array, 1=selected, 0=not) from a Set of pixel
- * indices. The mask uses the same row-major index as the pixel set.
- */
-function buildMask(pixels: Set<number>, width: number, height: number): Uint8Array {
-  const mask = new Uint8Array(width * height);
-  for (const idx of pixels) {
-    if (idx >= 0 && idx < width * height) mask[idx] = 1;
-  }
-  return mask;
-}
-
-/**
- * Moore-neighborhood boundary tracing (Jacob's stopping criterion).
- *
- * Traces the outer boundary of a binary mask as a sequence of pixel-corner
- * points (half-pixel offset so corners align to pixel grid edges).
- * Returns an array of {x, y} in pixel coordinates.
- *
- * The 8-directional Moore order starting "from the west":
- *   7 0 1
- *   6 * 2
- *   5 4 3
- */
-function traceBoundary(mask: Uint8Array, width: number, height: number): Array<{x: number; y: number}> {
-  // Moore neighborhood: 8 directions in clockwise order starting from "up"
-  // Each entry: [dx, dy]
-  const dirs: [number, number][] = [
-    [0, -1],   // 0: up
-    [1, -1],   // 1: up-right
-    [1,  0],   // 2: right
-    [1,  1],   // 3: down-right
-    [0,  1],   // 4: down
-    [-1,  1],  // 5: down-left
-    [-1,  0],  // 6: left
-    [-1, -1],  // 7: up-left
-  ];
-
-  // Find the starting pixel: topmost then leftmost selected pixel
-  let startIdx = -1;
-  outer:
-  for (let py = 0; py < height; py++) {
-    for (let px = 0; px < width; px++) {
-      if (mask[py * width + px] === 1) {
-        startIdx = py * width + px;
-        break outer;
-      }
-    }
-  }
-  if (startIdx < 0) return [];
-
-  const startX = startIdx % width;
-  const startY = Math.floor(startIdx / width);
-
-  // For single-pixel selections, return a square polygon around the pixel
-  if (mask.reduce((s, v) => s + v, 0) === 1) {
-    return [
-      { x: startX,     y: startY },
-      { x: startX + 1, y: startY },
-      { x: startX + 1, y: startY + 1 },
-      { x: startX,     y: startY + 1 },
-    ];
-  }
-
-  // Jacob's stopping criterion: stop when we revisit startPx with entry
-  // direction == startEntryDir
-  const boundary: Array<{x: number; y: number}> = [];
-
-  // Start: came from the left (dir=6), so entry direction was from left
-  const startEntryDir = 6;
-  let cx = startX;
-  let cy = startY;
-  let entryDir = startEntryDir;
-  let iterations = 0;
-  const maxIter = width * height * 2 + 8;
-
-  do {
-    boundary.push({ x: cx, y: cy });
-
-    // Rotate clockwise from the entry direction's "back" until we find a
-    // selected neighbor. "Back" = (entryDir + 4) % 8, then rotate clockwise
-    // from there.
-    const backDir = (entryDir + 4) % 8;
-    let found = false;
-    for (let r = 1; r <= 8; r++) {
-      const d = (backDir + r) % 8;
-      const nx = cx + dirs[d][0];
-      const ny = cy + dirs[d][1];
-      if (nx >= 0 && nx < width && ny >= 0 && ny < height && mask[ny * width + nx] === 1) {
-        // Move to this neighbor; entry direction = direction we came FROM
-        entryDir = (d + 4) % 8;
-        cx = nx;
-        cy = ny;
-        found = true;
-        break;
-      }
-    }
-    if (!found) break; // isolated pixel (should have been caught above)
-    iterations++;
-  } while (
-    iterations < maxIter &&
-    !(cx === startX && cy === startY && entryDir === startEntryDir)
-  );
-
-  // Convert pixel-center coordinates to pixel-edge coordinates.
-  // The polygon should enclose the pixels, not thread through their centers.
-  // We do this by offsetting the center-based trace to edge-based by walking
-  // the boundary at the top-left corner of each pixel cell.
-  // Simple approach: the traced pixel centers already form a valid polygon
-  // enclosing the region if we offset each point by 0.5 in the appropriate
-  // direction. Instead, we use a slightly different approach: expand each
-  // pixel boundary outward to get a proper cell-boundary polygon.
-  // For simplicity, return the pixel-center coords — callers apply sx/sy scale
-  // which effectively places points at pixel centers. Half-pixel offset is
-  // handled by adding 0.5 to each coordinate here.
-  return boundary.map(p => ({ x: p.x + 0.5, y: p.y + 0.5 }));
-}
-
-/**
- * Douglas-Peucker polyline simplification (polygon variant: operates on
- * closed path by treating it as an open polyline from pt[0] back to pt[0]).
- */
-function douglasPeucker(points: Array<{x: number; y: number}>, epsilon: number): Array<{x: number; y: number}> {
-  if (points.length <= 2) return points;
-
-  function perpendicularDist(p: {x: number; y: number}, a: {x: number; y: number}, b: {x: number; y: number}): number {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    if (dx === 0 && dy === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-    const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
-    const nearX = a.x + t * dx;
-    const nearY = a.y + t * dy;
-    return Math.hypot(p.x - nearX, p.y - nearY);
-  }
-
-  function rdp(pts: Array<{x: number; y: number}>, start: number, end: number, eps: number, keep: Set<number>): void {
-    if (end <= start + 1) return;
-    let maxDist = 0;
-    let maxIdx = start;
-    for (let i = start + 1; i < end; i++) {
-      const d = perpendicularDist(pts[i], pts[start], pts[end]);
-      if (d > maxDist) { maxDist = d; maxIdx = i; }
-    }
-    if (maxDist > eps) {
-      keep.add(maxIdx);
-      rdp(pts, start, maxIdx, eps, keep);
-      rdp(pts, maxIdx, end, eps, keep);
-    }
-  }
-
-  const keep = new Set<number>([0, points.length - 1]);
-  rdp(points, 0, points.length - 1, epsilon, keep);
-  return points.filter((_, i) => keep.has(i));
-}
-
-/**
- * Chaikin corner-cutting smoothing.
- * Each iteration replaces each edge with two new points at 1/4 and 3/4
- * along the edge, resulting in a smoother closed polygon.
- */
-function chaikin(points: Array<{x: number; y: number}>, iterations = 2): Array<{x: number; y: number}> {
-  let pts = points;
-  for (let i = 0; i < iterations; i++) {
-    const next: Array<{x: number; y: number}> = [];
-    for (let j = 0; j < pts.length; j++) {
-      const p0 = pts[j];
-      const p1 = pts[(j + 1) % pts.length];
-      next.push({ x: p0.x * 0.75 + p1.x * 0.25, y: p0.y * 0.75 + p1.y * 0.25 });
-      next.push({ x: p0.x * 0.25 + p1.x * 0.75, y: p0.y * 0.25 + p1.y * 0.75 });
-    }
-    pts = next;
-  }
-  return pts;
-}
-
-/**
- * Compute AABB polygon (4 points) from a set of pixel indices.
- */
-function aabbPolygon(
-  pixels: Set<number>,
-  imgWidth: number,
-  bitmapObj: { x: number; y: number; width: number; height: number },
-  scaleX: number,
-  scaleY: number,
-): Array<{x: number; y: number}> {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const idx of pixels) {
-    const px = idx % imgWidth;
-    const py = Math.floor(idx / imgWidth);
-    if (px < minX) minX = px;
-    if (px > maxX) maxX = px;
-    if (py < minY) minY = py;
-    if (py > maxY) maxY = py;
-  }
-  return [
-    { x: bitmapObj.x + minX * scaleX,       y: bitmapObj.y + minY * scaleY },
-    { x: bitmapObj.x + (maxX + 1) * scaleX, y: bitmapObj.y + minY * scaleY },
-    { x: bitmapObj.x + (maxX + 1) * scaleX, y: bitmapObj.y + (maxY + 1) * scaleY },
-    { x: bitmapObj.x + minX * scaleX,       y: bitmapObj.y + (maxY + 1) * scaleY },
-  ];
-}
-
-/**
- * Convert a set of selected pixel indices to a polygon in stage coordinates.
- *
- * Smoothing levels:
- *   "pixels"  — exact AABB bounding box (no contour tracing)
- *   "normal"  — exact AABB bounding box
- *   "rough"   — Moore-neighborhood boundary trace → Douglas-Peucker simplification
- *   "smooth"  — rough contour + Chaikin corner-cutting (2 iterations)
- */
-function selectedPixelsToBoundingPolygon(
-  pixels: Set<number>,
-  imgWidth: number,
-  imgHeight: number,
-  bitmapObj: BitmapDisplayObject,
-  smoothing: "pixels" | "rough" | "normal" | "smooth",
-): Point[] {
-  if (pixels.size === 0) return [];
-
-  // Scale pixel coords to stage coordinates
-  const sx = bitmapObj.width / imgWidth;
-  const sy = bitmapObj.height / imgHeight;
-
-  // For "pixels" and "normal" modes, return the simple AABB
-  if (smoothing === "pixels" || smoothing === "normal") {
-    return aabbPolygon(pixels, imgWidth, bitmapObj, sx, sy);
-  }
-
-  // For "rough" and "smooth": trace the pixel boundary contour
-  const mask = buildMask(pixels, imgWidth, imgHeight);
-  let contour = traceBoundary(mask, imgWidth, imgHeight);
-
-  // Fallback to AABB if tracing produced too few points
-  if (contour.length < 3) {
-    return aabbPolygon(pixels, imgWidth, bitmapObj, sx, sy);
-  }
-
-  // Simplify with Douglas-Peucker when there are many points (threshold: 0.5px)
-  if (contour.length > 100) {
-    contour = douglasPeucker(contour, 0.5);
-  }
-
-  if (smoothing === "smooth") {
-    // Apply Chaikin corner cutting for a smoother curve
-    contour = chaikin(contour, 2);
-  }
-
-  // Transform from pixel space to stage space
-  return contour.map(p => ({
-    x: bitmapObj.x + p.x * sx,
-    y: bitmapObj.y + p.y * sy,
-  }));
-}
-
 /**
  * Run magic wand selection on a BitmapDisplayObject.
- * Draws the bitmap to an offscreen canvas, reads pixel data, runs flood fill,
- * and returns the resulting lasso polygon in stage coordinates.
  *
- * Returns null if the bitmap cannot be loaded (e.g. no dataUri).
+ * Draws the bitmap to an offscreen canvas, reads its RGBA pixels, then delegates
+ * the flood fill + selection-polygon shaping to the pure core helper
+ * `magicWandSelectPixels`. Returns the resulting lasso polygon in stage
+ * coordinates, or null if the bitmap cannot be loaded (e.g. no dataUri).
  */
 function magicWandSelect(
   bitmapObj: BitmapDisplayObject,
@@ -721,7 +393,7 @@ function magicWandSelect(
   stageX: number,
   stageY: number,
   threshold: number,
-  smoothing: "pixels" | "rough" | "normal" | "smooth",
+  smoothing: MagicWandSmoothing,
 ): Promise<Point[] | null> {
   return new Promise((resolve) => {
     if (!bitmapItem.dataUri) { resolve(null); return; }
@@ -739,12 +411,16 @@ function magicWandSelect(
         ctx.drawImage(img, 0, 0, w, h);
         const imageData = ctx.getImageData(0, 0, w, h);
 
-        // Convert stage click to bitmap-local pixel coordinates
-        const localX = ((stageX - bitmapObj.x) / bitmapObj.width) * w;
-        const localY = ((stageY - bitmapObj.y) / bitmapObj.height) * h;
-
-        const selected = floodFillPixels(imageData.data, w, h, localX, localY, threshold);
-        const polygon = selectedPixelsToBoundingPolygon(selected, w, h, bitmapObj, smoothing);
+        const polygon = magicWandSelectPixels(
+          imageData.data,
+          w,
+          h,
+          bitmapObj,
+          stageX,
+          stageY,
+          threshold,
+          smoothing,
+        );
         resolve(polygon);
       } catch {
         resolve(null);
@@ -1760,6 +1436,10 @@ export function StageArea({
   // Polygon lasso: vertices added per-click; close on double-click or near start
   const [lassoPolyVertices, setLassoPolyVertices] = useState<Point[]>([]);
   const lassoPolyLastClickRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  // Mirror of lassoPolyVertices for use inside window keydown handlers (whose
+  // effects close over a stale snapshot of the state).
+  const lassoPolyVerticesRef = useRef<Point[]>([]);
+  lassoPolyVerticesRef.current = lassoPolyVertices;
 
   // Free Transform marquee selection state
   const [ftMarqueeStart, setFtMarqueeStart] = useState<{ x: number; y: number } | null>(null);
@@ -2086,33 +1766,20 @@ export function StageArea({
         }
 
         if (lassoPolygonMode) {
-          // Polygon mode: each click adds a vertex
+          // Polygon mode: each click adds a vertex. A double-click (within the
+          // time/distance window) or a click on the start vertex closes the
+          // polygon — decision delegated to the shared core helper so the close
+          // logic is unit-tested. closeDistance is zoom-adjusted here.
           const now = Date.now();
           const last = lassoPolyLastClickRef.current;
-          // Double-click or near start → close polygon
-          if (last && now - last.time < 400 && Math.hypot(stageX - last.x, stageY - last.y) < 10 / internalZoom) {
-            // Close and select
+          const closeDistance = POLYGON_CLOSE_DISTANCE / internalZoom;
+          if (shouldClosePolygon(lassoPolyVertices, stageX, stageY, last, now, closeDistance)) {
             const verts = lassoPolyVertices;
-            if (verts.length >= 3) {
-              const selectedId = findShapeInLasso([...verts, verts[0]], shapeDisplayObjects);
-              if (selectedId) onShapeSelect?.(selectedId);
-              else onShapeSelect?.(null);
-            }
+            const selectedId = findShapeInLasso([...verts, verts[0]], shapeDisplayObjects);
+            onShapeSelect?.(selectedId);
             setLassoPolyVertices([]);
             lassoPolyLastClickRef.current = null;
             return;
-          }
-          // Check if clicking near start to close
-          if (lassoPolyVertices.length >= 3) {
-            const first = lassoPolyVertices[0];
-            if (Math.hypot(stageX - first.x, stageY - first.y) <= 10 / internalZoom) {
-              const selectedId = findShapeInLasso([...lassoPolyVertices, lassoPolyVertices[0]], shapeDisplayObjects);
-              if (selectedId) onShapeSelect?.(selectedId);
-              else onShapeSelect?.(null);
-              setLassoPolyVertices([]);
-              lassoPolyLastClickRef.current = null;
-              return;
-            }
           }
           setLassoPolyVertices((prev) => [...prev, { x: stageX, y: stageY }]);
           lassoPolyLastClickRef.current = { x: stageX, y: stageY, time: now };
@@ -3325,7 +2992,8 @@ export function StageArea({
     [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
   );
 
-  // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place
+  // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place.
+  // Enter key (polygon lasso) → close the in-progress polygon selection.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -3338,16 +3006,30 @@ export function StageArea({
           setLassoPolyVertices([]);
           lassoPolyLastClickRef.current = null;
         }
+        return;
+      }
+      // Enter closes an in-progress polygon-lasso selection (Flash behaviour).
+      if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && activeTool === "lasso") {
+        const verts = lassoPolyVerticesRef.current;
+        if (verts.length >= 3) {
+          e.preventDefault();
+          const selectedId = findShapeInLasso([...verts, verts[0]], shapeDisplayObjects);
+          onShapeSelect?.(selectedId);
+          setLassoPolyVertices([]);
+          lassoPolyLastClickRef.current = null;
+        }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeTool]);
+  }, [activeTool, shapeDisplayObjects, onShapeSelect]);
 
-  // Enter key → toggle playback
+  // Enter key → toggle playback (suppressed while a polygon-lasso selection is
+  // in progress, where Enter closes the polygon instead).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
+        if (activeTool === "lasso" && lassoPolyVerticesRef.current.length >= 3) return;
         const target = e.target as HTMLElement;
         if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA" && !target.isContentEditable) {
           e.preventDefault();
@@ -3357,7 +3039,7 @@ export function StageArea({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onPlayToggle]);
+  }, [onPlayToggle, activeTool]);
 
   // F8 → Convert to Symbol
   useEffect(() => {

@@ -238,3 +238,26 @@ export {
 // Validation utilities
 export type { ValidationResult, PropertyValidationResult } from "./validate.js";
 export { validateFrameScript, validateDocumentProperties } from "./validate.js";
+
+// Lasso tool — Magic Wand flood-fill selection + Polygon close logic
+export type {
+  MagicWandSmoothing,
+  BitmapRegion,
+  PolygonLastClick,
+} from "./magicWand.js";
+export {
+  DEFAULT_MAGIC_WAND_THRESHOLD,
+  POLYGON_DOUBLE_CLICK_MS,
+  POLYGON_CLOSE_DISTANCE,
+  rgbDistance,
+  floodFillPixels,
+  buildMask,
+  traceBoundary,
+  douglasPeucker,
+  chaikin,
+  aabbPolygon,
+  selectedPixelsToBoundingPolygon,
+  magicWandSelectPixels,
+  shouldClosePolygon,
+  pointInPolygon,
+} from "./magicWand.js";
