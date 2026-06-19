@@ -24,6 +24,7 @@
 
 import { test, expect, TestInfo } from '@playwright/test';
 import { PNG } from 'pngjs';
+import { parseSwfTags } from './helpers/swf-parse';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -327,41 +328,16 @@ test.describe('Shape morph (DefineMorphShape2) visual oracle — task 0784', () 
     expect(typeof swfBase64).toBe('string');
     expect(swfBase64.length).toBeGreaterThan(0);
 
-    // Parse SWF tags to find DefineMorphShape2 (tag type 84)
+    // Parse SWF tags to find DefineMorphShape2 (tag type 84).
+    // publish() returns a COMPRESSED CWS SWF by default; parseSwfTags inflates
+    // the zlib body before walking the tag stream (task 1214). Reading the raw
+    // bytes from offset 8 used to yield garbage tag types and never find tag 84.
     const bytes = Buffer.from(swfBase64, 'base64');
-    console.log(`[0784] SWF size: ${bytes.length} bytes`);
+    console.log(`[0784] SWF size: ${bytes.length} bytes (signature=${bytes.toString('latin1', 0, 3)})`);
 
-    // Skip the SWF header (FWS/CWS + version + length = 8 bytes)
-    // Then skip the FrameSize RECT field, FrameRate UI16, FrameCount UI16
-    let offset = 8;
-    // FrameSize RECT: first 5 bits = Nbits, then 4*Nbits bits
-    const nBits = (bytes[offset]! >> 3) & 0x1f;
-    const rectBytes = Math.ceil((5 + 4 * nBits) / 8);
-    offset += rectBytes;
-    // FrameRate UI16 + FrameCount UI16 = 4 bytes
-    offset += 4;
-
-    let foundMorphShape2 = false;
-    const tagTypes: number[] = [];
-
-    while (offset < bytes.length - 2) {
-      const tagWord = bytes.readUInt16LE(offset);
-      const tagType = tagWord >> 6;
-      const tagShortLen = tagWord & 0x3f;
-      offset += 2;
-      let tagLen = tagShortLen;
-      if (tagShortLen === 0x3f) {
-        tagLen = bytes.readUInt32LE(offset);
-        offset += 4;
-      }
-      tagTypes.push(tagType);
-      if (tagType === 84) {
-        foundMorphShape2 = true;
-        console.log(`[0784] Found DefineMorphShape2 (tag 84) at offset ${offset}, len=${tagLen}`);
-      }
-      offset += tagLen;
-      if (tagType === 0) break; // End tag
-    }
+    const tags = parseSwfTags(bytes);
+    const tagTypes = tags.map((t) => t.type);
+    const foundMorphShape2 = tags.some((t) => t.type === 84);
 
     console.log(`[0784] Tag types found: ${tagTypes.join(', ')}`);
     expect(foundMorphShape2, 'SWF must contain DefineMorphShape2 (tag 84)').toBe(true);

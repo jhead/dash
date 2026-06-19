@@ -30,6 +30,7 @@
 
 import { test, expect, TestInfo } from '@playwright/test';
 import { PNG } from 'pngjs';
+import { parseSwfTags } from './helpers/swf-parse';
 
 // ---------------------------------------------------------------------------
 // Type helpers
@@ -37,12 +38,15 @@ import { PNG } from 'pngjs';
 
 type Page = Parameters<Parameters<typeof test>[1]>[0];
 
-/** Shape of the __flashTest test bridge exposed by Shell.tsx. */
+/** Shape of the __flashTest test bridge exposed by Shell.tsx.
+ *  NOTE: publish() is ASYNC (returns a Promise<string> of base64 SWF bytes);
+ *  every call site must await it. The old `publish(): string` declaration hid
+ *  a missing await that made structureCheck.swfLength undefined (task 1214). */
 interface FlashTestBridge {
   loadDocument(doc: unknown): void;
   saveFlaBytes(): string;
   loadFlaBytes(base64: string): void;
-  publish(): string;
+  publish(): Promise<string>;
   screenshotStage(frameIndex?: number): string;
   setCurrentFrame(frame: number): void;
 }
@@ -389,23 +393,27 @@ test.describe('FLA round-trip fidelity oracle — task 0802', () => {
     }, flaBase64);
     await page.waitForTimeout(300);
 
-    // Step 4: Read back the restored document structure via the bridge's publish
-    // (no Ruffle needed — we inspect data-level fidelity via the existing bridge)
-    const structureCheck = await page.evaluate(() => {
-      // We can't read the doc directly from outside React, but we CAN publish and
-      // check the SWF is non-trivial (>500 bytes), and we expose structural info
-      // via a quick JSFL-style introspection:
+    // Step 4: Publish the restored doc and structurally verify the compiled SWF
+    // (no Ruffle needed). publish() is ASYNC and returns base64-encoded CWS bytes;
+    // it MUST be awaited — the old code dropped the await, so `swf` was a Promise
+    // and `swf.length` was undefined (task 1214). We now decode the base64,
+    // decompress the CWS body, and walk the tag stream to assert real structure.
+    const swfBase64 = await page.evaluate(async () => {
       const t = (window as unknown as { __flashTest: FlashTestBridge }).__flashTest;
-
-      // Publish → SWF bytes length gives a basic "compile succeeded" signal
-      const swf = t.publish();
-      const swfLength = swf.length;
-
-      return { swfLength };
+      return await t.publish();
     });
 
-    // SWF should compile without error and be non-trivial
-    expect(structureCheck.swfLength).toBeGreaterThan(100);
+    const swfBytes = Buffer.from(swfBase64, 'base64');
+    // Compile-succeeded signal: the SWF is non-trivial.
+    expect(swfBytes.length, 'compiled SWF must be non-trivial').toBeGreaterThan(100);
+
+    // Structural signal: the tag stream parses and carries real content
+    // (the 24-frame main timeline emits multiple ShowFrame tags).
+    const tags = parseSwfTags(swfBytes);
+    const tagTypes = tags.map((t) => t.type);
+    console.log(`[fla-roundtrip] compiled SWF tag types = ${[...new Set(tagTypes)].sort((a, b) => a - b).join(',')}`);
+    expect(tags.length, 'compiled SWF must contain tags').toBeGreaterThan(0);
+    expect(tags.filter((t) => t.type === 1).length, 'compiled SWF must have ShowFrame tags').toBeGreaterThan(0);
   });
 
   // -------------------------------------------------------------------------

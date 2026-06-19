@@ -45,6 +45,7 @@
 
 import { test, expect, TestInfo } from '@playwright/test';
 import { PNG } from 'pngjs';
+import { parseSwfTags } from './helpers/swf-parse';
 
 // ---------------------------------------------------------------------------
 // Helpers (copied from shape-morph.spec.ts pattern)
@@ -225,30 +226,16 @@ function countNonWhitePixelsInRegion(
 // SWF tag parser (mirrors shape-morph.spec.ts)
 // ---------------------------------------------------------------------------
 
-/** Parse SWF tag records and return an array of {type, body}. */
+/**
+ * Parse SWF tag records and return an array of {type, body}.
+ *
+ * Delegates to the shared `parseSwfTags` helper, which decompresses CWS
+ * (compressed) SWFs before walking the tag stream. `__flashTest.publish()`
+ * returns a CWS by default (publishSettings.compress = true), so reading the
+ * raw bytes from offset 8 used to yield garbage tag types (task 1214).
+ */
 function parseSWFTags(bytes: Buffer): Array<{ type: number; body: Buffer }> {
-  let offset = 8;
-  // Skip FrameSize RECT
-  const nBits = (bytes[offset]! >> 3) & 0x1f;
-  const rectBytes = Math.ceil((5 + 4 * nBits) / 8);
-  offset += rectBytes + 4; // FrameRate UI16 + FrameCount UI16
-
-  const tags: Array<{ type: number; body: Buffer }> = [];
-  while (offset < bytes.length - 2) {
-    const tagWord = bytes.readUInt16LE(offset);
-    const tagType = tagWord >> 6;
-    const tagShortLen = tagWord & 0x3f;
-    offset += 2;
-    let tagLen = tagShortLen;
-    if (tagShortLen === 0x3f) {
-      tagLen = bytes.readUInt32LE(offset);
-      offset += 4;
-    }
-    tags.push({ type: tagType, body: bytes.slice(offset, offset + tagLen) });
-    offset += tagLen;
-    if (tagType === 0) break; // End tag
-  }
-  return tags;
+  return parseSwfTags(bytes);
 }
 
 // ---------------------------------------------------------------------------

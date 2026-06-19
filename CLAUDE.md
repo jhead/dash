@@ -87,6 +87,23 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   offscreen canvas, composite onto a second canvas pre-filled with
   `docProperties.backgroundColor` before encoding to PNG. See `Shell.tsx
   screenshotStage()`.
+- **Structural SWF oracles MUST decompress CWS before walking tags (task 1214).**
+  `__flashTest.publish()` returns a COMPRESSED **CWS** SWF by default
+  (`publishSettings.compress = true` in `Shell.tsx`). Three e2e oracles walked the tag
+  stream from raw byte 8 — which for a CWS is the start of the zlib-compressed body — so
+  they read garbage tag types (811, 16, 369, 401…; none valid) and never found the real
+  tags: they FAILED while giving ZERO real coverage. The fix is harness-only: a shared
+  `apps/desktop/e2e/helpers/swf-parse.ts` whose `decompressSwf()` detects the signature
+  (`CWS`→`inflateSync(bytes[8:])`, FWS→passthrough, ZWS/LZMA→throw) and `parseSwfTags()`
+  inflates then walks. `shape-morph`/`motion-guide`/`fla-roundtrip` now call it.
+  `decompressSwf` rewrites the 8-byte header's signature to `FWS` so the inflated buffer
+  walks uniformly at offset 8. The SWF header (signature+version+FileLength) is always 8
+  bytes UNCOMPRESSED; only the body is zlib'd. NOT a product defect — Ruffle decompresses
+  CWS fine and the visual oracles in the same specs render correctly. Separately,
+  `__flashTest.publish()` is **async** (returns `Promise<string>`); the `FlashTestBridge`
+  type that declared it `string` hid a missing `await` in fla-roundtrip's structure test
+  (`swf.length` on a Promise = `undefined`) — the type now says `Promise<string>` and the
+  call site awaits it.
 
 ### Verification
 
