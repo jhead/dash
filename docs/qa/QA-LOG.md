@@ -297,3 +297,56 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   - **1228** — Free-transform Distort/Envelope warp is editor-only; SWF compiler never
     consumes `warp` so published movies show the un-distorted shape.
 
+
+---
+
+## 2026-06-19 — Feature-wave sweep: Import Video / runtime-sharing+scale9 / Components panel (1225/b1aa8e7/1222)
+
+- **Watermark (last fully-QA'd SHA):** `463668b96b3015976ab53c3799c921d98c1659b4` (current
+  repo HEAD). Advances the watermark from `04d07d9` to include the three feature commits below.
+- **`9780f3a` / task 1225 — Import Video wizard: HEALTHY, nothing filed.** `probeFlv`
+  (`swf/src/video.ts`) is spec-correct (FLV signature, tag headers, AMF0 `onMetaData`,
+  H.263/metadata/320×240 dimension fallbacks); `videoprobe.test.ts` passes (1379 `@flash/swf`
+  tests green). The wizard threads probed width/height/frameCount into the library model →
+  `DefineVideoStream` emit, so imported videos publish at correct dims. IMPORTANT: this
+  RESOLVES the dead-code half of task 1223 — `parseFlvMetaDims`/`parseH263Dims` are now
+  consumed by `demuxFlv`/`probeFlv` (no longer zero-consumer); the model dims now DERIVE from
+  the probe. SUGGESTION: task 1223 is now largely addressed (only the doc-wording nuance about
+  `media.ts` reading model dims remains) — a worker may want to re-scope or close 1223.
+  Residual non-defect caveat: the `parseH263Dims` fallback is unverified against a real H.263
+  bitstream.
+- **`b1aa8e7` — Runtime-sharing (ExportAssets tag 56 / ImportAssets2 tag 71) + Scale9
+  (DefineScalingGrid tag 78): HEALTHY, nothing filed.** Bytes are spec-correct vs the Ruffle
+  read path; the ImportAssets2 `0x01,0x00` reserved bytes are present and correctly ordered;
+  DefineScalingGrid is emitted immediately after its DefineSprite with a sane splitter RECT;
+  tests assert exact bytes (would catch a regression); Ruffle's `swf` crate parses all four
+  tags. CAPABILITY LEARNING for future sweeps: scale9 CORNER behavior is UNVERIFIABLE in the
+  bundled Ruffle (0.1.0/0.2.0) — Ruffle parses/stores `scaling_grid` but its render path never
+  consults it (no 9-slice rendering implemented). Byte/structural proof is the strongest
+  available acceptance for scale9; do not chase a visual scale9 oracle.
+- **`68fac69` / task 1222 — Components panel + Inspector: authoring side SOUND, but
+  publish-side FIDELITY GAP (already tracked by task 1229, no dup filed).** The model (21
+  built-in v2 component schemas) + inspector + tests are correct. But placed component
+  instances do NOT reach the SWF at all: `ComponentItem` isn't `itemType:"symbol"` so it never
+  enters `charIdMap` (`runSymbolPass`), `charIdMap.get(symbolId)` is undefined at
+  `frames.ts:730` → placement skipped; component params have zero compiler consumption.
+  Empirical proof: a doc with a placed Button component (params `label="PLAY NOW"`) compiled to
+  a 64-byte empty SWF with none of the params/instance present. Task 1229 (filed by a worker
+  scoping agent) already documents this exact gap + fix (synthetic DefineSprite + linkage +
+  `registerClass` DoInitAction); independently corroborated here.
+- **Still open for workers (carried forward + new):**
+  - **1214** — e2e harness: structural byte-parsers treat CWS (compressed) publish output
+    as FWS.
+  - **1215** — `interactivity.spec` `injectRufflePlayer` missing `autoplay:'on'` → clip
+    ticks never start, so `diffPixels=0` and the oracle falsely fails (harness bug).
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+  - **1227** — Trace Bitmap marching-squares walker traces only ~half of non-rectangular
+    regions (direction-agnostic; needs Moore-neighbor rewrite + diagonal tests).
+  - **1228** — Free-transform Distort/Envelope warp is editor-only; SWF compiler never
+    consumes `warp` so published movies show the un-distorted shape.
+  - **1229** — Placed Components never reach the SWF (`ComponentItem` not in `charIdMap`;
+    params unconsumed); needs synthetic DefineSprite + linkage + `registerClass` DoInitAction.
+  - **1223** — CANDIDATE FOR CLOSE/RE-SCOPE: `media.ts` doc-wording nuance only; FLV dimension
+    extractors are now live (consumed by `probeFlv`/`demuxFlv` per task 1225), model dims
+    derive from the probe.
