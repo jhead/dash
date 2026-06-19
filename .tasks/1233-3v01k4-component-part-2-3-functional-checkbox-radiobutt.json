@@ -1,0 +1,10 @@
+{
+  "id": "1233-3v01k4-component-part-2-3-functional-checkbox-radiobutt",
+  "title": "Component Part 2.3: functional CheckBox + RadioButton (toggle/selected state, radio groupName)",
+  "description": "Build on the now-complete functional-component core: Part 2.1 (task 1231, commit 8618411 \u2014 AS2 class emission + skin + Ruffle-confirmed registerClass binding) and Part 2.2 (task 1232/7xban3, commit 30602ff \u2014 generic live componentParameters delivery via setComponentParam). Extend the SAME proven infra in packages/swf/src/compiler/components.ts to two more core form controls so the tool has a usable minimal set (Button/CheckBox/RadioButton): (1) mx.controls.CheckBox \u2014 a self-authored flat AS2 class + skin (box + check mark drawn via DefineShape4, label_txt) with a 'selected' boolean state that toggles on release and reflects the author's 'selected'/'label' params; (2) mx.controls.RadioButton \u2014 similar, plus 'groupName' for mutual exclusivity (selecting one in a group deselects siblings via _root group tracking) and a 'data'/'value' param. Reuse the existing class-emission (encodeRawDoInitAction), skin-building, registerClass ordering, and setComponentParam plumbing \u2014 generalize rather than copy-paste where reasonable. VERIFY ground truth first (the catalog in packages/core/src/model/components.ts already lists these components with their params). VERIFY (no real-Flash fixture): Ruffle oracle (apps/desktop/e2e/component-oracle.spec.ts) \u2014 a placed CheckBox toggles selected on click (pixel/state change) and a RadioButton group enforces single-selection; plus structural unit tests (decode own SWF) that each class DoInitAction + skin + registerClass is emitted. Build+tests green (only ~3 task-1207 fixture failures acceptable). Update docs/13. SCOPE: components.ts (+ catalog wiring if needed), component-place.test.ts, component-oracle.spec.ts. OUT OF SCOPE / still gated-on-demand: List/ComboBox/DataGrid/Tree/containers/data-binding (the niche long tail).",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T02:48:49Z",
+  "updated_at": "2026-06-19T02:48:49Z"
+}
