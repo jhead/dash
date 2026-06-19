@@ -77,3 +77,27 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
     unmatched; regression, introduced by `035796d`. Full bounds, bisect verdict,
     root-cause hypothesis and repro in the task.
 
+### 2026-06-19 (later) — SHAPE GEOMETRY regression RESOLVED (task 1217)
+
+> The finding was originally filed as id 1213; concurrent task-id allocation reused
+> 1214–1216 for the e2e-oracle sweep, so the fix task landed as **1217**
+> (`1217-shape-geometry-golden-parity-regression`).
+
+- **Root cause (confirmed, matches the bisect):** `035796d` (fill0/fill1 closed-loop
+  reconstruction in `convertShape`) makes the FLA importer emit a filled-and-stroked
+  region as TWO separate closed paths (one fill-only, one identical stroke-only). The SWF
+  encoder wrote each as its own DefineShape loop, doubling the edge-record count vs Flash's
+  single combined fill+stroke loop — so the record-signature match failed for all 3 shapes.
+  (The suspected gradient work `2b3ae69` was NOT the cause.)
+- **Fix:** `packages/swf/src/shapes.ts` `coalesceFillStrokePairs()` merges an adjacent
+  fill-only + coincident (byte-identical-geometry) stroke-only path pair into one combined
+  loop before encoding, matching Flash's own output. Two of the three shapes now
+  record-match. The third — the rounded-rect button face — is the documented gradient-fill
+  expansion (Flash explodes one linear-gradient into 17 fillStyles and re-winds the loop);
+  `tools/golden-parity.mjs` now bounds-matches that single gradient shape and reports it as
+  KNOWN-GAP (the only remaining SHAPE GEOMETRY gap), exactly as the task specified.
+- **Verification:** `node tools/golden-parity.mjs` → **exit 0**; SHAPE GEOMETRY = KNOWN-GAP
+  (gradient expansion only); all hard dimensions PASS. `@flash/swf` 108 files / 1369 tests
+  pass (3 new coalescing tests in `shapes.test.ts`). `@flash/core` 327/330 files pass — the
+  3 failures are solely the missing `fixtures/flash8-empty.fla` (task 1207), unchanged.
+

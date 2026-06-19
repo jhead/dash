@@ -680,3 +680,101 @@ describe("PlaceObject2", () => {
     expect(body.length).toBeGreaterThan(4);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fill+stroke coalescing (golden-parity SHAPE GEOMETRY regression, task 1213)
+// ---------------------------------------------------------------------------
+//
+// The FLA importer reconstructs a filled-and-stroked region as TWO separate closed
+// paths (one fill-only, one identical stroke-only). Real Flash 8 encodes it as ONE
+// edge loop carrying both a fill and a line style. The encoder must coalesce the
+// coincident pair so its DefineShape edge-record sequence matches Flash (golden.swf
+// stroked oval = 5 records, not 10).
+describe("DefineShape4 fill+stroke coalescing", () => {
+  const SQUARE_SEGS: Shape["paths"][number]["segments"] = [
+    { type: "line", to: { x: 10, y: 0 } },
+    { type: "line", to: { x: 10, y: 10 } },
+    { type: "line", to: { x: 0, y: 10 } },
+  ];
+  const FILL = { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } } as const;
+  const STROKE: SolidStroke = {
+    type: "solid",
+    color: { r: 0, g: 0, b: 0, a: 255 },
+    width: 2,
+    caps: "round",
+    joints: "round",
+    miterLimit: 3,
+  };
+  const path = (extra: object) => ({
+    start: { x: 0, y: 0 },
+    segments: SQUARE_SEGS,
+    closed: true,
+    ...extra,
+  });
+
+  it("coincident fill-only + stroke-only pair encodes identically to one combined path", () => {
+    const separate: Shape = {
+      id: "t",
+      paths: [path({ fill: FILL }), path({ stroke: STROKE })],
+    };
+    const combined: Shape = {
+      id: "t",
+      paths: [path({ fill: FILL, stroke: STROKE })],
+    };
+    const a = encodeDefineShape4(1, separate);
+    const b = encodeDefineShape4(1, combined);
+    expect(Array.from(a)).toEqual(Array.from(b));
+  });
+
+  it("coalesced output is strictly smaller than two un-merged loops would be", () => {
+    // A genuinely-separate (non-coincident) fill + stroke must NOT be merged: give the
+    // stroke different geometry so the pair stays two records.
+    const twoLoops: Shape = {
+      id: "t",
+      paths: [
+        path({ fill: FILL }),
+        {
+          start: { x: 100, y: 100 },
+          segments: [{ type: "line", to: { x: 200, y: 100 } }],
+          closed: false,
+          stroke: STROKE,
+        },
+      ],
+    };
+    const coalesced: Shape = {
+      id: "t",
+      paths: [path({ fill: FILL, stroke: STROKE })],
+    };
+    // The non-coincident pair keeps both paths (more edge records) than the single loop.
+    expect(encodeDefineShape4(1, twoLoops).length).toBeGreaterThan(
+      encodeDefineShape4(1, coalesced).length,
+    );
+  });
+
+  it("does not merge a fill+stroke pair with differing geometry", () => {
+    const mismatched: Shape = {
+      id: "t",
+      paths: [
+        path({ fill: FILL }),
+        {
+          start: { x: 0, y: 0 },
+          segments: [
+            { type: "line", to: { x: 99, y: 0 } }, // different second vertex
+            { type: "line", to: { x: 10, y: 10 } },
+            { type: "line", to: { x: 0, y: 10 } },
+          ],
+          closed: true,
+          stroke: STROKE,
+        },
+      ],
+    };
+    const combined: Shape = {
+      id: "t",
+      paths: [path({ fill: FILL, stroke: STROKE })],
+    };
+    // Differing geometry must stay two separate paths → larger than the combined loop.
+    expect(encodeDefineShape4(1, mismatched).length).toBeGreaterThan(
+      encodeDefineShape4(1, combined).length,
+    );
+  });
+});

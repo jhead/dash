@@ -112,6 +112,27 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   grows ShapeBounds by half the max stroke width per side (a r=210twip circle with a
   20twip stroke → ±220, not ±210). `shapes.ts` adds `ceil(maxStrokeTwips/2)` to
   ShapeBounds and leaves EdgeBounds at the raw geometry.
+- **The encoder coalesces a fill-only + coincident stroke-only path pair into ONE
+  DefineShape loop (task 1213).** The FLA importer reconstructs a filled-and-stroked
+  region as TWO separate closed paths (one fill, one identical stroke — correct for the
+  editor stage and traced-bitmap fill stacks), but real Flash 8 encodes such a region as
+  a SINGLE edge loop whose StyleChangeRecord carries both a fill and a line style and
+  traverses the outline once (golden stroked oval = 5 records, not 10). Without merging,
+  every imported stroked fill emitted double the edge records and broke golden-parity
+  SHAPE GEOMETRY. `coalesceFillStrokePairs()` in `shapes.ts` merges only an adjacent
+  (fill-only, stroke-only) pair with byte-identical geometry; lone fills/strokes, already-
+  combined paths, and traced-bitmap fill stacks pass through untouched. Ruffle renders
+  both forms identically — this only closes the gap to Flash's own output. Regression
+  introduced by `035796d` (fill0/fill1 loop reconstruction), NOT the gradient work that
+  was the initial suspect. Gate: `shapes.test.ts` "DefineShape4 fill+stroke coalescing".
+- **golden's gradient button face is a bounds-match KNOWN-GAP, not a record-match (task
+  1213).** Flash re-encodes a single FLA linear-gradient fill into a non-minimal stack of
+  ~17 solid+gradient fillStyles AND re-winds the loop, so that one shape can never
+  record-signature-match (we emit 1 gradient fill, identical bounds). `golden-parity.mjs`
+  SHAPE GEOMETRY falls back to a ShapeBounds match for a shape with no signature match
+  ONLY when one side carries a gradient fill and the fill counts differ — the documented
+  gradient-fill expansion — and reports it as KNOWN-GAP. Any other no-signature-match is
+  still a hard DIFF.
 - **Static-text fidelity gap (task 1193, OPEN):** the golden title imports left-aligned
   (TextRecord x_offset=0 vs Flash's 3640 that centers it) and we substitute NotoSans
   while REUSING the original Arial glyph indices → wrong glyphs render. The Ruffle render

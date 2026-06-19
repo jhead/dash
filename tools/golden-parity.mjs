@@ -165,20 +165,39 @@ record(
     (s.records || [])
       .map((r) => `${r.type}:${r.x ?? ""},${r.y ?? ""}`)
       .join("|");
+  const boundsKey = (b) => `${b.xMin},${b.xMax},${b.yMin},${b.yMax}`;
   const shapes = (j) => j.tags.filter((t) => t.tag === "DefineShape").map((s) => ({
     sig: sig(s),
     bounds: s.bounds,
     edgeBounds: s.edgeBounds ?? null,
     fills: (s.fillStyles || []).length,
+    hasGradient: (s.fillStyles || []).some((f) => /gradient/i.test(f.type ?? "")),
     version: s.version,
   }));
   const os = shapes(ours), gs = shapes(golden);
   const gmap = new Map(gs.map((s) => [s.sig, s]));
+  // Bounds-based fallback index: Flash re-encodes a single FLA gradient fill into a
+  // non-minimal stack of solid+gradient fillStyles (golden button face: 17 vs our 1)
+  // AND re-winds the loop, so the gradient shape can never record-signature-match. It
+  // is the documented gradient-fill-count expansion — a byte gap, not a render defect.
+  // Match such shapes by ShapeBounds instead and report them as KNOWN-GAP.
+  const gByBounds = new Map(gs.map((s) => [boundsKey(s.bounds), s]));
   const diffs = [];
   let matched = 0;
   for (const s of os) {
-    const g = gmap.get(s.sig);
-    if (!g) { diffs.push(`shape(fills=${s.fills},${s.bounds.xMin}..${s.bounds.xMax}): no record-match in golden`); continue; }
+    let g = gmap.get(s.sig);
+    if (!g) {
+      const gb = gByBounds.get(boundsKey(s.bounds));
+      // Accept a bounds-only match ONLY for the gradient-fill expansion case (one side
+      // carries a gradient fill that Flash expanded into many fillStyles). Anything else
+      // with no signature match is a genuine edge-record regression.
+      if (gb && (s.hasGradient || gb.hasGradient) && s.fills !== gb.fills) {
+        diffs.push(`shape(${s.bounds.xMin}..${s.bounds.xMax}): fillStyles ${s.fills}≠${gb.fills} (Flash gradient-fill expansion — byte gap, not a render defect; bounds match)`);
+        continue;
+      }
+      diffs.push(`shape(fills=${s.fills},${s.bounds.xMin}..${s.bounds.xMax}): no record-match in golden`);
+      continue;
+    }
     matched++;
     const fd = [];
     for (const k of ["xMin", "xMax", "yMin", "yMax"]) {

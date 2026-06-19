@@ -369,6 +369,65 @@ function isDegenerate(path: ShapePath): boolean {
   return false;
 }
 
+/**
+ * Two paths have identical geometry when their start point, closed flag, and the
+ * full segment list (line/curve, control + anchor points) match exactly. Used to
+ * detect a fill-only path and a stroke-only path that trace the same outline.
+ */
+function sameGeometry(a: ShapePath, b: ShapePath): boolean {
+  if (a.closed !== b.closed) return false;
+  if (a.start.x !== b.start.x || a.start.y !== b.start.y) return false;
+  if (a.segments.length !== b.segments.length) return false;
+  for (let i = 0; i < a.segments.length; i++) {
+    const sa = a.segments[i]!;
+    const sb = b.segments[i]!;
+    if (sa.type !== sb.type) return false;
+    if (sa.to.x !== sb.to.x || sa.to.y !== sb.to.y) return false;
+    if (sa.type === "curve" && sb.type === "curve") {
+      if (sa.control.x !== sb.control.x || sa.control.y !== sb.control.y) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Coalesce a fill-only path immediately followed by a stroke-only path that traces
+ * the identical outline into a SINGLE path carrying both the fill and the stroke.
+ *
+ * Real Flash 8 encodes a filled-and-stroked region as one edge loop whose
+ * StyleChangeRecord sets both a fill style and a line style, then traverses the
+ * outline once (golden.swf: a stroked oval/square is 5 records, not 10). The FLA
+ * importer (`convertShape`, task 035796d) reconstructs fills and strokes as
+ * SEPARATE closed paths to faithfully rebuild the fill0/fill1 region model — which
+ * is correct for the editor stage and for traced-bitmap shapes, but doubles the
+ * DefineShape edge-record count vs Flash for ordinary stroked fills. Merging the
+ * coincident pair here restores Flash's single-loop encoding (golden-parity SHAPE
+ * GEOMETRY) without disturbing the import-side region reconstruction. Ruffle renders
+ * both forms identically; this is purely a closer match to Flash's own output.
+ *
+ * Only adjacent (fill-only, stroke-only) pairs with byte-identical geometry are
+ * merged; everything else (lone fills, lone strokes, fills+strokes already combined,
+ * traced-bitmap fill stacks) passes through untouched.
+ */
+function coalesceFillStrokePairs(paths: readonly ShapePath[]): ShapePath[] {
+  const out: ShapePath[] = [];
+  for (let i = 0; i < paths.length; i++) {
+    const cur = paths[i]!;
+    const next = paths[i + 1];
+    if (
+      cur.fill && !cur.stroke &&
+      next && next.stroke && !next.fill &&
+      sameGeometry(cur, next)
+    ) {
+      out.push({ ...cur, stroke: next.stroke });
+      i++; // consume the stroke path
+      continue;
+    }
+    out.push(cur);
+  }
+  return out;
+}
+
 export function encodeDefineShape4(
   charId: number,
   shape: Shape,
@@ -380,9 +439,13 @@ export function encodeDefineShape4(
   // corruption). Such paths produce malformed bit streams that Ruffle rejects as
   // "Invalid fill style" when it misinterprets the garbage bits as stateNewStyles=1.
   const validPaths = shape.paths.filter((p) => !isDegenerate(p));
-  const filteredShape: Shape = validPaths.length === shape.paths.length
+  // Merge coincident fill-only + stroke-only path pairs into single combined loops,
+  // matching real Flash 8's DefineShape edge encoding (see coalesceFillStrokePairs).
+  const coalescedPaths = coalesceFillStrokePairs(validPaths);
+  const filteredShape: Shape = coalescedPaths.length === shape.paths.length &&
+    coalescedPaths.every((p, i) => p === shape.paths[i])
     ? shape
-    : { ...shape, paths: validPaths };
+    : { ...shape, paths: coalescedPaths };
 
   // --- UI16 character ID ---
   bw.writeUI16LE(charId);
