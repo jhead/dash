@@ -17,6 +17,18 @@ export interface CompileOptions {
    */
   bitmapPixels?: Map<string, { width: number; height: number; pixels: Uint8Array }>;
   /**
+   * Publish-Settings "JPEG quality" (1–100). When set, photo (JPEG) library
+   * bitmaps are RE-ENCODED from their decoded ARGB pixels (see
+   * {@link bitmapPixels}) to JPEG at this quality before being embedded in
+   * DefineBitsJPEG2/JPEG3, so the slider actually controls the published SWF's
+   * bitmap encoding quality/size (task 1287). When undefined, the bitmap's
+   * ORIGINAL JPEG bytes are passed through verbatim (the legacy behaviour, used
+   * by unit tests / golden-parity that pass no quality). Re-encoding requires
+   * decoded pixels in {@link bitmapPixels}; without them the original bytes are
+   * used regardless.
+   */
+  jpegQuality?: number;
+  /**
    * When true, emit a Protect tag (24) to mark the SWF as password-protected.
    * The tag body is empty.
    */

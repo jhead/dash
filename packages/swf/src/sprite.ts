@@ -34,7 +34,7 @@ import {
 } from "./filters.js";
 import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, encodeCSMTextSettings, alignXOffsetTwips } from "./text.js";
 import { Tag } from "./tags.js";
-import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
+import { resolvePhotoJpegBytes, type PhotoBitmapOptions } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
 import { fontKey } from "./fonts.js";
 import { encodeStartSound, encodeStartSound2 } from "./sounds.js";
@@ -210,7 +210,12 @@ export function encodeDefineSprite(
    *  subsetted via the "Embed…" character ranges. Static DefineText inside this
    *  sprite uses it to map characters to the right (subsetted) glyph indices.
    *  Absent/unset for a key means the full default 95-glyph table (legacy mapping). */
-  glyphIndexMapByFontKey?: ReadonlyMap<string, ReadonlyMap<number, number>>
+  glyphIndexMapByFontKey?: ReadonlyMap<string, ReadonlyMap<number, number>>,
+  /** Publish-Settings JPEG quality + decoded bitmap pixels, threaded so photo
+   *  bitmaps INSIDE this symbol re-encode at the chosen quality (task 1287).
+   *  Absent for unit tests / inline-button placements → original bytes pass
+   *  through unchanged. */
+  photoOptions?: PhotoBitmapOptions
 ): Uint8Array {
   const timeline = symbol.timeline;
   const layers = timeline.layers;
@@ -400,7 +405,12 @@ export function encodeDefineSprite(
               item.itemType === "bitmap" && item.id === obj.libraryItemId
           );
           if (bitmapItem && bitmapItem.dataUri) {
-            const imageBytes = ensureJpegEOI(dataUriToBytes(bitmapItem.dataUri));
+            // Honour the Publish-Settings JPEG quality slider (task 1287).
+            const imageBytes = resolvePhotoJpegBytes(
+              bitmapItem,
+              photoOptions?.jpegQuality,
+              photoOptions?.bitmapPixels?.get(bitmapItem.id)
+            );
             if (imageBytes.length > 0) {
               // Hoist DefineBitsJPEG2 to top level
               const bitmapCharId = nextCharId();
@@ -862,7 +872,8 @@ export function encodeDefineSprite(
                   (displayObj as { buttonHandlers: readonly ButtonHandler[] }).buttonHandlers,
                   (displayObj as { trackAsMenu?: boolean }).trackAsMenu,
                   fontCharIdMap,
-                  glyphIndexMapByFontKey
+                  glyphIndexMapByFontKey,
+                  photoOptions
                 );
                 for (const def of instHoisted) {
                   hoistedDefs.push(def);

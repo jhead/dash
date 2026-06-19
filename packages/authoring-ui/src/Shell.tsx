@@ -2505,6 +2505,9 @@ export function Shell(): React.ReactElement {
   const { publishToBytes, testMovie } = usePublish(doc, {
     compress: publishSettings.compress,
     protect: publishSettings.protect,
+    // Publish-Settings "JPEG quality" slider: thread it so photo bitmaps are
+    // re-encoded at the chosen quality in the published SWF (task 1287).
+    jpegQuality: publishSettings.jpegQuality,
     debugPassword: publishSettings.debuggingPermitted && publishSettings.debugPassword
       ? publishSettings.debugPassword
       : undefined,

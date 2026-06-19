@@ -24,7 +24,7 @@ import { fontKey } from "./fonts.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "./shapes.js";
 import { encodeDefineEditText, encodeDefineText, encodeCSMTextSettings, alignXOffsetTwips } from "./text.js";
 import { Tag } from "./tags.js";
-import { dataUriToBytes, ensureJpegEOI } from "./bitmaps.js";
+import { resolvePhotoJpegBytes, type PhotoBitmapOptions } from "./bitmaps.js";
 
 // ---------------------------------------------------------------------------
 // Identity MATRIX helper
@@ -177,7 +177,11 @@ export function encodeDefineButton2(
   /** Maps fontKey → (code-point → glyph-index) for subsetted fonts ("Embed…"
    *  ranges). Static DefineText for button state text uses it to map characters
    *  to subsetted glyph indices. Absent for a key means the full default table. */
-  glyphIndexMapByFontKey?: ReadonlyMap<string, ReadonlyMap<number, number>>
+  glyphIndexMapByFontKey?: ReadonlyMap<string, ReadonlyMap<number, number>>,
+  /** Publish-Settings JPEG quality + decoded bitmap pixels, so bitmaps in this
+   *  button's state graphics re-encode at the chosen quality (task 1287).
+   *  Absent → original bytes pass through unchanged. */
+  photoOptions?: PhotoBitmapOptions
 ): Uint8Array {
   const bw = new BitWriter();
 
@@ -265,7 +269,12 @@ export function encodeDefineButton2(
               item.itemType === "bitmap" && item.id === obj.libraryItemId
           );
           if (bitmapItem && bitmapItem.dataUri) {
-            const imageBytes = ensureJpegEOI(dataUriToBytes(bitmapItem.dataUri));
+            // Honour the Publish-Settings JPEG quality slider (task 1287).
+            const imageBytes = resolvePhotoJpegBytes(
+              bitmapItem,
+              photoOptions?.jpegQuality,
+              photoOptions?.bitmapPixels?.get(bitmapItem.id)
+            );
             if (imageBytes.length > 0) {
               const bitmapCid = nextCharId();
               const imgPayload = new Uint8Array(2 + imageBytes.length);

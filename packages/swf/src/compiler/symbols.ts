@@ -15,6 +15,7 @@ import { encodeDefineSprite } from "../sprite.js";
 import { encodeDefineButton2, encodeDefineButtonSound } from "../buttons.js";
 import { encodeDoInitAction } from "../doInitAction.js";
 import type { VideoStreamInfo } from "./media.js";
+import type { PhotoBitmapOptions } from "../bitmaps.js";
 
 /**
  * Sort symbols so that each symbol appears after all symbols it references
@@ -167,6 +168,10 @@ export interface SymbolPassInput {
   soundIdMap: Map<string, number>;
   videoCharIdMap: Map<string, number>;
   videoStreams: VideoStreamInfo[];
+  /** Publish-Settings JPEG quality + decoded bitmap pixels (task 1287), passed
+   *  to the sprite/button encoders so symbol-internal photo bitmaps re-encode at
+   *  the chosen quality. Optional — absent for callers that pass no quality. */
+  photoOptions?: PhotoBitmapOptions;
 }
 
 /** Linkage entries collected during symbol emission, emitted in the first frame. */
@@ -190,7 +195,7 @@ export function runSymbolPass(input: SymbolPassInput): SymbolPassResult {
   const {
     writer, doc, symbols, charIdMap, graphicButtonSymbolIds,
     fontCharIdMap, glyphIndexMapByFontKey, soundItems, soundIdMap,
-    videoCharIdMap, videoStreams,
+    videoCharIdMap, videoStreams, photoOptions,
   } = input;
 
   const pendingButtonSounds: Array<{ charId: number; sounds: ButtonSounds }> = [];
@@ -227,7 +232,8 @@ export function runSymbolPass(input: SymbolPassInput): SymbolPassResult {
         undefined,
         undefined,
         fontCharIdMap,
-        glyphIndexMapByFontKey
+        glyphIndexMapByFontKey,
+        photoOptions
       );
 
       // Emit hoisted shape/text definition tags first
@@ -253,7 +259,8 @@ export function runSymbolPass(input: SymbolPassInput): SymbolPassResult {
         soundIdMap,
         videoCharIdMap,
         videoStreams,
-        glyphIndexMapByFontKey
+        glyphIndexMapByFontKey,
+        photoOptions
       );
 
       // Emit hoisted definition tags first

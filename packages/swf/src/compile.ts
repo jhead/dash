@@ -139,6 +139,9 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     soundIdMap,
     videoCharIdMap,
     videoStreams,
+    // Thread the Publish-Settings JPEG quality + decoded pixels so symbol-internal
+    // photo bitmaps re-encode at the chosen quality, not their original bytes (task 1287).
+    photoOptions: { jpegQuality: options?.jpegQuality, bitmapPixels: options?.bitmapPixels },
   });
 
   // 3d. Placed v2-component pass (task 1229): synthesize a DefineSprite +

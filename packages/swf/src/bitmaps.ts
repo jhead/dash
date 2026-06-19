@@ -13,8 +13,10 @@
 // Flash Player and Ruffle (flate2 ZlibDecoder) cannot decompress, so the bitmap
 // silently fails to decode and renders blank. `zlibSync` emits the proper zlib
 // stream — the same encoder used for the CWS movie body in assemble.ts.
+import type { BitmapItem } from "@flash/core";
 import { zlibSync } from "fflate";
 import { BitWriter } from "./bits.js";
+import { encodeJpeg } from "./jpeg-encode.js";
 
 // ---------------------------------------------------------------------------
 // Tag header helper (internal use only)
@@ -301,4 +303,74 @@ export function dataUriToBytes(dataUri: string): Uint8Array {
   } catch {
     return new Uint8Array(0);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Photo (JPEG) bitmap byte resolution — Publish Settings "JPEG quality"
+// ---------------------------------------------------------------------------
+
+/** Decoded ARGB pixel data for a single library bitmap. */
+export interface DecodedBitmapPixels {
+  width: number;
+  height: number;
+  /** ARGB bytes, 4 per pixel, row-major. */
+  pixels: Uint8Array;
+}
+
+/**
+ * The subset of {@link CompileOptions} the photo-bitmap emit paths need to
+ * honour the Publish-Settings "JPEG quality" slider (task 1287). Threaded into
+ * the symbol-internal encoders (sprite.ts / buttons.ts) so bitmaps inside
+ * movieclip / button symbols re-encode at the same quality as scene bitmaps.
+ */
+export interface PhotoBitmapOptions {
+  /** Publish-Settings JPEG quality (1–100), or undefined to pass bytes through. */
+  jpegQuality?: number;
+  /** Decoded ARGB pixels keyed by BitmapItem.id (from buildBitmapPixels). */
+  bitmapPixels?: Map<string, DecodedBitmapPixels>;
+}
+
+/**
+ * Resolve the JPEG byte stream to embed for a photo (JPEG) library bitmap,
+ * honouring the Publish-Settings "JPEG quality" slider (task 1287).
+ *
+ * Historically every photo bitmap was embedded by passing its ORIGINAL dataUri
+ * JPEG bytes through verbatim (`ensureJpegEOI(dataUriToBytes(dataUri))`), so the
+ * quality slider was inert — changing it produced a byte-identical SWF. This
+ * helper threads the slider value through: when a `jpegQuality` is supplied AND
+ * decoded ARGB pixels are available for the bitmap, it RE-ENCODES the pixels to
+ * JPEG at that quality (lower quality → smaller bytes). Otherwise it falls back
+ * to the original pass-through bytes, preserving the legacy behaviour used by
+ * unit tests / golden-parity that pass no quality (and the case where pixel
+ * decoding was unavailable, e.g. headless without a canvas).
+ *
+ * The returned bytes always end with a JPEG EOI marker, ready for
+ * DefineBitsJPEG2 (tag 21) or DefineBitsJPEG3 (tag 35).
+ *
+ * @param bitmapItem  the library bitmap being emitted
+ * @param jpegQuality the Publish-Settings JPEG quality (1–100), or undefined to
+ *                    pass the original bytes through
+ * @param pixelData   decoded ARGB pixels for this bitmap, if available
+ * @returns the JPEG bytes to embed (empty array when the bitmap has no data)
+ */
+export function resolvePhotoJpegBytes(
+  bitmapItem: BitmapItem,
+  jpegQuality: number | undefined,
+  pixelData: DecodedBitmapPixels | undefined
+): Uint8Array {
+  // Re-encode from decoded pixels at the requested quality when both are present
+  // and this is a photo (JPEG) bitmap. This is the path that makes the slider
+  // actually control the published JPEG's quality/size.
+  if (
+    jpegQuality !== undefined &&
+    bitmapItem.compressionType === "photo" &&
+    pixelData &&
+    pixelData.width > 0 &&
+    pixelData.height > 0 &&
+    pixelData.pixels.length >= pixelData.width * pixelData.height * 4
+  ) {
+    return encodeJpeg(pixelData.width, pixelData.height, pixelData.pixels, jpegQuality);
+  }
+  // Legacy pass-through: original JPEG/PNG bytes (EOI-terminated for JPEG).
+  return ensureJpegEOI(dataUriToBytes(bitmapItem.dataUri));
 }

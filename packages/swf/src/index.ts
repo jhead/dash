@@ -18,7 +18,14 @@ export { BitWriter } from "./bits.js";
 export { Tag } from "./tags.js";
 export type { TagCode } from "./tags.js";
 export { encodeDefineShape4, encodePlaceObject2 } from "./shapes.js";
-export { encodeDefineBitsLossless2 } from "./bitmaps.js";
+export {
+  encodeDefineBitsLossless2,
+  encodeDefineBitsJpeg3,
+  encodeDefineBitsJPEG2,
+  resolvePhotoJpegBytes,
+} from "./bitmaps.js";
+export type { DecodedBitmapPixels, PhotoBitmapOptions } from "./bitmaps.js";
+export { encodeJpeg } from "./jpeg-encode.js";
 export {
   encodeDefineVideoStream,
   encodeVideoFrame,

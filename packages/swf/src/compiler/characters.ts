@@ -9,7 +9,7 @@ import type { BitmapFill, BitmapItem, FlashDocument, Shape, ShapeWarp } from "@f
 import { getTweenSpans, warpShape } from "@flash/core";
 import { Tag } from "../tags.js";
 import { SwfWriter } from "../writer.js";
-import { dataUriToBytes, encodeDefineBitsLossless2, encodeDefineBitsJpeg3, ensureJpegEOI } from "../bitmaps.js";
+import { encodeDefineBitsLossless2, encodeDefineBitsJpeg3, resolvePhotoJpegBytes } from "../bitmaps.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "../shapes.js";
 import { encodeDefineMorphShape2 } from "../morphshape.js";
 import { encodeDefineText, encodeDefineEditText, encodeCSMTextSettings, alignXOffsetTwips } from "../text.js";
@@ -138,11 +138,13 @@ export function emitBitmapFillTags(
       writer.writeRaw(losslessTag);
       emittedBitmapCharIds.set(bitmapId, charId);
     } else if (bitmapItem.dataUri) {
-      const rawBytes = dataUriToBytes(bitmapItem.dataUri);
-      const imageBytes = ensureJpegEOI(rawBytes);
+      const pixelDataForJpeg = options?.bitmapPixels?.get(bitmapItem.id);
+      // Honour the Publish-Settings JPEG quality slider: re-encode photo pixels
+      // at the requested quality when available, else pass original bytes through.
+      const imageBytes = resolvePhotoJpegBytes(bitmapItem, options?.jpegQuality, pixelDataForJpeg);
       if (imageBytes.length > 0) {
         const charId = writer.nextCharId();
-        const pixelDataForAlpha = options?.bitmapPixels?.get(bitmapItem.id);
+        const pixelDataForAlpha = pixelDataForJpeg;
         const hasTransparency =
           bitmapItem.compressionType === "photo" &&
           pixelDataForAlpha !== undefined &&
@@ -433,13 +435,14 @@ export function runCharacterPass(input: CharacterPassInput): CharacterPassResult
                 );
                 writer.writeTag(Tag.DefineShape4, shapeBody);
               } else if (bitmapItem.dataUri) {
-                const rawBytes = dataUriToBytes(bitmapItem.dataUri);
-                const imageBytes = ensureJpegEOI(rawBytes);
+                const pixelDataForJpeg = options?.bitmapPixels?.get(bitmapItem.id);
+                // Honour the Publish-Settings JPEG quality slider (task 1287).
+                const imageBytes = resolvePhotoJpegBytes(bitmapItem, options?.jpegQuality, pixelDataForJpeg);
                 if (imageBytes.length > 0) {
                   const bitmapCharId = writer.nextCharId();
 
                   // Check if this is a photo bitmap with transparent pixel data
-                  const pixelDataForAlpha = options?.bitmapPixels?.get(bitmapItem.id);
+                  const pixelDataForAlpha = pixelDataForJpeg;
                   const hasTransparency =
                     bitmapItem.compressionType === "photo" &&
                     pixelDataForAlpha !== undefined &&
