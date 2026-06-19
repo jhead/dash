@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { withProperties } from "@flash/core";
 import type { FlashDocument, PublishProfile, PublishProfileSettings } from "@flash/core";
+import { chrome, halo, chromeFont, inputStyle, buttonStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -143,47 +144,38 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.5)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 2000,
   },
   dialog: {
-    background: "#3c3c3c",
-    border: "1px solid #666",
-    boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
+    background: chrome.appBg,
+    border: `1px solid ${chrome.separator}`,
+    boxShadow: "4px 4px 12px rgba(0,0,0,0.45)",
     minWidth: "380px",
-    fontFamily: "Tahoma, Arial, sans-serif",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
     userSelect: "none",
   },
   titleBar: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    background: "#2a2a2a",
-    borderBottom: "1px solid #555",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `1px solid ${halo.headerDivider}`,
     padding: "4px 6px",
     cursor: "default",
   },
   titleText: {
-    fontSize: "11px",
+    ...chromeFont(),
     fontWeight: "bold",
-    color: "#e0e0e0",
+    color: chrome.textDefault,
   },
   closeBtn: {
-    background: "#666",
-    border: "1px solid #888",
-    color: "#e0e0e0",
-    width: "14px",
-    height: "14px",
-    fontSize: "10px",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+    ...buttonStyle("up"),
+    width: "16px",
+    height: "16px",
     padding: 0,
     lineHeight: 1,
   },
@@ -192,59 +184,52 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "4px",
     padding: "6px 10px",
-    borderBottom: "1px solid #555",
-    background: "#343434",
+    borderBottom: `1px solid ${chrome.separator}`,
+    background: chrome.insetFieldStrip,
   },
   profileLabel: {
-    fontSize: "11px",
-    color: "#aaa",
+    ...chromeFont(),
+    color: chrome.textDefault,
     flexShrink: 0,
   },
   profileSelect: {
+    ...inputStyle(),
     flex: 1,
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
-    padding: "2px 4px",
-    outline: "none",
   },
   profileBtn: {
-    background: "#555",
-    border: "1px solid #777",
-    color: "#e0e0e0",
-    fontSize: "11px",
+    ...buttonStyle("up"),
     padding: "2px 7px",
-    cursor: "pointer",
     minWidth: "22px",
     flexShrink: 0,
   },
   tabBar: {
     display: "flex",
-    borderBottom: "1px solid #555",
-    background: "#2e2e2e",
+    borderBottom: `1px solid ${chrome.separator}`,
+    background: chrome.insetFieldStrip,
   },
   tab: {
     padding: "5px 14px",
-    fontSize: "11px",
+    ...chromeFont(),
     cursor: "pointer",
-    borderRight: "1px solid #555",
-    color: "#aaa",
+    borderRight: `1px solid ${chrome.separator}`,
+    color: chrome.textDisabled,
     userSelect: "none" as const,
   },
   tabActive: {
     padding: "5px 14px",
-    fontSize: "11px",
+    ...chromeFont(),
     cursor: "pointer",
-    borderRight: "1px solid #555",
-    color: "#e0e0e0",
-    background: "#3c3c3c",
-    borderBottom: "1px solid #3c3c3c",
+    borderRight: `1px solid ${chrome.separator}`,
+    color: chrome.textDefault,
+    background: halo.panelContentBg,
+    borderBottom: `1px solid ${halo.panelContentBg}`,
     marginBottom: "-1px",
     userSelect: "none" as const,
   },
   body: {
     padding: "10px 12px",
+    background: halo.panelContentBg,
+    color: chrome.textDefault,
   },
   row: {
     display: "flex",
@@ -254,41 +239,32 @@ const styles: Record<string, React.CSSProperties> = {
   label: {
     width: "120px",
     flexShrink: 0,
-    fontSize: "11px",
-    color: "#ccc",
+    ...chromeFont(),
+    color: chrome.textDefault,
   },
   input: {
+    ...inputStyle(),
     flex: 1,
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
-    padding: "2px 4px",
-    outline: "none",
   },
   select: {
+    ...inputStyle(),
     flex: 1,
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
-    padding: "2px 4px",
-    outline: "none",
   },
   readOnlyValue: {
     flex: 1,
-    fontSize: "11px",
-    color: "#aaa",
+    ...chromeFont(),
+    color: chrome.textDisabled,
     padding: "2px 4px",
   },
   divider: {
     height: "1px",
-    background: "#555",
+    background: chrome.separator,
     margin: "8px 0",
   },
   sectionTitle: {
-    fontSize: "10px",
-    color: "#999",
+    ...chromeFont(),
+    fontSize: 10,
+    color: chrome.textDisabled,
     textTransform: "uppercase" as const,
     letterSpacing: "0.05em",
     marginBottom: "6px",
@@ -302,22 +278,17 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: "10px",
   },
   btn: {
-    background: "#555",
-    border: "1px solid #777",
-    color: "#e0e0e0",
-    fontSize: "11px",
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    cursor: "pointer",
     minWidth: "58px",
   },
   btnPrimary: {
-    background: "#1a6ea8",
-    border: "1px solid #2288cc",
-    color: "#fff",
-    fontSize: "11px",
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    cursor: "pointer",
     minWidth: "58px",
+    borderColor: halo.haloBlue,
+    color: chrome.textDefault,
+    fontWeight: "bold",
   },
 };
 
@@ -756,7 +727,7 @@ export function PublishSettingsDialog({
                     type="color"
                     value={backgroundColor}
                     onChange={(e) => setBackgroundColor(e.target.value)}
-                    style={{ width: 32, height: 22, padding: 0, border: "1px solid #555", cursor: "pointer", background: "none" }}
+                    style={{ width: 32, height: 22, padding: 0, border: `1px solid ${halo.inputBorder}`, cursor: "pointer", background: "none" }}
                   />
                   <input
                     type="text"
@@ -798,7 +769,7 @@ export function PublishSettingsDialog({
                     onChange={(e) => setJpegQuality(Number(e.target.value))}
                     style={{ flex: 1 }}
                   />
-                  <span style={{ fontSize: "11px", color: "#ccc", minWidth: "28px", textAlign: "right" }}>
+                  <span style={{ ...chromeFont(), color: chrome.textDefault, minWidth: "28px", textAlign: "right" }}>
                     {jpegQuality}
                   </span>
                 </div>
@@ -812,7 +783,7 @@ export function PublishSettingsDialog({
                   onChange={(e) => setCompress(e.target.checked)}
                   style={{ cursor: "pointer" }}
                 />
-                <label htmlFor="ps-compress" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+                <label htmlFor="ps-compress" style={{ ...chromeFont(), color: chrome.textDefault, cursor: "pointer" }}>
                   Compress movie
                 </label>
               </div>
@@ -825,7 +796,7 @@ export function PublishSettingsDialog({
                   onChange={(e) => setProtect(e.target.checked)}
                   style={{ cursor: "pointer" }}
                 />
-                <label htmlFor="ps-protect" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+                <label htmlFor="ps-protect" style={{ ...chromeFont(), color: chrome.textDefault, cursor: "pointer" }}>
                   Protect from import
                 </label>
               </div>
@@ -838,7 +809,7 @@ export function PublishSettingsDialog({
                   onChange={(e) => setDebuggingPermitted(e.target.checked)}
                   style={{ cursor: "pointer" }}
                 />
-                <label htmlFor="ps-debugging" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+                <label htmlFor="ps-debugging" style={{ ...chromeFont(), color: chrome.textDefault, cursor: "pointer" }}>
                   Debugging permitted
                 </label>
               </div>
@@ -871,7 +842,7 @@ export function PublishSettingsDialog({
                   onChange={(e) => setPublishHtml(e.target.checked)}
                   style={{ cursor: "pointer" }}
                 />
-                <label htmlFor="ps-publish-html" style={{ fontSize: "11px", color: "#ccc", cursor: "pointer" }}>
+                <label htmlFor="ps-publish-html" style={{ ...chromeFont(), color: chrome.textDefault, cursor: "pointer" }}>
                   Publish HTML file
                 </label>
               </div>
@@ -889,7 +860,7 @@ export function PublishSettingsDialog({
                   style={{ cursor: "pointer" }}
                   disabled={!publishHtml}
                 />
-                <label htmlFor="ps-html-loop" style={{ fontSize: "11px", color: publishHtml ? "#ccc" : "#666", cursor: "pointer" }}>
+                <label htmlFor="ps-html-loop" style={{ ...chromeFont(), color: publishHtml ? chrome.textDefault : chrome.textDisabled, cursor: "pointer" }}>
                   Loop
                 </label>
               </div>
@@ -903,7 +874,7 @@ export function PublishSettingsDialog({
                   style={{ cursor: "pointer" }}
                   disabled={!publishHtml}
                 />
-                <label htmlFor="ps-html-menu" style={{ fontSize: "11px", color: publishHtml ? "#ccc" : "#666", cursor: "pointer" }}>
+                <label htmlFor="ps-html-menu" style={{ ...chromeFont(), color: publishHtml ? chrome.textDefault : chrome.textDisabled, cursor: "pointer" }}>
                   Display menu
                 </label>
               </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { chrome, halo, chromeFont, inputStyle, buttonStyle } from "./theme/flash8Theme.js";
 import {
   type Preferences,
   UI_SCALE_MIN,
@@ -31,42 +32,33 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.5)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 1000,
   },
   dialog: {
-    background: "#3c3c3c",
-    border: "1px solid #666",
-    boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
+    background: chrome.appBg,
+    border: `1px solid ${chrome.separator}`,
+    boxShadow: "4px 4px 12px rgba(0,0,0,0.45)",
     width: "460px",
-    fontFamily: "Tahoma, Arial, sans-serif",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
     userSelect: "none",
   },
   titleBar: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    background: "#2a2a2a",
-    borderBottom: "1px solid #555",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `1px solid ${halo.headerDivider}`,
     padding: "4px 6px",
   },
-  titleText: { fontSize: "11px", fontWeight: "bold", color: "#e0e0e0" },
+  titleText: { ...chromeFont(), fontWeight: "bold", color: chrome.textDefault },
   closeBtn: {
-    background: "#666",
-    border: "1px solid #888",
-    color: "#e0e0e0",
-    width: "14px",
-    height: "14px",
-    fontSize: "10px",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+    ...buttonStyle("up"),
+    width: "16px",
+    height: "16px",
     padding: 0,
     lineHeight: 1,
   },
@@ -74,69 +66,56 @@ const styles: Record<string, React.CSSProperties> = {
   sidebar: {
     width: "120px",
     flexShrink: 0,
-    background: "#333",
-    borderRight: "1px solid #555",
+    background: chrome.insetFieldStrip,
+    borderRight: `1px solid ${chrome.separator}`,
     padding: "4px 0",
   },
   category: {
     padding: "4px 10px",
     cursor: "pointer",
-    fontSize: "11px",
+    ...chromeFont(),
   },
-  pane: { flex: 1, padding: "12px 14px" },
+  pane: { flex: 1, padding: "12px 14px", background: halo.panelContentBg },
   sectionLabel: {
-    fontSize: "11px",
+    ...chromeFont(),
     fontWeight: "bold",
-    color: "#cfcfcf",
+    color: chrome.textDefault,
     marginBottom: "10px",
   },
   row: { display: "flex", alignItems: "center", marginBottom: "10px", gap: "8px" },
-  label: { width: "80px", flexShrink: 0, color: "#ccc" },
-  slider: { flex: 1 },
+  label: { width: "80px", flexShrink: 0, ...chromeFont(), color: chrome.textDefault },
+  slider: { flex: 1, accentColor: halo.haloBlue },
   numInput: {
     width: "52px",
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
-    padding: "2px 4px",
-    outline: "none",
+    ...inputStyle(),
   },
-  hint: { color: "#999", fontSize: "10px", lineHeight: 1.5, marginTop: "4px" },
+  hint: { ...chromeFont(), fontSize: 10, color: chrome.textDisabled, lineHeight: 1.5, marginTop: "4px" },
   presetRow: { display: "flex", gap: "6px", marginTop: "2px", marginLeft: "88px" },
   presetBtn: {
-    background: "#4a4a4a",
-    border: "1px solid #666",
-    color: "#ddd",
-    fontSize: "10px",
+    ...buttonStyle("up"),
+    fontSize: 10,
     padding: "2px 8px",
-    cursor: "pointer",
   },
   footer: {
     display: "flex",
     justifyContent: "space-between",
     gap: "6px",
     padding: "8px 12px",
-    borderTop: "1px solid #555",
-    background: "#363636",
+    borderTop: `1px solid ${chrome.separator}`,
+    background: chrome.appBg,
   },
   btn: {
-    background: "#555",
-    border: "1px solid #777",
-    color: "#e0e0e0",
-    fontSize: "11px",
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    cursor: "pointer",
     minWidth: "58px",
   },
   btnPrimary: {
-    background: "#1a6ea8",
-    border: "1px solid #2288cc",
-    color: "#fff",
-    fontSize: "11px",
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    cursor: "pointer",
     minWidth: "58px",
+    borderColor: halo.haloBlue,
+    color: chrome.textDefault,
+    fontWeight: "bold",
   },
 };
 
@@ -194,8 +173,8 @@ export function PreferencesDialog({
                 key={c}
                 style={{
                   ...styles.category,
-                  background: c === category ? "#1a6ea8" : "transparent",
-                  color: c === category ? "#fff" : "#ddd",
+                  background: c === category ? halo.selectionColor : "transparent",
+                  color: c === category ? halo.textSelected : chrome.textDefault,
                 }}
                 onClick={() => setCategory(c)}
               >
@@ -234,7 +213,7 @@ export function PreferencesDialog({
                     }}
                     title="UI scale (%)"
                   />
-                  <span style={{ color: "#aaa" }}>%</span>
+                  <span style={{ ...chromeFont(), color: chrome.textDisabled }}>%</span>
                 </div>
                 <div style={styles.presetRow}>
                   {PRESETS.map((p) => (

@@ -1,10 +1,10 @@
 {
   "id": "1253-0f60aa-flash8-re-theme-wave-b-dialogs-batch-1-publishse",
   "title": "Flash8 re-theme Wave B: dialogs batch 1 (PublishSettings, DocumentProperties, BitmapProperties, ConvertToSymbol, SymbolLinkage, SymbolProperties, Preferences)",
-  "description": "Convert these dialog components to the Flash 8 light theme via packages/authoring-ui/src/theme/flash8Theme.ts (chrome.*/halo.*), mirroring Shell.tsx + converted panels. Files (packages/authoring-ui/src/): PublishSettingsDialog.tsx, DocumentPropertiesDialog.tsx, BitmapPropertiesDialog.tsx, ConvertToSymbolDialog.tsx, SymbolLinkageDialog.tsx, SymbolPropertiesDialog.tsx, PreferencesDialog.tsx. Replace all dark hex with tokens \u2192 light #ECECEC dialog chrome, white content, near-black Tahoma text, halo inputs (#B7BABC inset border, focus ring), halo buttons (cornerRadius 4 gradients), #999999 separators; modal overlay scrim can stay rgba(0,0,0,0.4-0.5). Keep functionality intact. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: those 7 dialog files only (+ read-only theme import).",
-  "status": "open",
+  "description": "DONE. Converted 7 dialog components to Flash 8 light Halo theme via flash8Theme tokens (chrome.*/halo.*/chromeFont/inputStyle/buttonStyle): PublishSettingsDialog, DocumentPropertiesDialog, BitmapPropertiesDialog, ConvertToSymbolDialog, SymbolLinkageDialog, SymbolPropertiesDialog, PreferencesDialog. Light #ECECEC dialog chrome (chrome.appBg), white content bodies (halo.panelContentBg), near-black Tahoma text (chromeFont), halo inputs (inputStyle), halo buttons (buttonStyle), #999999 separators (chrome.separator), title bars use the light header gradient. Modal scrim kept rgba(0,0,0,0.45). Re-picked dark accents for light: primary buttons use halo.haloBlue border + bold near-black label; active states use halo.selectionColor/down gradient; sliders accentColor=halo.haloBlue. Functionality unchanged (style-only). Evidence: 'pnpm --filter ./packages/** build' green; 'pnpm --filter @flash/authoring-ui run test -- --run' = 44 files / 653 tests PASSED, 0 failures. Screenshot oracle deferred (needs dev-server+Playwright infra). git diff: only the 7 dialog files.",
+  "status": "done",
   "effort": "high",
   "priority": "medium",
   "created_at": "2026-06-19T06:06:46Z",
-  "updated_at": "2026-06-19T06:06:46Z"
+  "updated_at": "2026-06-19T06:15:32Z"
 }

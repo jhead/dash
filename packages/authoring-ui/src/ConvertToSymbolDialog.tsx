@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { chrome, halo, chromeFont, inputStyle, buttonStyle } from "./theme/flash8Theme.js";
 import type { SymbolType } from "@flash/core";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +33,7 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.5)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -40,46 +41,39 @@ const styles: Record<string, React.CSSProperties> = {
   },
   dialog: {
     position: "fixed",
-    background: "#3c3c3c",
-    border: "1px solid #666",
-    boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
+    background: chrome.appBg,
+    border: `1px solid ${chrome.separator}`,
+    boxShadow: "4px 4px 12px rgba(0,0,0,0.45)",
     minWidth: "300px",
     zIndex: 1000,
-    fontFamily: "Tahoma, Arial, sans-serif",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
     userSelect: "none",
   },
   titleBar: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    background: "#2a2a2a",
-    borderBottom: "1px solid #555",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `1px solid ${halo.headerDivider}`,
     padding: "4px 6px",
     cursor: "default",
   },
   titleText: {
-    fontSize: "11px",
+    ...chromeFont(),
     fontWeight: "bold",
-    color: "#e0e0e0",
+    color: chrome.textDefault,
   },
   closeBtn: {
-    background: "#666",
-    border: "1px solid #888",
-    color: "#e0e0e0",
-    width: "14px",
-    height: "14px",
-    fontSize: "10px",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+    ...buttonStyle("up"),
+    width: "16px",
+    height: "16px",
     padding: 0,
     lineHeight: 1,
   },
   body: {
     padding: "10px 12px",
+    background: halo.panelContentBg,
+    color: chrome.textDefault,
   },
   row: {
     display: "flex",
@@ -89,17 +83,12 @@ const styles: Record<string, React.CSSProperties> = {
   label: {
     width: "50px",
     flexShrink: 0,
-    fontSize: "11px",
-    color: "#ccc",
+    ...chromeFont(),
+    color: chrome.textDefault,
   },
   inputWide: {
     flex: 1,
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
-    padding: "2px 4px",
-    outline: "none",
+    ...inputStyle(),
   },
   radioGroup: {
     display: "flex",
@@ -113,12 +102,12 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "6px",
     cursor: "pointer",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
+    color: chrome.textDefault,
   },
   divider: {
     height: "1px",
-    background: "#555",
+    background: chrome.separator,
     margin: "8px 0",
   },
   btnRow: {
@@ -129,22 +118,17 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: "10px",
   },
   btn: {
-    background: "#555",
-    border: "1px solid #777",
-    color: "#e0e0e0",
-    fontSize: "11px",
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    cursor: "pointer",
     minWidth: "58px",
   },
   btnPrimary: {
-    background: "#1a6ea8",
-    border: "1px solid #2288cc",
-    color: "#fff",
-    fontSize: "11px",
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    cursor: "pointer",
     minWidth: "58px",
+    borderColor: halo.haloBlue,
+    color: chrome.textDefault,
+    fontWeight: "bold",
   },
   registrationRow: {
     display: "flex",
@@ -158,29 +142,22 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: "50px",
   },
   regBtn: {
+    ...buttonStyle("up"),
     width: "16px",
     height: "16px",
     padding: 0,
-    border: "1px solid #666",
-    background: "#444",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "10px",
+    fontSize: 10,
+    color: chrome.textDefault,
     lineHeight: 1,
   },
   regBtnActive: {
+    ...buttonStyle("down"),
     width: "16px",
     height: "16px",
     padding: 0,
-    border: "1px solid #4aa3e0",
-    background: "#1a6ea8",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "10px",
+    borderColor: halo.haloBlue,
+    fontSize: 10,
+    color: chrome.textDefault,
     lineHeight: 1,
   },
 };
@@ -273,7 +250,7 @@ export function ConvertToSymbolDialog({
           <div style={styles.divider} />
 
           {/* Type */}
-          <div style={{ marginBottom: "8px", fontSize: "11px", color: "#ccc" }}>Type:</div>
+          <div style={{ ...chromeFont(), marginBottom: "8px", color: chrome.textDefault }}>Type:</div>
           <div style={styles.radioGroup}>
             {(
               [
@@ -297,7 +274,7 @@ export function ConvertToSymbolDialog({
           <div style={styles.divider} />
 
           {/* Registration point */}
-          <div style={{ marginBottom: "6px", fontSize: "11px", color: "#ccc" }}>Registration:</div>
+          <div style={{ ...chromeFont(), marginBottom: "6px", color: chrome.textDefault }}>Registration:</div>
           <div style={styles.registrationGrid}>
             {REGISTRATION_POSITIONS.map((pos) => (
               <button
