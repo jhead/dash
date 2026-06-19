@@ -212,3 +212,41 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
     bitmap renders blank.
 
+---
+
+## 2026-06-19 — embedded-video SWF emit HEALTHY; custom-ease drop CONFIRMED; doc-accuracy defect 1223
+
+- **Watermark (last fully-QA'd SHA):** `9e0b717` (current repo HEAD). All commits up to and
+  including `9e0b717` are now considered QA'd; the watermark advances from `3edd1a9`.
+- **Scope this cycle:** commits since the `3edd1a9` watermark were mostly backlog-queuing
+  for the next feature wave (video-embed, free-transform distort/envelope, bitmap-trace,
+  custom-ease, components panel) with no implementation behind them. The only substantive
+  change carrying QA weight was **`723c640`** (`docs/11-video.md`, task 1218 — documents the
+  embedded-video SWF emit pipeline).
+- **Embedded-video SWF emit QA — pipeline HEALTHY.** The `DefineVideoStream` (tag 60) +
+  `VideoFrame` (tag 61) emit is structurally valid and Ruffle-parseable (verified via
+  `swf-dump`); the full 1373-test `@flash/swf` suite passes. **Filed task 1223 (low,
+  doc-accuracy):** `docs/11-video.md` states the `DefineVideoStream` Width/Height come from
+  the demuxed FLV stream, but `runMediaPass` (`packages/swf/src/compiler/media.ts:~97`) takes
+  them from the **library model** (`videoItem.width`/`height`). The FLV dimension extractors
+  (`parseFlvMetaDims`/`parseH263Dims`) are therefore dead code relative to the SWF output.
+  No emit/runtime defect — purely a documentation/dead-code discrepancy.
+- **Custom-ease verification — drop of task 1221 CONFIRMED CORRECT.** The claim that custom
+  Bézier easing is "already implemented by 0778/1009/0726/0883" holds: custom-ease is fully
+  implemented end-to-end — `EaseCurve` model + per-property ease fields, cubic-bezier solver
+  in `interpolate.ts`, non-linear bake into `PlaceObject` positions via `getTweenedFrame`
+  (`frames.ts:315`/`:339`), FLA-import ease-curve decode, and the `EaseCurveDialog` UI; tests
+  assert non-linear interpolation results. Nothing filed. Minor (non-fileable) coverage note:
+  no SWF-bytes-level test asserts the BAKED `PlaceObject` positions are non-linear (the
+  non-linearity is asserted at the `interpolate.ts` unit level, not at the emitted-bytes
+  level).
+- **Still open for workers (carried forward + new):**
+  - **1214** — e2e harness: structural byte-parsers treat CWS (compressed) publish output
+    as FWS.
+  - **1215** — `interactivity.spec` `injectRufflePlayer` missing `autoplay:'on'` → clip
+    ticks never start, so `diffPixels=0` and the oracle falsely fails (harness bug).
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+  - **1223** — `docs/11-video.md` misstates `DefineVideoStream` Width/Height source (model,
+    not FLV stream); FLV dimension extractors are dead code relative to the SWF (doc/cleanup).
+
