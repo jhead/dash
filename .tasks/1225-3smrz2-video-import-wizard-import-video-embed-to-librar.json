@@ -1,0 +1,10 @@
+{
+  "id": "1225-3smrz2-video-import-wizard-import-video-embed-to-librar",
+  "title": "Video Import wizard (Import Video > embed to library)",
+  "description": "VERIFIED MISSING: no video import dialog/wizard in packages/authoring-ui/src. Embedded-video SWF emit (DefineVideoStream/VideoFrame) and FLV demux (packages/swf/src/video.ts demuxFlv) already exist (task 1218). docs/11-video.md specs a Video Import wizard. Implement an Import Video dialog: select a video file/dataUri, show codec + dimensions + frame count (via demuxFlv/metadata), choose embed-to-timeline-or-library, and create a VideoItem library entry (+ optionally place on stage) that flows into the existing publish pipeline. VERIFY ground truth first and grep done-tasks for overlap. SCOPE: in = import dialog + VideoItem creation + File/Import menu wiring; OUT (defer) = live FLV streaming/cue-point editor/skin picker. Files: new authoring-ui VideoImportDialog + import handler + menu wiring; reuse existing core video model + swf/video.ts. Build + tests green (add tests); update docs/11.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T01:09:14Z",
+  "updated_at": "2026-06-19T01:09:14Z"
+}

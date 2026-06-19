@@ -1,0 +1,10 @@
+{
+  "id": "1224-3hv4g0-fla-writer-emit-contents-cmediasound-cmediabits-",
+  "title": "FLA writer: emit Contents CMediaSound/CMediaBits media-catalog records",
+  "description": "Split off from 1205. saveRealFla() now writes the \u00a711 frame sound sub-block (soundId etc.) byte-correctly, verified via parseFla8Timeline round-trip. BUT the writer does not emit the Contents media catalog: writeContents() accepts a 'media' field (ContentsMediaEntry[]) but never serializes it. The importer resolves a frame's soundId -> library item via a 'Media N' / CMediaSound catalog scan (flash8-binary.ts registerCMediaSoundObject + the CMediaSound/CMediaBits FFFF-class discovery flow), so a saved frame sound's library LINK is not rebuilt on a full tryLoadRealFla re-import (warns 'frame sound id N not found in library'). Implement real CMediaSound (schema 6) and CMediaBits NEWCLASS objects in contents-write.ts referencing 'Media N' stream names, advancing the \u00a75.2 combined-table index (two slots/class). RISK: byte-unverified vs a real Flash 8 oracle; the CONTENTS_POST_STAGE template self-declares CColorDef/CQTAudioSettings and must stay valid; carchive-validate stops at the CDocumentPage chain so structural validation is partial. Validate against fixtures/evaporatingdrip.fla (has Media 4 = a sound) and the strict validator. Acceptance: a saved doc with a sound library item + frame sound round-trips through tryLoadRealFla with frame.sound.libraryItemId resolved.",
+  "status": "open",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-19T01:09:00Z",
+  "updated_at": "2026-06-19T01:09:00Z"
+}
