@@ -232,7 +232,10 @@ export function AgentChatPanel(
         patchAssistantRun(assistantId, { ...state, error: friendly.message });
       }
       // Persist the model's assistant + tool messages for the next turn.
-      if (responseMessages.length > 0) {
+      // Defensive: a custom/overridden runTurn (or an abort/error path) may
+      // return undefined here instead of an empty array, so guard against it
+      // rather than throwing on `.length`.
+      if (responseMessages && responseMessages.length > 0) {
         historyRef.current = [...historyRef.current, ...responseMessages];
       }
     } catch (err) {

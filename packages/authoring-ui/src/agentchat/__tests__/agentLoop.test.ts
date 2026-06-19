@@ -186,6 +186,83 @@ describe("reduceAgentEvent — terminal status", () => {
   });
 });
 
+describe("reduceAgentEvent — abort/error terminal precedence", () => {
+  it("error-then-abort keeps the error (a real failure outranks a cancel)", () => {
+    const state = fold([
+      { type: "text-delta", id: "t", text: "partial" } as Part,
+      { type: "error", error: new Error("boom") } as Part,
+      { type: "abort", reason: "user" } as Part,
+    ]);
+    expect(state.status).toBe("error");
+    expect(state.error).toBe("boom");
+  });
+
+  it("abort-then-error keeps the abort (first terminal wins)", () => {
+    const state = fold([
+      { type: "text-delta", id: "t", text: "partial" } as Part,
+      { type: "abort", reason: "user" } as Part,
+      { type: "error", error: new Error("late boom") } as Part,
+    ]);
+    expect(state.status).toBe("stopped");
+    expect(state.error).toBeUndefined();
+  });
+
+  it("a trailing abort does NOT override a finished (done) run", () => {
+    const state = fold([
+      { type: "finish", finishReason: "stop" } as unknown as Part,
+      { type: "abort", reason: "user" } as Part,
+    ]);
+    expect(state.status).toBe("done");
+  });
+});
+
+describe("reduceAgentEvent — orphaned tool-result", () => {
+  it("warns and does not throw when a tool-result has an unknown toolCallId", () => {
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+    try {
+      const state = fold([
+        { type: "tool-call", toolCallId: "known", toolName: "x", input: {} } as unknown as Part,
+        // result for a call we never recorded:
+        { type: "tool-result", toolCallId: "ghost", toolName: "x", input: {}, output: 1 } as unknown as Part,
+      ]);
+      // The known chip is untouched and stays running (no result arrived for it).
+      const known = state.entries.find(
+        (e): e is AgentToolEntry => e.kind === "tool" && e.toolCallId === "known"
+      );
+      expect(known?.status).toBe("running");
+      // No phantom chip was created for the ghost id.
+      expect(
+        state.entries.some((e) => e.kind === "tool" && e.toolCallId === "ghost")
+      ).toBe(false);
+      // The orphan was surfaced via a warning mentioning the id.
+      expect(warnings.some((w) => w.includes("ghost"))).toBe(true);
+    } finally {
+      console.warn = origWarn;
+    }
+  });
+
+  it("warns on an orphaned tool-error too (chip would otherwise stick on running)", () => {
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+    try {
+      const state = fold([
+        { type: "tool-error", toolCallId: "missing", toolName: "y", input: {}, error: new Error("nope") } as unknown as Part,
+      ]);
+      expect(state.entries.length).toBe(0);
+      expect(warnings.some((w) => w.includes("missing"))).toBe(true);
+    } finally {
+      console.warn = origWarn;
+    }
+  });
+});
+
 describe("drivePartStream", () => {
   it("pushes a new state per part and returns the final state", async () => {
     const states: AgentRunState[] = [];

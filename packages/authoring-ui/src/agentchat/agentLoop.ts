@@ -302,11 +302,27 @@ export function reduceAgentEvent(
     }
 
     case "abort": {
-      return { ...state, status: "stopped" };
+      // Terminal: only transition from `running`, like `finish`. A trailing
+      // abort must NOT clobber a prior `error` (a real failure outranks a
+      // cancel) — and equally, the FIRST terminal event wins, so an
+      // error-after-abort can't erase the abort. Whichever terminal arrives
+      // first is kept; this is what defines abort↔error precedence.
+      if (state.status === "running") return { ...state, status: "stopped" };
+      return state;
     }
 
     case "error": {
-      return { ...state, status: "error", error: agentErrorMessage(part.error) };
+      // Terminal: only transition from `running`. If we already reached a
+      // terminal state (stopped/done/error) the first one stands; a later
+      // error does not overwrite a prior abort, and vice versa.
+      if (state.status === "running") {
+        return {
+          ...state,
+          status: "error",
+          error: agentErrorMessage(part.error),
+        };
+      }
+      return state;
     }
 
     default:
@@ -367,7 +383,27 @@ function patchTool(
       return { ...state, entries };
     }
   }
+  // Orphaned tool-result / tool-error: no matching tool-call entry. Without a
+  // matching call this would be silently dropped — and any tool chip that DID
+  // open under this id would otherwise be stuck on "running" forever. This can
+  // happen if a result arrives for a call we never recorded (out-of-order /
+  // dropped tool-call part). Warn loudly so it is observable; the run state is
+  // left unchanged (there is no chip to attach the result to).
+  warnOrphanedToolResult(toolCallId);
   return state;
+}
+
+/**
+ * Surface an orphaned tool-result (a `tool-result`/`tool-error` whose
+ * `toolCallId` matches no recorded `tool-call`). Extracted so tests can spy on
+ * it and so the warning is centralized.
+ */
+function warnOrphanedToolResult(toolCallId: string): void {
+  if (typeof console !== "undefined" && typeof console.warn === "function") {
+    console.warn(
+      `[agentLoop] tool-result/tool-error for unknown toolCallId "${toolCallId}" — no matching tool-call; dropping.`
+    );
+  }
 }
 
 // --- The async driver -------------------------------------------------------

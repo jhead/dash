@@ -2917,15 +2917,19 @@ export function Shell(): React.ReactElement {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Agent MCP bridge (DEV / VITE_FLASH_TEST=1 only)
+  // Agent command callbacks — wired in ALL environments.
+  //
+  // These callbacks back BOTH the in-browser Agent Chat panel (a real user
+  // feature, see docs/32-agent-chat.md — its tools call dispatchAgentCommand →
+  // requireCallbacks) AND the external MCP/WebSocket bridge. Previously this was
+  // test-gated together with the WebSocket bridge below, so a production build
+  // never wired the callbacks: every chat tool call threw "Editor not ready:
+  // agent callbacks not wired" via requireCallbacks(). The WebSocket transport
+  // (startAgentBridge, further down) is the genuinely test/dev-only bit and
+  // stays gated; the callbacks themselves must be live whenever the app runs.
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const metaEnv = (import.meta as any).env as Record<string, unknown> | undefined;
-    const isTestEnv = metaEnv?.["DEV"] === true || metaEnv?.["VITE_FLASH_TEST"] === "1";
-    if (!isTestEnv) return;
-
     setAgentCallbacks({
       // Readers
       // Read the live document straight from the store so agent commands issued

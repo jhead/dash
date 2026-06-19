@@ -50,8 +50,11 @@ export function createDashOpenRouter(
     fetch?: typeof fetch;
   } = {}
 ): OpenRouterProvider {
+  // Trim here so call sites needn't: a stray leading/trailing space (common
+  // when pasting a key) would otherwise produce a confusing 401 from OpenRouter.
+  const key = apiKey.trim();
   return createOpenRouter({
-    apiKey,
+    apiKey: key,
     headers: {
       "HTTP-Referer": options.referer ?? DASH_AGENT_REFERER,
       "X-Title": options.title ?? DASH_AGENT_TITLE,
