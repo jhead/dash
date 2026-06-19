@@ -52,6 +52,24 @@ select,
   -webkit-touch-callout: default;
 }
 
+/*
+ * Rendered message text in the Agent Chat transcript (task 1285) is plain
+ * non-input markup (div/span/pre), so the body-level `user-select:none` from
+ * task 1276 over-applied and made assistant responses, user messages,
+ * reasoning, and tool args/results impossible to select or copy. Opt the whole
+ * transcript region — and every descendant message body it contains — back into
+ * selectable text, matching the editable allowlist above. Scoped to the
+ * transcript container (data-testid=agent-transcript) so the surrounding chat
+ * chrome (settings toggle, send/stop buttons, header) stays non-selectable and
+ * the 1276 mobile fix holds everywhere else.
+ */
+[data-testid="agent-transcript"],
+[data-testid="agent-transcript"] * {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
 .app-shell {
   display: flex;
   flex-direction: column;

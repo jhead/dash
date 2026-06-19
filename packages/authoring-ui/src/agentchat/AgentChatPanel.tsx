@@ -602,6 +602,14 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: 8,
+    // task 1285: rendered chat message text (assistant/user bodies, reasoning,
+    // tool args/results) is plain non-input markup, so it inherited the global
+    // body `user-select:none` from task 1276 and could not be selected/copied.
+    // Opt the transcript region (and its descendant message bubbles) back into
+    // selectable text; styles.css mirrors this for the -webkit- variants. The
+    // surrounding chat chrome stays non-selectable (1276 mobile fix intact).
+    userSelect: "text",
+    WebkitUserSelect: "text",
   },
   empty: {
     color: halo.disabledText,
