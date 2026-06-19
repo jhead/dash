@@ -1,0 +1,10 @@
+{
+  "id": "1256-1do31s-flash8-re-theme-polish-p1-convert-residual-dark-",
+  "title": "Flash8 re-theme polish P1: convert residual dark shell strips (StatusBar, Shell zoom/scenes strip, SceneSwitcher, Rulers)",
+  "description": "Visual audit found these always-visible strips still DARK (illegible) after the re-theme. Convert to light Flash 8 via packages/authoring-ui/src/theme/flash8Theme.ts, mirroring the converted Shell/Timeline. Files: (1) packages/authoring-ui/src/StatusBar.tsx (~23-42: #2d2d2d bg, #1a1a1a border, #888/#555 text) \u2192 chrome.panelBg/insetFieldStrip bg, chrome.separator border, chrome.textDefault/textDisabled, chromeFont(). (2) packages/authoring-ui/src/Shell.tsx ZOOM/SCENES control strip only (~3290-3360: #2a2a2a bg, #3a3a3a/#333 buttons, #ccc/#ddd text, active #1a6ea8) \u2192 insetFieldStrip bg, buttonStyle() buttons, halo.haloBlue active, inputStyle() zoom select. DO NOT disturb the already-converted Shell styles object. (3) packages/authoring-ui/src/SceneSwitcher.tsx (#2a2a2a/#333, active #1a6ea8, borders #1a1a1a) \u2192 panelBg + halo accents. (4) packages/authoring-ui/src/Rulers.tsx (~325: #3c3c3c bg, #00aaff guide) \u2192 chrome.insetFieldStrip bg + content.guide. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: those 4 files (+ read-only theme import).",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-19T06:23:04Z",
+  "updated_at": "2026-06-19T06:23:04Z"
+}
