@@ -6,6 +6,7 @@
  */
 
 import React, { useState } from "react";
+import { chrome, titleBarStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -29,18 +30,20 @@ export function PanelGroup({
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   return (
-    <div style={{ borderBottom: "1px solid #333", flexShrink: 0 }}>
+    <div
+      style={{
+        borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
+        flexShrink: 0,
+      }}
+    >
       <div
         style={{
-          background: "#3a3a3a",
-          padding: "3px 8px",
+          // Flash 8 panel header: light-gray gradient + gripper dots, Tahoma 11px,
+          // near-black text (titleBarStyle supplies chromeFont + the header gradient).
+          ...titleBarStyle(),
           cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
           gap: 6,
           userSelect: "none",
-          fontSize: 11,
-          color: "#ddd",
         }}
         onClick={() => setCollapsed((c) => !c)}
       >

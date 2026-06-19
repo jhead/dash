@@ -2,9 +2,9 @@
   "id": "1258-2j6n1c-flash8-re-theme-polish-convert-missed-container-",
   "title": "Flash8 re-theme polish: convert missed container chrome (PanelGroup + ShellOverlays)",
   "description": "Final residual-dark cleanup after the Flash 8 re-theme. PanelGroup.tsx (the panel docking/group container \u2014 not a *Panel.tsx so it was missed by every batch) still has dark chrome (e.g. line ~35 #3a3a3a). Convert packages/authoring-ui/src/PanelGroup.tsx to light Flash 8 via packages/authoring-ui/src/theme/flash8Theme.ts (chrome.*/halo.* + titleBarStyle/chromeFont as appropriate), mirroring Shell.tsx \u2014 panel group borders/headers/bg to light chrome. ALSO check packages/authoring-ui/src/ShellOverlays.tsx and convert any dark chrome there too. DO NOT change genuine content colors: leave SwatchesPanel.tsx:23 (#333333 palette swatch data) and StageArea.tsx canvas pen/lasso line colors (#333333 \u2014 they read correctly on the white stage). After your change, packages/authoring-ui/src/PanelGroup.tsx:35:#3a3a3a should show only intentional content colors. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: PanelGroup.tsx + ShellOverlays.tsx (+ read-only theme import).",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-19T06:31:44Z",
-  "updated_at": "2026-06-19T06:31:44Z"
+  "updated_at": "2026-06-19T06:34:19Z"
 }
