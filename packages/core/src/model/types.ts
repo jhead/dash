@@ -588,6 +588,22 @@ export interface FlaSwfBlob {
   readonly sceneIndex?: number;
 }
 
+/**
+ * A single ActionScript 2.0 source file attached to the document.
+ *
+ * `path` is classpath-RELATIVE and uses forward slashes, mirroring the AS2
+ * package convention (e.g. `com/example/Foo.as` for class `com.example.Foo`).
+ * It is the key under which the file is stored in the dash `.fla` zip
+ * (`classes/<path>`) and is used to resolve `import`/class-name references at
+ * compile time (a later phase).
+ */
+export interface AsClassFile {
+  /** Classpath-relative path with forward slashes, e.g. `com/example/Foo.as`. */
+  readonly path: string;
+  /** Full UTF-8 source text of the `.as` file. */
+  readonly source: string;
+}
+
 export interface FlashDocument {
   readonly id: string;
   readonly properties: DocumentProperties;
@@ -609,4 +625,20 @@ export interface FlashDocument {
    * When enabled the SWF includes EnableAccessibility flag metadata.
    */
   readonly accessibility?: DocumentAccessibility;
+  /**
+   * AS2 class source files attached to the document. Each `path` is
+   * classpath-relative (e.g. `com/example/Foo.as`). Optional — absent on
+   * documents that have no external AS2 classes (the common case), so existing
+   * fixtures, the binary FLA writer, and round-trip tests are unaffected.
+   * Persisted in the dash `.fla` zip both as `classes/<path>` entries
+   * (authoritative on load) and inline in `document.json`.
+   */
+  readonly asClasses?: readonly AsClassFile[];
+  /**
+   * AS2 classpaths (search roots for resolving class files), in priority order.
+   * Mirrors Flash 8's "ActionScript Settings > Classpath". Defaults to `['.']`
+   * (the document-relative root) when absent. Optional for the same
+   * backward-compatibility reasons as `asClasses`.
+   */
+  readonly classpaths?: readonly string[];
 }

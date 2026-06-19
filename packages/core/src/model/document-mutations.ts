@@ -1,4 +1,4 @@
-import type { FlashDocument, Scene, DocumentProperties, GridSettings, Guide, RulerUnits } from "./types.js";
+import type { FlashDocument, Scene, DocumentProperties, GridSettings, Guide, RulerUnits, AsClassFile } from "./types.js";
 import { createScene } from "./scene.js";
 
 // ---------------------------------------------------------------------------
@@ -209,4 +209,49 @@ export function moveGuide(doc: FlashDocument, guideId: string, position: number)
       ),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// AS2 class files
+// ---------------------------------------------------------------------------
+
+/**
+ * Add an AS2 class source file to the document.
+ *
+ * `path` is classpath-relative (e.g. `com/example/Foo.as`). If a class with the
+ * same `path` already exists, its source is REPLACED (paths are unique keys), so
+ * this is also a safe upsert. Returns a new document (immutable; history-safe).
+ */
+export function addAsClass(doc: FlashDocument, file: AsClassFile): FlashDocument {
+  const existing = doc.asClasses ?? [];
+  const idx = existing.findIndex((c) => c.path === file.path);
+  const next =
+    idx === -1
+      ? [...existing, file]
+      : existing.map((c, i) => (i === idx ? file : c));
+  return { ...doc, asClasses: next };
+}
+
+/**
+ * Update the source of an existing AS2 class file (matched by `path`).
+ * No-op (returns the same document) if no class with that path exists.
+ */
+export function updateAsClass(doc: FlashDocument, path: string, source: string): FlashDocument {
+  const existing = doc.asClasses ?? [];
+  const idx = existing.findIndex((c) => c.path === path);
+  if (idx === -1) return doc;
+  return {
+    ...doc,
+    asClasses: existing.map((c, i) => (i === idx ? { ...c, source } : c)),
+  };
+}
+
+/**
+ * Remove an AS2 class file by `path`. No-op if not found.
+ */
+export function removeAsClass(doc: FlashDocument, path: string): FlashDocument {
+  const existing = doc.asClasses ?? [];
+  const filtered = existing.filter((c) => c.path !== path);
+  if (filtered.length === existing.length) return doc;
+  return { ...doc, asClasses: filtered };
 }

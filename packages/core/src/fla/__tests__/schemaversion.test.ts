@@ -12,11 +12,11 @@ describe("FLA schema version", () => {
     vi.restoreAllMocks();
   });
 
-  it("serializeDocument produces JSON containing schemaVersion:1", () => {
+  it("serializeDocument produces JSON containing the current schemaVersion", () => {
     const doc = createDocument();
     const json = serializeDocument(doc);
     const parsed = JSON.parse(json) as Record<string, unknown>;
-    expect(parsed["schemaVersion"]).toBe(1);
+    expect(parsed["schemaVersion"]).toBe(2);
   });
 
   it("deserializeDocument round-trips a serialized document successfully", () => {

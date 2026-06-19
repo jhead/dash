@@ -17,6 +17,12 @@ export function saveRealFla(doc: FlashDocument): Uint8Array {
 
 const ENTRY_NAME = "document.json";
 
+/** Zip-entry prefix under which AS2 class source files are stored. */
+const CLASSES_PREFIX = "classes/";
+
+/** Default AS2 classpath when a document carries none. */
+const DEFAULT_CLASSPATHS: readonly string[] = ["."];
+
 /** Map from MIME type to file extension (used when saving). */
 const MIME_TO_EXT: Record<string, string> = {
   "image/png": ".png",
@@ -119,6 +125,16 @@ export function saveFla(doc: FlashDocument): Uint8Array {
     },
   };
 
+  // Write each AS2 class as its own `classes/<path>` zip entry. The source
+  // also stays inline in document.json (see serializeDocument): the zip entries
+  // are the authoritative copy on load, the inline copy is the fallback. When a
+  // document has no classes, no `classes/` entries are written and asClasses /
+  // classpaths are absent from document.json, so the archive is byte-identical
+  // to the pre-AS2 format.
+  for (const cls of strippedDoc.asClasses ?? []) {
+    files[`${CLASSES_PREFIX}${cls.path}`] = [strToU8(cls.source), { level: 6 }];
+  }
+
   const json = serializeDocument(strippedDoc);
   files[ENTRY_NAME] = strToU8(json);
 
@@ -188,11 +204,41 @@ export function loadFla(bytes: Uint8Array): FlashDocument {
     return item;
   });
 
+  // Reconcile AS2 classes. The `classes/<path>` zip entries are authoritative
+  // (they are the user-editable on-disk copy); fall back to the inline
+  // `asClasses` from document.json when no zip entries are present (e.g. a doc
+  // serialized by a path that did not split out the entries). Default
+  // classpaths to ['.'] when absent. Leave asClasses/classpaths UNSET when the
+  // document has neither, so non-AS2 docs round-trip unchanged.
+  const zipClasses = Object.keys(entries)
+    .filter((k) => k.startsWith(CLASSES_PREFIX) && k.length > CLASSES_PREFIX.length)
+    .sort()
+    .map((k) => ({
+      path: k.slice(CLASSES_PREFIX.length),
+      source: strFromU8(entries[k]),
+    }));
+
+  const asClasses =
+    zipClasses.length > 0
+      ? zipClasses
+      : doc.asClasses && doc.asClasses.length > 0
+        ? doc.asClasses
+        : undefined;
+
+  const classpaths =
+    asClasses !== undefined
+      ? doc.classpaths && doc.classpaths.length > 0
+        ? doc.classpaths
+        : DEFAULT_CLASSPATHS
+      : doc.classpaths;
+
   return {
     ...doc,
     library: {
       ...doc.library,
       items: restoredItems,
     },
+    ...(asClasses !== undefined ? { asClasses } : {}),
+    ...(classpaths !== undefined ? { classpaths } : {}),
   };
 }

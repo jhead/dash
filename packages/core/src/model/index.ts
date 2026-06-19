@@ -1,5 +1,6 @@
 // Types
 export type {
+  AsClassFile,
   AttachedBehavior,
   BitmapItem,
   ButtonAction,
@@ -112,6 +113,9 @@ export {
   addGuide,
   removeGuide,
   moveGuide,
+  addAsClass,
+  updateAsClass,
+  removeAsClass,
 } from "./document-mutations.js";
 
 // Frame span and keyframe query helpers (pure, no mutations)

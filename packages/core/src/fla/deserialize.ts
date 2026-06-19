@@ -7,7 +7,7 @@ interface FlaPayload {
   document: FlashDocument;
 }
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 /**
  * Deserialize a FlashDocument from a JSON string produced by `serializeDocument`.
