@@ -163,6 +163,15 @@ const componentItem = {
   componentName: 'Button', packageName: 'mx.controls',
 };
 
+/** A component instance carrying authored componentParameters (task 1232, Part 2.2). */
+function componentInstanceWithParams(name: string, params: Record<string, string>) {
+  return {
+    type: 'instance', id: 'inst-button', symbolId: 'comp-button',
+    x: 225, y: 30, scaleX: 1, scaleY: 1, rotation: 0, instanceName: name,
+    componentParameters: params,
+  };
+}
+
 function componentInstance(name: string) {
   return {
     type: 'instance', id: 'inst-button', symbolId: 'comp-button',
@@ -241,6 +250,63 @@ _root.onEnterFrame = function() {
       ] },
     }],
     library: withComponent ? { items: [componentItem], folders: [] } : { items: [], folders: [] },
+  };
+}
+
+/** The author's NON-DEFAULT label, distinct from the catalog default "Button". */
+const AUTHOR_LABEL = 'PLAY NOW';
+
+/**
+ * A 2-frame doc whose frame-0 root script advances RED→BLUE ONLY when the LIVE
+ * component instance reports the AUTHOR'S label (not the catalog default). This is
+ * the Part-2.2 acceptance oracle: the per-instance param DoAction must have reached
+ * the registerClass-bound runtime instance and applied `setComponentParam("label",
+ * "PLAY NOW")` (which mirrors into both `this.label` and `label_txt.text`).
+ *
+ * The poll checks `getLabel() == AUTHOR_LABEL` — a default-labelled instance ("Button")
+ * can never satisfy it, so a blue end-state proves the author param was delivered live.
+ */
+function makeParamDoc() {
+  const bgLayerFrames = [
+    frame({
+      index: 0,
+      script: `stop();
+_root.onEnterFrame = function() {
+  var inst = _root.myButton;
+  if (inst != undefined && inst.getLabel() == "${AUTHOR_LABEL}") {
+    _root.gotoAndStop(2);
+    delete _root.onEnterFrame;
+  }
+};`,
+      displayObjects: [centeredRect('bg-red', 255, 0, 0)],
+    }),
+    frame({ index: 1, script: 'stop();', displayObjects: [centeredRect('bg-blue', 0, 0, 255)] }),
+  ];
+
+  const inst = componentInstanceWithParams('myButton', { label: AUTHOR_LABEL });
+  const compLayerFrames = [
+    frame({ index: 0, displayObjects: [inst] }),
+    frame({ index: 1, displayObjects: [inst] }),
+  ];
+
+  return {
+    id: 'comp-param-doc', properties: BASE_PROPS,
+    scenes: [{
+      id: 'scene-1', name: 'Scene 1',
+      timeline: { layers: [
+        {
+          id: 'comp-layer', name: 'Component', type: 'normal', visible: true, locked: false,
+          outlineMode: false, outlineColor: '#00ff00', height: 20, parentFolderId: null,
+          frameCount: 2, frames: compLayerFrames,
+        },
+        {
+          id: 'bg-layer', name: 'Background', type: 'normal', visible: true, locked: false,
+          outlineMode: false, outlineColor: '#0000ff', height: 20, parentFolderId: null,
+          frameCount: 2, frames: bgLayerFrames,
+        },
+      ] },
+    }],
+    library: { items: [componentItem], folders: [] },
   };
 }
 
@@ -336,5 +402,41 @@ test.describe('v2 component runtime oracle (task 1231, Part 2.1)', () => {
     // No component → instanceof never true → background stays RED, never blue.
     expect(afterC.red, 'no-component control must stay red').toBeGreaterThan(500);
     expect(afterC.blue, 'no-component control must NOT advance to blue').toBeLessThan(200);
+  });
+});
+
+test.describe('v2 component LIVE parameter delivery (task 1232, Part 2.2)', () => {
+  test.skip(!!process.env.CI, 'Ruffle WASM infra not set up in CI yet');
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('canvas', { timeout: 15000 });
+    const ready = await page.evaluate(
+      () => typeof (window as unknown as { __flashTest?: unknown }).__flashTest !== 'undefined'
+    );
+    expect(ready).toBe(true);
+  });
+
+  test("the author's NON-DEFAULT label reaches the LIVE instance: getLabel()==author advances RED→BLUE", async ({ page }, testInfo: TestInfo) => {
+    const swf = await publish(page, makeParamDoc());
+    await ensureRuffleLoaded(page);
+    const id = '__ruffle_comp_param__';
+    await injectRufflePlayer(page, swf, id);
+
+    // The onEnterFrame poll advances once the live instance reports the AUTHOR's
+    // label (not the catalog default). Give the param DoAction a few ticks to run.
+    await page.waitForTimeout(2500);
+    await hideRuffleOverlays(page, id);
+    const after = await page.locator(`#${id}`).screenshot();
+    await testInfo.attach('param-after', { body: after, contentType: 'image/png' });
+    const afterC = colorCounts(after);
+    await removeRufflePlayer(page, id);
+
+    console.log(`[1232] param after red=${afterC.red} blue=${afterC.blue}`);
+    // setComponentParam("label","PLAY NOW") applied to the live instance → getLabel()
+    // returns the author's value → onEnterFrame advanced RED→BLUE. A default-labelled
+    // ("Button") instance can never satisfy the poll, so blue == author param delivered.
+    expect(afterC.blue, 'frame must advance to blue once the author label is delivered live').toBeGreaterThan(500);
+    expect(afterC.red, 'red must be gone after the advance').toBeLessThan(200);
   });
 });

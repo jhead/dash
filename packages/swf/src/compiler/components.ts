@@ -28,19 +28,32 @@
  *      The shape + edit-text are hoisted to top level (definition tags may not live
  *      inside a sprite) and placed via PlaceObject2 inside the sprite body.
  *
- *   3. The author's label text statically seeded into the EditText at compile time
- *      (live param-passing is a follow-on). The class `setLabel()` method also
- *      updates `label_txt.text` at runtime.
+ *   3. The author's label text statically seeded into the EditText at compile time.
+ *      The class `setLabel()` / `setText()` methods also update `label_txt.text` at
+ *      runtime.
  *
  *   4. The ExportAssets entry + registerClass DoInitAction from Part 1 (unchanged).
+ *
+ * PART 2.2 (task 1232) delivers the author's full `componentParameters` to the LIVE
+ * runtime instance, GENERICALLY (not hardcoded to Button.label). The skin sprite now
+ * carries a class method `setComponentParam(name, value)`; for each placed component
+ * instance the frame loop (compiler/frames.ts) emits a per-instance DoAction that,
+ * for every parameter the author changed from its catalog default, calls
+ * `_root.<instanceName>.setComponentParam(name, value)`. Values are typed from the
+ * component catalog (packages/core/src/model/components.ts): number/boolean literals
+ * vs quoted strings. This generalizes over the whole catalog parameter set, so future
+ * controls (CheckBox/List/...) get author params for free. See
+ * `buildComponentParamScript()` below.
  *
  * EXPLICITLY OUT OF SCOPE (later waves): the full `mx.controls.*` AS2 framework,
  * Halo skins, and other controls (CheckBox / List / ComboBox / ...).
  */
 import type {
   Color,
+  ComponentDef,
   ComponentItem,
   ComponentLinkage,
+  ComponentParamDef,
   DisplayObject,
   FlashDocument,
   PathSegment,
@@ -48,7 +61,7 @@ import type {
   SymbolInstance,
   TextDisplayObject,
 } from "@flash/core";
-import { compileAS2 } from "@flash/core";
+import { compileAS2, getComponentDef } from "@flash/core";
 import { BitWriter } from "../bits.js";
 import { Tag } from "../tags.js";
 import { SwfWriter } from "../writer.js";
@@ -112,10 +125,81 @@ export function componentLinkageIdentifier(item: ComponentItem): string {
   return item.linkage?.linkageIdentifier || componentClassName(item);
 }
 
+/** Resolve the built-in catalog definition for a placed component (by class/display name). */
+export function componentDefFor(item: ComponentItem): ComponentDef | undefined {
+  return (
+    getComponentDef(item.componentName?.trim() || "") ??
+    getComponentDef(item.name?.trim() || "")
+  );
+}
+
 /** The label text statically seeded into the skin's EditText (defaults to the item name). */
 export function componentLabel(item: ComponentItem): string {
   const cls = item.componentName?.trim() || item.name;
   return cls || "Button";
+}
+
+// ---------------------------------------------------------------------------
+// Live parameter delivery (task 1232, Part 2.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Render one parameter value as an AS2 literal, typed from the catalog definition:
+ *   - number  → bare numeric literal (NaN-guarded; falls back to a quoted string)
+ *   - boolean → `true` / `false`
+ *   - string / list / array → a quoted, escaped string literal
+ *
+ * `array` parameters (ComboBox/List data & labels, DateChooser dayNames) are stored
+ * as a comma-joined string in the model; we deliver them verbatim as a string and
+ * leave parsing to the (future) control implementation — the generic mechanism only
+ * guarantees the AUTHOR'S value reaches `_root.<name>.<param>`.
+ */
+function paramValueLiteral(value: string, type: ComponentParamDef["type"]): string {
+  if (type === "number") {
+    const n = Number(value);
+    return Number.isFinite(n) ? String(n) : JSON.stringify(value);
+  }
+  if (type === "boolean") {
+    return value === "true" ? "true" : "false";
+  }
+  // string | list | array → quoted/escaped literal.
+  return JSON.stringify(value);
+}
+
+/**
+ * Build the AS2 source that delivers a placed instance's authored
+ * `componentParameters` onto the live (registerClass-bound) runtime instance at
+ * `_root.<instanceName>`. GENERIC over the catalog's parameter set — every
+ * parameter the author changed from its catalog default is assigned via the
+ * class's `setComponentParam(name, value)` shim (which also mirrors label/text
+ * into the skin's `label_txt`). Returns "" when there is nothing to deliver
+ * (no catalog def, no params, or all params at their default).
+ *
+ * Only NON-DEFAULT params are emitted: the constructor already seeds defaults
+ * (and label/text are statically pre-seeded into the EditText), so re-asserting
+ * a default would be wasted bytecode. Targeting via `_root.<name>` requires the
+ * placement to carry the instance name (the frame loop guarantees this for placed
+ * components — see compiler/frames.ts).
+ */
+export function buildComponentParamScript(
+  item: ComponentItem,
+  componentParameters: Record<string, string> | undefined,
+  instanceName: string,
+): string {
+  if (!componentParameters || !instanceName) return "";
+  const def = componentDefFor(item);
+  if (!def) return "";
+
+  const lines: string[] = [];
+  // Iterate the CATALOG parameter order (deterministic output), not the model map.
+  for (const p of def.parameters) {
+    const authored = componentParameters[p.name];
+    if (authored === undefined) continue;
+    if (authored === p.defaultValue) continue; // unchanged — constructor already seeded it
+    const literal = paramValueLiteral(authored, p.type);
+    lines.push(`_root.${instanceName}.setComponentParam(${JSON.stringify(p.name)}, ${literal});`);
+  }
+  return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +259,18 @@ ${fqn}.prototype.setLabel = function(s) {
 };
 ${fqn}.prototype.getLabel = function() {
   return this.label;
+};
+${fqn}.prototype.setText = function(s) {
+  this.text = s;
+  if (this.label_txt != undefined) {
+    this.label_txt.text = s;
+  }
+};
+${fqn}.prototype.setComponentParam = function(name, value) {
+  this[name] = value;
+  if ((name == "label" || name == "text") && this.label_txt != undefined) {
+    this.label_txt.text = value;
+  }
 };
 ${fqn}.prototype.onLoad = function() {
   if (this.label_txt != undefined) {

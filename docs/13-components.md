@@ -185,4 +185,54 @@ registerClass `DoInitAction`; the skin `DefineSprite` places a hoisted `DefineSh
 `DefineEditText`; the seeded label appears in the EditText InitialText.
 
 **Still OUT OF SCOPE (later waves):** the full `mx.controls.*` AS2 framework, Halo skins,
-live parameter passing, and other controls (CheckBox / List / ComboBox / …).
+and other controls (CheckBox / List / ComboBox / …).
+
+## Live parameter passing (task 1232, Part 2.2)
+
+Part 2.1 only *statically* seeded the EditText with a label derived from the component's
+class/display name. The author's actual **per-instance** `componentParameters` (the
+Component Inspector Parameters tab, task 1222, stored on the `SymbolInstance` model) did
+not reach the runtime instance. Part 2.2 delivers them **live and GENERICALLY** — over the
+whole catalog parameter set, not hardcoded to `Button.label`.
+
+How it works:
+
+1. **A generic setter on the authored class.** Every component skin's self-authored AS2
+   class now carries `setComponentParam(name, value)` (in addition to `setLabel` /
+   `setText`). It assigns `this[name] = value` and, for the `label`/`text` params, mirrors
+   the value into the skin's `label_txt.text` so the visible caption updates. See
+   `authorComponentClassBytecode` in `packages/swf/src/compiler/components.ts`.
+
+2. **A per-instance param DoAction.** For each *placed* component instance, the frame loop
+   (`compiler/frames.ts`) emits a `DoAction` **after** the instance's `PlaceObject2` on the
+   same frame. `buildComponentParamScript(item, componentParameters, instanceName)` walks
+   the **catalog** definition (`BUILTIN_COMPONENTS` / `getComponentDef`) and, for every
+   parameter the author changed **from its catalog default**, emits
+   `_root.<instanceName>.setComponentParam(name, value)`. Defaults are skipped (the
+   constructor already seeds them). Values are typed from the catalog: `number`/`boolean`
+   become bare literals, `string`/`list`/`array` become quoted strings.
+
+3. **Instance naming.** Targeting `_root.<name>` requires the placement to carry an
+   instance name. Placed components often have none authored, so the frame loop synthesizes
+   a stable, unique fallback name (`__cmp_<scene>_<depth>`); an authored name always wins.
+
+Because the mechanism is driven entirely by the catalog parameter definitions, future
+controls (CheckBox / List / ComboBox / …) get author-param delivery for free once they ship
+a skin + class — no per-control encoder code.
+
+**Verification.** `packages/swf/src/__tests__/component-place.test.ts` ("live component
+parameter delivery") decodes our own SWF and asserts the per-instance `setComponentParam`
+DoAction carries the author's non-default param name+value (and is *absent* when all params
+are at their defaults; and that an unnamed component still gets a synthesized addressable
+name). The Ruffle acceptance oracle
+`apps/desktop/e2e/component-oracle.spec.ts` ("v2 component LIVE parameter delivery")
+publishes a Button with a **non-default** label and advances the stage RED→BLUE only when a
+root `onEnterFrame` observes `_root.myButton.getLabel() == "<author value>"` — runtime proof
+the author's param reached the live registerClass-bound instance (a default-labelled
+instance can never satisfy the poll).
+
+**Still OUT OF SCOPE (later waves):** the full `mx.controls.*` AS2 framework, Halo skins,
+and the actual behaviours of params beyond `label`/`text` (e.g. `toggle`/`selected` visual
+state, `data`/`labels` list population) — Part 2.2 guarantees the author's value *reaches*
+`_root.<name>.<param>`; wiring each param into real control behaviour is per-control work,
+gated on demand. Other controls (CheckBox / List / ComboBox / …) likewise await their skins.

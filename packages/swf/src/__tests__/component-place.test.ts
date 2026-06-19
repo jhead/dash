@@ -204,6 +204,81 @@ function pushedStrings(body: Uint8Array): string[] {
   return strings;
 }
 
+const TAG_DO_ACTION = 12;
+
+/**
+ * Decode the ActionPush(string) operands of a DoAction body (pure AVM1 bytecode,
+ * NO leading SpriteID — unlike DoInitAction). Used to prove the per-instance
+ * component-param DoAction pushes the param name + value as it calls
+ * setComponentParam(name, value).
+ */
+function doActionPushedStrings(body: Uint8Array): string[] {
+  const strings: string[] = [];
+  // The AS2 compiler hoists repeated string literals into an ActionConstantPool
+  // (0x88) and ActionPush references them by constant8/16 INDEX, so we resolve
+  // both inline string pushes AND constant-pool references.
+  let constantPool: string[] = [];
+  let pos = 0;
+  while (pos < body.length) {
+    const op = body[pos];
+    if (op === 0x00) break; // ActionEnd
+    if (op < 0x80) {
+      pos += 1;
+      continue;
+    }
+    const len = body[pos + 1] | (body[pos + 2] << 8);
+    if (op === 0x88 /* ActionConstantPool */) {
+      const cp: string[] = [];
+      let p = pos + 3;
+      const count = body[p] | (body[p + 1] << 8);
+      p += 2;
+      for (let i = 0; i < count; i++) {
+        let s = p;
+        while (s < body.length && body[s] !== 0) s++;
+        cp.push(new TextDecoder().decode(body.slice(p, s)));
+        p = s + 1;
+      }
+      constantPool = cp;
+    } else if (op === 0x96 /* ActionPush */) {
+      // ActionPush operand is a sequence of typed values; walk them.
+      let p = pos + 3;
+      const end = pos + 3 + len;
+      while (p < end) {
+        const valType = body[p++];
+        if (valType === 0x00 /* string */) {
+          let s = p;
+          while (s < end && body[s] !== 0) s++;
+          strings.push(new TextDecoder().decode(body.slice(p, s)));
+          p = s + 1;
+        } else if (valType === 0x01 /* float */) {
+          p += 4;
+        } else if (valType === 0x02 || valType === 0x03 /* null/undefined */) {
+          // no operand
+        } else if (valType === 0x04 /* register */) {
+          p += 1;
+        } else if (valType === 0x05 /* boolean */) {
+          p += 1;
+        } else if (valType === 0x06 /* double */) {
+          p += 8;
+        } else if (valType === 0x07 /* integer */) {
+          p += 4;
+        } else if (valType === 0x08 /* constant8 */) {
+          const idx = body[p++];
+          if (idx < constantPool.length) strings.push(constantPool[idx]);
+        } else if (valType === 0x09 /* constant16 */) {
+          const idx = body[p] | (body[p + 1] << 8);
+          p += 2;
+          if (idx < constantPool.length) strings.push(constantPool[idx]);
+        } else {
+          break;
+        }
+      }
+    }
+    pos += 3 + len;
+  }
+  return strings;
+}
+
 // ---------------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------------
@@ -510,5 +585,139 @@ describe("functional self-authored component class + skin (task 1231, Part 2.1)"
     const editTextTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
     const decoded = editTextTags.map((t) => new TextDecoder().decode(t.body));
     expect(decoded.some((s) => s.includes("Submit"))).toBe(true);
+  });
+});
+
+describe("live component parameter delivery (task 1232, Part 2.2)", () => {
+  /** A component instance carrying explicit componentParameters. */
+  function makeParamInstance(
+    symbolId: string,
+    componentParameters: Record<string, string>,
+    name = "myButton"
+  ): SymbolInstance {
+    return {
+      type: "instance",
+      id: "inst-1",
+      symbolId,
+      x: 100,
+      y: 50,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      instanceName: name,
+      componentParameters,
+    } as SymbolInstance;
+  }
+
+  /** All DoAction (tag 12) bodies in document order. */
+  function doActions(tags: SWFTag[]): Uint8Array[] {
+    return tags.filter((t) => t.code === TAG_DO_ACTION).map((t) => t.body);
+  }
+
+  it("emits a per-instance DoAction delivering a NON-DEFAULT label to the runtime instance", () => {
+    const component = makeComponent(); // Button, default label "Button"
+    // Author a non-default label + a non-default boolean param.
+    const instance = makeParamInstance(component.id, {
+      label: "Play Now",
+      toggle: "true",
+      enabled: "true", // default → must NOT be emitted
+    });
+    const doc = makeDoc(component, instance);
+
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    // Find a DoAction whose pushed strings reference setComponentParam + the
+    // author's non-default value.
+    const paramAction = doActions(tags).find((b) =>
+      doActionPushedStrings(b).includes("setComponentParam")
+    );
+    expect(paramAction, "a per-instance setComponentParam DoAction must be emitted").toBeDefined();
+
+    const strings = doActionPushedStrings(paramAction!);
+    // Targets the instance via _root.<name>.
+    expect(strings).toContain("myButton");
+    expect(strings).toContain("setComponentParam");
+    // The non-default label param + its authored value reach the runtime.
+    expect(strings).toContain("label");
+    expect(strings).toContain("Play Now");
+    // The non-default toggle param name is delivered too.
+    expect(strings).toContain("toggle");
+    // A param left at its catalog default ("enabled" === "true") is NOT delivered.
+    expect(strings).not.toContain("enabled");
+  });
+
+  it("does NOT emit a param DoAction when all params are at their catalog defaults", () => {
+    const component = makeComponent();
+    // Every param at its default value → nothing to deliver.
+    const instance = makeParamInstance(component.id, {
+      label: "Button",
+      labelPlacement: "right",
+      selected: "false",
+      toggle: "false",
+      enabled: "true",
+      visible: "true",
+    });
+    const doc = makeDoc(component, instance);
+
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    const hasParamAction = doActions(tags).some((b) =>
+      doActionPushedStrings(b).includes("setComponentParam")
+    );
+    expect(hasParamAction).toBe(false);
+  });
+
+  it("synthesizes an instance name so an unnamed placed component is still addressable", () => {
+    const component = makeComponent();
+    // No instanceName authored, but a non-default param is set.
+    const instance = {
+      type: "instance",
+      id: "inst-unnamed",
+      symbolId: component.id,
+      x: 10,
+      y: 10,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      componentParameters: { label: "Anonymous" },
+    } as SymbolInstance;
+    const doc = makeDoc(component, instance);
+
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    const paramAction = doActions(tags).find((b) =>
+      doActionPushedStrings(b).includes("setComponentParam")
+    );
+    expect(paramAction, "param delivery must still occur for an unnamed component").toBeDefined();
+    const strings = doActionPushedStrings(paramAction!);
+    // The synthesized fallback name (prefix `__cmp_`) addresses the instance.
+    expect(strings.some((s) => s.startsWith("__cmp_"))).toBe(true);
+    expect(strings).toContain("Anonymous");
+  });
+
+  it("delivers a non-default 'text' param for a text-bearing control (Label)", () => {
+    // Generic over the catalog: Label's `text` param is delivered just like Button.label.
+    const component = makeComponent({
+      componentName: "Label",
+      name: "Label",
+      packageName: "mx.controls",
+    });
+    const instance = makeParamInstance(component.id, { text: "Hello World" }, "myLabel");
+    const doc = makeDoc(component, instance);
+
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    const paramAction = doActions(tags).find((b) =>
+      doActionPushedStrings(b).includes("setComponentParam")
+    );
+    expect(paramAction).toBeDefined();
+    const strings = doActionPushedStrings(paramAction!);
+    expect(strings).toContain("myLabel");
+    expect(strings).toContain("text");
+    expect(strings).toContain("Hello World");
   });
 });

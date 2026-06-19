@@ -45,6 +45,8 @@ import { encodeRemoveObject2 } from "./scripts.js";
 import { encodeExportAssets, encodeImportAssets2 } from "./symbols.js";
 import { computeStreamSounds } from "./sound-stream.js";
 import type { MorphSpanInfo } from "./characters.js";
+import { buildComponentParamScript } from "./components.js";
+import type { ComponentItem } from "@flash/core";
 
 /** Everything the frame loop reads, built by the earlier compiler pre-passes. */
 export interface FrameLoopContext {
@@ -81,6 +83,17 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
     morphShapeObjIds, morphObjSpanInfo, getOrAssignDepth, exportEntries,
     importsByUrl, doInitActionBodies,
   } = ctx;
+
+  // Placed v2-component lookup: symbolId → ComponentItem. A SymbolInstance whose
+  // symbolId resolves here is a placed component (task 1229+). Used to (a) ensure
+  // the placement carries an instance name (so AS2 can address it) and (b) emit a
+  // per-instance param-delivery DoAction (task 1232, Part 2.2 — live params).
+  const componentItemBySymbolId = new Map<string, ComponentItem>();
+  for (const item of doc.library.items) {
+    if (item.itemType === "component") {
+      componentItemBySymbolId.set(item.id, item as ComponentItem);
+    }
+  }
 
   /**
    * Serialize a ColorEffect, standalone alpha, and visible=false to a string key for change detection.
@@ -274,6 +287,13 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
         // Flash 8 uses the _accProps object on a MovieClip to expose accessibility info
         // to MSAA screen readers (equivalent to AS2 `mc._accProps.name = "..."` etc.).
         const accPropsActions: string[] = [];
+
+        // Collect per-instance v2-component parameter scripts (task 1232, Part 2.2).
+        // For each newly-placed component instance, this carries the AS2 that delivers
+        // the author's non-default componentParameters onto the live runtime instance
+        // (_root.<name>.setComponentParam(...)). Emitted as DoAction AFTER the placement
+        // (so the instance exists) but on the same frame.
+        const componentParamActions: string[] = [];
 
         // Collect _quality initialization script for scene 0 / frame 0.
         // Flash Player default is "HIGH"; only emit when explicitly set to something else.
@@ -735,6 +755,60 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
               }
             } else if (displayObj.type === "instance") {
               let charId = charIdMap.get(displayObj.symbolId);
+
+              // Placed v2-component instance (task 1232, Part 2.2): deliver the
+              // author's componentParameters to the live runtime instance.
+              //
+              // The component skin is a plain DefineSprite bound (via registerClass)
+              // to a self-authored AS2 class. To address it from AS2 (`_root.<name>`)
+              // the placement MUST carry an instance name; component placements often
+              // have none authored, so synthesize a stable, unique fallback name. The
+              // param DoAction (collected below) runs AFTER the placement on this frame.
+              const componentItem =
+                charId !== undefined ? componentItemBySymbolId.get(displayObj.symbolId) : undefined;
+              if (componentItem !== undefined && clipDepth === undefined) {
+                // Stable synthesized name: deterministic per (scene, depth) so re-emits
+                // across frames address the same instance. Authored names win.
+                const compName =
+                  displayObj.instanceName && displayObj.instanceName.length > 0
+                    ? displayObj.instanceName
+                    : `__cmp_${sceneIdx}_${depth}`;
+
+                // Carry any non-identity transform / color effect so the component
+                // renders with its authored scale/rotation/alpha (rare for components,
+                // but free to honour).
+                const compTransform =
+                  scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0
+                    ? { scaleX, scaleY, rotation, skewX, skewY }
+                    : undefined;
+                const compCXForm = displayObj.colorEffect
+                  ? colorEffectToCXForm(displayObj.colorEffect) ?? undefined
+                  : undefined;
+
+                if (compCXForm) {
+                  writer.writeTag(
+                    Tag.PlaceObject2,
+                    encodePlaceObject2WithCXForm(charId!, depth, x, y, compCXForm, compTransform, false, compName)
+                  );
+                } else {
+                  writer.writeTag(
+                    Tag.PlaceObject2,
+                    encodePlaceObject2WithName(charId!, depth, x, y, compName, compTransform)
+                  );
+                }
+
+                // Deliver the author's non-default params to the live instance.
+                const paramScript = buildComponentParamScript(
+                  componentItem,
+                  displayObj.componentParameters,
+                  compName
+                );
+                if (paramScript) componentParamActions.push(paramScript);
+
+                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey, filtersKey: thisFiltersKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+                continue;
+              }
+
               if (charId !== undefined) {
                 // Button instances with instance-level on() handlers need a
                 // unique DefineButton2 character (the handlers live in the tag,
@@ -1582,6 +1656,21 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
 
         // Emit DoAction for _accProps scripts (accessibility name/description/shortcut).
         for (const script of accPropsActions) {
+          const actionBytes = compileAS2(script);
+          if (actionBytes.length > 0) {
+            const doActionBody = new Uint8Array(actionBytes.length + 1);
+            doActionBody.set(actionBytes);
+            // doActionBody[actionBytes.length] is already 0x00 (EndAction)
+            writer.writeTag(Tag.DoAction, doActionBody);
+          }
+        }
+
+        // Emit DoAction for v2-component per-instance parameter delivery (task 1232).
+        // Each script calls _root.<name>.setComponentParam(...) for every author-
+        // changed component parameter, applying it to the live registerClass-bound
+        // runtime instance. Placed AFTER the component's PlaceObject2 (above) so the
+        // instance exists when the script runs on this frame.
+        for (const script of componentParamActions) {
           const actionBytes = compileAS2(script);
           if (actionBytes.length > 0) {
             const doActionBody = new Uint8Array(actionBytes.length + 1);
