@@ -1,0 +1,10 @@
+{
+  "id": "1288-5pamej-component-part-2-6-functional-numericstepper-pro",
+  "title": "Component Part 2.6: functional NumericStepper + ProgressBar (next standard controls)",
+  "description": "Continue the functional v2 component set on the registry-driven framework (Part 2.1-2.5: CONTROL_REGISTRY in packages/authoring-ui/src/compiler/components.ts \u2014 wait, it's packages/authoring-ui/src/agent? no: packages/swf/src/compiler/components.ts). Add two more COMMON, standard Flash 8 v2 components via the SAME registry (no per-control hand-coding): (1) mx.controls.NumericStepper \u2014 a value field + up/down stepper buttons; honors author min/max/stepSize/value params; up/down adjusts value within bounds; exposes getValue/setValue. (2) mx.controls.ProgressBar \u2014 a track + fill bar; honors author value/maximum (or indeterminate mode); setProgress/setValue updates the fill width. Reuse the existing class-emission (encodeRawDoInitAction / authorClassBody), skin builder (DefineShape4 + named children), registerClass, and setComponentParam plumbing established by Button/CheckBox/List etc. VERIFY GROUND TRUTH FIRST: confirm these are in the catalog (packages/core/src/model/components.ts) and NOT already implemented (grep done-tasks + the registry). VERIFY (no real-Flash fixture): structural unit tests (decode own SWF \u2014 each emits class DoInitAction + skin + registerClass + author params) AND a Ruffle oracle (apps/desktop/e2e/component-oracle.spec.ts) \u2014 NumericStepper up-button increments the value; ProgressBar fill reflects value. Build+authoring-ui/swf tests green (only ~3 task-1207 fixture failures acceptable). Update docs/13. STILL GATED (do NOT build): DataGrid/Tree/DateChooser/Accordion/Menu/ScrollPane/containers/data-binding (the complex/niche tier). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: components.ts (registry entries) + component-place.test.ts + component-oracle.spec.ts.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T19:38:02Z",
+  "updated_at": "2026-06-19T19:38:02Z"
+}
