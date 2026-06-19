@@ -5,8 +5,8 @@
  * CompileContext by the orchestrator; this module currently owns the standalone
  * bitmap-fill emission used by that pass.)
  */
-import type { BitmapFill, BitmapItem, FlashDocument, Shape } from "@flash/core";
-import { getTweenSpans } from "@flash/core";
+import type { BitmapFill, BitmapItem, FlashDocument, Shape, ShapeWarp } from "@flash/core";
+import { getTweenSpans, warpShape } from "@flash/core";
 import { Tag } from "../tags.js";
 import { SwfWriter } from "../writer.js";
 import { dataUriToBytes, encodeDefineBitsLossless2, encodeDefineBitsJpeg3, ensureJpegEOI } from "../bitmaps.js";
@@ -57,6 +57,50 @@ export function collectBitmapFillIds(shape: Shape): string[] {
     }
   }
   return Array.from(ids);
+}
+
+/**
+ * Bake a Free-Transform Distort/Envelope warp into a shape's geometry for SWF
+ * publishing.
+ *
+ * A PlaceObject2/3 matrix is affine and CANNOT carry a non-affine distort
+ * (perspective quad) or envelope (Coons/bezier mesh), so real Flash 8 bakes the
+ * warp into the actual DefineShape edge coordinates at publish time. We do the
+ * same here, reusing the SAME `warpShape` mesh-mapping the editor stage uses
+ * (`engine/warp.ts`), so the published SWF matches the stage exactly.
+ *
+ * `warpShape(shape, warp, x, y)` maps the shape's LOCAL points into ABSOLUTE
+ * stage space (the warp corners live in stage space). The stage renderer then
+ * draws that absolute geometry at (0,0). The SWF, however, encodes shape paths
+ * ORIGIN-RELATIVE and puts the placement offset (the object's x/y) in the
+ * PlaceObject2 tx/ty (the shape-origin-normalization rule). So we translate the
+ * warped absolute geometry back by (-x,-y): PlaceObject2's tx/ty=(x,y) then
+ * restores the absolute position, with the non-affine deformation already baked
+ * into the edges. Curves are already subdivided to chords by `warpShape`.
+ */
+export function bakeWarpIntoShape(
+  shape: Shape,
+  warp: ShapeWarp,
+  x: number,
+  y: number
+): Shape {
+  const warpedAbsolute = warpShape(shape, warp, x, y);
+  return {
+    ...warpedAbsolute,
+    paths: warpedAbsolute.paths.map((path) => ({
+      ...path,
+      start: { x: path.start.x - x, y: path.start.y - y },
+      segments: path.segments.map((seg) =>
+        seg.type === "line"
+          ? { ...seg, to: { x: seg.to.x - x, y: seg.to.y - y } }
+          : {
+              ...seg,
+              control: { x: seg.control.x - x, y: seg.control.y - y },
+              to: { x: seg.to.x - x, y: seg.to.y - y },
+            }
+      ),
+    })),
+  };
 }
 
 /**
@@ -203,12 +247,23 @@ export function runCharacterPass(input: CharacterPassInput): CharacterPassResult
             emitBitmapFillTags(startObj.shape, doc, writer, emittedBitmapFillCharIds, options);
             emitBitmapFillTags(endObj.shape, doc, writer, emittedBitmapFillCharIds, options);
 
+            // Bake any Distort/Envelope warp on the start/end keyframe shapes
+            // into their morph geometry (the affine PlaceObject matrix can't
+            // carry a non-affine warp; matches the editor stage). See
+            // bakeWarpIntoShape.
+            const startMorphShape = startObj.warp
+              ? bakeWarpIntoShape(startObj.shape, startObj.warp, startObj.x, startObj.y)
+              : startObj.shape;
+            const endMorphShape = endObj.warp
+              ? bakeWarpIntoShape(endObj.shape, endObj.warp, endObj.x, endObj.y)
+              : endObj.shape;
+
             // Emit DefineMorphShape2 tag (tag 84 — required for Flash 8 to
             // preserve LINESTYLE2 cap/join data via MORPHLINESTYLE2 records).
             const morphBody = encodeDefineMorphShape2(
               morphCharId,
-              startObj.shape.paths,
-              endObj.shape.paths,
+              startMorphShape.paths,
+              endMorphShape.paths,
               startKf.shapeHints ?? null,
               endKf.shapeHints ?? null,
               emittedBitmapFillCharIds.size > 0 ? emittedBitmapFillCharIds : undefined
@@ -257,9 +312,16 @@ export function runCharacterPass(input: CharacterPassInput): CharacterPassResult
             emitBitmapFillTags(obj.shape, doc, writer, emittedBitmapFillCharIds, options);
             const charId = writer.nextCharId();
             objCharIdMap.set(obj.id, charId);
+            // Distort/Envelope warp is non-affine: bake it into the DefineShape
+            // edge geometry (PlaceObject's matrix can't carry it), matching the
+            // editor stage which draws the same warpShape() output. See
+            // bakeWarpIntoShape.
+            const shapeToEncode = obj.warp
+              ? bakeWarpIntoShape(obj.shape, obj.warp, obj.x, obj.y)
+              : obj.shape;
             const shapeBody = encodeDefineShape4(
               charId,
-              obj.shape,
+              shapeToEncode,
               emittedBitmapFillCharIds.size > 0 ? emittedBitmapFillCharIds : undefined
             );
             writer.writeTag(Tag.DefineShape4, shapeBody);

@@ -47,6 +47,19 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
     when `obj.warp` is set. The authoring-ui `StageArea` hit-tests the mesh control points,
     drives the drag, draws the warped mesh frame + handles, and persists the result via
     `onShapeWarp` → `updateDisplayObject({ warp })`.
+  - **Publishing (SWF)**: a PlaceObject2/3 matrix is affine and cannot carry a non-affine
+    distort/envelope, so — exactly like real Flash 8 — the warp is **baked into the
+    DefineShape edge coordinates** at publish time. The SWF character pass
+    (`packages/swf/src/compiler/characters.ts` `bakeWarpIntoShape`) reuses the SAME
+    `engine/warp.ts` `warpShape` mapping the stage uses, then translates the warped
+    absolute geometry back by the placement offset so the DefineShape stays origin-relative
+    and PlaceObject2 tx/ty carries the offset (the shape-origin-normalization rule). This
+    covers both `ShapeDisplayObject` and `DrawingObject`, and shape-tween (morph) start/end
+    keyframes. Without this the published movie showed the pristine un-distorted shape (the
+    fidelity gap fixed by task 1228). Curves are subdivided to chords by `warpShape`; the
+    envelope Coons patch is sampled per vertex. Gate: `packages/swf/src/__tests__/warp-bake.test.ts`
+    (compiles a warped shape and decodes the emitted DefineShape4 ShapeBounds to confirm the
+    warp is in the geometry).
 - **Lasso**: freeform drag; **Polygon Mode** for straight-edged selections (click successive
   vertices; close by double-clicking, clicking the start vertex, or pressing **Enter** —
   **Esc** cancels the in-progress polygon); **Magic Wand** selects contiguous bitmap regions

@@ -415,6 +415,23 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **Shape origin normalization**: encode shape paths relative to (0,0) in DefineShape,
   and put the full stage offset in PlaceObject2 `tx/ty`. Baking absolute coords into the
   shape record and also translating via PO2 double-offsets the object.
+- **Free Transform Distort/Envelope warp is BAKED into DefineShape geometry at publish
+  (task 1228).** A PlaceObject2/3 matrix is affine and cannot represent a non-affine distort
+  (perspective quad) or envelope (Coons/bezier mesh), so real Flash 8 — and now the compiler
+  — bake the warp into the actual DefineShape edge coordinates. The character pass
+  (`compiler/characters.ts bakeWarpIntoShape`) reuses the SAME `engine/warp.ts warpShape` the
+  stage renderer uses (do NOT duplicate the mesh math), then translates the warped ABSOLUTE
+  stage geometry back by the object's `(x,y)` so the DefineShape stays origin-relative and
+  PlaceObject2 tx/ty=(x,y) restores position (shape-origin-normalization rule). `warpShape`'s
+  corners live in STAGE space, so it maps local→absolute; the renderer draws that at (0,0),
+  the SWF subtracts the offset. Applies to `ShapeDisplayObject`, `DrawingObject`, and
+  shape-tween (morph) start/end keyframes. `warpShape` already subdivides quadratics to
+  chords; the envelope Coons patch is sampled per vertex, so a warped edge only bends where
+  the shape has vertices ALONG that edge (a 4-vertex square's bottom edge won't show a
+  mid-edge bow unless a midpoint vertex exists). Before this fix the published movie showed
+  the pristine un-distorted shape (`grep -rniw warp packages/swf/src` returned nothing).
+  Gate: `warp-bake.test.ts` (compiles a warped shape, decodes the emitted DefineShape4
+  ShapeBounds from our own SWF, asserts the warp is in the geometry).
 - **DefineMorphShape2 (tag 84)**: use tag 84 (not legacy tag 46) for Flash 8 shape
   tweens so LINESTYLE2 cap/join data is preserved.
 - **DefineScalingGrid (tag 78)**: must immediately follow the `DefineSprite` tag for
