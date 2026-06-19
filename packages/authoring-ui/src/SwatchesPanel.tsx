@@ -7,6 +7,12 @@
  */
 
 import React, { useState, useCallback, useRef } from "react";
+import {
+  chrome,
+  halo,
+  chromeFont,
+  titleBarStyle as haloTitleBarStyle,
+} from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Default Flash 8 swatches palette (32-color default + web safe extension)
@@ -86,39 +92,27 @@ const panelStyle: React.CSSProperties = {
   position: "fixed",
   top: "80px",
   right: "260px",
-  width: "220px",
-  background: "#2a2a2a",
-  border: "1px solid #555",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+  width: "240px",
+  background: chrome.panelBg,
+  border: `${chrome.borderThin}px solid ${chrome.separator}`,
+  boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
   display: "flex",
   flexDirection: "column",
   zIndex: 1800,
-  fontFamily: "Arial, sans-serif",
-  fontSize: "11px",
-  color: "#d0d0d0",
-  borderRadius: "3px",
+  ...chromeFont(),
   overflow: "hidden",
   userSelect: "none",
 };
 
 const titleBarStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
+  ...haloTitleBarStyle(),
   justifyContent: "space-between",
-  height: "22px",
-  background: "#3a3a3a",
-  borderBottom: "1px solid #1a1a1a",
-  padding: "0 6px",
-  flexShrink: 0,
-  fontSize: "11px",
-  fontWeight: "bold",
-  color: "#c0c0c0",
 };
 
 const closeBtnStyle: React.CSSProperties = {
   background: "transparent",
   border: "none",
-  color: "#999",
+  color: chrome.textDefault,
   cursor: "pointer",
   fontSize: "13px",
   lineHeight: "1",
@@ -131,26 +125,33 @@ const toolbarStyle: React.CSSProperties = {
   alignItems: "center",
   gap: "4px",
   padding: "4px 6px",
-  borderBottom: "1px solid #1a1a1a",
+  borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
   flexShrink: 0,
 };
 
 const toolBtnStyle: React.CSSProperties = {
-  background: "#3c3c3c",
-  border: "1px solid #555",
-  color: "#c0c0c0",
+  ...chromeFont(),
+  background: chrome.panelBg,
+  border: `1px solid ${halo.borderColor}`,
+  color: chrome.textDefault,
   fontSize: "10px",
   cursor: "pointer",
   padding: "2px 6px",
-  borderRadius: "2px",
+  borderRadius: halo.cornerRadius,
   whiteSpace: "nowrap",
 };
 
+// Flash 8 Swatches: the Web-216 palette renders as ~12px cells, ~19–20 per
+// row, separated by 1px gridlines on the white swatch well.
+const SWATCH_CELL = 12;
+const SWATCH_COLS = 19;
+
 const gridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(16, 1fr)",
+  gridTemplateColumns: `repeat(${SWATCH_COLS}, ${SWATCH_CELL}px)`,
   gap: "1px",
   padding: "6px",
+  background: halo.panelContentBg,
   overflowY: "auto",
   flex: 1,
 };
@@ -323,12 +324,11 @@ export function SwatchesPanel({
             key={`${color}-${index}`}
             data-testid={`swatch-${index}`}
             style={{
-              width: "100%",
-              aspectRatio: "1",
+              width: `${SWATCH_CELL}px`,
+              height: `${SWATCH_CELL}px`,
               background: color,
-              border: "1px solid #1a1a1a",
+              border: `1px solid ${chrome.separator}`,
               cursor: "pointer",
-              borderRadius: "1px",
               boxSizing: "border-box",
             }}
             title={color}
@@ -346,7 +346,7 @@ export function SwatchesPanel({
           <div
             style={{
               gridColumn: "1 / -1",
-              color: "#666",
+              color: chrome.textDisabled,
               fontSize: "11px",
               padding: "8px 0",
               textAlign: "center",
@@ -364,9 +364,9 @@ export function SwatchesPanel({
             position: "fixed",
             left: tooltip.x,
             top: tooltip.y,
-            background: "#222",
-            border: "1px solid #555",
-            color: "#e0e0e0",
+            background: halo.panelContentBg,
+            border: `1px solid ${halo.borderColor}`,
+            color: chrome.textDefault,
             fontSize: "10px",
             padding: "2px 5px",
             borderRadius: "2px",
@@ -386,9 +386,9 @@ export function SwatchesPanel({
             position: "fixed",
             left: contextMenu.x,
             top: contextMenu.y,
-            background: "#3c3c3c",
-            border: "1px solid #1a1a1a",
-            boxShadow: "2px 2px 6px rgba(0,0,0,0.5)",
+            background: chrome.panelBg,
+            border: `1px solid ${chrome.separator}`,
+            boxShadow: "2px 2px 6px rgba(0,0,0,0.35)",
             zIndex: 9999,
             minWidth: "120px",
           }}
@@ -396,16 +396,19 @@ export function SwatchesPanel({
         >
           <div
             style={{
+              ...chromeFont(),
               padding: "4px 16px",
               fontSize: "12px",
-              color: "#e0e0e0",
+              color: chrome.textDefault,
               cursor: "pointer",
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLDivElement).style.background = "#0078d7";
+              (e.currentTarget as HTMLDivElement).style.background = halo.haloBlue;
+              (e.currentTarget as HTMLDivElement).style.color = "#FFFFFF";
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLDivElement).style.background = "transparent";
+              (e.currentTarget as HTMLDivElement).style.color = chrome.textDefault;
             }}
             onClick={handleRemoveFromContext}
           >

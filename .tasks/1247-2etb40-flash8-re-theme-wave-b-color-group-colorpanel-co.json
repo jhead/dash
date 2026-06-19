@@ -1,10 +1,10 @@
 {
   "id": "1247-2etb40-flash8-re-theme-wave-b-color-group-colorpanel-co",
   "title": "Flash8 re-theme Wave B: Color group (ColorPanel + ColorMixerPanel + SwatchesPanel)",
-  "description": "Convert packages/authoring-ui/src/ColorPanel.tsx, ColorMixerPanel.tsx, SwatchesPanel.tsx to the Flash 8 light theme via packages/authoring-ui/src/theme/flash8Theme.ts (Wave A) per docs/30-flash8-ui-spec.md \u00a73.6 (Color Mixer) and \u00a73.7 (Swatches). Replace all dark hex with chrome.*/halo.* tokens (light #ECECEC panel, white content areas, Tahoma text, #B7BABC inset borders, halo inputs). Color Mixer: Type dropdown (Solid/Linear/Radial/Bitmap), stacked R/G/B + Alpha% + hex fields, rainbow spectrum + tint slider, gradient edit bar (selected pointer black / unselected white). Swatches: Web-216 grid (~12px cells, ~19-20/row, 1px separators) + gradient row below. Mirror Shell.tsx pattern. Keep functionality intact. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: those 3 files only (+ read-only theme import).",
-  "status": "open",
+  "description": "DONE. Converted ColorPanel.tsx, ColorMixerPanel.tsx, SwatchesPanel.tsx to Flash 8 light theme via theme/flash8Theme.ts (chrome.*/halo.* tokens), mirroring Shell.tsx. Light #ECECEC panels, halo title bars (gripper-dot gradient), Tahoma chrome text, halo inputs (#B7BABC inset border via inputStyle()), #999999 separators, halo-blue accents, gradient pointers selected=black/unselected=white, Web-216 swatch grid (12px cells, 19 cols, 1px #999999 separators on white well). Functionality (color picking, gradient stop edit/drag, swatch grid + .act load/save, bitmap fill) intact. VERIFY: 'pnpm --filter ./packages/** build' green; 'pnpm --filter @flash/authoring-ui run test -- --run' = 44 files / 653 tests ALL PASS (no fixture failures). Screenshot deferred (needs running dev server + browser driver).",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-19T05:55:53Z",
-  "updated_at": "2026-06-19T05:55:53Z"
+  "updated_at": "2026-06-19T06:03:54Z"
 }

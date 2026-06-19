@@ -7,6 +7,13 @@
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import type { BitmapFill, BitmapItem, Fill, GradientColorStop } from "@flash/core";
+import {
+  chrome,
+  halo,
+  chromeFont,
+  inputStyle as haloInputStyle,
+  titleBarStyle as haloTitleBarStyle,
+} from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -137,38 +144,26 @@ const panelStyle: React.CSSProperties = {
   top: "80px",
   left: "60px",
   width: "240px",
-  background: "#2a2a2a",
-  border: "1px solid #555",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+  background: chrome.panelBg,
+  border: `${chrome.borderThin}px solid ${chrome.separator}`,
+  boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
   display: "flex",
   flexDirection: "column",
   zIndex: 1800,
-  fontFamily: "Arial, sans-serif",
-  fontSize: "11px",
-  color: "#d0d0d0",
-  borderRadius: "3px",
+  ...chromeFont(),
   overflow: "hidden",
   userSelect: "none",
 };
 
 const titleBarStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
+  ...haloTitleBarStyle(),
   justifyContent: "space-between",
-  height: "22px",
-  background: "#3a3a3a",
-  borderBottom: "1px solid #1a1a1a",
-  padding: "0 6px",
-  flexShrink: 0,
-  fontSize: "11px",
-  fontWeight: "bold",
-  color: "#c0c0c0",
 };
 
 const closeBtnStyle: React.CSSProperties = {
   background: "transparent",
   border: "none",
-  color: "#999",
+  color: chrome.textDefault,
   cursor: "pointer",
   fontSize: "13px",
   lineHeight: "1",
@@ -184,8 +179,7 @@ const rowStyle: React.CSSProperties = {
 };
 
 const labelStyle: React.CSSProperties = {
-  fontSize: "11px",
-  color: "#aaa",
+  ...chromeFont(),
   width: "16px",
   textAlign: "right",
   flexShrink: 0,
@@ -195,48 +189,37 @@ const sliderStyle: React.CSSProperties = {
   flex: 1,
   height: "14px",
   cursor: "pointer",
-  accentColor: "#1a6ea8",
+  accentColor: halo.haloBlue,
 };
 
 const numberInputStyle: React.CSSProperties = {
+  ...haloInputStyle(),
   width: "36px",
-  background: "#1a1a1a",
-  border: "1px solid #444",
-  color: "#e0e0e0",
-  fontSize: "11px",
-  padding: "1px 3px",
   textAlign: "right",
   flexShrink: 0,
 };
 
 const hexInputStyle: React.CSSProperties = {
+  ...haloInputStyle(),
   flex: 1,
-  background: "#1a1a1a",
-  border: "1px solid #444",
-  color: "#e0e0e0",
-  fontSize: "11px",
-  padding: "1px 4px",
   fontFamily: "monospace",
   textTransform: "uppercase",
 };
 
 const selectStyle: React.CSSProperties = {
+  ...haloInputStyle(),
   flex: 1,
-  background: "#1a1a1a",
-  border: "1px solid #444",
-  color: "#e0e0e0",
-  fontSize: "11px",
-  padding: "1px 2px",
 };
 
 const modeBtnStyle = (active: boolean): React.CSSProperties => ({
-  background: active ? "#1a6ea8" : "#3c3c3c",
-  border: "1px solid #555",
-  color: active ? "#fff" : "#aaa",
+  ...chromeFont(),
+  background: active ? halo.haloBlue : chrome.panelBg,
+  border: `1px solid ${active ? halo.haloBlue : halo.borderColor}`,
+  color: active ? "#FFFFFF" : chrome.textDefault,
   fontSize: "10px",
   cursor: "pointer",
   padding: "1px 6px",
-  borderRadius: "2px",
+  borderRadius: halo.cornerRadius,
 });
 
 // ---------------------------------------------------------------------------
@@ -332,7 +315,7 @@ function GradientEditor({
           position: "relative",
           height: "18px",
           borderRadius: "2px",
-          border: "1px solid #555",
+          border: `1px solid ${halo.inputBorder}`,
           background: gradientCss,
           cursor: "crosshair",
           marginBottom: "14px",
@@ -354,7 +337,9 @@ function GradientEditor({
                 width: "10px",
                 height: "10px",
                 background: rgbToHex(stop.color.r, stop.color.g, stop.color.b),
-                border: isSelected ? "2px solid #fff" : "1px solid #888",
+                // Flash 8: selected stop pointer is black, unselected white.
+                border: isSelected ? "2px solid #000000" : "2px solid #FFFFFF",
+                outline: `1px solid ${halo.borderCap}`,
                 borderRadius: "2px",
                 cursor: "ew-resize",
                 zIndex: 2,
@@ -392,13 +377,14 @@ function GradientEditor({
           {stops.length > 2 && (
             <button
               style={{
-                background: "#5a1a1a",
-                border: "1px solid #944",
-                color: "#f88",
+                ...chromeFont(),
+                background: chrome.panelBg,
+                border: `1px solid ${halo.borderColor}`,
+                color: halo.error,
                 fontSize: "10px",
                 cursor: "pointer",
                 padding: "1px 4px",
-                borderRadius: "2px",
+                borderRadius: halo.cornerRadius,
                 flexShrink: 0,
               }}
               title="Delete stop"
@@ -837,8 +823,8 @@ export function ColorMixerPanel({
     height: "18px",
     flex: 1,
     borderRadius: "2px",
-    border: "1px solid #555",
-    background: `linear-gradient(${activeColor}${Math.round(activeAlpha * 2.55).toString(16).padStart(2, "0")}, ${activeColor}${Math.round(activeAlpha * 2.55).toString(16).padStart(2, "0")}), repeating-conic-gradient(#888 0% 25%, #555 0% 50%) 0 0 / 8px 8px`,
+    border: `1px solid ${halo.inputBorder}`,
+    background: `linear-gradient(${activeColor}${Math.round(activeAlpha * 2.55).toString(16).padStart(2, "0")}, ${activeColor}${Math.round(activeAlpha * 2.55).toString(16).padStart(2, "0")}), repeating-conic-gradient(#CCCCCC 0% 25%, #FFFFFF 0% 50%) 0 0 / 8px 8px`,
   };
 
   // -------------------------------------------------------------------------
@@ -869,7 +855,7 @@ export function ColorMixerPanel({
                 width: "24px",
                 height: "24px",
                 background: strokeColor || "#000",
-                border: activeTarget === "stroke" ? "2px solid #1a6ea8" : "2px solid #555",
+                border: activeTarget === "stroke" ? `2px solid ${halo.haloBlue}` : `2px solid ${halo.borderColor}`,
                 cursor: "pointer",
                 borderRadius: "2px",
                 zIndex: 1,
@@ -886,7 +872,7 @@ export function ColorMixerPanel({
                 width: "24px",
                 height: "24px",
                 background: fillColor || "#fff",
-                border: activeTarget === "fill" ? "2px solid #1a6ea8" : "2px solid #555",
+                border: activeTarget === "fill" ? `2px solid ${halo.haloBlue}` : `2px solid ${halo.borderColor}`,
                 cursor: "pointer",
                 borderRadius: "2px",
                 zIndex: 2,
@@ -899,13 +885,14 @@ export function ColorMixerPanel({
           {/* Swap button */}
           <button
             style={{
-              background: "#3c3c3c",
-              border: "1px solid #555",
-              color: "#aaa",
+              ...chromeFont(),
+              background: chrome.panelBg,
+              border: `1px solid ${halo.borderColor}`,
+              color: chrome.textDefault,
               fontSize: "12px",
               cursor: "pointer",
               padding: "2px 4px",
-              borderRadius: "2px",
+              borderRadius: halo.cornerRadius,
             }}
             title="Swap fill and stroke"
             onClick={handleSwap}
@@ -916,13 +903,14 @@ export function ColorMixerPanel({
           {/* No fill / no stroke buttons */}
           <button
             style={{
-              background: activeTarget === "fill" && activeAlpha === 0 ? "#1a6ea8" : "#3c3c3c",
-              border: "1px solid #555",
-              color: "#aaa",
+              ...chromeFont(),
+              background: activeTarget === "fill" && activeAlpha === 0 ? halo.haloBlue : chrome.panelBg,
+              border: `1px solid ${halo.borderColor}`,
+              color: activeTarget === "fill" && activeAlpha === 0 ? "#FFFFFF" : chrome.textDefault,
               fontSize: "10px",
               cursor: "pointer",
               padding: "2px 4px",
-              borderRadius: "2px",
+              borderRadius: halo.cornerRadius,
             }}
             title="No fill"
             onClick={() => {
@@ -933,13 +921,14 @@ export function ColorMixerPanel({
           </button>
           <button
             style={{
-              background: activeTarget === "stroke" && activeAlpha === 0 ? "#1a6ea8" : "#3c3c3c",
-              border: "1px solid #555",
-              color: "#aaa",
+              ...chromeFont(),
+              background: activeTarget === "stroke" && activeAlpha === 0 ? halo.haloBlue : chrome.panelBg,
+              border: `1px solid ${halo.borderColor}`,
+              color: activeTarget === "stroke" && activeAlpha === 0 ? "#FFFFFF" : chrome.textDefault,
               fontSize: "10px",
               cursor: "pointer",
               padding: "2px 4px",
-              borderRadius: "2px",
+              borderRadius: halo.cornerRadius,
             }}
             title="No stroke"
             onClick={() => {
@@ -1005,11 +994,11 @@ export function ColorMixerPanel({
                       key={item.id}
                       title={item.name}
                       style={{
-                        border: isSelected ? "2px solid #1a6ea8" : "1px solid #555",
+                        border: isSelected ? `2px solid ${halo.haloBlue}` : `1px solid ${halo.borderColor}`,
                         borderRadius: "2px",
                         cursor: "pointer",
                         overflow: "hidden",
-                        background: "#1a1a1a",
+                        background: halo.panelContentBg,
                         aspectRatio: "1",
                         display: "flex",
                         alignItems: "center",
@@ -1024,7 +1013,7 @@ export function ColorMixerPanel({
                           style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
                         />
                       ) : (
-                        <span style={{ fontSize: "9px", color: "#666", textAlign: "center", padding: "2px" }}>
+                        <span style={{ fontSize: "9px", color: chrome.textDisabled, textAlign: "center", padding: "2px" }}>
                           {item.name}
                         </span>
                       )}
@@ -1033,13 +1022,13 @@ export function ColorMixerPanel({
                 })}
               </div>
             ) : (
-              <div style={{ color: "#888", fontSize: "11px", marginBottom: "6px" }}>
+              <div style={{ color: chrome.textDisabled, fontSize: "11px", marginBottom: "6px" }}>
                 No bitmaps in library
               </div>
             )}
             {/* Selected bitmap name */}
             {selectedBitmapId && bitmapItems && (
-              <div style={{ fontSize: "10px", color: "#aaa", marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div style={{ fontSize: "10px", color: chrome.textDefault, marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {bitmapItems.find((b) => b.id === selectedBitmapId)?.name ?? selectedBitmapId}
               </div>
             )}
@@ -1187,7 +1176,7 @@ export function ColorMixerPanel({
         {/* Hex + color preview */}
         {(colorType === "solid" || isGradient) && (
           <div style={{ ...rowStyle, marginTop: "4px" }}>
-            <span style={{ ...labelStyle, width: "14px", fontSize: "11px", color: "#888" }}>#</span>
+            <span style={{ ...labelStyle, width: "14px", fontSize: "11px" }}>#</span>
             <input
               type="text"
               maxLength={6}
@@ -1256,7 +1245,7 @@ export function ColorMixerPanel({
         {isGradient && activeTarget === "fill" && (
           <>
             <div style={{ ...rowStyle, marginTop: "4px" }}>
-              <span style={{ ...labelStyle, width: "auto", marginRight: "4px", color: "#aaa", fontSize: "11px" }}>
+              <span style={{ ...labelStyle, width: "auto", marginRight: "4px", fontSize: "11px" }}>
                 Overflow:
               </span>
               <select
@@ -1271,7 +1260,7 @@ export function ColorMixerPanel({
               </select>
             </div>
             <div style={{ ...rowStyle, marginTop: "2px" }}>
-              <span style={{ ...labelStyle, width: "auto", marginRight: "4px", color: "#aaa", fontSize: "11px" }}>
+              <span style={{ ...labelStyle, width: "auto", marginRight: "4px", fontSize: "11px" }}>
                 Color space:
               </span>
               <select

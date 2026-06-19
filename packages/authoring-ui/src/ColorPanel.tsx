@@ -11,6 +11,13 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import type { Color, Fill, GradientColorStop, LinearGradientFill, RadialGradientFill, SolidStroke } from "@flash/core";
+import {
+  chrome,
+  halo,
+  chromeFont,
+  inputStyle as haloInputStyle,
+  titleBarStyle as haloTitleBarStyle,
+} from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -181,7 +188,7 @@ function ColorPicker({ color, onChange }: ColorPickerProps): React.ReactElement 
 
       {/* Hue slider */}
       <div style={{ marginTop: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
-        <span style={{ fontSize: "9px", color: "#aaa", width: "10px" }}>H</span>
+        <span style={{ fontSize: "9px", color: chrome.textDefault, width: "10px" }}>H</span>
         <input
           type="range" min={0} max={360} value={Math.round(h)}
           onChange={handleHueSlider}
@@ -189,14 +196,14 @@ function ColorPicker({ color, onChange }: ColorPickerProps): React.ReactElement 
             width: "100%",
             background: "linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)",
             height: "8px", cursor: "pointer", appearance: "none",
-            border: "1px solid #555", borderRadius: "2px",
+            border: `1px solid ${halo.inputBorder}`, borderRadius: "2px",
           }}
         />
       </div>
 
       {/* Alpha slider */}
       <div style={{ marginTop: "2px", display: "flex", alignItems: "center", gap: "4px" }}>
-        <span style={{ fontSize: "9px", color: "#aaa", width: "10px" }}>A</span>
+        <span style={{ fontSize: "9px", color: chrome.textDefault, width: "10px" }}>A</span>
         <input
           type="range" min={0} max={100} value={alphaPercent}
           onChange={handleAlphaSlider}
@@ -204,7 +211,7 @@ function ColorPicker({ color, onChange }: ColorPickerProps): React.ReactElement 
             width: "calc(100% - 46px)",
             height: "8px", cursor: "pointer", appearance: "none",
             background: `linear-gradient(to right, transparent, rgb(${color.r},${color.g},${color.b}))`,
-            border: "1px solid #555", borderRadius: "2px",
+            border: `1px solid ${halo.inputBorder}`, borderRadius: "2px",
           }}
         />
         <input
@@ -212,13 +219,13 @@ function ColorPicker({ color, onChange }: ColorPickerProps): React.ReactElement 
           onChange={(e) => handleAlphaSlider({ target: { value: e.target.value } } as React.ChangeEvent<HTMLInputElement>)}
           style={inputStyle}
         />
-        <span style={{ fontSize: "9px", color: "#aaa" }}>%</span>
+        <span style={{ fontSize: "9px", color: chrome.textDefault }}>%</span>
       </div>
 
       {/* Hex + RGBA inputs */}
       <div style={{ marginTop: "4px", display: "flex", flexDirection: "column", gap: "2px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-          <span style={{ fontSize: "9px", color: "#aaa", width: "10px" }}>#</span>
+          <span style={{ fontSize: "9px", color: chrome.textDefault, width: "10px" }}>#</span>
           <input
             type="text"
             value={colorToHex(color).slice(1).toUpperCase()}
@@ -230,13 +237,13 @@ function ColorPicker({ color, onChange }: ColorPickerProps): React.ReactElement 
           <div style={{
             width: "20px", height: "16px",
             background: `rgba(${color.r},${color.g},${color.b},${color.a / 255})`,
-            border: "1px solid #555", flexShrink: 0,
+            border: `1px solid ${halo.inputBorder}`, flexShrink: 0,
           }} />
         </div>
         <div style={{ display: "flex", gap: "2px" }}>
           {(["r", "g", "b"] as const).map((ch) => (
             <div key={ch} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <span style={{ fontSize: "8px", color: "#aaa" }}>{ch.toUpperCase()}</span>
+              <span style={{ fontSize: "8px", color: chrome.textDefault }}>{ch.toUpperCase()}</span>
               <input
                 type="number" min={0} max={255} value={color[ch]}
                 onChange={(e) => handleChannelChange(ch, e.target.value)}
@@ -245,7 +252,7 @@ function ColorPicker({ color, onChange }: ColorPickerProps): React.ReactElement 
             </div>
           ))}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <span style={{ fontSize: "8px", color: "#aaa" }}>A</span>
+            <span style={{ fontSize: "8px", color: chrome.textDefault }}>A</span>
             <input
               type="number" min={0} max={255} value={color.a}
               onChange={(e) => handleChannelChange("a", e.target.value)}
@@ -363,7 +370,7 @@ function GradientEditor({
           style={{
             height: "16px",
             background: gradientCss(safeStops),
-            border: "1px solid #555",
+            border: `1px solid ${halo.inputBorder}`,
             cursor: "crosshair",
             userSelect: "none",
           }}
@@ -386,7 +393,9 @@ function GradientEditor({
                 width: `${STOP_HANDLE_SIZE}px`,
                 height: `${STOP_HANDLE_SIZE}px`,
                 background: `rgb(${stop.color.r},${stop.color.g},${stop.color.b})`,
-                border: isSelected ? "2px solid #fff" : "1px solid #888",
+                // Flash 8: selected stop pointer is black, unselected white.
+                border: isSelected ? "2px solid #000000" : "2px solid #FFFFFF",
+                outline: `1px solid ${halo.borderCap}`,
                 cursor: "ew-resize",
                 boxSizing: "border-box",
                 clipPath: "polygon(50% 0%, 100% 50%, 100% 100%, 0% 100%, 0% 50%)",
@@ -412,13 +421,13 @@ function GradientEditor({
         >
           - Stop
         </button>
-        <span style={{ fontSize: "9px", color: "#aaa" }}>
+        <span style={{ fontSize: "9px", color: chrome.textDefault }}>
           {safeStops.length} stops
         </span>
       </div>
 
       {/* Selected stop color picker */}
-      <div style={{ fontSize: "9px", color: "#aaa", marginBottom: "2px" }}>
+      <div style={{ fontSize: "9px", color: chrome.textDefault, marginBottom: "2px" }}>
         Stop {Math.min(selectedStopIdx, safeStops.length - 1) + 1} color:
       </div>
       <ColorPicker color={selectedStop.color} onChange={handleStopColorChange} />
@@ -426,20 +435,20 @@ function GradientEditor({
       {/* Angle input (linear only) */}
       {gradientType === "linear-gradient" && (
         <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "6px" }}>
-          <span style={{ fontSize: "9px", color: "#aaa" }}>Angle:</span>
+          <span style={{ fontSize: "9px", color: chrome.textDefault }}>Angle:</span>
           <input
             type="number" min={0} max={360} value={Math.round(angle)}
             onChange={(e) => onAngleChange?.(clamp(Number(e.target.value), 0, 360))}
             style={inputStyle}
           />
-          <span style={{ fontSize: "9px", color: "#aaa" }}>deg</span>
+          <span style={{ fontSize: "9px", color: chrome.textDefault }}>deg</span>
         </div>
       )}
 
       {/* Focal point slider (radial only) */}
       {gradientType === "radial-gradient" && (
         <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "6px" }}>
-          <span style={{ fontSize: "9px", color: "#aaa" }}>Focal:</span>
+          <span style={{ fontSize: "9px", color: chrome.textDefault }}>Focal:</span>
           <input
             type="range" min={-100} max={100}
             value={Math.round(focalPoint * 100)}
@@ -463,22 +472,20 @@ function GradientEditor({
 // ---------------------------------------------------------------------------
 
 const inputStyle: React.CSSProperties = {
+  ...haloInputStyle(),
   width: "36px",
-  background: "#1a1a1a",
-  color: "#e0e0e0",
-  border: "1px solid #555",
-  fontSize: "10px",
-  padding: "1px 2px",
   textAlign: "right",
   appearance: "none",
 };
 
 const smallBtnStyle: React.CSSProperties = {
-  background: "#3a3a3a",
-  color: "#c0c0c0",
-  border: "1px solid #555",
+  ...chromeFont(),
+  background: chrome.panelBg,
+  color: chrome.textDefault,
+  border: `1px solid ${halo.borderColor}`,
   fontSize: "9px",
   padding: "1px 4px",
+  borderRadius: halo.cornerRadius,
   cursor: "pointer",
 };
 
@@ -608,25 +615,16 @@ export function ColorPanel({
         top: "60px",
         right: "210px",
         width: "190px",
-        background: "#2d2d2d",
-        border: "1px solid #1a1a1a",
-        boxShadow: "2px 2px 8px rgba(0,0,0,0.6)",
+        background: chrome.panelBg,
+        border: `${chrome.borderThin}px solid ${chrome.separator}`,
+        boxShadow: "2px 2px 8px rgba(0,0,0,0.35)",
         zIndex: 500,
         userSelect: "none",
-        fontSize: "11px",
-        color: "#e0e0e0",
+        ...chromeFont(),
       }}
     >
       {/* Header */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: "#222",
-        padding: "3px 6px",
-        borderBottom: "1px solid #1a1a1a",
-        flexShrink: 0,
-      }}>
+      <div style={{ ...haloTitleBarStyle(), justifyContent: "space-between" }}>
         <span style={{ fontSize: "11px", fontWeight: "bold" }}>Color</span>
         <button
           type="button"
@@ -634,7 +632,7 @@ export function ColorPanel({
           style={{
             background: "transparent",
             border: "none",
-            color: "#aaa",
+            color: chrome.textDefault,
             cursor: "pointer",
             fontSize: "12px",
             padding: 0,
@@ -654,12 +652,14 @@ export function ColorPanel({
               type="button"
               onClick={() => setEditTarget(t)}
               style={{
+                ...chromeFont(),
                 flex: 1,
                 fontSize: "10px",
                 padding: "2px 0",
-                background: editTarget === t ? "#3a3a3a" : "#1a1a1a",
-                color: editTarget === t ? "#fff" : "#888",
-                border: "1px solid #444",
+                background: editTarget === t ? chrome.panelBg : chrome.insetFieldStrip,
+                color: editTarget === t ? chrome.textDefault : chrome.textDisabled,
+                border: `1px solid ${chrome.separator}`,
+                borderBottom: editTarget === t ? `2px solid ${halo.haloBlue}` : `1px solid ${chrome.separator}`,
                 cursor: "pointer",
                 textTransform: "capitalize",
               }}
@@ -676,10 +676,8 @@ export function ColorPanel({
               value={fillTypeId}
               onChange={(e) => handleFillTypeChange(e.target.value as FillTypeId)}
               style={{
+                ...haloInputStyle(),
                 width: "100%",
-                background: "#1a1a1a",
-                color: "#e0e0e0",
-                border: "1px solid #555",
                 fontSize: "10px",
                 padding: "2px",
               }}
@@ -718,9 +716,9 @@ export function ColorPanel({
             alignItems: "center",
             justifyContent: "center",
             height: "40px",
-            color: "#888",
+            color: chrome.textDisabled,
             fontSize: "11px",
-            border: "1px dashed #555",
+            border: `1px dashed ${halo.borderColor}`,
           }}>
             No Fill
           </div>
