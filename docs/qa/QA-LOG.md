@@ -712,3 +712,37 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
 - **Still open for workers (running list, unchanged):** 1216, 1227 open; 1223 remains a
   close candidate (resolved by 1225, doc-wording nuance only); component part 2.4
   (task 1234) queued / not-yet-implemented.
+
+---
+
+## 2026-06-19 — Task 1234 verification: Component Part 2.4 (Label + TextInput + TextArea)
+
+- **HEAD:** `759ced8eedc436dbaf1d452471724715421bf2f0`
+- **WATERMARK (last fully-QA'd SHA): advanced to `759ced8eedc436dbaf1d452471724715421bf2f0`
+  (current HEAD).** Task 1234 (commit `9962633`) is now verified; the only commits between
+  `9962633` and HEAD are task/qa-only (`git diff --stat 9962633..HEAD` excluding
+  `.tasks/**`/`docs/**` is EMPTY — files touched are `.tasks/.counter`, the task 1235 JSON,
+  and this log), so no unverified code remains and the watermark advances to HEAD:
+  - `759ced8` task: queue component part 2.5 (List + ComboBox) — task JSON only, no code.
+  - `005151e` qa: proactive idle-window audit — blend modes healthy — QA-LOG only, no code.
+- **Task 1234 (commit `9962633`, Component Part 2.4: Label + TextInput + TextArea)
+  VERIFIED genuinely functional.** Registry-driven skins + `encodeDefineEditText`
+  (`text.ts`) map `textType`/`multiline`/`wordWrap` to correct spec bit positions.
+  swf-dump-proven flag words: Label `0x208c` (ReadOnly set, read-only display, no face),
+  TextInput `0x2084` (ReadOnly CLEAR — genuinely editable), TextArea `0x20e4` (ReadOnly
+  clear + Multiline + WordWrap). Shared `authorTextFieldClassBody`
+  (getText/setText/addEventListener change), text/label param delivered via
+  `setComponentParam`→`label_txt.text`, device-font (HasFont=0/UseOutlines=0).
+  Unit 1431/1431 (component-place: 34 tests decode + assert flag bits per control).
+  component-oracle e2e 11/11 (5 new): controls render non-white (176/774/1055 px) +
+  TextInput/TextArea prove runtime editability (`label_txt.type=="input"` → RED→BLUE).
+  golden-parity exit 0; golden-fla / visual-oracle green. Nothing filed.
+  (Keyboard-typing into a focused input is out of scope — headless Ruffle limitation,
+  not a gap.)
+- **Milestone:** v2 components framework now spans Button, CheckBox, RadioButton, Label,
+  TextInput, TextArea — all verified functional end-to-end (self-authored AS2 + skin +
+  registerClass + live params + correct interactive flags/behavior).
+- **Still open for workers (running list):** 1216 (motion-tween/guide/bitmap),
+  1227 (trace-bitmap marching-squares half-region) — both still unaddressed;
+  1223 candidate-for-close (via 1225).
+- **Audited & healthy (running list):** Sound Envelope (1204), Blend modes.
