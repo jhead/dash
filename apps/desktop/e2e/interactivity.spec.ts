@@ -67,6 +67,8 @@ async function injectRufflePlayer(
         data?: Uint8Array;
         url?: string;
         allowScriptAccess?: boolean;
+        autoplay?: string;
+        unmuteOverlay?: string;
       }): Promise<void> }
     };
     const ruffleApi = (window as unknown as { RufflePlayer: { newest(): RuffleHandle } }).RufflePlayer.newest();
@@ -76,8 +78,50 @@ async function injectRufflePlayer(
       'position:fixed;top:0;left:0;width:550px;height:400px;z-index:99999;';
     document.body.appendChild(player);
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    void player.ruffle().load({ data: bytes, allowScriptAccess: true });
+    // autoplay:'on' forces play() without a user-gesture audio context. In headless
+    // Chromium the AudioContext is suspended, so Ruffle's default autoplay:'auto'
+    // shows a play-button overlay and never calls play() — the timeline never advances
+    // after a synthesized click and frame-advance interactivity oracles see
+    // before==after (diffPixels=0). unmuteOverlay:'hidden' suppresses the dimming
+    // overlay. Mirrors button-roundtrip / keyboard / fla-roundtrip helpers (task 0928).
+    void player.ruffle().load({
+      data: bytes,
+      allowScriptAccess: true,
+      autoplay: 'on',
+      unmuteOverlay: 'hidden',
+    });
   }, { b64: swfBase64, id: playerId });
+}
+
+/**
+ * Recursively hide Ruffle's overlay chrome (play-button, unmute, hardware-accel
+ * panic/message backdrop) inside the player's shadow DOM. In headless Chromium
+ * these overlays sit ON TOP of the stage and INTERCEPT pointer events, so a
+ * synthesized `.click()` is absorbed by the overlay and never reaches the SWF's
+ * button hit area — the on(release)/press action never fires and the frame never
+ * advances (diffPixels=0). They also ruin screenshots with a dimming backdrop.
+ * Mirrors button-roundtrip / keyboard / fla-roundtrip helpers (task 0703/0928).
+ */
+async function hideRuffleOverlays(
+  page: Parameters<Parameters<typeof test>[1]>[0],
+  playerId = '__ruffle_interact_player__'
+): Promise<void> {
+  await page.evaluate((id) => {
+    const root = document.getElementById(id) as (HTMLElement & { shadowRoot?: ShadowRoot }) | null;
+    const sr = root?.shadowRoot;
+    if (!sr) return;
+    const walk = (node: ParentNode) => {
+      node.querySelectorAll('*').forEach((elem) => {
+        const e = elem as HTMLElement & { shadowRoot?: ShadowRoot };
+        const sig = `${e.id} ${e.className}`.toLowerCase();
+        if (/modal|overlay|message|splash|play-button|panic/.test(sig)) {
+          e.style.setProperty('display', 'none', 'important');
+        }
+        if (e.shadowRoot) walk(e.shadowRoot);
+      });
+    };
+    walk(sr);
+  }, playerId);
 }
 
 /** Remove the injected Ruffle player element. */
@@ -485,6 +529,7 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
     await ensureRuffleLoaded(page);
     await injectRufflePlayer(page, swfBase64);
     await page.waitForTimeout(2000);
+    await hideRuffleOverlays(page);
 
     const shotBefore = await screenshotPlayer(page);
     if (testInfo.retry > 0) {
@@ -493,6 +538,7 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
 
     await page.locator('#__ruffle_interact_player__').click({ position: { x: 275, y: 200 } });
     await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page);
 
     const shotAfter = await screenshotPlayer(page);
     if (testInfo.retry > 0) {
@@ -653,12 +699,14 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
     await ensureRuffleLoaded(page);
     await injectRufflePlayer(page, swfBase64, PLAYER_ID);
     await page.waitForTimeout(2000);
+    await hideRuffleOverlays(page, PLAYER_ID);
 
     const shotBefore = await page.locator(`#${PLAYER_ID}`).screenshot();
 
     // Click: on(press) fires on mouseDown → nextFrame() → blue rectangle
     await page.locator(`#${PLAYER_ID}`).click({ position: { x: 275, y: 200 } });
     await page.waitForTimeout(1500);
+    await hideRuffleOverlays(page, PLAYER_ID);
 
     const shotAfter = await page.locator(`#${PLAYER_ID}`).screenshot();
 
@@ -815,6 +863,7 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
 
     // Wait for Ruffle to fully initialize and run the first frame (load event fires)
     await page.waitForTimeout(2500);
+    await hideRuffleOverlays(page, PLAYER_ID);
 
     const shotAfterLoad = await page.locator(`#${PLAYER_ID}`).screenshot();
 
@@ -863,6 +912,7 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
     const PLAYER_NO_CLIP_ID = '__ruffle_clipaction_noclip_player__';
     await injectRufflePlayer(page, swfBase64NoClip, PLAYER_NO_CLIP_ID);
     await page.waitForTimeout(2500);
+    await hideRuffleOverlays(page, PLAYER_NO_CLIP_ID);
 
     const shotNoClip = await page.locator(`#${PLAYER_NO_CLIP_ID}`).screenshot();
     await removeRufflePlayer(page, PLAYER_NO_CLIP_ID);
@@ -1048,6 +1098,7 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
       await ensureRuffleLoaded(page);
       await injectRufflePlayer(page, swfBase64, PLAYER_ID);
       await page.waitForTimeout(2000);
+      await hideRuffleOverlays(page, PLAYER_ID);
 
       // Capture initial state (frame 0 = red player)
       const shotBefore = await page.locator(`#${PLAYER_ID}`).screenshot();
@@ -1056,6 +1107,7 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
       // Click stage center → on(release) fires → nextFrame() → frame 1 (green "caught")
       await page.locator(`#${PLAYER_ID}`).click({ position: { x: 275, y: 200 } });
       await page.waitForTimeout(1500);
+      await hideRuffleOverlays(page, PLAYER_ID);
 
       // Capture post-click state (frame 1 = green caught shape)
       const shotAfter = await page.locator(`#${PLAYER_ID}`).screenshot();
@@ -1147,6 +1199,7 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
     await ensureRuffleLoaded(page);
     await injectRufflePlayer(page, swfBase64, PLAYER_ID);
     await page.waitForTimeout(2000);
+    await hideRuffleOverlays(page, PLAYER_ID);
 
     // Screenshot with mouse NOT over the button (Up state = red)
     // Move mouse to safe off-stage position first
@@ -1157,6 +1210,7 @@ test.describe('Interactivity oracle: synthesized input drives SWF state', () => 
     // Hover over center of button → triggers Over state (blue)
     await page.locator(`#${PLAYER_ID}`).hover({ position: { x: 275, y: 200 } });
     await page.waitForTimeout(1000);
+    await hideRuffleOverlays(page, PLAYER_ID);
 
     const shotAfter = await page.locator(`#${PLAYER_ID}`).screenshot();
 

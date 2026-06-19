@@ -700,6 +700,24 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **onClipEvent(mouseDown) does not fire in headless Ruffle**: Ruffle's WASM player in
   headless Playwright does not dispatch global mouse clip events. Use
   `onClipEvent(load)` or `onClipEvent(enterFrame)` in interactivity oracle tests instead.
+- **The interactivity oracle's local `injectRufflePlayer` needed BOTH autoplay AND
+  overlay-hiding (task 1215).** `interactivity.spec.ts` had its OWN copy of
+  `injectRufflePlayer` (separate from the autoplay-correct button-roundtrip/keyboard
+  helpers) that loaded with neither `autoplay:'on'`/`unmuteOverlay:'hidden'` NOR a
+  `hideRuffleOverlays` call — so the 3 frame-advance click tests (button release/press,
+  dot-catcher capstone) saw `diffPixels=0` (Expected >100). Two coupled root causes, both
+  harness-only: (1) without `autoplay:'on'` the suspended-AudioContext play-button overlay
+  keeps the timeline from ever calling `play()` (the standard autoplay-gating bullet
+  above); (2) even with autoplay forcing playback, the play-button / hardware-accel panic
+  overlay elements in the player's shadow DOM still **intercept the synthesized `.click()`**
+  so it never reaches the SWF button's hit area — the on(release)/press BUTTONCONDACTION
+  never fires. Fix mirrors the passing helpers: add the two load opts AND a
+  `hideRuffleOverlays()` (recursive shadow-DOM `display:none !important` on any
+  id/class matching `modal|overlay|message|splash|play-button|panic`) after load and after
+  the click, before each screenshot. Proven: button-roundtrip's identical on(release)
+  fixture already PASSED (pixelDiff 10000) because it called `hideRuffleOverlays`. NOT a
+  product defect — same SWF, same Ruffle. Acceptance: all 6
+  `apps/desktop/e2e/interactivity.spec.ts` tests pass.
 - **Keyboard DOES reach AVM1 — focus is the gate; use onClipEvent(keyDown), not
   Key.isDown (task 0703)**. Proven end-to-end in `apps/desktop/e2e/keyboard.spec.ts`:
   publishing a SWF with `onClipEvent(keyDown){ _root.gotoAndStop(2); }`, clicking the
