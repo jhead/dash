@@ -6,54 +6,51 @@
  */
 import React, { useState } from "react";
 import type { BitmapItem } from "@flash/core";
+import { chrome, halo, chromeFont, buttonStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
-// Styles (Flash 8 dark-panel aesthetic)
+// Styles (Flash 8 light "Halo" chrome)
 // ---------------------------------------------------------------------------
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.5)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 2000,
   },
   dialog: {
-    background: "#3c3c3c",
-    border: "1px solid #666",
-    boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
+    background: chrome.appBg,
+    border: `1px solid ${chrome.separator}`,
+    boxShadow: "4px 4px 12px rgba(0,0,0,0.45)",
     minWidth: "300px",
     maxWidth: "400px",
     width: "320px",
-    fontFamily: "Tahoma, Arial, sans-serif",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
     userSelect: "none",
   },
   titleBar: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    background: "#2a2a2a",
-    borderBottom: "1px solid #555",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `1px solid ${halo.headerDivider}`,
     padding: "4px 6px",
     cursor: "default",
   },
   titleText: {
-    fontSize: "11px",
+    ...chromeFont(),
     fontWeight: "bold",
-    color: "#e0e0e0",
+    color: chrome.textDefault,
   },
   closeBtn: {
-    background: "none",
-    border: "none",
-    color: "#aaa",
-    cursor: "pointer",
-    fontSize: "13px",
-    padding: "0 2px",
+    ...buttonStyle("up"),
+    width: "16px",
+    height: "16px",
+    padding: 0,
     lineHeight: 1,
   },
   body: {
@@ -61,42 +58,44 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: "8px",
+    background: halo.panelContentBg,
   },
   label: {
-    fontSize: "11px",
-    color: "#ccc",
+    ...chromeFont(),
+    color: chrome.textDefault,
     marginBottom: "4px",
   },
   listBox: {
-    background: "#1e1e1e",
-    border: "1px solid #555",
+    background: halo.inputBg,
+    border: `1px solid ${chrome.separator}`,
     height: "180px",
     overflowY: "auto",
   },
   listItem: {
     padding: "4px 8px",
     cursor: "default",
-    fontSize: "11px",
+    ...chromeFont(),
+    color: chrome.textDefault,
     display: "flex",
     alignItems: "center",
     gap: "6px",
   },
   listItemSelected: {
-    background: "#0078d7",
-    color: "#fff",
+    background: halo.selectionColor,
+    color: chrome.textDefault,
   },
   thumbnail: {
     width: "24px",
     height: "24px",
     objectFit: "contain",
-    background: "#333",
-    border: "1px solid #444",
+    background: halo.panelContentBg,
+    border: `1px solid ${halo.borderColor}`,
     flexShrink: 0,
   },
   emptyMsg: {
-    color: "#777",
+    color: chrome.textDisabled,
     padding: "8px",
-    fontSize: "11px",
+    ...chromeFont(),
     fontStyle: "italic",
   },
   buttons: {
@@ -104,21 +103,21 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "flex-end",
     gap: "6px",
     padding: "6px 10px 10px",
-    borderTop: "1px solid #555",
+    borderTop: `1px solid ${chrome.separator}`,
+    background: halo.panelContentBg,
   },
   btn: {
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    fontSize: "11px",
-    cursor: "pointer",
-    border: "1px solid #666",
-    borderRadius: "2px",
-    background: "#4a4a4a",
-    color: "#e0e0e0",
+    minWidth: "58px",
   },
   btnPrimary: {
-    background: "#0078d7",
-    borderColor: "#005fa3",
-    color: "#fff",
+    ...buttonStyle("up"),
+    padding: "3px 14px",
+    minWidth: "58px",
+    borderColor: halo.haloBlue,
+    color: chrome.textDefault,
+    fontWeight: "bold",
   },
 };
 
@@ -192,7 +191,7 @@ export function SwapBitmapDialog({
                     )}
                     <span>{item.name}</span>
                     {item.originalWidth > 0 && (
-                      <span style={{ color: isSelected ? "#cce0ff" : "#888", fontSize: "10px" }}>
+                      <span style={{ color: chrome.textDisabled, fontSize: "10px" }}>
                         {item.originalWidth}×{item.originalHeight}
                       </span>
                     )}

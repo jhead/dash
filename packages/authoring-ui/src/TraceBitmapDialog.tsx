@@ -10,36 +10,37 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { CurveFit, CornerThreshold, TraceBitmapOptions } from "@flash/core";
+import { chrome, halo, chromeFont, inputStyle, buttonStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
-// Styles
+// Styles (Flash 8 light "Halo" chrome)
 // ---------------------------------------------------------------------------
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.5)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 2000,
   },
   dialog: {
-    background: "#3c3c3c",
-    border: "1px solid #666",
-    boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
+    background: chrome.appBg,
+    border: `1px solid ${chrome.separator}`,
+    boxShadow: "4px 4px 12px rgba(0,0,0,0.45)",
     minWidth: "300px",
     zIndex: 2000,
-    fontFamily: "Tahoma, Arial, sans-serif",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
   },
   titleBar: {
-    background: "#555",
-    padding: "6px 10px",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `1px solid ${halo.headerDivider}`,
+    padding: "4px 6px",
+    ...chromeFont(),
     fontWeight: "bold",
-    fontSize: "12px",
+    color: chrome.textDefault,
     userSelect: "none",
     cursor: "default",
     display: "flex",
@@ -48,6 +49,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   body: {
     padding: "12px 16px",
+    background: halo.panelContentBg,
   },
   row: {
     display: "flex",
@@ -58,44 +60,37 @@ const styles: Record<string, React.CSSProperties> = {
   label: {
     width: "130px",
     flexShrink: 0,
-    color: "#ccc",
+    ...chromeFont(),
+    color: chrome.textDefault,
   },
   input: {
     width: "70px",
-    background: "#222",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    padding: "2px 4px",
-    fontSize: "11px",
+    ...inputStyle(),
   },
   select: {
     flex: 1,
-    background: "#222",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    padding: "2px 4px",
-    fontSize: "11px",
+    ...inputStyle(),
   },
   footer: {
     display: "flex",
     justifyContent: "flex-end",
     gap: "8px",
     padding: "8px 16px 12px",
-    borderTop: "1px solid #555",
+    borderTop: `1px solid ${chrome.separator}`,
+    background: halo.panelContentBg,
   },
   button: {
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    background: "#555",
-    border: "1px solid #888",
-    color: "#e0e0e0",
-    cursor: "pointer",
-    fontSize: "11px",
-    fontFamily: "Tahoma, Arial, sans-serif",
+    minWidth: "58px",
   },
   buttonPrimary: {
-    background: "#0078d7",
-    border: "1px solid #005aa0",
-    color: "#fff",
+    ...buttonStyle("up"),
+    padding: "3px 14px",
+    minWidth: "58px",
+    borderColor: halo.haloBlue,
+    color: chrome.textDefault,
+    fontWeight: "bold",
   },
 };
 

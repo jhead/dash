@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { VideoItem } from "@flash/core";
 import { createVideo } from "@flash/core";
 import type { PendingVideoImport } from "./store/uiStore.js";
+import { chrome, halo, chromeFont, inputStyle, buttonStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,7 +64,7 @@ const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.5)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -71,73 +72,54 @@ const styles: Record<string, React.CSSProperties> = {
   },
   dialog: {
     position: "fixed",
-    background: "#3c3c3c",
-    border: "1px solid #666",
-    boxShadow: "4px 4px 12px rgba(0,0,0,0.6)",
+    background: chrome.appBg,
+    border: `1px solid ${chrome.separator}`,
+    boxShadow: "4px 4px 12px rgba(0,0,0,0.45)",
     minWidth: "340px",
     zIndex: 1000,
-    fontFamily: "Tahoma, Arial, sans-serif",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
     userSelect: "none",
   },
   titleBar: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    background: "#2a2a2a",
-    borderBottom: "1px solid #555",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `1px solid ${halo.headerDivider}`,
     padding: "4px 6px",
   },
-  titleText: { fontSize: "11px", fontWeight: "bold", color: "#e0e0e0" },
+  titleText: { ...chromeFont(), fontWeight: "bold", color: chrome.textDefault },
   closeBtn: {
-    background: "#666",
-    border: "1px solid #888",
-    color: "#e0e0e0",
-    width: "14px",
-    height: "14px",
-    fontSize: "10px",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+    ...buttonStyle("up"),
+    width: "16px",
+    height: "16px",
     padding: 0,
     lineHeight: 1,
   },
-  body: { padding: "10px 12px" },
+  body: { padding: "10px 12px", background: halo.panelContentBg },
   row: { display: "flex", alignItems: "center", marginBottom: "8px" },
-  label: { width: "78px", flexShrink: 0, fontSize: "11px", color: "#ccc" },
+  label: { width: "78px", flexShrink: 0, ...chromeFont(), color: chrome.textDefault },
   inputWide: {
     flex: 1,
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
-    padding: "2px 4px",
-    outline: "none",
+    ...inputStyle(),
   },
   inputNum: {
     width: "64px",
-    background: "#1e1e1e",
-    border: "1px solid #555",
-    color: "#e0e0e0",
-    fontSize: "11px",
-    padding: "2px 4px",
-    outline: "none",
+    ...inputStyle(),
   },
-  divider: { height: "1px", background: "#555", margin: "8px 0" },
+  divider: { height: "1px", background: chrome.separator, margin: "8px 0" },
   metaBox: {
-    background: "#2a2a2a",
-    border: "1px solid #555",
+    background: halo.inputBg,
+    border: `1px solid ${chrome.separator}`,
     padding: "6px 8px",
     marginBottom: "8px",
-    fontSize: "11px",
-    color: "#ccc",
+    ...chromeFont(),
+    color: chrome.textDefault,
     lineHeight: 1.5,
   },
-  metaKey: { color: "#9aa", display: "inline-block", width: "84px" },
-  metaVal: { color: "#e0e0e0" },
-  warn: { color: "#e0b050", fontStyle: "italic" },
+  metaKey: { color: chrome.textDisabled, display: "inline-block", width: "84px" },
+  metaVal: { color: chrome.textDefault },
+  warn: { color: halo.error, fontStyle: "italic" },
   radioGroup: {
     display: "flex",
     flexDirection: "column" as const,
@@ -150,8 +132,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "6px",
     cursor: "pointer",
-    fontSize: "11px",
-    color: "#e0e0e0",
+    ...chromeFont(),
+    color: chrome.textDefault,
   },
   btnRow: {
     display: "flex",
@@ -160,22 +142,17 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: "10px",
   },
   btn: {
-    background: "#555",
-    border: "1px solid #777",
-    color: "#e0e0e0",
-    fontSize: "11px",
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    cursor: "pointer",
     minWidth: "58px",
   },
   btnPrimary: {
-    background: "#1a6ea8",
-    border: "1px solid #2288cc",
-    color: "#fff",
-    fontSize: "11px",
+    ...buttonStyle("up"),
     padding: "3px 14px",
-    cursor: "pointer",
     minWidth: "58px",
+    borderColor: halo.haloBlue,
+    color: chrome.textDefault,
+    fontWeight: "bold",
   },
 };
 
@@ -326,7 +303,7 @@ export function VideoImportDialog({
               style={styles.inputNum}
               data-testid="video-import-width"
             />
-            <span style={{ width: "28px", textAlign: "center", color: "#ccc" }}>×</span>
+            <span style={{ width: "28px", textAlign: "center", color: chrome.textDefault }}>×</span>
             <span style={{ ...styles.label, width: "44px" }}>Height:</span>
             <input
               type="number"
@@ -350,13 +327,13 @@ export function VideoImportDialog({
               style={styles.inputNum}
               data-testid="video-import-fps"
             />
-            <span style={{ marginLeft: "6px", color: "#ccc" }}>fps</span>
+            <span style={{ marginLeft: "6px", color: chrome.textDefault }}>fps</span>
           </div>
 
           <div style={styles.divider} />
 
           {/* Embed target */}
-          <div style={{ marginBottom: "6px", fontSize: "11px", color: "#ccc" }}>
+          <div style={{ marginBottom: "6px", ...chromeFont(), color: chrome.textDefault }}>
             Embed video in SWF:
           </div>
           <div style={styles.radioGroup}>

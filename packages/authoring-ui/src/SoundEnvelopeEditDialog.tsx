@@ -22,6 +22,28 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SoundEnvelopePoint, WaveformPeaks } from "@flash/core";
 import { decodeWavPeaks } from "@flash/core";
+import { chrome, halo, chromeFont, buttonStyle } from "./theme/flash8Theme.js";
+
+// ---------------------------------------------------------------------------
+// Canvas colors — re-picked to read on a LIGHT chrome background.
+// Dark waveform on a near-white band, haloBlue envelope/handles, light grid.
+// ---------------------------------------------------------------------------
+
+const CANVAS_BG = "#FFFFFF";          // dialog content white
+const BAND_BG = "#F2F2F2";            // channel band (very light grey)
+const PLACEHOLDER_BG = "#E0E0E0";     // flat placeholder when no waveform
+const WAVEFORM_COLOR = "#46586A";     // dark slate waveform peaks
+const GRID_COLOR = "#CFCFCF";         // light dashed amplitude gridlines
+const CHANNEL_LABEL = "#808080";      // L / R band labels
+const MARKER_LABEL = "#808080";       // In / Out text labels
+const ENVELOPE_COLOR = halo.haloBlue; // envelope curve
+const NODE_COLOR = halo.haloBlue;     // envelope handle dot
+const NODE_ACTIVE = "#FFB300";        // dragging handle (amber)
+const NODE_STROKE = "#FFFFFF";        // node outline
+const IN_MARKER = "#1FA855";          // in-point (green)
+const OUT_MARKER = "#D8501E";         // out-point (orange-red)
+const MARKER_ACTIVE = "#FFB300";      // dragging marker (amber)
+const DIM_OVERLAY = "rgba(0,0,0,0.18)"; // trimmed region dimming
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -186,7 +208,7 @@ function drawWaveform(
   const mid = yTop + INNER_H / 2;
   const chan = peaks.channels[channelIdx] ?? peaks.channels[0];
   if (!chan) return;
-  ctx.fillStyle = "#5a6a7a";
+  ctx.fillStyle = WAVEFORM_COLOR;
   // For each canvas X column inside the band, sample the corresponding peak.
   for (let px = 0; px < INNER_W; px++) {
     // Map this column back to full-clip normalised t, then to a bucket index.
@@ -206,16 +228,16 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState, view: ViewParam
   ctx.clearRect(0, 0, CW, CH);
 
   // Background
-  ctx.fillStyle = "#1a1a1a";
+  ctx.fillStyle = CANVAS_BG;
   ctx.fillRect(0, 0, CW, CH);
 
   // Channel bands background
-  ctx.fillStyle = "#252525";
+  ctx.fillStyle = BAND_BG;
   ctx.fillRect(PAD_L, LEFT_TOP, INNER_W, INNER_H);
   ctx.fillRect(PAD_L, RIGHT_TOP, INNER_W, INNER_H);
 
   // Channel labels
-  ctx.fillStyle = "#666";
+  ctx.fillStyle = CHANNEL_LABEL;
   ctx.font = "9px Tahoma, Arial, sans-serif";
   ctx.fillText("L", PAD_L - 18, LEFT_TOP + INNER_H / 2 + 3);
   ctx.fillText("R", PAD_L - 18, RIGHT_TOP + INNER_H / 2 + 3);
@@ -225,7 +247,7 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState, view: ViewParam
     drawWaveform(ctx, peaks, 0, LEFT_TOP, viewStart, zoom);
     drawWaveform(ctx, peaks, peaks.channelCount > 1 ? 1 : 0, RIGHT_TOP, viewStart, zoom);
   } else {
-    ctx.fillStyle = "#383838";
+    ctx.fillStyle = PLACEHOLDER_BG;
     ctx.fillRect(PAD_L + 1, LEFT_TOP + 2, INNER_W - 2, INNER_H - 4);
     ctx.fillRect(PAD_L + 1, RIGHT_TOP + 2, INNER_W - 2, INNER_H - 4);
   }
@@ -233,7 +255,7 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState, view: ViewParam
   // In/out dimming
   const inX = tToX(s.inPoint, viewStart, zoom);
   const outX = tToX(s.outPoint, viewStart, zoom);
-  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillStyle = DIM_OVERLAY;
   // Before in-point
   if (inX > PAD_L) {
     const w = Math.min(inX, PAD_L + INNER_W) - PAD_L;
@@ -250,7 +272,7 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState, view: ViewParam
   }
 
   // Grid lines (25%, 50%, 75% amplitude)
-  ctx.strokeStyle = "#333";
+  ctx.strokeStyle = GRID_COLOR;
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 3]);
   for (const amp of [0.25, 0.5, 0.75]) {
@@ -278,8 +300,8 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState, view: ViewParam
     ctx.stroke();
   }
 
-  drawCurve(s.leftNodes, LEFT_TOP, "#44aaff");
-  drawCurve(s.rightNodes, RIGHT_TOP, "#44aaff");
+  drawCurve(s.leftNodes, LEFT_TOP, ENVELOPE_COLOR);
+  drawCurve(s.rightNodes, RIGHT_TOP, ENVELOPE_COLOR);
 
   // Draw envelope nodes
   function drawNodes(
@@ -297,9 +319,9 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState, view: ViewParam
         s.activeItem.index === i;
       ctx.beginPath();
       ctx.arc(x, y, NODE_R, 0, Math.PI * 2);
-      ctx.fillStyle = isActive ? "#ffdd00" : "#0099ff";
+      ctx.fillStyle = isActive ? NODE_ACTIVE : NODE_COLOR;
       ctx.fill();
-      ctx.strokeStyle = "#fff";
+      ctx.strokeStyle = NODE_STROKE;
       ctx.lineWidth = 0.5;
       ctx.stroke();
     });
@@ -311,21 +333,21 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState, view: ViewParam
   // In-point marker (only if within view)
   if (inX >= PAD_L - 1 && inX <= PAD_L + INNER_W + 1) {
     const inActive = s.activeItem?.kind === "in";
-    ctx.strokeStyle = inActive ? "#ffdd00" : "#00ff88";
+    ctx.strokeStyle = inActive ? MARKER_ACTIVE : IN_MARKER;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(inX, PAD_T);
     ctx.lineTo(inX, PAD_T + INNER_H * 2 + 8);
     ctx.stroke();
     // Triangle top indicator
-    ctx.fillStyle = inActive ? "#ffdd00" : "#00ff88";
+    ctx.fillStyle = inActive ? MARKER_ACTIVE : IN_MARKER;
     ctx.beginPath();
     ctx.moveTo(inX, PAD_T);
     ctx.lineTo(inX + 6, PAD_T - 5);
     ctx.lineTo(inX - 6, PAD_T - 5);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = "#555";
+    ctx.fillStyle = MARKER_LABEL;
     ctx.font = "9px Tahoma, Arial, sans-serif";
     ctx.fillText("In", inX + 2, CH - 5);
   }
@@ -333,20 +355,20 @@ function drawCanvas(ctx: CanvasRenderingContext2D, s: DrawState, view: ViewParam
   // Out-point marker (only if within view)
   if (outX >= PAD_L - 1 && outX <= PAD_L + INNER_W + 1) {
     const outActive = s.activeItem?.kind === "out";
-    ctx.strokeStyle = outActive ? "#ffdd00" : "#ff6633";
+    ctx.strokeStyle = outActive ? MARKER_ACTIVE : OUT_MARKER;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(outX, PAD_T);
     ctx.lineTo(outX, PAD_T + INNER_H * 2 + 8);
     ctx.stroke();
-    ctx.fillStyle = outActive ? "#ffdd00" : "#ff6633";
+    ctx.fillStyle = outActive ? MARKER_ACTIVE : OUT_MARKER;
     ctx.beginPath();
     ctx.moveTo(outX, PAD_T);
     ctx.lineTo(outX + 6, PAD_T - 5);
     ctx.lineTo(outX - 6, PAD_T - 5);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = "#555";
+    ctx.fillStyle = MARKER_LABEL;
     ctx.font = "9px Tahoma, Arial, sans-serif";
     ctx.fillText("Out", outX + 2, CH - 5);
   }
@@ -598,7 +620,7 @@ export function SoundEnvelopeEditDialog({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.55)",
+        background: "rgba(0,0,0,0.45)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -610,12 +632,10 @@ export function SoundEnvelopeEditDialog({
     >
       <div
         style={{
-          background: "#3c3c3c",
-          border: "1px solid #666",
-          boxShadow: "4px 4px 16px rgba(0,0,0,0.7)",
-          fontFamily: "Tahoma, Arial, sans-serif",
-          fontSize: 11,
-          color: "#e0e0e0",
+          background: chrome.appBg,
+          border: `1px solid ${chrome.separator}`,
+          boxShadow: "4px 4px 16px rgba(0,0,0,0.45)",
+          ...chromeFont(),
           userSelect: "none",
           minWidth: 440,
         }}
@@ -626,30 +646,22 @@ export function SoundEnvelopeEditDialog({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            background: "#2a2a2a",
-            borderBottom: "1px solid #555",
+            background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+            borderBottom: `1px solid ${halo.headerDivider}`,
             padding: "4px 6px",
           }}
         >
-          <span style={{ fontWeight: "bold", fontSize: 11 }}>Edit Envelope</span>
+          <span style={{ ...chromeFont(), fontWeight: "bold" }}>Edit Envelope</span>
           <button
             onClick={onClose}
-            style={{
-              background: "none",
-              border: "1px solid #666",
-              color: "#ccc",
-              cursor: "pointer",
-              fontSize: 11,
-              padding: "1px 5px",
-              lineHeight: "14px",
-            }}
+            style={{ ...buttonStyle("up"), width: 16, height: 16, padding: 0, lineHeight: 1 }}
           >
             ×
           </button>
         </div>
 
         {/* Body */}
-        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, background: halo.panelContentBg }}>
           {/* Canvas */}
           <div style={{ display: "flex", justifyContent: "center" }}>
             <canvas
@@ -658,7 +670,7 @@ export function SoundEnvelopeEditDialog({
               height={CH}
               style={{
                 cursor: "crosshair",
-                border: "1px solid #555",
+                border: `1px solid ${chrome.separator}`,
                 display: "block",
               }}
               onMouseDown={onMouseDown}
@@ -676,21 +688,17 @@ export function SoundEnvelopeEditDialog({
               fontSize: 10,
             }}
           >
-            <span style={{ color: "#aaa" }}>Zoom:</span>
+            <span style={{ ...chromeFont(), fontSize: 10 }}>Zoom:</span>
             {ZOOM_LEVELS.map((z) => (
               <button
                 key={z}
                 aria-label={`zoom-${z}x`}
                 onClick={() => applyZoom(z)}
                 style={{
-                  background: zoom === z ? "#0066cc" : "#555",
-                  border: "1px solid #888",
-                  color: "#e0e0e0",
-                  cursor: "pointer",
+                  ...buttonStyle(zoom === z ? "down" : "up"),
                   fontSize: 10,
                   padding: "1px 7px",
-                  borderRadius: 2,
-                  fontWeight: zoom === z ? "bold" : "normal",
+                  ...(zoom === z ? { borderColor: halo.haloBlue, color: chrome.textDefault, fontWeight: "bold" } : {}),
                 }}
               >
                 {z}×
@@ -712,7 +720,7 @@ export function SoundEnvelopeEditDialog({
           </div>
 
           {/* Instructions */}
-          <div style={{ fontSize: 10, color: "#666", textAlign: "center" }}>
+          <div style={{ fontSize: 10, color: chrome.textDisabled, textAlign: "center" }}>
             Drag In/Out markers to trim. Click channel band to add a volume node.
             Right-click an interior node to remove it.
           </div>
@@ -721,43 +729,24 @@ export function SoundEnvelopeEditDialog({
           <div style={{ display: "flex", justifyContent: "space-between", gap: 6, marginTop: 4 }}>
             <button
               onClick={handleReset}
-              style={{
-                background: "#555",
-                border: "1px solid #888",
-                color: "#e0e0e0",
-                cursor: "pointer",
-                fontSize: 11,
-                padding: "3px 10px",
-                borderRadius: 2,
-              }}
+              style={{ ...buttonStyle("up"), padding: "3px 10px" }}
             >
               Reset
             </button>
             <div style={{ display: "flex", gap: 6 }}>
               <button
                 onClick={onClose}
-                style={{
-                  background: "#555",
-                  border: "1px solid #888",
-                  color: "#e0e0e0",
-                  cursor: "pointer",
-                  fontSize: 11,
-                  padding: "3px 14px",
-                  borderRadius: 2,
-                }}
+                style={{ ...buttonStyle("up"), padding: "3px 14px" }}
               >
                 Cancel
               </button>
               <button
                 onClick={handleOk}
                 style={{
-                  background: "#0066cc",
-                  border: "1px solid #0099ff",
-                  color: "#ffffff",
-                  cursor: "pointer",
-                  fontSize: 11,
+                  ...buttonStyle("up"),
                   padding: "3px 14px",
-                  borderRadius: 2,
+                  borderColor: halo.haloBlue,
+                  color: chrome.textDefault,
                   fontWeight: "bold",
                 }}
               >

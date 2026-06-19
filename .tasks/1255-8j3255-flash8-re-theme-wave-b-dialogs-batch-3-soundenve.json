@@ -1,10 +1,10 @@
 {
   "id": "1255-8j3255-flash8-re-theme-wave-b-dialogs-batch-3-soundenve",
   "title": "Flash8 re-theme Wave B: dialogs batch 3 (SoundEnvelopeEdit, SwapBitmap, SwapSymbol, TimelineEffect, TraceBitmap, VideoImport)",
-  "description": "Final dialogs batch. Convert these to the Flash 8 light theme via packages/authoring-ui/src/theme/flash8Theme.ts (chrome.*/halo.*), mirroring Shell.tsx + converted dialogs. Files (packages/authoring-ui/src/): SoundEnvelopeEditDialog.tsx, SwapBitmapDialog.tsx, SwapSymbolDialog.tsx, TimelineEffectDialog.tsx, TraceBitmapDialog.tsx, VideoImportDialog.tsx. Light #ECECEC chrome, white content, near-black Tahoma text, halo inputs/buttons, #999999 separators, scrim rgba(0,0,0,~0.45). NOTE: SoundEnvelopeEditDialog draws a waveform + envelope on canvas \u2014 re-pick waveform/envelope/handle/grid colors to read on a light bg (dark waveform, haloBlue envelope handles). TraceBitmap/VideoImport may show preview images (leave image content; theme the chrome). Keep functionality intact. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: those 6 dialog files only (+ read-only theme import).",
-  "status": "open",
+  "description": "DONE. Converted 6 dialogs to Flash 8 light theme via flash8Theme chrome.*/halo.* tokens: SoundEnvelopeEditDialog, SwapBitmap, SwapSymbol, TimelineEffect, TraceBitmap, VideoImport. Light #ECECEC chrome, white content (halo.panelContentBg), near-black Tahoma (chromeFont), halo inputs (inputStyle)/buttons (buttonStyle), #999999 separators (chrome.separator), header gradient title bars, scrim rgba(0,0,0,0.45). SoundEnvelope canvas re-picked for light bg: dark slate waveform #46586A, haloBlue envelope+handles, light #CFCFCF dashed grid, green/orange in/out markers, lighter dim overlay. TraceBitmap/VideoImport: chrome themed, preview/meta content left intact. Functionality unchanged. EVIDENCE: pnpm --filter './packages/**' build => Done (all 7 pkgs). pnpm --filter @flash/authoring-ui run test -- --run => 44 files, 653 tests passed (0 failures; incl soundEnvelopeDialog 8/8, videoImportDialog 6/6). Screenshot deferred (no live dev server in batch worktree).",
+  "status": "done",
   "effort": "high",
   "priority": "medium",
   "created_at": "2026-06-19T06:13:05Z",
-  "updated_at": "2026-06-19T06:13:05Z"
+  "updated_at": "2026-06-19T06:21:06Z"
 }
