@@ -182,7 +182,8 @@ interface MenuBarItemProps {
   onClose: () => void;
 }
 
-function MenuBarItem({
+// Exported for unit testing of the outside-click dismiss behavior (task 1304).
+export function MenuBarItem({
   menu,
   isOpen,
   onOpen,
@@ -192,13 +193,22 @@ function MenuBarItem({
 
   useEffect(() => {
     if (!isOpen) return;
-    function handleClickOutside(e: MouseEvent) {
+    function handleClickOutside(e: Event) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         onClose();
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    // Listen on `pointerdown` in the CAPTURE phase (not bubbling `mousedown`).
+    // The stage work area captures the pointer on its own pointerdown
+    // (StageArea setPointerCapture) and/or calls preventDefault on the compat
+    // mousedown, both of which suppress the document-level `mousedown` — so a
+    // press that begins on the stage never dismissed the open menu (task 1304).
+    // `pointerdown` is dispatched to the document BEFORE the stage captures the
+    // pointer; the capture phase guarantees the listener runs even if a child
+    // stops propagation of the bubbling event.
+    document.addEventListener("pointerdown", handleClickOutside, true);
+    return () =>
+      document.removeEventListener("pointerdown", handleClickOutside, true);
   }, [isOpen, onClose]);
 
   return (
