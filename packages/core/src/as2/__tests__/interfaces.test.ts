@@ -77,12 +77,19 @@ describe("AS2 interface declarations and implements keyword", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 4: Interface emits no bytecode
+  // Test 4: Interface emits an empty constructor (task 1299)
   // -------------------------------------------------------------------------
 
-  it("4. interface declaration emits no bytecode", () => {
+  it("4. interface declaration emits its constructor so implements can resolve it", () => {
+    // An AS2 interface MUST exist as a global constructor function at runtime so
+    // a class's `implements` clause (compiled to ActionImplementsOp, which does
+    // ActionGetVariable "IEmpty") resolves to a real value. We emit
+    // `IEmpty = function() {};` (ActionDefineFunction2 0x8e + ActionSetVariable
+    // 0x1d). Previously this was a no-op (0 bytes), which left implements broken.
     const bytes = compileAS2("interface IEmpty {}");
-    expect(bytes.length).toBe(0);
+    expect(bytes.length).toBeGreaterThan(0);
+    expect(bytes).toContain(0x8e); // ActionDefineFunction2 (the empty ctor)
+    expect(bytes).toContain(0x1d); // ActionSetVariable (binds the interface name)
   });
 
   // -------------------------------------------------------------------------

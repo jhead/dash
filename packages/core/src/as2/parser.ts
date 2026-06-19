@@ -300,7 +300,10 @@ class Parser {
       this.eat('keyword', 'dynamic');
     }
     const start = this.eat('keyword', 'class');
-    const name = this.eat('identifier').value;
+    // Class names may be fully qualified (e.g. `com.example.Foo`) — parse the
+    // whole dotted path, not just a single identifier. parseTypeName already
+    // handles the dotted form (used for extends/implements/var types).
+    const name = this.parseTypeName();
 
     let superClass: string | null = null;
     if (this.tryEat('keyword', 'extends')) {
@@ -375,7 +378,9 @@ class Parser {
 
   private parseInterfaceDecl(): InterfaceDecl {
     const start = this.eat('keyword', 'interface');
-    const name = this.eat('identifier').value;
+    // Interface names may be fully qualified (e.g. `com.example.IFoo`) — parse
+    // the whole dotted path, same as class names.
+    const name = this.parseTypeName();
 
     const superInterfaces: string[] = [];
     if (this.tryEat('keyword', 'extends')) {

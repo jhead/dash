@@ -18,6 +18,7 @@ import { assembleSwf } from "./compiler/assemble.js";
 import { flattenDisplayObjects } from "./compiler/display.js";
 import { topoSortSymbols, encodeExportAssets, encodeImportAssets2, runSymbolPass } from "./compiler/symbols.js";
 import { runComponentPass } from "./compiler/components.js";
+import { runClassPass } from "./compiler/classes.js";
 import { runCharacterPass } from "./compiler/characters.js";
 import { runMediaPass } from "./compiler/media.js";
 import { createDepthAllocator, runDepthPrepass } from "./compiler/depth.js";
@@ -155,6 +156,21 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
   const componentPass = runComponentPass({ writer, doc, charIdMap });
   exportEntries.push(...componentPass.exportEntries);
   doInitActionBodies.push(...componentPass.doInitActionBodies);
+
+  // 3e. AS2 user-class pass (task 1299): compile each external `.as` class
+  // attached to the document (doc.asClasses) into a class-DEFINITION
+  // DoInitAction, topologically ordered superclass-before-subclass. These MUST
+  // execute BEFORE the registerClass bindings the symbol pass emitted (which do
+  // `Object.registerClass(linkageId, ClassName)` and dereference the class
+  // constructor), so the class definition exists in _global when registerClass
+  // resolves it. We PREPEND them to the front of doInitActionBodies (the symbol-
+  // pass registerClass bodies and component bodies were already pushed above).
+  // import statements are a pure resolution hint and emit no bytecode. See
+  // compiler/classes.ts.
+  const classPass = runClassPass(doc);
+  if (classPass.doInitActionBodies.length > 0) {
+    doInitActionBodies.unshift(...classPass.doInitActionBodies);
+  }
 
   // 4. Frames — iterate ALL scenes' timelines.
   //    Each scene gets a FrameLabel tag (scene name) at its first frame.

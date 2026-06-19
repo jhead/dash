@@ -733,7 +733,7 @@ class Compiler {
         break;
 
       case 'InterfaceDecl':
-        // Interface declarations have no runtime representation — skip silently
+        this.compileInterfaceDecl(stmt as import('./ast.js').InterfaceDecl);
         break;
 
       case 'SwitchStmt':
@@ -2895,6 +2895,70 @@ class Compiler {
   // ---- Class compilation ---------------------------------------------------
 
   /**
+   * For a fully-qualified class/interface name (`com.example.Foo`), emit the
+   * AVM1 bytecode that ensures every intermediate package object exists on
+   * `_global`, equivalent to:
+   *
+   *   if (_global.com == undefined) { _global.com = {}; }
+   *   if (_global.com.example == undefined) { _global.com.example = {}; }
+   *
+   * (The leaf — `_global.com.example.Foo` — is assigned the constructor by the
+   * normal ActionSetVariable path in compileClassDecl, which resolves the dotted
+   * package portion on the scope chain once these objects exist.)
+   *
+   * AVM1's resolve_target_path does NOT auto-create missing intermediates, so
+   * without these guards a dotted-name ActionSetVariable silently no-ops and the
+   * class never registers. Bare names (no dot) need no package objects.
+   *
+   * Anchoring on `_global` (rather than the scope-relative dotted path) is what
+   * makes the class resolvable from anywhere at runtime — exactly how the v2
+   * component pass authors `_global.mx.controls.Button`.
+   */
+  private emitEnsurePackagePath(qualifiedName: string): void {
+    if (!qualifiedName.includes('.')) return;
+    const parts = qualifiedName.split('.');
+    // Guard each package level EXCEPT the leaf (the class itself).
+    for (let depth = 1; depth < parts.length; depth++) {
+      const prefix = parts.slice(0, depth); // e.g. ['com'] then ['com','example']
+
+      // --- Evaluate the current package object: _global.<prefix...> ---
+      const pushPackageValue = () => {
+        this.pushString('_global');
+        this.emit(0x1c); // ActionGetVariable → _global
+        for (const part of prefix) {
+          this.pushString(part);
+          this.emit(0x4e); // ActionGetMember
+        }
+      };
+
+      // if (<pkg> == undefined)
+      pushPackageValue();
+      this.pushUndefined();
+      this.emit(0x49); // ActionEquals2 → (pkg === undefined)
+      // ActionIf jumps when top-of-stack is truthy; we want to SKIP the
+      // assignment when the package already exists (i.e. NOT undefined). So
+      // invert: jump-over-create when (pkg == undefined) is FALSE.
+      this.emit(0x12); // ActionNot → true when pkg is defined
+      const skipCreatePos = this.emitActionIf();
+
+      // <pkg parent>.<leaf-of-prefix> = {}
+      // Build the parent object reference then SetMember the leaf segment.
+      this.pushString('_global');
+      this.emit(0x1c); // ActionGetVariable → _global
+      for (let i = 0; i < prefix.length - 1; i++) {
+        this.pushString(prefix[i]!);
+        this.emit(0x4e); // ActionGetMember → descend to the parent package
+      }
+      this.pushString(prefix[prefix.length - 1]!); // member name
+      this.pushInt(0);
+      this.emit(0x43); // ActionInitObject → {} (0 properties)
+      this.emit(0x4f); // ActionSetMember → parent.member = {}
+
+      this.patchJump(skipCreatePos, this.buf.length);
+    }
+  }
+
+  /**
    * Compile a ClassDecl to AVM1 bytecode.
    *
    * Emits the prototype-chain setup equivalent to:
@@ -2908,13 +2972,27 @@ class Compiler {
    */
   private compileClassDecl(decl: ClassDecl): void {
     const className = decl.name;
+    // For a fully-qualified name like `com.example.Foo`, the constructor method
+    // is named with the LEAF segment only (`Foo`). Match against it.
+    const leafName = className.includes('.')
+      ? className.slice(className.lastIndexOf('.') + 1)
+      : className;
+
+    // ---- 0. Ensure the namespace package objects exist on _global ----------
+    // A dotted class name (`com.example.Foo`) registers as
+    // `_global.com.example.Foo`. AVM1's ActionSetVariable/ActionGetVariable
+    // resolve the dotted path via the scope chain (which includes _global), but
+    // they do NOT auto-create the intermediate package objects — Ruffle's
+    // resolve_target_path returns None if `com` or `com.example` is undefined.
+    // So we must create the package chain first. Bare names need no guard.
+    this.emitEnsurePackagePath(className);
 
     // ---- 1. Find constructor and split members ----------------------------
     const ctor = decl.body.find(
-      (m): m is FunctionDecl => m.type === 'FunctionDecl' && m.name === className
+      (m): m is FunctionDecl => m.type === 'FunctionDecl' && m.name === leafName
     );
     const members = decl.body.filter(
-      (m) => !(m.type === 'FunctionDecl' && (m as FunctionDecl).name === className)
+      (m) => !(m.type === 'FunctionDecl' && (m as FunctionDecl).name === leafName)
     );
 
     const ctorBody: Statement[] = ctor?.body.body ?? [];
@@ -2922,6 +3000,8 @@ class Compiler {
 
     // ---- 2. Emit: ClassName = function(...) { ... } ----------------------
     // ActionSetVariable expects: [name, value] on stack (name below, value on top)
+    // For a dotted name, ActionSetVariable resolves `com.example` on the scope
+    // chain (now that the package objects exist) and sets the `.Foo` member.
     this.pushString(className);
     this.emitDefineFunction2('', ctorParams, ctorBody, decl.superClass);
     this.emit(0x1d); // ActionSetVariable
@@ -3016,6 +3096,31 @@ class Compiler {
     for (const [propName, { getter, setter }] of getsetPairs) {
       this.compileAddProperty(className, propName, getter, setter, decl.superClass);
     }
+  }
+
+  /**
+   * Compile an InterfaceDecl to AVM1 bytecode.
+   *
+   * An AS2 interface has no method bodies, but it MUST exist as a global
+   * constructor function at runtime so that a class's `implements` clause —
+   * compiled to ActionImplementsOp (0x2c), which does `ActionGetVariable "IFoo"`
+   * to fetch the interface — resolves to a real value. Real Flash/MTASC emit the
+   * interface as an empty constructor: `IFoo = function() {};`. Without it, the
+   * GetVariable returns undefined and ActionImplementsOp is a no-op (or errors).
+   *
+   * Fully-qualified interface names register as `_global.<path>.IFoo`, identical
+   * to classes — the namespace package objects are created first.
+   */
+  private compileInterfaceDecl(decl: import('./ast.js').InterfaceDecl): void {
+    const ifaceName = decl.name;
+
+    // Ensure namespace package objects exist for a dotted interface name.
+    this.emitEnsurePackagePath(ifaceName);
+
+    // IFoo = function() {};  (empty constructor — no params, empty body)
+    this.pushString(ifaceName);
+    this.emitDefineFunction2('', [], [], null);
+    this.emit(0x1d); // ActionSetVariable
   }
 
   /**

@@ -132,12 +132,18 @@ describe("AS2 interface keyword support", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 6: Interface declaration emits no bytecode
+  // Test 6: Interface declaration emits its constructor (task 1299)
   // -------------------------------------------------------------------------
 
-  it("6. interface declaration emits no bytecode", () => {
+  it("6. interface declaration emits an empty constructor function", () => {
+    // The interface must register as a global constructor so a class's
+    // `implements IAnimal` (ActionImplementsOp → ActionGetVariable "IAnimal")
+    // can resolve it. Method signatures have no bodies, so the constructor is
+    // empty. Previously this was a no-op (0 bytes).
     const bytes = compileAS2("interface IAnimal { function getName():String; }");
-    expect(bytes.length).toBe(0);
+    expect(bytes.length).toBeGreaterThan(0);
+    expect(bytes).toContain(0x8e); // ActionDefineFunction2 (the empty ctor)
+    expect(bytes).toContain(0x1d); // ActionSetVariable (binds "IAnimal")
   });
 
   // -------------------------------------------------------------------------

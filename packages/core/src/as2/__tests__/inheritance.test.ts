@@ -283,9 +283,12 @@ describe("AS2 class inheritance: extends and super()", () => {
     ).toBe(true);
   });
 
-  it("12b. interface-only source emits no bytecode", () => {
+  it("12b. interface-only source emits its constructor (task 1299)", () => {
+    // An interface registers as a global constructor so `implements` can resolve
+    // it via ActionImplementsOp; it is no longer a no-op.
     const bytes = compileAS2("interface IAnimal { function speak():String; }");
-    expect(bytes.length).toBe(0);
+    expect(bytes.length).toBeGreaterThan(0);
+    expect(bytes).toContain(0x8e); // ActionDefineFunction2 (empty ctor)
   });
 
   // -------------------------------------------------------------------------

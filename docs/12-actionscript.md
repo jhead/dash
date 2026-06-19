@@ -97,3 +97,48 @@ Representative, not exhaustive — the goal is full Player 8 AS2 stdlib parity:
   our compiler output is validated against Ruffle + Flash Player 8 captures.
 - Authoring-time stage playback is geometry/tween preview only (no script execution).
   Running scripts means Test Movie: publish the SWF and play it in the embedded Ruffle.
+
+## AS2 class compile pipeline (`doc.asClasses` → SWF)
+
+External `.as` class files attached to the document (`FlashDocument.asClasses`, each
+`{ path, source }`; classpaths in `FlashDocument.classpaths`) are compiled into the
+published SWF so library symbols linked to a class resolve at runtime.
+
+Pipeline (all in `@flash/swf compileDocument`, orchestrated by `compile.ts`):
+
+1. **`runSymbolPass`** (`compiler/symbols.ts`) emits, for every library symbol whose
+   linkage has `exportForActionScript` + a `className`, an `ExportAssets` entry
+   (`linkageIdentifier → charId`) and a **registerClass** `DoInitAction`:
+   `Object.registerClass(linkageId, ClassName)`. `ActionGetVariable ClassName`
+   resolves a dotted name (`com.example.Foo`) by walking the path.
+2. **`runClassPass`** (`compiler/classes.ts`, task 1299) parses every `asClasses`
+   entry, **topologically orders them by `extends`** (a superclass DoInitAction must
+   run before a subclass's — `ActionExtends` dereferences the superclass constructor),
+   compiles each via `compileAS2`, and wraps it with `encodeRawDoInitAction` as a
+   **class-DEFINITION** DoInitAction. v1 compiles EVERY `asClasses` entry
+   deterministically; `import` is a pure resolution hint (no bytecode).
+3. **Ordering (load-bearing):** the orchestrator **prepends** the class-definition
+   bodies BEFORE the symbol-pass registerClass bodies in `doInitActionBodies`, so the
+   constructor exists in `_global` when registerClass resolves it. All DoInitActions are
+   emitted in scene-0 frame-0, after `ExportAssets`/`ImportAssets2`, before any
+   `PlaceObject`. This mirrors the v2-component pass (`compiler/components.ts`), which
+   solves the same definition-before-binding problem for synthesized `mx.controls.*`.
+
+**Fully-qualified names** (`com.example.Foo`) register at `_global.com.example.Foo`. The
+parser (`as2/parser.ts`) accepts a dotted class/interface name (`parseTypeName`), and
+`compileClassDecl` (`as2/compiler.ts`) emits `_global`-anchored package guards
+(`if (_global.com == undefined) _global.com = {}; …`) BEFORE the class binding —
+AVM1's `resolve_target_path` does NOT auto-create missing intermediate package objects,
+so a bare dotted `ActionSetVariable` would silently no-op without them. The constructor
+method is matched by the LEAF segment (`Foo`), not the dotted name.
+
+**Interfaces** compile to an empty global constructor (`IFoo = function(){};`) so a
+class's `implements` clause — `ActionImplementsOp` (0x2c), which does
+`ActionGetVariable "IFoo"` — resolves to a real value. (Previously a no-op.)
+
+**Acceptance:** structural unit tests in `packages/swf/src/__tests__/classes.test.ts`
+(definition-before-registerClass ordering; extends ordering; dotted-name registration)
+PLUS the Ruffle runtime oracle `apps/desktop/e2e/as2-class-attach.spec.ts` — a `.as`
+class linked to a library MovieClip, `attachMovie`d at runtime, whose method `trace()`s
+a known line surfaced through Ruffle's trace observer. Byte-presence tests are necessary
+but not sufficient; the Ruffle e2e is the gate.
