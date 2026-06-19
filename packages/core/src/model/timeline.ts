@@ -5,7 +5,7 @@ import type { FlashFilter } from "../engine/filters.js";
 
 /** Widened update type that covers both shape transforms and text fields. */
 type DisplayObjectUpdates = Partial<
-  Pick<ShapeDisplayObject, "x" | "y" | "scaleX" | "scaleY" | "rotation" | "skewX" | "skewY" | "shape"> & {
+  Pick<ShapeDisplayObject, "x" | "y" | "scaleX" | "scaleY" | "rotation" | "skewX" | "skewY" | "shape" | "warp"> & {
     text: string;
     width: number;
     height: number;

@@ -30,6 +30,23 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
 
 - **Free Transform modes**: Rotate and Skew, Scale, Distort, Envelope. Holding modifiers:
   Shift = constrain; Alt/Option = transform from center; corner vs edge handles differ.
+  - **Distort** (`Dst`) and **Envelope** (`Env`) are non-affine *mesh warps* that replace
+    the object's affine box with a four-sided mesh you drag directly. Distort gives 4 free
+    corner handles (the rectangle maps to an arbitrary quadrilateral, bilinearly
+    interpolated inside — drag one corner for a perspective-style skew). Envelope adds two
+    cubic-Bézier control points per edge (8 total), bending each edge into a curve; the
+    interior is a Coons patch (an untouched envelope is geometrically identical to distort).
+    Dragging a corner in envelope mode carries its two adjacent edge controls so the
+    tangents follow. The warp is stored on the display object as a `ShapeWarp`
+    (`mode`, `origBounds`, `corners`, optional `edges`) and **supersedes** the affine
+    scale/rotation/skew when present.
+  - **Implementation**: the warp math lives in `@flash/core` `engine/warp.ts`
+    (`identityWarp`, `pointToUV`, `bilinear`, `coons`, `evalWarp`, `warpPoint`, `warpShape`)
+    and is unit-tested in `engine/__tests__/warp.test.ts`. The stage renderer
+    (`engine/renderer.ts`) warps a shape's geometry into stage space and draws it directly
+    when `obj.warp` is set. The authoring-ui `StageArea` hit-tests the mesh control points,
+    drives the drag, draws the warped mesh frame + handles, and persists the result via
+    `onShapeWarp` → `updateDisplayObject({ warp })`.
 - **Lasso**: freeform drag; **Polygon Mode** for straight-edged selections (click successive
   vertices; close by double-clicking, clicking the start vertex, or pressing **Enter** —
   **Esc** cancels the in-progress polygon); **Magic Wand** selects contiguous bitmap regions

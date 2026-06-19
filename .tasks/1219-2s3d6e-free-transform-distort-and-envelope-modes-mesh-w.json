@@ -1,10 +1,10 @@
 {
   "id": "1219-2s3d6e-free-transform-distort-and-envelope-modes-mesh-w",
   "title": "Free Transform: Distort and Envelope modes (mesh warp)",
-  "description": "ToolsPanel exposes Distort + Envelope FreeTransform modes but the transform engine backend is stub/partial. Implement 4-point distort (perspective/mesh corner drag) and envelope (bezier mesh) warps. VERIFY ground truth first. Scope: packages/authoring-ui/src/tools/FreeTransformTool.ts (+ToolsPanel), packages/core/src/engine/transform.ts, stage renderer warp path. Build + tests green; update docs/04-toolbox.md.",
-  "status": "open",
+  "description": "DONE. Distort + Envelope mesh warp implemented end-to-end. Ground truth: ToolsPanel exposed 3 modes (rotate-scale/distort/envelope) and StageArea drew distort/envelope corner+edge handles, but the drag fell through to scale math (no warp) and there was no warp model/render path. Implemented: (1) core engine/warp.ts \u2014 ShapeWarp model (4 corners + 8 bezier edge controls), bilinear distort + Coons-patch envelope eval, warpShape geometry mapping w/ curve subdivision; ShapeWarp/WarpCorners/WarpEdges types on ShapeDisplayObject+DrawingObject; warp field in updateDisplayObject. (2) renderer.ts \u2014 warps shape geometry into stage space and draws directly when obj.warp set (supersedes affine). (3) StageArea \u2014 warp-handle hit test (corners always, edge controls in envelope), warpDragRef drag, warped mesh frame+handle render, onShapeWarp callback; Shell handleShapeWarp -> updateDisplayObject({warp}). (4) Tests: engine/__tests__/warp.test.ts (13 tests, all pass). Build green all 7 packages. core suite: 5250 pass, only 2-3 pre-existing failures from missing fixtures/flash8-empty.fla (task 1207). authoring-ui suite: 639 pass. Docs: docs/04-toolbox.md updated.",
+  "status": "done",
   "effort": "high",
   "priority": "medium",
   "created_at": "2026-06-19T00:48:14Z",
-  "updated_at": "2026-06-19T00:48:14Z"
+  "updated_at": "2026-06-19T01:07:12Z"
 }

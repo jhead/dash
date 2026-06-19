@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
-import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing } from "@flash/core";
-import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE } from "@flash/core";
+import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges } from "@flash/core";
+import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 
 // ---------------------------------------------------------------------------
@@ -697,6 +697,8 @@ export interface StageAreaProps {
   onDeleteSelected?: () => void;
   onShapeResize?: (id: string, newX: number, newY: number, scaleX: number, scaleY: number) => void;
   onShapeRotate?: (id: string, newRotation: number) => void;
+  /** Free Transform Distort / Envelope: persist the mesh warp on the object. */
+  onShapeWarp?: (id: string, warp: ShapeWarp) => void;
   /** Called by pen tool when a new path is complete (uses onShapeCreated); by subselection when geometry changes */
   onShapeUpdate?: (id: string, newShape: Shape) => void;
   // Bitmap display objects
@@ -910,6 +912,120 @@ const HANDLE_CURSORS: Record<TransformHandle, React.CSSProperties["cursor"]> = {
   w: "w-resize",
   rotate: "crosshair",
 };
+
+// ---------------------------------------------------------------------------
+// Free Transform — Distort / Envelope mesh-handle plumbing
+// ---------------------------------------------------------------------------
+
+/** A draggable warp control point: one of 4 corners or 8 envelope edge controls. */
+type WarpHandleId =
+  | "nw" | "ne" | "se" | "sw"
+  | "t0" | "t1" | "r0" | "r1" | "b0" | "b1" | "l0" | "l1";
+
+interface WarpHandle {
+  id: WarpHandleId;
+  x: number;
+  y: number;
+  /** Corners draw as squares; edge controls draw as circles. */
+  kind: "corner" | "edge";
+}
+
+/**
+ * Return the object's current warp, or build an identity warp from its
+ * transformed AABB when none has been applied yet. The mode argument forces
+ * the warp into the requested editor mode (switching distort↔envelope reuses
+ * the existing corners and synthesises identity edges as needed).
+ */
+function getOrInitWarp(
+  obj: ShapeDisplayObject,
+  bounds: { x: number; y: number; width: number; height: number },
+  mode: "distort" | "envelope"
+): ShapeWarp {
+  const existing = obj.warp;
+  if (!existing) return identityWarp(bounds, mode);
+  if (existing.mode === mode && (mode === "distort" || existing.edges)) return existing;
+  // Switching modes: keep corners, (re)derive edges for envelope.
+  if (mode === "distort") {
+    return { mode, origBounds: existing.origBounds, corners: existing.corners };
+  }
+  const c = existing.corners;
+  const lerp = (a: Point, b: Point, t: number): Point => ({
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+  });
+  const edges: WarpEdges = existing.edges ?? {
+    t0: lerp(c.nw, c.ne, 1 / 3), t1: lerp(c.nw, c.ne, 2 / 3),
+    r0: lerp(c.ne, c.se, 1 / 3), r1: lerp(c.ne, c.se, 2 / 3),
+    b0: lerp(c.sw, c.se, 1 / 3), b1: lerp(c.sw, c.se, 2 / 3),
+    l0: lerp(c.nw, c.sw, 1 / 3), l1: lerp(c.nw, c.sw, 2 / 3),
+  };
+  return { mode, origBounds: existing.origBounds, corners: c, edges };
+}
+
+/** Enumerate the draggable handle positions for a warp (corners + envelope edges). */
+function getWarpHandles(warp: ShapeWarp): WarpHandle[] {
+  const c = warp.corners;
+  const handles: WarpHandle[] = [
+    { id: "nw", x: c.nw.x, y: c.nw.y, kind: "corner" },
+    { id: "ne", x: c.ne.x, y: c.ne.y, kind: "corner" },
+    { id: "se", x: c.se.x, y: c.se.y, kind: "corner" },
+    { id: "sw", x: c.sw.x, y: c.sw.y, kind: "corner" },
+  ];
+  if (warp.mode === "envelope" && warp.edges) {
+    const e = warp.edges;
+    (["t0", "t1", "r0", "r1", "b0", "b1", "l0", "l1"] as const).forEach((id) => {
+      const p = e[id];
+      handles.push({ id, x: p.x, y: p.y, kind: "edge" });
+    });
+  }
+  return handles;
+}
+
+/**
+ * Apply a new absolute position to one warp control point, returning a new
+ * ShapeWarp. Dragging a CORNER also drags its two adjacent edge controls by the
+ * same delta (envelope), so the corner's tangents follow it — matching Flash's
+ * behaviour where moving a corner carries its handles.
+ */
+function moveWarpHandle(warp: ShapeWarp, id: WarpHandleId, nx: number, ny: number): ShapeWarp {
+  const setP = (p: Point, dx: number, dy: number): Point => ({ x: p.x + dx, y: p.y + dy });
+  if (id === "nw" || id === "ne" || id === "se" || id === "sw") {
+    const old = warp.corners[id];
+    const dx = nx - old.x;
+    const dy = ny - old.y;
+    const corners: WarpCorners = { ...warp.corners, [id]: { x: nx, y: ny } };
+    if (warp.mode !== "envelope" || !warp.edges) {
+      return { ...warp, corners };
+    }
+    // Carry the two edge controls anchored at this corner.
+    const e = { ...warp.edges };
+    const adj: Record<typeof id, (keyof WarpEdges)[]> = {
+      nw: ["t0", "l0"],
+      ne: ["t1", "r0"],
+      se: ["r1", "b1"],
+      sw: ["b0", "l1"],
+    } as Record<typeof id, (keyof WarpEdges)[]>;
+    for (const ek of adj[id]) {
+      e[ek] = setP(warp.edges[ek], dx, dy);
+    }
+    return { ...warp, corners, edges: e };
+  }
+  // Edge control point.
+  if (!warp.edges) return warp;
+  const edges: WarpEdges = { ...warp.edges, [id]: { x: nx, y: ny } };
+  return { ...warp, edges };
+}
+
+/** Build the polygon outline of the warped quad (used to draw the mesh frame). */
+function warpOutlinePoints(warp: ShapeWarp, samplesPerEdge = 12): Point[] {
+  const pts: Point[] = [];
+  // top (v=0, u 0→1), right (u=1, v 0→1), bottom (v=1, u 1→0), left (u=0, v 1→0)
+  for (let i = 0; i < samplesPerEdge; i++) pts.push(evalWarp(warp, i / samplesPerEdge, 0));
+  for (let i = 0; i < samplesPerEdge; i++) pts.push(evalWarp(warp, 1, i / samplesPerEdge));
+  for (let i = 0; i < samplesPerEdge; i++) pts.push(evalWarp(warp, 1 - i / samplesPerEdge, 1));
+  for (let i = 0; i < samplesPerEdge; i++) pts.push(evalWarp(warp, 0, 1 - i / samplesPerEdge));
+  return pts;
+}
 
 interface DrawPreview {
   tool: "oval" | "rect" | "line" | "polystar";
@@ -1252,6 +1368,7 @@ export function StageArea({
   onDeleteSelected,
   onShapeResize,
   onShapeRotate,
+  onShapeWarp,
   onShapeUpdate,
   guides = [],
   showGuides = true,
@@ -1357,6 +1474,15 @@ export function StageArea({
     /** Angle (degrees) from shape center to mouse at drag start — used for rotate delta. */
     startAngle?: number;
   } | null>(null);
+
+  // Free Transform Distort / Envelope mesh-warp drag state. Holds the control
+  // point being dragged and the warp snapshot at drag start.
+  const warpDragRef = useRef<{
+    handle: WarpHandleId;
+    shapeId: string;
+    warp: ShapeWarp;
+  } | null>(null);
+
   // Cursor to show when hovering over a handle
   const [handleCursor, setHandleCursor] = useState<React.CSSProperties["cursor"]>(undefined);
 
@@ -2064,27 +2190,22 @@ export function StageArea({
           if (selObj) {
             const bounds = transformedShapeBounds(selObj);
 
-            // For distort/envelope modes: check 4 corner handle positions
+            // Distort / Envelope: hit-test the warp mesh control points (4
+            // corners always; +8 bezier edge controls in envelope mode) at
+            // their warped positions. The drag updates a ShapeWarp, not scale.
             if (freeTransformMode === "distort" || freeTransformMode === "envelope") {
-              const corners: TransformHandle[] = ["nw", "ne", "se", "sw"];
-              const handles = getHandlePositions(bounds);
-              const cornerHandles = handles.filter((h) => corners.includes(h.id));
-              const hitCorner = cornerHandles.find(
-                (h) => Math.abs(stageX - h.x) <= 8 && Math.abs(stageY - h.y) <= 8
+              const warp = getOrInitWarp(selObj, bounds, freeTransformMode);
+              const warpHandles = getWarpHandles(warp);
+              const tol = 8 / internalZoom;
+              const hit = warpHandles.find(
+                (h) => Math.abs(stageX - h.x) <= tol && Math.abs(stageY - h.y) <= tol
               );
-              if (hitCorner) {
+              if (hit) {
                 e.preventDefault();
-                transformDragRef.current = {
-                  handle: hitCorner.id,
+                warpDragRef.current = {
+                  handle: hit.id,
                   shapeId: selectedShapeId,
-                  startStageX: stageX,
-                  startStageY: stageY,
-                  origBounds: bounds,
-                  origX: selObj.x,
-                  origY: selObj.y,
-                  origScaleX: selObj.scaleX ?? 1,
-                  origScaleY: selObj.scaleY ?? 1,
-                  origRotation: selObj.rotation ?? 0,
+                  warp,
                 };
                 return;
               }
@@ -2549,6 +2670,21 @@ export function StageArea({
         return;
       }
 
+      // Free Transform Distort / Envelope mesh-warp drag.
+      if (warpDragRef.current) {
+        e.preventDefault();
+        const wd = warpDragRef.current;
+        let { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        if (snapToPixels) {
+          stageX = Math.round(stageX);
+          stageY = Math.round(stageY);
+        }
+        const next = moveWarpHandle(wd.warp, wd.handle, stageX, stageY);
+        wd.warp = next;
+        onShapeWarp?.(wd.shapeId, next);
+        return;
+      }
+
       // Transform handle drag (resize / rotate)
       if (transformDragRef.current) {
         const td = transformDragRef.current;
@@ -2787,7 +2923,7 @@ export function StageArea({
         setPressedButtonId(null);
       }
     },
-    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeWarp, freeTransformMode, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
   );
 
   const onMouseUp = useCallback(
@@ -2797,11 +2933,13 @@ export function StageArea({
       panStartRef.current = null;
       const wasShapeDrag = selectionDragRef.current !== null;
       selectionDragRef.current = null;
+      const wasWarpDrag = warpDragRef.current !== null;
       transformDragRef.current = null;
+      warpDragRef.current = null;
       guideDragRef.current = null;
       gradientDragRef.current = null;
       // Notify parent that a shape drag gesture just ended so it can commit to undo history
-      if (wasShapeDrag) {
+      if (wasShapeDrag || wasWarpDrag) {
         onShapeMoveEnd?.();
       }
       // Enable Simple Buttons: clear pressed state on mouse up
@@ -3638,37 +3776,42 @@ export function StageArea({
       ctx.restore();
     }
 
-    // Draw Free Transform distort/envelope handles (4 or 8 handles)
+    // Draw Free Transform distort/envelope mesh handles at their WARPED
+    // positions (4 corners; +8 bezier edge controls in envelope mode), plus the
+    // warped mesh frame. The live warp during a drag comes from warpDragRef.
     if (activeTool === "free-transform" && selectedShapeId && (freeTransformMode === "distort" || freeTransformMode === "envelope")) {
       const obj = shapeDisplayObjects.find((o) => o.id === selectedShapeId);
       if (obj) {
         const bounds = transformedShapeBounds(obj);
+        const warp =
+          warpDragRef.current && warpDragRef.current.shapeId === selectedShapeId
+            ? warpDragRef.current.warp
+            : getOrInitWarp(obj, bounds, freeTransformMode);
         const ctx = renderCanvasRef.current.getContext("2d")!;
         ctx.save();
-        // Draw the 4 corner handles with orange color for distort mode
-        const corners = ["nw", "ne", "se", "sw"] as const;
-        const handles = getHandlePositions(bounds);
-        const cornerHandles = handles.filter((h) => corners.includes(h.id as typeof corners[number]));
+
+        // Warped mesh outline (orange, dashed). Follows the bent envelope edges.
+        const outline = warpOutlinePoints(warp);
         ctx.strokeStyle = "#ff6600";
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 2]);
-        ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+        ctx.beginPath();
+        ctx.moveTo(outline[0].x, outline[0].y);
+        for (let i = 1; i < outline.length; i++) ctx.lineTo(outline[i].x, outline[i].y);
+        ctx.closePath();
+        ctx.stroke();
         ctx.setLineDash([]);
-        for (const h of cornerHandles) {
+
+        for (const h of getWarpHandles(warp)) {
           ctx.fillStyle = "white";
           ctx.strokeStyle = "#ff6600";
-          ctx.fillRect(h.x - 5, h.y - 5, 10, 10);
-          ctx.strokeRect(h.x - 5, h.y - 5, 10, 10);
-        }
-        // For envelope mode also show edge midpoint handles
-        if (freeTransformMode === "envelope") {
-          const edgeMids = ["n", "e", "s", "w"] as const;
-          const edgeHandles = handles.filter((h) => edgeMids.includes(h.id as typeof edgeMids[number]));
-          for (const h of edgeHandles) {
+          if (h.kind === "corner") {
+            ctx.fillRect(h.x - 5, h.y - 5, 10, 10);
+            ctx.strokeRect(h.x - 5, h.y - 5, 10, 10);
+          } else {
+            // Envelope edge control: a circle with a tether to its anchor edge.
             ctx.beginPath();
             ctx.arc(h.x, h.y, 4, 0, Math.PI * 2);
-            ctx.fillStyle = "white";
-            ctx.strokeStyle = "#ff6600";
             ctx.fill();
             ctx.stroke();
           }

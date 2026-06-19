@@ -38,6 +38,7 @@ import type {
 } from "./filters.js";
 import type { Library } from "../model/types.js";
 import { getGoverningKeyframe } from "../model/timeline-query.js";
+import { warpShape } from "./warp.js";
 
 // ---------------------------------------------------------------------------
 // Color conversion
@@ -1570,7 +1571,12 @@ function renderDisplayObject(
       const rotation = obj.rotation ?? 0;
       const filters = obj.filters ?? [];
       const drawShape = () => {
-        if (scaleX !== 1 || scaleY !== 1 || rotation !== 0) {
+        if (obj.warp) {
+          // Distort / Envelope: the mesh warp supersedes the affine box. Warp the
+          // geometry into absolute stage space and draw it at the origin.
+          const warped = warpShape(obj.shape, obj.warp, obj.x, obj.y);
+          renderShape(ctx, warped, 0, 0, imageCache);
+        } else if (scaleX !== 1 || scaleY !== 1 || rotation !== 0) {
           ctx.save();
           ctx.translate(obj.x, obj.y);
           ctx.rotate((rotation * Math.PI) / 180);
@@ -1591,7 +1597,14 @@ function renderDisplayObject(
 
     case "drawing-object": {
       const filters = obj.filters ?? [];
-      const drawShape = () => renderShape(ctx, obj.shape, obj.x, obj.y, imageCache);
+      const drawShape = () => {
+        if (obj.warp) {
+          const warped = warpShape(obj.shape, obj.warp, obj.x, obj.y);
+          renderShape(ctx, warped, 0, 0, imageCache);
+        } else {
+          renderShape(ctx, obj.shape, obj.x, obj.y, imageCache);
+        }
+      };
       if (filters.length > 0) {
         applyFilters(ctx, filters, drawShape);
       } else {

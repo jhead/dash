@@ -309,6 +309,50 @@ export interface Shape {
 }
 
 // ---------------------------------------------------------------------------
+// Free Transform mesh warp (Distort / Envelope) — see ./warp.ts for the math.
+// ---------------------------------------------------------------------------
+
+/** The four mesh corners of a warp, in stage space. */
+export interface WarpCorners {
+  readonly nw: Point;
+  readonly ne: Point;
+  readonly se: Point;
+  readonly sw: Point;
+}
+
+/**
+ * Eight cubic-Bézier edge control points (envelope mode), in stage space.
+ * Each edge is the cubic from its start corner through two controls to its end
+ * corner. `t0/t1` are top (nw→ne), `r0/r1` right (ne→se), `b0/b1` bottom
+ * (sw→se, left→right), `l0/l1` left (nw→sw, top→bottom).
+ */
+export interface WarpEdges {
+  readonly t0: Point; readonly t1: Point;
+  readonly r0: Point; readonly r1: Point;
+  readonly b0: Point; readonly b1: Point;
+  readonly l0: Point; readonly l1: Point;
+}
+
+/**
+ * A non-affine mesh deformation applied to a display object by the Free
+ * Transform Distort / Envelope modes.
+ *
+ *  - `mode: "distort"`  — only `corners` is used (bilinear interior).
+ *  - `mode: "envelope"` — `corners` + `edges` (Coons-patch interior).
+ *
+ * `origBounds` is the object's transformed AABB at the moment the warp was
+ * created; it defines the (u,v) parameterization so re-evaluating the warp is
+ * stable across edits. When a `warp` is present on a display object the renderer
+ * draws the warped geometry directly and ignores the affine scale/rotation/skew.
+ */
+export interface ShapeWarp {
+  readonly mode: "distort" | "envelope";
+  readonly origBounds: Rect;
+  readonly corners: WarpCorners;
+  readonly edges?: WarpEdges;
+}
+
+// ---------------------------------------------------------------------------
 // Display objects
 // ---------------------------------------------------------------------------
 
@@ -346,6 +390,12 @@ export interface ShapeDisplayObject {
   readonly cacheAsBitmap?: boolean;
   /** Flash 8 filters applied to this object. */
   readonly filters?: readonly FlashFilter[];
+  /**
+   * Free Transform Distort / Envelope mesh warp. When present, the renderer
+   * draws the warped geometry directly and the affine scale/rotation/skew are
+   * superseded (matching Flash's distort/envelope behaviour).
+   */
+  readonly warp?: ShapeWarp;
 }
 
 /**
@@ -541,6 +591,8 @@ export interface DrawingObject {
   readonly y: number;
   /** Flash 8 filters applied to this object. */
   readonly filters?: readonly FlashFilter[];
+  /** Free Transform Distort / Envelope mesh warp (see {@link ShapeWarp}). */
+  readonly warp?: ShapeWarp;
 }
 
 export type TextType = "static" | "dynamic" | "input";

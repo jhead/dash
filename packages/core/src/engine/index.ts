@@ -116,6 +116,11 @@ export {
   makeIdentityMatrix, createInstanceMatrix, decomposeMatrix, multiplyMatrix,
 } from "./matrix.js";
 
+export type { ShapeWarp, WarpCorners, WarpEdges } from "./warp.js";
+export {
+  identityWarp, pointToUV, bilinear, coons, evalWarp, warpPoint, warpShape,
+} from "./warp.js";
+
 // Guide path utilities
 export type { PathPoint } from "./guidepath.js";
 export { samplePath, getGuideLayerPath } from "./guidepath.js";

@@ -40,6 +40,7 @@ import type {
   Shape,
   ShapeDisplayObject,
   ShapeHint,
+  ShapeWarp,
   SolidStroke,
   SoundEnvelopePoint,
   SoundItem,
@@ -1276,6 +1277,18 @@ export function Shell(): React.ReactElement {
       if (!layerId) return;
       pushDoc(withTimeline((t) =>
         updateDisplayObject(t, layerId, currentFrame, id, { rotation })
+      ));
+    },
+    [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
+  );
+
+  /** Free Transform Distort / Envelope: store the mesh warp on the object. */
+  const handleShapeWarp = useCallback(
+    (id: string, warp: ShapeWarp) => {
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      pushDoc(withTimeline((t) =>
+        updateDisplayObject(t, layerId, currentFrame, id, { warp })
       ));
     },
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
@@ -3044,6 +3057,7 @@ export function Shell(): React.ReactElement {
                 onDeleteSelected={handleDeleteSelected}
                 onShapeResize={handleShapeResize}
                 onShapeRotate={handleShapeRotate}
+                onShapeWarp={handleShapeWarp}
                 onShapeUpdate={handleShapeUpdate}
                 onShapeGradientUpdate={handleShapeUpdate}
                 guides={guides}
