@@ -406,3 +406,55 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
     dimension extractors are now live (consumed by `probeFlv`/`demuxFlv` per task 1225), model
     dims derive from the probe.
   - **1228** — RESOLVED + VERIFIED (see above); no longer open.
+
+
+---
+
+## 2026-06-19 — Verify task 1214 (CWS-decompress in structural SWF oracles) + 1229 part 1 (placed v2 components → SWF)
+
+- **Watermark (last fully-QA'd SHA):** `8fabd91` — the last VERIFIED commit
+  (1228→`7056784` / 1229-part1→`9fba499` / 1214→`8fabd91` all verified). Advances the
+  watermark to include the CWS-parse harness fix.
+- **NOTE — commits AFTER `8fabd91` are NOT yet QA'd.** Current repo HEAD is `af1d826`.
+  The intervening commits up to HEAD — including `07ad764` (task 1215 interactivity-autoplay
+  harness fix) and `af1d826` (task 1231 / component part 2.1 queue) — are the next sweep's
+  target and have NOT been QA-verified here.
+- **`8fabd91` / task 1214 — "e2e structural CWS-parse fix": VERIFIED genuinely resolved.**
+  New harness helper `apps/desktop/e2e/helpers/swf-parse.ts` detects the CWS magic and
+  zlib-inflates the body BEFORE tag-walking (not masking — no assertion was skipped or
+  loosened). `fla-roundtrip` was in fact STRENGTHENED: it had been reading an un-awaited
+  Promise → `undefined` → silently passing on garbage; it now `await`s `publish()`, inflates,
+  and asserts a real tag stream. The three structural specs (shape-morph tag-84, motion-guide
+  ShowFrame, fla-roundtrip) now pass for the RIGHT reason. No regression — solid/gradient
+  swf-dump confirm `publish()` emits CWS.
+- **`9fba499` / task 1229 PART 1 — "emit placed v2 components into SWF": VERIFIED
+  correct / accepted.** `runComponentPass` emits a synthetic DefineSprite + ExportAssets
+  linkage (FQ class name) + DoInitAction `Object.registerClass` (AVM1 arg order verified
+  against ruffle `activation.rs`). The instance is no longer dropped: a Button doc compiles
+  to 215 bytes vs the old 64-byte empty SWF; tests assert real decoded bytes; golden-parity
+  exit 0; Ruffle loads with zero AVM1 / page errors.
+  - **KNOWN remaining gap (tracked, not newly filed):** component PARAMETER values are
+    dropped on publish (`label="PLAY NOW"` vanishes). Tracked by task **1231** (Component
+    Part 2.1).
+  - **WATCH-ITEM for maintainer:** 1231 only statically seeds `Button.label` for ONE control;
+    general / live param-passing across ALL components is not yet a standalone task.
+- **ORCHESTRATION RULE (confirmed twice this session):** Do NOT run multiple Playwright /
+  Ruffle e2e subagents concurrently — they share the single Vite dev server on port 1420
+  (`playwright.config` `workers:1`), and concurrent runs cause `ERR_CONNECTION_REFUSED` /
+  "Port 1420 already in use" flakes. Serialize e2e-heavy QA agents. `golden-parity` (CLI,
+  no server) and pure code / unit-test agents CAN run in parallel. Future sweeps: fan out
+  parallel agents for static / byte / golden-parity work, but run only ONE e2e/Ruffle agent
+  at a time.
+- **Still open for workers (carried forward + new):**
+  - **1215** — interactivity-autoplay harness fix LANDED (`07ad764`); pending QA-verify next
+    sweep.
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+  - **1227** — Trace Bitmap marching-squares walker traces only ~half of non-rectangular
+    regions (needs Moore-neighbor rewrite + diagonal tests).
+  - **1230** — Free-Transform warp + affine double-transform in the published SWF (frame loop
+    emits PlaceObject2 affine on top of the baked warp).
+  - **1231** — Component Part 2.1: AS2 class-emission infra + functional Button; param
+    passing still limited (see WATCH-ITEM above).
+  - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
+- **Resolved + verified (no longer open):** 1213 / 1217, 1228, 1214, 1229-part 1.
