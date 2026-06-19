@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ButtonAction, ButtonHandler, ClipAction, Symbol, SymbolInstance } from "@flash/core";
 import { parse as parseAS2 } from "@flash/core";
+import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // AS2 keyword list for lightweight syntax highlighting
@@ -22,13 +23,16 @@ const KEYWORD_RE = new RegExp(
 );
 
 // ---------------------------------------------------------------------------
-// Token colours
+// Token colours — Flash 8 ActionScript editor palette on a WHITE code pane
+// (per docs/30-flash8-ui-spec.md §3.8): keywords blue, comments gray, strings
+// green, identifiers/foreground black. Numbers get a readable dark-orange so
+// they stay distinct against white without colliding with the keyword blue.
 // ---------------------------------------------------------------------------
 
-const COLOR_KEYWORD = "#569cd6";
-const COLOR_STRING  = "#CE9178";
-const COLOR_COMMENT = "#6A9955";
-const COLOR_NUMBER  = "#B5CEA8";
+const COLOR_KEYWORD = "#0000FF"; // blue
+const COLOR_STRING  = "#009900"; // green
+const COLOR_COMMENT = "#999999"; // gray
+const COLOR_NUMBER  = "#CC6600"; // dark orange (readable on white)
 
 // ---------------------------------------------------------------------------
 // Token type
@@ -554,26 +558,29 @@ function ScriptEditor({
     return <>{parts}</>;
   }, [findText, matches, currentMatchIndex, script]);
 
+  // Narrow light-gray line-number gutter on the left of the WHITE code pane.
   const lineNumStyle: React.CSSProperties = {
     width: "40px",
     flexShrink: 0,
-    background: "#1e1e1e",
-    borderRight: "1px solid #333",
+    background: chrome.insetFieldStrip,
+    borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
     overflowY: "hidden",
     paddingTop: "4px",
     textAlign: "right",
     paddingRight: "6px",
-    color: "#555",
+    color: chrome.textDisabled,
     fontSize: "13px",
     lineHeight: "1.5",
     userSelect: "none",
   };
 
+  // The textarea is transparent over the syntax overlay; caret is near-black so
+  // it reads on the white code pane.
   const textareaStyle: React.CSSProperties = {
     flex: 1,
     background: "transparent",
     color: "transparent",
-    caretColor: "#d4d4d4",
+    caretColor: chrome.textDefault,
     border: "none",
     outline: "none",
     resize: "none",
@@ -607,13 +614,13 @@ function ScriptEditor({
     overflowY: "auto",
     pointerEvents: "none",
     zIndex: 1,
-    color: "#d4d4d4",
+    color: chrome.textDefault,
   };
 
   const findBarInputStyle: React.CSSProperties = {
-    background: "#1e1e1e",
-    color: "#d4d4d4",
-    border: "1px solid #555",
+    background: halo.inputBg,
+    color: chrome.textDefault,
+    border: `${chrome.borderThin}px solid ${halo.inputBorder}`,
     borderRadius: "3px",
     padding: "1px 4px",
     fontSize: "12px",
@@ -627,7 +634,7 @@ function ScriptEditor({
     background: "transparent",
     border: "1px solid transparent",
     borderRadius: "3px",
-    color: "#ccc",
+    color: chrome.textDefault,
     cursor: "pointer",
     fontSize: "12px",
     padding: "1px 5px",
@@ -655,8 +662,8 @@ function ScriptEditor({
             flexDirection: "column",
             gap: 2,
             padding: "3px 4px",
-            borderBottom: "1px solid #444",
-            background: "#2d2d2d",
+            borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
+            background: chrome.insetFieldStrip,
             flexShrink: 0,
           }}
         >
@@ -673,12 +680,12 @@ function ScriptEditor({
             />
             <button style={findBarBtnStyle} onClick={findPrev} title="Previous match (Shift+Enter)">&#x25B2;</button>
             <button style={findBarBtnStyle} onClick={findNext} title="Next match (Enter)">&#x25BC;</button>
-            <span style={{ color: "#888", fontSize: 11, flexShrink: 0, minWidth: 60 }}>
+            <span style={{ color: chrome.textDisabled, fontSize: 11, flexShrink: 0, minWidth: 60 }}>
               {matchCount === 0 ? (findText ? "No matches" : "") : `${currentMatchIndex + 1}/${matchCount}`}
             </span>
             {findMode === 'find' && (
               <button
-                style={{ ...findBarBtnStyle, color: "#888" }}
+                style={{ ...findBarBtnStyle, color: chrome.textDisabled }}
                 onClick={() => { setFindMode('replace'); }}
                 title="Switch to Replace (Ctrl+H)"
               >
@@ -711,15 +718,15 @@ function ScriptEditor({
         </div>
       )}
 
-      <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative" }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", position: "relative", background: halo.panelContentBg }}>
         <div ref={lineNumRef} style={lineNumStyle}>
           {Array.from({ length: lineCount }, (_, i) => (
             <div
               key={i}
               style={{
                 lineHeight: "1.5",
-                background: syntaxError?.line === i + 1 ? "rgba(255,80,80,0.18)" : undefined,
-                color: syntaxError?.line === i + 1 ? "#f97171" : undefined,
+                background: syntaxError?.line === i + 1 ? "rgba(255,0,0,0.12)" : undefined,
+                color: syntaxError?.line === i + 1 ? halo.error : undefined,
               }}
             >
               {i + 1}
@@ -761,11 +768,11 @@ function ScriptEditor({
           data-testid="as2-error-bar"
           style={{
             flexShrink: 0,
-            background: "#3a1010",
-            borderTop: "1px solid #7a2222",
+            background: "#FDE8E8",
+            borderTop: `${chrome.borderThin}px solid ${halo.error}`,
             padding: "3px 8px",
             fontSize: "12px",
-            color: "#f97171",
+            color: "#C00000",
             display: "flex",
             alignItems: "center",
             gap: "6px",
@@ -785,11 +792,11 @@ function ScriptEditor({
           data-testid="as2-valid-bar"
           style={{
             flexShrink: 0,
-            background: "#0d2a1a",
-            borderTop: "1px solid #1e6840",
+            background: "#E8F5E9",
+            borderTop: `${chrome.borderThin}px solid #009900`,
             padding: "3px 8px",
             fontSize: "12px",
-            color: "#4ec9b0",
+            color: "#007000",
             userSelect: "none",
           }}
         >
@@ -926,12 +933,13 @@ export function ActionsPanel({
         position: "relative",
         width: "100%",
         height: "100%",
-        background: "#1e1e1e",
+        background: chrome.panelBg,
         display: "flex",
         flexDirection: "column",
+        ...chromeFont(),
         fontFamily: "'Consolas', 'Courier New', monospace",
         fontSize: "13px",
-        color: "#d4d4d4",
+        color: chrome.textDefault,
         overflow: "hidden",
       }
     : {
@@ -941,30 +949,36 @@ export function ActionsPanel({
         transform: "translateX(-50%)",
         width: (isMovieClipMode || isButtonMode || isButtonInstanceMode) ? "760px" : "680px",
         height: "320px",
-        background: "#1e1e1e",
-        border: "1px solid #444",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
+        background: chrome.panelBg,
+        border: `${chrome.borderThin}px solid ${chrome.separator}`,
+        boxShadow: "0 4px 24px rgba(0,0,0,0.35)",
         display: "flex",
         flexDirection: "column",
         zIndex: 2000,
+        ...chromeFont(),
         fontFamily: "'Consolas', 'Courier New', monospace",
         fontSize: "13px",
-        color: "#d4d4d4",
+        color: chrome.textDefault,
         borderRadius: "4px",
         overflow: "hidden",
       };
 
+  // Title bar mirrors Shell's header gradient idiom; uses the panel-header
+  // gradient stops so the floating panel reads as Flash 8 chrome.
+  const [hdr0, hdr1] = halo.panelHeaderGrad;
   const titleBarStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     height: "24px",
-    background: "#2d2d2d",
-    borderBottom: "1px solid #444",
+    background: `linear-gradient(${hdr0}, ${hdr1})`,
+    borderBottom: `${chrome.borderThin}px solid ${halo.headerDivider}`,
     padding: "0 8px",
     flexShrink: 0,
+    ...chromeFont(),
     fontSize: "11px",
-    color: "#ccc",
+    fontWeight: "bold",
+    color: chrome.textDefault,
     userSelect: "none",
   };
 
@@ -972,8 +986,8 @@ export function ActionsPanel({
     display: "flex",
     alignItems: "center",
     height: "26px",
-    background: "#252526",
-    borderBottom: "1px solid #333",
+    background: chrome.insetFieldStrip,
+    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
     padding: "0 4px",
     gap: "2px",
     flexShrink: 0,
@@ -983,22 +997,26 @@ export function ActionsPanel({
     background: "transparent",
     border: "1px solid transparent",
     borderRadius: "3px",
-    color: "#ccc",
+    color: chrome.textDefault,
     cursor: "pointer",
     fontSize: "12px",
     padding: "2px 6px",
     lineHeight: "1",
   };
 
+  // Footer status strip — Halo footer gradient (mirrors Shell), dark text.
+  const [ft0, ft1] = halo.footerGrad;
   const statusBarStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     height: "22px",
-    background: "#007acc",
+    background: `linear-gradient(${ft0}, ${ft1})`,
+    borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
     padding: "0 8px",
     flexShrink: 0,
+    ...chromeFont(),
     fontSize: "11px",
-    color: "#fff",
+    color: chrome.textDefault,
     gap: "12px",
   };
 
@@ -1058,7 +1076,7 @@ export function ActionsPanel({
           <div style={titleBarStyle}>
             <span>Actions - Button{instanceLabel}</span>
             <button
-              style={{ background: "transparent", border: "none", color: "#ccc", cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
+              style={{ background: "transparent", border: "none", color: chrome.textDefault, cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
               onClick={onClose}
               title="Close (F9)"
             >
@@ -1072,8 +1090,8 @@ export function ActionsPanel({
           <button style={toolBtnStyle} title="Add Statement">+</button>
           <button style={toolBtnStyle} title="Find">&#128269;</button>
           <button style={toolBtnStyle} title="Help">?</button>
-          <div style={{ width: "1px", height: "16px", background: "#555", margin: "0 4px" }} />
-          <span style={{ fontSize: "11px", color: "#888" }}>on</span>
+          <div style={{ width: "1px", height: "16px", background: chrome.separator, margin: "0 4px" }} />
+          <span style={{ fontSize: "11px", color: chrome.textDisabled }}>on</span>
         </div>
 
         {/* Two-column layout: event list + editor */}
@@ -1082,13 +1100,13 @@ export function ActionsPanel({
           <div style={{
             width: "140px",
             flexShrink: 0,
-            background: "#252526",
-            borderRight: "1px solid #333",
+            background: chrome.insetFieldStrip,
+            borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
             overflowY: "auto",
             display: "flex",
             flexDirection: "column",
           }}>
-            <div style={{ padding: "4px 8px", fontSize: "10px", color: "#888", borderBottom: "1px solid #333", userSelect: "none" }}>
+            <div style={{ padding: "4px 8px", fontSize: "10px", color: chrome.textDisabled, borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`, userSelect: "none" }}>
               on
             </div>
             {BUTTON_HANDLER_EVENT_TYPES.map(({ event, label }) => {
@@ -1101,10 +1119,10 @@ export function ActionsPanel({
                   data-testid={`button-handler-event-${buttonHandlerEventKey(event)}`}
                   onClick={() => setSelectedButtonHandlerEvent(event)}
                   style={{
-                    background: isSelected ? "#094771" : "transparent",
+                    background: isSelected ? halo.selectionColor : "transparent",
                     border: "none",
-                    borderBottom: "1px solid #2a2a2a",
-                    color: isSelected ? "#fff" : hasScript ? "#d4d4d4" : "#777",
+                    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
+                    color: isSelected ? halo.textSelected : hasScript ? chrome.textDefault : chrome.textDisabled,
                     cursor: "pointer",
                     fontSize: "12px",
                     padding: "5px 8px",
@@ -1116,7 +1134,7 @@ export function ActionsPanel({
                   }}
                 >
                   {hasScript && (
-                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4ec9b0", flexShrink: 0, display: "inline-block" }} />
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#009900", flexShrink: 0, display: "inline-block" }} />
                   )}
                   {!hasScript && <span style={{ width: "6px", flexShrink: 0, display: "inline-block" }} />}
                   {label}
@@ -1163,7 +1181,7 @@ export function ActionsPanel({
           <div style={titleBarStyle}>
             <span>Actions - Movie Clip{instanceLabel}</span>
             <button
-              style={{ background: "transparent", border: "none", color: "#ccc", cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
+              style={{ background: "transparent", border: "none", color: chrome.textDefault, cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
               onClick={onClose}
               title="Close (F9)"
             >
@@ -1177,8 +1195,8 @@ export function ActionsPanel({
           <button style={toolBtnStyle} title="Add Statement">+</button>
           <button style={toolBtnStyle} title="Find">&#128269;</button>
           <button style={toolBtnStyle} title="Help">?</button>
-          <div style={{ width: "1px", height: "16px", background: "#555", margin: "0 4px" }} />
-          <span style={{ fontSize: "11px", color: "#888" }}>onClipEvent</span>
+          <div style={{ width: "1px", height: "16px", background: chrome.separator, margin: "0 4px" }} />
+          <span style={{ fontSize: "11px", color: chrome.textDisabled }}>onClipEvent</span>
         </div>
 
         {/* Two-column layout: event list + editor */}
@@ -1187,13 +1205,13 @@ export function ActionsPanel({
           <div style={{
             width: "140px",
             flexShrink: 0,
-            background: "#252526",
-            borderRight: "1px solid #333",
+            background: chrome.insetFieldStrip,
+            borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
             overflowY: "auto",
             display: "flex",
             flexDirection: "column",
           }}>
-            <div style={{ padding: "4px 8px", fontSize: "10px", color: "#888", borderBottom: "1px solid #333", userSelect: "none" }}>
+            <div style={{ padding: "4px 8px", fontSize: "10px", color: chrome.textDisabled, borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`, userSelect: "none" }}>
               onClipEvent
             </div>
             {CLIP_EVENT_TYPES.map(({ event, label }) => {
@@ -1204,10 +1222,10 @@ export function ActionsPanel({
                   key={event}
                   onClick={() => setSelectedClipEvent(event)}
                   style={{
-                    background: isSelected ? "#094771" : "transparent",
+                    background: isSelected ? halo.selectionColor : "transparent",
                     border: "none",
-                    borderBottom: "1px solid #2a2a2a",
-                    color: isSelected ? "#fff" : hasScript ? "#d4d4d4" : "#777",
+                    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
+                    color: isSelected ? halo.textSelected : hasScript ? chrome.textDefault : chrome.textDisabled,
                     cursor: "pointer",
                     fontSize: "12px",
                     padding: "5px 8px",
@@ -1219,7 +1237,7 @@ export function ActionsPanel({
                   }}
                 >
                   {hasScript && (
-                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4ec9b0", flexShrink: 0, display: "inline-block" }} />
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#009900", flexShrink: 0, display: "inline-block" }} />
                   )}
                   {!hasScript && <span style={{ width: "6px", flexShrink: 0, display: "inline-block" }} />}
                   {label}
@@ -1264,7 +1282,7 @@ export function ActionsPanel({
           <div style={titleBarStyle}>
             <span>Actions - Button{symbolLabel}</span>
             <button
-              style={{ background: "transparent", border: "none", color: "#ccc", cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
+              style={{ background: "transparent", border: "none", color: chrome.textDefault, cursor: "pointer", fontSize: "14px", lineHeight: "1", padding: "0 2px" }}
               onClick={onClose}
               title="Close (F9)"
             >
@@ -1278,8 +1296,8 @@ export function ActionsPanel({
           <button style={toolBtnStyle} title="Add Statement">+</button>
           <button style={toolBtnStyle} title="Find">&#128269;</button>
           <button style={toolBtnStyle} title="Help">?</button>
-          <div style={{ width: "1px", height: "16px", background: "#555", margin: "0 4px" }} />
-          <span style={{ fontSize: "11px", color: "#888" }}>on</span>
+          <div style={{ width: "1px", height: "16px", background: chrome.separator, margin: "0 4px" }} />
+          <span style={{ fontSize: "11px", color: chrome.textDisabled }}>on</span>
         </div>
 
         {/* Two-column layout: event list + editor */}
@@ -1288,13 +1306,13 @@ export function ActionsPanel({
           <div style={{
             width: "140px",
             flexShrink: 0,
-            background: "#252526",
-            borderRight: "1px solid #333",
+            background: chrome.insetFieldStrip,
+            borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
             overflowY: "auto",
             display: "flex",
             flexDirection: "column",
           }}>
-            <div style={{ padding: "4px 8px", fontSize: "10px", color: "#888", borderBottom: "1px solid #333", userSelect: "none" }}>
+            <div style={{ padding: "4px 8px", fontSize: "10px", color: chrome.textDisabled, borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`, userSelect: "none" }}>
               on
             </div>
             {BUTTON_EVENT_TYPES.map(({ event, label }) => {
@@ -1305,10 +1323,10 @@ export function ActionsPanel({
                   key={buttonEventKey(event)}
                   onClick={() => setSelectedButtonEvent(event)}
                   style={{
-                    background: isSelected ? "#094771" : "transparent",
+                    background: isSelected ? halo.selectionColor : "transparent",
                     border: "none",
-                    borderBottom: "1px solid #2a2a2a",
-                    color: isSelected ? "#fff" : hasScript ? "#d4d4d4" : "#777",
+                    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
+                    color: isSelected ? halo.textSelected : hasScript ? chrome.textDefault : chrome.textDisabled,
                     cursor: "pointer",
                     fontSize: "12px",
                     padding: "5px 8px",
@@ -1320,7 +1338,7 @@ export function ActionsPanel({
                   }}
                 >
                   {hasScript && (
-                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4ec9b0", flexShrink: 0, display: "inline-block" }} />
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#009900", flexShrink: 0, display: "inline-block" }} />
                   )}
                   {!hasScript && <span style={{ width: "6px", flexShrink: 0, display: "inline-block" }} />}
                   {label}
@@ -1367,7 +1385,7 @@ export function ActionsPanel({
             style={{
               background: "transparent",
               border: "none",
-              color: "#ccc",
+              color: chrome.textDefault,
               cursor: "pointer",
               fontSize: "14px",
               lineHeight: "1",
@@ -1390,21 +1408,21 @@ export function ActionsPanel({
           style={{
             width: "1px",
             height: "16px",
-            background: "#555",
+            background: chrome.separator,
             margin: "0 4px",
           }}
         />
-        <span style={{ fontSize: "11px", color: "#888" }}>
+        <span style={{ fontSize: "11px", color: chrome.textDisabled }}>
           Script Assist
         </span>
-        <div style={{ width: "1px", height: "16px", background: "#555", margin: "0 4px" }} />
+        <div style={{ width: "1px", height: "16px", background: chrome.separator, margin: "0 4px" }} />
         <select
           title="Insert snippet"
           style={{
-            background: "#2d2d2d",
-            border: "1px solid #555",
+            background: halo.inputBg,
+            border: `${chrome.borderThin}px solid ${halo.inputBorder}`,
             borderRadius: "3px",
-            color: "#ccc",
+            color: chrome.textDefault,
             cursor: "pointer",
             fontSize: "11px",
             padding: "1px 4px",

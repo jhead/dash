@@ -17,10 +17,13 @@ function textsOf(line: string, inBlock = false) {
   return tokens.map((t) => line.slice(t.start, t.end));
 }
 
-const C_KW  = "#569cd6";
-const C_STR = "#CE9178";
-const C_COM = "#6A9955";
-const C_NUM = "#B5CEA8";
+// Flash 8 light-theme AS editor palette (white code pane): keywords blue,
+// strings green, comments gray, numbers readable dark-orange. Must stay in
+// sync with the COLOR_* constants in ActionsPanel.tsx.
+const C_KW  = "#0000FF";
+const C_STR = "#009900";
+const C_COM = "#999999";
+const C_NUM = "#CC6600";
 
 // ---------------------------------------------------------------------------
 // Keywords
