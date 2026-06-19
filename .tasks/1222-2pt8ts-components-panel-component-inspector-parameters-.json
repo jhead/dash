@@ -1,0 +1,10 @@
+{
+  "id": "1222-2pt8ts-components-panel-component-inspector-parameters-",
+  "title": "Components panel + Component Inspector (Parameters tab)",
+  "description": "VERIFIED MISSING: no Components* component in packages/authoring-ui/src; docs/13-components.md specs a Components panel (Window > Components: list built-in v2 components, drag onto stage to instantiate) and a Component Inspector (Parameters tab). Implement: (1) a ComponentsPanel listing the available built-in components, (2) drag/double-click to instantiate a component instance on stage (library + display object), (3) a Component Inspector Parameters tab to edit the instance's component parameters, persisted on the instance model. VERIFY ground truth first and grep done-tasks for overlap. SCOPE: in = panel + instantiate + Parameters editing; OUT (defer) = Bindings/Schema tabs and the Data Integration/DataSet/XMLConnector features (extreme effort, separate tasks). Scope files: new packages/authoring-ui/src/ComponentsPanel.tsx + Component Inspector UI, Shell.tsx registration, packages/core/src/model component-instance/parameters state. Build + tests green (add tests); update docs/13.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T00:55:58Z",
+  "updated_at": "2026-06-19T00:55:58Z"
+}
