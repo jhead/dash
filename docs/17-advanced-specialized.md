@@ -22,6 +22,11 @@ These are real parity targets but reasonable to schedule in later phases.
   - Instance with `accessibility.name/description/shortcut/forceSimple` + `instanceName`
     → emits a DoAction that sets `_accProps` on the instance:
     `var _ap=new Object(); _ap.name="…"; … _root.name._accProps=_ap;`
+  - Instance with `accessibility.enabled === false` ("Make object accessible" unchecked)
+    + `instanceName` → emits `_ap.silent = true;` so MSAA screen readers skip the
+    instance. Emitted alongside any other `_accProps` fields (Flash still silences the
+    object even when name/description/etc. are also set). Document-level
+    `DocumentAccessibility.enabled` is a separate, document-wide setting.
 - Per-object and per-document accessibility settings; `_accProps` via ActionScript;
   `System.capabilities.hasAccessibility`.
 - **Tab order / reading order** — author tab index for keyboard navigation; Accessibility

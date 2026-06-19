@@ -979,9 +979,9 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
             }
 
             // If this is a newly-placed instance with _accProps fields (name,
-            // description, shortcut, forceSimple), emit an AS2 DoAction to set
-            // the _accProps object on the instance. Flash 8 exposes these to
-            // MSAA screen readers via the _accProps MovieClip property.
+            // description, shortcut, forceSimple, silent), emit an AS2 DoAction
+            // to set the _accProps object on the instance. Flash 8 exposes these
+            // to MSAA screen readers via the _accProps MovieClip property.
             // Requires an instanceName to address the object (_root.name).
             if (
               displayObj.type === "instance" &&
@@ -994,7 +994,12 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
               const hasDesc = acc.description != null && acc.description !== "";
               const hasShortcut = acc.shortcut != null && acc.shortcut !== "";
               const hasForceSimple = acc.forceSimple != null;
-              if (hasName || hasDesc || hasShortcut || hasForceSimple) {
+              // "Make object accessible" unchecked (enabled === false) hides the
+              // instance from MSAA screen readers via _accProps.silent = true.
+              // Flash still silences the object even when other a11y fields are
+              // set, so this is emitted alongside (not instead of) them.
+              const hasSilent = acc.enabled === false;
+              if (hasName || hasDesc || hasShortcut || hasForceSimple || hasSilent) {
                 const iname = displayObj.instanceName;
                 // Build the _accProps script:
                 //   var _ap = new Object();
@@ -1002,6 +1007,7 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                 //   _ap.description = "...";   // optional
                 //   _ap.shortcut = "...";       // optional
                 //   _ap.forceSimple = true;     // optional
+                //   _ap.silent = true;          // optional (enabled === false)
                 //   _root.iname._accProps = _ap;
                 const parts: string[] = ["var _ap = new Object();"];
                 if (hasName) {
@@ -1018,6 +1024,9 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                 }
                 if (hasForceSimple) {
                   parts.push(`_ap.forceSimple = ${acc.forceSimple ? "true" : "false"};`);
+                }
+                if (hasSilent) {
+                  parts.push(`_ap.silent = true;`);
                 }
                 parts.push(`_root.${iname}._accProps = _ap;`);
                 accPropsActions.push(parts.join(""));

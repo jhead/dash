@@ -640,6 +640,63 @@ describe("_accProps DoAction emission", () => {
     expect(doActionContains(tags, "fullClip")).toBe(true);
   });
 
+  it("instance with accessibility.enabled=false emits _accProps DoAction with silent=true", () => {
+    // "Make object accessible" unchecked must hide the instance from MSAA
+    // screen readers via _accProps.silent = true, even when no other a11y
+    // fields (name/description/shortcut/forceSimple) are set.
+    const sym = makeSymbol("sym-acc-silent");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-acc-silent",
+      symbolId: "sym-acc-silent",
+      x: 0,
+      y: 0,
+      instanceName: "silentClip",
+      accessibility: {
+        enabled: false,
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "_accProps")).toBe(true);
+    expect(doActionContains(tags, "silent")).toBe(true);
+    expect(doActionContains(tags, "silentClip")).toBe(true);
+  });
+
+  it("instance with enabled=false AND other a11y fields silences while keeping the other fields", () => {
+    // Flash silences the object (silent=true) even when name/description/etc.
+    // are also set, so silent is emitted ALONGSIDE the other fields.
+    const sym = makeSymbol("sym-acc-silent-plus");
+    const inst: SymbolInstance = {
+      type: "instance",
+      id: "inst-acc-silent-plus",
+      symbolId: "sym-acc-silent-plus",
+      x: 0,
+      y: 0,
+      instanceName: "silentPlusClip",
+      accessibility: {
+        enabled: false,
+        name: "Hidden Nav",
+        description: "Should still be silenced",
+      },
+    };
+    const scene = makeSceneWithFrames("s1", "Scene 1", [
+      makeFrameWithObjects(0, [inst]),
+    ]);
+    const doc = makeDoc([scene], undefined, [sym]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+    expect(doActionContains(tags, "_accProps")).toBe(true);
+    expect(doActionContains(tags, "silent")).toBe(true);
+    expect(doActionContains(tags, "Hidden Nav")).toBe(true);
+    expect(doActionContains(tags, "Should still be silenced")).toBe(true);
+    expect(doActionContains(tags, "silentPlusClip")).toBe(true);
+  });
+
   it("instance WITHOUT instanceName does NOT emit _accProps DoAction", () => {
     const sym = makeSymbol("sym-acc-noname");
     const inst: SymbolInstance = {
