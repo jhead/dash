@@ -851,3 +851,34 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
 - **Audited & healthy (running list):** Sound Envelope (1204), Blend modes, **Filters**
   (RECORD encoding 8/9 ok, Convolution fixed — BUT tag-level HasFilterList broken → 1238,
   so filters are runtime-dropped pending fix).
+
+## 2026-06-19 — Verify task 1237 (ComboBox polish); watermark advance to e5a98f9; reiterate 1238 CRITICAL
+
+- **Task 1237 (commit `e5a98f9`, ComboBox polish) VERIFIED genuinely resolved.** All 3
+  items correct: (a) **hitTest off-by-one fixed** — dropped the trailing `+ __rowHeight`;
+  the clickable band now exactly matches the collapsed row (closed) / collapsed + N item
+  rows (open), with no phantom trailing row and no under-shoot (bottom edge inclusive);
+  (b) **arrow_mk now toggles** in `__setOpen` (`_visible = !__open`, undefined-guarded);
+  (c) **extraTextFields signature made consistent** (type-only). +4 component-place tests
+  assert the TRUE boundary semantics (not mere presence); component-place 46/46, full swf
+  suite 1444/1444; component-oracle e2e 15/15; golden-parity exit 0. Nothing filed.
+  (Note: the old over-extended gate was partly masked downstream by `__rowAtMouse`
+  rejecting out-of-range rows, so practical impact was minor — the fix correctly tightens
+  it regardless.)
+
+- **WATERMARK:** last fully-QA'd SHA advanced to **`e5a98f9`** (= current HEAD). The only
+  code commit since `f934f2e` is `e5a98f9`; the remainder are task/qa bookkeeping.
+
+- **REMINDER — CRITICAL UNFIXED:** task **1238** (PlaceObject3 HasFilterList encoded at
+  the wrong flags2 bit `0x10` instead of `0x01` → ALL 9 filter types silently dropped by
+  Ruffle at runtime) is **STILL OPEN/unfixed**; workers prioritized the minor 1237 polish
+  ahead of it. It is the single highest-impact open defect; its acceptance MUST include a
+  Ruffle visual render (byte-presence tests mutually mask it).
+
+- **Still open for workers (running list, priority order):** **1238** (CRITICAL — filters
+  runtime-dropped), **1216**, **1227**, + **1223** close-candidate.
+- **Audited & healthy (running list):** Sound Envelope, Blend modes, Filters (RECORD
+  encoding ok — BUT tag-level HasFilterList broken → 1238, so filters runtime-dropped
+  pending fix).
+- **Resolved + verified this session includes:** 1213/1217, 1228, 1214, 1229, 1215, 1230,
+  1232, 1231-2.1, comp-2.2, 1233, 1234, 1235, 1236, 1237.
