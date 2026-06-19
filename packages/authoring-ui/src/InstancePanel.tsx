@@ -29,8 +29,12 @@ const styles: Record<string, React.CSSProperties> = {
   panel: {
     display: "flex",
     flexDirection: "column",
-    width: "200px",
-    flexShrink: 0,
+    // Fill the Properties pane width like the sibling Transform/Align panels
+    // (which set no fixed width). A hardcoded 200px capped the Instance content
+    // short of the pane edge when the pane was wider (task 1292). width:100% +
+    // border-box stretches to the PanelGroup content wrapper without overflow.
+    width: "100%",
+    boxSizing: "border-box",
     background: chrome.panelBg,
     overflowY: "auto",
     borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
