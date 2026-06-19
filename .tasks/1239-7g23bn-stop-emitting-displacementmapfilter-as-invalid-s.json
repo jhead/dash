@@ -1,0 +1,10 @@
+{
+  "id": "1239-7g23bn-stop-emitting-displacementmapfilter-as-invalid-s",
+  "title": "Stop emitting DisplacementMapFilter as invalid SWF FilterID=8 (corrupts filter list)",
+  "description": "Surfaced by task 1238: packages/swf/src/filters.ts emits DisplacementMapFilter as FilterID=8, but the SWF FILTERLIST defines only IDs 0-7 (DropShadow0/Blur1/Glow2/Bevel3/GradientGlow4/Convolution5/ColorMatrix6/GradientBevel7). DisplacementMapFilter is an AS3/Flash9+ runtime filter with NO Flash 8 SWF tag representation. Ruffle's swf crate rejects ID 8 as 'Invalid filter type', which means ANY PlaceObject3 whose filter list includes a displacement filter has its ENTIRE filter list fail to parse at runtime (all filters on that instance dropped). FIX: do not emit DisplacementMapFilter into the SWF PlaceObject3 filter list \u2014 skip it (and any other non-0..7 filter) when building the list, ideally with a dev warning, so the remaining valid filters still apply. VERIFY first against filters.ts + the model (is a displacement filter even reachable from the authoring UI? if it's purely vestigial, just remove the ID-8 encode path). Confirm with the swf crate / a decode test that a placement mixing a displacement filter + a valid filter (e.g. blur) now parses with the blur intact. Add a regression test. Build+tests green (only ~3 task-1207 fixture failures acceptable). Update docs/08 (already notes the issue). Scope: packages/swf/src/filters.ts + filter tests.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-19T04:28:02Z",
+  "updated_at": "2026-06-19T04:28:02Z"
+}
