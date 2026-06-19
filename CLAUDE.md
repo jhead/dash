@@ -319,6 +319,18 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
 - **PlaceObject3 required for filters**: filters and blend modes need tag 70
   (PlaceObject3), not tag 26 (PlaceObject2). Emitting PO2 silently drops all filter
   data; Ruffle sees no filter and renders the object unfiltered.
+- **Filter TWEENS need a `filtersKey` in the frame-diff change detection (task 1210)**:
+  `frames.ts` decides whether to re-emit a placement on a move by comparing the prev
+  per-depth state (`posChanged`). It keyed on x/y/scale/rotation/colorEffect/clipActions
+  but NOT the filter list, so a tween that changes ONLY the filter (e.g. the Blur timeline
+  effect ramping a BlurFilter 0→max→0 with the object fixed at one position) suppressed the
+  move entirely and the blur froze at its first-frame value. Fix: `filtersKey(displayObj)`
+  serializes the enabled filters; it is added to `posChanged` and to every `depthState.set`.
+  The per-frame interpolated filter (from `getTweenedFrame` → `interpolateFilters`) now
+  emits a fresh PlaceObject3 each frame. Acceptance: `blur-tween.test.ts` (blurX ramps
+  0→peak→0 across the span). The interpolation engine + PO3 filter emit already existed;
+  the only gap was this change-detection key. Blur timeline-effect synthesis lives in
+  `useTimelineEffectHandlers.ts` (3 keyframes: start/mid-peak/end, motion-tweened).
 - **Shape origin normalization**: encode shape paths relative to (0,0) in DefineShape,
   and put the full stage offset in PlaceObject2 `tx/ty`. Baking absolute coords into the
   shape record and also translating via PO2 double-offsets the object.

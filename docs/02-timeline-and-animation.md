@@ -70,6 +70,31 @@ Pre-built, parameterized animations applied to objects (and re-editable):
 
 Timeline Effects generate symbols/tweens automatically and remain editable via their dialog.
 
+### Implementation (Insert > Timeline Effects)
+
+`Insert > Timeline Effects > {Transform|Blur|…}` opens `TimelineEffectDialog`
+(`packages/authoring-ui`). The selected shape(s)/symbol(s) on the active keyframe are
+wrapped in a new MovieClip symbol (named `Transform N`, `Blur N`, …) and the effect's
+keyframes are synthesized on the object's timeline by `useTimelineEffectHandlers`. The
+result interpolates on stage (via `getTweenedFrame`) and compiles to a smooth SWF tween.
+
+- **Transform** (duration, scale X/Y, rotation, alpha, ease): a single motion tween from
+  the start keyframe to an end keyframe `duration-1` frames later, with the end instance
+  carrying the target scale/rotation/alpha. Ease is stored as the keyframe `motionEase`.
+- **Blur** (duration, blur X/Y, ease): a **blur-filter tween 0 → max → 0** across three
+  keyframes — start (blur 0), midpoint (the requested peak blur), end (blur 0) — each
+  motion-tweened. A `flash.filters.BlurFilter` is set on every keyframe; the tween engine
+  interpolates the filter per frame and the SWF compiler emits a per-frame PlaceObject3
+  (tag 70) FILTERLIST, so the object visibly blurs and re-sharpens. (Spans shorter than 3
+  frames degrade to a single 0 → max ramp.) The peak blur reaches exactly the dialog
+  value at the middle keyframe.
+
+> **Filter tweens require per-frame PlaceObject3 re-emit.** The compiler's frame-diff
+> change detection (`packages/swf/src/compiler/frames.ts`) keys on position, color
+> effect, AND the serialized filter list (`filtersKey`). Without the filter key a tween
+> that changes only the filter (position fixed) would suppress the move and freeze the
+> blur at its first-frame value.
+
 ## Frame rate & timing
 
 - Movie-wide **frames per second** (default 12). Real playback may drop below target under

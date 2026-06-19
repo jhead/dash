@@ -266,7 +266,149 @@ export function useTimelineEffectHandlers(deps: TimelineEffectHandlersDeps) {
     }
 
     // ---------------------------------------------------------------------------
-    // Tween-based effects: Transform, Transition, Blur, Drop Shadow, Expand, Explode
+    // Blur — blur-filter tween 0 -> max -> 0 across three keyframes.
+    //
+    // Unlike the other tween effects (a single start->end motion tween), Blur
+    // ramps a flash.filters.BlurFilter up to its peak at the midpoint of the
+    // span and back down to zero, so the object visibly blurs and re-sharpens.
+    // The filter is interpolated every frame by the tween engine
+    // (interpolateFilters in @flash/core) and emitted per-frame as a
+    // PlaceObject3 by the SWF compiler, producing a smooth runtime blur.
+    // ---------------------------------------------------------------------------
+    if (params.effect === "blur") {
+      const blurInstId = `effect-inst-${Date.now().toString(36)}`;
+      const convertedIdsBlur = new Set(objectsToConvert.map((o) => o.id));
+      const easeBlur = params.ease ?? 0;
+
+      // Three keyframes: start (currentFrame), mid (peak blur), end.
+      // For an N-frame span the midpoint is the geometric middle frame.
+      const startFrame = currentFrame;
+      const endFrame = currentFrame + params.duration - 1;
+      const midFrame =
+        params.duration >= 3
+          ? currentFrame + Math.floor((params.duration - 1) / 2)
+          : -1; // too short for a distinct peak — single 0->max ramp
+
+      const makeBlurFilter = (bx: number, by: number) =>
+        [{ type: "blur" as const, blurX: bx, blurY: by, quality: 1 as const, enabled: true }];
+
+      // Base instance (shared transform; per-keyframe filters applied below).
+      const baseBlurInstance: SymbolInstance = {
+        type: "instance",
+        id: blurInstId,
+        symbolId: newSymbol.id,
+        x: originX,
+        y: originY,
+        ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
+        ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
+      };
+
+      // The start keyframe carries a zero-blur filter so the interpolator has a
+      // matching blur filter at both ends of every span (filters interpolate by
+      // position; a missing filter on one side disables interpolation).
+      const startBlurInstance = {
+        ...baseBlurInstance,
+        filters: makeBlurFilter(0, 0),
+      } as SymbolInstance;
+
+      const peakBlurInstance = {
+        ...baseBlurInstance,
+        filters: makeBlurFilter(params.blurX, params.blurY),
+      } as SymbolInstance;
+
+      const endBlurInstance = {
+        ...baseBlurInstance,
+        filters: makeBlurFilter(0, 0),
+      } as SymbolInstance;
+
+      const setInstanceOnKeyframe = (
+        t: TimelineModel,
+        frameIndex: number,
+        inst: SymbolInstance
+      ): TimelineModel => ({
+        ...t,
+        layers: t.layers.map((l) => {
+          if (l.id !== layerId) return l;
+          return {
+            ...l,
+            frames: l.frames.map((f) =>
+              f.isKeyframe && f.index === frameIndex
+                ? {
+                    ...f,
+                    displayObjects: f.displayObjects.map((o) =>
+                      o.id === blurInstId ? inst : o
+                    ),
+                  }
+                : f
+            ) as readonly import("@flash/core").Frame[],
+          };
+        }) as readonly import("@flash/core").Layer[],
+      });
+
+      const applyBlurToTimeline = (t: TimelineModel): TimelineModel => {
+        // 1. Replace the originals with the start (zero-blur) instance.
+        let result: TimelineModel = {
+          ...t,
+          layers: t.layers.map((l) => {
+            if (l.id !== layerId) return l;
+            const frames = l.frames.map((f) => {
+              if (!f.isKeyframe || f.index !== kf.index) return f;
+              const remaining = f.displayObjects.filter((o) => !convertedIdsBlur.has(o.id));
+              return {
+                ...f,
+                displayObjects: [...remaining, startBlurInstance] as readonly import("@flash/core").DisplayObject[],
+                isEmpty: false,
+              };
+            }) as readonly import("@flash/core").Frame[];
+            return { ...l, frames };
+          }) as readonly import("@flash/core").Layer[],
+        };
+
+        if (midFrame > startFrame && midFrame < endFrame) {
+          // 0 -> max (peak) -> 0 across three keyframes, motion-tweened.
+          result = insertKeyframe(result, layerId, midFrame);
+          result = insertKeyframe(result, layerId, endFrame);
+          result = setInstanceOnKeyframe(result, midFrame, peakBlurInstance);
+          result = setInstanceOnKeyframe(result, endFrame, endBlurInstance);
+          result = setMotionTween(result, layerId, startFrame, easeBlur);
+          result = setMotionTween(result, layerId, midFrame, easeBlur);
+        } else {
+          // Span too short for a distinct peak: single 0 -> max ramp.
+          result = insertKeyframe(result, layerId, endFrame);
+          result = setInstanceOnKeyframe(result, endFrame, peakBlurInstance);
+          result = setMotionTween(result, layerId, startFrame, easeBlur);
+        }
+        return result;
+      };
+
+      let newDocBlur: FlashDocument;
+      if (editContext.mode === "symbol" && editContext.symbolId) {
+        const items = finalLib.items.map((item) => {
+          if (item.id === editContext.symbolId && item.itemType === "symbol") {
+            return { ...item, timeline: applyBlurToTimeline(item.timeline) };
+          }
+          return item;
+        });
+        newDocBlur = { ...doc, library: { ...finalLib, items } };
+      } else {
+        const sceneIdx = Math.min(activeSceneIndex, doc.scenes.length - 1);
+        newDocBlur = {
+          ...doc,
+          scenes: doc.scenes.map((s, i) =>
+            i === sceneIdx ? { ...s, timeline: applyBlurToTimeline(s.timeline) } : s
+          ),
+          library: finalLib,
+        };
+      }
+
+      pushDoc(newDocBlur);
+      setSelectedShapeId(blurInstId);
+      setTimelineEffectOpen(false);
+      return;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Tween-based effects: Transform, Transition, Drop Shadow, Expand, Explode
     // ---------------------------------------------------------------------------
 
     // --- Build the START instance (frame 0 = currentFrame) ------------
@@ -314,9 +456,6 @@ export function useTimelineEffectHandlers(deps: TimelineEffectHandlersDeps) {
     } else if (params.effect === "transition") {
       const endAlpha = params.direction === "out" ? 0 : 100;
       endUpdatesBuilder.colorEffect = { type: "alpha", alpha: endAlpha };
-    } else if (params.effect === "blur") {
-      // Blur: animate from full blur to 0 alpha (fade out while blurring)
-      endUpdatesBuilder.colorEffect = { type: "alpha", alpha: 0 };
     } else if (params.effect === "drop-shadow") {
       // Drop shadow: tween alpha to the specified end alpha
       if (params.alpha !== 100) {

@@ -129,6 +129,22 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
     return null;
   }
 
+  /**
+   * Serialize the enabled filter list to a string key for change detection.
+   * Returns null when the object carries no enabled filters.
+   *
+   * This is what makes filter TWEENS (e.g. the Blur timeline effect, which ramps
+   * a BlurFilter 0 → max → 0) emit a fresh PlaceObject3 every frame: during a
+   * motion tween the position is unchanged but the interpolated filter differs
+   * each frame, so without a filters key the move would be suppressed and the
+   * blur would freeze at its first-frame value.
+   */
+  function filtersKey(displayObj: DisplayObject): string | null {
+    const filters = (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters;
+    if (!filters || !hasEnabledFilters(filters)) return null;
+    return JSON.stringify(filters.filter((f) => f.enabled));
+  }
+
   /** Compute a serialized key representing the effective clip actions for a SymbolInstance.
    *  Returns null if there are no effective clip actions. */
   function computeClipActionsKey(displayObj: DisplayObject): string | null {
@@ -162,6 +178,8 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
     ratio: number;
     /** Serialized color effect key for change detection (null = no effect). */
     colorEffectKey: string | null;
+    /** Serialized filter-list key for change detection (null = no filters). */
+    filtersKey: string | null;
     /** Serialized clip actions key for change detection (null = no clip actions). */
     clipActionsKey: string | null;
     /** Serialized letter-spacing key for change detection. */
@@ -400,6 +418,7 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
           }
 
           const thisColorEffectKey = colorEffectKey(displayObj);
+          const thisFiltersKey = filtersKey(displayObj);
           const thisClipActionsKey = computeClipActionsKey(displayObj);
           const thisLetterSpacingKey = displayObj.type === "text"
             ? String((displayObj as { letterSpacing?: number }).letterSpacing ?? 0)
@@ -421,6 +440,7 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
               prev.objId !== objId ||
               prev.ratio !== morphRatio ||
               prev.colorEffectKey !== thisColorEffectKey ||
+              prev.filtersKey !== thisFiltersKey ||
               prev.clipActionsKey !== thisClipActionsKey ||
               prev.letterSpacingKey !== thisLetterSpacingKey ||
               prev.restrictKey !== thisRestrictKey);
@@ -754,7 +774,7 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                     instanceTransform
                   );
                   writer.writeTag(Tag.PlaceObject2, placeBody);
-                  depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+                  depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey, filtersKey: thisFiltersKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
                   continue;
                 }
 
@@ -1004,7 +1024,7 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
               }
             }
 
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, filtersKey: thisFiltersKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
           } else if (posChanged) {
             // Object moved, scaled, rotated, or replaced — emit PlaceObject2+Move
             if (
@@ -1023,7 +1043,7 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                   true
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
-                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+                depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, filtersKey: thisFiltersKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
                 continue; // skip the generic depthState.set below
               }
               const objTransform =
@@ -1396,7 +1416,7 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                 }
               }
             }
-            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+            depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: morphRatio, colorEffectKey: thisColorEffectKey, filtersKey: thisFiltersKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
           }
           // else: unchanged — emit nothing
         }

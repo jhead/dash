@@ -317,6 +317,84 @@ function applyTimelineEffect(
   }
 
   // ---------------------------------------------------------------------------
+  // Blur — blur-filter tween 0 -> max -> 0 across three keyframes.
+  // ---------------------------------------------------------------------------
+  if (params.effect === "blur") {
+    const blurInstId = `effect-inst-${effectCounter}`;
+    const startFrame = currentFrame;
+    const endFrame = currentFrame + params.duration - 1;
+    const midFrame =
+      params.duration >= 3
+        ? currentFrame + Math.floor((params.duration - 1) / 2)
+        : -1;
+    const easeBlur = params.ease ?? 0;
+
+    const makeBlurFilter = (bx: number, by: number) =>
+      [{ type: "blur" as const, blurX: bx, blurY: by, quality: 1 as const, enabled: true }];
+
+    const baseBlurInstance: SymbolInstance = {
+      type: "instance",
+      id: blurInstId,
+      symbolId: newSymbol.id,
+      x: originX,
+      y: originY,
+      ...(symNatW > 0 ? { naturalWidth: symNatW } : {}),
+      ...(symNatH > 0 ? { naturalHeight: symNatH } : {}),
+    };
+    const startBlurInstance = { ...baseBlurInstance, filters: makeBlurFilter(0, 0) } as SymbolInstance;
+    const peakBlurInstance = { ...baseBlurInstance, filters: makeBlurFilter(params.blurX, params.blurY) } as SymbolInstance;
+    const endBlurInstance = { ...baseBlurInstance, filters: makeBlurFilter(0, 0) } as SymbolInstance;
+
+    const setInstanceOnKeyframe = (t: TimelineModel, frameIndex: number, inst: SymbolInstance): TimelineModel => ({
+      ...t,
+      layers: t.layers.map((l) => {
+        if (l.id !== layerId) return l;
+        return {
+          ...l,
+          frames: l.frames.map((f) =>
+            f.isKeyframe && f.index === frameIndex
+              ? { ...f, displayObjects: f.displayObjects.map((o) => (o.id === blurInstId ? inst : o)) }
+              : f
+          ) as readonly FlashFrame[],
+        };
+      }) as readonly FlashLayer[],
+    });
+
+    let blurResult: TimelineModel = {
+      ...tl,
+      layers: tl.layers.map((l) => {
+        if (l.id !== layerId) return l;
+        const frames = l.frames.map((f) => {
+          if (!f.isKeyframe || f.index !== kf.index) return f;
+          const remaining = f.displayObjects.filter((o) => !convertedIds.has(o.id));
+          return { ...f, displayObjects: [...remaining, startBlurInstance] as readonly FlashDisplayObject[], isEmpty: false };
+        }) as readonly FlashFrame[];
+        return { ...l, frames };
+      }) as readonly FlashLayer[],
+    };
+
+    if (midFrame > startFrame && midFrame < endFrame) {
+      blurResult = insertKeyframe(blurResult, layerId, midFrame);
+      blurResult = insertKeyframe(blurResult, layerId, endFrame);
+      blurResult = setInstanceOnKeyframe(blurResult, midFrame, peakBlurInstance);
+      blurResult = setInstanceOnKeyframe(blurResult, endFrame, endBlurInstance);
+      blurResult = setMotionTween(blurResult, layerId, startFrame, easeBlur);
+      blurResult = setMotionTween(blurResult, layerId, midFrame, easeBlur);
+    } else {
+      blurResult = insertKeyframe(blurResult, layerId, endFrame);
+      blurResult = setInstanceOnKeyframe(blurResult, endFrame, peakBlurInstance);
+      blurResult = setMotionTween(blurResult, layerId, startFrame, easeBlur);
+    }
+
+    const newDoc: FlashDocument = {
+      ...doc,
+      scenes: doc.scenes.map((s, i) => (i === sceneIndex ? { ...s, timeline: blurResult } : s)),
+      library: finalLib,
+    };
+    return { doc: newDoc, instanceId: blurInstId };
+  }
+
+  // ---------------------------------------------------------------------------
   // Tween-based effects
   // ---------------------------------------------------------------------------
   const instId = `effect-inst-${effectCounter}`;
@@ -359,8 +437,6 @@ function applyTimelineEffect(
   } else if (params.effect === "transition") {
     const endAlpha = params.direction === "out" ? 0 : 100;
     endUpdatesBuilder.colorEffect = { type: "alpha", alpha: endAlpha };
-  } else if (params.effect === "blur") {
-    endUpdatesBuilder.colorEffect = { type: "alpha", alpha: 0 };
   } else if (params.effect === "expand") {
     if (params.direction === "contract") {
       endUpdatesBuilder.scaleX = 0;
@@ -676,8 +752,15 @@ describe("applyTimelineEffect — Transition", () => {
 // Tests — Blur effect
 // ---------------------------------------------------------------------------
 
+type WithFilters = SymbolInstance & { filters?: readonly { type: string; blurX: number; blurY: number; enabled: boolean }[] };
+
+function blurFilterOf(inst: SymbolInstance | undefined): { blurX: number; blurY: number } | undefined {
+  const f = (inst as WithFilters | undefined)?.filters?.find((x) => x.type === "blur");
+  return f ? { blurX: f.blurX, blurY: f.blurY } : undefined;
+}
+
 describe("applyTimelineEffect — Blur", () => {
-  it("creates a motion tween spanning the specified duration", () => {
+  it("creates motion tweens spanning the specified duration (3-keyframe peak ramp)", () => {
     const shape = makeShapeObj("bShape1", 100, 100);
     const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
     const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
@@ -693,19 +776,17 @@ describe("applyTimelineEffect — Blur", () => {
     });
 
     expect(result).not.toBeNull();
-    const newTl = result!.doc.scenes[0].timeline;
-    const layer0 = newTl.layers[0];
+    const layer0 = result!.doc.scenes[0].timeline.layers[0];
 
-    // Start keyframe should have a motion tween
-    const kf0After = layer0.frames.find((f) => f.isKeyframe && f.index === 0);
-    expect(kf0After?.tweenType).toBe("motion");
+    // Start keyframe (0) and mid keyframe (7) both carry a motion tween.
+    expect(layer0.frames.find((f) => f.isKeyframe && f.index === 0)?.tweenType).toBe("motion");
+    expect(layer0.frames.find((f) => f.isKeyframe && f.index === 7)?.tweenType).toBe("motion");
 
-    // End keyframe (frame 14) should exist (duration 15: frames 0–14)
-    const kf14 = layer0.frames.find((f) => f.isKeyframe && f.index === 14);
-    expect(kf14).toBeDefined();
+    // End keyframe (14) exists (duration 15: frames 0–14).
+    expect(layer0.frames.find((f) => f.isKeyframe && f.index === 14)).toBeDefined();
   });
 
-  it("end keyframe instance has alpha=0 (fades out during blur)", () => {
+  it("synthesizes a blur filter that ramps 0 -> max -> 0 across the three keyframes", () => {
     const shape = makeShapeObj("bShape2", 50, 50);
     const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
     const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
@@ -714,16 +795,53 @@ describe("applyTimelineEffect — Blur", () => {
 
     const result = applyTimelineEffect(doc, 0, 0, 0, "bShape2", {
       effect: "blur",
-      duration: 10,
-      blurX: 20,
-      blurY: 20,
+      duration: 11, // frames 0..10, mid = 5
+      blurX: 24,
+      blurY: 16,
       ease: 0,
     });
 
-    const endKf = getKfAtFrame(result!.doc, 0, 0, 9);
-    expect(endKf).toBeDefined();
-    const endInst = endKf!.displayObjects.find((o) => o.id === result!.instanceId) as SymbolInstance;
-    expect(endInst?.colorEffect?.alpha).toBe(0);
+    const id = result!.instanceId;
+    const startInst = getKfAtFrame(result!.doc, 0, 0, 0)!.displayObjects.find((o) => o.id === id) as SymbolInstance;
+    const midInst = getKfAtFrame(result!.doc, 0, 0, 5)!.displayObjects.find((o) => o.id === id) as SymbolInstance;
+    const endInst = getKfAtFrame(result!.doc, 0, 0, 10)!.displayObjects.find((o) => o.id === id) as SymbolInstance;
+
+    // Start: zero blur.
+    expect(blurFilterOf(startInst)).toEqual({ blurX: 0, blurY: 0 });
+    // Mid: peak blur = the dialog values.
+    expect(blurFilterOf(midInst)).toEqual({ blurX: 24, blurY: 16 });
+    // End: back to zero blur.
+    expect(blurFilterOf(endInst)).toEqual({ blurX: 0, blurY: 0 });
+  });
+
+  it("the start instance keeps the object fully opaque (no alpha fade)", () => {
+    const shape = makeShapeObj("bShape3", 0, 0);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, "bShape3", {
+      effect: "blur", duration: 10, blurX: 20, blurY: 20, ease: 0,
+    });
+
+    const startInst = getKfAtFrame(result!.doc, 0, 0, 0)!.displayObjects.find((o) => o.id === result!.instanceId) as SymbolInstance;
+    expect(startInst?.colorEffect).toBeUndefined();
+  });
+
+  it("applies the ease value to the motion tween", () => {
+    const shape = makeShapeObj("bShape4", 0, 0);
+    const kf0 = createFrame(0, { isKeyframe: true, isEmpty: false, displayObjects: [shape] });
+    const layer = createLayer("Layer 1", "normal", { frames: [kf0], frameCount: 1 });
+    const tl = createTimeline({ layers: [layer] });
+    const doc = makeDoc(tl, makeLibrary());
+
+    const result = applyTimelineEffect(doc, 0, 0, 0, "bShape4", {
+      effect: "blur", duration: 12, blurX: 30, blurY: 30, ease: 60,
+    });
+
+    const startKf = result!.doc.scenes[0].timeline.layers[0].frames.find((f) => f.isKeyframe && f.index === 0);
+    expect(startKf?.motionEase).toBe(60);
   });
 });
 
