@@ -278,7 +278,7 @@ const PANEL_WIDTH = metrics.toolsPanelWidth; // ~67px
 // Styles — Flash 8 "Halo" LIGHT theme via flash8Theme.ts tokens (no hardcoded
 // chrome hex); mirrors the Shell.tsx reference. See docs/30-flash8-ui-spec.md §3.1.
 //   - light ButtonFace panel → chrome.panelBg
-//   - single column ~22px square buttons with 16px monochrome dark glyphs
+//   - two-column ~22px square buttons with 16px monochrome dark glyphs
 //   - ACTIVE tool = sunken 3D bevel (bevel("sunken")) over insetFieldStrip
 //   - glyph colour           → chrome.textDefault (currentColor)
 //   - separators / borders   → chrome.separator (1px)
@@ -322,7 +322,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   toolGrid: {
     display: "grid",
-    gridTemplateColumns: `repeat(1, ${BTN_SIZE}px)`,
+    gridTemplateColumns: `repeat(2, ${BTN_SIZE}px)`,
     gap: "1px",
     justifyContent: "center",
     padding: "0 1px",
