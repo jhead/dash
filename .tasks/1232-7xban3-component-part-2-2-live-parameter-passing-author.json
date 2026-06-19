@@ -1,0 +1,10 @@
+{
+  "id": "1232-7xban3-component-part-2-2-live-parameter-passing-author",
+  "title": "Component Part 2.2: live parameter-passing \u2014 author componentParameters reach the runtime instance",
+  "description": "Build on Part 2.1 (task 1231, commit 8618411) which made a self-authored mx.controls.Button render+react (Ruffle-confirmed registerClass binding). Currently the author's label is STATICALLY seeded into the EditText at compile time; the broader componentParameters (on the SymbolInstance model, editable in the Component Inspector from task 1222) are NOT delivered to the runtime instance. PART 2.2: make author-configured componentParameters reach the live component at runtime, GENERALLY (not just Button.label). Approach (verify best fit against the code): for each placed component instance, after it is placed, emit a per-instance DoAction (or PlaceObject2 init mechanism) that sets the instance's parameters on the registered class instance (e.g. _root.<instanceName>.setLabel(...) / assign properties) using the componentParameters map; ensure the placed sprite has an instance name so the script can target it. Keep it generic over the parameter set defined in the component catalog (packages/core/src/model/components.ts). VERIFY: Ruffle oracle (apps/desktop/e2e) \u2014 set a non-default label (and another param) in the model, publish, confirm the rendered/queried runtime value reflects the author's param (not the default); plus a structural unit test (decode own SWF) that the per-instance param DoAction/init is emitted with the right values. Self-verifiable without a real-Flash fixture. Build+tests green (only ~3 task-1207 fixture failures acceptable). Scope: packages/swf/src/compiler/components.ts (+ frames.ts per-instance script emission, doInitAction/DoAction helpers, component-place.test.ts, e2e). Update docs/13. NOTE: this is the last broadly-applicable Part-2 slice planned for now; further control families (CheckBox/RadioButton/List/etc.) are gated on demand.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T02:28:39Z",
+  "updated_at": "2026-06-19T02:28:39Z"
+}
