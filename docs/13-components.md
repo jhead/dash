@@ -94,3 +94,41 @@ as disabled stubs) and the **Data Integration** components — `DataSet`, `XMLCo
 `WebServiceConnector`, `XUpdateResolver`, `RDBMSResolver` — plus live binding/schema
 semantics. v2 styling/skinning (Halo theme) and runtime component behavior are also future
 work; the current scope is authoring-time placement + parameter editing only.
+
+## Publishing placed components (task 1229, Part 1 — runtime plumbing)
+
+Before this task, a placed `ComponentItem` was **silently dropped** from the published SWF:
+the SWF compiler's symbol pass only maps `itemType === "symbol"`, so the component's
+character id never entered `charIdMap`; the stage `SymbolInstance` (whose `symbolId` points at
+the `ComponentItem.id`) then resolved to nothing in the frame loop and was omitted entirely.
+`ComponentItem` also carried no AS2 linkage, so no `ExportAssets`/`DoInitAction` was emitted.
+
+**Part 1 closes the plumbing gap** in `packages/swf/src/compiler/components.ts` (`runComponentPass`),
+invoked by the orchestrator (`compile.ts`) AFTER the symbol pass and BEFORE the frame loop.
+For every component **actually placed** on a scene or symbol timeline it:
+
+1. **Synthesizes a DefineSprite** (an empty placeholder timeline — `SpriteID + 1 frame +
+   ShowFrame + End`) and registers it in `charIdMap` under the `ComponentItem.id`, so the
+   stage instance resolves to a real character id via the existing
+   `charIdMap.get(displayObj.symbolId)` placement path (no change needed in `frames.ts`).
+2. **Exports it under its fully-qualified AS2 class name** (e.g. `mx.controls.Button`,
+   derived from `packageName + "." + componentName`) by appending an `ExportAssets` entry.
+3. **Emits a `DoInitAction`** calling `Object.registerClass(linkageId, ClassName)`, reusing
+   the same `encodeDoInitAction` machinery library symbols use. The export/init entries are
+   merged into the symbol-pass result lists so the existing first-frame
+   `ExportAssets → DoInitAction` emission (`compiler/frames.ts`, scene 0 frame 0) handles them.
+
+`ComponentItem` now has an optional `linkage?: ComponentLinkage` (`{ className,
+linkageIdentifier? }`, `packages/core/src/model/types.ts`) to override the derived class
+name; when absent the compiler derives it. Unplaced library components emit nothing.
+
+**Explicitly OUT OF SCOPE (Part 2, separate effort):** the real `mx.controls.*` AS2
+framework, skins, and behaviour. Without it the component **registers but renders as an empty
+placeholder sprite** — the accepted Part-1 outcome. The class is registered so
+`attachMovie`/`registerClass`/`new ClassName()` resolve at runtime once Part 2 lands.
+
+Acceptance: `packages/swf/src/__tests__/component-place.test.ts` publishes a doc with a placed
+Button component, decodes the OWN compiled SWF (no real-Flash binary), and asserts (a) a
+DefineSprite exists for it, (b) ExportAssets lists `mx.controls.Button`, (c) a DoInitAction
+registers the class (`Object.registerClass` bytecode), and (d) the stage PlaceObject
+references the synthetic sprite's char id.

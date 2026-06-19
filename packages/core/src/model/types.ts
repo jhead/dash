@@ -464,8 +464,28 @@ export interface ComponentItem {
   readonly itemType: "component";
   readonly componentName: string;
   readonly packageName: string;
+  /**
+   * AS2 linkage for runtime registration (task 1229). A placed v2 component is
+   * published as a synthetic DefineSprite that exports under its fully-qualified
+   * AS2 class name (e.g. `mx.controls.Button`) and is bound to that class via a
+   * DoInitAction → `Object.registerClass`. When omitted, the compiler derives
+   * the class name from `packageName + "." + componentName`. See
+   * docs/13-components.md "Publishing placed components".
+   */
+  readonly linkage?: ComponentLinkage;
   /** Round-trip identity recovered from a binary FLA import; undefined otherwise. */
   readonly flaItemId?: FlaItemId;
+}
+
+/** AS2 linkage metadata for a published v2 component (task 1229). */
+export interface ComponentLinkage {
+  /** Fully-qualified AS2 class name registered at runtime (e.g. `mx.controls.Button`). */
+  readonly className: string;
+  /**
+   * ExportAssets linkage identifier. Defaults to `className` — Flash uses the
+   * symbol's linkage id as the `attachMovie`/`registerClass` key.
+   */
+  readonly linkageIdentifier?: string;
 }
 
 export type LibraryItem =

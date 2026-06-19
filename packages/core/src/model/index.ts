@@ -6,6 +6,7 @@ export type {
   ButtonSounds,
   ButtonStateSound,
   ComponentItem,
+  ComponentLinkage,
   DocumentAccessibility,
   DocumentProperties,
   EaseCurve,

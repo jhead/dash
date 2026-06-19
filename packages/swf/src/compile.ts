@@ -17,6 +17,7 @@ import { emitHeaderTags } from "./compiler/header.js";
 import { assembleSwf } from "./compiler/assemble.js";
 import { flattenDisplayObjects } from "./compiler/display.js";
 import { topoSortSymbols, encodeExportAssets, encodeImportAssets2, runSymbolPass } from "./compiler/symbols.js";
+import { runComponentPass } from "./compiler/components.js";
 import { runCharacterPass } from "./compiler/characters.js";
 import { runMediaPass } from "./compiler/media.js";
 import { createDepthAllocator, runDepthPrepass } from "./compiler/depth.js";
@@ -139,6 +140,18 @@ export function compileDocument(doc: FlashDocument, options?: CompileOptions): U
     videoCharIdMap,
     videoStreams,
   });
+
+  // 3d. Placed v2-component pass (task 1229): synthesize a DefineSprite +
+  // ExportAssets + DoInitAction for every ComponentItem placed on a timeline, so
+  // a placed mx.controls.* component resolves to a real character id (instead of
+  // being silently dropped) and registers its AS2 class. Runs AFTER the symbol
+  // pass (char ids already assigned) and BEFORE the frame loop (so the placement
+  // path can resolve charIdMap.get(symbolId)). The export/init entries are merged
+  // into the symbol-pass results so the existing first-frame ExportAssets /
+  // DoInitAction machinery (compiler/frames.ts) emits them. See compiler/components.ts.
+  const componentPass = runComponentPass({ writer, doc, charIdMap });
+  exportEntries.push(...componentPass.exportEntries);
+  doInitActionBodies.push(...componentPass.doInitActionBodies);
 
   // 4. Frames — iterate ALL scenes' timelines.
   //    Each scene gets a FrameLabel tag (scene name) at its first frame.
