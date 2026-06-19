@@ -282,7 +282,8 @@ describe("SWF blend mode encoding", () => {
 
   /**
    * Test 6: Instance with both filter AND blendMode → single PlaceObject3
-   * with both HasFilterList (0x10) and HasBlendMode (0x02) bits set in Flags2
+   * with both HasFilterList (0x01) and HasBlendMode (0x02) bits set in Flags2.
+   * (Task 1238: HasFilterList was 0x10 = HasImage; corrected to bit 0 = 0x01.)
    */
   it("6. Instance with filter + blendMode produces PlaceObject3 with both Flags2 bits set", () => {
     const blur = makeBlurFilter();
@@ -290,8 +291,9 @@ describe("SWF blend mode encoding", () => {
 
     // Flags2 is at byte index 1
     const flags2 = body[1];
-    expect(flags2 & 0x02).toBe(0x02); // HasBlendMode
-    expect(flags2 & 0x10).toBe(0x10); // HasFilterList
+    expect(flags2 & 0x02).toBe(0x02); // HasBlendMode (PlaceFlag 1<<9)
+    expect(flags2 & 0x01).toBe(0x01); // HasFilterList (PlaceFlag 1<<8)
+    expect(flags2 & 0x10).toBe(0); // HasImage (PlaceFlag 1<<12) must NOT be set
 
     // Also verify via compileDocument that a single PlaceObject3 is emitted
     const sym = makeSymbol("sym-blend-6");
@@ -322,7 +324,8 @@ describe("SWF blend mode encoding", () => {
 
     // Check the tag body Flags2 has both bits
     const tagFlags2 = placeObject3Tags[0].body[1];
-    expect(tagFlags2 & 0x02).toBe(0x02); // HasBlendMode
-    expect(tagFlags2 & 0x10).toBe(0x10); // HasFilterList
+    expect(tagFlags2 & 0x02).toBe(0x02); // HasBlendMode (PlaceFlag 1<<9)
+    expect(tagFlags2 & 0x01).toBe(0x01); // HasFilterList (PlaceFlag 1<<8)
+    expect(tagFlags2 & 0x10).toBe(0); // HasImage must NOT be set
   });
 });

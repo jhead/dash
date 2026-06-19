@@ -58,10 +58,12 @@ function parseTags(swf: Uint8Array): SwfTag[] {
  * the body is short and the only filter id present is 1.
  */
 function blurXFromPlaceObject3(body: Uint8Array): number | null {
-  // PlaceObject3 has TWO flag bytes: flags1 (body[0]) then flags2 (body[1]).
-  // HasFilterList is bit 4 of flags2.
+  // PlaceObject3 has TWO flag bytes: flags1 (body[0]) then flags2 (body[1]),
+  // forming the LE u16 PlaceFlag. HasFilterList is PlaceFlag 1<<8 = flags2 bit 0
+  // (0x01) — exactly how Ruffle's swf crate decodes it. (Task 1238: was 0x10 =
+  // HasImage, which masked the filters-dropped defect — Ruffle ignored the list.)
   const flags2 = body[1];
-  if (!(flags2 & 0x10)) return null;
+  if (!(flags2 & 0x01)) return null;
   // The FILTERLIST starts after flags(2)+depth(2)+conditional PO2 fields. Rather
   // than fully parse the matrix/cxform, scan for the Blur filter id (1) record:
   // a byte 0x01 followed by 8 bytes (blurX,blurY FIXED16) and a quality byte.

@@ -572,16 +572,19 @@ export function encodePlaceObject3WithFilters(
   bw.writeUI8(flags1);
 
   // ---------------------------------------------------------------------------
-  // Flags2: UI8
-  // bit 0: HasImage (0)
-  // bit 1: HasClassName (0)
-  // bit 2: HasCacheAsBitmap (0x04 — set when cacheAsBitmap is true)
-  // bit 3: HasBlendMode (0)
-  // bit 4: HasFilterList (1 if filters present)
-  // bits 5-7: reserved
+  // Flags2: UI8 — the HIGH byte of the little-endian u16 PlaceFlag field. Each
+  // flags2 bit N is combined PlaceFlag bit (8 + N). Per Ruffle's swf crate
+  // (swf/src/types.rs PlaceFlag):
+  // bit 0 (0x01): HasFilterList    (PlaceFlag 1<<8)
+  // bit 1 (0x02): HasBlendMode     (PlaceFlag 1<<9)
+  // bit 2 (0x04): HasCacheAsBitmap (PlaceFlag 1<<10)
+  // bit 3 (0x08): HasClassName     (PlaceFlag 1<<11)
+  // bit 4 (0x10): HasImage         (PlaceFlag 1<<12)  ← NOT HasFilterList!
+  // bit 5 (0x20): HasVisible       (PlaceFlag 1<<13)
+  // bits 6-7: OpaqueBackground / reserved
   // ---------------------------------------------------------------------------
   const enabledFilters = filters.filter((f) => f.enabled);
-  let flags2 = enabledFilters.length > 0 ? (1 << 4) : 0;
+  let flags2 = enabledFilters.length > 0 ? (1 << 0) : 0; // HasFilterList (0x01)
   if (cacheAsBitmap) flags2 |= 0x04; // HasCacheAsBitmap
   bw.writeUI8(flags2);
 
@@ -742,13 +745,15 @@ export function encodePlaceObject3WithBlendMode(
     (hasName ? (1 << 5) : 0); // HasName
   bw.writeUI8(flags1);
 
-  // Flags2:
-  //   bit 1 (0x02): HasBlendMode
-  //   bit 2 (0x04): HasCacheAsBitmap (set when cacheAsBitmap is true)
-  //   bit 4 (0x10): HasFilterList
+  // Flags2 (high byte of the LE u16 PlaceFlag; bit N = PlaceFlag bit 8+N, per
+  // Ruffle swf/src/types.rs PlaceFlag):
+  //   bit 0 (0x01): HasFilterList    (PlaceFlag 1<<8)
+  //   bit 1 (0x02): HasBlendMode     (PlaceFlag 1<<9)
+  //   bit 2 (0x04): HasCacheAsBitmap (PlaceFlag 1<<10) — set when cacheAsBitmap is true
+  //   bit 4 (0x10): HasImage         (PlaceFlag 1<<12) — NOT HasFilterList!
   const enabledFilters = filters ? filters.filter((f) => f.enabled) : [];
   let flags2 = 0x02; // HasBlendMode always set here
-  if (enabledFilters.length > 0) flags2 |= 0x10; // HasFilterList
+  if (enabledFilters.length > 0) flags2 |= 0x01; // HasFilterList (0x01)
   if (cacheAsBitmap) flags2 |= 0x04; // HasCacheAsBitmap
   bw.writeUI8(flags2);
 

@@ -719,15 +719,21 @@ describe("SWF filter encoding", () => {
   });
 
   /**
-   * Test 11: PlaceObject3 Flags2 bit 4 (HasFilterList) is set when filters present.
+   * Test 11: PlaceObject3 Flags2 bit 0 (HasFilterList) is set when filters present.
+   *
+   * HasFilterList is PlaceFlag 1<<8 in Ruffle's swf crate (swf/src/types.rs) =
+   * flags2 (the high byte of the LE u16) bit 0 = 0x01. It is NOT 0x10 — flags2
+   * bit 4 = PlaceFlag 1<<12 = HAS_IMAGE. (Task 1238: the old 0x10 assertion
+   * codified the wrong bit and masked a defect where Ruffle dropped every filter.)
    */
-  it("PlaceObject3 body Flags2 byte has HasFilterList bit set (bit 4 = 0x10)", () => {
+  it("PlaceObject3 body Flags2 byte has HasFilterList bit set (bit 0 = 0x01), not HasImage (0x10)", () => {
     const filter = makeBlurFilter();
     const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
 
     // Flags2 is at byte index 1
     const flags2 = body[1];
-    expect(flags2 & 0x10).toBe(0x10); // bit 4 = HasFilterList
+    expect(flags2 & 0x01).toBe(0x01); // bit 0 = HasFilterList
+    expect(flags2 & 0x10).toBe(0); // bit 4 = HasImage must NOT be set
   });
 
   /**
@@ -739,6 +745,40 @@ describe("SWF filter encoding", () => {
 
     const flags2 = body[1];
     expect(flags2).toBe(0); // No filter list
+  });
+
+  /**
+   * Test 12b (task 1238): Decode the PlaceObject3 flag word EXACTLY as Ruffle's
+   * swf crate does — as a single little-endian u16 PlaceFlag (flags1 = low byte,
+   * flags2 = high byte) — and assert a filtered placement sets HAS_FILTER_LIST
+   * (1<<8) and does NOT set HAS_IMAGE (1<<12).
+   *
+   * This is the assertion that actually catches the bug: the previous tests keyed
+   * off `flags2 & 0x10`, which is HAS_IMAGE — so they were green while Ruffle
+   * decoded filters=None and silently dropped every filter. Bit constants are
+   * lifted verbatim from ruffle/swf/src/types.rs `PlaceFlag`.
+   */
+  it("Ruffle-faithful decode: filtered PlaceObject3 sets HAS_FILTER_LIST (1<<8), not HAS_IMAGE (1<<12)", () => {
+    // Ruffle PlaceFlag bits (swf/src/types.rs) — the relevant PlaceObject3 ones:
+    const HAS_FILTER_LIST = 1 << 8;
+    const HAS_BLEND_MODE = 1 << 9;
+    const HAS_CACHE_AS_BITMAP = 1 << 10;
+    const HAS_IMAGE = 1 << 12;
+
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [makeBlurFilter()]);
+    // Combined LE u16: flags1 (body[0]) is the low byte, flags2 (body[1]) the high byte.
+    const placeFlag = body[0] | (body[1] << 8);
+
+    expect(placeFlag & HAS_FILTER_LIST).toBe(HAS_FILTER_LIST);
+    expect(placeFlag & HAS_IMAGE).toBe(0);
+    expect(placeFlag & HAS_BLEND_MODE).toBe(0);
+    expect(placeFlag & HAS_CACHE_AS_BITMAP).toBe(0);
+
+    // And no-filter / disabled-filter placement clears HAS_FILTER_LIST entirely.
+    const noFilterBody = encodePlaceObject3WithFilters(1, 1, 0, 0, [makeBlurFilter({ enabled: false })]);
+    const noFilterFlag = noFilterBody[0] | (noFilterBody[1] << 8);
+    expect(noFilterFlag & HAS_FILTER_LIST).toBe(0);
+    expect(noFilterFlag & HAS_IMAGE).toBe(0);
   });
 
   /**
@@ -972,9 +1012,10 @@ describe("SWF filter encoding", () => {
     // No PlaceObject2 for the text field
     expect(placeObject2Tags.length).toBe(0);
 
-    // Verify HasFilterList flag (bit 4 of Flags2, which is byte 1 of the body)
+    // Verify HasFilterList flag (bit 0 of Flags2, byte 1 of the body; 0x01 not 0x10)
     const body = placeObject3Tags[0].body;
-    expect(body[1] & 0x10).toBe(0x10);
+    expect(body[1] & 0x01).toBe(0x01);
+    expect(body[1] & 0x10).toBe(0); // HasImage must NOT be set
   });
 
   /**
@@ -1013,8 +1054,9 @@ describe("SWF filter encoding", () => {
     const body = placeObject3Tags[0].body;
     // Flags1 byte (bit 5 = HasName = 0x20)
     expect(body[0] & 0x20).toBe(0x20);
-    // Flags2 byte (bit 4 = HasFilterList = 0x10)
-    expect(body[1] & 0x10).toBe(0x10);
+    // Flags2 byte (bit 0 = HasFilterList = 0x01; bit 4 = HasImage must be clear)
+    expect(body[1] & 0x01).toBe(0x01);
+    expect(body[1] & 0x10).toBe(0);
   });
 
   /**
@@ -1096,9 +1138,10 @@ describe("SWF filter encoding", () => {
     expect(placeObject3Tags.length).toBeGreaterThan(0);
     expect(placeObject2Tags.length).toBe(0);
 
-    // Verify HasFilterList flag (bit 4 of Flags2, byte 1 of body)
+    // Verify HasFilterList flag (bit 0 of Flags2, byte 1 of body; 0x01 not 0x10)
     const body = placeObject3Tags[0].body;
-    expect(body[1] & 0x10).toBe(0x10);
+    expect(body[1] & 0x01).toBe(0x01);
+    expect(body[1] & 0x10).toBe(0); // HasImage must NOT be set
   });
 
   /**
@@ -1154,8 +1197,9 @@ describe("SWF filter encoding", () => {
 
     // Flags1 byte (bit 5 = HasName = 0x20)
     expect(body[0] & 0x20).toBe(0x20);
-    // Flags2 byte (bit 4 = HasFilterList = 0x10)
-    expect(body[1] & 0x10).toBe(0x10);
+    // Flags2 byte (bit 0 = HasFilterList = 0x01; bit 4 = HasImage must be clear)
+    expect(body[1] & 0x01).toBe(0x01);
+    expect(body[1] & 0x10).toBe(0);
   });
 
   /**

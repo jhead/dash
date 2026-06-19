@@ -224,15 +224,17 @@ describe("DisplacementMapFilter SWF encoding (FilterID=8)", () => {
   });
 
   /**
-   * Test 10: HasFilterList flag (bit 4 of Flags2) is set.
+   * Test 10: HasFilterList flag (bit 0 of Flags2 = 0x01) is set.
+   * (Task 1238: was 0x10 = HasImage, which masked the filters-dropped defect.)
    */
-  it("DisplacementMapFilter: PlaceObject3 Flags2 HasFilterList bit is set", () => {
+  it("DisplacementMapFilter: PlaceObject3 Flags2 HasFilterList bit is set (0x01), not HasImage (0x10)", () => {
     const filter = makeDisplacementFilter();
     const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
 
     // Flags2 is at byte index 1
     const flags2 = body[1];
-    expect(flags2 & 0x10).toBe(0x10);
+    expect(flags2 & 0x01).toBe(0x01); // HasFilterList (PlaceFlag 1<<8)
+    expect(flags2 & 0x10).toBe(0); // HasImage (PlaceFlag 1<<12) must NOT be set
   });
 
   /**
@@ -244,7 +246,7 @@ describe("DisplacementMapFilter SWF encoding (FilterID=8)", () => {
 
     // Flags2 HasFilterList bit should be clear
     const flags2 = body[1];
-    expect(flags2 & 0x10).toBe(0);
+    expect(flags2 & 0x01).toBe(0);
 
     // No FilterID=8 should appear
     const start = findFilterListStart(body, 1, 8);

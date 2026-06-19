@@ -276,15 +276,17 @@ describe("ConvolutionFilter SWF encoding (FilterID=5)", () => {
   });
 
   /**
-   * Test 9: HasFilterList flag (bit 4 of Flags2) is set for ConvolutionFilter.
+   * Test 9: HasFilterList flag (bit 0 of Flags2 = 0x01) is set for ConvolutionFilter.
+   * (Task 1238: was 0x10 = HasImage, which masked the filters-dropped defect.)
    */
-  it("ConvolutionFilter: PlaceObject3 Flags2 HasFilterList bit is set", () => {
+  it("ConvolutionFilter: PlaceObject3 Flags2 HasFilterList bit is set (0x01), not HasImage (0x10)", () => {
     const filter = makeConvolutionFilter();
     const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
 
     // Flags2 is at byte index 1
     const flags2 = body[1];
-    expect(flags2 & 0x10).toBe(0x10); // HasFilterList bit
+    expect(flags2 & 0x01).toBe(0x01); // HasFilterList bit (PlaceFlag 1<<8)
+    expect(flags2 & 0x10).toBe(0); // HasImage (PlaceFlag 1<<12) must NOT be set
   });
 
   /**
@@ -296,7 +298,7 @@ describe("ConvolutionFilter SWF encoding (FilterID=5)", () => {
 
     // Flags2 should have HasFilterList clear
     const flags2 = body[1];
-    expect(flags2 & 0x10).toBe(0); // HasFilterList bit clear
+    expect(flags2 & 0x01).toBe(0); // HasFilterList bit clear
 
     // No FilterID=5 should appear after byte 7
     let found = false;

@@ -86,6 +86,20 @@ Blend modes map to the SWF `PlaceObject3` blend-mode field and `MovieClip.blendM
   then all ratio bytes, then blurX/blurY/angle/distance (FIXED16) + strength (FIXED8) +
   a flags byte (inner=bit7, knockout=bit6, compositeSource=bit5, onTop=bit4 for the
   "full"/ON_TOP bevel, passes/quality=bits 0-3). Round-tripped by `filters.test.ts`.
+- **PlaceObject3 flag word is a single LITTLE-ENDIAN u16** (`flags1` = low byte, `flags2`
+  = high byte); flags2 bit N is combined PlaceFlag bit (8+N). Per Ruffle's swf crate
+  (`swf/src/types.rs PlaceFlag`): **HasFilterList = 1<<8 = flags2 bit 0 (0x01)**,
+  HasBlendMode = 1<<9 (0x02), HasCacheAsBitmap = 1<<10 (0x04), HasClassName = 1<<11
+  (0x08), **HasImage = 1<<12 = flags2 bit 4 (0x10)**. HasFilterList is therefore 0x01, NOT
+  0x10 — emitting 0x10 sets HasImage instead, and the swf crate (= the runtime) decodes
+  `filters=None` and silently drops the entire FILTERLIST (task 1238). The encoders live in
+  `packages/swf/src/filters.ts` (`encodePlaceObject3WithFilters` /
+  `…WithBlendMode`); the Ruffle-faithful u16 decode is asserted in `filters.test.ts`.
+- **DisplacementMapFilter is NOT a SWF PlaceObject filter**: the SWF FILTERLIST defines
+  filter IDs 0–7 only (DropShadow/Blur/Glow/Bevel/GradientGlow/Convolution/ColorMatrix/
+  GradientBevel). DisplacementMap is an AS3-runtime-only filter; emitting it into a SWF
+  FILTERLIST (our encoder uses FilterID=8) produces bytes the swf crate rejects as
+  "Invalid filter type". Tracked separately from the HasFilterList bit fix.
 - Blend modes = GPU blend-state + custom fragment composites; Layer forces an offscreen group
   buffer so Alpha/Erase operate on the composited group.
 - Keep a filter/blend pipeline cache keyed on parameters + source bitmap hash.
