@@ -13,6 +13,26 @@ import { frameFilename } from "../frameFilename.js";
 import type { ExportGifOptions } from "../ExportGifDialog";
 import type { UiStoreApi } from "../store/index.js";
 
+/**
+ * Derive the gifenc `repeat` value (== the NETSCAPE2.0 application-extension loop
+ * count) from the export dialog's loop settings.
+ *
+ * gifenc's GIFEncoder.writeFrame writes the NETSCAPE2.0 loop sub-block on the first
+ * frame iff `repeat >= 0`, encoding `repeat` as the 2-byte little-endian loop count:
+ *   - 0 -> loop forever
+ *   - N -> play N additional times (finite loop)
+ *   - <0 -> omit the extension entirely, so the GIF plays exactly once
+ *
+ * "Loop forever" therefore maps to 0; a finite count maps to the requested loopCount
+ * (clamped to >= 1, matching the dialog), instead of being silently discarded.
+ */
+export function gifLoopRepeat(options: {
+  loopForever: boolean;
+  loopCount: number;
+}): number {
+  return options.loopForever ? 0 : Math.max(1, options.loopCount);
+}
+
 export interface ExportHandlersDeps {
   uiStore: UiStoreApi;
   doc: FlashDocument;
@@ -156,10 +176,11 @@ export function useExportHandlers(deps: ExportHandlersDeps) {
         const w = docProperties.width;
         const h = docProperties.height;
         const gif = GIFEncoder();
-        // Repeat: 0 = loop forever; n > 0 = gifenc does not natively encode finite
-        // loop counts via NETSCAPE2.0 (it only writes the extension once on the first
-        // frame). We pass 0 for "loop forever" and -1 (no extension) otherwise.
-        const repeat = options.loopForever ? 0 : -1;
+        // `repeat` maps directly to the NETSCAPE2.0 application-extension loop count
+        // (see gifLoopRepeat): 0 = loop forever, N = finite N-times. Honors the dialog's
+        // loop count instead of discarding it (the old code passed -1 = no extension =
+        // plays once for any finite count).
+        const repeat = gifLoopRepeat(options);
 
         for (let fi = 0; fi < maxFrame; fi++) {
           // Render the frame to a data URL and decode to RGBA bytes
