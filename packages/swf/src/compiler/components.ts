@@ -248,14 +248,14 @@ export function controlKindFor(className: string): ControlKind {
 // ---------------------------------------------------------------------------
 
 /** Height (px) of one List/ComboBox row (matches the catalog rowHeight default). */
-const ROW_HEIGHT = 20;
+export const ROW_HEIGHT = 20;
 /**
  * Size of the fixed row POOL for the repeated-row skin. The flat compile-time model
  * does not know the author's item count (delivered live via `labels`), so we emit a
  * fixed pool of named EditText children and the class shows only as many as there are
  * items. Items beyond the pool are NOT rendered (scrolling is the deferred follow-on).
  */
-const LIST_ROW_POOL = 8;
+export const LIST_ROW_POOL = 8;
 
 /**
  * How a control's skin face/box is drawn:
@@ -341,9 +341,11 @@ interface ControlSpec {
   /**
    * Extra named EditText skin children beyond the primary `label_txt`. Selection
    * controls (List/ComboBox) supply the repeated row pool here. Empty/omitted for
-   * every other control.
+   * every other control. `height` is the skin box height; the row-pool impls derive
+   * their per-row geometry from a fixed `ROW_HEIGHT`, so it is optional (the call site
+   * still passes it for parity with `buildMarks`).
    */
-  extraTextFields?(width: number, height: number): ExtraTextField[];
+  extraTextFields?(width: number, height?: number): ExtraTextField[];
 }
 
 // ---------------------------------------------------------------------------
@@ -796,7 +798,7 @@ ${fqn}.prototype.onMouseDown = function() {
  * it, updates the collapsed label, and closes the dropdown. Exposes the same
  * selectedIndex/selectedItem API as List.
  */
-function authorComboBoxClassBody(fqn: string): string {
+export function authorComboBoxClassBody(fqn: string): string {
   return (
     authorRowPoolHelpers(fqn, LIST_ROW_POOL, ROW_HEIGHT, ROW_HEIGHT) +
     `
@@ -823,6 +825,10 @@ ${fqn}.prototype.__setOpen = function(v) {
       f._visible = (this.__open && i < this.__items.length);
     }
     i++;
+  }
+  // Toggle the ▼ overlay so the open/closed state has a visual cue (hidden while open).
+  if (this.arrow_mk != undefined) {
+    this.arrow_mk._visible = !this.__open;
   }
   this.__refresh();
 };
@@ -874,8 +880,11 @@ ${fqn}.prototype.onMouseDown = function() {
   // the open dropdown extends below, still inside the skin bbox since rows are children).
   var mx = this._parent._xmouse;
   var my = this._parent._ymouse;
+  // Visible bottom edge: the collapsed row (__rowTop = one row) plus, when open, the N
+  // item rows. No trailing +__rowHeight — that added a phantom extra row (closed box
+  // accepted clicks ~2 rows down; open box accepted a row below the last item).
   var bottom = this._y + this.__rowTop + (this.__open ? this.__items.length * this.__rowHeight : 0);
-  if (mx >= this._x && mx <= this._x + this._width && my >= this._y && my <= bottom + this.__rowHeight) {
+  if (mx >= this._x && mx <= this._x + this._width && my >= this._y && my <= bottom) {
     this.__handleClick();
   } else if (this.__open) {
     // Click-away closes the open dropdown.

@@ -19,6 +19,7 @@
 
 import { describe, it, expect } from "vitest";
 import { compileDocument } from "../compile.js";
+import { authorComboBoxClassBody, ROW_HEIGHT } from "../compiler/components.js";
 import type {
   ComponentItem,
   FlashDocument,
@@ -1283,5 +1284,70 @@ describe("functional selection controls: List + ComboBox (task 1235, Part 2.5)",
     expect(strings).toContain("myCombo");
     expect(strings).toContain("labels");
     expect(strings).toContain("One,Two,Three");
+  });
+
+  // -------------------------------------------------------------------------
+  // Corrected ComboBox hit-test boundary (task 1237).
+  //
+  // A precise Ruffle hit oracle is impractical: per docs/13 + the project
+  // learnings, headless Ruffle does NOT dispatch global mouse clip events
+  // (onMouseDown), so a click-to-open/select cannot be exercised at runtime in
+  // the e2e harness. We therefore assert the corrected boundary STRUCTURALLY by
+  // (a) pinning the authored onMouseDown gate (no trailing phantom row) and
+  // (b) simulating the exact runtime arithmetic for both collapsed and open
+  // states, proving the clickable area now matches the VISIBLE rows.
+  // -------------------------------------------------------------------------
+  describe("corrected hit-test boundary (task 1237)", () => {
+    /**
+     * Replicates the authored onMouseDown gate's vertical hit test:
+     *   bottom = _y + __rowTop + (open ? items*__rowHeight : 0)
+     *   inside = my >= _y && my <= bottom
+     * __rowTop for the ComboBox is ROW_HEIGHT (the collapsed row sits on top).
+     */
+    function inside(my: number, opts: { y: number; open: boolean; items: number }): boolean {
+      const rowTop = ROW_HEIGHT; // ComboBox: collapsed label occupies row 0
+      const bottom = opts.y + rowTop + (opts.open ? opts.items * ROW_HEIGHT : 0);
+      return my >= opts.y && my <= bottom;
+    }
+
+    it("the authored gate drops the phantom trailing row (no '+ this.__rowHeight')", () => {
+      const src = authorComboBoxClassBody("_global.Foo");
+      // The corrected gate compares to `bottom` exactly...
+      expect(src).toContain("my <= bottom)");
+      // ...and must NOT re-add a row to the boundary.
+      expect(src).not.toContain("my <= bottom + this.__rowHeight");
+    });
+
+    it("a click just below the COLLAPSED row is OUTSIDE (does not open)", () => {
+      const y = 100;
+      // The collapsed box is the single top row: y .. y+ROW_HEIGHT.
+      expect(inside(y + ROW_HEIGHT, { y, open: false, items: 3 })).toBe(true); // bottom edge
+      // One pixel past the collapsed row must be outside (previously a phantom row).
+      expect(inside(y + ROW_HEIGHT + 1, { y, open: false, items: 3 })).toBe(false);
+      // The old off-by-one accepted clicks ~2 rows down — now firmly outside.
+      expect(inside(y + 2 * ROW_HEIGHT - 1, { y, open: false, items: 3 })).toBe(false);
+    });
+
+    it("with the dropdown OPEN, a click below the last item is OUTSIDE (no phantom select)", () => {
+      const y = 100;
+      const items = 3;
+      // Visible area = collapsed row + N item rows = y .. y + (1+N)*ROW_HEIGHT.
+      const visibleBottom = y + (1 + items) * ROW_HEIGHT;
+      expect(inside(visibleBottom, { y, open: true, items })).toBe(true); // last item's bottom edge
+      // One pixel below the last item must be outside (was the phantom row).
+      expect(inside(visibleBottom + 1, { y, open: true, items })).toBe(false);
+      // A full phantom row below the last item is firmly outside.
+      expect(inside(visibleBottom + ROW_HEIGHT, { y, open: true, items })).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Arrow overlay toggle (task 1237): __setOpen flips arrow_mk visibility,
+  // guarded for undefined.
+  // -------------------------------------------------------------------------
+  it("ComboBox __setOpen toggles arrow_mk visibility (guarded for undefined)", () => {
+    const src = authorComboBoxClassBody("_global.Foo");
+    expect(src).toContain("if (this.arrow_mk != undefined)");
+    expect(src).toContain("this.arrow_mk._visible = !this.__open;");
   });
 });

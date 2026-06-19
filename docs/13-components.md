@@ -389,6 +389,16 @@ compile-time model does not know the author's item count (delivered live via the
      row selects it, updates the collapsed label, and closes; a click-away closes it. Same
      selection API as List plus `isOpen`/`open`/`close`.
 
+**ComboBox hit-test boundary (task 1237 polish).** The `onMouseDown` clickable area matches
+the **visible** rows exactly: `bottom = _y + __rowTop + (open ? items*__rowHeight : 0)` and the
+gate is `my <= bottom` (NOT `bottom + __rowHeight`). `__rowTop` is one row (the collapsed
+display sits on top), so a **collapsed** box accepts clicks only in its single top row, and an
+**open** box accepts the collapsed row + the N item rows — no phantom extra row below either.
+`__setOpen` also toggles `arrow_mk._visible` (hidden while open, shown while collapsed; guarded
+for `undefined`) so the open/closed state has a visual cue. Verified structurally in
+`component-place.test.ts` ("corrected hit-test boundary (task 1237)") — a Ruffle hit oracle is
+impractical because headless Ruffle does not dispatch global mouse clip (`onMouseDown`) events.
+
 **Verification.** Structural unit tests (`component-place.test.ts`, "functional selection
 controls") decode our own SWF and assert, per control: ExportAssets under the FQ class name, a
 class-definition DoInitAction (DefineFunction2) **before** registerClass, the **fixed row pool**
