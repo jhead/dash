@@ -1,0 +1,10 @@
+{
+  "id": "1242-5zdj57-extend-filter-pixel-oracle-to-the-remaining-5-fi",
+  "title": "Extend filter-pixel-oracle to the remaining 5 filter types (Bevel/GradientGlow/GradientBevel/ColorMatrix/Convolution)",
+  "description": "The filter-render regression guard apps/desktop/e2e/filter-pixel-oracle.spec.ts (added by task 1241) currently pixel-oracles only 3 of the 8 SWF filter types: Glow, DropShadow, Blur. NOT covered: Bevel, GradientGlow, GradientBevel, ColorMatrix/AdjustColor, Convolution.\n\nWhy this matters (regression-prevention, not speculative coverage): this codebase has already had TWO real filter defects hide behind weak/byte-presence tests -- task 1236 (ConvolutionFilter CLAMP/PRESERVE_ALPHA bits swapped) and the CRITICAL task 1238 (PlaceObject3 HasFilterList at wrong flags2 bit -> ALL filters silently dropped at runtime). The pixel-oracle is the proven guard (its counterfactual catches 1238), but the 5 uncovered types -- especially Convolution, which had a real masked bug -- remain guarded only by byte tests.\n\nAsk: add per-filter-type cases to filter-pixel-oracle.spec.ts for the remaining 5 types, each rendering via real Ruffle and asserting a meaningful outside-bounds (or, for ColorMatrix/Convolution which may not extend beyond bounds, an inside-shape pixel-change) delta vs a no-filter control -- mirroring the existing Glow/DropShadow/Blur cases. Note ColorMatrix/Convolution alter pixels WITHIN the shape rather than producing a halo, so they may need an inside-bounds color-delta assertion instead of outside-bounds.\n\nAcceptance: each of the 5 types has a Ruffle-render assertion that FAILS if that filter is dropped/corrupted (verifiable by the same counterfactual method used for 1241).\n\nReferences: task 1241 (added the existing oracle + counterfactual method), task 1236 (ConvolutionFilter CLAMP/PRESERVE_ALPHA bits swapped), task 1238 (CRITICAL PlaceObject3 HasFilterList wrong-bit dropped all filters).\n\nPriority: low. Effort: medium.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-19T05:22:53Z",
+  "updated_at": "2026-06-19T05:22:53Z"
+}
