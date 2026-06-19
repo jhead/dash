@@ -518,3 +518,52 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
     sweep; sprite.ts doesn't bake warp).
   - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
 - **Resolved + verified (no longer open):** 1213 / 1217, 1228, 1214, 1229-part 1, 1215, 1230.
+
+
+---
+
+## 2026-06-19 — Verify 1231 Part 2.1 (functional self-authored mx.controls.Button)
+
+- **Watermark (last fully-QA'd SHA):** `6e7d849` — current repo HEAD. Advances the
+  watermark to include everything through 1231 Part 2.1 (`8618411`), now VERIFIED below.
+  Resolved + verified set now includes: 1213/1217, 1228, 1214, 1229-part1, 1215, 1230,
+  **1231-part2.1**.
+- **`8618411` / task 1231 Part 2.1 — functional self-authored `mx.controls.Button`:
+  VERIFIED genuinely resolved.** The AS2 class emission is REAL, not a stub:
+  `authorComponentClassBytecode()` emits `_global.mx.controls.Button` with prototype
+  methods (`setLabel` / `getLabel` / `onLoad` / `onRollOver` / `onRollOut` / `onRelease`)
+  via `compileAS2` — using a dotted-global assignment workaround because the AS2 compiler's
+  `compileClassDecl` only supports single-identifier class names. The class-def
+  `DoInitAction` is ordered BEFORE the `registerClass` body; the skin is a hoisted
+  `DefineShape4` rounded-rect face plus a named `DefineEditText` `label_txt` placed inside
+  the skin `DefineSprite`; `ActionEnd` is appended.
+  - **Test evidence:** unit suite **1397/1397**; component-place tests decode the real
+    emitted structure (DefineFunction2 via a proper AVM1 framing walk, ordering, char-id
+    cross-refs, seeded label bytes). component-oracle e2e **3/3**: the RENDER oracle shows
+    2412 non-white px; the BINDING oracle proves Ruffle resolves
+    `_root.myButton instanceof mx.controls.Button` (red=0 / blue=20000 RED→BLUE advance);
+    the NEGATIVE control stays red (the advance is impossible without the bound class) —
+    strong runtime FUNCTIONAL proof. golden-parity exit 0; adjacent golden-fla-oracle /
+    visual-oracle green. No regression. Nothing filed.
+- **Minor coverage nuance (not a defect):** the render test's >500px threshold is met by
+  the face shape ALONE, so the label GLYPH pixels are not separately pixel-verified (label
+  presence is proven structurally in the unit test; device-font `HasFont` is unset).
+- **TASK-ID CLARIFICATION (important — corrects any earlier conflation):** the label
+  SEEDED by 1231 is the component/item NAME (`componentName || name || "Button"`); there
+  is NO distinct user-facing `label` PARAMETER in the `ComponentItem` model yet.
+  User-facing component PARAMETER-passing (the Component Inspector param values from task
+  1222) is DEFERRED to "component Part 2.2 (live parameter-passing)", QUEUED BY COMMIT
+  `6e7d849` — this is NOT task 1232. Task **1232** is the separate symbol-internal
+  Free-Transform-warp-dropped defect. Keep these distinct.
+- **Still open for workers (carried forward + new):**
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+  - **1227** — Trace Bitmap marching-squares walker traces only ~half of non-rectangular
+    regions (needs Moore-neighbor rewrite + diagonal tests).
+  - **1232** — Free-Transform warp dropped for symbol-internal shapes (sprite.ts doesn't
+    bake warp).
+  - **Component Part 2.2 (live parameter-passing)** — queued by `6e7d849`; user-facing
+    Component Inspector param values not yet emitted on publish. (NOT 1232.)
+  - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
+- **Resolved + verified (no longer open):** 1213 / 1217, 1228, 1214, 1229-part 1, 1215,
+  1230, 1231-part 2.1.
