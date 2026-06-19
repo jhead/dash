@@ -1,11 +1,15 @@
 /**
  * SWF filter encoding — FILTERLIST for PlaceObject3 (tag 70).
  *
- * Supports DropShadow (ID=0), Blur (ID=1), Glow (ID=2), and Bevel (ID=3).
- * Used for objects that have Flash 8 FlashFilter effects applied.
+ * Supports the eight Flash 8 SWF FILTERLIST ids: DropShadow (0), Blur (1),
+ * Glow (2), Bevel (3), GradientGlow (4), Convolution (5), ColorMatrix /
+ * AdjustColor (6), and GradientBevel (7). Filters with no Flash 8 SWF
+ * representation (e.g. DisplacementMapFilter — an AS3 runtime-only filter) are
+ * skipped, never emitted as an invalid FilterID; see `encodableFilters()` and
+ * task 1239 / docs/08.
  */
 import { BitWriter } from "./bits.js";
-import type { FlashFilter, DropShadowFilter, GlowFilter, BlurFilter, BevelFilter, GradientGlowFilter, GradientBevelFilter, AdjustColorFilter, ConvolutionFilter, DisplacementMapFilter } from "@flash/core";
+import type { FlashFilter, DropShadowFilter, GlowFilter, BlurFilter, BevelFilter, GradientGlowFilter, GradientBevelFilter, AdjustColorFilter, ConvolutionFilter } from "@flash/core";
 import { toSWFMatrix, composeMatrix } from "@flash/core";
 import { edgeNumBits } from "./helpers.js";
 import { type CXForm, encodeCXFormWithAlpha } from "./cxform.js";
@@ -379,92 +383,67 @@ function writeConvolutionFilter(bw: BitWriter, f: ConvolutionFilter): void {
   bw.writeUI8(flags);
 }
 
-/**
- * Parse a CSS hex color string (#rrggbb, #rgb, or #rrggbbaa) into {r, g, b, a}.
- */
-function hexToRGBA(hex: string): { r: number; g: number; b: number; a: number } {
-  const h = hex.replace("#", "");
-  if (h.length === 3) {
-    return {
-      r: parseInt(h[0] + h[0], 16),
-      g: parseInt(h[1] + h[1], 16),
-      b: parseInt(h[2] + h[2], 16),
-      a: 255,
-    };
-  }
-  if (h.length === 8) {
-    return {
-      r: parseInt(h.slice(0, 2), 16) || 0,
-      g: parseInt(h.slice(2, 4), 16) || 0,
-      b: parseInt(h.slice(4, 6), 16) || 0,
-      a: parseInt(h.slice(6, 8), 16) || 0,
-    };
-  }
-  return {
-    r: parseInt(h.slice(0, 2), 16) || 0,
-    g: parseInt(h.slice(2, 4), 16) || 0,
-    b: parseInt(h.slice(4, 6), 16) || 0,
-    a: 255,
-  };
-}
-
-/**
- * Encode a DisplacementMapFilter (FilterID = 8).
- *
- * SWF layout (per SWF spec §23 DISPLACEMENTMAPFILTER):
- *   UI16:   MapBitmapId — character ID of the map bitmap
- *   FLOAT:  MapPoint.x  — x offset of the map (IEEE 754 LE)
- *   FLOAT:  MapPoint.y  — y offset of the map (IEEE 754 LE)
- *   UI8:    ComponentX  — color channel for X displacement (1=R, 2=G, 4=B, 8=A)
- *   UI8:    ComponentY  — color channel for Y displacement
- *   FLOAT:  ScaleX      — scale factor for X displacement
- *   FLOAT:  ScaleY      — scale factor for Y displacement
- *   UI8:    Mode        — 0=wrap, 1=clamp, 2=ignore, 3=color
- *   RGBA:   Color       — 4 bytes, color for out-of-bounds pixels (mode=3)
- *   UI8:    Clamp       — reserved, write 0
- */
-function writeDisplacementMapFilter(bw: BitWriter, f: DisplacementMapFilter): void {
-  // MapBitmapId: UI16
-  bw.writeUI16LE(f.mapBitmapId ?? 0);
-
-  // MapPoint: two FLOAT32 values
-  bw.writeFloat(f.mapPoint?.x ?? 0);
-  bw.writeFloat(f.mapPoint?.y ?? 0);
-
-  // ComponentX, ComponentY: UI8
-  bw.writeUI8(f.componentX ?? 1);
-  bw.writeUI8(f.componentY ?? 2);
-
-  // ScaleX, ScaleY: FLOAT32
-  bw.writeFloat(f.scaleX ?? 0);
-  bw.writeFloat(f.scaleY ?? 0);
-
-  // Mode: UI8 (0=wrap, 1=clamp, 2=ignore, 3=color)
-  const modeMap: Record<string, number> = { wrap: 0, clamp: 1, ignore: 2, color: 3 };
-  bw.writeUI8(modeMap[f.mode ?? "wrap"] ?? 0);
-
-  // Color: RGBA (4 bytes)
-  const { r, g, b, a } = hexToRGBA(f.color ?? "#00000000");
-  bw.writeUI8(r);
-  bw.writeUI8(g);
-  bw.writeUI8(b);
-  bw.writeUI8(a);
-
-  // Clamp: UI8 (reserved, write 0)
-  bw.writeUI8(0);
-}
+// NOTE (task 1239): the former `writeDisplacementMapFilter` / `hexToRGBA`
+// encoders emitted a SWF FILTERLIST entry with FilterID=8. That id does not
+// exist in the Flash 8 SWF FILTERLIST (valid ids are 0..7); Ruffle's `swf`
+// crate rejects it as "Invalid filter type" and drops the WHOLE filter list
+// for that PlaceObject3. DisplacementMapFilter is an AS3 runtime-only filter
+// with no SWF tag form and is unreachable from the authoring UI/model anyway,
+// so the encoder was purely vestigial. It has been removed; `writeFilterList`
+// now skips any non-encodable filter via `encodableFilters()`.
 
 // ---------------------------------------------------------------------------
 // FILTERLIST encoder
 // ---------------------------------------------------------------------------
 
 /**
+ * The SWF FILTERLIST (PlaceObject3, tag 70) only defines FilterIDs 0–7:
+ *   0 DropShadow, 1 Blur, 2 Glow, 3 Bevel, 4 GradientGlow,
+ *   5 Convolution, 6 ColorMatrix (AdjustColor), 7 GradientBevel.
+ *
+ * DisplacementMapFilter is an AS3 / Flash Player 9+ *runtime* filter
+ * (`flash.filters.DisplacementMapFilter`) with NO Flash 8 SWF tag
+ * representation. There is no FilterID for it. Ruffle's `swf` crate rejects
+ * any FilterID outside 0..7 as "Invalid filter type", which makes the swf
+ * crate decode `filters = None` for the ENTIRE PlaceObject3 — dropping every
+ * (otherwise valid) filter on that instance, not just the displacement one.
+ *
+ * So a filter is only "SWF-encodable" if it has a real FILTERLIST id. This
+ * deliberately excludes "displacementMap" (and any future non-0..7 filter),
+ * so it is never written, never counted toward FilterCount, and never sets
+ * the HasFilterList flag on its own. See task 1239 / docs/08.
+ */
+export function isSwfEncodableFilter(f: FlashFilter): boolean {
+  return f.type !== "displacementMap";
+}
+
+/** Enabled filters that have a valid SWF FILTERLIST representation (ID 0..7). */
+export function encodableFilters(filters: readonly FlashFilter[]): FlashFilter[] {
+  return filters.filter((f) => f.enabled && isSwfEncodableFilter(f));
+}
+
+/**
  * Encode a SWF FILTERLIST into a BitWriter.
- * Only encodes enabled filters.
+ * Only encodes enabled filters that have a valid SWF FilterID (0..7).
+ * Filters without a Flash 8 SWF representation (e.g. displacementMap) are
+ * skipped (with a dev-facing warning) so the remaining valid filters on the
+ * same instance still apply instead of the whole list being rejected.
  */
 function writeFilterList(bw: BitWriter, filters: readonly FlashFilter[]): void {
-  const enabled = filters.filter((f) => f.enabled);
+  const enabled = encodableFilters(filters);
   bw.writeUI8(enabled.length); // FilterCount
+
+  // Dev-facing warning for any enabled-but-unencodable filter that we skip.
+  for (const f of filters) {
+    if (f.enabled && !isSwfEncodableFilter(f)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[swf/filters] Skipping filter '${f.type}' — it has no Flash 8 SWF ` +
+          `FILTERLIST id (valid ids are 0..7). Emitting it would corrupt the ` +
+          `entire filter list (Ruffle: "Invalid filter type"). See docs/08.`,
+      );
+    }
+  }
 
   for (const f of enabled) {
     switch (f.type) {
@@ -500,10 +479,9 @@ function writeFilterList(bw: BitWriter, filters: readonly FlashFilter[]): void {
         bw.writeUI8(5); // FilterID
         writeConvolutionFilter(bw, f);
         break;
-      case "displacementMap":
-        bw.writeUI8(8); // FilterID
-        writeDisplacementMapFilter(bw, f);
-        break;
+      // NOTE: "displacementMap" is intentionally NOT emitted — it has no SWF
+      // FILTERLIST id (0..7) and would corrupt the whole list (see above /
+      // encodableFilters()). It is filtered out before this loop runs.
     }
   }
 }
@@ -583,7 +561,9 @@ export function encodePlaceObject3WithFilters(
   // bit 5 (0x20): HasVisible       (PlaceFlag 1<<13)
   // bits 6-7: OpaqueBackground / reserved
   // ---------------------------------------------------------------------------
-  const enabledFilters = filters.filter((f) => f.enabled);
+  // Only SWF-encodable filters (FilterID 0..7) count toward HasFilterList —
+  // a lone displacementMap must NOT set the flag (it would mean an empty list).
+  const enabledFilters = encodableFilters(filters);
   let flags2 = enabledFilters.length > 0 ? (1 << 0) : 0; // HasFilterList (0x01)
   if (cacheAsBitmap) flags2 |= 0x04; // HasCacheAsBitmap
   bw.writeUI8(flags2);
@@ -667,11 +647,15 @@ export function encodePlaceObject3WithFilters(
 }
 
 /**
- * Returns true if an object has any enabled filters.
+ * Returns true if an object has any enabled, SWF-encodable filters (FilterID
+ * 0..7). This drives the PlaceObject2-vs-PlaceObject3 routing decision, so a
+ * filter with no Flash 8 SWF representation (e.g. displacementMap) must NOT
+ * count — otherwise the object would route to PlaceObject3 carrying an empty
+ * FILTERLIST. (See task 1239.)
  */
 export function hasEnabledFilters(filters: readonly FlashFilter[] | undefined): boolean {
   if (!filters || filters.length === 0) return false;
-  return filters.some((f) => f.enabled);
+  return filters.some((f) => f.enabled && isSwfEncodableFilter(f));
 }
 
 // ---------------------------------------------------------------------------
@@ -751,7 +735,8 @@ export function encodePlaceObject3WithBlendMode(
   //   bit 1 (0x02): HasBlendMode     (PlaceFlag 1<<9)
   //   bit 2 (0x04): HasCacheAsBitmap (PlaceFlag 1<<10) — set when cacheAsBitmap is true
   //   bit 4 (0x10): HasImage         (PlaceFlag 1<<12) — NOT HasFilterList!
-  const enabledFilters = filters ? filters.filter((f) => f.enabled) : [];
+  // Only SWF-encodable filters (FilterID 0..7) count toward HasFilterList.
+  const enabledFilters = filters ? encodableFilters(filters) : [];
   let flags2 = 0x02; // HasBlendMode always set here
   if (enabledFilters.length > 0) flags2 |= 0x01; // HasFilterList (0x01)
   if (cacheAsBitmap) flags2 |= 0x04; // HasCacheAsBitmap

@@ -1,49 +1,37 @@
 /**
- * Tests for DisplacementMapFilter SWF encoding (FilterID = 8).
+ * Regression tests for DisplacementMapFilter handling (task 1239).
  *
- * SWF DisplacementMapFilter layout:
- *   UI8:    FilterID = 8
- *   UI16:   MapBitmapId
- *   FLOAT:  MapPoint.x  (IEEE 754 LE)
- *   FLOAT:  MapPoint.y  (IEEE 754 LE)
- *   UI8:    ComponentX
- *   UI8:    ComponentY
- *   FLOAT:  ScaleX      (IEEE 754 LE)
- *   FLOAT:  ScaleY      (IEEE 754 LE)
- *   UI8:    Mode        (0=wrap, 1=clamp, 2=ignore, 3=color)
- *   RGBA:   Color       (4 bytes)
- *   UI8:    Clamp       (reserved, 0)
+ * DisplacementMapFilter is an AS3 / Flash Player 9+ *runtime* filter
+ * (`flash.filters.DisplacementMapFilter`) with NO Flash 8 SWF FILTERLIST
+ * representation. The SWF FILTERLIST (PlaceObject3, tag 70) only defines
+ * FilterIDs 0..7. The encoder previously emitted DisplacementMapFilter as
+ * FilterID=8; Ruffle's `swf` crate rejects any id outside 0..7 as "Invalid
+ * filter type", which makes the swf crate decode `filters = None` for the
+ * ENTIRE PlaceObject3 — silently dropping every (otherwise valid) filter on
+ * that instance.
+ *
+ * The fix: never emit a displacementMap (or any non-0..7 filter) into the SWF
+ * FILTERLIST. It is skipped when building the list so the remaining valid
+ * filters on the same instance still apply. These tests prove:
+ *   1. No FilterID=8 byte is ever emitted.
+ *   2. A displacementMap alone produces NO filter list (HasFilterList clear).
+ *   3. A displacementMap mixed with a valid filter (blur) leaves the blur
+ *      intact and the list well-formed (count = 1, FilterID = 1).
  */
 
 import { describe, it, expect } from "vitest";
-import { encodePlaceObject3WithFilters } from "../filters.js";
-import type { DisplacementMapFilter } from "@flash/core";
+import {
+  encodePlaceObject3WithFilters,
+  encodePlaceObject3WithBlendMode,
+  hasEnabledFilters,
+  isSwfEncodableFilter,
+  encodableFilters,
+} from "../filters.js";
+import type { DisplacementMapFilter, BlurFilter, FlashFilter } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function readFloat32LE(bytes: Uint8Array, offset: number): number {
-  const view = new DataView(bytes.buffer, bytes.byteOffset + offset, 4);
-  return view.getFloat32(0, true);
-}
-
-function readUI16LE(bytes: Uint8Array, offset: number): number {
-  return bytes[offset] | (bytes[offset + 1] << 8);
-}
-
-/**
- * Find the FILTERLIST start (FilterCount byte followed by FilterID byte) in a
- * PlaceObject3 body. Returns the index of the FilterCount byte, or -1.
- */
-function findFilterListStart(body: Uint8Array, filterCount: number, filterId: number): number {
-  for (let i = 7; i < body.length - 1; i++) {
-    if (body[i] === filterCount && body[i + 1] === filterId) {
-      return i;
-    }
-  }
-  return -1;
-}
 
 function makeDisplacementFilter(overrides: Partial<DisplacementMapFilter> = {}): DisplacementMapFilter {
   return {
@@ -61,216 +49,144 @@ function makeDisplacementFilter(overrides: Partial<DisplacementMapFilter> = {}):
   };
 }
 
+function makeBlurFilter(overrides: Partial<BlurFilter> = {}): BlurFilter {
+  return {
+    type: "blur",
+    blurX: 4,
+    blurY: 4,
+    quality: 1,
+    enabled: true,
+    ...overrides,
+  };
+}
+
+/**
+ * Find the FILTERLIST start (FilterCount byte followed by a *valid* FilterID
+ * byte 0..7) in a PlaceObject3 body. Returns the index of the FilterCount byte.
+ */
+function findFilterListStart(body: Uint8Array, filterCount: number): number {
+  for (let i = 7; i < body.length - 1; i++) {
+    if (body[i] === filterCount && body[i + 1] >= 0 && body[i + 1] <= 7) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 // ---------------------------------------------------------------------------
-// Tests
+// Unit: the encodability predicate
 // ---------------------------------------------------------------------------
 
-describe("DisplacementMapFilter SWF encoding (FilterID=8)", () => {
-  /**
-   * Test 1: FilterID byte is 8 for DisplacementMapFilter.
-   */
-  it("DisplacementMapFilter: FilterID byte is 8", () => {
-    const filter = makeDisplacementFilter();
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
-
-    const start = findFilterListStart(body, 1, 8);
-    expect(start).toBeGreaterThan(-1);
-    expect(body[start + 1]).toBe(8);
+describe("SWF filter encodability (task 1239)", () => {
+  it("isSwfEncodableFilter: displacementMap is NOT encodable", () => {
+    expect(isSwfEncodableFilter(makeDisplacementFilter())).toBe(false);
   });
 
-  /**
-   * Test 2: MapBitmapId is written as UI16 LE immediately after FilterID.
-   */
-  it("DisplacementMapFilter: MapBitmapId is written as UI16 LE", () => {
-    const filter = makeDisplacementFilter({ mapBitmapId: 42 });
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
-
-    const start = findFilterListStart(body, 1, 8);
-    expect(start).toBeGreaterThan(-1);
-
-    // start+0: FilterCount (1)
-    // start+1: FilterID (8)
-    // start+2..+3: MapBitmapId (UI16 LE)
-    const mapBitmapId = readUI16LE(body, start + 2);
-    expect(mapBitmapId).toBe(42);
+  it("isSwfEncodableFilter: blur IS encodable", () => {
+    expect(isSwfEncodableFilter(makeBlurFilter())).toBe(true);
   });
 
-  /**
-   * Test 3: MapPoint X and Y are written as FLOAT32 LE after MapBitmapId.
-   */
-  it("DisplacementMapFilter: MapPoint X and Y are FLOAT32 LE", () => {
-    const filter = makeDisplacementFilter({ mapPoint: { x: 12.5, y: -8.0 } });
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
-
-    const start = findFilterListStart(body, 1, 8);
-    expect(start).toBeGreaterThan(-1);
-
-    // start+0: FilterCount
-    // start+1: FilterID
-    // start+2..+3: MapBitmapId (2 bytes)
-    // start+4..+7: MapPoint.x (FLOAT32)
-    // start+8..+11: MapPoint.y (FLOAT32)
-    const mapX = readFloat32LE(body, start + 4);
-    const mapY = readFloat32LE(body, start + 8);
-
-    expect(mapX).toBeCloseTo(12.5, 5);
-    expect(mapY).toBeCloseTo(-8.0, 5);
-  });
-
-  /**
-   * Test 4: ComponentX and ComponentY are written as UI8 after MapPoint.
-   */
-  it("DisplacementMapFilter: ComponentX and ComponentY are written correctly", () => {
-    const filter = makeDisplacementFilter({ componentX: 4, componentY: 8 }); // B and A channels
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
-
-    const start = findFilterListStart(body, 1, 8);
-    expect(start).toBeGreaterThan(-1);
-
-    // start+12: ComponentX
-    // start+13: ComponentY
-    expect(body[start + 12]).toBe(4); // B channel
-    expect(body[start + 13]).toBe(8); // A channel
-  });
-
-  /**
-   * Test 5: ScaleX and ScaleY are written as FLOAT32 LE after ComponentY.
-   */
-  it("DisplacementMapFilter: ScaleX and ScaleY are FLOAT32 LE", () => {
-    const filter = makeDisplacementFilter({ scaleX: 50.0, scaleY: 25.5 });
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
-
-    const start = findFilterListStart(body, 1, 8);
-    expect(start).toBeGreaterThan(-1);
-
-    // start+14..+17: ScaleX (FLOAT32)
-    // start+18..+21: ScaleY (FLOAT32)
-    const scaleX = readFloat32LE(body, start + 14);
-    const scaleY = readFloat32LE(body, start + 18);
-
-    expect(scaleX).toBeCloseTo(50.0, 4);
-    expect(scaleY).toBeCloseTo(25.5, 4);
-  });
-
-  /**
-   * Test 6: Mode byte is written correctly (0=wrap, 1=clamp, 2=ignore, 3=color).
-   */
-  it("DisplacementMapFilter: Mode byte encodes wrap/clamp/ignore/color correctly", () => {
-    const modes: Array<["wrap" | "clamp" | "ignore" | "color", number]> = [
-      ["wrap", 0],
-      ["clamp", 1],
-      ["ignore", 2],
-      ["color", 3],
+  it("encodableFilters: strips displacementMap, keeps enabled valid filters", () => {
+    const filters: FlashFilter[] = [
+      makeBlurFilter(),
+      makeDisplacementFilter(),
+      makeBlurFilter({ enabled: false }), // disabled valid filter — excluded
     ];
+    const result = encodableFilters(filters);
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe("blur");
+  });
 
-    for (const [modeName, modeValue] of modes) {
-      const filter = makeDisplacementFilter({ mode: modeName });
-      const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+  it("hasEnabledFilters: false when the ONLY enabled filter is a displacementMap", () => {
+    expect(hasEnabledFilters([makeDisplacementFilter()])).toBe(false);
+  });
 
-      const start = findFilterListStart(body, 1, 8);
-      expect(start).toBeGreaterThan(-1);
+  it("hasEnabledFilters: true when a valid filter is present alongside a displacementMap", () => {
+    expect(hasEnabledFilters([makeDisplacementFilter(), makeBlurFilter()])).toBe(true);
+  });
+});
 
-      // start+22: Mode
-      expect(body[start + 22]).toBe(modeValue);
+// ---------------------------------------------------------------------------
+// Encoder: displacementMap is never emitted as FilterID=8
+// ---------------------------------------------------------------------------
+
+describe("DisplacementMapFilter is not emitted into the SWF FILTERLIST (task 1239)", () => {
+  it("a lone displacementMap produces NO filter list (HasFilterList clear)", () => {
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [makeDisplacementFilter()]);
+
+    // Flags2 (byte index 1): HasFilterList (0x01) must be clear, so there is no
+    // FILTERLIST in the body at all (and therefore no FilterID=8 entry).
+    expect(body[1] & 0x01).toBe(0);
+  });
+
+  it("displacementMap + blur: the blur survives, the displacement is dropped", () => {
+    // Order the displacement FIRST to prove it does not shift/poison the blur.
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [
+      makeDisplacementFilter(),
+      makeBlurFilter({ blurX: 6, blurY: 6, quality: 2 }),
+    ]);
+
+    // HasFilterList must be set (there IS a valid filter).
+    expect(body[1] & 0x01).toBe(0x01);
+    // HasImage (0x10) must NOT be set (task 1238 guard).
+    expect(body[1] & 0x10).toBe(0);
+
+    // FILTERLIST: count = 1, FilterID = 1 (Blur), NOT 2 (displacement count).
+    const start = findFilterListStart(body, 1);
+    expect(start).toBeGreaterThan(-1);
+    expect(body[start]).toBe(1); // FilterCount = 1 (blur only)
+    expect(body[start + 1]).toBe(1); // FilterID = 1 (Blur)
+
+    // No FilterID=8 byte should appear in the FILTERLIST region.
+    for (let i = start; i < body.length; i++) {
+      expect(body[i]).not.toBe(8);
     }
   });
 
-  /**
-   * Test 7: Color RGBA bytes are written correctly after Mode.
-   */
-  it("DisplacementMapFilter: Color RGBA bytes are written correctly", () => {
-    const filter = makeDisplacementFilter({ color: "#ff8040aa" });
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+  it("blur + displacementMap (reversed order): blur still intact, count = 1", () => {
+    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [
+      makeBlurFilter(),
+      makeDisplacementFilter(),
+    ]);
 
-    const start = findFilterListStart(body, 1, 8);
+    expect(body[1] & 0x01).toBe(0x01); // HasFilterList set
+    const start = findFilterListStart(body, 1);
     expect(start).toBeGreaterThan(-1);
-
-    // start+23..+26: RGBA
-    expect(body[start + 23]).toBe(0xff); // R
-    expect(body[start + 24]).toBe(0x80); // G
-    expect(body[start + 25]).toBe(0x40); // B
-    expect(body[start + 26]).toBe(0xaa); // A
+    expect(body[start]).toBe(1); // count = 1
+    expect(body[start + 1]).toBe(1); // FilterID = 1 (Blur)
   });
 
-  /**
-   * Test 8: Clamp (reserved) byte is 0 after Color.
-   */
-  it("DisplacementMapFilter: reserved Clamp byte is 0", () => {
-    const filter = makeDisplacementFilter();
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+  it("encodePlaceObject3WithBlendMode also skips displacementMap but keeps the blur", () => {
+    const body = encodePlaceObject3WithBlendMode(
+      1,
+      1,
+      0,
+      0,
+      "multiply",
+      [makeDisplacementFilter(), makeBlurFilter()],
+    );
 
-    const start = findFilterListStart(body, 1, 8);
+    // HasBlendMode (0x02) always set; HasFilterList (0x01) set for the blur.
+    expect(body[1] & 0x02).toBe(0x02);
+    expect(body[1] & 0x01).toBe(0x01);
+
+    const start = findFilterListStart(body, 1);
     expect(start).toBeGreaterThan(-1);
-
-    // start+27: Clamp (reserved)
-    expect(body[start + 27]).toBe(0);
+    expect(body[start]).toBe(1); // count = 1 (blur only)
+    expect(body[start + 1]).toBe(1); // Blur
   });
 
-  /**
-   * Test 9: Total FILTERLIST size for a DisplacementMapFilter.
-   *
-   * FilterCount(1) + FilterID(1) + MapBitmapId(2) + MapPoint(8) + ComponentX(1) +
-   * ComponentY(1) + ScaleX(4) + ScaleY(4) + Mode(1) + Color(4) + Clamp(1) = 28 bytes
-   */
-  it("DisplacementMapFilter: total FILTERLIST has correct byte count (28 bytes)", () => {
-    const filter = makeDisplacementFilter();
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
+  it("blend-mode placement with ONLY a displacementMap has no filter list", () => {
+    const body = encodePlaceObject3WithBlendMode(
+      1,
+      1,
+      0,
+      0,
+      "multiply",
+      [makeDisplacementFilter()],
+    );
 
-    const start = findFilterListStart(body, 1, 8);
-    expect(start).toBeGreaterThan(-1);
-
-    const filterListBytes = body.length - start;
-    expect(filterListBytes).toBe(28);
-  });
-
-  /**
-   * Test 10: HasFilterList flag (bit 0 of Flags2 = 0x01) is set.
-   * (Task 1238: was 0x10 = HasImage, which masked the filters-dropped defect.)
-   */
-  it("DisplacementMapFilter: PlaceObject3 Flags2 HasFilterList bit is set (0x01), not HasImage (0x10)", () => {
-    const filter = makeDisplacementFilter();
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
-
-    // Flags2 is at byte index 1
-    const flags2 = body[1];
-    expect(flags2 & 0x01).toBe(0x01); // HasFilterList (PlaceFlag 1<<8)
-    expect(flags2 & 0x10).toBe(0); // HasImage (PlaceFlag 1<<12) must NOT be set
-  });
-
-  /**
-   * Test 11: Disabled filter is excluded from the FILTERLIST.
-   */
-  it("DisplacementMapFilter: disabled filter is not encoded in FILTERLIST", () => {
-    const filter = makeDisplacementFilter({ enabled: false });
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
-
-    // Flags2 HasFilterList bit should be clear
-    const flags2 = body[1];
-    expect(flags2 & 0x01).toBe(0);
-
-    // No FilterID=8 should appear
-    const start = findFilterListStart(body, 1, 8);
-    expect(start).toBe(-1);
-  });
-
-  /**
-   * Test 12: Default values — mapBitmapId=0, componentX=1, componentY=2, mode=wrap (0).
-   */
-  it("DisplacementMapFilter: default values are encoded correctly", () => {
-    const filter: DisplacementMapFilter = {
-      type: "displacementMap",
-      enabled: true,
-    };
-    const body = encodePlaceObject3WithFilters(1, 1, 0, 0, [filter]);
-
-    const start = findFilterListStart(body, 1, 8);
-    expect(start).toBeGreaterThan(-1);
-
-    const mapBitmapId = readUI16LE(body, start + 2);
-    expect(mapBitmapId).toBe(0);
-
-    expect(body[start + 12]).toBe(1); // default componentX = 1 (Red)
-    expect(body[start + 13]).toBe(2); // default componentY = 2 (Green)
-    expect(body[start + 22]).toBe(0); // default mode = wrap (0)
+    expect(body[1] & 0x02).toBe(0x02); // HasBlendMode set
+    expect(body[1] & 0x01).toBe(0); // HasFilterList clear
   });
 });

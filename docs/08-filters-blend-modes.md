@@ -95,11 +95,25 @@ Blend modes map to the SWF `PlaceObject3` blend-mode field and `MovieClip.blendM
   `filters=None` and silently drops the entire FILTERLIST (task 1238). The encoders live in
   `packages/swf/src/filters.ts` (`encodePlaceObject3WithFilters` /
   `…WithBlendMode`); the Ruffle-faithful u16 decode is asserted in `filters.test.ts`.
-- **DisplacementMapFilter is NOT a SWF PlaceObject filter**: the SWF FILTERLIST defines
-  filter IDs 0–7 only (DropShadow/Blur/Glow/Bevel/GradientGlow/Convolution/ColorMatrix/
-  GradientBevel). DisplacementMap is an AS3-runtime-only filter; emitting it into a SWF
-  FILTERLIST (our encoder uses FilterID=8) produces bytes the swf crate rejects as
-  "Invalid filter type". Tracked separately from the HasFilterList bit fix.
+- **DisplacementMapFilter is NOT a SWF PlaceObject filter, and is never emitted (task
+  1239)**: the SWF FILTERLIST defines filter IDs 0–7 only (0 DropShadow / 1 Blur / 2 Glow /
+  3 Bevel / 4 GradientGlow / 5 Convolution / 6 ColorMatrix / 7 GradientBevel).
+  `DisplacementMapFilter` is an AS3 / Flash Player 9+ *runtime-only* filter
+  (`flash.filters.DisplacementMapFilter`) with no Flash 8 SWF tag form and no FilterID. The
+  encoder used to emit it as **FilterID=8**, which Ruffle's `swf` crate rejects as "Invalid
+  filter type" — and crucially that rejection makes the swf crate decode `filters = None`
+  for the **entire** PlaceObject3, silently dropping *every* (otherwise valid) filter on
+  that instance, not just the displacement one. So a blur + displacement stack lost the blur
+  too. **Fix:** `packages/swf/src/filters.ts` now skips any filter that has no valid
+  FILTERLIST id when building the list (`isSwfEncodableFilter` / `encodableFilters`), with a
+  dev-facing `console.warn`. Only encodable filters count toward `FilterCount`, the
+  `HasFilterList` flag, and the PlaceObject2-vs-PlaceObject3 routing (`hasEnabledFilters`),
+  so a lone displacement emits no FILTERLIST at all and a displacement-mixed-with-blur emits
+  just the blur (count = 1, FilterID = 1) and parses cleanly at runtime. The vestigial
+  FilterID=8 encode path (`writeDisplacementMapFilter`) was removed — displacementMap is also
+  unreachable from the authoring model/UI (no FiltersPanel entry, no FLA-import decoder, no
+  tween interpolation), so nothing constructs one in practice. Gate:
+  `__tests__/displacement-filter.test.ts`.
 - Blend modes = GPU blend-state + custom fragment composites; Layer forces an offscreen group
   buffer so Alpha/Erase operate on the composited group.
 - Keep a filter/blend pipeline cache keyed on parameters + source bitmap hash.
