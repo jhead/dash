@@ -114,7 +114,7 @@ export const DEFAULT_EDITOR_LAYOUT: EditorLayout = {
 };
 
 const RIGHT_TABS: readonly RightTab[] = ["library", "properties", "agent"];
-const BOTTOM_TABS: readonly BottomTab[] = ["actions", "sound", "output"];
+const BOTTOM_TABS: readonly BottomTab[] = ["actions", "sound", "output", "classes"];
 const VIEW_MODES: readonly ViewMode[] = ["normal", "outlines", "antialias"];
 
 /** Clamp a numeric pane size into its [min,max], falling back to default if not finite. */

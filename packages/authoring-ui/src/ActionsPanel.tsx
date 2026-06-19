@@ -343,7 +343,9 @@ function parseLineFromError(msg: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
-function ScriptEditor({
+export type { ScriptEditorProps };
+
+export function ScriptEditor({
   script,
   onScriptChange,
   onCursorChange,

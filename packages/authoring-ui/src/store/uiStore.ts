@@ -23,7 +23,7 @@ export interface EditContext {
 
 export type EditPathEntry = { symbolId: string; instanceId: string };
 
-export type BottomTab = "actions" | "sound" | "output";
+export type BottomTab = "actions" | "sound" | "output" | "classes";
 
 export type RightTab = "library" | "properties" | "agent";
 

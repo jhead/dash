@@ -1,10 +1,10 @@
 {
   "id": "1302-6mrs3t-as2-classes-p4-classes-panel-ui-bottom-dock-tab-",
   "title": "AS2 classes P4: Classes panel UI (bottom-dock tab: file tree + .as editor)",
-  "description": "Human UI to define/edit/add/remove .as class files. Depends on P0 (model/mutations) + P2 (VFS). (1) New packages/authoring-ui/src/ClassesPanel.tsx: a two-pane panel \u2014 a file TREE (left: package folders + .as files, with add/remove/rename actions) and the REUSED ScriptEditor component from ActionsPanel.tsx (~327) on the right for editing the selected .as file (gets AS2 syntax highlighting + live parse-error gutter for free). (2) Dock as a NEW BOTTOM-DOCK tab 'Classes' (user decision) alongside Actions/Library: Shell.tsx BOTTOM_TABS (~517) + bottomTab state (~762) + mount the panel. (3) Wire reads/writes through the VFS (P2) + the doc mutations (P0) via pushDoc (history-safe); reflect changes in doc.asClasses. Keep desktop+narrow responsive behavior intact. VERIFY: build + authoring-ui tests green (only ~3 task-1207 fixtures acceptable); tests for tree add/remove/rename + editor load/save wiring. Conflict hotspot: Shell.tsx (BOTTOM_TABS/bottomTab). Depends on P0+P2; parallel with P3. ACQUIRE lock; commit incl task file; push rebase-retry.",
-  "status": "open",
+  "description": "DONE. Classes panel UI shipped. packages/authoring-ui/src/ClassesPanel.tsx: two-pane bottom-dock tab \u2014 left file TREE (package folders + .as files; New/remove/inline-rename) + REUSED ScriptEditor (now exported from ActionsPanel.tsx) on the right (AS2 highlight + parse-error gutter). Pure helpers in classTree.ts (buildClassTree/classNameToPath/validateClassPath/defaultClassSource). VFS+doc sync: createClassVfs({flaPath}) -> hydrateVfsFromDoc({prune:true}) on mount; vfs.write/remove on edits (debounced ~600ms for editor); syncDocFromVfs -> pushDoc (history-safe, same-ref = no churn). Wired as NEW bottom-dock tab 'Classes' in Shell.tsx: BottomTab union (store/uiStore.ts), BOTTOM_TABS allowlist (editorLayout.ts), Shell BOTTOM_TABS + mount. Responsive (1280) intact. VERIFY: pnpm --filter './packages/**' build = green; authoring-ui suite = 66 files / 883 tests PASS (0 failures, incl. the task-1207 fixtures). New tests: classTree.test.ts (pure helpers), classesPanel.test.ts (jsdom render: empty state, hydrate+select, add/remove/rename + editor load/save update VFS AND doc.asClasses via pushDoc), editorLayout.test.ts ('classes' tab round-trip). Docs: docs/33 UI section + tests list, docs/21 bottom-dock tabs, CLAUDE.md learnings.",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-19T22:31:23Z",
-  "updated_at": "2026-06-19T22:31:23Z"
+  "updated_at": "2026-06-19T23:16:53Z"
 }

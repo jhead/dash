@@ -139,6 +139,11 @@ describe("editorLayout persistence", () => {
     expect(loadEditorLayout().bottomTab).toBeNull();
   });
 
+  it("recognizes the 'classes' bottom-dock tab (task 1302 P4)", () => {
+    saveEditorLayout({ ...DEFAULT_EDITOR_LAYOUT, bottomTab: "classes" });
+    expect(loadEditorLayout().bottomTab).toBe("classes");
+  });
+
   it("does not throw on a quota / privacy-mode write failure", () => {
     mem.throwOnSet = true;
     expect(() => saveEditorLayout(DEFAULT_EDITOR_LAYOUT)).not.toThrow();

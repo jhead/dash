@@ -125,6 +125,7 @@ import {
   type CommandRegistry,
 } from "./commands/index.js";
 import { ActionsPanel } from "./ActionsPanel";
+import { ClassesPanel } from "./ClassesPanel";
 import { OutputPanel } from "./OutputPanel";
 import { SoundPanel } from "./SoundPanel";
 import {
@@ -524,6 +525,7 @@ const styles: Record<string, React.CSSProperties> = {
 
 const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
   { id: "actions", label: "Actions" },
+  { id: "classes", label: "Classes" },
   { id: "sound", label: "Sound" },
   { id: "output", label: "Output" },
 ];
@@ -3739,6 +3741,14 @@ export function Shell(): React.ReactElement {
                     onButtonActionsChange={handleButtonActionsChange}
                     selectedButtonInstance={selectedButtonInstance}
                     onButtonHandlersChange={handleButtonHandlersChange}
+                  />
+                )}
+                {bottomTab === "classes" && (
+                  <ClassesPanel
+                    doc={doc}
+                    pushDoc={pushDoc}
+                    flaPath={filePath}
+                    onClose={() => setBottomTab(null)}
                   />
                 )}
                 {bottomTab === "sound" && (

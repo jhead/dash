@@ -165,6 +165,50 @@ await hydrateVfsFromDoc(doc, vfs);                // on open
 const { doc: nextDoc } = await syncDocFromVfs(doc, vfs); // on save
 ```
 
+## Classes panel UI (P4)
+
+The Classes panel (`packages/authoring-ui/src/ClassesPanel.tsx`) is a NEW
+bottom-dock tab — **Classes**, alongside Actions / Sound / Output (and the
+right-pane Library) — for authoring external `.as` class files by hand.
+
+Layout — two panes:
+
+- **Left: a file TREE** of package folders + `.as` files (`buildClassTree` in
+  `classTree.ts` nests the slashed classpaths into folders-first, alphabetical
+  nodes). Toolbar `＋ New` adds a class; each file row has a delete (`✕`) action;
+  double-click a file to rename it inline. A sensible empty state prompts the
+  user to create the first class (e.g. `com.example.Main`).
+- **Right: the REUSED `ScriptEditor`** from `ActionsPanel.tsx` (now exported),
+  so every `.as` file gets AS2 syntax highlighting + the live parse-error gutter
+  for free. The editor is keyed on the selected path so switching files resets
+  cleanly.
+
+Data flow — the `.fla` embed (`doc.asClasses`) stays authoritative; the VFS is
+only the editing surface:
+
+```
+mount/open : createClassVfs({ flaPath })   // platform-correct backend
+             hydrateVfsFromDoc(doc, vfs, { prune:true })   // exact mirror
+edit       : vfs.write(path, source)  --(debounced ~600ms)--> syncDocFromVfs -> pushDoc
+add (New)  : vfs.write(newPath, defaultClassSource) -> syncDocFromVfs -> pushDoc
+remove (✕) : vfs.remove(path)                       -> syncDocFromVfs -> pushDoc
+rename     : vfs.write(new, body) + vfs.remove(old) -> syncDocFromVfs -> pushDoc
+```
+
+`syncDocFromVfs` returns the SAME doc reference when nothing changed, so
+`pushDoc` (history-safe) is only called on a real mutation — no history churn on
+no-op saves. The panel re-creates + re-hydrates the VFS only when `flaPath`
+changes; in-session doc edits flow through the editor write path, not a
+re-hydrate (which would clobber unsaved edits). Pure helpers
+(`classTree.ts`: tree building, `classNameToPath`, `validateClassPath`,
+`defaultClassSource`) keep the testable logic DOM-free.
+
+The dock wiring lives in `Shell.tsx`: `"classes"` is added to the `BottomTab`
+union (`store/uiStore.ts`), the persisted `BOTTOM_TABS` allowlist
+(`editorLayout.ts`), the `BOTTOM_TABS` tab-bar list, and the bottom-dock content
+switch mounts `<ClassesPanel doc pushDoc flaPath onClose />`. Desktop + narrow
+responsive behavior (task 1280) is unchanged — Classes is just another dock tab.
+
 ## Tests
 
 - `@flash/core` `src/vfs/__tests__/vfs-core.test.ts` — path normalization +
@@ -176,3 +220,11 @@ const { doc: nextDoc } = await syncDocFromVfs(doc, vfs); // on save
   - `vfsTauri.test.ts` — `TauriClassVfs` against a mocked `@tauri-apps/plugin-fs`.
   - `vfsFactorySync.test.ts` — factory backend selection + a hydrate/sync
     round-trip against the real IndexedDB fallback backend.
+  - `classTree.test.ts` — pure Classes-panel helpers: tree nesting/sorting,
+    `classNameToPath` (dotted/slashed), `validateClassPath` (dupes, bad
+    identifiers, traversal), `defaultClassSource`.
+  - `classesPanel.test.ts` — the Classes panel mounted with an injected
+    `MemoryClassVfs`: empty state, hydrate+select, and tree add/remove/rename +
+    editor load/save all update BOTH the VFS and `doc.asClasses` via `pushDoc`.
+  - `editorLayout.test.ts` — the `"classes"` bottom-dock tab round-trips through
+    layout persistence.

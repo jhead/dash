@@ -744,6 +744,20 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   Playwright workers each `page.goto('/')` steals the connection, causing in-flight tool
   calls to fail with "Editor page disconnected". Set `workers: 1` in
   `playwright.config.ts`.
+- **The `ScriptEditor` (AS2 highlight + live parse-error gutter) is now EXPORTED
+  from `ActionsPanel.tsx` and reused by the Classes panel (task 1302 P4).** It is
+  fully self-contained — props are just `script`/`onScriptChange`/`onCursorChange`
+  — so the Classes panel gets syntax highlighting + the error gutter for free by
+  keying one `<ScriptEditor key={selectedPath} />` on the selected `.as` file.
+  Don't fork it; if frame and class editing need to diverge, add props.
+- **A new bottom-dock tab is a 4-touchpoint change, no exhaustive switch to chase
+  (task 1302).** To add a tab (e.g. `Classes`): (1) extend the `BottomTab` union
+  in `store/uiStore.ts`; (2) add it to the persisted `BOTTOM_TABS` allowlist in
+  `editorLayout.ts` (else `normalize()` coerces a persisted value back to default
+  and the tab won't restore on reload); (3) add `{ id, label }` to `BOTTOM_TABS`
+  in `Shell.tsx`; (4) add a `{bottomTab === "x" && <Panel/>}` branch in the
+  bottom-dock content. The dock renders independent `&&` branches (not a switch),
+  so nothing else breaks, and the responsive (task 1280) wiring is tab-agnostic.
 
 ### AS2 external classes / Class VFS (task 1300 P2)
 

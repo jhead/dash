@@ -13,6 +13,8 @@ export { PropertiesPanel } from "./PropertiesPanel";
 export type { PlacedInstance, DocumentInfo, PropertiesPanelProps } from "./PropertiesPanel";
 export { LibraryPanel } from "./LibraryPanel";
 export type { LibraryPanelProps } from "./LibraryPanel";
+export { ClassesPanel } from "./ClassesPanel";
+export type { ClassesPanelProps } from "./ClassesPanel";
 export { StatusBar } from "./StatusBar";
 export type { StatusBarProps } from "./StatusBar";
 export { Shell } from "./Shell";

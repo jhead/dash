@@ -82,6 +82,10 @@ packages/authoring-ui/src/
   restores it ONCE up front: the uiStore slice seeds `createUiStore` via
   `layoutToUiInit`, the pane sizes seed the `useResize` hooks, and writes happen
   on drag-end (sizes) and on a durable-slice change subscription (tabs/toggles).
+  The bottom-dock tabs are **Actions / Classes / Sound / Output** (`BottomTab`
+  in `store/uiStore.ts`; `BOTTOM_TABS` allowlist in `editorLayout.ts`); the
+  **Classes** tab mounts `ClassesPanel` (the AS2 external-class file tree + reused
+  ScriptEditor — see `docs/33-as2-classes-vfs.md`).
   **Responsive clamp (task 1280):** `loadEditorLayout(isNarrowViewport)` forces
   `rightPaneCollapsed=true` on a narrow viewport so a layout persisted from a
   desktop session can never leave the right pane expanded and squeezing the stage
