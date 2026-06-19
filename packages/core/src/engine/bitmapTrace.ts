@@ -174,6 +174,19 @@ function keyToColor(key: number): SolidFill["color"] {
  * then walk edge-to-edge choosing the next direction from the 2×2 cell
  * configuration around the current grid vertex, until we return to the start.
  *
+ * The walk is a CONSISTENT-HANDEDNESS loop — clockwise in screen coordinates
+ * (y-down), keeping the filled region on the RIGHT of travel. At a vertex the
+ * next direction is the edge whose right-hand cell is filled and left-hand cell
+ * empty. For the two diagonal "saddle" configs (cases 5 and 10) both edges
+ * qualify, so the ENTRY direction disambiguates the turn.
+ *
+ * Tracking handedness this way is what lets convex/diagonal regions (circles,
+ * diamonds, ellipses, the traced-bitmap vector logos) close around their whole
+ * outline. The previous per-case table ignored the entry direction and had two
+ * wrong cells (case 14 and the case-10 saddle), so at a bottom/side tip the
+ * walker turned up an interior line-of-symmetry chord and quit — enclosing only
+ * ~half the region's true area (task 1227).
+ *
  * @param mask    1 = inside region, 0 = outside (row-major, length w*h).
  * @param width   grid width in cells.
  * @param height  grid height in cells.
@@ -205,11 +218,20 @@ export function marchingSquaresContour(
 
   // We walk along grid vertices. At a vertex (vx, vy), the four surrounding
   // cells are: TL=(vx-1,vy-1) TR=(vx,vy-1) BL=(vx-1,vy) BR=(vx,vy).
-  // Directions: 0=up, 1=right, 2=down, 3=left (in grid-vertex space).
+  // Directions (grid-vertex space, screen coords / y-down):
+  const UP = 0;
+  const RIGHT = 1;
+  const DOWN = 2;
+  const LEFT = 3;
+
   const contour: Point[] = [];
   let vx = startX;
   let vy = startY;
-  let prevDir = -1; // for the saddle tie-break
+  // Seed the entry direction as RIGHT: the start corner is the TL of the
+  // topmost-leftmost filled cell (case 2, BR-only), whose first move is RIGHT
+  // along the region's top edge. Seeding RIGHT also resolves a saddle that
+  // happens to sit at the very start vertex.
+  let prevDir = RIGHT;
   const maxSteps = (width + 2) * (height + 2) * 4 + 8;
   let steps = 0;
 
@@ -224,50 +246,57 @@ export function marchingSquaresContour(
     // Marching-squares case index (TL,TR,BR,BL bits).
     const caseIdx = (tl << 3) | (tr << 2) | (br << 1) | bl;
 
-    // Determine next direction so the filled region stays on a consistent side.
+    // Next direction so the filled region stays on our RIGHT (clockwise outer
+    // walk). Derived from "for edge dir d the right-hand cell is filled, the
+    // left-hand cell empty": UP→(left TL,right TR), RIGHT→(TR,BR),
+    // DOWN→(BR,BL), LEFT→(BL,TL).
     let dir: number;
     switch (caseIdx) {
+      // --- one filled corner ---
       case 1: // BL only
-        dir = 2; // down
+        dir = DOWN;
         break;
       case 2: // BR only
-        dir = 1; // right
-        break;
-      case 3: // BL+BR
-        dir = 1; // right
+        dir = RIGHT;
         break;
       case 4: // TR only
-        dir = 0; // up
-        break;
-      case 5: // TR + BL → saddle (0101): depends on entry direction
-        dir = prevDir === 1 ? 0 : 2;
-        break;
-      case 6: // TR+BR
-        dir = 0; // up
-        break;
-      case 7: // TR+BR+BL
-        dir = 0; // up
+        dir = UP;
         break;
       case 8: // TL only
-        dir = 3; // left
+        dir = LEFT;
         break;
-      case 9: // TL+BL
-        dir = 2; // down
+      // --- two filled, shared edge ---
+      case 3: // BL+BR (bottom row)
+        dir = RIGHT;
         break;
-      case 10: // TL+BR → saddle (1010)
-        dir = prevDir === 0 ? 1 : 3;
+      case 6: // TR+BR (right col)
+        dir = UP;
         break;
-      case 11: // TL+BL+BR
-        dir = 1; // right
+      case 9: // TL+BL (left col)
+        dir = DOWN;
         break;
-      case 12: // TL+TR
-        dir = 3; // left
+      case 12: // TL+TR (top row)
+        dir = LEFT;
         break;
-      case 13: // TL+TR+BL
-        dir = 2; // down
+      // --- three filled corners (single empty corner) ---
+      case 7: // empty = TL
+        dir = UP;
         break;
-      case 14: // TL+TR+BR
-        dir = 0; // up
+      case 11: // empty = TR
+        dir = RIGHT;
+        break;
+      case 13: // empty = BR
+        dir = DOWN;
+        break;
+      case 14: // empty = BL
+        dir = LEFT;
+        break;
+      // --- saddles: ambiguous, resolve by entry direction ---
+      case 5: // TR + BL filled (╱): valid UP or DOWN
+        dir = prevDir === RIGHT ? UP : DOWN;
+        break;
+      case 10: // TL + BR filled (╲): valid RIGHT or LEFT
+        dir = prevDir === DOWN ? RIGHT : LEFT;
         break;
       default:
         // 0 (empty) or 15 (full) should never occur on a boundary vertex.
@@ -276,16 +305,16 @@ export function marchingSquaresContour(
 
     prevDir = dir;
     switch (dir) {
-      case 0:
+      case UP:
         vy -= 1;
         break;
-      case 1:
+      case RIGHT:
         vx += 1;
         break;
-      case 2:
+      case DOWN:
         vy += 1;
         break;
-      case 3:
+      case LEFT:
         vx -= 1;
         break;
     }

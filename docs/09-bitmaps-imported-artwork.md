@@ -71,7 +71,14 @@ The `flash.display.BitmapData` API enables programmatic raster work at runtime:
   pixels drop into one transparent bucket); (2) 4-connectivity flood-fill connected
   same-color regions; (3) discard regions below **Minimum Area**; (4) trace each region's
   outline with **marching squares** on a region-local binary mask (pixel-edge coordinates,
-  so axis-aligned edges are exact); (5) simplify the contour with **Douglas-Peucker** whose
+  so axis-aligned edges are exact). The walk is a **consistent-handedness clockwise loop**
+  (fill kept on the right of travel, screen y-down): the per-vertex direction is the edge
+  whose right-hand cell is filled and left-hand cell empty, and the two diagonal *saddle*
+  configs are disambiguated by the **entry direction**. This handedness is load-bearing —
+  a per-case lookup that ignores the entry direction walks one side of a convex/diagonal
+  region (circle, diamond, ellipse) then climbs the interior line-of-symmetry chord and
+  quits, capturing only ~half the area (the task-1227 defect); (5) simplify the contour
+  with **Douglas-Peucker** whose
   epsilon comes from **Curve Fit** (`pixels`=0 keeps every vertex → smoother modes raise
   epsilon); (6) emit a closed solid-filled `ShapePath` — smoothing curve-fit modes round
   shallow vertices into quadratic Béziers while vertices whose turn angle meets the

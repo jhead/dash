@@ -109,6 +109,126 @@ describe("marchingSquaresContour", () => {
     expect(contour[0]).toEqual({ x: 0, y: 0 });
     expect(polygonArea(contour)).toBe(25);
   });
+
+  // ---- Regression: diagonal/convex regions (task 1227) -----------------
+  // The original per-case direction table walked one side of a diamond/disk,
+  // then climbed the interior line-of-symmetry chord and quit, enclosing only
+  // ~half the true area. A consistent-handedness walk must capture the full
+  // outline. The acceptance bar is shoelace area ≈ filled-cell count and that
+  // the traced bbox equals the region bbox.
+
+  /** Build a binary mask from a predicate over a w×h grid. */
+  function maskFrom(
+    w: number,
+    h: number,
+    inside: (x: number, y: number) => boolean,
+  ): { mask: Uint8Array; cells: number } {
+    const mask = new Uint8Array(w * h);
+    let cells = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (inside(x, y)) {
+          mask[y * w + x] = 1;
+          cells++;
+        }
+      }
+    }
+    return { mask, cells };
+  }
+
+  function bbox(poly: Point[]) {
+    return {
+      minX: Math.min(...poly.map((p) => p.x)),
+      maxX: Math.max(...poly.map((p) => p.x)),
+      minY: Math.min(...poly.map((p) => p.y)),
+      maxY: Math.max(...poly.map((p) => p.y)),
+    };
+  }
+
+  it("traces a small diamond without dropping its left half (DIAMOND5)", () => {
+    // |x-2| + |y-2| <= 2 on a 5×5 grid → 13 filled cells.
+    const w = 5;
+    const h = 5;
+    const { mask, cells } = maskFrom(w, h, (x, y) => Math.abs(x - 2) + Math.abs(y - 2) <= 2);
+    expect(cells).toBe(13);
+    const contour = marchingSquaresContour(mask, w, h);
+    // The traced contour must enclose ~all 13 cells (not ~9 = the right half).
+    expect(polygonArea(contour)).toBe(cells);
+    // And it must span the full region bbox (left half present).
+    const b = bbox(contour);
+    expect(b.minX).toBe(0);
+    expect(b.maxX).toBe(w);
+    expect(b.minY).toBe(0);
+    expect(b.maxY).toBe(h);
+  });
+
+  it("traces a filled disk capturing the whole area, not the right half", () => {
+    // R=18 disk on a 40×40 grid centered at (20,20).
+    const w = 40;
+    const h = 40;
+    const cx = 20;
+    const cy = 20;
+    const r = 18;
+    const { mask, cells } = maskFrom(
+      w,
+      h,
+      (x, y) => (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r,
+    );
+    const contour = marchingSquaresContour(mask, w, h);
+    // Shoelace area must match the filled-cell count within a few percent.
+    const area = polygonArea(contour);
+    expect(area).toBeGreaterThan(cells * 0.97);
+    expect(area).toBeLessThan(cells * 1.03);
+    // Contour bbox must span the full disk, not just the right half.
+    const b = bbox(contour);
+    const filled = [...mask.keys()].filter((i) => mask[i]);
+    const cellMinX = Math.min(...filled.map((i) => i % w));
+    const cellMaxX = Math.max(...filled.map((i) => i % w));
+    expect(b.minX).toBeLessThanOrEqual(cellMinX);
+    expect(b.maxX).toBeGreaterThanOrEqual(cellMaxX + 1);
+  });
+
+  it("traces a plus/cross (concave) capturing every arm", () => {
+    // A plus on a 7×7 grid: arms 3-wide.
+    const w = 7;
+    const h = 7;
+    const { mask, cells } = maskFrom(
+      w,
+      h,
+      (x, y) => (x >= 2 && x <= 4) || (y >= 2 && y <= 4),
+    );
+    const contour = marchingSquaresContour(mask, w, h);
+    expect(polygonArea(contour)).toBe(cells);
+    const b = bbox(contour);
+    expect(b.minX).toBe(0);
+    expect(b.maxX).toBe(w);
+    expect(b.minY).toBe(0);
+    expect(b.maxY).toBe(h);
+  });
+
+  it("end-to-end: a traced disk's ShapePath bbox spans the full region", () => {
+    // 40×40 image with a filled red disk; traced path bbox must span the disk.
+    const cx = 20;
+    const cy = 20;
+    const r = 18;
+    const img = makeImage(40, 40, (x, y) =>
+      (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r
+        ? [255, 0, 0, 255]
+        : [0, 0, 0, 0],
+    );
+    const paths = traceBitmapToPaths(img, {
+      colorThreshold: 100,
+      minimumArea: 1,
+      curveFit: "pixels",
+      cornerThreshold: "normal",
+    });
+    expect(paths.length).toBeGreaterThanOrEqual(1);
+    const p = paths.find((pp) => pp.fill?.type === "solid")!;
+    const xs = [p.start.x, ...p.segments.map((s) => s.to.x)];
+    // The disk spans roughly x=2..38; a right-half-only trace would start near x=20.
+    expect(Math.min(...xs)).toBeLessThan(6);
+    expect(Math.max(...xs)).toBeGreaterThan(34);
+  });
 });
 
 // ---------------------------------------------------------------------------

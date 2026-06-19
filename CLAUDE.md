@@ -313,6 +313,25 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   so they survive the reversal correctly: a mask at binary-index N is still type "mask"
   after reversal, and the model's "mask is above its masked layers" invariant (`mask at
   li=k`, `masked at li=k+1`) is preserved because the panel order is maintained.
+- **Marching-squares contour tracing needs CONSISTENT HANDEDNESS, not a pure per-case
+  lookup (task 1227).** `engine/bitmapTrace.ts marchingSquaresContour()` (the Trace Bitmap
+  raster→vector tracer) walks grid vertices choosing the next direction from the 2×2 cell
+  config. The original table set the direction almost entirely from the case and only
+  consulted the entry direction for the two literal saddles — and it had two wrong cells:
+  case 14 (TL+TR+BR filled / BL empty) and the case-10 saddle. The effect: on any region
+  with both right- and left-leaning diagonal edges (every circle/diamond/ellipse, the
+  Magnet.fla traced logos) the walker traced one side, reached the far tip, then climbed the
+  interior line-of-symmetry chord and terminated near the start — enclosing only ~HALF the
+  true area (a 40×40 R=18 disk traced as its right half: bbox x=20..39 instead of ~2..38).
+  Fix: make it a clockwise loop keeping fill on the RIGHT of travel — for edge dir d the
+  right-hand cell must be filled, the left empty (UP→cells TL/TR, RIGHT→TR/BR, DOWN→BR/BL,
+  LEFT→BL/TL); the two saddles pick by entry direction; seed the entry dir as RIGHT (the
+  start corner is the TL of the topmost-leftmost filled cell = BR-only, first move RIGHT).
+  Closure (polygonToShapePath always re-appends start + Douglas-Peucker) was never the bug —
+  the geometry was just half-missing. The unit tests missed it because they only asserted
+  axis-aligned rectangles + a 3×3 L (whose boundaries lack an up-left diagonal); regression
+  cases now assert shoelace area ≈ filled-cell count AND traced bbox == region bbox for a
+  diamond, disk, and plus/cross (`bitmapTrace.test.ts`).
 - **Shape fills use the SWF fill0/fill1 (left/right) edge model; `convertShape` must
   reconstruct CLOSED loops, not emit per-style-run ribbons.** Each `Fla8Edge` records the
   fill on its LEFT (`fill0`) and RIGHT (`fill1`) side. A single filled region is bounded by
