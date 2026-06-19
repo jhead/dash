@@ -183,3 +183,32 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
     bitmap renders blank.
 
+---
+
+## 2026-06-19 — task 1206 collision-free task ids VERIFIED; parallel filing now safe
+
+- **Watermark (last fully-QA'd general-code SHA):** `3edd1a9` — only the task-rework
+  commit is verified this cycle. Current repo HEAD is `e855c64`; commits after `3edd1a9`
+  up to current HEAD are NOT yet QA'd and are deferred to the next sweep.
+- **Task 1206 (commit `3edd1a9`, "collision-free concurrent-safe task ids") — VERIFIED
+  correct and robust.** Their `tools/task-concurrency.test.py` is rigorous (32 concurrent
+  creates, cross-worktree collision repro). Independent stress testing confirms:
+  - 20 concurrent `./task` creates → 20 distinct ids and 20 distinct files (no collision).
+  - Cross-worktree: 20 concurrent creates across separate worktrees all survive via unique
+    per-id tokens (no clobbering).
+  - Lock contention → exactly 1 winner (the lock still serializes the counter bump, but
+    uniqueness no longer DEPENDS on the lock — the token guarantees distinctness).
+  - The ~1266-file mass-rename preserved all task data: only `id` and `updated_at` changed
+    per file; no task content lost. No defect filed.
+- **CAPABILITY NOTE for future sweeps:** the task-id collision class is now eliminated at
+  the root — uniqueness no longer depends on a shared lock. QA sweeps may therefore now
+  safely run **PARALLEL filing subagents**; there is no longer a need to serialize `./task`
+  creation as earlier sweeps did.
+- **Still open for workers (carried forward):**
+  - **1214** — e2e harness: structural byte-parsers treat CWS (compressed) publish output
+    as FWS.
+  - **1215** — `interactivity.spec` `injectRufflePlayer` missing `autoplay:'on'` → clip
+    ticks never start, so `diffPixels=0` and the oracle falsely fails (harness bug).
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+
