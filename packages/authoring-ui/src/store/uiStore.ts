@@ -23,7 +23,7 @@ export interface EditContext {
 
 export type EditPathEntry = { symbolId: string; instanceId: string };
 
-export type BottomTab = "actions" | "sound" | "properties" | "output";
+export type BottomTab = "actions" | "sound" | "output";
 
 export type RightTab = "library" | "properties";
 
@@ -303,7 +303,7 @@ const DEFAULTS: UiData = {
   hasMotionClipboard: false,
   selectedLibraryItemId: null,
   rightTab: "library",
-  bottomTab: "properties",
+  bottomTab: "actions",
   timelineCollapsed: false,
   preferencesOpen: false,
   instances: [],

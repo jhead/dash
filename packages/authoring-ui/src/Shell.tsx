@@ -65,7 +65,6 @@ import type { ViewMode, OnionFrame } from "./StageArea";
 import { Rulers } from "./Rulers";
 import { Timeline } from "./Timeline";
 import { usePreferences } from "./preferences";
-import { PropertiesPanel } from "./PropertiesPanel";
 import type { PlacedInstance } from "./PropertiesPanel";
 import { LibraryPanel } from "./LibraryPanel";
 import { StatusBar } from "./StatusBar";
@@ -468,7 +467,6 @@ const styles: Record<string, React.CSSProperties> = {
 const BOTTOM_TABS: Array<{ id: BottomTab; label: string }> = [
   { id: "actions", label: "Actions" },
   { id: "sound", label: "Sound" },
-  { id: "properties", label: "Properties" },
   { id: "output", label: "Output" },
 ];
 
@@ -794,7 +792,7 @@ export function Shell(): React.ReactElement {
   const safeActiveLayerIndex = Math.min(activeLayerIndex, Math.max(0, timeline.layers.length - 1));
 
   // Remember the last expanded bottom tab so re-expanding restores it.
-  const lastBottomTabRef = useRef<BottomTab>("properties");
+  const lastBottomTabRef = useRef<BottomTab>("actions");
 
   // Resizable panes: right panel width, top timeline height, bottom dock height.
   const rightResize = useResize(240, 160, 600, "x");
@@ -1564,24 +1562,6 @@ export function Shell(): React.ReactElement {
     [selectedButtonSymbol, doc, pushDoc]
   );
 
-  /** Generic display object updater used by PropertiesPanel. */
-  const handleUpdateObject = useCallback(
-    (id: string, changes: Partial<DisplayObject>) => {
-      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
-      if (!layerId) return;
-      pushDoc(withTimeline((t) =>
-        updateDisplayObject(t, layerId, currentFrame, id, changes)
-      ));
-    },
-    [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
-  );
-
-  /** Open the Swap Bitmap dialog for the given BitmapDisplayObject id. */
-  const handleSwapBitmap = useCallback((id: string) => {
-    setSwapBitmapTargetId(id);
-    setSwapBitmapDialogOpen(true);
-  }, []);
-
   /** Called when the user confirms a bitmap swap from the dialog. */
   const handleSwapBitmapConfirm = useCallback((newLibraryItemId: string) => {
     setSwapBitmapDialogOpen(false);
@@ -1596,13 +1576,7 @@ export function Shell(): React.ReactElement {
     setSwapBitmapTargetId(null);
   }, [swapBitmapTargetId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]);
 
-  /** Single-element array of the currently selected display object (for PropertiesPanel). */
-  const selectedObjects = useMemo<DisplayObject[]>(
-    () => (selectedDisplayObject ? [selectedDisplayObject] : []),
-    [selectedDisplayObject]
-  );
-
-  /** Governing keyframe at the active layer cursor position (for PropertiesPanel frame view). */
+  /** Governing keyframe at the active layer cursor position (used by the stage/timeline). */
   const currentGoverningFrame = useMemo<Frame | null>(() => {
     const layer = timeline.layers[safeActiveLayerIndex];
     if (!layer) return null;
@@ -2343,7 +2317,7 @@ export function Shell(): React.ReactElement {
 
   // Document/frame-property, File-menu, and drag-drop handlers — see hooks/useDocumentHandlers.
   const {
-    handleDocPropsConfirm, handleUpdateDocProperties, handleFrameUpdate,
+    handleDocPropsConfirm,
     handleDocumentChange, handleFilePathChange, handleDragOver, handleDragLeave, handleDrop,
   } = useDocumentHandlers({
     uiStore, timeline, pushDoc, withProperties, withTimeline, replaceDoc, clearHistory, setSelectedShapeId,
@@ -3463,21 +3437,6 @@ export function Shell(): React.ReactElement {
                     onSoundChange={handleSoundChange}
                     onPreviewSound={previewSound}
                     onEditEnvelope={handleEditEnvelope}
-                  />
-                )}
-                {bottomTab === "properties" && (
-                  <PropertiesPanel
-                    doc={doc}
-                    selectedObjects={selectedObjects}
-                    onUpdateDocProperties={handleUpdateDocProperties}
-                    onUpdateObject={handleUpdateObject}
-                    currentFrame={currentGoverningFrame}
-                    currentLayerIndex={safeActiveLayerIndex}
-                    currentFrameIndex={currentFrame}
-                    onFrameUpdate={handleFrameUpdate}
-                    onSwapBitmap={handleSwapBitmap}
-                    sounds={soundLibraryItems}
-                    onSoundChange={handleSoundChange}
                   />
                 )}
                 {bottomTab === "output" && (
