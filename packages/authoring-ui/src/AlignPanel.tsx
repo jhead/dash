@@ -157,18 +157,25 @@ const toStageRowStyle: React.CSSProperties = {
 
 interface AlignButtonProps {
   title: string;
-  label: string;
+  icon: React.ReactNode;
   onClick: () => void;
 }
 
-function AlignButton({ title, label, onClick }: AlignButtonProps): React.ReactElement {
+function AlignButton({ title, icon, onClick }: AlignButtonProps): React.ReactElement {
   const [hovered, setHovered] = useState(false);
   const style: React.CSSProperties = {
     ...buttonStyle(hovered ? "over" : "up"),
+    // Fixed Halo icon-button box. Override buttonStyle's text padding (2px 8px):
+    // a 26px-wide button has only ~10px usable width after 8px side padding, which
+    // clipped the multi-glyph icons. Center a fixed-size SVG icon with no padding,
+    // box-sizing:border-box (keep the 1px border inside the 26×22 box), and clip any
+    // residual overflow defensively.
+    boxSizing: "border-box",
     width: "26px",
     height: "22px",
-    color: chrome.textDefault,
-    fontSize: "10px",
+    padding: 0,
+    overflow: "hidden",
+    color: halo.iconColor,
     flexShrink: 0,
   };
   return (
@@ -179,10 +186,175 @@ function AlignButton({ title, label, onClick }: AlignButtonProps): React.ReactEl
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {label}
+      {icon}
     </button>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Align icons — crisp inline SVG glyphs (16×16, viewBox-scaled) that fit
+// cleanly inside the 26×22 button box. Per docs/30-flash8-ui-spec.md the icon
+// glyph colour is halo.iconColor (#2B333C); the alignment guide uses the Halo
+// blue accent (halo.haloBlue). Object bars inherit currentColor.
+// ---------------------------------------------------------------------------
+
+const ICON_SIZE = 16;
+const GUIDE = halo.haloBlue; // alignment guide / reference line accent
+
+function Icon({ children }: { children: React.ReactNode }): React.ReactElement {
+  return (
+    <svg
+      width={ICON_SIZE}
+      height={ICON_SIZE}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      stroke="none"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: "block" }}
+    >
+      {children}
+    </svg>
+  );
+}
+
+// Align: left / hcenter / right edges (guide line + two object bars)
+const IconAlignLeft = (
+  <Icon>
+    <rect x="1" y="1" width="1.5" height="14" fill={GUIDE} />
+    <rect x="3.5" y="3" width="9" height="3.5" />
+    <rect x="3.5" y="9.5" width="5.5" height="3.5" />
+  </Icon>
+);
+const IconAlignHCenter = (
+  <Icon>
+    <rect x="7.25" y="1" width="1.5" height="14" fill={GUIDE} />
+    <rect x="3.5" y="3" width="9" height="3.5" />
+    <rect x="5.25" y="9.5" width="5.5" height="3.5" />
+  </Icon>
+);
+const IconAlignRight = (
+  <Icon>
+    <rect x="13.5" y="1" width="1.5" height="14" fill={GUIDE} />
+    <rect x="3.5" y="3" width="9" height="3.5" />
+    <rect x="7" y="9.5" width="5.5" height="3.5" />
+  </Icon>
+);
+
+// Align: top / vcenter / bottom edges
+const IconAlignTop = (
+  <Icon>
+    <rect x="1" y="1" width="14" height="1.5" fill={GUIDE} />
+    <rect x="3" y="3.5" width="3.5" height="9" />
+    <rect x="9.5" y="3.5" width="3.5" height="5.5" />
+  </Icon>
+);
+const IconAlignVCenter = (
+  <Icon>
+    <rect x="1" y="7.25" width="14" height="1.5" fill={GUIDE} />
+    <rect x="3" y="3.5" width="3.5" height="9" />
+    <rect x="9.5" y="5.25" width="3.5" height="5.5" />
+  </Icon>
+);
+const IconAlignBottom = (
+  <Icon>
+    <rect x="1" y="13.5" width="14" height="1.5" fill={GUIDE} />
+    <rect x="3" y="3.5" width="3.5" height="9" />
+    <rect x="9.5" y="7" width="3.5" height="5.5" />
+  </Icon>
+);
+
+// Distribute: three bars positioned by the distributed edge
+const IconDistLeft = (
+  <Icon>
+    <rect x="1" y="2" width="2" height="12" />
+    <rect x="7" y="2" width="2" height="12" />
+    <rect x="13" y="2" width="2" height="12" />
+  </Icon>
+);
+const IconDistHCenter = (
+  <Icon>
+    <rect x="1.5" y="2" width="2" height="12" />
+    <rect x="7" y="2" width="2" height="12" />
+    <rect x="12.5" y="2" width="2" height="12" />
+    <rect x="2" y="7.25" width="12" height="1.5" fill={GUIDE} opacity="0.7" />
+  </Icon>
+);
+const IconDistRight = (
+  <Icon>
+    <rect x="1" y="2" width="2" height="12" />
+    <rect x="7" y="2" width="2" height="12" />
+    <rect x="13" y="2" width="2" height="12" />
+    <rect x="3" y="2" width="0.75" height="12" fill={GUIDE} />
+    <rect x="9" y="2" width="0.75" height="12" fill={GUIDE} />
+  </Icon>
+);
+const IconDistTop = (
+  <Icon>
+    <rect x="2" y="1" width="12" height="2" />
+    <rect x="2" y="7" width="12" height="2" />
+    <rect x="2" y="13" width="12" height="2" />
+  </Icon>
+);
+const IconDistVCenter = (
+  <Icon>
+    <rect x="2" y="1.5" width="12" height="2" />
+    <rect x="2" y="7" width="12" height="2" />
+    <rect x="2" y="12.5" width="12" height="2" />
+    <rect x="7.25" y="2" width="1.5" height="12" fill={GUIDE} opacity="0.7" />
+  </Icon>
+);
+const IconDistBottom = (
+  <Icon>
+    <rect x="2" y="1" width="12" height="2" />
+    <rect x="2" y="7" width="12" height="2" />
+    <rect x="2" y="13" width="12" height="2" />
+    <rect x="2" y="3" width="12" height="0.75" fill={GUIDE} />
+    <rect x="2" y="9" width="12" height="0.75" fill={GUIDE} />
+  </Icon>
+);
+
+// Match size: a small box growing to a large box, with the matched dimension marked
+const IconMatchWidth = (
+  <Icon>
+    <rect x="1" y="5" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    <rect x="8" y="3" width="7" height="10" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    <rect x="1" y="14.2" width="14" height="1.4" fill={GUIDE} />
+  </Icon>
+);
+const IconMatchHeight = (
+  <Icon>
+    <rect x="5" y="1" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    <rect x="3" y="8" width="10" height="7" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    <rect x="0.4" y="1" width="1.4" height="14" fill={GUIDE} />
+  </Icon>
+);
+const IconMatchBoth = (
+  <Icon>
+    <rect x="1" y="9" width="5" height="5" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    <rect x="7" y="2" width="8" height="12" fill="none" stroke="currentColor" strokeWidth="1.3" />
+  </Icon>
+);
+
+// Space evenly: bars with explicit equal-gap markers between them
+const IconSpaceH = (
+  <Icon>
+    <rect x="1" y="2" width="3" height="12" />
+    <rect x="6.5" y="2" width="3" height="12" />
+    <rect x="12" y="2" width="3" height="12" />
+    <rect x="4" y="7" width="2.5" height="2" fill={GUIDE} />
+    <rect x="9.5" y="7" width="2.5" height="2" fill={GUIDE} />
+  </Icon>
+);
+const IconSpaceV = (
+  <Icon>
+    <rect x="2" y="1" width="12" height="3" />
+    <rect x="2" y="6.5" width="12" height="3" />
+    <rect x="2" y="12" width="12" height="3" />
+    <rect x="7" y="4" width="2" height="2.5" fill={GUIDE} />
+    <rect x="7" y="9.5" width="2" height="2.5" fill={GUIDE} />
+  </Icon>
+);
 
 // ---------------------------------------------------------------------------
 // AlignPanel
@@ -537,14 +709,14 @@ export function AlignPanel({
       <div style={sectionStyle}>
         <div style={sectionLabelStyle}>Align</div>
         <div style={btnRowStyle}>
-          <AlignButton title="Align Left Edges" label="|[" onClick={alignLeftEdges} />
-          <AlignButton title="Align Horizontal Center" label="[-" onClick={alignHorizontalCenter} />
-          <AlignButton title="Align Right Edges" label="]|" onClick={alignRightEdges} />
+          <AlignButton title="Align Left Edges" icon={IconAlignLeft} onClick={alignLeftEdges} />
+          <AlignButton title="Align Horizontal Center" icon={IconAlignHCenter} onClick={alignHorizontalCenter} />
+          <AlignButton title="Align Right Edges" icon={IconAlignRight} onClick={alignRightEdges} />
         </div>
         <div style={btnRowStyle}>
-          <AlignButton title="Align Top Edges" label="T[" onClick={alignTopEdges} />
-          <AlignButton title="Align Vertical Center" label="[-" onClick={alignVerticalCenter} />
-          <AlignButton title="Align Bottom Edges" label="B[" onClick={alignBottomEdges} />
+          <AlignButton title="Align Top Edges" icon={IconAlignTop} onClick={alignTopEdges} />
+          <AlignButton title="Align Vertical Center" icon={IconAlignVCenter} onClick={alignVerticalCenter} />
+          <AlignButton title="Align Bottom Edges" icon={IconAlignBottom} onClick={alignBottomEdges} />
         </div>
       </div>
 
@@ -552,14 +724,14 @@ export function AlignPanel({
       <div style={sectionStyle}>
         <div style={sectionLabelStyle}>Distribute</div>
         <div style={btnRowStyle}>
-          <AlignButton title="Distribute Left Edges" label="|--|" onClick={distributeLeftEdges} />
-          <AlignButton title="Distribute Horizontal Centers" label="-|-" onClick={distributeHorizontalCenters} />
-          <AlignButton title="Distribute Right Edges" label="|--|" onClick={distributeRightEdges} />
+          <AlignButton title="Distribute Left Edges" icon={IconDistLeft} onClick={distributeLeftEdges} />
+          <AlignButton title="Distribute Horizontal Centers" icon={IconDistHCenter} onClick={distributeHorizontalCenters} />
+          <AlignButton title="Distribute Right Edges" icon={IconDistRight} onClick={distributeRightEdges} />
         </div>
         <div style={btnRowStyle}>
-          <AlignButton title="Distribute Top Edges" label="T-T" onClick={distributeTopEdges} />
-          <AlignButton title="Distribute Vertical Centers" label="-+-" onClick={distributeVerticalCenters} />
-          <AlignButton title="Distribute Bottom Edges" label="B-B" onClick={distributeBottomEdges} />
+          <AlignButton title="Distribute Top Edges" icon={IconDistTop} onClick={distributeTopEdges} />
+          <AlignButton title="Distribute Vertical Centers" icon={IconDistVCenter} onClick={distributeVerticalCenters} />
+          <AlignButton title="Distribute Bottom Edges" icon={IconDistBottom} onClick={distributeBottomEdges} />
         </div>
       </div>
 
@@ -567,9 +739,9 @@ export function AlignPanel({
       <div style={sectionStyle}>
         <div style={sectionLabelStyle}>Match Size</div>
         <div style={btnRowStyle}>
-          <AlignButton title="Match Width" label="W=" onClick={matchWidth} />
-          <AlignButton title="Match Height" label="H=" onClick={matchHeight} />
-          <AlignButton title="Match Width and Height" label="WH=" onClick={matchWidthAndHeight} />
+          <AlignButton title="Match Width" icon={IconMatchWidth} onClick={matchWidth} />
+          <AlignButton title="Match Height" icon={IconMatchHeight} onClick={matchHeight} />
+          <AlignButton title="Match Width and Height" icon={IconMatchBoth} onClick={matchWidthAndHeight} />
         </div>
       </div>
 
@@ -577,8 +749,8 @@ export function AlignPanel({
       <div style={sectionStyle}>
         <div style={sectionLabelStyle}>Space</div>
         <div style={btnRowStyle}>
-          <AlignButton title="Space Evenly Horizontal" label="|=|" onClick={spaceEvenlyHorizontal} />
-          <AlignButton title="Space Evenly Vertical" label="-=-" onClick={spaceEvenlyVertical} />
+          <AlignButton title="Space Evenly Horizontal" icon={IconSpaceH} onClick={spaceEvenlyHorizontal} />
+          <AlignButton title="Space Evenly Vertical" icon={IconSpaceV} onClick={spaceEvenlyVertical} />
         </div>
       </div>
 
