@@ -21,6 +21,7 @@ trade-offs, and how the chat maps onto the MCP/agent-protocol tool surface.
 | **Key storage** | `localStorage` in your browser only (BYOK) — never sent to a Dash server |
 | **Tooling** | Auto-generated from `@flash/agent-protocol` — one tool per command (68 commands) |
 | **Execution** | Tool `execute` → `dispatchAgentCommand` → the live document store (undoable) |
+| **History** | Persisted to `localStorage`; multiple named threads (`threadStore.ts`) — survives tab-switch + page refresh |
 | **Code** | `packages/authoring-ui/src/agentchat/` |
 
 ---
@@ -74,9 +75,15 @@ backend; the only network calls go **directly from your browser to
   `streamText` multi-step tool loop and folds its `fullStream` into a renderable
   transcript via the pure reducer `reduceAgentEvent`. `classifyAgentError()` maps
   raw failures into friendly, actionable buckets (see *Error handling*).
-- **`AgentChatPanel.tsx`** — the panel: collapsible Settings, the transcript
+- **`AgentChatPanel.tsx`** — the panel: collapsible Settings, the **thread
+  switcher** (`New chat` + a dropdown of past conversations), the transcript
   (user bubbles + assistant turns with streamed text, *thinking*, tool-call
-  chips, step markers), and the composer with the **Send / Stop** button.
+  chips, step markers), and the composer with the **Send / Stop** button. The
+  panel is a thin view over `threadStore` — it holds no conversation state of its
+  own, so leaving and returning to the Agent tab (or reloading) shows the same
+  conversation.
+- **`threadStore.ts`** — the persisted (`localStorage`) conversation store (see
+  *History & threads* below).
 - **`AgentMarkdown.tsx`** — renders an assistant message body as Markdown (see
   *Markdown rendering* below).
 - **`AgentSettings.tsx`** — the API-key input + model selector (or manual
@@ -113,6 +120,73 @@ tool-call chips stay plain text.
 - **AI SDK v6** gives a provider-agnostic streaming tool loop (`streamText` with
   `stopWhen: stepCountIs(...)`), tool definitions from Zod schemas, and a
   uniform `fullStream` of typed parts the panel renders.
+
+---
+
+## History & threads
+
+Conversation history is **persisted** and supports **multiple threads**, so it
+survives both leaving/returning to the Agent tab (the panel unmounts) and a full
+page refresh. State lives in **`threadStore.ts`** — a `localStorage`-backed
+[zustand](https://github.com/pmndrs/zustand) store — *not* in `AgentChatPanel`'s
+component state (which is where it lived before, and why it used to be lost).
+
+### The store (`threadStore.ts`)
+
+```ts
+interface ChatThread {
+  id: string;
+  title: string;          // derived from the first user message (truncated); "New chat" until then
+  transcript: Turn[];     // the rendered messages (user bubbles + assistant runs)
+  history: ModelMessage[];// the AI-SDK ModelMessage[] multi-turn context (assistant + tool)
+  createdAt: number;
+  updatedAt: number;
+}
+interface ThreadState {
+  threads: ChatThread[];
+  activeThreadId: string | null;
+  // actions:
+  newThread, selectThread, deleteThread, clearActiveThread,
+  appendUserAndAssistant, patchActiveAssistantRun, appendActiveHistory
+}
+```
+
+- Each thread carries **both** the rendered `transcript` (what you see) and the
+  raw `history` (`ModelMessage[]`, the multi-turn context the loop is given) — so
+  switching threads restores the exact UI *and* the model's memory of that
+  conversation.
+- The **in-flight run writes into the active thread**: `handleSend` snapshots the
+  active thread's `history`, appends the user + a live assistant turn via
+  `appendUserAndAssistant`, then streams updates onto that assistant turn with
+  `patchActiveAssistantRun` and finally records the model's response messages with
+  `appendActiveHistory`. Streaming text, *thinking*, and tool chips all persist.
+- The **title** is derived from the first user message (whitespace-collapsed and
+  truncated to `MAX_TITLE_LEN`); a thread with no user message yet shows **"New
+  chat"**.
+
+### UI
+
+- **`New chat`** — starts a fresh empty thread and makes it active.
+- **Thread switcher** — a dropdown (most-recent first) of past threads showing
+  title + a compact relative timestamp; click one to switch (restoring its
+  transcript). Each row has an **✕** to **delete** that thread.
+- **Clear** — empties the *current* thread (transcript + history) in place,
+  keeping the thread and its id (the title resets to "New chat").
+- Switching/clearing/deleting the active thread is blocked while a run is in
+  flight (it would orphan the streaming patches); deleting a *non-active* thread
+  mid-run is fine.
+
+### Persistence hygiene (quota-safe, mirrors `preferences.ts`)
+
+- Every read/write is wrapped in `try/catch`: malformed JSON, a non-object
+  payload, a dangling `activeThreadId`, or a privacy-mode/quota write failure all
+  fall back gracefully (an empty store on read; a silent no-op — or a single-most-
+  recent-thread retry — on write). The UI never throws on storage errors.
+- **Size is capped** so one long conversation can't blow the ~5 MB `localStorage`
+  quota: at most `MAX_THREADS` threads are kept (oldest-`updatedAt` dropped
+  first), and each thread's `transcript`/`history` is trimmed to the most recent
+  `MAX_TURNS_PER_THREAD` / `MAX_HISTORY_PER_THREAD` entries
+  (`boundForStorage` / `trimThread`).
 
 ---
 
@@ -166,7 +240,9 @@ Because the key lives in `localStorage`:
 - The transcript **auto-scrolls** to the newest content as it streams.
 - **Tool-call chips** are collapsed by default; click one to expand its args and
   result/error.
-- **Clear** resets the conversation (history + transcript).
+- **Clear** empties the *current* thread (history + transcript), keeping the
+  thread; use **New chat** / the thread switcher to manage separate
+  conversations (see *History & threads*).
 
 ### Stop button
 
@@ -225,8 +301,11 @@ agent-protocol registry automatically appears in **both** surfaces.
 ## Verification
 
 - **Unit** (`agentchat/__tests__/`): the `agentLoop` reducer + terminal-status
-  rules, `classifyAgentError` buckets, the generated tool set, and the system
-  prompt. `pnpm --filter @flash/authoring-ui run test -- --run agentchat`.
+  rules, `classifyAgentError` buckets, the generated tool set, the system prompt,
+  and the **`threadStore`** (`threadStore.test.ts`): round-tripping threads
+  through a mocked `localStorage`, new/switch/clear/delete, restore-active-on-
+  remount, title derivation, storage bounding/trimming, and the parse/quota
+  failure fallbacks. `pnpm --filter @flash/authoring-ui run test -- --run agentchat`.
 - **E2E oracle** (`apps/desktop/e2e/agent-chat-drives-stage.spec.ts`): opens the
   Agent tab and runs the **real** loop (`runAgentTurn` → `streamText`) against a
   **stubbed** `MockLanguageModelV3` (from `ai/test`) whose stream emits a

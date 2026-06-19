@@ -21,6 +21,15 @@ import {
   type AgentToolEntry,
 } from "./agentLoop.js";
 import { AgentMarkdown } from "./AgentMarkdown.js";
+import {
+  useThreadStore,
+  selectThreadsByRecency,
+  selectActiveThread,
+  DEFAULT_THREAD_TITLE,
+  type Turn as StoredTurn,
+  type UserTurn as StoredUserTurn,
+  type AssistantTurn as StoredAssistantTurn,
+} from "./threadStore.js";
 
 // ---------------------------------------------------------------------------
 // AgentChatPanel — the client-side Agent Chat docked in the RIGHT pane (P3).
@@ -50,21 +59,12 @@ const MAX_STEPS = 24;
  */
 export const DEFAULT_AGENT_MODEL = "anthropic/claude-sonnet-4.5";
 
-/** A user message in the visible transcript. */
-interface UserTurn {
-  role: "user";
-  id: string;
-  text: string;
-}
-
-/** A completed/live assistant turn in the visible transcript. */
-interface AssistantTurn {
-  role: "assistant";
-  id: string;
-  run: AgentRunState;
-}
-
-type Turn = UserTurn | AssistantTurn;
+// The transcript model (UserTurn/AssistantTurn/Turn) now lives in ./threadStore
+// so the persisted store and this panel share one definition. Re-aliased here
+// for readability in the render code below.
+type UserTurn = StoredUserTurn;
+type AssistantTurn = StoredAssistantTurn;
+type Turn = StoredTurn;
 
 export interface AgentChatPanelProps {
   /**
@@ -127,14 +127,30 @@ export function AgentChatPanel(
   // chat instead of being hard-blocked).
   const effectiveModel = model.trim().length > 0 ? model.trim() : DEFAULT_AGENT_MODEL;
 
-  const [turns, setTurns] = useState<Turn[]>([]);
+  // Conversation state lives in the PERSISTED thread store (task 1291), so it
+  // survives leaving/returning to the Agent tab (unmount/remount) AND a full
+  // page refresh. The active thread's transcript is what we render; its
+  // `history` (ModelMessage[]) is the multi-turn context the loop receives.
+  const threads = useThreadStore(selectThreadsByRecency);
+  const activeThread = useThreadStore(selectActiveThread);
+  const activeThreadId = useThreadStore((s) => s.activeThreadId);
+  const newThread = useThreadStore((s) => s.newThread);
+  const selectThread = useThreadStore((s) => s.selectThread);
+  const deleteThread = useThreadStore((s) => s.deleteThread);
+  const clearActiveThread = useThreadStore((s) => s.clearActiveThread);
+  const appendUserAndAssistant = useThreadStore((s) => s.appendUserAndAssistant);
+  const patchActiveAssistantRun = useThreadStore(
+    (s) => s.patchActiveAssistantRun
+  );
+  const appendActiveHistory = useThreadStore((s) => s.appendActiveHistory);
+
+  const turns: Turn[] = activeThread?.transcript ?? [];
+
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(() => !hasKey);
+  const [threadMenuOpen, setThreadMenuOpen] = useState(false);
 
-  // The full model-message history (system is supplied separately), preserved
-  // across turns for multi-turn context (includes assistant + tool messages).
-  const historyRef = useRef<ModelMessage[]>([]);
   const controllerRef = useRef<AbortController | null>(null);
 
   // The id of the assistant turn currently being streamed (so onState patches
@@ -155,35 +171,27 @@ export function AgentChatPanel(
   // silently-dead button.
   const canSend = !running && input.trim().length > 0 && hasKey;
 
-  const patchAssistantRun = useCallback(
-    (assistantId: string, run: AgentRunState) => {
-      setTurns((prev) =>
-        prev.map((t) =>
-          t.role === "assistant" && t.id === assistantId ? { ...t, run } : t
-        )
-      );
-    },
-    []
-  );
+  const patchAssistantRun = patchActiveAssistantRun;
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (text.length === 0 || running) return;
     if (!hasKey) {
       // No key — open Settings and surface the actionable hint as a turn so the
-      // intent isn't silently dropped.
+      // intent isn't silently dropped. Still recorded in the active thread so it
+      // persists like any other turn.
       setSettingsOpen(true);
       const assistantId = nextTurnId();
       const friendly = classifyAgentError(null, { hasKey: false, hasModel: true });
-      setTurns((prev) => [
-        ...prev,
+      appendUserAndAssistant(
         { role: "user", id: nextTurnId(), text },
         {
           role: "assistant",
           id: assistantId,
           run: { entries: [], status: "error", error: friendly.message },
         },
-      ]);
+        { role: "user", content: text }
+      );
       setInput("");
       return;
     }
@@ -197,15 +205,18 @@ export function AgentChatPanel(
     };
     activeAssistantIdRef.current = assistantId;
 
-    setTurns((prev) => [...prev, userTurn, assistantTurn]);
+    // Snapshot the active thread's history BEFORE appending the new user
+    // message, then build the messages the loop will see (prior history + this
+    // user turn). The store records the same user message + the live assistant
+    // turn into the active thread (creating one if none exists), so the in-flight
+    // run writes into — and persists against — the active thread.
+    const priorHistory = selectActiveThread(useThreadStore.getState())?.history ?? [];
+    const userMessage: ModelMessage = { role: "user", content: text };
+    const messages: ModelMessage[] = [...priorHistory, userMessage];
+
+    appendUserAndAssistant(userTurn, assistantTurn, userMessage);
     setInput("");
     setRunning(true);
-
-    // Append the user message to the persistent history.
-    historyRef.current = [
-      ...historyRef.current,
-      { role: "user", content: text },
-    ];
 
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -217,7 +228,7 @@ export function AgentChatPanel(
         model: languageModel,
         system: AGENT_SYSTEM_PROMPT,
         tools,
-        messages: historyRef.current,
+        messages,
         maxSteps: MAX_STEPS,
         abortSignal: controller.signal,
         onState: (run) => patchAssistantRun(assistantId, run),
@@ -237,7 +248,7 @@ export function AgentChatPanel(
       // return undefined here instead of an empty array, so guard against it
       // rather than throwing on `.length`.
       if (responseMessages && responseMessages.length > 0) {
-        historyRef.current = [...historyRef.current, ...responseMessages];
+        appendActiveHistory(responseMessages);
       }
     } catch (err) {
       // runTurn folds errors into state; this is a final safety net for an
@@ -263,6 +274,8 @@ export function AgentChatPanel(
     tools,
     runTurn,
     patchAssistantRun,
+    appendUserAndAssistant,
+    appendActiveHistory,
   ]);
 
   const handleStop = useCallback(() => {
@@ -282,9 +295,33 @@ export function AgentChatPanel(
 
   const handleClear = useCallback(() => {
     if (running) return;
-    historyRef.current = [];
-    setTurns([]);
-  }, [running]);
+    clearActiveThread();
+  }, [running, clearActiveThread]);
+
+  const handleNewThread = useCallback(() => {
+    if (running) return;
+    newThread();
+    setThreadMenuOpen(false);
+  }, [running, newThread]);
+
+  const handleSelectThread = useCallback(
+    (id: string) => {
+      if (running) return;
+      selectThread(id);
+      setThreadMenuOpen(false);
+    },
+    [running, selectThread]
+  );
+
+  const handleDeleteThread = useCallback(
+    (id: string) => {
+      // Deleting a non-active thread is safe mid-run; deleting the active thread
+      // while a run is in flight would orphan the streaming patches, so block it.
+      if (running && id === activeThreadId) return;
+      deleteThread(id);
+    },
+    [running, activeThreadId, deleteThread]
+  );
 
   return (
     <div data-testid="agent-chat-panel" style={styles.root}>
@@ -319,6 +356,78 @@ export function AgentChatPanel(
             model={model}
             onModelChange={(m) => updatePreferences({ agentModel: m })}
           />
+        </div>
+      )}
+
+      {/* --- Thread switcher (task 1291) --- */}
+      <div style={styles.threadBar} data-testid="agent-thread-bar">
+        <button
+          type="button"
+          data-testid="agent-thread-switcher"
+          onClick={() => setThreadMenuOpen((v) => !v)}
+          style={styles.threadSwitcher}
+          title="Switch conversation"
+        >
+          <span style={styles.threadSwitcherTitle}>
+            {activeThread?.title ?? DEFAULT_THREAD_TITLE}
+          </span>
+          <span style={styles.threadCaret}>{threadMenuOpen ? "▾" : "▸"}</span>
+        </button>
+        <button
+          type="button"
+          data-testid="agent-new-thread"
+          onClick={handleNewThread}
+          disabled={running}
+          style={buttonStyle(running ? "disabled" : "up")}
+          title="Start a new chat"
+        >
+          New chat
+        </button>
+      </div>
+      {threadMenuOpen && (
+        <div style={styles.threadMenu} data-testid="agent-thread-menu">
+          {threads.length === 0 && (
+            <div style={styles.threadMenuEmpty} data-testid="agent-thread-empty">
+              No conversations yet.
+            </div>
+          )}
+          {threads.map((t) => (
+            <div
+              key={t.id}
+              style={{
+                ...styles.threadMenuItem,
+                ...(t.id === activeThreadId
+                  ? styles.threadMenuItemActive
+                  : null),
+              }}
+              data-testid="agent-thread-item"
+              data-active={t.id === activeThreadId ? "true" : "false"}
+            >
+              <button
+                type="button"
+                data-testid="agent-thread-select"
+                onClick={() => handleSelectThread(t.id)}
+                disabled={running}
+                style={styles.threadMenuSelect}
+                title={t.title}
+              >
+                <span style={styles.threadMenuItemTitle}>{t.title}</span>
+                <span style={styles.threadMenuItemTime}>
+                  {formatThreadTime(t.updatedAt)}
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="agent-thread-delete"
+                onClick={() => handleDeleteThread(t.id)}
+                disabled={running && t.id === activeThreadId}
+                style={styles.threadMenuDelete}
+                title="Delete this conversation"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -549,6 +658,31 @@ function Spinner(): React.JSX.Element {
   return <span style={styles.spinner} aria-hidden="true" />;
 }
 
+/**
+ * Format a thread's updatedAt timestamp compactly for the switcher: a relative
+ * label for recent times ("just now", "5m", "3h"), falling back to a short
+ * locale date for older threads. Dependency-free + deterministic given `now`.
+ */
+export function formatThreadTime(ts: number, now: number = Date.now()): string {
+  const diffMs = now - ts;
+  if (diffMs < 0) return "just now";
+  const min = Math.floor(diffMs / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d`;
+  try {
+    return new Date(ts).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return `${day}d`;
+  }
+}
+
 function prettyJson(value: unknown): string {
   if (value === undefined) return "—";
   try {
@@ -598,6 +732,93 @@ const styles: Record<string, React.CSSProperties> = {
     maxHeight: "40%",
     overflowY: "auto",
     borderBottom: `1px solid ${chrome.separator}`,
+  },
+  threadBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "4px 6px",
+    borderBottom: `1px solid ${chrome.separator}`,
+    flex: "0 0 auto",
+  },
+  threadSwitcher: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    flex: 1,
+    minWidth: 0,
+    background: "transparent",
+    border: "none",
+    color: chrome.textDefault,
+    cursor: "pointer",
+    fontSize: 11,
+    padding: "2px 4px",
+    textAlign: "left",
+  },
+  threadSwitcherTitle: {
+    flex: 1,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  threadCaret: {
+    fontSize: 9,
+    color: halo.disabledText,
+    flex: "0 0 auto",
+  },
+  threadMenu: {
+    flex: "0 0 auto",
+    maxHeight: "40%",
+    overflowY: "auto",
+    borderBottom: `1px solid ${chrome.separator}`,
+    background: chrome.insetFieldStrip,
+  },
+  threadMenuEmpty: {
+    color: halo.disabledText,
+    fontSize: 10,
+    padding: "6px 8px",
+  },
+  threadMenuItem: {
+    display: "flex",
+    alignItems: "center",
+    borderBottom: `1px solid ${chrome.separator}`,
+  },
+  threadMenuItemActive: {
+    background: "rgba(80,140,224,0.18)",
+  },
+  threadMenuSelect: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    minWidth: 0,
+    background: "transparent",
+    border: "none",
+    color: chrome.textDefault,
+    cursor: "pointer",
+    fontSize: 11,
+    padding: "5px 6px",
+    textAlign: "left",
+  },
+  threadMenuItemTitle: {
+    flex: 1,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  threadMenuItemTime: {
+    fontSize: 9,
+    color: halo.disabledText,
+    flex: "0 0 auto",
+  },
+  threadMenuDelete: {
+    background: "transparent",
+    border: "none",
+    color: halo.disabledText,
+    cursor: "pointer",
+    fontSize: 11,
+    padding: "5px 8px",
+    flex: "0 0 auto",
   },
   transcript: {
     flex: 1,
