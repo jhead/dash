@@ -17,3 +17,15 @@ export type { OpenRouterModel } from "./openrouterClient.js";
 
 export { AgentSettings } from "./AgentSettings.js";
 export type { AgentSettingsProps } from "./AgentSettings.js";
+
+// Phase 2 tool bridge: the generated AI SDK v6 tool set (one tool per
+// agent-protocol command, executing via dispatchAgentCommand) + the system
+// prompt. P3's agent loop imports these from `@flash/authoring-ui`.
+export { buildAgentTools } from "./tools.js";
+export type {
+  AgentToolSet,
+  AgentToolError,
+  BuildAgentToolsOptions,
+  Dispatch,
+} from "./tools.js";
+export { AGENT_SYSTEM_PROMPT, buildAgentSystemPrompt } from "./systemPrompt.js";

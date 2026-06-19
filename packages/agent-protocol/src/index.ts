@@ -250,6 +250,17 @@ export const StageAddVideoResultSchema = z.object({
 });
 export type StageAddVideoResult = z.infer<typeof StageAddVideoResultSchema>;
 
+export const StageAddBitmapParamsSchema = z.object({
+  bitmapItemId: z.string().describe("Library BitmapItem id"),
+  x: z.number(),
+  y: z.number(),
+  width: z.number().positive().optional().describe("Display width (defaults to native)"),
+  height: z.number().positive().optional().describe("Display height (defaults to native)"),
+  layerId: z.string().optional(),
+  frameIndex: z.number().int().nonnegative().optional(),
+});
+export type StageAddBitmapParams = z.infer<typeof StageAddBitmapParamsSchema>;
+
 export const StageUpdateParamsSchema = z.object({
   id: z.string(),
   layerId: z.string().optional(),
@@ -374,6 +385,18 @@ export const TimelineGotoFrameParamsSchema = z.object({
   frameIndex: z.number().int().nonnegative(),
 });
 export type TimelineGotoFrameParams = z.infer<typeof TimelineGotoFrameParamsSchema>;
+
+export const TimelineSetSoundParamsSchema = z.object({
+  layerId: z.string(),
+  frameIndex: z.number().int().nonnegative(),
+  libraryItemId: z
+    .string()
+    .nullable()
+    .describe("Library sound item id to attach, or null to clear the frame sound"),
+  syncMode: z.enum(["event", "start", "stop", "stream"]).optional(),
+  repeatCount: z.number().int().nonnegative().optional(),
+});
+export type TimelineSetSoundParams = z.infer<typeof TimelineSetSoundParamsSchema>;
 
 // ---------------------------------------------------------------------------
 // Code (AS2)
@@ -869,6 +892,215 @@ export const ALL_COMMANDS = [
 ] as const;
 
 export type AgentCommand = (typeof ALL_COMMANDS)[number];
+
+// ---------------------------------------------------------------------------
+// Command registry (single source of truth: name → params schema + description)
+//
+// This is the programmatic registry that transport layers enumerate. The MCP
+// plugin hand-codes its own tool surface, but any generic consumer (e.g. the
+// in-browser Agent Chat tool bridge) builds its tool set by iterating
+// COMMAND_SCHEMAS: one entry per ALL_COMMANDS, mapping the command name to the
+// Zod schema for its params. Paramless commands map to an empty strict object.
+// ---------------------------------------------------------------------------
+
+/**
+ * Map of every agent command name to the Zod schema describing its params.
+ *
+ * Exactly covers ALL_COMMANDS (verified by a unit test). Several commands share
+ * a schema: the four `timeline_insert_*` / `timeline_remove_frame` ops all take
+ * `{ layerId, frameIndex }` (TimelineFrameParamsSchema), and `playback_play` /
+ * `playback_stop` take no params (empty strict object).
+ */
+export const COMMAND_SCHEMAS = {
+  // session & document
+  editor_status: EditorStatusParamsSchema,
+  doc_get: DocGetParamsSchema,
+  doc_summary: DocGetSummaryParamsSchema,
+  doc_load: DocLoadParamsSchema,
+  doc_set_properties: DocSetPropertiesParamsSchema,
+  history_undo: HistoryUndoParamsSchema,
+  history_redo: HistoryRedoParamsSchema,
+  history_depth: HistoryDepthParamsSchema,
+  // stage & selection
+  stage_add_shape: StageAddShapeParamsSchema,
+  stage_add_text: StageAddTextParamsSchema,
+  stage_place_instance: StagePlaceInstanceParamsSchema,
+  stage_add_video: StageAddVideoParamsSchema,
+  stage_add_bitmap: StageAddBitmapParamsSchema,
+  stage_update: StageUpdateParamsSchema,
+  stage_remove: StageRemoveParamsSchema,
+  stage_arrange: StageArrangeParamsSchema,
+  stage_group: StageGroupParamsSchema,
+  stage_ungroup: StageUngroupParamsSchema,
+  selection_get: SelectionGetParamsSchema,
+  selection_set: SelectionSetParamsSchema,
+  view_set: ViewSetParamsSchema,
+  tool_select: ToolSelectParamsSchema,
+  // timeline
+  timeline_add_layer: TimelineAddLayerParamsSchema,
+  timeline_remove_layer: TimelineRemoveLayerParamsSchema,
+  timeline_update_layer: TimelineUpdateLayerParamsSchema,
+  timeline_insert_frame: TimelineFrameParamsSchema,
+  timeline_insert_keyframe: TimelineFrameParamsSchema,
+  timeline_insert_blank_keyframe: TimelineFrameParamsSchema,
+  timeline_remove_frame: TimelineFrameParamsSchema,
+  timeline_set_frame_label: TimelineSetFrameLabelParamsSchema,
+  timeline_set_tween: TimelineSetTweenParamsSchema,
+  timeline_set_sound: TimelineSetSoundParamsSchema,
+  timeline_goto_frame: TimelineGotoFrameParamsSchema,
+  timeline_copy_frames: TimelineCopyFramesParamsSchema,
+  timeline_paste_frames: TimelinePasteFramesParamsSchema,
+  playback_play: z.object({}).strict(),
+  playback_stop: z.object({}).strict(),
+  // code
+  script_get: ScriptGetParamsSchema,
+  script_set: ScriptSetParamsSchema,
+  script_check: ScriptCheckParamsSchema,
+  script_list: ScriptListParamsSchema,
+  // library
+  library_list: LibraryListParamsSchema,
+  library_create_symbol: LibraryCreateSymbolParamsSchema,
+  library_convert_to_symbol: LibraryConvertToSymbolParamsSchema,
+  library_rename: LibraryRenameParamsSchema,
+  library_remove: LibraryRemoveParamsSchema,
+  library_import_bitmap: LibraryImportBitmapParamsSchema,
+  library_import_sound: LibraryImportSoundParamsSchema,
+  library_set_linkage: LibrarySetLinkageParamsSchema,
+  // filters
+  filter_add: FilterAddParamsSchema,
+  filter_remove: FilterRemoveParamsSchema,
+  filter_list: FilterListParamsSchema,
+  // output & escape hatches
+  jsfl_run: JsflRunParamsSchema,
+  stage_screenshot: StageScreenshotParamsSchema,
+  publish_swf: PublishSwfParamsSchema,
+  file_save_fla: FileSaveFlaParamsSchema,
+  file_load_fla: FileLoadFlaParamsSchema,
+  // scene management
+  scene_add: SceneAddParamsSchema,
+  scene_remove: SceneRemoveParamsSchema,
+  scene_rename: SceneRenameParamsSchema,
+  scene_select: SceneSelectParamsSchema,
+  scene_duplicate: SceneDuplicateParamsSchema,
+  scene_reorder: SceneReorderParamsSchema,
+  // stage utilities
+  stage_move_selection: StageMoveSelectionParamsSchema,
+  stage_find_instances: StageFindInstancesParamsSchema,
+  stage_get_bounds: StageGetBoundsParamsSchema,
+  stage_duplicate: StageDuplicateParamsSchema,
+  // library utilities
+  library_use_count: LibraryUseCountParamsSchema,
+} satisfies Record<AgentCommand, z.ZodType>;
+
+/**
+ * One-line, model-facing description of each command. Used as the AI SDK tool
+ * `description` so an LLM can pick the right tool. Concise but specific about
+ * what the command reads/mutates and what it returns. Covers ALL_COMMANDS.
+ */
+export const COMMAND_DESCRIPTIONS = {
+  // session & document
+  editor_status:
+    "Read editor status: alive flag, document name/size/fps/bg-color, scene/layer/frame counts, active tool, edit context, and the document revision (rev). Cheap; call to orient.",
+  doc_get:
+    "Read the document or a subtree at a JSON Pointer path (e.g. /scenes/0/timeline/layers/1). Omit path for the full document — prefer doc_summary first; the full doc can be very large.",
+  doc_summary:
+    "Read a token-light outline of the document: scenes -> layers (id, name, type, frameCount) -> keyframes (index, objectCount, hasScript, tween) plus the library list. The recommended first call before authoring.",
+  doc_load: "Replace the current document with the provided document JSON (pushes to history).",
+  doc_set_properties:
+    "Update document properties: width, height, frameRate, backgroundColor (#RRGGBB). Returns ok and rev.",
+  history_undo: "Undo the last document mutation. Returns ok and rev.",
+  history_redo: "Redo the last undone mutation. Returns ok and rev.",
+  history_depth: "Read the number of available undo and redo steps.",
+  // stage & selection
+  stage_add_shape:
+    "Add a primitive shape (rect, oval, or line) to the active layer/frame with fill/stroke colors (#RRGGBB[AA]). Returns the new object id and rev.",
+  stage_add_text:
+    "Add a text object to the stage (static/dynamic/input) with text, position, font, size, and color. Returns the new object id and rev.",
+  stage_place_instance:
+    "Place a library symbol instance on the stage at a position, with optional name/transform and graphic loop mode. Returns the new object id and rev.",
+  stage_add_video:
+    "Place a library VideoItem on the stage as a video display object (defaults to native size). Returns the new object id and rev.",
+  stage_add_bitmap:
+    "Place a library BitmapItem on the stage as a bitmap display object (defaults to native size). Returns the new object id and rev.",
+  stage_update:
+    "Update properties of a display object (x, y, scaleX, scaleY, rotation, alpha, text, blendMode, colorEffect, cacheAsBitmap, etc.). Returns ok and rev.",
+  stage_remove: "Remove display objects by id. Returns ok and rev.",
+  stage_arrange: "Change z-order of display objects: front/back/forward/backward. Returns ok and rev.",
+  stage_group: "Group display objects into a single group object. Returns ok and rev.",
+  stage_ungroup: "Ungroup a group, returning its children to the frame. Returns ok and rev.",
+  selection_get: "Read the currently selected object ids and their data.",
+  selection_set: "Set the stage selection by id list, or pass all:true to select everything. Returns ok.",
+  view_set: "Update the viewport: zoom, pan, current frame, or active layer. Returns ok.",
+  tool_select:
+    "Select the active drawing/editing tool by id (e.g. selection, pen, rectangle, oval, text). Returns ok.",
+  // timeline
+  timeline_add_layer: "Add a new layer to the active timeline. Returns the new layerId and rev.",
+  timeline_remove_layer: "Remove a layer by id. Returns ok and rev.",
+  timeline_update_layer: "Rename, lock, hide, or change the type of a layer. Returns ok and rev.",
+  timeline_insert_frame:
+    "Insert a regular (in-between) frame at frameIndex on a layer, extending the governing keyframe. Returns ok and rev.",
+  timeline_insert_keyframe:
+    "Insert a keyframe at frameIndex, copying content from the governing keyframe. Returns ok and rev.",
+  timeline_insert_blank_keyframe: "Insert an empty keyframe at frameIndex on a layer. Returns ok and rev.",
+  timeline_remove_frame: "Remove the frame at frameIndex on a layer. Returns ok and rev.",
+  timeline_set_frame_label:
+    "Set the label (and optional labelType: name/comment/anchor) on a keyframe. Returns ok and rev.",
+  timeline_set_tween:
+    "Set or clear a motion/shape tween on a keyframe span (pass kind:null to clear). Returns ok and rev.",
+  timeline_set_sound:
+    "Attach a library sound to a frame (with syncMode and repeatCount), or pass libraryItemId:null to clear it. Returns ok and rev.",
+  timeline_goto_frame: "Move the playhead to frameIndex (0-based). Returns ok and rev.",
+  timeline_copy_frames: "Copy a span of frames on a layer to an internal clipboard. Returns ok.",
+  timeline_paste_frames: "Paste previously copied frames at a target layer/frame. Returns ok and rev.",
+  playback_play: "Start timeline playback in the editor. Returns ok.",
+  playback_stop: "Stop timeline playback in the editor. Returns ok.",
+  // code
+  script_get: "Read the AS2 frame/object script at a given location. Returns the source text.",
+  script_set: "Set the AS2 frame/object script at a given location. Returns ok and rev.",
+  script_check: "Compile-check an AS2 script, returning diagnostics (errors/warnings) without applying it.",
+  script_list: "List all scripts in the document with their locations.",
+  // library
+  library_list: "Read the library contents (symbols, bitmaps, sounds, etc.) with ids, names, and types.",
+  library_create_symbol:
+    "Create a new empty library symbol (movieclip/graphic/button). Returns the new symbol id and rev.",
+  library_convert_to_symbol:
+    "Convert selected stage objects into a new library symbol and replace them with an instance. Returns the new symbol id and rev.",
+  library_rename: "Rename a library item by id. Returns ok and rev.",
+  library_remove: "Remove a library item by id. Returns ok and rev.",
+  library_import_bitmap:
+    "Import a base64-encoded image into the library as a BitmapItem. Returns the new item id and rev.",
+  library_import_sound:
+    "Import base64-encoded audio into the library as a SoundItem. Returns the new item id and rev.",
+  library_set_linkage:
+    "Set AS2 linkage on a symbol (linkageId + export flags) for attachMovie / new ClassName. Returns ok and rev.",
+  // filters
+  filter_add:
+    "Add a filter (dropShadow, blur, glow, bevel, gradientGlow, gradientBevel, colorMatrix) to the selected/given objects. Returns ok and rev.",
+  filter_remove: "Remove a filter from the selected/given objects by index. Returns ok and rev.",
+  filter_list: "Read the filters applied to a given object.",
+  // output & escape hatches
+  jsfl_run:
+    "Run a JSFL script for operations not covered by a structured tool. Prefer structured tools where available. Returns the script result/logs.",
+  stage_screenshot:
+    "Render the current stage (optionally at a given frame) to a base64 PNG so you can visually inspect the result.",
+  publish_swf: "Compile the document to a SWF (for testing in Ruffle). Returns the SWF bytes/metadata.",
+  file_save_fla: "Save the current document to a .fla file. Returns ok.",
+  file_load_fla: "Load a .fla file as the current document. Returns ok and rev.",
+  // scene management
+  scene_add: "Add a new scene. Returns the new scene index and rev.",
+  scene_remove: "Remove a scene by 0-based index (cannot remove the only scene). Returns ok and rev.",
+  scene_rename: "Rename a scene by 0-based index. Returns ok and rev.",
+  scene_select: "Switch the active scene by 0-based index. Returns ok and rev.",
+  scene_duplicate: "Duplicate the active scene. Returns the new scene index and rev.",
+  scene_reorder: "Move a scene from one index to another. Returns ok and rev.",
+  // stage utilities
+  stage_move_selection: "Nudge/move the selected objects by a delta, or to an absolute position. Returns ok and rev.",
+  stage_find_instances: "Find stage instances of a given library symbol id. Returns matching object ids.",
+  stage_get_bounds: "Read the bounding box of given objects (or the selection / whole stage).",
+  stage_duplicate: "Duplicate the selected/given display objects in place. Returns the new object ids and rev.",
+  // library utilities
+  library_use_count: "Count how many times a library symbol is used across the document.",
+} satisfies Record<AgentCommand, string>;
 
 export const BridgeRequestSchema = z.object({
   /** Unique request ID for correlating replies. */
