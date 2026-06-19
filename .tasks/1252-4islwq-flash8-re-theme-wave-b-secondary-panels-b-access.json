@@ -1,0 +1,10 @@
+{
+  "id": "1252-4islwq-flash8-re-theme-wave-b-secondary-panels-b-access",
+  "title": "Flash8 re-theme Wave B: secondary panels B (Accessibility, Bandwidth, Components, ComponentInspector, History + InfoPanel if present)",
+  "description": "Convert these panels to the Flash 8 light theme via packages/authoring-ui/src/theme/flash8Theme.ts (chrome.*/halo.*), mirroring Shell.tsx + converted panels (Timeline/Library/Color). Files: packages/authoring-ui/src/AccessibilityPanel.tsx, BandwidthProfilerPanel.tsx, ComponentsPanel.tsx, ComponentInspectorPanel.tsx, HistoryPanel.tsx, and InfoPanel.tsx IF it exists. Replace all dark hex with tokens \u2192 light #ECECEC chrome, white content, near-black Tahoma text, halo selection #7FCEFF / hover #B2E1FF, #B7BABC inset inputs, #999999 separators, halo buttons. Re-pick dark-bg accents to read on light (esp. BandwidthProfiler graph colors). Keep functionality intact. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: those files only (+ read-only theme import).",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T06:05:18Z",
+  "updated_at": "2026-06-19T06:05:18Z"
+}
