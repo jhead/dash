@@ -20,6 +20,36 @@ body {
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+
+  /*
+   * Mobile/touch (task 1276): tapping or long-pressing the non-editable authoring
+   * chrome must act as a UI tap, never trigger native text selection or the iOS
+   * callout menu (which draws a selection rectangle that obscures controls).
+   * Suppress selection app-wide at the single highest container — <body> covers
+   * the Shell root (#root > div) AND any portal/overlay rendered under <body> —
+   * then opt selection back IN below for genuinely editable elements only.
+   */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * Re-enable selection/editing where it is legitimately wanted: form inputs,
+ * textareas (which back BOTH the Actions/code editor in ActionsPanel and the
+ * inline text-edit overlay in StageArea), <select>, and any content-editable
+ * region. `user-select: text` overrides the body-level `none` for these and
+ * their descendants, keeping caret placement, selection, and copy/paste working.
+ */
+input,
+textarea,
+select,
+[contenteditable="true"],
+[contenteditable=""] {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 .app-shell {
