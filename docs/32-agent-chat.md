@@ -77,8 +77,34 @@ backend; the only network calls go **directly from your browser to
 - **`AgentChatPanel.tsx`** — the panel: collapsible Settings, the transcript
   (user bubbles + assistant turns with streamed text, *thinking*, tool-call
   chips, step markers), and the composer with the **Send / Stop** button.
+- **`AgentMarkdown.tsx`** — renders an assistant message body as Markdown (see
+  *Markdown rendering* below).
 - **`AgentSettings.tsx`** — the API-key input + model selector (or manual
   model-id input when the catalog can't load).
+
+### Markdown rendering
+
+Assistant message bodies render as **Markdown** (`AgentMarkdown.tsx`, via
+[`react-markdown`](https://github.com/remarkjs/react-markdown) +
+[`remark-gfm`](https://github.com/remarkjs/remark-gfm)). User-typed messages and
+tool-call chips stay plain text.
+
+- **What renders:** headings, **bold**/*italic*, ordered/unordered lists, inline
+  `code`, fenced code blocks (monospace on a light inset background, with
+  horizontal scroll for long lines), blockquotes, links (open in a new tab with
+  `rel="noopener noreferrer"`), and GFM tables, ~~strikethrough~~, and task
+  lists.
+- **Theme:** every element is styled to the Flash 8 LIGHT theme via the
+  `flash8Theme` tokens — near-black text, code on a `chrome.insetFieldStrip`
+  inset. The transcript stays `user-select:text` so message text is selectable
+  (task 1285).
+- **Safe by default (no XSS):** the default `react-markdown` pipeline is used
+  with **no `rehype-raw`** / raw-HTML passthrough, so any literal HTML in the
+  assistant text (e.g. `<script>`/`<b>`) is escaped to plain text and can never
+  become live DOM.
+- **Streaming-friendly:** `react-markdown` re-parses on every streaming delta,
+  and partial/unclosed markdown (e.g. an open code fence mid-stream) parses
+  gracefully without throwing.
 
 ### Why AI SDK v6 + OpenRouter
 

@@ -20,6 +20,7 @@ import {
   type AgentEntry,
   type AgentToolEntry,
 } from "./agentLoop.js";
+import { AgentMarkdown } from "./AgentMarkdown.js";
 
 // ---------------------------------------------------------------------------
 // AgentChatPanel — the client-side Agent Chat docked in the RIGHT pane (P3).
@@ -456,9 +457,13 @@ function entryKey(e: AgentEntry, i: number): string {
 function EntryView({ entry }: { entry: AgentEntry }): React.JSX.Element | null {
   switch (entry.kind) {
     case "text":
+      // Assistant text bodies render as themed, XSS-safe Markdown (task 1290):
+      // react-markdown re-parses on every streaming delta and degrades
+      // gracefully on partial/unclosed markdown. User messages + tool chips stay
+      // plain. The container keeps the transcript's user-select:text (task 1285).
       return (
         <div style={styles.assistantText} data-testid="agent-text">
-          {entry.text}
+          <AgentMarkdown>{entry.text}</AgentMarkdown>
         </div>
       );
     case "reasoning":
@@ -653,9 +658,12 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: "100%",
   },
   assistantText: {
+    // Markdown body wrapper (task 1290). AgentMarkdown owns the per-element
+    // typography/color; this div just scopes the entry. No `pre-wrap` here —
+    // markdown manages its own block whitespace (a `pre-wrap` here would add
+    // stray blank lines between rendered block elements).
     fontSize: 11,
     color: chrome.textDefault,
-    whiteSpace: "pre-wrap",
     wordBreak: "break-word",
     lineHeight: 1.45,
   },
