@@ -33,6 +33,12 @@ import {
 } from "@flash/core";
 import { EaseCurveDialog } from "./EaseCurveDialog";
 import { chrome, content, halo, chromeFont } from "./theme/flash8Theme.js";
+import {
+  EyeIcon,
+  LockClosedIcon,
+  FolderIcon,
+  TrashIcon,
+} from "./uiGlyphIcons.js";
 
 // ---------------------------------------------------------------------------
 // Flash 8 light-theme conversion
@@ -1246,9 +1252,9 @@ export function Timeline({
                 for (const l of timeline.layers) t = setLayerVisible(t, l.id, !anyVisible);
                 onTimelineChange(t);
               }}
-              style={{ ...iconButtonStyle, color: chrome.textDefault }}
+              style={{ ...iconButtonStyle, color: chrome.textDefault, display: "flex", alignItems: "center", justifyContent: "center" }}
             >
-              👁
+              <EyeIcon size={12} />
             </button>
             {/* Lock all */}
             <button
@@ -1259,9 +1265,9 @@ export function Timeline({
                 for (const l of timeline.layers) t = setLayerLocked(t, l.id, anyUnlocked);
                 onTimelineChange(t);
               }}
-              style={{ ...iconButtonStyle, color: chrome.textDefault }}
+              style={{ ...iconButtonStyle, color: chrome.textDefault, display: "flex", alignItems: "center", justifyContent: "center" }}
             >
-              🔒
+              <LockClosedIcon size={12} />
             </button>
             {/* Show all as outlines */}
             <button
@@ -1371,7 +1377,7 @@ export function Timeline({
                         : chrome.textDisabled,
                   }}
                 >
-                  {layer.type === "folder" ? "📁"
+                  {layer.type === "folder" ? <FolderIcon size={12} />
                     : layer.type === "guide" ? "⟂"
                     : layer.type === "guided" ? "⤳"
                     : layer.type === "mask" ? "◧"
@@ -1452,9 +1458,9 @@ export function Timeline({
                       setLayerLocked(timeline, layer.id, !layer.locked)
                     );
                   }}
-                  style={{ ...iconButtonStyle, color: layer.locked ? chrome.textDefault : chrome.textDisabled }}
+                  style={{ ...iconButtonStyle, color: layer.locked ? chrome.textDefault : chrome.textDisabled, display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
-                  {layer.locked ? "🔒" : "•"}
+                  {layer.locked ? <LockClosedIcon size={11} /> : "•"}
                 </button>
                 {/* Outline color chip (rightmost) — toggles outline view */}
                 <button
@@ -1813,8 +1819,8 @@ export function Timeline({
               >
                 ⤳
               </button>
-              <button title="Insert Layer Folder" onClick={handleAddLayerFolder} style={layerFooterBtnStyle}>
-                📁
+              <button title="Insert Layer Folder" onClick={handleAddLayerFolder} style={{ ...layerFooterBtnStyle, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                <FolderIcon size={13} />
               </button>
               <div style={{ flex: 1 }} />
               <button
@@ -1825,9 +1831,12 @@ export function Timeline({
                   ...layerFooterBtnStyle,
                   color: timeline.layers.length <= 1 ? chrome.textDisabled : chrome.textDefault,
                   cursor: timeline.layers.length <= 1 ? "default" : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                🗑
+                <TrashIcon size={13} />
               </button>
             </>
           )}

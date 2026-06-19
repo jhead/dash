@@ -43,6 +43,7 @@ import { ColorPicker } from "./ColorPicker";
 import { EaseCurveDialog } from "./EaseCurveDialog";
 import { CharacterEmbeddingDialog } from "./CharacterEmbeddingDialog";
 import { chrome, halo, chromeFont, inputStyle } from "./theme/flash8Theme.js";
+import { LockClosedIcon, LockOpenIcon } from "./uiGlyphIcons.js";
 
 // ---------------------------------------------------------------------------
 // Flash 8 "Halo" light-theme tokens for inspector field pairs.
@@ -900,10 +901,13 @@ function InstanceView({
                 ...(aspectLocked ? TOGGLE_ON : TOGGLE_OFF),
                 padding: "1px 4px",
                 minWidth: 18,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
               onClick={() => setAspectLocked((v) => !v)}
             >
-              {aspectLocked ? "🔒" : "🔓"}
+              {aspectLocked ? <LockClosedIcon size={12} /> : <LockOpenIcon size={12} />}
             </button>
             <span style={S.label}>H:</span>
             <NumInput
