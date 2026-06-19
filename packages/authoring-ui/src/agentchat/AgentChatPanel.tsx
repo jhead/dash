@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import type { ModelMessage } from "ai";
+import { useShallow } from "zustand/react/shallow";
 import { chrome, chromeFont, halo, inputStyle, buttonStyle } from "../theme/flash8Theme.js";
 import { usePreferences } from "../preferences.js";
 import { AgentSettings } from "./AgentSettings.js";
@@ -131,7 +132,11 @@ export function AgentChatPanel(
   // survives leaving/returning to the Agent tab (unmount/remount) AND a full
   // page refresh. The active thread's transcript is what we render; its
   // `history` (ModelMessage[]) is the multi-turn context the loop receives.
-  const threads = useThreadStore(selectThreadsByRecency);
+  // selectThreadsByRecency returns a freshly-sorted array on every call, so it
+  // MUST be wrapped in useShallow under zustand v5 — otherwise useSyncExternalStore
+  // sees a new snapshot reference each render and React loops ("getSnapshot should
+  // be cached" → "Maximum update depth exceeded"), which blanks the whole panel.
+  const threads = useThreadStore(useShallow(selectThreadsByRecency));
   const activeThread = useThreadStore(selectActiveThread);
   const activeThreadId = useThreadStore((s) => s.activeThreadId);
   const newThread = useThreadStore((s) => s.newThread);
@@ -139,9 +144,7 @@ export function AgentChatPanel(
   const deleteThread = useThreadStore((s) => s.deleteThread);
   const clearActiveThread = useThreadStore((s) => s.clearActiveThread);
   const appendUserAndAssistant = useThreadStore((s) => s.appendUserAndAssistant);
-  const patchActiveAssistantRun = useThreadStore(
-    (s) => s.patchActiveAssistantRun
-  );
+  const patchAssistantRun = useThreadStore((s) => s.patchAssistantRun);
   const appendActiveHistory = useThreadStore((s) => s.appendActiveHistory);
 
   const turns: Turn[] = activeThread?.transcript ?? [];
@@ -157,6 +160,11 @@ export function AgentChatPanel(
   // the right entry).
   const activeAssistantIdRef = useRef<string | null>(null);
 
+  // The thread the in-flight run was STARTED on (task 1293). Streaming patches
+  // are scoped to THIS thread, not whatever is active when a delta arrives, so a
+  // mid-run thread switch can't land patches in the wrong thread. Null when idle.
+  const runThreadIdRef = useRef<string | null>(null);
+
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   // Auto-scroll to the bottom as content streams in.
   useEffect(() => {
@@ -164,14 +172,28 @@ export function AgentChatPanel(
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns]);
 
+  // Safety net (task 1293): if the active thread changes while a run is in
+  // flight, abort the run. Streaming patches are already scoped to the origin
+  // thread (runThreadIdRef), so they can never mutate the wrong thread; aborting
+  // on switch is the belt-and-braces guarantee that an in-flight stream only ever
+  // touches its origin thread. (The if(running) UI guards already block the
+  // common switch paths; this also covers programmatic / race switches.)
+  useEffect(() => {
+    if (
+      running &&
+      runThreadIdRef.current !== null &&
+      activeThreadId !== runThreadIdRef.current
+    ) {
+      controllerRef.current?.abort();
+    }
+  }, [running, activeThreadId]);
+
   const tools = useMemo(() => buildTools(), [buildTools]);
 
   // Send is enabled once there's text + a key (the model falls back to a
   // default). The missing-key case is handled with a friendly banner, not a
   // silently-dead button.
   const canSend = !running && input.trim().length > 0 && hasKey;
-
-  const patchAssistantRun = patchActiveAssistantRun;
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
@@ -215,6 +237,12 @@ export function AgentChatPanel(
     const messages: ModelMessage[] = [...priorHistory, userMessage];
 
     appendUserAndAssistant(userTurn, assistantTurn, userMessage);
+    // Capture the ORIGIN thread the run is started on (appendUserAndAssistant
+    // creates one if the store was empty). All streaming patches target THIS
+    // thread explicitly, not the live activeThreadId, so a mid-run thread switch
+    // can never land patches in the wrong thread (task 1293).
+    const originThreadId = useThreadStore.getState().activeThreadId;
+    runThreadIdRef.current = originThreadId;
     setInput("");
     setRunning(true);
 
@@ -231,7 +259,9 @@ export function AgentChatPanel(
         messages,
         maxSteps: MAX_STEPS,
         abortSignal: controller.signal,
-        onState: (run) => patchAssistantRun(assistantId, run),
+        onState: (run) =>
+          originThreadId &&
+          patchAssistantRun(originThreadId, assistantId, run),
       });
       // If the turn ended in error, rewrite the raw provider message into a
       // friendly, actionable one (auth / network / model / rate-limit).
@@ -241,13 +271,25 @@ export function AgentChatPanel(
           hasModel: true,
         });
         if (friendly.openSettings) setSettingsOpen(true);
-        patchAssistantRun(assistantId, { ...state, error: friendly.message });
+        if (originThreadId) {
+          patchAssistantRun(originThreadId, assistantId, {
+            ...state,
+            error: friendly.message,
+          });
+        }
       }
       // Persist the model's assistant + tool messages for the next turn.
       // Defensive: a custom/overridden runTurn (or an abort/error path) may
       // return undefined here instead of an empty array, so guard against it
-      // rather than throwing on `.length`.
-      if (responseMessages && responseMessages.length > 0) {
+      // rather than throwing on `.length`. History is appended to the ORIGIN
+      // thread only when it is still active — if the user switched away (which
+      // also aborts the run, task 1293), the active thread is a different
+      // conversation and must not receive this run's history.
+      if (
+        responseMessages &&
+        responseMessages.length > 0 &&
+        useThreadStore.getState().activeThreadId === originThreadId
+      ) {
         appendActiveHistory(responseMessages);
       }
     } catch (err) {
@@ -255,15 +297,18 @@ export function AgentChatPanel(
       // unexpected throw (e.g. createDashOpenRouter / getModel).
       const friendly = classifyAgentError(err, { hasKey: true, hasModel: true });
       if (friendly.openSettings) setSettingsOpen(true);
-      patchAssistantRun(assistantId, {
-        entries: [],
-        status: "error",
-        error: friendly.message,
-      });
+      if (originThreadId) {
+        patchAssistantRun(originThreadId, assistantId, {
+          entries: [],
+          status: "error",
+          error: friendly.message,
+        });
+      }
     } finally {
       setRunning(false);
       controllerRef.current = null;
       activeAssistantIdRef.current = null;
+      runThreadIdRef.current = null;
     }
   }, [
     input,

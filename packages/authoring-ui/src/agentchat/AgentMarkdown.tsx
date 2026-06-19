@@ -121,13 +121,7 @@ export interface AgentMarkdownProps {
   children: string;
 }
 
-/**
- * Render an assistant message body as themed, XSS-safe Markdown.
- *
- * @remarks Used by {@link AgentChatPanel} for assistant text entries. User
- * messages and tool-call chips stay plain text.
- */
-export function AgentMarkdown({
+function AgentMarkdownImpl({
   children,
 }: AgentMarkdownProps): React.JSX.Element {
   return (
@@ -138,6 +132,23 @@ export function AgentMarkdown({
     </div>
   );
 }
+
+/**
+ * Render an assistant message body as themed, XSS-safe Markdown.
+ *
+ * @remarks Used by {@link AgentChatPanel} for assistant text entries. User
+ * messages and tool-call chips stay plain text.
+ *
+ * PERF (task 1293): wrapped in `React.memo` keyed on the `children` markdown
+ * string. A streaming run re-renders the whole transcript on every delta, but
+ * react-markdown re-PARSES its source on every render — O(n²) over a long, still-
+ * growing response when every bubble re-parses. The memo means a bubble only re-
+ * parses when ITS OWN text actually changes: the one growing bubble still re-
+ * parses each delta (unavoidable — its text changed), but all the already-settled
+ * bubbles above it are skipped. The default shallow prop compare is exactly right
+ * here — `children` is a plain string, so reference/value equality coincide.
+ */
+export const AgentMarkdown = React.memo(AgentMarkdownImpl);
 
 // --- Styles -----------------------------------------------------------------
 

@@ -23,9 +23,18 @@ import type { AgentRunState } from "./agentLoop.js";
 //   - per-thread transcript/history trimming so one runaway conversation can't
 //     blow the ~5MB localStorage quota.
 //
-// The IN-FLIGHT run writes into the active thread: AgentChatPanel patches the
-// streaming AgentRunState onto the active thread's transcript via
-// `patchActiveAssistantRun`, so streaming/thinking/tool chips all persist.
+// The IN-FLIGHT run writes into its ORIGIN thread: AgentChatPanel captures the
+// threadId at send time and patches the streaming AgentRunState onto THAT
+// thread's transcript via `patchAssistantRun(threadId, ...)`, so streaming/
+// thinking/tool chips land in the thread the run was started on even if the user
+// switches the active thread mid-flight (task 1293).
+//
+// PERSISTENCE (task 1293): streaming deltas are kept in memory only — they update
+// the live UI but do NOT hit localStorage (per-delta writes thrashed storage and
+// risked quota). The store persists only on TERMINAL run state (done/error/
+// stopped) and on history append + structural mutations (new/select/clear/delete/
+// append). On hydrate, any thread left in a non-terminal `running` run (a mid-run
+// refresh) is coerced to a terminal `stopped` state so it never sticks "running".
 // ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "flash8.agentThreads";
@@ -100,10 +109,25 @@ export interface ThreadState {
     assistantTurn: AssistantTurn,
     userMessage: ModelMessage
   ) => string;
-  /** Patch the streaming AgentRunState onto an assistant turn in the active thread. */
-  patchActiveAssistantRun: (assistantId: string, run: AgentRunState) => void;
+  /**
+   * Patch the streaming AgentRunState onto an assistant turn in the THREAD it was
+   * started on (NOT necessarily the active thread). Live (non-terminal `running`)
+   * patches update in-memory state only — they are NOT persisted to localStorage,
+   * so streaming deltas don't thrash storage. A TERMINAL patch (done/error/
+   * stopped) IS persisted so the finished run survives a refresh (task 1293).
+   */
+  patchAssistantRun: (
+    threadId: string,
+    assistantId: string,
+    run: AgentRunState
+  ) => void;
   /** Append model response messages (assistant + tool) to the active thread's history. */
   appendActiveHistory: (messages: ModelMessage[]) => void;
+}
+
+/** A run status that will never change again (the stream has ended). */
+function isTerminalRunStatus(status: AgentRunState["status"]): boolean {
+  return status === "done" || status === "error" || status === "stopped";
 }
 
 // --- Title derivation -------------------------------------------------------
@@ -177,6 +201,25 @@ export function boundForStorage(state: PersistShape): PersistShape {
   };
 }
 
+/**
+ * Coerce any assistant turn left in a non-terminal `running` run to a terminal
+ * `stopped` state. Persisted state only ever contains a `running` run if the page
+ * was refreshed mid-stream (the AbortController died with the page, so the run can
+ * never finish); without this it would render "Working…" forever (task 1293).
+ * Returns a NEW thread only when something changed (referentially stable otherwise).
+ */
+function coerceRunningToTerminal(thread: ChatThread): ChatThread {
+  let changed = false;
+  const transcript = thread.transcript.map((turn) => {
+    if (turn.role === "assistant" && turn.run.status === "running") {
+      changed = true;
+      return { ...turn, run: { ...turn.run, status: "stopped" as const } };
+    }
+    return turn;
+  });
+  return changed ? { ...thread, transcript } : thread;
+}
+
 /** Validate + coerce a parsed thread into a well-formed ChatThread (or null). */
 function normalizeThread(raw: unknown): ChatThread | null {
   if (!raw || typeof raw !== "object") return null;
@@ -187,7 +230,7 @@ function normalizeThread(raw: unknown): ChatThread | null {
     : [];
   const history = Array.isArray(o.history) ? (o.history as ModelMessage[]) : [];
   const now = Date.now();
-  return {
+  const thread: ChatThread = {
     id: o.id,
     title:
       typeof o.title === "string" && o.title.length > 0
@@ -198,6 +241,9 @@ function normalizeThread(raw: unknown): ChatThread | null {
     createdAt: typeof o.createdAt === "number" ? o.createdAt : now,
     updatedAt: typeof o.updatedAt === "number" ? o.updatedAt : now,
   };
+  // A persisted `running` run means a mid-stream refresh; the run can never
+  // resume, so coerce it to a terminal `stopped` (task 1293).
+  return coerceRunningToTerminal(thread);
 }
 
 /** Read the persisted thread state from localStorage, defaulting to empty. */
@@ -328,12 +374,11 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     return assistantTurn.id;
   },
 
-  patchActiveAssistantRun: (assistantId, run) => {
+  patchAssistantRun: (threadId, assistantId, run) => {
     set((s) => {
-      const id = s.activeThreadId;
-      if (!id) return s;
+      if (!s.threads.some((t) => t.id === threadId)) return s;
       const threads = s.threads.map((t) => {
-        if (t.id !== id) return t;
+        if (t.id !== threadId) return t;
         return {
           ...t,
           transcript: t.transcript.map((x) =>
@@ -342,7 +387,12 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
           updatedAt: Date.now(),
         };
       });
-      return persist({ ...s, threads });
+      const next = { ...s, threads };
+      // PERF (task 1293): live streaming deltas (`running`) update the in-memory
+      // UI only — they do NOT persist, so streaming doesn't thrash localStorage.
+      // Only a TERMINAL run (done/error/stopped) is persisted, so the finished
+      // transcript survives a refresh.
+      return isTerminalRunStatus(run.status) ? persist(next) : next;
     });
   },
 

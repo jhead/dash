@@ -153,4 +153,37 @@ describe("<AgentMarkdown>", () => {
     }).not.toThrow();
     expect(container.textContent ?? "").toContain("half a bold");
   });
+
+  // --- Memoization (task 1293 perf) ---------------------------------------
+
+  it("is wrapped in React.memo", () => {
+    // React.memo produces an exotic component object tagged with the memo symbol.
+    const memoSymbol = Symbol.for("react.memo");
+    expect((AgentMarkdown as unknown as { $$typeof?: symbol }).$$typeof).toBe(
+      memoSymbol
+    );
+  });
+
+  it("does NOT re-render the markdown subtree when children are unchanged", () => {
+    // Render once, capture the rendered <p> DOM node, then re-render with the
+    // SAME children string. React.memo bails out of the re-render, so the inner
+    // DOM (and the parsed output) is reused — the node identity is preserved.
+    render("hello **world**");
+    const firstP = container.querySelector("p");
+    expect(firstP).not.toBeNull();
+
+    render("hello **world**");
+    const secondP = container.querySelector("p");
+    expect(secondP).toBe(firstP); // same node => memo skipped the re-parse
+    expect(secondP?.textContent).toBe("hello world");
+  });
+
+  it("DOES re-render when the children string changes (memo doesn't break updates)", () => {
+    render("first message");
+    expect(container.textContent ?? "").toContain("first message");
+    render("second message");
+    const text = container.textContent ?? "";
+    expect(text).toContain("second message");
+    expect(text).not.toContain("first message");
+  });
 });

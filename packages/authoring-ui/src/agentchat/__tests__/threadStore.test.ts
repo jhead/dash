@@ -9,6 +9,8 @@ const STORAGE_KEY = "flash8.agentThreads";
 class MemoryStorage {
   store = new Map<string, string>();
   throwOnSet = false;
+  /** Count of successful setItem calls (task 1293: bound per-delta writes). */
+  setCount = 0;
   getItem(k: string) {
     return this.store.has(k) ? this.store.get(k)! : null;
   }
@@ -18,6 +20,7 @@ class MemoryStorage {
       e.name = "QuotaExceededError";
       throw e;
     }
+    this.setCount += 1;
     this.store.set(k, String(v));
   }
   removeItem(k: string) {
@@ -57,8 +60,11 @@ afterAll(() => {
 function resetStore(): void {
   mem.throwOnSet = false;
   mem.clear();
+  mem.setCount = 0;
   useThreadStore.setState({ threads: [], activeThreadId: null });
 }
+
+const runningRun: AgentRunState = { entries: [], status: "running" };
 
 const doneRun: AgentRunState = {
   entries: [{ kind: "text", id: "t1", text: "hello" }],
@@ -125,15 +131,15 @@ describe("new / select / clear / delete", () => {
     expect(s.threads).toHaveLength(1);
   });
 
-  it("patchActiveAssistantRun updates the streaming run on the active thread", () => {
+  it("patchAssistantRun updates the streaming run on its origin thread", () => {
     const st = useThreadStore.getState();
-    st.newThread();
+    const id = st.newThread();
     st.appendUserAndAssistant(
       { role: "user", id: "u1", text: "hi" },
       { role: "assistant", id: "a1", run: { entries: [], status: "running" } },
       { role: "user", content: "hi" }
     );
-    st.patchActiveAssistantRun("a1", doneRun);
+    st.patchAssistantRun(id, "a1", doneRun);
     const t = selectActiveThread(useThreadStore.getState())!;
     const assistant = t.transcript.find((x) => x.role === "assistant")!;
     expect(assistant.role).toBe("assistant");
@@ -324,6 +330,186 @@ describe("storage bounding (quota hygiene)", () => {
     // The most-recent turn is preserved (oldest dropped).
     const last = bounded.threads[0].transcript.at(-1)!;
     expect(last.id).toBe(`u${MAX_TURNS_PER_THREAD + 49}`);
+  });
+});
+
+describe("thread-scoped streaming patches (task 1293 correctness)", () => {
+  it("keeps patching the ORIGIN thread after the active thread switches", () => {
+    const st = useThreadStore.getState();
+    const a = st.newThread();
+    st.appendUserAndAssistant(
+      { role: "user", id: "u1", text: "on A" },
+      { role: "assistant", id: "a1", run: runningRun },
+      { role: "user", content: "on A" }
+    );
+    // A run is in flight on thread A; the user opens/switches to a new thread B.
+    const b = st.newThread();
+    expect(useThreadStore.getState().activeThreadId).toBe(b);
+
+    // A streaming delta arrives — it must land on A (origin), NOT B (active).
+    st.patchAssistantRun(a, "a1", {
+      entries: [{ kind: "text", id: "t1", text: "partial" }],
+      status: "running",
+    });
+    // And the terminal patch too.
+    st.patchAssistantRun(a, "a1", doneRun);
+
+    const threadA = useThreadStore.getState().threads.find((t) => t.id === a)!;
+    const assistantA = threadA.transcript.find((x) => x.role === "assistant")!;
+    expect(assistantA.role).toBe("assistant");
+    if (assistantA.role === "assistant") {
+      expect(assistantA.run.status).toBe("done");
+    }
+    // Thread B is untouched (still empty).
+    const threadB = useThreadStore.getState().threads.find((t) => t.id === b)!;
+    expect(threadB.transcript).toEqual([]);
+  });
+
+  it("is a no-op for an unknown threadId", () => {
+    const st = useThreadStore.getState();
+    const a = st.newThread();
+    st.appendUserAndAssistant(
+      { role: "user", id: "u1", text: "hi" },
+      { role: "assistant", id: "a1", run: runningRun },
+      { role: "user", content: "hi" }
+    );
+    expect(() => st.patchAssistantRun("ghost-thread", "a1", doneRun)).not.toThrow();
+    const threadA = useThreadStore.getState().threads.find((t) => t.id === a)!;
+    const assistantA = threadA.transcript.find((x) => x.role === "assistant")!;
+    if (assistantA.role === "assistant") {
+      expect(assistantA.run.status).toBe("running");
+    }
+  });
+});
+
+describe("persist-on-terminal only (task 1293 perf/durability)", () => {
+  it("does NOT write to localStorage per streaming delta, but DOES on terminal", () => {
+    const st = useThreadStore.getState();
+    const a = st.newThread();
+    st.appendUserAndAssistant(
+      { role: "user", id: "u1", text: "go" },
+      { role: "assistant", id: "a1", run: runningRun },
+      { role: "user", content: "go" }
+    );
+    // Baseline: structural mutations above DID persist.
+    const baseline = mem.setCount;
+    expect(baseline).toBeGreaterThan(0);
+
+    // Many streaming deltas (all non-terminal `running`) must add ZERO writes.
+    for (let i = 0; i < 50; i++) {
+      st.patchAssistantRun(a, "a1", {
+        entries: [{ kind: "text", id: "t1", text: "x".repeat(i) }],
+        status: "running",
+      });
+    }
+    expect(mem.setCount).toBe(baseline);
+
+    // In-memory UI state still reflects the latest delta.
+    const live = useThreadStore.getState().threads.find((t) => t.id === a)!;
+    const liveAssistant = live.transcript.find((x) => x.role === "assistant")!;
+    if (liveAssistant.role === "assistant") {
+      expect(liveAssistant.run.entries).toHaveLength(1);
+    }
+
+    // The terminal patch persists exactly once.
+    st.patchAssistantRun(a, "a1", doneRun);
+    expect(mem.setCount).toBe(baseline + 1);
+
+    // And the persisted snapshot carries the terminal (done) run.
+    const reloaded = loadThreads();
+    const reloadedAssistant = reloaded.threads
+      .find((t) => t.id === a)!
+      .transcript.find((x) => x.role === "assistant")!;
+    if (reloadedAssistant.role === "assistant") {
+      expect(reloadedAssistant.run.status).toBe("done");
+    }
+  });
+
+  it("persists each terminal status (done/error/stopped)", () => {
+    for (const status of ["done", "error", "stopped"] as const) {
+      resetStore();
+      const st = useThreadStore.getState();
+      const a = st.newThread();
+      st.appendUserAndAssistant(
+        { role: "user", id: "u1", text: "go" },
+        { role: "assistant", id: "a1", run: runningRun },
+        { role: "user", content: "go" }
+      );
+      const baseline = mem.setCount;
+      st.patchAssistantRun(a, "a1", { entries: [], status });
+      expect(mem.setCount).toBe(baseline + 1);
+    }
+  });
+});
+
+describe("hydrate coerces a mid-run 'running' to terminal (task 1293)", () => {
+  it("turns a persisted 'running' assistant run into 'stopped' on load", () => {
+    // Simulate a mid-stream page refresh: persisted state has a `running` run.
+    mem.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        threads: [
+          {
+            id: "mid",
+            title: "Interrupted",
+            transcript: [
+              { role: "user", id: "u1", text: "go" },
+              {
+                role: "assistant",
+                id: "a1",
+                run: {
+                  entries: [{ kind: "text", id: "t1", text: "half" }],
+                  status: "running",
+                },
+              },
+            ],
+            history: [{ role: "user", content: "go" }],
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+        activeThreadId: "mid",
+      })
+    );
+    const loaded = loadThreads();
+    const assistant = loaded.threads[0].transcript.find(
+      (x) => x.role === "assistant"
+    )!;
+    expect(assistant.role).toBe("assistant");
+    if (assistant.role === "assistant") {
+      expect(assistant.run.status).toBe("stopped");
+      // The partial text is preserved — only the status is coerced.
+      expect(assistant.run.entries).toHaveLength(1);
+    }
+  });
+
+  it("leaves already-terminal runs untouched on load", () => {
+    mem.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        threads: [
+          {
+            id: "done",
+            title: "Finished",
+            transcript: [
+              { role: "user", id: "u1", text: "go" },
+              { role: "assistant", id: "a1", run: doneRun },
+            ],
+            history: [],
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+        activeThreadId: "done",
+      })
+    );
+    const loaded = loadThreads();
+    const assistant = loaded.threads[0].transcript.find(
+      (x) => x.role === "assistant"
+    )!;
+    if (assistant.role === "assistant") {
+      expect(assistant.run.status).toBe("done");
+    }
   });
 });
 
