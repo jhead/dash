@@ -70,6 +70,38 @@ select,
   -webkit-touch-callout: default;
 }
 
+/*
+ * The Output panel's message pane (task 1286, follow-up to 1285/1276) renders
+ * trace()/error/compile output as plain non-input markup (div/span/pre), so the
+ * body-level `user-select:none` from task 1276 over-applied and made that
+ * copyable readout impossible to select. Opt the message region — and every
+ * descendant output line — back into selectable text, matching the transcript
+ * allowlist above. Scoped to the messages container
+ * (data-testid=output-panel-messages) so the surrounding panel chrome (toolbar,
+ * Clear button) stays non-selectable and the 1276 mobile fix holds elsewhere.
+ */
+[data-testid="output-panel-messages"],
+[data-testid="output-panel-messages"] * {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/*
+ * The Actions panel's AS2 syntax/compile-error bar (task 1286 audit) shows the
+ * compiler error message — copyable diagnostic text. It already opts back in via
+ * an inline `userSelect:text` on the bar, but that lacks the -webkit- variant
+ * and iOS callout; mirror it here so the error message selects/copies on every
+ * platform too. Scoped to the error bar (data-testid=as2-error-bar) only — the
+ * rest of the Actions chrome stays non-selectable (1276 mobile fix intact).
+ */
+[data-testid="as2-error-bar"],
+[data-testid="as2-error-bar"] * {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
 .app-shell {
   display: flex;
   flex-direction: column;

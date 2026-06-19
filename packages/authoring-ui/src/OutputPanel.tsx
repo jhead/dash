@@ -86,6 +86,16 @@ export function OutputPanel({ messages, onClear }: OutputPanelProps): React.Reac
           whiteSpace: "pre-wrap",
           wordBreak: "break-all",
           lineHeight: 1.5,
+          // task 1286 (follow-up to 1285): the rendered trace/error/compile
+          // output lines are plain non-input markup (<div>/<span>), so they
+          // inherited the global body `user-select:none` from task 1276 and
+          // could not be selected or copied. Opt the message pane (and every
+          // line it contains) back into selectable text; styles.css mirrors
+          // this for the -webkit- variants. The surrounding panel chrome
+          // (toolbar, Clear button) stays non-selectable (1276 mobile fix
+          // intact).
+          userSelect: "text",
+          WebkitUserSelect: "text",
         }}
         data-testid="output-panel-messages"
       >
