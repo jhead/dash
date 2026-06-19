@@ -1,0 +1,10 @@
+{
+  "id": "1278-0rtc4i-agent-chat-p3-chat-panel-in-right-pane-agent-loo",
+  "title": "Agent chat P3: chat panel in RIGHT pane + agent loop (streaming, thinking, tool chips, Stop)",
+  "description": "Build the Agent Chat panel UI + the agent run loop. Depends on P1 (client/settings) + P2 (tool bridge). Per approved plan: dock in the RIGHT pane (alongside Library/Properties tabs \u2014 NOT the bottom dock); free-run tool execution with a Stop button. (1) AgentChatPanel.tsx (packages/authoring-ui/src): chat transcript, input box, send; settings area (API key + model selector from P1); message list rendering. (2) Agent loop using AI SDK v6: use the v6 Agent class / streamText with the P2 tool set, stopWhen: stepCountIs(N) for the multi-step tool loop, free-run (auto-execute tools), and abortSignal from an AbortController. Render from the fullStream: streamed assistant TEXT deltas, a THINKING indicator (reasoning parts), TOOL-CALL chips (tool name -> args -> result, from tool-call/tool-result parts), step boundaries, and errors. Handle onAbort AND onError (fast-abort can fire onError). (3) STOP button -> controller.abort(); show stopped state. (4) Dock: add an 'Agent' tab to the RIGHT-pane tab group in Shell.tsx (mirror how Library/Properties tabs are added \u2014 see the right-pane PanelGroup) + uiStore visibility; render AgentChatPanel there. (5) Conversation history in component state; persist model/key via P1 preferences. VERIFY: build + authoring-ui tests green (only ~3 task-1207 fixtures acceptable); add tests for the fullStream->UI state reducer (text/reasoning/tool-call/tool-result/abort) with a mocked stream. ACQUIRE lock; commit incl task file; push rebase-retry (Shell.tsx edits \u2014 rebase carefully). Scope: AgentChatPanel + loop module + Shell/uiStore right-pane wiring.",
+  "status": "open",
+  "effort": "extreme",
+  "priority": "high",
+  "created_at": "2026-06-19T07:38:48Z",
+  "updated_at": "2026-06-19T07:38:48Z"
+}

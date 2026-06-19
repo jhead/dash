@@ -1,0 +1,10 @@
+{
+  "id": "1279-0rucfj-agent-chat-p4-polish-e2e-oracle-chat-drives-the-",
+  "title": "Agent chat P4: polish + e2e oracle (chat drives the stage) + docs",
+  "description": "Finalize the agent chat pane. Depends on P3. (1) Polish: robust error states (bad/missing key, model error, network/CORS failure with a clear message), empty/loading states, disable Send while running, keyboard submit, autoscroll, tool-chip expand/collapse. (2) e2e oracle: a Playwright test (apps/desktop/e2e) that opens the Agent panel, injects a stubbed/mocked LLM response that emits a tool call (e.g. stage_add_shape rect) so NO real network/key is needed in CI, and asserts the shape appears on the stage (document/state changed) \u2014 proving the chat drives authoring via dispatchAgentCommand end-to-end. (If mocking the AI SDK stream in-browser is impractical, instead unit-test the loop with a mocked model and add a lighter e2e that drives the tool bridge directly; explain the choice.) (3) Docs: docs/ page documenting the agent chat (architecture, BYOK/OpenRouter setup, model selection, that it reuses the agent-protocol tools, the no-server design, and the localStorage key caveat). VERIFY: build + tests green (only ~3 task-1207 fixtures acceptable). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: AgentChatPanel polish + new e2e spec + docs.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T07:38:48Z",
+  "updated_at": "2026-06-19T07:38:48Z"
+}
