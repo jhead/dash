@@ -35,7 +35,7 @@ Light Windows-XP/Luna furniture. These are **best-estimate** values (see *Known 
 | `insetFieldStrip` | `#D4D4D4` | Slightly darker recessed strip (tool wells, gutters) |
 | `separator` | `#999999` | 1px panel/region separators |
 | `textDefault` | `#000000` | Near-black default text |
-| `textDisabled` | `#808080` | Disabled / dimmed label text |
+| `textDisabled` | `#595959` | Dimmed / inactive label text (inactive tabs, unselected event options, genuinely-disabled controls). Darkened from `#808080` in task 1271 for WCAG AA legibility on the `#D4D4D4` inset strip (`#808080`→`#595959` lifts contrast 2.66:1→4.73:1) while staying clearly dimmed vs `#000000` `textDefault`. Dark-theme equivalent is `#9a9a9a`. |
 | `bevelEdge` | `2px` | Etched bevel thickness |
 | `borderThin` | `1px` | Thin border thickness |
 

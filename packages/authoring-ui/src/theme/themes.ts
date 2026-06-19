@@ -110,7 +110,13 @@ export const flash8Light: Theme = {
     insetFieldStrip: "#D4D4D4",
     separator: "#999999",
     textDefault: "#000000",
-    textDisabled: "#808080",
+    // Dimmed-but-legible label text. Darkened from #808080 (only 2.66:1 on the
+    // #D4D4D4 inset strip — below even the WCAG 3:1 large-text floor) to #595959,
+    // which clears AA (4.73:1 on #D4D4D4, 5.93:1 on #ECECEC, 7.0:1 on #FFFFFF) while
+    // staying a clearly-dimmed mid-gray vs the near-black #000000 textDefault. Drives
+    // inactive tab labels and unselected event options as well as genuinely-disabled
+    // controls. (task 1271)
+    textDisabled: "#595959",
     bevelLight: "#FFFFFF",
     bevelDark: "#808080",
   },
@@ -183,7 +189,12 @@ export const flash8Dark: Theme = {
     insetFieldStrip: "#252525",
     separator: "#1a1a1a",
     textDefault: "#e0e0e0",
-    textDisabled: "#808080",
+    // Dimmed-but-legible label text (dark theme equivalent of the light fix above).
+    // #808080 was only 3.88:1 on the #252525 inset strip / 3.49:1 on #2d2d2d panelBg —
+    // below AA — so inactive tabs/unselected options read as faint. Lightened to
+    // #9a9a9a (5.45:1 on #252525, 4.89:1 on #2d2d2d) while staying clearly dimmed vs
+    // the #e0e0e0 textDefault. (task 1271)
+    textDisabled: "#9a9a9a",
     bevelLight: "#555555",
     bevelDark: "#111111",
   },
