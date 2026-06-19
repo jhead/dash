@@ -101,3 +101,43 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   pass (3 new coalescing tests in `shapes.test.ts`). `@flash/core` 327/330 files pass — the
   3 failures are solely the missing `fixtures/flash8-empty.fla` (task 1207), unchanged.
 
+---
+
+## 2026-06-19 — full e2e + Ruffle visual-oracle baseline established
+
+- **HEAD (watermark — last fully-QA'd SHA):** `624141f4cb5ab41d18b760e6aa783bb0deda37f5`
+- **Toolchain status:** golden-parity runnable (cargo + `ruffle/` clone + `tools/swf-dump`
+  built — see `docs/qa/golden-parity-setup.md`). The full Playwright e2e + Ruffle
+  visual-oracle suite is now ALSO runnable here: chromium + system deps installed and the
+  bundled Ruffle **0.2.0** is present at `apps/desktop/public/ruffle/`. NOTE: both the
+  Ruffle bundle and `playwright install --with-deps chromium` must be re-provisioned on a
+  clean checkout (both gitignored) — copy the Ruffle bundle from the `@ruffle-rs/ruffle`
+  npm package.
+- **e2e baseline (run at HEAD `d8cd458`, `workers:1`):** **104 passed / 10 failed.** This
+  is the regression baseline future sweeps diff against. The high-value acceptance oracles
+  all PASS: visual-oracle, golden + Magnet FLA, color-effect, keyboard, mask,
+  button `on(release)`, sound, capstone-0519. The 10 failures break down as **6 harness
+  bugs + 1 flake + 3 real candidates** (all triaged into the tasks below).
+- **Tasks filed this cycle:**
+  - **1213 → 1217** — golden-parity SHAPE GEOMETRY regression, introduced `035796d` (filed
+    in the prior 2026-06-19 entry as 1213, re-filed and RESOLVED as 1217 — see the section
+    above; restated here for the watermark).
+  - **1214** — e2e harness: structural byte-parsers treat CWS (compressed) publish output
+    as FWS.
+  - **1215** — `interactivity.spec` `injectRufflePlayer` missing `autoplay:'on'` → clip
+    ticks never start, so `diffPixels=0` and the oracle falsely fails.
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+- **Verified-healthy this cycle:**
+  - a11y `_accProps.silent` defect (task **1211**) is FIXED in `9d30146` — confirmed not
+    lost in the id-collision dedup.
+  - task **1209** (text orientation / tracking / baseline shift) PASSES — oracle-backed.
+  - task **1210** (blur filter-tween) PASSES — true per-frame interpolation, PlaceObject3
+    on all move paths.
+- **Observation (NOT a task — flagged for a maintainer to reconcile, no edit made):** a
+  CLAUDE.md "Learnings" note states static text "is not called from the main compile path"
+  via `encodeDefineText`/DefineText (tag 11), but the main path at
+  `packages/swf/src/compiler/characters.ts:275` now DOES route embedded-font static text
+  through `encodeDefineText`. Likely outdated since the task-1200 system-font embedding
+  work. Do not edit CLAUDE.md from a QA sweep — left for a maintainer.
+
