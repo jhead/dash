@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
-import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges } from "@flash/core";
+import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges } from "@flash/core";
 import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
@@ -266,16 +266,81 @@ function pencilPointsToShape(
   return { id: nextDrawId(), paths: [path] };
 }
 
+/**
+ * Build a closed circular ShapePath (4 quadratic-Bézier quarter arcs) centered
+ * at (cx,cy) with the given radius. Used for the round brush nib / single dab.
+ *
+ * For a 90° quadratic arc the control point sits at the intersection of the two
+ * endpoint tangents — i.e. the corner of the axis-aligned bounding box. That
+ * approximation is round enough to be visually indistinguishable from a true
+ * circle at brush sizes, and matches Flash 8's round brush tip.
+ */
+function circlePath(cx: number, cy: number, radius: number, fill: Fill): ShapePath {
+  const r = radius;
+  // Cardinal points (start at the right, go clockwise: right→bottom→left→top).
+  const right = { x: cx + r, y: cy };
+  const bottom = { x: cx, y: cy + r };
+  const left = { x: cx - r, y: cy };
+  const top = { x: cx, y: cy - r };
+  // Corner control points (tangent intersections).
+  const br = { x: cx + r, y: cy + r };
+  const bl = { x: cx - r, y: cy + r };
+  const tl = { x: cx - r, y: cy - r };
+  const tr = { x: cx + r, y: cy - r };
+  return {
+    start: right,
+    segments: [
+      { type: "curve" as const, control: br, to: bottom },
+      { type: "curve" as const, control: bl, to: left },
+      { type: "curve" as const, control: tl, to: top },
+      { type: "curve" as const, control: tr, to: right },
+    ],
+    closed: true,
+    fill,
+  };
+}
+
+/**
+ * Append a semicircular cap (two quadratic quarter arcs) to `segments`, bowing
+ * AWAY from the ribbon along `dir`. The cap connects `from` to `to`, both on the
+ * circle of radius `half` centered at `center`; `dir` is the unit outward
+ * direction (the stroke tangent at that end). Each quarter arc's control point
+ * is the tangent intersection (endpoint + dir*half), matching `circlePath`.
+ */
+function appendRoundCap(
+  segments: PathSegment[],
+  center: Point,
+  from: Point,
+  to: Point,
+  dir: { x: number; y: number },
+  half: number
+): void {
+  // Far tip of the cap on the circle = center + dir*half.
+  const tip = { x: center.x + dir.x * half, y: center.y + dir.y * half };
+  const c1 = { x: from.x + dir.x * half, y: from.y + dir.y * half };
+  const c2 = { x: to.x + dir.x * half, y: to.y + dir.y * half };
+  segments.push({ type: "curve", control: c1, to: tip });
+  segments.push({ type: "curve", control: c2, to });
+}
+
 function brushPointsToShape(
   points: Point[],
   brushSize: number,
   fill: Fill
 ): Shape {
-  if (points.length < 2) return { id: nextDrawId(), paths: [] };
-
   const half = brushSize / 2;
+
+  // Single dab (click or near-zero drag): a round nib = a circle of diameter
+  // brushSize centered on the point. Flash 8's brush is round by default.
+  if (points.length < 2) {
+    if (points.length === 0) return { id: nextDrawId(), paths: [] };
+    const p = points[0];
+    return { id: nextDrawId(), paths: [circlePath(p.x, p.y, half, fill)] };
+  }
+
   const forward: Point[] = [];
   const backward: Point[] = [];
+  const tangents: { x: number; y: number }[] = [];
 
   for (let i = 0; i < points.length; i++) {
     const curr = points[i];
@@ -285,18 +350,52 @@ function brushPointsToShape(
     const tx = next.x - prev.x;
     const ty = next.y - prev.y;
     const tlen = Math.hypot(tx, ty) || 1;
-    // Perpendicular to tangent
-    const nx = -ty / tlen;
-    const ny = tx / tlen;
+    const txu = tx / tlen;
+    const tyu = ty / tlen;
+    tangents.push({ x: txu, y: tyu });
+    // Perpendicular to tangent (left side).
+    const nx = -tyu;
+    const ny = txu;
     forward.push({ x: curr.x + nx * half, y: curr.y + ny * half });
-    backward.unshift({ x: curr.x - nx * half, y: curr.y - ny * half });
+    backward.push({ x: curr.x - nx * half, y: curr.y - ny * half });
   }
 
-  // Build closed path: forward edge then backward edge
-  const allPoints = [...forward, ...backward];
+  // Sweep a ribbon with ROUND caps at both ends so the stroke head/tail are
+  // semicircles, not square butts. Walk the forward (left) edge start→end, cap
+  // around the end point, walk the backward (right) edge end→start, cap around
+  // the start point, then close.
+  const segments: PathSegment[] = [];
+
+  // Forward edge: forward[0] → forward[n-1].
+  for (let i = 1; i < forward.length; i++) {
+    segments.push({ type: "line", to: forward[i] });
+  }
+
+  // End cap: semicircle around the LAST point, bowing along +tangent.
+  const lastPt = points[points.length - 1];
+  const endDir = tangents[tangents.length - 1];
+  appendRoundCap(
+    segments,
+    lastPt,
+    forward[forward.length - 1],
+    backward[backward.length - 1],
+    endDir,
+    half
+  );
+
+  // Backward edge: backward[n-1] → backward[0].
+  for (let i = backward.length - 2; i >= 0; i--) {
+    segments.push({ type: "line", to: backward[i] });
+  }
+
+  // Start cap: semicircle around the FIRST point, bowing along -tangent.
+  const firstPt = points[0];
+  const startDir = { x: -tangents[0].x, y: -tangents[0].y };
+  appendRoundCap(segments, firstPt, backward[0], forward[0], startDir, half);
+
   const path: ShapePath = {
-    start: allPoints[0],
-    segments: allPoints.slice(1).map((pt) => ({ type: "line" as const, to: pt })),
+    start: forward[0],
+    segments,
     closed: true,
     fill,
   };
@@ -3065,8 +3164,9 @@ export function StageArea({
       pencilPointsRef.current = [];
       setPencilPreviewPoints([]);
 
-      // Brush tool: finalize brush stroke
-      if (activeTool === "brush" && brushPointsRef.current.length >= 2) {
+      // Brush tool: finalize brush stroke (>= 1 point: a single click/dab
+      // produces a round nib circle, not nothing).
+      if (activeTool === "brush" && brushPointsRef.current.length >= 1) {
         const fillColor: Fill = propFill ?? { type: "solid", color: hexToColor(propStrokeColor) };
         const shape = brushPointsToShape(brushPointsRef.current, brushSize, fillColor);
         if (shape.paths.length > 0) {
@@ -4324,27 +4424,16 @@ export function StageArea({
             </svg>
           )}
 
-          {/* Brush preview overlay */}
-          {brushPreviewPoints.length >= 2 && (() => {
-            const half = brushSize / 2;
-            const forward: { x: number; y: number }[] = [];
-            const backward: { x: number; y: number }[] = [];
-            for (let i = 0; i < brushPreviewPoints.length; i++) {
-              const curr = brushPreviewPoints[i];
-              const prev2 = brushPreviewPoints[Math.max(0, i - 1)];
-              const next2 = brushPreviewPoints[Math.min(brushPreviewPoints.length - 1, i + 1)];
-              const tx = next2.x - prev2.x;
-              const ty = next2.y - prev2.y;
-              const tlen = Math.hypot(tx, ty) || 1;
-              const nx = -ty / tlen;
-              const ny = tx / tlen;
-              forward.push({ x: curr.x + nx * half, y: curr.y + ny * half });
-              backward.unshift({ x: curr.x - nx * half, y: curr.y - ny * half });
-            }
-            const allPts = [...forward, ...backward];
+          {/* Brush preview overlay — a round-capped/round-joined thick stroke so
+              the preview matches the round nib geometry committed on mouse-up. */}
+          {brushPreviewPoints.length >= 1 && (() => {
             const fillCss = propFill?.type === "solid"
               ? `rgba(${propFill.color.r},${propFill.color.g},${propFill.color.b},${propFill.color.a / 255})`
               : propStrokeColor;
+            const pathD = brushPreviewPoints.length === 1
+              // Single dab: degenerate stroke renders as a round dot via linecap=round.
+              ? `M ${brushPreviewPoints[0].x},${brushPreviewPoints[0].y} L ${brushPreviewPoints[0].x},${brushPreviewPoints[0].y}`
+              : "M " + brushPreviewPoints.map((p) => `${p.x},${p.y}`).join(" L ");
             return (
               <svg
                 style={{
@@ -4358,9 +4447,13 @@ export function StageArea({
                   overflow: "visible",
                 }}
               >
-                <polygon
-                  points={allPts.map((p) => `${p.x},${p.y}`).join(" ")}
-                  fill={fillCss}
+                <path
+                  d={pathD}
+                  fill="none"
+                  stroke={fillCss}
+                  strokeWidth={brushSize}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                   opacity={0.6}
                 />
               </svg>

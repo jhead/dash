@@ -250,15 +250,60 @@ function pencilPointsToShape(
   return { id: "draw-1", paths: [path] };
 }
 
+type PathSeg = ShapePath["segments"][number];
+
+function circlePath(cx: number, cy: number, radius: number, fill: Fill): ShapePath {
+  const r = radius;
+  const right = { x: cx + r, y: cy };
+  const bottom = { x: cx, y: cy + r };
+  const left = { x: cx - r, y: cy };
+  const top = { x: cx, y: cy - r };
+  const br = { x: cx + r, y: cy + r };
+  const bl = { x: cx - r, y: cy + r };
+  const tl = { x: cx - r, y: cy - r };
+  const tr = { x: cx + r, y: cy - r };
+  return {
+    start: right,
+    segments: [
+      { type: "curve" as const, control: br, to: bottom },
+      { type: "curve" as const, control: bl, to: left },
+      { type: "curve" as const, control: tl, to: top },
+      { type: "curve" as const, control: tr, to: right },
+    ],
+    closed: true,
+    fill,
+  };
+}
+
+function appendRoundCap(
+  segments: PathSeg[],
+  center: Point,
+  from: Point,
+  to: Point,
+  dir: { x: number; y: number },
+  half: number
+): void {
+  const tip = { x: center.x + dir.x * half, y: center.y + dir.y * half };
+  const c1 = { x: from.x + dir.x * half, y: from.y + dir.y * half };
+  const c2 = { x: to.x + dir.x * half, y: to.y + dir.y * half };
+  segments.push({ type: "curve", control: c1, to: tip });
+  segments.push({ type: "curve", control: c2, to });
+}
+
 function brushPointsToShape(
   points: Point[],
   brushSize: number,
   fill: Fill
 ): { id: string; paths: ShapePath[] } {
-  if (points.length < 2) return { id: "draw-empty", paths: [] };
   const half = brushSize / 2;
+  if (points.length < 2) {
+    if (points.length === 0) return { id: "draw-empty", paths: [] };
+    const p = points[0];
+    return { id: "draw-1", paths: [circlePath(p.x, p.y, half, fill)] };
+  }
   const forward: Point[] = [];
   const backward: Point[] = [];
+  const tangents: { x: number; y: number }[] = [];
   for (let i = 0; i < points.length; i++) {
     const curr = points[i];
     const prev = points[Math.max(0, i - 1)];
@@ -266,15 +311,30 @@ function brushPointsToShape(
     const tx = next.x - prev.x;
     const ty = next.y - prev.y;
     const tlen = Math.hypot(tx, ty) || 1;
-    const nx = -ty / tlen;
-    const ny = tx / tlen;
+    const txu = tx / tlen;
+    const tyu = ty / tlen;
+    tangents.push({ x: txu, y: tyu });
+    const nx = -tyu;
+    const ny = txu;
     forward.push({ x: curr.x + nx * half, y: curr.y + ny * half });
-    backward.unshift({ x: curr.x - nx * half, y: curr.y - ny * half });
+    backward.push({ x: curr.x - nx * half, y: curr.y - ny * half });
   }
-  const allPoints = [...forward, ...backward];
+  const segments: PathSeg[] = [];
+  for (let i = 1; i < forward.length; i++) {
+    segments.push({ type: "line", to: forward[i] });
+  }
+  const lastPt = points[points.length - 1];
+  const endDir = tangents[tangents.length - 1];
+  appendRoundCap(segments, lastPt, forward[forward.length - 1], backward[backward.length - 1], endDir, half);
+  for (let i = backward.length - 2; i >= 0; i--) {
+    segments.push({ type: "line", to: backward[i] });
+  }
+  const firstPt = points[0];
+  const startDir = { x: -tangents[0].x, y: -tangents[0].y };
+  appendRoundCap(segments, firstPt, backward[0], forward[0], startDir, half);
   const path: ShapePath = {
-    start: allPoints[0],
-    segments: allPoints.slice(1).map((pt) => ({ type: "line" as const, to: pt })),
+    start: forward[0],
+    segments,
     closed: true,
     fill,
   };
@@ -646,9 +706,35 @@ describe("Brush tool", () => {
     expect(shape.paths[0].segments.length).toBeGreaterThan(0);
   });
 
-  it("returns empty paths for fewer than 2 points", () => {
-    const shape = brushPointsToShape([{ x: 0, y: 0 }], 8, RED);
+  it("returns empty paths only for zero points", () => {
+    const shape = brushPointsToShape([], 8, RED);
     expect(shape.paths).toHaveLength(0);
+  });
+
+  it("a single dab produces a ROUND circle, not a rectangle (Flash 8 round nib)", () => {
+    const shape = brushPointsToShape([{ x: 50, y: 50 }], 20, RED);
+    expect(shape.paths).toHaveLength(1);
+    const path = shape.paths[0];
+    expect(path.closed).toBe(true);
+    expect(path.fill).toBe(RED);
+    // Round dab is built from CURVE segments (quadratic arcs), not 4 straight
+    // rectangle edges. A square head would be all "line" segments.
+    expect(path.segments.every((s) => s.type === "curve")).toBe(true);
+    expect(path.segments).toHaveLength(4);
+
+    // Geometry must lie on the circle of radius brushSize/2 (=10) about (50,50):
+    // every anchor (start + each segment endpoint) is ~radius from center.
+    const radius = 10;
+    const anchors = [path.start, ...path.segments.map((s) => s.to)];
+    for (const a of anchors) {
+      const d = Math.hypot(a.x - 50, a.y - 50);
+      expect(d).toBeCloseTo(radius, 5);
+    }
+    // Bounding box is the full diameter in BOTH axes (a circle, not a sliver).
+    const xs = anchors.map((p) => p.x);
+    const ys = anchors.map((p) => p.y);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(2 * radius, 5);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(2 * radius, 5);
   });
 
   it("perpendicular extrusion creates width roughly equal to brushSize", () => {
@@ -659,6 +745,22 @@ describe("Brush tool", () => {
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys);
     expect(maxY - minY).toBeCloseTo(20, 0);
+  });
+
+  it("a straight stroke has ROUND end caps (semicircle arcs), not flat butt ends", () => {
+    const pts = [{ x: 0, y: 50 }, { x: 100, y: 50 }]; // horizontal line, half=10
+    const shape = brushPointsToShape(pts, 20, RED);
+    const path = shape.paths[0];
+    // The ribbon ends are capped by curve segments (the round caps), so the path
+    // contains curve segments — a square/butt end would be all straight lines.
+    const curves = path.segments.filter((s) => s.type === "curve");
+    expect(curves.length).toBeGreaterThanOrEqual(4); // 2 caps × 2 quarter arcs
+
+    // The end cap bulges PAST the last point: its far tip reaches x = 100 + half.
+    const xs = [path.start.x, ...path.segments.map((s) => s.to.x)];
+    expect(Math.max(...xs)).toBeCloseTo(110, 5); // 100 + half(10)
+    // The start cap bulges PAST the first point: x reaches 0 - half.
+    expect(Math.min(...xs)).toBeCloseTo(-10, 5); // 0 - half(10)
   });
 });
 
