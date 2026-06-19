@@ -1,0 +1,10 @@
+{
+  "id": "1253-0f60aa-flash8-re-theme-wave-b-dialogs-batch-1-publishse",
+  "title": "Flash8 re-theme Wave B: dialogs batch 1 (PublishSettings, DocumentProperties, BitmapProperties, ConvertToSymbol, SymbolLinkage, SymbolProperties, Preferences)",
+  "description": "Convert these dialog components to the Flash 8 light theme via packages/authoring-ui/src/theme/flash8Theme.ts (chrome.*/halo.*), mirroring Shell.tsx + converted panels. Files (packages/authoring-ui/src/): PublishSettingsDialog.tsx, DocumentPropertiesDialog.tsx, BitmapPropertiesDialog.tsx, ConvertToSymbolDialog.tsx, SymbolLinkageDialog.tsx, SymbolPropertiesDialog.tsx, PreferencesDialog.tsx. Replace all dark hex with tokens \u2192 light #ECECEC dialog chrome, white content, near-black Tahoma text, halo inputs (#B7BABC inset border, focus ring), halo buttons (cornerRadius 4 gradients), #999999 separators; modal overlay scrim can stay rgba(0,0,0,0.4-0.5). Keep functionality intact. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: those 7 dialog files only (+ read-only theme import).",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-19T06:06:46Z",
+  "updated_at": "2026-06-19T06:06:46Z"
+}
