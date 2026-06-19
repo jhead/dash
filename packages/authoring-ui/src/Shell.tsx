@@ -88,7 +88,7 @@ import { ShellDialogs } from "./layout/ShellDialogs.js";
 import { ShellPanels } from "./layout/ShellPanels.js";
 import { ManageCommandsDialog } from "./layout/ManageCommandsDialog.js";
 import { ShellOverlays } from "./layout/ShellOverlays.js";
-import { chrome, halo, chromeFont, buttonStyle, inputStyle } from "./theme/flash8Theme.js";
+import { chrome, halo, chromeFont, buttonStyle, inputStyle, metrics } from "./theme/flash8Theme.js";
 import { useToolHandlers } from "./hooks/useToolHandlers.js";
 import { useTimelineEffectHandlers } from "./hooks/useTimelineEffectHandlers.js";
 import { nextInstanceId, nextBitmapId, nextVideoId } from "./idgen.js";
@@ -3081,7 +3081,20 @@ export function Shell(): React.ReactElement {
         onTextFormatChange={handleTextFormatChange}
       />
       <div style={styles.centerRegion}>
-        <div style={{ width: 44, minWidth: 44, flexShrink: 0, overflow: "hidden" }}>
+        {/* Tools-panel host wrapper. Width MUST track the panel's own width
+            (metrics.toolsPanelWidth, ~67px) so the 2-column tool grid (task 1267:
+            repeat(2,22px) = 2×22 + 1px gap + 2×1px padding = 47px, centered in the
+            66px inner width after the 1px borderRight) is not clipped by overflow:hidden.
+            The old hardcoded 44px == a single column, which clipped the right column once
+            1267 restored two columns (task 1274). */}
+        <div
+          style={{
+            width: metrics.toolsPanelWidth,
+            minWidth: metrics.toolsPanelWidth,
+            flexShrink: 0,
+            overflow: "hidden",
+          }}
+        >
           <ToolsPanel
             toolState={toolState}
             onToolChange={handleToolChange}
