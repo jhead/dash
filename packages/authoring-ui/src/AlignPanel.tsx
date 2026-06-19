@@ -8,6 +8,7 @@
 import React, { useState, useCallback } from "react";
 import type { DisplayObject, ShapeDisplayObject, DrawingObject } from "@flash/core";
 import { transformedShapeBounds } from "@flash/core";
+import { chrome, halo, chromeFont, buttonStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -79,20 +80,21 @@ function getObjectBounds(obj: DisplayObject): Bounds {
 // Styles
 // ---------------------------------------------------------------------------
 
+// Flash 8 "Halo" light theme — tokens from theme/flash8Theme.ts (no hardcoded hex).
+// Align panel: #ECECEC chrome, near-black Tahoma text, halo icon buttons,
+// #999999 separators. See docs/30-flash8-ui-spec.md + Shell.tsx (reference).
 const panelStyle: React.CSSProperties = {
   position: "fixed",
   top: "80px",
   right: "220px",
   width: "220px",
-  background: "#2a2a2a",
-  border: "1px solid #555",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+  background: chrome.panelBg,
+  border: `1px solid ${chrome.separator}`,
+  boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
   display: "flex",
   flexDirection: "column",
   zIndex: 1800,
-  fontFamily: "Arial, sans-serif",
-  fontSize: "11px",
-  color: "#d0d0d0",
+  ...chromeFont(),
   borderRadius: "3px",
   overflow: "hidden",
   userSelect: "none",
@@ -103,19 +105,19 @@ const titleBarStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "space-between",
   height: "22px",
-  background: "#3a3a3a",
-  borderBottom: "1px solid #1a1a1a",
+  background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+  borderBottom: `1px solid ${halo.headerDivider}`,
   padding: "0 6px",
   flexShrink: 0,
   fontSize: "11px",
   fontWeight: "bold",
-  color: "#c0c0c0",
+  color: chrome.textDefault,
 };
 
 const closeBtnStyle: React.CSSProperties = {
   background: "transparent",
   border: "none",
-  color: "#999",
+  color: chrome.textDefault,
   cursor: "pointer",
   fontSize: "13px",
   lineHeight: "1",
@@ -124,12 +126,12 @@ const closeBtnStyle: React.CSSProperties = {
 
 const sectionStyle: React.CSSProperties = {
   padding: "4px 6px",
-  borderBottom: "1px solid #1a1a1a",
+  borderBottom: `1px solid ${chrome.separator}`,
 };
 
 const sectionLabelStyle: React.CSSProperties = {
   fontSize: "10px",
-  color: "#888",
+  color: chrome.textDisabled,
   marginBottom: "4px",
   textTransform: "uppercase",
   letterSpacing: "0.5px",
@@ -162,17 +164,11 @@ interface AlignButtonProps {
 function AlignButton({ title, label, onClick }: AlignButtonProps): React.ReactElement {
   const [hovered, setHovered] = useState(false);
   const style: React.CSSProperties = {
+    ...buttonStyle(hovered ? "over" : "up"),
     width: "26px",
     height: "22px",
-    background: hovered ? "#444" : "#333",
-    border: "1px solid " + (hovered ? "#666" : "#444"),
-    color: "#d0d0d0",
-    cursor: "pointer",
+    color: chrome.textDefault,
     fontSize: "10px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "2px",
     flexShrink: 0,
   };
   return (
@@ -520,9 +516,7 @@ export function AlignPanel({
     ? {
         display: "flex",
         flexDirection: "column",
-        fontFamily: "Arial, sans-serif",
-        fontSize: "11px",
-        color: "#d0d0d0",
+        ...chromeFont(),
         userSelect: "none",
       }
     : panelStyle;
@@ -595,11 +589,11 @@ export function AlignPanel({
           id="alignToStage"
           checked={toStage}
           onChange={(e) => setToStage(e.target.checked)}
-          style={{ cursor: "pointer", accentColor: "#1a6ea8" }}
+          style={{ cursor: "pointer", accentColor: halo.haloBlue }}
         />
         <label
           htmlFor="alignToStage"
-          style={{ cursor: "pointer", fontSize: "11px", color: "#c0c0c0" }}
+          style={{ cursor: "pointer", fontSize: "11px", color: chrome.textDefault }}
         >
           To Stage
         </label>

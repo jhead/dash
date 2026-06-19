@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import type { ColorEffect, SymbolInstance } from "@flash/core";
+import { chrome, halo, chromeFont, inputStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -21,29 +22,33 @@ export interface InstancePanelProps {
 // Styles (matching PropertiesPanel style conventions)
 // ---------------------------------------------------------------------------
 
+// Flash 8 "Halo" light theme — tokens from theme/flash8Theme.ts (no hardcoded hex).
+// Instance properties: #ECECEC chrome, near-black Tahoma text, halo (white)
+// inputs/selects, #999999 separators. See docs/30-flash8-ui-spec.md + Shell.tsx.
 const styles: Record<string, React.CSSProperties> = {
   panel: {
     display: "flex",
     flexDirection: "column",
     width: "200px",
     flexShrink: 0,
-    background: "#2d2d2d",
+    background: chrome.panelBg,
     overflowY: "auto",
-    borderTop: "1px solid #1a1a1a",
+    borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
+    ...chromeFont(),
   },
   sectionHeader: {
     display: "flex",
     alignItems: "center",
     height: "22px",
-    background: "#3a3a3a",
-    borderBottom: "1px solid #1a1a1a",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `1px solid ${halo.headerDivider}`,
     padding: "0 6px",
     flexShrink: 0,
     userSelect: "none",
   },
   sectionLabel: {
     fontSize: "11px",
-    color: "#c0c0c0",
+    color: chrome.textDefault,
     fontWeight: "bold",
   },
   sectionBody: {
@@ -51,7 +56,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: "4px",
-    borderBottom: "1px solid #1a1a1a",
+    borderBottom: `1px solid ${chrome.separator}`,
   },
   row: {
     display: "flex",
@@ -61,53 +66,42 @@ const styles: Record<string, React.CSSProperties> = {
   },
   label: {
     fontSize: "11px",
-    color: "#999",
+    color: chrome.textDefault,
     width: "60px",
     flexShrink: 0,
   },
   labelWide: {
     fontSize: "11px",
-    color: "#999",
+    color: chrome.textDefault,
     width: "80px",
     flexShrink: 0,
   },
   input: {
+    ...inputStyle(),
     fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
-    padding: "1px 4px",
     flex: 1,
   },
   inputSmall: {
+    ...inputStyle(),
     fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
-    padding: "1px 4px",
     width: "52px",
   },
   select: {
+    ...inputStyle(),
     fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
     padding: "1px 2px",
     flex: 1,
   },
   colorSwatch: {
     width: "22px",
     height: "16px",
-    border: "1px solid #555",
+    border: `1px solid ${halo.borderColor}`,
     cursor: "pointer",
     flexShrink: 0,
   },
   colorInput: {
+    ...inputStyle(),
     fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
-    padding: "1px 4px",
     flex: 1,
   },
 };
@@ -287,7 +281,7 @@ export function InstancePanel({ instance, symbolType, onChange }: InstancePanelP
               max={100}
               onChange={(v) => onChange({ colorEffect: { ...effect, brightness: v } })}
             />
-            <span style={{ fontSize: "11px", color: "#999" }}>%</span>
+            <span style={{ fontSize: "11px", color: chrome.textDefault }}>%</span>
           </div>
         )}
 
@@ -321,7 +315,7 @@ export function InstancePanel({ instance, symbolType, onChange }: InstancePanelP
                 max={100}
                 onChange={(v) => onChange({ colorEffect: { ...effect, tintAmount: v } })}
               />
-              <span style={{ fontSize: "11px", color: "#999" }}>%</span>
+              <span style={{ fontSize: "11px", color: chrome.textDefault }}>%</span>
             </div>
           </>
         )}
@@ -336,7 +330,7 @@ export function InstancePanel({ instance, symbolType, onChange }: InstancePanelP
               max={100}
               onChange={(v) => onChange({ colorEffect: { ...effect, alpha: v } })}
             />
-            <span style={{ fontSize: "11px", color: "#999" }}>%</span>
+            <span style={{ fontSize: "11px", color: chrome.textDefault }}>%</span>
           </div>
         )}
 
@@ -457,7 +451,7 @@ export function InstancePanel({ instance, symbolType, onChange }: InstancePanelP
       </div>
       <div style={styles.sectionBody}>
         <div style={styles.row}>
-          <label style={{ fontSize: "11px", color: "#999", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+          <label style={{ fontSize: "11px", color: chrome.textDefault, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
             <input
               type="checkbox"
               checked={instance.cacheAsBitmap ?? false}
@@ -470,7 +464,7 @@ export function InstancePanel({ instance, symbolType, onChange }: InstancePanelP
         {/* Track as Menu Item — button instances only */}
         {symbolType === "button" && (
           <div style={styles.row}>
-            <label style={{ fontSize: "11px", color: "#999", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+            <label style={{ fontSize: "11px", color: chrome.textDefault, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
               <input
                 type="checkbox"
                 checked={instance.trackAsMenu ?? false}

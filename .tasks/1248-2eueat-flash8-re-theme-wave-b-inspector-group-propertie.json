@@ -2,9 +2,9 @@
   "id": "1248-2eueat-flash8-re-theme-wave-b-inspector-group-propertie",
   "title": "Flash8 re-theme Wave B: inspector group (PropertiesPanel + InstancePanel + TransformPanel + AlignPanel)",
   "description": "Convert packages/authoring-ui/src/PropertiesPanel.tsx, InstancePanel.tsx, TransformPanel.tsx, AlignPanel.tsx to the Flash 8 light theme via flash8Theme.ts per docs/30-flash8-ui-spec.md \u00a73.4 (Properties inspector) and \u00a73.9 (Align/Info/Transform). Light #ECECEC chrome, near-black Tahoma text, halo inputs/buttons, #999999 separators; Properties inspector is the bottom dock with label-left/value-right field pairs, Properties/Filters/Parameters tabs, white-triangle expander. Transform: W%/H% + Constrain, Rotate/Skew radios, skew fields. Align: align/distribute/match/space icon buttons + To-stage toggle. Replace all dark hex with tokens; mirror Shell.tsx. Keep functionality. Build+authoring-ui tests green (only ~3 task-1207 fixture failures acceptable). ACQUIRE the lock; commit incl task file; push rebase-retry. Scope: those 4 files only (+ read-only theme import). If an InfoPanel.tsx exists and is part of this group, include it.",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-19T05:55:53Z",
-  "updated_at": "2026-06-19T05:55:53Z"
+  "updated_at": "2026-06-19T06:04:52Z"
 }

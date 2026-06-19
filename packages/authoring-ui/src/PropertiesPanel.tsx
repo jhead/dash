@@ -42,6 +42,28 @@ import { shapeBounds } from "@flash/core";
 import { ColorPicker } from "./ColorPicker";
 import { EaseCurveDialog } from "./EaseCurveDialog";
 import { CharacterEmbeddingDialog } from "./CharacterEmbeddingDialog";
+import { chrome, halo, chromeFont, inputStyle } from "./theme/flash8Theme.js";
+
+// ---------------------------------------------------------------------------
+// Flash 8 "Halo" light-theme tokens for inspector field pairs.
+// Properties inspector = bottom dock: #ECECEC chrome, near-black Tahoma text,
+// halo (white) inputs/buttons, #999999 separators. A "toggle" button (bold/
+// italic/align/aspect-lock) uses the Halo down-state when active and the
+// up-state when inactive. See docs/30-flash8-ui-spec.md + flash8Theme.ts.
+// ---------------------------------------------------------------------------
+
+/** Active (selected) Halo toggle: light-blue down-state fill + accent border. */
+const TOGGLE_ON: React.CSSProperties = {
+  background: "linear-gradient(#D8F0FF, #99D7FF)",
+  color: chrome.textDefault,
+  borderColor: halo.haloBlue,
+};
+/** Inactive Halo toggle: up-state gradient + default border. */
+const TOGGLE_OFF: React.CSSProperties = {
+  background: "linear-gradient(rgba(255,255,255,0.6), rgba(204,204,204,0.4))",
+  color: chrome.textDefault,
+  borderColor: halo.borderColor,
+};
 
 // ---------------------------------------------------------------------------
 // Re-exported legacy types (kept for backward compatibility)
@@ -122,30 +144,31 @@ const S: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     width: "100%",
-    background: "#2d2d2d",
-    borderTop: "1px solid #1a1a1a",
+    background: chrome.panelBg,
+    borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
     flexShrink: 0,
     overflow: "hidden",
+    ...chromeFont(),
   },
   header: {
     display: "flex",
     alignItems: "center",
     height: "22px",
-    background: "#3a3a3a",
-    borderBottom: "1px solid #1a1a1a",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `1px solid ${halo.headerDivider}`,
     padding: "0 8px",
     flexShrink: 0,
     userSelect: "none",
   },
   headerLabel: {
     fontSize: "11px",
-    color: "#c0c0c0",
+    color: chrome.textDefault,
     fontWeight: "bold",
     marginRight: 8,
   },
   headerType: {
     fontSize: "10px",
-    color: "#888",
+    color: chrome.textDisabled,
   },
   body: {
     display: "flex",
@@ -163,75 +186,69 @@ const S: Record<string, React.CSSProperties> = {
   },
   label: {
     fontSize: "11px",
-    color: "#888",
+    color: chrome.textDefault,
     whiteSpace: "nowrap",
     userSelect: "none",
   },
   input: {
+    ...inputStyle(),
     fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
-    padding: "1px 4px",
     width: "52px",
   },
   inputWide: {
+    ...inputStyle(),
     fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
-    padding: "1px 4px",
     width: "90px",
   },
   colorSwatch: {
     width: "20px",
     height: "16px",
-    border: "1px solid #555",
+    border: `1px solid ${halo.borderColor}`,
     cursor: "pointer",
     flexShrink: 0,
     padding: 0,
   },
   select: {
+    ...inputStyle(),
     fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
     padding: "1px 2px",
   },
   selectWide: {
+    ...inputStyle(),
     fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
     padding: "1px 2px",
     minWidth: "80px",
   },
   toggleBtn: {
     fontSize: "11px",
     padding: "1px 6px",
-    border: "1px solid #444",
+    border: `1px solid ${halo.borderColor}`,
+    borderRadius: halo.cornerRadius,
     cursor: "pointer",
     userSelect: "none",
     minWidth: "20px",
     textAlign: "center",
+    color: chrome.textDefault,
   },
   alignBtn: {
     fontSize: "11px",
     padding: "1px 5px",
-    border: "1px solid #444",
+    border: `1px solid ${halo.borderColor}`,
+    borderRadius: halo.cornerRadius,
     cursor: "pointer",
     userSelect: "none",
+    color: chrome.textDefault,
   },
   placeholder: {
     padding: "6px 8px",
     fontSize: "11px",
-    color: "#666",
+    color: chrome.textDisabled,
     fontStyle: "italic",
   },
   separator: {
     width: "1px",
     height: "16px",
-    background: "#444",
+    background: chrome.separator,
     flexShrink: 0,
   },
 };
@@ -640,8 +657,7 @@ function ShapeView({
         <button
           style={{
             ...S.toggleBtn,
-            background: hasFill ? "#333" : "#1a6ea8",
-            color: hasFill ? "#999" : "#fff",
+            ...(hasFill ? TOGGLE_OFF : TOGGLE_ON),
           }}
           onClick={handleFillNoneToggle}
           title={hasFill ? "Remove fill" : "Add fill"}
@@ -664,8 +680,7 @@ function ShapeView({
         <button
           style={{
             ...S.toggleBtn,
-            background: hasStroke ? "#333" : "#1a6ea8",
-            color: hasStroke ? "#999" : "#fff",
+            ...(hasStroke ? TOGGLE_OFF : TOGGLE_ON),
           }}
           onClick={handleStrokeNoneToggle}
           title={hasStroke ? "Remove stroke" : "Add stroke"}
@@ -717,8 +732,7 @@ function ShapeView({
                 key={value}
                 style={{
                   ...S.toggleBtn,
-                  background: strokeCaps === value ? "#1a6ea8" : "#333",
-                  color: strokeCaps === value ? "#fff" : "#999",
+                  ...(strokeCaps === value ? TOGGLE_ON : TOGGLE_OFF),
                   fontFamily: "monospace",
                 }}
                 onClick={() => handleStrokeCapChange(value)}
@@ -739,8 +753,7 @@ function ShapeView({
                 key={value}
                 style={{
                   ...S.toggleBtn,
-                  background: strokeJoints === value ? "#1a6ea8" : "#333",
-                  color: strokeJoints === value ? "#fff" : "#999",
+                  ...(strokeJoints === value ? TOGGLE_ON : TOGGLE_OFF),
                   fontFamily: "monospace",
                 }}
                 onClick={() => handleStrokeJoinChange(value)}
@@ -811,7 +824,7 @@ function InstanceView({
       {/* Symbol name (read-only) */}
       <div style={S.fieldGroup}>
         <span style={S.label}>Symbol:</span>
-        <span style={{ ...S.label, color: "#c0c0c0", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={symbolName}>
+        <span style={{ ...S.label, color: chrome.textDefault, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={symbolName}>
           {symbolName}
         </span>
       </div>
@@ -884,8 +897,7 @@ function InstanceView({
               title={aspectLocked ? "Unlock aspect ratio" : "Lock aspect ratio"}
               style={{
                 ...S.toggleBtn,
-                background: aspectLocked ? "#1a6ea8" : "#333",
-                color: aspectLocked ? "#fff" : "#999",
+                ...(aspectLocked ? TOGGLE_ON : TOGGLE_OFF),
                 padding: "1px 4px",
                 minWidth: 18,
               }}
@@ -926,7 +938,7 @@ function InstanceView({
           style={{ width: 52 }}
           onChange={(v) => onUpdateObject(obj.id, { rotation: v } as Partial<DisplayObject>)}
         />
-        <span style={{ ...S.label, marginLeft: 2, color: "#a0a0a0" }}>°</span>
+        <span style={{ ...S.label, marginLeft: 2, color: chrome.textDefault }}>°</span>
       </div>
 
       {/* ScaleX / ScaleY */}
@@ -937,7 +949,7 @@ function InstanceView({
           style={{ width: 52 }}
           onChange={(v) => onUpdateObject(obj.id, { scaleX: v / 100 } as Partial<DisplayObject>)}
         />
-        <span style={{ ...S.label, marginLeft: 2, color: "#a0a0a0" }}>%</span>
+        <span style={{ ...S.label, marginLeft: 2, color: chrome.textDefault }}>%</span>
       </div>
       <div style={S.fieldGroup}>
         <span style={S.label}>ScY:</span>
@@ -946,7 +958,7 @@ function InstanceView({
           style={{ width: 52 }}
           onChange={(v) => onUpdateObject(obj.id, { scaleY: v / 100 } as Partial<DisplayObject>)}
         />
-        <span style={{ ...S.label, marginLeft: 2, color: "#a0a0a0" }}>%</span>
+        <span style={{ ...S.label, marginLeft: 2, color: chrome.textDefault }}>%</span>
       </div>
 
       {/* Visible */}
@@ -1387,15 +1399,14 @@ function TextView({
             ...S.toggleBtn,
             width: "auto",
             padding: "0 8px",
-            background: isSubset ? "#1a6ea8" : "#333",
-            color: isSubset ? "#fff" : "#bbb",
+            ...(isSubset ? TOGGLE_ON : TOGGLE_OFF),
           }}
           onClick={() => setShowEmbedDialog(true)}
           title="Choose which character ranges to embed in the published font"
         >
           Embed…
         </button>
-        <span style={{ ...S.label, color: "#888", fontSize: 10 }}>
+        <span style={{ ...S.label, color: chrome.textDisabled, fontSize: 10 }}>
           {isSubset ? "(subset)" : "(all)"}
         </span>
       </div>
@@ -1420,8 +1431,7 @@ function TextView({
           style={{
             ...S.toggleBtn,
             fontWeight: "bold",
-            background: obj.bold ? "#1a6ea8" : "#333",
-            color: obj.bold ? "#fff" : "#999",
+            ...(obj.bold ? TOGGLE_ON : TOGGLE_OFF),
           }}
           onClick={() => onUpdateObject(obj.id, { bold: !obj.bold } as Partial<DisplayObject>)}
           title="Bold"
@@ -1432,8 +1442,7 @@ function TextView({
           style={{
             ...S.toggleBtn,
             fontStyle: "italic",
-            background: obj.italic ? "#1a6ea8" : "#333",
-            color: obj.italic ? "#fff" : "#999",
+            ...(obj.italic ? TOGGLE_ON : TOGGLE_OFF),
           }}
           onClick={() => onUpdateObject(obj.id, { italic: !obj.italic } as Partial<DisplayObject>)}
           title="Italic"
@@ -1444,8 +1453,7 @@ function TextView({
           style={{
             ...S.toggleBtn,
             textDecoration: "underline",
-            background: obj.underline ? "#1a6ea8" : "#333",
-            color: obj.underline ? "#fff" : "#999",
+            ...(obj.underline ? TOGGLE_ON : TOGGLE_OFF),
           }}
           onClick={() => onUpdateObject(obj.id, { underline: !obj.underline } as Partial<DisplayObject>)}
           title="Underline"
@@ -1545,8 +1553,7 @@ function TextView({
             key={a}
             style={{
               ...S.alignBtn,
-              background: obj.align === a ? "#1a6ea8" : "#333",
-              color: obj.align === a ? "#fff" : "#999",
+              ...(obj.align === a ? TOGGLE_ON : TOGGLE_OFF),
             }}
             onClick={() => onUpdateObject(obj.id, { align: a } as Partial<DisplayObject>)}
             title={a}
@@ -1598,8 +1605,7 @@ function TextView({
             <button
               style={{
                 ...S.toggleBtn,
-                background: obj.html ? "#1a6ea8" : "#333",
-                color: obj.html ? "#fff" : "#999",
+                ...(obj.html ? TOGGLE_ON : TOGGLE_OFF),
                 fontFamily: "monospace",
                 letterSpacing: "-1px",
               }}
@@ -1932,7 +1938,7 @@ function BitmapView({
       <div style={S.fieldGroup}>
         <span style={S.label}>Bitmap:</span>
         <span
-          style={{ ...S.label, color: "#c0c0c0", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          style={{ ...S.label, color: chrome.textDefault, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
           title={bitmapName}
         >
           {bitmapName}
@@ -1985,11 +1991,11 @@ function BitmapView({
       {/* W / H (read-only — display size) */}
       <div style={S.fieldGroup}>
         <span style={S.label}>W:</span>
-        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+        <span style={{ ...S.label, color: chrome.textDefault, width: 44, textAlign: "right" }}>
           {Math.round(obj.width * (obj.scaleX ?? 1))}
         </span>
         <span style={{ ...S.label, marginLeft: 8 }}>H:</span>
-        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+        <span style={{ ...S.label, color: chrome.textDefault, width: 44, textAlign: "right" }}>
           {Math.round(obj.height * (obj.scaleY ?? 1))}
         </span>
       </div>
@@ -2043,9 +2049,7 @@ function BitmapView({
           <button
             style={{
               ...S.toggleBtn,
-              background: "#333",
-              color: "#c0c0c0",
-              border: "1px solid #555",
+              ...TOGGLE_OFF,
               padding: "2px 8px",
             }}
             onClick={() => onSwapBitmap(obj.id)}
@@ -2090,7 +2094,7 @@ function VideoView({
       <div style={S.fieldGroup}>
         <span style={S.label}>Video:</span>
         <span
-          style={{ ...S.label, color: "#c0c0c0", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          style={{ ...S.label, color: chrome.textDefault, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
           title={videoName}
         >
           {videoName}
@@ -2143,11 +2147,11 @@ function VideoView({
       {/* W / H (read-only) */}
       <div style={S.fieldGroup}>
         <span style={S.label}>W:</span>
-        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+        <span style={{ ...S.label, color: chrome.textDefault, width: 44, textAlign: "right" }}>
           {Math.round(obj.width * (obj.scaleX ?? 1))}
         </span>
         <span style={{ ...S.label, marginLeft: 8 }}>H:</span>
-        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+        <span style={{ ...S.label, color: chrome.textDefault, width: 44, textAlign: "right" }}>
           {Math.round(obj.height * (obj.scaleY ?? 1))}
         </span>
       </div>
@@ -2488,11 +2492,9 @@ function FrameView({
             <button
               style={{
                 ...S.toggleBtn,
-                background: motionEaseCurve ? "#225522" : "#333",
-                color: motionEaseCurve ? "#88ee88" : "#888",
+                ...(motionEaseCurve ? TOGGLE_ON : TOGGLE_OFF),
                 fontSize: "10px",
                 padding: "1px 4px",
-                border: `1px solid ${motionEaseCurve ? "#44aa44" : "#444"}`,
               }}
               onClick={() => setShowEaseCurveDialog(true)}
               title="Open custom ease curve editor"
@@ -2606,8 +2608,8 @@ function GroupView({
       {/* Type indicator */}
       <div style={S.fieldGroup}>
         <span style={S.label}>Type:</span>
-        <span style={{ ...S.label, color: "#c0c0c0" }}>Group</span>
-        <span style={{ ...S.label, color: "#888", marginLeft: 4 }}>
+        <span style={{ ...S.label, color: chrome.textDefault }}>Group</span>
+        <span style={{ ...S.label, color: chrome.textDisabled, marginLeft: 4 }}>
           ({obj.children.length} item{obj.children.length !== 1 ? "s" : ""})
         </span>
       </div>
@@ -2637,11 +2639,11 @@ function GroupView({
       {/* W / H (read-only — derived from children bounds) */}
       <div style={S.fieldGroup}>
         <span style={S.label}>W:</span>
-        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+        <span style={{ ...S.label, color: chrome.textDefault, width: 44, textAlign: "right" }}>
           {Math.round(totalW)}
         </span>
         <span style={{ ...S.label, marginLeft: 8 }}>H:</span>
-        <span style={{ ...S.label, color: "#c0c0c0", width: 44, textAlign: "right" }}>
+        <span style={{ ...S.label, color: chrome.textDefault, width: 44, textAlign: "right" }}>
           {Math.round(totalH)}
         </span>
       </div>
@@ -2653,9 +2655,7 @@ function GroupView({
         <button
           style={{
             ...S.toggleBtn,
-            background: "#333",
-            color: "#c0c0c0",
-            border: "1px solid #555",
+            ...TOGGLE_OFF,
             padding: "2px 8px",
           }}
           onClick={() => onUngroup?.()}

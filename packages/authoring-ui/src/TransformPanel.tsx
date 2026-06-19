@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import type { DisplayObject, ShapeDisplayObject, DrawingObject } from "@flash/core";
 import { transformedShapeBounds } from "@flash/core";
+import { chrome, halo, chromeFont, inputStyle, buttonStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -35,27 +36,31 @@ export interface TransformPanelProps {
 // Styles
 // ---------------------------------------------------------------------------
 
+// Flash 8 "Halo" light theme — tokens from theme/flash8Theme.ts (no hardcoded hex).
+// Transform panel: #ECECEC chrome, near-black Tahoma text, halo (white) inputs,
+// #999999 separators. See docs/30-flash8-ui-spec.md + Shell.tsx (reference).
 const styles: Record<string, React.CSSProperties> = {
   panel: {
     display: "flex",
     flexDirection: "column",
-    background: "#2d2d2d",
-    borderBottom: "1px solid #1a1a1a",
+    background: chrome.panelBg,
+    borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
     flexShrink: 0,
+    ...chromeFont(),
   },
   sectionHeader: {
     display: "flex",
     alignItems: "center",
     height: "22px",
-    background: "#3a3a3a",
-    borderBottom: "1px solid #1a1a1a",
+    background: `linear-gradient(${halo.panelHeaderGrad[0]}, ${halo.panelHeaderGrad[1]})`,
+    borderBottom: `1px solid ${halo.headerDivider}`,
     padding: "0 6px",
     flexShrink: 0,
     userSelect: "none",
   },
   sectionLabel: {
     fontSize: "11px",
-    color: "#c0c0c0",
+    color: chrome.textDefault,
     fontWeight: "bold",
   },
   sectionBody: {
@@ -77,42 +82,34 @@ const styles: Record<string, React.CSSProperties> = {
   },
   label: {
     fontSize: "10px",
-    color: "#999",
+    color: chrome.textDefault,
     width: "16px",
     flexShrink: 0,
     textAlign: "right",
   },
   labelWide: {
     fontSize: "10px",
-    color: "#999",
+    color: chrome.textDefault,
     width: "44px",
     flexShrink: 0,
     textAlign: "right",
   },
   input: {
+    ...inputStyle(),
     fontSize: "11px",
-    background: "#222",
-    color: "#e0e0e0",
-    border: "1px solid #444",
-    padding: "1px 3px",
     flex: 1,
     minWidth: 0,
-    outline: "none",
   },
   inputFocused: {
+    ...inputStyle(true),
     fontSize: "11px",
-    background: "#1a1a2e",
-    color: "#e0e0e0",
-    border: "1px solid #1a6ea8",
-    padding: "1px 3px",
     flex: 1,
     minWidth: 0,
-    outline: "none",
   },
   placeholder: {
     padding: "6px",
     fontSize: "11px",
-    color: "#666",
+    color: chrome.textDisabled,
     fontStyle: "italic",
   },
   constrainRow: {
@@ -124,23 +121,20 @@ const styles: Record<string, React.CSSProperties> = {
   },
   constrainLabel: {
     fontSize: "10px",
-    color: "#999",
+    color: chrome.textDefault,
     userSelect: "none",
     cursor: "pointer",
   },
   resetBtn: {
+    ...buttonStyle("up"),
     fontSize: "10px",
-    background: "#3a3a3a",
-    color: "#c0c0c0",
-    border: "1px solid #555",
     padding: "2px 6px",
-    cursor: "pointer",
     marginTop: "4px",
     alignSelf: "center",
   },
   divider: {
     height: "1px",
-    background: "#383838",
+    background: chrome.separator,
     margin: "2px 0",
   },
 };
@@ -365,7 +359,7 @@ export function TransformPanel({
               id="tp-constrain"
               checked={constrain}
               onChange={(e) => setConstrain(e.target.checked)}
-              style={{ cursor: "pointer", accentColor: "#1a6ea8" }}
+              style={{ cursor: "pointer", accentColor: halo.haloBlue }}
             />
             <label htmlFor="tp-constrain" style={styles.constrainLabel}>
               Constrain proportions
@@ -379,7 +373,7 @@ export function TransformPanel({
         <div style={styles.fieldGroup}>
           <span style={styles.labelWide}>Rotate:</span>
           <NumField fieldValue={rotation} onCommit={handleRotation} suffix="degrees" />
-          <span style={{ fontSize: "10px", color: "#666", marginLeft: "2px", flexShrink: 0 }}>deg</span>
+          <span style={{ fontSize: "10px", color: chrome.textDisabled, marginLeft: "2px", flexShrink: 0 }}>deg</span>
         </div>
 
         {/* Skew H and V row */}
@@ -393,7 +387,7 @@ export function TransformPanel({
             <NumField fieldValue={skewY} onCommit={handleSkewY} suffix="skew V (degrees)" />
           </div>
         </div>
-        <div style={{ fontSize: "10px", color: "#666", textAlign: "center" }}>skew H / V</div>
+        <div style={{ fontSize: "10px", color: chrome.textDisabled, textAlign: "center" }}>skew H / V</div>
 
         {/* Reset Transform */}
         <button
