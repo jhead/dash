@@ -8,6 +8,28 @@
 
 import React, { useState, useCallback } from "react";
 import type { FrameSizeReport } from "@flash/swf";
+import { chrome, halo, chromeFont, titleBarStyle } from "./theme/flash8Theme.js";
+
+// ---------------------------------------------------------------------------
+// Chart palette — re-picked for the LIGHT (white plot) Flash 8 theme.
+// The original dark-bg colors (#2677c8 on #111) wash out on white, so these
+// are chosen to read against #FFFFFF: a darker Halo blue for in-budget bars,
+// a strong amber for over-budget, and a red budget line.
+// ---------------------------------------------------------------------------
+
+const PLOT_BG = halo.panelContentBg; // white
+const PLOT_BORDER = halo.borderColor; // #B7BABC
+const AXIS_TEXT = chrome.textDefault; // near-black
+const AXIS_TEXT_DIM = chrome.textDisabled; // #808080
+const GRIDLINE = halo.gridLineV; // subtle vertical hover line on white
+
+const BAR_IN = "#2A6FB0"; // in-budget (darker Halo blue, reads on white)
+const BAR_IN_HOVER = halo.haloBlue; // #009DFF halo accent on hover
+const BAR_IN_LARGEST = "#1E5C96"; // largest in-budget (deeper)
+const BAR_OVER = "#D98C00"; // over-budget amber (reads on white)
+const BAR_OVER_HOVER = "#FFB400"; // brighter amber on hover
+const BAR_OVER_LARGEST = "#B36F00"; // largest over-budget (deeper)
+const BUDGET_LINE = "#CC2222"; // red budget line
 
 // ---------------------------------------------------------------------------
 // Modem speed presets (bits per second)
@@ -48,26 +70,19 @@ const panel: React.CSSProperties = {
   left: "50%",
   transform: "translateX(-50%)",
   width: "520px",
-  background: "#1e1e1e",
-  border: "1px solid #555",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.7)",
+  background: chrome.panelBg,
+  border: `${chrome.borderThin}px solid ${chrome.separator}`,
+  boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
   zIndex: 2000,
   display: "flex",
   flexDirection: "column",
-  fontFamily: "'Segoe UI', Arial, sans-serif",
-  fontSize: "11px",
-  color: "#e0e0e0",
+  ...chromeFont(),
   userSelect: "none",
 };
 
 const titleBar: React.CSSProperties = {
-  background: "#3c3c3c",
-  padding: "4px 8px",
-  display: "flex",
-  alignItems: "center",
+  ...titleBarStyle(),
   justifyContent: "space-between",
-  borderBottom: "1px solid #555",
-  flexShrink: 0,
 };
 
 const toolbar: React.CSSProperties = {
@@ -75,9 +90,10 @@ const toolbar: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: "8px",
-  borderBottom: "1px solid #333",
-  background: "#2a2a2a",
+  borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
+  background: chrome.panelBg,
   flexShrink: 0,
+  ...chromeFont(),
 };
 
 const chartArea: React.CSSProperties = {
@@ -85,22 +101,23 @@ const chartArea: React.CSSProperties = {
   flexGrow: 1,
   overflowX: "auto",
   overflowY: "hidden",
+  background: halo.panelContentBg,
 };
 
 const statusBar: React.CSSProperties = {
   padding: "4px 8px",
-  borderTop: "1px solid #333",
-  background: "#2a2a2a",
+  borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
+  background: chrome.panelBg,
   display: "flex",
   gap: "16px",
   flexShrink: 0,
-  color: "#c0c0c0",
+  ...chromeFont(),
 };
 
 const closeBtn: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#e0e0e0",
+  color: chrome.textDefault,
   cursor: "pointer",
   fontSize: "14px",
   lineHeight: "1",
@@ -108,10 +125,16 @@ const closeBtn: React.CSSProperties = {
 };
 
 const selectStyle: React.CSSProperties = {
-  background: "#3c3c3c",
-  border: "1px solid #555",
-  color: "#e0e0e0",
+  background: halo.inputBg,
+  borderStyle: "solid",
+  borderWidth: 1,
+  borderTopColor: halo.inputBorderDark,
+  borderLeftColor: halo.inputBorderDark,
+  borderRightColor: halo.inputBorderLight,
+  borderBottomColor: halo.inputBorderLight,
+  color: halo.text,
   fontSize: "11px",
+  fontFamily: chrome.fontFamily,
   padding: "2px 4px",
   cursor: "pointer",
 };
@@ -218,7 +241,7 @@ export function BandwidthProfilerPanel({
             <option key={p.label} value={i}>{p.label}</option>
           ))}
         </select>
-        <span style={{ color: "#aaa" }}>
+        <span style={{ color: chrome.textDisabled }}>
           Budget: {fmtBytes(Math.round(budget))}/frame
         </span>
       </div>
@@ -237,8 +260,8 @@ export function BandwidthProfilerPanel({
             y={0}
             width={Math.max(totalBarsW, PLOT_W)}
             height={PLOT_H}
-            fill="#111"
-            stroke="#333"
+            fill={PLOT_BG}
+            stroke={PLOT_BORDER}
             strokeWidth={1}
           />
 
@@ -250,7 +273,7 @@ export function BandwidthProfilerPanel({
               y={y + 3}
               textAnchor="end"
               fontSize={9}
-              fill="#888"
+              fill={AXIS_TEXT}
             >
               {label}
             </text>
@@ -264,9 +287,9 @@ export function BandwidthProfilerPanel({
             const isOver = bytes > budget;
             const isHovered = hoveredFrame === fi;
             const isLargest = fi === largestFrame;
-            let fill = isOver ? "#e6b800" : "#2677c8";
-            if (isHovered) fill = isOver ? "#ffe033" : "#44aaff";
-            if (isLargest && !isHovered) fill = isOver ? "#ffcc00" : "#3399ff";
+            let fill = isOver ? BAR_OVER : BAR_IN;
+            if (isHovered) fill = isOver ? BAR_OVER_HOVER : BAR_IN_HOVER;
+            if (isLargest && !isHovered) fill = isOver ? BAR_OVER_LARGEST : BAR_IN_LARGEST;
             return (
               <rect
                 key={fi}
@@ -289,7 +312,7 @@ export function BandwidthProfilerPanel({
               y1={budgetY}
               x2={AXIS_LEFT + Math.max(totalBarsW, PLOT_W)}
               y2={budgetY}
-              stroke="#cc2222"
+              stroke={BUDGET_LINE}
               strokeWidth={1.5}
               strokeDasharray="4 2"
             />
@@ -301,7 +324,7 @@ export function BandwidthProfilerPanel({
               x={AXIS_LEFT + 4}
               y={Math.max(8, budgetY - 3)}
               fontSize={8}
-              fill="#cc2222"
+              fill={BUDGET_LINE}
             >
               {modem.label}
             </text>
@@ -318,7 +341,7 @@ export function BandwidthProfilerPanel({
                   y={PLOT_H + 13}
                   textAnchor="middle"
                   fontSize={8}
-                  fill="#666"
+                  fill={AXIS_TEXT_DIM}
                 >
                   {fi + 1}
                 </text>
@@ -334,9 +357,9 @@ export function BandwidthProfilerPanel({
               y1={0}
               x2={AXIS_LEFT + hoveredFrame * (barWidth + barGap) + barWidth / 2}
               y2={PLOT_H}
-              stroke="#ffffff"
+              stroke={GRIDLINE}
               strokeWidth={0.5}
-              strokeOpacity={0.3}
+              strokeOpacity={0.8}
             />
           )}
         </svg>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { chrome, halo, chromeFont, titleBarStyle, buttonStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,32 +47,23 @@ const containerStyle: React.CSSProperties = {
   flexDirection: "column",
   width: "220px",
   maxHeight: "400px",
-  background: "#2d2d2d",
-  border: "1px solid #1a1a1a",
-  boxShadow: "2px 4px 12px rgba(0,0,0,0.5)",
-  fontFamily: "system-ui, sans-serif",
-  fontSize: "12px",
-  color: "#e0e0e0",
+  background: chrome.panelBg,
+  border: `${chrome.borderThin}px solid ${chrome.separator}`,
+  boxShadow: "2px 4px 12px rgba(0,0,0,0.3)",
+  ...chromeFont(),
   position: "absolute",
   zIndex: 2000,
 };
 
-const titleBarStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
+const historyTitleBarStyle: React.CSSProperties = {
+  ...titleBarStyle(),
   justifyContent: "space-between",
-  height: "22px",
-  padding: "0 8px",
-  background: "#3c3c3c",
-  borderBottom: "1px solid #1a1a1a",
-  flexShrink: 0,
-  userSelect: "none",
 };
 
 const closeBtnStyle: React.CSSProperties = {
   background: "transparent",
   border: "none",
-  color: "#aaa",
+  color: chrome.textDefault,
   cursor: "pointer",
   fontSize: "13px",
   lineHeight: 1,
@@ -82,6 +74,7 @@ const listStyle: React.CSSProperties = {
   flex: 1,
   overflowY: "auto",
   minHeight: 0,
+  background: halo.panelContentBg,
 };
 
 const stepRowBaseStyle: React.CSSProperties = {
@@ -93,11 +86,12 @@ const stepRowBaseStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
+  ...chromeFont(),
 };
 
 const dividerStyle: React.CSSProperties = {
   height: "2px",
-  background: "#1a6ea8",
+  background: halo.haloBlue,
   margin: "1px 0",
   flexShrink: 0,
 };
@@ -107,29 +101,19 @@ const footerStyle: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   padding: "4px 8px",
-  borderTop: "1px solid #1a1a1a",
+  borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
+  background: chrome.panelBg,
   flexShrink: 0,
   gap: "4px",
 };
 
 const clearBtnStyle: React.CSSProperties = {
-  background: "#3a3a3a",
-  border: "1px solid #555",
-  color: "#ccc",
-  cursor: "pointer",
-  fontSize: "11px",
-  padding: "2px 8px",
-  borderRadius: "2px",
+  ...buttonStyle("up"),
+  whiteSpace: "nowrap",
 };
 
 const saveCommandBtnStyle: React.CSSProperties = {
-  background: "#1a6ea8",
-  border: "1px solid #0d5a8a",
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: "11px",
-  padding: "2px 8px",
-  borderRadius: "2px",
+  ...buttonStyle("up"),
   whiteSpace: "nowrap",
 };
 
@@ -196,7 +180,7 @@ export function HistoryPanel({
   return (
     <div style={containerStyle} data-testid="history-panel">
       {/* Title bar */}
-      <div style={titleBarStyle}>
+      <div style={historyTitleBarStyle}>
         <span style={{ fontWeight: "bold", fontSize: "11px" }}>History</span>
         {onClose && (
           <button style={closeBtnStyle} onClick={onClose} title="Close History panel">
@@ -211,8 +195,8 @@ export function HistoryPanel({
         <div
           style={{
             ...stepRowBaseStyle,
-            background: currentIndex === 0 ? "#1a6ea8" : "#3a3a3a",
-            color: currentIndex === 0 ? "#fff" : "#ccc",
+            background: currentIndex === 0 ? halo.selectionColor : halo.alternatingRows[0],
+            color: currentIndex === 0 ? halo.textSelected : chrome.textDefault,
             fontStyle: "italic",
           }}
           onClick={() => onJumpTo(0)}
@@ -233,14 +217,14 @@ export function HistoryPanel({
               style={{
                 ...stepRowBaseStyle,
                 background: isSelected
-                  ? "#0d5a8a"
+                  ? halo.rollOverColor
                   : isCurrent
-                  ? "#1a6ea8"
+                  ? halo.selectionColor
                   : i % 2 === 0
-                  ? "#333"
-                  : "#2d2d2d",
-                color: isCurrent || isSelected ? "#fff" : "#e0e0e0",
-                outline: isSelected ? "1px solid #4da6ff" : "none",
+                  ? halo.alternatingRows[0]
+                  : halo.alternatingRows[1],
+                color: isCurrent || isSelected ? halo.textSelected : chrome.textDefault,
+                outline: isSelected ? `1px solid ${halo.haloBlue}` : "none",
               }}
               onClick={(e) => {
                 if (onSaveAsCommand && e.shiftKey) {
@@ -268,8 +252,8 @@ export function HistoryPanel({
               key={stepIndex}
               style={{
                 ...stepRowBaseStyle,
-                background: i % 2 === 0 ? "#333" : "#2d2d2d",
-                color: "#777",
+                background: i % 2 === 0 ? halo.alternatingRows[0] : halo.alternatingRows[1],
+                color: chrome.textDisabled,
               }}
               onClick={() => onJumpTo(stepIndex)}
               data-testid={`history-step-${stepIndex}`}

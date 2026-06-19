@@ -14,6 +14,7 @@
 
 import React, { useMemo, useState } from "react";
 import { BUILTIN_COMPONENTS, type ComponentDef } from "@flash/core";
+import { chrome, halo, chromeFont, titleBarStyle } from "./theme/flash8Theme.js";
 
 /** dataTransfer MIME type carrying a built-in component's class name on drag. */
 export const COMPONENT_DRAG_MIME = "application/flash-component";
@@ -42,28 +43,19 @@ const panelStyle: React.CSSProperties = {
   top: "80px",
   right: "10px",
   width: "220px",
-  background: "#2a2a2a",
-  border: "1px solid #555",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+  background: chrome.panelBg,
+  border: `${chrome.borderThin}px solid ${chrome.separator}`,
+  boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
   display: "flex",
   flexDirection: "column",
   zIndex: 1800,
-  fontFamily: "Arial, sans-serif",
-  fontSize: "11px",
-  color: "#d0d0d0",
-  borderRadius: "3px",
+  ...chromeFont(),
   overflow: "hidden",
 };
 
 const headerStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
+  ...titleBarStyle(),
   justifyContent: "space-between",
-  padding: "4px 8px",
-  background: "#333",
-  borderBottom: "1px solid #555",
-  flexShrink: 0,
-  height: "22px",
 };
 
 const listStyle: React.CSSProperties = {
@@ -71,15 +63,17 @@ const listStyle: React.CSSProperties = {
   overflowY: "auto",
   minHeight: "80px",
   maxHeight: "360px",
+  background: halo.panelContentBg,
 };
 
 const categoryStyle: React.CSSProperties = {
   padding: "3px 8px",
-  background: "#3a3a3a",
+  background: chrome.insetFieldStrip,
+  borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
+  borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
+  ...chromeFont(),
+  color: chrome.textDefault,
   fontWeight: "bold",
-  color: "#bbb",
-  borderTop: "1px solid #444",
-  borderBottom: "1px solid #222",
 };
 
 const rowStyle = (selected: boolean): React.CSSProperties => ({
@@ -88,8 +82,9 @@ const rowStyle = (selected: boolean): React.CSSProperties => ({
   gap: 6,
   padding: "3px 8px 3px 18px",
   cursor: "grab",
-  background: selected ? "#1c5a99" : "transparent",
-  color: selected ? "#fff" : "#d0d0d0",
+  ...chromeFont(),
+  background: selected ? halo.selectionColor : "transparent",
+  color: selected ? halo.textSelected : chrome.textDefault,
   userSelect: "none",
 });
 
@@ -97,8 +92,8 @@ const iconStyle: React.CSSProperties = {
   width: 12,
   height: 12,
   flexShrink: 0,
-  background: "#888",
-  border: "1px solid #555",
+  background: halo.borderCap,
+  border: `1px solid ${halo.borderColor}`,
   borderRadius: 2,
 };
 
@@ -134,7 +129,7 @@ export function ComponentsPanel({
           style={{
             background: "transparent",
             border: "none",
-            color: "#aaa",
+            color: chrome.textDefault,
             cursor: "pointer",
             fontSize: "13px",
             lineHeight: 1,

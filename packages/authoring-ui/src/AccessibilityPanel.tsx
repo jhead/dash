@@ -14,6 +14,7 @@
 import React, { useCallback } from "react";
 import type { DocumentAccessibility, FlashDocument } from "@flash/core";
 import type { ObjectAccessibility } from "@flash/core";
+import { chrome, halo, chromeFont, titleBarStyle } from "./theme/flash8Theme.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -53,37 +54,30 @@ const PANEL: React.CSSProperties = {
   top: "60px",
   left: "220px",
   zIndex: 2000,
-  background: "#2d2d2d",
-  border: "1px solid #555",
-  borderRadius: "4px",
+  background: chrome.panelBg,
+  border: `${chrome.borderThin}px solid ${chrome.separator}`,
   minWidth: "260px",
   maxWidth: "320px",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+  boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
   display: "flex",
   flexDirection: "column",
-  fontFamily: "system-ui, sans-serif",
-  fontSize: "11px",
-  color: "#d4d4d4",
+  ...chromeFont(),
   userSelect: "none",
 };
 
 const TITLE_BAR: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
+  ...titleBarStyle(),
   justifyContent: "space-between",
-  padding: "4px 8px",
-  background: "#333",
-  borderBottom: "1px solid #444",
-  flexShrink: 0,
 };
 
 const SECTION_HEADER: React.CSSProperties = {
   padding: "4px 8px",
-  background: "#383838",
-  borderBottom: "1px solid #444",
+  background: chrome.insetFieldStrip,
+  borderTop: `${chrome.borderThin}px solid ${chrome.separator}`,
+  borderBottom: `${chrome.borderThin}px solid ${chrome.separator}`,
   fontWeight: "bold",
-  fontSize: "11px",
-  color: "#aaa",
+  ...chromeFont(),
+  color: chrome.textDefault,
 };
 
 const BODY: React.CSSProperties = {
@@ -91,12 +85,13 @@ const BODY: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: "6px",
+  background: halo.panelContentBg,
 };
 
 const CLOSE_BTN: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#aaa",
+  color: chrome.textDefault,
   cursor: "pointer",
   fontSize: "14px",
   lineHeight: 1,
@@ -108,6 +103,7 @@ const CHECKBOX_ROW: React.CSSProperties = {
   alignItems: "center",
   gap: "6px",
   cursor: "pointer",
+  ...chromeFont(),
 };
 
 const FIELD_ROW: React.CSSProperties = {
@@ -117,16 +113,21 @@ const FIELD_ROW: React.CSSProperties = {
 };
 
 const LABEL: React.CSSProperties = {
-  color: "#aaa",
-  fontSize: "10px",
+  ...chromeFont(),
+  color: chrome.textDefault,
 };
 
 const INPUT: React.CSSProperties = {
-  background: "#1e1e1e",
-  border: "1px solid #555",
-  borderRadius: "3px",
-  color: "#d4d4d4",
+  background: halo.inputBg,
+  borderStyle: "solid",
+  borderWidth: 1,
+  borderTopColor: halo.inputBorderDark,
+  borderLeftColor: halo.inputBorderDark,
+  borderRightColor: halo.inputBorderLight,
+  borderBottomColor: halo.inputBorderLight,
+  color: halo.text,
   fontSize: "11px",
+  fontFamily: chrome.fontFamily,
   padding: "2px 5px",
   outline: "none",
   width: "100%",
