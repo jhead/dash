@@ -567,3 +567,61 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
 - **Resolved + verified (no longer open):** 1213 / 1217, 1228, 1214, 1229-part 1, 1215,
   1230, 1231-part 2.1.
+
+
+---
+
+## 2026-06-19 — Verify task 1232 (symbol-internal warp bake) + Component Part 2.2 (live params)
+
+- **Watermark (last fully-QA'd SHA):** `cb7d4fe` — current repo HEAD. Advances the
+  watermark to include the symbol-internal warp fix (`6307e85`) and the component live
+  parameter-passing work (`30602ff`), both VERIFIED below. Resolved + verified set now:
+  1213/1217, 1228, 1214, 1229-part1, 1215, 1230, 1231-part2.1, **1232**,
+  **component-part2.2**.
+- **Task 1232 (symbol-internal Free-Transform warp bake, commit `6307e85`) — VERIFIED
+  genuinely + completely resolved.** `sprite.ts` bakes the warp via the shared
+  `bakeWarpIntoShape` (not `shiftShapePaths`) and emits an IDENTITY affine on BOTH the
+  place and move paths. Byte-proven via swf-dump: the symbol-internal `DefineShape4` bounds
+  are now BAKED (0..5000 / 0..4000) vs the old pristine 1000..3000; the `PlaceObject2`
+  carries identity scale/rotation plus the correct `tx`/`ty` on the place AND move paths;
+  un-warped (pure-affine) symbols are unaffected. golden-parity exit 0; swf suite
+  **1407/1407**.
+  - **Minor non-blocking note:** the shipped `warp-sprite-bake.test.ts` asserts only the
+    PLACE path; the MOVE path is confirmed correct by an independent swf-dump repro.
+- **Component Part 2.2 — live parameter delivery (commit `30602ff`) — VERIFIED genuinely
+  works.** Author `componentParameters` reach the live instance via a per-instance
+  `DoAction` (emitted AFTER the component `PlaceObject2`) calling
+  `setComponentParam(name, value)`; only non-default params are emitted. Per-INSTANCE
+  correctness is proven (two Buttons with distinct labels each bind their OWN value — no
+  last-wins). Bytecode is sound (`ActionEnd`-terminated, standard `compileAS2` path). The
+  component-place unit tests decode the `DoAction` and assert the value reaches the right
+  instance; the component-oracle e2e is **4/4** and proves live delivery in Ruffle
+  (`getLabel()=="PLAY NOW"` → blue=20000, with a default-label negative control).
+  golden-parity exit 0; visual-oracle / golden-fla green. Nothing filed.
+- **BOOKKEEPING FLAG for maintainer:** commit `30602ff` (component live-param work) is
+  MISLABELED "task 1232" in its message, but task 1232 is the (separate) symbol-internal
+  Free-Transform-warp defect, resolved by commit `6307e85`. Task-status findings (read-only,
+  this sweep) for reconciliation:
+  - The id prefix `1232` is AMBIGUOUS — it matches TWO tasks:
+    `1232-6mgjzs-free-transform-warp-dropped-for-symbol-internal-` (the WARP defect) and
+    `1232-7xban3-component-part-2-2-live-parameter-passing-author` (component Part 2.2).
+  - `1232-6mgjzs` (symbol-internal warp): status **done**, resolved by commit `6307e85`
+    with regression test `warp-sprite-bake.test.ts`.
+  - `1232-7xban3` (Component Part 2.2 live params): status **done** — there IS a separate,
+    correctly-titled task tracking component Part 2.2, and it is closed. So despite the
+    `30602ff` commit-message mislabel, the work is properly tracked under its own task.
+    Maintainer should be aware the commit message text still says "task 1232" (the warp
+    task's bare number), not the part-2.2 task token.
+- **Milestone:** the v2 components feature is now complete + verified end-to-end:
+  emit (1229 part 1) → functional self-authored `mx.controls.Button` (1231 part 2.1) →
+  live author params (part 2.2).
+- **Still open for workers (carried forward + new):**
+  - **1216** — real render candidates: motion-tween not moving / motion-guide apex /
+    bitmap renders blank.
+  - **1227** — Trace Bitmap marching-squares walker traces only ~half of non-rectangular
+    regions (needs Moore-neighbor rewrite + diagonal tests).
+  - **1233** — Component Part 2.3: functional CheckBox / RadioButton (NEW, filed upstream
+    this sweep; status open).
+  - **1223** — CANDIDATE FOR CLOSE (resolved by 1225): `media.ts` doc-wording nuance only.
+- **Resolved + verified (no longer open):** 1213 / 1217, 1228, 1214, 1229-part 1, 1215,
+  1230, 1231-part 2.1, 1232, component-part 2.2.
