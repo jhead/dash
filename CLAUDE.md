@@ -468,6 +468,27 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   (warp+scaleX=2 / warp+rotation=30 → hasScale=hasRotate=false, un-doubled bounds;
   pure-affine still sets hasScale/hasRotate). Decoding the SHAPE bounds alone would NOT
   have caught this — the bug is in the placement matrix, not the baked geometry.
+- **The 1228/1230 warp bake ALSO applies to SYMBOL-INTERNAL shapes (the sprite path,
+  task 1232).** Tasks 1228/1230 fixed only the SCENE timeline (`compiler/characters.ts` +
+  `compiler/frames.ts`). The DefineSprite builder (`sprite.ts`) has its OWN shape-encode
+  pre-pass and its own PlaceObject2 emit paths, and they ignored `obj.warp` entirely: the
+  pre-pass (~338) called `shiftShapePaths(obj.shape, ox, oy)` and the two emit branches
+  (~705 first-placement, ~936 move) always built an affine `objTransform`. So a Distort/
+  Envelope warp authored on a shape INSIDE a movieclip/graphic symbol (reachable via
+  symbol-edit / edit-in-place; `handleShapeWarp` → `withSymbolTimeline` writes the warp onto
+  a ShapeDisplayObject inside the symbol's timeline) was DROPPED — the published DefineShape4
+  inside the DefineSprite was the pristine un-warped square (stage/SWF divergence). Fix
+  mirrors the scene path: when `obj.warp` is set, bake it via the SHARED `bakeWarpIntoShape`
+  (do not duplicate mesh math) and gate the sprite-internal `objTransform` to identity
+  (`displayObj.type === "shape" && !displayObj.warp`) in BOTH emit branches. Coordinate-convention
+  caveat: the sprite path normally bakes the (+x,+y) offset INTO the geometry (normOrigin=(x,y),
+  residual PO2=0 → un-warped bounds are 1000..3000 twips for a 100px square at (50,50)), whereas
+  `bakeWarpIntoShape` returns ORIGIN-RELATIVE geometry (absolute−x,y). So for warped shapes set
+  `shapeNormOrigin=(0,0)` → residual PO2=(x,y) carries the offset, matching the scene path's
+  shape-origin-normalization. Gate: `warp-sprite-bake.test.ts` (compiles a real movieclip-symbol
+  doc via `compileDocument`, decodes the DefineShape4 hoisted above the DefineSprite AND the
+  sprite-internal PlaceObject2 matrix — warp baked to 5000/4000 twips, no double-transform;
+  un-warped + pure-affine symbol-internal cases unchanged).
 - **DefineMorphShape2 (tag 84)**: use tag 84 (not legacy tag 46) for Flash 8 shape
   tweens so LINESTYLE2 cap/join data is preserved.
 - **DefineScalingGrid (tag 78)**: must immediately follow the `DefineSprite` tag for

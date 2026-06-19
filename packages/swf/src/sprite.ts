@@ -40,6 +40,7 @@ import { fontKey } from "./fonts.js";
 import { encodeStartSound, encodeStartSound2 } from "./sounds.js";
 import { encodeDefineButton2 } from "./buttons.js";
 import { encodeDefineMorphShape2, encodePlaceObject2WithRatio } from "./morphshape.js";
+import { bakeWarpIntoShape } from "./compiler/characters.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -334,8 +335,26 @@ export function encodeDefineSprite(
           // translation of (placement - shift) — i.e. 0,0 for non-tweened shapes.
           const ox = ("x" in obj ? (obj as { x: number }).x ?? 0 : 0);
           const oy = ("y" in obj ? (obj as { y: number }).y ?? 0 : 0);
-          shapeNormOrigin.set(obj.id, { x: ox, y: oy });
-          const normShape = shiftShapePaths(obj.shape, ox, oy);
+          // Task 1232 (same class as 1228/1230, sprite path): a Free-Transform
+          // Distort/Envelope warp authored on a shape INSIDE this symbol is
+          // non-affine and cannot be carried by the affine PlaceObject2 matrix,
+          // so — exactly like the scene path (characters.ts) — bake it into the
+          // DefineShape edge coordinates here. `bakeWarpIntoShape` reuses the
+          // SAME engine/warp.ts the editor stage uses and returns ORIGIN-RELATIVE
+          // geometry (it subtracts the object's x,y after mapping local→absolute).
+          // So for warped shapes the normalization origin is (0,0) and the residual
+          // PlaceObject2 translation becomes (placement - 0) = (x,y), positioning
+          // the baked geometry — matching the scene-path shape-origin-normalization.
+          // Un-warped shapes keep the legacy shift-by-(+x,+y) convention.
+          const warp = ("warp" in obj ? (obj as { warp?: import("@flash/core").ShapeWarp }).warp : undefined);
+          let normShape: Shape;
+          if (warp) {
+            shapeNormOrigin.set(obj.id, { x: 0, y: 0 });
+            normShape = bakeWarpIntoShape(obj.shape, warp, ox, oy);
+          } else {
+            shapeNormOrigin.set(obj.id, { x: ox, y: oy });
+            normShape = shiftShapePaths(obj.shape, ox, oy);
+          }
           // Hoist DefineShape4 to top level (Bug 3)
           hoistedDefs.push({ tagType: Tag.DefineShape4, body: encodeDefineShape4(charId, normShape) });
         } else if (obj.type === "text") {
@@ -702,7 +721,13 @@ export function encodeDefineSprite(
       if (isFirst) {
         if (displayObj.type === "shape" || displayObj.type === "drawing-object") {
           const charId = objCharIdMap.get(objId)!;
-          const objTransform = displayObj.type === "shape" ? {
+          // Task 1232 (mirrors 1230's frames.ts gating): a warped shape bakes the
+          // warp into ABSOLUTE-stage DefineShape geometry, which already encodes the
+          // full scale/rotation. Emitting the affine scaleX/scaleY/rotation on top
+          // would transform it twice; the editor renderer ignores affine when a warp
+          // is present (warp supersedes affine). So a warped shape gets an identity
+          // (translate-only) transform.
+          const objTransform = displayObj.type === "shape" && !displayObj.warp ? {
             scaleX: displayObj.scaleX,
             scaleY: displayObj.scaleY,
             rotation: displayObj.rotation,
@@ -933,7 +958,9 @@ export function encodeDefineSprite(
         const replaceChar = prev!.objId !== objId;
         if (displayObj.type === "shape" || displayObj.type === "drawing-object") {
           const charId = objCharIdMap.get(objId)!;
-          const objTransform = displayObj.type === "shape" ? {
+          // Task 1232 (mirrors 1230): warped shapes emit identity transform (warp
+          // baked into geometry supersedes affine) — see first-placement note above.
+          const objTransform = displayObj.type === "shape" && !displayObj.warp ? {
             scaleX: displayObj.scaleX,
             scaleY: displayObj.scaleY,
             rotation: displayObj.rotation,
