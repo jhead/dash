@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges } from "@flash/core";
@@ -1452,6 +1452,27 @@ function StageContextMenu({
   );
 }
 
+/**
+ * Pasteboard (work-area) margin in stage pixels surrounding the white stage rect.
+ *
+ * Real Flash 8 renders and lets you fully select/drag objects sitting on the gray
+ * pasteboard OUTSIDE the white stage — the stage rect is only the publish crop guide.
+ * Our render <canvas> + grid canvas + CanvasRenderer backing buffer used to be sized
+ * to EXACTLY stageW×H, so anything at x<0 / y<0 / x>stageW / y>stageH was clipped
+ * away by the canvas's own dimensions (invisible, and its selection halo too). We now
+ * enlarge those surfaces by this margin on every side and translate all drawing by it,
+ * so off-stage content renders on the pasteboard and is fully visible/selectable. The
+ * stage rect (white fill + edge shadow) remains the visual boundary on top.
+ *
+ * Sized generously relative to the stage so common "tween in from off-screen" staging
+ * (a symbol parked just past the left/top edge) lands on the visible pasteboard, while
+ * staying bounded so the backing bitmap doesn't balloon on huge stages.
+ */
+export function computePasteboardMargin(stageWidth: number, stageHeight: number): number {
+  const byStage = Math.round(Math.max(stageWidth, stageHeight) * 0.6);
+  return Math.max(220, Math.min(byStage, 900));
+}
+
 export function StageArea({
   stageWidth = 550,
   stageHeight = 400,
@@ -1558,6 +1579,19 @@ export function StageArea({
   const gridCanvasRef = useRef<HTMLCanvasElement>(null);
   const renderCanvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<CanvasRenderer | null>(null);
+
+  // Pasteboard margin (stage px) around the white stage. The render/grid canvases and
+  // the renderer backing buffer span stage + this margin on every side; stage origin
+  // (0,0) maps to canvas pixel (pasteboardMargin, pasteboardMargin). This is what lets
+  // off-stage content render and be selectable on the gray pasteboard. The canvases are
+  // positioned at top/left = -pasteboardMargin inside the stage box so the stage rect
+  // (white fill + edge shadow) stays exactly where it was visually.
+  const pasteboardMargin = useMemo(
+    () => computePasteboardMargin(stageWidth, stageHeight),
+    [stageWidth, stageHeight]
+  );
+  const canvasWidth = stageWidth + pasteboardMargin * 2;
+  const canvasHeight = stageHeight + pasteboardMargin * 2;
 
   // Internal pan/zoom state — we manage locally and call callbacks
   const [internalZoom, setInternalZoom] = useState(zoom);
@@ -3447,8 +3481,9 @@ export function StageArea({
     // HiDPI / Retina support: scale physical pixels by device pixel ratio.
     const dpr = window.devicePixelRatio || 1;
 
-    // Resize the canvas buffer to match stage dimensions (with DPR scaling)
-    rendererRef.current.resize(stageWidth, stageHeight, dpr);
+    // Resize the canvas buffer to stage + pasteboard margin on every side (with DPR
+    // scaling) so off-stage content is not clipped by the canvas dimensions.
+    rendererRef.current.resize(canvasWidth, canvasHeight, dpr);
 
     // Pre-load any bitmap images into renderer cache
     for (const bitmapItem of bitmapLibraryItems) {
@@ -3512,17 +3547,22 @@ export function StageArea({
     }
 
     // Viewport: no zoom/pan here — the parent div's CSS transform handles those.
-    // We render at 1:1 scale so the canvas stays sharp.
-    const viewport: Viewport = { x: 0, y: 0, zoom: 1 };
+    // We render at 1:1 scale so the canvas stays sharp. The negative pan shifts ALL
+    // scene drawing by +pasteboardMargin (renderer applies translate(-viewport.x,
+    // -viewport.y)), so stage coord (0,0) lands at canvas pixel (margin, margin) and
+    // off-stage content (x<0 etc.) draws onto the enlarged pasteboard buffer instead of
+    // being clipped. Direct halo/handle/preview draws below get the same offset via a
+    // base-transform translate applied right after render() returns.
+    const viewport: Viewport = { x: -pasteboardMargin, y: -pasteboardMargin, zoom: 1 };
 
     // Render onion skin ghost frames (sorted farthest-from-current first)
     if (onionFrames.length > 0) {
       const ctx = renderCanvasRef.current.getContext("2d")!;
       // Render main scene (to establish the canvas) then we'll re-render on top
       // First render ghost frames by drawing directly with globalAlpha + tint overlay
-      rendererRef.current.resize(stageWidth, stageHeight);
+      rendererRef.current.resize(canvasWidth, canvasHeight, dpr);
       // Clear first
-      ctx.clearRect(0, 0, stageWidth, stageHeight);
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
       // Sort: farthest from current frame first (lowest opacity first)
       const sortedOnion = [...onionFrames].sort((a, b) => a.opacity - b.opacity);
@@ -3531,7 +3571,7 @@ export function StageArea({
         // Render ghost scene to a temporary off-screen canvas (DPR-scaled).
         const offscreen = document.createElement("canvas");
         const ghostRenderer = new CanvasRenderer(offscreen);
-        ghostRenderer.resize(stageWidth, stageHeight, dpr);
+        ghostRenderer.resize(canvasWidth, canvasHeight, dpr);
         // Copy image cache by loading bitmaps
         for (const bitmapItem of bitmapLibraryItems) {
           if (bitmapItem.dataUri) {
@@ -3557,14 +3597,14 @@ export function StageArea({
         // Specify logical destination size so the DPR-scaled image maps correctly.
         ctx.save();
         ctx.globalAlpha = ghost.opacity;
-        ctx.drawImage(offscreen, 0, 0, stageWidth, stageHeight);
+        ctx.drawImage(offscreen, 0, 0, canvasWidth, canvasHeight);
 
         // Apply a subtle color tint overlay (skip in outline mode — color is already baked in)
         if (!ghost.outlineMode) {
           const tintColor = ghost.tint === "before" ? "rgba(50,100,220,0.15)" : "rgba(50,180,80,0.15)";
           ctx.globalCompositeOperation = "source-atop";
           ctx.fillStyle = tintColor;
-          ctx.fillRect(0, 0, stageWidth, stageHeight);
+          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
         }
         ctx.restore();
       }
@@ -3574,12 +3614,12 @@ export function StageArea({
     } else if (parentSceneGraph) {
       // Symbol edit mode: render parent scene dimmed, then symbol contents at full opacity.
       const ctx = renderCanvasRef.current.getContext("2d")!;
-      ctx.clearRect(0, 0, stageWidth, stageHeight);
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
       // Render parent scene to an offscreen canvas, then composite at 35% opacity.
       const offscreen = document.createElement("canvas");
       const parentRenderer = new CanvasRenderer(offscreen);
-      parentRenderer.resize(stageWidth, stageHeight, dpr);
+      parentRenderer.resize(canvasWidth, canvasHeight, dpr);
       for (const bitmapItem of bitmapLibraryItems) {
         if (bitmapItem.dataUri) {
           parentRenderer.loadImage(bitmapItem.id, bitmapItem.dataUri);
@@ -3588,13 +3628,25 @@ export function StageArea({
       parentRenderer.render(parentSceneGraph, viewport, library);
       ctx.save();
       ctx.globalAlpha = 0.35;
-      ctx.drawImage(offscreen, 0, 0, stageWidth, stageHeight);
+      ctx.drawImage(offscreen, 0, 0, canvasWidth, canvasHeight);
       ctx.restore();
 
       // Render the symbol's contents at full opacity on top.
       rendererRef.current.render(sceneGraph, viewport, library);
     } else {
       rendererRef.current.render(sceneGraph, viewport, library);
+    }
+
+    // From here on, ALL direct halo/handle/preview/motion-path drawing uses raw STAGE
+    // coordinates. Bake the pasteboard margin into the canvas 2D base transform so those
+    // stage coords map to canvas pixels (stageX + margin, stageY + margin), matching the
+    // scene content drawn above (which got the same offset via viewport). render() above
+    // already restored the transform to the DPR scale, and none of the overlay blocks
+    // below call setTransform (only save/restore), so this single base translate persists
+    // across every overlay. Off-stage selection halos now render on the pasteboard too.
+    {
+      const ctx = renderCanvasRef.current.getContext("2d")!;
+      ctx.setTransform(dpr, 0, 0, dpr, pasteboardMargin * dpr, pasteboardMargin * dpr);
     }
 
     // Draw selection + transform overlay on top of rendered shapes
@@ -4055,7 +4107,7 @@ export function StageArea({
       ctx.fillRect(r.x, r.y, r.width, r.height);
       ctx.restore();
     }
-  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId, symbolInstanceDisplayObjects, editingTextId, textEditState]);
+  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, pasteboardMargin, canvasWidth, canvasHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId, symbolInstanceDisplayObjects, editingTextId, textEditState]);
 
   // CSS filter for view modes
   const stageFilter =
@@ -4306,18 +4358,22 @@ export function StageArea({
             );
           })}
 
-          {/* Canvas renderer for shape display objects */}
+          {/* Canvas renderer for shape display objects. Spans stage + pasteboard margin
+              on every side and is offset by -pasteboardMargin so the stage region still
+              aligns to the stage box at (0,0); off-stage content draws onto the margin.
+              The effect resizes the backing buffer (with DPR) — the width/height attrs
+              here are the pre-mount fallback only. */}
           <canvas
             ref={renderCanvasRef}
             data-testid="stage-canvas"
-            width={stageWidth}
-            height={stageHeight}
+            width={canvasWidth}
+            height={canvasHeight}
             style={{
               position: "absolute",
-              top: 0,
-              left: 0,
-              width: stageWidth,
-              height: stageHeight,
+              top: -pasteboardMargin,
+              left: -pasteboardMargin,
+              width: canvasWidth,
+              height: canvasHeight,
               pointerEvents: "none",
               zIndex: 4,
             }}
