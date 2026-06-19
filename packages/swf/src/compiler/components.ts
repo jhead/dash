@@ -1,5 +1,5 @@
 /**
- * Placed v2-component synthesis pass (task 1229, Part 1 — runtime plumbing).
+ * Placed v2-component synthesis pass.
  *
  * Flash 8 ships the v2 component architecture (`mx.controls.*` / `mx.containers.*`):
  * authoring-time UI controls backed by AS2 classes. A `ComponentItem` placed on
@@ -8,24 +8,53 @@
  * handles `itemType === "symbol"`, so a placed component never received a SWF
  * character id and was SILENTLY DROPPED from the published movie.
  *
- * This pass closes that gap by emitting, for each *placed* ComponentItem:
- *   1. A synthetic DefineSprite (an empty placeholder timeline) registered in
- *      `charIdMap` under the ComponentItem's id, so the stage instance resolves to
- *      a real character id in the frame loop (`charIdMap.get(displayObj.symbolId)`).
- *   2. An ExportAssets entry under the fully-qualified AS2 class name
- *      (e.g. `mx.controls.Button`) — Flash's linkage identifier for the component.
- *   3. A DoInitAction calling `Object.registerClass(className, <ctor>)`, reusing the
- *      same machinery library symbols use, so the placeholder binds to its class.
+ * PART 1 (task 1229) closed the plumbing gap: each placed component emitted an
+ * (empty) DefineSprite + ExportAssets(class name) + a DoInitAction calling
+ * `Object.registerClass`. The component registered but rendered as nothing.
  *
- * EXPLICITLY OUT OF SCOPE (Part 2): the actual `mx.controls.*` AS2 framework, skins,
- * and behaviour. Without it the component registers but renders as an empty
- * placeholder sprite — the accepted Part-1 outcome.
+ * PART 2.1 (task 1231) makes ONE component genuinely render + react in Ruffle
+ * using AS2 WE author — NOT Adobe's real `mx.*` framework, and with NO Halo skin
+ * asset. For each placed component we now emit:
+ *
+ *   1. A self-authored AS2 class compiled via `compileAS2()` (from @flash/core),
+ *      wrapped in a DoInitAction. The class lives at the component's fully-qualified
+ *      dotted global path (e.g. `_global.mx.controls.Button`) so the existing
+ *      registerClass DoInitAction's `ActionGetVariable "mx.controls.Button"`
+ *      resolves to it. This DoInitAction is ordered BEFORE the registerClass one so
+ *      the constructor exists when registerClass binds it to the exported sprite.
+ *
+ *   2. A REAL skin DefineSprite: a DefineShape4 rounded-rect face (component default
+ *      size) plus a named DefineEditText `label_txt` placed on the sprite timeline.
+ *      The shape + edit-text are hoisted to top level (definition tags may not live
+ *      inside a sprite) and placed via PlaceObject2 inside the sprite body.
+ *
+ *   3. The author's label text statically seeded into the EditText at compile time
+ *      (live param-passing is a follow-on). The class `setLabel()` method also
+ *      updates `label_txt.text` at runtime.
+ *
+ *   4. The ExportAssets entry + registerClass DoInitAction from Part 1 (unchanged).
+ *
+ * EXPLICITLY OUT OF SCOPE (later waves): the full `mx.controls.*` AS2 framework,
+ * Halo skins, and other controls (CheckBox / List / ComboBox / ...).
  */
-import type { ComponentItem, ComponentLinkage, DisplayObject, FlashDocument, SymbolInstance } from "@flash/core";
+import type {
+  Color,
+  ComponentItem,
+  ComponentLinkage,
+  DisplayObject,
+  FlashDocument,
+  PathSegment,
+  Shape,
+  SymbolInstance,
+  TextDisplayObject,
+} from "@flash/core";
+import { compileAS2 } from "@flash/core";
 import { BitWriter } from "../bits.js";
 import { Tag } from "../tags.js";
 import { SwfWriter } from "../writer.js";
-import { encodeDoInitAction } from "../doInitAction.js";
+import { encodeDoInitAction, encodeRawDoInitAction } from "../doInitAction.js";
+import { encodeDefineShape4, encodePlaceObject2, encodePlaceObject2WithName } from "../shapes.js";
+import { encodeDefineEditText } from "../text.js";
 import { flattenDisplayObjects } from "./display.js";
 
 /** Inputs the component-synthesis pass needs. */
@@ -43,8 +72,29 @@ export interface ComponentPassInput {
  */
 export interface ComponentPassResult {
   exportEntries: { charId: number; name: string }[];
+  /**
+   * DoInitAction bodies, emitted by the orchestrator IN ARRAY ORDER. The class
+   * definition body is pushed BEFORE the registerClass body so the constructor
+   * exists when registerClass resolves the class name.
+   */
   doInitActionBodies: Uint8Array[];
 }
+
+// ---------------------------------------------------------------------------
+// Default component skin geometry / label
+// ---------------------------------------------------------------------------
+
+/** Flash 8 Button component's default placed size (px). */
+const DEFAULT_BUTTON_WIDTH = 100;
+const DEFAULT_BUTTON_HEIGHT = 22;
+
+/** Face fill (light grey) + border (medium grey) for the self-authored skin. */
+const FACE_COLOR: Color = { r: 0xe6, g: 0xe6, b: 0xe6, a: 0xff };
+const BORDER_COLOR: Color = { r: 0x66, g: 0x66, b: 0x66, a: 0xff };
+const LABEL_COLOR: Color = { r: 0x00, g: 0x00, b: 0x00, a: 0xff };
+
+/** Corner radius (px) of the rounded-rect face. */
+const CORNER_RADIUS = 6;
 
 /**
  * Fully-qualified AS2 class name for a component, e.g. `mx.controls.Button`.
@@ -62,22 +112,225 @@ export function componentLinkageIdentifier(item: ComponentItem): string {
   return item.linkage?.linkageIdentifier || componentClassName(item);
 }
 
+/** The label text statically seeded into the skin's EditText (defaults to the item name). */
+export function componentLabel(item: ComponentItem): string {
+  const cls = item.componentName?.trim() || item.name;
+  return cls || "Button";
+}
+
+// ---------------------------------------------------------------------------
+// AS2 class authoring
+// ---------------------------------------------------------------------------
+
 /**
- * Encode an EMPTY DefineSprite body (placeholder timeline): SpriteID + a single
- * frame containing only ShowFrame, terminated by End. This is the Part-1
- * placeholder skin — Part 2 replaces it with the real component visual.
+ * Author a FLAT, self-contained AS2 class for a placed component and return the
+ * compiled AVM1 bytecode (via @flash/core's `compileAS2`).
  *
- * Returns the raw tag body (the caller wraps it with `writeTag(DefineSprite, …)`).
+ * The class is authored as plain dotted-global assignments rather than `class`
+ * syntax. The AS2 compiler's `compileClassDecl` only supports a single-identifier
+ * class name (it emits `Name = function ...` via ActionSetVariable), but a
+ * component's class name is dotted (`mx.controls.Button`). Authoring it as
+ * `_global.mx.controls.Button = function(){...}` lets the existing registerClass
+ * DoInitAction (`ActionGetVariable "mx.controls.Button"`) resolve the constructor:
+ * AVM1's GetVariable walks the dotted path and falls back to `_global`.
+ *
+ * The class implements:
+ *   - constructor:  seeds `this.label`, mirrors it into the named `label_txt`
+ *                   child (the EditText placed in the skin sprite).
+ *   - setLabel(s):  param-driven update of both `this.label` and `label_txt.text`.
+ *   - getLabel():   accessor.
+ *   - onLoad:       re-asserts the label once the child is attached (clip-event
+ *                   parity for the Ruffle oracle).
+ *   - onRollOver / onRollOut: dim/restore the face alpha on hover.
+ *   - onRelease:    runtime click handler (sprites with onRelease become buttons
+ *                   in AVM1) — restores alpha and traces, proving the instance is live.
  */
-export function encodeEmptyDefineSprite(spriteId: number): Uint8Array {
-  // SpriteID (UI16) + FrameCount (UI16=1) + ShowFrame (tag 1, len 0) + End (tag 0, len 0).
+export function authorComponentClassBytecode(className: string, label: string): Uint8Array {
+  // Build the namespace guards + the fully-qualified global path. e.g.
+  // mx.controls.Button → ensure _global.mx and _global.mx.controls exist first.
+  const parts = className.split(".");
+  const guards: string[] = [];
+  let path = "_global";
+  for (let i = 0; i < parts.length - 1; i++) {
+    path += "." + parts[i];
+    guards.push(`if (${path} == undefined) { ${path} = {}; }`);
+  }
+  const fqn = "_global." + className;
+  // JSON.stringify gives a correctly quoted/escaped AS2 string literal.
+  const labelLit = JSON.stringify(label);
+
+  const src = `
+${guards.join("\n")}
+${fqn} = function() {
+  this.label = ${labelLit};
+  if (this.label_txt != undefined) {
+    this.label_txt.text = this.label;
+  }
+};
+${fqn}.prototype.setLabel = function(s) {
+  this.label = s;
+  if (this.label_txt != undefined) {
+    this.label_txt.text = s;
+  }
+};
+${fqn}.prototype.getLabel = function() {
+  return this.label;
+};
+${fqn}.prototype.onLoad = function() {
+  if (this.label_txt != undefined) {
+    this.label_txt.text = this.label;
+  }
+};
+${fqn}.prototype.onRollOver = function() {
+  this._alpha = 70;
+};
+${fqn}.prototype.onRollOut = function() {
+  this._alpha = 100;
+};
+${fqn}.prototype.onRelease = function() {
+  this._alpha = 100;
+  trace("[component] " + this.label + " released");
+};
+`;
+  return compileAS2(src);
+}
+
+// ---------------------------------------------------------------------------
+// Skin geometry
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a rounded-rectangle filled+stroked Shape for the component face, sized to
+ * (width, height) in pixels with origin at (0,0).
+ */
+function buildButtonFaceShape(width: number, height: number): Shape {
+  const r = Math.min(CORNER_RADIUS, width / 2, height / 2);
+  const x0 = 0;
+  const y0 = 0;
+  const x1 = width;
+  const y1 = height;
+
+  // Quadratic-corner rounded rect, clockwise from the top-left tangent point.
+  const segments: PathSegment[] = [
+    // top edge → top-right corner
+    { type: "line", to: { x: x1 - r, y: y0 } },
+    { type: "curve", control: { x: x1, y: y0 }, to: { x: x1, y: y0 + r } },
+    // right edge → bottom-right corner
+    { type: "line", to: { x: x1, y: y1 - r } },
+    { type: "curve", control: { x: x1, y: y1 }, to: { x: x1 - r, y: y1 } },
+    // bottom edge → bottom-left corner
+    { type: "line", to: { x: x0 + r, y: y1 } },
+    { type: "curve", control: { x: x0, y: y1 }, to: { x: x0, y: y1 - r } },
+    // left edge → top-left corner
+    { type: "line", to: { x: x0, y: y0 + r } },
+    { type: "curve", control: { x: x0, y: y0 }, to: { x: x0 + r, y: y0 } },
+  ];
+
+  return {
+    id: "component-face",
+    paths: [
+      {
+        start: { x: x0 + r, y: y0 },
+        segments,
+        closed: true,
+        fill: { type: "solid", color: FACE_COLOR },
+        stroke: {
+          type: "solid",
+          color: BORDER_COLOR,
+          width: 1,
+          caps: "round",
+          joints: "round",
+          miterLimit: 3,
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Build a centered dynamic-text TextDisplayObject for the component label. It is
+ * given the instance name `label_txt` at PLACEMENT time (PlaceObject2 name); the
+ * DefineEditText itself carries the statically seeded initial text.
+ */
+function buildLabelTextObject(label: string, width: number, height: number): TextDisplayObject {
+  return {
+    type: "text",
+    id: "label_txt",
+    x: 0,
+    y: 0,
+    width,
+    height,
+    text: label,
+    textType: "dynamic",
+    fontFamily: "Arial",
+    fontSize: 12,
+    bold: false,
+    italic: false,
+    color: LABEL_COLOR,
+    align: "center",
+    multiline: false,
+    wordWrap: false,
+    instanceName: "label_txt",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Skin sprite emission
+// ---------------------------------------------------------------------------
+
+/** Encode a tag record (header + body), large-tag aware. */
+function encodeTagRecord(tagType: number, body: Uint8Array): Uint8Array {
+  const bw = new BitWriter();
+  if (body.length < 0x3f) {
+    bw.writeUI16LE((tagType << 6) | body.length);
+  } else {
+    bw.writeUI16LE((tagType << 6) | 0x3f);
+    bw.writeSI32LE(body.length);
+  }
+  bw.writeBytes(body);
+  return bw.getBytes();
+}
+
+/**
+ * Build the DefineSprite tag *body* for the component skin: a single-frame
+ * timeline that places the face shape (depth 1) and the named label EditText
+ * (depth 2, instance name `label_txt`), then ShowFrame + End.
+ *
+ * The face shape and EditText characters must be defined at TOP LEVEL before this
+ * sprite (definition tags are forbidden inside a sprite), so the caller hoists
+ * `encodeDefineShape4` / `encodeDefineEditText` first; this body only carries the
+ * two PlaceObject2 control tags.
+ */
+export function encodeComponentSkinSprite(
+  spriteId: number,
+  faceCharId: number,
+  labelCharId: number,
+  labelObj: TextDisplayObject,
+): Uint8Array {
   const bw = new BitWriter();
   bw.writeUI16LE(spriteId);
   bw.writeUI16LE(1); // FrameCount
-  bw.writeUI16LE((Tag.ShowFrame << 6) | 0); // ShowFrame record header, body length 0
-  bw.writeUI16LE((Tag.End << 6) | 0); // End record header, body length 0
+
+  // Place the face shape at depth 1.
+  bw.writeBytes(encodeTagRecord(Tag.PlaceObject2, encodePlaceObject2(faceCharId, 1, 0, 0)));
+
+  // Place the named label EditText at depth 2 — the instance name makes
+  // `this.label_txt` resolvable from the class methods.
+  bw.writeBytes(
+    encodeTagRecord(
+      Tag.PlaceObject2,
+      encodePlaceObject2WithName(labelCharId, 2, labelObj.x, labelObj.y, labelObj.instanceName!),
+    ),
+  );
+
+  bw.writeBytes(encodeTagRecord(Tag.ShowFrame, new Uint8Array(0)));
+  bw.writeBytes(encodeTagRecord(Tag.End, new Uint8Array(0)));
   return bw.getBytes();
 }
+
+// ---------------------------------------------------------------------------
+// Placement collection
+// ---------------------------------------------------------------------------
 
 /**
  * Collect the set of ComponentItem ids that are actually PLACED on any scene or
@@ -116,12 +369,19 @@ function collectPlacedComponentIds(doc: FlashDocument): Set<string> {
   return placed;
 }
 
+// ---------------------------------------------------------------------------
+// Pass
+// ---------------------------------------------------------------------------
+
 /**
- * Emit a synthetic DefineSprite + linkage for every placed v2 component.
+ * Emit, for every placed v2 component: the hoisted skin definitions
+ * (DefineShape4 + DefineEditText), the skin DefineSprite (registered under the
+ * ComponentItem id), the class-definition DoInitAction, the registerClass
+ * DoInitAction, and the ExportAssets linkage entry.
  *
  * Must run AFTER the symbol pass (so library-symbol char ids are already assigned
- * and the synthetic sprite ids never collide) and BEFORE the frame loop (so the
- * placement path can resolve `charIdMap.get(displayObj.symbolId)`).
+ * and the synthetic ids never collide) and BEFORE the frame loop (so the placement
+ * path can resolve `charIdMap.get(displayObj.symbolId)`).
  */
 export function runComponentPass(input: ComponentPassInput): ComponentPassResult {
   const { writer, doc, charIdMap } = input;
@@ -137,21 +397,38 @@ export function runComponentPass(input: ComponentPassInput): ComponentPassResult
     if (!placedIds.has(item.id)) continue;
     const component = item as ComponentItem;
 
-    const charId = writer.nextCharId();
-    charIdMap.set(component.id, charId);
-
-    // 1. Synthetic placeholder sprite (registered under the ComponentItem id so
-    //    the stage SymbolInstance resolves to it).
-    writer.writeTag(Tag.DefineSprite, encodeEmptyDefineSprite(charId));
-
-    // 2. ExportAssets entry under the fully-qualified AS2 class name.
     const className = componentClassName(component);
     const linkageId = componentLinkageIdentifier(component);
-    exportEntries.push({ charId, name: linkageId });
+    const label = componentLabel(component);
+    const width = DEFAULT_BUTTON_WIDTH;
+    const height = DEFAULT_BUTTON_HEIGHT;
 
-    // 3. DoInitAction binding the placeholder to its AS2 class (reuses the same
-    //    Object.registerClass machinery library symbols use).
-    doInitActionBodies.push(encodeDoInitAction(charId, className, linkageId));
+    // 1. Hoisted skin definitions (top-level, BEFORE the DefineSprite).
+    const faceCharId = writer.nextCharId();
+    writer.writeTag(Tag.DefineShape4, encodeDefineShape4(faceCharId, buildButtonFaceShape(width, height)));
+
+    const labelObj = buildLabelTextObject(label, width, height);
+    const labelCharId = writer.nextCharId();
+    // No embedded font id → device-font rendering (HasFont unset); text still seeded.
+    writer.writeTag(Tag.DefineEditText, encodeDefineEditText(labelCharId, labelObj));
+
+    // 2. The skin DefineSprite, registered under the ComponentItem id so the stage
+    //    SymbolInstance resolves to it.
+    const spriteId = writer.nextCharId();
+    charIdMap.set(component.id, spriteId);
+    writer.writeTag(
+      Tag.DefineSprite,
+      encodeComponentSkinSprite(spriteId, faceCharId, labelCharId, labelObj),
+    );
+
+    // 3. ExportAssets entry under the linkage identifier (defaults to class name).
+    exportEntries.push({ charId: spriteId, name: linkageId });
+
+    // 4. DoInitAction ORDER: class definition FIRST, then registerClass — so the
+    //    constructor exists in _global when registerClass resolves it.
+    const classBytecode = authorComponentClassBytecode(className, label);
+    doInitActionBodies.push(encodeRawDoInitAction(spriteId, classBytecode));
+    doInitActionBodies.push(encodeDoInitAction(spriteId, className, linkageId));
   }
 
   return { exportEntries, doInitActionBodies };

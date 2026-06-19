@@ -132,3 +132,57 @@ Button component, decodes the OWN compiled SWF (no real-Flash binary), and asser
 DefineSprite exists for it, (b) ExportAssets lists `mx.controls.Button`, (c) a DoInitAction
 registers the class (`Object.registerClass` bytecode), and (d) the stage PlaceObject
 references the synthetic sprite's char id.
+
+## Functional component class + skin (task 1231, Part 2.1)
+
+Part 2.1 is the **load-bearing first slice** that makes ONE placed component genuinely
+**render and react** in the published SWF — using AS2 **we author**, NOT Adobe's real
+`mx.*` framework, and with **no Halo skin asset**. It builds directly on Part 1's
+ExportAssets + registerClass plumbing. For every placed component `runComponentPass` now
+emits (all in `packages/swf/src/compiler/components.ts`):
+
+1. **A self-authored AS2 class**, compiled with `compileAS2()` (`@flash/core`) and wrapped
+   in a **raw-bytecode `DoInitAction`** (new `encodeRawDoInitAction` in
+   `doInitAction.ts`). The class is authored as **dotted-global assignments** —
+   `_global.mx.controls.Button = function(){…}` plus `…prototype.setLabel / onRelease /
+   onRollOver / onRollOut / onLoad` — rather than `class` syntax, because the AS2 compiler's
+   `compileClassDecl` only supports a single-identifier class name (it emits `Name =
+   function` via ActionSetVariable) and a component's name is dotted. Authoring it at the
+   global dotted path lets the existing registerClass `DoInitAction`
+   (`ActionGetVariable "mx.controls.Button"`) resolve the constructor (AVM1 GetVariable
+   walks the dotted path / falls back to `_global`). **The class-definition `DoInitAction`
+   is pushed BEFORE the registerClass one** (array order = emission order in
+   `compiler/frames.ts`), so the constructor exists when registerClass binds it.
+2. **A real skin `DefineSprite`** replacing the Part-1 empty placeholder: a **DefineShape4**
+   rounded-rect face (100×22 default, light-grey fill + grey border) and a **named
+   DefineEditText `label_txt`**, both hoisted to top level (definition tags are forbidden
+   inside a sprite) and placed via `PlaceObject2` on the sprite's single frame. The
+   EditText uses a device font (no embedded `DefineFont3`).
+3. **The author's label statically seeded** into the EditText's initial text at compile
+   time (derived from `componentName`/`name`; live param-passing is a follow-on). The
+   class `setLabel()` / `onLoad` also write `label_txt.text` at runtime.
+
+### KEY UNKNOWN — RESOLVED: Ruffle binds DoInitAction classes via registerClass
+
+The central open question for the whole Part-2 effort was: **does Ruffle bind a
+DoInitAction-defined class (via `Object.registerClass`) to the exported placeholder sprite
+at runtime?** The Ruffle oracle `apps/desktop/e2e/component-oracle.spec.ts` answers **YES,
+confirmed**:
+
+- **RENDER** — the published SWF shows ~2400 non-white, button-shaped pixels (the skin
+  renders; not the Part-1 empty placeholder).
+- **BINDING** — a root `onEnterFrame` polls `_root.myButton instanceof mx.controls.Button`
+  and advances the stage **RED→BLUE only when true**. It flips to blue within a tick or
+  two, proving the registerClass binding made the exported sprite an instance of the
+  DoInitAction-defined class. (`onEnterFrame`, NOT headless `mouseDown`, per the
+  headless-Ruffle clip-event constraint.)
+- **NEGATIVE CONTROL** — an identical doc with **no component placed** never advances
+  (stays red), proving the advance is impossible without the bound class.
+
+Structural acceptance (`component-place.test.ts`, decoding our own SWF): the class
+`DoInitAction` body contains `DefineFunction2` (0x8e) and is **ordered before** the
+registerClass `DoInitAction`; the skin `DefineSprite` places a hoisted `DefineShape4` +
+`DefineEditText`; the seeded label appears in the EditText InitialText.
+
+**Still OUT OF SCOPE (later waves):** the full `mx.controls.*` AS2 framework, Halo skins,
+live parameter passing, and other controls (CheckBox / List / ComboBox / …).

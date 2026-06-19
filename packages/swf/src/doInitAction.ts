@@ -99,10 +99,41 @@ export function encodeDoInitAction(
   linkageId: string
 ): Uint8Array {
   const actionBytes = buildRegisterClassBytecode(className, linkageId);
-  const body = new Uint8Array(2 + actionBytes.length);
+  return encodeRawDoInitAction(spriteId, actionBytes);
+}
+
+/**
+ * Encode a DoInitAction (tag 59) tag body from a RAW AVM1 bytecode buffer.
+ *
+ * Unlike {@link encodeDoInitAction} (which only builds the fixed
+ * Object.registerClass script), this variant wraps arbitrary pre-compiled AVM1
+ * bytecode — e.g. a self-authored AS2 class compiled via `compileAS2()` — in the
+ * DoInitAction framing. The component pass (task 1231) uses it to emit a
+ * component's class DEFINITION ahead of its registerClass binding, so the
+ * constructor exists in the global scope when registerClass resolves it.
+ *
+ * A trailing ActionEnd (0x00) is appended when the bytecode does not already end
+ * with one. `compileAS2()` does NOT emit ActionEnd, so an action record built
+ * from its output would otherwise run off the end of the buffer (same rule as
+ * DoAction frame scripts and CLIPACTIONRECORD bytecode).
+ *
+ * @param spriteId    Character ID associated with the init action (for parity
+ *                    with encodeDoInitAction; DoInitAction scripts all execute
+ *                    before frame 1 regardless of this id).
+ * @param actionBytes Pre-compiled AVM1 bytecode (no SWF framing).
+ * @returns Raw tag body bytes (WITHOUT the tag record header).
+ */
+export function encodeRawDoInitAction(
+  spriteId: number,
+  actionBytes: Uint8Array
+): Uint8Array {
+  const hasEnd = actionBytes.length > 0 && actionBytes[actionBytes.length - 1] === 0x00;
+  const tail = hasEnd ? 0 : 1;
+  const body = new Uint8Array(2 + actionBytes.length + tail);
   // SpriteId as UI16LE
   body[0] = spriteId & 0xff;
   body[1] = (spriteId >> 8) & 0xff;
   body.set(actionBytes, 2);
+  if (!hasEnd) body[2 + actionBytes.length] = 0x00; // ActionEnd
   return body;
 }

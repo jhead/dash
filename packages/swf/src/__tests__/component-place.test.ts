@@ -34,9 +34,42 @@ import type {
 
 const TAG_END = 0;
 const TAG_PLACE_OBJECT2 = 26;
+const TAG_DEFINE_EDIT_TEXT = 37;
 const TAG_DEFINE_SPRITE = 39;
 const TAG_EXPORT_ASSETS = 56;
 const TAG_DO_INIT_ACTION = 59;
+const TAG_DEFINE_SHAPE4 = 83;
+
+/** AVM1 ActionDefineFunction2 opcode — proof a function/class was authored. */
+const ACTION_DEFINE_FUNCTION2 = 0x8e;
+
+/**
+ * True when an AVM1 bytecode buffer (the body AFTER the 2-byte DoInitAction
+ * SpriteID) contains a DefineFunction2 (0x8e) action. We walk the action stream
+ * respecting variable-length-action framing so a 0x8e byte inside a push operand
+ * is not a false positive.
+ */
+function bytecodeHasDefineFunction2(body: Uint8Array): boolean {
+  let pos = 2; // skip SpriteID
+  while (pos < body.length) {
+    const op = body[pos];
+    if (op === 0x00) break; // ActionEnd
+    if (op === ACTION_DEFINE_FUNCTION2) return true;
+    if (op < 0x80) {
+      pos += 1; // no-operand action
+      continue;
+    }
+    const len = body[pos + 1] | (body[pos + 2] << 8);
+    pos += 3 + len; // skip the header; bodies (codeSize) follow but contain their own actions
+  }
+  return false;
+}
+
+/** Tags 39 (DefineSprite) inner control tags — parse the sprite body's tag stream. */
+function parseSpriteInnerTags(body: Uint8Array): SWFTag[] {
+  // DefineSprite body: UI16 SpriteID, UI16 FrameCount, then a tag stream.
+  return parseTags(body, 4);
+}
 
 // ---------------------------------------------------------------------------
 // SWF binary parser helpers (same minimal reader other swf tests use)
@@ -309,13 +342,17 @@ describe("placed v2 component runtime plumbing (task 1229, Part 1)", () => {
     expect(spriteIds).toContain(componentCharId);
 
     // (c) A DoInitAction registers the class for that sprite id, and its bytecode
-    //     calls Object.registerClass(linkageId, ClassName).
-    const initTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
-    const initForComponent = initTags.find(
-      (t) => doInitActionSpriteId(t.body) === componentCharId
+    //     calls Object.registerClass(linkageId, ClassName). Part 2.1 emits TWO
+    //     DoInitActions per component (class-definition then registerClass), both
+    //     targeting the sprite id; select the registerClass one by its content.
+    const initForComponent = tags.filter(
+      (t) => t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === componentCharId
     );
-    expect(initForComponent, "DoInitAction must target the component sprite").toBeDefined();
-    const strings = pushedStrings(initForComponent!.body);
+    const registerInit = initForComponent.find((t) =>
+      pushedStrings(t.body).includes("registerClass")
+    );
+    expect(registerInit, "DoInitAction must register the component class").toBeDefined();
+    const strings = pushedStrings(registerInit!.body);
     expect(strings).toContain("Object");
     expect(strings).toContain("registerClass");
     expect(strings).toContain(CLASS_NAME); // className passed to registerClass
@@ -367,5 +404,111 @@ describe("placed v2 component runtime plumbing (task 1229, Part 1)", () => {
     const initTags = tags.filter((t) => t.code === TAG_DO_INIT_ACTION);
     const strings = initTags.flatMap((t) => pushedStrings(t.body));
     expect(strings).toContain("com.example.MyButton");
+  });
+});
+
+describe("functional self-authored component class + skin (task 1231, Part 2.1)", () => {
+  const CLASS_NAME = "mx.controls.Button";
+
+  it("emits a class-definition DoInitAction (DefineFunction2) ORDERED BEFORE registerClass", () => {
+    const component = makeComponent();
+    const instance = makeInstance(component.id);
+    const doc = makeDoc(component, instance);
+
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    // Recover the component sprite char id from the ExportAssets linkage entry.
+    const exports = tags
+      .filter((t) => t.code === TAG_EXPORT_ASSETS)
+      .flatMap((t) => parseExportAssets(t.body));
+    const spriteId = exports.find((e) => e.name === CLASS_NAME)!.charId;
+    expect(spriteId).toBeGreaterThanOrEqual(1);
+
+    // Walk the tag stream in document order, capturing the index of each
+    // DoInitAction targeting the component sprite.
+    const initIndices: { idx: number; tag: SWFTag }[] = [];
+    tags.forEach((t, idx) => {
+      if (t.code === TAG_DO_INIT_ACTION && doInitActionSpriteId(t.body) === spriteId) {
+        initIndices.push({ idx, tag: t });
+      }
+    });
+    // Two DoInitActions: the class definition and the registerClass binding.
+    expect(initIndices.length).toBe(2);
+
+    const classInit = initIndices.find((e) => bytecodeHasDefineFunction2(e.tag.body));
+    const registerInit = initIndices.find((e) =>
+      pushedStrings(e.tag.body).includes("registerClass")
+    );
+    expect(classInit, "a DoInitAction must define the class via DefineFunction2").toBeDefined();
+    expect(registerInit, "a DoInitAction must call registerClass").toBeDefined();
+
+    // The class DEFINITION must be emitted BEFORE the registerClass binding so the
+    // constructor exists in _global when registerClass resolves the dotted name.
+    expect(classInit!.idx).toBeLessThan(registerInit!.idx);
+
+    // The registerClass body should NOT itself contain a DefineFunction2 (it is a
+    // pure Object.registerClass call), confirming the two are distinct scripts.
+    expect(bytecodeHasDefineFunction2(registerInit!.tag.body)).toBe(false);
+  });
+
+  it("emits a real skin sprite containing a DefineShape4 face + a named DefineEditText", () => {
+    const component = makeComponent();
+    const instance = makeInstance(component.id);
+    const doc = makeDoc(component, instance);
+
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    const exports = tags
+      .filter((t) => t.code === TAG_EXPORT_ASSETS)
+      .flatMap((t) => parseExportAssets(t.body));
+    const spriteId = exports.find((e) => e.name === CLASS_NAME)!.charId;
+
+    // The skin DefineSprite for the component.
+    const spriteTag = tags.find(
+      (t) => t.code === TAG_DEFINE_SPRITE && defineSpriteId(t.body) === spriteId
+    );
+    expect(spriteTag, "component skin DefineSprite must exist").toBeDefined();
+
+    // The face shape (DefineShape4) and label EditText (DefineEditText) are hoisted
+    // to TOP LEVEL before the sprite (definition tags are forbidden inside sprites).
+    const shapeTags = tags.filter((t) => t.code === TAG_DEFINE_SHAPE4);
+    const editTextTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    expect(shapeTags.length).toBeGreaterThanOrEqual(1);
+    expect(editTextTags.length).toBeGreaterThanOrEqual(1);
+
+    // Char ids placed INSIDE the skin sprite resolve to a hoisted shape + edit-text.
+    const innerTags = parseSpriteInnerTags(spriteTag!.body);
+    const innerPlacedIds = innerTags
+      .filter((t) => t.code === TAG_PLACE_OBJECT2)
+      .map((t) => placeObject2CharId(t.body))
+      .filter((id): id is number => id !== null);
+    // Two placements: the face shape and the label text field.
+    expect(innerPlacedIds.length).toBe(2);
+
+    const shapeCharIds = new Set(shapeTags.map((t) => defineSpriteId(t.body) /* UI16 at offset 0 */));
+    const editTextCharIds = new Set(
+      editTextTags.map((t) => t.body[0] | (t.body[1] << 8))
+    );
+    // One placed id is a DefineShape4 char, the other a DefineEditText char.
+    const placesShape = innerPlacedIds.some((id) => shapeCharIds.has(id));
+    const placesEditText = innerPlacedIds.some((id) => editTextCharIds.has(id));
+    expect(placesShape, "skin sprite must place the DefineShape4 face").toBe(true);
+    expect(placesEditText, "skin sprite must place the DefineEditText label").toBe(true);
+  });
+
+  it("statically seeds the author's label into the EditText initial text", () => {
+    const component = makeComponent({ componentName: "Submit", name: "Submit" });
+    const instance = makeInstance(component.id);
+    const doc = makeDoc(component, instance);
+
+    const bytes = compileDocument(doc);
+    const tags = parseSWF(bytes);
+
+    // The seeded label appears as the EditText's NUL-terminated InitialText.
+    const editTextTags = tags.filter((t) => t.code === TAG_DEFINE_EDIT_TEXT);
+    const decoded = editTextTags.map((t) => new TextDecoder().decode(t.body));
+    expect(decoded.some((s) => s.includes("Submit"))).toBe(true);
   });
 });
