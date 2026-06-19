@@ -746,3 +746,46 @@ assumed green at the SHA; this log tracks the gaps those tests miss.
   1227 (trace-bitmap marching-squares half-region) — both still unaddressed;
   1223 candidate-for-close (via 1225).
 - **Audited & healthy (running list):** Sound Envelope (1204), Blend modes.
+
+---
+
+## 2026-06-19 — Proactive exploratory audit: Filter parameter/flag fidelity (idle window, no new worker code)
+
+- **Watermark (last fully-QA'd SHA):** unchanged at `759ced8eedc436dbaf1d452471724715421bf2f0`.
+  No new worker code landed this cycle; this is a proactive idle-window sweep, so the
+  watermark does NOT advance.
+- **HEAD at audit:** `ad94eda48221388fbfabe545f35f0a75c5a3e0e1` (includes task 1236 filing).
+- **Proactive audit — Filter parameter/flag fidelity: 8/9 healthy, ONE defect filed
+  (task 1236).** Audited all 9 model filter types (`engine/filters.ts`) against their
+  `swf/src/filters.ts` encoders and Ruffle's `swf/src/read.rs` read path.
+  - **VERIFIED CORRECT (8):**
+    - **DropShadow** (id0): RGBA / blurXY / angle / distance FIXED16 / strength FIXED8 /
+      flags inner=b7, knockout=b6, compositeSource=b5, passes=b0-4.
+    - **Blur** (id1): passes b7-3.
+    - **Glow** (id2).
+    - **Bevel** (id3): highlight-then-shadow color order, onTop=b4.
+    - **GradientGlow** (id4) + **GradientBevel** (id7): numColors / colors / ratios +
+      onTop derived from bevelType="full".
+    - **ColorMatrix** (id6): 20 floats.
+    - Byte-proven via swf-dump that inner / knockout / onTop / compositeSource flags +
+      blur / angle / distance / strength + gradient ratios round-trip exactly.
+- **DEFECT FILED — task 1236 (already pushed, commit `ad94eda`):** **ConvolutionFilter
+  (id5) CLAMP / PRESERVE_ALPHA flag bits SWAPPED vs Ruffle.** Encoder writes
+  `clamp |= 1<<0`, `preserveAlpha |= 1<<1`; Ruffle reads `CLAMP = 1<<1`,
+  `PRESERVE_ALPHA = 1<<0` — inverted. Byte-proven (clamp=true, preserveAlpha=false →
+  rawFlags `0x01` → Ruffle decodes clamp=false, preserveAlpha=true). Latent (Convolution
+  not UI-exposed yet, but the model type / default-factory / compile path are live). The
+  existing `convolution-filter.test.ts` codified the WRONG bit layout, masking it
+  (byte-presence-not-runtime-proof). Fix: `clamp |= 1<<1`, `preserveAlpha |= 1<<0`, plus
+  update the stale test/comment.
+- **OBSERVATION (not filed):** **DisplacementMapFilter (id8)** is emitted by the encoder
+  but the bundled Ruffle (0.1.0 / 0.2.0) has no FilterID-8 read case — an engine-support
+  gap, not a flag bug. Noted for awareness.
+- **Logged as "proactively audited" so future idle-cycle sweeps skip it.** Running
+  "audited & healthy" list now: Sound Envelope (1204), Blend modes, **Filters
+  (param/flag fidelity)** (8/9 healthy; Convolution defect → 1236).
+- **Still open for workers (running list):** **1216** (motion-tween/guide/bitmap),
+  **1227** (trace-bitmap marching-squares half-region), **1236** (new — Convolution flag
+  swap) — all open; **1223** remains a candidate-for-close (resolved by 1225, doc-wording
+  nuance only); component part 2.5 (List + ComboBox, task **1235**) queued /
+  not-yet-implemented.
