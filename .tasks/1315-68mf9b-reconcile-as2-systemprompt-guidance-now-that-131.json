@@ -1,0 +1,10 @@
+{
+  "id": "1315-68mf9b-reconcile-as2-systemprompt-guidance-now-that-131",
+  "title": "Reconcile AS2 systemPrompt guidance now that 1314 makes field initializers work",
+  "description": "Task 1314 (commit 65effa8) fixed the AS2 compiler so instance field initializers (var x:Number = 0) ARE hoisted into the constructor and now run for className-linked placed symbols. The guidance added in task 1313 to packages/authoring-ui/src/agentchat/systemPrompt.ts (the '# AS2 scripting' section) still says field initializers 'may not run for className-linked placed symbols' \u2014 now FALSE/misleading. UPDATE that section to be accurate + concise: field initializers ARE supported (compiled into the constructor and run per-instance); initializing in an explicit constructor is also fine/equivalent. Drop the 'may not run / undefined / NaN' warning. Keep it short. VERIFY: build green; authoring-ui tests green incl systemPrompt.test.ts (update matchers if they assert the old wording). ACQUIRE lock; commit incl task file; push rebase-retry (if .tasks/.counter conflicts keep origin's). Scope: systemPrompt.ts (+ its test if needed).",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-20T01:34:35Z",
+  "updated_at": "2026-06-20T01:34:35Z"
+}
