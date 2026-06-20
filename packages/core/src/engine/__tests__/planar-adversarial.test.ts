@@ -512,3 +512,121 @@ describe("planar/adversarial — angled cut across a band (1332 family, raster o
     expect(oracleDiff(shapes)).toBe(0);
   });
 });
+
+// ===========================================================================
+// CURVE / CURVE EXACT-TANGENT contact (task 1336). Two curved fills (disks)
+// touching at a single apex (dx == 2r) must merge WITHOUT dropping a region —
+// the externally-tangent single-point contact is registered as ONE shared
+// pinch vertex (NOT a flood of spurious near-tangent crossings), and the
+// rotation system separates the two loops so each disk closes as its own
+// bounded face. Before the fix the curve/curve solver flooded the arrangement
+// (he 16 -> ~98) at exactly dx==2r and BOTH disks leaked to the unbounded face;
+// the raster read-back painted NOTHING (~99% data loss in stage + Ruffle).
+//
+// Acceptance is the RENDER-FAITHFUL raster oracle (task 1330): the merged
+// read-back rasterized vs the z-order ground truth, the SAME function the
+// product merge-on-commit path uses (buildArrangementFromShapes ->
+// planarShapeToShape). This is the curve/curve guard task 1334 asked for and
+// never landed.
+// ===========================================================================
+
+describe("planar/adversarial — curve/curve EXACT-TANGENT contact (1336, raster oracle)", () => {
+  const RED3: Fill = { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } };
+  const BLUE3: Fill = { type: "solid", color: { r: 0, g: 0, b: 255, a: 255 } };
+
+  /**
+   * A quadratic-4-arc disk (Flash's circle is four quadratic arcs); controls at
+   * the corner box (cx±r, cy±r). Closed + filled. This is the exact fixture the
+   * 1336 product-impact verification drove through the editor + Ruffle.
+   */
+  function disk(id: string, cx: number, cy: number, r: number, fill: Fill): Shape {
+    const right: Point = { x: cx + r, y: cy };
+    const bottom: Point = { x: cx, y: cy + r };
+    const left: Point = { x: cx - r, y: cy };
+    const top: Point = { x: cx, y: cy - r };
+    return {
+      id,
+      paths: [
+        {
+          start: right,
+          segments: [
+            { type: "curve", control: { x: cx + r, y: cy + r }, to: bottom },
+            { type: "curve", control: { x: cx - r, y: cy + r }, to: left },
+            { type: "curve", control: { x: cx - r, y: cy - r }, to: top },
+            { type: "curve", control: { x: cx + r, y: cy - r }, to: right },
+          ],
+          fill,
+          closed: true,
+        },
+      ],
+    };
+  }
+
+  /** Merge -> read-back raster vs z-order ground-truth raster pixel diff. */
+  function diskDiff(shapes: Shape[], w = 200, h = 160): number {
+    const ps = buildArrangementFromShapes(shapes);
+    const merged = planarShapeToShape(ps, "merged");
+    const got = rasterizePaths(merged.paths, w, h);
+    const truth = rasterizeLayer(shapes.map((s) => ({ shape: s, x: 0, y: 0 })), w, h);
+    return pixelDiff(got, truth);
+  }
+
+  const r = 30;
+  const cx = 50, cy = 70;
+
+  // dx == 2r is the genuine product data-loss separation. dx == 2r ± epsilon is
+  // the near-tangent neighbourhood that must also stay clean (no regime flip).
+  // The clean gap and deep-overlap separations confirm the fix is local (it does
+  // not perturb the well-separated or transversal-crossing regimes).
+  const cases: { dx: number; label: string }[] = [
+    { dx: 2 * r + 2, label: "gap (disjoint)" },
+    { dx: 2 * r + 0.5, label: "near-tangent +eps" },
+    { dx: 2 * r, label: "EXACT tangent (dx==2r)" },
+    { dx: 2 * r - 0.5, label: "near-tangent -eps" },
+    { dx: 1.5 * r, label: "clean overlap" },
+    { dx: r, label: "deep overlap" },
+  ];
+
+  for (const { dx, label } of cases) {
+    it(`different-color disks, ${label} (dx=${dx}): merged render == ground truth`, () => {
+      const shapes = [disk("red", cx, cy, r, RED3), disk("blue", cx + dx, cy, r, BLUE3)];
+      // Render-faithful: no region dropped, no spurious paint.
+      expect(diskDiff(shapes), "merged render == ground truth").toBeLessThanOrEqual(8);
+    });
+
+    it(`same-color disks, ${label} (dx=${dx}): union render == ground truth`, () => {
+      const shapes = [disk("a", cx, cy, r, BLUE3), disk("b", cx + dx, cy, r, BLUE3)];
+      expect(diskDiff(shapes), "merged union render == ground truth").toBeLessThanOrEqual(8);
+    });
+  }
+
+  it("EXACT tangent: arrangement is planar (euler 2) and BOTH disks survive as bounded faces", () => {
+    const shapes = [disk("red", cx, cy, r, RED3), disk("blue", cx + 2 * r, cy, r, BLUE3)];
+    const ps = buildArrangementFromShapes(shapes);
+    expect(eulerCharacteristic(ps), "planar (euler 2)").toBe(2);
+    // No half-edge flood: two intact 4-arc loops sharing one pinch vertex = 8.
+    expect(undirectedEdgeCount(ps), "no near-tangent crossing flood").toBe(8);
+    // Two distinct bounded filled faces, one per disk (neither leaked away).
+    const filled = ps.faces.filter((f) => !f.unbounded && f.fill !== null);
+    expect(filled.length, "both disks survive").toBe(2);
+    const fills = new Set(filled.map((f) => f.fill));
+    expect(fills.size, "one red disk + one blue disk").toBe(2);
+  });
+
+  it("EXACT tangent holds across radii, positions, and orientation (h/v tangency)", () => {
+    for (const [ccx, ccy, rr] of [
+      [50, 60, 30],
+      [40, 50, 20],
+      [60, 70, 25],
+      [33.3, 44.4, 18.7], // non-integer geometry
+    ] as const) {
+      // Horizontal tangency.
+      const h = [disk("a", ccx, ccy, rr, RED3), disk("b", ccx + 2 * rr, ccy, rr, BLUE3)];
+      expect(diskDiff(h), `h-tangent r=${rr}@(${ccx},${ccy})`).toBeLessThanOrEqual(8);
+      // Vertical tangency (the contact tangents are horizontal, exercising the
+      // same coincident-tangent pinch on the other axis).
+      const v = [disk("a", ccx, ccy, rr, RED3), disk("b", ccx, ccy + 2 * rr, rr, BLUE3)];
+      expect(diskDiff(v, 200, 220), `v-tangent r=${rr}@(${ccx},${ccy})`).toBeLessThanOrEqual(8);
+    }
+  });
+});

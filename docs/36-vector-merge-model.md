@@ -823,6 +823,68 @@ count + area + raster pixels stay within epsilon AND that cycle N == cycle N−1
 (all five FAIL on the pre-fix build, where the fill collapses to `paths=0`). All 8 merge
 oracles still diff=0/220000; planar-adversarial / planar-subselection / planar-eraser unchanged.
 
+### 3.0j Curve/curve EXACT-TANGENT contact survives the merge (task 1336)
+
+**Symptom (the real, product-reachable data loss task 1334 was filed for).** Two distinct
+curved fills (e.g. two equal circles) touching at a SINGLE apex — externally tangent at
+`dx == 2r` — dropped a region on merge: at exactly `dx == 2r` BOTH disks vanished in the
+PRODUCT render (stage + Ruffle ~99% data loss), confirmed via the real merge-on-commit path
+(`commitMergeShape → planarMergeCommit → foldShapeIntoLayer → buildArrangementFromShapes →
+planarShapeToShape`). The window is measure-zero — `dx = 2r ± 0.5` both render a correct full
+union/two disks — but a user CAN hit it (snapping two equal circles edge-to-edge). The 1334
+"coincident-curve" fast-path (§3.0h, `coincidentOverlap`) did NOT cover this: it only engages
+when two quadratics trace the SAME arc over a substantial span; two distinct tangent circles
+trace DIFFERENT arcs touching at one point, so they fell through to the transversal solver.
+
+**Root cause — TWO coupled degeneracies at the exact tangency.** (1) `intersectCurveCurve`'s
+recursive subdivision (`recurse`) FLOODS: the two grazing arcs' sub-boxes overlap over a
+contiguous band and never separate, so it emits ~26 near-duplicate "crossings" spread over a
+~2.5 px arc around the true contact. `dedupe` only merges within `SNAP_EPS` (0.025 px), so
+dozens survive as distinct vertices → the arrangement shatters (undirected edges 8 → ~98) and
+both interiors leak to the unbounded face. This is the curve analogue of the 1332 seg/seg
+crossing-flood. (2) Even once the flood is collapsed to the single shared pinch vertex, FACE
+TRACING fails: at an external tangency the four arcs meeting at the contact point have
+IDENTICAL first-order tangents (both disks' boundaries leave the apex in the same — vertical —
+direction), so the rotation-system's pure tangent-angle sort orders the two disks' coincident-
+tangent edges ARBITRARILY, interleaves the loops, and both interiors still leak away.
+
+**Fix — two narrowly-scoped, curve-preserving changes.**
+1. **Tangent-cluster collapse** (`intersect.ts collapseTangentClusters`, after `recurse`).
+   Single-linkage-cluster the raw crossings by spatial proximity (`CLUSTER_RADIUS = 4 px` —
+   well above the ~2.5 px tangent band, far below the tens-of-px gap between two GENUINE
+   transversal crossings of two overlapping circles). A multi-point cluster collapses to ONE
+   pinned representative — the point of CLOSEST APPROACH between the two curves over the
+   cluster's parameter span (coarse grid scan + coordinate-descent) — but ONLY when it is a
+   genuinely GRAZING contact: the curve tangents at the contact are near-parallel
+   (`|sinθ| ≤ TANGENT_PARALLEL_SIN ≈ 20°`) AND the cluster has real spatial spread
+   (`> SNAP_EPS`). A transversal crossing meets at a clear angle and forms its own tight
+   single-point cluster, so it is returned UNCHANGED — genuine curve/curve crossings keep
+   their exact split points. The 1334 `coincidentOverlap` same-arc fast-path is untouched.
+2. **Tangent-coincident rotation tie-break** (`arrangement.ts compareOutgoing`/`bendSignature`,
+   used by the rotation-system sort). When two outgoing half-edges at a shared vertex have
+   tangent angles within `TANGENT_ANGLE_TIE` (~0.6°), break the tie by CURVATURE SIDE — the
+   signed bend of the edge just past the vertex (cross product of the t=0 tangent with the
+   tangent at t=0.05; 0 for a straight edge). The two tangent disks' boundaries bend OPPOSITE
+   ways at the contact, so this separates them into distinct CCW cycles and each disk closes as
+   its own bounded face. Ordinary vertices (edges meeting at a clear angle) keep the exact
+   first-order angular order — the tie-break never fires there.
+
+**Net effect.** At `dx == 2r` the arrangement is now two intact 4-arc loops sharing ONE pinch
+vertex (undirected edges = 8, euler = 2, two bounded filled faces — one per disk), and the
+read-back rasterizes pixel-identical to the z-order ground truth. Holds across radii, centre
+positions (incl. non-integer), and both horizontal and vertical tangency. The seg/curve apex-
+tangency corner (a straight edge exactly tangent to a curve's apex) benefits from the same
+rotation tie-break. Gate: `planar-adversarial.test.ts` "curve/curve EXACT-TANGENT contact
+(1336, raster oracle)" — a `dx` sweep (gap / near-tangent ±ε / exact tangent / clean overlap /
+deep overlap) for both same-color (union) and different-color (cut) disks, asserting merged
+read-back raster == ground truth (`pixelDiff ≤ 8`), plus euler/edge-count/face-count assertions
+at the exact tangency and an across-radii/orientation sweep. All FAIL on the pre-fix build
+(diff 6160, both disks dropped). The remaining WIDE-OVERLAP kernel-raster rows the original
+report flagged (`dx = 2r − 2 … r`) are RASTER-ORACLE artifacts (task 1330): they render a
+correct full union/cut in the actual `CanvasRenderer` + Ruffle and are NOT asserted here. All 8
+merge oracles still diff=0/220000; planar-adversarial / planar-subselection / planar-eraser /
+planar-merge unchanged; core suite green except the 3 pre-existing `flash8-empty.fla` fixtures.
+
 ### 3.1 Key decisions
 
 1. **Curve-preserving.** Cuts subdivide quadratics with de Casteljau and keep

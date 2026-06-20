@@ -32,6 +32,7 @@ import type {
 import {
   dist2,
   edgeAt,
+  edgeTangent as edgeTangentAt,
   outgoingDirection,
   pointKey,
   reverseEdgeGeometry,
@@ -54,6 +55,16 @@ import { intersectEdges } from "./intersect.js";
  * edge, many twips from any vertex) are unaffected.
  */
 const ENDPOINT_INCIDENCE_R2 = (1.5 / 20) * (1.5 / 20);
+
+/**
+ * Angular tolerance (radians) below which two outgoing half-edges at a shared
+ * vertex are treated as TANGENT-COINCIDENT, so the rotation-order comparator
+ * falls back to a curvature tie-break (task 1336). ~0.01 rad ≈ 0.6°: only the
+ * genuinely-coincident-tangent pinch (an exact external tangency of two curved
+ * fills) trips it; ordinary vertices where edges meet at a clear angle keep the
+ * exact first-order angular order.
+ */
+const TANGENT_ANGLE_TIE = 0.01;
 
 /** True when `pt` lies within {@link ENDPOINT_INCIDENCE_R2} of `endpoint`. */
 function nearEndpoint(pt: Point, endpoint: Point): boolean {
@@ -428,8 +439,21 @@ export class Arrangement {
 
     // Rotation system: sort each vertex's outgoing half-edges by their outgoing
     // angle (CCW).  next(he) = twin(prevInRotation(... )); standard DCEL link.
+    //
+    // TANGENT-COINCIDENT TIE-BREAK (task 1336). At an EXACT external tangency of
+    // two curved fills (two circles touching at one apex, dx == 2r), the four
+    // arcs meeting at the shared pinch vertex have IDENTICAL first-order tangents
+    // — both disks' boundaries leave the contact point in the same (vertical)
+    // direction. A pure t=0-tangent sort then orders the two disks' coincident-
+    // tangent edges ARBITRARILY, so face tracing interleaves the two loops and
+    // BOTH interiors leak to the unbounded face (the disks vanish). When two
+    // outgoing edges share a tangent angle we break the tie by CURVATURE — the
+    // direction the edge bends just past the vertex — which separates the two
+    // disks' boundaries so each closes as its own bounded face. A straight edge
+    // (no bend) sorts before a curve bending CCW and after one bending CW, a
+    // total, stable order for any mix of lines and arcs at a shared vertex.
     for (const v of this.vertices) {
-      v.outgoing.sort((a, b) => this.angleOf(liveEdges[a]) - this.angleOf(liveEdges[b]));
+      v.outgoing.sort((a, b) => this.compareOutgoing(liveEdges[a], liveEdges[b]));
     }
 
     // Link next/prev. For a half-edge `e` arriving at vertex w (e = twin of an
@@ -598,6 +622,49 @@ export class Arrangement {
     let a = Math.atan2(d.y, d.x);
     if (a < 0) a += Math.PI * 2;
     return a;
+  }
+
+  /**
+   * CCW rotation-order comparator for two outgoing half-edges sharing a vertex.
+   * Primary key is the outgoing tangent angle; the secondary key (task 1336) is
+   * the edge's curvature SIDE, used only when the first-order tangents coincide
+   * (within {@link TANGENT_ANGLE_TIE}). Two curves leaving a vertex with the
+   * SAME tangent (the exact-tangency pinch) are separated by which way they bend:
+   * a more-CW-bending edge precedes a more-CCW-bending edge in the CCW ring, so
+   * the two tangent loops keep their interiors distinct. A line (no curvature)
+   * gets a zero bend signature and sorts deterministically between opposite-
+   * bending curves.
+   */
+  private compareOutgoing(a: MutHalfEdge, b: MutHalfEdge): number {
+    const angA = this.angleOf(a);
+    const angB = this.angleOf(b);
+    let d = angA - angB;
+    // Wrap the difference into (-π, π] so a near-2π/near-0 pair counts as close.
+    if (d > Math.PI) d -= Math.PI * 2;
+    else if (d < -Math.PI) d += Math.PI * 2;
+    if (Math.abs(d) > TANGENT_ANGLE_TIE) return angA - angB;
+    // Tangents coincide: order by bend side (signed curvature proxy).
+    return this.bendSignature(a) - this.bendSignature(b);
+  }
+
+  /**
+   * Signed bend of an outgoing edge just past its origin: the cross product of
+   * the initial tangent with the tangent a short way along the curve. >0 = bends
+   * CCW (left), <0 = bends CW (right), 0 = straight. Used as the tangent-tie
+   * secondary sort key (task 1336).
+   */
+  private bendSignature(e: MutHalfEdge): number {
+    const g = e.geometry;
+    if (g.control === null) return 0; // straight: no bend
+    const d0 = outgoingDirection(g);
+    // Tangent a short way along; quadratics have constant second derivative, so
+    // any small t reveals the bend direction.
+    const dT = edgeTangentAt(g, 0.05);
+    const cross = d0.x * dT.y - d0.y * dT.x;
+    const len0 = Math.hypot(d0.x, d0.y);
+    const lenT = Math.hypot(dT.x, dT.y);
+    if (len0 < 1e-12 || lenT < 1e-12) return 0;
+    return cross / (len0 * lenT); // normalized sin of the turn angle
   }
 
   /**

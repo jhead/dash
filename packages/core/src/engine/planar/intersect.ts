@@ -16,7 +16,7 @@
  */
 
 import type { EdgeGeometry, Point } from "../types.js";
-import { edgeAt, edgeBBox, quadAt, snapPoint, SNAP_EPS } from "./geometry.js";
+import { edgeAt, edgeBBox, edgeTangent, quadAt, snapPoint, SNAP_EPS } from "./geometry.js";
 
 export interface Intersection {
   /** Parameter on edge A, in [0,1]. */
@@ -177,8 +177,21 @@ export function intersectCurveCurve(
 
   const out: Intersection[] = [];
   recurse(curveA, curveB, 0, 1, 0, 1, 0, out);
+  // TANGENT-CLUSTER COLLAPSE (task 1336). At an EXACT or near tangency — two
+  // distinct curved fills touching at a single apex (dx == 2r for two equal
+  // circles) — the two grazing arcs' sub-boxes overlap over a contiguous band
+  // and never separate, so `recurse` emits a FLOOD of near-duplicate crossings
+  // spread over a short arc (~2–3 px). `dedupe` only merges within SNAP_EPS
+  // (0.025 px), so dozens survive as distinct vertices; the arrangement then
+  // shatters (he 16 -> ~98) and BOTH filled regions leak to the unbounded face.
+  // This is the curve analogue of the 1332 seg/seg crossing-pin: a single
+  // tangent CONTACT must become ONE pinned shared vertex (the closest-approach
+  // point), not a cloud. Collapse only a genuinely GRAZING cluster (near-parallel
+  // curve tangents) so two real transversal crossings — which are spatially far
+  // apart and cross at non-parallel angles — are never wrongly merged.
+  const collapsed = collapseTangentClusters(curveA, curveB, out);
   // Dedupe near-equal results (subdivision can report a crossing twice).
-  return dedupe(out);
+  return dedupe(collapsed);
 }
 
 /**
@@ -316,6 +329,219 @@ function recurse(
     recurse(a, b, a0, a1, b0, bm, depth + 1, out);
     recurse(a, b, a0, a1, bm, b1, depth + 1, out);
   }
+}
+
+/**
+ * Spatial radius (px) within which two raw `recurse` crossings are linked into
+ * one cluster. The near-tangent flood spreads its points over a short arc — at
+ * dx==2r for r=30 the band is ~2.5 px tall — so the radius must comfortably
+ * exceed that, yet stay well below the smallest gap between two GENUINE
+ * transversal crossings of two distinct curved fills (which, for overlapping
+ * circles, are tens of px apart, on opposite sides of the lens). 4 px threads
+ * that needle.
+ */
+const CLUSTER_RADIUS = 4;
+const CLUSTER_RADIUS2 = CLUSTER_RADIUS * CLUSTER_RADIUS;
+
+/**
+ * Tangents are treated as PARALLEL (a grazing contact, not a transversal cross)
+ * when |sin θ| between the two curve tangents at the cluster representative is
+ * below this. A true transversal crossing meets at a clear angle; a tangency has
+ * (near-)parallel tangents. 0.35 ≈ 20°: generous enough to catch the slightly-
+ * off-parallel tangents the snapped flood produces, tight enough that a real
+ * crossing (typically near-perpendicular for two circle boundaries) is never
+ * mistaken for a tangency.
+ */
+const TANGENT_PARALLEL_SIN = 0.35;
+
+/**
+ * Collapse each GRAZING (near-tangent) spatial cluster of raw crossings to a
+ * single pinned representative — the point of closest approach between the two
+ * curves within the cluster's parameter span (task 1336). Transversal crossings
+ * (well-separated clusters, or a cluster whose curve tangents clearly cross) are
+ * returned unchanged, so genuine curve/curve crossings keep their split points.
+ */
+function collapseTangentClusters(
+  a: EdgeGeometry,
+  b: EdgeGeometry,
+  raw: Intersection[]
+): Intersection[] {
+  if (raw.length <= 1) return raw;
+
+  // Single-linkage spatial clustering: union points within CLUSTER_RADIUS.
+  const n = raw.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  const union = (x: number, y: number): void => {
+    const rx = find(x);
+    const ry = find(y);
+    if (rx !== ry) parent[rx] = ry;
+  };
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const dx = raw[i].point.x - raw[j].point.x;
+      const dy = raw[i].point.y - raw[j].point.y;
+      if (dx * dx + dy * dy <= CLUSTER_RADIUS2) union(i, j);
+    }
+  }
+
+  const clusters = new Map<number, Intersection[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    let list = clusters.get(r);
+    if (!list) {
+      list = [];
+      clusters.set(r, list);
+    }
+    list.push(raw[i]);
+  }
+
+  const out: Intersection[] = [];
+  for (const members of clusters.values()) {
+    if (members.length === 1) {
+      out.push(members[0]);
+      continue;
+    }
+    // Span of the cluster on each curve.
+    let tAmin = Infinity,
+      tAmax = -Infinity,
+      tBmin = Infinity,
+      tBmax = -Infinity;
+    for (const m of members) {
+      if (m.tA < tAmin) tAmin = m.tA;
+      if (m.tA > tAmax) tAmax = m.tA;
+      if (m.tB < tBmin) tBmin = m.tB;
+      if (m.tB > tBmax) tBmax = m.tB;
+    }
+
+    const rep = closestApproach(a, b, tAmin, tAmax, tBmin, tBmax);
+
+    // Grazing test: parallel curve tangents at the contact AND a real spatial
+    // spread (multiple distinct snapped points). A single tight transversal
+    // crossing that merely got reported a few times stays as its members
+    // (dedupe folds it); only a genuine near-tangent BAND collapses.
+    const dA = edgeTangent(a, rep.tA);
+    const dB = edgeTangent(b, rep.tB);
+    const lenA = Math.hypot(dA.x, dA.y);
+    const lenB = Math.hypot(dB.x, dB.y);
+    let parallel = false;
+    if (lenA > 1e-9 && lenB > 1e-9) {
+      const sin = Math.abs(dA.x * dB.y - dA.y * dB.x) / (lenA * lenB);
+      parallel = sin <= TANGENT_PARALLEL_SIN;
+    }
+    const spread = Math.max(
+      maxPointSpread(members),
+      0
+    );
+
+    if (parallel && spread > SNAP_EPS) {
+      // A genuine tangent contact: ONE pinned shared vertex.
+      out.push({ tA: clamp01(rep.tA), tB: clamp01(rep.tB), point: snapPoint(rep.point) });
+    } else {
+      // Not a tangency (transversal crossing reported multiply, or two close but
+      // angle-crossing hits): keep the members; dedupe folds the true duplicates.
+      for (const m of members) out.push(m);
+    }
+  }
+  return out;
+}
+
+/** Largest pairwise spatial spread (px) among a cluster's points. */
+function maxPointSpread(members: Intersection[]): number {
+  let max = 0;
+  for (let i = 0; i < members.length; i++) {
+    for (let j = i + 1; j < members.length; j++) {
+      const dx = members[i].point.x - members[j].point.x;
+      const dy = members[i].point.y - members[j].point.y;
+      const d = Math.hypot(dx, dy);
+      if (d > max) max = d;
+    }
+  }
+  return max;
+}
+
+/**
+ * Point of closest approach between curve A over [a0,a1] and curve B over
+ * [b0,b1]. A coarse grid scan seeds a short coordinate-descent refine. Returns
+ * the midpoint of the two closest curve points (the geometric contact) plus the
+ * parameters on each curve so the arrangement splits both at that exact place.
+ */
+function closestApproach(
+  a: EdgeGeometry,
+  b: EdgeGeometry,
+  a0: number,
+  a1: number,
+  b0: number,
+  b1: number
+): { tA: number; tB: number; point: Point } {
+  // Pad the spans slightly so the true contact (which may sit a hair outside the
+  // reported flood's extent) is reachable.
+  const pad = 0.02;
+  let loA = Math.max(0, a0 - pad),
+    hiA = Math.min(1, a1 + pad),
+    loB = Math.max(0, b0 - pad),
+    hiB = Math.min(1, b1 + pad);
+
+  const gap2 = (tA: number, tB: number): number => {
+    const pa = edgeAt(a, tA);
+    const pb = edgeAt(b, tB);
+    const dx = pa.x - pb.x;
+    const dy = pa.y - pb.y;
+    return dx * dx + dy * dy;
+  };
+
+  // Coarse seed.
+  let bestA = (loA + hiA) / 2,
+    bestB = (loB + hiB) / 2,
+    bestD = Infinity;
+  const G = 12;
+  for (let i = 0; i <= G; i++) {
+    const tA = loA + ((hiA - loA) * i) / G;
+    for (let j = 0; j <= G; j++) {
+      const tB = loB + ((hiB - loB) * j) / G;
+      const d = gap2(tA, tB);
+      if (d < bestD) {
+        bestD = d;
+        bestA = tA;
+        bestB = tB;
+      }
+    }
+  }
+
+  // Coordinate-descent refine, shrinking the window each pass.
+  let win = Math.max(hiA - loA, hiB - loB) / G;
+  for (let pass = 0; pass < 40; pass++) {
+    let improved = false;
+    for (const dtA of [-win, win, 0]) {
+      for (const dtB of [-win, win, 0]) {
+        const tA = clamp01(bestA + dtA);
+        const tB = clamp01(bestB + dtB);
+        const d = gap2(tA, tB);
+        if (d < bestD - 1e-15) {
+          bestD = d;
+          bestA = tA;
+          bestB = tB;
+          improved = true;
+        }
+      }
+    }
+    if (!improved) win /= 2;
+    if (win < 1e-7) break;
+  }
+
+  const pa = edgeAt(a, bestA);
+  const pb = edgeAt(b, bestB);
+  return {
+    tA: bestA,
+    tB: bestB,
+    point: { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 },
+  };
 }
 
 function subBBox(g: EdgeGeometry, t0: number, t1: number): ReturnType<typeof edgeBBox> {
