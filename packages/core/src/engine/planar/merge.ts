@@ -77,23 +77,47 @@ export interface FoldResult {
 }
 
 // ---------------------------------------------------------------------------
-// Spatial culling (task 1327) — bounded per-stroke fold on dense art.
+// Spatial culling (task 1327, corrected by task 1329) — bounded per-stroke fold
+// on dense art, geometrically IDENTICAL to the full whole-layer rebuild.
 //
 // The planar kernel's per-edge `insertEdge` scans every existing half-edge, so
 // folding N shapes with E total edges is ~O(E^2), plus the per-face fill resolve
 // is O(F * R). On a dense layer (a traced bitmap with 1000+ solid fills) a single
 // new stroke therefore "rebuilds the world" and hitches ~250-400 ms.
 //
-// But a shape whose bounding box does NOT overlap the new stroke's bounding box
-// cannot interact with it geometrically — no edges cross, so no union, cut, or
-// split is possible. Such disjoint shapes are kept UNTOUCHED and only the shapes
-// whose bbox overlaps the incoming stroke (plus the stroke) are folded through
-// the kernel. The merged result for the overlapping subset is identical to what
-// the full rebuild would produce for those same faces (the disjoint shapes
-// contribute no edges to the overlap region), and the disjoint faces are
-// byte-identical whether or not they pass through the kernel — so correctness is
-// preserved exactly. This turns the per-stroke cost from O(all fills) into
-// O(only the fills the stroke actually touches).
+// CORRECT CULL INVARIANT (task 1329). The merge is TOP-WINS / draw-order
+// dependent: when two shapes overlap, the LATER-drawn one wins the overlap. The
+// full rebuild folds EVERY mergeable shape into ONE kernel arrangement in draw
+// order, so every pairwise overlap — existing<->existing AND existing<->incoming —
+// resolves in-kernel with correct top-wins. A culled fold may therefore only
+// leave a shape UNTOUCHED if leaving it out cannot change ANY face of the merged
+// result. That holds iff the untouched shape is bbox-disjoint from the incoming
+// stroke AND from EVERY shape that gets folded — i.e. the folded set must be the
+// TRANSITIVE OVERLAP CLOSURE of the incoming stroke, not merely the shapes that
+// overlap the stroke directly.
+//
+// Why the closure (not just direct-overlap) is required (task 1329 regression):
+// if existing shape A is folded (it overlaps the stroke) and existing shape B
+// overlaps A but NOT the stroke, then A and B genuinely interact (top-wins between
+// them). Folding only A and re-emitting B separately re-orders B relative to A in
+// draw order, which can flip the color of the A<->B overlap — B was drawn on top
+// of A, but re-emitting B BELOW the merged object lets A win their overlap. Pulling
+// B (and anything B transitively overlaps) into the fold puts the whole interacting
+// cluster through ONE kernel arrangement in original draw order, so every overlap
+// resolves exactly as the full rebuild would.
+//
+// Why it stays correct for the UNTOUCHED shapes: by construction an untouched shape
+// is bbox-disjoint from every folded shape (and from the stroke), so it shares no
+// edges with the merged object — no union/cut/split is possible across that
+// boundary. Its own faces are byte-identical whether or not it passes through the
+// kernel, and its z-order relative to the merged object is geometrically irrelevant
+// (disjoint shapes never contend for a face). Untouched shapes keep their original
+// RELATIVE draw order among themselves, so any untouched<->untouched overlap also
+// resolves exactly as before. The result is therefore identical to the full rebuild
+// for ALL inputs — the cull only skips provably non-interacting work, turning
+// O(all fills) into O(the interacting cluster). The bbox test uses a tight,
+// curve-aware box (quadratic extrema) plus a 1px tolerance, so it is conservative:
+// any genuinely interacting shape is always pulled in.
 // ---------------------------------------------------------------------------
 
 interface Bound {
@@ -195,18 +219,29 @@ export interface CulledFoldResult<T> {
 }
 
 /**
- * Spatially-culled fold (task 1327). Partitions `existing` into the shapes whose
- * stage-space bbox overlaps (or touches, within {@link BBOX_OVERLAP_TOLERANCE})
- * the incoming stroke's bbox and the disjoint rest. Only the overlapping subset +
- * the incoming stroke are run through the planar kernel; the disjoint shapes are
- * returned untouched.
+ * Spatially-culled fold (task 1327, corrected by task 1329). Partitions `existing`
+ * into the TRANSITIVE OVERLAP CLOSURE of the incoming stroke (folded through the
+ * kernel) and the bbox-disjoint rest (returned untouched).
  *
- * Correctness: a disjoint shape contributes no edges that cross the incoming
- * stroke, so its presence in (or absence from) the arrangement cannot change any
- * face the stroke touches; and an untouched shape's own faces are byte-identical
- * whether or not they pass through the kernel. The merged artwork is therefore
- * identical to the full rebuild — just bounded to the shapes that actually
- * interact.
+ * The folded set starts from the incoming stroke and grows to a fixpoint: a shape
+ * joins the folded set if its stage-space bbox overlaps (or touches, within
+ * {@link BBOX_OVERLAP_TOLERANCE}) the stroke OR any already-folded shape. This is
+ * essential for correctness because the merge is top-wins / draw-order dependent:
+ * an existing shape that overlaps another existing shape (even if it misses the
+ * stroke) must be folded into the SAME kernel arrangement, in original draw order,
+ * or their mutual overlap can resolve to the wrong color (the task-1329 regression).
+ *
+ * The folded subset is passed to {@link foldShapeIntoLayer} in its ORIGINAL draw
+ * order (oldest first), with the incoming stroke last (topmost), so every overlap
+ * inside the cluster resolves exactly as the full whole-layer rebuild would.
+ *
+ * Correctness for the UNTOUCHED shapes: by construction each is bbox-disjoint from
+ * every folded shape AND from the stroke, so it shares no edges with the merged
+ * object — no union/cut/split crosses that boundary, and its z-order relative to
+ * the merged object is geometrically irrelevant. Untouched shapes keep their
+ * original relative order among themselves. The merged artwork is therefore
+ * identical to the full rebuild for ALL inputs — just bounded to the cluster that
+ * actually interacts.
  */
 export function foldShapeIntoLayerCulled<T extends { shape: Shape; x: number; y: number }>(
   existing: readonly T[],
@@ -215,20 +250,50 @@ export function foldShapeIntoLayerCulled<T extends { shape: Shape; x: number; y:
 ): CulledFoldResult<T> {
   const incBBox = shapeStageBBox(incoming);
 
-  const overlapping: T[] = [];
-  const untouched: T[] = [];
-  if (incBBox === null) {
-    // Degenerate incoming (no edges): nothing can overlap it; fold alone.
-    for (const e of existing) untouched.push(e);
-  } else {
-    for (const e of existing) {
-      const eb = shapeStageBBox(e);
-      if (eb !== null && boundsOverlap(incBBox, eb, BBOX_OVERLAP_TOLERANCE)) {
-        overlapping.push(e);
-      } else {
-        untouched.push(e);
+  // Precompute each existing shape's bbox once (null = no edges -> never overlaps).
+  const bboxes: (Bound | null)[] = existing.map((e) => shapeStageBBox(e));
+
+  // `folded[i] === true` means existing[i] is in the transitive overlap closure of
+  // the incoming stroke and must be passed through the kernel. We grow the closure
+  // to a fixpoint: seed it with everything overlapping the stroke, then repeatedly
+  // pull in any not-yet-folded shape that overlaps a shape already in the closure.
+  // The accumulating `clusterBounds` is the list of bboxes currently in the closure
+  // (the stroke's bbox first); a candidate folds if it overlaps ANY of them.
+  const folded: boolean[] = new Array(existing.length).fill(false);
+
+  if (incBBox !== null) {
+    // The cluster's member bboxes, seeded with the incoming stroke. Testing against
+    // each member's tight bbox (rather than a coarse union) keeps the closure as
+    // small as the geometry allows, preserving the perf win, while remaining exact:
+    // any shape that interacts with a folded shape overlaps that member's bbox.
+    const clusterBounds: Bound[] = [incBBox];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < existing.length; i++) {
+        if (folded[i]) continue;
+        const eb = bboxes[i];
+        if (eb === null) continue;
+        for (const cb of clusterBounds) {
+          if (boundsOverlap(cb, eb, BBOX_OVERLAP_TOLERANCE)) {
+            folded[i] = true;
+            clusterBounds.push(eb);
+            changed = true; // a new member can pull in further shapes -> re-scan.
+            break;
+          }
+        }
       }
     }
+  }
+  // If incBBox is null (degenerate incoming with no edges) nothing overlaps it, so
+  // the closure is empty and every existing shape is untouched — the stroke folds
+  // alone (a no-op fold, matching the full rebuild which would also add no edges).
+
+  const overlapping: T[] = [];
+  const untouched: T[] = [];
+  for (let i = 0; i < existing.length; i++) {
+    if (folded[i]) overlapping.push(existing[i]);
+    else untouched.push(existing[i]);
   }
 
   const { merged } = foldShapeIntoLayer(overlapping, incoming, mergedId);
@@ -272,17 +337,22 @@ export function planarMergeCommit<T extends MergeableLike>(
     return null;
   }
 
-  // Spatial cull (task 1327): only the mergeable shapes whose bbox overlaps the
-  // incoming stroke are folded through the kernel; disjoint shapes are kept
-  // untouched. This bounds the per-stroke cost to the shapes the stroke actually
-  // touches (O(overlap) instead of O(all fills)) while producing an identical
-  // merged result — disjoint shapes cannot interact with the new stroke.
+  // Spatial cull (task 1327, corrected by task 1329): fold the TRANSITIVE OVERLAP
+  // CLOSURE of the incoming stroke through the kernel; shapes bbox-disjoint from the
+  // whole interacting cluster are kept untouched. This bounds the per-stroke cost to
+  // the cluster the stroke actually touches (O(cluster) instead of O(all fills))
+  // while producing a result geometrically IDENTICAL to the full whole-layer rebuild
+  // — untouched shapes are disjoint from every folded shape, so they cannot interact
+  // with the merged artwork in any way (including z-order).
   const { merged, untouched } = foldShapeIntoLayerCulled(mergeable, incoming, incoming.shape.id);
   if (!merged || merged.paths.length === 0) return null;
 
   const mergedObj = makeMergedObject(merged);
-  // Layer order, bottom -> top: non-mergeable pass-throughs (gradient/bitmap),
-  // then the untouched disjoint mergeable shapes (unchanged), then the freshly
-  // merged planar artwork (absorbs the topmost stroke + everything it touched).
+  // Layer order, bottom -> top: non-mergeable pass-throughs (gradient/bitmap), then
+  // the untouched disjoint mergeable shapes (in their original relative order), then
+  // the freshly merged planar artwork. Placing the merged object on top is safe: by
+  // the transitive-closure invariant every untouched shape is bbox-disjoint from all
+  // folded geometry, so it never contends with the merged object for any face and its
+  // z-position relative to it is geometrically irrelevant.
   return [...passthrough, ...untouched, mergedObj];
 }

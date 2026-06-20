@@ -180,7 +180,7 @@ faces does this fill now occupy after the cut".
 | **P5 (cutover)** | **Cutover to merge-by-default + cleanup + final authenticity sweep** (task 1323). Remove the `planarMergeOnCommit` flag; merge unconditional for `type:"shape"` commits; delete the dead MVP `merge-drawing.ts` + the no-op `shape-boolean.ts` stub + the now-empty `featureFlags.ts`. Adapt the tests that assumed the old per-object behavior to the authentic merge outcome. Confirm all 8 oracles diff=0, Object Drawing still discrete, FLA/SWF round-trip + golden-parity + self-determinism unaffected, and the planar↔per-path interchange is sufficient. See §3.0d. | **DONE (task 1323).** |
 | **P5+ (interchange optimization, NOT a blocker)** | SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` hard-codes `stateFillStyle1=0`) — an edge-record-count *optimization* (closer byte-match to Flash), NOT a correctness need: the per-path read-back already round-trips to SWF at diff=0 (see §3.0d). FLA merge-map persistence and planar-topology shape-morph likewise remain future enhancements, not regressions. | Optional follow-up. |
 | **P5+ (selection polish)** | **Full selection authenticity + polish:** lasso over the planar pieces, edit-curve handles on faces, snapping against the arrangement. | Optional follow-up. |
-| **Perf follow-up (task 1327)** | Incremental fold — avoid rebuilding the entire layer arrangement per stroke on dense art (traced bitmaps with 1000+ fills). Measured ~35/61/176 ms per stroke for 100/400/800 mergeable fills. Resolved via **spatial bbox-culling**: only the shapes whose bbox overlaps the new stroke are folded through the kernel; disjoint shapes stay untouched. Per-stroke fold on a 1000-fill layer dropped ~239 ms → ~2 ms. See §3.0e. | **DONE (task 1327).** |
+| **Perf follow-up (task 1327)** | Incremental fold — avoid rebuilding the entire layer arrangement per stroke on dense art (traced bitmaps with 1000+ fills). Measured ~35/61/176 ms per stroke for 100/400/800 mergeable fills. Resolved via **spatial bbox-culling**: only the **transitive overlap closure** of the new stroke is folded through the kernel; shapes disjoint from the whole interacting cluster stay untouched. Per-stroke fold on a 1000-fill layer dropped ~239 ms → ~2 ms. See §3.0e. | **DONE (task 1327; correctness fixed by task 1329).** |
 
 ### 3.0 P1 implementation notes (task 1319)
 
@@ -494,7 +494,7 @@ merge-map persistence, planar-topology shape-morph — are **NOT cutover blocker
   Not a correctness blocker; normal authored art is responsive. **RESOLVED in task 1327**
   via spatial bbox-culling — see §3.0e.
 
-### 3.0e Incremental (spatial-cull) fold — bounded per-stroke cost on dense art (task 1327)
+### 3.0e Incremental (spatial-cull) fold — bounded per-stroke cost on dense art (task 1327; correctness corrected by task 1329)
 
 **The cost.** The planar kernel's `Arrangement.insertEdge` scans every existing half-edge
 for intersections, so folding N shapes with E total edges is ~`O(E²)`, and the per-face
@@ -504,17 +504,26 @@ every commit, so a single new stroke "rebuilt the world" — a dense traced-bitm
 (1000+ disjoint solid fills) hitched ~239 ms per stroke even though the stroke touched only
 a handful of fills.
 
-**The fix — spatial bounding-box culling (`engine/planar/merge.ts`).** A shape whose
-stage-space bbox does NOT overlap the new stroke's bbox cannot interact with it
-geometrically — no edges cross, so no union/cut/split is possible. So the commit now:
+**The fix — transitive-overlap-closure bbox culling (`engine/planar/merge.ts`).** The merge
+is **top-wins / draw-order dependent**: when two shapes overlap, the later-drawn one wins the
+overlap. The full whole-layer rebuild folds EVERY mergeable shape into ONE kernel arrangement
+in draw order, so every pairwise overlap — existing↔existing AND existing↔incoming — resolves
+in-kernel with correct top-wins. A culled fold may therefore only leave a shape **untouched**
+if leaving it out cannot change ANY face of the merged result. That holds **iff** the shape is
+bbox-disjoint from the incoming stroke AND from every shape that gets folded. So the commit
+now:
 
 1. Computes the incoming stroke's curve-aware stage bbox (`shapeStageBBox`, built on the
    existing `edgeBBox`).
-2. Partitions the layer's mergeable shapes into the subset whose bbox OVERLAPS (or touches
-   within a 1 px tolerance) the stroke, and the disjoint rest (`foldShapeIntoLayerCulled`).
-3. Folds ONLY the overlapping subset + the stroke through the kernel; the disjoint shapes
-   are returned **untouched** as their own display objects (they were already pairwise-
-   disjoint, so keeping them separate is correct and free).
+2. Grows the folded set to a **fixpoint (transitive overlap closure)**: seed it with every
+   mergeable shape whose bbox OVERLAPS (or touches within a 1 px tolerance) the stroke, then
+   repeatedly pull in any shape whose bbox overlaps a shape ALREADY in the closure
+   (`foldShapeIntoLayerCulled`). The remaining shapes are bbox-disjoint from the entire
+   interacting cluster.
+3. Folds the closure + the stroke through the kernel **in original draw order** (oldest
+   first, stroke last/topmost), so every overlap inside the cluster resolves exactly as the
+   full rebuild would. The disjoint rest is returned **untouched** as its own display objects,
+   in original relative order.
 
 `planarMergeCommit` therefore returns `[...passthrough, ...untouched, mergedObj]` — the
 layer may now hold several merged shapes instead of always collapsing to one. This is the
@@ -522,13 +531,23 @@ authentic state (two non-overlapping merge-mode regions are independent), and ev
 downstream consumer (render, selection via `livePlanarShape`, eraser, SWF/FLA interchange)
 already handles multiple shapes per layer.
 
-**Why correctness is preserved exactly.** A disjoint shape contributes no edges that cross
-the stroke, so its presence in (or absence from) the arrangement cannot change any face the
-stroke touches; and an untouched shape's own faces are byte-identical whether or not they
-pass through the kernel (the kernel is an identity on a single non-interacting shape). The
-merged artwork is identical to the full rebuild — just bounded to the shapes that actually
-interact. A shape that merely TOUCHES the stroke along a shared edge (a coincident-edge
-union) is kept IN by the tolerance, so the coincident-edge merge still sees both sides.
+**Why the closure is required — and why the cull is exact (corrected by task 1329).** The
+original cull (task 1327) folded only the shapes overlapping the *incoming stroke* and
+re-emitted everything else below the merged object. That **reorders top-wins z** between an
+untouched shape and a folded shape: if existing shape A overlaps the stroke (so A is folded)
+and existing shape B overlaps A but NOT the stroke, then A and B genuinely interact. Folding
+only A and re-emitting B separately below the merged object lets A win the A↔B overlap even
+though B was drawn on top — flipping the color of the overlap and **dropping an existing↔
+existing cut** (the task-1329 HIGH regression). The transitive closure fixes this: B (and
+anything B transitively overlaps) is pulled into the same kernel arrangement, so the overlap
+resolves in draw order. For the shapes that stay **untouched**, correctness is exact: each is
+bbox-disjoint from every folded shape and from the stroke, so it shares no edges with the
+merged object — no union/cut/split crosses that boundary, and its z-order relative to the
+merged object is geometrically irrelevant (disjoint shapes never contend for a face).
+Untouched shapes keep their original relative order, so untouched↔untouched overlaps also
+resolve as before. The merged artwork is therefore **identical to the full rebuild for ALL
+inputs** — just bounded to the cluster that actually interacts. A shape that merely TOUCHES
+the cluster along a shared edge (a coincident-edge union) is kept IN by the tolerance.
 
 **Measured before/after** (per-stroke fold, new stroke overlapping a few fills on a dense
 disjoint-fill layer, median of 5):
@@ -546,12 +565,17 @@ merge work is genuinely required when the stroke truly overlaps everything; the
 optimization only removes the wasted work, not the necessary work.
 
 **Verification.** All 8 merge-drawing oracles still pass stage↔Ruffle pixelmatch
-**diff=0/220000** (correctness unchanged); the core/authoring-ui/swf unit suites are green
+**diff=0/220000** (correctness unchanged); the core/authoring-ui unit suites are green
 (only the 3 pre-existing task-1207 `flash8-empty.fla`-fixture files fail, as documented).
-New unit tests in `planar-merge.test.ts` assert: disjoint shapes stay untouched; the culled
-fold == the full rebuild for the overlapping subset (identical merged area); touching-edge
-shapes still fold; and the per-stroke fold on a 500-fill layer is bounded (keeps ~n−overlap
-shapes untouched, not O(all fills), under a 50 ms ceiling).
+Unit tests in `planar-merge.test.ts` assert: disjoint shapes stay untouched; the culled fold
+== the full rebuild for the overlapping subset (identical merged area); touching-edge shapes
+still fold; and the per-stroke fold on a 500-fill layer is bounded (keeps ~n−overlap shapes
+untouched, not O(all fills), under a 50 ms ceiling). The **task-1329 regression suite** adds:
+the minimal two-overlapping-existing-shapes + off-stroke case (culled == full rebuild,
+z-order-respecting per-color face area identical), a 60-trial randomized fuzz proving
+culled == full rebuild for arbitrary overlapping layouts, and a transitive-closure case (a
+shape overlapping a folded shape but not the stroke is still folded). All three FAIL on the
+pre-1329 direct-overlap cull and PASS after.
 
 ### 3.0f ALL shape-creation paths share ONE merge-commit helper (task 1328)
 

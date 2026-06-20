@@ -403,3 +403,185 @@ describe("planar merge — spatial-cull incremental fold (task 1327)", () => {
     expect(total).toBeLessThanOrEqual(n * 100 + 14 * 14);
   });
 });
+
+// ===========================================================================
+// REGRESSION (task 1329): the bbox cull must NOT reorder top-wins z between an
+// untouched shape and a folded shape. When two EXISTING mutually-overlapping
+// shapes are on a layer and a new stroke overlaps only the EARLIER-drawn one,
+// the earlier shape is folded while the later (top) shape was previously left
+// "untouched" and re-emitted BELOW the merged object — flipping the color of the
+// existing<->existing overlap. The culled commit must be geometrically IDENTICAL
+// to the full whole-layer rebuild (foldShapeIntoLayer over ALL mergeable shapes).
+// ===========================================================================
+
+describe("planar merge — bbox-cull preserves top-wins z-order (task 1329 regression)", () => {
+  type Obj = { type: string; id: string; shape: Shape; x: number; y: number };
+  const mk = (id: string, x: number, y: number, w: number, h: number, fill: Fill): Obj => ({
+    type: "shape",
+    id,
+    shape: rectShape(id, x, y, w, h, fill),
+    x: 0,
+    y: 0,
+  });
+  const makeMerged = (s: Shape): Obj => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 });
+
+  /**
+   * Z-order-respecting per-color face area of a LAYER's display objects. Bakes
+   * each object's (x,y) offset into stage space and builds ONE planar arrangement
+   * in draw order (bottom -> top), so top-wins overlaps resolve exactly as they
+   * render. Returns a map of "r,g,b,a" -> total bounded-face area.
+   */
+  function layerColorAreas(objs: readonly { shape: Shape; x: number; y: number }[]): Map<string, number> {
+    const stage: Shape[] = [];
+    for (const o of objs) {
+      stage.push({
+        id: o.shape.id,
+        paths: o.shape.paths.map((p) => {
+          const t = (pt: Point): Point => ({ x: pt.x + o.x, y: pt.y + o.y });
+          return {
+            ...p,
+            start: t(p.start),
+            segments: p.segments.map((s) =>
+              s.type === "line"
+                ? { type: "line", to: t(s.to) }
+                : { type: "curve", control: t(s.control), to: t(s.to) }
+            ),
+          };
+        }),
+      });
+    }
+    const ps = buildArrangementFromShapes(stage);
+    const out = new Map<string, number>();
+    for (const f of ps.faces) {
+      if (f.unbounded || f.fill < 0) continue;
+      const fill = ps.fills[f.fill];
+      if (!fill || fill.type !== "solid") continue;
+      const c = fill.color;
+      const key = `${c.r},${c.g},${c.b},${c.a}`;
+      out.set(key, (out.get(key) ?? 0) + faceArea(ps, f));
+    }
+    return out;
+  }
+
+  function expectSameColorAreas(a: Map<string, number>, b: Map<string, number>): void {
+    const keys = new Set([...a.keys(), ...b.keys()]);
+    for (const k of keys) {
+      expect(a.get(k) ?? 0).toBeCloseTo(b.get(k) ?? 0, 0);
+    }
+  }
+
+  it("MINIMAL: later existing shape (off-stroke) keeps top-wins over an earlier folded shape", () => {
+    // Draw order bottom -> top: eBLUE then eRED (eRED is on top, overlaps eBLUE in
+    // [50..70, 30..40] = area 200). The incoming GREEN overlaps eBLUE only (y>=45
+    // misses eRED). Pre-fix, eRED was untouched and re-emitted BELOW the merged
+    // (eBLUE ∪ GREEN) object, so eBLUE wrongly won the [50..70,30..40] overlap.
+    const GREEN: Fill = { type: "solid", color: { r: 0, g: 255, b: 0, a: 255 } };
+    const eBLUE = mk("eBLUE", 50, 30, 30, 20, BLUE); // [50..80, 30..50]
+    const eRED = mk("eRED", 40, 20, 30, 20, RED); //   [40..70, 20..40], drawn LATER
+    const incoming = mk("green", 30, 45, 36, 15, GREEN); // [30..66, 45..60]
+
+    const existing = [eBLUE, eRED]; // bottom -> top
+
+    const culled = planarMergeCommit<Obj>(existing, incoming, makeMerged);
+    expect(culled).not.toBeNull();
+
+    // Full whole-layer rebuild reference: fold ALL mergeable shapes in draw order.
+    const full = foldShapeIntoLayer(existing, incoming, incoming.shape.id);
+    expect(full.merged).not.toBeNull();
+
+    const culledAreas = layerColorAreas(culled!);
+    const fullAreas = layerColorAreas([makeMerged(full.merged!)]);
+
+    // RED must keep its full area (it was drawn on top of BLUE); the existing<->
+    // existing overlap [50..70,30..40]=200 belongs to RED, not BLUE.
+    expectSameColorAreas(culledAreas, fullAreas);
+
+    // Concrete guard: RED kept its full 600 (= 30*20). Pre-fix the cull left eRED
+    // untouched below the merged object, so eBLUE absorbed the 200-unit overlap and
+    // RED dropped to 400 — this assertion FAILS on the pre-1329 code.
+    const redKey = "255,0,0,255";
+    expect(culledAreas.get(redKey) ?? 0).toBeCloseTo(600, 0);
+    expect(fullAreas.get(redKey) ?? 0).toBeCloseTo(600, 0);
+  });
+
+  it("randomized: culled commit == full whole-layer rebuild for 60 trials", () => {
+    // Deterministic PRNG (mulberry32) so the fuzz is reproducible.
+    let seed = 0x1329abcd >>> 0;
+    const rnd = () => {
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const ri = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1));
+    const palette: Fill[] = [
+      RED,
+      BLUE,
+      { type: "solid", color: { r: 0, g: 255, b: 0, a: 255 } },
+      { type: "solid", color: { r: 255, g: 255, b: 0, a: 255 } },
+    ];
+
+    for (let trial = 0; trial < 60; trial++) {
+      // 2-6 existing rects in a small field (so overlaps are frequent) + 1 stroke.
+      const nExisting = ri(2, 6);
+      const existing: Obj[] = [];
+      for (let i = 0; i < nExisting; i++) {
+        const x = ri(0, 60);
+        const y = ri(0, 60);
+        const w = ri(10, 40);
+        const h = ri(10, 40);
+        existing.push(mk("e" + i, x, y, w, h, palette[ri(0, palette.length - 1)]));
+      }
+      const incoming = mk(
+        "stroke",
+        ri(0, 60),
+        ri(0, 60),
+        ri(10, 40),
+        ri(10, 40),
+        palette[ri(0, palette.length - 1)]
+      );
+
+      const culled = planarMergeCommit<Obj>(existing, incoming, makeMerged);
+      const full = foldShapeIntoLayer(existing, incoming, incoming.shape.id);
+      // Both must agree on existence (a degenerate empty fold is rare here).
+      if (culled === null || full.merged === null) {
+        expect(culled === null).toBe(full.merged === null);
+        continue;
+      }
+
+      const culledAreas = layerColorAreas(culled);
+      const fullAreas = layerColorAreas([makeMerged(full.merged)]);
+      const keys = new Set([...culledAreas.keys(), ...fullAreas.keys()]);
+      for (const k of keys) {
+        const cv = culledAreas.get(k) ?? 0;
+        const fv = fullAreas.get(k) ?? 0;
+        expect(
+          Math.abs(cv - fv),
+          `trial ${trial} color ${k}: culled=${cv} full=${fv}`
+        ).toBeLessThan(1);
+      }
+    }
+  });
+
+  it("transitive closure: B overlaps A but not the stroke -> B is still folded", () => {
+    // A overlaps the stroke; B overlaps A but is disjoint from the stroke. B must be
+    // pulled into the fold (transitive closure), not left untouched. C is fully
+    // disjoint from everything and stays untouched.
+    const A = mk("A", 0, 0, 30, 30, BLUE); //   [0..30, 0..30] - overlaps stroke
+    const B = mk("B", 25, 0, 30, 30, RED); //   [25..55, 0..30] - overlaps A, not stroke
+    const C = mk("C", 200, 200, 10, 10, BLUE); // far away, untouched
+    const stroke = mk("s", 0, 0, 10, 10, RED); // [0..10, 0..10] - overlaps A only
+
+    const existing = [A, B, C]; // bottom -> top
+    const culled = planarMergeCommit<Obj>(existing, stroke, makeMerged);
+    expect(culled).not.toBeNull();
+
+    // Only C is untouched -> result is [C, merged] = 2 objects (A and B both folded).
+    expect(culled!.length).toBe(2);
+    expect(culled![0].id).toBe("C");
+
+    const full = foldShapeIntoLayer(existing, stroke, stroke.shape.id);
+    expectSameColorAreas(layerColorAreas(culled!), layerColorAreas([makeMerged(full.merged!)]));
+  });
+});
