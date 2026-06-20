@@ -224,6 +224,62 @@ describe("layoutToUiInit / uiStateToLayout (store seeding + extraction)", () => 
   });
 });
 
+// Adversarial-persistence guard (the 1316/1317 bug classes applied to the layout
+// surface). Layout persist is synchronous (resize-end callback + uiStore
+// subscription in Shell, no debounce), so it has no lost-on-close window; these
+// pin that there is no stale-write clobber and no enum-key normalization
+// asymmetry on restore.
+describe("adversarial persistence (1316/1317 classes)", () => {
+  beforeEach(() => mem.clear());
+
+  // CLASS 1 — a saved change is immediately readable (no flush/debounce window).
+  it("a saved layout change is immediately readable with no flush", () => {
+    saveEditorLayout({
+      ...DEFAULT_EDITOR_LAYOUT,
+      rightPaneWidth: 333,
+      timelineCollapsed: true,
+    });
+    const r = loadEditorLayout();
+    expect(r.rightPaneWidth).toBe(333);
+    expect(r.timelineCollapsed).toBe(true);
+  });
+
+  // CLASS 2 — N rapid sequential writes: the latest wins, no stale clobber.
+  it("the latest of N rapid sequential saves is what persists", () => {
+    for (let i = 0; i < 20; i++) {
+      saveEditorLayout({ ...DEFAULT_EDITOR_LAYOUT, rightPaneWidth: 200 + i });
+    }
+    expect(loadEditorLayout().rightPaneWidth).toBe(219);
+  });
+
+  // CLASS 3 — enum keys are matched EXACTLY by normalize(); a near-miss
+  // (casing/whitespace) falls back to the default rather than restoring a wrong
+  // slot. Read and write both pass through normalize, so the match is symmetric.
+  it("near-miss tab/enum values fall back to defaults (exact match, symmetric)", () => {
+    mem.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: EDITOR_LAYOUT_SCHEMA_VERSION,
+        layout: {
+          ...DEFAULT_EDITOR_LAYOUT,
+          rightTab: "Library",
+          bottomTab: " actions",
+          topTab: "TIMELINE",
+        },
+      })
+    );
+    const r = loadEditorLayout();
+    expect(r.rightTab).toBe("library");
+    expect(r.bottomTab).toBe("actions");
+    expect(r.topTab).toBe("timeline");
+  });
+
+  it("bottomTab null (dock collapsed) round-trips and is not coerced to a tab", () => {
+    saveEditorLayout({ ...DEFAULT_EDITOR_LAYOUT, bottomTab: null });
+    expect(loadEditorLayout().bottomTab).toBeNull();
+  });
+});
+
 /** Build a minimal UiData-shaped object with all durable fields at defaults. */
 function buildMinimalUiData() {
   return {

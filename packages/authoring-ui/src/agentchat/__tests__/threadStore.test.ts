@@ -513,6 +513,100 @@ describe("hydrate coerces a mid-run 'running' to terminal (task 1293)", () => {
   });
 });
 
+// Adversarial-persistence guard (mirrors the 1316/1317 bug classes applied to
+// the chat-thread surface): prove there is NO lost-on-close window, NO stale/
+// wrong-target write when a run finalizes after a switch/delete, and NO id
+// canonicalization asymmetry. These are the close/switch/finalize paths the
+// happy-path suite above does not adversarially exercise.
+describe("adversarial persistence (1316/1317 classes)", () => {
+  // CLASS 1 — lost-on-close / flush-before-debounce.
+  it("persists the completed user message + assistant turn at SEND, before any stream (close-mid-flight loses nothing)", () => {
+    const st = useThreadStore.getState();
+    const id = st.newThread();
+    // submitMessage appends user+assistant synchronously BEFORE awaiting runTurn.
+    st.appendUserAndAssistant(
+      { role: "user", id: "u1", text: "save me" },
+      { role: "assistant", id: "a1", run: runningRun },
+      { role: "user", content: "save me" }
+    );
+    // SIMULATE A TAB CLOSE NOW: no await, no terminal patch. Re-read storage.
+    const reloaded = loadThreads();
+    const t = reloaded.threads.find((x) => x.id === id)!;
+    const user = t.transcript.find((x) => x.role === "user");
+    expect(user && user.role === "user" && user.text).toBe("save me");
+    expect(t.history).toEqual([{ role: "user", content: "save me" }]);
+    // A persisted mid-stream `running` run is coerced to `stopped` (never lost,
+    // never stuck "Working…").
+    const a = t.transcript.find((x) => x.role === "assistant");
+    if (a && a.role === "assistant") expect(a.run.status).toBe("stopped");
+  });
+
+  // CLASS 2 — stale-write-race / wrong-target.
+  it("a terminal run finalizing AFTER the user switched to B lands on its origin A and never clobbers B", () => {
+    const st = useThreadStore.getState();
+    const a = st.newThread();
+    st.appendUserAndAssistant(
+      { role: "user", id: "u1", text: "on A" },
+      { role: "assistant", id: "a1", run: runningRun },
+      { role: "user", content: "on A" }
+    );
+    const b = st.newThread();
+    st.appendUserAndAssistant(
+      { role: "user", id: "u2", text: "on B" },
+      { role: "assistant", id: "b1", run: runningRun },
+      { role: "user", content: "on B" }
+    );
+    // A's run finalizes (the panel targets the captured origin id explicitly).
+    st.patchAssistantRun(a, "a1", doneRun);
+    const persisted = loadThreads();
+    const ta = persisted.threads.find((x) => x.id === a)!;
+    const tb = persisted.threads.find((x) => x.id === b)!;
+    const aA = ta.transcript.find((x) => x.role === "assistant");
+    if (aA && aA.role === "assistant") expect(aA.run.status).toBe("done");
+    // B's own content is untouched by A's finalizing run.
+    const uB = tb.transcript.find((x) => x.role === "user");
+    expect(uB && uB.role === "user" && uB.text).toBe("on B");
+  });
+
+  it("deleting the origin thread mid-run makes the terminal patch a safe no-op (no resurrect, no throw, no cross-write)", () => {
+    const st = useThreadStore.getState();
+    const a = st.newThread();
+    st.appendUserAndAssistant(
+      { role: "user", id: "u1", text: "doomed" },
+      { role: "assistant", id: "a1", run: runningRun },
+      { role: "user", content: "doomed" }
+    );
+    const b = st.newThread(); // b becomes active
+    st.deleteThread(a); // delete the now-non-active origin
+    expect(() => st.patchAssistantRun(a, "a1", doneRun)).not.toThrow();
+    const persisted = loadThreads();
+    expect(persisted.threads.find((x) => x.id === a)).toBeUndefined();
+    expect(persisted.threads.find((x) => x.id === b)).toBeDefined();
+  });
+
+  // CLASS 3 — key/canonicalization mismatch.
+  it("thread ids are matched EXACTLY (no trim/normalize on either side), so a near-miss id never cross-writes", () => {
+    const st = useThreadStore.getState();
+    const a = st.newThread();
+    st.appendUserAndAssistant(
+      { role: "user", id: "u1", text: "hi" },
+      { role: "assistant", id: "a1", run: runningRun },
+      { role: "user", content: "hi" }
+    );
+    // A trailing-space variant must NOT match (asymmetric normalization would be
+    // the 1317 Bug-A class).
+    st.patchAssistantRun(a + " ", "a1", doneRun);
+    const t1 = useThreadStore.getState().threads.find((x) => x.id === a)!;
+    const a1 = t1.transcript.find((x) => x.role === "assistant");
+    if (a1 && a1.role === "assistant") expect(a1.run.status).toBe("running");
+    // The exact id matches.
+    st.patchAssistantRun(a, "a1", doneRun);
+    const t2 = useThreadStore.getState().threads.find((x) => x.id === a)!;
+    const a2 = t2.transcript.find((x) => x.role === "assistant");
+    if (a2 && a2.role === "assistant") expect(a2.run.status).toBe("done");
+  });
+});
+
 describe("selectors", () => {
   it("selectThreadsByRecency sorts most-recent first", () => {
     useThreadStore.setState({
