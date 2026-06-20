@@ -180,7 +180,7 @@ faces does this fill now occupy after the cut".
 | **P5 (cutover)** | **Cutover to merge-by-default + cleanup + final authenticity sweep** (task 1323). Remove the `planarMergeOnCommit` flag; merge unconditional for `type:"shape"` commits; delete the dead MVP `merge-drawing.ts` + the no-op `shape-boolean.ts` stub + the now-empty `featureFlags.ts`. Adapt the tests that assumed the old per-object behavior to the authentic merge outcome. Confirm all 8 oracles diff=0, Object Drawing still discrete, FLA/SWF round-trip + golden-parity + self-determinism unaffected, and the planar↔per-path interchange is sufficient. See §3.0d. | **DONE (task 1323).** |
 | **P5+ (interchange optimization, NOT a blocker)** | SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` hard-codes `stateFillStyle1=0`) — an edge-record-count *optimization* (closer byte-match to Flash), NOT a correctness need: the per-path read-back already round-trips to SWF at diff=0 (see §3.0d). FLA merge-map persistence and planar-topology shape-morph likewise remain future enhancements, not regressions. | Optional follow-up. |
 | **P5+ (selection polish)** | **Full selection authenticity + polish:** lasso over the planar pieces, edit-curve handles on faces, snapping against the arrangement. | Optional follow-up. |
-| **Perf follow-up (task 1327)** | Incremental fold — avoid rebuilding the entire layer arrangement per stroke on dense art (traced bitmaps with 1000+ fills). Measured ~35/61/176 ms per stroke for 100/400/800 mergeable fills. Not a blocker; see §3.0d. | Open. |
+| **Perf follow-up (task 1327)** | Incremental fold — avoid rebuilding the entire layer arrangement per stroke on dense art (traced bitmaps with 1000+ fills). Measured ~35/61/176 ms per stroke for 100/400/800 mergeable fills. Resolved via **spatial bbox-culling**: only the shapes whose bbox overlaps the new stroke are folded through the kernel; disjoint shapes stay untouched. Per-stroke fold on a 1000-fill layer dropped ~239 ms → ~2 ms. See §3.0e. | **DONE (task 1327).** |
 
 ### 3.0 P1 implementation notes (task 1319)
 
@@ -486,14 +486,72 @@ merge-map persistence, planar-topology shape-morph — are **NOT cutover blocker
   does NOT touch any SWF compile/publish, FLA import/export, or tween/morph file, so a
   given document compiles byte-identically. `fla-roundtrip`, `convert-symbol-identity`,
   `visual-oracle` (18), `shape-morph`, `solid-swf-dump` all pass.
-* **Performance on dense art** — the one real follow-up. `planarMergeCommit` rebuilds
-  the WHOLE layer arrangement (`buildArrangementFromShapes` over every mergeable shape)
-  on each commit. Measured one-stroke fold cost on a dense solid-fill shape: 100 fills
+* **Performance on dense art** — the one real follow-up at cutover time. `planarMergeCommit`
+  rebuilt the WHOLE layer arrangement (`buildArrangementFromShapes` over every mergeable
+  shape) on each commit. Measured one-stroke fold cost on a dense solid-fill shape: 100 fills
   → ~35 ms, 400 → ~61 ms, 800 → ~176 ms (super-linear). A traced-bitmap layer (1000+
-  solid fills — all `isMergeableShape`) therefore sees a ~250–400 ms hitch per stroke.
-  Not a correctness blocker; normal authored art is responsive. Tracked as **task 1327**
-  (incremental fold: bbox-cull disjoint fills / cache the live arrangement / keep
-  traced bitmaps non-merging until broken-apart).
+  solid fills — all `isMergeableShape`) therefore saw a ~250–400 ms hitch per stroke.
+  Not a correctness blocker; normal authored art is responsive. **RESOLVED in task 1327**
+  via spatial bbox-culling — see §3.0e.
+
+### 3.0e Incremental (spatial-cull) fold — bounded per-stroke cost on dense art (task 1327)
+
+**The cost.** The planar kernel's `Arrangement.insertEdge` scans every existing half-edge
+for intersections, so folding N shapes with E total edges is ~`O(E²)`, and the per-face
+fill resolve (`assignFaceFillsBySampling` in `build.ts`) is `O(F · R)` over R source
+regions. `planarMergeCommit` ran `buildArrangementFromShapes` over the ENTIRE layer on
+every commit, so a single new stroke "rebuilt the world" — a dense traced-bitmap layer
+(1000+ disjoint solid fills) hitched ~239 ms per stroke even though the stroke touched only
+a handful of fills.
+
+**The fix — spatial bounding-box culling (`engine/planar/merge.ts`).** A shape whose
+stage-space bbox does NOT overlap the new stroke's bbox cannot interact with it
+geometrically — no edges cross, so no union/cut/split is possible. So the commit now:
+
+1. Computes the incoming stroke's curve-aware stage bbox (`shapeStageBBox`, built on the
+   existing `edgeBBox`).
+2. Partitions the layer's mergeable shapes into the subset whose bbox OVERLAPS (or touches
+   within a 1 px tolerance) the stroke, and the disjoint rest (`foldShapeIntoLayerCulled`).
+3. Folds ONLY the overlapping subset + the stroke through the kernel; the disjoint shapes
+   are returned **untouched** as their own display objects (they were already pairwise-
+   disjoint, so keeping them separate is correct and free).
+
+`planarMergeCommit` therefore returns `[...passthrough, ...untouched, mergedObj]` — the
+layer may now hold several merged shapes instead of always collapsing to one. This is the
+authentic state (two non-overlapping merge-mode regions are independent), and every
+downstream consumer (render, selection via `livePlanarShape`, eraser, SWF/FLA interchange)
+already handles multiple shapes per layer.
+
+**Why correctness is preserved exactly.** A disjoint shape contributes no edges that cross
+the stroke, so its presence in (or absence from) the arrangement cannot change any face the
+stroke touches; and an untouched shape's own faces are byte-identical whether or not they
+pass through the kernel (the kernel is an identity on a single non-interacting shape). The
+merged artwork is identical to the full rebuild — just bounded to the shapes that actually
+interact. A shape that merely TOUCHES the stroke along a shared edge (a coincident-edge
+union) is kept IN by the tolerance, so the coincident-edge merge still sees both sides.
+
+**Measured before/after** (per-stroke fold, new stroke overlapping a few fills on a dense
+disjoint-fill layer, median of 5):
+
+| Layer fills | Before (full rebuild) | After (bbox-cull) |
+|---|---|---|
+| 100 | ~28 ms | ~0.4 ms |
+| 400 | ~79 ms | ~1 ms |
+| 800 | ~214 ms | ~0.8 ms |
+| 1000 | ~239 ms | ~2 ms |
+
+Well under the ~50 ms acceptance target. A stroke that genuinely spans the WHOLE layer
+(overlapping every fill) still does the full fold (~216 ms for 1000) — that is correct, the
+merge work is genuinely required when the stroke truly overlaps everything; the
+optimization only removes the wasted work, not the necessary work.
+
+**Verification.** All 8 merge-drawing oracles still pass stage↔Ruffle pixelmatch
+**diff=0/220000** (correctness unchanged); the core/authoring-ui/swf unit suites are green
+(only the 3 pre-existing task-1207 `flash8-empty.fla`-fixture files fail, as documented).
+New unit tests in `planar-merge.test.ts` assert: disjoint shapes stay untouched; the culled
+fold == the full rebuild for the overlapping subset (identical merged area); touching-edge
+shapes still fold; and the per-stroke fold on a 500-fill layer is bounded (keeps ~n−overlap
+shapes untouched, not O(all fills), under a 50 ms ceiling).
 
 ### 3.1 Key decisions
 

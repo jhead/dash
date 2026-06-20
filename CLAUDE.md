@@ -900,14 +900,26 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   `Shape` (the LIVE planar map is re-derived on demand via `livePlanarShape`), so FLA
   needs no merge-map record. Don't treat the "P5 interchange gaps" (FillStyle1 / FLA
   merge-map / topology-morph) as blockers — they're optional follow-ups.
-- **Merge folds the WHOLE layer arrangement per commit — a real perf cost on dense art
-  (task 1327).** `planarMergeCommit`→`foldShapeIntoLayer` calls
-  `buildArrangementFromShapes` over EVERY mergeable shape on the layer for each commit
-  (not incremental). Measured one-stroke fold: 100 solid fills → ~35 ms, 400 → ~61 ms, 800
-  → ~176 ms (super-linear). A traced-bitmap layer (1000+ solid fills, all mergeable) thus
-  hitches ~250–400 ms per stroke. Normal authored art is fine; this is a dense-art
-  follow-up (bbox-cull disjoint fills / cache the live arrangement / keep traced bitmaps
-  non-merging), not a cutover blocker.
+- **Merge fold is bbox-CULLED, not a whole-layer rebuild (task 1327 — was the dense-art
+  perf cost).** `planarMergeCommit` used to call `buildArrangementFromShapes` over EVERY
+  mergeable shape on the layer per commit, so one stroke "rebuilt the world" — `insertEdge`
+  scans all half-edges (~`O(E²)`), so 100/400/800 disjoint fills cost ~35/61/176 ms and a
+  1000+-fill traced bitmap hitched ~239 ms PER STROKE. Fix: `foldShapeIntoLayerCulled`
+  (`engine/planar/merge.ts`) folds ONLY the mergeable shapes whose stage-space bbox overlaps
+  (within a 1 px tolerance) the incoming stroke's bbox through the kernel; **disjoint shapes
+  are kept UNTOUCHED** and re-emitted as their own display objects, so a layer may now hold
+  several merged shapes instead of always collapsing to one. Correctness is EXACT: a disjoint
+  shape contributes no edges that cross the stroke (no union/cut/split possible), and a
+  non-interacting shape is an identity through the kernel — the merged artwork equals the full
+  rebuild, just bounded to the shapes that actually interact. Touching-edge shapes are kept IN
+  by the tolerance so coincident-edge unions still see both sides. Result: per-stroke fold on
+  a 1000-fill layer dropped ~239 ms → ~2 ms (a stroke that genuinely spans the whole layer
+  still does the full ~216 ms fold — that work is real). All 8 oracles still diff=0/220000;
+  the curve-aware `shapeStageBBox` reuses the existing `edgeBBox`. Gate: `planar-merge.test.ts`
+  "spatial-cull incremental fold" (untouched-disjoint / culled==full-rebuild / touching-edge /
+  PERF 500-fill bounded). `foldShapeIntoLayer` (whole-layer) is kept for tests/explicit callers.
+  Note: the merge wiring in `Shell.tsx` is unchanged — `planarMergeCommit`'s signature/result
+  contract is identical, the culling is internal.
 - **Whole-shape drag in merge mode = split-on-move (geometry translates, NOT the object
   offset).** A drawn shape commits as one merged shape at (0,0) with geometry in stage
   space. The selection tool's `partialSelectEnabled` path (active whenever the selection

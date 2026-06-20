@@ -92,6 +92,7 @@ export {
   planarShapeToShape,
   isMergeableShape,
   foldShapeIntoLayer,
+  foldShapeIntoLayerCulled,
   planarMergeCommit,
   // P3 — live planar map + partial face/segment selection + split-on-move.
   livePlanarShape,
@@ -113,6 +114,7 @@ export type {
   InputEdge,
   Intersection,
   FoldResult,
+  CulledFoldResult,
   MergeableLike,
   PlanarEmitFilter,
   FaceKey,

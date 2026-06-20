@@ -67,9 +67,10 @@ export {
 export {
   isMergeableShape,
   foldShapeIntoLayer,
+  foldShapeIntoLayerCulled,
   planarMergeCommit,
 } from "./merge.js";
-export type { FoldResult, MergeableLike } from "./merge.js";
+export type { FoldResult, CulledFoldResult, MergeableLike } from "./merge.js";
 
 // P3 — live planar map + partial face/segment selection + split-on-move.
 export { livePlanarShape } from "./live.js";

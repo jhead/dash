@@ -17,6 +17,7 @@ import {
   faceArea,
   planarShapeToShape,
   foldShapeIntoLayer,
+  foldShapeIntoLayerCulled,
   planarMergeCommit,
 } from "../planar/index.js";
 
@@ -249,5 +250,156 @@ describe("planar merge-on-commit (P1)", () => {
     const merged = planarShapeToShape(ps, "m");
     const hasCurve = merged.paths.some((p) => p.segments.some((s) => s.type === "curve"));
     expect(hasCurve).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Incremental fold via spatial culling (task 1327) — bounded per-stroke fold
+// on dense art, with correctness identical to the full whole-layer rebuild.
+// ===========================================================================
+
+describe("planar merge — spatial-cull incremental fold (task 1327)", () => {
+  type Obj = { type: string; id: string; shape: Shape; x: number; y: number };
+  const mk = (id: string, x: number, y: number, w: number, h: number, fill: Fill): Obj => ({
+    type: "shape",
+    id,
+    shape: rectShape(id, x, y, w, h, fill),
+    x: 0,
+    y: 0,
+  });
+  const makeMerged = (s: Shape): Obj => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 });
+
+  /** Total filled area across every shape display object on a layer. */
+  function totalLayerArea(objs: readonly Obj[]): number {
+    let a = 0;
+    for (const o of objs) for (const p of o.shape.paths) if (p.fill) a += pathArea(p);
+    return a;
+  }
+
+  it("disjoint existing shapes are kept UNTOUCHED, not refolded into one shape", () => {
+    // Three disjoint same-color rects already on the layer; a 4th overlaps only
+    // the first one.
+    const existing = [
+      mk("a", 0, 0, 10, 10, BLUE),
+      mk("b", 100, 0, 10, 10, BLUE),
+      mk("c", 200, 0, 10, 10, BLUE),
+    ];
+    const incoming = mk("d", 5, 0, 10, 10, BLUE); // overlaps only "a"
+
+    const result = planarMergeCommit<Obj>(existing, incoming, makeMerged);
+    expect(result).not.toBeNull();
+    // b and c are disjoint -> untouched (2 objects) + 1 merged (a ∪ d) = 3.
+    expect(result!.length).toBe(3);
+    // The two disjoint shapes keep their identity (object reference preserved).
+    expect(result!.slice(0, 2).map((o) => o.id).sort()).toEqual(["b", "c"]);
+
+    // Area conservation: a (100) ∪ d (100), overlap 50 -> 150; + b (100) + c (100).
+    expect(totalLayerArea(result!)).toBeCloseTo(150 + 100 + 100, 0);
+  });
+
+  it("culled fold == full rebuild for the overlapping subset (identical merged area)", () => {
+    // A dense field of disjoint fills + a few that the new stroke overlaps.
+    const existing: Obj[] = [];
+    for (let i = 0; i < 50; i++) existing.push(mk("f" + i, i * 30, 0, 10, 10, BLUE));
+    // Two existing fills near the origin that the stroke will straddle.
+    existing.push(mk("near1", 0, 0, 10, 10, RED));
+    existing.push(mk("near2", 8, 0, 10, 10, RED));
+    const incoming = mk("stroke", 4, 0, 14, 14, RED);
+
+    const culled = planarMergeCommit<Obj>(existing, incoming, makeMerged);
+    expect(culled).not.toBeNull();
+
+    // Full rebuild: fold EVERY mergeable shape (the pre-optimization behavior).
+    const full = foldShapeIntoLayer(existing, incoming, incoming.shape.id);
+    expect(full.merged).not.toBeNull();
+
+    // The merged object in the culled result is the LAST element (top).
+    const culledMerged = culled![culled!.length - 1];
+
+    // Total artwork area must match between the two strategies (the disjoint
+    // fills contribute the same area whether folded or kept separate).
+    const culledTotal = totalLayerArea(culled!);
+    const fullTotal = totalLayerArea([makeMerged(full.merged!)]);
+    expect(culledTotal).toBeCloseTo(fullTotal, 0);
+
+    // And the culled merged region (the stroke + the 3 RED fills it touches)
+    // equals the red area of the full rebuild restricted to that region.
+    const culledRedArea = culledMerged.shape.paths
+      .filter((p) => p.fill && p.fill.type === "solid" && (p.fill as { color: { r: number } }).color.r === 255)
+      .reduce((s, p) => s + pathArea(p), 0);
+    const fullRedArea = full.merged!.paths
+      .filter((p) => p.fill && p.fill.type === "solid" && (p.fill as { color: { r: number } }).color.r === 255)
+      .reduce((s, p) => s + pathArea(p), 0);
+    expect(culledRedArea).toBeCloseTo(fullRedArea, 0);
+  });
+
+  it("foldShapeIntoLayerCulled partitions overlapping vs untouched correctly", () => {
+    const existing = [
+      mk("hit", 0, 0, 10, 10, BLUE),
+      mk("miss-far", 1000, 1000, 10, 10, BLUE),
+    ];
+    const incoming = mk("s", 5, 5, 10, 10, BLUE);
+    const { merged, untouched } = foldShapeIntoLayerCulled(existing, incoming, "m");
+    expect(merged).not.toBeNull();
+    expect(untouched.map((o) => o.id)).toEqual(["miss-far"]);
+  });
+
+  it("touching-but-not-overlapping shapes (shared edge) still fold together", () => {
+    // Two rects sharing exactly one vertical edge at x=10 -> a coincident edge in
+    // the planar map. They must fold (the cull tolerance keeps touching shapes in).
+    const existing = [mk("a", 0, 0, 10, 10, BLUE)];
+    const incoming = mk("b", 10, 0, 10, 10, BLUE); // shares the x=10 edge
+    const { merged, untouched } = foldShapeIntoLayerCulled(existing, incoming, "m");
+    expect(untouched.length).toBe(0); // "a" is NOT culled away
+    expect(merged).not.toBeNull();
+    // Union of two adjacent 10x10 squares = 200 (seam dissolves, same color).
+    const area = merged!.paths.reduce((s, p) => s + (p.fill ? pathArea(p) : 0), 0);
+    expect(area).toBeCloseTo(200, 0);
+  });
+
+  it("PERF: per-stroke fold on a 500-fill layer is BOUNDED (not O(all fills))", () => {
+    // Build a dense traced-bitmap-like layer: 500 disjoint solid fills in a grid.
+    const n = 500;
+    const existing: Obj[] = [];
+    const cols = Math.ceil(Math.sqrt(n));
+    const cell = 12; // 10px fill + 2px gap -> all DISJOINT
+    for (let i = 0; i < n; i++) {
+      const cx = (i % cols) * cell;
+      const cy = Math.floor(i / cols) * cell;
+      existing.push(mk("f" + i, cx, cy, 10, 10, BLUE));
+    }
+    // A new stroke that overlaps only the top-left corner (a couple of fills).
+    const incoming = mk("stroke", 0, 0, 14, 14, BLUE);
+
+    // Structural bound (the deterministic, non-flaky assertion): the result must
+    // keep the vast majority of the disjoint fills UNTOUCHED as separate display
+    // objects rather than collapsing all n into one merged shape. Pre-fix this
+    // was always 1; with culling it is ~n minus the handful the stroke touches.
+    const result = planarMergeCommit<Obj>(existing, incoming, makeMerged);
+    expect(result).not.toBeNull();
+    expect(result!.length).toBeGreaterThan(n - 10); // only a few fills merged in
+    expect(result!.length).toBeLessThan(n); // at least one (the stroke + its overlap) merged
+
+    // Timing bound (generous to avoid CI flakiness): warm once, then median of 5.
+    // The full-rebuild baseline for n=500 was well over 80 ms; the culled fold is
+    // ~1 ms. A 50 ms ceiling proves the hitch is gone with ample headroom.
+    const runs: number[] = [];
+    planarMergeCommit<Obj>(existing, incoming, makeMerged); // warm
+    for (let k = 0; k < 5; k++) {
+      const t0 = performance.now();
+      planarMergeCommit<Obj>(existing, incoming, makeMerged);
+      runs.push(performance.now() - t0);
+    }
+    runs.sort((a, b) => a - b);
+    const median = runs[2];
+    expect(median).toBeLessThan(50);
+
+    // Area is fully conserved (every fill still present; the stroke unions its
+    // overlap). Total = 500 fills * 100 area, minus the overlap absorbed by the
+    // 14x14 stroke unioned with the 2-3 fills it touches; assert it's within the
+    // sane envelope [n*100, n*100 + stroke area].
+    const total = totalLayerArea(result!);
+    expect(total).toBeGreaterThanOrEqual(n * 100);
+    expect(total).toBeLessThanOrEqual(n * 100 + 14 * 14);
   });
 });
