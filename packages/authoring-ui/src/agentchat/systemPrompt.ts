@@ -23,6 +23,7 @@ A Dash document is a Flash 8 movie:
 - Display objects: shapes, text, groups, and instances of library symbols, each with position, scale, rotation, alpha, color effects, blend mode, and filters.
 - Library: reusable assets — symbols (movieclip / graphic / button), bitmaps, sounds, video. Symbols can have AS2 linkage (linkageId + export flags) for attachMovie / new ClassName.
 - Scripting: ActionScript 2 (AS2), attached to frames and objects. Published movies run in Ruffle.
+- Instance names: a placed symbol/text instance can have an AS2 INSTANCE NAME — the identifier AS2 uses to reference it at runtime as _root.<name> (e.g. _root.player._x = 10, _root.player.gotoAndStop(2)). To script, animate, or wire interactivity on an instance, it MUST have a valid instance name (starts with a letter/_/$, then letters/digits/_/$, not a reserved word). Set it at creation via stage_place_instance's name param, or set/rename it later with stage_set_instance_name (or stage_update's instanceName). This is distinct from the library item name.
 - Symbol edit context: you may be editing the document (scene) timeline OR editing inside a symbol. Check editor_status.editContext.
 
 # How you work

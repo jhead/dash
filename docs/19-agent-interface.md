@@ -148,9 +148,10 @@ bumped on every `pushDoc`); reads include the `rev` they observed.
 |------|--------|--------|
 | `stage_add_shape` | `{ kind: "rect"\|"oval"\|"line", bounds/points, fill?, stroke?, layerId?, frameIndex? }` | `{ id, rev }` (defaults: active layer, current frame) |
 | `stage_add_text` | `{ x, y, width, height, text, textType?, fontFamily?, fontSize?, color?, ... }` | `{ id, rev }` |
-| `stage_place_instance` | `{ symbolId, x, y, name? }` | `{ id, rev }` |
+| `stage_place_instance` | `{ symbolId, x, y, name?, ... }` | `{ id, rev }` — `name` sets the **AS2 instance name** (see below) |
 | `stage_add_video` | `{ videoItemId, x, y, width?, height?, layerId?, frameIndex? }` (defaults to the VideoItem's native size) | `{ id, rev }` |
-| `stage_update` | `{ id, updates }` (x/y/scale/rotation/alpha/name/filters/text props…) | `{ ok, rev }` |
+| `stage_update` | `{ id, updates }` (x/y/scale/rotation/alpha/instanceName/filters/text props…) | `{ ok, rev }` — pass `instanceName` (top-level or in `updates`) to rename an instance |
+| `stage_set_instance_name` | `{ id, name, layerId?, frameIndex? }` | `{ ok, rev }` — set/rename the AS2 instance name; `""` clears it |
 | `stage_remove` | `{ ids }` | `{ ok, rev }` |
 | `stage_arrange` | `{ ids, op: "front"\|"back"\|"forward"\|"backward" }` | `{ ok, rev }` |
 | `stage_group` / `stage_ungroup` | `{ ids }` | `{ ok, rev }` |
@@ -158,6 +159,20 @@ bumped on every `pushDoc`); reads include the `rev` they observed.
 | `selection_set` | `{ ids }` (empty = clear) / `{ all: true }` | `{ ok }` |
 | `view_set` | `{ zoom?, panX?, panY?, currentFrame?, activeLayerId? }` | `{ ok }` |
 | `tool_select` | `{ toolId }` | `{ ok }` |
+
+**Instance names (AS2 `_root.<name>`).** A placed symbol/text instance can carry an
+*instance name* — the identifier ActionScript uses to reference it at runtime as
+`_root.<name>` (e.g. `_root.player._x = 10`, `_root.player.gotoAndStop(2)`). This is
+required to script, animate, or wire interactivity on an instance, and is **distinct from
+the library item name**. There are three ways to set it:
+
+- at creation, via `stage_place_instance`'s `name` param;
+- after placement, via the dedicated `stage_set_instance_name` (clearest — pass `""` to clear);
+- via `stage_update`'s `instanceName` param (top-level or inside `updates`).
+
+The name is validated as a valid AS2 identifier (starts with a letter, `_` or `$`, then
+letters/digits/`_`/`$`, and not a reserved word); an invalid name returns an `error`. The
+name is emitted as the PlaceObject2 name at publish, so `_root.<name>` resolves in Ruffle.
 
 ### Timeline
 

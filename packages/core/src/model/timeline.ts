@@ -36,6 +36,8 @@ type DisplayObjectUpdates = Partial<
     loopMode: "loop" | "play-once" | "single-frame";
     firstFrame: number;
     cacheAsBitmap: boolean;
+    // AS2 instance name (referenced as _root.<name>); undefined clears it.
+    instanceName: string | undefined;
   }
 >;
 

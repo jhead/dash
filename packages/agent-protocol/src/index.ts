@@ -221,7 +221,14 @@ export const StagePlaceInstanceParamsSchema = z.object({
   symbolId: z.string(),
   x: z.number(),
   y: z.number(),
-  name: z.string().optional(),
+  name: z.string().optional().describe(
+    "AS2 instance name for the placed instance. This is the name ActionScript uses to " +
+    "reference the instance at runtime (e.g. _root.<name>, _root.<name>._x = 10, " +
+    "_root.<name>.gotoAndStop(2)); set it whenever you intend to script or wire " +
+    "interactivity on this instance. Must be a valid AS2 identifier: starts with a " +
+    "letter, _ or $, then letters/digits/_/$, and not an AS2 reserved word. To rename " +
+    "an instance after placement, use stage_set_instance_name."
+  ),
   layerId: z.string().optional(),
   frameIndex: z.number().int().nonnegative().optional(),
 });
@@ -270,6 +277,11 @@ export const StageUpdateParamsSchema = z.object({
   loopMode: z.enum(['loop', 'play-once', 'single-frame']).optional(),
   firstFrame: z.number().int().min(0).optional(),
   colorEffect: z.object({ type: z.string() }).passthrough().optional().describe('Color effect (alpha, tint, brightness, advanced)'),
+  instanceName: z.string().optional().describe(
+    "AS2 instance name for a symbol/text instance (the name AS2 uses as _root.<name>). " +
+    "Set/renames the instance name in place; must be a valid AS2 identifier or empty " +
+    "string to clear. See also the dedicated stage_set_instance_name command."
+  ),
 });
 export type StageUpdateParams = z.infer<typeof StageUpdateParamsSchema>;
 
@@ -896,6 +908,26 @@ export const LibraryUseCountResultSchema = z.object({ count: z.number() })
 export type LibraryUseCountResult = z.infer<typeof LibraryUseCountResultSchema>
 
 // ---------------------------------------------------------------------------
+// stage_set_instance_name
+// ---------------------------------------------------------------------------
+
+export const StageSetInstanceNameParamsSchema = z.object({
+  id: z.string().describe('Display object id of the instance/text field to (re)name'),
+  name: z.string().describe(
+    "New AS2 instance name. This is the name ActionScript references at runtime as " +
+    "_root.<name> (e.g. _root.<name>._x, _root.<name>.gotoAndStop(2)). Must be a valid " +
+    "AS2 identifier (starts with a letter, _ or $, then letters/digits/_/$, not a " +
+    "reserved word), or an empty string to clear the name."
+  ),
+  layerId: z.string().optional(),
+  frameIndex: z.number().int().nonnegative().optional(),
+})
+export type StageSetInstanceNameParams = z.infer<typeof StageSetInstanceNameParamsSchema>
+
+export const StageSetInstanceNameResultSchema = z.object({ ok: z.boolean(), rev: RevSchema })
+export type StageSetInstanceNameResult = z.infer<typeof StageSetInstanceNameResultSchema>
+
+// ---------------------------------------------------------------------------
 // Bridge message envelope
 // ---------------------------------------------------------------------------
 
@@ -986,6 +1018,7 @@ export const ALL_COMMANDS = [
   "stage_find_instances",
   "stage_get_bounds",
   "stage_duplicate",
+  "stage_set_instance_name",
   // library utilities
   "library_use_count",
 ] as const;
@@ -1093,6 +1126,7 @@ export const COMMAND_SCHEMAS = {
   stage_find_instances: StageFindInstancesParamsSchema,
   stage_get_bounds: StageGetBoundsParamsSchema,
   stage_duplicate: StageDuplicateParamsSchema,
+  stage_set_instance_name: StageSetInstanceNameParamsSchema,
   // library utilities
   library_use_count: LibraryUseCountParamsSchema,
 } satisfies Record<AgentCommand, z.ZodType>;
@@ -1122,13 +1156,13 @@ export const COMMAND_DESCRIPTIONS = {
   stage_add_text:
     "Add a text object to the stage (static/dynamic/input) with text, position, font, size, and color. Returns the new object id and rev.",
   stage_place_instance:
-    "Place a library symbol instance on the stage at a position, with optional name/transform and graphic loop mode. Returns the new object id and rev.",
+    "Place a library symbol instance on the stage at a position, with optional transform and graphic loop mode. Pass `name` to set the AS2 instance name used to reference it as _root.<name> at runtime (needed to script/wire interactivity); rename later with stage_set_instance_name. Returns the new object id and rev.",
   stage_add_video:
     "Place a library VideoItem on the stage as a video display object (defaults to native size). Returns the new object id and rev.",
   stage_add_bitmap:
     "Place a library BitmapItem on the stage as a bitmap display object (defaults to native size). Returns the new object id and rev.",
   stage_update:
-    "Update properties of a display object (x, y, scaleX, scaleY, rotation, alpha, text, blendMode, colorEffect, cacheAsBitmap, etc.). Returns ok and rev.",
+    "Update properties of a display object (x, y, scaleX, scaleY, rotation, alpha, text, blendMode, colorEffect, cacheAsBitmap, instanceName, etc.). Pass `instanceName` to set/rename the AS2 instance name (referenced as _root.<name>); for renaming an instance the dedicated stage_set_instance_name is clearer. Returns ok and rev.",
   stage_remove: "Remove display objects by id. Returns ok and rev.",
   stage_arrange: "Change z-order of display objects: front/back/forward/backward. Returns ok and rev.",
   stage_group: "Group display objects into a single group object. Returns ok and rev.",
@@ -1214,6 +1248,8 @@ export const COMMAND_DESCRIPTIONS = {
   stage_find_instances: "Find stage instances of a given library symbol id. Returns matching object ids.",
   stage_get_bounds: "Read the bounding box of given objects (or the selection / whole stage).",
   stage_duplicate: "Duplicate the selected/given display objects in place. Returns the new object ids and rev.",
+  stage_set_instance_name:
+    "Set or rename the AS2 instance name of a placed symbol/text instance (the name AS2 references as _root.<name>, used to script position, playback, and interactivity). Validates the name as an AS2 identifier; pass an empty string to clear it. Returns ok and rev.",
   // library utilities
   library_use_count: "Count how many times a library symbol is used across the document.",
 } satisfies Record<AgentCommand, string>;

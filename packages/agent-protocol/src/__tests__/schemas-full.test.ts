@@ -56,6 +56,9 @@ import {
   // Bridge
   BridgeRequestSchema,
   ALL_COMMANDS,
+  COMMAND_SCHEMAS,
+  COMMAND_DESCRIPTIONS,
+  StageSetInstanceNameParamsSchema,
 } from "../index.js";
 
 // ---------------------------------------------------------------------------
@@ -588,5 +591,32 @@ describe("BridgeRequestSchema — all commands", () => {
     expect(() =>
       BridgeRequestSchema.parse({ id: "x", command: "not_a_real_command" })
     ).toThrow();
+  });
+
+  it("every command has a schema and a description (auto-generated tool surface)", () => {
+    for (const command of ALL_COMMANDS) {
+      expect(COMMAND_SCHEMAS[command]).toBeDefined();
+      expect(typeof COMMAND_DESCRIPTIONS[command]).toBe("string");
+      expect(COMMAND_DESCRIPTIONS[command].length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("stage_set_instance_name schema", () => {
+  it("is registered in ALL_COMMANDS + schema + description maps", () => {
+    expect(ALL_COMMANDS).toContain("stage_set_instance_name");
+    expect(COMMAND_SCHEMAS["stage_set_instance_name"]).toBe(StageSetInstanceNameParamsSchema);
+    expect(COMMAND_DESCRIPTIONS["stage_set_instance_name"]).toMatch(/instance name/i);
+  });
+
+  it("parses params with id + name", () => {
+    const p = StageSetInstanceNameParamsSchema.parse({ id: "obj-1", name: "player" });
+    expect(p.id).toBe("obj-1");
+    expect(p.name).toBe("player");
+  });
+
+  it("requires both id and name", () => {
+    expect(() => StageSetInstanceNameParamsSchema.parse({ id: "obj-1" })).toThrow();
+    expect(() => StageSetInstanceNameParamsSchema.parse({ name: "player" })).toThrow();
   });
 });

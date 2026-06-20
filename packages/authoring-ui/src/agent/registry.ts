@@ -59,6 +59,7 @@ import type {
   LibraryUseCountResult,
   StageGetBoundsResult,
   StageDuplicateResult,
+  StageSetInstanceNameResult,
 } from "@flash/agent-protocol";
 import type { FlashDocument, LayerType, SymbolType, FlashFilter, Symbol as SymbolItem } from "@flash/core";
 import type { FrameClipboard } from "@flash/core";
@@ -90,6 +91,7 @@ import {
   addDisplayObject,
   removeDisplayObject,
   updateDisplayObject,
+  validateInstanceName,
   createSymbolInLibrary,
   createBitmap,
   createSound,
@@ -1051,20 +1053,29 @@ const handlers: Record<string, AnyHandler> = {
     loopMode?: string;
     firstFrame?: number;
     cacheAsBitmap?: boolean;
+    instanceName?: string;
   }): OkRevResult {
     const cb = requireCallbacks();
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
     const doc = cb.getDoc();
     // Merge top-level shorthand params into the updates object so callers can
-    // pass colorEffect/blendMode/loopMode/firstFrame/cacheAsBitmap directly
-    // without nesting them under an `updates` key.
+    // pass colorEffect/blendMode/loopMode/firstFrame/cacheAsBitmap/instanceName
+    // directly without nesting them under an `updates` key.
     const merged: Record<string, unknown> = { ...(params.updates ?? {}) };
     if (params.colorEffect !== undefined) merged.colorEffect = params.colorEffect;
     if (params.blendMode !== undefined) merged.blendMode = params.blendMode;
     if (params.loopMode !== undefined) merged.loopMode = params.loopMode;
     if (params.firstFrame !== undefined) merged.firstFrame = params.firstFrame;
     if (params.cacheAsBitmap !== undefined) merged.cacheAsBitmap = params.cacheAsBitmap;
+    if (params.instanceName !== undefined) merged.instanceName = params.instanceName;
+    // Validate an instance name from either the top-level param or the generic
+    // updates bag, and normalize "" -> undefined (clears the name).
+    if (typeof merged.instanceName === "string") {
+      const validation = validateInstanceName(merged.instanceName);
+      if (!validation.ok) throw new Error(validation.error);
+      if (merged.instanceName === "") merged.instanceName = undefined;
+    }
     const newDoc = withActiveTimeline(cb, doc, (t) =>
       updateDisplayObject(t, layerId, frameIndex, params.id, merged as Parameters<typeof updateDisplayObject>[4])
     );
@@ -2484,6 +2495,71 @@ const handlers: Record<string, AnyHandler> = {
 
     cb.pushDoc(newDoc);
     return { duplicatedIds };
+  },
+
+  /**
+   * Set / rename the AS2 instance name of a placed symbol or text instance.
+   * The name is the identifier AS2 references at runtime as `_root.<name>`
+   * (used to script position, playback and interactivity). Validates the name
+   * as an AS2 identifier; an empty string clears it. History-safe via
+   * getDoc()/pushDoc().
+   */
+  stage_set_instance_name(params: {
+    id: string;
+    name: string;
+    layerId?: string;
+    frameIndex?: number;
+  }): StageSetInstanceNameResult {
+    const cb = requireCallbacks();
+
+    // Validate the AS2 instance name up front with a clear error.
+    const validation = validateInstanceName(params.name);
+    if (!validation.ok) throw new Error(validation.error);
+
+    const doc = cb.getDoc();
+    const timeline = getActiveTimeline(cb);
+
+    // Locate the target object in the active timeline. If layerId/frameIndex
+    // are supplied, honor them; otherwise search every keyframe so the caller
+    // need not know exactly where the instance lives.
+    let foundLayerId: string | undefined;
+    let foundFrameIndex: number | undefined;
+    let foundObj: DisplayObject | undefined;
+    for (const layer of timeline.layers) {
+      if (params.layerId !== undefined && layer.id !== params.layerId) continue;
+      for (const frame of layer.frames) {
+        if (!frame.isKeyframe) continue;
+        if (params.frameIndex !== undefined && frame.index !== params.frameIndex) continue;
+        const obj = frame.displayObjects.find((o) => o.id === params.id);
+        if (obj) {
+          foundLayerId = layer.id;
+          foundFrameIndex = frame.index;
+          foundObj = obj;
+          break;
+        }
+      }
+      if (foundObj) break;
+    }
+
+    if (!foundObj || foundLayerId === undefined || foundFrameIndex === undefined) {
+      throw new Error(
+        `No display object with id "${params.id}" found in the active timeline.`
+      );
+    }
+    if (foundObj.type !== "instance" && foundObj.type !== "text") {
+      throw new Error(
+        `Object "${params.id}" is a ${foundObj.type}; instance names apply only to ` +
+        `symbol instances and text fields.`
+      );
+    }
+
+    // Empty string clears the name (stored as undefined).
+    const instanceName = params.name === "" ? undefined : params.name;
+    const newDoc = withActiveTimeline(cb, doc, (t) =>
+      updateDisplayObject(t, foundLayerId!, foundFrameIndex!, params.id, { instanceName })
+    );
+    cb.pushDoc(newDoc);
+    return { ok: true, rev: _rev };
   },
 
   // =========================================================================

@@ -151,6 +151,8 @@ export type { InstanceTransform } from "./instance-mutations.js";
 export {
   setInstanceProperty,
   setInstanceTransform,
+  setInstanceName,
+  validateInstanceName,
 } from "./instance-mutations.js";
 
 // Display z-order

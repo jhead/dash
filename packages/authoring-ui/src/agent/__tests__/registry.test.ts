@@ -473,6 +473,140 @@ describe("stage_place_instance", () => {
       dispatchAgentCommand("stage_place_instance", { symbolId, x: 0, y: 0, blendMode: "not-a-mode" })
     ).rejects.toThrow(/blendMode/);
   });
+
+  it("sets the AS2 instanceName at creation via the name param", async () => {
+    const symResult = await dispatchAgentCommand("library_create_symbol", {
+      name: "Named",
+      symbolType: "movieclip",
+    }) as Record<string, unknown>;
+    const symbolId = symResult["symbolId"] as string;
+
+    await dispatchAgentCommand("stage_place_instance", {
+      symbolId,
+      x: 10,
+      y: 10,
+      name: "player",
+    });
+
+    const objs = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects;
+    const inst = objs.find((o) => o.type === "instance") as Record<string, unknown> | undefined;
+    expect(inst).toBeDefined();
+    expect(inst!["instanceName"]).toBe("player");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stage_set_instance_name (post-placement rename) + stage_update rename
+// ---------------------------------------------------------------------------
+
+describe("stage_set_instance_name", () => {
+  async function placeInstance(name?: string): Promise<string> {
+    const symResult = await dispatchAgentCommand("library_create_symbol", {
+      name: "Sym",
+      symbolType: "movieclip",
+    }) as Record<string, unknown>;
+    const symbolId = symResult["symbolId"] as string;
+    const placed = await dispatchAgentCommand("stage_place_instance", {
+      symbolId,
+      x: 0,
+      y: 0,
+      ...(name !== undefined ? { name } : {}),
+    }) as Record<string, unknown>;
+    return placed["id"] as string;
+  }
+
+  function getInstance(id: string): Record<string, unknown> | undefined {
+    for (const layer of state.doc.scenes[0].timeline.layers) {
+      for (const frame of layer.frames) {
+        const obj = frame.displayObjects.find((o) => o.id === id);
+        if (obj) return obj as unknown as Record<string, unknown>;
+      }
+    }
+    return undefined;
+  }
+
+  it("sets the instance name in the doc and bumps rev", async () => {
+    const id = await placeInstance();
+    const before = getRev();
+    const result = await dispatchAgentCommand("stage_set_instance_name", {
+      id,
+      name: "hero",
+    }) as Record<string, unknown>;
+    expect(result["ok"]).toBe(true);
+    expect(getInstance(id)!["instanceName"]).toBe("hero");
+    expect(getRev()).toBeGreaterThan(before);
+  });
+
+  it("renames an instance that already has a name", async () => {
+    const id = await placeInstance("oldName");
+    expect(getInstance(id)!["instanceName"]).toBe("oldName");
+    await dispatchAgentCommand("stage_set_instance_name", { id, name: "newName" });
+    expect(getInstance(id)!["instanceName"]).toBe("newName");
+  });
+
+  it("clears the name with an empty string", async () => {
+    const id = await placeInstance("temp");
+    await dispatchAgentCommand("stage_set_instance_name", { id, name: "" });
+    expect(getInstance(id)!["instanceName"]).toBeUndefined();
+  });
+
+  it("rejects an invalid AS2 instance name", async () => {
+    const id = await placeInstance();
+    await expect(
+      dispatchAgentCommand("stage_set_instance_name", { id, name: "2bad name" })
+    ).rejects.toThrow(/instance name/i);
+    // doc untouched
+    expect(getInstance(id)!["instanceName"]).toBeUndefined();
+  });
+
+  it("rejects an AS2 reserved word", async () => {
+    const id = await placeInstance();
+    await expect(
+      dispatchAgentCommand("stage_set_instance_name", { id, name: "this" })
+    ).rejects.toThrow(/reserved/i);
+  });
+
+  it("errors when the target id does not exist", async () => {
+    await expect(
+      dispatchAgentCommand("stage_set_instance_name", { id: "ghost", name: "x" })
+    ).rejects.toThrow(/no display object/i);
+  });
+});
+
+describe("stage_update instanceName", () => {
+  it("sets the AS2 instance name via the top-level instanceName param", async () => {
+    const symResult = await dispatchAgentCommand("library_create_symbol", {
+      name: "U",
+      symbolType: "movieclip",
+    }) as Record<string, unknown>;
+    const symbolId = symResult["symbolId"] as string;
+    const placed = await dispatchAgentCommand("stage_place_instance", {
+      symbolId, x: 0, y: 0,
+    }) as Record<string, unknown>;
+    const id = placed["id"] as string;
+
+    await dispatchAgentCommand("stage_update", { id, instanceName: "enemy" });
+
+    const objs = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects;
+    const inst = objs.find((o) => o.id === id) as unknown as Record<string, unknown>;
+    expect(inst["instanceName"]).toBe("enemy");
+  });
+
+  it("validates the instance name passed through stage_update", async () => {
+    const symResult = await dispatchAgentCommand("library_create_symbol", {
+      name: "U2",
+      symbolType: "movieclip",
+    }) as Record<string, unknown>;
+    const symbolId = symResult["symbolId"] as string;
+    const placed = await dispatchAgentCommand("stage_place_instance", {
+      symbolId, x: 0, y: 0,
+    }) as Record<string, unknown>;
+    const id = placed["id"] as string;
+
+    await expect(
+      dispatchAgentCommand("stage_update", { id, instanceName: "bad name!" })
+    ).rejects.toThrow(/instance name/i);
+  });
 });
 
 describe("stage_add_video", () => {

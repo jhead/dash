@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { setInstanceProperty, setInstanceTransform } from "../instance-mutations.js";
+import {
+  setInstanceProperty,
+  setInstanceTransform,
+  setInstanceName,
+  validateInstanceName,
+} from "../instance-mutations.js";
 import type { Frame } from "../types.js";
 import type { DisplayObject, SymbolInstance } from "../../engine/types.js";
 
@@ -210,5 +215,103 @@ describe("setInstanceTransform", () => {
     const other = result.displayObjects.find((o) => o.id === "inst-2") as SymbolInstance;
     expect(other.x).toBe(100);
     expect(other.y).toBe(100);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateInstanceName (AS2 identifier rules)
+// ---------------------------------------------------------------------------
+
+describe("validateInstanceName", () => {
+  it("accepts a simple identifier", () => {
+    expect(validateInstanceName("player")).toEqual({ ok: true });
+  });
+
+  it("accepts leading underscore and $ plus digits/_ in body", () => {
+    for (const name of ["_root2", "$obj", "myClip_1", "a", "_", "$"]) {
+      expect(validateInstanceName(name)).toEqual({ ok: true });
+    }
+  });
+
+  it("accepts an empty string (clears the name)", () => {
+    expect(validateInstanceName("")).toEqual({ ok: true });
+  });
+
+  it("rejects a name starting with a digit", () => {
+    const r = validateInstanceName("2cool");
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects names with spaces, dots, or punctuation", () => {
+    for (const name of ["my clip", "my.clip", "my-clip", "a!", "_root.child"]) {
+      expect(validateInstanceName(name).ok).toBe(false);
+    }
+  });
+
+  it("rejects AS2 reserved words", () => {
+    for (const name of ["this", "function", "class", "new", "for"]) {
+      expect(validateInstanceName(name).ok).toBe(false);
+    }
+  });
+
+  it("error message names the offending value", () => {
+    const r = validateInstanceName("bad name");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("bad name");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setInstanceName
+// ---------------------------------------------------------------------------
+
+describe("setInstanceName", () => {
+  it("sets the instanceName on the target instance", () => {
+    const frame = makeFrame([makeInstance("inst-1")]);
+    const result = setInstanceName(frame, "inst-1", "player");
+    const updated = result.displayObjects.find((o) => o.id === "inst-1") as SymbolInstance;
+    expect(updated.instanceName).toBe("player");
+  });
+
+  it("clears the name when given an empty string (undefined)", () => {
+    const frame = makeFrame([makeInstance("inst-1", { instanceName: "old" })]);
+    const result = setInstanceName(frame, "inst-1", "");
+    const updated = result.displayObjects.find((o) => o.id === "inst-1") as SymbolInstance;
+    expect(updated.instanceName).toBeUndefined();
+  });
+
+  it("renames an instance that already has a name", () => {
+    const frame = makeFrame([makeInstance("inst-1", { instanceName: "old" })]);
+    const result = setInstanceName(frame, "inst-1", "renamed");
+    const updated = result.displayObjects.find((o) => o.id === "inst-1") as SymbolInstance;
+    expect(updated.instanceName).toBe("renamed");
+  });
+
+  it("throws on an invalid AS2 instance name", () => {
+    const frame = makeFrame([makeInstance("inst-1")]);
+    expect(() => setInstanceName(frame, "inst-1", "2bad")).toThrow();
+    expect(() => setInstanceName(frame, "inst-1", "this")).toThrow();
+  });
+
+  it("does not mutate the original frame", () => {
+    const frame = makeFrame([makeInstance("inst-1")]);
+    setInstanceName(frame, "inst-1", "player");
+    expect((frame.displayObjects[0] as SymbolInstance).instanceName).toBeUndefined();
+  });
+
+  it("leaves the frame unchanged when the id is not found", () => {
+    const frame = makeFrame([makeInstance("inst-1", { instanceName: "keep" })]);
+    const result = setInstanceName(frame, "ghost", "newname");
+    expect((result.displayObjects[0] as SymbolInstance).instanceName).toBe("keep");
+  });
+
+  it("only renames the target when multiple instances are present", () => {
+    const frame = makeFrame([
+      makeInstance("inst-1"),
+      makeInstance("inst-2", { instanceName: "two" }),
+    ]);
+    const result = setInstanceName(frame, "inst-1", "one");
+    expect((result.displayObjects[0] as SymbolInstance).instanceName).toBe("one");
+    expect((result.displayObjects[1] as SymbolInstance).instanceName).toBe("two");
   });
 });
