@@ -553,6 +553,67 @@ fold == the full rebuild for the overlapping subset (identical merged area); tou
 shapes still fold; and the per-stroke fold on a 500-fill layer is bounded (keeps ~n−overlap
 shapes untouched, not O(all fills), under a 50 ms ceiling).
 
+### 3.0f ALL shape-creation paths share ONE merge-commit helper (task 1328)
+
+**The gap.** The P5 cutover (§3.0d) wired merge-on-commit into ONLY the interactive UI
+draw path (`Shell.tsx handleShapeCreated` / `commitMergeShapeDirect`). Every OTHER
+shape-creation entry point still called `addDisplayObject` directly and therefore did NOT
+merge — so programmatic / pasted / scripted drawing DIVERGED from interactive drawing (no
+same-color union, no different-color cut, no line-split). Found by an integration audit of
+the P5 cutover.
+
+**The fix — a single shared helper.** `commitShapeToTimeline(timeline, layerId, frameIndex,
+incoming)` (`packages/core/src/model/timeline.ts`) is now the SINGLE source of truth every
+shape-creation path routes through. It is the `Timeline -> Timeline` core of
+`handleShapeCreated`, factored out verbatim:
+
+* **Object Drawing** (`type:"drawing-object"`) and every non-shape display object — plain
+  discrete `addDisplayObject` append (Object Drawing must NOT merge).
+* **Gradient / bitmap (non-solid) fills** — passed through untouched (the incoming
+  non-mergeable shape is appended as-is; existing non-mergeable objects are preserved by
+  `planarMergeCommit`'s pass-through partition).
+* **Solid-fill / stroke merge-mode shapes** (`type:"shape"`) — folded into the layer's
+  GOVERNING keyframe at `frameIndex` via `planarMergeCommit` (same-color UNION /
+  different-color CUT / line-splits-fill, curve-preserving, bbox-culled), read back to
+  per-path closed loops as a single merged shape at (0,0).
+
+The helper is a pure transform; each caller supplies the correct `Timeline` (scene vs.
+symbol edit-context) and is responsible for stale-closure-safety (read the LIVE store
+present). Targeting the GOVERNING keyframe means a draw on a tween's middle frame folds
+into the keyframe that governs that frame — exactly as the interactive path does.
+
+**Paths now wired through it (identical semantics, single source of truth):**
+
+* `Shell.tsx handleShapeCreated` + `commitMergeShapeDirect` — REFACTORED to call the helper
+  (was the inlined logic the helper was factored from; byte-identical result, so the 8
+  oracles are unaffected).
+* **Agent** `stage_add_shape` (`agent/registry.ts`) — via `withActiveTimeline` (symbol
+  edit-context aware). The display-object id is set equal to the shape id so the id
+  `stage_add_shape` returns resolves to the merged object (a single shape on an empty layer
+  still folds, taking the merged shape's id) — `stage_update` / `stage_remove` /
+  `library_convert_to_symbol` by that id keep working post-fold.
+* **Copy/paste** `hooks/useClipboardHandlers.ts handlePaste` — pasted `type:"shape"` items
+  fold (the +10/+10 offset is baked into stage-space geometry by the fold); pasted
+  non-shapes (symbol instances, drawing-objects, text, bitmaps) append as-is.
+* **JSFL** `jsfl/runtime.ts` `addNewRectangle` / `addNewOval` / `addNewLine` — merge as the
+  interactive tools do (a JSFL line splits a JSFL fill). `addNewText` still plain-appends.
+
+**Draw-on-tween — verified NOT corrupting.** A new unit test
+(`model/__tests__/commit-shape-to-timeline.test.ts`) builds a shape tween (frame 0 → frame
+10), draws a second shape on a middle frame, and asserts: the draw lands on the GOVERNING
+(start) keyframe, the END keyframe geometry is untouched, the tween still interpolates after
+the draw, and the tween type is preserved. No corruption was observed, so **no fix was
+needed** beyond routing through the shared helper.
+
+**Verification.** `pnpm --filter './packages/**' build` green; core (only the 3 pre-existing
+`flash8-empty.fla`-fixture files fail, as documented), authoring-ui (1022/1022), and swf
+(1466/1466) unit suites green. New tests: the shared-helper test (union / cut / Object-Drawing
+no-merge / gradient passthrough / empty-keyframe / draw-on-tween), agent two-shape union+cut +
+id-resolves-post-fold (`registry.test.ts`), JSFL union+cut+line-split (`runtime.test.ts`), and
+paste union+cut+non-shape-append (`clipboardMerge.test.ts`). The 8 merge-drawing oracles are
+unaffected — `commitMergeShapeDirect` produces byte-identical output (same `planarMergeCommit`
+call) and Object-Drawing / gradient / symbol / undo paths are unchanged.
+
 ### 3.1 Key decisions
 
 1. **Curve-preserving.** Cuts subdivide quadratics with de Casteljau and keep

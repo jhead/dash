@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import {
-  addDisplayObject,
+  commitShapeToTimeline,
   getGoverningKeyframe,
   copyFrames,
   removeFrame,
@@ -76,19 +76,25 @@ export function useClipboardHandlers(deps: ClipboardHandlersDeps) {
         id: newId,
         ...(inPlace ? {} : { x: (item.x ?? 0) + 10, y: (item.y ?? 0) + 10 }),
       };
-      // Apply the timeline mutation to accumulate multi-item pastes
+      // Apply the timeline mutation to accumulate multi-item pastes. Route
+      // through the SHARED merge-on-commit helper (docs/36-vector-merge-model.md)
+      // so a pasted merge-mode shape (type:"shape") folds into the layer's planar
+      // arrangement identically to the interactive draw path (union / cut /
+      // line-split); pasted non-shapes (symbol instances, drawing-objects, text,
+      // bitmaps) append as-is — commitShapeToTimeline plain-appends any
+      // non-"shape" type.
       if (editContext.mode === "symbol" && editContext.symbolId) {
         const symId = editContext.symbolId;
         const items = newDoc.library.items.map((libItem) => {
           if (libItem.id === symId && libItem.itemType === "symbol") {
-            return { ...libItem, timeline: addDisplayObject(libItem.timeline, layerId, currentFrame, pasted) };
+            return { ...libItem, timeline: commitShapeToTimeline(libItem.timeline, layerId, currentFrame, pasted) };
           }
           return libItem;
         });
         newDoc = { ...newDoc, library: { ...newDoc.library, items } };
       } else {
         const sceneIdx = Math.min(activeSceneIndex, newDoc.scenes.length - 1);
-        const t = addDisplayObject(newDoc.scenes[sceneIdx].timeline, layerId, currentFrame, pasted);
+        const t = commitShapeToTimeline(newDoc.scenes[sceneIdx].timeline, layerId, currentFrame, pasted);
         newDoc = { ...newDoc, scenes: newDoc.scenes.map((s, i) => i === sceneIdx ? { ...s, timeline: t } : s) };
       }
       pastedIds.push(newId);

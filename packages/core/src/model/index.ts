@@ -82,6 +82,7 @@ export {
   setSoundOnFrame,
   addDisplayObject,
   setKeyframeDisplayObjects,
+  commitShapeToTimeline,
   removeDisplayObject,
   updateDisplayObject,
   convertToKeyframes,

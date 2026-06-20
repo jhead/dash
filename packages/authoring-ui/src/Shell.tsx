@@ -3,9 +3,9 @@ import {
   createDocument,
   addDisplayObject,
   setKeyframeDisplayObjects,
+  commitShapeToTimeline,
   removeDisplayObject,
   updateDisplayObject,
-  planarMergeCommit,
   livePlanarShape,
   splitOnMove,
   planarEraseShape,
@@ -1475,38 +1475,19 @@ export function Shell(): React.ReactElement {
           };
 
       // Flash 8 planar merge-on-commit (docs/36-vector-merge-model.md) — the
-      // DEFAULT model as of the P5 cutover. For merge-mode shapes (type:"shape")
-      // ONLY — Object Drawing shapes (type:"drawing-object") always append,
-      // discrete and unmerged. Folding the new shape into the active layer's
-      // planar arrangement realizes same-color UNION + different-color CUT
-      // (curve-preserving), then converts the result back to per-path closed
-      // loops stored as a single merged shape display object.
-      if (obj.type === "shape") {
-        const shapeObj = obj;
-        pushDoc(
-          withTimelineLive((t) => {
-            const layer = t.layers.find((l) => l.id === layerId);
-            const kf = layer ? getGoverningKeyframe(layer, currentFrame) : undefined;
-            const existing = (kf?.displayObjects ?? []) as ShapeDisplayObject[];
-            // Only existing merge-mode shapes participate; planarMergeCommit
-            // partitions out non-shape / non-mergeable objects and passes them
-            // through untouched.
-            const mergedList = planarMergeCommit<ShapeDisplayObject>(
-              existing,
-              shapeObj,
-              (s) => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 })
-            );
-            return mergedList
-              ? setKeyframeDisplayObjects(t, layerId, currentFrame, mergedList as DisplayObject[])
-              : addDisplayObject(t, layerId, currentFrame, shapeObj);
-          })
-        );
-        return;
-      }
-
-      pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, obj)));
+      // DEFAULT model as of the P5 cutover, routed through the SHARED
+      // commitShapeToTimeline helper so the UI draw path uses the IDENTICAL
+      // semantics as agent / copy-paste / JSFL shape creation. For merge-mode
+      // shapes (type:"shape") it folds into the active layer's planar
+      // arrangement (same-color UNION / different-color CUT, curve-preserving);
+      // Object Drawing shapes (type:"drawing-object") always append discrete.
+      // withTimelineLive reads the LIVE store present so back-to-back commits
+      // accumulate (CLAUDE.md "MCP agent stale-closure bug").
+      pushDoc(
+        withTimelineLive((t) => commitShapeToTimeline(t, layerId, currentFrame, obj))
+      );
     },
-    [timeline, currentFrame, activeLayerIndex, toolState, pushDoc, withTimeline, withTimelineLive]
+    [timeline, currentFrame, activeLayerIndex, toolState, pushDoc, withTimelineLive]
   );
 
   // Commit a merge-mode shape AS-IS (preserving its own fills/strokes) through
@@ -1522,22 +1503,10 @@ export function Shell(): React.ReactElement {
       // Build the next doc from the LIVE store present so back-to-back commits
       // (e.g. the oracle authoring blue then red) accumulate correctly — reading
       // the stale React-closure timeline would fold the second shape against an
-      // empty layer (CLAUDE.md "MCP agent stale-closure bug").
+      // empty layer (CLAUDE.md "MCP agent stale-closure bug"). Same SHARED
+      // commitShapeToTimeline helper as handleShapeCreated (single source of truth).
       pushDoc(
-        withTimelineLive((t) => {
-          const layer = t.layers.find((l) => l.id === layerId);
-          const kf = layer ? getGoverningKeyframe(layer, currentFrame) : undefined;
-          const existing = (kf?.displayObjects ?? []) as ShapeDisplayObject[];
-          const mergedList = planarMergeCommit<ShapeDisplayObject>(
-            existing,
-            obj,
-            (s) => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 })
-          );
-          if (mergedList) {
-            return setKeyframeDisplayObjects(t, layerId, currentFrame, mergedList as DisplayObject[]);
-          }
-          return addDisplayObject(t, layerId, currentFrame, obj);
-        })
+        withTimelineLive((t) => commitShapeToTimeline(t, layerId, currentFrame, obj))
       );
     },
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimelineLive]

@@ -28,6 +28,7 @@ import {
   transformedShapeBounds,
   breakApart as coreBreakApart,
   addDisplayObject,
+  commitShapeToTimeline,
   addLayer,
   deleteLayer,
   renameLayer,
@@ -2567,7 +2568,9 @@ function makeDocumentProxy(
       };
       const scene = state.doc.scenes[state.sceneIndex];
       if (!scene) return;
-      mutateTimeline((tl) => addDisplayObject(tl, layerId, state.frameIndex, obj));
+      // SHARED merge-on-commit (docs/36-vector-merge-model.md) — JSFL shape
+      // creation merges identically to the interactive UI draw path.
+      mutateTimeline((tl) => commitShapeToTimeline(tl, layerId, state.frameIndex, obj));
     },
     addNewOval(bounds) {
       const layerId = getActiveLayerId(state);
@@ -2598,7 +2601,9 @@ function makeDocumentProxy(
       };
       const scene = state.doc.scenes[state.sceneIndex];
       if (!scene) return;
-      mutateTimeline((tl) => addDisplayObject(tl, layerId, state.frameIndex, obj));
+      // SHARED merge-on-commit (docs/36-vector-merge-model.md) — JSFL shape
+      // creation merges identically to the interactive UI draw path.
+      mutateTimeline((tl) => commitShapeToTimeline(tl, layerId, state.frameIndex, obj));
     },
     addNewText(bounds, text) {
       const layerId = getActiveLayerId(state);
@@ -4211,7 +4216,10 @@ function makeDocumentProxy(
       };
       const scene = state.doc.scenes[state.sceneIndex];
       if (!scene) return;
-      mutateTimeline((tl) => addDisplayObject(tl, layerId, state.frameIndex, obj));
+      // SHARED merge-on-commit (docs/36-vector-merge-model.md) — a JSFL line is
+      // a stroke-only merge-mode shape; it splits fills / segments other lines
+      // exactly as the interactive line tool does.
+      mutateTimeline((tl) => commitShapeToTimeline(tl, layerId, state.frameIndex, obj));
     },
     addNewSymbol(name: string, type: string): any {
       return makeDocumentProxy(state, ids).library.addNewItem(type, name);

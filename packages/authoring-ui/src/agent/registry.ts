@@ -90,6 +90,7 @@ import {
   clearTween,
   setFrameScript,
   addDisplayObject,
+  commitShapeToTimeline,
   removeDisplayObject,
   updateDisplayObject,
   validateInstanceName,
@@ -762,20 +763,31 @@ const handlers: Record<string, AnyHandler> = {
       shape = createLineShape(params.x1, params.y1, params.x2, params.y2, lineStroke);
     }
 
+    // Merge-on-commit folds the shape into a merged display object whose id is
+    // the SHAPE's id (planarMergeCommit uses incoming.shape.id as the merged id).
+    // Use ONE id for both the display object and its shape so the id we return
+    // resolves to the committed (possibly merged) object — stage_update /
+    // stage_remove by this id then work whether or not a fold occurred.
+    const objId = nextAgentObjId("shape");
     const obj: ShapeDisplayObject = {
       type: "shape",
-      id: nextAgentObjId("shape"),
-      shape,
+      id: objId,
+      shape: { ...shape, id: objId },
       x: 0,
       y: 0,
     };
 
     const doc = cb.getDoc();
+    // Route through the SHARED merge-on-commit helper so programmatic shape
+    // creation merges identically to the interactive UI draw path
+    // (docs/36-vector-merge-model.md): same-color UNION / different-color CUT /
+    // line-splits-fill. withActiveTimeline targets the symbol edit-context
+    // timeline when editing a symbol, the active scene otherwise.
     const newDoc = withActiveTimeline(cb, doc, (t) =>
-      addDisplayObject(t, layerId, frameIndex, obj)
+      commitShapeToTimeline(t, layerId, frameIndex, obj)
     );
     cb.pushDoc(newDoc);
-    return { id: obj.id, rev: _rev };
+    return { id: objId, rev: _rev };
   },
 
   stage_add_text(params: {

@@ -89,6 +89,7 @@ export {
   Arrangement,
   buildArrangement,
   buildArrangementFromShapes,
+  faceArea,
   planarShapeToShape,
   isMergeableShape,
   foldShapeIntoLayer,

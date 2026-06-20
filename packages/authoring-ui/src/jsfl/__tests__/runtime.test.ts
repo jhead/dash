@@ -5,7 +5,7 @@
  * correctly as a pure TypeScript sandbox (no browser/DOM required).
  */
 import { describe, it, expect } from "vitest";
-import { createDocument } from "@flash/core";
+import { createDocument, buildArrangementFromShapes, faceArea } from "@flash/core";
 import { runJsfl, buildJsflContext } from "../runtime.js";
 
 // ---------------------------------------------------------------------------
@@ -100,6 +100,86 @@ describe("doc.addNewRectangle()", () => {
     const kf = layer.frames.find((f) => f.isKeyframe && f.index === 0);
     expect(kf?.displayObjects.length).toBeGreaterThan(0);
     expect(kf?.displayObjects[0].type).toBe("shape");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Merge-on-commit parity (task 1328): JSFL shape creation routes through the
+// SHARED commitShapeToTimeline helper, so two overlapping rects/lines a JSFL
+// script draws merge IDENTICALLY to the interactive UI draw path — same-color
+// UNION, different-color CUT, line-splits-fill (docs/36-vector-merge-model.md).
+// ---------------------------------------------------------------------------
+
+describe("JSFL shape creation — merge-on-commit parity", () => {
+  function sceneShapeAreas(doc: import("@flash/core").FlashDocument) {
+    const kf = doc.scenes[0].timeline.layers[0].frames.find((f) => f.isKeyframe && f.index === 0)!;
+    const shapes = kf.displayObjects
+      .filter((o): o is import("@flash/core").ShapeDisplayObject => o.type === "shape")
+      .map((o) => o.shape);
+    const ps = buildArrangementFromShapes(shapes);
+    const areaOf = (r: number, g: number, b: number) => {
+      const idx = ps.fills.findIndex(
+        (f) => f.type === "solid" && f.color.r === r && f.color.g === g && f.color.b === b
+      );
+      let a = 0;
+      for (const face of ps.faces) if (!face.unbounded && face.fill === idx) a += faceArea(ps, face);
+      return a;
+    };
+    return { count: kf.displayObjects.length, areaOf };
+  }
+
+  it("two same-color JSFL rects UNION into one merged region", () => {
+    const ctx = makeContext();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.setFillColor("#0000ff"); doc.setStrokeColor("#0000ff");
+       doc.addNewRectangle({left:0, top:0, right:100, bottom:100}, 0);
+       doc.addNewRectangle({left:50, top:0, right:150, bottom:100}, 0);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const { count, areaOf } = sceneShapeAreas(result.finalDocument!);
+    expect(count).toBe(1);
+    expect(areaOf(0, 0, 255)).toBeCloseTo(15000, 0);
+  });
+
+  it("a red JSFL rect over a blue one CUTS the blue (top wins)", () => {
+    const ctx = makeContext();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.setFillColor("#0000ff"); doc.setStrokeColor("#0000ff");
+       doc.addNewRectangle({left:0, top:0, right:100, bottom:100}, 0);
+       doc.setFillColor("#ff0000"); doc.setStrokeColor("#ff0000");
+       doc.addNewRectangle({left:50, top:0, right:150, bottom:100}, 0);`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const { areaOf } = sceneShapeAreas(result.finalDocument!);
+    expect(areaOf(255, 0, 0)).toBeCloseTo(10000, 0);
+    expect(areaOf(0, 0, 255)).toBeCloseTo(5000, 0);
+  });
+
+  it("a JSFL line drawn across a JSFL fill SPLITS it into two faces", () => {
+    const ctx = makeContext();
+    const result = runJsfl(
+      `var doc = fl.getDocumentDOM();
+       doc.setFillColor("#0000ff"); doc.setStrokeColor("#0000ff");
+       doc.addNewRectangle({left:0, top:0, right:100, bottom:100}, 0);
+       doc.addNewLine({x:50, y:-10}, {x:50, y:110});`,
+      ctx
+    );
+    expect(result.error).toBeUndefined();
+    const kf = result.finalDocument!.scenes[0].timeline.layers[0].frames.find(
+      (f) => f.isKeyframe && f.index === 0
+    )!;
+    const shapes = kf.displayObjects
+      .filter((o): o is import("@flash/core").ShapeDisplayObject => o.type === "shape")
+      .map((o) => o.shape);
+    const ps = buildArrangementFromShapes(shapes);
+    const blueIdx = ps.fills.findIndex((f) => f.type === "solid" && f.color.b === 255 && f.color.r === 0);
+    const blueFaces = ps.faces.filter((f) => !f.unbounded && f.fill === blueIdx);
+    // The line splits the fill into TWO independently-traceable faces.
+    expect(blueFaces.length).toBe(2);
   });
 });
 

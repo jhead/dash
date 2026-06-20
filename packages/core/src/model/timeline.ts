@@ -2,6 +2,8 @@ import type { EaseCurve, Frame, LabelType, Layer, LayerType, Timeline } from "./
 import type { DisplayObject, ObjectAccessibility, ShapeDisplayObject } from "../engine/types.js";
 
 import type { FlashFilter } from "../engine/filters.js";
+import { planarMergeCommit } from "../engine/planar/merge.js";
+import { getGoverningKeyframe } from "./timeline-query.js";
 
 /** Widened update type that covers both shape transforms and text fields. */
 type DisplayObjectUpdates = Partial<
@@ -1074,6 +1076,62 @@ export function setKeyframeDisplayObjects(
       return { ...layer, frames: newFrames };
     }),
   };
+}
+
+/**
+ * SHARED merge-on-commit helper — the SINGLE source of truth for committing a
+ * newly-created shape display object to a layer's governing keyframe under the
+ * Flash 8 "shape soup" merge model (docs/36-vector-merge-model.md).
+ *
+ * Every shape-creation entry point routes through this so they all have
+ * IDENTICAL semantics (factored out of `Shell.tsx handleShapeCreated` —
+ * formerly the only path that merged):
+ *
+ *   - **Object Drawing** (`type:"drawing-object"`) — discrete, NEVER merges:
+ *     a plain append, drawn on top, movable as a unit.
+ *   - **Gradient / bitmap fills** (non-solid) — passed through untouched. The
+ *     incoming shape, if non-mergeable, is appended as-is; existing non-mergeable
+ *     objects are preserved by `planarMergeCommit`'s pass-through partition.
+ *   - **Solid-fill / stroke merge-mode shapes** (`type:"shape"`) — folded into
+ *     the layer's planar arrangement (same-color UNION / different-color CUT /
+ *     line-splits-fill, curve-preserving, bbox-culled) via `planarMergeCommit`,
+ *     read back to per-path closed loops as a single merged shape at (0,0).
+ *
+ * The frame targeted is the GOVERNING keyframe at `frameIndex` (the same
+ * keyframe `addDisplayObject` / `setKeyframeDisplayObjects` resolve to), so a
+ * draw on a tween's middle frame folds into the keyframe that governs that
+ * frame — exactly as the interactive draw path does.
+ *
+ * The caller is responsible for supplying the correct `Timeline` (scene vs.
+ * symbol edit-context) and for stale-closure-safety (read the LIVE store
+ * present) — this helper is a pure `Timeline -> Timeline` transform.
+ */
+export function commitShapeToTimeline(
+  timeline: Timeline,
+  layerId: string,
+  frameIndex: number,
+  incoming: DisplayObject
+): Timeline {
+  // Object Drawing + every non-shape display object: plain discrete append.
+  if (incoming.type !== "shape") {
+    return addDisplayObject(timeline, layerId, frameIndex, incoming);
+  }
+
+  const layer = timeline.layers.find((l) => l.id === layerId);
+  const kf = layer ? getGoverningKeyframe(layer, frameIndex) : undefined;
+  // Only existing merge-mode shapes participate; planarMergeCommit partitions
+  // out non-shape / non-mergeable (gradient/bitmap) objects and passes them
+  // through untouched.
+  const existing = (kf?.displayObjects ?? []) as ShapeDisplayObject[];
+  const shapeObj = incoming as ShapeDisplayObject;
+  const mergedList = planarMergeCommit<ShapeDisplayObject>(
+    existing,
+    shapeObj,
+    (s) => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 })
+  );
+  return mergedList
+    ? setKeyframeDisplayObjects(timeline, layerId, frameIndex, mergedList as DisplayObject[])
+    : addDisplayObject(timeline, layerId, frameIndex, shapeObj);
 }
 
 /**

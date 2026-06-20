@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { createDocument, createSymbolInLibrary, livePlanarShape, splitOnMove } from "@flash/core";
+import { createDocument, createSymbolInLibrary, livePlanarShape, splitOnMove, buildArrangementFromShapes, faceArea } from "@flash/core";
 import type { FlashDocument } from "@flash/core";
 import {
   setAgentCallbacks,
@@ -361,6 +361,72 @@ describe("stage_add_shape", () => {
     const stop1color = stops[1]["color"] as Record<string, unknown>;
     expect(stop0color["a"]).toBe(255);
     expect(stop1color["a"]).toBe(128);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Merge-on-commit parity (task 1328): the agent stage_add_shape path now routes
+// through the SHARED commitShapeToTimeline helper, so two overlapping shapes the
+// agent draws merge IDENTICALLY to the interactive UI draw path — same-color
+// UNION, different-color CUT (docs/36-vector-merge-model.md). Object Drawing is
+// not reachable from the agent (it always commits type:"shape"); gradient
+// passthrough is covered above and by the core helper test.
+// ---------------------------------------------------------------------------
+describe("stage_add_shape — merge-on-commit parity", () => {
+  function sceneShapeAreas(): { red: number; blue: number; count: number } {
+    const kf = state.doc.scenes[0].timeline.layers[0].frames[0];
+    const shapes = kf.displayObjects
+      .filter((o): o is import("@flash/core").ShapeDisplayObject => o.type === "shape")
+      .map((o) => o.shape);
+    const ps = buildArrangementFromShapes(shapes);
+    const areaOf = (r: number, g: number, b: number): number => {
+      const idx = ps.fills.findIndex(
+        (f) => f.type === "solid" && f.color.r === r && f.color.g === g && f.color.b === b
+      );
+      let a = 0;
+      for (const face of ps.faces) {
+        if (!face.unbounded && face.fill === idx) a += faceArea(ps, face);
+      }
+      return a;
+    };
+    return { red: areaOf(255, 0, 0), blue: areaOf(0, 0, 255), count: kf.displayObjects.length };
+  }
+
+  it("two same-color rects the agent draws UNION into one region", async () => {
+    const layerId = state.doc.scenes[0].timeline.layers[0].id;
+    await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 0, y1: 0, x2: 100, y2: 100, fill: "#0000ff", layerId, frameIndex: 0,
+    });
+    await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 50, y1: 0, x2: 150, y2: 100, fill: "#0000ff", layerId, frameIndex: 0,
+    });
+    const { blue, count } = sceneShapeAreas();
+    expect(count).toBe(1); // folded into ONE merged shape
+    expect(blue).toBeCloseTo(15000, 0); // 100*100 + 100*100 - 50*100 overlap
+  });
+
+  it("a red rect the agent draws over a blue rect CUTS the blue (top wins; both colors present)", async () => {
+    const layerId = state.doc.scenes[0].timeline.layers[0].id;
+    await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 0, y1: 0, x2: 100, y2: 100, fill: "#0000ff", layerId, frameIndex: 0,
+    });
+    await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 50, y1: 0, x2: 150, y2: 100, fill: "#ff0000", layerId, frameIndex: 0,
+    });
+    const { red, blue } = sceneShapeAreas();
+    expect(red).toBeCloseTo(10000, 0); // full 100*100 red, top wins overlap
+    expect(blue).toBeCloseTo(5000, 0); // blue carved to the non-overlapped 50*100
+  });
+
+  it("the id returned by stage_add_shape resolves to the merged object (stage_update works post-fold)", async () => {
+    const layerId = state.doc.scenes[0].timeline.layers[0].id;
+    const r = await dispatchAgentCommand("stage_add_shape", {
+      kind: "rect", x1: 0, y1: 0, x2: 100, y2: 100, fill: "#0000ff", layerId, frameIndex: 0,
+    }) as { id: string };
+    // The single shape on an empty layer still folds (merged id == returned id).
+    const obj = state.doc.scenes[0].timeline.layers[0].frames[0].displayObjects.find((o) => o.id === r.id);
+    expect(obj).toBeTruthy();
+    expect(obj!.type).toBe("shape");
   });
 });
 
