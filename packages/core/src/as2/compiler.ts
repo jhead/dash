@@ -208,12 +208,20 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
       }
     }
 
+    // The constructor (FunctionDecl whose name === the class leaf name) is NOT
+    // emitted as a prototype method — it becomes the class function itself
+    // (compileClassDecl) — so it must not contribute a "prototype" pool string.
+    const leafName = decl.name.includes('.')
+      ? decl.name.slice(decl.name.lastIndexOf('.') + 1)
+      : decl.name;
+
     for (const member of decl.body) {
       if (member.type === 'FunctionDecl') {
         const fn = member as FunctionDecl;
         if (fn.name === null) continue;
         add(fn.name); // method name or ctor name
-        if (!fn.isStatic && !fn.isGetter && !fn.isSetter) {
+        const isCtor = fn.name === leafName && !fn.isStatic && !fn.isGetter && !fn.isSetter;
+        if (!isCtor && !fn.isStatic && !fn.isGetter && !fn.isSetter) {
           // Non-static method: pushes className + GetVariable + "prototype" + GetMember
           add('prototype');
         } else if (fn.isStatic) {
@@ -224,11 +232,20 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
       } else if (member.type === 'VarDecl') {
         const vd = member as VarDecl;
         add(vd.name);
-        if (!vd.isStatic) {
-          // Instance property: pushes className + GetVariable + "prototype" + GetMember
-          add('prototype');
+        if (vd.isStatic) {
+          // Static field: emitted as `ClassName.name = init` (className already
+          // added via decl.name; name added above; init scanned below).
+          if (vd.init !== null) scanExpr(vd.init);
+        } else if (vd.init !== null) {
+          // Instance field WITH initializer is hoisted into the constructor as
+          // `this.name = init` (compileClassDecl step 1b). The emitted strings
+          // are "this" (receiver) + the field name (already added) + whatever
+          // the init expression pushes. No "prototype" — the field is a real
+          // per-instance own property now, not a prototype assignment.
+          add('this');
+          scanExpr(vd.init);
         }
-        if (vd.init !== null) scanExpr(vd.init);
+        // Instance field with NO initializer emits nothing at all.
       }
     }
 
@@ -2995,8 +3012,51 @@ class Compiler {
       (m) => !(m.type === 'FunctionDecl' && (m as FunctionDecl).name === leafName)
     );
 
-    const ctorBody: Statement[] = ctor?.body.body ?? [];
+    const userCtorBody: Statement[] = ctor?.body.body ?? [];
     const ctorParams: string[] = ctor?.params ?? [];
+
+    // ---- 1b. Hoist instance field initializers into the constructor ------
+    //
+    // Real Flash 8 / MTASC compile a class instance field WITH an initializer
+    // (e.g. `private var vy:Number = 0;`) into a `this.vy = 0;` assignment at
+    // the START of the constructor body — NOT onto the prototype. This is the
+    // only place a per-instance initial value is guaranteed to run for EVERY
+    // instance, including a MovieClip symbol linked to the class via className
+    // linkage and placed on stage / attached via attachMovie: Ruffle sets such
+    // an instance's __proto__ to ClassName.prototype and invokes the class
+    // constructor, so a prototype-only assignment would be SHARED (and, for
+    // className-linked placed instances, the field read undefined → NaN).
+    // Moving the initializer into the constructor makes the field a real
+    // per-instance own-property set on construction. Fields WITHOUT an
+    // initializer emit nothing (matching Flash — an unset field is undefined).
+    //
+    // Ordering: the synthesized `this.field = init` assignments run at the
+    // START of the constructor, BEFORE the user's constructor body, mirroring
+    // Flash 8. For a subclass, `super(...)` (the first statement an author
+    // writes) runs inside the user body AFTER these — but AVM1's ActionExtends
+    // has already linked the prototype chain at class-definition time, so the
+    // own-property writes are valid regardless of when super() runs; Flash
+    // likewise initializes the field defaults before executing the authored
+    // constructor body.
+    const fieldInitStmts: Statement[] = [];
+    for (const m of decl.body) {
+      if (m.type !== 'VarDecl') continue;
+      const vd = m as VarDecl;
+      if (vd.isStatic) continue;        // statics go on the class object
+      if (vd.init === null) continue;   // no initializer → no runtime effect
+      // Synthesize: this.<name> = <init>;
+      const thisExpr: Identifier = { type: 'Identifier', name: 'this', pos: 0, line: 0 };
+      const target: MemberExpr = {
+        type: 'MemberExpr', object: thisExpr, property: vd.name, pos: 0, line: 0,
+      };
+      const assign: AssignExpr = {
+        type: 'AssignExpr', operator: '=', left: target, right: vd.init, pos: 0, line: 0,
+      };
+      const stmt: ExprStmt = { type: 'ExprStmt', expression: assign, pos: 0, line: 0 };
+      fieldInitStmts.push(stmt);
+    }
+
+    const ctorBody: Statement[] = [...fieldInitStmts, ...userCtorBody];
 
     // ---- 2. Emit: ClassName = function(...) { ... } ----------------------
     // ActionSetVariable expects: [name, value] on stack (name below, value on top)
@@ -3086,9 +3146,17 @@ class Compiler {
         if (fn.name === null) continue;
         this.compileClassMethod(className, fn, decl.superClass);
       } else {
-        // VarDecl
+        // VarDecl. Instance field INITIALIZERS are hoisted into the constructor
+        // (step 1b) so they run per-instance for every instance — including a
+        // className-linked placed/attached MovieClip. Therefore only STATIC
+        // fields are emitted here (on the class object); instance fields produce
+        // no prototype assignment. (An instance field without an initializer is
+        // already a no-op; one with an initializer is now a `this.x = v` in the
+        // ctor.)
         const vd = member as import('./ast.js').VarDecl;
-        this.compileClassProperty(className, vd);
+        if (vd.isStatic) {
+          this.compileClassProperty(className, vd);
+        }
       }
     }
 
@@ -3214,35 +3282,28 @@ class Compiler {
     }
   }
 
+  /**
+   * Emit a STATIC class field assignment: `ClassName.propName = initValue`.
+   *
+   * Only static fields reach this path now — instance field initializers are
+   * hoisted into the constructor by compileClassDecl (so they run per-instance,
+   * including for className-linked placed/attached symbols). A static field
+   * with no initializer is set to `undefined` to declare the slot on the class
+   * object, matching the prior behavior.
+   */
   private compileClassProperty(className: string, vd: VarDecl): void {
     const init = vd.init;
-    if (vd.isStatic) {
-      // ClassName.propName = initValue
-      this.pushString(className);
-      this.emit(0x1c); // ActionGetVariable
+    // ClassName.propName = initValue
+    this.pushString(className);
+    this.emit(0x1c); // ActionGetVariable → ClassName
 
-      this.pushString(vd.name);
-      if (init !== null) {
-        this.compileExpr(init);
-      } else {
-        this.pushUndefined();
-      }
-      this.emit(0x4f); // ActionSetMember
+    this.pushString(vd.name);
+    if (init !== null) {
+      this.compileExpr(init);
     } else {
-      // ClassName.prototype.propName = initValue
-      this.pushString(className);
-      this.emit(0x1c); // ActionGetVariable → ClassName
-      this.pushString('prototype');
-      this.emit(0x4e); // ActionGetMember → ClassName.prototype
-
-      this.pushString(vd.name);
-      if (init !== null) {
-        this.compileExpr(init);
-      } else {
-        this.pushUndefined();
-      }
-      this.emit(0x4f); // ActionSetMember
+      this.pushUndefined();
     }
+    this.emit(0x4f); // ActionSetMember
   }
 }
 

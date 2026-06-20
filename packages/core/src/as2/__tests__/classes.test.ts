@@ -161,10 +161,14 @@ describe("AS2 class declarations", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 6: Instance property with initializer
+  // Test 6: Instance field initializer is hoisted into the constructor
   // -------------------------------------------------------------------------
 
-  it("6. instance property with initializer is assigned on prototype", () => {
+  it("6. instance field initializer is hoisted into the constructor (not the prototype)", () => {
+    // Real Flash 8 / MTASC compile a class instance field WITH an initializer
+    // into a `this.field = init` assignment in the constructor body, so it runs
+    // per-instance for EVERY instance (including a className-linked placed /
+    // attachMovie'd symbol) — NOT a shared prototype assignment. Task 1314.
     const bytes = compileAS2(`
       class Counter {
         var count = 0;
@@ -173,10 +177,59 @@ describe("AS2 class declarations", () => {
 
     expect(containsString(bytes, "Counter")).toBe(true);
     expect(containsString(bytes, "count")).toBe(true);
-    expect(containsString(bytes, "prototype")).toBe(true);
 
-    // ActionSetMember to assign the property
+    // The field initializer is now `this.count = 0` inside the synthesized
+    // constructor, so the receiver "this" must appear and ActionSetMember
+    // (0x4f) assigns the field. A DefineFunction2 (0x8e) carries the ctor body.
+    expect(containsString(bytes, "this")).toBe(true);
     expect(bytes).toContain(0x4f);
+    expect(bytes).toContain(0x8e);
+
+    // It must NOT be a prototype assignment: a class with only an instance
+    // field (no methods, no extends) touches the prototype nowhere, so the
+    // "prototype" string should be absent entirely.
+    expect(containsString(bytes, "prototype")).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 6b: Instance field initializer runs even WITH an explicit constructor,
+  // and runs BEFORE the user constructor body (Flash 8 ordering, task 1314).
+  // -------------------------------------------------------------------------
+
+  it("6b. instance field initializer is prepended to an explicit constructor", () => {
+    const src = `
+      class Mover {
+        var vy = 7;
+        function Mover() {
+          this.vy = this.vy + 1;
+        }
+      }
+    `;
+    const bytes = compileAS2(src);
+
+    // Both the field name and "this" must be present (this.vy = 7 + the body).
+    expect(containsString(bytes, "Mover")).toBe(true);
+    expect(containsString(bytes, "vy")).toBe(true);
+    expect(containsString(bytes, "this")).toBe(true);
+    // ActionSetMember for the assignment(s) inside the constructor.
+    expect(bytes).toContain(0x4f);
+    // No prototype field assignment (only the constructor function on the var).
+    expect(containsString(bytes, "prototype")).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 6c: An instance field with NO initializer emits nothing at all
+  // (matches Flash — an unset field is simply undefined, task 1314).
+  // -------------------------------------------------------------------------
+
+  it("6c. instance field without an initializer produces no assignment", () => {
+    const withInit = compileAS2(`class A { var x = 1; }`);
+    const noInit = compileAS2(`class B { var x; }`);
+    // The no-initializer class must compile and be SMALLER (no this.x = ...).
+    expect(noInit.length).toBeGreaterThan(0);
+    expect(noInit.length).toBeLessThan(withInit.length);
+    // It must not reference "prototype" for the bare field either.
+    expect(containsString(noInit, "prototype")).toBe(false);
   });
 
   // -------------------------------------------------------------------------

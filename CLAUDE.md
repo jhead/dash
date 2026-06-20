@@ -712,6 +712,37 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   iterated forward (li=0 → depth 1) which put the background layer on top of everything
   else in Ruffle, hiding all content. A pre-pass in `compile.ts` now seeds
   `getOrAssignDepth` in the correct visual order before the frame loop runs.
+- **AS2 class INSTANCE field initializers are HOISTED into the constructor, not the
+  prototype (task 1314).** `compileClassDecl` (`as2/compiler.ts`) used to emit a class
+  instance field with an initializer — `var n:Number = 7;` / `private var vy = 0;` — as
+  `ClassName.prototype.n = 7` (a SHARED prototype assignment). That value did NOT take
+  effect for an instance created when a library MovieClip is linked to the class via
+  `className` linkage and placed/`attachMovie`d: Ruffle sets that instance's `__proto__`
+  to `ClassName.prototype` and runs the class constructor, and the field read `undefined`
+  (cascading to `NaN`). Real Flash 8 / MTASC compile each instance field initializer to a
+  `this.<name> = <init>;` assignment at the START of the constructor body (BEFORE the
+  authored ctor statements). Fix: `compileClassDecl` step 1b synthesizes those `this.x =
+  init` ExprStmts (from `Identifier "this"` + `MemberExpr` + `AssignExpr`, `pos/line=0`)
+  and prepends them to the ctor body; if the class has no explicit constructor it
+  synthesizes one holding only the initializers. Step 5 now emits ONLY **static** fields
+  on the class object (`ClassName.n = …`); instance fields produce no prototype
+  assignment. An instance field with NO initializer emits nothing (an unset field is
+  `undefined`, matching Flash). Methods + statics are unchanged; `extends`/`super` are
+  unaffected because `ActionExtends` links the prototype chain at class-definition time,
+  so the own-property writes are valid before `super()` runs (Flash also initializes field
+  defaults before the authored body). The string-collection pass (`collectStrings` →
+  `scanClassDecl`) was updated to match: instance-field-with-init adds `"this"` + scans
+  the init (no `"prototype"`), and the CONSTRUCTOR FunctionDecl (name === class leaf) is
+  excluded from the instance-method `"prototype"` pool-add (it becomes the class function,
+  not a prototype method). `pushString` falls back to an inline string when a constant is
+  absent from the pool, so the pool change is an optimization, not a correctness
+  dependency. Acceptance is the Ruffle e2e (byte tests insufficient, per the Verification
+  learning): `apps/desktop/e2e/as2-class-field-init.spec.ts` links a field-init class to a
+  MovieClip, attaches it, and asserts the field reads the INITIALIZED value at runtime —
+  `7` with NO explicit constructor, `15` (=5+10) WITH an explicit constructor (proving the
+  initializer ran first, THEN the ctor body). `classes.test.ts` test 6 (which previously
+  asserted the prototype assignment) was rewritten; `as2-class-attach`/`as2-class-capstone`
+  still pass.
 
 ### Authoring UI
 

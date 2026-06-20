@@ -136,9 +136,32 @@ method is matched by the LEAF segment (`Foo`), not the dotted name.
 class's `implements` clause — `ActionImplementsOp` (0x2c), which does
 `ActionGetVariable "IFoo"` — resolves to a real value. (Previously a no-op.)
 
+**Instance field initializers are hoisted into the constructor (task 1314).** A class
+instance field declared with an initializer — `var n:Number = 7;` or `private var vy =
+0;` — is compiled to a `this.<name> = <init>;` assignment at the START of the constructor
+body, BEFORE the author's constructor statements (Flash 8 ordering). If the class has no
+explicit constructor, `compileClassDecl` synthesizes one containing only these
+assignments. This matches real Flash 8 / MTASC and is the ONLY way the initial value runs
+for EVERY instance — in particular a MovieClip symbol linked to the class via `className`
+linkage and placed on stage or `attachMovie`d: Ruffle sets such an instance's `__proto__`
+to `ClassName.prototype` and invokes the class constructor, so the previous behavior
+(emitting the initializer as a SHARED `ClassName.prototype.n = 7` assignment) did not take
+effect for className-linked placed instances — the field read `undefined`, cascading to
+`NaN`. Only **instance** field initializers move into the constructor; **static** fields
+stay on the class object (`ClassName.n = …`), and methods stay on the prototype. An
+instance field with NO initializer emits nothing (an unset field is simply `undefined`,
+as in Flash). For a subclass, `super(...)` (written first in the user body) still runs
+after these own-property writes, which is valid because `ActionExtends` linked the
+prototype chain at class-definition time; Flash likewise initializes field defaults before
+executing the authored constructor body.
+
 **Acceptance:** structural unit tests in `packages/swf/src/__tests__/classes.test.ts`
 (definition-before-registerClass ordering; extends ordering; dotted-name registration)
-PLUS the Ruffle runtime oracle `apps/desktop/e2e/as2-class-attach.spec.ts` — a `.as`
+PLUS the Ruffle runtime oracles: `apps/desktop/e2e/as2-class-attach.spec.ts` — a `.as`
 class linked to a library MovieClip, `attachMovie`d at runtime, whose method `trace()`s
-a known line surfaced through Ruffle's trace observer. Byte-presence tests are necessary
-but not sufficient; the Ruffle e2e is the gate.
+a known line surfaced through Ruffle's trace observer — and
+`apps/desktop/e2e/as2-class-field-init.spec.ts` (task 1314), which links a class with a
+field initializer to a MovieClip, attaches it, and asserts the field reads the INITIALIZED
+value at runtime (7 with no constructor; 15 = 5+10 with an explicit constructor, proving
+the initializer ran before the ctor body). Byte-presence tests are necessary but not
+sufficient; the Ruffle e2e is the gate.
