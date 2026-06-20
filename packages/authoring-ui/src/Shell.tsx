@@ -3516,6 +3516,7 @@ export function Shell(): React.ReactElement {
                   stageWidth={docProperties.width}
                   stageHeight={docProperties.height}
                   documentBackground={docProperties.backgroundColor}
+                  onTrace={handleTrace}
                 />
               </div>
             )}

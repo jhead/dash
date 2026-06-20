@@ -85,6 +85,43 @@ The panel's control bar exposes:
   (document/white/black/checker), **Scale-to-fit** + **Zoom**.
 - **Stats** — last SWF size + last compile time (ms).
 
+## trace() / runtime output → Output panel (task 1312)
+
+The SWF running in the Live Preview tab routes its AS2 `trace()` lines (and
+Ruffle's own ERROR/WARN runtime diagnostics) to the SAME **Output panel** the
+Test Movie flow uses — so debugging a movie while you author it works without
+leaving the editor.
+
+How it is wired:
+
+- `RufflePlayer` already captures `trace()` via Ruffle's dedicated trace observer
+  (`<ruffle-player>.traceObserver` → `set_trace_observer`; see task 1259) and
+  surfaces each line through its `onTrace` prop. The bug was simply that the
+  Live Preview's `<RufflePlayer>` was rendered WITHOUT an `onTrace`, so the
+  captured lines had nowhere to go.
+- `LivePreviewPanel` now takes an `onTrace` prop, wired in `Shell.tsx` to the
+  **same `handleTrace`** that Test Movie uses (`useExportHandlers.handleTrace` →
+  `uiStore.setOutputMessages`). Both routes therefore feed one Output store; the
+  lines appear in `OutputPanel` (`data-testid="output-panel-messages"`).
+
+Unlike Test Movie, the preview does NOT clear the Output panel or force-switch
+the bottom dock to the Output tab on each hot-reload (that would be intrusive
+during continuous editing). Trace lines accumulate in the store and are visible
+whenever the Output tab is open.
+
+### No duplicate / no leak across the hot-reload loop
+
+- `RufflePlayer` registers exactly ONE trace observer per `load()` and restores
+  the original console methods on every reload and on unmount, so a debounced
+  hot-reload never stacks duplicate observers and never leaks one on
+  tab-switch/unmount. A changing `onTrace` callback identity does not reload
+  Ruffle (it is read through a ref).
+- `LivePreviewPanel` wraps `onTrace` so each NEW compiled SWF (a fresh
+  `swfBytes` identity) emits a subtle `─── reload ───` separator on its first
+  trace, lazily — a reload that produces no trace adds no separator. Lines keep
+  appending across reloads (history is preserved); they are never silently
+  cleared.
+
 ## Preferences persistence
 
 `preview/previewPrefs.ts` persists the durable preview prefs (auto-reload, start
@@ -112,3 +149,9 @@ active top tab is persisted via `editorLayout`.
   edit the doc → preview SWF updates; introduce a compile error → preview stays
   + error overlay shown; fix → recover. (Runs against the bundled Ruffle; like
   the other Ruffle oracles it is skipped in CI until WASM infra is set up.)
+- `apps/desktop/e2e/live-preview-trace.spec.ts` (task 1312) — Playwright oracle
+  mirroring `trace-output.spec.ts` but via the Live Preview tab: a doc whose
+  frame 1 calls `trace()` runs in Live Preview and the message appears in the
+  Output panel; a hot-reload appends the next run's trace WITHOUT duplicating
+  either run's line (the no-duplicate-listener guarantee) and inserts a reload
+  separator between runs.

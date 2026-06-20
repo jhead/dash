@@ -37,6 +37,13 @@ export interface LivePreviewPanelProps {
   stageWidth: number;
   stageHeight: number;
   documentBackground: string;
+  /**
+   * Receives each AS2 trace() line (and Ruffle ERROR/WARN diagnostics) emitted by
+   * the SWF running in the preview, so it can be appended to the shared Output
+   * panel — exactly like the Test Movie flow. Wired in Shell to the same
+   * `handleTrace` that Test Movie uses, so both routes feed one Output store.
+   */
+  onTrace?: (line: string) => void;
 }
 
 const STATUS_META: Record<LivePreviewStatus, { label: string; color: string; bg: string }> = {
@@ -58,6 +65,7 @@ export function LivePreviewPanel(props: LivePreviewPanelProps): React.ReactEleme
     stageWidth,
     stageHeight,
     documentBackground,
+    onTrace,
   } = props;
 
   const startAt = useMemo(
@@ -74,6 +82,45 @@ export function LivePreviewPanel(props: LivePreviewPanelProps): React.ReactEleme
     compileDocToBytes,
     startAt,
   });
+
+  // ---- Output-panel trace routing (task 1312) -----------------------------
+  // Forward each AS2 trace() / Ruffle WARN-ERROR line from the preview's Ruffle
+  // instance to the SAME Output panel store the Test Movie flow uses (via the
+  // `onTrace` prop, wired in Shell to handleTrace). RufflePlayer keeps onTrace
+  // in a ref, so passing a fresh wrapped callback each render does NOT reload
+  // the player — and RufflePlayer registers exactly ONE traceObserver per load
+  // and restores it on each reload/unmount, so there is no listener leak and no
+  // duplicate delivery across the hot-reload loop.
+  //
+  // Cross-reload behaviour: keep appending (never clear — the user may want the
+  // history), but emit a subtle "reload" separator lazily on the first trace of
+  // each NEW compiled SWF after the first, so it is clear which run produced a
+  // line. The separator is keyed on the swfBytes identity (a fresh Uint8Array
+  // per successful compile), so a reload that emits no trace adds no separator.
+  const onTraceRef = useRef(onTrace);
+  onTraceRef.current = onTrace;
+  // The swfBytes identity whose traces are currently being attributed; null
+  // until the first trace of the first run is seen.
+  const tracedRunRef = useRef<Uint8Array | null>(null);
+  const handlePreviewTrace = useCallback(
+    (line: string) => {
+      const cb = onTraceRef.current;
+      if (!cb) return;
+      const currentBytes = snapshot.swfBytes;
+      // A new run (different SWF identity) AND we have already attributed
+      // traces to a previous run → mark the boundary before this line.
+      if (
+        currentBytes &&
+        tracedRunRef.current !== null &&
+        tracedRunRef.current !== currentBytes
+      ) {
+        cb("─── reload ───");
+      }
+      tracedRunRef.current = currentBytes ?? tracedRunRef.current;
+      cb(line);
+    },
+    [snapshot.swfBytes]
+  );
 
   const controlsRef = useRef<PlayerControls | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -334,6 +381,7 @@ export function LivePreviewPanel(props: LivePreviewPanelProps): React.ReactEleme
             height={playerHeight}
             loadOptions={loadOptions}
             onControls={handleControls}
+            onTrace={handlePreviewTrace}
           />
         ) : (
           <div data-testid="preview-empty" style={{ color: "#888" }}>
