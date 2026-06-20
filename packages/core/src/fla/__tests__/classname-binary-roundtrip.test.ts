@@ -128,6 +128,55 @@ describe("binary FLA className linkage — write → read round-trip", () => {
   });
 });
 
+describe("binary FLA className linkage — multi-byte length boundaries (task 1311)", () => {
+  // The old `bomStringBytes` wrote the BomString length as a single byte
+  // (`s.length & 0xff`), so a className of 254 chars survived but 255/256/300
+  // truncated (255 & 0xff = 255 = the 0xff escape marker → reader mis-parses;
+  // 256 & 0xff = 0 → empty string; 300 & 0xff = 44 → garbage). With the shared
+  // `writeBomLength` escalation these all encode/decode correctly.
+  function classNameOfLength(n: number): string {
+    // Use only ASCII letters so each char is one UTF-16 code unit (length === n).
+    return "C".repeat(n);
+  }
+
+  function roundTripClassName(className: string): string {
+    const sym = createSymbol("Long", "movieclip", {
+      linkage: {
+        exportForActionScript: true,
+        exportInFirstFrame: true,
+        linkageIdentifier: "Long",
+        className,
+        exportForRuntimeSharing: false,
+        importForRuntimeSharing: false,
+        sharedUrl: "",
+      },
+    });
+    const contents = contentsOf(docWithSymbols([sym]));
+    // The strict CArchive validator must still accept the stream (the longer
+    // length prefix must not desync the §5.1/§5.2 allocator).
+    validateContentsStream(contents);
+    return parseFla8Contents(contents).symbols.get(1)!.className;
+  }
+
+  for (const n of [254, 255, 256, 300]) {
+    it(`a ${n}-char className encodes and decodes back equal`, () => {
+      const className = classNameOfLength(n);
+      expect(className.length).toBe(n);
+      const decoded = roundTripClassName(className);
+      expect(decoded.length).toBe(n);
+      expect(decoded).toBe(className);
+    });
+  }
+
+  it("a realistic long fully-qualified className (>254) round-trips", () => {
+    // e.g. com.example.deeply.nested.<...>.VeryLongClassName padded past 254.
+    const base = "com.example.deeply.nested.";
+    const className = base + "C".repeat(255 - base.length); // 255 total
+    expect(className.length).toBe(255);
+    expect(roundTripClassName(className)).toBe(className);
+  });
+});
+
 describe("binary FLA className linkage — empty-linkage path is byte-unchanged", () => {
   it("a symbol with NO className emits the empty-linkage tail (className decodes empty)", () => {
     const sym = createSymbol("Plain", "movieclip"); // default linkage: className ""

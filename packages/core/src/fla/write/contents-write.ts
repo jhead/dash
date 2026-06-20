@@ -148,16 +148,17 @@ function writeSceneTail(w: ByteWriter): void {
 }
 
 /**
- * Encode a BomString (`FF FE FF <len> <UTF-16LE>`) as a byte array. Mirrors
- * `writeBomString` in carchive-write but returns bytes for splicing into the tail.
+ * Encode a BomString (`FF FE FF <len> <UTF-16LE>`) as a byte array for splicing
+ * into the tail. REUSES the canonical {@link writeBomString} (and thus the shared
+ * `writeBomLength` length-prefix escalation: 1 byte for <0xff, `0xff`+UI16 for
+ * <0xffff, `0xff`+UI16(0xffff)+UI32 otherwise) so the className encoding can never
+ * diverge from the rest of the writer. The previous hand-rolled `s.length & 0xff`
+ * single-byte length truncated/corrupted classNames longer than 254 code units.
  */
-function bomStringBytes(s: string): number[] {
-  const out: number[] = [0xff, 0xfe, 0xff, s.length & 0xff];
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    out.push(c & 0xff, (c >>> 8) & 0xff);
-  }
-  return out;
+function bomStringBytes(s: string): Uint8Array {
+  const w = new ByteWriter(8 + s.length * 2);
+  writeBomString(w, s);
+  return w.finish();
 }
 
 /**

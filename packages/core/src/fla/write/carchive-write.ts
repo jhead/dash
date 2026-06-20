@@ -154,6 +154,14 @@ export function writeBomString(w: ByteWriter, s: string): void {
   for (let i = 0; i < s.length; i++) w.u16(s.charCodeAt(i));
 }
 
+/**
+ * Encode a BomString length prefix (code units): single byte for <0xff, then
+ * `0xff`+UI16 for <0xffff, then `0xff`+UI16(0xffff)+UI32. Shared by
+ * {@link writeBomString} and {@link writePlainStringUnicode} (and transitively by
+ * `contents-write.ts`'s `bomStringBytes`, which reuses `writeBomString`) so the
+ * escalation never diverges. Inverse: `readCString`'s `ext === 0xfffe` branch in
+ * `flash8-binary.ts`.
+ */
 function writeBomLength(w: ByteWriter, len: number): void {
   if (len < 0xff) {
     w.u8(len);

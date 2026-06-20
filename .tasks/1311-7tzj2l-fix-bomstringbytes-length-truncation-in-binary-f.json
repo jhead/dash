@@ -2,9 +2,9 @@
   "id": "1311-7tzj2l-fix-bomstringbytes-length-truncation-in-binary-f",
   "title": "Fix bomStringBytes length truncation in binary FLA className export (registry of >254-char strings corrupt)",
   "description": "AS2-feature audit found a HIGH-severity binary-format bug: packages/core/src/fla/write/contents-write.ts bomStringBytes() (~line 155) encodes the BomString length as a SINGLE byte (s.length & 0xff), which truncates/corrupts strings longer than 254 chars when written to the binary FLA. This affects the className splice (P5) for long fully-qualified AS2 class names (e.g. com.example.deeply.nested.VeryLongClassName). The correct multi-byte encoding already exists: writeBomLength()/writeBomString() in packages/core/src/fla/write/carchive-write.ts (~lines 157-165) \u2014 len<0xff = 1 byte; len<0xffff = 0xff + UI16; len>=0xffff = 0xff + UI16(0xffff) + UI32(len). FIX: make bomStringBytes use the same writeBomLength logic (reuse/share the helper rather than duplicate if practical) so long strings encode correctly. VERIFY: build + core tests green (only ~3 task-1207 fixture failures acceptable); add a round-trip test for a className with length >254 (and the boundary 255/256) proving correct encode/decode; keep the empty-className byte-identity (class-free export unchanged) and existing classname-binary-roundtrip tests passing. ACQUIRE lock; commit incl task file; push rebase-retry (if .tasks/.counter conflicts keep origin's). Scope: contents-write.ts (+ test).",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-20T00:32:04Z",
-  "updated_at": "2026-06-20T00:32:04Z"
+  "updated_at": "2026-06-20T00:38:06Z"
 }
