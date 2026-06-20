@@ -142,6 +142,181 @@ describe("ClassesPanel", () => {
     expect(byPath.has("com/example/Main.as")).toBe(true);
   });
 
+  // --- task 1317: VFS<->doc sync data-loss regressions ---------------------
+  //
+  // These three use an ISOLATED container/root (not the shared `root` from
+  // beforeEach) so an in-test unmount (b) and a post-restore async re-hydrate
+  // (c) can't leak DOM/act state into the legacy tests that follow.
+
+  function mountIsolated(
+    doc: FlashDocument,
+    onPush: (d: FlashDocument) => void,
+    vfs: IdentifiedClassVfs
+  ): {
+    el: HTMLDivElement;
+    r: Root;
+    rerender: (d: FlashDocument) => void;
+  } {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    const r = createRoot(el);
+    let current = doc;
+    const render = (d: FlashDocument) =>
+      act(() => {
+        r.render(
+          React.createElement(ClassesPanel, {
+            doc: d,
+            pushDoc: (next: FlashDocument) => {
+              current = next;
+              onPush(next);
+              render(next);
+            },
+            createVfs: () => vfs,
+          })
+        );
+      });
+    render(current);
+    return { el, r, rerender: (d) => render(d) };
+  }
+
+  it("(a) edit then IMMEDIATE compile/publish sees the edit (no 600ms wait)", async () => {
+    // DATA-LOSS: previously the edit only reached doc.asClasses after a 600ms
+    // debounce, so a Test Movie / Publish / Live-Preview recompile fired right
+    // after typing compiled STALE classes. Now the edit folds into the doc
+    // synchronously, so the very next read (no timer flush) has it.
+    let doc = createDocument();
+    doc = addAsClass(doc, { path: "Foo.as", source: "class Foo {}" });
+    const vfs = createMemoryClassVfs();
+    let pushed: FlashDocument | null = null;
+    const { el, r } = mountIsolated(doc, (d) => (pushed = d), vfs);
+    await flush();
+
+    const textarea = el.querySelector("textarea")!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value"
+      )!.set!;
+      setter.call(textarea, "class Foo { var edited; }");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    // NO setTimeout/debounce wait — simulate an immediate compile reading the doc.
+    expect(pushed).not.toBeNull();
+    const src = (pushed!.asClasses ?? []).find((c) => c.path === "Foo.as")?.source;
+    expect(src).toBe("class Foo { var edited; }");
+
+    act(() => r.unmount());
+    el.remove();
+  });
+
+  it("(b) edit then UNMOUNT keeps the edit in doc.asClasses", async () => {
+    // DATA-LOSS: closing the Classes tab with a pending edit used to only clear
+    // the timer (dropping the reconcile). The synchronous fold already put the
+    // edit in the doc; the unmount flush additionally drains any pending
+    // reconcile. Either way the edit must survive unmount with no timer wait.
+    let doc = createDocument();
+    doc = addAsClass(doc, { path: "Foo.as", source: "class Foo {}" });
+    const vfs = createMemoryClassVfs();
+    let pushed: FlashDocument | null = null;
+    const { el, r } = mountIsolated(doc, (d) => (pushed = d), vfs);
+    await flush();
+
+    const textarea = el.querySelector("textarea")!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value"
+      )!.set!;
+      setter.call(textarea, "class Foo { var survived; }");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    // Unmount BEFORE the 600ms debounce would fire.
+    act(() => r.unmount());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    el.remove();
+
+    expect(pushed).not.toBeNull();
+    const src = (pushed!.asClasses ?? []).find((c) => c.path === "Foo.as")?.source;
+    expect(src).toBe("class Foo { var survived; }");
+  });
+
+  it("(c) doc.asClasses changing after mount re-hydrates the panel/VFS", async () => {
+    // A project restore / undo swaps in a different embed while the tab is open.
+    // The panel must re-mirror the new classes into the VFS and the tree/editor.
+    let doc = createDocument();
+    doc = addAsClass(doc, { path: "Foo.as", source: "class Foo {}" });
+    const vfs = createMemoryClassVfs();
+    const { el, r, rerender } = mountIsolated(doc, () => {}, vfs);
+    await flush();
+    expect(
+      el.querySelector('[data-testid="class-file-Foo.as"]')
+    ).not.toBeNull();
+
+    // Simulate a restore: a brand-new doc identity with DIFFERENT classes.
+    let restored = createDocument();
+    restored = addAsClass(restored, {
+      path: "Bar.as",
+      source: "class Bar { var restored; }",
+    });
+    rerender(restored);
+    await flush();
+    await flush();
+
+    // VFS now mirrors the restored embed (Bar present, Foo pruned).
+    expect(await vfs.read("Bar.as")).toBe("class Bar { var restored; }");
+    expect(await vfs.exists("Foo.as")).toBe(false);
+    // Tree shows the restored file; the stale one is gone.
+    expect(
+      el.querySelector('[data-testid="class-file-Bar.as"]')
+    ).not.toBeNull();
+    expect(
+      el.querySelector('[data-testid="class-file-Foo.as"]')
+    ).toBeNull();
+
+    act(() => r.unmount());
+    el.remove();
+  });
+
+  it("(d) a no-op keystroke (identical source) does NOT push a history entry", async () => {
+    // addAsClass always allocates a new doc, so the panel must compare source
+    // itself; otherwise every keystroke — even one that re-emits identical text
+    // — would churn undo history.
+    let doc = createDocument();
+    doc = addAsClass(doc, { path: "Foo.as", source: "class Foo {}" });
+    const vfs = createMemoryClassVfs();
+    let pushes = 0;
+    const { el, r } = mountIsolated(doc, () => (pushes += 1), vfs);
+    await flush();
+    pushes = 0; // ignore any mount-time hydrate push
+
+    const textarea = el.querySelector("textarea")!;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value"
+    )!.set!;
+    // Re-emit the EXACT current source — must be a no-op.
+    act(() => {
+      setter.call(textarea, "class Foo {}");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(pushes).toBe(0);
+
+    // A real change DOES push.
+    act(() => {
+      setter.call(textarea, "class Foo { var y; }");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(pushes).toBe(1);
+
+    act(() => r.unmount());
+    el.remove();
+  });
+
   it("editing the selected file writes the VFS and reconciles the doc", async () => {
     let doc = createDocument();
     doc = addAsClass(doc, { path: "Foo.as", source: "class Foo {}" });

@@ -191,11 +191,12 @@ test.describe('AS2 class capstone — author via UI, link, publish, run (task 13
     await expect(editor).toBeVisible();
     await editor.click();
     await editor.fill(BALL_CLASS_SOURCE);
-    // The ScriptEditor flushes to doc.asClasses on a 600ms debounce; wait it out.
-    await page.waitForTimeout(900);
+    // Since task 1317 the panel folds each edit into doc.asClasses synchronously
+    // (no debounce window in which it could be lost). A small settle keeps the
+    // step robust to React/VFS async, but is no longer correctness-critical.
+    await page.waitForTimeout(200);
 
-    // Confirm the class source landed in the document model (the web/OPFS VFS
-    // syncs the .as file into doc.asClasses on a debounce).
+    // Confirm the class source landed in the document model.
     await expect
       .poll(async () =>
         page.evaluate(() => {

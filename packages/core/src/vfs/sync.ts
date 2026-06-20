@@ -96,8 +96,20 @@ export async function syncDocFromVfs(
     vfsPaths.add(path);
     const source = await vfs.read(path);
     if (source === null) continue;
-    const existing = (next.asClasses ?? []).find((c) => c.path === path);
-    if (existing && existing.source === source) continue; // no change
+    // Match on the NORMALIZED stored path: `path` is already normalized (line
+    // above), but doc.asClasses[].path may be raw (`./`, backslash, doubled
+    // slash) from a zip key / real-FLA import. Comparing raw `c.path === path`
+    // missed the existing entry, so addAsClass appended a stale DUPLICATE and the
+    // no-change short-circuit never fired (task 1317 Bug A). Treat it as "no
+    // change" only when the source matches AND the stored path is already
+    // canonical; otherwise let addAsClass rewrite it to the canonical path
+    // (collapsing the duplicate).
+    const existing = (next.asClasses ?? []).find(
+      (c) => normalizeClassPath(c.path) === path
+    );
+    if (existing && existing.source === source && existing.path === path) {
+      continue; // no change
+    }
     next = addAsClass(next, { path, source } satisfies AsClassFile);
     changed.push(path);
   }

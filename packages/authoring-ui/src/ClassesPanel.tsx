@@ -11,6 +11,7 @@ import {
   splitClassPath,
   hydrateVfsFromDoc,
   syncDocFromVfs,
+  addAsClass,
 } from "@flash/core";
 import { ScriptEditor } from "./ActionsPanel";
 import { createClassVfs } from "./vfs/factory.js";
@@ -37,13 +38,24 @@ import { chrome, halo, chromeFont } from "./theme/flash8Theme.js";
 //
 // Data flow (docs/33-as2-classes-vfs.md):
 //   open  : hydrateVfsFromDoc(doc, vfs, { prune:true })  — mirror embed -> VFS
-//   edit  : vfs.write(path, source)  -> syncDocFromVfs    -> pushDoc (debounced)
+//   edit  : vfs.write(path, source) + addAsClass -> pushDoc SYNCHRONOUSLY,
+//           plus a debounced full syncDocFromVfs to catch external/disk edits
 //   add   : vfs.write(newPath, stub) -> syncDocFromVfs    -> pushDoc
 //   remove: vfs.remove(path)         -> syncDocFromVfs    -> pushDoc
 //   rename: vfs.write(new) + remove(old) -> syncDocFromVfs -> pushDoc
 //
-// `doc.asClasses` (the `.fla` embed) stays authoritative; the VFS is just the
-// editing surface and is reconciled back via the P0 mutations on every change.
+// SYNC SEMANTICS (task 1317 — data-loss fix): `doc.asClasses` (the `.fla`
+// embed) is authoritative and EVERY editor keystroke folds straight into it
+// (synchronously, via `addAsClass` + `pushDoc`) so anything that compiles or
+// persists off `doc.asClasses` — Test Movie, Publish, Live Preview recompile,
+// autosave, Save — always sees the latest edit with NO debounce window in which
+// the edit could be lost. The 600ms timer no longer gates correctness: it only
+// runs a deferred FULL `syncDocFromVfs` to reconcile out-of-band changes (e.g.
+// an external desktop/disk edit, or a class removed via the VFS) and to coalesce
+// history. That pending reconcile is also FLUSHED on unmount (closing the tab)
+// so it can never be dropped. A re-hydrate fires when `doc.asClasses` identity
+// changes after mount (e.g. a project restore), guarded so it never clobbers an
+// in-progress edit.
 // ---------------------------------------------------------------------------
 
 export interface ClassesPanelProps {
@@ -98,6 +110,22 @@ export function ClassesPanel({
   const [error, setError] = useState<string | null>(null);
 
   const editTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True while the editor has an unflushed edit that is NOT yet reflected by a
+  // full VFS reconcile. Guards the doc-change re-hydrate from clobbering the
+  // user's in-progress typing, and tells the unmount/flush path there is work.
+  const pendingEditRef = useRef(false);
+  // The `asClasses` reference this panel itself last folded into the doc. The
+  // doc-change re-hydrate effect compares against it so the panel's OWN
+  // synchronous edits (which re-render it with a fresh doc) don't trigger a
+  // self-clobbering re-hydrate — only an EXTERNAL identity change (e.g. project
+  // restore / undo) re-mirrors the embed into the VFS.
+  const lastSyncedAsClassesRef = useRef<FlashDocument["asClasses"]>(doc.asClasses);
+  // Count of panel-initiated VFS mutations (create/remove/rename) currently
+  // mid-flight. While > 0 the re-hydrate effect must NOT prune-mirror the VFS:
+  // those ops write/remove a file and only THEN await syncToDoc, so a re-hydrate
+  // interleaving that async window could delete a just-created file that isn't in
+  // the (about-to-be-pushed) doc yet.
+  const vfsOpInFlightRef = useRef(0);
 
   // Re-list the VFS into `paths` (and prune a stale selection).
   const refresh = useCallback(async (): Promise<readonly string[]> => {
@@ -112,7 +140,10 @@ export function ClassesPanel({
     return next;
   }, []);
 
-  // Reconcile VFS -> doc -> history.
+  // Reconcile VFS -> doc -> history (full reconcile; async because it lists +
+  // reads the whole VFS). Used by add/remove/rename and the deferred edit
+  // reconcile. The per-keystroke doc update is handled SYNCHRONOUSLY by
+  // `handleScriptChange` so this is never on the data-loss critical path.
   const syncToDoc = useCallback(async (): Promise<void> => {
     const vfs = vfsRef.current;
     if (!vfs) return;
@@ -121,9 +152,26 @@ export function ClassesPanel({
     // never churns history needlessly.
     if (nextDoc !== docRef.current) {
       docRef.current = nextDoc;
+      lastSyncedAsClassesRef.current = nextDoc.asClasses;
       pushDoc(nextDoc);
     }
   }, [pushDoc]);
+
+  // Cancel the pending debounced reconcile and run it NOW (synchronously kick
+  // off the async full reconcile). Called on unmount so closing the Classes tab
+  // with a pending reconcile can't drop an out-of-band change. The synchronous
+  // per-keystroke doc update already guarantees the latest *editor* edit is in
+  // `doc.asClasses`; this additionally captures any VFS-level reconcile work.
+  const flushPendingSync = useCallback((): void => {
+    if (editTimer.current) {
+      clearTimeout(editTimer.current);
+      editTimer.current = null;
+    }
+    if (pendingEditRef.current) {
+      pendingEditRef.current = false;
+      void syncToDoc();
+    }
+  }, [syncToDoc]);
 
   // (Re)create + hydrate the VFS whenever the project path changes.
   useEffect(() => {
@@ -137,6 +185,7 @@ export function ClassesPanel({
     (async () => {
       // Exact mirror of the embed on (re)open.
       await hydrateVfsFromDoc(docRef.current, vfs, { prune: true });
+      lastSyncedAsClassesRef.current = docRef.current.asClasses;
       const next = await refresh();
       if (cancelled) return;
       setSelected((prev) => (prev && next.includes(prev) ? prev : next[0] ?? null));
@@ -147,10 +196,69 @@ export function ClassesPanel({
     return () => {
       cancelled = true;
     };
-    // Re-run only on path change; doc edits flow through hydrate-on-mount + the
-    // editor write path, not a full re-hydrate (which would clobber edits).
+    // Re-run only on path change; an EXTERNAL doc.asClasses change is handled by
+    // the dedicated re-hydrate effect below (the per-keystroke edit path keeps
+    // the doc current without a full re-hydrate, which would clobber edits).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flaPath]);
+
+  // Re-hydrate the VFS when `doc.asClasses` IDENTITY changes from OUTSIDE the
+  // panel after mount — e.g. a project restore, undo/redo, or an MCP mutation
+  // swaps in a different embed while the Classes tab is open. Without this the
+  // panel keeps showing the pre-restore classes (the path-keyed effect above
+  // never re-runs because flaPath is unchanged). Guarded so it NEVER clobbers
+  // the user's typing: skipped while an edit is pending, and skipped when the
+  // incoming reference is the one the panel itself just pushed (our own
+  // synchronous per-keystroke edit re-renders with a fresh doc — that must not
+  // trigger a self-clobbering re-hydrate).
+  useEffect(() => {
+    const incoming = doc.asClasses;
+    if (incoming === lastSyncedAsClassesRef.current) return; // our own / unchanged
+    if (pendingEditRef.current) {
+      // A debounced editor edit is mid-flight; don't re-mirror over it. Adopt
+      // the reference so a later genuine external change is still detected once
+      // the edit settles. (The synchronous per-keystroke fold already put the
+      // latest text in the doc, so adopting here loses nothing.)
+      lastSyncedAsClassesRef.current = incoming;
+      return;
+    }
+    if (vfsOpInFlightRef.current > 0) {
+      // A create/remove/rename is mid-flight (it writes/removes a file, THEN
+      // awaits syncToDoc). Pruning now could delete a just-created file not yet
+      // in the doc. Skip WITHOUT adopting the reference: the in-flight op's
+      // syncToDoc reconciles the (React-updated) external doc with the VFS, so
+      // the external change is folded in rather than lost.
+      return;
+    }
+    const vfs = vfsRef.current;
+    if (!vfs) return;
+    let cancelled = false;
+    lastSyncedAsClassesRef.current = incoming;
+    (async () => {
+      await hydrateVfsFromDoc(docRef.current, vfs, { prune: true });
+      const next = await refresh();
+      if (cancelled) return;
+      let nextSelected: string | null = null;
+      setSelected((prev) => {
+        nextSelected = prev && next.includes(prev) ? prev : next[0] ?? null;
+        return nextSelected;
+      });
+      // Re-read the (possibly changed) selected file's source into the editor;
+      // the selected-source effect is keyed on `selected`/`vfsReady`, neither of
+      // which necessarily changes here.
+      const sel = nextSelected;
+      if (sel !== null) {
+        const s = await vfs.read(sel);
+        if (!cancelled) setSource(s ?? "");
+      } else {
+        setSource("");
+      }
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.asClasses, refresh]);
 
   // Load the selected file's source into the editor.
   useEffect(() => {
@@ -168,10 +276,14 @@ export function ClassesPanel({
     };
   }, [selected, vfsReady]);
 
-  // Flush any pending debounced edit on unmount.
+  // FLUSH any pending debounced reconcile on unmount (closing the Classes tab)
+  // so an out-of-band change can't be dropped. Use a ref to the latest flush so
+  // the cleanup runs only on actual unmount, not on every flush-identity change.
+  const flushRef = useRef(flushPendingSync);
+  flushRef.current = flushPendingSync;
   useEffect(() => {
     return () => {
-      if (editTimer.current) clearTimeout(editTimer.current);
+      flushRef.current();
     };
   }, []);
 
@@ -182,12 +294,35 @@ export function ClassesPanel({
       const vfs = vfsRef.current;
       if (!vfs || selected === null) return;
       void vfs.write(selected, next);
+      // (a) DATA-LOSS FIX: fold the edit into `doc.asClasses` SYNCHRONOUSLY so
+      // any compile/persist that reads the doc (Test Movie, Publish, Live
+      // Preview recompile, autosave, Save) sees this exact edit immediately —
+      // there is no debounce window in which it can be lost. Skip the push when
+      // the source is byte-identical (`addAsClass` always allocates a new doc,
+      // so we must compare here) to avoid a history entry per no-op keystroke.
+      const path = normalizeClassPath(selected);
+      const existing = (docRef.current.asClasses ?? []).find(
+        (c) => normalizeClassPath(c.path) === path
+      );
+      if (!existing || existing.source !== next) {
+        const nextDoc = addAsClass(docRef.current, { path, source: next });
+        docRef.current = nextDoc;
+        lastSyncedAsClassesRef.current = nextDoc.asClasses;
+        pushDoc(nextDoc);
+      }
+      // Keep a light debounced FULL reconcile to coalesce history and catch
+      // VFS-level changes (external/disk edits) that the synchronous single-file
+      // update doesn't cover. This is flushed on unmount; it is NOT on the
+      // data-loss critical path.
+      pendingEditRef.current = true;
       if (editTimer.current) clearTimeout(editTimer.current);
       editTimer.current = setTimeout(() => {
+        editTimer.current = null;
+        pendingEditRef.current = false;
         void syncToDoc();
       }, EDIT_SYNC_DELAY_MS);
     },
-    [selected, syncToDoc]
+    [selected, syncToDoc, pushDoc]
   );
 
   // --- Add ----------------------------------------------------------------
@@ -215,9 +350,14 @@ export function ClassesPanel({
       setError(invalid);
       return;
     }
-    await vfs.write(path, defaultClassSource(path));
-    await refresh();
-    await syncToDoc();
+    vfsOpInFlightRef.current += 1;
+    try {
+      await vfs.write(path, defaultClassSource(path));
+      await refresh();
+      await syncToDoc();
+    } finally {
+      vfsOpInFlightRef.current -= 1;
+    }
     setCreating(false);
     setNewName("");
     setError(null);
@@ -234,9 +374,15 @@ export function ClassesPanel({
         typeof window === "undefined" ||
         window.confirm(`Delete class ${dottedNameFromPath(path)}?`);
       if (!ok) return;
-      await vfs.remove(path);
-      const next = await refresh();
-      await syncToDoc();
+      let next: readonly string[];
+      vfsOpInFlightRef.current += 1;
+      try {
+        await vfs.remove(path);
+        next = await refresh();
+        await syncToDoc();
+      } finally {
+        vfsOpInFlightRef.current -= 1;
+      }
       setSelected((prev) =>
         prev === path ? next[0] ?? null : prev
       );
@@ -268,11 +414,16 @@ export function ClassesPanel({
       return;
     }
     if (path !== normalizeClassPath(renaming)) {
-      const body = (await vfs.read(renaming)) ?? "";
-      await vfs.write(path, body);
-      await vfs.remove(renaming);
-      await refresh();
-      await syncToDoc();
+      vfsOpInFlightRef.current += 1;
+      try {
+        const body = (await vfs.read(renaming)) ?? "";
+        await vfs.write(path, body);
+        await vfs.remove(renaming);
+        await refresh();
+        await syncToDoc();
+      } finally {
+        vfsOpInFlightRef.current -= 1;
+      }
       setSelected((prev) => (prev === renaming ? path : prev));
     }
     setRenaming(null);

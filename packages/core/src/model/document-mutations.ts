@@ -1,5 +1,23 @@
 import type { FlashDocument, Scene, DocumentProperties, GridSettings, Guide, RulerUnits, AsClassFile } from "./types.js";
 import { createScene } from "./scene.js";
+import { normalizeClassPath } from "../vfs/path.js";
+
+/**
+ * Canonicalize an AS2 class path for storage/match. `doc.asClasses[].path` must
+ * always be a normalized classpath-relative path so the VFS-mirrored path (which
+ * IS normalized) and the stored path compare equal — otherwise a `./`-prefixed,
+ * backslash, or doubled-slash path (zip entry keys, real-FLA imports, external
+ * tooling) fails to match and duplicates instead of updating (task 1317 Bug A).
+ * Falls back to the raw input only if normalization throws (e.g. a `..` path),
+ * so a pathological path never crashes a mutation — it just won't dedup.
+ */
+function canonicalClassPath(path: string): string {
+  try {
+    return normalizeClassPath(path);
+  } catch {
+    return path;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // ID generation
@@ -224,11 +242,16 @@ export function moveGuide(doc: FlashDocument, guideId: string, position: number)
  */
 export function addAsClass(doc: FlashDocument, file: AsClassFile): FlashDocument {
   const existing = doc.asClasses ?? [];
-  const idx = existing.findIndex((c) => c.path === file.path);
+  // Store + match on the CANONICAL path so a non-normalized stored path (zip
+  // entry key, real-FLA import, backslash/`./` form) updates in place rather
+  // than appending a stale duplicate (task 1317 Bug A).
+  const path = canonicalClassPath(file.path);
+  const canonical: AsClassFile = file.path === path ? file : { ...file, path };
+  const idx = existing.findIndex((c) => canonicalClassPath(c.path) === path);
   const next =
     idx === -1
-      ? [...existing, file]
-      : existing.map((c, i) => (i === idx ? file : c));
+      ? [...existing, canonical]
+      : existing.map((c, i) => (i === idx ? canonical : c));
   return { ...doc, asClasses: next };
 }
 
@@ -238,7 +261,8 @@ export function addAsClass(doc: FlashDocument, file: AsClassFile): FlashDocument
  */
 export function updateAsClass(doc: FlashDocument, path: string, source: string): FlashDocument {
   const existing = doc.asClasses ?? [];
-  const idx = existing.findIndex((c) => c.path === path);
+  const canon = canonicalClassPath(path);
+  const idx = existing.findIndex((c) => canonicalClassPath(c.path) === canon);
   if (idx === -1) return doc;
   return {
     ...doc,
@@ -251,7 +275,8 @@ export function updateAsClass(doc: FlashDocument, path: string, source: string):
  */
 export function removeAsClass(doc: FlashDocument, path: string): FlashDocument {
   const existing = doc.asClasses ?? [];
-  const filtered = existing.filter((c) => c.path !== path);
+  const canon = canonicalClassPath(path);
+  const filtered = existing.filter((c) => canonicalClassPath(c.path) !== canon);
   if (filtered.length === existing.length) return doc;
   return { ...doc, asClasses: filtered };
 }

@@ -872,6 +872,33 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   backend's injectable `indexedDB` option; the OPFS backend with an in-memory fake handle
   tree; the Tauri backend with a `vi.mock("@tauri-apps/plugin-fs")` in-memory FS. Design:
   `docs/33-as2-classes-vfs.md`.
+- **`doc.asClasses` must be CURRENT before any compile/save, and stored paths must be
+  CANONICAL (task 1317).** Two distinct data-loss bugs at the ClassesPanel VFS<->doc seam:
+  (1) the panel wrote edits to the VFS immediately but only reconciled into `doc.asClasses`
+  on a 600 ms debounce, while EVERYTHING that compiles/persists reads `doc.asClasses`
+  directly — Test Movie (`useExportHandlers`), Publish (`usePublish.compileDocToBytes`), Live
+  Preview recompile (`useLivePreview`), autosave (`autosaveController`), Save (`saveFla`).
+  `syncDocFromVfs` had EXACTLY ONE caller (the debounced `syncToDoc`); nothing flushed it
+  before a compile. So a Test Movie / Publish / autosave / tab-close within 600 ms of a
+  keystroke used STALE class source. Fix: `ClassesPanel.handleScriptChange` folds each edit
+  into `doc.asClasses` SYNCHRONOUSLY (`addAsClass` + `pushDoc`, with a byte-identical
+  short-circuit so no-op keystrokes don't churn history); the 600 ms timer is now ONLY a
+  deferred full `syncDocFromVfs` (history coalescing + out-of-band/disk-edit reconcile) and
+  is FLUSHED on unmount. A dedicated effect re-hydrates the VFS when `doc.asClasses`
+  *identity* changes from outside after mount (project restore / undo / MCP swap), guarded by
+  `lastSyncedAsClassesRef` (ignore the panel's own synchronous push), `pendingEditRef` (don't
+  clobber typing), and a `vfsOpInFlightRef` counter (don't `prune`-mirror over an in-flight
+  create/remove/rename). (2) **Path-normalization mismatch (Bug A):** `syncDocFromVfs` and
+  `addAsClass`/`updateAsClass`/`removeAsClass` matched RAW `c.path === path` against a
+  NORMALIZED VFS path, while the VFS stores/mirrors under `normalizeClassPath`. A non-
+  normalized stored path (zip-entry key with `./`/backslash/doubled-slash, real-FLA import)
+  failed the match, so an edit APPENDED a duplicate (stale + edited) and the removal pass kept
+  the stale one — the compiler then emitted the class's `DoInitAction` TWICE and the `.fla`
+  embed persisted the stale dup forever. Fix: those four functions now match on the CANONICAL
+  (normalized) path, and `addAsClass` + `loadFla` STORE the canonical form (a `canonicalClassPath`
+  helper falls back to raw if `normalizeClassPath` throws, so a `..` path never crashes a
+  mutation). Gates: `classesPanel.test.ts` (a/b/c/d regressions) +
+  `sync-normalize-proof.test.ts` (1-entry post-fix).
 
 ### SWF clip actions
 

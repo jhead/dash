@@ -3,7 +3,17 @@ import { serializeDocument } from "./serialize.js";
 import { deserializeDocument } from "./deserialize.js";
 import { isOle2, tryLoadRealFla } from "./ole.js";
 import { saveRealFla as saveRealFlaImpl } from "./write/fla-write.js";
+import { normalizeClassPath } from "../vfs/path.js";
 import type { FlashDocument } from "../model/types.js";
+
+/** Canonicalize a class path read from a zip entry key; raw on failure. */
+function canonicalEntryClassPath(path: string): string {
+  try {
+    return normalizeClassPath(path);
+  } catch {
+    return path;
+  }
+}
 
 /**
  * Serialize a FlashDocument to a genuine Macromedia Flash 8 binary `.fla`
@@ -214,7 +224,11 @@ export function loadFla(bytes: Uint8Array): FlashDocument {
     .filter((k) => k.startsWith(CLASSES_PREFIX) && k.length > CLASSES_PREFIX.length)
     .sort()
     .map((k) => ({
-      path: k.slice(CLASSES_PREFIX.length),
+      // Store the CANONICAL (normalized) classpath so the loaded doc never
+      // carries a raw `./`/backslash/doubled-slash path that the VFS sync match
+      // would fail to dedup against (task 1317 Bug A). Fall back to the raw slice
+      // if normalization throws (a pathological key never blocks the load).
+      path: canonicalEntryClassPath(k.slice(CLASSES_PREFIX.length)),
       source: strFromU8(entries[k]),
     }));
 

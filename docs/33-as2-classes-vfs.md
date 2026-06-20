@@ -118,11 +118,17 @@ surface. Two pure helpers bridge them:
   `doc.asClasses` entry into the VFS. Without `prune` it leaves extra VFS files
   untouched (so a newer external desktop edit is not clobbered); with `prune` it
   deletes VFS files absent from the doc for an exact mirror.
-- **On save (and before publish):** `syncDocFromVfs(doc, vfs)` reads the VFS back
-  and folds it into a **new** document via the P0 mutations (`addAsClass`), so the
-  `.fla` embed re-captures all edits. Byte-identical files cause **no** history
-  churn (returns the same doc reference when nothing changed); files deleted via
-  the VFS are dropped from `asClasses`; non-`.as` files are ignored.
+- **On save / before publish (full reconcile):** `syncDocFromVfs(doc, vfs)` reads
+  the VFS back and folds it into a **new** document via the P0 mutations
+  (`addAsClass`), so the `.fla` embed re-captures all edits. Byte-identical files
+  cause **no** history churn (returns the same doc reference when nothing changed);
+  files deleted via the VFS are dropped from `asClasses`; non-`.as` files are
+  ignored.
+- **On every editor keystroke (synchronous single-file fold):** the Classes panel
+  also calls `addAsClass(doc, {path, source})` + `pushDoc` inline so `doc.asClasses`
+  is current *before* any compile/save can read it — `syncDocFromVfs` is no longer
+  the only path to the doc, and is not on the data-loss critical path. See the
+  panel's "Sync semantics" below (task 1317).
 
 ```
 open:  loadFla -> doc.asClasses --hydrateVfsFromDoc--> VFS  (edited live)
@@ -189,17 +195,58 @@ only the editing surface:
 ```
 mount/open : createClassVfs({ flaPath })   // platform-correct backend
              hydrateVfsFromDoc(doc, vfs, { prune:true })   // exact mirror
-edit       : vfs.write(path, source)  --(debounced ~600ms)--> syncDocFromVfs -> pushDoc
+edit       : vfs.write(path, source)
+             addAsClass(doc, {path, source}) -> pushDoc   // SYNCHRONOUS fold
+             --(debounced ~600ms)--> syncDocFromVfs -> pushDoc  // reconcile only
 add (New)  : vfs.write(newPath, defaultClassSource) -> syncDocFromVfs -> pushDoc
 remove (✕) : vfs.remove(path)                       -> syncDocFromVfs -> pushDoc
 rename     : vfs.write(new, body) + vfs.remove(old) -> syncDocFromVfs -> pushDoc
 ```
 
-`syncDocFromVfs` returns the SAME doc reference when nothing changed, so
-`pushDoc` (history-safe) is only called on a real mutation — no history churn on
-no-op saves. The panel re-creates + re-hydrates the VFS only when `flaPath`
-changes; in-session doc edits flow through the editor write path, not a
-re-hydrate (which would clobber unsaved edits). Pure helpers
+### Sync semantics — `doc.asClasses` is always current (task 1317)
+
+`doc.asClasses` is the authoritative embed and EVERYTHING that compiles or
+persists reads it directly: **Test Movie** (`useExportHandlers.testMovie`),
+**Publish** (`usePublish.compileDocToBytes`), **Live Preview** recompile
+(`useLivePreview` reads the live doc at compile time), **autosave**
+(`autosaveController`), and **Save** (`saveFla`). So a class edit MUST be in
+`doc.asClasses` before any of those can fire.
+
+The panel therefore folds **every editor keystroke into `doc.asClasses`
+synchronously** — `addAsClass(doc, {path, source})` + `pushDoc` run inline in the
+edit handler, with no debounce window in which the edit could be lost. (Before
+task 1317 the only path to the doc was a 600 ms debounce, so editing a class and
+immediately hitting Test Movie / Publish — or closing the Classes tab — compiled
+or saved the STALE embed and silently dropped the edit.)
+
+The 600 ms timer is **no longer on the correctness path**: it now runs only a
+deferred FULL `syncDocFromVfs` to (1) coalesce undo history and (2) catch
+VFS-level / out-of-band changes the single-file synchronous fold doesn't cover
+(an external desktop/disk edit, or a file removed straight from the VFS). That
+pending reconcile is **FLUSHED on unmount** (closing the Classes tab) so it is
+never dropped. Both `addAsClass` and `syncDocFromVfs` return the SAME doc
+reference when nothing changed, so `pushDoc` (history-safe) only fires on a real
+mutation — no history churn on a no-op keystroke or no-op save.
+
+**Path canonicalization (task 1317 Bug A).** `doc.asClasses[].path` is always
+stored in CANONICAL (normalized) form. The VFS mirrors classes under
+`normalizeClassPath(path)`, but a stored path could arrive RAW — a `classes/<p>`
+zip-entry key with a `./` prefix, a backslash path, a doubled slash, or a
+real-FLA import. The reconcile match (`syncDocFromVfs`) and the P0 mutations
+(`addAsClass`/`updateAsClass`/`removeAsClass`) now compare on the *normalized*
+path, and `addAsClass` + `loadFla` STORE the normalized form. Before this, a
+non-normalized stored path failed the `c.path === path` match, so an edit
+**appended a duplicate** (stale + edited) instead of replacing — the compiler
+then emitted the class's `DoInitAction` twice and the stale source persisted in
+the `.fla` forever. Gate: `packages/core/src/vfs/__tests__/sync-normalize-proof.test.ts`.
+
+The path-keyed `flaPath` effect re-creates + re-hydrates the VFS on a project
+*path* change. A dedicated effect ALSO re-hydrates when `doc.asClasses`
+**identity** changes from outside the panel after mount — a project restore,
+undo/redo, or an MCP mutation swapping in a different embed while the tab is open
+— so the panel never shows stale classes. It is guarded so it never clobbers an
+in-progress edit (skipped while an edit is pending) and ignores the panel's OWN
+synchronous edits (it tracks the last `asClasses` reference it pushed). Pure helpers
 (`classTree.ts`: tree building, `classNameToPath`, `validateClassPath`,
 `defaultClassSource`) keep the testable logic DOM-free.
 
