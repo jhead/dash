@@ -577,6 +577,46 @@ culled == full rebuild for arbitrary overlapping layouts, and a transitive-closu
 shape overlapping a folded shape but not the stroke is still folded). All three FAIL on the
 pre-1329 direct-overlap cull and PASS after.
 
+### 3.0g The merge-correctness oracle is RASTER ground-truth, not abstract face-area (task 1330)
+
+**The unsound oracle.** The `planar-merge.test.ts` merge-correctness checks (the 1329
+`culled == full rebuild` equivalence and the randomized fuzz) measured per-color
+**face area** by re-running `buildArrangementFromShapes` on the merged/baked path-soup and
+summing `faceArea` over `locateFace`/interior-point-resolved bounded faces. That abstract
+oracle is **NOT render-faithful**: re-arranging the read-back path-soup and resolving a
+point into an abstract face can land in a different face than the renderer actually paints,
+so it can both **miss real regressions** and report **FALSE divergences**.
+
+**The artifact (the task-1330 finding).** On a `>=7`-shape mutually-overlapping solid-fill
+cluster with a same-color island, the face-area oracle reported the whole-layer fold's
+GREEN as 691 (ground truth) vs 547 (folded) — a **Δ144 "leak"** into other colors. But this
+divergence is confined to the abstract oracle. The QA E2E verification rendered the exact
+cluster through the **real CanvasRenderer** two ways — via the merge fold and as plain
+top-wins layered drawing-objects — and `screenshotStage()` PNGs matched **pixel-for-pixel
+(diff=0/220000, flipPixels=0)**. The fold IS render-faithful (the renderer paints the
+emitted ShapePaths correctly via two-pass fills + non-zero winding); the Δ144 was an oracle
+artifact, not visible product output. (Accordingly the task's product-impact claim was
+**downgraded** — no product/geometry fix was made; the renderer is correct.)
+
+**The sound oracle.** The merge-correctness checks now compare **rasterized PIXELS**, not
+abstract face areas. A small pixel rasterizer (`engine/__tests__/raster-oracle.ts`) paints
+solid-fill `ShapePath`s using the SAME rules the product renderer uses
+(`renderShape` Pass-1: fills in path order, later over earlier; **consecutive same-`Fill`-
+reference paths batched into one non-zero-winding fill** so holes cut their outer loop;
+quadratics flattened to chords). The oracle rasterizes **both** (A) the merged/folded result
+and (B) the **ground-truth top-wins layered render** of the same input shapes (bottom→top),
+and asserts `pixelDiff == 0` / identical per-color pixel counts. Used for: the 1329
+`culled == full rebuild` equivalence (now a full-layer raster compare), the 60-trial
+randomized fuzz (per-color pixel counts EQUAL, not merely close), and the task-1330
+regression cases — the exact `e0..e6 + s GREEN` cluster and the minimal green-cluster +
+yellow + disjoint-green-island variant **now PASS** under the raster oracle, demonstrating
+the fold is render-faithful and that the old face-area oracle was the artifact (the same
+inputs reported Δ144 under face-area, diff=0 under pixels).
+
+**Scope.** This was a TEST-ORACLE-ONLY change — no product/src code was touched (only the
+`__tests__/raster-oracle.ts` helper + `planar-merge.test.ts`). The 8 merge-drawing e2e
+oracles (stage↔Ruffle pixelmatch) are unaffected.
+
 ### 3.0f ALL shape-creation paths share ONE merge-commit helper (task 1328)
 
 **The gap.** The P5 cutover (§3.0d) wired merge-on-commit into ONLY the interactive UI

@@ -20,6 +20,12 @@ import {
   foldShapeIntoLayerCulled,
   planarMergeCommit,
 } from "../planar/index.js";
+import {
+  rasterizePaths,
+  rasterizeLayer,
+  colorCounts,
+  pixelDiff,
+} from "./raster-oracle.js";
 
 const RED: Fill = { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } };
 const BLUE: Fill = { type: "solid", color: { r: 0, g: 0, b: 255, a: 255 } };
@@ -297,7 +303,7 @@ describe("planar merge — spatial-cull incremental fold (task 1327)", () => {
     expect(totalLayerArea(result!)).toBeCloseTo(150 + 100 + 100, 0);
   });
 
-  it("culled fold == full rebuild for the overlapping subset (identical merged area)", () => {
+  it("culled fold == full rebuild — RENDER-FAITHFUL (identical rasterized pixels)", () => {
     // A dense field of disjoint fills + a few that the new stroke overlaps.
     const existing: Obj[] = [];
     for (let i = 0; i < 50; i++) existing.push(mk("f" + i, i * 30, 0, 10, 10, BLUE));
@@ -313,24 +319,17 @@ describe("planar merge — spatial-cull incremental fold (task 1327)", () => {
     const full = foldShapeIntoLayer(existing, incoming, incoming.shape.id);
     expect(full.merged).not.toBeNull();
 
-    // The merged object in the culled result is the LAST element (top).
-    const culledMerged = culled![culled!.length - 1];
-
-    // Total artwork area must match between the two strategies (the disjoint
-    // fills contribute the same area whether folded or kept separate).
-    const culledTotal = totalLayerArea(culled!);
-    const fullTotal = totalLayerArea([makeMerged(full.merged!)]);
-    expect(culledTotal).toBeCloseTo(fullTotal, 0);
-
-    // And the culled merged region (the stroke + the 3 RED fills it touches)
-    // equals the red area of the full rebuild restricted to that region.
-    const culledRedArea = culledMerged.shape.paths
-      .filter((p) => p.fill && p.fill.type === "solid" && (p.fill as { color: { r: number } }).color.r === 255)
-      .reduce((s, p) => s + pathArea(p), 0);
-    const fullRedArea = full.merged!.paths
-      .filter((p) => p.fill && p.fill.type === "solid" && (p.fill as { color: { r: number } }).color.r === 255)
-      .reduce((s, p) => s + pathArea(p), 0);
-    expect(culledRedArea).toBeCloseTo(fullRedArea, 0);
+    // GROUND-TRUTH RASTER ORACLE (task 1330): the abstract per-color face-area
+    // comparison (sum of pathArea / faceArea) is NOT render-faithful — it can
+    // both miss real regressions and report false divergences (the Δ144 artifact).
+    // Instead rasterize BOTH the culled multi-object layer AND the full single-shape
+    // rebuild with the SAME two-pass-fill + non-zero-winding rules the renderer uses,
+    // and compare PIXELS. The culled fold (several display objects) and the full
+    // whole-layer rebuild (one merged shape) must paint the SAME image.
+    const W = 1540, H = 30;
+    const culledRaster = rasterizeLayer(culled!, W, H);
+    const fullRaster = rasterizeLayer([makeMerged(full.merged!)], W, H);
+    expect(pixelDiff(culledRaster, fullRaster)).toBe(0);
   });
 
   it("foldShapeIntoLayerCulled partitions overlapping vs untouched correctly", () => {
@@ -425,48 +424,31 @@ describe("planar merge — bbox-cull preserves top-wins z-order (task 1329 regre
   });
   const makeMerged = (s: Shape): Obj => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 });
 
+  // All shapes in this regression suite live within [0..100, 0..100] stage space;
+  // a slightly larger raster gives margin for the off-by-pixel cluster cases.
+  const RW = 120, RH = 120;
+
   /**
-   * Z-order-respecting per-color face area of a LAYER's display objects. Bakes
-   * each object's (x,y) offset into stage space and builds ONE planar arrangement
-   * in draw order (bottom -> top), so top-wins overlaps resolve exactly as they
-   * render. Returns a map of "r,g,b,a" -> total bounded-face area.
+   * RENDER-FAITHFUL per-color PIXEL count of a LAYER's display objects (task 1330).
+   *
+   * The previous oracle measured per-color FACE AREA by re-running
+   * `buildArrangementFromShapes` on the (baked) display objects and summing
+   * `faceArea` over bounded faces. That abstract re-arrangement is NOT
+   * render-faithful: a point can resolve into a different abstract face than the
+   * renderer paints, so the area oracle both misses real regressions and reports
+   * FALSE divergences (the Δ144 leak in this task was exactly such an artifact —
+   * confirmed diff=0 at the real CanvasRenderer). This now RASTERIZES the layer in
+   * draw order (bottom -> top, top-wins) with the same two-pass-fill + non-zero
+   * winding rules the renderer uses, and returns a map of "r,g,b,a" -> PIXEL count.
    */
   function layerColorAreas(objs: readonly { shape: Shape; x: number; y: number }[]): Map<string, number> {
-    const stage: Shape[] = [];
-    for (const o of objs) {
-      stage.push({
-        id: o.shape.id,
-        paths: o.shape.paths.map((p) => {
-          const t = (pt: Point): Point => ({ x: pt.x + o.x, y: pt.y + o.y });
-          return {
-            ...p,
-            start: t(p.start),
-            segments: p.segments.map((s) =>
-              s.type === "line"
-                ? { type: "line", to: t(s.to) }
-                : { type: "curve", control: t(s.control), to: t(s.to) }
-            ),
-          };
-        }),
-      });
-    }
-    const ps = buildArrangementFromShapes(stage);
-    const out = new Map<string, number>();
-    for (const f of ps.faces) {
-      if (f.unbounded || f.fill < 0) continue;
-      const fill = ps.fills[f.fill];
-      if (!fill || fill.type !== "solid") continue;
-      const c = fill.color;
-      const key = `${c.r},${c.g},${c.b},${c.a}`;
-      out.set(key, (out.get(key) ?? 0) + faceArea(ps, f));
-    }
-    return out;
+    return colorCounts(rasterizeLayer(objs, RW, RH));
   }
 
   function expectSameColorAreas(a: Map<string, number>, b: Map<string, number>): void {
     const keys = new Set([...a.keys(), ...b.keys()]);
     for (const k of keys) {
-      expect(a.get(k) ?? 0).toBeCloseTo(b.get(k) ?? 0, 0);
+      expect(a.get(k) ?? 0).toBe(b.get(k) ?? 0);
     }
   }
 
@@ -504,7 +486,7 @@ describe("planar merge — bbox-cull preserves top-wins z-order (task 1329 regre
     expect(fullAreas.get(redKey) ?? 0).toBeCloseTo(600, 0);
   });
 
-  it("randomized: culled commit == full whole-layer rebuild for 60 trials", () => {
+  it("randomized: culled commit == full whole-layer rebuild for 60 trials (raster pixels)", () => {
     // Deterministic PRNG (mulberry32) so the fuzz is reproducible.
     let seed = 0x1329abcd >>> 0;
     const rnd = () => {
@@ -550,6 +532,10 @@ describe("planar merge — bbox-cull preserves top-wins z-order (task 1329 regre
         continue;
       }
 
+      // RENDER-FAITHFUL pixel comparison: the culled multi-object layer and the
+      // full single-shape rebuild must paint the IDENTICAL image. Axis-aligned
+      // integer-grid rects rasterize exactly, so the per-color pixel counts are
+      // EQUAL (not merely close) when the two strategies agree.
       const culledAreas = layerColorAreas(culled);
       const fullAreas = layerColorAreas([makeMerged(full.merged)]);
       const keys = new Set([...culledAreas.keys(), ...fullAreas.keys()]);
@@ -557,9 +543,9 @@ describe("planar merge — bbox-cull preserves top-wins z-order (task 1329 regre
         const cv = culledAreas.get(k) ?? 0;
         const fv = fullAreas.get(k) ?? 0;
         expect(
-          Math.abs(cv - fv),
+          cv,
           `trial ${trial} color ${k}: culled=${cv} full=${fv}`
-        ).toBeLessThan(1);
+        ).toBe(fv);
       }
     }
   });
@@ -583,5 +569,93 @@ describe("planar merge — bbox-cull preserves top-wins z-order (task 1329 regre
 
     const full = foldShapeIntoLayer(existing, stroke, stroke.shape.id);
     expectSameColorAreas(layerColorAreas(culled!), layerColorAreas([makeMerged(full.merged!)]));
+  });
+});
+
+// ===========================================================================
+// REGRESSION (task 1330): the >=7-shape same-color-island CLUSTER repro that the
+// OLD abstract face-area oracle reported as a Δ144 "leak" (GREEN 691 -> 547). The
+// fold IS render-faithful through the real CanvasRenderer (the QA E2E addendum
+// confirmed diff=0/220000, flipPixels=0). The Δ144 was an ARTIFACT of measuring
+// per-color faceArea on a re-arranged path-soup (locateFace resolving a point into
+// a different abstract face than the renderer paints). Under the SOUND raster
+// oracle — rasterizing the FOLDED result and comparing it to the ground-truth
+// top-wins layered render of the same input shapes — the fold matches the screen.
+// This case proves the new oracle is sound (no false divergence) AND that the old
+// face-area oracle was the artifact.
+// ===========================================================================
+
+describe("planar merge — >=7-shape cluster fold IS render-faithful (task 1330 raster oracle)", () => {
+  const GREEN: Fill = { type: "solid", color: { r: 0, g: 255, b: 0, a: 255 } };
+  const YEL: Fill = { type: "solid", color: { r: 255, g: 255, b: 0, a: 255 } };
+  // The exact repro from the task description (all x=y=0 offsets; rects [x..x+w, y..y+h]):
+  //   existing (bottom->top): e0 BLUE, e1 GREEN, e2 YEL, e3 YEL, e4 BLUE, e5 RED, e6 GREEN
+  //   incoming: s GREEN
+  const obj = (id: string, x: number, y: number, w: number, h: number, fill: Fill) => ({
+    shape: rectShape(id, x, y, w, h, fill),
+    x: 0,
+    y: 0,
+  });
+
+  it("the e0..e6 + s GREEN cluster: folded result == ground-truth top-wins render (pixels)", () => {
+    // [x0,y0,x1,y1] -> mk via (x, y, w, h):
+    const existing = [
+      obj("e0", 12, 11, 16, 9, BLUE), //  [12..28, 11..20]
+      obj("e1", 37, 24, 29, 32, GREEN), // [37..66, 24..56]
+      obj("e2", 42, 35, 21, 32, YEL), //  [42..63, 35..67]
+      obj("e3", 7, 16, 32, 35, YEL), //   [7..39, 16..51]
+      obj("e4", 45, 10, 13, 26, BLUE), // [45..58, 10..36]
+      obj("e5", 41, 10, 27, 33, RED), //  [41..68, 10..43]
+      obj("e6", 43, 15, 12, 12, GREEN), // [43..55, 15..27]
+    ];
+    const incoming = obj("s", 26, 36, 29, 16, GREEN); // [26..55, 36..52]
+
+    // (A) The merged/folded result, re-rendered.
+    const full = foldShapeIntoLayer(existing, incoming, incoming.shape.id);
+    expect(full.merged).not.toBeNull();
+
+    const W = 80, H = 80;
+    const foldedRaster = rasterizePaths(full.merged!.paths, W, H);
+
+    // (B) The GROUND-TRUTH top-wins layered render of the SAME input shapes, in
+    // draw order (existing bottom->top, then the incoming stroke on top) — exactly
+    // what the screen shows.
+    const groundTruth = rasterizeLayer([...existing, incoming], W, H);
+
+    // RENDER-FAITHFUL: the fold reproduces the layered render PIXEL-for-PIXEL.
+    // Under the OLD abstract face-area oracle this same input reported GREEN=691
+    // (ground truth) vs 547 (folded) — a Δ144 FALSE divergence; the raster oracle
+    // shows there is no divergence at the renderer (the fold is sound).
+    expect(pixelDiff(foldedRaster, groundTruth)).toBe(0);
+
+    // And per-color pixel counts agree exactly (so no color "leaked").
+    const gt = colorCounts(groundTruth);
+    const folded = colorCounts(foldedRaster);
+    const keys = new Set([...gt.keys(), ...folded.keys()]);
+    for (const k of keys) {
+      expect(folded.get(k) ?? 0, `color ${k}`).toBe(gt.get(k) ?? 0);
+    }
+  });
+
+  it("minimal: green cluster + yellow over it + a DISJOINT same-color green island folds render-faithfully", () => {
+    // The "minimal variant" from the task description: a green cluster + yellow
+    // over it + a disjoint same-color green island. The old face-area oracle
+    // reported GREEN 643->503 / YELLOW 1336->1476; the raster oracle shows the
+    // fold matches the layered render.
+    const existing = [
+      obj("gA", 10, 10, 40, 40, GREEN), // green cluster base
+      obj("gB", 30, 20, 40, 40, GREEN), // overlaps gA (same color union)
+      obj("y", 25, 25, 30, 30, YEL), //   yellow over the green cluster
+      obj("island", 80, 80, 20, 20, GREEN), // DISJOINT same-color green island
+    ];
+    const incoming = obj("s", 15, 40, 40, 20, GREEN); // joins the cluster
+
+    const full = foldShapeIntoLayer(existing, incoming, incoming.shape.id);
+    expect(full.merged).not.toBeNull();
+
+    const W = 120, H = 120;
+    const folded = rasterizePaths(full.merged!.paths, W, H);
+    const groundTruth = rasterizeLayer([...existing, incoming], W, H);
+    expect(pixelDiff(folded, groundTruth)).toBe(0);
   });
 });
