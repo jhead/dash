@@ -1,0 +1,10 @@
+{
+  "id": "1323-56x1bp-vector-p5-cutover-merge-default-remove-dead-code",
+  "title": "Vector P5: cutover (merge default) + remove dead code + final authenticity sweep",
+  "description": "Depends on Vector P4. Make the planar merge model the DEFAULT (remove the P1 feature flag). Delete the now-replaced dead code: the old MVP engine/merge-drawing.ts and the no-op engine/shape-boolean.ts stub (verify no remaining callers). Final authenticity sweep: run the full interaction oracle suite (all canonical cases from P0 now enabled, not .todo) and confirm Ruffle pixel parity; confirm Object Drawing mode still discrete/unchanged; confirm .fla + SWF round-trip + golden-parity/self-determinism unaffected for unchanged docs; confirm performance acceptable on dense art (traced-bitmap shapes with many fills) \u2014 note any perf follow-up. VERIFY: build + all tests + all vector interaction oracles green (only ~3 task-1207 fixtures acceptable). Finalize docs/36-vector-merge-model.md (mark merge model shipped; document Object Drawing vs Merge, the planar<->per-path interchange, and any known limitations) + CLAUDE.md learnings. ACQUIRE lock; commit incl task file; push rebase-retry. Scope: remove flag + dead modules + oracle suite enable + docs. Sequential after P4 (final phase).",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-20T05:17:43Z",
+  "updated_at": "2026-06-20T05:17:43Z"
+}

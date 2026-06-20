@@ -1,0 +1,10 @@
+{
+  "id": "1320-4p2z6q-vector-p2-strokes-lines-split-fills-intersecting",
+  "title": "Vector P2: strokes/lines split fills + intersecting lines segment each other",
+  "description": "Depends on Vector P1. In the planar arrangement, adding a STROKE edge across a fill SPLITS the fill into separate faces along the line, and two crossing lines SPLIT each other into segments at the intersection (curve-preserving via P0 kernel). Wire line/pencil/pen + stroke commits through the arrangement. VERIFY: build + tests green (only ~3 task-1207 fixtures acceptable); Ruffle/stage oracle: 'line across a filled rect then drag one half -> two independent fills', 'two crossing lines -> 4 selectable segments'; arrangement-invariant tests. Update docs/36-vector-merge-model.md. ACQUIRE lock; commit incl task file; push rebase-retry. Conflict hotspots: StageArea.tsx tool handlers, Shell.tsx, engine/planar. Sequential after P1.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-20T05:17:20Z",
+  "updated_at": "2026-06-20T05:17:20Z"
+}
