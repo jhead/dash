@@ -2,9 +2,9 @@
   "id": "1297-45h81d-persist-editor-preferences-layout-to-localstorag",
   "title": "Persist editor preferences & layout to localStorage (pane sizes, dock/panel visibility, active tabs, view prefs) \u2014 survive refresh/restart",
   "description": "DONE. Implemented durable editor-layout persistence in packages/authoring-ui/src/editorLayout.ts (versioned localStorage key flash8.editorLayout {version,layout}, schema v1, try/catch read+write, normalize() clamps/validates every field, quota fallback). PERSIST: rightPaneWidth/timelineHeight/bottomDockHeight (clamped to useResize min/max), rightPaneCollapsed+timelineCollapsed, rightTab, bottomTab(null ok), snapToPixels/showRulers/viewMode, floating-panel+dock visibility toggles, simpleButtonsEnabled, last-used tool (toolState.activeTool). DO NOT PERSIST: selection, dialogs, playback/agent-run, hover/cursor, instances, swfBytes, drag, clipboards, document content. Restore-on-mount in Shell.tsx: layout loaded once (loadEditorLayout(initialNarrow)); uiStore seeded via layoutToUiInit; 3 useResize hooks seeded from persisted sizes + persist on drag-end; uiStore.subscribe persists durable slice on tab/toggle change. NARROW CLAMP (1280): loadEditorLayout(isNarrowViewport) forces rightPaneCollapsed=true. TESTS: src/__tests__/editorLayout.test.ts (14 tests) \u2014 durable round-trip, transient-not-written, clamp, malformed/schema-mismatch/quota fallback, narrow clamp, layoutToUiInit/uiStateToLayout. Build: pnpm --filter './packages/**' build = green. Tests: pnpm --filter @flash/authoring-ui run test --run = 822 passed / 60 files (0 failures, incl rightPaneResponsive 1280). Docs: docs/21-shell-architecture.md persistence convention added.",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-06-19T22:17:00Z",
-  "updated_at": "2026-06-19T22:26:59Z"
+  "updated_at": "2026-06-20T10:23:51Z"
 }
