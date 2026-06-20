@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { createDocument, createSymbolInLibrary } from "@flash/core";
+import { createDocument, createSymbolInLibrary, livePlanarShape, splitOnMove } from "@flash/core";
 import type { FlashDocument } from "@flash/core";
 import {
   setAgentCallbacks,
@@ -26,6 +26,7 @@ import {
 interface HarnessState {
   doc: FlashDocument;
   selectedIds: string[];
+  subSelection: import("@flash/core").SubSelection | null;
   currentFrame: number;
   activeLayerIndex: number;
   activeTool: string;
@@ -43,6 +44,7 @@ function makeHarness(initial?: FlashDocument) {
   const state: HarnessState = {
     doc: initial ?? createDocument(),
     selectedIds: [],
+    subSelection: null,
     currentFrame: 0,
     activeLayerIndex: 0,
     activeTool: "selection",
@@ -101,6 +103,25 @@ function makeHarness(initial?: FlashDocument) {
       if (idx >= 0) state.activeLayerIndex = idx;
     },
     setSelectedIds: (ids: string[]) => { state.selectedIds = ids; },
+    getSubSelection: () => state.subSelection,
+    setSubSelection: (s) => { state.subSelection = s; },
+    subSplitMove: (sel, dx, dy) => {
+      const layer = state.doc.scenes[state.activeSceneIndex].timeline.layers[state.activeLayerIndex];
+      const kf = layer.frames[state.currentFrame];
+      const target = kf.displayObjects.find(
+        (o): o is import("@flash/core").ShapeDisplayObject => o.type === "shape" && o.id === sel.shapeId
+      );
+      if (!target) return;
+      const ps = livePlanarShape(target.shape);
+      const { extracted, remainder } = splitOnMove(ps, sel.keys, dx, dy, "ext-1", target.shape.id);
+      const others = kf.displayObjects.filter((o) => o.id !== target.id);
+      const next: unknown[] = [...others];
+      if (remainder) next.push({ type: "shape", id: target.id, shape: remainder, x: target.x, y: target.y });
+      if (extracted) next.push({ type: "shape", id: "ext-1", shape: extracted, x: target.x, y: target.y });
+      // Mutate in place for the harness (no immutable helper needed here).
+      (kf as unknown as { displayObjects: unknown[] }).displayObjects = next;
+      state.subSelection = null;
+    },
     setZoom: (z: number) => { state.zoom = z; },
     setPan: (x: number, y: number) => { state.panX = x; state.panY = y; },
     selectTool: (toolId: string) => { state.activeTool = toolId; },
@@ -731,6 +752,63 @@ describe("selection_get / selection_set", () => {
     });
     await dispatchAgentCommand("selection_set", { all: true });
     expect(state.selectedIds.length).toBeGreaterThan(0);
+  });
+});
+
+describe("selection_pick_at (P3 partial face/segment)", () => {
+  // Put a single merged shape (a blue rect split by a line into 2 faces) directly
+  // on the keyframe — the shape the planar pick operates on.
+  function seedMergedShape() {
+    const layer = state.doc.scenes[0].timeline.layers[0];
+    const kf = layer.frames[0];
+    const shape = {
+      id: "merged-1",
+      paths: [
+        {
+          start: { x: 0, y: 0 },
+          segments: [
+            { type: "line" as const, to: { x: 0, y: 60 } },
+            { type: "line" as const, to: { x: 100, y: 60 } },
+            { type: "line" as const, to: { x: 100, y: 0 } },
+            { type: "line" as const, to: { x: 0, y: 0 } },
+          ],
+          fill: { type: "solid" as const, color: { r: 0, g: 0, b: 255, a: 255 } },
+          closed: true,
+        },
+        {
+          start: { x: -10, y: 30 },
+          segments: [{ type: "line" as const, to: { x: 110, y: 30 } }],
+          closed: false,
+          stroke: { color: { r: 0, g: 0, b: 0, a: 255 }, width: 2, caps: "round" as const, joints: "round" as const, miterLimit: 3 },
+        },
+      ],
+    };
+    (kf as unknown as { displayObjects: unknown[]; isEmpty?: boolean }).displayObjects = [
+      { type: "shape", id: "merged-1", shape, x: 20, y: 20 },
+    ];
+    (kf as unknown as { isEmpty?: boolean }).isEmpty = false;
+  }
+
+  it("picks a fill region (face) at a stage point and exposes it via selection_get", async () => {
+    seedMergedShape();
+    // Stage (70,35) is inside the top half of the rect placed at (20,20).
+    const r = await dispatchAgentCommand("selection_pick_at", { x: 70, y: 35 }) as Record<string, unknown>;
+    expect(r["picked"]).toBe(true);
+    expect(state.subSelection?.shapeId).toBe("merged-1");
+    expect(state.subSelection?.keys[0]?.kind).toBe("face");
+    const get = await dispatchAgentCommand("selection_get", {}) as Record<string, unknown>;
+    expect(get["subSelection"]).toBeTruthy();
+  });
+
+  it("split-on-move extracts the picked face and leaves the complement behind", async () => {
+    seedMergedShape();
+    await dispatchAgentCommand("selection_pick_at", { x: 70, y: 35, move: { dx: 200, dy: 0 } });
+    const kf = state.doc.scenes[0].timeline.layers[0].frames[0] as unknown as { displayObjects: { id: string }[] };
+    // The merged shape was replaced by remainder (same id) + an extracted shape.
+    const ids = kf.displayObjects.map((o) => o.id);
+    expect(ids).toContain("merged-1"); // remainder kept the original id
+    expect(ids).toContain("ext-1"); // the extracted half
+    expect(state.subSelection).toBeNull(); // cleared after commit
   });
 });
 

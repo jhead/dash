@@ -276,6 +276,22 @@ export function edgeGeometriesToShapePath(
 }
 
 /**
+ * Optional emit filters for {@link planarShapeToShape} (P3 partial selection /
+ * split-on-move). When supplied, only faces accepted by `faceFilter` participate
+ * in fill emission and only undirected edges accepted by `edgeFilter` emit as
+ * strokes. Both default to "accept everything", so the no-arg call is exactly the
+ * full read-back (byte-identical to the P1/P2 behavior). The filtered form is how
+ * split-on-move emits the EXTRACTED sub-set and (with complement predicates) the
+ * REMAINDER that keeps a hole where the extracted faces were.
+ */
+export interface PlanarEmitFilter {
+  /** Accept a bounded, filled face by its face id (default: accept all). */
+  faceFilter?: (faceId: number) => boolean;
+  /** Accept an undirected edge by either of its half-edge ids (default: accept all). */
+  edgeFilter?: (heId: number) => boolean;
+}
+
+/**
  * Convert a built {@link PlanarShape} (merge-mode half-edge form) back to the
  * per-path {@link Shape} interchange form — the inverse of
  * {@link import("./build.js").buildArrangementFromShapes}.
@@ -293,12 +309,32 @@ export function edgeGeometriesToShapePath(
  * (deduped against its twin so each undirected edge emits once).
  *
  * The result is curve-preserving (quadratic controls survive).
+ *
+ * P3: pass a {@link PlanarEmitFilter} to emit only a sub-set of faces/edges (the
+ * basis for partial-selection extraction + the hole-leaving complement). With no
+ * filter the output is identical to the P1/P2 full read-back.
  */
-export function planarShapeToShape(ps: PlanarShape, id: string): Shape {
+export function planarShapeToShape(
+  ps: PlanarShape,
+  id: string,
+  filter?: PlanarEmitFilter
+): Shape {
   const paths: ShapePath[] = [];
+  const faceFilter = filter?.faceFilter ?? (() => true);
+  const edgeFilter = filter?.edgeFilter ?? (() => true);
 
-  // Fill-index of the face on a half-edge's LEFT (its incident face).
+  // Whether a face participates in fill emission: bounded, filled, AND accepted.
+  const faceAccepted = (faceId: number): boolean => {
+    const f = ps.faces[faceId];
+    if (!f || f.unbounded || f.fill === null || f.fill === undefined) return false;
+    return faceFilter(faceId);
+  };
+
+  // Fill-index of the face on a half-edge's LEFT (its incident face). A face
+  // rejected by the filter reads as "background" (null), so a boundary forms
+  // between kept and dropped faces — this is what leaves a hole in the remainder.
   const faceFillOf = (faceId: number): number | null => {
+    if (!faceAccepted(faceId)) return null;
     const f = ps.faces[faceId];
     return f && !f.unbounded ? f.fill ?? null : null;
   };
@@ -345,15 +381,13 @@ export function planarShapeToShape(ps: PlanarShape, id: string): Shape {
     if (ra !== rb) parent.set(ra, rb);
   };
   for (const f of ps.faces) {
-    if (f.unbounded || f.fill === null || f.fill === undefined) continue;
+    if (!faceAccepted(f.id)) continue;
     parent.set(f.id, f.id);
   }
   for (const he of ps.halfEdges) {
-    const f = ps.faces[he.face];
-    if (!f || f.unbounded || f.fill === null || f.fill === undefined) continue;
+    if (!faceAccepted(he.face)) continue;
     const twin = ps.halfEdges[he.twin];
-    const tf = ps.faces[twin.face];
-    if (!tf || tf.unbounded || tf.fill === null || tf.fill === undefined) continue;
+    if (!faceAccepted(twin.face)) continue;
     if (parent.has(he.face) && parent.has(twin.face) && seamDissolvable(he)) {
       union(he.face, twin.face);
     }
@@ -364,11 +398,11 @@ export function planarShapeToShape(ps: PlanarShape, id: string): Shape {
   // groups loops of one colour contiguously), then by root id for determinism.
   const components = new Map<number, { fill: number; faces: Set<number> }>();
   for (const f of ps.faces) {
-    if (f.unbounded || f.fill === null || f.fill === undefined) continue;
+    if (!faceAccepted(f.id)) continue;
     const root = find(f.id);
     let comp = components.get(root);
     if (!comp) {
-      comp = { fill: f.fill, faces: new Set() };
+      comp = { fill: f.fill as number, faces: new Set() };
       components.set(root, comp);
     }
     comp.faces.add(f.id);
@@ -433,6 +467,8 @@ export function planarShapeToShape(ps: PlanarShape, id: string): Shape {
   for (const he of ps.halfEdges) {
     if (he.lineStyle === null || he.lineStyle === undefined) continue;
     if (seenStroke.has(he.id) || seenStroke.has(he.twin)) continue;
+    // P3 edge filter: an undirected edge emits only if EITHER half-edge passes.
+    if (!edgeFilter(he.id) && !edgeFilter(he.twin)) continue;
     seenStroke.add(he.id);
     const stroke = ps.lineStyles[he.lineStyle];
     if (!stroke) continue;

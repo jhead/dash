@@ -1,5 +1,5 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { SymbolType, TextAlign, BitmapItem } from "@flash/core";
+import type { SymbolType, TextAlign, BitmapItem, SubSelection } from "@flash/core";
 import type { FrameSizeReport, VideoProbe } from "@flash/swf";
 import type { PlacedInstance } from "../PropertiesPanel";
 import type { ViewMode } from "../StageArea";
@@ -133,6 +133,12 @@ export interface UiData {
   instances: PlacedInstance[];
   selectedInstanceId: string | null;
   selectedShapeIds: string[];
+  /**
+   * P3 — partial (face/segment) selection within a merged planar shape, used only
+   * when `planarMergeOnCommit` is on. Lives ALONGSIDE `selectedShapeIds` (which
+   * stays the whole-object selection); ephemeral UI state, not persisted.
+   */
+  subSelection: SubSelection | null;
 
   // view
   zoom: number;
@@ -228,6 +234,7 @@ export interface UiActions {
   setInstances: ReactSetter<PlacedInstance[]>;
   setSelectedInstanceId: ReactSetter<string | null>;
   setSelectedShapeIds: ReactSetter<string[]>;
+  setSubSelection: ReactSetter<SubSelection | null>;
   setZoom: ReactSetter<number>;
   setPanX: ReactSetter<number>;
   setPanY: ReactSetter<number>;
@@ -325,6 +332,7 @@ const DEFAULTS: UiData = {
   instances: [],
   selectedInstanceId: null,
   selectedShapeIds: [],
+  subSelection: null,
   zoom: 1.0,
   panX: 0,
   panY: 0,
@@ -424,6 +432,7 @@ export function createUiStore(init?: Partial<UiData>): UiStoreApi {
     setInstances: rs(set, get, "instances"),
     setSelectedInstanceId: rs(set, get, "selectedInstanceId"),
     setSelectedShapeIds: rs(set, get, "selectedShapeIds"),
+    setSubSelection: rs(set, get, "subSelection"),
     setZoom: rs(set, get, "zoom"),
     setPanX: rs(set, get, "panX"),
     setPanY: rs(set, get, "panY"),
@@ -486,6 +495,8 @@ export function createUiStore(init?: Partial<UiData>): UiStoreApi {
 // ---------------------------------------------------------------------------
 
 export const selectSelectedShapeIds = (s: UiState): string[] => s.selectedShapeIds;
+
+export const selectSubSelection = (s: UiState): SubSelection | null => s.subSelection;
 /** Backward-compat single selection: the id when exactly one shape is selected. */
 export const selectSelectedShapeId = (s: UiState): string | null =>
   s.selectedShapeIds.length === 1 ? s.selectedShapeIds[0] : null;

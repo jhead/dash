@@ -56,6 +56,7 @@ export {
   edgeGeometriesToShapePath,
   planarShapeToShape,
 } from "./query.js";
+export type { PlanarEmitFilter } from "./query.js";
 
 export {
   buildArrangementFromShapes,
@@ -69,3 +70,19 @@ export {
   planarMergeCommit,
 } from "./merge.js";
 export type { FoldResult, MergeableLike } from "./merge.js";
+
+// P3 — live planar map + partial face/segment selection + split-on-move.
+export { livePlanarShape } from "./live.js";
+export {
+  faceKey,
+  segmentKey,
+  resolveFace,
+  resolveSegment,
+  pickAt,
+  pickConnected,
+  pickInRect,
+  subSelectionPolylines,
+} from "./subselection.js";
+export type { FaceKey, SegmentKey, SubKey, SubSelection } from "./subselection.js";
+export { splitOnMove } from "./split.js";
+export type { SplitResult } from "./split.js";

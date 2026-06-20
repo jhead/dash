@@ -254,6 +254,22 @@ describe("SelectionGetResultSchema", () => {
     });
     expect(result.ids).toContain("obj-1");
   });
+
+  it("parses a P3 partial sub-selection (face + segment keys)", () => {
+    const result = SelectionGetResultSchema.parse({
+      ids: [],
+      objects: [],
+      subSelection: {
+        shapeId: "merged-1",
+        keys: [
+          { kind: "face", interior: "1400,700" },
+          { kind: "segment", a: "0,600", b: "2000,600", mid: "1000,600" },
+        ],
+      },
+    });
+    expect(result.subSelection?.shapeId).toBe("merged-1");
+    expect(result.subSelection?.keys).toHaveLength(2);
+  });
 });
 
 describe("SelectionSetParamsSchema", () => {

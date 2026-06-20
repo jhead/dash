@@ -6,6 +6,10 @@ import {
   removeDisplayObject,
   updateDisplayObject,
   planarMergeCommit,
+  livePlanarShape,
+  splitOnMove,
+  pickAt as planarPickAt,
+  pickConnected as planarPickConnected,
   getFeatureFlag,
   setFeatureFlag,
   setFrameScript,
@@ -51,6 +55,7 @@ import type {
   ShapeHint,
   ShapeWarp,
   SolidStroke,
+  SubSelection,
   SoundEnvelopePoint,
   SoundItem,
   SoundLinkage,
@@ -817,6 +822,7 @@ export function Shell(): React.ReactElement {
     instances, setInstances,
     selectedInstanceId, setSelectedInstanceId,
     selectedShapeIds, setSelectedShapeIds,
+    subSelection, setSubSelection,
     zoom, setZoom,
     panX, setPanX,
     panY, setPanY,
@@ -1091,6 +1097,18 @@ export function Shell(): React.ReactElement {
 
   // Backward-compat single-selection: the selected id when exactly one object is selected, else null
   const selectedShapeId = selectedShapeIds.length === 1 ? selectedShapeIds[0] : null;
+
+  // P3 — partial (face/segment) selection is active only with the planar merge
+  // flag ON and the selection tool. Read the flag each render (it changes via the
+  // agent/test bridge `setFeatureFlag`; tool changes re-render and re-read it).
+  const partialSelectEnabled =
+    getFeatureFlag("planarMergeOnCommit") && toolState.activeTool === "selection";
+
+  // Clear any partial (face/segment) selection when partial mode turns off (flag
+  // off or a non-selection tool) so a stale halo never lingers in whole-object mode.
+  useEffect(() => {
+    if (!partialSelectEnabled && subSelection) setSubSelection(null);
+  }, [partialSelectEnabled, subSelection, setSubSelection]);
 
   /** Replace the entire selection set. */
   const setSelectedShapeId = useCallback((id: string | null) => {
@@ -1522,6 +1540,51 @@ export function Shell(): React.ReactElement {
       );
     },
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimelineLive]
+  );
+
+  // P3 — split-on-move. Moving a PARTIAL selection (faces/segments of a merged
+  // shape) extracts the selected pieces into a new shape (offset by the drag) and
+  // leaves the complement (with a hole / cut where they were) as the original
+  // merged shape. One pushDoc = one undo step. Uses the LIVE store present to
+  // avoid the stale-closure bug (mirrors commitMergeShapeDirect).
+  const handleSubSplitMove = useCallback(
+    (sel: SubSelection, dx: number, dy: number) => {
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      pushDoc(
+        withTimelineLive((t) => {
+          const layer = t.layers.find((l) => l.id === layerId);
+          const kf = layer ? getGoverningKeyframe(layer, currentFrame) : undefined;
+          if (!kf) return t;
+          const target = (kf.displayObjects as DisplayObject[]).find(
+            (o): o is ShapeDisplayObject => o.type === "shape" && o.id === sel.shapeId
+          );
+          if (!target) return t;
+          const ps = livePlanarShape(target.shape);
+          const extractedId = `${target.id}-ext-${Date.now().toString(36)}`;
+          const { extracted, remainder } = splitOnMove(
+            ps,
+            sel.keys,
+            dx,
+            dy,
+            extractedId,
+            target.shape.id
+          );
+          if (!extracted && !remainder) return t;
+          const others = (kf.displayObjects as DisplayObject[]).filter((o) => o.id !== target.id);
+          const next: DisplayObject[] = [...others];
+          if (remainder) {
+            next.push({ type: "shape", id: target.id, shape: remainder, x: target.x, y: target.y });
+          }
+          if (extracted) {
+            next.push({ type: "shape", id: extractedId, shape: extracted, x: target.x, y: target.y });
+          }
+          return setKeyframeDisplayObjects(t, layerId, currentFrame, next);
+        })
+      );
+      setSubSelection(null);
+    },
+    [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimelineLive, setSubSelection]
   );
 
   const handleShapeUpdate = useCallback(
@@ -3006,6 +3069,41 @@ export function Shell(): React.ReactElement {
       // handleShapeCreated applies. Honors the planarMergeOnCommit flag.
       commitMergeShape: (shape: unknown, x: number, y: number) =>
         commitMergeShapeDirect(shape as Shape, x, y),
+      // P3 — pick a fill region / line segment of a merged shape at a stage point
+      // (returns the resolved SubSelection or null). Used by the merge-drawing
+      // oracle to author face/segment selection without simulating mouse events.
+      pickSubSelectionAt: (x: number, y: number, mode?: "single" | "connected") => {
+        const layer = timeline.layers[safeActiveLayerIndex];
+        if (!layer) return null;
+        const kf = getGoverningKeyframe(layer, currentFrame);
+        if (!kf) return null;
+        const shapes = (kf.displayObjects as DisplayObject[]).filter(
+          (o): o is ShapeDisplayObject => o.type === "shape"
+        );
+        for (let i = shapes.length - 1; i >= 0; i--) {
+          const target = shapes[i];
+          const ps = livePlanarShape(target.shape);
+          const pt = { x: x - target.x, y: y - target.y };
+          const keys =
+            mode === "connected"
+              ? planarPickConnected(ps, pt)
+              : (() => {
+                  const k = planarPickAt(ps, pt, 4);
+                  return k ? [k] : [];
+                })();
+          if (keys.length > 0) {
+            const sel: SubSelection = { shapeId: target.id, keys };
+            setSubSelection(sel);
+            return sel;
+          }
+        }
+        setSubSelection(null);
+        return null;
+      },
+      // P3 — split-on-move: extract the partial selection by (dx,dy), leaving the
+      // complement (a hole/cut) behind. Mirrors the mouse-up split commit.
+      subSplitMove: (sel: unknown, dx: number, dy: number) =>
+        handleSubSplitMove(sel as SubSelection, dx, dy),
       setActiveLayer: (i: number) => setActiveLayerIndex(i),
       triggerUndo: () => undo(),
       triggerRedo: () => redo(),
@@ -3142,6 +3240,10 @@ export function Shell(): React.ReactElement {
     docProperties,
     timeline,
     commitMergeShapeDirect,
+    handleSubSplitMove,
+    setSubSelection,
+    safeActiveLayerIndex,
+    currentFrame,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -3190,6 +3292,7 @@ export function Shell(): React.ReactElement {
       // immediately after pushDoc() see the update before React re-renders.
       getDoc: () => documentStore.getState().history.present,
       getSelectedIds: () => selectedShapeIds,
+      getSubSelection: () => subSelection,
       getCurrentFrame: () => currentFrame,
       getActiveLayerIndex: () => activeLayerIndex,
       getActiveTool: () => toolState.activeTool,
@@ -3213,6 +3316,8 @@ export function Shell(): React.ReactElement {
       setSelectedIds: (ids: string[]) => {
         setSelectedShapeIds(ids);
       },
+      setSubSelection: (s: SubSelection | null) => setSubSelection(s),
+      subSplitMove: (s: SubSelection, dx: number, dy: number) => handleSubSplitMove(s, dx, dy),
       setZoom: handleZoomChangeDirect,
       setPan: handlePanChange,
       selectTool: (toolId: string) => handleToolChange(toolId as import("./tools/types.js").ToolId),
@@ -3287,6 +3392,9 @@ export function Shell(): React.ReactElement {
   }, [
     doc,
     selectedShapeIds,
+    subSelection,
+    setSubSelection,
+    handleSubSplitMove,
     currentFrame,
     activeLayerIndex,
     toolState.activeTool,
@@ -3691,6 +3799,10 @@ export function Shell(): React.ReactElement {
                 selectedShapeIds={selectedShapeIds}
                 onShapeSelect={handleShapeSelectFromStage}
                 onShapeSelectMultiple={handleShapeSelectMultiple}
+                partialSelectEnabled={partialSelectEnabled}
+                subSelection={subSelection}
+                onSubSelect={setSubSelection}
+                onSubSplitMove={handleSubSplitMove}
                 onShapeMove={handleShapeMove}
                 onShapeMoveEnd={handleShapeMoveEnd}
                 onShapeDelete={handleShapeDelete}

@@ -97,8 +97,30 @@ export {
   isMergeableShape,
   foldShapeIntoLayer,
   planarMergeCommit,
+  // P3 — live planar map + partial face/segment selection + split-on-move.
+  livePlanarShape,
+  faceKey,
+  segmentKey,
+  resolveFace,
+  resolveSegment,
+  pickAt,
+  pickConnected,
+  pickInRect,
+  subSelectionPolylines,
+  splitOnMove,
 } from "./planar/index.js";
-export type { InputEdge, Intersection, FoldResult, MergeableLike } from "./planar/index.js";
+export type {
+  InputEdge,
+  Intersection,
+  FoldResult,
+  MergeableLike,
+  PlanarEmitFilter,
+  FaceKey,
+  SegmentKey,
+  SubKey,
+  SubSelection,
+  SplitResult,
+} from "./planar/index.js";
 
 // Engine feature flags (gates in-progress re-architectures; see featureFlags.ts).
 export type { EngineFeatureFlags } from "./featureFlags.js";

@@ -155,10 +155,25 @@ bumped on every `pushDoc`); reads include the `rev` they observed.
 | `stage_remove` | `{ ids }` | `{ ok, rev }` |
 | `stage_arrange` | `{ ids, op: "front"\|"back"\|"forward"\|"backward" }` | `{ ok, rev }` |
 | `stage_group` / `stage_ungroup` | `{ ids }` | `{ ok, rev }` |
-| `selection_get` | — | selected ids + their objects |
+| `selection_get` | — | selected ids + their objects (+ `subSelection` in planar merge mode) |
 | `selection_set` | `{ ids }` (empty = clear) / `{ all: true }` | `{ ok }` |
+| `selection_pick_at` | `{ x, y, mode?: "single"\|"connected", move?: { dx, dy } }` | `{ ok, picked }` |
 | `view_set` | `{ zoom?, panX?, panY?, currentFrame?, activeLayerId? }` | `{ ok }` |
 | `tool_select` | `{ toolId }` | `{ ok }` |
+
+**Partial (face/segment) selection — planar merge mode (task 1321).** When the
+`planarMergeOnCommit` engine flag is ON, a merged shape on a layer is a planar
+"shape soup" whose individual **fill regions (faces)** and **line segments** are
+selectable, exactly like authentic Flash 8. `selection_pick_at({ x, y })` picks the
+fill region or line segment of the merged shape at a stage point (`mode:"connected"`
+selects the connected fills+strokes set, the double-click behavior). The result is a
+`SubSelection` (`{ shapeId, keys }`, where each key is a stable, serializable face
+or segment reference) exposed on `selection_get`'s optional `subSelection` field.
+Pass `move:{ dx, dy }` to `selection_pick_at` to immediately **split-on-move**: the
+picked piece is extracted into a new shape offset by the delta, leaving the
+complement (a hole/cut) behind. With the flag OFF (the default), selection is
+whole-object (`selection_get`/`selection_set` over display-object ids) and these
+sub-selection fields are absent.
 
 **Instance names (AS2 `_root.<name>`).** A placed symbol/text instance can carry an
 *instance name* — the identifier ActionScript uses to reference it at runtime as

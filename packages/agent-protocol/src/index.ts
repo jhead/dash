@@ -321,11 +321,48 @@ export const SelectionSetParamsSchema = z.object({
 });
 export type SelectionSetParams = z.infer<typeof SelectionSetParamsSchema>;
 
+/**
+ * P3 — a partial (face/segment) sub-selection on a merged planar shape. Keys are
+ * stable, serializable references (a face's interior point, or an undirected
+ * edge's endpoints + midpoint). Mirrors @flash/core's SubSelection.
+ */
+export const SubSelectionSchema = z.object({
+  shapeId: z.string(),
+  keys: z.array(
+    z.union([
+      z.object({ kind: z.literal("face"), interior: z.string() }),
+      z.object({
+        kind: z.literal("segment"),
+        a: z.string(),
+        b: z.string(),
+        mid: z.string(),
+      }),
+    ])
+  ),
+});
+export type SubSelection = z.infer<typeof SubSelectionSchema>;
+
 export const SelectionGetResultSchema = z.object({
   ids: z.array(z.string()),
   objects: z.array(z.unknown()),
+  /** P3 — present only in planar merge mode when a partial selection is active. */
+  subSelection: SubSelectionSchema.nullish(),
 });
 export type SelectionGetResult = z.infer<typeof SelectionGetResultSchema>;
+
+/**
+ * P3 — pick a fill region or line segment of a merged shape at a stage point
+ * (planar merge mode). `mode:"connected"` selects the connected fills+strokes set
+ * (the double-click behavior). `move` (optional) immediately splits the picked
+ * selection off by the given delta (split-on-move).
+ */
+export const SelectionPickAtParamsSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  mode: z.enum(["single", "connected"]).optional(),
+  move: z.object({ dx: z.number(), dy: z.number() }).optional(),
+});
+export type SelectionPickAtParams = z.infer<typeof SelectionPickAtParamsSchema>;
 
 export const ViewSetParamsSchema = z.object({
   zoom: z.number().positive().optional(),
@@ -958,6 +995,7 @@ export const ALL_COMMANDS = [
   "stage_ungroup",
   "selection_get",
   "selection_set",
+  "selection_pick_at",
   "view_set",
   "tool_select",
   // timeline
@@ -1066,6 +1104,7 @@ export const COMMAND_SCHEMAS = {
   stage_ungroup: StageUngroupParamsSchema,
   selection_get: SelectionGetParamsSchema,
   selection_set: SelectionSetParamsSchema,
+  selection_pick_at: SelectionPickAtParamsSchema,
   view_set: ViewSetParamsSchema,
   tool_select: ToolSelectParamsSchema,
   // timeline
@@ -1169,6 +1208,8 @@ export const COMMAND_DESCRIPTIONS = {
   stage_ungroup: "Ungroup a group, returning its children to the frame. Returns ok and rev.",
   selection_get: "Read the currently selected object ids and their data.",
   selection_set: "Set the stage selection by id list, or pass all:true to select everything. Returns ok.",
+  selection_pick_at:
+    "Planar merge mode only: pick a fill region or line segment of a merged shape at a stage (x,y). mode:'connected' selects the connected fills+strokes set. Pass move:{dx,dy} to immediately split the picked piece off (split-on-move). Returns ok.",
   view_set: "Update the viewport: zoom, pan, current frame, or active layer. Returns ok.",
   tool_select:
     "Select the active drawing/editing tool by id (e.g. selection, pen, rectangle, oval, text). Returns ok.",

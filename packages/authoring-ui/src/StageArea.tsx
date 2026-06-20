@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
-import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges } from "@flash/core";
-import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape } from "@flash/core";
+import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
+import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
@@ -824,6 +824,20 @@ export interface StageAreaProps {
   onShapeSelect?: (id: string | null, shiftKey?: boolean) => void;
   /** Called when a marquee or shift+click produces a multi-selection result. */
   onShapeSelectMultiple?: (ids: string[], replace: boolean) => void;
+  // --- P3 partial (face/segment) selection on the planar merge map ---
+  /**
+   * When true (planarMergeOnCommit flag ON + selection tool), clicking a merged
+   * shape selects ONE fill region or line segment instead of the whole object,
+   * and dragging splits it off (split-on-move). Off ⇒ whole-object behavior
+   * (byte-identical to before).
+   */
+  partialSelectEnabled?: boolean;
+  /** The current partial selection (a set of stable face/segment keys), or null. */
+  subSelection?: SubSelection | null;
+  /** Replace the partial selection (null clears it). */
+  onSubSelect?: (s: SubSelection | null) => void;
+  /** Commit a split-on-move of the partial selection by (dx, dy) in stage px. */
+  onSubSplitMove?: (s: SubSelection, dx: number, dy: number) => void;
   onShapeMove?: (id: string, dx: number, dy: number) => void;
   /** Called once when a shape drag gesture finishes (mouse-up). Use to commit to undo history. */
   onShapeMoveEnd?: () => void;
@@ -1525,6 +1539,10 @@ export function StageArea({
   selectedShapeIds = [],
   onShapeSelect,
   onShapeSelectMultiple,
+  partialSelectEnabled = false,
+  subSelection = null,
+  onSubSelect,
+  onSubSplitMove,
   onShapeMove,
   onShapeMoveEnd,
   onShapeDelete,
@@ -1633,6 +1651,14 @@ export function StageArea({
     startMouseY: number;
     startX: number;
     startY: number;
+  } | null>(null);
+
+  // P3 — partial (face/segment) split-on-move drag state. Armed when a partial
+  // selection is dragged; the split is committed on mouse-up (no per-frame rebuild).
+  const subSplitDragRef = useRef<{
+    selection: SubSelection;
+    startMouseX: number;
+    startMouseY: number;
   } | null>(null);
 
   // Transform drag state (resize / rotate handles)
@@ -2537,6 +2563,34 @@ export function StageArea({
         });
         if (hit) {
           e.preventDefault();
+          // P3 — partial (face/segment) selection on the planar merge map. When
+          // the flag is on, clicking a merged shape selects ONE fill region or
+          // line segment; a drag splits it off (split-on-move). Dragging an
+          // already-partial-selected piece keeps the selection and starts the
+          // split drag. Whole-object selection (the block below) is used when the
+          // flag is off — byte-identical to before.
+          if (partialSelectEnabled && onSubSelect && !e.shiftKey) {
+            const ps = livePlanarShape(hit.shape);
+            const pt = { x: stageX - hit.x, y: stageY - hit.y };
+            const dbl = (e as unknown as { detail?: number }).detail === 2;
+            const keys = dbl ? planarPickConnected(ps, pt) : (() => {
+              const k = planarPickAt(ps, pt, 4 / internalZoom);
+              return k ? [k] : [];
+            })();
+            if (keys.length > 0) {
+              const sel: SubSelection = { shapeId: hit.id, keys };
+              onSubSelect(sel);
+              // Arm the split-on-move drag (committed on mouse-up).
+              subSplitDragRef.current = {
+                selection: sel,
+                startMouseX: e.clientX,
+                startMouseY: e.clientY,
+              };
+            } else {
+              onSubSelect(null);
+            }
+            return;
+          }
           const hitAlreadySelected = selectedShapeIds.includes(hit.id);
           // If clicking an already-selected object in multi-select mode (no shift), start drag
           // without changing the selection. Otherwise, update selection normally.
@@ -2623,7 +2677,7 @@ export function StageArea({
         setSelIsMarqueeSelecting(true);
       }
     },
-    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoMagicWand, magicWandThreshold, magicWandSmoothing, bitmapDisplayObjects, bitmapLibraryItems, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick, simpleButtonsEnabled, hoveredButtonId]
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, partialSelectEnabled, onSubSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoMagicWand, magicWandThreshold, magicWandSmoothing, bitmapDisplayObjects, bitmapLibraryItems, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick, simpleButtonsEnabled, hoveredButtonId]
   );
 
   const onMouseMove = useCallback(
@@ -3148,6 +3202,18 @@ export function StageArea({
       const _e = e;
       isPanningRef.current = false;
       panStartRef.current = null;
+      // P3 — commit a partial split-on-move on mouse-up. If the cursor barely
+      // moved it is a plain click (keep the selection, no split).
+      if (subSplitDragRef.current) {
+        const sd = subSplitDragRef.current;
+        subSplitDragRef.current = null;
+        const dxMouse = e.clientX - sd.startMouseX;
+        const dyMouse = e.clientY - sd.startMouseY;
+        if (Math.hypot(dxMouse, dyMouse) > 3 && onSubSplitMove) {
+          onSubSplitMove(sd.selection, dxMouse / internalZoom, dyMouse / internalZoom);
+        }
+        return;
+      }
       const wasShapeDrag = selectionDragRef.current !== null;
       selectionDragRef.current = null;
       const wasWarpDrag = warpDragRef.current !== null;
@@ -3169,6 +3235,31 @@ export function StageArea({
         const rect = normalizeRect(selMarqueeStart, selMarqueeEnd);
         // Only select if the marquee has non-trivial size (more than 2px in each direction)
         if (rect.width > 2 || rect.height > 2) {
+          // P3 — partial marquee: select all faces/segments of a merged shape that
+          // the rubber-band intersects (flag on). One merged shape per layer.
+          if (partialSelectEnabled && onSubSelect) {
+            const overlapped = [...shapeDisplayObjects].filter((obj) =>
+              boundsOverlap(transformedShapeBounds(obj), rect)
+            );
+            if (overlapped.length > 0) {
+              const target = overlapped[overlapped.length - 1];
+              const ps = livePlanarShape(target.shape);
+              const local = {
+                x: rect.x - target.x,
+                y: rect.y - target.y,
+                width: rect.width,
+                height: rect.height,
+              };
+              const keys = planarPickInRect(ps, local);
+              onSubSelect(keys.length > 0 ? { shapeId: target.id, keys } : null);
+            } else {
+              onSubSelect(null);
+            }
+            setSelIsMarqueeSelecting(false);
+            setSelMarqueeStart(null);
+            setSelMarqueeEnd(null);
+            return;
+          }
           // Collect ALL objects whose bounds overlap the marquee rect
           const hits = [...shapeDisplayObjects].filter((obj) =>
             boundsOverlap(transformedShapeBounds(obj), rect)
@@ -3346,7 +3437,7 @@ export function StageArea({
       drawStartRef.current = null;
       setDrawPreview(null);
     },
-    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
+    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, partialSelectEnabled, onSubSelect, onSubSplitMove, internalZoom, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
   );
 
   // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place.
@@ -3835,6 +3926,34 @@ export function StageArea({
       ctx.restore();
     }
 
+    // P3 — partial (face/segment) selection halo. Stroke each selected fill
+    // region boundary (+ holes) and line segment of the merged shape. Drawn in
+    // stage coords (the merged shape is at x=0,y=0), matching the overlay base
+    // transform above.
+    if (subSelection && subSelection.keys.length > 0 && renderCanvasRef.current) {
+      const target = shapeDisplayObjects.find((o) => o.id === subSelection.shapeId);
+      if (target) {
+        const ps = livePlanarShape(target.shape);
+        const polylines = subSelectionPolylines(ps, subSelection.keys);
+        if (polylines.length > 0) {
+          const ctx = renderCanvasRef.current.getContext("2d")!;
+          ctx.save();
+          ctx.translate(target.x, target.y);
+          ctx.strokeStyle = themeHalo.haloBlue;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([]);
+          for (const poly of polylines) {
+            if (poly.length < 2) continue;
+            ctx.beginPath();
+            ctx.moveTo(poly[0].x, poly[0].y);
+            for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
+    }
+
     // Draw Scale9Grid overlay when a single SymbolInstance with scale9Grid is selected
     if (isSingleSelect && effectiveSelectedIds.length === 1 && renderCanvasRef.current && library) {
       const selId = effectiveSelectedIds[0];
@@ -4209,7 +4328,7 @@ export function StageArea({
       ctx.fillRect(r.x, r.y, r.width, r.height);
       ctx.restore();
     }
-  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, pasteboardMargin, canvasWidth, canvasHeight, selectedShapeId, selectedShapeIds, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId, symbolInstanceDisplayObjects, editingTextId, textEditState]);
+  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, pasteboardMargin, canvasWidth, canvasHeight, selectedShapeId, selectedShapeIds, subSelection, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId, symbolInstanceDisplayObjects, editingTextId, textEditState]);
 
   // CSS filter for view modes
   const stageFilter =

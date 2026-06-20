@@ -2,9 +2,9 @@
   "id": "1321-4p45xg-vector-p3-partial-fill-region-line-segment-selec",
   "title": "Vector P3: partial fill-region + line-segment selection + split-on-move (authentic)",
   "description": "Depends on Vector P2. Implement Flash 8 selection granularity on the planar mesh: hit-test against FACES (fill regions) and HALF-EDGE runs (line segments between junctions). Click selects one fill region or one segment; double-click selects connected fills+strokes; rubber-band selects all faces/edges intersecting the marquee. Moving a partial selection SPLITS the geometry (extracts the selected faces/segments, leaving the complement / a hole). Extend the selection API beyond onShapeSelect(id) to face/segment ids (StageArea.tsx selection + hittest.ts); thread through undo/history, serialization of selection, and the MCP/agent selection tools so they still work. VERIFY: build + authoring-ui/core tests green (only ~3 task-1207 fixtures acceptable); Ruffle/stage oracle: click-a-fill-region, click-a-segment, double-click-connected, rubber-band, and partial-move-splits (hole left behind). Update docs/36-vector-merge-model.md + docs/19-agent-interface.md if selection tools change. ACQUIRE lock; commit incl task file; push rebase-retry. Conflict hotspots: StageArea.tsx (large), hittest.ts, selection/undo, agent registry. Sequential after P2 \u2014 widest API ripple.",
-  "status": "open",
+  "status": "done",
   "effort": "extreme",
   "priority": "high",
   "created_at": "2026-06-20T05:17:20Z",
-  "updated_at": "2026-06-20T05:17:20Z"
+  "updated_at": "2026-06-20T07:44:25Z"
 }

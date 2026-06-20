@@ -61,7 +61,8 @@ import type {
   StageDuplicateResult,
   StageSetInstanceNameResult,
 } from "@flash/agent-protocol";
-import type { FlashDocument, LayerType, SymbolType, FlashFilter, Symbol as SymbolItem } from "@flash/core";
+import type { FlashDocument, LayerType, SymbolType, FlashFilter, Symbol as SymbolItem, SubSelection } from "@flash/core";
+import { livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected } from "@flash/core";
 import type { FrameClipboard } from "@flash/core";
 import {
   hexToColor,
@@ -176,6 +177,8 @@ interface AgentCallbacks {
   // Readers
   getDoc: () => FlashDocument;
   getSelectedIds: () => string[];
+  /** P3 — the partial (face/segment) sub-selection, or null (planar merge mode). */
+  getSubSelection?: () => SubSelection | null;
   getCurrentFrame: () => number;
   getActiveLayerIndex: () => number;
   getActiveTool: () => string;
@@ -198,6 +201,10 @@ interface AgentCallbacks {
   setActiveLayerByIndex: (index: number) => void;
   setActiveLayerById: (layerId: string) => void;
   setSelectedIds: (ids: string[]) => void;
+  /** P3 — set / clear the partial (face/segment) sub-selection. */
+  setSubSelection?: (s: SubSelection | null) => void;
+  /** P3 — commit a split-on-move of the partial selection by (dx,dy) stage px. */
+  subSplitMove?: (s: SubSelection, dx: number, dy: number) => void;
   setZoom: (zoom: number) => void;
   setPan: (x: number, y: number) => void;
   selectTool: (toolId: string) => void;
@@ -1274,7 +1281,60 @@ const handlers: Record<string, AnyHandler> = {
         objects = kf.displayObjects.filter((o) => ids.includes(o.id)) as DisplayObject[];
       }
     }
-    return { ids, objects };
+    const subSelection = cb.getSubSelection?.() ?? null;
+    return {
+      ids,
+      objects,
+      ...(subSelection ? { subSelection: subSelection as SelectionGetResult["subSelection"] } : {}),
+    };
+  },
+
+  /**
+   * P3 — pick a fill region / line segment of a merged shape at a stage point
+   * (planar merge mode). Optionally split-on-move. Selects the merged shape under
+   * the point, derives its live planar map, and picks a face/segment (or the
+   * connected set). With `move`, commits the split immediately.
+   */
+  selection_pick_at(params: {
+    x: number;
+    y: number;
+    mode?: "single" | "connected";
+    move?: { dx: number; dy: number };
+  }): { ok: true; picked: boolean } {
+    const cb = requireCallbacks();
+    const frameIndex = cb.getCurrentFrame();
+    const timeline = getActiveTimeline(cb);
+    const layer = timeline.layers[cb.getActiveLayerIndex()];
+    if (!layer) return { ok: true, picked: false };
+    const kf = getGoverningKeyframe(layer, frameIndex);
+    if (!kf) return { ok: true, picked: false };
+    // Topmost merged shape under the point (by AABB), then planar pick in local space.
+    const shapes = kf.displayObjects.filter(
+      (o): o is ShapeDisplayObject => o.type === "shape"
+    );
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      const target = shapes[i];
+      const ps = livePlanarShape(target.shape);
+      const pt = { x: params.x - target.x, y: params.y - target.y };
+      const keys =
+        params.mode === "connected"
+          ? planarPickConnected(ps, pt)
+          : (() => {
+              const k = planarPickAt(ps, pt, 4);
+              return k ? [k] : [];
+            })();
+      if (keys.length > 0) {
+        const sel: SubSelection = { shapeId: target.id, keys };
+        if (params.move) {
+          cb.subSplitMove?.(sel, params.move.dx, params.move.dy);
+        } else {
+          cb.setSubSelection?.(sel);
+        }
+        return { ok: true, picked: true };
+      }
+    }
+    cb.setSubSelection?.(null);
+    return { ok: true, picked: false };
   },
 
   selection_set(params: { ids?: string[]; all?: boolean }): { ok: true } {

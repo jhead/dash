@@ -1,13 +1,23 @@
 # Vector Merge Model — authentic Flash 8 merge-drawing
 
-**Status:** P0 + P1 + P2 landed. P0 = curve-aware planar geometry kernel + oracle
-harness. **P1 (task 1319) = merge-on-commit** (same-color UNION / different-color
-CUT, top-wins, curve-preserving). **P2 (task 1320) = strokes/lines split fills +
-intersecting lines segment each other** (a line drawn across a fill splits it into
-separate selectable faces; two crossing lines split each other into four segments;
-curve-preserving). All behind the `planarMergeOnCommit` feature flag (default OFF
-until the P5 cutover). P3–P5 build on the kernel to wire merge mode into selection,
-the eraser, and SWF/FLA interchange.
+**Status:** P0 + P1 + P2 + P3-selection landed. P0 = curve-aware planar geometry
+kernel + oracle harness. **P1 (task 1319) = merge-on-commit** (same-color UNION /
+different-color CUT, top-wins, curve-preserving). **P2 (task 1320) = strokes/lines
+split fills + intersecting lines segment each other** (a line drawn across a fill
+splits it into separate selectable faces; two crossing lines split each other into
+four segments; curve-preserving). **P3-selection (task 1321) = partial fill-region
++ line-segment selection + split-on-move** (click selects ONE face or segment,
+double-click the connected set, marquee picks all intersecting; moving a partial
+selection EXTRACTS it and leaves a hole/cut behind — all on the LIVE planar map).
+All behind the `planarMergeOnCommit` feature flag (default OFF until the P5
+cutover). The remaining phases wire merge mode into the eraser and SWF/FLA
+interchange.
+
+> **Note on phase numbering.** The §3 phased plan below lists the curve-preserving
+> **eraser** as "P3"; the task backlog filed the **selection** milestone (task 1321)
+> as "Vector P3". Both build directly on the kernel and are independent; this doc
+> uses *P3-selection* (task 1321, this section) and *P3-eraser* (the §3 row) to keep
+> them distinct. The eraser remains planned.
 
 **Supersedes:** [`docs/03-planar-fill-decision.md`](./03-planar-fill-decision.md)
 (the 2026-06-09 decision to DEFER the planar model and ship the AABB
@@ -189,15 +199,20 @@ already existed — so two axis-aligned overlapping rects (whose top/bottom edge
 its fill/line labels into the existing edge instead of duplicating. This is the one
 P0 robustness gap merge needs; the P0 planar.test.ts suite still passes unchanged.
 
-**Gaps left for P2–P5.** (a) The dissolve is done at read-back, not in the live
+**Gaps left for P2–P5.** (a) ~~The dissolve is done at read-back, not in the live
 `PlanarShape` — segment/face *selection* (P3) needs the dissolved single face in
-the map itself. (b) ~~Strokes that cross a fill don't yet split the fill into
+the map itself.~~ **RESOLVED in P3-selection (task 1321)** — selection picks
+against the **live** `PlanarShape` (rebuilt on demand from the merged shape, memoized
+by identity), so the read-back dissolve is no longer in the selection path; see §3.0b.
+(b) ~~Strokes that cross a fill don't yet split the fill into
 selectable sub-faces (line-splits-fill is P2).~~ **DONE in P2 (task 1320)** — see
-§3.0a below. (c) The merge is per-commit; an undo/redo restores the pre-merge
-object list correctly (history snapshots the whole doc), but there is no
+§3.0a below. (c) ~~The merge is per-commit; … there is no
 incremental re-derivation if a folded shape is later moved (it's now one shape —
-P3 selection/segment work). (d) Curve/curve and seg/curve collinear-overlap (two
-identical arcs) is still the P0 behavior; not exercised by P1's rect cases.
+P3 selection/segment work).~~ **Addressed for partial moves in P3-selection** —
+moving a face/segment SPLITS the shape via `splitOnMove` (§3.0b); a whole-object
+move is still a single-shape translate. (d) Curve/curve and seg/curve
+collinear-overlap (two identical arcs) is still the P0 behavior; not exercised by
+P1's rect cases.
 
 ### 3.0a P2 implementation notes (task 1320)
 
@@ -239,11 +254,74 @@ stroke; same-color overlap with no divider still unions to 1 loop; an X of two
 lines yields 4 segments (each touching the crossing) and obeys Euler; a curved
 dividing stroke splits the fill and keeps quadratic geometry. Areas conserved.
 
-**Remaining for P3+.** Actual *selection* of a single split half / single segment
+**Remaining for P3+.** ~~Actual *selection* of a single split half / single segment
 (single-click face/edge, double-click connected fill+strokes) and moving one half
-independently still need the live planar map in the selection model (gap (a)); the
-read-back faithfully *represents* the split faces and segments so P3 selection can
-pick them.
+independently still need the live planar map in the selection model (gap (a)).~~
+**DONE in P3-selection (task 1321)** — see §3.0b.
+
+### 3.0b P3-selection implementation notes (task 1321)
+
+**Partial fill-region + line-segment selection + split-on-move, on the LIVE planar
+map.** The §3.0 gap (a) was that the dissolve happened at read-back, so the
+selection model had no addressable faces/segments. P3-selection closes it by
+deriving the **live** `PlanarShape` for the merged shape on demand and picking
+against it. Five new pure core modules / surfaces (all in `engine/planar/`,
+unit-tested without React):
+
+* **`live.ts livePlanarShape(shape)`** — rebuilds the arrangement from the merged
+  `Shape` (`buildArrangementFromShapes([shape])`), **memoized by `Shape` object
+  identity** in a `WeakMap`. Every immutable timeline mutation makes a new `Shape`,
+  so identity is a correct cache key and old entries GC automatically (no eviction,
+  no leaks). The merged display object is at `(0,0)`, so its paths are already in
+  kernel space — stage == local == kernel, removing offset bugs.
+* **`subselection.ts` — stable, serializable keys.** Half-edge / face ids are
+  array indices that change on rebuild, so a selection references **geometry**: a
+  `FaceKey` is the `pointKey` of a deterministic interior point (`faceInteriorPoint`);
+  a `SegmentKey` is the two snapped endpoints (sorted, undirected) + the snapped
+  midpoint (disambiguates curves sharing endpoints). `resolveFace`/`resolveSegment`
+  map a key back to a live id (exact interior-point / endpoint+mid match, with a
+  `locateFace` containment fallback for centroid drift). A `SubSelection` is
+  `{ shapeId, keys[] }` — ephemeral UI state (uiStore `subSelection`), not persisted
+  in the doc/history (matching `selectedShapeIds`); an undo restores the doc, the
+  next pick re-derives keys.
+* **`subselection.ts` — pure picking.** `pickAt` (click: stroke-on-ink wins within
+  half-its-width, else the face under the point, else nearest stroke within tol),
+  `pickConnected` (double-click: BFS the same-fill component across dissolvable
+  no-stroke seams + its bounding strokes; a lone stroke flood-selects its connected
+  run), `pickInRect` (marquee: every face whose interior is in the rect + every edge
+  intersecting it). `subSelectionPolylines` resolves a selection to drawable
+  boundary/edge polylines for the halo.
+* **`split.ts splitOnMove(ps, keys, dx, dy, …)`** — the defining behavior. Resolves
+  keys to selected face/edge ids, then re-emits via the **same proven read-back**
+  (`planarShapeToShape`) with a new optional `PlanarEmitFilter`: the EXTRACTED shape
+  keeps only the selected faces/edges (translated by the drag delta); the REMAINDER
+  keeps the complement. A face filtered out reads as "background", so the read-back's
+  component tracer emits the surrounding ring with the removed region as a CW hole
+  loop (opposite winding) — **the hole appears for free, no DCEL surgery**. The
+  refactor is behavior-preserving: `planarShapeToShape` with no filter is
+  byte-identical to P1/P2 (guarded by tests + the unchanged oracle cases 1–4).
+
+**Wiring (flag-gated, whole-object path untouched when OFF).** `uiStore` gains a
+`subSelection` field alongside `selectedShapeIds`. `StageArea.tsx` adds three
+flag-gated insertions only: the selection-tool mousedown picks a face/segment (via
+`livePlanarShape` + `pickAt`/`pickConnected`) and arms a split drag; mouse-up
+commits `onSubSplitMove`; the marquee picks `pickInRect`; the overlay draws the
+selection halo. All guarded by `partialSelectEnabled` (= flag ON + selection tool),
+so flag-OFF and drawing-objects are byte-identical. `Shell.tsx handleSubSplitMove`
+extracts + remainders the shape via `splitOnMove` on the LIVE store present (one
+`pushDoc` = one undo step; mirrors `commitMergeShapeDirect`'s stale-closure-safe
+pattern). The agent registry extends `selection_get` with the optional
+`subSelection` and adds `selection_pick_at({x,y,mode?,move?})` (pick a face/segment,
+optionally split-on-move); see docs/19. The compile/publish path is **untouched** —
+golden-parity / self-determinism are unchanged.
+
+**Acceptance.** `merge-drawing-oracle.spec.ts` case 5 (click resolves a face vs a
+segment) and case 6 (**partial-fill island click + move leaves a hole** — the outer
+fill reads back with a CW hole loop, the island moves off; stage↔Ruffle pixelmatch
+**diff=0/220000**). Plus core unit tests (`planar-subselection.test.ts`): key
+round-trip across a rebuild, `pickAt` face/segment/split-halves, marquee,
+double-click connected, split-on-move (extract a half, island-leaves-hole, segment
+extract, extract-all→null remainder), and the no-filter read-back equivalence.
 
 ### 3.1 Key decisions
 
@@ -293,9 +371,10 @@ is the truth; unit tests are necessary but not sufficient).
 
 `apps/desktop/e2e/merge-drawing-oracle.spec.ts` — cases 1–2 (cut, union) PASS as
 of P1 and cases 3–4 (line-splits-fill, two crossing lines = 4 segments) PASS as of
-P2 (task 1320) — all with `planarMergeOnCommit` ON for the test and stage↔Ruffle
-pixelmatch diff=0/220000; cases 5–6 (eraser, island move) remain `.fixme` for
-P3–P5. Each case is verified with the project's two-oracle stack:
+P2 (task 1320), and the partial-selection + island-move cases PASS as of
+P3-selection (task 1321) — all with `planarMergeOnCommit` ON for the test and
+stage↔Ruffle pixelmatch diff=0/220000; only the **eraser** case (separate P3-eraser
+phase) remains `.fixme`. Each case is verified with the project's two-oracle stack:
 the **stage-canvas** screenshot (`window.__flashTest.screenshotStage()`) for the
 authored result, and the **Ruffle pixel** screenshot of the published SWF
 (`window.__flashTest.publish()` → bundled Ruffle), pixelmatched against each
@@ -304,13 +383,16 @@ other. The six canonical cases:
 1. **red-over-blue cut** — the red overlap carves the blue (different-color cut).
 2. **blue-over-blue union** — two overlapping blues merge into one shape.
 3. **line across fill** — the line splits the fill into two independent regions
-   (P2 task 1320; structural 2-region assert + stage↔Ruffle). Moving only one
-   half independently needs P3 segment selection.
+   (P2 task 1320; structural 2-region assert + stage↔Ruffle).
 4. **two crossing lines = 4 segments** — four independently-selectable arms (P2
    task 1320; structural 4-segment assert + stage↔Ruffle).
-5. **erase across shape splits** — true subtraction splits the fill in two.
-6. **partial fill click + move leaves a hole** — moving a carved island leaves
-   the hole it had cut in the outer fill.
+5. **partial selection** — clicking a fill half resolves a FACE key, clicking the
+   dividing line resolves a SEGMENT key (P3-selection task 1321).
+6. **partial fill click + move leaves a hole** — selecting a carved island and
+   moving it extracts it and leaves the hole it had cut in the outer fill
+   (P3-selection task 1321; structural hole-loop assert + stage↔Ruffle diff=0).
+7. **erase across shape splits** — true subtraction splits the fill in two
+   (separate P3-eraser phase; remains `.fixme`).
 
 ### 4.3 Regression guards (unchanged in P0)
 

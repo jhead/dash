@@ -211,10 +211,18 @@ function rectShape(id: string, w: number, h: number, fill: unknown): unknown {
   };
 }
 
+interface SubSelectionLike {
+  shapeId: string;
+  keys: unknown[];
+}
+
 interface FlashTestMerge {
   loadDocument: (d: unknown) => void;
   setFeatureFlag: (name: string, value: boolean) => void;
   commitMergeShape: (shape: unknown, x: number, y: number) => void;
+  // P3 — partial face/segment selection + split-on-move.
+  pickSubSelectionAt: (x: number, y: number, mode?: "single" | "connected") => SubSelectionLike | null;
+  subSplitMove: (sel: SubSelectionLike, dx: number, dy: number) => void;
   publish: () => Promise<string> | string;
   screenshotStage: () => string;
   getDocument: () => unknown;
@@ -495,13 +503,126 @@ test.describe('Merge-drawing oracle (planar kernel) — canonical cases', () => 
   });
 
   // -------------------------------------------------------------------------
-  // 5-6 remain placeholders for P3-P5 (curve-preserving eraser, island move).
+  // 5 — partial selection: click a fill REGION and a line SEGMENT (P3 task 1321).
+  //   Authors a fill split by a line; clicking inside a half resolves a FACE key,
+  //   clicking on the line resolves a SEGMENT key — the planar selection model.
   // -------------------------------------------------------------------------
-  test.fixme('erase across a shape splits it into two fills', async () => {
-    // P3: route eraser through the planar kernel (curve-preserving cut).
+  test('partial selection: click resolves a fill region (face) and a line segment', async ({ page }) => {
+    await page.evaluate(({ rect, line }) => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      b.commitMergeShape(rect, 200, 140);
+      b.commitMergeShape(line, 0, 0);
+    }, {
+      rect: rectShape('rect-1', 160, 120, BLUE),
+      line: lineShape('line-1', 180, 200, 380, 200),
+    });
+    await page.waitForTimeout(150);
+
+    // Click inside the top half of the rect (rect spans y 140..260, line at y 200).
+    const faceSel = await page.evaluate(() => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      return b.pickSubSelectionAt(280, 165);
+    });
+    expect(faceSel, 'clicking a fill region selects a face').not.toBeNull();
+    expect((faceSel!.keys[0] as { kind: string }).kind).toBe('face');
+
+    // Click on the dividing line (y≈200).
+    const segSel = await page.evaluate(() => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      return b.pickSubSelectionAt(280, 200);
+    });
+    expect(segSel, 'clicking the line selects a segment').not.toBeNull();
+    expect((segSel!.keys[0] as { kind: string }).kind).toBe('segment');
   });
 
-  test.fixme('partial-fill island click + move leaves a hole in the outer fill', async () => {
-    // P3-P5: island carve + move, then assert the hole remains.
+  // -------------------------------------------------------------------------
+  // 6 — partial-fill click + move SPLITS the geometry (P3 task 1321). Author an
+  //   outer blue fill with a RED island carved inside it; select the red island,
+  //   move it away — the extracted island leaves a HOLE in the outer fill where
+  //   it had cut. Asserted structurally (the outer fill reads back with an inner
+  //   hole loop) + visually (stage shows the hole + the moved island; Ruffle
+  //   agrees).
+  // -------------------------------------------------------------------------
+  test('partial-fill island click + move leaves a hole in the outer fill', async ({ page }, testInfo: TestInfo) => {
+    await page.evaluate(({ outer, island }) => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      b.commitMergeShape(outer, 160, 120);
+      b.commitMergeShape(island, 220, 180);
+    }, {
+      outer: rectShape('outer', 200, 200, BLUE),
+      island: rectShape('island', 60, 60, RED),
+    });
+    await page.waitForTimeout(150);
+
+    // The island center is at stage (250, 210). Pick it, then split-move it right.
+    const moved = await page.evaluate(() => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      const sel = b.pickSubSelectionAt(250, 210);
+      if (!sel) return false;
+      b.subSplitMove(sel, 220, 0);
+      return true;
+    });
+    expect(moved, 'the red island was picked and split-moved').toBe(true);
+    await page.waitForTimeout(150);
+
+    // Structural: the outer blue now has a HOLE where the island was (a face with
+    // a non-empty hole loop), and the island moved to a new fill region.
+    const struct = await page.evaluate(() => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge & { getDocument: () => unknown } }).__flashTest;
+      const doc = b.getDocument() as {
+        scenes: { timeline: { layers: { frames: { displayObjects: { type: string; shape?: { paths: { fill?: { color?: { r: number; g: number; b: number } } }[] } }[] }[] }[] } }[];
+      };
+      const li = b.getActiveLayerIndex();
+      const frame = b.getCurrentFrame();
+      const layer = doc.scenes[0].timeline.layers[li];
+      const kf = layer.frames[Math.min(frame, layer.frames.length - 1)] ?? layer.frames[0];
+      let blueLoops = 0, redLoops = 0;
+      for (const obj of kf.displayObjects) {
+        if (obj.type !== 'shape' || !obj.shape) continue;
+        for (const p of obj.shape.paths) {
+          const c = p.fill?.color;
+          if (!c) continue;
+          if (c.b > 150 && c.r < 90) blueLoops++;
+          if (c.r > 150 && c.b < 90) redLoops++;
+        }
+      }
+      return { blueLoops, redLoops, objects: kf.displayObjects.length };
+    });
+    console.log(`[P3] island-move struct: ${JSON.stringify(struct)}`);
+    // Outer blue emits its outer boundary + a hole loop = 2 blue fill paths; the
+    // moved red island is its own fill.
+    expect(struct.blueLoops, 'outer fill keeps a hole loop where the island was').toBe(2);
+    expect(struct.redLoops, 'the island moved off as its own fill').toBe(1);
+
+    const stagePng = await captureStagePng(page, testInfo, 'island-move');
+    // The original island location (stage ~250,210) is now a HOLE in the outer
+    // fill: the renderer's non-zero winding cuts the inner loop, so the region
+    // shows the white background (NOT red, and not blue-filled). The defining
+    // assert: it is no longer the red island.
+    const holeRegion = sampleRegionAvg(stagePng, 235, 195, 265, 225);
+    console.log(`[P3] island-move hole region avg=${JSON.stringify(holeRegion)}`);
+    const holeIsRed = holeRegion.r > 150 && holeRegion.g < 90 && holeRegion.b < 90;
+    expect(holeIsRed, 'the vacated region is no longer the red island (a hole)').toBe(false);
+    // It is the background showing through the hole (high green+blue = not a fill).
+    expect(holeRegion.g, 'the hole shows background, not a blue fill').toBeGreaterThan(150);
+    // The island moved right (~+220): stage (470, 210) is now red.
+    const movedRegion = sampleRegionAvg(stagePng, 455, 195, 485, 225);
+    console.log(`[P3] island-move moved region avg=${JSON.stringify(movedRegion)}`);
+    expect(movedRegion.r, 'the island is now at its moved location').toBeGreaterThan(120);
+    expect(movedRegion.b, 'the moved island is red, not blue').toBeLessThan(120);
+
+    // Ruffle agrees with the authored stage.
+    const rufflePng = await publishAndShootRuffle(page, testInfo, '__ruffle_merge_island__', 'island-move');
+    const { diff, w, h } = diffStageVsRuffle(stagePng, rufflePng);
+    console.log(`[P3] island-move pixelmatch diff=${diff}/${w * h}`);
+    expect(diff / (w * h), 'stage and ruffle agree (island move)').toBeLessThan(0.12);
+  });
+
+  // -------------------------------------------------------------------------
+  // Eraser (curve-preserving true subtraction) is the DOC's separate P3 phase
+  // (docs/36 §3 row P3), not the selection task — remains a placeholder.
+  // -------------------------------------------------------------------------
+  test.fixme('erase across a shape splits it into two fills', async () => {
+    // Eraser routed through the planar kernel (curve-preserving cut). Separate phase.
   });
 });
