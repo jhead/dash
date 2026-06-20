@@ -1,10 +1,10 @@
 {
   "id": "1319-4p1vpl-vector-p1-merge-on-commit-same-color-union-diffe",
   "title": "Vector P1: merge-on-commit (same-color union / different-color cut, top-wins) behind flag",
-  "description": "Depends on Vector P0 (planar kernel). Implement Flash 8 MERGE drawing on commit for merge-mode shapes. Replace the dead/MVP merge-drawing.ts with TRUE planar union (same fill color -> single region) and CUT (different color -> top wins, underlying overlapped area destroyed) using the P0 planar kernel, curve-preserving. Wire into Shell.tsx handleShapeCreated (~1448) for type:'shape' ONLY (drawing-object stays append, unchanged). On commit: fold the new shape into the layer's planar arrangement, then convert back to per-path closed loops for storage/.fla/SWF (per-path stays the interchange format). Put behind a feature flag (default off until P5 cutover). VERIFY: build + tests green (only ~3 task-1207 fixtures acceptable); Ruffle PIXEL oracle (acceptance truth): 'draw red over blue cuts blue beneath', 'draw blue over blue = one merged region (drag selects whole union)'; area-conservation unit tests. Update docs/36-vector-merge-model.md. ACQUIRE lock; commit incl task file; push rebase-retry. Conflict hotspots: Shell.tsx, engine/merge-drawing.ts, engine/index.ts. Sequential after P0.",
-  "status": "open",
+  "description": "DONE (P1). Planar merge-on-commit behind planarMergeOnCommit flag (default OFF). Kernel: engine/planar/merge.ts (planarMergeCommit/foldShapeIntoLayer) + planarShapeToShape read-back in query.ts (same-color UNION via region-boundary trace, different-color CUT top-wins, island holes, curve-preserving). Fixed P0 coincident-edge gap in arrangement.ts addTwinPair (collinear overlapping rect edges). Wired into Shell.tsx handleShapeCreated + commitMergeShapeDirect (live-store read). New model mutation setKeyframeDisplayObjects. ACCEPTANCE: apps/desktop/e2e/merge-drawing-oracle.spec.ts cut+union cases PASS (2 passed/4 skipped), stage<->Ruffle pixelmatch diff=0/220000. UNIT: planar-merge.test.ts 6 tests. SUITES: core 5427 passed (3 pre-existing task-1207 flash8-empty.fla fixtures fail, fixture absent in worktree); authoring-ui 1011 passed; visual-oracle 13 passed (flag off, unchanged). golden-parity unaffected by construction (SWF compiler has zero refs to flag/merge code).",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-20T05:17:20Z",
-  "updated_at": "2026-06-20T05:17:20Z"
+  "updated_at": "2026-06-20T06:26:36Z"
 }

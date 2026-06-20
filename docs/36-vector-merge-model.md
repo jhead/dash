@@ -1,8 +1,11 @@
 # Vector Merge Model — authentic Flash 8 merge-drawing
 
-**Status:** P0 landed (curve-aware planar geometry kernel + oracle harness).
-P1–P5 build on the kernel to wire merge mode into the tools, renderer, selection,
-eraser, and SWF/FLA interchange.
+**Status:** P0 + P1 landed. P0 = curve-aware planar geometry kernel + oracle
+harness. **P1 (task 1319) = merge-on-commit** (same-color UNION / different-color
+CUT, top-wins, curve-preserving) wired into the commit path behind the
+`planarMergeOnCommit` feature flag (default OFF until the P5 cutover). P2–P5 build
+on the kernel to wire merge mode into the renderer, selection, eraser, and
+SWF/FLA interchange.
 
 **Supersedes:** [`docs/03-planar-fill-decision.md`](./03-planar-fill-decision.md)
 (the 2026-06-09 decision to DEFER the planar model and ship the AABB
@@ -134,11 +137,64 @@ faces does this fill now occupy after the cut".
 | Phase | Scope | Status |
 |---|---|---|
 | **P0** | The curve-aware planar geometry kernel (`engine/planar/`): intersection (seg/seg, seg/curve, curve/curve), arrangement construction (insert edge + split existing + new at all crossings), face extraction with hole nesting, point-in-face, curve-preserving split. Additive `PlanarShape`/half-edge types in `engine/types.ts`. Kernel unit tests (Euler invariant, area conservation, intersection counts, curve round-trip). The interaction-oracle harness (`apps/desktop/e2e/merge-drawing-oracle.spec.ts`) as `.fixme` placeholders for the canonical cases. **No user-facing behavior change.** | **DONE (this task, 1318).** |
-| **P1** | **Merge-mode geometry ops on the kernel:** `mergeDraw` / cut / union / line-splits-fill implemented as arrangement operations (replacing the AABB approximation in `engine/merge-drawing.ts`), returning `Shape`s for the renderer. Same-color union + different-color cut become exact. | Planned. |
-| **P2** | **Renderer + selection** read the planar map: render faces by traced loops with winding-correct fills; selection model selects **segments and faces** (single-click edge/face, double-click connected fill+strokes), matching Flash. | Planned. |
+| **P1** | **Merge-mode geometry ops on the kernel:** cut / union implemented as arrangement operations (`engine/planar/merge.ts` + `planarShapeToShape` in `query.ts`), returning per-path `Shape`s for storage/render/SWF. Same-color union + different-color cut are exact, curve-preserving. Wired into `Shell.tsx handleShapeCreated` / `commitMergeShapeDirect` behind the `planarMergeOnCommit` flag (default OFF). Acceptance: `merge-drawing-oracle.spec.ts` cut + union cases (stage↔Ruffle pixelmatch diff=0). | **DONE (task 1319).** |
+| **P2** | **Renderer + selection** read the planar map: render faces by traced loops with winding-correct fills; selection model selects **segments and faces** (single-click edge/face, double-click connected fill+strokes), matching Flash. Includes full single-face dissolve of interior same-color seams (P1 already dissolves at read-back via region-boundary tracing, but selection needs the live planar map). Also line-splits-fill (line edge subdivides a fill into independently-selectable faces). | Planned. |
 | **P3** | **Curve-preserving eraser & true subtraction** routed through the kernel: erase-across-shape splits curve-preservingly; removing an overlapping island leaves a hole. Replaces the polyline-flatten path in `engine/eraser.ts` for fills. | Planned. |
 | **P4** | **Interchange:** enable SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` currently hard-codes `stateFillStyle1=0`); FLA import/export of merge-map geometry; shape-morph (`tween/interpolate.ts`) matched on the planar topology. | Planned. |
 | **P5** | **Full selection authenticity + polish:** marquee/lasso over the planar pieces, edit-curve handles on faces, snapping against the arrangement, and turning the P0 oracle placeholders into passing Ruffle+stage specs. | Planned. |
+
+### 3.0 P1 implementation notes (task 1319)
+
+**Merge-on-commit flow.** When `planarMergeOnCommit` is ON, committing a
+`type:"shape"` display object (`Shell.tsx handleShapeCreated`; the
+`__flashTest.commitMergeShape` bridge uses the same fold via
+`commitMergeShapeDirect`) folds the new shape into the active layer's existing
+merge-mode shapes:
+
+1. `engine/planar/merge.ts planarMergeCommit` partitions the layer's display
+   objects into **mergeable** (`type:"shape"` with only solid fills/strokes) and
+   **pass-through** (drawing-objects, gradient/bitmap fills — untouched).
+2. `foldShapeIntoLayer` bakes each contributor's `(x,y)` offset into stage-space
+   geometry, draw-order oldest→newest with the **incoming shape last** (topmost),
+   and calls the P0 `buildArrangementFromShapes` → one `PlanarShape`.
+3. `planarShapeToShape` (in `query.ts`) reads the planar map back to a single
+   per-path `Shape` placed at `(0,0)` — the interchange/Object-Drawing/SWF form.
+4. The keyframe's display-object list is replaced atomically via the new
+   `setKeyframeDisplayObjects` model mutation (pass-through objects first, the
+   merged artwork on top).
+
+Reads use the **live store present** (`withTimelineLive`), so back-to-back commits
+accumulate (the stale React-closure timeline would fold the 2nd shape against an
+empty layer — CLAUDE.md "MCP agent stale-closure bug").
+
+**Planar ↔ per-path read-back (`planarShapeToShape`).** Same-color UNION is
+realized at read-back by tracing the **boundary** of each same-fill region — a
+half-edge whose left face has fill F and whose twin's face does NOT — chaining
+those boundary half-edges into loops while hopping across interior same-fill seams.
+Two overlapping same-color rects therefore emit ONE closed loop (the union
+silhouette), not per-face loops. Different-color CUT and ISLANDS fall out for free:
+the topmost fill wins each face (P0's interior-point sampling), and a face's holes
+are emitted as additional loops sharing the **same `Fill` object reference** so the
+renderer's non-zero-winding batching (engine/renderer.ts) cuts the hole. Curves are
+preserved (quadratic controls survive the trace).
+
+**Kernel gap fixed for P1 (coincident edges).** P0's `Arrangement.addTwinPair`
+created a NEW half-edge pair even when a geometrically coincident undirected edge
+already existed — so two axis-aligned overlapping rects (whose top/bottom edges are
+**collinear and overlapping**) produced duplicate edges that broke face tracing
+(the union measured 10000 instead of 15000). P1 added
+`findCoincidentHalfEdge` + a merge in `addTwinPair`: a coincident a→b edge folds
+its fill/line labels into the existing edge instead of duplicating. This is the one
+P0 robustness gap merge needs; the P0 planar.test.ts suite still passes unchanged.
+
+**Gaps left for P2–P5.** (a) The dissolve is done at read-back, not in the live
+`PlanarShape` — P2 selection needs the dissolved single face in the map itself.
+(b) Strokes that cross a fill don't yet split the fill into selectable sub-faces
+(line-splits-fill is P2). (c) The merge is per-commit; an undo/redo restores the
+pre-merge object list correctly (history snapshots the whole doc), but there is no
+incremental re-derivation if a folded shape is later moved (it's now one shape —
+P2 selection/segment work). (d) Curve/curve and seg/curve collinear-overlap (two
+identical arcs) is still the P0 behavior; not exercised by P1's rect cases.
 
 ### 3.1 Key decisions
 
@@ -186,8 +242,10 @@ is the truth; unit tests are necessary but not sufficient).
 
 ### 4.2 Interaction oracles (the canonical cases)
 
-`apps/desktop/e2e/merge-drawing-oracle.spec.ts` — `.fixme` placeholders in P0,
-filled in by P1–P5. Each case is verified with the project's two-oracle stack:
+`apps/desktop/e2e/merge-drawing-oracle.spec.ts` — cases 1–2 (cut, union) are
+PASSING as of P1 (with `planarMergeOnCommit` ON for the test; stage↔Ruffle
+pixelmatch diff=0/220000); cases 3–6 remain `.fixme` for P2–P5. Each case is
+verified with the project's two-oracle stack:
 the **stage-canvas** screenshot (`window.__flashTest.screenshotStage()`) for the
 authored result, and the **Ruffle pixel** screenshot of the published SWF
 (`window.__flashTest.publish()` → bundled Ruffle), pixelmatched against each

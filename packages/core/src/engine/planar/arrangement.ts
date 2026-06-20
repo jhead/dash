@@ -103,6 +103,31 @@ export class Arrangement {
    * endpoints `aId`→`bId` with geometry `geom` (oriented a→b).  Returns the
    * forward half-edge id.  Does NOT register intersections.
    */
+  /**
+   * Find an existing undirected edge that is geometrically COINCIDENT with the
+   * directed edge `aId→bId` (`geom`): same two endpoints (in either order) and
+   * matching curve control. Returns the forward half-edge whose direction is
+   * `aId→bId` (i.e. the half-edge that travels the same way as `geom`), or null.
+   *
+   * This is what makes collinear/coincident overlapping segments — e.g. the
+   * shared top/bottom edges of two axis-aligned overlapping rectangles — merge
+   * into ONE edge instead of producing a duplicate that breaks face tracing.
+   */
+  private findCoincidentHalfEdge(aId: number, bId: number, geom: EdgeGeometry): MutHalfEdge | null {
+    const ctrlKey = (g: EdgeGeometry): string => (g.control === null ? "L" : pointKey(g.control));
+    const wantCtrl = ctrlKey(geom);
+    for (const heId of this.vertices[aId].outgoing) {
+      const he = this.edges[heId];
+      if (he.origin !== aId) continue;
+      const twin = this.edges[he.twin];
+      if (twin.origin !== bId) continue;
+      // Endpoints match in the a→b direction; verify the curve control matches
+      // (a straight edge and a curve between the same endpoints are distinct).
+      if (ctrlKey(he.geometry) === wantCtrl) return he;
+    }
+    return null;
+  }
+
   private addTwinPair(
     aId: number,
     bId: number,
@@ -111,6 +136,27 @@ export class Arrangement {
     fillRight: number | null,
     lineStyle: number | null
   ): number {
+    // Coincident-edge merge: if an undirected edge already runs a→b with the
+    // same geometry, fold the new labels into it rather than adding a duplicate.
+    // Fill labels combine "last non-null wins" (the later/topmost contributor's
+    // fill takes the side it covers); line styles prefer any non-null. The
+    // final per-face fill is re-resolved by interior sampling in build.ts, so
+    // this label-merge only needs to keep the topology single-edged.
+    const existing = this.findCoincidentHalfEdge(aId, bId, geom);
+    if (existing) {
+      const twin = this.edges[existing.twin];
+      if (fillLeft !== null) existing.fillLeft = fillLeft;
+      if (fillRight !== null) existing.fillRight = fillRight;
+      // Twin sees swapped sides.
+      if (fillRight !== null) twin.fillLeft = fillRight;
+      if (fillLeft !== null) twin.fillRight = fillLeft;
+      if (lineStyle !== null) {
+        existing.lineStyle = lineStyle;
+        twin.lineStyle = lineStyle;
+      }
+      return existing.id;
+    }
+
     const fwdId = this.edges.length;
     const revId = fwdId + 1;
     const fwd: MutHalfEdge = {

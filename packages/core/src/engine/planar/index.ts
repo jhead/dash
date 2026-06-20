@@ -52,6 +52,9 @@ export {
   eulerCharacteristic,
   shapePathToEdgeGeometries,
   shapeToEdgeGeometries,
+  traceCycleGeometries,
+  edgeGeometriesToShapePath,
+  planarShapeToShape,
 } from "./query.js";
 
 export {
@@ -59,3 +62,10 @@ export {
   buildArrangement,
   pathToInputEdges,
 } from "./build.js";
+
+export {
+  isMergeableShape,
+  foldShapeIntoLayer,
+  planarMergeCommit,
+} from "./merge.js";
+export type { FoldResult, MergeableLike } from "./merge.js";

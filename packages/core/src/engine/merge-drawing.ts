@@ -1,6 +1,14 @@
 /**
  * Merge-drawing model for Flash 8 vector shapes.
  *
+ * SUPERSEDED (task 1319, P1): the TRUE planar merge-on-commit lives in
+ * `engine/planar/merge.ts` (`planarMergeCommit` / `foldShapeIntoLayer`) + the
+ * `planarShapeToShape` read-back in `engine/planar/query.ts`, wired into
+ * `Shell.tsx` behind the `planarMergeOnCommit` feature flag. The AABB
+ * approximation below is no longer on the commit path. It is retained only
+ * because its unit tests still exercise the color/fill helpers; do NOT add new
+ * callers — use the planar kernel. See docs/36-vector-merge-model.md.
+ *
  * Flash's signature behavior (classic / merge-drawing mode):
  *   - Overlapping fills of the **same color** on the same layer merge into one
  *     contiguous shape.

@@ -2,8 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   createDocument,
   addDisplayObject,
+  setKeyframeDisplayObjects,
   removeDisplayObject,
   updateDisplayObject,
+  planarMergeCommit,
+  getFeatureFlag,
+  setFeatureFlag,
   setFrameScript,
   setFrameBehaviors,
   setSoundOnFrame,
@@ -1446,9 +1450,78 @@ export function Shell(): React.ReactElement {
             x,
             y,
           };
+
+      // Flash 8 planar merge-on-commit (docs/36-vector-merge-model.md, P1).
+      // For merge-mode shapes (type:"shape") ONLY — drawing-objects always
+      // append, unchanged. Behind the `planarMergeOnCommit` feature flag (default
+      // OFF until the P5 cutover), folding the new shape into the active layer's
+      // planar arrangement realizes same-color UNION + different-color CUT
+      // (curve-preserving), then converts the result back to per-path closed
+      // loops stored as a single merged shape display object.
+      if (obj.type === "shape" && getFeatureFlag("planarMergeOnCommit")) {
+        const shapeObj = obj;
+        pushDoc(
+          withTimelineLive((t) => {
+            const layer = t.layers.find((l) => l.id === layerId);
+            const kf = layer ? getGoverningKeyframe(layer, currentFrame) : undefined;
+            const existing = (kf?.displayObjects ?? []) as ShapeDisplayObject[];
+            // Only existing merge-mode shapes participate; planarMergeCommit
+            // partitions out non-shape / non-mergeable objects and passes them
+            // through untouched.
+            const mergedList = planarMergeCommit<ShapeDisplayObject>(
+              existing,
+              shapeObj,
+              (s) => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 })
+            );
+            return mergedList
+              ? setKeyframeDisplayObjects(t, layerId, currentFrame, mergedList as DisplayObject[])
+              : addDisplayObject(t, layerId, currentFrame, shapeObj);
+          })
+        );
+        return;
+      }
+
       pushDoc(withTimeline((t) => addDisplayObject(t, layerId, currentFrame, obj)));
     },
-    [timeline, currentFrame, activeLayerIndex, toolState, pushDoc, withTimeline]
+    [timeline, currentFrame, activeLayerIndex, toolState, pushDoc, withTimeline, withTimelineLive]
+  );
+
+  // Commit a merge-mode shape AS-IS (preserving its own fills/strokes) through
+  // the planar merge-on-commit path. Shares the same fold logic as
+  // handleShapeCreated but skips the tool-driven re-coloring — used by the
+  // merge-drawing oracle (docs/36-vector-merge-model.md, P1) and any caller that
+  // already has fully-styled geometry. When the flag is OFF it appends, matching
+  // default behavior.
+  const commitMergeShapeDirect = useCallback(
+    (shape: Shape, x: number, y: number) => {
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      const obj: ShapeDisplayObject = { type: "shape", id: shape.id, shape, x, y };
+      const mergeOn = getFeatureFlag("planarMergeOnCommit");
+      // Build the next doc from the LIVE store present so back-to-back commits
+      // (e.g. the oracle authoring blue then red) accumulate correctly — reading
+      // the stale React-closure timeline would fold the second shape against an
+      // empty layer (CLAUDE.md "MCP agent stale-closure bug").
+      pushDoc(
+        withTimelineLive((t) => {
+          if (mergeOn) {
+            const layer = t.layers.find((l) => l.id === layerId);
+            const kf = layer ? getGoverningKeyframe(layer, currentFrame) : undefined;
+            const existing = (kf?.displayObjects ?? []) as ShapeDisplayObject[];
+            const mergedList = planarMergeCommit<ShapeDisplayObject>(
+              existing,
+              obj,
+              (s) => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 })
+            );
+            if (mergedList) {
+              return setKeyframeDisplayObjects(t, layerId, currentFrame, mergedList as DisplayObject[]);
+            }
+          }
+          return addDisplayObject(t, layerId, currentFrame, obj);
+        })
+      );
+    },
+    [timeline, currentFrame, activeLayerIndex, pushDoc, withTimelineLive]
   );
 
   const handleShapeUpdate = useCallback(
@@ -2921,6 +2994,18 @@ export function Shell(): React.ReactElement {
 
       selectTool: (tool: string) => handleToolChange(tool as ToolId),
       setCurrentFrame: (frame: number) => setCurrentFrame(frame),
+
+      // Engine feature flags (docs/36-vector-merge-model.md). Lets oracles flip
+      // the planar merge-on-commit flag on for a test without changing defaults.
+      setFeatureFlag: (name: string, value: boolean) =>
+        setFeatureFlag(name as "planarMergeOnCommit", value),
+      getFeatureFlag: (name: string) => getFeatureFlag(name as "planarMergeOnCommit"),
+      // Commit a merge-mode shape AS-IS (with its own fills/strokes) through the
+      // planar merge-on-commit path. Used by the merge-drawing oracle to author
+      // the canonical union / cut cases without the tool re-coloring that
+      // handleShapeCreated applies. Honors the planarMergeOnCommit flag.
+      commitMergeShape: (shape: unknown, x: number, y: number) =>
+        commitMergeShapeDirect(shape as Shape, x, y),
       setActiveLayer: (i: number) => setActiveLayerIndex(i),
       triggerUndo: () => undo(),
       triggerRedo: () => redo(),
@@ -3056,6 +3141,7 @@ export function Shell(): React.ReactElement {
     fullSceneGraph,
     docProperties,
     timeline,
+    commitMergeShapeDirect,
   ]);
 
   // ---------------------------------------------------------------------------

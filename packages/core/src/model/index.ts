@@ -81,6 +81,7 @@ export {
   setFrameBehaviors,
   setSoundOnFrame,
   addDisplayObject,
+  setKeyframeDisplayObjects,
   removeDisplayObject,
   updateDisplayObject,
   convertToKeyframes,

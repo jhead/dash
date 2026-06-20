@@ -89,8 +89,20 @@ export type { EraseOptions } from "./eraser.js";
 // Exported as a namespace to avoid name clashes (e.g. snapPoint with ./snap.js);
 // see docs/36-vector-merge-model.md.
 export * as planar from "./planar/index.js";
-export { Arrangement, buildArrangement, buildArrangementFromShapes } from "./planar/index.js";
-export type { InputEdge, Intersection } from "./planar/index.js";
+export {
+  Arrangement,
+  buildArrangement,
+  buildArrangementFromShapes,
+  planarShapeToShape,
+  isMergeableShape,
+  foldShapeIntoLayer,
+  planarMergeCommit,
+} from "./planar/index.js";
+export type { InputEdge, Intersection, FoldResult, MergeableLike } from "./planar/index.js";
+
+// Engine feature flags (gates in-progress re-architectures; see featureFlags.ts).
+export type { EngineFeatureFlags } from "./featureFlags.js";
+export { getFeatureFlag, setFeatureFlag, getFeatureFlags } from "./featureFlags.js";
 
 // Renderer
 export { CanvasRenderer, initCanvas } from "./renderer.js";

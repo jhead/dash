@@ -1047,6 +1047,36 @@ export function addDisplayObject(
 }
 
 /**
+ * Replace the ENTIRE display-object list of a layer's governing keyframe.
+ *
+ * Used by the planar merge-on-commit path (docs/36-vector-merge-model.md, P1):
+ * folding a newly-drawn merge-mode shape into the layer's planar arrangement
+ * produces a new object list that supersedes the previous one, so a single
+ * atomic replace is the right primitive (rather than add + N removes).
+ */
+export function setKeyframeDisplayObjects(
+  timeline: Timeline,
+  layerId: string,
+  frameIndex: number,
+  objects: readonly DisplayObject[]
+): Timeline {
+  return {
+    ...timeline,
+    layers: timeline.layers.map((layer) => {
+      if (layer.id !== layerId) return layer;
+      const kf = findGoverningKeyframe(layer, frameIndex);
+      if (!kf) return layer;
+      const newFrames = layer.frames.map((f) =>
+        f.index === kf.index
+          ? { ...f, displayObjects: [...objects], isEmpty: objects.length === 0 }
+          : f
+      );
+      return { ...layer, frames: newFrames };
+    }),
+  };
+}
+
+/**
  * Remove a DisplayObject by id from the governing keyframe.
  */
 export function removeDisplayObject(
