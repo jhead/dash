@@ -1,0 +1,10 @@
+{
+  "id": "1312-2zru74-live-preview-route-trace-runtime-output-to-the-o",
+  "title": "Live Preview: route trace()/runtime output to the Output panel (currently lost)",
+  "description": "BUG: trace() (and likely runtime errors/warnings) emitted by the SWF running in the LIVE PREVIEW tab do not appear in the Output panel. The Test Movie flow DOES capture trace to Output (the trace-output e2e oracle relies on it), so the capture mechanism exists but the Live Preview's embedded Ruffle instance isn't wired to it. EXPLORE: how Test Movie / the existing preview captures Ruffle trace and routes it to the Output panel (find the Ruffle trace/log callback \u2014 e.g. onTrace / a logger / traceObserver config on <ruffle-player> or the player.load config \u2014 and the Output panel store that receives messages; see packages/player/src/RufflePlayer.tsx, the Output panel + its store, and how useExportHandlers/Test Movie wires trace). FIX: wire the Live Preview Ruffle instance (packages/authoring-ui/src/preview/* \u2014 LivePreviewPanel/useLivePreview + packages/player RufflePlayer loadOptions/callbacks) to forward trace (and runtime errors/warnings if Test Movie does) to the SAME Output panel store, so trace from the live preview shows up in Output just like Test Movie. Make sure it works with the hot-reload loop: clearing/appending appropriately across reloads (don't duplicate listeners on each reload; don't leak; reasonable behavior on reload \u2014 e.g. continue appending, optionally a separator, your call but no listener leak). VERIFY: build + authoring-ui tests green (only ~3 task-1207 fixture failures acceptable); add/extend a Playwright e2e: a doc with a trace() runs in Live Preview and the message appears in the Output panel (mirror trace-output.spec.ts but via the Live Preview tab). Update docs/34-live-preview.md. ACQUIRE lock; commit incl task file; push rebase-retry (if .tasks/.counter conflicts keep origin's). Scope: preview/* + RufflePlayer trace wiring + Output store hookup (+e2e).",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-20T01:04:04Z",
+  "updated_at": "2026-06-20T01:04:04Z"
+}
