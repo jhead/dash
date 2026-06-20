@@ -86,3 +86,11 @@ export {
 export type { FaceKey, SegmentKey, SubKey, SubSelection } from "./subselection.js";
 export { splitOnMove } from "./split.js";
 export type { SplitResult } from "./split.js";
+
+// P4 — curve-preserving eraser on the planar arrangement + Flash 8 modes.
+export { planarEraseShape, faucetEraseShape, buildEraserStamp } from "./eraser.js";
+export type {
+  EraserMode,
+  PlanarEraseOptions,
+  PlanarEraseResult,
+} from "./eraser.js";

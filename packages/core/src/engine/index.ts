@@ -108,6 +108,10 @@ export {
   pickInRect,
   subSelectionPolylines,
   splitOnMove,
+  // P4 — curve-preserving eraser on the planar arrangement + Flash 8 modes.
+  planarEraseShape,
+  faucetEraseShape,
+  buildEraserStamp,
 } from "./planar/index.js";
 export type {
   InputEdge,
@@ -120,6 +124,9 @@ export type {
   SubKey,
   SubSelection,
   SplitResult,
+  EraserMode,
+  PlanarEraseOptions,
+  PlanarEraseResult,
 } from "./planar/index.js";
 
 // Engine feature flags (gates in-progress re-architectures; see featureFlags.ts).

@@ -8,6 +8,10 @@ import {
   planarMergeCommit,
   livePlanarShape,
   splitOnMove,
+  planarEraseShape,
+  faucetEraseShape,
+  buildEraserPolygon,
+  isMergeableShape,
   pickAt as planarPickAt,
   pickConnected as planarPickConnected,
   getFeatureFlag,
@@ -44,6 +48,7 @@ import type {
   DisplayObject,
   DocumentProperties,
   DrawingObject,
+  EraserMode as PlanarEraserMode,
   Fill,
   FlashDocument,
   FlashFilter,
@@ -1596,6 +1601,56 @@ export function Shell(): React.ReactElement {
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
   );
 
+  // P4 — planar eraser bridge for the merge-drawing oracle. Erases a swept eraser
+  // path (kernel/stage space) from the topmost merged mergeable shape on the active
+  // layer, curve-preservingly, with the given mode. One pushDoc = one undo step
+  // (mirrors handleSubSplitMove's stale-closure-safe live-store pattern).
+  const handleEraseOnLayer = useCallback(
+    (
+      points: { x: number; y: number }[],
+      radius: number,
+      mode: PlanarEraserMode = "normal",
+      faucet = false
+    ) => {
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      pushDoc(
+        withTimelineLive((t) => {
+          const layer = t.layers.find((l) => l.id === layerId);
+          const kf = layer ? getGoverningKeyframe(layer, currentFrame) : undefined;
+          if (!kf) return t;
+          const objs = kf.displayObjects as DisplayObject[];
+          for (let i = objs.length - 1; i >= 0; i--) {
+            const target = objs[i];
+            if (
+              target.type !== "shape" ||
+              (target.x ?? 0) !== 0 ||
+              (target.y ?? 0) !== 0 ||
+              !isMergeableShape((target as ShapeDisplayObject).shape)
+            )
+              continue;
+            const shp = (target as ShapeDisplayObject).shape;
+            const { shape: next } = faucet
+              ? faucetEraseShape(shp, points[0])
+              : planarEraseShape(shp, buildEraserPolygon(points, radius), {
+                  mode,
+                  insideAt: mode === "inside" ? points[0] : undefined,
+                });
+            if (next === shp) return t;
+            const others = objs.filter((o) => o.id !== target.id);
+            const replaced: DisplayObject[] = [...others];
+            if (next) {
+              replaced.push({ type: "shape", id: target.id, shape: next, x: 0, y: 0 });
+            }
+            return setKeyframeDisplayObjects(t, layerId, currentFrame, replaced);
+          }
+          return t;
+        })
+      );
+    },
+    [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimelineLive]
+  );
+
   // During a drag gesture, use `replaceDoc` (no history entry).
   // When the gesture ends, commit with `pushDoc` via handleShapeMoveEnd.
   // We track the pre-drag document snapshot so the final push captures the full move.
@@ -3104,6 +3159,19 @@ export function Shell(): React.ReactElement {
       // complement (a hole/cut) behind. Mirrors the mouse-up split commit.
       subSplitMove: (sel: unknown, dx: number, dy: number) =>
         handleSubSplitMove(sel as SubSelection, dx, dy),
+
+      // P4 — curve-preserving planar eraser: erase a swept path (kernel/stage
+      // space) from the topmost merged mergeable shape on the active layer, with
+      // a Flash 8 mode. Used by the merge-drawing oracle to author the eraser
+      // cases without simulating drag gestures.
+      eraseOnLayer: (
+        points: { x: number; y: number }[],
+        radius: number,
+        mode?: string
+      ) => handleEraseOnLayer(points, radius, (mode as PlanarEraserMode) ?? "normal"),
+      // P4 — faucet: a single click removes a whole fill / line under the point.
+      faucetEraseOnLayer: (x: number, y: number) =>
+        handleEraseOnLayer([{ x, y }], 0, "normal", true),
       setActiveLayer: (i: number) => setActiveLayerIndex(i),
       triggerUndo: () => undo(),
       triggerRedo: () => redo(),
@@ -3241,6 +3309,7 @@ export function Shell(): React.ReactElement {
     timeline,
     commitMergeShapeDirect,
     handleSubSplitMove,
+    handleEraseOnLayer,
     setSubSelection,
     safeActiveLayerIndex,
     currentFrame,
@@ -3832,6 +3901,8 @@ export function Shell(): React.ReactElement {
                 pencilMode={toolState.pencilMode}
                 brushSize={toolState.brushSize}
                 eraserSize={toolState.eraserSize}
+                eraserMode={toolState.eraserMode}
+                eraserFaucet={toolState.eraserFaucet}
                 strokeColor={toolState.strokeColor}
                 strokeWidth={toolState.strokeWidth}
                 strokeAlpha={toolState.strokeAlpha}

@@ -223,11 +223,44 @@ interface FlashTestMerge {
   // P3 — partial face/segment selection + split-on-move.
   pickSubSelectionAt: (x: number, y: number, mode?: "single" | "connected") => SubSelectionLike | null;
   subSplitMove: (sel: SubSelectionLike, dx: number, dy: number) => void;
+  // P4 — curve-preserving planar eraser + faucet.
+  eraseOnLayer: (points: { x: number; y: number }[], radius: number, mode?: string) => void;
+  faucetEraseOnLayer: (x: number, y: number) => void;
   publish: () => Promise<string> | string;
   screenshotStage: () => string;
   getDocument: () => unknown;
   getActiveLayerIndex: () => number;
   getCurrentFrame: () => number;
+}
+
+/**
+ * A filled disk built from FOUR quadratic-Bézier arcs (curve-preserving test
+ * fixture). Centered at the origin-relative (cx,cy) with radius r. The control
+ * points use the standard quad-circle factor (~0.5523*2 for a 90° arc midpoint
+ * pulled out), good enough to read back as true quadratics that survive an
+ * eraser cut.
+ */
+function diskShape(id: string, cx: number, cy: number, r: number, fill: unknown): unknown {
+  // Each 90° quarter is one quadratic whose control sits at the corner of the
+  // axis-aligned bounding square scaled by ~SQRT2 (the standard quad-circle
+  // midpoint pull). For the oracle we only need a smooth convex closed curve.
+  const c = r * Math.SQRT2; // control offset so the arc midpoint lands ~on the circle
+  const p = (ax: number, ay: number) => ({ x: cx + ax, y: cy + ay });
+  // Corners at E(r,0), S(0,r), W(-r,0), N(0,-r); controls at the square corners.
+  return {
+    id,
+    paths: [{
+      start: p(r, 0),
+      segments: [
+        { type: 'curve', control: p(c, c), to: p(0, r) },
+        { type: 'curve', control: p(-c, c), to: p(-r, 0) },
+        { type: 'curve', control: p(-c, -c), to: p(0, -r) },
+        { type: 'curve', control: p(c, -c), to: p(r, 0) },
+      ],
+      fill,
+      closed: true,
+    }],
+  };
 }
 
 const STROKE = { type: 'solid', color: { r: 0, g: 0, b: 0, a: 255 }, width: 4, caps: 'round', joints: 'round', miterLimit: 3 } as const;
@@ -619,10 +652,115 @@ test.describe('Merge-drawing oracle (planar kernel) — canonical cases', () => 
   });
 
   // -------------------------------------------------------------------------
-  // Eraser (curve-preserving true subtraction) is the DOC's separate P3 phase
-  // (docs/36 §3 row P3), not the selection task — remains a placeholder.
+  // 7 — eraser: erase a band ACROSS a filled rect cuts it into two fills (P4
+  //   task 1322). The eraser is routed through the planar kernel (curve-aware
+  //   splits), not the per-object curve-flattening GH path.
   // -------------------------------------------------------------------------
-  test.fixme('erase across a shape splits it into two fills', async () => {
-    // Eraser routed through the planar kernel (curve-preserving cut). Separate phase.
+  test('erase across a fill cuts it into two regions', async ({ page }, testInfo: TestInfo) => {
+    await page.evaluate(({ rect }) => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      b.commitMergeShape(rect, 200, 140);
+    }, { rect: rectShape('rect-1', 160, 120, BLUE) });
+    await page.waitForTimeout(120);
+
+    // Sanity: one fill region before erasing.
+    const before = await inspectMergedPaths(page);
+    expect(before.fillPaths, 'one fill before erase').toBe(1);
+
+    // Erase a vertical band straight through the middle of the rect (stage x≈280,
+    // y from above to below the rect at 140..260).
+    await page.evaluate(() => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      b.eraseOnLayer([{ x: 280, y: 120 }, { x: 280, y: 280 }], 8, 'normal');
+    });
+    await page.waitForTimeout(120);
+
+    // Structural: the fill is now TWO independent regions (left + right of the cut).
+    const after = await inspectMergedPaths(page);
+    console.log(`[P4] erase-cut paths: ${JSON.stringify(after)}`);
+    expect(after.fillPaths, 'fill cut into two regions').toBe(2);
+
+    const stagePng = await captureStagePng(page, testInfo, 'erase-cut');
+    const rufflePng = await publishAndShootRuffle(page, testInfo, '__ruffle_erase_cut__', 'erase-cut');
+
+    // Visual: both halves blue; the cut band (~x 280) shows background.
+    const leftHalf = sampleRegionAvg(stagePng, 230, 180, 260, 220);
+    const rightHalf = sampleRegionAvg(stagePng, 300, 180, 340, 220);
+    const band = sampleRegionAvg(stagePng, 277, 180, 283, 220);
+    console.log(`[P4] erase-cut left=${JSON.stringify(leftHalf)} right=${JSON.stringify(rightHalf)} band=${JSON.stringify(band)}`);
+    // Blue fill is (0,0,255); background is white (255,255,255). Discriminate on
+    // the RED channel: blue halves have r≈0, the erased band shows white (r≈255).
+    expect(leftHalf.b, 'left half blue').toBeGreaterThan(110);
+    expect(leftHalf.r, 'left half is blue, not white').toBeLessThan(90);
+    expect(rightHalf.b, 'right half blue').toBeGreaterThan(110);
+    expect(rightHalf.r, 'right half is blue, not white').toBeLessThan(90);
+    expect(band.r, 'erased band shows background (white), not blue').toBeGreaterThan(leftHalf.r + 80);
+
+    const { diff, w, h } = diffStageVsRuffle(stagePng, rufflePng);
+    console.log(`[P4] erase-cut pixelmatch diff=${diff}/${w * h}`);
+    expect(diff / (w * h), 'stage and ruffle agree (erase cut)').toBeLessThan(0.12);
+  });
+
+  // -------------------------------------------------------------------------
+  // 8 — eraser on a CURVED silhouette: erase a band through a filled DISK splits
+  //   it into two pieces, each keeping its curved (quadratic) silhouette (the P4
+  //   curve-preserving headline). The fill is a disk of quadratic arcs; after the
+  //   cut the surviving halves still read back with curve segments.
+  // -------------------------------------------------------------------------
+  test('erase a stroke through a disk splits it, curve silhouette preserved', async ({ page }, testInfo: TestInfo) => {
+    await page.evaluate(({ disk }) => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      b.commitMergeShape(disk, 0, 0);
+    }, { disk: diskShape('disk-1', 290, 220, 70, BLUE) });
+    await page.waitForTimeout(120);
+
+    const before = await inspectMergedPaths(page);
+    expect(before.fillPaths, 'one disk fill before erase').toBe(1);
+
+    // Erase a thin vertical band through the disk center.
+    await page.evaluate(() => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      b.eraseOnLayer([{ x: 290, y: 140 }, { x: 290, y: 300 }], 6, 'normal');
+    });
+    await page.waitForTimeout(120);
+
+    const after = await inspectMergedPaths(page);
+    console.log(`[P4] disk-split paths: ${JSON.stringify(after)}`);
+    expect(after.fillPaths, 'disk split into two pieces').toBe(2);
+
+    // Curve preservation: the surviving fill pieces still contain curve segments
+    // (the disk's quadratic arcs survived the cut, not flattened to polylines).
+    const hasCurve = await page.evaluate(() => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      const doc = b.getDocument() as { scenes: { timeline: { layers: { frames: { displayObjects: { type: string; shape?: { paths: { fill?: unknown; segments: { type: string }[] }[] } }[] }[] }[] } }[] };
+      const li = b.getActiveLayerIndex();
+      const frame = b.getCurrentFrame();
+      const layer = doc.scenes[0].timeline.layers[li];
+      const kf = layer.frames[Math.min(frame, layer.frames.length - 1)] ?? layer.frames[0];
+      for (const obj of kf.displayObjects) {
+        if (obj.type !== 'shape' || !obj.shape) continue;
+        for (const p of obj.shape.paths) {
+          if (p.fill && p.segments.some((s) => s.type === 'curve')) return true;
+        }
+      }
+      return false;
+    });
+    expect(hasCurve, 'cut disk halves keep quadratic silhouette').toBe(true);
+
+    const stagePng = await captureStagePng(page, testInfo, 'disk-split');
+    const rufflePng = await publishAndShootRuffle(page, testInfo, '__ruffle_disk_split__', 'disk-split');
+
+    // Visual: left and right lobes blue; the cut center shows background.
+    const leftLobe = sampleRegionAvg(stagePng, 235, 210, 265, 230);
+    const rightLobe = sampleRegionAvg(stagePng, 315, 210, 345, 230);
+    console.log(`[P4] disk-split left=${JSON.stringify(leftLobe)} right=${JSON.stringify(rightLobe)}`);
+    expect(leftLobe.b, 'left lobe blue').toBeGreaterThan(110);
+    expect(leftLobe.r, 'left lobe is blue, not white').toBeLessThan(90);
+    expect(rightLobe.b, 'right lobe blue').toBeGreaterThan(110);
+    expect(rightLobe.r, 'right lobe is blue, not white').toBeLessThan(90);
+
+    const { diff, w, h } = diffStageVsRuffle(stagePng, rufflePng);
+    console.log(`[P4] disk-split pixelmatch diff=${diff}/${w * h}`);
+    expect(diff / (w * h), 'stage and ruffle agree (disk split)').toBeLessThan(0.12);
   });
 });

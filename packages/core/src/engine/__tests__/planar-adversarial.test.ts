@@ -382,4 +382,48 @@ describe("planar/adversarial — LINE/LINE junctions", () => {
     expect(vertexCount(ps)).toBe(5);
     expect(eulerCharacteristic(ps)).toBe(2);
   });
+
+  // -------------------------------------------------------------------------
+  // task 1326 (fixed by 1322): the single-pass builder used to MERGE two
+  // NON-ADJACENT same-color bands into one face when a same-color fill is
+  // crossed by MULTIPLE PARALLEL full-crossing stroke dividers — a stray bridge
+  // edge gave euler=-1 and faces [6000,3000] instead of [3000,3000,3000]. Root
+  // cause: insertEdge intersected the new edge against RETIRED half-edges
+  // (origin=-1) left in the array, producing spurious split params. Fixed by
+  // skipping retired edges in the intersection scan (arrangement.ts).
+  // -------------------------------------------------------------------------
+  describe("task 1326 — same-color fill + N parallel full-crossing dividers", () => {
+    it("two dividers split a same-color rect into THREE equal faces (euler 2)", () => {
+      const ps = buildArrangementFromShapes([
+        rectShape("r", 0, 0, 90, 90, RED),
+        strokeLineShape("d1", -10, 30, 100, 30),
+        strokeLineShape("d2", -10, 60, 100, 60),
+      ]);
+      const filled = ps.faces.filter((f) => !f.unbounded && f.fill !== null);
+      expect(filled.length, "three same-color bands").toBe(3);
+      expect(eulerCharacteristic(ps), "planar (no stray bridge edge)").toBe(2);
+      // Bands are equal-area thirds (allow for the divider stroke width seam).
+      const areas = filled.map((f) => faceArea(ps, f)).sort((a, b) => a - b);
+      for (const a of areas) {
+        expect(a, "each band ~ a third of the rect").toBeGreaterThan(2500);
+        expect(a, "no band fused to ~two-thirds").toBeLessThan(3100);
+      }
+      // Total conserved (no area lost/duplicated).
+      const total = areas.reduce((s, a) => s + a, 0);
+      expect(total).toBeGreaterThan(8000);
+      expect(total).toBeLessThan(8200);
+    });
+
+    it("three dividers split a same-color rect into FOUR faces (euler 2)", () => {
+      const ps = buildArrangementFromShapes([
+        rectShape("r", 0, 0, 100, 120, BLUE),
+        strokeLineShape("d1", -10, 30, 110, 30),
+        strokeLineShape("d2", -10, 60, 110, 60),
+        strokeLineShape("d3", -10, 90, 110, 90),
+      ]);
+      const filled = ps.faces.filter((f) => !f.unbounded && f.fill !== null);
+      expect(filled.length, "four same-color bands").toBe(4);
+      expect(eulerCharacteristic(ps)).toBe(2);
+    });
+  });
 });

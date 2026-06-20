@@ -223,6 +223,13 @@ export class Arrangement {
 
     for (const eid of forwardIds) {
       const e = this.edges[eid];
+      // Skip RETIRED half-edges: splitExistingEdge marks a split-away edge with
+      // origin=-1 but leaves it in the array (to keep the even/odd twin pairing).
+      // Its geometry is stale; intersecting the new edge against it produces
+      // SPURIOUS split params that corrupt the topology when a later edge crosses
+      // the same region (e.g. a second parallel chord / an eraser band's two
+      // sides both crossing a fill's boundary edge). Skip them. (task 1322)
+      if (e.origin < 0) continue;
       const hits = intersectEdges(geom, e.geometry);
       for (const h of hits) {
         // Only register interior splits; endpoints become shared vertices

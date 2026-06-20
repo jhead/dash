@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
-import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines } from "@flash/core";
+import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, planarEraseShape, faucetEraseShape, isMergeableShape, getFeatureFlag, type EraserMode } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
@@ -889,6 +889,10 @@ export interface StageAreaProps {
   pencilMode?: "straighten" | "smooth" | "ink";
   brushSize?: number;
   eraserSize?: number;
+  /** Flash 8 eraser mode (planar path, flag ON): normal/fills/lines/selected/inside. */
+  eraserMode?: EraserMode;
+  /** Faucet mode: a single click deletes a whole fill or line (planar path). */
+  eraserFaucet?: boolean;
   strokeColor?: string;
   strokeWidth?: number;
   /** Stroke opacity 0-100; 0 means no stroke */
@@ -1578,6 +1582,8 @@ export function StageArea({
   pencilMode = "ink",
   brushSize = 8,
   eraserSize = 16,
+  eraserMode = "normal",
+  eraserFaucet = false,
   strokeColor: propStrokeColor = "#000000",
   strokeWidth: propStrokeWidth = 1,
   strokeAlpha: propStrokeAlpha = 100,
@@ -1982,6 +1988,23 @@ export function StageArea({
       if (e.button === 0 && activeTool === "eraser") {
         e.preventDefault();
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        // P4 Faucet mode (planar, flag ON): a single click removes a WHOLE fill
+        // or line under the cursor. Operate on the topmost merged mergeable shape.
+        if (eraserFaucet && getFeatureFlag("planarMergeOnCommit")) {
+          for (let i = shapeDisplayObjects.length - 1; i >= 0; i--) {
+            const obj = shapeDisplayObjects[i];
+            if ((obj.x ?? 0) !== 0 || (obj.y ?? 0) !== 0 || !isMergeableShape(obj.shape)) continue;
+            const { shape: next } = faucetEraseShape(obj.shape, { x: stageX, y: stageY });
+            if (next === null) {
+              onShapeDelete?.(obj.id);
+              break;
+            } else if (next !== obj.shape) {
+              onShapeUpdate?.(obj.id, next);
+              break;
+            }
+          }
+          return;
+        }
         eraserPointsRef.current = [{ x: stageX, y: stageY }];
         erasedIdsRef.current = new Set();
         setEraserPreview({ x: stageX, y: stageY, w: 0, h: 0 });
@@ -2831,6 +2854,35 @@ export function StageArea({
             });
             if (!touches) continue;
 
+            // P4: when planar merge is ON and this is a merged mergeable shape
+            // (placed at 0,0, geometry in stage space), erase on the planar mesh
+            // — curve-preserving cut/trim with Flash 8 eraser modes. Otherwise
+            // fall back to the legacy per-object curve-FLATTENING GH eraser
+            // (default behavior, flag OFF / drawing-objects) — unchanged.
+            const usePlanar =
+              getFeatureFlag("planarMergeOnCommit") &&
+              (obj.x ?? 0) === 0 &&
+              (obj.y ?? 0) === 0 &&
+              (obj.scaleX ?? 1) === 1 &&
+              (obj.scaleY ?? 1) === 1 &&
+              (obj.rotation ?? 0) === 0 &&
+              isMergeableShape(obj.shape);
+
+            if (usePlanar) {
+              const stamp = buildEraserPolygon(sweptStage, half);
+              const { shape: next } = planarEraseShape(obj.shape, stamp, {
+                mode: eraserMode,
+                insideAt: eraserMode === "inside" ? sweptStage[0] : undefined,
+              });
+              if (next === null) {
+                erasedIdsRef.current.add(obj.id);
+                onShapeDelete?.(obj.id);
+              } else if (next !== obj.shape) {
+                onShapeUpdate?.(obj.id, next);
+              }
+              continue;
+            }
+
             // Map the swept eraser path into the shape's LOCAL space (inverse of
             // the display-object transform: translate(x,y) ∘ rotate ∘ scale).
             const localPts = sweptStage.map((p) => stageToShapeLocal(p, obj));
@@ -3194,7 +3246,7 @@ export function StageArea({
         setPressedButtonId(null);
       }
     },
-    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeWarp, freeTransformMode, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeWarp, freeTransformMode, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, eraserMode, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
   );
 
   const onMouseUp = useCallback(

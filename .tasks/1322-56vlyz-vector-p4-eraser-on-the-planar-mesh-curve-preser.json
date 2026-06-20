@@ -1,10 +1,10 @@
 {
   "id": "1322-56vlyz-vector-p4-eraser-on-the-planar-mesh-curve-preser",
   "title": "Vector P4: eraser on the planar mesh, curve-preserving + eraser modes",
-  "description": "Depends on Vector P3. Re-target the eraser from per-object Greiner-Hormann (engine/eraser.ts, which flattens curves) to subtract from the LAYER planar arrangement: remove fill area from faces and TRIM/SPLIT half-edges (strokes), PRESERVING quadratics (no polyline flattening). Reuse the existing GH machinery but make it curve-aware via the P0 kernel. Implement Flash 8 eraser modes (Normal, Erase Fills, Erase Lines, Erase Selected, Erase Inside) + faucet (click removes a whole fill/line). VERIFY: build + tests green (only ~3 task-1207 fixtures acceptable); Ruffle oracle: 'erase a stroke through a disk -> disk splits into two, curve silhouette preserved'; 'erase across a fill cuts it'; modes behave correctly; existing eraser tests still pass (adapt as needed). Update docs/36-vector-merge-model.md. ACQUIRE lock; commit incl task file; push rebase-retry. Conflict hotspots: engine/eraser.ts, StageArea.tsx eraser wiring. Sequential after P3.",
-  "status": "open",
+  "description": "P4 DONE. Curve-preserving eraser on the planar mesh (engine/planar/eraser.ts): planarEraseShape inserts the eraser stamp as subdivision edges so the P0 kernel splits fills/strokes curve-preservingly, then drops erased faces/strokes via the P3 PlanarEmitFilter. Flash 8 modes: normal/fills/lines/selected/inside + faucetEraseShape (whole fill/line). Fixed a P0 kernel bug (insertEdge intersected against RETIRED half-edges, corrupting topology for two-parallel-chords / eraser-band cases) with a one-line guard in arrangement.ts. Legacy per-object eraser kept for flag-OFF/drawing-objects (unchanged default). EVIDENCE: core 'npx vitest run planar-eraser.test.ts' = 12/12 pass; planar+legacy eraser suites = 89/89; full core suite = 5477 pass / 2 fail (only the pre-existing task-1207 flash8-empty.fla fixtures); authoring-ui = 1013/1013; swf = 1466/1466 (compile path unchanged, self-determinism intact). ORACLE: 'npx playwright test merge-drawing-oracle.spec.ts' = 8/8 pass incl new case7 'erase across a fill cuts it' (diff=0/220000) + case8 'erase a band through a disk, curve silhouette preserved' (diff=0/220000); P1-P3 cases 1-6 still diff=0/220000 (kernel fix is a pure improvement). docs/36 updated (P4 marked, eraser curve-preserving on mesh, \u00a73.0c).",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-20T05:17:43Z",
-  "updated_at": "2026-06-20T05:17:43Z"
+  "updated_at": "2026-06-20T08:19:18Z"
 }

@@ -50,6 +50,13 @@ export interface ToolState {
   brushSize?: number;
   /** Eraser tool size in pixels. Default 16 */
   eraserSize?: number;
+  /**
+   * Flash 8 eraser mode (planar path, flag ON): Normal / Erase Fills /
+   * Erase Lines / Erase Selected / Erase Inside. Default 'normal'.
+   */
+  eraserMode?: "normal" | "fills" | "lines" | "selected" | "inside";
+  /** Faucet mode: a single click deletes a whole fill or line. Default false. */
+  eraserFaucet?: boolean;
   /** Free Transform sub-mode. Default 'rotate-scale' */
   freeTransformMode?: FreeTransformMode;
   /** Lasso polygon mode toggle. Default false (freehand) */

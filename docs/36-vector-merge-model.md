@@ -1,23 +1,32 @@
 # Vector Merge Model — authentic Flash 8 merge-drawing
 
-**Status:** P0 + P1 + P2 + P3-selection landed. P0 = curve-aware planar geometry
-kernel + oracle harness. **P1 (task 1319) = merge-on-commit** (same-color UNION /
-different-color CUT, top-wins, curve-preserving). **P2 (task 1320) = strokes/lines
-split fills + intersecting lines segment each other** (a line drawn across a fill
-splits it into separate selectable faces; two crossing lines split each other into
-four segments; curve-preserving). **P3-selection (task 1321) = partial fill-region
-+ line-segment selection + split-on-move** (click selects ONE face or segment,
-double-click the connected set, marquee picks all intersecting; moving a partial
-selection EXTRACTS it and leaves a hole/cut behind — all on the LIVE planar map).
-All behind the `planarMergeOnCommit` feature flag (default OFF until the P5
-cutover). The remaining phases wire merge mode into the eraser and SWF/FLA
-interchange.
+**Status:** P0 + P1 + P2 + P3-selection + P4-eraser landed. P0 = curve-aware
+planar geometry kernel + oracle harness. **P1 (task 1319) = merge-on-commit**
+(same-color UNION / different-color CUT, top-wins, curve-preserving). **P2 (task
+1320) = strokes/lines split fills + intersecting lines segment each other** (a line
+drawn across a fill splits it into separate selectable faces; two crossing lines
+split each other into four segments; curve-preserving). **P3-selection (task 1321)
+= partial fill-region + line-segment selection + split-on-move** (click selects ONE
+face or segment, double-click the connected set, marquee picks all intersecting;
+moving a partial selection EXTRACTS it and leaves a hole/cut behind — all on the
+LIVE planar map). **P4-eraser (task 1322) = curve-preserving eraser on the planar
+mesh + Flash 8 eraser modes** — the eraser stroke (disk + capsule stamp) is
+subtracted from the layer arrangement: faces inside the erased region lose their
+fill (a band erased clean through SPLITS a fill into two; an erased interior island
+leaves a hole) and stroke half-edges are TRIMMED/SPLIT at the eraser boundary —
+all CURVE-PRESERVING via the P0 kernel splits (de Casteljau, never polyline
+flattening). Modes: Normal / Erase Fills / Erase Lines / Erase Selected / Erase
+Inside, plus the Faucet whole-fill/line click. All behind the `planarMergeOnCommit`
+feature flag (default OFF until the P5 cutover); the legacy per-object
+curve-FLATTENING eraser (`engine/eraser.ts`) stays for the flag-OFF /
+drawing-object path so default behavior is unchanged. The remaining phase is
+SWF/FLA interchange (P5).
 
-> **Note on phase numbering.** The §3 phased plan below lists the curve-preserving
+> **Note on phase numbering.** The §3 phased plan below listed the curve-preserving
 > **eraser** as "P3"; the task backlog filed the **selection** milestone (task 1321)
-> as "Vector P3". Both build directly on the kernel and are independent; this doc
-> uses *P3-selection* (task 1321, this section) and *P3-eraser* (the §3 row) to keep
-> them distinct. The eraser remains planned.
+> as "Vector P3" and the **eraser** milestone (task 1322) as "Vector P4". This doc
+> uses *P3-selection* (task 1321) and *P4-eraser* (task 1322, §3.0c) — both build
+> directly on the kernel. The eraser is now LANDED.
 
 **Supersedes:** [`docs/03-planar-fill-decision.md`](./03-planar-fill-decision.md)
 (the 2026-06-09 decision to DEFER the planar model and ship the AABB
@@ -151,8 +160,9 @@ faces does this fill now occupy after the cut".
 | **P0** | The curve-aware planar geometry kernel (`engine/planar/`): intersection (seg/seg, seg/curve, curve/curve), arrangement construction (insert edge + split existing + new at all crossings), face extraction with hole nesting, point-in-face, curve-preserving split. Additive `PlanarShape`/half-edge types in `engine/types.ts`. Kernel unit tests (Euler invariant, area conservation, intersection counts, curve round-trip). The interaction-oracle harness (`apps/desktop/e2e/merge-drawing-oracle.spec.ts`) as `.fixme` placeholders for the canonical cases. **No user-facing behavior change.** | **DONE (this task, 1318).** |
 | **P1** | **Merge-mode geometry ops on the kernel:** cut / union implemented as arrangement operations (`engine/planar/merge.ts` + `planarShapeToShape` in `query.ts`), returning per-path `Shape`s for storage/render/SWF. Same-color union + different-color cut are exact, curve-preserving. Wired into `Shell.tsx handleShapeCreated` / `commitMergeShapeDirect` behind the `planarMergeOnCommit` flag (default OFF). Acceptance: `merge-drawing-oracle.spec.ts` cut + union cases (stage↔Ruffle pixelmatch diff=0). | **DONE (task 1319).** |
 | **P2** | **Strokes/lines split fills + intersecting lines segment each other** (task 1320): adding a STROKE edge across a fill SPLITS the fill into separate selectable faces along the line; two crossing lines SPLIT each other into segments at the crossing (curve-preserving). Wired through the existing P1 fold path — line/pencil/pen + stroke commits are `type:"shape"` and already route through `planarMergeCommit` under the flag. The read-back (`planarShapeToShape`) now treats a stroked same-fill seam as a real boundary (only **un-stroked** same-fill seams dissolve), so a line-split fill reads back as two distinct fill loops + the segmented line and an X of two lines reads back as four segments. Acceptance: `merge-drawing-oracle.spec.ts` cases 3 (line-splits-fill) + 4 (4 segments) — stage↔Ruffle pixelmatch diff=0. (Full segment/face *selection* — single-click edge/face, double-click connected fill+strokes — and the live-map dissolve remain P3+.) | **DONE (task 1320).** |
-| **P3** | **Curve-preserving eraser & true subtraction** routed through the kernel: erase-across-shape splits curve-preservingly; removing an overlapping island leaves a hole. Replaces the polyline-flatten path in `engine/eraser.ts` for fills. | Planned. |
-| **P4** | **Interchange:** enable SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` currently hard-codes `stateFillStyle1=0`); FLA import/export of merge-map geometry; shape-morph (`tween/interpolate.ts`) matched on the planar topology. | Planned. |
+| **P3-selection** | **Partial fill-region + line-segment selection + split-on-move** (task 1321). See §3.0b. | **DONE (task 1321).** |
+| **P4-eraser** | **Curve-preserving eraser & true subtraction** routed through the kernel (`engine/planar/eraser.ts`): erase-across-shape splits curve-preservingly; removing an overlapping island leaves a hole; strokes are trimmed/split at the eraser boundary keeping quadratics. Flash 8 eraser MODES (Normal / Erase Fills / Erase Lines / Erase Selected / Erase Inside) + faucet whole-fill/line click. The legacy polyline-flatten `engine/eraser.ts` stays for the flag-OFF / drawing-object path. See §3.0c. | **DONE (task 1322).** |
+| **P5 (interchange)** | **Interchange:** enable SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` currently hard-codes `stateFillStyle1=0`); FLA import/export of merge-map geometry; shape-morph (`tween/interpolate.ts`) matched on the planar topology. | Planned. |
 | **P5** | **Full selection authenticity + polish:** marquee/lasso over the planar pieces, edit-curve handles on faces, snapping against the arrangement, and turning the P0 oracle placeholders into passing Ruffle+stage specs. | Planned. |
 
 ### 3.0 P1 implementation notes (task 1319)
@@ -323,6 +333,69 @@ round-trip across a rebuild, `pickAt` face/segment/split-halves, marquee,
 double-click connected, split-on-move (extract a half, island-leaves-hole, segment
 extract, extract-all→null remainder), and the no-filter read-back equivalence.
 
+### 3.0c P4-eraser implementation notes (task 1322)
+
+**Curve-preserving eraser on the planar mesh.** The legacy `engine/eraser.ts`
+does a polygon Greiner–Hormann difference on **flattened** polylines, so every cut
+curve is faceted to chords. P4 re-targets the eraser to the planar kernel
+(`engine/planar/eraser.ts`):
+
+* **`planarEraseShape(shape, eraserLoops, opts)`** — builds the arrangement from
+  the merged shape's paths **plus the eraser stamp polygons inserted as style-less
+  subdivision edges** (`buildArrangementFromShapes([shape, eraserShape])`). The
+  kernel SPLITS the existing fill/stroke edges at the eraser boundary
+  CURVE-PRESERVINGLY (de Casteljau). Then the faces whose interior point lies
+  inside the eraser region (even-odd over the stamps) and the stroke half-edges
+  whose midpoint lies inside it are dropped at read-back via the P3
+  `PlanarEmitFilter` (`faceFilter`/`edgeFilter`). A band erased clean through a
+  fill becomes two faces → two loops; an erased interior island leaves a hole
+  (the surrounding ring reads back with a CW hole loop, exactly like P3 split).
+  Curves not touched by the eraser survive as **true quadratics**.
+* **Eraser modes.** `mode: "normal"` erases fills + strokes; `"fills"` only fills;
+  `"lines"` only strokes; `"selected"` erases only faces whose interior passes a
+  `selectedFaceFilter` (the caller restricts to the current selection);
+  `"inside"` erases only the fill the gesture STARTED in (`insideAt` → the
+  `locateFace` fill index), so it does not spill onto other fills or background.
+* **`faucetEraseShape(shape, pt)`** — a single click deletes a WHOLE connected
+  fill component (same-fill faces across dissolvable seams) or a WHOLE connected
+  line (stroked-edge run via shared vertices), picked on the LIVE planar map
+  (`livePlanarShape`), stroke-on-ink winning over a face.
+
+**Kernel bug fixed for P4 (retired-edge intersection — task 1322).** P0's
+`Arrangement.insertEdge` scanned ALL even-indexed half-edges for intersections
+against the new edge — including edges that an earlier `splitExistingEdge` had
+RETIRED (marked `origin = -1` but left in the array to keep the even/odd twin
+pairing). A retired edge's geometry is stale, so intersecting the new edge against
+it produced SPURIOUS split params that corrupted the topology whenever a later edge
+crossed the same region — e.g. **two parallel chords / an eraser band's two sides
+both crossing a fill's boundary edge** (the band failed to become its own face;
+Euler went to −1). The fix is one guard: `if (e.origin < 0) continue;` in the
+intersection scan. This is the one P0 robustness gap the eraser's multi-chord case
+needs; the entire P0–P3 suite (planar/merge/subselection/adversarial) and the
+oracle cases 1–6 still pass byte-for-byte (diff=0/220000).
+
+**Wiring (flag-gated, default behavior unchanged).** `StageArea.tsx`'s eraser
+handler adds a flag-gated branch: when `planarMergeOnCommit` is ON and the touched
+object is a merged mergeable shape at `(0,0)` with identity transform, it routes
+through `planarEraseShape` (with the active `eraserMode`); otherwise it falls back
+to the legacy per-object curve-flattening `eraseShape` (flag-OFF / drawing-objects
+— byte-identical default). Faucet is handled on mousedown. `Shell.tsx` adds
+`handleEraseOnLayer` (one `pushDoc` = one undo step, stale-closure-safe via
+`withTimelineLive`, mirroring `handleSubSplitMove`) and the `__flashTest` bridge
+gains `eraseOnLayer(points, radius, mode)` + `faucetEraseOnLayer(x, y)` for the
+oracle. `ToolState` gains `eraserMode` + `eraserFaucet`. The compile/publish path
+is **untouched** — golden-parity / self-determinism unchanged.
+
+**Acceptance.** `merge-drawing-oracle.spec.ts` case 7 (**erase across a fill cuts
+it** into two regions — structural 2-fill assert + stage↔Ruffle diff=0/220000) and
+case 8 (**erase a band through a filled DISK splits it, curve silhouette
+preserved** — structural 2-fill + `hasCurve` assert + stage↔Ruffle diff=0/220000),
+both with `planarMergeOnCommit` ON for the test. Plus core unit tests
+(`planar-eraser.test.ts`): erase splits a face; area reduced correctly; full cover
+→ null; island leaves a hole; **stroke trim keeps quadratics** (curve round-trip
+within epsilon); all five modes behave; faucet whole-fill / whole-line. The legacy
+`eraser.test.ts` (flag-OFF path) still passes unchanged.
+
 ### 3.1 Key decisions
 
 1. **Curve-preserving.** Cuts subdivide quadratics with de Casteljau and keep
@@ -370,15 +443,15 @@ is the truth; unit tests are necessary but not sufficient).
 ### 4.2 Interaction oracles (the canonical cases)
 
 `apps/desktop/e2e/merge-drawing-oracle.spec.ts` — cases 1–2 (cut, union) PASS as
-of P1 and cases 3–4 (line-splits-fill, two crossing lines = 4 segments) PASS as of
-P2 (task 1320), and the partial-selection + island-move cases PASS as of
-P3-selection (task 1321) — all with `planarMergeOnCommit` ON for the test and
-stage↔Ruffle pixelmatch diff=0/220000; only the **eraser** case (separate P3-eraser
-phase) remains `.fixme`. Each case is verified with the project's two-oracle stack:
+of P1, cases 3–4 (line-splits-fill, two crossing lines = 4 segments) PASS as of
+P2 (task 1320), the partial-selection + island-move cases PASS as of P3-selection
+(task 1321), and the two **eraser** cases PASS as of P4-eraser (task 1322) — all
+with `planarMergeOnCommit` ON for the test and stage↔Ruffle pixelmatch
+diff=0/220000. Each case is verified with the project's two-oracle stack:
 the **stage-canvas** screenshot (`window.__flashTest.screenshotStage()`) for the
 authored result, and the **Ruffle pixel** screenshot of the published SWF
 (`window.__flashTest.publish()` → bundled Ruffle), pixelmatched against each
-other. The six canonical cases:
+other. The eight canonical cases:
 
 1. **red-over-blue cut** — the red overlap carves the blue (different-color cut).
 2. **blue-over-blue union** — two overlapping blues merge into one shape.
@@ -391,8 +464,13 @@ other. The six canonical cases:
 6. **partial fill click + move leaves a hole** — selecting a carved island and
    moving it extracts it and leaves the hole it had cut in the outer fill
    (P3-selection task 1321; structural hole-loop assert + stage↔Ruffle diff=0).
-7. **erase across shape splits** — true subtraction splits the fill in two
-   (separate P3-eraser phase; remains `.fixme`).
+7. **erase across a fill cuts it** — the eraser band cut through a filled rect
+   splits it into two independent regions (P4-eraser task 1322; structural
+   2-fill assert + stage↔Ruffle diff=0/220000).
+8. **erase a band through a disk, curve silhouette preserved** — erasing through a
+   filled DISK (quadratic arcs) splits it into two pieces that keep their curved
+   silhouette (P4-eraser task 1322; structural 2-fill + `hasCurve` assert +
+   stage↔Ruffle diff=0/220000).
 
 ### 4.3 Regression guards (unchanged in P0)
 
