@@ -69,6 +69,16 @@ interface MutHalfEdge {
   lineStyle: number | null;
 }
 
+/**
+ * A pending edge subdivision at parameter `t` whose vertex is the shared snapped
+ * crossing `point` (task 1332). Threading the authoritative point through the
+ * chop keeps both edges through a crossing exactly vertex-coincident.
+ */
+interface Split {
+  readonly t: number;
+  readonly point: Point;
+}
+
 export class Arrangement {
   private vertices: MutVertex[] = [];
   private edges: MutHalfEdge[] = [];
@@ -214,9 +224,24 @@ export class Arrangement {
     // 1. Find all intersection parameters of this edge against existing edges,
     //    and the splits each existing edge needs.  We collect splits per
     //    existing FORWARD half-edge (process undirected edges once via even ids).
-    const newSplitParams = new Set<number>(); // params on the NEW edge
-    // existingEdgeId (forward) -> set of params to split it at
-    const existingSplits = new Map<number, Set<number>>();
+    //
+    // CRITICAL (task 1332): a split is recorded as `{ t, point }` where `point`
+    // is the SNAPPED intersection coordinate the intersector returned. Both the
+    // NEW edge and the EXISTING edge are then split AT THAT SHARED POINT (see
+    // `chopEdge`/`splitLocal`, which pin each interior split endpoint to the
+    // supplied point) rather than each side independently re-evaluating its own
+    // geometry at its own parameter. Independent re-evaluation snapped the SAME
+    // crossing into two ADJACENT twip cells — e.g. an angled eraser-capsule edge
+    // crossing a band's top edge produced (102.65,95) on the capsule side and
+    // (102.70,95) on the band side, a 1-twip apart. Those two "should-be-shared"
+    // vertices then did NOT merge, the half-edge rotation ring at the crossing
+    // was wrong, and the far region failed to close into a bounded face (it
+    // leaked into the unbounded face) → one whole side of an angled cut vanished.
+    // Pinning both splits to the EXACT returned point makes the shared vertex
+    // exactly shared, so an angled cut splits the shape into two bounded faces.
+    const newSplits = new Map<string, Split>(); // splits on the NEW edge, keyed by point
+    // existingEdgeId (forward) -> point-key -> split
+    const existingSplits = new Map<number, Map<string, Split>>();
 
     const forwardIds: number[] = [];
     for (let i = 0; i < this.edges.length; i += 2) forwardIds.push(i);
@@ -232,39 +257,40 @@ export class Arrangement {
       if (e.origin < 0) continue;
       const hits = intersectEdges(geom, e.geometry);
       for (const h of hits) {
+        const pt = snapPoint(h.point);
         // Only register interior splits; endpoints become shared vertices
         // automatically when we create the new edge's vertices.
-        if (h.tA > 1e-7 && h.tA < 1 - 1e-7) newSplitParams.add(h.tA);
+        if (h.tA > 1e-7 && h.tA < 1 - 1e-7) {
+          newSplits.set(pointKey(pt), { t: h.tA, point: pt });
+        }
         if (h.tB > 1e-7 && h.tB < 1 - 1e-7) {
           let set = existingSplits.get(eid);
           if (!set) {
-            set = new Set<number>();
+            set = new Map<string, Split>();
             existingSplits.set(eid, set);
           }
-          set.add(h.tB);
+          set.set(pointKey(pt), { t: h.tB, point: pt });
         }
       }
     }
 
     // 2. Split existing edges first (so their geometry is subdivided before we
     //    weave in the new one).  Splitting changes the edge array but we operate
-    //    on a captured snapshot of (eid, params).
-    for (const [eid, params] of existingSplits) {
-      this.splitExistingEdge(eid, [...params]);
+    //    on a captured snapshot of (eid, splits).
+    for (const [eid, splits] of existingSplits) {
+      this.splitExistingEdge(eid, [...splits.values()]);
     }
 
-    // 3. Split the NEW edge at its own intersection params and insert each piece
+    // 3. Split the NEW edge at its own intersection points and insert each piece
     //    as a twin pair, sharing vertices at the split points.
-    const sortedParams = [...newSplitParams].sort((a, b) => a - b);
-    let segStartT = 0;
-    let pieceGeoms = chopEdge(geom, sortedParams);
+    const sortedSplits = [...newSplits.values()].sort((a, b) => a.t - b.t);
+    const pieceGeoms = chopEdge(geom, sortedSplits);
     for (const pg of pieceGeoms) {
       const aId = this.getOrCreateVertex(pg.p0);
       const bId = this.getOrCreateVertex(pg.p1);
       if (aId === bId && pg.control === null) continue; // collapsed
       this.addTwinPair(aId, bId, pg, fillLeft, fillRight, lineStyle);
     }
-    void segStartT;
   }
 
   /**
@@ -272,7 +298,7 @@ export class Arrangement {
    * set of parameters, replacing it with a chain of twin pairs that share new
    * vertices.  Preserves fill/line styles and curve geometry.
    */
-  private splitExistingEdge(forwardId: number, params: number[]): void {
+  private splitExistingEdge(forwardId: number, splits: Split[]): void {
     const fwd = this.edges[forwardId];
     const rev = this.edges[fwd.twin];
     const fillLeft = fwd.fillLeft;
@@ -280,7 +306,10 @@ export class Arrangement {
     const lineStyle = fwd.lineStyle;
     const geom = fwd.geometry;
 
-    const sorted = [...new Set(params)].sort((a, b) => a - b);
+    // Dedupe by the shared crossing point (task 1332) and order by parameter.
+    const byKey = new Map<string, Split>();
+    for (const s of splits) byKey.set(pointKey(s.point), s);
+    const sorted = [...byKey.values()].sort((a, b) => a.t - b.t);
     const pieces = chopEdge(geom, sorted);
     if (pieces.length <= 1) return; // nothing to do
 
@@ -545,19 +574,27 @@ export class Arrangement {
 // ---------------------------------------------------------------------------
 
 /**
- * Chop an edge geometry at a sorted list of interior parameters (curve-aware),
+ * Chop an edge geometry at a sorted list of interior splits (curve-aware),
  * returning the chain of piece geometries.  De Casteljau preserves quadratics.
+ *
+ * Each {@link Split} carries the parameter `t` AND the authoritative snapped
+ * crossing `point` (task 1332): the split vertex is FORCED to `point` rather than
+ * re-evaluating the geometry at `t` and re-snapping. This guarantees that the
+ * same crossing produces the EXACT same vertex coordinate on every edge that
+ * passes through it (the new edge and the existing edge it crosses), so the
+ * shared vertex merges by exact integer key instead of landing a twip apart.
  */
-function chopEdge(geom: EdgeGeometry, sortedParams: number[]): EdgeGeometry[] {
-  if (sortedParams.length === 0) return [geom];
+function chopEdge(geom: EdgeGeometry, sortedSplits: Split[]): EdgeGeometry[] {
+  if (sortedSplits.length === 0) return [geom];
   const pieces: EdgeGeometry[] = [];
   let cur = geom;
   let prevT = 0;
-  for (const t of sortedParams) {
+  for (const s of sortedSplits) {
+    const t = s.t;
     if (t <= prevT + 1e-9 || t >= 1 - 1e-9) continue;
     // Re-parameterize t into the remaining sub-curve's local parameter.
     const local = (t - prevT) / (1 - prevT);
-    const { first, second } = splitLocal(cur, local);
+    const { first, second } = splitLocal(cur, local, s.point);
     pieces.push(first);
     cur = second;
     prevT = t;
@@ -566,12 +603,19 @@ function chopEdge(geom: EdgeGeometry, sortedParams: number[]): EdgeGeometry[] {
   return pieces;
 }
 
+/**
+ * Split a sub-curve `g` at local parameter `t`. The split vertex is pinned to
+ * `mid` — the authoritative snapped crossing point (task 1332) — so both edges
+ * through a crossing share the exact same vertex coordinate. The control points
+ * are still computed by de Casteljau (curve-preserving); only the endpoint that
+ * becomes the shared vertex is forced.
+ */
 function splitLocal(
   g: EdgeGeometry,
-  t: number
+  t: number,
+  mid: Point
 ): { first: EdgeGeometry; second: EdgeGeometry } {
   if (g.control === null) {
-    const mid = snapPoint(edgeAt(g, t));
     return {
       first: { p0: g.p0, control: null, p1: mid },
       second: { p0: mid, control: null, p1: g.p1 },
@@ -580,7 +624,6 @@ function splitLocal(
   // de Casteljau on the quadratic.
   const a = lerp(g.p0, g.control, t);
   const b = lerp(g.control, g.p1, t);
-  const mid = snapPoint(lerp(a, b, t));
   return {
     first: { p0: g.p0, control: snapPoint(a), p1: mid },
     second: { p0: mid, control: snapPoint(b), p1: g.p1 },

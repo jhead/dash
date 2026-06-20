@@ -226,6 +226,110 @@ describe("planar/P4 — eraser on the planar arrangement", () => {
   });
 });
 
+describe("planar/P4 — angled cut splits a band into two surviving sides (task 1332)", () => {
+  // A horizontal brush band: x=0..200, y=95..105 (10px thick), solid fill.
+  // A brush stroke is a CLOSED FILLED outline polygon (engine/brushtool.ts), so
+  // we model it as a filled rect — exactly the QA repro.
+  const band = (): Shape => rectShape("band", 0, 95, 200, 10, BLUE);
+
+  /** x-extent of all fill loops in a Shape. */
+  function fillXExtent(shape: Shape | null): { min: number; max: number } {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const p of shape?.paths ?? []) {
+      if (!p.fill) continue;
+      for (const pt of [p.start, ...p.segments.map((s) => s.to)]) {
+        min = Math.min(min, pt.x);
+        max = Math.max(max, pt.x);
+      }
+    }
+    return { min, max };
+  }
+
+  /** Count bounded filled faces of a Shape's own arrangement. */
+  function filledFaceCount(shape: Shape | null): number {
+    if (!shape) return 0;
+    const ps = buildArrangementFromShapes([shape]);
+    return ps.faces.filter((f) => !f.unbounded && f.fill !== null).length;
+  }
+
+  // The QA-filed BUG case: an angled capsule drag whose endpoints lie OUTSIDE
+  // the band on OPPOSITE sides, crossing both parallel edges of the band. Before
+  // the fix this returned ONE fill with x-extent [0,96] — the entire right half
+  // (x~110..200) was dropped (it leaked into the unbounded face).
+  it("angled cut leaves BOTH sides spanning the full original x-extent", () => {
+    const stamp = buildEraserStamp(
+      [
+        { x: 90, y: 90 }, // above the band, left of centre
+        { x: 110, y: 112 }, // below the band, right of centre
+      ],
+      6
+    );
+    const { shape } = planarEraseShape(band(), stamp, { mode: "normal" }, "band");
+    expect(shape).not.toBeNull();
+
+    // Two surviving regions (left + right of the cut).
+    expect(filledFaceCount(shape)).toBeGreaterThanOrEqual(2);
+
+    // Both sides survive: the x-extent must still span (essentially) 0..200.
+    const ext = fillXExtent(shape);
+    expect(ext.min).toBeLessThanOrEqual(1);
+    expect(ext.max).toBeGreaterThanOrEqual(199);
+  });
+
+  it("angled cut conserves area: only the eraser swath is removed", () => {
+    const fill = band();
+    const before = totalFillArea(fill); // 200 * 10 = 2000
+    expect(before).toBeCloseTo(2000, -1);
+    const stamp = buildEraserStamp(
+      [
+        { x: 90, y: 90 },
+        { x: 110, y: 112 },
+      ],
+      6
+    );
+    const { shape } = planarEraseShape(fill, stamp, { mode: "normal" });
+    const after = totalFillArea(shape);
+    // The swath through the 10px-tall band removes only a modest bite — NOT
+    // half the shape. Pre-fix this dropped to ~910 (>half lost).
+    expect(after).toBeLessThan(before);
+    expect(after).toBeGreaterThan(1500); // far more than half survives
+    expect(before - after).toBeLessThan(400); // only the eraser bite removed
+  });
+
+  it("a steeper / fatter angled cut still splits cleanly into two full-span sides", () => {
+    const stamp = buildEraserStamp(
+      [
+        { x: 90, y: 90 },
+        { x: 110, y: 112 },
+      ],
+      10 // wider eraser
+    );
+    const { shape } = planarEraseShape(band(), stamp, { mode: "normal" }, "band");
+    expect(shape).not.toBeNull();
+    expect(filledFaceCount(shape)).toBeGreaterThanOrEqual(2);
+    const ext = fillXExtent(shape);
+    expect(ext.min).toBeLessThanOrEqual(1);
+    expect(ext.max).toBeGreaterThanOrEqual(199);
+  });
+
+  it("matches axis-aligned behaviour: a perpendicular cut also leaves both full-span sides", () => {
+    const stamp = buildEraserStamp(
+      [
+        { x: 100, y: 88 },
+        { x: 100, y: 112 },
+      ],
+      6
+    );
+    const { shape } = planarEraseShape(band(), stamp, { mode: "normal" }, "band");
+    expect(shape).not.toBeNull();
+    expect(filledFaceCount(shape)).toBeGreaterThanOrEqual(2);
+    const ext = fillXExtent(shape);
+    expect(ext.min).toBeLessThanOrEqual(1);
+    expect(ext.max).toBeGreaterThanOrEqual(199);
+  });
+});
+
 describe("planar/P4 — eraser stamp-overlap union (task 1327 regression)", () => {
   /** UNION (any-loop) point-in-eraser — the CORRECT containment for the stamp. */
   const inEraserUnion = (pt: Point, loops: readonly (readonly Point[])[]): boolean =>

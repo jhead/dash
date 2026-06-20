@@ -156,6 +156,26 @@ perturbation technique remains the reference for the boolean ops P1+ will build 
 top of the arrangement; the kernel's snap-first approach removes most of the
 degeneracies that perturbation was patching.)
 
+**Snapping is not sufficient on its own — the crossing point must be SHARED, not
+recomputed per edge (task 1332).** When two edges cross, `insertEdge` splits BOTH
+of them at the crossing. The intersector returns one snapped `point`, but the old
+code threw that point away and split each edge independently by re-evaluating its
+*own* geometry at its *own* parameter (`edgeAt(geom, t)`) and re-snapping. Two
+re-evaluations of the same crossing — once along edge A's parameterization, once
+along edge B's — can land in **adjacent** twip cells (e.g. an angled eraser-capsule
+edge crossing a band's top edge produced `(102.65, 95)` on one side and
+`(102.70, 95)` on the other, 1 twip apart). The two "should-be-shared" vertices
+then did **not** merge, the half-edge rotation ring at the crossing was malformed,
+and the far region failed to close into a bounded face — it leaked into the
+unbounded face, so one whole side of an angled cut **vanished** (the QA-filed
+"erase across a brush line deletes the right half" bug). Fix: thread the
+authoritative snapped intersection `point` through the split (`Split = { t, point }`)
+and **pin** each interior split vertex to that exact point in `chopEdge`/`splitLocal`
+(control points are still de Casteljau, only the shared endpoint is forced). Now the
+same crossing produces the *identical* vertex coordinate on every edge through it, so
+it merges by exact integer key regardless of which parameterization computed it.
+Gate: `planar-eraser.test.ts` "angled cut splits a band into two surviving sides".
+
 ### 2.4 Why a half-edge map (not just polygon booleans)
 
 The existing eraser does polygon Greiner–Hormann difference on **flattened**
