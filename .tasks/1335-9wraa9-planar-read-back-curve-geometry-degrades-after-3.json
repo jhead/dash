@@ -1,0 +1,10 @@
+{
+  "id": "1335-9wraa9-planar-read-back-curve-geometry-degrades-after-3",
+  "title": "Planar read-back: curve geometry degrades after 3+ commit->rebuild cycles (quadratic read-back accumulation)",
+  "description": "Latent stability issue flagged by task 1334 (out of its scope). Any oval/curved fill \u2014 stroked or stroke-free \u2014 slowly DEGRADES after 3+ successive commit -> livePlanarShape-rebuild cycles: planarShapeToShape read-back of quadratics accumulates error/fragments across repeated fold->read-back->fold round-trips. Single commits and the stroked-vs-stroke-free parity are fine (fixed in 1334); this is multi-cycle drift. INVESTIGATE engine/planar/query.ts planarShapeToShape curve read-back + how livePlanarShape rebuilds from the committed per-path shape: each cycle re-derives quadratics from the arrangement, introducing small geometry/segmentation changes that compound. FIX direction: make the read-back idempotent/stable across cycles \u2014 e.g. canonicalize/refit the curve representation so fold(read-back(x)) stabilizes (a fixed point) rather than drifting; or cache/carry the original curve params so rebuild doesn't re-derive lossily; or snap/dedup to twip grid on read-back to converge. VERIFY: add a test that N (e.g. 10) successive commit->rebuild cycles on an oval keep area + fragment-count + pixel-raster stable within epsilon (use the raster oracle from task 1330); 8 merge oracles still diff=0; existing planar tests pass. ACQUIRE lock; commit incl task file; push rebase-retry (if .tasks/.counter conflicts keep origin's). Scope: engine/planar query/read-back (+ test). Not urgent (single-edit drawing is fine) but affects heavy iterative editing.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-20T17:49:26Z",
+  "updated_at": "2026-06-20T17:49:26Z"
+}
