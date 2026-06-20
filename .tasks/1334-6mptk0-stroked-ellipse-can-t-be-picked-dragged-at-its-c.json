@@ -1,0 +1,10 @@
+{
+  "id": "1334-6mptk0-stroked-ellipse-can-t-be-picked-dragged-at-its-c",
+  "title": "Stroked ellipse can't be picked/dragged at its centre \u2014 fragments into ~25 merge fill-loops, centre face pickAt returns null",
+  "description": "Surfaced (documented, not fixed) by task 1331. In the merge model, a STROKED ellipse/oval commits as ~25 fragmented fill loops (the stroke segments the fill), so pickAt at the oval's CENTRE returns null and you can't select/drag the stroked oval by its interior \u2014 a stroke-free oval picks/drags fine. Likely the fragmentation of a curved stroke-bordered fill leaves the centre as many tiny faces or an unresolved region, or pickAt's face resolution at the centroid fails. EXPLORE engine/planar pickAt/locateFace + how a stroked oval folds (merge.ts / planarShapeToShape) + subselection.ts pickAt. FIX so the interior of a stroked oval (and similar stroke-bordered curved fills) resolves to its fill face for click-select/drag, matching a stroke-free oval. VERIFY: build + core/authoring-ui tests green (only ~3 task-1207 fixtures acceptable); merge oracles still diff=0; add a regression test (stroked oval: pickAt at centre resolves a fill face; drag works). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: engine/planar pickAt/fold (+test).",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-20T17:11:07Z",
+  "updated_at": "2026-06-20T17:11:07Z"
+}
