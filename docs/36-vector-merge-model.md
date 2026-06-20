@@ -1,26 +1,41 @@
 # Vector Merge Model — authentic Flash 8 merge-drawing
 
-**Status:** P0 + P1 + P2 + P3-selection + P4-eraser landed. P0 = curve-aware
-planar geometry kernel + oracle harness. **P1 (task 1319) = merge-on-commit**
-(same-color UNION / different-color CUT, top-wins, curve-preserving). **P2 (task
-1320) = strokes/lines split fills + intersecting lines segment each other** (a line
-drawn across a fill splits it into separate selectable faces; two crossing lines
-split each other into four segments; curve-preserving). **P3-selection (task 1321)
-= partial fill-region + line-segment selection + split-on-move** (click selects ONE
-face or segment, double-click the connected set, marquee picks all intersecting;
-moving a partial selection EXTRACTS it and leaves a hole/cut behind — all on the
-LIVE planar map). **P4-eraser (task 1322) = curve-preserving eraser on the planar
-mesh + Flash 8 eraser modes** — the eraser stroke (disk + capsule stamp) is
-subtracted from the layer arrangement: faces inside the erased region lose their
-fill (a band erased clean through SPLITS a fill into two; an erased interior island
-leaves a hole) and stroke half-edges are TRIMMED/SPLIT at the eraser boundary —
-all CURVE-PRESERVING via the P0 kernel splits (de Casteljau, never polyline
-flattening). Modes: Normal / Erase Fills / Erase Lines / Erase Selected / Erase
-Inside, plus the Faucet whole-fill/line click. All behind the `planarMergeOnCommit`
-feature flag (default OFF until the P5 cutover); the legacy per-object
-curve-FLATTENING eraser (`engine/eraser.ts`) stays for the flag-OFF /
-drawing-object path so default behavior is unchanged. The remaining phase is
-SWF/FLA interchange (P5).
+**Status: SHIPPED as the DEFAULT vector model (P5 cutover, task 1323).** Merge
+drawing is now the default behavior of every shape tool — there is NO feature flag.
+Two overlapping same-color shapes union; different colors cut top-wins; a line
+across a fill splits it; an eraser truly subtracts; clicking with the selection tool
+picks a fill face / line segment and dragging it splits it off. Object Drawing mode
+(`type:"drawing-object"`) remains the discrete-object alternative and is unchanged.
+
+P0 + P1 + P2 + P3-selection + P4-eraser are all landed and on by default. P0 =
+curve-aware planar geometry kernel + oracle harness. **P1 (task 1319) =
+merge-on-commit** (same-color UNION / different-color CUT, top-wins,
+curve-preserving). **P2 (task 1320) = strokes/lines split fills + intersecting
+lines segment each other** (a line drawn across a fill splits it into separate
+selectable faces; two crossing lines split each other into four segments;
+curve-preserving). **P3-selection (task 1321) = partial fill-region + line-segment
+selection + split-on-move** (click selects ONE face or segment, double-click the
+connected set, marquee picks all intersecting; moving a partial selection EXTRACTS
+it and leaves a hole/cut behind — all on the LIVE planar map). **P4-eraser (task
+1322) = curve-preserving eraser on the planar mesh + Flash 8 eraser modes** — the
+eraser stroke (disk + capsule stamp) is subtracted from the layer arrangement:
+faces inside the erased region lose their fill (a band erased clean through SPLITS a
+fill into two; an erased interior island leaves a hole) and stroke half-edges are
+TRIMMED/SPLIT at the eraser boundary — all CURVE-PRESERVING via the P0 kernel splits
+(de Casteljau, never polyline flattening). Modes: Normal / Erase Fills / Erase Lines
+/ Erase Selected / Erase Inside, plus the Faucet whole-fill/line click.
+
+**P5 cutover (task 1323).** The `planarMergeOnCommit` feature flag was removed and
+merge made unconditional for `type:"shape"` commits (`Shell.tsx handleShapeCreated`
+/ `commitMergeShapeDirect`); partial face/segment selection is active whenever the
+selection tool is active; the planar eraser is selected purely by geometry (a merged
+mergeable shape at identity transform / origin), with the legacy per-object
+curve-FLATTENING eraser (`engine/eraser.ts`) kept ONLY for Object Drawing shapes,
+non-identity transforms, and gradient/bitmap fills (which never enter the merge map).
+The dead MVP modules `engine/merge-drawing.ts` (AABB merge approximation) and the
+no-op `engine/shape-boolean.ts` stub were deleted, along with the `featureFlags.ts`
+module (it held only this one flag). See §3.0d for the cutover notes, the
+planar↔per-path interchange confirmation, and the known limitations / follow-ups.
 
 > **Note on phase numbering.** The §3 phased plan below listed the curve-preserving
 > **eraser** as "P3"; the task backlog filed the **selection** milestone (task 1321)
@@ -162,8 +177,10 @@ faces does this fill now occupy after the cut".
 | **P2** | **Strokes/lines split fills + intersecting lines segment each other** (task 1320): adding a STROKE edge across a fill SPLITS the fill into separate selectable faces along the line; two crossing lines SPLIT each other into segments at the crossing (curve-preserving). Wired through the existing P1 fold path — line/pencil/pen + stroke commits are `type:"shape"` and already route through `planarMergeCommit` under the flag. The read-back (`planarShapeToShape`) now treats a stroked same-fill seam as a real boundary (only **un-stroked** same-fill seams dissolve), so a line-split fill reads back as two distinct fill loops + the segmented line and an X of two lines reads back as four segments. Acceptance: `merge-drawing-oracle.spec.ts` cases 3 (line-splits-fill) + 4 (4 segments) — stage↔Ruffle pixelmatch diff=0. (Full segment/face *selection* — single-click edge/face, double-click connected fill+strokes — and the live-map dissolve remain P3+.) | **DONE (task 1320).** |
 | **P3-selection** | **Partial fill-region + line-segment selection + split-on-move** (task 1321). See §3.0b. | **DONE (task 1321).** |
 | **P4-eraser** | **Curve-preserving eraser & true subtraction** routed through the kernel (`engine/planar/eraser.ts`): erase-across-shape splits curve-preservingly; removing an overlapping island leaves a hole; strokes are trimmed/split at the eraser boundary keeping quadratics. Flash 8 eraser MODES (Normal / Erase Fills / Erase Lines / Erase Selected / Erase Inside) + faucet whole-fill/line click. The legacy polyline-flatten `engine/eraser.ts` stays for the flag-OFF / drawing-object path. See §3.0c. | **DONE (task 1322).** |
-| **P5 (interchange)** | **Interchange:** enable SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` currently hard-codes `stateFillStyle1=0`); FLA import/export of merge-map geometry; shape-morph (`tween/interpolate.ts`) matched on the planar topology. | Planned. |
-| **P5** | **Full selection authenticity + polish:** marquee/lasso over the planar pieces, edit-curve handles on faces, snapping against the arrangement, and turning the P0 oracle placeholders into passing Ruffle+stage specs. | Planned. |
+| **P5 (cutover)** | **Cutover to merge-by-default + cleanup + final authenticity sweep** (task 1323). Remove the `planarMergeOnCommit` flag; merge unconditional for `type:"shape"` commits; delete the dead MVP `merge-drawing.ts` + the no-op `shape-boolean.ts` stub + the now-empty `featureFlags.ts`. Adapt the tests that assumed the old per-object behavior to the authentic merge outcome. Confirm all 8 oracles diff=0, Object Drawing still discrete, FLA/SWF round-trip + golden-parity + self-determinism unaffected, and the planar↔per-path interchange is sufficient. See §3.0d. | **DONE (task 1323).** |
+| **P5+ (interchange optimization, NOT a blocker)** | SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` hard-codes `stateFillStyle1=0`) — an edge-record-count *optimization* (closer byte-match to Flash), NOT a correctness need: the per-path read-back already round-trips to SWF at diff=0 (see §3.0d). FLA merge-map persistence and planar-topology shape-morph likewise remain future enhancements, not regressions. | Optional follow-up. |
+| **P5+ (selection polish)** | **Full selection authenticity + polish:** lasso over the planar pieces, edit-curve handles on faces, snapping against the arrangement. | Optional follow-up. |
+| **Perf follow-up (task 1327)** | Incremental fold — avoid rebuilding the entire layer arrangement per stroke on dense art (traced bitmaps with 1000+ fills). Measured ~35/61/176 ms per stroke for 100/400/800 mergeable fills. Not a blocker; see §3.0d. | Open. |
 
 ### 3.0 P1 implementation notes (task 1319)
 
@@ -394,7 +411,89 @@ both with `planarMergeOnCommit` ON for the test. Plus core unit tests
 (`planar-eraser.test.ts`): erase splits a face; area reduced correctly; full cover
 → null; island leaves a hole; **stroke trim keeps quadratics** (curve round-trip
 within epsilon); all five modes behave; faucet whole-fill / whole-line. The legacy
-`eraser.test.ts` (flag-OFF path) still passes unchanged.
+`eraser.test.ts` (Object-Drawing / legacy path) still passes unchanged.
+
+### 3.0d P5 cutover — merge by default + cleanup + authenticity sweep (task 1323)
+
+**The cutover.** The `planarMergeOnCommit` feature flag is GONE. The merge fold is
+now unconditional for `type:"shape"` commits:
+
+* `Shell.tsx handleShapeCreated` folds every committed merge-mode shape via
+  `planarMergeCommit` (was gated on the flag; now gated only on
+  `obj.type === "shape"`, so Object Drawing's `type:"drawing-object"` still appends
+  discretely). `commitMergeShapeDirect` (the `__flashTest.commitMergeShape` bridge)
+  likewise always folds.
+* `partialSelectEnabled` (the face/segment subselection + split-on-move path in
+  `StageArea.tsx`) is now active whenever the selection tool is active.
+* The planar eraser is chosen **purely by geometry** — a merged mergeable shape at
+  identity transform and origin (0,0). The legacy per-object curve-FLATTENING GH
+  eraser (`engine/eraser.ts`) is kept ONLY for the cases that never enter the merge
+  map: **Object Drawing shapes, non-identity-transform shapes, and gradient/bitmap
+  fills** (`isMergeableShape` rejects non-solid fills). The faucet click is likewise
+  unconditional. So `engine/eraser.ts` is NOT dead — it is the Object-Drawing /
+  non-mergeable path.
+
+**Dead code removed.** `engine/merge-drawing.ts` (the MVP AABB merge approximation,
+superseded by the planar kernel in P1 — no remaining callers after the cutover) and
+the no-op `engine/shape-boolean.ts` stub (bbox-only union/subtract, only ever called
+by its own test) were deleted, with their unit tests and the `engine/index.ts`
+re-exports. `engine/featureFlags.ts` (which held only `planarMergeOnCommit`) was
+deleted along with its index re-exports and the `setFeatureFlag`/`getFeatureFlag`
+`__flashTest` bridge methods.
+
+**Tests adapted to the authentic outcome (not deleted).** The whole-object
+selection-drag e2e (`pointer-stage-1275.spec.ts` "selection drag-move persists,
+1264") used to assert the display-object `(x,y)` moved. Under merge-by-default a
+drawn rect commits as ONE merged shape at (0,0) with the geometry in stage space;
+dragging the whole filled region runs **split-on-move**, which extracts + translates
+the GEOMETRY (the artwork moves) rather than the object offset. The test now tracks
+the stage-space centroid of the artwork and asserts IT moved — the Flash-correct
+result. The `merge-drawing-oracle.spec.ts` `beforeEach`/`afterEach` no longer flip
+any flag; all 8 canonical cases run by default.
+
+**Planar ↔ per-path interchange is SUFFICIENT (the key cutover assessment).** The
+"remaining P5 interchange gaps" noted in P4 — SWF `FillStyle1` hard-coded to 0, FLA
+merge-map persistence, planar-topology shape-morph — are **NOT cutover blockers**:
+
+* **SWF.** The merged artwork is read back by `planarShapeToShape` into per-path
+  **closed loops** (one solid fill per loop; holes share the same `Fill` reference
+  and are cut by the renderer/Ruffle non-zero winding). The SWF encoder emits exactly
+  this single-fill-per-loop form (`FillStyle0` set, `stateFillStyle1=0`) and Ruffle
+  renders it identically. **Empirical proof:** all 8 oracle cases publish SWF that
+  pixelmatches the stage at **diff=0/220000** — cut, union, line-split, four
+  segments, partial selection, island-leaves-hole, erase-cut, and curved disk split.
+  Populating `FillStyle1` would only reduce the edge-record count (a closer byte-match
+  to Flash's own dual-fill loops), an optimization tracked as an optional follow-up.
+* **FLA.** A merged shape is a normal per-path `Shape` display object; it
+  saves/loads through the standard interchange with no special merge-map record. The
+  LIVE planar map for selection/erase is re-derived on demand from that `Shape`
+  (`livePlanarShape`, memoized by identity), so nothing planar needs persisting.
+  `fla-roundtrip.spec.ts` + `convert-symbol-identity.spec.ts` stay green.
+* **Morph.** Shape-tween interpolation is untouched; a merged shape morphs via the
+  existing path model. Topology-aware morph matching is a future enhancement, not a
+  regression.
+
+**Authenticity sweep results (task 1323).**
+
+* **All 8 merge interaction oracles** pass with merge as the default (no flag),
+  stage↔Ruffle pixelmatch **diff=0/220000** each.
+* **Object Drawing** stays discrete — structurally guaranteed (`type:"drawing-object"`
+  bypasses the merge fold; DrawingObjects aren't in the mergeable shape list and route
+  to the legacy eraser).
+* **FLA + SWF round-trip, golden-parity, self-determinism, visual-oracle** unaffected
+  for unchanged docs — the cutover diff touches ONLY the editor authoring path
+  (`Shell.tsx` / `StageArea.tsx` / `uiStore.ts`) and removes dead engine modules; it
+  does NOT touch any SWF compile/publish, FLA import/export, or tween/morph file, so a
+  given document compiles byte-identically. `fla-roundtrip`, `convert-symbol-identity`,
+  `visual-oracle` (18), `shape-morph`, `solid-swf-dump` all pass.
+* **Performance on dense art** — the one real follow-up. `planarMergeCommit` rebuilds
+  the WHOLE layer arrangement (`buildArrangementFromShapes` over every mergeable shape)
+  on each commit. Measured one-stroke fold cost on a dense solid-fill shape: 100 fills
+  → ~35 ms, 400 → ~61 ms, 800 → ~176 ms (super-linear). A traced-bitmap layer (1000+
+  solid fills — all `isMergeableShape`) therefore sees a ~250–400 ms hitch per stroke.
+  Not a correctness blocker; normal authored art is responsive. Tracked as **task 1327**
+  (incremental fold: bbox-cull disjoint fills / cache the live arrangement / keep
+  traced bitmaps non-merging until broken-apart).
 
 ### 3.1 Key decisions
 
@@ -445,9 +544,10 @@ is the truth; unit tests are necessary but not sufficient).
 `apps/desktop/e2e/merge-drawing-oracle.spec.ts` — cases 1–2 (cut, union) PASS as
 of P1, cases 3–4 (line-splits-fill, two crossing lines = 4 segments) PASS as of
 P2 (task 1320), the partial-selection + island-move cases PASS as of P3-selection
-(task 1321), and the two **eraser** cases PASS as of P4-eraser (task 1322) — all
-with `planarMergeOnCommit` ON for the test and stage↔Ruffle pixelmatch
-diff=0/220000. Each case is verified with the project's two-oracle stack:
+(task 1321), and the two **eraser** cases PASS as of P4-eraser (task 1322). As of
+the P5 cutover (task 1323) all eight run with merge as the DEFAULT model (no flag)
+— stage↔Ruffle pixelmatch diff=0/220000 each. Each case is verified with the
+project's two-oracle stack:
 the **stage-canvas** screenshot (`window.__flashTest.screenshotStage()`) for the
 authored result, and the **Ruffle pixel** screenshot of the published SWF
 (`window.__flashTest.publish()` → bundled Ruffle), pixelmatched against each

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
-import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, planarEraseShape, faucetEraseShape, isMergeableShape, getFeatureFlag, type EraserMode } from "@flash/core";
+import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, planarEraseShape, faucetEraseShape, isMergeableShape, type EraserMode } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
@@ -1988,9 +1988,9 @@ export function StageArea({
       if (e.button === 0 && activeTool === "eraser") {
         e.preventDefault();
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
-        // P4 Faucet mode (planar, flag ON): a single click removes a WHOLE fill
+        // P4 Faucet mode (planar): a single click removes a WHOLE fill
         // or line under the cursor. Operate on the topmost merged mergeable shape.
-        if (eraserFaucet && getFeatureFlag("planarMergeOnCommit")) {
+        if (eraserFaucet) {
           for (let i = shapeDisplayObjects.length - 1; i >= 0; i--) {
             const obj = shapeDisplayObjects[i];
             if ((obj.x ?? 0) !== 0 || (obj.y ?? 0) !== 0 || !isMergeableShape(obj.shape)) continue;
@@ -2854,13 +2854,12 @@ export function StageArea({
             });
             if (!touches) continue;
 
-            // P4: when planar merge is ON and this is a merged mergeable shape
-            // (placed at 0,0, geometry in stage space), erase on the planar mesh
-            // — curve-preserving cut/trim with Flash 8 eraser modes. Otherwise
-            // fall back to the legacy per-object curve-FLATTENING GH eraser
-            // (default behavior, flag OFF / drawing-objects) — unchanged.
+            // P4: when this is a merged mergeable shape (placed at 0,0, geometry
+            // in stage space), erase on the planar mesh — curve-preserving
+            // cut/trim with Flash 8 eraser modes. Otherwise fall back to the
+            // legacy per-object curve-FLATTENING GH eraser (Object Drawing shapes
+            // / non-identity transforms / gradient/bitmap fills) — unchanged.
             const usePlanar =
-              getFeatureFlag("planarMergeOnCommit") &&
               (obj.x ?? 0) === 0 &&
               (obj.y ?? 0) === 0 &&
               (obj.scaleX ?? 1) === 1 &&

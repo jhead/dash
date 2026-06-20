@@ -16,10 +16,9 @@
  *       player, screenshot it, and pixelmatch against the stage capture so the
  *       authored merge result and the published result agree.
  *
- * P1 (task 1319) fills in the first two cases (red-over-blue cut, blue-over-blue
- * union) behind the `planarMergeOnCommit` feature flag (turned ON for the test).
- * Cases 3-6 (segment selection, line-splits-fill, eraser, island move) remain
- * `.fixme` placeholders for P2-P5.
+ * All eight canonical cases run by default. Merge drawing is now the DEFAULT
+ * vector model (docs/36-vector-merge-model.md, P5 cutover) — there is no longer a
+ * feature flag to enable; a fresh document is already in merge mode.
  *
  * Mirrors the existing oracle conventions (color-effect-oracle.spec.ts /
  * interactivity.spec.ts): pixelmatch + pngjs, `__flashTest` bridge, autoplay+
@@ -218,7 +217,6 @@ interface SubSelectionLike {
 
 interface FlashTestMerge {
   loadDocument: (d: unknown) => void;
-  setFeatureFlag: (name: string, value: boolean) => void;
   commitMergeShape: (shape: unknown, x: number, y: number) => void;
   // P3 — partial face/segment selection + split-on-move.
   pickSubSelectionAt: (x: number, y: number, mode?: "single" | "connected") => SubSelectionLike | null;
@@ -353,18 +351,9 @@ test.describe('Merge-drawing oracle (planar kernel) — canonical cases', () => 
       () => typeof (window as unknown as { __flashTest?: unknown }).__flashTest !== 'undefined'
     );
     expect(ready).toBe(true);
-    // Start from a fresh document and turn the planar merge flag ON for the test.
-    await page.evaluate(() => {
-      const b = (window as unknown as { __flashTest: FlashTestMerge & { loadDocument: (d: unknown) => void } }).__flashTest;
-      b.setFeatureFlag('planarMergeOnCommit', true);
-    });
+    // Merge drawing is the DEFAULT model (docs/36-vector-merge-model.md, P5
+    // cutover) — no feature flag to flip. A fresh document starts in merge mode.
     await page.waitForTimeout(100);
-  });
-
-  test.afterEach(async ({ page }) => {
-    await page.evaluate(() => {
-      (window as unknown as { __flashTest: FlashTestMerge }).__flashTest.setFeatureFlag('planarMergeOnCommit', false);
-    });
   });
 
   // -------------------------------------------------------------------------

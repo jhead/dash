@@ -134,9 +134,10 @@ export interface UiData {
   selectedInstanceId: string | null;
   selectedShapeIds: string[];
   /**
-   * P3 — partial (face/segment) selection within a merged planar shape, used only
-   * when `planarMergeOnCommit` is on. Lives ALONGSIDE `selectedShapeIds` (which
-   * stays the whole-object selection); ephemeral UI state, not persisted.
+   * Partial (face/segment) selection within a merged planar shape (the default
+   * merge model — docs/36-vector-merge-model.md). Lives ALONGSIDE
+   * `selectedShapeIds` (which stays the whole-object selection); ephemeral UI
+   * state, not persisted.
    */
   subSelection: SubSelection | null;
 

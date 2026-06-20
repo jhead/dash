@@ -52,6 +52,35 @@ async function firstShapePos(page: Page): Promise<{ id: string; x: number; y: nu
   });
 }
 
+// Stage-space centroid of the first shape's geometry (object offset + the mean of
+// its path anchor points). In MERGE mode (the default model) a selection drag of a
+// whole filled region extracts + translates the geometry rather than moving the
+// display-object (x,y), so a move must be observed in the geometry, not obj.x/y.
+async function firstShapeStageCenter(page: Page): Promise<{ x: number; y: number } | null> {
+  return page.evaluate(() => {
+    const doc: any = (window as any).__flashTest.getDocument();
+    for (const scene of doc.scenes ?? []) {
+      for (const layer of scene.timeline?.layers ?? []) {
+        for (const frame of layer.frames ?? []) {
+          for (const obj of frame.displayObjects ?? []) {
+            if (obj.type !== 'shape') continue;
+            let sx = 0, sy = 0, n = 0;
+            for (const p of obj.shape?.paths ?? []) {
+              if (p.start) { sx += p.start.x; sy += p.start.y; n++; }
+              for (const seg of p.segments ?? []) {
+                if (seg.to) { sx += seg.to.x; sy += seg.to.y; n++; }
+              }
+            }
+            if (n === 0) return { x: obj.x ?? 0, y: obj.y ?? 0 };
+            return { x: (obj.x ?? 0) + sx / n, y: (obj.y ?? 0) + sy / n };
+          }
+        }
+      }
+    }
+    return null;
+  });
+}
+
 // Dispatch a single PointerEvent on the stage work-area element.
 async function dispatchPointer(
   page: Page,
@@ -189,7 +218,11 @@ test.describe('task 1275 — pointer-driven stage interactions', () => {
       'mouse',
     );
     await expect.poll(() => countShapes(page)).toBeGreaterThan(0);
-    const start = await firstShapePos(page);
+    // In MERGE mode (the default vector model) a drawn rect commits as a single
+    // merged shape at (0,0) with the geometry in stage space; dragging the whole
+    // filled region extracts + translates the GEOMETRY (the artwork moves), not
+    // the display-object offset. So track the stage-space centroid of the artwork.
+    const start = await firstShapeStageCenter(page);
     expect(start).not.toBeNull();
 
     // Switch to selection tool, click on the shape and drag it right+down.
@@ -199,9 +232,9 @@ test.describe('task 1275 — pointer-driven stage interactions', () => {
     const grabY = r.top + r.height * 0.4;
     await pointerDrag(page, { x: grabX, y: grabY }, { x: grabX + 80, y: grabY + 60 }, 'mouse');
 
-    // Allow commit, then re-read; the shape must have moved AND stayed moved.
+    // Allow commit, then re-read; the artwork must have moved AND stayed moved.
     await page.waitForTimeout(150);
-    const moved = await firstShapePos(page);
+    const moved = await firstShapeStageCenter(page);
     expect(moved).not.toBeNull();
     const dx = Math.abs((moved!.x ?? 0) - (start!.x ?? 0));
     const dy = Math.abs((moved!.y ?? 0) - (start!.y ?? 0));

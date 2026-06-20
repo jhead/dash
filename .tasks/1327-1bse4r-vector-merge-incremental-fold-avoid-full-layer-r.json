@@ -1,0 +1,10 @@
+{
+  "id": "1327-1bse4r-vector-merge-incremental-fold-avoid-full-layer-r",
+  "title": "Vector merge: incremental fold (avoid full layer re-arrangement per stroke on dense art)",
+  "description": "Follow-up from P5 cutover (task 1323). planarMergeCommit/foldShapeIntoLayer rebuilds the ENTIRE layer arrangement (buildArrangementFromShapes over every mergeable shape) on each commit. Measured one-stroke fold cost on a dense solid-fill shape: n=100 -> 35ms, n=400 -> 61ms, n=800 -> 176ms (super-linear). A traced-bitmap layer (1000+ solid fills, all mergeable) thus sees a ~250-400ms hitch per stroke. NOT a correctness blocker (all 8 oracles diff=0; normal art is responsive), but on dense art the merge 'rebuilds the world' per stroke. Options: (a) only fold the new shape against shapes whose bbox overlaps it (skip disjoint fills); (b) incremental insertEdge into a cached live arrangement instead of rebuild-from-scratch; (c) keep traced-bitmap shapes as non-merging until explicitly broken-apart. Acceptance: per-stroke fold on a 1000-fill layer under ~50ms, oracles still diff=0.",
+  "status": "open",
+  "effort": "high",
+  "priority": "low",
+  "created_at": "2026-06-20T08:43:07Z",
+  "updated_at": "2026-06-20T08:43:07Z"
+}

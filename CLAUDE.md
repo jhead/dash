@@ -870,6 +870,53 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   `__flashTest` bridge gained `saveProjectAs`/`saveProject`/`flushAutosave`/
   `getActiveProjectName`/`getRecentProjects` for the e2e.
 
+### Vector merge model — Flash 8 "shape soup" (docs/36)
+
+- **Merge drawing is the DEFAULT vector model as of the P5 cutover (task 1323) — no
+  feature flag.** Committing a `type:"shape"` display object folds it into the active
+  layer's planar arrangement (same-color UNION / different-color CUT / line-splits-fill
+  / true-subtract eraser, all curve-preserving) via `planarMergeCommit`
+  (`engine/planar/merge.ts`) → read back to per-path closed loops by `planarShapeToShape`
+  (`engine/planar/query.ts`). The gate is now ONLY `obj.type === "shape"` in
+  `Shell.tsx handleShapeCreated` / `commitMergeShapeDirect`. **Object Drawing mode emits
+  `type:"drawing-object"`, which bypasses the fold** — that is the discrete-object
+  alternative, unchanged. The `planarMergeOnCommit` flag, the whole `engine/featureFlags.ts`
+  module (it held only that flag), the dead MVP `engine/merge-drawing.ts` (AABB merge
+  approximation, superseded by the kernel in P1), and the no-op `engine/shape-boolean.ts`
+  stub were all DELETED. `engine/eraser.ts` is NOT dead — it is the legacy per-object
+  curve-flattening eraser, still used for the cases that never enter the merge map: Object
+  Drawing shapes, non-identity-transform shapes, gradient/bitmap fills (`isMergeableShape`
+  rejects non-solid fills). The planar vs legacy eraser is now chosen purely by geometry
+  (merged mergeable shape at identity transform / origin), not a flag.
+- **The planar↔per-path interchange is SUFFICIENT for SWF/FLA — `FillStyle1` does NOT
+  need populating.** The merged artwork reads back as per-path closed loops (one solid
+  fill per loop; holes share the same `Fill` reference, cut by non-zero winding). The SWF
+  encoder emits that single-fill-per-loop form (`stateFillStyle1=0` in
+  `packages/swf/src/shapes.ts`) and Ruffle renders it identically — proven by all 8
+  `merge-drawing-oracle.spec.ts` cases publishing SWF that pixelmatches the stage at
+  diff=0/220000. Populating `FillStyle1` (the dual-fill edge model) would only reduce the
+  DefineShape edge-record count (closer byte-match to Flash's own loops) — an
+  optimization, not correctness. A merged shape also saves/loads as an ordinary per-path
+  `Shape` (the LIVE planar map is re-derived on demand via `livePlanarShape`), so FLA
+  needs no merge-map record. Don't treat the "P5 interchange gaps" (FillStyle1 / FLA
+  merge-map / topology-morph) as blockers — they're optional follow-ups.
+- **Merge folds the WHOLE layer arrangement per commit — a real perf cost on dense art
+  (task 1327).** `planarMergeCommit`→`foldShapeIntoLayer` calls
+  `buildArrangementFromShapes` over EVERY mergeable shape on the layer for each commit
+  (not incremental). Measured one-stroke fold: 100 solid fills → ~35 ms, 400 → ~61 ms, 800
+  → ~176 ms (super-linear). A traced-bitmap layer (1000+ solid fills, all mergeable) thus
+  hitches ~250–400 ms per stroke. Normal authored art is fine; this is a dense-art
+  follow-up (bbox-cull disjoint fills / cache the live arrangement / keep traced bitmaps
+  non-merging), not a cutover blocker.
+- **Whole-shape drag in merge mode = split-on-move (geometry translates, NOT the object
+  offset).** A drawn shape commits as one merged shape at (0,0) with geometry in stage
+  space. The selection tool's `partialSelectEnabled` path (active whenever the selection
+  tool is active) picks the clicked face and, on drag, EXTRACTS + translates that geometry
+  via `splitOnMove` — the display-object `x/y` stays at the origin. Any test/assertion that
+  expected `obj.x` to change on a selection drag must instead observe the artwork's
+  stage-space geometry move (e.g. `pointer-stage-1275.spec.ts` 1264 now tracks the shape
+  centroid). This is the authentic Flash 8 outcome (you move the artwork, not a container).
+
 ### AS2 external classes / Class VFS (task 1300 P2)
 
 - **The ClassVfs INTERFACE + path helpers + hydrate/sync bridge are PURE and live in
