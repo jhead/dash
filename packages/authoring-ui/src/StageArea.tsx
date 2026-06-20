@@ -1785,7 +1785,6 @@ export function StageArea({
 
   // Eraser tool state
   const eraserPointsRef = useRef<Point[] | null>(null);
-  const [eraserPreview, setEraserPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   // Tracks erased object IDs during the current drag to avoid double-deleting
   const erasedIdsRef = useRef<Set<string>>(new Set());
   // Eraser cursor position in stage coords (for circle overlay)
@@ -2034,7 +2033,6 @@ export function StageArea({
         }
         eraserPointsRef.current = [{ x: stageX, y: stageY }];
         erasedIdsRef.current = new Set();
-        setEraserPreview({ x: stageX, y: stageY, w: 0, h: 0 });
         return;
       }
 
@@ -2843,13 +2841,7 @@ export function StageArea({
               ? eraserPointsRef.current[eraserPointsRef.current.length - 1]
               : { x: stageX, y: stageY };
           eraserPointsRef.current.push({ x: stageX, y: stageY });
-          const allPts = eraserPointsRef.current;
-          const minX = Math.min(...allPts.map((p) => p.x));
-          const minY = Math.min(...allPts.map((p) => p.y));
-          const maxX = Math.max(...allPts.map((p) => p.x));
-          const maxY = Math.max(...allPts.map((p) => p.y));
           const half = eraserSize / 2;
-          setEraserPreview({ x: minX - half, y: minY - half, w: (maxX - minX) + eraserSize, h: (maxY - minY) + eraserSize });
 
           // Vector erase (Flash 8): boolean-subtract the eraser stamp from each
           // overlapping shape's geometry (in the shape's LOCAL coordinate space),
@@ -3525,7 +3517,6 @@ export function StageArea({
       if (activeTool === "eraser") {
         eraserPointsRef.current = null;
         erasedIdsRef.current = new Set();
-        setEraserPreview(null);
         return;
       }
 
@@ -3580,7 +3571,7 @@ export function StageArea({
       drawStartRef.current = null;
       setDrawPreview(null);
     },
-    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, eraserPreview, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, partialSelectEnabled, onSubSelect, onSubSplitMove, internalZoom, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
+    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, partialSelectEnabled, onSubSelect, onSubSplitMove, internalZoom, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
   );
 
   // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place.
@@ -5015,23 +5006,6 @@ export function StageArea({
             );
           })()}
 
-          {/* Eraser preview overlay (bounding rect of the full drag path) */}
-          {eraserPreview && (
-            <div
-              style={{
-                position: "absolute",
-                left: eraserPreview.x,
-                top: eraserPreview.y,
-                width: eraserPreview.w,
-                height: eraserPreview.h,
-                border: "1px dashed #ff6600",
-                boxSizing: "border-box",
-                background: "rgba(255,100,0,0.1)",
-                pointerEvents: "none",
-                zIndex: 20,
-              }}
-            />
-          )}
           {/* Eraser cursor circle overlay — shown whenever eraser tool is active and cursor is over the stage */}
           {activeTool === "eraser" && eraserCursorPos && (
             <div
