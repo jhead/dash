@@ -57,3 +57,4 @@ Start with `00-overview-and-architecture.md`, then read by domain.
 | 32 | [Agent Chat (in-app)](./32-agent-chat.md) | Client-side BYOK chat panel: AI SDK v6 + OpenRouter driving the editor via the agent-protocol tools |
 | 33 | [AS2 Classes & Class VFS](./33-as2-classes-vfs.md) | Cross-platform virtual filesystem for external AS2 `.as` classes: OPFS / IndexedDB fallback / Tauri native-FS disk mirror + doc↔VFS hydrate/sync |
 | 34 | [Live Preview tab](./34-live-preview.md) | Top-dock Live Preview: debounced auto-republish + Ruffle hot-reload, error-resilient (keeps last-good), live-dev controls + persisted prefs |
+| 35 | [Persistent Projects](./35-persistent-projects.md) | Browser project persistence: IndexedDB autosave so F5 restores in-progress work, named Save As slots, Open Recent, restore-on-load (+ Tauri recent-paths) |

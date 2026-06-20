@@ -25,6 +25,21 @@ interface MenuDefinition {
   items?: MenuItem[];
 }
 
+/** One entry in the File > Open Recent submenu (task 1310). */
+export interface RecentProjectEntry {
+  /** Stable identity: IndexedDB project name (web) or file path (Tauri). */
+  readonly id: string;
+  /** Display label. */
+  readonly label: string;
+  /** Epoch-ms of the last open/save (for ordering). */
+  readonly updatedAt: number;
+}
+
+/** True when running inside a Tauri desktop app (real `.fla` files on disk). */
+function isTauriEnv(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
@@ -255,6 +270,27 @@ export interface MenuBarProps {
   onDocumentChange?: (doc: FlashDocument, path?: string) => void;
   /** Called after a save action resolves the file path. */
   onFilePathChange?: (path: string) => void;
+  // --- Browser-persistent projects (task 1310) ---------------------------
+  /** Most-recent-first list for the File > Open Recent submenu. */
+  recentProjects?: readonly RecentProjectEntry[];
+  /** Active project name (web) / path (Tauri), for the active-slot Save. */
+  activeProjectName?: string;
+  /** Open a recent project by id (web: IndexedDB name; Tauri: file path). */
+  onOpenRecentProject?: (id: string) => void;
+  /** Remove an entry from the recent list (delete-from-recent). */
+  onRemoveRecentProject?: (id: string) => void;
+  /**
+   * Persist the document to the active named project slot (web IndexedDB).
+   * Returns true if it saved; false when there is no active named project (the
+   * caller then routes to Save As).
+   */
+  onSaveProject?: (doc: FlashDocument) => Promise<boolean>;
+  /** Persist the document under `name` (web Save As → IndexedDB slot). */
+  onSaveProjectAs?: (name: string, doc: FlashDocument) => Promise<boolean>;
+  /** Record a desktop file open/save in the recent-paths list (Tauri). */
+  onNoteOpenedPath?: (path: string) => void;
+  /** Reset the active project after New (clears the title-bar name). */
+  onResetActiveProject?: () => void;
   /** Called when Control > Test Movie is activated (Ctrl/Cmd+Enter). */
   onTestMovie?: () => void;
   /** Called when Control > Publish is activated. */
@@ -581,6 +617,14 @@ export function MenuBar({
   onRunCommand,
   onToggleSimpleButtons,
   simpleButtonsEnabled = false,
+  recentProjects = [],
+  activeProjectName,
+  onOpenRecentProject,
+  onRemoveRecentProject,
+  onSaveProject,
+  onSaveProjectAs,
+  onNoteOpenedPath,
+  onResetActiveProject,
 }: MenuBarProps = {}): React.ReactElement {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const { newDocument, openDocument, saveDocument, saveDocumentAs, exportBinaryFla } =
@@ -588,10 +632,13 @@ export function MenuBar({
 
   const closeMenu = useCallback(() => setOpenMenu(null), []);
 
+  const tauri = isTauriEnv();
+
   const handleNew = useCallback(() => {
     const doc = newDocument();
+    onResetActiveProject?.();
     onDocumentChange?.(doc, undefined);
-  }, [newDocument, onDocumentChange]);
+  }, [newDocument, onDocumentChange, onResetActiveProject]);
 
   const handleOpen = useCallback(async () => {
     const doc = await openDocument();
@@ -600,22 +647,82 @@ export function MenuBar({
     }
   }, [openDocument, onDocumentChange]);
 
+  // Plain Save:
+  //   - Web: persist to the active named IndexedDB project slot. If there is no
+  //     active named project yet, fall through to Save As (prompt for a name).
+  //   - Tauri: write the real `.fla` to disk (existing behaviour) and record the
+  //     path in the recent-paths list.
   const handleSave = useCallback(async () => {
     if (!document) return;
+    if (!tauri) {
+      const saved = await onSaveProject?.(document);
+      if (saved) return;
+      // No active named project — behave like Save As.
+      await handleSaveAsRef.current?.();
+      return;
+    }
     const savedPath = await saveDocument(document, filePath);
-    if (savedPath) onFilePathChange?.(savedPath);
-  }, [document, filePath, saveDocument, onFilePathChange]);
+    if (savedPath) {
+      onFilePathChange?.(savedPath);
+      onNoteOpenedPath?.(savedPath);
+    }
+  }, [document, filePath, tauri, saveDocument, onFilePathChange, onSaveProject, onNoteOpenedPath]);
 
+  // Save As:
+  //   - Web: prompt for a project NAME and persist under it (IndexedDB slot),
+  //     which becomes the active project and the title-bar name. Also trigger a
+  //     `.fla` download so the user keeps an on-disk copy.
+  //   - Tauri: native save dialog → real `.fla` on disk + recent-paths.
   const handleSaveAs = useCallback(async () => {
     if (!document) return;
+    if (!tauri) {
+      const suggested = activeProjectName ?? "Untitled";
+      const answer = window.prompt("Save project as:", suggested);
+      if (answer === null) return; // user cancelled
+      const name = answer.trim();
+      if (!name) return;
+      const saved = await onSaveProjectAs?.(name, document);
+      if (saved) {
+        // Also offer a downloadable .fla copy for the named project.
+        await saveDocumentAs(document, `${name}.fla`);
+      }
+      return;
+    }
     const savedPath = await saveDocumentAs(document, filePath);
-    if (savedPath) onFilePathChange?.(savedPath);
-  }, [document, filePath, saveDocumentAs, onFilePathChange]);
+    if (savedPath) {
+      onFilePathChange?.(savedPath);
+      onNoteOpenedPath?.(savedPath);
+    }
+  }, [document, filePath, tauri, activeProjectName, saveDocumentAs, onFilePathChange, onSaveProjectAs, onNoteOpenedPath]);
+
+  // handleSave needs to reach handleSaveAs before it is declared (mutual ref).
+  const handleSaveAsRef = useRef<(() => Promise<void>) | null>(null);
+  handleSaveAsRef.current = handleSaveAs;
 
   const handleExportBinaryFla = useCallback(async () => {
     if (!document) return;
     await exportBinaryFla(document, filePath);
   }, [document, filePath, exportBinaryFla]);
+
+  // Open Recent (task 1310): a flat, capped list rendered inline in the File
+  // menu (the dropdown is single-level, so there is no nested submenu). Each row
+  // opens the project; an explicit "Clear Recent" entry empties the list. When
+  // empty, a single disabled placeholder is shown.
+  const recentItems: MenuItem[] = recentProjects.length === 0
+    ? [{ label: "Open Recent — (none)", action: () => {}, disabled: true, separator: true }]
+    : recentProjects.map((entry, i) => ({
+        label: `${i === 0 ? "Open Recent:  " : "    "}${entry.label}`,
+        action: () => { onOpenRecentProject?.(entry.id); },
+        ...(i === 0 ? { separator: true } : {}),
+      }));
+  if (recentProjects.length > 0 && onRemoveRecentProject) {
+    recentItems.push({
+      label: "    Clear Recent",
+      action: () => {
+        for (const entry of recentProjects) onRemoveRecentProject(entry.id);
+      },
+    });
+  }
 
   const MENUS: MenuDefinition[] = [
     {
@@ -623,6 +730,7 @@ export function MenuBar({
       items: [
         { label: "New", action: handleNew },
         { label: "Open...", action: () => { void handleOpen(); } },
+        ...recentItems,
         { label: "Save", action: () => { void handleSave(); }, separator: true },
         { label: "Save As...", action: () => { void handleSaveAs(); } },
         { label: "Export Flash 8 (.fla binary)...", action: () => { void handleExportBinaryFla(); } },

@@ -782,6 +782,32 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   compile-error→last-good+overlay; fix→recover) + the 3 preview unit specs. The
   Ruffle bundle (`apps/desktop/public/ruffle/`) is GITIGNORED, so a fresh worktree
   must symlink it from the main checkout to run the e2e.
+- **Browser-persistent projects = IndexedDB bytes + localStorage metadata, split
+  by SIZE (task 1310).** A project is a serialized `.fla` (`saveFla → Uint8Array`,
+  multi-MB with embedded media) so the BYTES live in IndexedDB (`dash-projects`
+  DB, one `projects` store keyPath:"name", mirrors `vfs/indexeddb.ts`: injectable
+  `IDBFactory` for fake-indexeddb, awaited txn completion). The TINY metadata —
+  active project name + the Open Recent list (capped 15, dedup) — lives in
+  localStorage (`flash8.recentProjects`, preferences.ts hygiene: versioned
+  envelope + normalize + try/catch) because it must be read SYNCHRONOUSLY on first
+  render to drive restore-on-load before the async IndexedDB read resolves.
+  AUTOSAVE is a framework-free `autosaveController.ts` (same shape as
+  `livePreviewController.ts`: injected timers, monotonic generation = supersession
+  authority) debouncing ~1.5 s; it writes a reserved CURRENT-WORKING slot
+  (`__dash_current__`, excluded from `list()`) so F5 restores in-progress work
+  even for an UNNAMED doc, plus the active named slot when one exists. Save As
+  writes BOTH the named slot and the working slot (so a reload reopens the named
+  project) and sets the title-bar name (`EditBar.documentName ← activeName`).
+  `ProjectQuotaError` wraps a QuotaExceededError so autosave degrades silently
+  (in-memory doc is the source of truth). On TAURI the IndexedDB path is skipped
+  (`isTauri()`); the same recent list tracks file PATHS via `noteOpenedPath`.
+  Restore + actions run from `useProjectActions.ts` mounted once in Shell;
+  parse/quota failures return null and fall through to a fresh `createDocument()`,
+  never throw. Gates: 4 node unit specs (`projectStore`/`autosaveController`/
+  `recentProjects`/`projectSession`) + `persistent-projects.spec.ts` (edit→reload→
+  restored; Save As→reload→reopens named; plain Save updates active slot). The DEV
+  `__flashTest` bridge gained `saveProjectAs`/`saveProject`/`flushAutosave`/
+  `getActiveProjectName`/`getRecentProjects` for the e2e.
 
 ### AS2 external classes / Class VFS (task 1300 P2)
 

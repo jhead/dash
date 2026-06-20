@@ -151,6 +151,7 @@ import { PanelGroup } from "./PanelGroup";
 import { startAgentBridge, stopAgentBridge } from "./agent/bridge.js";
 import { setAgentCallbacks, clearAgentCallbacks, bumpRev } from "./agent/registry.js";
 import { loadCommands } from "./savedCommands.js";
+import { useProjectActions } from "./projects/index.js";
 
 // ---------------------------------------------------------------------------
 // Shape hint overlay
@@ -2600,6 +2601,17 @@ export function Shell(): React.ReactElement {
   });
 
   // ---------------------------------------------------------------------------
+  // Browser-persistent projects (task 1310): debounced autosave to IndexedDB so
+  // F5 restores in-progress work, named Save As slots, and an Open Recent list.
+  // On Tauri this tracks recent file PATHS (the desktop reopen mechanism); on
+  // the web it autosaves/restores the document via IndexedDB.
+  // ---------------------------------------------------------------------------
+  const projectActions = useProjectActions({
+    documentStore,
+    onRestoreDocument: handleDocumentChange,
+  });
+
+  // ---------------------------------------------------------------------------
   // Publish handlers
   // ---------------------------------------------------------------------------
 
@@ -2942,6 +2954,18 @@ export function Shell(): React.ReactElement {
         pushDoc(newDoc as typeof doc);
       },
 
+      // --- Browser-persistent projects (task 1310) test surface ----------
+      // The active project name reflected in the title bar.
+      getActiveProjectName: () => projectActions.activeName,
+      // The Open Recent list (most-recent-first).
+      getRecentProjects: () => projectActions.recent.map((e) => ({ ...e })),
+      // Save As under a name (web IndexedDB slot).
+      saveProjectAs: (name: string) => projectActions.saveProjectAs(name, doc),
+      // Plain Save to the active named slot.
+      saveProject: () => projectActions.saveProject(doc),
+      // Force-flush any pending debounced autosave (so a reload sees it).
+      flushAutosave: () => projectActions.flushAutosave(),
+
       // Export the current document as SWF and return it as a base64 string
       publish: async () => {
         const bytes = await publishToBytes();
@@ -3265,6 +3289,17 @@ export function Shell(): React.ReactElement {
         filePath={filePath}
         onDocumentChange={handleDocumentChange}
         onFilePathChange={handleFilePathChange}
+        recentProjects={projectActions.recent}
+        activeProjectName={projectActions.activeName}
+        onOpenRecentProject={async (id) => {
+          const restored = await projectActions.openRecent(id);
+          if (restored) handleDocumentChange(restored, id);
+        }}
+        onRemoveRecentProject={projectActions.removeRecent}
+        onSaveProject={(d) => projectActions.saveProject(d)}
+        onSaveProjectAs={(name, d) => projectActions.saveProjectAs(name, d)}
+        onNoteOpenedPath={projectActions.noteOpenedPath}
+        onResetActiveProject={projectActions.resetActive}
         onTestMovie={handleTestMovie}
         onPublish={handlePublish}
         onPublishSettings={() => setPublishSettingsOpen(true)}
@@ -3374,7 +3409,7 @@ export function Shell(): React.ReactElement {
         simpleButtonsEnabled={simpleButtonsEnabled}
       />
       <EditBar
-        documentName="Untitled-1"
+        documentName={projectActions.activeName ?? (filePath ? filePath.replace(/\\/g, "/").split("/").pop() : undefined) ?? "Untitled-1"}
         sceneName={doc.scenes[Math.min(activeSceneIndex, doc.scenes.length - 1)]?.name ?? "Scene 1"}
         symbolName={editContext.mode === "symbol" ? editContext.symbolName : undefined}
         onExitSymbol={editContext.mode === "symbol" ? handleExitEditInPlace : undefined}
@@ -3954,7 +3989,7 @@ export function Shell(): React.ReactElement {
             <LibraryPanel
               library={library}
               doc={doc}
-              documentName="Untitled-1"
+              documentName={projectActions.activeName ?? "Untitled-1"}
               selectedItemId={selectedLibraryItemId}
               onItemSelect={setSelectedLibraryItemId}
               onCreateSymbol={handleCreateSymbol}
