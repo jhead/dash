@@ -17,6 +17,8 @@ import {
   runAgentTurn,
   initialAgentRunState,
   classifyAgentError,
+  clampMaxSteps,
+  DEFAULT_MAX_STEPS,
   type AgentRunState,
   type AgentEntry,
   type AgentToolEntry,
@@ -48,8 +50,10 @@ import {
 // this component owns conversation history + UI state and renders the run.
 // ---------------------------------------------------------------------------
 
-/** Max model steps for the multi-step tool loop. */
-const MAX_STEPS = 24;
+// The max model steps for the multi-step tool loop is no longer a hardcoded
+// constant: it defaults to DEFAULT_MAX_STEPS (a generous backstop, raised from
+// the old 24 that cut long tasks off mid-work) and is user-configurable via the
+// `agentMaxSteps` preference, clamped to a sane range by `clampMaxSteps`.
 
 /**
  * A sensible default model when the user hasn't picked one yet — a capable,
@@ -127,6 +131,12 @@ export function AgentChatPanel(
   // once a key is present (so a user with a key but no explicit model can still
   // chat instead of being hard-blocked).
   const effectiveModel = model.trim().length > 0 ? model.trim() : DEFAULT_AGENT_MODEL;
+  // The effective step-loop backstop: the user's configured cap (clamped to a
+  // sane range), or the generous default when unset. Never the old hard 24.
+  const maxSteps =
+    preferences.agentMaxSteps != null
+      ? clampMaxSteps(preferences.agentMaxSteps)
+      : DEFAULT_MAX_STEPS;
 
   // Conversation state lives in the PERSISTED thread store (task 1291), so it
   // survives leaving/returning to the Agent tab (unmount/remount) AND a full
@@ -195,8 +205,12 @@ export function AgentChatPanel(
   // silently-dead button.
   const canSend = !running && input.trim().length > 0 && hasKey;
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
+  // The core run: append the user+assistant turns and drive one agent turn to a
+  // terminal state. Shared by Send (composer text) and Continue (resume after a
+  // `max-steps` backstop), so both go through the exact same persistence + abort
+  // wiring. `text` is the already-trimmed message to send.
+  const submitMessage = useCallback(
+    async (text: string) => {
     if (text.length === 0 || running) return;
     if (!hasKey) {
       // No key — open Settings and surface the actionable hint as a turn so the
@@ -214,7 +228,6 @@ export function AgentChatPanel(
         },
         { role: "user", content: text }
       );
-      setInput("");
       return;
     }
 
@@ -243,7 +256,6 @@ export function AgentChatPanel(
     // can never land patches in the wrong thread (task 1293).
     const originThreadId = useThreadStore.getState().activeThreadId;
     runThreadIdRef.current = originThreadId;
-    setInput("");
     setRunning(true);
 
     const controller = new AbortController();
@@ -257,7 +269,7 @@ export function AgentChatPanel(
         system: AGENT_SYSTEM_PROMPT,
         tools,
         messages,
-        maxSteps: MAX_STEPS,
+        maxSteps,
         abortSignal: controller.signal,
         onState: (run) =>
           originThreadId &&
@@ -310,18 +322,39 @@ export function AgentChatPanel(
       activeAssistantIdRef.current = null;
       runThreadIdRef.current = null;
     }
-  }, [
-    input,
-    running,
-    hasKey,
-    apiKey,
-    effectiveModel,
-    tools,
-    runTurn,
-    patchAssistantRun,
-    appendUserAndAssistant,
-    appendActiveHistory,
-  ]);
+    },
+    [
+      running,
+      hasKey,
+      apiKey,
+      effectiveModel,
+      maxSteps,
+      tools,
+      runTurn,
+      patchAssistantRun,
+      appendUserAndAssistant,
+      appendActiveHistory,
+    ]
+  );
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (text.length === 0 || running) return;
+    // Clear the composer optimistically; submitMessage records the turn. (The
+    // missing-key branch inside submitMessage still records the dropped intent.)
+    setInput("");
+    await submitMessage(text);
+  }, [input, running, submitMessage]);
+
+  // Continue after the step-limit backstop (task 1305): resume the SAME thread
+  // with a short nudge so the agent picks up where the cap cut it off. The prior
+  // run's assistant + tool history is already persisted, so the model has full
+  // context; this just grants it another `maxSteps` budget. Disabled while a run
+  // is live.
+  const handleContinue = useCallback(() => {
+    if (running) return;
+    void submitMessage("Continue.");
+  }, [running, submitMessage]);
 
   const handleStop = useCallback(() => {
     controllerRef.current?.abort();
@@ -400,6 +433,9 @@ export function AgentChatPanel(
             onApiKeyChange={(k) => updatePreferences({ openrouterApiKey: k })}
             model={model}
             onModelChange={(m) => updatePreferences({ agentModel: m })}
+            maxSteps={maxSteps}
+            maxStepsIsDefault={preferences.agentMaxSteps == null}
+            onMaxStepsChange={(n) => updatePreferences({ agentMaxSteps: n })}
           />
         </div>
       )}
@@ -502,11 +538,19 @@ export function AgentChatPanel(
             rectangle in the middle of the stage” or “add a layer named UI”.
           </div>
         )}
-        {turns.map((t) =>
+        {turns.map((t, i) =>
           t.role === "user" ? (
             <UserBubble key={t.id} text={t.text} />
           ) : (
-            <AssistantBubble key={t.id} run={t.run} />
+            <AssistantBubble
+              key={t.id}
+              run={t.run}
+              // The Continue button only applies to the LAST turn (resuming the
+              // tail of the conversation), and only when no run is in flight.
+              onContinue={
+                i === turns.length - 1 && !running ? handleContinue : undefined
+              }
+            />
           )
         )}
       </div>
@@ -564,7 +608,14 @@ function UserBubble({ text }: { text: string }): React.JSX.Element {
   );
 }
 
-function AssistantBubble({ run }: { run: AgentRunState }): React.JSX.Element {
+function AssistantBubble({
+  run,
+  onContinue,
+}: {
+  run: AgentRunState;
+  /** When present (last turn, idle), render a Continue button on max-steps. */
+  onContinue?: () => void;
+}): React.JSX.Element {
   const hasContent = run.entries.length > 0;
   const pending = run.status === "running" && !hasContent;
   return (
@@ -588,6 +639,28 @@ function AssistantBubble({ run }: { run: AgentRunState }): React.JSX.Element {
           data-testid="agent-status-stopped"
         >
           ■ Stopped
+        </div>
+      )}
+      {run.status === "max-steps" && (
+        // The step-limit backstop fired while the agent still wanted to call
+        // tools — the task is unfinished, not done. Surface it clearly and
+        // offer to keep going (a fresh step budget on the same thread) rather
+        // than leaving the user staring at a silent, confusing stop (task 1305).
+        <div style={styles.maxSteps} data-testid="agent-status-max-steps">
+          <div style={styles.statusLine}>
+            ⚠ Reached the step limit before finishing. The agent paused as a
+            safety backstop — your task may not be complete.
+          </div>
+          {onContinue && (
+            <button
+              type="button"
+              data-testid="agent-continue"
+              onClick={onContinue}
+              style={{ ...buttonStyle("up"), ...styles.continueButton }}
+            >
+              Continue
+            </button>
+          )}
         </div>
       )}
       {run.status === "error" && (
@@ -1148,6 +1221,20 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#e05050",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
+  },
+  maxSteps: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 4,
+    fontSize: 10,
+    color: "#c79a3a",
+    borderTop: `1px dashed ${chrome.separator}`,
+    paddingTop: 4,
+    marginTop: 2,
+  },
+  continueButton: {
+    fontSize: 11,
   },
   spinner: {
     width: 9,

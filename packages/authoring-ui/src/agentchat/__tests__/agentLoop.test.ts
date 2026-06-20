@@ -14,6 +14,10 @@ import {
   drivePartStream,
   agentErrorMessage,
   classifyAgentError,
+  clampMaxSteps,
+  DEFAULT_MAX_STEPS,
+  MAX_STEPS_LIMIT,
+  MIN_MAX_STEPS,
   type AgentRunState,
   type AgentToolEntry,
   type AgentTextEntry,
@@ -183,6 +187,78 @@ describe("reduceAgentEvent — terminal status", () => {
     ]);
     expect(state.status).toBe("error");
     expect(state.error).toBe("network down");
+  });
+});
+
+describe("step cap — value + configurability (task 1305)", () => {
+  it("defaults to a generous backstop (not the old 24) but stays bounded", () => {
+    // The user report was the 24-step cap cutting long tasks off mid-work. The
+    // default is raised substantially; pin the contract so it can't silently
+    // regress back to a tiny value, and assert it's a real bound (never ∞).
+    expect(DEFAULT_MAX_STEPS).toBeGreaterThanOrEqual(100);
+    expect(DEFAULT_MAX_STEPS).toBeLessThanOrEqual(MAX_STEPS_LIMIT);
+    expect(Number.isFinite(MAX_STEPS_LIMIT)).toBe(true);
+    expect(MIN_MAX_STEPS).toBeGreaterThanOrEqual(1);
+  });
+
+  it("clampMaxSteps falls back to the default for non-finite/missing values", () => {
+    expect(clampMaxSteps(undefined)).toBe(DEFAULT_MAX_STEPS);
+    expect(clampMaxSteps(null)).toBe(DEFAULT_MAX_STEPS);
+    expect(clampMaxSteps(NaN)).toBe(DEFAULT_MAX_STEPS);
+    expect(clampMaxSteps(Infinity)).toBe(DEFAULT_MAX_STEPS);
+    expect(clampMaxSteps("200" as unknown)).toBe(DEFAULT_MAX_STEPS);
+  });
+
+  it("clampMaxSteps keeps an in-range value (floored) and clamps the extremes", () => {
+    expect(clampMaxSteps(200)).toBe(200);
+    expect(clampMaxSteps(150.9)).toBe(150);
+    expect(clampMaxSteps(0)).toBe(MIN_MAX_STEPS);
+    expect(clampMaxSteps(-5)).toBe(MIN_MAX_STEPS);
+    expect(clampMaxSteps(MAX_STEPS_LIMIT + 10_000)).toBe(MAX_STEPS_LIMIT);
+  });
+});
+
+describe("reduceAgentEvent — max-steps terminal (cap reached, task 1305)", () => {
+  it("flips to max-steps when finish carries finishReason 'tool-calls'", () => {
+    // The step-cap backstop fired: the last step emitted tool calls but the
+    // loop refused to continue, so the top-level finish reports 'tool-calls'.
+    // This must be a DISTINCT, surfaced terminal — not a misleading 'done'.
+    const state = fold([
+      { type: "start-step" } as Part,
+      {
+        type: "tool-call",
+        toolCallId: "c1",
+        toolName: "stage_add_shape",
+        input: {},
+      } as unknown as Part,
+      {
+        type: "tool-result",
+        toolCallId: "c1",
+        toolName: "stage_add_shape",
+        input: {},
+        output: { ok: true },
+      } as unknown as Part,
+      { type: "finish", finishReason: "tool-calls" } as unknown as Part,
+    ]);
+    expect(state.status).toBe("max-steps");
+  });
+
+  it("still flips to done on a natural finish (finishReason 'stop')", () => {
+    const state = fold([
+      { type: "start-step" } as Part,
+      { type: "text-delta", id: "t", text: "all done" } as Part,
+      { type: "finish", finishReason: "stop" } as unknown as Part,
+    ]);
+    expect(state.status).toBe("done");
+  });
+
+  it("a prior abort outranks a max-steps finish (first terminal wins)", () => {
+    const state = fold([
+      { type: "tool-call", toolCallId: "c", toolName: "x", input: {} } as unknown as Part,
+      { type: "abort", reason: "user" } as Part,
+      { type: "finish", finishReason: "tool-calls" } as unknown as Part,
+    ]);
+    expect(state.status).toBe("stopped");
   });
 });
 

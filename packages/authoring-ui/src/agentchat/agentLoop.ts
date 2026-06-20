@@ -75,8 +75,62 @@ export type AgentEntry =
   | AgentToolEntry
   | AgentStepEntry;
 
-/** Terminal status of a run. `running` while the stream is live. */
-export type AgentRunStatus = "running" | "done" | "stopped" | "error";
+/**
+ * Terminal status of a run. `running` while the stream is live.
+ *
+ * - `done`     — the model stopped emitting tool calls (natural completion;
+ *                the final step's finishReason is `stop`).
+ * - `stopped`  — the user aborted via the Stop button.
+ * - `error`    — the run failed.
+ * - `max-steps` — the multi-step tool loop hit its `stepCountIs(maxSteps)`
+ *                backstop WHILE the model still wanted to call tools (the final
+ *                step's finishReason is `tool-calls`). The task is NOT finished;
+ *                the UI surfaces this as a CONTINUABLE terminal state ("reached
+ *                the step limit — Continue?") rather than a silent stop, so a
+ *                legitimately long task isn't confusingly cut off mid-work.
+ */
+export type AgentRunStatus =
+  | "running"
+  | "done"
+  | "stopped"
+  | "error"
+  | "max-steps";
+
+/**
+ * Default maximum model steps for the multi-step tool loop.
+ *
+ * This is a SAFETY BACKSTOP, not a task budget: the loop terminates naturally
+ * the moment the model stops emitting tool calls (a `finish` with finishReason
+ * `stop`). The cap only bounds a runaway/looping agent that would otherwise call
+ * tools forever (unbounded token cost + hang). It was 24 — far too low for real
+ * multi-step authoring tasks, which were getting cut off mid-task — and is now a
+ * generous 100. The user can raise it further (up to {@link MAX_STEPS_LIMIT})
+ * via the agent settings, and can always halt a run early with the Stop button.
+ */
+export const DEFAULT_MAX_STEPS = 100;
+
+/**
+ * Hard upper bound on the configurable step cap. A user-supplied `maxSteps` is
+ * clamped to `[MIN_MAX_STEPS, MAX_STEPS_LIMIT]` so the backstop is never truly
+ * unbounded (a stuck agent at 1000 steps still terminates instead of draining
+ * cost / hanging indefinitely).
+ */
+export const MAX_STEPS_LIMIT = 1000;
+
+/** Minimum allowed step cap (at least one model step must be permitted). */
+export const MIN_MAX_STEPS = 1;
+
+/**
+ * Clamp a (possibly user-supplied / persisted) step cap into the valid range,
+ * falling back to {@link DEFAULT_MAX_STEPS} for non-finite / missing values.
+ */
+export function clampMaxSteps(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_MAX_STEPS;
+  }
+  const rounded = Math.floor(value);
+  return Math.min(MAX_STEPS_LIMIT, Math.max(MIN_MAX_STEPS, rounded));
+}
 
 /**
  * The accumulated state the UI renders. `entries` is the ordered transcript of
@@ -296,9 +350,19 @@ export function reduceAgentEvent(
     }
 
     case "finish": {
-      // Only flip to done if we did not already stop / error.
-      if (state.status === "running") return { ...state, status: "done" };
-      return state;
+      // Only transition from `running` — a prior stop/error/max-steps wins.
+      if (state.status !== "running") return state;
+      // The top-level `finish` carries the LAST step's finishReason. A natural
+      // completion ends with `stop` (the model emitted no further tool calls).
+      // If instead it ends with `tool-calls`, the model WANTED to keep going but
+      // the `stopWhen: stepCountIs(maxSteps)` backstop halted the loop — i.e. we
+      // hit the step cap mid-task. Surface that as a distinct, continuable
+      // terminal state rather than a misleading `done`.
+      const finishReason = (part as { finishReason?: string }).finishReason;
+      if (finishReason === "tool-calls") {
+        return { ...state, status: "max-steps" };
+      }
+      return { ...state, status: "done" };
     }
 
     case "abort": {

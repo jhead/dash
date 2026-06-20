@@ -4,6 +4,7 @@ import {
   fetchOpenRouterModels,
   type OpenRouterModel,
 } from "./openrouterClient.js";
+import { clampMaxSteps } from "./agentLoop.js";
 
 // ---------------------------------------------------------------------------
 // AgentSettings — reusable settings panel for the client-side Agent Chat.
@@ -27,6 +28,15 @@ export interface AgentSettingsProps {
   model: string;
   /** Persist a newly selected/typed model id. */
   onModelChange: (modelId: string) => void;
+  /**
+   * The effective max-steps backstop currently in use (the configured value or
+   * the default). Shown in the control; an empty input means "use the default".
+   */
+  maxSteps: number;
+  /** True when `maxSteps` is the default (no explicit user value persisted). */
+  maxStepsIsDefault: boolean;
+  /** Persist a new max-steps value (or `undefined` to reset to the default). */
+  onMaxStepsChange: (maxSteps: number | undefined) => void;
   /**
    * Injectable fetcher (defaults to {@link fetchOpenRouterModels}); overridable
    * for tests / custom transports.
@@ -63,17 +73,32 @@ export function AgentSettings({
   onApiKeyChange,
   model,
   onModelChange,
+  maxSteps,
+  maxStepsIsDefault,
+  onMaxStepsChange,
   fetchModels = fetchOpenRouterModels,
 }: AgentSettingsProps): React.JSX.Element {
   const [keyDraft, setKeyDraft] = useState(apiKey);
   const [keyFocused, setKeyFocused] = useState(false);
   const [modelFocused, setModelFocused] = useState(false);
+  const [stepsFocused, setStepsFocused] = useState(false);
+  // The steps input is a free-text draft so the user can clear it (= default)
+  // or type a number; it commits on blur/Enter. Blank when at the default.
+  const [stepsDraft, setStepsDraft] = useState(
+    maxStepsIsDefault ? "" : String(maxSteps)
+  );
   const [load, setLoad] = useState<LoadState>({ status: "idle" });
 
   // Keep the local draft in sync when the persisted key changes externally.
   useEffect(() => {
     setKeyDraft(apiKey);
   }, [apiKey]);
+
+  // Keep the steps draft in sync when the persisted value changes externally
+  // (e.g. reset). Blank when on the default so the placeholder shows.
+  useEffect(() => {
+    setStepsDraft(maxStepsIsDefault ? "" : String(maxSteps));
+  }, [maxSteps, maxStepsIsDefault]);
 
   // (Re)load the model catalog whenever the persisted key changes & is present.
   const abortRef = useRef<AbortController | null>(null);
@@ -110,6 +135,26 @@ export function AgentSettings({
     setKeyDraft("");
     onApiKeyChange("");
   }, [onApiKeyChange]);
+
+  // Commit the steps draft: blank/0/junk resets to the default (undefined);
+  // a positive integer persists it. The parent clamps to the valid range.
+  const commitSteps = useCallback(() => {
+    const trimmed = stepsDraft.trim();
+    if (trimmed.length === 0) {
+      onMaxStepsChange(undefined);
+      return;
+    }
+    const n = Number(trimmed);
+    if (!Number.isFinite(n) || n < 1) {
+      onMaxStepsChange(undefined);
+      return;
+    }
+    // Persist the CLAMPED value so the stored, displayed, and effective caps
+    // stay consistent: clampMaxSteps is also applied at the use site, so an
+    // unclamped 5000 would persist as 5000 but run as 1000 (the display would
+    // permanently disagree with the enforced cap). Clamp here too.
+    onMaxStepsChange(clampMaxSteps(Math.floor(n)));
+  }, [stepsDraft, onMaxStepsChange]);
 
   const showManualModelInput =
     load.status === "error" || load.status === "idle";
@@ -217,6 +262,38 @@ export function AgentSettings({
             )}
           </>
         )}
+      </div>
+
+      {/* --- Max steps (safety backstop) --- */}
+      <div style={rowStyle}>
+        <label htmlFor="agent-max-steps" style={labelStyle}>
+          Max steps
+        </label>
+        <input
+          id="agent-max-steps"
+          data-testid="agent-max-steps-input"
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          placeholder={`${maxSteps} (default)`}
+          value={stepsDraft}
+          onChange={(e) => setStepsDraft(e.target.value)}
+          onFocus={() => setStepsFocused(true)}
+          onBlur={() => {
+            setStepsFocused(false);
+            commitSteps();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitSteps();
+          }}
+          style={{ ...inputStyle(stepsFocused), width: "100%" }}
+        />
+        <div style={noticeStyle} data-testid="agent-max-steps-notice">
+          The most tool steps the agent runs before pausing as a safety backstop.
+          The agent stops on its own when a task is done; this only bounds a
+          runaway loop. Leave blank for the default. Effective: {maxSteps}.
+        </div>
       </div>
     </div>
   );

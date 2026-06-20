@@ -29,6 +29,16 @@ export interface Preferences {
    * loop (later phase) chooses a default when unset.
    */
   agentModel?: string;
+
+  /**
+   * Maximum model steps for the Agent Chat multi-step tool loop (the
+   * `stepCountIs(maxSteps)` safety backstop). Absent until the user changes it;
+   * the panel falls back to a generous default (DEFAULT_MAX_STEPS in agentLoop).
+   * The loop ALWAYS terminates naturally when the model stops calling tools, so
+   * this only bounds a runaway agent. Stored as a positive integer; the panel
+   * clamps it to a sane range (never unbounded). Absent = use the default.
+   */
+  agentMaxSteps?: number;
 }
 
 export const UI_SCALE_MIN = 0.25;
@@ -56,6 +66,18 @@ function normalizeOptionalString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/**
+ * Coerce a stored value into an optional positive integer. Non-finite, non-
+ * numeric, or non-positive values normalize to `undefined` (so the panel falls
+ * back to its default cap). Final clamping to the valid range lives with the
+ * agent loop (clampMaxSteps); this only rejects junk before it persists.
+ */
+function normalizeOptionalPositiveInt(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const n = Math.floor(value);
+  return n >= 1 ? n : undefined;
+}
+
 /** Normalize an arbitrary parsed object into a complete Preferences value. */
 function normalize(raw: unknown): Preferences {
   const obj = (raw && typeof raw === "object" ? raw : {}) as Partial<Preferences>;
@@ -68,6 +90,8 @@ function normalize(raw: unknown): Preferences {
   if (openrouterApiKey !== undefined) prefs.openrouterApiKey = openrouterApiKey;
   const agentModel = normalizeOptionalString(obj.agentModel);
   if (agentModel !== undefined) prefs.agentModel = agentModel;
+  const agentMaxSteps = normalizeOptionalPositiveInt(obj.agentMaxSteps);
+  if (agentMaxSteps !== undefined) prefs.agentMaxSteps = agentMaxSteps;
   return prefs;
 }
 
