@@ -175,7 +175,7 @@ faces does this fill now occupy after the cut".
 | **P0** | The curve-aware planar geometry kernel (`engine/planar/`): intersection (seg/seg, seg/curve, curve/curve), arrangement construction (insert edge + split existing + new at all crossings), face extraction with hole nesting, point-in-face, curve-preserving split. Additive `PlanarShape`/half-edge types in `engine/types.ts`. Kernel unit tests (Euler invariant, area conservation, intersection counts, curve round-trip). The interaction-oracle harness (`apps/desktop/e2e/merge-drawing-oracle.spec.ts`) as `.fixme` placeholders for the canonical cases. **No user-facing behavior change.** | **DONE (this task, 1318).** |
 | **P1** | **Merge-mode geometry ops on the kernel:** cut / union implemented as arrangement operations (`engine/planar/merge.ts` + `planarShapeToShape` in `query.ts`), returning per-path `Shape`s for storage/render/SWF. Same-color union + different-color cut are exact, curve-preserving. Wired into `Shell.tsx handleShapeCreated` / `commitMergeShapeDirect` behind the `planarMergeOnCommit` flag (default OFF). Acceptance: `merge-drawing-oracle.spec.ts` cut + union cases (stage↔Ruffle pixelmatch diff=0). | **DONE (task 1319).** |
 | **P2** | **Strokes/lines split fills + intersecting lines segment each other** (task 1320): adding a STROKE edge across a fill SPLITS the fill into separate selectable faces along the line; two crossing lines SPLIT each other into segments at the crossing (curve-preserving). Wired through the existing P1 fold path — line/pencil/pen + stroke commits are `type:"shape"` and already route through `planarMergeCommit` under the flag. The read-back (`planarShapeToShape`) now treats a stroked same-fill seam as a real boundary (only **un-stroked** same-fill seams dissolve), so a line-split fill reads back as two distinct fill loops + the segmented line and an X of two lines reads back as four segments. Acceptance: `merge-drawing-oracle.spec.ts` cases 3 (line-splits-fill) + 4 (4 segments) — stage↔Ruffle pixelmatch diff=0. (Full segment/face *selection* — single-click edge/face, double-click connected fill+strokes — and the live-map dissolve remain P3+.) | **DONE (task 1320).** |
-| **P3-selection** | **Partial fill-region + line-segment selection + split-on-move** (task 1321). See §3.0b. | **DONE (task 1321).** |
+| **P3-selection** | **Partial fill-region + line-segment selection + split-on-move**, with a **live drag preview** during the move (tasks 1321, 1331). See §3.0b. | **DONE (tasks 1321, 1331).** |
 | **P4-eraser** | **Curve-preserving eraser & true subtraction** routed through the kernel (`engine/planar/eraser.ts`): erase-across-shape splits curve-preservingly; removing an overlapping island leaves a hole; strokes are trimmed/split at the eraser boundary keeping quadratics. Flash 8 eraser MODES (Normal / Erase Fills / Erase Lines / Erase Selected / Erase Inside) + faucet whole-fill/line click. The legacy polyline-flatten `engine/eraser.ts` stays for the flag-OFF / drawing-object path. See §3.0c. | **DONE (task 1322).** |
 | **P5 (cutover)** | **Cutover to merge-by-default + cleanup + final authenticity sweep** (task 1323). Remove the `planarMergeOnCommit` flag; merge unconditional for `type:"shape"` commits; delete the dead MVP `merge-drawing.ts` + the no-op `shape-boolean.ts` stub + the now-empty `featureFlags.ts`. Adapt the tests that assumed the old per-object behavior to the authentic merge outcome. Confirm all 8 oracles diff=0, Object Drawing still discrete, FLA/SWF round-trip + golden-parity + self-determinism unaffected, and the planar↔per-path interchange is sufficient. See §3.0d. | **DONE (task 1323).** |
 | **P5+ (interchange optimization, NOT a blocker)** | SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` hard-codes `stateFillStyle1=0`) — an edge-record-count *optimization* (closer byte-match to Flash), NOT a correctness need: the per-path read-back already round-trips to SWF at diff=0 (see §3.0d). FLA merge-map persistence and planar-topology shape-morph likewise remain future enhancements, not regressions. | Optional follow-up. |
@@ -349,6 +349,35 @@ fill reads back with a CW hole loop, the island moves off; stage↔Ruffle pixelm
 round-trip across a rebuild, `pickAt` face/segment/split-halves, marquee,
 double-click connected, split-on-move (extract a half, island-leaves-hole, segment
 extract, extract-all→null remainder), and the no-filter read-back equivalence.
+
+**Live drag preview during a partial move (task 1331) — DONE.** P3-selection
+originally committed `splitOnMove` only on **mouse-up**: there was no per-move
+render, so the dragged face/segment stayed pinned at its origin and only "jumped"
+to the final position on release (no live preview — the deferred gap noted here).
+The whole-object legacy path (`selectionDragRef`) had always rendered live via
+`onShapeMove` every pointermove; once `partialSelectEnabled` became always-on for
+the Selection tool (P5 cutover, task 1323) that live path was no longer reached
+for plain vector shapes, so EVERY brush/tool shape (`DrawingObject` brush strokes
+AND `ShapeDisplayObject` rect/oval — all in `shapeDisplayObjects`) dragged
+invisibly. `StageArea.tsx` now renders a **transient** live preview while the
+split-on-move drag is in flight, WITHOUT mutating the doc: on the first move past
+the 3px click-vs-drag threshold it runs `splitOnMove(ps, keys, 0, 0, …)` **once**
+to extract the `{remainder, extracted}` geometry, then each subsequent pointermove
+merely **translates** the already-extracted geometry by the live cursor offset
+(the scene graph swaps the original shape for remainder@base + extracted@offset,
+and the selection halo follows). This is a pure render translate — no per-move
+planar recompute — relying on the invariant *split-at-0-then-translate(dx,dy) ==
+split-with-delta(dx,dy)* (the extracted shape is `translateShape(extracted, dx,
+dy)`; the remainder is delta-independent). The **authoritative** split still
+commits exactly once on mouse-up via `Shell.handleSubSplitMove` (one `pushDoc` =
+one undo step, geometry identical to before). A sub-threshold click still only
+selects (no preview, no move). Acceptance: `drag-live-preview-1331.spec.ts` (rect
++ curve oval: screenshots the LIVE canvas MID-DRAG and asserts the artwork is at
+the dragged offset, not just after release; + a click-only-no-move case) and the
+`planar-subselection.test.ts` "extract-at-0-then-translate == split-with-delta"
+unit case (rect + curve). The 8 merge oracles still diff=0/220000 (commit
+geometry unchanged). Test bridge gained `__flashTest.setFillColor` /
+`setStrokeNone` for pointer-drawing e2e.
 
 ### 3.0c P4-eraser implementation notes (task 1322)
 

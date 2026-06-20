@@ -928,6 +928,27 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   expected `obj.x` to change on a selection drag must instead observe the artwork's
   stage-space geometry move (e.g. `pointer-stage-1275.spec.ts` 1264 now tracks the shape
   centroid). This is the authentic Flash 8 outcome (you move the artwork, not a container).
+- **The split-on-move drag now has a LIVE preview; commit is still one mouse-up step
+  (task 1331).** Originally `splitOnMove` ran ONLY on pointerup, so a partial move showed
+  NO live render — the artwork sat at its origin and jumped to the final spot on release
+  (the whole-object `selectionDragRef` live path was no longer reached once
+  `partialSelectEnabled` became always-on for the Selection tool in the P5 cutover). Fix is
+  render-only in `StageArea.tsx`: on the first pointermove past the 3px threshold, run
+  `splitOnMove(ps, keys, 0, 0, …)` ONCE to extract `{remainder, extracted}` (cached in a
+  ref), then EACH move just TRANSLATES the extracted geometry by the live offset (swap the
+  target shape in the rendered scene graph for remainder@base + extracted@(base+dx,dy); the
+  halo follows). No per-move planar recompute — relies on the invariant
+  *split-at-0-then-translate(dx,dy) == split-with-delta(dx,dy)* (extracted is
+  `translateShape(extracted, dx, dy)`, remainder is delta-independent — see `split.ts`). The
+  doc is NOT mutated during the drag; `Shell.handleSubSplitMove` still commits the
+  authoritative split once on mouse-up (one `pushDoc`/undo, geometry identical). A
+  sub-threshold click only selects. **Stroked-curve pick caveat (latent, NOT this task):** a
+  stroked ellipse commits as ~25 fragmented merge fill-loops whose CENTRE face `pickAt`
+  returns null, so a stroked-oval whole-fill drag can't be picked at its centre; a
+  stroke-NONE oval commits as one clean loop and picks/drags fine. The e2e
+  (`drag-live-preview-1331.spec.ts`) draws stroke-free + matches the exact fill colour
+  (`__flashTest.setFillColor`/`setStrokeNone`) and screenshots the LIVE canvas mid-drag (the
+  doc is unchanged mid-drag, so `getDocument()` can't see the preview — must screenshot).
 
 ### AS2 external classes / Class VFS (task 1300 P2)
 

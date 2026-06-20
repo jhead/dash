@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
-import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, planarEraseShape, faucetEraseShape, isMergeableShape, type EraserMode } from "@flash/core";
+import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, splitOnMove as planarSplitOnMove, planarEraseShape, faucetEraseShape, isMergeableShape, type EraserMode } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
@@ -1667,6 +1667,33 @@ export function StageArea({
     startMouseY: number;
   } | null>(null);
 
+  // P3 live drag-preview (task 1331). While a split-on-move drag is in flight we
+  // show the dragged piece following the cursor WITHOUT mutating the doc (the
+  // authoritative split is committed once on mouse-up via onSubSplitMove). The
+  // planar split is run ONCE when the drag first crosses the click threshold to
+  // extract the {remainder, extracted} geometry; subsequent moves only translate
+  // the already-extracted geometry by the live offset (a pure render translate —
+  // no per-move planar recompute). `baseX/baseY` is the dragged shape's display
+  // origin (kept fixed); `dx/dy` is the live cursor offset in stage units.
+  const subSplitPreviewRef = useRef<{
+    shapeId: string;
+    remainder: Shape | null;
+    extracted: Shape | null;
+    baseX: number;
+    baseY: number;
+  } | null>(null);
+  // State mirror so a render fires on each preview move. Holds the live offset.
+  const [subSplitPreview, setSubSplitPreview] = useState<{
+    shapeId: string;
+    extractedId: string;
+    remainder: Shape | null;
+    extracted: Shape | null;
+    baseX: number;
+    baseY: number;
+    dx: number;
+    dy: number;
+  } | null>(null);
+
   // Transform drag state (resize / rotate handles)
   const transformDragRef = useRef<{
     handle: TransformHandle;
@@ -3079,6 +3106,67 @@ export function StageArea({
         return;
       }
 
+      // P3 split-on-move LIVE drag preview (task 1331). When a partial selection
+      // is being dragged, render the extracted piece following the cursor every
+      // move (the legacy whole-object path does the same via onShapeMove). The
+      // doc is NOT mutated here — the authoritative split is committed once on
+      // mouse-up. We run the planar split ONCE (when the drag first passes the
+      // click threshold) to get the {remainder, extracted} geometry, then only
+      // translate the extracted geometry by the live offset on later moves.
+      if (subSplitDragRef.current) {
+        const sd = subSplitDragRef.current;
+        const dxMouse = e.clientX - sd.startMouseX;
+        const dyMouse = e.clientY - sd.startMouseY;
+        const dx = dxMouse / internalZoom;
+        const dy = dyMouse / internalZoom;
+        // Below the click-vs-drag threshold a plain click just selects — do not
+        // start the preview yet (matches the mouse-up >3px gate).
+        if (Math.hypot(dxMouse, dyMouse) <= 3) {
+          return;
+        }
+        // Lazily extract the geometry once, on the first move past threshold.
+        if (
+          !subSplitPreviewRef.current ||
+          subSplitPreviewRef.current.shapeId !== sd.selection.shapeId
+        ) {
+          const target = shapeDisplayObjects.find((o) => o.id === sd.selection.shapeId);
+          if (target) {
+            const ps = livePlanarShape(target.shape);
+            // Extract at zero offset: `extracted` is origin-aligned with the
+            // remainder, so we translate it purely in the render below.
+            const { extracted, remainder } = planarSplitOnMove(
+              ps,
+              sd.selection.keys,
+              0,
+              0,
+              `${target.id}-preview`,
+              target.shape.id
+            );
+            subSplitPreviewRef.current = {
+              shapeId: target.id,
+              remainder,
+              extracted,
+              baseX: target.x,
+              baseY: target.y,
+            };
+          }
+        }
+        const pv = subSplitPreviewRef.current;
+        if (pv && pv.shapeId === sd.selection.shapeId) {
+          setSubSplitPreview({
+            shapeId: pv.shapeId,
+            extractedId: `${pv.shapeId}-preview`,
+            remainder: pv.remainder,
+            extracted: pv.extracted,
+            baseX: pv.baseX,
+            baseY: pv.baseY,
+            dx,
+            dy,
+          });
+        }
+        return;
+      }
+
       // Selection drag (move)
       if (selectionDragRef.current && onShapeMove) {
         const drag = selectionDragRef.current;
@@ -3258,6 +3346,10 @@ export function StageArea({
       if (subSplitDragRef.current) {
         const sd = subSplitDragRef.current;
         subSplitDragRef.current = null;
+        // Tear down the live drag-preview (task 1331) BEFORE committing, so the
+        // transient render is replaced by the authoritative committed doc.
+        subSplitPreviewRef.current = null;
+        setSubSplitPreview(null);
         const dxMouse = e.clientX - sd.startMouseX;
         const dyMouse = e.clientY - sd.startMouseY;
         if (Math.hypot(dxMouse, dyMouse) > 3 && onSubSplitMove) {
@@ -3736,6 +3828,50 @@ export function StageArea({
       };
     }
 
+    // P3 split-on-move LIVE drag preview (task 1331). While dragging a partial
+    // selection, swap the original (un-split) shape in the scene for its two
+    // pieces: the remainder stays at the base origin, the extracted piece is
+    // translated to follow the cursor. The doc is untouched — this is a transient
+    // render only; the authoritative split commits on mouse-up. Because the
+    // extracted geometry was pre-computed once (mousedown→first move), the only
+    // per-move work is a cheap translate of the display origin.
+    if (subSplitPreview && subSplitPreview.shapeId) {
+      const pv = subSplitPreview;
+      sceneGraph = {
+        ...sceneGraph,
+        layers: sceneGraph.layers.map((layer) => {
+          if (!layer.objects.some((o) => o.id === pv.shapeId)) return layer;
+          const objects: import("@flash/core").DisplayObject[] = [];
+          for (const obj of layer.objects) {
+            if (obj.id !== pv.shapeId) {
+              objects.push(obj);
+              continue;
+            }
+            // Replace the target with remainder (at base) + extracted (offset).
+            if (pv.remainder) {
+              objects.push({
+                type: "shape",
+                id: pv.shapeId,
+                shape: pv.remainder,
+                x: pv.baseX,
+                y: pv.baseY,
+              } as ShapeDisplayObject);
+            }
+            if (pv.extracted) {
+              objects.push({
+                type: "shape",
+                id: pv.extractedId,
+                shape: pv.extracted,
+                x: pv.baseX + pv.dx,
+                y: pv.baseY + pv.dy,
+              } as ShapeDisplayObject);
+            }
+          }
+          return { ...layer, objects };
+        }),
+      };
+    }
+
     // Enable Simple Buttons: patch firstFrame on button SymbolInstances to show Over/Down/Up state.
     if (simpleButtonsEnabled && library && (hoveredButtonId || pressedButtonId)) {
       sceneGraph = {
@@ -3982,25 +4118,73 @@ export function StageArea({
     // stage coords (the merged shape is at x=0,y=0), matching the overlay base
     // transform above.
     if (subSelection && subSelection.keys.length > 0 && renderCanvasRef.current) {
-      const target = shapeDisplayObjects.find((o) => o.id === subSelection.shapeId);
-      if (target) {
-        const ps = livePlanarShape(target.shape);
-        const polylines = subSelectionPolylines(ps, subSelection.keys);
-        if (polylines.length > 0) {
-          const ctx = renderCanvasRef.current.getContext("2d")!;
-          ctx.save();
-          ctx.translate(target.x, target.y);
-          ctx.strokeStyle = themeHalo.haloBlue;
-          ctx.lineWidth = 2;
-          ctx.setLineDash([]);
-          for (const poly of polylines) {
-            if (poly.length < 2) continue;
-            ctx.beginPath();
-            ctx.moveTo(poly[0].x, poly[0].y);
-            for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
-            ctx.stroke();
+      // During a live split-on-move drag (task 1331) the original shape is
+      // swapped out of the scene for {remainder, extracted}; the selection halo
+      // should outline the EXTRACTED piece at its dragged offset so it tracks the
+      // cursor. Otherwise (idle selection) outline the live planar map in place.
+      const dragPreview =
+        subSplitPreview && subSplitPreview.shapeId === subSelection.shapeId
+          ? subSplitPreview
+          : null;
+      const ctx = renderCanvasRef.current.getContext("2d")!;
+      const strokePolylines = (
+        polylines: { x: number; y: number }[][],
+        ox: number,
+        oy: number
+      ) => {
+        if (polylines.length === 0) return;
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.strokeStyle = themeHalo.haloBlue;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        for (const poly of polylines) {
+          if (poly.length < 2) continue;
+          ctx.beginPath();
+          ctx.moveTo(poly[0].x, poly[0].y);
+          for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+      if (dragPreview && dragPreview.extracted) {
+        // The extracted piece is a standalone Shape (it is entirely selected);
+        // outline each of its contours at the dragged offset. Quadratic segments
+        // are sampled to short chords for the halo polyline.
+        const polylines: { x: number; y: number }[][] = [];
+        for (const path of dragPreview.extracted.paths) {
+          const poly: { x: number; y: number }[] = [{ x: path.start.x, y: path.start.y }];
+          let prev = path.start;
+          for (const seg of path.segments) {
+            if (seg.type === "curve") {
+              const steps = 8;
+              for (let s = 1; s <= steps; s++) {
+                const t = s / steps;
+                const mt = 1 - t;
+                poly.push({
+                  x: mt * mt * prev.x + 2 * mt * t * seg.control.x + t * t * seg.to.x,
+                  y: mt * mt * prev.y + 2 * mt * t * seg.control.y + t * t * seg.to.y,
+                });
+              }
+            } else {
+              poly.push({ x: seg.to.x, y: seg.to.y });
+            }
+            prev = seg.to;
           }
-          ctx.restore();
+          if (path.closed) poly.push({ x: path.start.x, y: path.start.y });
+          polylines.push(poly);
+        }
+        strokePolylines(
+          polylines,
+          dragPreview.baseX + dragPreview.dx,
+          dragPreview.baseY + dragPreview.dy
+        );
+      } else if (!dragPreview) {
+        const target = shapeDisplayObjects.find((o) => o.id === subSelection.shapeId);
+        if (target) {
+          const ps = livePlanarShape(target.shape);
+          const polylines = subSelectionPolylines(ps, subSelection.keys);
+          strokePolylines(polylines, target.x, target.y);
         }
       }
     }
@@ -4379,7 +4563,7 @@ export function StageArea({
       ctx.fillRect(r.x, r.y, r.width, r.height);
       ctx.restore();
     }
-  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, pasteboardMargin, canvasWidth, canvasHeight, selectedShapeId, selectedShapeIds, subSelection, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId, symbolInstanceDisplayObjects, editingTextId, textEditState]);
+  }, [propSceneGraph, parentSceneGraph, shapeDisplayObjects, textDisplayObjects, bitmapDisplayObjects, bitmapLibraryItems, stageWidth, stageHeight, pasteboardMargin, canvasWidth, canvasHeight, selectedShapeId, selectedShapeIds, subSelection, subSplitPreview, activeTool, penState, subselState, lassoPoints, lassoPolyVertices, lassoPolygonMode, freeTransformMode, library, onionFrames, timeline, _currentFrame, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, simpleButtonsEnabled, hoveredButtonId, pressedButtonId, symbolInstanceDisplayObjects, editingTextId, textEditState]);
 
   // CSS filter for view modes
   const stageFilter =

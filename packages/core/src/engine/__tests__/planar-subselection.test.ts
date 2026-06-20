@@ -315,4 +315,66 @@ describe("P3 — splitOnMove", () => {
     expect(extracted).not.toBeNull();
     expect(remainder).toBeNull();
   });
+
+  // P3 LIVE drag-preview invariant (task 1331). The live preview extracts the
+  // selection ONCE at delta 0 and then merely TRANSLATES the extracted geometry
+  // each pointermove (a pure render translate — no per-move planar recompute),
+  // committing the authoritative split only on mouse-up. That is only correct if
+  // "split at delta 0, then translate by (dx,dy)" == "split with delta (dx,dy)".
+  // This pins exactly that, and exercises it on a CURVE-based fill (oval) so the
+  // preview is proven for brush/oval geometry, not just axis-aligned rects.
+  it("extract-at-0-then-translate == split-with-delta (the preview optimization)", () => {
+    const ovalCurveShape = (id: string): Shape => ({
+      id,
+      // A diamond of quadratic arcs around (50,50) r=40 — a curve-only fill loop
+      // (no axis-aligned edges), like an oval / brush blob.
+      paths: [
+        {
+          start: { x: 90, y: 50 },
+          segments: [
+            { type: "curve", control: { x: 90, y: 90 }, to: { x: 50, y: 90 } },
+            { type: "curve", control: { x: 10, y: 90 }, to: { x: 10, y: 50 } },
+            { type: "curve", control: { x: 10, y: 10 }, to: { x: 50, y: 10 } },
+            { type: "curve", control: { x: 90, y: 10 }, to: { x: 90, y: 50 } },
+          ],
+          fill: BLUE,
+          closed: true,
+        },
+      ],
+    });
+
+    const dx = 137;
+    const dy = -42;
+    for (const make of [
+      () => rectShape("box", 0, 0, 100, 60, RED),
+      () => ovalCurveShape("oval"),
+    ]) {
+      const shape = make();
+      // Base extract (what the preview computes ONCE at drag start).
+      const psBase = buildArrangementFromShapes([shape]);
+      const keyBase = pickAt(psBase, { x: 50, y: 30 }) ?? pickAt(psBase, { x: 50, y: 50 })!;
+      const base = splitOnMove(psBase, [keyBase], 0, 0, "ext", "rem");
+      expect(base.extracted).not.toBeNull();
+
+      // Authoritative split with the live delta (what commits on mouse-up).
+      const psFull = buildArrangementFromShapes([shape]);
+      const keyFull = pickAt(psFull, { x: 50, y: 30 }) ?? pickAt(psFull, { x: 50, y: 50 })!;
+      const full = splitOnMove(psFull, [keyFull], dx, dy, "ext", "rem");
+      expect(full.extracted).not.toBeNull();
+
+      // The preview renders base.extracted translated by (dx,dy); that must equal
+      // the committed full.extracted geometry point-for-point.
+      const basePts = base.extracted!.paths.flatMap((p) =>
+        [p.start, ...p.segments.map((s) => s.to)].map((pt) => ({ x: pt.x + dx, y: pt.y + dy })),
+      );
+      const fullPts = full.extracted!.paths.flatMap((p) =>
+        [p.start, ...p.segments.map((s) => s.to)],
+      );
+      expect(basePts.length).toBe(fullPts.length);
+      for (let i = 0; i < basePts.length; i++) {
+        expect(basePts[i].x).toBeCloseTo(fullPts[i].x, 6);
+        expect(basePts[i].y).toBeCloseTo(fullPts[i].y, 6);
+      }
+    }
+  });
 });

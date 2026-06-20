@@ -3076,6 +3076,13 @@ export function Shell(): React.ReactElement {
       getActiveTool: () => toolState.activeTool,
 
       selectTool: (tool: string) => handleToolChange(tool as ToolId),
+      // Set the active fill color (hex). Used by e2e specs that draw with the
+      // pointer and need a visible (non-white) fill to screenshot-assert against.
+      setFillColor: (hex: string) => handleFillColorChange(hex),
+      // Disable the active stroke (alpha 0). Used by e2e specs that need a
+      // stroke-free fill so the committed shape is a single clean fill loop.
+      setStrokeNone: () =>
+        uiStore.getState().setToolState((prev) => ({ ...prev, strokeAlpha: 0 })),
       setCurrentFrame: (frame: number) => setCurrentFrame(frame),
 
       // Commit a merge-mode shape AS-IS (with its own fills/strokes) through the
@@ -3273,6 +3280,7 @@ export function Shell(): React.ReactElement {
     setSubSelection,
     safeActiveLayerIndex,
     currentFrame,
+    handleFillColorChange,
   ]);
 
   // ---------------------------------------------------------------------------
