@@ -1,0 +1,10 @@
+{
+  "id": "1309-07vcgy-hotfix-main-build-red-publish-swf-result-type-mi",
+  "title": "HOTFIX main build red: publish_swf result type missing ok/width/height (registry.ts:2016, from 1306)",
+  "description": "origin/main does NOT compile: packages/authoring-ui/src/agent/registry.ts(2016,7) TS2353 \u2014 publish_swf handler returns {ok,width,height,byteLength,swfBase64} (task 1306 commit 363d116) but the declared result type only allows {swfBase64,byteLength}. Fix the TYPE to match the implementation: find the publish_swf result type declaration (a local result type in registry.ts, the AgentCallbacks publishSwf signature, or the command result map) and add ok,width,height. SURGICAL only \u2014 sibling agent 1307 is concurrently adding a handler in registry.ts; touch ONLY the publish_swf result type. VERIFY: pnpm --filter @flash/authoring-ui build GREEN (tsc passes); full build + authoring-ui tests green (only ~3 task-1207 fixtures acceptable); agent-chat e2e oracle passes. ACQUIRE lock; commit incl task file; push origin/main REBASE-RETRY FAST. Report type change + green build + commit SHA.",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-20T00:05:55Z",
+  "updated_at": "2026-06-20T00:05:55Z"
+}
