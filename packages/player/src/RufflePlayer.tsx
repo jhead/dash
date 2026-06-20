@@ -366,6 +366,13 @@ export function RufflePlayer({
   return (
     <div
       ref={containerRef}
+      // Marker for the authoring app's global keyboard handlers: any keydown whose
+      // target/activeElement is inside this subtree is being handled by the running
+      // SWF (Ruffle has its own window-level keydown listener gated on player focus),
+      // so authoring shortcuts/nudge/reload must NOT also fire. See
+      // `isWithinRufflePlayer` in @flash/authoring-ui. Used by BOTH the Test Movie
+      // modal and the Live Preview tab, which each embed this component.
+      data-ruffle-host="true"
       style={{
         width,
         height,

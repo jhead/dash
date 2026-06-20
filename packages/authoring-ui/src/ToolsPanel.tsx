@@ -3,6 +3,7 @@ import type { FreeTransformMode, PolyStarOptions, ToolId, ToolState } from "./to
 import { OBJECT_DRAWING_TOOLS } from "./tools/types";
 import type { Fill } from "@flash/core";
 import { chrome, halo, chromeFont, bevel, metrics } from "./theme/flash8Theme.js";
+import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
 
 // ---------------------------------------------------------------------------
 // Flash 8 toolbox icons — 16×16 inline SVG, stroke="currentColor"
@@ -580,6 +581,8 @@ export function ToolsPanel({
   // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Ignore keys destined for a focused Ruffle player (Test Movie / Live Preview).
+      if (isWithinRufflePlayer(e)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as HTMLElement;
       if (

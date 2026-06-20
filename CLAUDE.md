@@ -812,7 +812,37 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   (play/pause/restart) handle. Gate: `live-preview.spec.ts` (edit→reload;
   compile-error→last-good+overlay; fix→recover) + the 3 preview unit specs. The
   Ruffle bundle (`apps/desktop/public/ruffle/`) is GITIGNORED, so a fresh worktree
-  must symlink it from the main checkout to run the e2e.
+  must symlink it from the main checkout to run the e2e. (Note: the worktree has
+  no `apps/desktop/public/` at all until you `mkdir -p` it and symlink `ruffle/`
+  inside.)
+- **Keypresses inside a Ruffle player must NOT leak to the authoring app — use a
+  containment check, never `stopPropagation` (task 1324).** Many editor shortcuts
+  are GLOBAL (`window`/`document` keydown listeners): tool hotkeys (`ToolsPanel.tsx`),
+  arrow-key nudge + tool/clipboard/arrange/F8/Delete/Enter (`dispatch/keyboard.ts`
+  + SEVEN listeners in `StageArea.tsx`), Test Movie / zoom / panel toggles
+  (`Shell.tsx`), undo/redo (`hooks/useHistory.ts`). When the user interacts with a
+  running SWF in the Test Movie modal OR the Live Preview tab, those keys belong to
+  the SWF — arrow keys must drive the game, not nudge a selected shape; letters must
+  reach AVM1, not switch the tool. Fix: every global authoring keydown handler now
+  early-returns on `isWithinRufflePlayer(e)` (`dispatch/playerFocus.ts`), a shared
+  containment check — `e.target.closest('[data-ruffle-host]')`, falling back to
+  `document.activeElement` (Ruffle registers on `window`, so the event `target` is
+  often `window`, but FOCUS is genuinely inside the player). The marker
+  `data-ruffle-host="true"` is on the RufflePlayer container (`@flash/player`),
+  which BOTH the Test Movie modal and Live Preview embed — one check covers both.
+  Critical: do NOT `stopPropagation()` on the player container — Ruffle's OWN keydown
+  listener is also on `window`, so stopping propagation to window would block the SWF
+  too. The containment check leaves Ruffle's window listener untouched, so the SWF
+  keeps receiving keys (`keyboard.spec.ts` still passes: ArrowRight fires
+  onClipEvent(keyDown), pixelDiff 10000, with the player focused). `Timeline.tsx`'s
+  listener was already safe — it's panel-scoped (`panelRef.contains(activeElement)`),
+  and the player is never inside the timeline panel. Test Movie's Escape-to-close
+  (`PlayerWindow.tsx`) is NOT guarded (it's the player's own behaviour) so Escape
+  still closes the modal. The legacy `Shell.tsx playerOpenRef` Test-Movie guard is
+  kept as belt-and-suspenders. Gates: `dispatch/__tests__/playerFocus.test.ts`
+  (6 unit cases incl. the activeElement fallback) + `preview-key-isolation.spec.ts`
+  (e2e: control proves "t" switches tool when editor focused; then with the Live
+  Preview ruffle-player focused, "t"/arrows/"p" leave the tool unchanged).
 - **Browser-persistent projects = IndexedDB bytes + localStorage metadata, split
   by SIZE (task 1310).** A project is a serialized `.fla` (`saveFla → Uint8Array`,
   multi-MB with embedded media) so the BYTES live in IndexedDB (`dash-projects`

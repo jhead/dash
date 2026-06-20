@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { isWithinRufflePlayer } from "./playerFocus.js";
 
 export interface CommandKeyboardOptions {
   /** Dispatch a command by id (disabled commands no-op in the registry). */
@@ -81,6 +82,8 @@ export function useCommandKeyboard(opts: CommandKeyboardOptions): void {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't fire while a Ruffle player (Test Movie / Live Preview) owns input.
+      if (isWithinRufflePlayer(e)) return;
       // Don't fire while typing in an input/textarea.
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;

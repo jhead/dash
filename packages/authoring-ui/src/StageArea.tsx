@@ -5,6 +5,7 @@ import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDispla
 import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
+import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
 
 // Text-edit overlay (<textarea>) chrome. The textarea's text content box is inset from
 // its top-left by border + padding; the canvas paints text with its top-left exactly at
@@ -1803,6 +1804,7 @@ export function StageArea({
   // Handle keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isWithinRufflePlayer(e)) return;
       if (e.code === "Space" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         // Only activate hand tool if not typing in an input
         const target = e.target as HTMLElement;
@@ -3351,6 +3353,7 @@ export function StageArea({
   // Enter key (polygon lasso) → close the in-progress polygon selection.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (isWithinRufflePlayer(e)) return;
       if (e.key === "Escape") {
         if (activeTool === "pen") {
           setPenState({ anchors: [], dragStart: null, currentHandleOut: null, cursorPos: null });
@@ -3383,6 +3386,7 @@ export function StageArea({
   // in progress, where Enter closes the polygon instead).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (isWithinRufflePlayer(e)) return;
       if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
         if (activeTool === "lasso" && lassoPolyVerticesRef.current.length >= 3) return;
         const target = e.target as HTMLElement;
@@ -3399,6 +3403,7 @@ export function StageArea({
   // F8 → Convert to Symbol
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (isWithinRufflePlayer(e)) return;
       if (e.key === "F8") {
         const target = e.target as HTMLElement;
         if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
@@ -3414,6 +3419,7 @@ export function StageArea({
   // Delete key → delete selected shape
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (isWithinRufflePlayer(e)) return;
       if ((e.key === "Delete" || e.key === "Backspace") && (selectedShapeIds.length > 0 || selectedShapeId)) {
         const target = e.target as HTMLElement;
         if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
@@ -3432,6 +3438,7 @@ export function StageArea({
   // Clipboard shortcuts: Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+Shift+V, Ctrl+D
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (isWithinRufflePlayer(e)) return;
       const isModifier = e.ctrlKey || e.metaKey;
       if (!isModifier) return;
       const target = e.target as HTMLElement;
@@ -3463,6 +3470,7 @@ export function StageArea({
   // Arrange and Group shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (isWithinRufflePlayer(e)) return;
       const isModifier = e.ctrlKey || e.metaKey;
       if (!isModifier) return;
       const target = e.target as HTMLElement;

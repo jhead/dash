@@ -25,6 +25,7 @@ import {
   defaultComponentParameters,
 } from "@flash/core";
 import { useCommandKeyboard } from "./dispatch/keyboard.js";
+import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
 import { TransformHandles } from "./TransformHandles";
 import type {
   BitmapDisplayObject,
@@ -2746,11 +2747,19 @@ export function Shell(): React.ReactElement {
   // Global keyboard: Ctrl/Cmd+Enter → Test Movie; Shift+F9 → Color; F9 → Actions; Ctrl+J → Doc Props; Escape → exit edit-in-place
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      // Do not handle keyboard shortcuts when focus is inside an iframe (test-movie player)
-      // or test-movie overlay, to avoid interfering with Ruffle's own keyboard handling.
+      // Do not handle authoring shortcuts when focus is inside a running Ruffle
+      // player (Test Movie modal OR Live Preview tab) — those keys belong to the
+      // SWF. Ruffle delivers keys via its own window listener gated on player
+      // focus, so the SWF still receives them (Key.isDown / onClipEvent(keyDown)).
+      // Allow Ctrl/Cmd+Enter to re-trigger Test Movie even from inside the player.
+      if (isWithinRufflePlayer(e)) {
+        if (!(e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
+          return;
+        }
+      }
+      // Test Movie modal open (legacy guard): suppress all but Ctrl/Cmd+Enter so
+      // Ruffle handles keys freely even before focus lands inside the player.
       if (playerOpenRef.current) {
-        // Allow Ctrl/Cmd+Enter to re-trigger test movie even while player is open,
-        // but suppress all other shortcuts so Ruffle can handle keys freely.
         if (!(e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
           return;
         }

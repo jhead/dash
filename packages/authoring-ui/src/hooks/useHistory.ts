@@ -6,6 +6,7 @@ import {
   canRedo as historyCanRedo,
 } from "@flash/core";
 import { historyReducer, type HistoryAction } from "../store/history.js";
+import { isWithinRufflePlayer } from "../dispatch/playerFocus.js";
 
 // The pure reducer now lives in store/history.ts so the Zustand documentStore
 // can reuse it without importing React. Re-export it (and HistoryAction) here so
@@ -92,6 +93,9 @@ export function useHistory(initial: FlashDocument): UseHistoryResult {
   // Keyboard shortcut listener — bound to the DOM document.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
+      // Undo/redo must not fire while a Ruffle player (Test Movie / Live Preview)
+      // owns keyboard input — those keys belong to the SWF.
+      if (isWithinRufflePlayer(event)) return;
       const mod = event.ctrlKey || event.metaKey;
       if (!mod) return;
 
