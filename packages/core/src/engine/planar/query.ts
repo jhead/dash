@@ -50,6 +50,11 @@ function appendHalfEdgePoints(he: HalfEdge, out: Point[]): void {
   }
 }
 
+/** True when two points are within a twip (1/20 px) — a degenerate sub-twip span. */
+function isSubTwip(a: Point, b: Point): boolean {
+  return Math.abs(a.x - b.x) < 0.05 && Math.abs(a.y - b.y) < 0.05;
+}
+
 /** Shoelace signed area of a polygon. Positive = CCW. */
 export function polygonSignedArea(poly: readonly Point[]): number {
   let a = 0;
@@ -411,6 +416,11 @@ export function planarShapeToShape(
     (a, b) => a.fill - b.fill
   );
 
+  // Stroked edges consumed by a coincident fill loop (see below): they were
+  // emitted as part of a COMBINED fill+stroke path, so the separate per-edge
+  // stroke pass must not re-emit them.
+  const strokeConsumedByFill = new Set<number>();
+
   for (const comp of compList) {
     const fill = ps.fills[comp.fill];
     if (!fill) continue;
@@ -436,11 +446,13 @@ export function planarShapeToShape(
     while (remaining.size > 0) {
       const startId = remaining.values().next().value as number;
       const loop: EdgeGeometry[] = [];
+      const loopHes: number[] = [];
       let cur = startId;
       let guard = 0;
       do {
         remaining.delete(cur);
         loop.push(ps.halfEdges[cur].geometry);
+        loopHes.push(cur);
         // Advance to the next boundary half-edge: walk `next` (which stays in the
         // incident face) — if that is a boundary edge, take it; otherwise keep
         // rotating via successive `next` (crossing dissolved interior seams).
@@ -455,24 +467,85 @@ export function planarShapeToShape(
         cur = step;
         if (++guard > ps.halfEdges.length + 5) break;
       } while (cur !== startId && cur >= 0 && remaining.has(cur));
-      // Close: if we returned to start (or ran into an already-consumed edge),
-      // emit the loop.
-      const path = edgeGeometriesToShapePath(loop, fill);
-      if (path) paths.push(path);
+
+      // COMBINE a uniformly-stroked fill loop into ONE fill+stroke path. When
+      // EVERY edge of this fill loop carries the SAME line style, the stroke
+      // traces exactly the fill boundary (a stroked oval / rect / any stroked
+      // filled shape). Emitting them as ONE path — instead of one fill loop PLUS
+      // a dozen separate single-segment stroke fragments — is load-bearing: a
+      // re-built (livePlanarShape) merge map then sees the stroke segmented
+      // IDENTICALLY to the fill boundary, so the coincident-edge merge folds them
+      // into shared edges and face tracing stays clean. Splitting them apart was
+      // the stroked-ellipse centre-pick bug (task 1334): the fill loop (11 curve
+      // segments) and the stroke fragments (per-edge) re-built with mismatched
+      // split points → coincident curves the arrangement could not merge → the
+      // interior never resolved to a fill face and pickAt at the centre returned
+      // null. The combined form also matches the SWF encoder's
+      // coalesceFillStrokePairs expectation and how an authored shape is shaped.
+      let uniformStroke: Stroke | undefined;
+      let allStroked = loopHes.length > 0;
+      for (const heId of loopHes) {
+        const he = ps.halfEdges[heId];
+        const ls = he.lineStyle;
+        const tls = ps.halfEdges[he.twin].lineStyle;
+        const styleIdx = ls ?? tls;
+        if (styleIdx === null || styleIdx === undefined) {
+          allStroked = false;
+          break;
+        }
+        const s = ps.lineStyles[styleIdx];
+        if (!s) {
+          allStroked = false;
+          break;
+        }
+        if (uniformStroke === undefined) uniformStroke = s;
+        else if (s !== uniformStroke) {
+          allStroked = false;
+          break;
+        }
+        // The edge must also pass the P3 edge filter to be consumed here.
+        if (!edgeFilter(he.id) && !edgeFilter(he.twin)) {
+          allStroked = false;
+          break;
+        }
+      }
+
+      const path = edgeGeometriesToShapePath(
+        loop,
+        fill,
+        allStroked ? uniformStroke : undefined
+      );
+      if (path) {
+        paths.push(path);
+        if (allStroked) for (const heId of loopHes) strokeConsumedByFill.add(heId);
+      }
     }
   }
 
-  // --- Strokes: one open path per undirected line-styled edge ---
+  // --- Strokes: one open path per undirected line-styled edge (except those
+  // already emitted as part of a coincident fill+stroke loop above). ---
   const seenStroke = new Set<number>();
   for (const he of ps.halfEdges) {
     if (he.lineStyle === null || he.lineStyle === undefined) continue;
     if (seenStroke.has(he.id) || seenStroke.has(he.twin)) continue;
+    if (strokeConsumedByFill.has(he.id) || strokeConsumedByFill.has(he.twin)) {
+      seenStroke.add(he.id);
+      continue;
+    }
     // P3 edge filter: an undirected edge emits only if EITHER half-edge passes.
     if (!edgeFilter(he.id) && !edgeFilter(he.twin)) continue;
     seenStroke.add(he.id);
     const stroke = ps.lineStyles[he.lineStyle];
     if (!stroke) continue;
     const g = he.geometry;
+    // Skip a sub-twip stub. A stroked edge that spans less than a twip after
+    // snapping is a topology artifact (the residual stub left at a curve seam when
+    // a fill loop's coincident stroke was emitted as one combined path) — it is
+    // invisible AND, re-built, it produces a coincident micro-curve the
+    // arrangement cannot merge, re-fragmenting the interior so the centre stops
+    // resolving to a fill face (task 1334). A real stroke segment always spans
+    // more than a twip.
+    if (isSubTwip(g.p0, g.p1)) continue;
     paths.push({
       start: g.p0,
       segments: [g.control === null ? { type: "line", to: g.p1 } : { type: "curve", control: g.control, to: g.p1 }],

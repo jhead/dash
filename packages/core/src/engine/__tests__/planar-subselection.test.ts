@@ -21,8 +21,10 @@ import {
   splitOnMove,
   planarShapeToShape,
   faceArea,
+  locateFace,
   type SubKey,
 } from "../planar/index.js";
+import { createOvalShape } from "../shapes.js";
 
 const RED: Fill = { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } };
 const BLUE: Fill = { type: "solid", color: { r: 0, g: 0, b: 255, a: 255 } };
@@ -375,6 +377,93 @@ describe("P3 — splitOnMove", () => {
         expect(basePts[i].x).toBeCloseTo(fullPts[i].x, 6);
         expect(basePts[i].y).toBeCloseTo(fullPts[i].y, 6);
       }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// task 1334 — a STROKED ellipse/oval must pick & drag at its interior, exactly
+// like a stroke-free oval. Regression for the centre-pick failure: the readback
+// used to emit a stroked curved fill's boundary as ~12 separate single-segment
+// stroke fragments (plus sub-twip stubs). Re-building the merge map (the live
+// planar shape used by pickAt) from THAT committed shape produced coincident
+// curves the arrangement could not merge → the curve/curve intersector flooded
+// with spurious crossings → the interior shattered into tiny faces (or none) and
+// pickAt at the centre returned null. The fix: (1) the curve/curve intersector
+// reports coincident-overlap endpoints (not a flood); (2) zero-span split pieces
+// are dropped; (3) read-back emits a uniformly-stroked fill loop as ONE combined
+// fill+stroke path and drops sub-twip stroke stubs — so the rebuild stays clean.
+// ---------------------------------------------------------------------------
+describe("task 1334 — stroked oval picks & drags at its centre", () => {
+  // The committed (merged) form: drive the freshly-drawn shape through the fold
+  // (buildArrangementFromShapes) then read back to per-path loops, exactly as the
+  // editor stores it; pickAt operates on the LIVE planar map rebuilt from that.
+  function commitMerged(shape: Shape): Shape {
+    return planarShapeToShape(buildArrangementFromShapes([shape]), "committed");
+  }
+
+  it("a STROKED oval read-back is one combined fill+stroke loop (not fragments)", () => {
+    const stroked = createOvalShape(50, 50, 150, 150, RED, STROKE);
+    const committed = commitMerged(stroked);
+    const fillLoops = committed.paths.filter((p) => p.fill);
+    const strokeLoops = committed.paths.filter((p) => p.stroke);
+    expect(fillLoops.length, "exactly one fill loop").toBe(1);
+    // The single fill loop also carries the stroke (the coincident boundary).
+    expect(fillLoops[0].stroke, "fill loop is also stroked (combined)").toBeTruthy();
+    // No dozen orphan single-segment stroke fragments left over.
+    expect(strokeLoops.length, "no fragmented orphan strokes").toBeLessThanOrEqual(1);
+  });
+
+  it("pickAt at the centre of a STROKED oval resolves a FILL FACE (matches stroke-free)", () => {
+    const centre = { x: 100, y: 100 };
+
+    // Stroke-free baseline: must resolve a fill face.
+    const free = livePlanarShape(commitMerged(createOvalShape(50, 50, 150, 150, RED, null)));
+    const freeFace = locateFace(free, centre);
+    expect(freeFace, "stroke-free oval centre resolves a face").not.toBeNull();
+    const freePick = pickAt(free, centre);
+    expect(freePick?.kind, "stroke-free oval centre picks a face").toBe("face");
+
+    // Stroked oval: must behave identically.
+    const ps = livePlanarShape(commitMerged(createOvalShape(50, 50, 150, 150, RED, STROKE)));
+    const face = locateFace(ps, centre);
+    expect(face, "stroked oval centre resolves a fill face").not.toBeNull();
+    expect(face!.fill, "the resolved face carries the fill").not.toBeNull();
+    // Same interior area as the stroke-free oval (the fill region is identical).
+    expect(faceArea(ps, face!)).toBeCloseTo(faceArea(free, freeFace!), 0);
+
+    const pick = pickAt(ps, centre);
+    expect(pick, "stroked oval centre pick is non-null").not.toBeNull();
+    expect(pick!.kind, "stroked oval centre picks a FACE (the interior fill)").toBe("face");
+  });
+
+  it("dragging a STROKED oval by its centre extracts the interior fill (split-on-move)", () => {
+    const centre = { x: 100, y: 100 };
+    const ps = livePlanarShape(commitMerged(createOvalShape(50, 50, 150, 150, RED, STROKE)));
+    const key = pickAt(ps, centre);
+    expect(key?.kind).toBe("face");
+
+    // Whole-shape drag = split-on-move of the picked face by a live delta.
+    const moved = splitOnMove(ps, [key as SubKey], 10, 10, "ext", "rem");
+    expect(moved.extracted, "drag extracts geometry").not.toBeNull();
+    const extractedFills = moved.extracted!.paths.filter((p) => p.fill);
+    expect(extractedFills.length, "the extracted artwork carries the fill").toBeGreaterThanOrEqual(1);
+  });
+
+  it("a curved stroke-bordered fill survives a commit→rebuild cycle (general curved fills)", () => {
+    // Not just the oval: any uniformly-stroked curved fill must keep a pickable
+    // interior through one fold/read-back/rebuild round-trip.
+    const cases: [string, Shape][] = [
+      ["wide ellipse", createOvalShape(40, 80, 160, 120, BLUE, STROKE)],
+      ["tall ellipse", createOvalShape(80, 40, 120, 160, RED, STROKE)],
+    ];
+    for (const [label, shape] of cases) {
+      const ps = livePlanarShape(commitMerged(shape));
+      // centre of the bounding box
+      const c = { x: 100, y: 100 };
+      const f = locateFace(ps, c);
+      expect(f, `${label}: centre resolves a fill face`).not.toBeNull();
+      expect(pickAt(ps, c)?.kind, `${label}: centre picks a face`).toBe("face");
     }
   });
 });

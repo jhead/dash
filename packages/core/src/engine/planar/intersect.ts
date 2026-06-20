@@ -162,9 +162,122 @@ export function intersectCurveCurve(
   curveA: EdgeGeometry,
   curveB: EdgeGeometry
 ): Intersection[] {
+  // COINCIDENCE FAST-PATH. Two quadratics that trace (a span of) the SAME path —
+  // e.g. an oval's fill boundary and its coincident stroke loop, or a curve laid
+  // exactly over another — have overlapping bounding boxes at every subdivision
+  // level, so the transversal `recurse` below would emit a FLOOD of spurious
+  // "crossings" all along the shared arc (deduped only at SNAP_EPS → dozens of
+  // bogus split points → the arrangement shatters into thousands of micro-edges
+  // and face tracing collapses). This is the curve analogue of the seg/seg
+  // collinear-overlap case: report ONLY the overlap-interval endpoints so both
+  // curves split at the SAME shared vertices and the coincident-edge merge in
+  // the arrangement folds them into one edge.
+  const overlap = coincidentOverlap(curveA, curveB);
+  if (overlap) return overlap;
+
   const out: Intersection[] = [];
   recurse(curveA, curveB, 0, 1, 0, 1, 0, out);
   // Dedupe near-equal results (subdivision can report a crossing twice).
+  return dedupe(out);
+}
+
+/**
+ * Detect whether two quadratic curves are COINCIDENT over a span (one traces the
+ * same path as the other for a contiguous parameter range) and, if so, return the
+ * overlap-interval endpoints as the only intersections. Returns `null` when the
+ * curves merely cross transversally (the normal subdivision case).
+ *
+ * Method: sample B; project each sample to its nearest parameter on A. The pair
+ * is coincident iff a contiguous run of B's samples ALL lie on A (within a
+ * slightly-relaxed snap tolerance) AND their A-parameters advance monotonically
+ * (same trace, not a transversal touch). We then report the endpoints of that
+ * shared span on A (which, snapped, become shared vertices on both curves). One or
+ * two grazing samples on A are NOT coincidence — they fall through to the
+ * transversal solver so a real curve/curve crossing is unaffected.
+ */
+function coincidentOverlap(a: EdgeGeometry, b: EdgeGeometry): Intersection[] | null {
+  // Relax the on-curve tolerance a touch above SNAP_EPS: coincident authored
+  // geometry can differ by sub-twip rounding after a readback round-trip.
+  const ON_TOL = Math.max(SNAP_EPS * 4, 0.05);
+  const SAMPLES = 24;
+
+  // Nearest parameter on `a` to a point: coarse scan + ternary-search refine.
+  const nearestParamOnA = (pt: Point): { t: number; d: number } => {
+    let bestT = 0;
+    let bestD = Infinity;
+    const COARSE = 32;
+    for (let i = 0; i <= COARSE; i++) {
+      const t = i / COARSE;
+      const q = edgeAt(a, t);
+      const d = (q.x - pt.x) ** 2 + (q.y - pt.y) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        bestT = t;
+      }
+    }
+    let lo = Math.max(0, bestT - 1 / COARSE);
+    let hi = Math.min(1, bestT + 1 / COARSE);
+    for (let iter = 0; iter < 24; iter++) {
+      const m1 = lo + (hi - lo) / 3;
+      const m2 = hi - (hi - lo) / 3;
+      const q1 = edgeAt(a, m1);
+      const q2 = edgeAt(a, m2);
+      const d1 = (q1.x - pt.x) ** 2 + (q1.y - pt.y) ** 2;
+      const d2 = (q2.x - pt.x) ** 2 + (q2.y - pt.y) ** 2;
+      if (d1 < d2) hi = m2;
+      else lo = m1;
+    }
+    const t = (lo + hi) / 2;
+    const q = edgeAt(a, t);
+    return { t, d: Math.hypot(q.x - pt.x, q.y - pt.y) };
+  };
+
+  // Project each B sample onto A; collect the ones whose point lies on A.
+  const onA: { tA: number; tB: number }[] = [];
+  for (let i = 0; i <= SAMPLES; i++) {
+    const tB = i / SAMPLES;
+    const pt = edgeAt(b, tB);
+    const { t, d } = nearestParamOnA(pt);
+    if (d <= ON_TOL) onA.push({ tA: t, tB });
+  }
+  // Need a real shared span — and the bulk of B must lie on A — so a true
+  // transversal crossing (one/two on-curve samples) still goes to the solver.
+  if (onA.length < 3 || onA.length < (SAMPLES + 1) * 0.5) return null;
+
+  // Reject a CORNER GRAZE. Two adjacent (non-coincident) quadratic arcs that
+  // share an endpoint also share a near-equal tangent there, so a handful of B's
+  // samples near the join project onto a tiny slice of A — looking like a
+  // micro-overlap. A genuine coincident overlap covers a substantial parameter
+  // span of A; require the matched A-range to be a real fraction of the curve.
+  const tASpan = Math.abs(onA[onA.length - 1].tA - onA[0].tA);
+  const tBSpan = Math.abs(onA[onA.length - 1].tB - onA[0].tB);
+  if (tASpan < 0.1 || tBSpan < 0.1) return null;
+
+  // The shared A-parameters must advance monotonically (same direction, same
+  // trace), not bounce — a transversal contact would not.
+  const incr = onA[onA.length - 1].tA >= onA[0].tA;
+  for (let i = 1; i < onA.length; i++) {
+    const dt = onA[i].tA - onA[i - 1].tA;
+    if (incr ? dt < -ON_TOL : dt > ON_TOL) return null;
+  }
+
+  // Report the overlap-interval endpoints on A (snapped → shared vertices).
+  // CRUCIAL: the two endpoints must be DISTINCT after snapping. Two adjacent
+  // (but not coincident) curves that merely share a corner vertex can produce a
+  // near-degenerate "overlap" clustered at that corner — emitting it would split
+  // a curve at a point coincident with its own endpoint and create a zero-span
+  // stub edge that corrupts face tracing. A genuine coincident overlap spans a
+  // real arc, so its endpoints snap to different vertices.
+  const tA0 = clamp01(onA[0].tA);
+  const tA1 = clamp01(onA[onA.length - 1].tA);
+  const p0 = snapPoint(edgeAt(a, tA0));
+  const p1 = snapPoint(edgeAt(a, tA1));
+  if (p0.x === p1.x && p0.y === p1.y) return null; // span collapses to one vertex
+
+  const out: Intersection[] = [
+    { tA: tA0, tB: clamp01(onA[0].tB), point: p0 },
+    { tA: tA1, tB: clamp01(onA[onA.length - 1].tB), point: p1 },
+  ];
   return dedupe(out);
 }
 

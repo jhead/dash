@@ -288,7 +288,14 @@ export class Arrangement {
     for (const pg of pieceGeoms) {
       const aId = this.getOrCreateVertex(pg.p0);
       const bId = this.getOrCreateVertex(pg.p1);
-      if (aId === bId && pg.control === null) continue; // collapsed
+      // A piece whose endpoints snap to the SAME vertex spans no real distance —
+      // a zero-length line OR a zero-span quadratic stub (the kind produced when
+      // a curve is split a sub-twip from its own endpoint, e.g. two adjacent
+      // oval arcs crossing near their shared corner). It carries no area and no
+      // visible stroke; inserting it adds a self-loop half-edge that pollutes the
+      // rotation system and leaves orphan stroke fragments on read-back (the
+      // stroked-ellipse centre-pick bug, task 1334). Skip lines AND curves.
+      if (aId === bId) continue; // collapsed (was: only `&& control === null`)
       this.addTwinPair(aId, bId, pg, fillLeft, fillRight, lineStyle);
     }
   }
@@ -325,7 +332,7 @@ export class Arrangement {
     for (const pg of pieces) {
       const aId = this.getOrCreateVertex(pg.p0);
       const bId = this.getOrCreateVertex(pg.p1);
-      if (aId === bId && pg.control === null) continue;
+      if (aId === bId) continue; // collapsed line OR zero-span curve (task 1334)
       this.addTwinPair(aId, bId, pg, fillLeft, fillRight, lineStyle);
     }
   }

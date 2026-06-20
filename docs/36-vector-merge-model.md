@@ -201,6 +201,7 @@ faces does this fill now occupy after the cut".
 | **P5+ (interchange optimization, NOT a blocker)** | SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` hard-codes `stateFillStyle1=0`) — an edge-record-count *optimization* (closer byte-match to Flash), NOT a correctness need: the per-path read-back already round-trips to SWF at diff=0 (see §3.0d). FLA merge-map persistence and planar-topology shape-morph likewise remain future enhancements, not regressions. | Optional follow-up. |
 | **P5+ (selection polish)** | **Full selection authenticity + polish:** lasso over the planar pieces, edit-curve handles on faces, snapping against the arrangement. | Optional follow-up. |
 | **Perf follow-up (task 1327)** | Incremental fold — avoid rebuilding the entire layer arrangement per stroke on dense art (traced bitmaps with 1000+ fills). Measured ~35/61/176 ms per stroke for 100/400/800 mergeable fills. Resolved via **spatial bbox-culling**: only the **transitive overlap closure** of the new stroke is folded through the kernel; shapes disjoint from the whole interacting cluster stay untouched. Per-stroke fold on a 1000-fill layer dropped ~239 ms → ~2 ms. See §3.0e. | **DONE (task 1327; correctness fixed by task 1329).** |
+| **Stroked-curve centre-pick (task 1334)** | A STROKED ellipse/oval (and any uniformly-stroked **curved** fill) could not be picked/dragged at its interior: re-building the live planar map from the committed shape shattered the interior into tiny faces (or none) so `pickAt` at the centre returned null, while a stroke-free oval picked fine. Root cause was a **coincident-curve** explosion: read-back emitted the stroked fill boundary as ~12 separate single-segment stroke fragments (+ sub-twip stubs); on rebuild the fill loop and those fragments are the SAME geometry split at different points, and `intersectCurveCurve` had NO coincidence handling — it flooded the arrangement with spurious crossings (~14.6k half-edges) so face tracing collapsed. Fixed at three layers (all curve-preserving). See §3.0h. | **DONE (task 1334).** |
 
 ### 3.0 P1 implementation notes (task 1319)
 
@@ -726,6 +727,56 @@ id-resolves-post-fold (`registry.test.ts`), JSFL union+cut+line-split (`runtime.
 paste union+cut+non-shape-append (`clipboardMerge.test.ts`). The 8 merge-drawing oracles are
 unaffected — `commitMergeShapeDirect` produces byte-identical output (same `planarMergeCommit`
 call) and Object-Drawing / gradient / symbol / undo paths are unchanged.
+
+### 3.0h Stroked curved fills pick/drag at their centre — coincident-curve handling (task 1334)
+
+**Symptom.** A STROKED ellipse/oval could not be click-selected or dragged by its interior:
+`pickAt` at the oval's centre returned `null`, so the whole-fill drag never started. A
+stroke-NONE oval picked/dragged fine. (Surfaced — documented, not fixed — by task 1331.)
+
+**Root cause — a coincident-curve explosion on rebuild.** A stroked oval folds cleanly on
+first commit (one bounded fill face). But the read-back (`planarShapeToShape`) emitted the
+stroked fill boundary as ~12 SEPARATE single-segment open stroke paths (one per undirected
+edge), plus a couple of sub-twip stubs at the curve seams. `pickAt` operates on the LIVE
+planar map, which is **re-built** (`livePlanarShape` → `buildArrangementFromShapes`) from that
+committed shape. On rebuild the fill loop (one 11-segment curve) and the dozen stroke
+fragments are the SAME geometry split at DIFFERENT points — i.e. *coincident curves*. And
+`intersectCurveCurve` (recursive bbox subdivision) had NO coincidence case: two curves tracing
+the same arc overlap at every subdivision level, so it emitted a FLOOD of spurious "crossings"
+all along the shared arc (deduped only at SNAP_EPS). Result: ~14.6k half-edges, the interior
+shattered into tiny/zero-area faces, and the centre resolved to no fill face. (This is the
+curve analogue of the seg/seg collinear-overlap that was already handled.)
+
+**Fix — three curve-preserving layers** (no flag; merge/eraser/selection unchanged):
+
+1. **`intersect.ts` — coincidence fast-path.** `intersectCurveCurve` first runs
+   `coincidentOverlap`: sample B, project each sample to its nearest parameter on A; if a
+   contiguous, monotonic run of B's samples lies ON A over a *substantial* span (rejecting the
+   corner-graze where two adjacent arcs merely share a tangent at a join), report ONLY the
+   overlap-interval endpoints — never a flood. Distinct-endpoint + min-span guards keep a true
+   transversal crossing on the normal subdivision path.
+2. **`arrangement.ts` — drop zero-span pieces.** A split piece whose endpoints snap to the
+   SAME vertex is degenerate (a zero-length line OR a zero-span quadratic stub produced when a
+   curve is split a sub-twip from its own endpoint). The guard now skips lines AND curves
+   (`if (aId === bId) continue`), so no self-loop half-edge pollutes the rotation system.
+3. **`query.ts` — combine a uniformly-stroked fill loop + drop sub-twip stubs.** When EVERY
+   edge of a traced fill loop carries the SAME line style, emit ONE **combined fill+stroke**
+   path instead of a fill loop plus a dozen orphan stroke fragments — so a re-built map sees
+   the stroke segmented IDENTICALLY to the fill boundary and the coincident-edge merge
+   (`addTwinPair`) folds them into shared edges. The residual sub-twip stroke stub at a curve
+   seam is dropped (invisible, and re-built it re-fragments the interior). This combined form
+   also matches the SWF encoder's `coalesceFillStrokePairs` expectation and how an authored
+   stroked shape is naturally shaped.
+
+**Net effect.** A stroked oval now read-backs as one combined fill+stroke loop; the rebuilt
+map is one bounded fill face; `locateFace`/`pickAt` at the centre resolve that face and
+`splitOnMove` extracts it — byte-for-byte the stroke-free oval's behaviour. (Independent
+pre-existing note: any oval — stroked OR stroke-free — still degrades after **3+** successive
+commit→rebuild cycles from quadratic read-back accumulation; out of scope here, and the
+stroked oval now matches the stroke-free oval at every cycle count.) Gate:
+`planar-subselection.test.ts` "task 1334 — stroked oval picks & drags at its centre" (combined
+read-back / centre→fill-face parity with stroke-free / drag extracts the fill / wide+tall
+ellipses survive a round-trip). All 8 merge oracles still diff=0/220000.
 
 ### 3.1 Key decisions
 

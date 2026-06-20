@@ -1,10 +1,10 @@
 {
   "id": "1334-6mptk0-stroked-ellipse-can-t-be-picked-dragged-at-its-c",
   "title": "Stroked ellipse can't be picked/dragged at its centre \u2014 fragments into ~25 merge fill-loops, centre face pickAt returns null",
-  "description": "Surfaced (documented, not fixed) by task 1331. In the merge model, a STROKED ellipse/oval commits as ~25 fragmented fill loops (the stroke segments the fill), so pickAt at the oval's CENTRE returns null and you can't select/drag the stroked oval by its interior \u2014 a stroke-free oval picks/drags fine. Likely the fragmentation of a curved stroke-bordered fill leaves the centre as many tiny faces or an unresolved region, or pickAt's face resolution at the centroid fails. EXPLORE engine/planar pickAt/locateFace + how a stroked oval folds (merge.ts / planarShapeToShape) + subselection.ts pickAt. FIX so the interior of a stroked oval (and similar stroke-bordered curved fills) resolves to its fill face for click-select/drag, matching a stroke-free oval. VERIFY: build + core/authoring-ui tests green (only ~3 task-1207 fixtures acceptable); merge oracles still diff=0; add a regression test (stroked oval: pickAt at centre resolves a fill face; drag works). ACQUIRE lock; commit incl task file; push rebase-retry. Scope: engine/planar pickAt/fold (+test).",
-  "status": "open",
+  "description": "FIXED (task 1334). Post-1332 re-measure: stroked oval folds CLEAN on first commit (1 face); the bug appears on REBUILD of the live planar map (livePlanarShape) from the committed shape. Read-back emitted the stroked fill boundary as ~12 separate stroke fragments + sub-twip stubs; on rebuild the fill loop and those fragments are the SAME geometry split differently (coincident curves), and intersectCurveCurve had NO coincidence case -> flooded ~14.6k half-edges -> interior shattered -> locateFace/pickAt at centre null. Fix (3 curve-preserving layers): (1) intersect.ts coincidentOverlap reports overlap-interval endpoints not a flood; (2) arrangement.ts drops zero-span split pieces (lines AND curves); (3) query.ts emits a uniformly-stroked fill loop as ONE combined fill+stroke path + drops sub-twip stubs. Now identical to stroke-free oval: 1 bounded fill face, centre->fill face, splitOnMove extracts it. VERIFIED: core 5485 pass (3 pre-existing missing-fixture flash8-empty.fla ENOENT only), swf 1466, authoring-ui 1022; 8 merge oracles diff=0/220000; regression test planar-subselection.test.ts 'task 1334'; docs/36 3.0h.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-06-20T17:11:07Z",
-  "updated_at": "2026-06-20T17:11:07Z"
+  "updated_at": "2026-06-20T17:44:53Z"
 }
