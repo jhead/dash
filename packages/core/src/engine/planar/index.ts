@@ -1,0 +1,61 @@
+/**
+ * Curve-aware planar geometry kernel (Flash 8 merge-drawing foundation).
+ *
+ * A half-edge planar subdivision over quadratic-bezier-aware geometry:
+ *   - geometry.ts   — twip snapping + curve-preserving split/eval primitives
+ *   - intersect.ts  — segment/segment, segment/curve, curve/curve intersection
+ *   - arrangement.ts— the DCEL builder (insert edge, split, faces)
+ *   - query.ts      — point-in-face, area, Euler, Shape<->arrangement conversion
+ *   - build.ts      — high-level builders from Shape paths
+ *
+ * Kernel only — no user-facing behavior change.  See docs/36-vector-merge-model.md.
+ */
+
+export {
+  TWIPS_PER_PX,
+  SNAP_EPS,
+  snapCoord,
+  snapPoint,
+  pointKey,
+  pointsEqual,
+  dist2,
+  quadAt,
+  edgeAt,
+  edgeTangent,
+  outgoingDirection,
+  splitQuad,
+  splitEdgeGeometry,
+  reverseEdgeGeometry,
+  edgeBBox,
+} from "./geometry.js";
+
+export {
+  intersectSegSeg,
+  intersectSegCurve,
+  intersectCurveCurve,
+  intersectEdges,
+} from "./intersect.js";
+export type { Intersection } from "./intersect.js";
+
+export { Arrangement } from "./arrangement.js";
+export type { InputEdge } from "./arrangement.js";
+
+export {
+  faceBoundaryPolygon,
+  faceInteriorPoint,
+  polygonSignedArea,
+  faceArea,
+  traceCycle,
+  pointInPolygon,
+  locateFace,
+  pointInFace,
+  eulerCharacteristic,
+  shapePathToEdgeGeometries,
+  shapeToEdgeGeometries,
+} from "./query.js";
+
+export {
+  buildArrangementFromShapes,
+  buildArrangement,
+  pathToInputEdges,
+} from "./build.js";

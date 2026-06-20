@@ -309,6 +309,109 @@ export interface Shape {
 }
 
 // ---------------------------------------------------------------------------
+// Planar subdivision (half-edge "shape soup") — Flash 8 merge-drawing model
+// ---------------------------------------------------------------------------
+//
+// These types are the in-memory form of Flash's merge-mode vector model: a
+// planar subdivision where geometry is a set of EDGES (quadratic-bezier-aware)
+// and each edge knows the fill on each side (fillLeft/fillRight, the SWF
+// fill0/fill1 dual) plus an optional line style.  The half-edge structure makes
+// the planar regions (faces) and their adjacency explicit, which is what
+// same-color union / different-color cut / line-splits-fill all operate on.
+//
+// They are ADDITIVE and live alongside `Shape`/`ShapePath`; `Shape` remains the
+// per-path .fla/SWF interchange + Object-Drawing form.  See the kernel in
+// engine/planar/ and docs/36-vector-merge-model.md.
+
+/**
+ * The geometry of a single planar edge, in twip-snapped pixel coordinates.
+ * A `control` of `null` is a straight line from `p0` to `p1`; otherwise it is a
+ * quadratic Bézier `p0 → control → p1` (Flash's native curve form).
+ *
+ * Curves are CURVE-PRESERVING: splitting an edge subdivides the Bézier at a
+ * parameter `t` (de Casteljau) and stores the resulting true quadratic on each
+ * half — geometry is never flattened to a polyline.
+ */
+export interface EdgeGeometry {
+  readonly p0: Point;
+  readonly control: Point | null;
+  readonly p1: Point;
+}
+
+/**
+ * A directed half-edge in the planar subdivision.  Every undirected edge is two
+ * twin half-edges; each half-edge bounds one face (on its LEFT, by CCW
+ * convention) and links into a face boundary via `next`/`prev`.
+ *
+ * `fillLeft`/`fillRight` are fill-style indices into {@link PlanarShape.fills}
+ * (or `null` for "background"/no fill) for the regions on the left and right of
+ * the edge's direction of travel — the SWF fill0/fill1 dual.  `lineStyle` is an
+ * index into {@link PlanarShape.lineStyles}, or `null` for no stroke.
+ */
+export interface HalfEdge {
+  /** Stable id within its arrangement (index into the half-edge array). */
+  readonly id: number;
+  /** Origin vertex id (the tail of this directed half-edge). */
+  readonly origin: number;
+  /** The twin half-edge (same undirected edge, opposite direction). */
+  twin: number;
+  /** Next half-edge around the incident face (CCW). */
+  next: number;
+  /** Previous half-edge around the incident face. */
+  prev: number;
+  /** Incident face id (the face on the LEFT of this half-edge), or -1 if unassigned. */
+  face: number;
+  /**
+   * Geometry of this directed half-edge: `p0` is at `origin`, `p1` is at the
+   * twin's origin.  The twin carries the reversed geometry.
+   */
+  geometry: EdgeGeometry;
+  /** Fill index on the left of travel, or null for background. */
+  fillLeft: number | null;
+  /** Fill index on the right of travel, or null for background. */
+  fillRight: number | null;
+  /** Line-style index, or null for no stroke. */
+  lineStyle: number | null;
+}
+
+/** A vertex (node) in the planar subdivision, at twip-snapped coordinates. */
+export interface PlanarVertex {
+  readonly id: number;
+  readonly point: Point;
+  /** One outgoing half-edge id (an entry point into the rotation), or -1 if isolated. */
+  outgoing: number;
+}
+
+/**
+ * A face (planar region) of the subdivision.  `outer` is one half-edge on the
+ * face's outer boundary (or -1 for the single unbounded face).  `holes` lists
+ * one half-edge per inner boundary (island/hole) contained by this face.
+ * `fill` is the fill-style index that fills this region (null = background).
+ */
+export interface PlanarFace {
+  readonly id: number;
+  outer: number;
+  holes: number[];
+  fill: number | null;
+  /** True for the single unbounded outer face. */
+  readonly unbounded: boolean;
+}
+
+/**
+ * A planar subdivision ("shape soup"): the merge-mode geometry of one layer's
+ * mergeable artwork.  Vertices, half-edges and faces are stored in parallel
+ * id-indexed arrays (an id of -1 means "none").  `fills`/`lineStyles` are the
+ * style tables that edge/face indices refer to.
+ */
+export interface PlanarShape {
+  readonly vertices: readonly PlanarVertex[];
+  readonly halfEdges: readonly HalfEdge[];
+  readonly faces: readonly PlanarFace[];
+  readonly fills: readonly Fill[];
+  readonly lineStyles: readonly Stroke[];
+}
+
+// ---------------------------------------------------------------------------
 // Free Transform mesh warp (Distort / Envelope) — see ./warp.ts for the math.
 // ---------------------------------------------------------------------------
 
