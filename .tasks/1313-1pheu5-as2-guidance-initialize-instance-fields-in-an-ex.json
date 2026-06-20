@@ -1,0 +1,10 @@
+{
+  "id": "1313-1pheu5-as2-guidance-initialize-instance-fields-in-an-ex",
+  "title": "AS2 guidance: initialize instance fields in an explicit constructor (field initializers unreliable for class-linked placed symbols)",
+  "description": "Add concise, clear AS2 authoring guidance so the agent writes working classes. Symptom seen: a class with field initializers (private var vy:Number = 0; etc.) linked to a MovieClip symbol via className linkage and placed on stage had ALL fields undefined at runtime (vy += gravity -> NaN; no movement/jump). Moving the initializers into an explicit constructor (public function Player() { vy = 0; ... }) fixed it. GUIDANCE TO ADD (lead with the reliable pattern; concise): 'When writing AS2 classes, initialize instance fields in an explicit constructor public function ClassName() { ... }, not via bare field initializers (var x:Number = 0). Bare field initializers may not run for symbols linked to a class via className linkage and placed on the stage, leaving fields undefined (which cascades into NaN). Constructor initialization is the reliable, recommended pattern.' ADD this to: (1) the dash agent chat system prompt packages/authoring-ui/src/agentchat/systemPrompt.ts (this is the agent that authors AS2 via chat) \u2014 a brief line in the AS2/scripting guidance; (2) CLAUDE.md AS2/AVM1 learnings; (3) AGENTS.md if it has an AS2 section. Keep it tight \u2014 a sentence or two each, no walls of text. Note: a compiler fix is in progress to make field initializers run (separate task); word the guidance so it stays valid either way (constructor-init is recommended regardless). VERIFY: build green (no code logic changed); authoring-ui tests green. ACQUIRE lock; commit incl task file; push rebase-retry (if .tasks/.counter conflicts keep origin's). Scope: systemPrompt.ts + CLAUDE.md (+AGENTS.md).",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-06-20T01:10:51Z",
+  "updated_at": "2026-06-20T01:10:51Z"
+}
