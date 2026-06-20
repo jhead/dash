@@ -778,6 +778,51 @@ stroked oval now matches the stroke-free oval at every cycle count.) Gate:
 read-back / centre→fill-face parity with stroke-free / drag extracts the fill / wide+tall
 ellipses survive a round-trip). All 8 merge oracles still diff=0/220000.
 
+### 3.0i Multi-cycle read-back is a FIXED POINT — shared-vertex tangent-touch guard (task 1335)
+
+**Symptom (the latent issue flagged by 3.0h).** Any oval / curved fill — stroked or
+stroke-free — DEGRADED after 3+ successive commit→`livePlanarShape`-rebuild cycles. Heavy
+iterative editing runs a merged shape through many `fold → read-back → fold` round-trips (every
+selection edit re-derives the live map via `livePlanarShape` and commits the read-back back to
+the timeline). Measured on a stroke-free oval: the read-back gained ~8 stub segments PER cycle
+(8 → 13 → 19 …), the 45° boundary vertices marched ~1 twip per cycle, and after ~3 cycles the
+topology degenerated so badly that the fill was **LOST ENTIRELY** (`paths → 0`, zero pixels).
+Single commits and the stroked-vs-stroke-free parity (3.0h) were already fine; this was purely
+multi-cycle accumulation.
+
+**Root cause — a near-shared-vertex "crossing" that is really a tangent touch.** A closed
+curved path's consecutive quadratic arcs SHARE an endpoint vertex `V` and merely TOUCH there
+(tangent continuity) — they do not truly cross. But after twip-snapping the arcs' endpoints and
+controls, `intersectCurveCurve` reports a near-`V` "hit" whose parameter is *interior*
+(`tA ≈ 0.9993`, `tB ≈ 0.0002`) yet whose snapped point lands **one-to-two twips OFF** the true
+shared vertex (e.g. `V = (176.55,162.45)` but the hit snaps to `(176.60,162.40)`). The old
+`insertEdge` registered any interior split (`1e-7 < t < 1−1e-7`), so this spurious hit (a)
+split an arc a sub-twip from its own endpoint, leaving a ~1-twip stub edge, and (b) routed the
+boundary chain through a vertex a twip away from the real one. Each rebuild re-introduced and
+re-displaced these, so the geometry never settled — it drifted and fragmented to collapse.
+
+**Fix — `arrangement.ts insertEdge` shared-vertex guard (single change, curve-preserving).**
+An interior split is REJECTED when its snapped crossing point lies within
+`ENDPOINT_INCIDENCE_R2` (~1.5 twips²) of an endpoint of **BOTH** edges at once — the signature
+of a shared-vertex tangent touch (both arcs' nearby endpoints are the vertex `V` they share). A
+GENUINE crossing — even one near a vertex, e.g. an eraser-capsule edge cutting a band edge
+close to where the capsule edge ends — is near an endpoint of AT MOST ONE edge (the other edge
+passes through with the crossing solidly in its interior), so the "both edges" condition leaves
+every real crossing intact. (An earlier "near an endpoint of *either* edge" form was too broad
+— it suppressed a legitimate angled-eraser cut; the "both" form is the precise discriminator.)
+
+**Net effect — a true fixed point.** Cycle 1 applies the unavoidable one-time twip-snap of the
+authored (off-grid) control points (sub-pixel; renders pixel-identical, so the single-commit
+oracles are unaffected). From cycle 2 onward the read-back is **byte-exact identical** to the
+previous cycle: segment count, path count, area, and rasterized pixels are all stable forever
+(`dPixels = 0` across 10+ cycles for circles and wide/tall/off-grid ovals, stroked and
+stroke-free). Curve fidelity is preserved — no polyline flattening, still one closed quadratic
+fill loop. Gate: `planar-merge.test.ts` "planar read-back: multi-cycle stability is a fixed
+point (task 1335)" — 10 commit→rebuild cycles on five oval cases assert path-count + segment-
+count + area + raster pixels stay within epsilon AND that cycle N == cycle N−1 byte-for-byte
+(all five FAIL on the pre-fix build, where the fill collapses to `paths=0`). All 8 merge
+oracles still diff=0/220000; planar-adversarial / planar-subselection / planar-eraser unchanged.
+
 ### 3.1 Key decisions
 
 1. **Curve-preserving.** Cuts subdivide quadratics with de Casteljau and keep

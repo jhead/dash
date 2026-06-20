@@ -30,6 +30,7 @@ import type {
   Stroke,
 } from "../types.js";
 import {
+  dist2,
   edgeAt,
   outgoingDirection,
   pointKey,
@@ -37,6 +38,27 @@ import {
   snapPoint,
 } from "./geometry.js";
 import { intersectEdges } from "./intersect.js";
+
+/**
+ * Endpoint-incidence radius for the shared-vertex guard (task 1335), in px²
+ * (squared distance). An interior split whose snapped crossing point lands within
+ * this radius of an edge endpoint is treated as a SHARED-VERTEX incidence — it is
+ * snapped to that endpoint vertex and NOT registered as a real interior split.
+ * Two arcs that merely TOUCH at a shared vertex (consecutive segments of any
+ * closed path — every oval / rounded shape) report such a near-endpoint hit whose
+ * snapped point lands one-to-two twips off the true vertex; without this guard the
+ * sub-twip stub it creates re-fragments and drifts the geometry on every
+ * fold->read-back cycle. The radius is ~1.5 twips (a touch over the grid spacing),
+ * large enough to absorb the curve-curve solver's near-tangent noise but far
+ * smaller than any real feature, so genuine crossings (which land well inside an
+ * edge, many twips from any vertex) are unaffected.
+ */
+const ENDPOINT_INCIDENCE_R2 = (1.5 / 20) * (1.5 / 20);
+
+/** True when `pt` lies within {@link ENDPOINT_INCIDENCE_R2} of `endpoint`. */
+function nearEndpoint(pt: Point, endpoint: Point): boolean {
+  return dist2(pt, endpoint) <= ENDPOINT_INCIDENCE_R2;
+}
 
 /** A directed input edge handed to the arrangement. */
 export interface InputEdge {
@@ -258,18 +280,49 @@ export class Arrangement {
       const hits = intersectEdges(geom, e.geometry);
       for (const h of hits) {
         const pt = snapPoint(h.point);
+        const ptKey = pointKey(pt);
         // Only register interior splits; endpoints become shared vertices
         // automatically when we create the new edge's vertices.
-        if (h.tA > 1e-7 && h.tA < 1 - 1e-7) {
-          newSplits.set(pointKey(pt), { t: h.tA, point: pt });
+        //
+        // SHARED-VERTEX GUARD (task 1335): two arcs that share an endpoint vertex
+        // (e.g. consecutive quadratic arcs of one oval, or any closed path's
+        // adjacent segments) merely TOUCH there — they do not truly cross. But the
+        // curve-curve solver reports a near-endpoint "hit" whose parameter is
+        // interior (tA≈0.9993, tB≈0.0002) and whose SNAPPED point lands one-to-two
+        // twips OFF the true shared vertex. Registering it (a) splits an arc a
+        // sub-twip from its own endpoint, leaving a ~1-twip stub, and (b) moves the
+        // chain through a vertex a twip away from the real one. On a single
+        // un-crossed oval this drifts/fragments the read-back on every
+        // fold->read-back cycle (the 45° vertices march ~1 twip per cycle; segments
+        // multiply 8->13->19) until the topology degenerates and the fill is LOST
+        // entirely (paths=0 after ~3 cycles) — the multi-cycle planar read-back
+        // drift.
+        //
+        // The signature of a shared-vertex tangent touch is that the hit lands near
+        // an endpoint of BOTH edges at once (the vertex they share). A GENUINE
+        // crossing — even one near a vertex (e.g. an eraser-capsule edge cutting a
+        // band edge close to where the capsule edge ends) — is near an endpoint of
+        // AT MOST ONE of the two edges; the other edge passes through with the
+        // crossing solidly in its interior. So reject the interior split ONLY when
+        // the snapped point is within ENDPOINT_INCIDENCE_R2 of an endpoint of BOTH
+        // edges. This kills the oval's tangent-touch stubs (idempotent fixed-point
+        // read-back) without suppressing any real crossing — including the angled
+        // eraser cuts (planar-eraser.test.ts), where the crossing is near only the
+        // capsule edge's end, not the band edge's.
+        const newNear = nearEndpoint(pt, geom.p0) || nearEndpoint(pt, geom.p1);
+        const existingNear =
+          nearEndpoint(pt, e.geometry.p0) || nearEndpoint(pt, e.geometry.p1);
+        const sharedVertexTouch = newNear && existingNear;
+        if (h.tA > 1e-7 && h.tA < 1 - 1e-7 && !sharedVertexTouch) {
+          newSplits.set(ptKey, { t: h.tA, point: pt });
         }
-        if (h.tB > 1e-7 && h.tB < 1 - 1e-7) {
+        if (h.tB > 1e-7 && h.tB < 1 - 1e-7 && !sharedVertexTouch) {
           let set = existingSplits.get(eid);
           if (!set) {
             set = new Map<string, Split>();
             existingSplits.set(eid, set);
           }
-          set.set(pointKey(pt), { t: h.tB, point: pt });
+          set.set(ptKey, { t: h.tB, point: pt });
         }
       }
     }

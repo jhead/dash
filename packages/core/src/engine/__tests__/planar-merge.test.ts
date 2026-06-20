@@ -26,6 +26,7 @@ import {
   colorCounts,
   pixelDiff,
 } from "./raster-oracle.js";
+import { createOvalShape } from "../shapes.js";
 
 const RED: Fill = { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } };
 const BLUE: Fill = { type: "solid", color: { r: 0, g: 0, b: 255, a: 255 } };
@@ -657,5 +658,132 @@ describe("planar merge — >=7-shape cluster fold IS render-faithful (task 1330 
     const folded = rasterizePaths(full.merged!.paths, W, H);
     const groundTruth = rasterizeLayer([...existing, incoming], W, H);
     expect(pixelDiff(folded, groundTruth)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-cycle read-back stability (task 1335)
+//
+// A merged shape's LIVE planar map is re-derived on demand from its committed
+// per-path Shape (livePlanarShape -> buildArrangementFromShapes), and each
+// selection edit commits that re-derived read-back back to the timeline. So heavy
+// iterative editing runs the shape through MANY fold -> read-back -> fold cycles.
+//
+// The read-back of a curved fill (every oval / rounded shape) MUST converge to a
+// FIXED POINT, not drift. Before the fix, consecutive quadratic arcs of one oval
+// reported a near-shared-vertex "crossing" whose snapped point landed a twip off
+// the true vertex; registering that split spawned a sub-twip stub edge every
+// cycle. The segment count multiplied (8 -> 13 -> 19 ...) and the 45° vertices
+// marched ~1 twip per cycle until the topology degenerated and the fill was LOST
+// entirely (paths -> 0) after ~3 cycles. The fix (arrangement.ts shared-vertex
+// guard) rejects those tangent-touch incidences so fold(read-back(x)) is a fixed
+// point.
+// ---------------------------------------------------------------------------
+describe("planar read-back: multi-cycle stability is a fixed point (task 1335)", () => {
+  /** One commit -> rebuild cycle: fold a single shape and read it back. */
+  const cycle = (s: Shape): Shape =>
+    planarShapeToShape(buildArrangementFromShapes([s]), "merged");
+
+  /** Total filled-loop area of a Shape (chord shoelace). */
+  const totalFillArea = (s: Shape): number =>
+    s.paths.reduce((a, p) => a + (p.fill ? pathArea(p) : 0), 0);
+
+  /** Count of non-null fill pixels of a Shape rasterized at WxH. */
+  const fillPixels = (s: Shape, w: number, h: number): number => {
+    const r = rasterizePaths(s.paths, w, h);
+    let n = 0;
+    for (const k of r.px) if (k !== null) n++;
+    return n;
+  };
+
+  /** Whether two Shapes have byte-identical path/segment geometry. */
+  const sameGeometry = (a: Shape, b: Shape): boolean =>
+    JSON.stringify(a.paths.map((p) => [p.fill ? 1 : 0, p.stroke ? 1 : 0, p.start, p.segments])) ===
+    JSON.stringify(b.paths.map((p) => [p.fill ? 1 : 0, p.stroke ? 1 : 0, p.start, p.segments]));
+
+  const cases: [string, Shape][] = [
+    ["circle", createOvalShape(40, 40, 200, 200, RED, null)],
+    ["wide oval", createOvalShape(40, 60, 200, 180, RED, null)],
+    ["tall oval", createOvalShape(60, 40, 180, 200, RED, null)],
+    ["off-grid oval", createOvalShape(37, 53, 203, 191, BLUE, null)],
+  ];
+
+  for (const [name, authored] of cases) {
+    it(`${name}: 10 commit->rebuild cycles keep area + path-count + raster pixels stable`, () => {
+      const W = 240, H = 240;
+
+      // Cycle 1 is the first commit (one-time twip snap of authored, off-grid
+      // control points). From cycle 1 onward the read-back must be a FIXED POINT.
+      const c1 = cycle(authored);
+
+      // The first commit must render essentially pixel-identical to the authored
+      // shape: the only change is the one-time snap of off-grid authored vertices
+      // to the twip grid, which is sub-pixel and at worst nudges a few boundary
+      // pixels on a heavily off-grid oval (single-commit correctness / oracle
+      // invariant). This is a ONE-TIME effect — the strict fixed-point assertion
+      // below proves there is NO further drift from cycle 2 onward.
+      const authoredPx = fillPixels(authored, W, H);
+      expect(authoredPx).toBeGreaterThan(0);
+      expect(Math.abs(fillPixels(c1, W, H) - authoredPx)).toBeLessThanOrEqual(6);
+
+      const baseArea = totalFillArea(c1);
+      const basePaths = c1.paths.length;
+      const baseSegs = c1.paths.reduce((n, p) => n + p.segments.length, 0);
+      const basePx = fillPixels(c1, W, H);
+
+      // The fill must survive (the pre-fix bug collapsed it to paths=0).
+      expect(basePaths).toBeGreaterThan(0);
+      expect(baseArea).toBeGreaterThan(0);
+
+      let prev = c1;
+      for (let i = 2; i <= 10; i++) {
+        const next = cycle(prev);
+
+        // Curve fidelity: still a single closed curved fill loop (NOT flattened
+        // to a polyline, NOT fragmented into stubs).
+        expect(next.paths.length).toBe(basePaths);
+        const segs = next.paths.reduce((n, p) => n + p.segments.length, 0);
+        expect(segs).toBe(baseSegs);
+        expect(next.paths.some((p) => p.segments.some((s) => s.type === "curve"))).toBe(true);
+
+        // Stability within epsilon: area, raster pixels do not drift.
+        expect(Math.abs(totalFillArea(next) - baseArea)).toBeLessThan(0.5);
+        expect(Math.abs(fillPixels(next, W, H) - basePx)).toBeLessThanOrEqual(2);
+
+        // STRONGER: from cycle 2 the geometry is a byte-exact fixed point —
+        // cycle N == cycle N-1 (and therefore == all later cycles).
+        expect(sameGeometry(next, prev)).toBe(true);
+
+        prev = next;
+      }
+    });
+  }
+
+  it("a stroked oval is also a fixed point across 10 cycles", () => {
+    const STROKE = {
+      width: 2,
+      color: { r: 0, g: 0, b: 0, a: 255 },
+      caps: "round" as const,
+      joints: "round" as const,
+    };
+    const authored = createOvalShape(40, 60, 200, 180, RED, STROKE);
+    const W = 240, H = 240;
+
+    const c1 = cycle(authored);
+    expect(c1.paths.length).toBeGreaterThan(0);
+    const baseArea = totalFillArea(c1);
+    const basePaths = c1.paths.length;
+    const basePx = fillPixels(c1, W, H);
+    expect(baseArea).toBeGreaterThan(0);
+
+    let prev = c1;
+    for (let i = 2; i <= 10; i++) {
+      const next = cycle(prev);
+      expect(next.paths.length).toBe(basePaths);
+      expect(Math.abs(totalFillArea(next) - baseArea)).toBeLessThan(0.5);
+      expect(Math.abs(fillPixels(next, W, H) - basePx)).toBeLessThanOrEqual(2);
+      expect(sameGeometry(next, prev)).toBe(true);
+      prev = next;
+    }
   });
 });
