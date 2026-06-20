@@ -26,6 +26,7 @@ import {
   planarShapeToShape,
   type InputEdge,
 } from "../planar/index.js";
+import { rasterizeLayer, rasterizePaths, pixelDiff } from "./raster-oracle.js";
 
 // ---------------------------------------------------------------------------
 // fixtures (mirrors planar.test.ts)
@@ -425,5 +426,89 @@ describe("planar/adversarial — LINE/LINE junctions", () => {
       expect(filled.length, "four same-color bands").toBe(4);
       expect(eulerCharacteristic(ps)).toBe(2);
     });
+  });
+});
+
+// ===========================================================================
+// task 1332 NEIGHBORS — angled different-color cut crossing a filled band.
+// The 1332 family (an angled loop whose long edges cross BOTH parallel host
+// edges -> 4 near-parallel crossing vertices -> a region can leak to the
+// unbounded face = data loss) is verified CORRECT at these angles via the
+// render-faithful RASTER ORACLE (merged read-back vs z-order ground truth).
+// These are GREEN guards so that fixing the still-open dead-zone angles (~10,
+// ~20-25 deg, tracked in task 1332) does not silently regress the angles that
+// already work. (The failing dead-zone angles live in task 1332 as repros, NOT
+// here — we never commit a red guard.)
+// ===========================================================================
+describe("planar/adversarial — angled cut across a band (1332 family, raster oracle)", () => {
+  const RED2: Fill = { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } };
+  const BLUE2: Fill = { type: "solid", color: { r: 0, g: 0, b: 255, a: 255 } };
+
+  /** Closed filled polygon ShapePath (explicit closing edge — the kernel does
+   * NOT synthesize it). */
+  function filledPoly(pts: Point[], fill: Fill): Shape {
+    const segs = pts.slice(1).map((p) => ({ type: "line" as const, to: p }));
+    const last = pts[pts.length - 1]!;
+    if (last.x !== pts[0]!.x || last.y !== pts[0]!.y) segs.push({ type: "line" as const, to: pts[0]! });
+    return { id: "p", paths: [{ start: pts[0]!, segments: segs, fill, closed: true }] };
+  }
+  function filledRect(x: number, y: number, w: number, h: number, fill: Fill): Shape {
+    return filledPoly([{ x, y }, { x, y: y + h }, { x: x + w, y: y + h }, { x: x + w, y }], fill);
+  }
+
+  /** A 90x90 RED band crossed by a thin BLUE parallelogram at `deg` from
+   * horizontal, centered on the band's mid-height, long edges crossing both
+   * band edges. */
+  function angledCut(deg: number, cutThick: number): Shape[] {
+    const bandW = 90, bandH = 90, cy = bandH / 2;
+    const slope = Math.tan((deg * Math.PI) / 180);
+    const ext = 20, half = cutThick / 2, x0 = -ext, x1 = bandW + ext;
+    const yL = cy + slope * (x0 - bandW / 2);
+    const yR = cy + slope * (x1 - bandW / 2);
+    return [
+      filledRect(0, 0, bandW, bandH, RED2),
+      filledPoly([
+        { x: x0, y: yL - half }, { x: x0, y: yL + half },
+        { x: x1, y: yR + half }, { x: x1, y: yR - half },
+      ], BLUE2),
+    ];
+  }
+
+  /** Merge -> read-back raster vs z-order ground-truth raster pixel diff. */
+  function oracleDiff(shapes: Shape[], w = 120, h = 120): number {
+    const ps = buildArrangementFromShapes(shapes);
+    const merged = planarShapeToShape(ps, "merged");
+    const got = rasterizePaths(merged.paths, w, h);
+    const truth = rasterizeLayer(shapes.map((s) => ({ shape: s, x: 0, y: 0 })), w, h);
+    return pixelDiff(got, truth);
+  }
+
+  // Angles outside the open dead zones — proven correct (region NOT dropped).
+  for (const deg of [3, 5, 7, 9, 14, 16, 18, 30, 40, 45]) {
+    it(`cut at ${deg}deg keeps BOTH band halves + the cut (raster diff ~0)`, () => {
+      const shapes = angledCut(deg, 5);
+      const ps = buildArrangementFromShapes(shapes);
+      expect(eulerCharacteristic(ps), "planar (euler 2)").toBe(2);
+      // No region leaks to unbounded: both RED bands and the BLUE cut survive.
+      const filled = ps.faces.filter((f) => !f.unbounded && f.fill !== null);
+      expect(filled.length, "no dropped region").toBeGreaterThanOrEqual(3);
+      // Render-faithful: merged read-back == z-order ground truth (subpixel tol).
+      expect(oracleDiff(shapes), "merged render == ground truth").toBeLessThanOrEqual(8);
+    });
+  }
+
+  it("two DISJOINT different-color filled rects merge with no loss (raster diff 0)", () => {
+    const shapes = [filledRect(0, 0, 50, 50, RED2), filledRect(60, 0, 50, 50, BLUE2)];
+    expect(oracleDiff(shapes)).toBe(0);
+  });
+
+  it("two abutting (shared-edge) different-color filled rects (raster diff 0)", () => {
+    const shapes = [filledRect(0, 0, 50, 50, RED2), filledRect(50, 0, 50, 50, BLUE2)];
+    expect(oracleDiff(shapes)).toBe(0);
+  });
+
+  it("a flush different-color strip along a band edge (coincident boundary, raster diff 0)", () => {
+    const shapes = [filledRect(0, 0, 100, 100, RED2), filledRect(0, 0, 100, 10, BLUE2)];
+    expect(oracleDiff(shapes)).toBe(0);
   });
 });
