@@ -73,13 +73,27 @@ export interface PlanarEraseOptions {
 // Eraser region helpers
 // ---------------------------------------------------------------------------
 
-/** Even-odd point-in-(multi-polygon): inside an ODD number of the loops. */
+/**
+ * UNION point-in-(multi-polygon): inside if `pt` falls within ANY of the eraser
+ * stamp loops.
+ *
+ * The eraser stamp is built from MULTIPLE overlapping simple loops — one disk per
+ * drag sample plus a bridging capsule between consecutive samples (see
+ * {@link buildEraserStamp}). The erased region is their UNION, not their symmetric
+ * difference. The old even-odd parity test (`inside = !inside` per containing loop)
+ * cancelled wherever an EVEN number of loops overlapped — exactly the disk⋂capsule
+ * overlap that occurs on every ordinary drag — so those covered points read as
+ * OUTSIDE and the fill/stroke there survived as an un-erased sliver (task 1327).
+ *
+ * Because each individual stamp loop is a simple (non-self-intersecting) convex
+ * polygon, an OR over per-loop {@link pointInPolygon} is the exact union /
+ * nonzero-coverage test: a point inside one-or-more loops is inside the swept area.
+ */
 function pointInEraser(pt: Point, eraserLoops: readonly (readonly Point[])[]): boolean {
-  let inside = false;
   for (const loop of eraserLoops) {
-    if (loop.length >= 3 && pointInPolygon(pt, loop)) inside = !inside;
+    if (loop.length >= 3 && pointInPolygon(pt, loop)) return true;
   }
-  return inside;
+  return false;
 }
 
 /** Sample a half-edge's geometric MIDPOINT (curve-aware). */

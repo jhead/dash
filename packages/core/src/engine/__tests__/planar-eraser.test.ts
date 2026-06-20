@@ -7,6 +7,7 @@ import {
   livePlanarShape,
   buildArrangementFromShapes,
   faceArea,
+  pointInPolygon,
   edgeAt,
 } from "../planar/index.js";
 
@@ -222,6 +223,147 @@ describe("planar/P4 — eraser on the planar arrangement", () => {
     expect(after).toBeLessThan(before);
     expect(after).toBeGreaterThan(before - 1200);
     expect(after).toBeGreaterThan(8000);
+  });
+});
+
+describe("planar/P4 — eraser stamp-overlap union (task 1327 regression)", () => {
+  /** UNION (any-loop) point-in-eraser — the CORRECT containment for the stamp. */
+  const inEraserUnion = (pt: Point, loops: readonly (readonly Point[])[]): boolean =>
+    loops.some((loop) => loop.length >= 3 && pointInPolygon(pt, loop));
+
+  /** Number of loops a point is covered by (the stamp's geometric coverage). */
+  const eraserCoverage = (pt: Point, loops: readonly (readonly Point[])[]): number =>
+    loops.reduce((n, l) => n + (l.length >= 3 && pointInPolygon(pt, l) ? 1 : 0), 0);
+
+  /**
+   * NON-ZERO winding number of all FILL loops of `shape` at `pt`. The eraser
+   * read-back emits a hole as a CW (negative) loop nested in its CCW (positive)
+   * outer loop, so the renderer's non-zero winding cuts it; a net winding of 0 at
+   * `pt` means NO fill covers that point (it was erased). A surviving un-erased
+   * sliver would show net winding != 0 inside the sweep.
+   */
+  function netFillWinding(shape: Shape | null, pt: Point): number {
+    if (!shape) return 0;
+    let w = 0;
+    for (const p of shape.paths) {
+      if (!p.fill) continue;
+      // Flatten the (already poly-line, curves chord-sampled) loop and ray-cast
+      // with a SIGNED crossing count = winding number.
+      const pts: Point[] = [{ x: p.start.x, y: p.start.y }];
+      let prev = p.start;
+      for (const seg of p.segments) {
+        if (seg.type === "line") {
+          pts.push({ x: seg.to.x, y: seg.to.y });
+        } else {
+          for (let i = 1; i <= 12; i++) {
+            const t = i / 12;
+            const mt = 1 - t;
+            pts.push({
+              x: mt * mt * prev.x + 2 * mt * t * seg.control.x + t * t * seg.to.x,
+              y: mt * mt * prev.y + 2 * mt * t * seg.control.y + t * t * seg.to.y,
+            });
+          }
+        }
+        prev = seg.to;
+      }
+      for (let i = 0, n = pts.length; i < n; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % n];
+        if (a.y <= pt.y) {
+          if (b.y > pt.y && cross(a, b, pt) > 0) w++;
+        } else if (b.y <= pt.y && cross(a, b, pt) < 0) {
+          w--;
+        }
+      }
+    }
+    return w;
+  }
+  const cross = (a: Point, b: Point, p: Point): number =>
+    (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+
+  it("overlapping disk+capsule drag leaves NO un-erased fill inside the sweep", () => {
+    // A horizontal drag whose disk caps and bridging capsule OVERLAP heavily —
+    // the exact case the old even-odd parity test mis-classified: a point
+    // covered by an EVEN number of loops (disk⋂capsule) read as OUTSIDE, so the
+    // fill there survived as a sliver. The drag runs well inside a solid fill.
+    const fill = rectShape("f", 0, 0, 120, 120, BLUE);
+    const stamp = buildEraserStamp(
+      [
+        { x: 40, y: 60 },
+        { x: 80, y: 60 },
+      ],
+      14
+    );
+    // Sanity: disk + capsule + disk = 3 loops, and the capsule overlaps both end
+    // disks, so points exist covered TWICE (the even-odd bug's trigger). Pick the
+    // disk⋂capsule overlap explicitly and confirm coverage is even (== 2).
+    expect(stamp.length).toBe(3);
+    const overlapPt = { x: 50, y: 60 }; // between the left disk centre and the body
+    expect(eraserCoverage(overlapPt, stamp)).toBe(2);
+
+    const { shape } = planarEraseShape(fill, stamp, { mode: "normal" }, "f");
+    expect(shape).not.toBeNull();
+
+    // KEY assertion: scan a dense grid over the eraser sweep's bounding box; at
+    // EVERY point inside the union the output's net fill winding must be 0 (fully
+    // erased). Under the old even-odd test the overlap zone survived (winding 1).
+    let coveredInsideSweep = 0;
+    let surviving = 0;
+    for (let x = 22; x <= 98; x += 2) {
+      for (let y = 44; y <= 76; y += 2) {
+        const pt = { x, y };
+        if (!inEraserUnion(pt, stamp)) continue;
+        coveredInsideSweep++;
+        if (netFillWinding(shape, pt) !== 0) surviving++;
+      }
+    }
+    expect(coveredInsideSweep).toBeGreaterThan(100); // the grid really hits the sweep
+    expect(surviving).toBe(0); // nothing left un-erased anywhere in the sweep
+  });
+
+  it("plus-shaped overlap of two bands erases the central crossing (no spurious survivor)", () => {
+    // Two crossing erase bands over a big fill. Even-odd cancelled where the two
+    // bands' loops overlap (covered an even number of times — e.g. the centre),
+    // leaving a spurious filled island; the union test erases the whole plus.
+    const fill = rectShape("f", 0, 0, 200, 200, BLUE);
+    const horiz = buildEraserStamp(
+      [
+        { x: 60, y: 100 },
+        { x: 140, y: 100 },
+      ],
+      16
+    );
+    const vert = buildEraserStamp(
+      [
+        { x: 100, y: 60 },
+        { x: 100, y: 140 },
+      ],
+      16
+    );
+    const stamp = [...horiz, ...vert];
+    // The centre is covered by BOTH bands — an even coverage the old parity test
+    // mis-read as outside.
+    expect(eraserCoverage({ x: 100, y: 100 }, stamp)).toBeGreaterThanOrEqual(2);
+
+    const { shape } = planarEraseShape(fill, stamp, { mode: "normal" }, "f");
+    expect(shape).not.toBeNull();
+
+    let coveredInsideSweep = 0;
+    let surviving = 0;
+    for (let x = 40; x <= 160; x += 2) {
+      for (let y = 40; y <= 160; y += 2) {
+        const pt = { x, y };
+        if (!inEraserUnion(pt, stamp)) continue;
+        coveredInsideSweep++;
+        if (netFillWinding(shape, pt) !== 0) surviving++;
+      }
+    }
+    expect(coveredInsideSweep).toBeGreaterThan(100);
+    expect(surviving).toBe(0);
+    // The centre of the crossing must be erased (the even-odd spurious survivor).
+    expect(netFillWinding(shape, { x: 100, y: 100 })).toBe(0);
+    // ... while a corner well outside the plus is still filled (didn't over-erase).
+    expect(netFillWinding(shape, { x: 10, y: 10 })).not.toBe(0);
   });
 });
 
