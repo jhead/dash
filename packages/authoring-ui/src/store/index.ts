@@ -34,6 +34,7 @@ export type {
   EditContext,
   EditPathEntry,
   BottomTab,
+  TopTab,
   RightTab,
   EnvelopeTarget,
   SelectedFrameRange,

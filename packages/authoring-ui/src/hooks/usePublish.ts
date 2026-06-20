@@ -117,16 +117,24 @@ export async function buildBitmapPixels(
  */
 export function usePublish(doc: FlashDocument, compileOptions?: Omit<CompileOptions, "bitmapPixels">) {
   /**
-   * Compile the document to raw SWF bytes.
+   * Compile an arbitrary document to raw SWF bytes, reusing the full publish
+   * pipeline (bitmap pixel decode + embedded-font resolution + compileDocument).
    *
-   * All bitmaps (lossless PNG and photo JPEG) in the library are decoded to raw
-   * ARGB pixel data via an OffscreenCanvas before compiling so that:
-   * - DefineBitsLossless2 tags are emitted with correct alpha channel data, and
-   * - DefineBitsJPEG3 (tag 35) is emitted instead of DefineBitsJPEG2 (tag 21)
-   *   when a JPEG bitmap has a transparent alpha channel.
+   * `targetDoc` lets callers compile a DERIVED document (e.g. Live Preview's
+   * start-from-scene/frame clone) without duplicating any of the publish logic.
+   * Defaults to the hook's `doc`.
+   *
+   * `skipSystemFontPrompt` (default false) bypasses the Local Font Access API
+   * permission prompt and uses the bundled font fallback instead. The Live
+   * Preview's debounced background re-compile sets this so the user is never
+   * prompted on every keystroke; the user-initiated Publish/Test Movie path
+   * keeps the prompt (false) so authored text embeds real system-font outlines.
    */
-  async function publishToBytes(): Promise<Uint8Array> {
-    const bitmapItems = doc.library.items.filter(
+  async function compileDocToBytes(
+    targetDoc: FlashDocument = doc,
+    opts?: { skipSystemFontPrompt?: boolean }
+  ): Promise<Uint8Array> {
+    const bitmapItems = targetDoc.library.items.filter(
       (item): item is BitmapItem => item.itemType === "bitmap"
     );
     const bitmapPixels = await buildBitmapPixels(bitmapItems);
@@ -137,19 +145,28 @@ export function usePublish(doc: FlashDocument, compileOptions?: Omit<CompileOpti
     // appears here. Falls back silently to bundled weight/style tables if the API
     // is unavailable or permission is denied (see resolveFontGlyphSources).
     let fontGlyphSources: CompileOptions["fontGlyphSources"];
-    try {
-      const requests = collectFontFaceRequests(doc);
-      if (requests.length > 0) {
-        fontGlyphSources = await resolveFontGlyphSources(requests);
+    if (!opts?.skipSystemFontPrompt) {
+      try {
+        const requests = collectFontFaceRequests(targetDoc);
+        if (requests.length > 0) {
+          fontGlyphSources = await resolveFontGlyphSources(requests);
+        }
+      } catch (err) {
+        // Never let font extraction block publishing; the compiler's bundled
+        // fallback still produces correct (if Noto-substituted) output.
+        console.warn("[usePublish] System-font extraction failed; using bundled fallback:", err);
+        fontGlyphSources = undefined;
       }
-    } catch (err) {
-      // Never let font extraction block publishing; the compiler's bundled
-      // fallback still produces correct (if Noto-substituted) output.
-      console.warn("[usePublish] System-font extraction failed; using bundled fallback:", err);
-      fontGlyphSources = undefined;
     }
 
-    return compileDocument(doc, { ...compileOptions, bitmapPixels, fontGlyphSources });
+    return compileDocument(targetDoc, { ...compileOptions, bitmapPixels, fontGlyphSources });
+  }
+
+  /**
+   * Compile the hook's document to raw SWF bytes (the standard publish path).
+   */
+  async function publishToBytes(): Promise<Uint8Array> {
+    return compileDocToBytes(doc);
   }
 
   /**
@@ -196,5 +213,5 @@ export function usePublish(doc: FlashDocument, compileOptions?: Omit<CompileOpti
     return publishToBytes();
   }
 
-  return { publishToBytes, publishToFile, testMovie };
+  return { publishToBytes, publishToFile, testMovie, compileDocToBytes };
 }

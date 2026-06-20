@@ -30,6 +30,36 @@ export interface RufflePlayerProps {
    * Low-severity Ruffle internal logs (DEBUG/INFO) are filtered out.
    */
   onTrace?: (line: string) => void;
+  /**
+   * Extra Ruffle load options (quality, scale/letterbox, backdrop color, mute).
+   * Merged into the base load config. Used by the Live Preview tab's live-dev
+   * controls. Changing these re-loads the current SWF with the new config.
+   */
+  loadOptions?: PlayerLoadOptions;
+  /**
+   * Receives imperative playback controls once a player has loaded a SWF, so a
+   * parent (e.g. the Live Preview panel) can wire Play/Pause/Restart buttons.
+   * Called with `null` when no player is loaded.
+   */
+  onControls?: (controls: PlayerControls | null) => void;
+}
+
+/** Subset of Ruffle load options exposed to the embedder. */
+export interface PlayerLoadOptions {
+  quality?: string;
+  scale?: string;
+  letterbox?: string;
+  backgroundColor?: string;
+  muted?: boolean;
+}
+
+/** Imperative playback controls surfaced via {@link RufflePlayerProps.onControls}. */
+export interface PlayerControls {
+  play: () => void;
+  pause: () => void;
+  /** Reload the current SWF from frame 1. */
+  restart: () => void;
+  isPlaying: () => boolean;
 }
 
 /**
@@ -45,6 +75,8 @@ export function RufflePlayer({
   ruffleBaseUrl = "/ruffle",
   onError,
   onTrace,
+  loadOptions,
+  onControls,
 }: RufflePlayerProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<RufflePlayerElement | null>(null);
@@ -55,10 +87,19 @@ export function RufflePlayer({
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
   const onTraceRef = useRef(onTrace);
   useEffect(() => { onTraceRef.current = onTrace; }, [onTrace]);
+  const onControlsRef = useRef(onControls);
+  useEffect(() => { onControlsRef.current = onControls; }, [onControls]);
+  // Keep loadOptions in a ref so createAndLoad reads the latest without being a
+  // dep (a new object identity each render would otherwise reload Ruffle).
+  const loadOptionsRef = useRef(loadOptions);
+  loadOptionsRef.current = loadOptions;
 
   // Holds the original console methods so we can restore them on unmount.
   const origConsoleLogRef = useRef<(typeof console.log) | null>(null);
   const origConsoleWarnRef = useRef<(typeof console.warn) | null>(null);
+  // A reload-the-current-SWF thunk, set on each successful load so Restart can
+  // re-run it without re-referencing createAndLoad before it is defined.
+  const reloadCurrentRef = useRef<(() => void) | null>(null);
 
   /** Ensure the Ruffle script is injected and return a promise that resolves
    *  when window.RufflePlayer is available. */
@@ -118,6 +159,11 @@ export function RufflePlayer({
    * newest compile authoritative when loads overlap, so a stale SWF can't win. */
   const createAndLoad = useCallback(
     async (bytes: Uint8Array, isStale: () => boolean) => {
+      // Record a Restart thunk that re-loads exactly these bytes from frame 1.
+      reloadCurrentRef.current = () => {
+        let restartStale = false;
+        void createAndLoad(bytes, () => restartStale);
+      };
       try {
         await ensureRuffle();
       } catch (err) {
@@ -219,6 +265,7 @@ export function RufflePlayer({
       // Load SWF from bytes via a Blob URL so we don't need a server
       const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/x-shockwave-flash" });
       const url = URL.createObjectURL(blob);
+      const extra = loadOptionsRef.current ?? {};
       try {
         await (player.ruffle() as unknown as {
           load(opts: Record<string, unknown>): Promise<void>;
@@ -234,6 +281,12 @@ export function RufflePlayer({
           // is already fully in memory (loaded from a Blob), so there is nothing
           // to wait for and the preloader just flashes.
           preloader: false,
+          // Optional embedder controls (quality / scale / letterbox / bg / mute).
+          ...(extra.quality ? { quality: extra.quality } : {}),
+          ...(extra.scale ? { scale: extra.scale } : {}),
+          ...(extra.letterbox ? { letterbox: extra.letterbox } : {}),
+          ...(extra.backgroundColor ? { backgroundColor: extra.backgroundColor } : {}),
+          ...(extra.muted ? { muted: true } : {}),
         });
         // Register the trace observer now that load() has created the WASM
         // instance — this is the binding that actually takes effect (the
@@ -246,6 +299,18 @@ export function RufflePlayer({
         if (isStale() && container.contains(player)) {
           container.removeChild(player);
           if (playerRef.current === player) playerRef.current = null;
+        } else {
+          // Surface imperative playback controls for the live-dev panel. The
+          // <ruffle-player> element exposes play()/pause()/isPlaying on the web
+          // build; restart re-loads the same bytes from frame 1.
+          onControlsRef.current?.({
+            play: () => player.play?.(),
+            pause: () => player.pause?.(),
+            isPlaying: () => player.isPlaying ?? true,
+            restart: () => {
+              void reloadCurrentRef.current?.();
+            },
+          });
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -283,6 +348,9 @@ export function RufflePlayer({
         container.removeChild(player);
       }
       playerRef.current = null;
+      reloadCurrentRef.current = null;
+      // Tell the embedder its controls are gone so it can't drive a dead player.
+      onControlsRef.current?.(null);
       // Restore original console methods if we installed interceptors.
       if (origConsoleLogRef.current) {
         console.log = origConsoleLogRef.current;

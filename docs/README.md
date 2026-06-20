@@ -56,3 +56,4 @@ Start with `00-overview-and-architecture.md`, then read by domain.
 | 31 | [Theming](./31-theming.md) | Swappable light/dark theme system; how to enable dark mode later |
 | 32 | [Agent Chat (in-app)](./32-agent-chat.md) | Client-side BYOK chat panel: AI SDK v6 + OpenRouter driving the editor via the agent-protocol tools |
 | 33 | [AS2 Classes & Class VFS](./33-as2-classes-vfs.md) | Cross-platform virtual filesystem for external AS2 `.as` classes: OPFS / IndexedDB fallback / Tauri native-FS disk mirror + doc↔VFS hydrate/sync |
+| 34 | [Live Preview tab](./34-live-preview.md) | Top-dock Live Preview: debounced auto-republish + Ruffle hot-reload, error-resilient (keeps last-good), live-dev controls + persisted prefs |

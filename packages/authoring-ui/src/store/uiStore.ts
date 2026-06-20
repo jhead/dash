@@ -25,6 +25,9 @@ export type EditPathEntry = { symbolId: string; instanceId: string };
 
 export type BottomTab = "actions" | "sound" | "output" | "classes";
 
+/** The top dock (alongside the stage) hosts the Timeline and the Live Preview. */
+export type TopTab = "timeline" | "preview";
+
 export type RightTab = "library" | "properties" | "agent";
 
 export interface EnvelopeTarget {
@@ -114,6 +117,8 @@ export interface UiData {
   selectedLibraryItemId: string | null;
   rightTab: RightTab;
   bottomTab: BottomTab | null;
+  /** Active top-dock tab (Timeline | Live Preview), shown alongside the stage. */
+  topTab: TopTab;
   timelineCollapsed: boolean;
   /**
    * Whether the right pane (Library / Properties / future Agent dock) is
@@ -216,6 +221,7 @@ export interface UiActions {
   setSelectedLibraryItemId: ReactSetter<string | null>;
   setRightTab: ReactSetter<RightTab>;
   setBottomTab: ReactSetter<BottomTab | null>;
+  setTopTab: ReactSetter<TopTab>;
   setTimelineCollapsed: ReactSetter<boolean>;
   setRightPaneCollapsed: ReactSetter<boolean>;
   setPreferencesOpen: ReactSetter<boolean>;
@@ -312,6 +318,7 @@ const DEFAULTS: UiData = {
   selectedLibraryItemId: null,
   rightTab: "library",
   bottomTab: "actions",
+  topTab: "timeline",
   timelineCollapsed: false,
   rightPaneCollapsed: false,
   preferencesOpen: false,
@@ -410,6 +417,7 @@ export function createUiStore(init?: Partial<UiData>): UiStoreApi {
     setSelectedLibraryItemId: rs(set, get, "selectedLibraryItemId"),
     setRightTab: rs(set, get, "rightTab"),
     setBottomTab: rs(set, get, "bottomTab"),
+    setTopTab: rs(set, get, "topTab"),
     setTimelineCollapsed: rs(set, get, "timelineCollapsed"),
     setRightPaneCollapsed: rs(set, get, "rightPaneCollapsed"),
     setPreferencesOpen: rs(set, get, "preferencesOpen"),

@@ -110,6 +110,12 @@ import { useClipboardHandlers } from "./hooks/useClipboardHandlers.js";
 import { useExportHandlers } from "./hooks/useExportHandlers.js";
 import { useHistoryCommandHandlers } from "./hooks/useHistoryCommandHandlers.js";
 import { useDocumentHandlers } from "./hooks/useDocumentHandlers.js";
+import { LivePreviewPanel } from "./preview/LivePreviewPanel.js";
+import {
+  loadPreviewPrefs,
+  savePreviewPrefs,
+  type PreviewPrefs,
+} from "./preview/previewPrefs.js";
 import {
   instanceNamesOf,
   shapeDisplayObjectsAt,
@@ -798,6 +804,7 @@ export function Shell(): React.ReactElement {
     selectedLibraryItemId, setSelectedLibraryItemId,
     rightTab, setRightTab,
     bottomTab, setBottomTab,
+    topTab, setTopTab,
     timelineCollapsed, setTimelineCollapsed,
     rightPaneCollapsed, setRightPaneCollapsed,
     setPreferencesOpen,
@@ -2596,7 +2603,7 @@ export function Shell(): React.ReactElement {
   // Publish handlers
   // ---------------------------------------------------------------------------
 
-  const { publishToBytes, testMovie } = usePublish(doc, {
+  const { publishToBytes, testMovie, compileDocToBytes } = usePublish(doc, {
     compress: publishSettings.compress,
     protect: publishSettings.protect,
     // Publish-Settings "JPEG quality" slider: thread it so photo bitmaps are
@@ -2606,6 +2613,37 @@ export function Shell(): React.ReactElement {
       ? publishSettings.debugPassword
       : undefined,
   });
+
+  // -------------------------------------------------------------------------
+  // Live Preview tab (task 1308): debounced background re-publish + Ruffle
+  // hot-reload. Prefs persist via the same versioned-localStorage pattern as
+  // editorLayout; the doc subscription drives auto-reload.
+  // -------------------------------------------------------------------------
+  const [previewPrefs, setPreviewPrefs] = useState<PreviewPrefs>(() => loadPreviewPrefs());
+  const handlePreviewPrefsChange = useCallback((patch: Partial<PreviewPrefs>) => {
+    setPreviewPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      savePreviewPrefs(next);
+      return next;
+    });
+  }, []);
+  // Subscribe to document-content changes (history.present identity) for auto-reload.
+  const subscribeDoc = useCallback(
+    (listener: () => void) => {
+      let prev = documentStore.getState().history.present;
+      return documentStore.subscribe((s) => {
+        if (s.history.present !== prev) {
+          prev = s.history.present;
+          listener();
+        }
+      });
+    },
+    [documentStore]
+  );
+  const getLiveDoc = useCallback(
+    () => documentStore.getState().history.present,
+    [documentStore]
+  );
 
   const handlePublish = useCallback(() => {
     void (async () => {
@@ -3382,7 +3420,7 @@ export function Shell(): React.ReactElement {
           />
         </div>
         <div style={styles.mainColumn}>
-          {/* Top dock: Timeline (resizable + collapsible) */}
+          {/* Top dock: tabbed (Timeline | Live Preview), resizable + collapsible */}
           <div
             style={{
               ...styles.bottomPanel,
@@ -3391,25 +3429,62 @@ export function Shell(): React.ReactElement {
             data-testid="timeline-panel"
           >
             <div style={{ ...styles.bottomTabs, borderTop: "none" }} role="tablist">
-              <button
-                role="tab"
-                aria-selected={!timelineCollapsed}
-                style={bottomTabBtnStyle(!timelineCollapsed)}
-                onClick={() => setTimelineCollapsed((v) => !v)}
-                title={timelineCollapsed ? "Expand Timeline" : "Collapse Timeline"}
-              >
-                Timeline
-              </button>
+              {([
+                { id: "timeline", label: "Timeline" },
+                { id: "preview", label: "Live Preview" },
+              ] as const).map(({ id, label }) => (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={!timelineCollapsed && topTab === id}
+                  data-testid={`top-tab-${id}`}
+                  style={bottomTabBtnStyle(!timelineCollapsed && topTab === id)}
+                  onClick={() => {
+                    if (timelineCollapsed) {
+                      setTopTab(id);
+                      setTimelineCollapsed(false);
+                    } else if (topTab === id) {
+                      // Clicking the active tab collapses the dock.
+                      setTimelineCollapsed(true);
+                    } else {
+                      setTopTab(id);
+                    }
+                  }}
+                  title={
+                    !timelineCollapsed && topTab === id
+                      ? `Collapse ${label}`
+                      : label
+                  }
+                >
+                  {label}
+                </button>
+              ))}
               <div style={{ flex: 1 }} />
               <button
                 style={{ ...bottomTabBtnStyle(false), flex: "0 0 auto", width: 28, fontSize: 12 }}
                 onClick={() => setTimelineCollapsed((v) => !v)}
-                title={timelineCollapsed ? "Expand Timeline" : "Collapse Timeline"}
+                title={timelineCollapsed ? "Expand panel" : "Collapse panel"}
               >
                 {timelineCollapsed ? "▾" : "▴"}
               </button>
             </div>
-            {!timelineCollapsed && (
+            {!timelineCollapsed && topTab === "preview" && (
+              <div style={styles.bottomContent}>
+                <LivePreviewPanel
+                  active={topTab === "preview" && !timelineCollapsed}
+                  doc={doc}
+                  subscribeDoc={subscribeDoc}
+                  getDoc={getLiveDoc}
+                  compileDocToBytes={compileDocToBytes}
+                  prefs={previewPrefs}
+                  onPrefsChange={handlePreviewPrefsChange}
+                  stageWidth={docProperties.width}
+                  stageHeight={docProperties.height}
+                  documentBackground={docProperties.backgroundColor}
+                />
+              </div>
+            )}
+            {!timelineCollapsed && topTab === "timeline" && (
               <div style={styles.bottomContent}>
                 <Timeline
                   timeline={timeline}

@@ -1,4 +1,4 @@
-import type { UiData, RightTab, BottomTab } from "./store/uiStore.js";
+import type { UiData, RightTab, BottomTab, TopTab } from "./store/uiStore.js";
 import type { ViewMode } from "./StageArea";
 import type { ToolId } from "./tools/types";
 
@@ -66,6 +66,8 @@ export interface EditorLayout {
   rightTab: RightTab;
   /** Active bottom-dock tab (null = dock collapsed). */
   bottomTab: BottomTab | null;
+  /** Active top-dock tab (Timeline | Live Preview). */
+  topTab: TopTab;
   /** View preference: snap-to-pixels. */
   snapToPixels: boolean;
   /** View preference: show rulers. */
@@ -96,6 +98,7 @@ export const DEFAULT_EDITOR_LAYOUT: EditorLayout = {
   timelineCollapsed: false,
   rightTab: "library",
   bottomTab: "actions",
+  topTab: "timeline",
   snapToPixels: false,
   showRulers: false,
   viewMode: "normal",
@@ -115,6 +118,7 @@ export const DEFAULT_EDITOR_LAYOUT: EditorLayout = {
 
 const RIGHT_TABS: readonly RightTab[] = ["library", "properties", "agent"];
 const BOTTOM_TABS: readonly BottomTab[] = ["actions", "sound", "output", "classes"];
+const TOP_TABS: readonly TopTab[] = ["timeline", "preview"];
 const VIEW_MODES: readonly ViewMode[] = ["normal", "outlines", "antialias"];
 
 /** Clamp a numeric pane size into its [min,max], falling back to default if not finite. */
@@ -152,6 +156,7 @@ function normalize(raw: unknown): EditorLayout {
     timelineCollapsed: boolOr(o.timelineCollapsed, d.timelineCollapsed),
     rightTab: enumOr(o.rightTab, RIGHT_TABS, d.rightTab),
     bottomTab,
+    topTab: enumOr(o.topTab, TOP_TABS, d.topTab),
     snapToPixels: boolOr(o.snapToPixels, d.snapToPixels),
     showRulers: boolOr(o.showRulers, d.showRulers),
     viewMode: enumOr(o.viewMode, VIEW_MODES, d.viewMode),
@@ -239,6 +244,7 @@ export function layoutToUiInit(
     timelineCollapsed: layout.timelineCollapsed,
     rightTab: layout.rightTab,
     bottomTab: layout.bottomTab,
+    topTab: layout.topTab,
     snapToPixels: layout.snapToPixels,
     showRulers: layout.showRulers,
     viewMode: layout.viewMode,
@@ -270,6 +276,7 @@ export function uiStateToLayout(
     timelineCollapsed: ui.timelineCollapsed,
     rightTab: ui.rightTab,
     bottomTab: ui.bottomTab,
+    topTab: ui.topTab,
     snapToPixels: ui.snapToPixels,
     showRulers: ui.showRulers,
     viewMode: ui.viewMode,

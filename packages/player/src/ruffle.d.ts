@@ -13,20 +13,37 @@ export interface RufflePlayerElement extends HTMLElement {
    * `set_trace_observer`. See ruffle/web/src/lib.rs `set_trace_observer`.
    */
   traceObserver?: ((message: string) => void) | null;
+  // Playback controls exposed by the <ruffle-player> element (web API). Optional
+  // because availability varies across bundled Ruffle versions; callers guard.
+  play?: () => void;
+  pause?: () => void;
+  /** True while the movie timeline is advancing. */
+  readonly isPlaying?: boolean;
+  /** Audio volume, 0..1. */
+  volume?: number;
+}
+
+export interface RuffleLoadOptions {
+  url?: string;
+  data?: Uint8Array;
+  logLevel?: string;
+  autoplay?: string;
+  unmuteOverlay?: string;
+  preloader?: boolean;
+  /** Render quality: "low" | "medium" | "high" | "best" | "high8x8" | … */
+  quality?: string;
+  /** Scaling mode: "showAll" (letterbox) | "exactFit" | "noBorder" | "noScale". */
+  scale?: string;
+  /** Whether to letterbox: "on" | "off" | "fullscreen". */
+  letterbox?: string;
+  /** Hex backdrop color, e.g. "#1e1e1e". */
+  backgroundColor?: string;
+  /** Mute audio. */
+  muted?: boolean;
 }
 
 export interface RufflePlayerInstance {
-  load(
-    options:
-      | {
-          url?: string;
-          data?: Uint8Array;
-          logLevel?: string;
-          autoplay?: string;
-          unmuteOverlay?: string;
-        }
-      | string
-  ): Promise<void>;
+  load(options: RuffleLoadOptions | string): Promise<void>;
 }
 
 export interface RuffleHandle {

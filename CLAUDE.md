@@ -758,6 +758,30 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   in `Shell.tsx`; (4) add a `{bottomTab === "x" && <Panel/>}` branch in the
   bottom-dock content. The dock renders independent `&&` branches (not a switch),
   so nothing else breaks, and the responsive (task 1280) wiring is tab-agnostic.
+- **The TOP dock is now tabbed too: Timeline | Live Preview (task 1308).** The
+  top dock (beside the stage) used to be a single Timeline toggle; it is now a
+  two-tab strip driven by `uiStore.topTab: "timeline" | "preview"` (persisted via
+  `editorLayout` — same 5-touchpoint pattern as a bottom tab: union + default +
+  `TOP_TABS` allowlist + `layoutToUiInit`/`uiStateToLayout` + Shell wiring).
+  Clicking the active top tab collapses the dock (reuses `timelineCollapsed`).
+- **Live Preview = pure controller + thin React adapter (task 1308).** The
+  debounced/superseding/error-resilient hot-reload loop is a framework-free class
+  `preview/livePreviewController.ts` (node-unit-tested with injected timers/clock;
+  a monotonic generation counter is the supersession authority so a stale
+  in-flight compile can never overwrite a newer result), wrapped by
+  `preview/useLivePreview.ts`. It REUSES the compiler via a new
+  `usePublish().compileDocToBytes(targetDoc, {skipSystemFontPrompt})` —
+  `publishToBytes()` now delegates to it; the preview passes `skipSystemFontPrompt:
+  true` so a background recompile never fires the Local Font Access prompt.
+  Start-from-scene/frame is done by prepending a `gotoAndPlay` to a SHALLOW-CLONED
+  doc's first keyframe (`preview/startAt.ts`) — the compiler is never duplicated.
+  On COMPILE ERROR the last-good SWF stays mounted (preview not blanked) + a
+  non-blocking banner shows the message. `RufflePlayer` gained optional
+  `loadOptions` (quality/scale/letterbox/bg/mute) + an `onControls`
+  (play/pause/restart) handle. Gate: `live-preview.spec.ts` (edit→reload;
+  compile-error→last-good+overlay; fix→recover) + the 3 preview unit specs. The
+  Ruffle bundle (`apps/desktop/public/ruffle/`) is GITIGNORED, so a fresh worktree
+  must symlink it from the main checkout to run the e2e.
 
 ### AS2 external classes / Class VFS (task 1300 P2)
 
