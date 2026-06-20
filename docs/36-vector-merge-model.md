@@ -1,11 +1,13 @@
 # Vector Merge Model — authentic Flash 8 merge-drawing
 
-**Status:** P0 + P1 landed. P0 = curve-aware planar geometry kernel + oracle
+**Status:** P0 + P1 + P2 landed. P0 = curve-aware planar geometry kernel + oracle
 harness. **P1 (task 1319) = merge-on-commit** (same-color UNION / different-color
-CUT, top-wins, curve-preserving) wired into the commit path behind the
-`planarMergeOnCommit` feature flag (default OFF until the P5 cutover). P2–P5 build
-on the kernel to wire merge mode into the renderer, selection, eraser, and
-SWF/FLA interchange.
+CUT, top-wins, curve-preserving). **P2 (task 1320) = strokes/lines split fills +
+intersecting lines segment each other** (a line drawn across a fill splits it into
+separate selectable faces; two crossing lines split each other into four segments;
+curve-preserving). All behind the `planarMergeOnCommit` feature flag (default OFF
+until the P5 cutover). P3–P5 build on the kernel to wire merge mode into selection,
+the eraser, and SWF/FLA interchange.
 
 **Supersedes:** [`docs/03-planar-fill-decision.md`](./03-planar-fill-decision.md)
 (the 2026-06-09 decision to DEFER the planar model and ship the AABB
@@ -138,7 +140,7 @@ faces does this fill now occupy after the cut".
 |---|---|---|
 | **P0** | The curve-aware planar geometry kernel (`engine/planar/`): intersection (seg/seg, seg/curve, curve/curve), arrangement construction (insert edge + split existing + new at all crossings), face extraction with hole nesting, point-in-face, curve-preserving split. Additive `PlanarShape`/half-edge types in `engine/types.ts`. Kernel unit tests (Euler invariant, area conservation, intersection counts, curve round-trip). The interaction-oracle harness (`apps/desktop/e2e/merge-drawing-oracle.spec.ts`) as `.fixme` placeholders for the canonical cases. **No user-facing behavior change.** | **DONE (this task, 1318).** |
 | **P1** | **Merge-mode geometry ops on the kernel:** cut / union implemented as arrangement operations (`engine/planar/merge.ts` + `planarShapeToShape` in `query.ts`), returning per-path `Shape`s for storage/render/SWF. Same-color union + different-color cut are exact, curve-preserving. Wired into `Shell.tsx handleShapeCreated` / `commitMergeShapeDirect` behind the `planarMergeOnCommit` flag (default OFF). Acceptance: `merge-drawing-oracle.spec.ts` cut + union cases (stage↔Ruffle pixelmatch diff=0). | **DONE (task 1319).** |
-| **P2** | **Renderer + selection** read the planar map: render faces by traced loops with winding-correct fills; selection model selects **segments and faces** (single-click edge/face, double-click connected fill+strokes), matching Flash. Includes full single-face dissolve of interior same-color seams (P1 already dissolves at read-back via region-boundary tracing, but selection needs the live planar map). Also line-splits-fill (line edge subdivides a fill into independently-selectable faces). | Planned. |
+| **P2** | **Strokes/lines split fills + intersecting lines segment each other** (task 1320): adding a STROKE edge across a fill SPLITS the fill into separate selectable faces along the line; two crossing lines SPLIT each other into segments at the crossing (curve-preserving). Wired through the existing P1 fold path — line/pencil/pen + stroke commits are `type:"shape"` and already route through `planarMergeCommit` under the flag. The read-back (`planarShapeToShape`) now treats a stroked same-fill seam as a real boundary (only **un-stroked** same-fill seams dissolve), so a line-split fill reads back as two distinct fill loops + the segmented line and an X of two lines reads back as four segments. Acceptance: `merge-drawing-oracle.spec.ts` cases 3 (line-splits-fill) + 4 (4 segments) — stage↔Ruffle pixelmatch diff=0. (Full segment/face *selection* — single-click edge/face, double-click connected fill+strokes — and the live-map dissolve remain P3+.) | **DONE (task 1320).** |
 | **P3** | **Curve-preserving eraser & true subtraction** routed through the kernel: erase-across-shape splits curve-preservingly; removing an overlapping island leaves a hole. Replaces the polyline-flatten path in `engine/eraser.ts` for fills. | Planned. |
 | **P4** | **Interchange:** enable SWF `FillStyle1` export of the planar map (`packages/swf/src/shapes.ts` currently hard-codes `stateFillStyle1=0`); FLA import/export of merge-map geometry; shape-morph (`tween/interpolate.ts`) matched on the planar topology. | Planned. |
 | **P5** | **Full selection authenticity + polish:** marquee/lasso over the planar pieces, edit-curve handles on faces, snapping against the arrangement, and turning the P0 oracle placeholders into passing Ruffle+stage specs. | Planned. |
@@ -188,13 +190,60 @@ its fill/line labels into the existing edge instead of duplicating. This is the 
 P0 robustness gap merge needs; the P0 planar.test.ts suite still passes unchanged.
 
 **Gaps left for P2–P5.** (a) The dissolve is done at read-back, not in the live
-`PlanarShape` — P2 selection needs the dissolved single face in the map itself.
-(b) Strokes that cross a fill don't yet split the fill into selectable sub-faces
-(line-splits-fill is P2). (c) The merge is per-commit; an undo/redo restores the
-pre-merge object list correctly (history snapshots the whole doc), but there is no
+`PlanarShape` — segment/face *selection* (P3) needs the dissolved single face in
+the map itself. (b) ~~Strokes that cross a fill don't yet split the fill into
+selectable sub-faces (line-splits-fill is P2).~~ **DONE in P2 (task 1320)** — see
+§3.0a below. (c) The merge is per-commit; an undo/redo restores the pre-merge
+object list correctly (history snapshots the whole doc), but there is no
 incremental re-derivation if a folded shape is later moved (it's now one shape —
-P2 selection/segment work). (d) Curve/curve and seg/curve collinear-overlap (two
+P3 selection/segment work). (d) Curve/curve and seg/curve collinear-overlap (two
 identical arcs) is still the P0 behavior; not exercised by P1's rect cases.
+
+### 3.0a P2 implementation notes (task 1320)
+
+**Line-splits-fill + intersecting-line segmentation — where the work landed.**
+The *kernel* already did the hard part: `Arrangement.insertEdge` splits the new
+edge AND every existing edge it crosses at all intersections (curve-preserving),
+so a stroke drawn across a filled rect already produced TWO planar faces (areas
+conserved) and two crossing lines already produced FOUR half-edge segments meeting
+at a shared crossing vertex. The gap was entirely in the **read-back**
+(`planarShapeToShape`): P1's same-color UNION tracing dissolved *every* interior
+seam between two same-fill faces, so a fill split by a line collapsed back into ONE
+silhouette loop (the two halves lost their dividing boundary). 
+
+**The one rule that distinguishes union from split:** a same-fill interior seam
+dissolves ONLY when it carries **no stroke**. In authentic Flash 8 a line drawn
+across a fill is a real, selectable boundary — the faces on its two sides stay
+separate even though they share the fill color, and the stroke renders on top. So
+`planarShapeToShape` now (1) partitions same-fill faces into **connected
+components** via union-find, merging two faces only across a seam that is
+same-fill AND `lineStyle === null`; (2) traces each component's boundary as the
+union silhouette (so genuine same-color overlap with no dividing line still emits
+ONE loop — P1 union preserved). A fill cut by a line therefore reads back as TWO
+fill loops (two selectable faces) + the segmented line; an X of two strokes reads
+back as the existing four open stroke segments. Curve-preserving throughout (a
+quadratic dividing stroke keeps true quadratics on both split halves).
+
+**Wiring.** No `Shell.tsx`/`StageArea.tsx` change was needed: line/pencil/pen and
+any stroke-only shape commit as `type:"shape"` with stroke-only paths (no fill),
+which `isMergeableShape` already accepts, so they flow through the same P1
+`planarMergeCommit` fold under the `planarMergeOnCommit` flag. The behavior change
+is confined to the read-back. Drawing-object append is unchanged.
+
+**Acceptance.** `merge-drawing-oracle.spec.ts` case 3 (line across a filled rect →
+2 fill regions + the dividing line; stage↔Ruffle diff=0) and case 4 (two crossing
+lines → 4 segments; stage↔Ruffle diff=0), both with `planarMergeOnCommit` ON for
+the test. Plus core unit tests in `planar.test.ts` ("planar/P2 — …"): a chord
+through a face yields 2 faces; the read-back emits 2 fill loops + the segmented
+stroke; same-color overlap with no divider still unions to 1 loop; an X of two
+lines yields 4 segments (each touching the crossing) and obeys Euler; a curved
+dividing stroke splits the fill and keeps quadratic geometry. Areas conserved.
+
+**Remaining for P3+.** Actual *selection* of a single split half / single segment
+(single-click face/edge, double-click connected fill+strokes) and moving one half
+independently still need the live planar map in the selection model (gap (a)); the
+read-back faithfully *represents* the split faces and segments so P3 selection can
+pick them.
 
 ### 3.1 Key decisions
 
@@ -242,10 +291,11 @@ is the truth; unit tests are necessary but not sufficient).
 
 ### 4.2 Interaction oracles (the canonical cases)
 
-`apps/desktop/e2e/merge-drawing-oracle.spec.ts` — cases 1–2 (cut, union) are
-PASSING as of P1 (with `planarMergeOnCommit` ON for the test; stage↔Ruffle
-pixelmatch diff=0/220000); cases 3–6 remain `.fixme` for P2–P5. Each case is
-verified with the project's two-oracle stack:
+`apps/desktop/e2e/merge-drawing-oracle.spec.ts` — cases 1–2 (cut, union) PASS as
+of P1 and cases 3–4 (line-splits-fill, two crossing lines = 4 segments) PASS as of
+P2 (task 1320) — all with `planarMergeOnCommit` ON for the test and stage↔Ruffle
+pixelmatch diff=0/220000; cases 5–6 (eraser, island move) remain `.fixme` for
+P3–P5. Each case is verified with the project's two-oracle stack:
 the **stage-canvas** screenshot (`window.__flashTest.screenshotStage()`) for the
 authored result, and the **Ruffle pixel** screenshot of the published SWF
 (`window.__flashTest.publish()` → bundled Ruffle), pixelmatched against each
@@ -253,9 +303,11 @@ other. The six canonical cases:
 
 1. **red-over-blue cut** — the red overlap carves the blue (different-color cut).
 2. **blue-over-blue union** — two overlapping blues merge into one shape.
-3. **line across fill, then move half** — the line splits the fill; only the
-   selected half moves.
-4. **two crossing lines = 4 segments** — four independently-selectable arms.
+3. **line across fill** — the line splits the fill into two independent regions
+   (P2 task 1320; structural 2-region assert + stage↔Ruffle). Moving only one
+   half independently needs P3 segment selection.
+4. **two crossing lines = 4 segments** — four independently-selectable arms (P2
+   task 1320; structural 4-segment assert + stage↔Ruffle).
 5. **erase across shape splits** — true subtraction splits the fill in two.
 6. **partial fill click + move leaves a hole** — moving a carved island leaves
    the hole it had cut in the outer fill.

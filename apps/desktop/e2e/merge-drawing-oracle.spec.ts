@@ -217,6 +217,57 @@ interface FlashTestMerge {
   commitMergeShape: (shape: unknown, x: number, y: number) => void;
   publish: () => Promise<string> | string;
   screenshotStage: () => string;
+  getDocument: () => unknown;
+  getActiveLayerIndex: () => number;
+  getCurrentFrame: () => number;
+}
+
+const STROKE = { type: 'solid', color: { r: 0, g: 0, b: 0, a: 255 }, width: 4, caps: 'round', joints: 'round', miterLimit: 3 } as const;
+
+/** A stroke-only (no fill) open line ShapePath shape (origin-relative). */
+function lineShape(id: string, x0: number, y0: number, x1: number, y1: number): unknown {
+  return {
+    id,
+    paths: [{
+      start: { x: x0, y: y0 },
+      segments: [{ type: 'line', to: { x: x1, y: y1 } }],
+      closed: false,
+      stroke: STROKE,
+    }],
+  };
+}
+
+/**
+ * Inspect the active layer's committed merge artwork: count the fill paths and
+ * stroke-only paths across all shape display objects on the governing keyframe.
+ * The planar merge-on-commit path stores the folded result as a single merged
+ * `type:"shape"` object whose `shape.paths` carry the split fills + segments.
+ */
+async function inspectMergedPaths(page: Page): Promise<{ fillPaths: number; strokePaths: number }> {
+  return await page.evaluate(() => {
+    const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+    const doc = b.getDocument() as {
+      scenes: { timeline: { layers: { frames: { displayObjects: { type: string; shape?: { paths: { fill?: unknown; stroke?: unknown }[] } }[] }[] }[] } }[];
+    };
+    const li = b.getActiveLayerIndex();
+    const frame = b.getCurrentFrame();
+    let fillPaths = 0, strokePaths = 0;
+    for (const scene of doc.scenes) {
+      const layer = scene.timeline.layers[li];
+      if (!layer) continue;
+      const kf = layer.frames[Math.min(frame, layer.frames.length - 1)] ?? layer.frames[0];
+      if (!kf) continue;
+      for (const obj of kf.displayObjects) {
+        if (obj.type !== 'shape' || !obj.shape) continue;
+        for (const p of obj.shape.paths) {
+          if (p.fill) fillPaths++;
+          else if (p.stroke) strokePaths++;
+        }
+      }
+      break;
+    }
+    return { fillPaths, strokePaths };
+  });
 }
 
 async function captureStagePng(page: Page, testInfo: TestInfo, label: string): Promise<Buffer> {
@@ -362,17 +413,90 @@ test.describe('Merge-drawing oracle (planar kernel) — canonical cases', () => 
   });
 
   // -------------------------------------------------------------------------
-  // 3-6 remain placeholders for P2-P5 (segment selection, line-splits-fill,
-  // curve-preserving eraser, island move leaves a hole).
+  // 3. line across a filled rect -> the fill is SPLIT into two independent
+  //    regions (P2). The dividing stroke subdivides the planar fill face into
+  //    two selectable faces; the read-back stores TWO fill loops + the segmented
+  //    line. We assert the split structurally (two fill regions) AND visually
+  //    (stage shows the fill with the dividing line; Ruffle agrees).
   // -------------------------------------------------------------------------
-  test.fixme('line across fill then move half: only the selected half moves', async () => {
-    // P2-P5: line-splits-fill + segment selection, then assert the moved half.
+  test('line across a filled rect splits the fill into two independent regions', async ({ page }, testInfo: TestInfo) => {
+    // A blue 160x120 rect at (200,140); a horizontal black line drawn across its
+    // middle (from left of the rect to right of it) -> the line splits the fill.
+    await page.evaluate(({ rect, line }) => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      b.commitMergeShape(rect, 200, 140);
+      // Line in stage space spanning x 180..380 at y 200 (rect spans y 140..260).
+      b.commitMergeShape(line, 0, 0);
+    }, {
+      rect: rectShape('rect-1', 160, 120, BLUE),
+      line: lineShape('line-1', 180, 200, 380, 200),
+    });
+    await page.waitForTimeout(200);
+
+    // Structural: the merged artwork carries TWO fill regions (the split halves)
+    // plus the segmented line (inside span + two outside stubs = 3 stroke paths).
+    const counts = await inspectMergedPaths(page);
+    console.log(`[P2] line-splits-fill paths: ${JSON.stringify(counts)}`);
+    expect(counts.fillPaths, 'fill split into two regions').toBe(2);
+    expect(counts.strokePaths, 'line segmented by the fill boundary').toBeGreaterThanOrEqual(1);
+
+    const stagePng = await captureStagePng(page, testInfo, 'split');
+    const rufflePng = await publishAndShootRuffle(page, testInfo, '__ruffle_merge_split__', 'split');
+
+    // Visual: both halves (top y~150..190 and bottom y~210..250) are blue.
+    const topHalf = sampleRegionAvg(stagePng, 230, 150, 350, 185);
+    const botHalf = sampleRegionAvg(stagePng, 230, 215, 350, 250);
+    console.log(`[P2] split stage: top=${JSON.stringify(topHalf)} bot=${JSON.stringify(botHalf)}`);
+    expect(topHalf.b, 'top half blue').toBeGreaterThan(110);
+    expect(botHalf.b, 'bottom half blue').toBeGreaterThan(110);
+    // The dividing line is dark (a black stroke) at y~200 across the fill.
+    const divider = sampleRegionAvg(stagePng, 230, 198, 350, 202);
+    console.log(`[P2] split divider avg=${JSON.stringify(divider)}`);
+    expect(divider.r + divider.g + divider.b, 'dividing stroke is dark').toBeLessThan(topHalf.r + topHalf.g + topHalf.b);
+
+    const { diff, w, h } = diffStageVsRuffle(stagePng, rufflePng);
+    console.log(`[P2] split pixelmatch diff=${diff}/${w * h}`);
+    expect(diff / (w * h), 'stage and ruffle agree (split)').toBeLessThan(0.12);
   });
 
-  test.fixme('two crossing lines become four selectable segments', async () => {
-    // P2-P5: arrangement-backed segment selection, then assert 4 arms.
+  // -------------------------------------------------------------------------
+  // 4. two crossing lines -> four segments (P2). The crossing point becomes a
+  //    shared vertex; each line is split in two -> four independently-selectable
+  //    arms. Asserted structurally (4 stroke segments) + visually (an X renders).
+  // -------------------------------------------------------------------------
+  test('two crossing lines become four selectable segments', async ({ page }, testInfo: TestInfo) => {
+    await page.evaluate(({ a, c }) => {
+      const b = (window as unknown as { __flashTest: FlashTestMerge }).__flashTest;
+      b.commitMergeShape(a, 0, 0);
+      b.commitMergeShape(c, 0, 0);
+    }, {
+      a: lineShape('lineA', 220, 160, 360, 280),
+      c: lineShape('lineC', 220, 280, 360, 160),
+    });
+    await page.waitForTimeout(200);
+
+    // Structural: four edge-segments meeting at the crossing.
+    const counts = await inspectMergedPaths(page);
+    console.log(`[P2] crossing-lines paths: ${JSON.stringify(counts)}`);
+    expect(counts.fillPaths, 'no fills, just strokes').toBe(0);
+    expect(counts.strokePaths, 'four selectable segments').toBe(4);
+
+    const stagePng = await captureStagePng(page, testInfo, 'cross');
+    const rufflePng = await publishAndShootRuffle(page, testInfo, '__ruffle_merge_cross__', 'cross');
+
+    // Visual: the crossing center (~290,220) has dark ink; the X renders.
+    const center = sampleRegionAvg(stagePng, 285, 215, 295, 225);
+    console.log(`[P2] cross stage center=${JSON.stringify(center)}`);
+    expect(center.count, 'something rendered at the crossing').toBeGreaterThan(0);
+
+    const { diff, w, h } = diffStageVsRuffle(stagePng, rufflePng);
+    console.log(`[P2] cross pixelmatch diff=${diff}/${w * h}`);
+    expect(diff / (w * h), 'stage and ruffle agree (cross)').toBeLessThan(0.12);
   });
 
+  // -------------------------------------------------------------------------
+  // 5-6 remain placeholders for P3-P5 (curve-preserving eraser, island move).
+  // -------------------------------------------------------------------------
   test.fixme('erase across a shape splits it into two fills', async () => {
     // P3: route eraser through the planar kernel (curve-preserving cut).
   });

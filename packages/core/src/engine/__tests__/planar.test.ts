@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { EdgeGeometry, Fill, Point, Shape, ShapePath } from "../types.js";
+import type { EdgeGeometry, Fill, Point, Shape, ShapePath, Stroke } from "../types.js";
 import {
   Arrangement,
   buildArrangement,
@@ -13,6 +13,7 @@ import {
   intersectEdges,
   locateFace,
   pointInFace,
+  planarShapeToShape,
   polygonSignedArea,
   splitEdgeGeometry,
   edgeAt,
@@ -26,6 +27,28 @@ import {
 
 const RED: Fill = { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } };
 const BLUE: Fill = { type: "solid", color: { r: 0, g: 0, b: 255, a: 255 } };
+const STROKE: Stroke = {
+  color: { r: 0, g: 0, b: 0, a: 255 },
+  width: 1,
+  caps: "round",
+  joints: "round",
+  miterLimit: 3,
+};
+
+/** A stroke-only (no fill) open ShapePath line shape. */
+function strokeLineShape(id: string, x0: number, y0: number, x1: number, y1: number): Shape {
+  return {
+    id,
+    paths: [
+      {
+        start: { x: x0, y: y0 },
+        segments: [{ type: "line", to: { x: x1, y: y1 } }],
+        closed: false,
+        stroke: STROKE,
+      },
+    ],
+  };
+}
 
 function line(p0: Point, p1: Point): EdgeGeometry {
   return { p0, control: null, p1 };
@@ -425,5 +448,122 @@ describe("planar/query — face boundary trace", () => {
     const poly = faceBoundaryPolygon(ps, inner);
     expect(poly.length).toBeGreaterThanOrEqual(4);
     expect(polygonSignedArea(poly)).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P2: strokes/lines SPLIT fills, intersecting lines segment each other.
+// These exercise the HIGH-LEVEL path (buildArrangementFromShapes ->
+// planarShapeToShape) — the read-back must reflect the split fills and the
+// segmented lines as independently-selectable per-path pieces (so P3 selection
+// can later pick faces / segments). docs/36-vector-merge-model.md §1.1, P2.
+// ---------------------------------------------------------------------------
+
+describe("planar/P2 — a stroke line across a fill SPLITS it", () => {
+  it("a chord through a face yields 2 faces (kernel)", () => {
+    const ps = buildArrangementFromShapes([
+      rectShape("rect", 0, 0, 100, 100, RED),
+      strokeLineShape("line", -10, 50, 110, 50),
+    ]);
+    const redFaces = ps.faces.filter((f) => !f.unbounded && f.fill === 0);
+    expect(redFaces.length).toBe(2);
+    // Areas are conserved: the two halves sum to the whole 100x100 fill.
+    expect(totalBoundedFaceArea(ps, 0)).toBeCloseTo(100 * 100, 0);
+  });
+
+  it("read-back emits 2 separate fill loops + the dividing stroke (selectable halves)", () => {
+    const ps = buildArrangementFromShapes([
+      rectShape("rect", 0, 0, 100, 100, RED),
+      strokeLineShape("line", -10, 50, 110, 50),
+    ]);
+    const merged = planarShapeToShape(ps, "merged");
+    const fillPaths = merged.paths.filter((p) => p.fill);
+    const strokePaths = merged.paths.filter((p) => p.stroke && !p.fill);
+    // TWO independently-selectable fill regions (the split halves), NOT one
+    // dissolved silhouette — this is what P3 selection picks as two faces.
+    expect(fillPaths.length).toBe(2);
+    // The crossing stroke is segmented by the rect's edges into the inside span
+    // plus the two outside stubs (3 undirected stroke segments).
+    expect(strokePaths.length).toBe(3);
+    // Both fill loops are closed and carry the red fill.
+    for (const p of fillPaths) {
+      expect(p.closed).toBe(true);
+      expect(p.fill).toEqual(RED);
+    }
+  });
+
+  it("a same-color overlap with NO dividing line still UNIONS to one loop", () => {
+    // Regression: P2 must NOT break P1 same-color union. Two overlapping reds
+    // with no stroke between them dissolve into a single silhouette loop.
+    const ps = buildArrangementFromShapes([
+      rectShape("a", 0, 0, 20, 20, RED),
+      rectShape("b", 10, 10, 20, 20, RED),
+    ]);
+    const merged = planarShapeToShape(ps, "merged");
+    const fillPaths = merged.paths.filter((p) => p.fill);
+    expect(fillPaths.length).toBe(1);
+  });
+});
+
+describe("planar/P2 — two crossing lines segment each other", () => {
+  it("an X of two stroke lines yields 4 edge-segments (read-back)", () => {
+    const ps = buildArrangementFromShapes([
+      strokeLineShape("a", 0, 0, 100, 100),
+      strokeLineShape("b", 0, 100, 100, 0),
+    ]);
+    // The crossing point is a shared vertex: 4 undirected edges, 8 half-edges.
+    expect(ps.halfEdges.length).toBe(8);
+    const merged = planarShapeToShape(ps, "merged");
+    const strokePaths = merged.paths.filter((p) => p.stroke && !p.fill);
+    // Four independently-selectable arms meeting at the crossing.
+    expect(strokePaths.length).toBe(4);
+    // Each arm is an open segment ending at (or starting from) the crossing
+    // point (50,50) — proving the lines were actually split at the intersection.
+    const CENTER = { x: 50, y: 50 };
+    const touches = (p: (typeof strokePaths)[number]): boolean => {
+      const ends = [p.start, p.segments[p.segments.length - 1]!.to];
+      return ends.some((e) => Math.abs(e.x - CENTER.x) < 0.6 && Math.abs(e.y - CENTER.y) < 0.6);
+    };
+    expect(strokePaths.every(touches)).toBe(true);
+  });
+
+  it("two crossing lines obey Euler and share exactly one crossing vertex", () => {
+    const ps = buildArrangementFromShapes([
+      strokeLineShape("a", 0, 0, 100, 100),
+      strokeLineShape("b", 0, 100, 100, 0),
+    ]);
+    expect(eulerCharacteristic(ps)).toBe(2);
+    const usedVerts = new Set(ps.halfEdges.map((h) => h.origin));
+    expect(usedVerts.size).toBe(5); // 4 endpoints + 1 crossing
+  });
+});
+
+describe("planar/P2 — a curved stroke across a fill splits it, curve-preserving", () => {
+  it("the dividing curve keeps quadratic geometry and the fill splits in two", () => {
+    const ps = buildArrangementFromShapes([
+      rectShape("rect", 0, 0, 100, 100, RED),
+      // A quadratic stroke arcing across the rect, endpoints outside its sides.
+      {
+        id: "arc",
+        paths: [
+          {
+            start: { x: -10, y: 50 },
+            segments: [{ type: "curve", control: { x: 50, y: 90 }, to: { x: 110, y: 50 } }],
+            closed: false,
+            stroke: STROKE,
+          },
+        ],
+      },
+    ]);
+    const redFaces = ps.faces.filter((f) => !f.unbounded && f.fill === 0);
+    expect(redFaces.length).toBe(2);
+    expect(totalBoundedFaceArea(ps, 0)).toBeCloseTo(100 * 100, 0);
+    // Curve-preserving: at least one fill loop carries a quadratic segment from
+    // the dividing arc (it was split at the rect's edges but never flattened).
+    const merged = planarShapeToShape(ps, "merged");
+    const fillPaths = merged.paths.filter((p) => p.fill);
+    expect(fillPaths.length).toBe(2);
+    const anyCurve = merged.paths.some((p) => p.segments.some((s) => s.type === "curve"));
+    expect(anyCurve).toBe(true);
   });
 });

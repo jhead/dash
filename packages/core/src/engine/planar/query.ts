@@ -303,38 +303,92 @@ export function planarShapeToShape(ps: PlanarShape, id: string): Shape {
     return f && !f.unbounded ? f.fill ?? null : null;
   };
 
-  // --- Fills: trace the BOUNDARY of each same-fill region, dissolving interior
-  //     seams (a half-edge whose left face and right face carry the SAME fill is
-  //     an interior seam between same-color faces — it disappears, realizing
-  //     same-color union as a single boundary loop). We walk boundary half-edges
-  //     (left fill = F, right fill != F) following `next`, which already skips
-  //     dissolved seams because `next` stays within the same incident face... but
-  //     to cross face-to-face within a same-fill region we instead follow the
-  //     boundary using a region-aware walk below.
+  // --- Fills: dissolve same-color UNION seams but KEEP line-split boundaries.
   //
-  // Group faces by fill, then per fill collect the set of boundary half-edges
-  // (left = this fill, twin's face fill != this fill) and chain them into loops.
-  const fillFaces = new Map<number, Set<number>>();
+  // Two adjacent faces carrying the SAME fill normally union into one region by
+  // dissolving the shared interior edge (same-color UNION; P1). BUT in authentic
+  // Flash 8 a STROKE drawn across a fill SPLITS it into independently-selectable
+  // sub-faces (docs/36-vector-merge-model.md §1.1, P2): the line inserts edges
+  // that subdivide the region and each sub-region is its own traceable loop. So
+  // an interior same-fill seam is only DISSOLVABLE when it carries NO stroke; a
+  // half-edge with a `lineStyle` is always a real boundary between its two faces.
+  //
+  // We therefore (1) partition same-fill faces into CONNECTED COMPONENTS where a
+  // component edge crosses only NON-STROKED same-fill seams, then (2) trace each
+  // component's boundary (the union silhouette of that component) as before. A
+  // component with no stroked seams is a single region (same-color union); a fill
+  // split by a line becomes two components → two loops → two selectable faces.
+
+  // A seam between two same-fill faces is dissolvable iff it carries no stroke.
+  const seamDissolvable = (he: HalfEdge): boolean => {
+    if (he.lineStyle !== null && he.lineStyle !== undefined) return false;
+    const twin = ps.halfEdges[he.twin];
+    return faceFillOf(he.face) === faceFillOf(twin.face);
+  };
+
+  // Union-find over bounded, filled faces; merge across dissolvable seams only.
+  const parent = new Map<number, number>();
+  const find = (x: number): number => {
+    let r = x;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    let c = x;
+    while (parent.get(c) !== c) {
+      const n = parent.get(c)!;
+      parent.set(c, r);
+      c = n;
+    }
+    return r;
+  };
+  const union = (a: number, b: number): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
   for (const f of ps.faces) {
     if (f.unbounded || f.fill === null || f.fill === undefined) continue;
-    let s = fillFaces.get(f.fill);
-    if (!s) { s = new Set(); fillFaces.set(f.fill, s); }
-    s.add(f.id);
+    parent.set(f.id, f.id);
+  }
+  for (const he of ps.halfEdges) {
+    const f = ps.faces[he.face];
+    if (!f || f.unbounded || f.fill === null || f.fill === undefined) continue;
+    const twin = ps.halfEdges[he.twin];
+    const tf = ps.faces[twin.face];
+    if (!tf || tf.unbounded || tf.fill === null || tf.fill === undefined) continue;
+    if (parent.has(he.face) && parent.has(twin.face) && seamDissolvable(he)) {
+      union(he.face, twin.face);
+    }
   }
 
-  const fillIndices = [...fillFaces.keys()].sort((a, b) => a - b);
-  for (const fi of fillIndices) {
-    const fill = ps.fills[fi];
-    if (!fill) continue;
-    const facesOfFill = fillFaces.get(fi)!;
+  // Group faces by their component root, preserving the fill of the component.
+  // Emit components ordered by fill index (so the renderer's same-Fill batching
+  // groups loops of one colour contiguously), then by root id for determinism.
+  const components = new Map<number, { fill: number; faces: Set<number> }>();
+  for (const f of ps.faces) {
+    if (f.unbounded || f.fill === null || f.fill === undefined) continue;
+    const root = find(f.id);
+    let comp = components.get(root);
+    if (!comp) {
+      comp = { fill: f.fill, faces: new Set() };
+      components.set(root, comp);
+    }
+    comp.faces.add(f.id);
+  }
+  const compList = [...components.values()].sort(
+    (a, b) => a.fill - b.fill
+  );
 
-    // Boundary half-edges of this fill region: the incident (left) face has fill
-    // fi, and the half-edge across the twin does NOT belong to the same fill.
+  for (const comp of compList) {
+    const fill = ps.fills[comp.fill];
+    if (!fill) continue;
+    const facesOfComp = comp.faces;
+
+    // Boundary half-edges of this component: the incident (left) face is in the
+    // component, and the half-edge across the twin is NOT (a different fill, the
+    // background, OR a stroked same-fill seam that splits the region).
     const isBoundary = (he: HalfEdge): boolean => {
-      if (!facesOfFill.has(he.face)) return false;
+      if (!facesOfComp.has(he.face)) return false;
       const twin = ps.halfEdges[he.twin];
-      const twinFill = faceFillOf(twin.face);
-      return twinFill !== fi;
+      return !facesOfComp.has(twin.face);
     };
 
     const remaining = new Set<number>();
@@ -342,8 +396,9 @@ export function planarShapeToShape(ps: PlanarShape, id: string): Shape {
 
     // Chain boundary half-edges into closed loops. From a boundary half-edge,
     // the next boundary half-edge is found by rotating around the shared vertex:
-    // follow `next` until we land on another boundary half-edge of this fill
-    // (this hops across interior seams to stay on the region's true silhouette).
+    // follow `next` until we land on another boundary half-edge of this
+    // component (this hops across dissolved interior seams to stay on the
+    // component's true silhouette).
     while (remaining.size > 0) {
       const startId = remaining.values().next().value as number;
       const loop: EdgeGeometry[] = [];
@@ -354,12 +409,12 @@ export function planarShapeToShape(ps: PlanarShape, id: string): Shape {
         loop.push(ps.halfEdges[cur].geometry);
         // Advance to the next boundary half-edge: walk `next` (which stays in the
         // incident face) — if that is a boundary edge, take it; otherwise keep
-        // rotating via successive `next` (crossing same-fill interior seams).
+        // rotating via successive `next` (crossing dissolved interior seams).
         let step = ps.halfEdges[cur].next;
         let inner = 0;
         while (step >= 0 && !isBoundary(ps.halfEdges[step])) {
-          // Cross the interior seam: jump to the twin's `next` to continue along
-          // the outer silhouette of the same-fill region.
+          // Cross the dissolved seam: jump to the twin's `next` to continue along
+          // the outer silhouette of the same-fill component.
           step = ps.halfEdges[ps.halfEdges[step].twin].next;
           if (++inner > ps.halfEdges.length + 5) break;
         }
