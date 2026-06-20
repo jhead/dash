@@ -108,15 +108,21 @@ export function useProjectActions(deps: UseProjectActionsDeps): UseProjectAction
   if (!autosaveRef.current && !disabled) {
     autosaveRef.current = new AutosaveController({
       serialize: saveFla,
-      persist: async (bytes) => {
+      persist: async ({ bytes, targetName, generation }) => {
         const store = getProjectStore();
         if (!store) return;
+        // Defense-in-depth: stamp the write with the controller generation as a
+        // monotonic per-slot seq so an out-of-order stale write is rejected by
+        // the store even if it slips past the in-process supersession guard.
         // Always update the current-working recovery slot.
-        await autosaveCurrentWorking(store, bytes);
-        // If a named project is active, keep it in sync too.
-        const name = activeNameRef.current;
-        if (name && name !== CURRENT_WORKING_KEY) {
-          await store.put(name, bytes);
+        await autosaveCurrentWorking(store, bytes, generation);
+        // If a named project was active AT SCHEDULE TIME, keep it in sync too.
+        // `targetName` was captured when this save was scheduled — NOT read here
+        // at resolve time — so a Save As that switched the active slot during the
+        // debounce/persist window cannot redirect these (older) bytes into the
+        // newly-named slot (BUG 2, task 1316).
+        if (targetName && targetName !== CURRENT_WORKING_KEY) {
+          await store.put(targetName, bytes, { seq: generation });
         }
       },
       delayMs: autosaveDelayMs,
@@ -190,23 +196,82 @@ export function useProjectActions(deps: UseProjectActionsDeps): UseProjectAction
       const nextDoc = selectDoc(state);
       if (nextDoc === prevDoc) return;
       prevDoc = nextDoc;
-      controller.schedule(nextDoc);
+      // Capture the active named slot AT SCHEDULE TIME so a Save As during the
+      // debounce window cannot retarget these bytes (BUG 2, task 1316).
+      const target = activeNameRef.current;
+      controller.schedule(nextDoc, target);
     });
     return unsub;
   }, [documentStore, restored, disabled, tauri]);
 
-  // Flush pending autosave when the tab is hidden / closed so the very latest
-  // edit survives an abrupt close (debounce may not have fired yet).
+  // -------------------------------------------------------------------------
+  // Last-chance durability flush (BUG 1, task 1316).
+  //
+  // IndexedDB writes are async and CANNOT be fully awaited during page unload —
+  // the browser may tear the tab down before the transaction commits. We make the
+  // unsaved window as small as practical and start the durable write at the
+  // recommended lifecycle point:
+  //   - visibilitychange -> 'hidden' is the PRIMARY durable flush: it fires while
+  //     the page is still fully alive (unlike pagehide/beforeunload), so the
+  //     IndexedDB transaction has the best chance to commit. We serialize the
+  //     pending doc SYNCHRONOUSLY in the handler (takePendingPayload) and START
+  //     the write immediately, rather than relying on the async debounced path.
+  //   - pagehide is a BACKSTOP for the rare case the page goes straight to unload
+  //     without a prior 'hidden' transition.
+  //   - blur proactively flushes so the unsaved window is already tiny by the time
+  //     the tab is hidden/closed.
+  //
+  // This is the documented BEST-EFFORT path: a save started here is durable in the
+  // common case but is NOT guaranteed if the OS kills the tab mid-commit. The
+  // debounced autosave + the current-working recovery slot remain the primary
+  // durability mechanism; see docs/35-persistent-projects.md.
+  // -------------------------------------------------------------------------
   useEffect(() => {
     if (disabled || tauri) return;
-    const onHide = () => {
-      void autosaveRef.current?.flush();
+
+    // Synchronously serialize the pending doc and start its IndexedDB write.
+    // Returns true if a write was started. Best-effort: errors are swallowed
+    // (the in-memory doc + recovery slot are the source of truth).
+    const startDurableFlush = (): boolean => {
+      const controller = autosaveRef.current;
+      if (!controller) return false;
+      const payload = controller.takePendingPayload();
+      if (!payload) return false;
+      const store = getProjectStore();
+      if (!store) return false;
+      const { bytes, targetName, generation } = payload;
+      // Fire the writes; do not await (we cannot reliably await during unload).
+      void (async () => {
+        try {
+          await autosaveCurrentWorking(store, bytes, generation);
+          if (targetName && targetName !== CURRENT_WORKING_KEY) {
+            await store.put(targetName, bytes, { seq: generation });
+          }
+        } catch {
+          // Best-effort; ignore (quota/IO/teardown).
+        }
+      })();
+      return true;
     };
-    window.addEventListener("pagehide", onHide);
-    window.addEventListener("visibilitychange", onHide);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") startDurableFlush();
+    };
+    const onPageHide = () => {
+      startDurableFlush();
+    };
+    const onBlur = () => {
+      // Proactive: shrink the unsaved window before a possible close.
+      startDurableFlush();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("blur", onBlur);
     return () => {
-      window.removeEventListener("pagehide", onHide);
-      window.removeEventListener("visibilitychange", onHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("blur", onBlur);
     };
   }, [disabled, tauri]);
 
@@ -220,8 +285,17 @@ export function useProjectActions(deps: UseProjectActionsDeps): UseProjectAction
       if (!name) return false;
       const store = getProjectStore();
       if (!store) return false;
+      // Supersede any pending/in-flight autosave BEFORE writing the named slot:
+      // a debounced autosave that captured OLDER bytes (or the old target) must
+      // not overwrite the slot this explicit Save As is about to own (BUG 2,
+      // task 1316). The post-supersede generation is the monotonic seq we stamp
+      // this write with, so a stale autosave's lower seq is rejected by the store.
+      autosaveRef.current?.supersede();
+      const seq = autosaveRef.current?.currentGeneration;
+      // Point future autosaves at the new slot before any await yields.
+      activeNameRef.current = name;
       try {
-        const { recent } = await saveNamed(store, loadRecentProjects(), name, doc);
+        const { recent } = await saveNamed(store, loadRecentProjects(), name, doc, seq);
         setRecentState(recent);
         activeNameRef.current = name;
         return true;
@@ -250,8 +324,12 @@ export function useProjectActions(deps: UseProjectActionsDeps): UseProjectAction
       }
       const store = getProjectStore();
       if (!store) return false;
+      // Supersede pending autosave so a stale debounced write can't clobber this
+      // explicit Save (BUG 2, task 1316); stamp with the post-supersede seq.
+      autosaveRef.current?.supersede();
+      const seq = autosaveRef.current?.currentGeneration;
       try {
-        const { recent } = await saveNamed(store, loadRecentProjects(), name, doc);
+        const { recent } = await saveNamed(store, loadRecentProjects(), name, doc, seq);
         setRecentState(recent);
         return true;
       } catch (err) {
@@ -275,7 +353,12 @@ export function useProjectActions(deps: UseProjectActionsDeps): UseProjectAction
       }
       const store = getProjectStore();
       if (!store) return null;
-      const result = await openNamed(store, loadRecentProjects(), id);
+      // Supersede any pending autosave (it captured the doc we're navigating
+      // AWAY from) so it cannot overwrite the freshly-opened current-working slot
+      // (BUG 2, task 1316). Stamp the open's mirror write with the new seq.
+      autosaveRef.current?.supersede();
+      const seq = autosaveRef.current?.currentGeneration;
+      const result = await openNamed(store, loadRecentProjects(), id, seq);
       if (!result) {
         // Stale recent entry (project deleted) — drop it.
         setRecentState((prev) => removeRecentProject(prev, id));

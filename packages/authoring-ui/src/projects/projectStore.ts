@@ -49,6 +49,15 @@ export interface ProjectMeta {
   readonly sizeBytes: number;
   /** Optional small data-URI stage thumbnail (PNG). */
   readonly thumbnail?: string;
+  /**
+   * Optional monotonic write sequence (defense-in-depth, task 1316). When a
+   * caller supplies a `seq` to {@link ProjectStore.put}, the store rejects a
+   * write whose `seq` is STRICTLY LESS than the slot's current `seq` — so an
+   * out-of-order stale autosave can never clobber a newer write to the same slot
+   * even if the in-process generation guard is somehow bypassed. Writes without a
+   * `seq` (legacy / explicit saves) always win.
+   */
+  readonly seq?: number;
 }
 
 /** A full stored project record (metadata + the serialized `.fla` bytes). */
@@ -161,7 +170,7 @@ export class ProjectStore {
   async put(
     name: string,
     bytes: Uint8Array,
-    extra?: { updatedAt?: number; thumbnail?: string }
+    extra?: { updatedAt?: number; thumbnail?: string; seq?: number }
   ): Promise<ProjectMeta> {
     const record: ProjectRecord = {
       schemaVersion: PROJECT_SCHEMA_VERSION,
@@ -170,9 +179,29 @@ export class ProjectStore {
       updatedAt: extra?.updatedAt ?? Date.now(),
       sizeBytes: bytes.byteLength,
       ...(extra?.thumbnail ? { thumbnail: extra.thumbnail } : {}),
+      ...(typeof extra?.seq === "number" ? { seq: extra.seq } : {}),
     };
     try {
+      // A single readwrite transaction does the read-guard AND the write so the
+      // seq comparison is atomic (no interleaving put on the same slot).
       const store = await this.tx("readwrite");
+      if (typeof extra?.seq === "number") {
+        const existing = normalizeRecord(
+          (await reqAsync(store.get(name))) as unknown
+        );
+        if (existing && typeof existing.seq === "number" && extra.seq < existing.seq) {
+          // Stale out-of-order write — keep the newer record. Resolve with the
+          // EXISTING metadata so the caller treats it as a no-op success.
+          await this.txDone(store);
+          return {
+            name: existing.name,
+            updatedAt: existing.updatedAt,
+            sizeBytes: existing.sizeBytes,
+            ...(existing.thumbnail ? { thumbnail: existing.thumbnail } : {}),
+            ...(typeof existing.seq === "number" ? { seq: existing.seq } : {}),
+          };
+        }
+      }
       await reqAsync(store.put(record));
       await this.txDone(store);
     } catch (err) {
@@ -189,6 +218,7 @@ export class ProjectStore {
       updatedAt: record.updatedAt,
       sizeBytes: record.sizeBytes,
       ...(record.thumbnail ? { thumbnail: record.thumbnail } : {}),
+      ...(typeof record.seq === "number" ? { seq: record.seq } : {}),
     };
   }
 
@@ -283,6 +313,7 @@ function finishRecord(v: Record<string, unknown>, bytes: Uint8Array): ProjectRec
   const sizeBytes =
     typeof v.sizeBytes === "number" ? v.sizeBytes : bytes.byteLength;
   const thumbnail = typeof v.thumbnail === "string" ? v.thumbnail : undefined;
+  const seq = typeof v.seq === "number" ? v.seq : undefined;
   return {
     schemaVersion,
     name: v.name as string,
@@ -290,6 +321,7 @@ function finishRecord(v: Record<string, unknown>, bytes: Uint8Array): ProjectRec
     updatedAt,
     sizeBytes,
     ...(thumbnail ? { thumbnail } : {}),
+    ...(typeof seq === "number" ? { seq } : {}),
   };
 }
 

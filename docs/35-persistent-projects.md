@@ -60,12 +60,24 @@ the file path.
 
 A framework-free, fully node-testable engine (mirrors
 `preview/livePreviewController.ts`): timers and the clock are injected. On every
-document mutation `schedule(doc)` re-arms a single ~1.5 s debounce capturing only
-the **latest** doc; after the quiet period it serializes once and persists to the
-current-working slot **and** (if a named project is active) the named slot. A
-monotonic **generation** counter is the supersession authority — a stale
-in-flight persist can never overwrite newer bytes. `flush()` forces an immediate
-save (used by the `pagehide`/`visibilitychange` listeners and explicit Save).
+document mutation `schedule(doc, targetName)` re-arms a single ~1.5 s debounce
+capturing only the **latest** `(doc, targetName)` pair; after the quiet period it
+serializes once and persists to the current-working slot **and** (if a named
+project was active **at schedule time**) the named slot. A monotonic
+**generation** counter is the supersession authority — a stale in-flight persist
+can never overwrite newer bytes. `flush()` forces an immediate save (explicit
+Save). `supersede()` invalidates any pending/in-flight autosave (used by explicit
+Save / Save As / Open). `takePendingPayload()` synchronously serializes the
+pending doc into a payload so the unload path can start the write itself.
+
+**Target capture (closes the Save-As race, task 1316).** The persist payload
+bundles `{bytes, targetName, generation}` captured when the controller *decides*
+to save — NOT read from a live ref at persist-resolve time. Previously the persist
+closure read the active name at resolve time, so a Save As during the debounce/
+in-flight window could redirect a stale autosave's *old* bytes into the *newly
+named* slot and silently overwrite it. Now the target is frozen with the bytes,
+and an explicit Save/Save As/Open calls `supersede()` first (bumping the
+generation past any pending autosave) so the stale result is dropped.
 
 ### Restore-on-load — `projects/projectSession.ts` + `useProjectActions.ts`
 
@@ -92,6 +104,44 @@ the project becomes most-recent + active. The active name is reflected in the
   downloadable `.fla` copy so the user keeps an on-disk file.
 - **Save** (web): writes the active named slot via `saveProject`. If there is no
   active named project yet, it falls through to Save As (prompt).
+
+## Durability semantics (task 1316)
+
+The whole feature exists to **not lose the user's work**. Two guarantees and one
+honest non-guarantee:
+
+- **Steady state — strong.** Every mutation re-arms the ~1.5 s debounce; after a
+  quiet period the latest bytes are written to IndexedDB and the transaction is
+  **awaited to completion** (`txDone`) before the write resolves. The
+  current-working slot means even an unnamed in-progress doc survives a refresh.
+
+- **Save / Save As / Open — race-free.** An explicit save **supersedes** any
+  pending/in-flight autosave (generation bump) and the autosave's *target slot is
+  captured with its bytes at decide time*, so a stale autosave can never overwrite
+  a slot a later Save As named. **Defense-in-depth:** every autosave write is
+  stamped with the monotonic generation as a per-slot `seq`; `ProjectStore.put`
+  **rejects a write whose `seq` is strictly lower** than the slot's current `seq`
+  (atomic read-guard + write in one readwrite transaction). Seq-less writes always
+  win, so explicit saves are unconditional. (Explicit saves also carry the
+  post-supersede seq, so they sit at the top of the monotonic order.)
+
+- **Abrupt tab close / reload — best-effort (documented limit).** IndexedDB writes
+  are asynchronous and **cannot be fully awaited during page unload** — the browser
+  may tear the tab down before the transaction commits. We implement the
+  best-practice path and minimize the unsaved window:
+  - `visibilitychange → 'hidden'` is the **primary** last-chance flush: it fires
+    while the page is still fully alive (unlike `pagehide`/`beforeunload`), so the
+    transaction has the best chance to commit. The handler serializes the pending
+    doc **synchronously** (`takePendingPayload`) and **starts** the IndexedDB write
+    immediately rather than relying on the async debounced path.
+  - `pagehide` is a **backstop** for a direct-to-unload transition.
+  - `blur` proactively flushes so the unsaved window is already tiny before a close.
+
+  This is genuinely best-effort: a write started in the unload handler is durable
+  in the common case but is **not guaranteed** if the OS kills the tab mid-commit.
+  The debounced autosave + current-working recovery slot remain the primary
+  durability mechanism; the unload flush only shrinks the worst-case window. No
+  impossible guarantees are claimed.
 
 ## Open Recent
 
@@ -123,11 +173,19 @@ Save/Open behaviour is otherwise unchanged.
 ## Tests
 
 - Unit (`fake-indexeddb`, node): `projectStore.test.ts` (round-trip, list order,
-  delete, current-working slot, quota fallback), `autosaveController.test.ts`
-  (debounce, latest-wins, flush, cancel, error/saved callbacks),
+  delete, current-working slot, quota fallback, **monotonic `seq` guard**),
+  `autosaveController.test.ts` (debounce, latest-wins, flush, cancel, error/saved
+  callbacks, **target capture, `supersede()`, `takePendingPayload()`**),
   `recentProjects.test.ts` (persist, touch/dedup/cap, remove, parse fallback),
   `projectSession.test.ts` (Save-As naming, restore-on-load incl. F5 recovery +
   fallback + unparseable, open-named).
+- Regression (task 1316) — `autosaveSaveAsRace.test.ts` (real controller + real
+  `ProjectStore` over `fake-indexeddb`, fake timers): (a) a **Save As fired during
+  a pending autosave debounce** leaves the named slot with the Save-As bytes — the
+  stale autosave does NOT overwrite it (also the in-flight-persist variant, caught
+  by the `seq` guard); (b) the **visibility/unload flush** invokes the durable
+  write with the LATEST pending bytes synchronously (`takePendingPayload`) and the
+  still-armed debounce timer does not double-write.
 - E2E (`apps/desktop/e2e/persistent-projects.spec.ts`): edit → reload → restored;
   Save As `<name>` → title bar + recent list → reload → reopens the named project;
   plain Save updates the active slot.

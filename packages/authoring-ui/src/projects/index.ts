@@ -35,7 +35,7 @@ export {
 export type { RecentEntry, RecentProjectsState } from "./recentProjects.js";
 
 export { AutosaveController } from "./autosaveController.js";
-export type { AutosaveDeps, AutosaveTimers } from "./autosaveController.js";
+export type { AutosaveDeps, AutosaveTimers, AutosavePayload } from "./autosaveController.js";
 
 export {
   restoreOnLoad,

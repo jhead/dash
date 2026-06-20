@@ -42,7 +42,7 @@ describe("AutosaveController (debounce)", () => {
     const persisted: string[] = [];
     const c = new AutosaveController({
       serialize: (d) => new TextEncoder().encode((d as { id: string }).id),
-      persist: async (b) => { persisted.push(new TextDecoder().decode(b)); },
+      persist: async ({ bytes }) => { persisted.push(new TextDecoder().decode(bytes)); },
       delayMs: 1000,
       timers: clock.timers,
     });
@@ -62,7 +62,7 @@ describe("AutosaveController (debounce)", () => {
     const persisted: string[] = [];
     const c = new AutosaveController({
       serialize: (d) => new TextEncoder().encode((d as { id: string }).id),
-      persist: async (b) => { persisted.push(new TextDecoder().decode(b)); },
+      persist: async ({ bytes }) => { persisted.push(new TextDecoder().decode(bytes)); },
       delayMs: 1500,
       timers: clock.timers,
     });
@@ -78,7 +78,7 @@ describe("AutosaveController (debounce)", () => {
     const persisted: string[] = [];
     const c = new AutosaveController({
       serialize: (d) => new TextEncoder().encode((d as { id: string }).id),
-      persist: async (b) => { persisted.push(new TextDecoder().decode(b)); },
+      persist: async ({ bytes }) => { persisted.push(new TextDecoder().decode(bytes)); },
       delayMs: 5000,
       timers: clock.timers,
     });
@@ -95,7 +95,7 @@ describe("AutosaveController (debounce)", () => {
     const persisted: string[] = [];
     const c = new AutosaveController({
       serialize: (d) => new TextEncoder().encode((d as { id: string }).id),
-      persist: async (b) => { persisted.push(new TextDecoder().decode(b)); },
+      persist: async ({ bytes }) => { persisted.push(new TextDecoder().decode(bytes)); },
       delayMs: 1000,
       timers: clock.timers,
     });
@@ -130,12 +130,123 @@ describe("AutosaveController (debounce)", () => {
       persist: async () => {},
       delayMs: 100,
       timers: clock.timers,
-      onSaved: (b) => { savedBytes = b; },
+      onSaved: ({ bytes }) => { savedBytes = bytes; },
     });
     c.schedule(doc("x"));
     clock.advance(100);
     await Promise.resolve();
     expect(savedBytes).not.toBeNull();
     expect(Array.from(savedBytes!)).toEqual([7, 8, 9]);
+  });
+
+  // ----- BUG 2 (task 1316): Save-As race / target capture + supersession -----
+
+  it("captures the target slot at schedule time, not at persist resolve", async () => {
+    const targets: (string | undefined)[] = [];
+    const c = new AutosaveController({
+      serialize: (d) => new TextEncoder().encode((d as { id: string }).id),
+      persist: async ({ targetName }) => { targets.push(targetName); },
+      delayMs: 100,
+      timers: clock.timers,
+    });
+    c.schedule(doc("a"), "OldSlot");
+    clock.advance(100);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(targets).toEqual(["OldSlot"]);
+  });
+
+  it("supersede() drops a pending autosave so a stale write never lands", async () => {
+    const persisted: string[] = [];
+    const c = new AutosaveController({
+      serialize: (d) => new TextEncoder().encode((d as { id: string }).id),
+      persist: async ({ bytes }) => { persisted.push(new TextDecoder().decode(bytes)); },
+      delayMs: 1000,
+      timers: clock.timers,
+    });
+    c.schedule(doc("stale"), "Slot");
+    // An explicit Save As runs during the debounce window → supersede.
+    c.supersede();
+    clock.advance(2000);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(persisted).toEqual([]); // the stale debounced bytes never persisted
+  });
+
+  it("supersede() advances the generation past the pending one (monotonic seq)", () => {
+    const c = new AutosaveController({
+      serialize: () => new Uint8Array([1]),
+      persist: async () => {},
+      delayMs: 1000,
+      timers: clock.timers,
+    });
+    c.schedule(doc("a"), "Slot");
+    const beforeGen = c.currentGeneration;
+    c.supersede();
+    expect(c.currentGeneration).toBeGreaterThan(beforeGen);
+    expect(c.hasPending).toBe(false);
+  });
+
+  it("an in-flight persist that is superseded does not advance savedGeneration", async () => {
+    // A slow persist lets us interleave a supersede while it is awaiting.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const persisted: number[] = [];
+    const c = new AutosaveController({
+      serialize: (d) => new TextEncoder().encode((d as { id: string }).id),
+      persist: async ({ generation }) => {
+        await gate;
+        persisted.push(generation);
+      },
+      delayMs: 100,
+      timers: clock.timers,
+    });
+    c.schedule(doc("inflight"), "Slot");
+    clock.advance(100); // fire(): serializes, calls persist (awaiting on gate)
+    await Promise.resolve();
+    const inflightGen = c.currentGeneration;
+    // Explicit Save As runs while persist is in flight → supersede.
+    c.supersede();
+    release(); // let the stale persist resolve
+    await Promise.resolve();
+    await Promise.resolve();
+    // The stale persist callback ran (we cannot abort the IDB write), but its
+    // onSaved bookkeeping is dropped because a newer generation superseded it.
+    expect(persisted).toEqual([inflightGen]);
+    expect(c.currentGeneration).toBeGreaterThan(inflightGen);
+  });
+
+  it("takePendingPayload() serializes the latest bytes synchronously for unload", () => {
+    const c = new AutosaveController({
+      serialize: (d) => new TextEncoder().encode((d as { id: string }).id),
+      persist: async () => {},
+      delayMs: 1000,
+      timers: clock.timers,
+    });
+    c.schedule(doc("a"), "Slot");
+    c.schedule(doc("latest"), "Slot");
+    const payload = c.takePendingPayload();
+    expect(payload).not.toBeNull();
+    expect(new TextDecoder().decode(payload!.bytes)).toBe("latest");
+    expect(payload!.targetName).toBe("Slot");
+  });
+
+  it("takePendingPayload() claims the generation so a later timer fire is a no-op", async () => {
+    const persisted: string[] = [];
+    const c = new AutosaveController({
+      serialize: (d) => new TextEncoder().encode((d as { id: string }).id),
+      persist: async ({ bytes }) => { persisted.push(new TextDecoder().decode(bytes)); },
+      delayMs: 100,
+      timers: clock.timers,
+    });
+    c.schedule(doc("a"), "Slot");
+    // Unload handler takes the payload synchronously (writes it itself).
+    const payload = c.takePendingPayload();
+    expect(payload).not.toBeNull();
+    // The armed timer still fires later, but must NOT double-persist.
+    clock.advance(100);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(persisted).toEqual([]);
   });
 });

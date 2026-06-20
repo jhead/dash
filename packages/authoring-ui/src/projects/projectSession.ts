@@ -91,9 +91,10 @@ export async function restoreOnLoad(
  */
 export async function autosaveCurrentWorking(
   store: ProjectStore,
-  bytes: Uint8Array
+  bytes: Uint8Array,
+  seq?: number
 ): Promise<ProjectMeta> {
-  return store.put(CURRENT_WORKING_KEY, bytes);
+  return store.put(CURRENT_WORKING_KEY, bytes, typeof seq === "number" ? { seq } : undefined);
 }
 
 /**
@@ -108,13 +109,15 @@ export async function saveNamed(
   store: ProjectStore,
   recent: RecentProjectsState,
   name: string,
-  doc: FlashDocument
+  doc: FlashDocument,
+  seq?: number
 ): Promise<{ recent: RecentProjectsState; meta: ProjectMeta }> {
   const bytes = saveFla(doc);
   const now = Date.now();
-  const meta = await store.put(name, bytes, { updatedAt: now });
+  const seqExtra = typeof seq === "number" ? { seq } : {};
+  const meta = await store.put(name, bytes, { updatedAt: now, ...seqExtra });
   // Mirror into the current-working slot so F5 recovers the named project.
-  await store.put(CURRENT_WORKING_KEY, bytes, { updatedAt: now });
+  await store.put(CURRENT_WORKING_KEY, bytes, { updatedAt: now, ...seqExtra });
   const entry: RecentEntry = { id: name, label: name, updatedAt: now };
   const nextRecent = touchRecentProject(recent, entry);
   return { recent: nextRecent, meta };
@@ -129,13 +132,17 @@ export async function saveNamed(
 export async function openNamed(
   store: ProjectStore,
   recent: RecentProjectsState,
-  name: string
+  name: string,
+  seq?: number
 ): Promise<{ doc: FlashDocument; recent: RecentProjectsState } | null> {
   const record = await store.get(name);
   if (!record) return null;
   const doc = tryLoad(record.bytes);
   if (!doc) return null;
-  await store.put(CURRENT_WORKING_KEY, record.bytes, { updatedAt: Date.now() });
+  await store.put(CURRENT_WORKING_KEY, record.bytes, {
+    updatedAt: Date.now(),
+    ...(typeof seq === "number" ? { seq } : {}),
+  });
   const entry: RecentEntry = {
     id: name,
     label: name,

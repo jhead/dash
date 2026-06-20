@@ -92,6 +92,33 @@ describe("ProjectStore (IndexedDB round-trip)", () => {
       ProjectQuotaError
     );
   });
+
+  // ----- monotonic seq guard (defense-in-depth, task 1316) -----
+
+  it("rejects an out-of-order stale write (lower seq) to the same slot", async () => {
+    await store.put("Slot", bytesOf("newer"), { seq: 10 });
+    // A stale write with a lower seq arrives late — it must NOT clobber.
+    const meta = await store.put("Slot", bytesOf("stale-older"), { seq: 5 });
+    expect(meta.seq).toBe(10); // returns the EXISTING (kept) metadata
+    const rec = await store.get("Slot");
+    expect(new TextDecoder().decode(rec!.bytes)).toBe("newer");
+  });
+
+  it("accepts an equal-or-higher seq write", async () => {
+    await store.put("Slot", bytesOf("v10"), { seq: 10 });
+    await store.put("Slot", bytesOf("v10b"), { seq: 10 }); // equal seq wins (re-save)
+    expect(new TextDecoder().decode((await store.get("Slot"))!.bytes)).toBe("v10b");
+    await store.put("Slot", bytesOf("v11"), { seq: 11 });
+    expect(new TextDecoder().decode((await store.get("Slot"))!.bytes)).toBe("v11");
+  });
+
+  it("a seq-less write always wins (explicit saves are unconditional)", async () => {
+    await store.put("Slot", bytesOf("v10"), { seq: 10 });
+    await store.put("Slot", bytesOf("unconditional")); // no seq → overwrites
+    expect(new TextDecoder().decode((await store.get("Slot"))!.bytes)).toBe(
+      "unconditional"
+    );
+  });
 });
 
 /**
