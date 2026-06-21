@@ -40,3 +40,31 @@ custom_domain = true
 
 [observability]
 enabled = true
+
+# ---------------------------------------------------------------------------
+# Abuse hardening (task 1355)
+# ---------------------------------------------------------------------------
+# Origin allowlist for the WebSocket upgrade. A comma- or space-separated list of
+# web origins permitted to open a signaling connection (e.g. the dash app's
+# origin). The worker rejects a disallowed browser Origin with HTTP 403 BEFORE
+# accepting a socket.
+#
+#   - LEFT EMPTY (or set to "*")  -> ANY origin is allowed (the open y-webrtc
+#     default; the hard rate/size/connection caps in src/relay.ts are then the
+#     sole abuse bound). This is the shipped default so deploying never silently
+#     breaks a stock client.
+#   - A NON-EMPTY list -> only those origins (plus Origin-less non-browser
+#     clients, since Origin is a spoofable, browser-only soft control) may
+#     connect.
+#
+# To restrict to your app origin(s), uncomment and edit, e.g.:
+#   ALLOWED_ORIGINS = "https://dash.jxh.io, https://www.dash.jxh.io"
+# A localhost dev origin can be added too:
+#   ALLOWED_ORIGINS = "https://dash.jxh.io, http://localhost:1420"
+#
+# The other abuse bounds (max connections global + per-IP, max topics per
+# connection, max subscribers per topic, max message size, per-connection publish
+# rate limit) are hard-coded constants in src/relay.ts (`LIMITS`) — edit them
+# there, not here. See README.md and docs/37-collab.md.
+[vars]
+ALLOWED_ORIGINS = ""

@@ -359,6 +359,58 @@ a self-hosted server (the y-webrtc repo ships a one-file Node signaling server).
 document bytes (they flow P2P over WebRTC) nor the password `k` (it lives only in
 the link fragment, which is never transmitted).**
 
+The shipped default endpoint is dash's own Cloudflare worker
+(`wss://signal.dash.jxh.io`, `workers/signaling/`).
+
+#### Signaling-server privacy scope (what the relay observes)
+
+The server is a pub/sub relay for the handshake, so its metadata visibility is
+inherent, not a leak. It observes exactly:
+
+- the **room id** — y-webrtc uses the room NAME as the pub/sub **topic**, sent in
+  **plaintext** over the WebSocket on every subscribe/publish. The room id is a
+  128-bit random token (unguessable), but the relay does see it. (The link
+  *fragment* carrying the room id + key is never sent over HTTP; the room name
+  travels as the WS topic instead — so "the server never sees the room id" would
+  be overstated. It never sees the password `k`.)
+- **peer IPs** — inherent to any WebRTC signaling/relay server.
+
+It does **not** see document bytes (P2P over WebRTC DTLS) nor the room key `k`
+(client-side AES-GCM, derived from the fragment password). With CF
+`[observability]` enabled in `wrangler.toml`, the Cloudflare platform additionally
+records sampled request metadata + uncaught exceptions; the worker's own code
+emits no `console.*` (no message contents / room ids / IPs logged by us).
+
+#### Default worker abuse hardening (task 1355)
+
+Because `signal.dash.jxh.io` is the **default, self-deployed** endpoint the
+deployer pays for, the worker is NOT a wide-open y-webrtc relay — it enforces
+hard caps so it can't be abused as a free pub/sub bus or a DoS / billing
+amplifier. These are guards around the protocol, not protocol changes; offenders
+are dropped/closed gracefully so a stock y-webrtc client is unaffected. The
+numeric limits are constants in `workers/signaling/src/relay.ts` (`LIMITS`):
+
+| Guard | Default | On exceed |
+| --- | --- | --- |
+| max connections (global) | 2000 | upgrade → HTTP 503 |
+| max connections per IP (`cf-connecting-ip`) | 50 | upgrade → HTTP 429 |
+| max topics per connection | 50 | extra topics ignored |
+| max subscribers per topic (room) | 100 | extra subscribers ignored |
+| max message size | 64 KiB | frame dropped, socket closed (1009) |
+| per-connection publish rate | 60 burst / 20 per s | excess publishes dropped (token bucket) |
+
+**Origin allowlist** — the WS Upgrade `Origin` is checked against the
+`ALLOWED_ORIGINS` wrangler var (comma/space-separated). Empty / unset / `"*"` =
+allow any origin (the shipped default, so deploying never breaks stock clients); a
+non-empty list rejects disallowed browser origins with HTTP 403. To restrict the
+relay to the dash app origin(s), set e.g.
+`ALLOWED_ORIGINS = "https://dash.jxh.io, http://localhost:1420"` in
+`wrangler.toml [vars]` and re-deploy (add each new origin to the list). Origin is
+**spoofable outside browsers**, so it is a soft control (an Origin-less
+non-browser request is allowed even with a non-empty list); the hard caps above
+and the client-side E2E encryption are the real abuse/confidentiality bound. Full
+detail: `workers/signaling/README.md`.
+
 ### 8.5 Acceptance
 
 `packages/authoring-ui/src/collab/__tests__/` (19 tests, all green; full

@@ -2,16 +2,23 @@
  * Shareable collaboration link — parse / generate (task 1344 P1).
  *
  * The link puts BOTH secrets in the URL **fragment** (`#…`) so they are never
- * sent to any server: browsers do not transmit the fragment in HTTP requests,
+ * sent to any server in an HTTP request: browsers do not transmit the fragment,
  * and the y-webrtc signaling server only ever brokers the WebRTC handshake — it
- * never sees the room password (`k`) nor (because we use the fragment) the room
- * id either.
+ * never sees the room password (`k`).
+ *
+ * NOTE: the signaling server DOES see the room NAME. The fragment isn't sent
+ * over HTTP, but y-webrtc uses the room name as the pub/sub TOPIC it
+ * subscribes/publishes to over the WebSocket, in plaintext — so the relay
+ * observes the (128-bit random) room id plus peer IPs. It still never sees the
+ * password `k` nor any document bytes (those flow P2P over WebRTC). See
+ * docs/37-collab.md for the full signaling-server privacy scope.
  *
  *   #room=<random-room-id>&k=<E2E-password>
  *
  *   - `room` is the y-webrtc room NAME. Peers in the same room find each other
- *     through the signaling server's broadcast, but the actual document bytes are
- *     exchanged peer-to-peer over WebRTC.
+ *     through the signaling server's broadcast (the room name IS the plaintext
+ *     pub/sub topic), but the actual document bytes are exchanged peer-to-peer
+ *     over WebRTC.
  *   - `k` is the y-webrtc room PASSWORD. y-webrtc derives an AES-GCM key from it
  *     (PBKDF2) and end-to-end-encrypts every WebRTC and BroadcastChannel message,
  *     so a peer cannot join — or read any doc bytes — without `k`. Keeping `k` in
