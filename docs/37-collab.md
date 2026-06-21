@@ -395,17 +395,24 @@ the binding attaches relative to first sync:
 
 ### 8.4 Signaling configuration (user-editable)
 
-`signaling.ts` exposes the signaling server list. The default is the **public
-Yjs y-webrtc signaling server** (`wss://y-webrtc-eu.fly.dev`) — a **third-party,
-best-effort** service. It is user-editable (`getSignalingServers()` /
-`setSignalingServers(raw)`, persisted in `localStorage`); a session may point at
-a self-hosted server (the y-webrtc repo ships a one-file Node signaling server).
+`signaling.ts` exposes the signaling server list. The **sole built-in default**
+is dash's own Cloudflare worker (`wss://signal.dash.jxh.io`, `workers/signaling/`).
+It is user-editable (`getSignalingServers()` / `setSignalingServers(raw)`,
+persisted in `localStorage`); a session may add its own server(s) or point at a
+self-hosted one (the y-webrtc repo ships a one-file Node signaling server).
 **The signaling server only brokers the WebRTC handshake (SDP/ICE). It never sees
 document bytes (they flow P2P over WebRTC) nor the password `k` (it lives only in
 the link fragment, which is never transmitted).**
 
-The shipped default endpoint is dash's own Cloudflare worker
-(`wss://signal.dash.jxh.io`, `workers/signaling/`).
+No third-party public fallback ships in the default list (task 1356). A peer
+connects to **all** listed servers simultaneously, and a public Yjs signaling
+server observes the room id (plaintext pub/sub topic) and peer IPs — so a public
+fallback in the default list would leak room metadata to a third party even while
+our own worker is up. Dropping it keeps room metadata on our own infrastructure.
+The trade-off is intentional: redundancy is traded for privacy, so a session
+cannot signal if `signal.dash.jxh.io` is down (the Share dialog surfaces a
+"Signaling server unreachable" banner); a user who wants redundancy can add more
+servers via the field.
 
 #### Signaling-server privacy scope (what the relay observes)
 
@@ -1242,10 +1249,13 @@ working P2P over their established WebRTC links). P5 surfaces this:
   `localStorage`): one `wss://…` per line. Multiple entries give redundancy (a
   peer connects to all of them); a user can point at a self-hosted server.
   Changes take effect on the next start/join. The default list (`signaling.ts`
-  `DEFAULT_SIGNALING_SERVERS`) is now **our own serverless worker first**
-  (`wss://signal.dash.jxh.io`, §13.9) with the public Yjs server
-  (`wss://y-webrtc-eu.fly.dev`) kept as a secondary fallback — so a session still
-  signals even if our worker is unreachable, and either one alone suffices.
+  `DEFAULT_SIGNALING_SERVERS`) is now **our own serverless worker ONLY**
+  (`wss://signal.dash.jxh.io`, §13.9) — the third-party public Yjs fallback
+  (`wss://y-webrtc-eu.fly.dev`) was dropped (task 1356) because a peer signals to
+  ALL listed servers simultaneously, so a public fallback would expose the room id
+  (plaintext pub/sub topic) + peer IPs to a third party even while our worker is
+  up. Redundancy is intentionally traded for privacy; a user who wants a fallback
+  can add one via this field.
 
 ### 13.6 Acceptance — tests (the gates)
 

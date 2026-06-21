@@ -131,14 +131,15 @@ function SignalingSettings(): React.ReactElement {
         }}
       >
         {open ? "▾" : "▸"} Signaling server
-        {usingDefault ? " (using public default)" : " (custom)"}
+        {usingDefault ? " (using default)" : " (custom)"}
       </button>
       {open && (
         <div style={{ marginTop: 6 }}>
           <div style={{ color: "#666", marginBottom: 4 }}>
             One URL per line (<code>wss://…</code>). The signaling server only
-            brokers the connection — it never sees your data or key. If you can't
-            connect, the public server may be down; run your own or list several.
+            brokers the connection — it never sees your data or key. The default
+            is our own server; if you can't connect it may be down, so you can run
+            your own or list several.
           </div>
           <textarea
             data-testid="collab-signaling-input"

@@ -14,29 +14,34 @@
  *       every y-webrtc message is end-to-end encrypted with it; `k` lives only in
  *       the share-link fragment, which browsers never transmit).
  *
- * The PRIMARY default below is OUR OWN serverless signaling server — a Cloudflare
+ * The SOLE default below is OUR OWN serverless signaling server — a Cloudflare
  * Worker + Durable Object that speaks y-webrtc's exact pub/sub signaling protocol
  * (see `workers/signaling/` and docs/37-collab.md §13.5). It is a drop-in for the
  * stock y-webrtc transport: the client is unchanged, only this URL points at our
  * worker instead of a third-party public server. As a handshake-only broker it
  * never sees document bytes or the room password (see the file header above).
  *
- * A public Yjs server is kept as a SECONDARY fallback so a session can still
- * signal if our worker is unreachable (a peer connects to ALL listed servers and
- * any one is sufficient to broker the handshake). The whole list is user-editable
- * (Share dialog → Signaling-server field) so a session can point at a self-hosted
- * server instead.
+ * No third-party fallback is shipped by default. A peer connects to ALL listed
+ * servers simultaneously, and a public Yjs signaling server observes the room id
+ * (sent plaintext as the pub/sub topic) and connecting peers' IP addresses — so a
+ * public fallback in the default list would leak room metadata to an external
+ * observer even while our own worker is up and working. Dropping it keeps room
+ * metadata on our own infrastructure only. The trade-off is intentional:
+ * redundancy is traded for privacy, so a session cannot signal if our worker is
+ * down (the Share dialog surfaces a "Signaling server unreachable" banner). The
+ * whole list is still user-editable (Share dialog → Signaling-server field) so a
+ * session can add its own server(s) or point at a self-hosted one.
  */
 
 /**
- * Default signaling servers. Primary = our own Cloudflare Worker
- * (`signal.dash.jxh.io`, deployed from `workers/signaling/`); secondary = a
- * public Yjs server for redundancy. Handshake-only; multiple entries give
- * redundancy and a peer connects to all of them.
+ * Default signaling servers. The SOLE default is our own Cloudflare Worker
+ * (`signal.dash.jxh.io`, deployed from `workers/signaling/`) — handshake-only, so
+ * it never sees document bytes or the room password. No third-party fallback is
+ * included by default (privacy: a public relay would observe room ids + peer IPs);
+ * users can add their own server(s) via the Share dialog.
  */
 export const DEFAULT_SIGNALING_SERVERS: readonly string[] = [
   "wss://signal.dash.jxh.io",
-  "wss://y-webrtc-eu.fly.dev",
 ];
 
 /** localStorage key for a user-overridden signaling server list. */
@@ -67,7 +72,7 @@ export function parseSignalingServers(raw: string | null | undefined): string[] 
 
 /**
  * The signaling servers to use for a new session: the user's stored override if
- * present and valid, otherwise the public default.
+ * present and valid, otherwise the built-in default (our own worker).
  */
 export function getSignalingServers(): string[] {
   return parseSignalingServers(readLocalStorage());
