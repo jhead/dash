@@ -1,11 +1,15 @@
 # Collaboration — optional P2P multiplayer (docs/37)
 
-Status: **Phase 1 complete** (task 1344) on top of **Phase 0** (task 1343).
-P0 shipped the foundation: a faithful, property-tested Yjs binding for the
-document model. P1 adds the **opt-in y-webrtc transport + shareable link + join
-flow** — still **default OFF**: no provider, network, signaling connection, or
-awareness exists until the user explicitly starts/joins a session. Phases 2–5
-build presence, asset transport, conflict UX, and the editor toggle on top.
+Status: **Phase 2 complete** (task 1345) on top of **P1** (task 1344) and **P0**
+(task 1343). P0 shipped the foundation: a faithful, property-tested Yjs binding
+for the document model. P1 added the **opt-in y-webrtc transport + shareable link
++ join flow**. P2 adds **awareness/presence** — live cursors, selection outlines,
+scene/frame/tool/edit-context presence, presence avatars, follow-a-peer, and a
+Library "editing this symbol" badge — riding the same encrypted y-webrtc mesh via
+`y-protocols/awareness`. Still **default OFF**: no provider, network, signaling
+connection, or awareness exists until the user explicitly starts/joins a session;
+solo has zero overhead. Phases 3–5 build asset transport, conflict UX, and the
+editor toggle on top.
 
 > This binding is THE BET of the whole feature. Everything downstream assumes the
 > projection `FlashDocument → Y.Doc → FlashDocument` is the identity over the full
@@ -378,3 +382,141 @@ authoring-ui suite 1087/1087, collab P0 still 9/9):
 - `session.ydoc` / `session.binding` — the shared doc + the live binding.
 - `session.link` / `shareUrl()` / `fragment()` — the invite.
 - `session.synced` / `session.signaling` / `session.stop()` — status + teardown.
+
+---
+
+## 9. Phase 2 — awareness / presence (task 1345)
+
+P2 adds **non-persistent presence** on top of P1's transport. It touches the
+document **not at all** — the awareness channel is a separate `y-protocols`
+substate that y-webrtc multiplexes over the same encrypted mesh. Nothing here
+runs solo: the awareness controller, overlays, and avatars only exist inside a
+live `CollabSession`, and every presence component returns `null` / no-ops with
+zero peers.
+
+### 9.1 The awareness state shape
+
+Each peer broadcasts one `AwarenessState` (`collab/awarenessState.ts`), set
+field-by-field via `awareness.setLocalStateField`:
+
+```ts
+interface AwarenessState {
+  user: { id; name; color };        // stable local identity (collab/localUser.ts)
+  cursor: { x; y } | null;          // STAGE coords (uiStore.cursorPos), null off-stage
+  scene: number;                    // uiStore.activeSceneIndex
+  frame: number;                    // uiStore.currentFrame
+  editContext: { mode: "document" | "symbol"; symbolId?; symbolName? };
+  selection: { shapeIds: string[]; instanceId: string | null };
+  tool: string;                     // uiStore.toolState.activeTool
+}
+```
+
+`user` is a **stable per-browser identity** (`localUser.ts`): a random id, a
+friendly random name, and a palette color derived deterministically from the id,
+persisted in `localStorage` so a collaborator keeps the same color/name across
+reloads. It is never written to the Y.Doc.
+
+### 9.2 uiStore → awareness (outbound, throttled cursor)
+
+`attachAwareness(awareness, uiStore, user, opts)` (`collab/awareness.ts`)
+subscribes the uiStore and, on every change, projects the snapshot
+(`uiStateToAwareness`) and pushes **only the fields that changed**
+(`changedAwarenessFields`). The **cursor** — the one high-frequency field (fires
+on every mousemove) — is throttled to at most one broadcast per
+`cursorThrottleMs` (default **50 ms / 20 Hz**), with a trailing-edge timer so the
+**last** position in a burst always lands; every other field
+(scene/frame/selection/tool/editContext) broadcasts immediately. The initial
+seed (cursor still `null`) does not start the throttle clock, so the user's first
+real move is instant.
+
+### 9.3 awareness → UI (inbound) + rendering
+
+`awareness.on('change')` drives `readPeers(awareness)` — all clients **except**
+`awareness.clientID`, defensively parsed by `asPeerPresence` (a malformed payload
+is dropped, never thrown on). The React layer subscribes through `usePeers()`
+(`collab/CollabContext.tsx`), which re-renders on every peer change **and on
+TTL-driven drops**.
+
+- **Live cursors + selection outlines** — `RemoteCursorsOverlay` renders inside
+  StageArea's existing `stageOverlay` slot, which is **stage-space** (the
+  container carries the CSS zoom/pan), so a peer's stage-coord cursor maps
+  straight to `left`/`top`; screen-constant sizes (caret, label, outline stroke)
+  are divided by `zoom`. Only peers **co-located** with the local user (same
+  scene + frame + edit-context) are drawn — a cursor from a peer in another
+  scene/symbol would be meaningless locally. Each peer's selection
+  (`shapeIds` + `instanceId`) is resolved against the active keyframe's display
+  objects and outlined in the peer's color (`getTransformedBounds`).
+- **Presence avatars** — `PresenceAvatars` renders a chip per peer (+ self) in
+  the EditBar's right slot, colored, with initials and a hover tooltip showing
+  where they are.
+- **Library "editing this symbol" badge** — `symbolEditorsFromPeers` groups
+  peers by `editContext.symbolId`; `LibraryPanel` draws a colored dot per remote
+  editor next to the symbol's name.
+
+The store-connected wrappers (`collab/CollabPresence.tsx`:
+`PresenceAvatarsConnected` / `RemoteCursorsConnected` / `LibraryPanelConnected`)
+read `usePeers()` + the stores and are dropped into the Shell so the Shell body
+itself needs no presence plumbing.
+
+### 9.4 Follow-a-peer
+
+Clicking a peer's avatar **follows** them: `PresenceAvatarsConnected.onFollow`
+jumps the local view to the peer's `scene`/`frame` and matches their
+edit-context (entering / exiting symbol-edit), so you land exactly where they are
+working.
+
+### 9.5 TTL — the protocol's built-in timeout (no custom drop logic)
+
+There is **no custom presence-expiry code**. `y-protocols/awareness` stamps every
+state with a `lastUpdated` and runs an internal interval that calls
+`removeAwarenessStates` for any client not refreshed within `outdatedTimeout`
+(**30 s**), firing a `change`/`update` with that client in `removed`. A peer that
+closes its tab or drops its WebRTC connection therefore disappears on its own. We
+only **re-stamp our own** state on a keepalive (default 15 s, well under the
+timeout) so a quiet local peer is never falsely reaped, and on a graceful
+`leave`/`stop` we broadcast `setLocalState(null)` so peers see us go immediately
+(the TTL is just the fallback for an ungraceful drop).
+
+### 9.6 Session wiring
+
+`startCollab` / `joinCollab` (`collab/collabSession.ts`) gained an optional
+`uiStore` (+ `user`): when present they call `attachAwareness(provider.awareness,
+uiStore, user)` and expose `session.awareness` + `session.awarenessController`.
+`CollabProvider` (mounted in `Shell` inside `StoreProvider`) owns the live
+`CollabSession | null` and the `start`/`join`/`leave` actions, passing the doc +
+UI stores in. Default state is `null` (solo). `stop()` detaches presence
+**first** (broadcast offline), then the binding, then destroys the provider/Y.Doc.
+
+### 9.7 Acceptance
+
+`packages/authoring-ui/src/collab/__tests__/` (P2):
+
+- **`awarenessState.test.ts`** — uiStore → awareness field mapping (cursor,
+  scene, frame, selection, tool, editContext incl. symbol vs document), the
+  defensive remote-state parse, the change-diff (cursor-throttle gate), and the
+  symbol-editors grouping.
+- **`awareness.test.ts`** — the controller over **two real `Awareness` instances
+  wired loopback** (y-webrtc absent in Node, same stand-in pattern as P1's
+  convergence test): outbound broadcast reaches a peer; cursor updates throttle
+  and flush the **last** position; `readPeers` collects a simulated remote and
+  excludes self; **TTL drop** — graceful `detach` (offline broadcast) AND the
+  protocol's `removeAwarenessStates` sweep both remove the peer.
+- **`presenceRender.test.ts`** (jsdom) — a simulated remote awareness state
+  renders a live cursor at its stage coords, a per-user selection outline, and a
+  presence avatar (with follow-on-click); a non-co-located peer and the solo
+  (no-peer) case render nothing.
+
+Full authoring-ui suite **1109/1109** green; collab P0 still **9/9**.
+
+### 9.8 Honest limits
+
+- Remote cursors/selection draw only for **co-located** peers (same
+  scene/frame/edit-context); cross-context presence is surfaced via the avatars +
+  follow, not on the stage.
+- Selection outlines are **AABBs** (`getTransformedBounds`), not the exact
+  per-object halo the local selection uses — sufficient to show *what* a peer has
+  selected without re-deriving each object's precise transform on every change.
+- **Remote code-edit cursors for `asClasses` Y.Text** were scoped but deferred:
+  the ClassesPanel uses the shared `ScriptEditor` whose textarea selection is not
+  yet surfaced to awareness. The awareness shape has room for it (a future
+  `codeCursor` field); not wired in P2.

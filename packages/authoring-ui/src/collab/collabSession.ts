@@ -21,6 +21,7 @@
  * Reconnection is handled entirely by y-webrtc/Yjs: on a dropped peer, only the
  * missing updates are re-exchanged via the Yjs state-vector protocol.
  */
+import type { Awareness } from "y-protocols/awareness";
 import { WebrtcProvider } from "y-webrtc";
 import * as Y from "yjs";
 import {
@@ -28,12 +29,18 @@ import {
   type AttachCollabResult,
 } from "../store/collabAdapter.js";
 import type { DocumentStoreApi } from "../store/documentStore.js";
+import type { UiStoreApi } from "../store/uiStore.js";
+import {
+  type AwarenessController,
+  attachAwareness,
+} from "./awareness.js";
 import {
   type CollabLink,
   buildShareUrl,
   collabLinkToFragment,
   generateCollabLink,
 } from "./collabLink.js";
+import { type CollabUser, getLocalUser } from "./localUser.js";
 import { getSignalingServers } from "./signaling.js";
 
 /** A live collaboration session. Owns the Y.Doc, binding, and provider. */
@@ -48,6 +55,19 @@ export interface CollabSession {
   readonly binding: AttachCollabResult["binding"];
   /** The signaling servers this session connects through (handshake only). */
   readonly signaling: readonly string[];
+  /** The local user identity broadcast on the awareness channel. */
+  readonly user: CollabUser;
+  /**
+   * The y-protocols awareness instance (P2 presence). Owned by the provider; the
+   * uiStore is wired to it via `awarenessController`. Inert until a peer joins.
+   */
+  readonly awareness: Awareness;
+  /**
+   * The presence controller (P2). Reads remote peers and bridges the uiStore to
+   * the awareness channel. Present whenever a `uiStore` was supplied to
+   * start/join; undefined otherwise (headless / doc-only sessions).
+   */
+  readonly awarenessController?: AwarenessController;
   /** True once the provider has reached its first sync with a peer/room. */
   readonly synced: boolean;
   /** Build the full shareable URL from a base (e.g. `location.origin + path`). */
@@ -66,6 +86,15 @@ export interface StartCollabOptions {
    * `joinCollab`; callers normally let `startCollab` generate the link.
    */
   link?: CollabLink;
+  /**
+   * The UI store to bridge to the awareness channel (P2 presence). When given,
+   * the session wires uiStore → awareness (cursor/selection/scene/frame/tool)
+   * and reads remote peers back. Omit for a headless / doc-only session (no
+   * presence). The Shell always passes it; tests may omit it.
+   */
+  uiStore?: UiStoreApi;
+  /** Override the local user identity (defaults to the persisted local user). */
+  user?: CollabUser;
 }
 
 function buildProvider(
@@ -88,6 +117,8 @@ function makeSession(
   provider: WebrtcProvider,
   binding: AttachCollabResult,
   signaling: string[],
+  user: CollabUser,
+  awarenessController: AwarenessController | undefined,
 ): CollabSession {
   let synced = false;
   provider.on("synced", () => {
@@ -99,12 +130,19 @@ function makeSession(
     provider,
     binding: binding.binding,
     signaling,
+    user,
+    awareness: provider.awareness,
+    awarenessController,
     get synced() {
       return synced;
     },
     shareUrl: (baseUrl: string) => buildShareUrl(baseUrl, link),
     fragment: () => collabLinkToFragment(link),
     stop: () => {
+      // Detach presence FIRST so we broadcast our own offline state before the
+      // provider tears the transport down (peers see us leave immediately; the
+      // awareness TTL is only the fallback for an ungraceful drop).
+      awarenessController?.detach();
       binding.detach();
       provider.destroy();
       ydoc.destroy();
@@ -124,6 +162,7 @@ export function startCollab(
 ): CollabSession {
   const link = options.link ?? generateCollabLink();
   const signaling = options.signaling ?? getSignalingServers();
+  const user = options.user ?? getLocalUser();
   const ydoc = new Y.Doc();
 
   // START: attach FIRST so the binding seeds the local doc into the empty Y.Doc
@@ -131,7 +170,12 @@ export function startCollab(
   const binding = attachCollab(store, ydoc);
   const provider = buildProvider(link, ydoc, signaling);
 
-  return makeSession(link, ydoc, provider, binding, signaling);
+  // P2: bridge the uiStore to the provider's awareness channel (presence).
+  const awarenessController = options.uiStore
+    ? attachAwareness(provider.awareness, options.uiStore, user)
+    : undefined;
+
+  return makeSession(link, ydoc, provider, binding, signaling, user, awarenessController);
 }
 
 /**
@@ -151,6 +195,7 @@ export async function joinCollab(
   options: StartCollabOptions & { syncTimeoutMs?: number } = {},
 ): Promise<CollabSession> {
   const signaling = options.signaling ?? getSignalingServers();
+  const user = options.user ?? getLocalUser();
   const syncTimeoutMs = options.syncTimeoutMs ?? 8000;
   const ydoc = new Y.Doc();
 
@@ -161,7 +206,13 @@ export async function joinCollab(
   await waitForSync(provider, syncTimeoutMs);
 
   const binding = attachCollab(store, ydoc);
-  return makeSession(link, ydoc, provider, binding, signaling);
+
+  // P2: bridge the uiStore to the provider's awareness channel (presence).
+  const awarenessController = options.uiStore
+    ? attachAwareness(provider.awareness, options.uiStore, user)
+    : undefined;
+
+  return makeSession(link, ydoc, provider, binding, signaling, user, awarenessController);
 }
 
 /** Resolve when the provider first syncs, or after `timeoutMs`. */

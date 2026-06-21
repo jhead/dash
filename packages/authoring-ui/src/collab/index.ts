@@ -31,3 +31,45 @@ export {
   startCollab,
   joinCollab,
 } from "./collabSession.js";
+
+// ---------------------------------------------------------------------------
+// Phase 2 — awareness / presence (task 1345): live cursors, selection,
+// scene/frame, tool, presence avatars, follow-a-peer, library editing badge.
+// ---------------------------------------------------------------------------
+export {
+  type CollabUser,
+  PRESENCE_COLORS,
+  colorForId,
+  createLocalUser,
+  getLocalUser,
+  setLocalUser,
+} from "./localUser.js";
+
+export {
+  type AwarenessState,
+  type PeerPresence,
+  type PeerSelection,
+  type PeerEditContext,
+  type CursorPoint,
+  uiStateToAwareness,
+  asPeerPresence,
+  changedAwarenessFields,
+  symbolEditorsFromPeers,
+} from "./awarenessState.js";
+
+export {
+  type AwarenessController,
+  type AttachAwarenessOptions,
+  attachAwareness,
+  readPeers,
+} from "./awareness.js";
+
+export {
+  CollabProvider,
+  useCollab,
+  usePeers,
+  type CollabContextValue,
+} from "./CollabContext.js";
+
+export { RemoteCursorsOverlay } from "./RemoteCursorsOverlay.js";
+export { PresenceAvatars } from "./PresenceAvatars.js";

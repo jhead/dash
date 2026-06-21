@@ -86,7 +86,12 @@ import {
   type EditorLayout,
 } from "./editorLayout";
 import type { PlacedInstance } from "./PropertiesPanel";
-import { LibraryPanel } from "./LibraryPanel";
+import { CollabProvider } from "./collab/CollabContext";
+import {
+  PresenceAvatarsConnected,
+  RemoteCursorsConnected,
+  LibraryPanelConnected,
+} from "./collab/CollabPresence";
 import { AgentChatPanel } from "./agentchat/AgentChatPanel";
 import { StatusBar } from "./StatusBar";
 import type { ToolId } from "./tools/types";
@@ -3510,6 +3515,7 @@ export function Shell(): React.ReactElement {
 
   return (
     <StoreProvider initialDoc={_initialDoc} stores={stores}>
+    <CollabProvider>
     <div
       style={{
         ...styles.shell,
@@ -3661,6 +3667,7 @@ export function Shell(): React.ReactElement {
         textAlign={textFormat.align}
         textColor={textFormat.color}
         onTextFormatChange={handleTextFormatChange}
+        rightSlot={<PresenceAvatarsConnected />}
       />
       <div style={styles.centerRegion}>
         {/* Tools-panel host wrapper. Width MUST track the panel's own width
@@ -3907,6 +3914,8 @@ export function Shell(): React.ReactElement {
                 simpleButtonsEnabled={simpleButtonsEnabled}
                 stageOverlay={
                   <>
+                    {/* Collab P2: remote cursors + selection outlines (inert solo). */}
+                    <RemoteCursorsConnected />
                     {(toolState.activeTool === "free-transform" || toolState.activeTool === "selection") &&
                     selectedBounds &&
                     selectedShapeId && (
@@ -4233,7 +4242,7 @@ export function Shell(): React.ReactElement {
           {rightTab === "agent" ? (
             <AgentChatPanel />
           ) : rightTab === "library" ? (
-            <LibraryPanel
+            <LibraryPanelConnected
               library={library}
               doc={doc}
               documentName={projectActions.activeName ?? "Untitled-1"}
@@ -4480,6 +4489,7 @@ export function Shell(): React.ReactElement {
         );
       })()}
     </div>
+    </CollabProvider>
     </StoreProvider>
   );
 }

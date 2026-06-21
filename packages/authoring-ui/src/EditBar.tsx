@@ -26,6 +26,11 @@ export interface EditBarProps {
   textAlign?: TextAlign;
   textColor?: string;
   onTextFormatChange?: (format: Partial<TextFormat>) => void;
+  /**
+   * Right-aligned slot (collab presence avatars, task 1345 P2). Rendered flush
+   * to the right edge of the edit bar; nothing solo.
+   */
+  rightSlot?: React.ReactNode;
 }
 
 const FONT_FAMILIES = ["Arial", "Times New Roman", "Courier New", "Verdana", "Georgia"];
@@ -93,6 +98,7 @@ export function EditBar({
   textAlign = "left",
   textColor = "#000000",
   onTextFormatChange,
+  rightSlot,
 }: EditBarProps): React.ReactElement {
   const colorInputRef = useRef<HTMLInputElement>(null);
 
@@ -218,6 +224,11 @@ export function EditBar({
             style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
           />
         </>
+      )}
+      {rightSlot && (
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+          {rightSlot}
+        </div>
       )}
     </div>
   );

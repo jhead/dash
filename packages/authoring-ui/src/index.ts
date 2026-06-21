@@ -71,3 +71,29 @@ export {
   startCollab,
   joinCollab,
 } from "./collab/index.js";
+
+// Collab P2 awareness/presence (task 1345): live cursors, selection outlines,
+// presence avatars, follow-a-peer, "editing this symbol" library badge. Inert
+// solo — these only render/subscribe inside a live session.
+export {
+  type CollabUser,
+  type AwarenessState,
+  type PeerPresence,
+  type PeerSelection,
+  type PeerEditContext,
+  type AwarenessController,
+  type CollabContextValue,
+  PRESENCE_COLORS,
+  getLocalUser,
+  setLocalUser,
+  uiStateToAwareness,
+  asPeerPresence,
+  symbolEditorsFromPeers,
+  attachAwareness,
+  readPeers,
+  CollabProvider,
+  useCollab,
+  usePeers,
+  RemoteCursorsOverlay,
+  PresenceAvatars,
+} from "./collab/index.js";

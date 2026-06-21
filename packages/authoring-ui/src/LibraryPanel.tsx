@@ -26,6 +26,12 @@ export interface LibraryPanelProps {
   onBitmapDoubleClick?: (item: BitmapItem) => void;
   /** Called when a folder's collapsed state changes — used to persist to the model. */
   onUpdateFolder?: (folderId: string, collapsed: boolean) => void;
+  /**
+   * Collab presence (task 1345 P2): symbol library-item id → the remote peers
+   * currently editing that symbol's timeline. Renders a small colored dot per
+   * editor next to the item name. Absent / empty in the solo app.
+   */
+  symbolEditors?: ReadonlyMap<string, ReadonlyArray<{ color: string; name: string }>>;
 }
 
 // ----------------------------------------------------------------------------
@@ -474,6 +480,7 @@ export function LibraryPanel({
   onSetSymbolProperties,
   onBitmapDoubleClick,
   onUpdateFolder,
+  symbolEditors,
 }: LibraryPanelProps): React.ReactElement {
   const [collapsed, setCollapsed] = useState(false);
   const [showNewSymbolDialog, setShowNewSymbolDialog] = useState(false);
@@ -1005,6 +1012,34 @@ export function LibraryPanel({
         ) : (
           <span style={rowNameStyle} title={item.name}>{item.name}</span>
         )}
+
+        {/* Collab "editing this symbol" indicator (task 1345 P2): a colored dot
+            per remote peer currently inside this symbol's timeline. */}
+        {!isRenaming && symbolEditors && (() => {
+          const editors = symbolEditors.get(item.id);
+          if (!editors || editors.length === 0) return null;
+          return (
+            <span
+              data-testid={`library-editing-${item.name}`}
+              title={`Editing: ${editors.map((e) => e.name).join(", ")}`}
+              style={{ display: "inline-flex", alignItems: "center", gap: 2, marginLeft: 4, flexShrink: 0 }}
+            >
+              {editors.map((e, i) => (
+                <span
+                  key={i}
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: e.color,
+                    border: "1px solid #fff",
+                    boxShadow: "0 0 0 0.5px rgba(0,0,0,0.3)",
+                  }}
+                />
+              ))}
+            </span>
+          );
+        })()}
 
         {/* Type label */}
         {!isRenaming && (
