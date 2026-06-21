@@ -300,12 +300,19 @@ safe value — never an uncaught throw, never corruption.** Concrete application
 - **`doc_load` / `file_load_fla` (doc-replacement boundaries).** Both replace the
   whole document, so both route the incoming doc through `normalizeAgentDoc`
   before `pushDoc`. It throws a clear error on non-object input and backfills the
-  load-bearing invariants — `id`, `properties` (overlay `createDocumentProperties`
-  defaults), `scenes` (drop scenes lacking a `timeline.layers` array; backfill one
-  default scene if none survive), and `library.items` (the original 1363 fix). A
-  valid doc passes through with identical values (idempotent). `file_load_fla`
-  additionally relies on `loadFla` throwing a clear `FLA open error: …` for a
-  malformed archive.
+  load-bearing invariants — `id`, `properties`, `scenes` (drop scenes lacking a
+  `timeline.layers` array; backfill one default scene if none survive), and
+  `library.items` (the original 1363 fix). For `properties` it also **coerces a
+  PRESENT-but-wrong-typed scalar** to a safe value before overlaying
+  `createDocumentProperties` defaults (task 1368): `width`/`height`/`frameRate`
+  are clamped to finite numbers (else default), `backgroundColor`/`rulerUnits`
+  forced to a string/valid enum, the `snapTo*` flags to booleans, `guides`/`grid`
+  to their container shapes — so a malformed scalar (e.g. `width:"wide"`,
+  `frameRate:{}`) cannot reach `history.present` and corrupt the SWF compiler's
+  `width*20` stage-RECT math (NaN). Bounds mirror collab's `validateInboundDoc`
+  (task 1350). A valid doc passes through with identical values (idempotent).
+  `file_load_fla` additionally relies on `loadFla` throwing a clear
+  `FLA open error: …` for a malformed archive.
 - **`doc_load.document: z.unknown()` / `file_load_fla.flaBase64: z.string()` are
   intentionally LEFT loose at the schema layer.** A full structural Zod schema for
   the entire `FlashDocument` would be hundreds of lines, brittle against every

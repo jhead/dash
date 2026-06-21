@@ -1924,6 +1924,94 @@ describe("doc_load structural validation (task 1367)", () => {
     expect(state.doc.properties.grid).toBeDefined();
   });
 
+  it("COERCES present-but-wrong-typed properties scalars to safe defaults (task 1368)", async () => {
+    // properties is PRESENT but its scalars are garbage types. createDocumentProperties
+    // spreads overrides last, so without coercion these would WIN over the defaults and
+    // reach history.present (the SWF compiler's width*20 → NaN corrupts the stage RECT).
+    const base = createDocument();
+    const garbageProps = {
+      ...base,
+      properties: {
+        ...base.properties,
+        width: "wide",
+        height: {},
+        frameRate: [],
+        backgroundColor: 123,
+        rulerUnits: 42,
+        snapToObjects: "yes",
+        guides: "nope",
+        grid: 7,
+      },
+    } as unknown as FlashDocument;
+    await dispatchAgentCommand("doc_load", { document: garbageProps });
+    const p = state.doc.properties;
+    // Every coerced scalar is now the correct type and a finite/sane value.
+    expect(typeof p.width).toBe("number");
+    expect(Number.isFinite(p.width)).toBe(true);
+    expect(p.width).toBe(550); // dropped back to default
+    expect(typeof p.height).toBe("number");
+    expect(Number.isFinite(p.height)).toBe(true);
+    expect(p.height).toBe(400);
+    expect(typeof p.frameRate).toBe("number");
+    expect(Number.isFinite(p.frameRate)).toBe(true);
+    expect(p.frameRate).toBe(12);
+    expect(typeof p.backgroundColor).toBe("string");
+    expect(p.backgroundColor).toBe("#ffffff");
+    expect(typeof p.rulerUnits).toBe("string");
+    expect(p.rulerUnits).toBe("px");
+    expect(typeof p.snapToObjects).toBe("boolean");
+    expect(Array.isArray(p.guides)).toBe(true);
+    expect(typeof p.grid).toBe("object");
+    expect(p.grid).not.toBeNull();
+    // SWF-compiler invariant: the stage RECT math never yields NaN.
+    expect(Number.isFinite(p.width * 20)).toBe(true);
+    expect(Number.isFinite(p.height * 20)).toBe(true);
+  });
+
+  it("CLAMPS out-of-range numeric properties to sane bounds (task 1368)", async () => {
+    const base = createDocument();
+    const extreme = {
+      ...base,
+      properties: {
+        ...base.properties,
+        width: -5, // below min 1
+        height: 1e9, // above max 100000
+        frameRate: 0, // below min 0.01
+      },
+    } as unknown as FlashDocument;
+    await dispatchAgentCommand("doc_load", { document: extreme });
+    const p = state.doc.properties;
+    expect(p.width).toBe(1);
+    expect(p.height).toBe(100_000);
+    expect(p.frameRate).toBe(0.01);
+  });
+
+  it("PRESERVES valid wrong-adjacent property values (coercion is identity for good docs, task 1368)", async () => {
+    // A valid (but non-default) properties object must pass through untouched —
+    // proves the coercion only fires on a TYPE mismatch, not on legal values.
+    const base = createDocument();
+    const goodProps = {
+      ...base,
+      properties: {
+        ...base.properties,
+        width: 320,
+        height: 240,
+        frameRate: 30,
+        backgroundColor: "#112233",
+        rulerUnits: "cm",
+        snapToObjects: true,
+      },
+    } as unknown as FlashDocument;
+    await dispatchAgentCommand("doc_load", { document: goodProps });
+    const p = state.doc.properties;
+    expect(p.width).toBe(320);
+    expect(p.height).toBe(240);
+    expect(p.frameRate).toBe(30);
+    expect(p.backgroundColor).toBe("#112233");
+    expect(p.rulerUnits).toBe("cm");
+    expect(p.snapToObjects).toBe(true);
+  });
+
   it("SYNTHESISES an id when the doc has none", async () => {
     const { id: _omit, ...noId } = createDocument();
     void _omit;

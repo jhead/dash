@@ -288,9 +288,14 @@ function isValidScene(scene: unknown): boolean {
  * Rules (fail-clear, else coerce to safe):
  *  - Non-object / null / array input  -> throw a clear Error (not a document).
  *  - `id`          : keep if a non-empty string, else synthesise one.
- *  - `properties`  : overlay `createDocumentProperties()` defaults so width/
- *                    height/frameRate/backgroundColor/grid/... are always present
- *                    and the renderer never reads `undefined`.
+ *  - `properties`  : COERCE a PRESENT-but-wrong-typed scalar (e.g. `width:"wide"`,
+ *                    `frameRate:{}`, `backgroundColor:123`) to a safe finite/typed
+ *                    value, THEN overlay `createDocumentProperties()` defaults so
+ *                    width/height/frameRate/backgroundColor/grid/... are always
+ *                    present, finite, and the RIGHT TYPE — the renderer and SWF
+ *                    compiler (which compute the stage RECT as `width*20`) never
+ *                    read `undefined` nor a string/object scalar. Mirrors collab's
+ *                    `validateInboundDoc` clamps (task 1350) for consistency.
  *  - `scenes`      : force to an array; drop scenes lacking a `timeline.layers`
  *                    array; if none remain, backfill one default scene so the
  *                    timeline panel + compiler always have ≥1 renderable scene.
@@ -298,6 +303,43 @@ function isValidScene(scene: unknown): boolean {
  *  All other fields (asClasses, publishProfiles, flaSwfBlobs, …) pass through
  *  untouched — they are optional and their own readers tolerate absence.
  */
+/** A finite number clamped to [min,max], else `fallback`. Mirrors collab's `asClampedNumber`. */
+function clampedNumberOr(v: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof v === "number" && Number.isFinite(v) ? v : fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+const VALID_RULER_UNITS = new Set(["px", "inches", "points", "cm", "mm"]);
+
+/**
+ * Coerce a PRESENT properties object's known scalar fields to their correct types
+ * before `createDocumentProperties` overlays defaults. `createDocumentProperties`
+ * spreads `overrides` LAST, so a wrong-typed value (string `width`, object
+ * `frameRate`, numeric `backgroundColor`, …) would otherwise WIN over the default
+ * and flow into `history.present`, where the SWF compiler computes `width*20` →
+ * `NaN` (corrupt stage RECT). This drops any wrong-typed known scalar from the
+ * overlay so the default survives; a correctly-typed value passes through
+ * untouched (idempotent for a valid doc). Bounds mirror collab's
+ * `validateProperties` (task 1350) for cross-boundary consistency.
+ */
+function coercePropsScalars(raw: Record<string, unknown>): Record<string, unknown> {
+  const d = createDocumentProperties();
+  const out: Record<string, unknown> = { ...raw };
+  out.width = clampedNumberOr(raw.width, 1, 100_000, d.width);
+  out.height = clampedNumberOr(raw.height, 1, 100_000, d.height);
+  out.frameRate = clampedNumberOr(raw.frameRate, 0.01, 1000, d.frameRate);
+  if (typeof raw.backgroundColor !== "string") out.backgroundColor = d.backgroundColor;
+  if (typeof raw.rulerUnits !== "string" || !VALID_RULER_UNITS.has(raw.rulerUnits)) {
+    out.rulerUnits = d.rulerUnits;
+  }
+  if (typeof raw.snapToObjects !== "boolean") out.snapToObjects = d.snapToObjects;
+  if (typeof raw.snapToPixels !== "boolean") out.snapToPixels = d.snapToPixels;
+  if (typeof raw.snapToGuides !== "boolean") out.snapToGuides = d.snapToGuides;
+  if (!Array.isArray(raw.guides)) out.guides = d.guides;
+  if (typeof raw.grid !== "object" || raw.grid === null) out.grid = d.grid;
+  return out;
+}
+
 export function normalizeAgentDoc(document: unknown): FlashDocument {
   if (typeof document !== "object" || document === null || Array.isArray(document)) {
     throw new Error(
@@ -313,11 +355,14 @@ export function normalizeAgentDoc(document: unknown): FlashDocument {
     doc = { ...doc, id: createDocument().id };
   }
 
-  // properties: overlay defaults so every load-bearing field is finite/present.
-  // A valid doc already carries all of them, so this is idempotent for good docs.
+  // properties: COERCE present-but-wrong-typed scalars, THEN overlay defaults so
+  // every load-bearing field is finite/present AND the right type. A valid doc
+  // already carries all of them with correct types, so this is idempotent for
+  // good docs; a malformed scalar (string width, object frameRate, …) is dropped
+  // back to its default rather than reaching the SWF compiler's `width*20` math.
   const propsIn =
     typeof doc.properties === "object" && doc.properties !== null
-      ? (doc.properties as Record<string, unknown>)
+      ? coercePropsScalars(doc.properties as Record<string, unknown>)
       : {};
   doc = { ...doc, properties: createDocumentProperties(propsIn) };
 
