@@ -950,6 +950,56 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   (`__flashTest.setFillColor`/`setStrokeNone`) and screenshots the LIVE canvas mid-drag (the
   doc is unchanged mid-drag, so `getDocument()` can't see the preview — must screenshot).
 
+### Collaboration — Yjs derived-binding (docs/37, task 1343 P0)
+
+- **The `@flash/collab` binding is a DERIVED projection — the immutable
+  `FlashDocument` stays source of truth; Yjs only merges.** New package
+  `packages/collab` (`@flash/collab`) keeps Yjs OUT of `@flash/core` (which must
+  import cleanly in Node/browser/Tauri); collab depends on core for TYPES only.
+  The authoring-ui adapter (`store/collabAdapter.ts`) is the only editor touch
+  point and runs ONLY when `attachCollab(store, ydoc)` is explicitly called —
+  default OFF, solo unchanged. There is NO networking at P0 (tests wire two
+  in-process `Y.Doc`s).
+- **The single hook point is the zustand store's `apply()`** (`set({ history:
+  historyReducer(...) })` in `store/documentStore.ts`): `pushDoc`/`replaceDoc`/
+  `commitDrag`/`undo`/`redo` all route through it and a full bypass audit found
+  NO other writer of `history.present`. So one `store.subscribe` captures every
+  edit. Adapter maps `getDoc→history.present`, `applyRemote→replaceDoc` (NOT
+  pushDoc — remote edits must not create local undo entries), `subscribe→subscribe`.
+- **Outbound is a structural-sharing diff, not a re-materialize.** The model's
+  pure mutations preserve sibling references (no global deep rebuilds), so
+  `diffDoc(prev,next)` descends ONLY where object refs differ and writes the
+  minimal delta in ONE `ydoc.transact(localOrigin)`. `prev===next` is a valid
+  skip. A single scalar edit emits <½ the bytes of a full materialize (gated).
+- **Mapping granularity (the spec's core call):** displayObject SCALARS are
+  per-field `Y.Map` entries (two peers editing x vs y merge); `shape` geometry +
+  `filters`/`colorEffect`/`warp` are stored ATOMICALLY (whole-value LWW — segments
+  have no stable id, finer merge needs a forbidden custom merge). `displayObjects`
+  + `library.items` are `Y.Map<id, child>` + a sibling `__order: Y.Array<id>`
+  (per-object merge with deterministic z-order). `asClasses` is
+  `Y.Map<path, Y.Text>` (char-level merge via min prefix/suffix splice). scenes/
+  layers/frames are positional `Y.Array`s. Inbound origin-filters on `localOrigin`.
+- **Round-trip fidelity hinges on NEVER storing `undefined` in a Y container** —
+  an absent optional field (`scaleX?`, `alpha?`, …) must rebuild as ABSENT, so the
+  binding drops `undefined` keys, deletes vanished keys, and compares with a JSON
+  equality treating `{a:1}`≡`{a:1,b:undefined}`. Without this, deepEqual fails on
+  every object with optional fields.
+- **Integrate a fresh Y type into its parent BEFORE materializing into it.**
+  Creating `new Y.Map()`, filling it, THEN `parent.set(...)` triggers Yjs's
+  "Invalid access: Add Yjs type to a document before reading data" on any read of
+  its detached sub-types. Fix: `parent.set(key, child)` first, then materialize
+  into the now-integrated `child` (same for `Y.Array.push` then write-by-index).
+- **Acceptance = a property test as the gate** (`packages/collab/.../property.test.ts`):
+  120 seeds × 60 steps = 7,200 random mutations through the REAL `@flash/core`
+  functions, synced via the binding to a SECOND Y.Doc, rebuilt, deepEqual to
+  source AFTER EVERY step (+ 200-step local round-trip + min-delta proof).
+  `binding.test.ts` proves per-field merge, atomic-geometry LWW, char-level
+  asClasses merge, origin filtering / no-echo, and late-join adoption. 9/9 pass.
+  Known limits: positional-array concurrent same-index insert can interleave;
+  atomic geometry is one-artist-per-shape; `flaSwfBlobs` (Uint8Array, import-only,
+  never produced by a mutation) is mapped atomically as base64 outside the test
+  surface; bitmap/sound/video bytes intentionally NOT in Y (out-of-band in P4).
+
 ### AS2 external classes / Class VFS (task 1300 P2)
 
 - **The ClassVfs INTERFACE + path helpers + hydrate/sync bridge are PURE and live in

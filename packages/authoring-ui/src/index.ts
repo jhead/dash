@@ -44,3 +44,10 @@ export * from "./agentchat/index.js";
 // (OPFS / IndexedDB fallback / Tauri native FS disk mirror) + platform factory,
 // re-exporting the pure ClassVfs interface + hydrate/sync from @flash/core.
 export * from "./vfs/index.js";
+
+// Optional P2P multiplayer (task 1343 P0): opt-in @flash/collab adapter that
+// projects the document store onto a Y.Doc. Default OFF — nothing here runs
+// unless `attachCollab` is explicitly called. NO networking at this phase.
+export { attachCollab, storeAsDocSource } from "./store/collabAdapter.js";
+export type { AttachCollabResult } from "./store/collabAdapter.js";
+export { COLLAB_ENABLED_DEFAULT } from "./store/collabFlag.js";
