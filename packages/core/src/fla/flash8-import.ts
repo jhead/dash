@@ -1386,52 +1386,71 @@ function convertLayer(
   });
 }
 
+/** CArchive backref-tag bit set on a backref-form `parentLayerRef`. */
+const PARENT_REF_BACKREF_BIT = 0x8000;
+
 /**
  * Resolve mask→masked hierarchy in the binary layer list (bottom-to-top order).
  *
- * In the Flash 8 binary format, layers that are masked children of a mask layer
- * have `layerType=0` (normal) but carry a non-zero `parentLayerRef` in their
- * CPicLayer trailer — a CArchive object-reference pointing to the mask parent.
+ * In the Flash 8 binary format a masked child carries `layerType=0` (normal)
+ * plus a `parentReference` in its CPicLayer trailer (docs/21 §10.2) that names
+ * its mask layer by the §5.2 running object index.  Two on-wire forms occur:
  *
- * This function scans the binary (bottom-to-top) layer array: after finding a
- * mask layer (type=4), consecutive layers with the same non-zero parentLayerRef
- * are promoted to layerType=5 (masked).
+ *   1. **Raw running-index form** — `parentLayerRef` equals the mask layer's
+ *      `ownObjectIndex` directly.  This is how Flash stores the masked children
+ *      that sit ABOVE the mask in binary order (Magnet.fla AA: Magnets / Walls /
+ *      Ball all carry the mask's index; Scene 5: the masked "Layer 5").
  *
- * The mask group ends when a layer has parentLayerRef=0 (no parent / different
- * group) or a different parentLayerRef value (belongs to a nested/different mask).
+ *   2. **Backref-tag form** — `parentLayerRef` has the 0x8000 CArchive backref
+ *      bit set (e.g. 0x8003).  Flash emits this for the one masked child stored
+ *      IMMEDIATELY BELOW its mask in binary order; its literal index is a
+ *      backref to an earlier shared object, NOT the mask, so it is resolved
+ *      positionally to the nearest mask layer at a higher binary index.
+ *      (Magnet.fla Scene 5: 'Ball' at bin 1, the mask at bin 2.)
+ *
+ * The previous single forward scan promoted only a consecutive run of children
+ * AFTER the mask and required matching non-zero refs, so it silently dropped a
+ * backref-form child sitting before the mask — Scene 5's 'Ball' lost its mask
+ * membership and rendered un-masked (task 1341).  This pass is now
+ * order-independent: it indexes every mask by `ownObjectIndex`, then promotes
+ * any layer whose `parentReference` resolves (by either form) to a mask.
  */
 function resolveMaskedLayers(binaryLayers: readonly Fla8Layer[]): Fla8Layer[] {
   const result: Fla8Layer[] = [...binaryLayers];
-  // Whether we are currently tracking a mask group (just passed a type=4 layer)
-  let inMaskGroup = false;
-  // The parentLayerRef value shared by all children of the current mask
-  let maskRef = 0;
+
+  // Map each mask layer's running object index → its binary position.
+  const maskIndexByObjId = new Map<number, number>();
+  for (let i = 0; i < result.length; i++) {
+    const layer = result[i]!;
+    if (layer.layerType === 4) maskIndexByObjId.set(layer.ownObjectIndex, i);
+  }
+  if (maskIndexByObjId.size === 0) return result;
+
+  /** Nearest mask layer at a strictly higher binary index than `from`, or -1. */
+  const nearestMaskAbove = (from: number): number => {
+    for (let j = from + 1; j < result.length; j++) {
+      if (result[j]!.layerType === 4) return j;
+    }
+    return -1;
+  };
 
   for (let i = 0; i < result.length; i++) {
     const layer = result[i]!;
-    if (layer.layerType === 4) {
-      // Just encountered a mask layer — activate tracking for its children.
-      inMaskGroup = true;
-      maskRef = 0; // will be set from the first child's parentLayerRef
-    } else if (inMaskGroup && layer.parentLayerRef !== 0) {
-      // Inside a mask group: this layer has a parent reference.
-      if (maskRef === 0) {
-        // First child: record the shared parentLayerRef for this mask group.
-        maskRef = layer.parentLayerRef;
-      }
-      if (layer.parentLayerRef === maskRef && layer.layerType === 0) {
-        // Promote to masked type.
-        result[i] = { ...layer, layerType: 5 };
-      } else if (layer.parentLayerRef !== maskRef) {
-        // Different parent ref → exit this mask group.
-        inMaskGroup = false;
-        maskRef = 0;
-      }
+    if (layer.layerType !== 0 || layer.parentLayerRef === 0) continue;
+
+    let belongsToMask = false;
+    if ((layer.parentLayerRef & PARENT_REF_BACKREF_BIT) !== 0) {
+      // Backref-tag form: positionally attach to the nearest mask above. Flash
+      // only uses this form for the masked child directly below the mask, so the
+      // child must be adjacent (no other layer between it and that mask).
+      const maskIdx = nearestMaskAbove(i);
+      belongsToMask = maskIdx === i + 1;
     } else {
-      // parentLayerRef=0 or not in a mask group → exit mask group tracking.
-      inMaskGroup = false;
-      maskRef = 0;
+      // Raw running-index form: must equal a mask layer's own object index.
+      belongsToMask = maskIndexByObjId.has(layer.parentLayerRef);
     }
+
+    if (belongsToMask) result[i] = { ...layer, layerType: 5 };
   }
   return result;
 }
@@ -1471,27 +1490,32 @@ function convertTimeline(
   }
 
   // After binary-order reversal, mask groups are inverted: masked children end up
-  // at LOWER li indices than their owning mask layer.  Fix: collect any run of
-  // 'masked' layers immediately preceding a 'mask' layer and re-insert them right
-  // after the mask so the group becomes [mask, …masked].
+  // at LOWER li indices than their owning mask layer.  The model invariant is
+  // [mask, …masked] (mask above its masked children, contiguous).  Because a
+  // masked child may have been stored on EITHER side of the mask in the binary
+  // (Scene 5's 'Ball' was below the mask, so after reversal it lands AFTER the
+  // mask, while the mask's other masked children land BEFORE it — task 1341),
+  // gather the masked layers from BOTH the already-emitted tail and the run that
+  // follows the mask, and re-emit them all directly after the mask.
   const reordered: Layer[] = [];
   let i = 0;
   while (i < layers.length) {
     const layer = layers[i]!;
     if (layer.type === "mask") {
-      const hasConsecutiveMaskedAfter =
-        i + 1 < layers.length && layers[i + 1]!.type === "masked";
-      if (hasConsecutiveMaskedAfter) {
-        reordered.push(layer);
-        i++;
-      } else {
-        const maskedBefore: Layer[] = [];
-        while (reordered.length > 0 && reordered[reordered.length - 1]!.type === "masked") {
-          maskedBefore.unshift(reordered.pop()!);
-        }
-        reordered.push(layer, ...maskedBefore);
-        i++;
+      // Masked children that ended up before the mask (pull them off the tail).
+      const maskedBefore: Layer[] = [];
+      while (reordered.length > 0 && reordered[reordered.length - 1]!.type === "masked") {
+        maskedBefore.unshift(reordered.pop()!);
       }
+      // Masked children that ended up immediately after the mask.
+      const maskedAfter: Layer[] = [];
+      let j = i + 1;
+      while (j < layers.length && layers[j]!.type === "masked") {
+        maskedAfter.push(layers[j]!);
+        j++;
+      }
+      reordered.push(layer, ...maskedBefore, ...maskedAfter);
+      i = j;
     } else {
       reordered.push(layer);
       i++;

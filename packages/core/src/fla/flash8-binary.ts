@@ -539,12 +539,23 @@ export interface Fla8Layer {
   readonly outlineColor: Fla8Color | null;
   readonly frames: Fla8Frame[];
   /**
-   * Non-zero CArchive object-reference index of the parent layer in the binary
-   * stream (read from the first 2 bytes of the CPicLayer trailer).
-   * A non-zero value indicates this layer is a child of a mask/folder layer.
-   * Zero means no parent (top-level layer).
+   * Raw 2-byte trailer field that follows `layerType` (docs/21 §10.2
+   * `parentReference`).  It is either:
+   *   - 0           → no parent (top-level layer), or
+   *   - a raw §5.2 running object index that equals the parent layer's
+   *     {@link ownObjectIndex} (the common masked-child form), or
+   *   - a CArchive backref tag (high bit 0x8000 set) → the parent object was
+   *     already serialized; Flash uses this form for the masked child stored
+   *     immediately below its mask in the binary (bottom-to-top) order.
+   * Use {@link Fla8Layer.ownObjectIndex} + the high-bit test to resolve it to a
+   * mask; see `resolveMaskedLayers`.
    */
   readonly parentLayerRef: number;
+  /**
+   * This layer's own §5.2 running object index, so another layer's raw
+   * `parentLayerRef` can be matched to it.  See docs/21 §10.2.
+   */
+  readonly ownObjectIndex: number;
 }
 
 export interface Fla8Timeline {
@@ -854,6 +865,17 @@ class ArchiveReader {
   /** True if `idx` (1-based reference index) refers to a declared class. */
   isClassIndex(idx: number): boolean {
     return this.nameByIndex.has(idx);
+  }
+
+  /**
+   * The §5.2 running object index that the NEXT new object/class header will be
+   * assigned.  A `CPicLayer`'s own running index — used to resolve another
+   * layer's `parentReference` (which is stored as a running object index, not a
+   * layer-array position; see docs/21 §10.2) — is this value captured at the
+   * moment the layer's class tag is consumed, minus one.
+   */
+  get nextObjectIndex(): number {
+    return 1 + this.definedCount + this.objectCount;
   }
 
   readClassTag(): ClassTag {
@@ -1259,6 +1281,10 @@ function readCPicPage(ctx: ParseCtx): ParsedNode {
 
 function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
   const { r } = ctx;
+  // The layer's class tag was just consumed by the parent object loop, so the
+  // running object index allocator already counted it; this layer's own §5.2
+  // running index is therefore one less than the next-to-be-assigned index.
+  const ownObjectIndex = ctx.ar.nextObjectIndex - 1;
   const base = readCPicObjBase(ctx);
 
   let name = "";
@@ -1293,15 +1319,18 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
     if (!(err instanceof FlaEofError)) throw err;
   }
 
-  // Trailer (parent-layer ref / open / autoNamed encoding) is small and
-  // version-dependent; rather than decoding it, scan forward (bounded) for
-  // the nearest continuation: another CPicLayer backref tag, a NEWCLASS tag,
-  // or the page object-tail signature.
-  //
-  // The first 2 bytes of the trailer encode a CArchive object-reference index
-  // for the parent layer (0 = no parent).  We peek at them without advancing
-  // r.pos so that repositionAfterLayerTrailer can still scan from the same
-  // position it always did.
+  // Trailer (docs/21 §10.2): `parentReference` (encodedUI, but a backref-tagged
+  // form also occurs — see below), `open`, `autoNamed`, then the ancestor chain.
+  // We peek the first 2 bytes (the `parentReference`) WITHOUT advancing r.pos so
+  // that repositionAfterLayerTrailer still scans from the same position. The
+  // value is decoded by `resolveMaskedLayers`:
+  //   - 0                     → no parent (top-level layer);
+  //   - a raw §5.2 running object index → equals the mask layer's
+  //     ownObjectIndex (the common masked-child form);
+  //   - a CArchive backref tag (high bit 0x8000 set) → Flash's encoding for the
+  //     masked child stored immediately below its mask in the binary
+  //     (bottom-to-top) order. Its literal index is a backref to an earlier
+  //     shared object, so it is resolved positionally (nearest mask above).
   const parentLayerRef =
     r.pos + 1 < r.buf.length
       ? (r.buf[r.pos]! | (r.buf[r.pos + 1]! << 8))
@@ -1314,7 +1343,17 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
   }
   return {
     cls: "CPicLayer",
-    layer: { name, layerType, hidden, locked, outlineMode, outlineColor, frames, parentLayerRef },
+    layer: {
+      name,
+      layerType,
+      hidden,
+      locked,
+      outlineMode,
+      outlineColor,
+      frames,
+      parentLayerRef,
+      ownObjectIndex,
+    },
   };
 }
 
