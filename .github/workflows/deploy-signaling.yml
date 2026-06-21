@@ -1,0 +1,56 @@
+name: Deploy signaling worker
+
+# Deploys the y-webrtc signaling Cloudflare Worker (workers/signaling/) to
+# wss://signal.dash.jxh.io. Runs on a push to main that touches the worker, and
+# on manual dispatch.
+#
+# REQUIRED repo secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN  — token with Workers Scripts:Edit + Account Settings:Read
+#                           + Workers Routes:Edit + Zone:Read + DNS:Edit on the
+#                           jxh.io zone (see workers/signaling/README.md).
+#   CLOUDFLARE_ACCOUNT_ID — the Cloudflare account id that owns the jxh.io zone.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/signaling/**"
+      - ".github/workflows/deploy-signaling.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-signaling
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck worker
+        run: pnpm --filter @dash/signaling-worker run typecheck
+
+      - name: Run relay unit tests
+        run: pnpm --filter @dash/signaling-worker run test
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/signaling
+          command: deploy

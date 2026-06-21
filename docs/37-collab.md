@@ -1071,10 +1071,12 @@ working P2P over their established WebRTC links). P5 surfaces this:
 - **User-editable URL + multiple servers.** The dialog's **Signaling server**
   section (`SignalingSettings`) edits the persisted list (`signaling.ts`,
   `localStorage`): one `wss://…` per line. Multiple entries give redundancy (a
-  peer connects to all of them); a user can point at a self-hosted server (the
-  y-webrtc repo ships a one-file Node signaling server). Changes take effect on the
-  next start/join. The default is the public Yjs server
-  (`wss://y-webrtc-eu.fly.dev`) — third-party, best-effort.
+  peer connects to all of them); a user can point at a self-hosted server.
+  Changes take effect on the next start/join. The default list (`signaling.ts`
+  `DEFAULT_SIGNALING_SERVERS`) is now **our own serverless worker first**
+  (`wss://signal.dash.jxh.io`, §13.9) with the public Yjs server
+  (`wss://y-webrtc-eu.fly.dev`) kept as a secondary fallback — so a session still
+  signals even if our worker is unreachable, and either one alone suffices.
 
 ### 13.6 Acceptance — tests (the gates)
 
@@ -1152,3 +1154,65 @@ worktree because that untracked dev-local fixture is absent; unrelated to P5).
 - **Remote code-edit cursors** for `asClasses` Y.Text were scoped but deferred
   (P2 §9.8).
 - **Benign y-webrtc log noise** from our asset frames (§12.6).
+
+## 14. Our own signaling server — Cloudflare Worker (`signal.dash.jxh.io`)
+
+Public y-webrtc signaling servers are best-effort and unreliable, so dash ships
+its **own serverless signaling server** and makes it the **default**. The browser
+client stays **stock y-webrtc** (§8.1) — only the default signaling URL changed.
+
+### 14.1 What & where
+
+- A **Cloudflare Worker + Durable Object** in `workers/signaling/` (its own
+  package `@dash/signaling-worker`; Cloudflare/worker types are kept OUT of the
+  app packages). It speaks y-webrtc's exact pub/sub signaling protocol, so it is a
+  **drop-in** for the upstream one-file Node signaling server
+  (`y-webrtc/bin/server.js`).
+- **Protocol** (relay): `{type:'subscribe',topics[]}` / `{type:'unsubscribe',
+  topics[]}` / `{type:'publish',topic,...}` (forwarded to **all** subscribers of
+  the topic, incl. the publisher, with `clients=<count>` stamped) / `{type:'ping'}`
+  → `{type:'pong'}`. A plain GET returns `okay` (health check).
+- **Why a Durable Object:** a room's peers find each other through a *shared* topic
+  and the server fans publishes out across *different* connections — that needs
+  cross-connection state, which a stateless Worker cannot do. A **single global
+  DO** (`idFromName('signaling')`) owns every WebSocket and the topic→subscribers
+  table, so all peers signal through one instance.
+- **Hibernation:** the DO uses the **WebSocket Hibernation API**
+  (`acceptWebSocket` + `webSocketMessage`/`webSocketClose`/`webSocketError`) so
+  idle rooms cost nothing; each socket's subscription list is persisted via
+  `serializeAttachment` and rehydrated on wake. Ping/pong keepalive uses the
+  runtime auto-response + the JSON `ping` handler. Subscriptions are cleaned up on
+  close/error.
+- **Pure, testable core:** the pub/sub fan-out lives in `src/relay.ts` — a
+  transport-agnostic data structure with **no Cloudflare types**, unit-tested in
+  plain Node (`test/relay.test.ts`, 23 cases: subscribe / publish-fans-out /
+  unsubscribe / ping-pong / close-cleanup / robustness / a 2-peer handshake). **No
+  CF credentials and no miniflare are required to test.** The DO/Worker wrapper
+  (`src/index.ts`) is verified to build via `wrangler deploy --dry-run`.
+
+It remains **handshake-only** — it never sees document bytes or the room password
+(everything is E2E-encrypted; §13.6). The privacy/security model (§13.7) is
+unchanged.
+
+### 14.2 Deploy (GitHub Actions → Cloudflare)
+
+`.github/workflows/deploy-signaling.yml` deploys via `cloudflare/wrangler-action`
+on a push to `main` touching `workers/signaling/**` and on `workflow_dispatch`. It
+typechecks + runs the relay unit tests, then `wrangler deploy`.
+
+**The repo owner must provide (one-time):**
+
+1. **`jxh.io` as an active Cloudflare zone** in the account. The `custom_domain`
+   route in `wrangler.toml` provisions `signal.dash.jxh.io` (DNS + edge TLS) under
+   that zone. (Without the zone, drop the `[[routes]]` block and use the default
+   `*.workers.dev` URL.)
+2. **Repo secrets** (Settings → Secrets and variables → Actions):
+   - `CLOUDFLARE_ACCOUNT_ID` — the account id owning the `jxh.io` zone.
+   - `CLOUDFLARE_API_TOKEN` — a Custom API token with **Account → Workers Scripts:
+     Edit**, **Account → Account Settings: Read**, **Zone → Workers Routes: Edit**,
+     **Zone → Zone: Read**, **Zone → DNS: Edit** (the Zone scopes on `jxh.io`, for
+     the custom-domain binding).
+3. **First deploy:** push `workers/signaling/**` to `main`, or run the workflow
+   manually (Actions → *Deploy signaling worker* → *Run workflow*).
+
+Full setup + exact token scopes: **`workers/signaling/README.md`**.

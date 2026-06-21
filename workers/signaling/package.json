@@ -1,0 +1,22 @@
+{
+  "name": "@dash/signaling-worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cloudflare Worker + Durable Object y-webrtc signaling server for dash collaboration (signal.dash.jxh.io).",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "deploy": "wrangler deploy",
+    "deploy:dry-run": "wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240909.0",
+    "typescript": "^5.5.3",
+    "vitest": "^2.1.9",
+    "wrangler": "^3.78.0"
+  }
+}

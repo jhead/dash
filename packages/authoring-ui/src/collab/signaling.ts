@@ -14,18 +14,28 @@
  *       every y-webrtc message is end-to-end encrypted with it; `k` lives only in
  *       the share-link fragment, which browsers never transmit).
  *
- * The default below is the public y-webrtc signaling server operated by the Yjs
- * project. It is a THIRD-PARTY dependency and a best-effort public service — for
- * production or private use you should run your own (the y-webrtc repo ships a
- * one-file Node signaling server). The URL is user-editable so a session can
- * point at a self-hosted server.
+ * The PRIMARY default below is OUR OWN serverless signaling server — a Cloudflare
+ * Worker + Durable Object that speaks y-webrtc's exact pub/sub signaling protocol
+ * (see `workers/signaling/` and docs/37-collab.md §13.5). It is a drop-in for the
+ * stock y-webrtc transport: the client is unchanged, only this URL points at our
+ * worker instead of a third-party public server. As a handshake-only broker it
+ * never sees document bytes or the room password (see the file header above).
+ *
+ * A public Yjs server is kept as a SECONDARY fallback so a session can still
+ * signal if our worker is unreachable (a peer connects to ALL listed servers and
+ * any one is sufficient to broker the handshake). The whole list is user-editable
+ * (Share dialog → Signaling-server field) so a session can point at a self-hosted
+ * server instead.
  */
 
 /**
- * Public default signaling servers (Yjs project). Third-party, best-effort.
- * Multiple entries give redundancy; a peer connects to all of them.
+ * Default signaling servers. Primary = our own Cloudflare Worker
+ * (`signal.dash.jxh.io`, deployed from `workers/signaling/`); secondary = a
+ * public Yjs server for redundancy. Handshake-only; multiple entries give
+ * redundancy and a peer connects to all of them.
  */
 export const DEFAULT_SIGNALING_SERVERS: readonly string[] = [
+  "wss://signal.dash.jxh.io",
   "wss://y-webrtc-eu.fly.dev",
 ];
 

@@ -1,0 +1,42 @@
+# Cloudflare Worker config for the dash y-webrtc signaling server.
+#
+# Deploy with `wrangler deploy` (CI does this — see
+# .github/workflows/deploy-signaling.yml). Requires CLOUDFLARE_API_TOKEN +
+# CLOUDFLARE_ACCOUNT_ID in the environment, and that `jxh.io` is an active zone in
+# the same Cloudflare account (so the `signal.dash.jxh.io` custom domain can be
+# provisioned). See README.md for the exact setup + token scopes.
+
+name = "dash-signaling"
+main = "src/index.ts"
+
+# Pin a recent runtime so the WebSocket Hibernation API + auto-response are
+# available. Bump as needed; keep in sync with the runtime features used.
+compatibility_date = "2024-09-09"
+
+# The single global signaling Durable Object. The Worker routes every request to
+# `idFromName('signaling')`, so all peers share this one instance for cross-
+# connection topic fan-out.
+[[durable_objects.bindings]]
+name = "SIGNALING"
+class_name = "SignalingServer"
+
+# Durable Object migration. `new_sqlite_classes` puts the DO on the
+# SQLite-backed storage backend (the current default for new DO classes; required
+# on the Workers Free plan and recommended generally). The signaling DO keeps no
+# durable storage of its own — subscriptions live in memory + per-socket
+# hibernation attachments — but a migration entry is still required to register
+# the class.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SignalingServer"]
+
+# Custom domain: wss://signal.dash.jxh.io reaches this worker. A `custom_domain`
+# route makes Cloudflare provision the hostname + an edge TLS cert and bind it to
+# the worker (no separate DNS record / Route needed). REQUIRES `jxh.io` to be an
+# active zone in this Cloudflare account.
+[[routes]]
+pattern = "signal.dash.jxh.io"
+custom_domain = true
+
+[observability]
+enabled = true
