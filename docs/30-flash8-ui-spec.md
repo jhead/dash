@@ -160,6 +160,46 @@ Pixels Flash paints into the document and timeline.
 
 ---
 
+## Library panel — item-preview pane (task 1338)
+
+Flash 8's Library panel shows a **preview box at the top** of the panel — directly under
+the title bar and **above** the search strip / column headers / item list. Selecting an
+item updates the box with a preview keyed off the item type. This is implemented as
+`<LibraryPreview>` (`packages/authoring-ui/src/LibraryPreview.tsx`), inserted at the top of
+the `!collapsed` fragment in `LibraryPanel.tsx`, keyed on the existing `selectedItemId`
+prop (no new selection plumbing).
+
+**Layout / appearance.** Fixed-height strip (96px), `content.pasteboard` background with a
+1px `chrome.separator` bottom border — visually the same "work area" surround Flash uses
+behind the preview. Content is fit-and-centered within the box.
+
+**Per item type:**
+
+| Item type | Preview | Controls |
+|---|---|---|
+| Bitmap | the image (`<img src=dataUri>`, `pixelated` when smoothing off) | — |
+| Movie Clip | first frame rendered to a `<canvas>` | ▶ Play / ■ Stop (timeline tick) |
+| Graphic | first frame rendered to a `<canvas>` | ▶ Play / ■ Stop (timeline tick) |
+| Button | up-state (first frame) rendered to a `<canvas>` | none (static) |
+| Sound | waveform (peak bins) drawn to a `<canvas>` | ▶ Play / ■ Stop (`<audio>`) |
+| Font | sample line "AaBbYyZz 123" in the named face/weight/style | — |
+| Video / Component | labelled placeholder fallback | — |
+
+**How symbols render.** The pane **reuses the stage machinery** rather than reinventing it:
+it builds a `SceneGraph` for a single timeline frame via `getTweenedFrame` (the same pattern
+as `Shell.tsx screenshotStage` / `engine/snapshot.ts snapshotFrame`) and draws it with
+`CanvasRenderer.render(sceneGraph, viewport, library)`. The viewport zoom/pan is computed to
+fit the frame's content bounds into the preview box. Bitmaps referenced anywhere in the doc
+are preloaded (`renderer.loadImage`) and their decode awaited before drawing, so nested
+bitmaps appear rather than placeholders. Play/Stop advances `frameIndex` on a `setInterval`
+at the document frame rate, re-rendering each tick.
+
+**Sound waveform.** Decoded on selection via Web Audio (`AudioContext.decodeAudioData` →
+abs-peak bins) and drawn as centered bars; playback feeds the sound `dataUri` to an
+`<audio>` element. Decode failures fall back to just the midline (still shows Play/Stop).
+
+---
+
 ## Known gaps
 
 - **Exact XP/Luna IDE panel gray is a best-estimate `#ECECEC`.** The real Flash 8 chrome

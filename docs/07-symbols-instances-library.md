@@ -46,6 +46,11 @@ Editing the master symbol updates **all** instances (except per-instance overrid
 - Lists all assets: symbols, bitmaps, sounds, video, fonts, components, compiled clips.
 - Columns: name, type, use count, linkage, modified date.
 - **Folders** for organization; sort, search, preview (with play for clips/sound/video).
+- **Item-preview pane** at the top of the panel (above the search/list): updates for the
+  selected item — bitmap shows the image; movieclip/graphic render their first frame to a
+  canvas with Play/Stop; button shows its up state; sound shows a waveform + Play/Stop;
+  font shows sample text. Implemented as `<LibraryPreview>`; reuses the stage `CanvasRenderer`
+  for symbol rendering. See `docs/30-flash8-ui-spec.md` § "Library panel — item-preview pane".
 - **Library options**: New Symbol, New Folder, Duplicate, **Properties**, **Linkage**,
   Edit, Rename, Delete, Update (re-import), Select Unused Items.
 - Multiple document libraries open simultaneously; drag assets between documents.

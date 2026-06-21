@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo } from "react";
 import type { BitmapItem, FlashDocument, Library, LibraryItem, LibraryFolder, Symbol, SymbolLinkage, SymbolType } from "@flash/core";
+import { LibraryPreview } from "./LibraryPreview";
 import { SymbolLinkageDialog } from "./SymbolLinkageDialog";
 import { SymbolPropertiesDialog } from "./SymbolPropertiesDialog";
 import type { SymbolPropertiesData } from "./SymbolPropertiesDialog";
@@ -1098,6 +1099,13 @@ export function LibraryPanel({
 
       {!collapsed && (
         <>
+          {/* Item-preview pane (Flash 8): shows the selected item above the list. */}
+          <LibraryPreview
+            library={library}
+            selectedItemId={selectedItemId}
+            fps={doc?.properties.frameRate}
+          />
+
           {/* Search bar */}
           <div style={searchBarStyle}>
             <input
