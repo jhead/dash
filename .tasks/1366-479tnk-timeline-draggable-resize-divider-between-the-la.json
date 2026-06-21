@@ -1,0 +1,10 @@
+{
+  "id": "1366-479tnk-timeline-draggable-resize-divider-between-the-la",
+  "title": "Timeline: draggable resize divider between the layers panel and the frames panel (persisted)",
+  "description": "FEATURE (user request): make the divider between the layers list (left) and the frames/timeline grid (right) in the Timeline DRAGGABLE to resize, like the app's other resizable dividers. Find the Timeline component in packages/authoring-ui (the layers panel + frame grid + the divider/border between them) and the EXISTING drag-to-resize divider pattern used elsewhere in the editor (the user says 'like others' \u2014 there are already resizable panes; reuse that resizer component/hook for consistent behavior: grab cursor, drag handle, min/max width clamp). Make the layers-column width adjustable by dragging the divider. PERSIST the chosen width across reloads using the editor-prefs/layout persistence (packages/authoring-ui/src/editorLayout.ts, task 1297 \u2014 it already persists pane sizes/layout to localStorage); add a layers-column-width key with a sane default + min/max clamp. Ensure the frame grid reflows correctly as the layers column resizes, and the divider is keyboard/a11y-consistent with the other dividers if they are. VERIFY: build + authoring-ui tests green (only ~3 task-1207 fixtures acceptable); add a test for the persisted width (set width -> persisted -> restored on reload) and/or the resize handler clamping, consistent with how the other dividers are tested. Update docs/ if editor layout/prefs are documented. ACQUIRE lock; commit incl task file; push origin/main rebase-retry (if .tasks/.counter conflicts keep origin's; concurrent agents are in editor-selection/ruffle/collab \u2014 you own the Timeline divider + editorLayout; a queued task 1364 touches layer activation, coordinate if it lands first). Mirror the existing divider UX exactly so it feels native.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-06-21T22:32:50Z",
+  "updated_at": "2026-06-21T22:32:50Z"
+}
