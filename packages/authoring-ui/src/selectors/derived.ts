@@ -9,6 +9,7 @@ import type {
   SymbolInstance,
   BitmapItem,
   SoundItem,
+  Layer,
 } from "@flash/core";
 
 /**
@@ -58,6 +59,95 @@ export const bitmapDisplayObjectsAt = (t: Timeline, layerIndex: number, frame: n
 
 export const symbolInstancesAt = (t: Timeline, layerIndex: number, frame: number): SymbolInstance[] =>
   displayObjectsOfType<SymbolInstance>(t, layerIndex, frame, "instance");
+
+/**
+ * Whether a layer's contents can be directly selected by clicking on the stage
+ * (Flash 8 semantics). Locked and hidden layers are never selectable; guide
+ * layers and folder rows hold no directly-selectable stage content. Normal,
+ * mask, masked, and guided layers are selectable.
+ *
+ * This is the gate for both cross-layer hit-testing AND the auto-switch target:
+ * clicking an object on a layer that fails this check must neither select the
+ * object nor change the active layer (matching Flash).
+ */
+export function isLayerStageSelectable(layer: Layer | undefined | null): boolean {
+  if (!layer) return false;
+  if (!layer.visible || layer.locked) return false;
+  if (layer.type === "guide" || layer.type === "folder") return false;
+  return true;
+}
+
+/**
+ * Selectable display objects on a SINGLE non-active layer at `frame`, grouped by
+ * the kinds StageArea hit-tests (shapes, symbol instances, text). Bitmaps are
+ * intentionally excluded — the Selection tool's pointer-down only hit-tests
+ * shapes/instances/text for whole-object selection (bitmaps live inside the
+ * shape/instance hit paths in practice), matching the active-layer arrays.
+ */
+export interface LayerSelectables {
+  readonly layerIndex: number;
+  readonly shapes: ShapeDisplayObject[];
+  readonly instances: SymbolInstance[];
+  readonly texts: TextDisplayObject[];
+}
+
+/**
+ * Build the per-layer selectable-object breakdown for every layer EXCEPT
+ * `activeLayerIndex` that is stage-selectable (visible && !locked && not a
+ * guide/folder). Used as a fallback hit-test pass so clicking an object on
+ * another layer selects it AND makes that layer active (Flash 8 auto-switch).
+ *
+ * Layers are returned in z-order (index 0 = topmost) so callers can resolve the
+ * front-most hit by iterating in order. The active layer is omitted because its
+ * objects are already covered by the primary (active-layer) hit-test arrays.
+ */
+export function otherLayerSelectables(
+  timeline: Timeline,
+  activeLayerIndex: number,
+  frame: number
+): LayerSelectables[] {
+  const out: LayerSelectables[] = [];
+  for (let li = 0; li < timeline.layers.length; li++) {
+    if (li === activeLayerIndex) continue;
+    const layer = timeline.layers[li];
+    if (!isLayerStageSelectable(layer)) continue;
+    const kf = activeKeyframeForLayer(timeline, li, frame);
+    if (!kf) continue;
+    const shapes: ShapeDisplayObject[] = [];
+    const instances: SymbolInstance[] = [];
+    const texts: TextDisplayObject[] = [];
+    for (const o of kf.displayObjects) {
+      if (o.type === "shape") shapes.push(o as ShapeDisplayObject);
+      else if (o.type === "instance") instances.push(o as SymbolInstance);
+      else if (o.type === "text") texts.push(o as TextDisplayObject);
+    }
+    if (shapes.length || instances.length || texts.length) {
+      out.push({ layerIndex: li, shapes, instances, texts });
+    }
+  }
+  return out;
+}
+
+/**
+ * Resolve the index of the layer that owns the display object with `objectId`
+ * at `frame`, considering ONLY stage-selectable layers (so a hit on a locked/
+ * hidden/guide layer never drives the active-layer auto-switch). Returns -1 when
+ * the object is not found on any selectable layer.
+ */
+export function ownerSelectableLayerIndex(
+  timeline: Timeline,
+  objectId: string,
+  frame: number
+): number {
+  for (let li = 0; li < timeline.layers.length; li++) {
+    const layer = timeline.layers[li];
+    if (!isLayerStageSelectable(layer)) continue;
+    const kf = activeKeyframeForLayer(timeline, li, frame);
+    if (!kf) continue;
+    if (kf.displayObjects.some((o) => o.id === objectId)) return li;
+  }
+  return -1;
+}
 
 export const bitmapLibraryItems = (library: Library): BitmapItem[] =>
   library.items.filter((i): i is BitmapItem => i.itemType === "bitmap");

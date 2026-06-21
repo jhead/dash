@@ -144,6 +144,9 @@ import {
   symbolInstancesAt,
   bitmapLibraryItems as bitmapLibraryItemsOf,
   soundLibraryItems as soundLibraryItemsOf,
+  otherLayerSelectables,
+  ownerSelectableLayerIndex,
+  type LayerSelectables,
 } from "./selectors/index.js";
 import {
   createPopulatedRegistry,
@@ -1176,6 +1179,21 @@ export function Shell(): React.ReactElement {
     setSelectedShapeIds(id ? [id] : []);
   }, []);
 
+  /**
+   * Flash 8 auto-switch: selecting an object on the stage makes that object's
+   * layer the ACTIVE layer, so the Timeline / LayerList follow the selection.
+   * Resolves the owning layer index across ALL stage-selectable layers (locked/
+   * hidden/guide layers are skipped, so we never activate a layer Flash wouldn't).
+   * A no-op when the object already lives on the active layer or isn't found.
+   */
+  const maybeActivateOwnerLayer = useCallback((id: string | null) => {
+    if (id === null) return;
+    const owner = ownerSelectableLayerIndex(timeline, id, currentFrame);
+    if (owner >= 0 && owner !== safeActiveLayerIndex) {
+      setActiveLayerIndex(owner);
+    }
+  }, [timeline, currentFrame, safeActiveLayerIndex, setActiveLayerIndex]);
+
   /** Handle a shape-select event from StageArea (supports shift+click for multi-select). */
   const handleShapeSelectFromStage = useCallback((id: string | null, shiftKey?: boolean) => {
     if (id === null) {
@@ -1185,10 +1203,12 @@ export function Shell(): React.ReactElement {
       setSelectedShapeIds((prev) =>
         prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
       );
+      maybeActivateOwnerLayer(id);
     } else {
       setSelectedShapeIds([id]);
+      maybeActivateOwnerLayer(id);
     }
-  }, []);
+  }, [maybeActivateOwnerLayer]);
 
   /** Handle a multi-shape-select event from StageArea (marquee result). */
   const handleShapeSelectMultiple = useCallback((ids: string[], replace: boolean) => {
@@ -1201,7 +1221,22 @@ export function Shell(): React.ReactElement {
         return Array.from(merged);
       });
     }
-  }, []);
+    // Flash auto-switch follows the FIRST hit object's layer (marquee selections
+    // are top-down; the front-most hit drives the active layer). Skipped when the
+    // selection clears.
+    if (ids.length > 0) maybeActivateOwnerLayer(ids[0]);
+  }, [maybeActivateOwnerLayer]);
+
+  /**
+   * Handle a partial (vector-shape subselection) select from StageArea. A
+   * SubSelection carries only { shapeId, keys } — no layer — so we resolve the
+   * owning layer from the shapeId and apply the same Flash auto-switch as the
+   * whole-object paths (task 1364, ties into the 1331/1361 subselection model).
+   */
+  const handleSubSelect = useCallback((sel: SubSelection | null) => {
+    setSubSelection(sel);
+    if (sel) maybeActivateOwnerLayer(sel.shapeId);
+  }, [setSubSelection, maybeActivateOwnerLayer]);
 
   // Grid settings are derived from doc.properties.grid (persisted in document state)
   const showGrid = docProperties.grid.showGrid;
@@ -2554,6 +2589,15 @@ export function Shell(): React.ReactElement {
   );
   const symbolInstanceDisplayObjects = useMemo<SymbolInstance[]>(
     () => symbolInstancesAt(timeline, safeActiveLayerIndex, currentFrame),
+    [timeline, currentFrame, safeActiveLayerIndex]
+  );
+  // Selectable objects on the OTHER (non-active) stage-selectable layers, used as
+  // a fallback hit-test pass so clicking an object on another layer selects it
+  // and makes that layer active (Flash 8 auto-switch — task 1364). The active
+  // layer's objects stay in the primary arrays above; locked/hidden/guide layers
+  // are excluded by `otherLayerSelectables`.
+  const otherLayerSelectableObjects = useMemo<LayerSelectables[]>(
+    () => otherLayerSelectables(timeline, safeActiveLayerIndex, currentFrame),
     [timeline, currentFrame, safeActiveLayerIndex]
   );
   const bitmapLibraryItems = useMemo<BitmapItem[]>(() => bitmapLibraryItemsOf(library), [library]);
@@ -3949,7 +3993,7 @@ export function Shell(): React.ReactElement {
                 onShapeSelectMultiple={handleShapeSelectMultiple}
                 partialSelectEnabled={partialSelectEnabled}
                 subSelection={subSelection}
-                onSubSelect={setSubSelection}
+                onSubSelect={handleSubSelect}
                 onSubSplitMove={handleSubSplitMove}
                 onShapeMove={handleShapeMove}
                 onShapeMoveEnd={handleShapeMoveEnd}
@@ -3998,6 +4042,7 @@ export function Shell(): React.ReactElement {
                 onConvertToSymbol={handleConvertToSymbol}
                 onInstanceDoubleClick={handleInstanceDoubleClick}
                 symbolInstanceDisplayObjects={symbolInstanceDisplayObjects}
+                otherLayerSelectables={otherLayerSelectableObjects}
                 onSymbolInstanceDoubleClick={handleSymbolInstanceDoubleClick}
                 parentSceneGraph={parentSceneGraph}
                 onExitSymbolEdit={editContext.mode === "symbol" ? handleExitEditInPlace : undefined}

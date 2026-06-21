@@ -791,6 +791,18 @@ export interface OnionFrame {
   outlineMode?: boolean;
 }
 
+/**
+ * Selectable display objects on a single non-active, stage-selectable layer,
+ * grouped by the kinds the Selection tool hit-tests. Mirrors the
+ * `LayerSelectables` produced by `selectors/derived.ts otherLayerSelectables`.
+ */
+export interface LayerSelectables {
+  readonly layerIndex: number;
+  readonly shapes: ShapeDisplayObject[];
+  readonly instances: SymbolInstance[];
+  readonly texts: TextDisplayObject[];
+}
+
 export interface StageAreaProps {
   stageWidth?: number;
   stageHeight?: number;
@@ -931,6 +943,17 @@ export interface StageAreaProps {
    * Used for hit-testing double-clicks to enter symbol edit mode.
    */
   symbolInstanceDisplayObjects?: SymbolInstance[];
+  /**
+   * Selectable objects on the OTHER (non-active) stage-selectable layers, grouped
+   * per layer in z-order (index 0 = topmost). Used ONLY as a fallback hit-test
+   * pass for the Selection tool: when the active-layer hit-tests all miss, a hit
+   * here selects the object AND makes its layer active (Flash 8 auto-switch —
+   * task 1364). The active layer drives selection/edit via the primary arrays;
+   * once a fallback hit switches the active layer, the object joins those arrays
+   * on the next render and behaves identically. Locked/hidden/guide layers are
+   * pre-excluded by the producer (`otherLayerSelectables`).
+   */
+  otherLayerSelectables?: LayerSelectables[];
   /**
    * Called when user double-clicks a SymbolInstance on stage with the selection tool.
    * Receives the instance id and symbolId.
@@ -1601,6 +1624,7 @@ export function StageArea({
   onConvertToSymbol,
   onInstanceDoubleClick,
   symbolInstanceDisplayObjects = [],
+  otherLayerSelectables = [],
   onSymbolInstanceDoubleClick,
   parentSceneGraph,
   onExitSymbolEdit,
@@ -2713,6 +2737,54 @@ export function StageArea({
           return;
         }
 
+        // --- Cross-layer fallback hit-test (Flash 8 auto-switch — task 1364) ---
+        // The active-layer hit-tests above all missed. Flash makes the clicked
+        // object's layer active even when it lives on another layer, so probe the
+        // other stage-selectable layers (visible/!locked/!guide, pre-filtered by
+        // the producer) front-to-back. A hit selects the object via onShapeSelect;
+        // Shell's handler resolves the owning layer and switches the active layer,
+        // after which the object joins the active-layer arrays and drags/edits
+        // normally. We don't arm a drag here (the object isn't on the active layer
+        // yet). Skipped in symbol-edit mode (other-layer arrays are scene-scoped).
+        if (otherLayerSelectables.length > 0 && !parentSceneGraph) {
+          for (const layer of otherLayerSelectables) {
+            // Shapes (top-most within the layer first)
+            const ls = [...layer.shapes].reverse().find((obj) => {
+              const bounds = transformedShapeBounds(obj);
+              return (
+                stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+                stageY >= bounds.y && stageY <= bounds.y + bounds.height
+              );
+            });
+            if (ls) {
+              e.preventDefault();
+              onShapeSelect?.(ls.id, e.shiftKey);
+              return;
+            }
+            const li = [...layer.instances].reverse().find((inst) => {
+              const bounds = getSymbolInstanceBounds(inst, library);
+              return (
+                stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+                stageY >= bounds.y && stageY <= bounds.y + bounds.height
+              );
+            });
+            if (li) {
+              e.preventDefault();
+              onShapeSelect?.(li.id, e.shiftKey);
+              return;
+            }
+            const lt = [...layer.texts].reverse().find((obj) => (
+              stageX >= obj.x && stageX <= obj.x + obj.width &&
+              stageY >= obj.y && stageY <= obj.y + obj.height
+            ));
+            if (lt) {
+              e.preventDefault();
+              onShapeSelect?.(lt.id, e.shiftKey);
+              return;
+            }
+          }
+        }
+
         // Start marquee selection on empty stage (arrow tool rubber-band)
         e.preventDefault();
         onShapeSelect?.(null);
@@ -2725,7 +2797,7 @@ export function StageArea({
         setSelIsMarqueeSelecting(true);
       }
     },
-    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, partialSelectEnabled, onSubSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoMagicWand, magicWandThreshold, magicWandSmoothing, bitmapDisplayObjects, bitmapLibraryItems, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick, simpleButtonsEnabled, hoveredButtonId]
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, partialSelectEnabled, onSubSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoMagicWand, magicWandThreshold, magicWandSmoothing, bitmapDisplayObjects, bitmapLibraryItems, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, otherLayerSelectables, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick, simpleButtonsEnabled, hoveredButtonId]
   );
 
   const onMouseMove = useCallback(

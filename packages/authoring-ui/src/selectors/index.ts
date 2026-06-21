@@ -7,6 +7,10 @@ export {
   bitmapLibraryItems,
   soundLibraryItems,
   instanceNamesOf,
+  isLayerStageSelectable,
+  otherLayerSelectables,
+  ownerSelectableLayerIndex,
+  type LayerSelectables,
 } from "./derived.js";
 export {
   resolveActiveTimeline,
