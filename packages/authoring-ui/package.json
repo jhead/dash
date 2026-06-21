@@ -22,7 +22,6 @@
     "@flash/core": "workspace:*",
     "@flash/player": "workspace:*",
     "@flash/swf": "workspace:*",
-    "yjs": "^13.6.27",
     "@openrouter/ai-sdk-provider": "^2",
     "@tauri-apps/plugin-dialog": "^2.0.3",
     "@tauri-apps/plugin-fs": "^2.5.1",
@@ -32,6 +31,8 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^9.1.0",
     "remark-gfm": "^4.0.1",
+    "y-webrtc": "^10.3.0",
+    "yjs": "^13.6.27",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

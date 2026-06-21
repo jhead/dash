@@ -47,7 +47,27 @@ export * from "./vfs/index.js";
 
 // Optional P2P multiplayer (task 1343 P0): opt-in @flash/collab adapter that
 // projects the document store onto a Y.Doc. Default OFF — nothing here runs
-// unless `attachCollab` is explicitly called. NO networking at this phase.
+// unless `attachCollab` is explicitly called.
 export { attachCollab, storeAsDocSource } from "./store/collabAdapter.js";
 export type { AttachCollabResult } from "./store/collabAdapter.js";
 export { COLLAB_ENABLED_DEFAULT } from "./store/collabFlag.js";
+
+// Optional P2P multiplayer transport (task 1344 P1): the y-webrtc provider +
+// shareable `#room=…&k=…` link + opt-in start/join flow + signaling config.
+// Still default OFF — a provider/network/awareness is created ONLY when
+// `startCollab` / `joinCollab` is explicitly called.
+export {
+  type CollabLink,
+  generateCollabLink,
+  parseCollabLink,
+  collabLinkToFragment,
+  buildShareUrl,
+  DEFAULT_SIGNALING_SERVERS,
+  parseSignalingServers,
+  getSignalingServers,
+  setSignalingServers,
+  type CollabSession,
+  type StartCollabOptions,
+  startCollab,
+  joinCollab,
+} from "./collab/index.js";

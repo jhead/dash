@@ -1,9 +1,11 @@
 # Collaboration — optional P2P multiplayer (docs/37)
 
-Status: **Phase 0 complete** (task 1343). This phase ships the foundation only:
-a faithful, property-tested Yjs binding for the document model. It is **opt-in,
-default OFF, and does no networking**. Phases 1–5 build the provider, presence,
-asset transport, conflict UX, and the editor toggle on top of this binding.
+Status: **Phase 1 complete** (task 1344) on top of **Phase 0** (task 1343).
+P0 shipped the foundation: a faithful, property-tested Yjs binding for the
+document model. P1 adds the **opt-in y-webrtc transport + shareable link + join
+flow** — still **default OFF**: no provider, network, signaling connection, or
+awareness exists until the user explicitly starts/joins a session. Phases 2–5
+build presence, asset transport, conflict UX, and the editor toggle on top.
 
 > This binding is THE BET of the whole feature. Everything downstream assumes the
 > projection `FlashDocument → Y.Doc → FlashDocument` is the identity over the full
@@ -274,3 +276,105 @@ From `@flash/authoring-ui`:
 
 A P1 provider phase wires a `Y.Doc` to y-webrtc/y-websocket and calls
 `attachCollab` behind a UI toggle; nothing else in the editor needs to change.
+
+---
+
+## 8. Phase 1 — y-webrtc transport + shareable link + opt-in join (task 1344)
+
+P1 adds the network. It is the **only** place a provider is constructed, and it
+constructs one **only** when the user explicitly starts or joins. In the solo
+app — and at startup — nothing here runs: no `WebrtcProvider`, no signaling
+socket, no WebRTC, no awareness. Default OFF is preserved
+(`COLLAB_ENABLED_DEFAULT = false` still gates the editor toggle a later phase
+wires).
+
+### 8.1 The transport — y-webrtc
+
+We use **y-webrtc** (Yjs-native): a WebRTC **mesh** between peers, a **public
+signaling server** for the handshake only, and **room-password end-to-end
+encryption**. There is **no server of ours**. y-webrtc derives an AES-GCM key
+from the room password (PBKDF2) and encrypts every WebRTC and BroadcastChannel
+message, so a peer cannot join — or read any document bytes — without the
+password. Reconnection is handled entirely by y-webrtc/Yjs: a dropped peer
+re-exchanges only the missing updates via the Yjs state-vector protocol.
+
+### 8.2 The shareable link — secret in the URL fragment
+
+```
+#room=<random-room-id>&k=<E2E-password>
+```
+
+- `room` is the y-webrtc **room name** (also the link's room id).
+- `k` is the y-webrtc **room password** = the **end-to-end key**.
+
+Both live in the URL **fragment** (`#…`). Browsers never transmit the fragment in
+an HTTP request, so the signaling server never sees the room or the key — the
+share link itself is the capability. `collabLink.ts` is a pure module:
+`generateCollabLink()` mints a 128-bit room id + 256-bit key with the Web Crypto
+RNG (base64url); `buildShareUrl(base, link)` / `parseCollabLink(input)` round-trip
+the fragment. A normal (non-collab) URL parses to `null`, so opening one never
+auto-joins.
+
+### 8.3 Start vs. join (the seeding order is load-bearing)
+
+`collabSession.ts` owns the provider. Two flows, distinguished only by **when**
+the binding attaches relative to first sync:
+
+- **`startCollab(store)` — host.** Mint a fresh room+key, **attach the binding
+  first** (P0 seeds the local document into the new, empty `Y.Doc` — the host's
+  doc becomes the shared session state), then bring up the provider. Returns
+  immediately with a live `CollabSession` whose `link` is the invite to share.
+- **`joinCollab(store, link)` — joiner.** Bring up the provider **first**, await
+  the first `synced` event (so the `Y.Doc` is populated with the existing
+  session's state), **then attach the binding** — which, seeing a non-empty
+  `Y.Doc`, takes P0's **late-join adoption** path: it rebuilds the remote document
+  and `replaceDoc`s it into the local editor (a remote edit, so **no local undo
+  entry**). After that, local and remote edits flow both ways and Yjs reconciles.
+  A fresh/empty room never fires `synced`, so a `syncTimeoutMs` (default 8 s)
+  binds anyway — an empty room then behaves like a host start.
+
+### 8.4 Signaling configuration (user-editable)
+
+`signaling.ts` exposes the signaling server list. The default is the **public
+Yjs y-webrtc signaling server** (`wss://y-webrtc-eu.fly.dev`) — a **third-party,
+best-effort** service. It is user-editable (`getSignalingServers()` /
+`setSignalingServers(raw)`, persisted in `localStorage`); a session may point at
+a self-hosted server (the y-webrtc repo ships a one-file Node signaling server).
+**The signaling server only brokers the WebRTC handshake (SDP/ICE). It never sees
+document bytes (they flow P2P over WebRTC) nor the password `k` (it lives only in
+the link fragment, which is never transmitted).**
+
+### 8.5 Acceptance
+
+`packages/authoring-ui/src/collab/__tests__/` (19 tests, all green; full
+authoring-ui suite 1087/1087, collab P0 still 9/9):
+
+- **`collabLink.test.ts`** — generate→fragment→parse round-trip; secret is in the
+  fragment, never the path/query; a normal URL parses to `null`; tokens are
+  random + URL-safe.
+- **`signaling.test.ts`** — public `wss://` default; user-override parsing.
+- **`convergence.test.ts`** — **two peers converge.** y-webrtc needs a real WebRTC
+  stack (absent in Node), so the test stands in y-webrtc's exact place —
+  replicating Yjs updates between two `Y.Doc`s over a loopback wire
+  (`encodeStateAsUpdate`/`applyUpdate`) — and drives the **real** `@flash/core`
+  mutations through two stores + two `attachCollab` bindings. Edits on either peer
+  appear on the other; both documents end deep-equal; a remote edit creates no
+  local undo entry on the receiver.
+- **`collabSession.test.ts`** (mocked `WebrtcProvider`) — **default OFF** (no
+  provider until start/join); start seeds + surfaces a link; provider gets the
+  room as name and the key as `password`; **join adopts on first sync** (binding
+  attaches only after `synced`, then merges the remote doc); empty-room timeout.
+
+### 8.6 The surface P2 (awareness/presence) builds on
+
+`CollabSession` (from `@flash/authoring-ui`) exposes everything P2 needs:
+
+- `session.provider: WebrtcProvider` — and y-webrtc's provider already owns a
+  `provider.awareness` (a `y-protocols/awareness` `Awareness`) created per
+  session. P2 sets local state (`awareness.setLocalStateField('user', {...})` for
+  cursor/selection/name/color) and observes `awareness.on('change', …)` to render
+  remote presence. No new transport is needed — awareness rides the same
+  encrypted y-webrtc mesh.
+- `session.ydoc` / `session.binding` — the shared doc + the live binding.
+- `session.link` / `shareUrl()` / `fragment()` — the invite.
+- `session.synced` / `session.signaling` / `session.stop()` — status + teardown.
