@@ -108,3 +108,20 @@ export {
 // ---------------------------------------------------------------------------
 export { ShareDialog } from "./ShareDialog.js";
 export { CollabControls, useCollabStatus, type CollabConnState } from "./CollabControls.js";
+
+// ---------------------------------------------------------------------------
+// Phase 5 — hardening (task 1348 / docs 37 §13): peer-count realism,
+// reconnection / signaling-health, and the perf/encryption gates (tests).
+// ---------------------------------------------------------------------------
+export {
+  PEER_COUNT_WARN_THRESHOLD,
+  peerCountAdvice,
+  type PeerCountAdvice,
+  type PeerCountSeverity,
+} from "./peerCount.js";
+export {
+  attachReconnect,
+  type ReconnectController,
+  type ReconnectProviderLike,
+  type AttachReconnectOptions,
+} from "./reconnect.js";

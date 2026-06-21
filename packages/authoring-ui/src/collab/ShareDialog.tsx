@@ -15,9 +15,17 @@
  * end-to-end encrypted and flows directly between peers — there is no server of
  * ours in the middle.
  */
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useCollab } from "./CollabContext.js";
 import { parseCollabLink } from "./collabLink.js";
+import {
+  DEFAULT_SIGNALING_SERVERS,
+  getSignalingServers,
+  parseSignalingServers,
+  setSignalingServers,
+} from "./signaling.js";
+import { peerCountAdvice } from "./peerCount.js";
+import { useCollabStatus } from "./CollabControls.js";
 
 export interface ShareDialogProps {
   onClose: () => void;
@@ -107,11 +115,128 @@ function HonestNote(): React.ReactElement {
   );
 }
 
+/**
+ * The editable signaling-server field (P5 fallback / ops). The signaling server
+ * only brokers the WebRTC handshake — but if every configured server is down a
+ * NEW peer can never find an existing one, so we let the user point at their own
+ * (the y-webrtc repo ships a one-file Node signaling server) or list several for
+ * redundancy. Persisted in localStorage; takes effect on the NEXT start/join.
+ */
+function SignalingSettings(): React.ReactElement {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(() => getSignalingServers().join("\n"));
+  const [saved, setSaved] = useState(false);
+
+  const onSave = useCallback(() => {
+    setSignalingServers(value);
+    // Re-read so the field shows the normalized (validated/deduped) list and
+    // falls back to the default if the user cleared it or typed only garbage.
+    setValue(getSignalingServers().join("\n"));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }, [value]);
+
+  const onReset = useCallback(() => {
+    setSignalingServers("");
+    setValue(getSignalingServers().join("\n"));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }, []);
+
+  const parsed = parseSignalingServers(value);
+  const usingDefault =
+    parsed.length === DEFAULT_SIGNALING_SERVERS.length &&
+    parsed.every((u, i) => u === DEFAULT_SIGNALING_SERVERS[i]);
+
+  return (
+    <div style={{ marginTop: 14, fontSize: 11.5 }}>
+      <button
+        type="button"
+        data-testid="collab-signaling-toggle"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          background: "none",
+          border: "none",
+          color: "#36c",
+          cursor: "pointer",
+          padding: 0,
+          fontSize: 11.5,
+          textDecoration: "underline",
+        }}
+      >
+        {open ? "▾" : "▸"} Signaling server
+        {usingDefault ? " (using public default)" : " (custom)"}
+      </button>
+      {open && (
+        <div style={{ marginTop: 6 }}>
+          <div style={{ color: "#666", marginBottom: 4 }}>
+            One URL per line (<code>wss://…</code>). The signaling server only
+            brokers the connection — it never sees your data or key. If you can't
+            connect, the public server may be down; run your own or list several.
+          </div>
+          <textarea
+            data-testid="collab-signaling-input"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            rows={3}
+            spellCheck={false}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              fontFamily: "monospace",
+              fontSize: 11,
+              border: "1px solid #999",
+              borderRadius: 4,
+              padding: "4px 6px",
+              resize: "vertical",
+            }}
+          />
+          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+            <button
+              type="button"
+              data-testid="collab-signaling-save"
+              onClick={onSave}
+              style={{ ...plainBtn, padding: "3px 10px", fontSize: 11.5 }}
+            >
+              {saved ? "Saved" : "Save"}
+            </button>
+            <button
+              type="button"
+              data-testid="collab-signaling-reset"
+              onClick={onReset}
+              style={{ ...plainBtn, padding: "3px 10px", fontSize: 11.5 }}
+            >
+              Reset to default
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ShareDialog({ onClose }: ShareDialogProps): React.ReactElement {
   const { session, start, join, joining } = useCollab();
+  const status = useCollabStatus();
+  const peerAdvice = peerCountAdvice(status.peers);
   const [joinInput, setJoinInput] = useState("");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // P5: live signaling health. y-webrtc keeps existing P2P links alive even with
+  // the signaling server down, but a NEW peer can't find the room without it, so
+  // we surface the condition with a clear pointer at the editable URL field.
+  const [signalingDown, setSignalingDown] = useState(false);
+  useEffect(() => {
+    if (!session) {
+      setSignalingDown(false);
+      return;
+    }
+    setSignalingDown(!session.signalingConnected);
+    return session.reconnect.onSignalingChange((connected) =>
+      setSignalingDown(!connected),
+    );
+  }, [session]);
 
   const shareUrl = useMemo(() => {
     if (!session) return "";
@@ -199,7 +324,38 @@ export function ShareDialog({ onClose }: ShareDialogProps): React.ReactElement {
                 {copied ? "Copied!" : "Copy"}
               </button>
             </div>
+            {peerAdvice.warn && (
+              <div
+                data-testid="collab-peer-warn-banner"
+                style={{
+                  ...noteBox,
+                  background: "#fdeede",
+                  borderColor: "#e0a060",
+                  color: "#6a3500",
+                }}
+              >
+                <strong>Large session ({peerAdvice.participants} people).</strong>{" "}
+                {peerAdvice.message}
+              </div>
+            )}
+            {signalingDown && (
+              <div
+                data-testid="collab-signaling-down"
+                style={{
+                  ...noteBox,
+                  background: "#fdecec",
+                  borderColor: "#e09a9a",
+                  color: "#7a1f1f",
+                }}
+              >
+                <strong>Signaling server unreachable.</strong> Peers already
+                connected stay connected, but no one new can join until a
+                signaling server is reachable. Check your connection or set a
+                different server below.
+              </div>
+            )}
             <HonestNote />
+            <SignalingSettings />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button type="button" onClick={onClose} style={plainBtn}>
                 Done
@@ -268,6 +424,8 @@ export function ShareDialog({ onClose }: ShareDialogProps): React.ReactElement {
                 {error}
               </div>
             )}
+
+            <SignalingSettings />
 
             <div
               style={{

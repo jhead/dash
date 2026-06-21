@@ -46,6 +46,7 @@ import { attachAssetSync, type AssetSyncController } from "./assetSync.js";
 import type { AssetStore } from "./assetStore.js";
 import type { AssetTransport } from "./assetChannel.js";
 import { webrtcAssetTransport } from "./webrtcAssetTransport.js";
+import { attachReconnect, type ReconnectController } from "./reconnect.js";
 
 /** A live collaboration session. Owns the Y.Doc, binding, and provider. */
 export interface CollabSession {
@@ -82,8 +83,16 @@ export interface CollabSession {
   readonly assetSync?: AssetSyncController;
   /** The content-addressed asset byte store (shared with the renderer). */
   readonly assetStore?: AssetStore;
+  /**
+   * The P5 reconnection / signaling-health controller. Re-broadcasts presence
+   * on a new peer connection (churn/reconnect resilience) and reports whether a
+   * signaling server is reachable. Always present for a networked session.
+   */
+  readonly reconnect: ReconnectController;
   /** True once the provider has reached its first sync with a peer/room. */
   readonly synced: boolean;
+  /** True iff a signaling server is currently reachable (P5 ops surfacing). */
+  readonly signalingConnected: boolean;
   /** Build the full shareable URL from a base (e.g. `location.origin + path`). */
   shareUrl(baseUrl: string): string;
   /** The `#room=…&k=…` fragment alone (for appending to the current URL). */
@@ -146,6 +155,13 @@ function makeSession(
   provider.on("synced", () => {
     synced = true;
   });
+  // P5: reconnection + signaling-health. Re-broadcasts presence whenever a peer
+  // connection is (re)established so churn/reconnect re-syncs awareness, and
+  // tracks signaling reachability for the ops/error surfacing.
+  const reconnect = attachReconnect(
+    provider as unknown as import("./reconnect.js").ReconnectProviderLike,
+    { awarenessController },
+  );
   return {
     link,
     ydoc,
@@ -157,8 +173,12 @@ function makeSession(
     awarenessController,
     assetSync,
     assetStore: assetSync?.store,
+    reconnect,
     get synced() {
       return synced;
+    },
+    get signalingConnected() {
+      return reconnect.signalingConnected();
     },
     shareUrl: (baseUrl: string) => buildShareUrl(baseUrl, link),
     fragment: () => collabLinkToFragment(link),
@@ -167,6 +187,7 @@ function makeSession(
       // provider tears the transport down (peers see us leave immediately; the
       // awareness TTL is only the fallback for an ungraceful drop).
       awarenessController?.detach();
+      reconnect.detach();
       binding.detach();
       assetSync?.destroy();
       provider.destroy();

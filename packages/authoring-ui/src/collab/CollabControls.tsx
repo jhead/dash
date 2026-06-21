@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useCollab } from "./CollabContext.js";
 import { ShareDialog } from "./ShareDialog.js";
+import { peerCountAdvice } from "./peerCount.js";
 
 /** Coarse connection state surfaced to the user. */
 export type CollabConnState = "solo" | "connecting" | "connected";
@@ -138,26 +139,41 @@ export function CollabControls(): React.ReactElement {
   }
 
   const connected = status.state === "connected";
+  const advice = peerCountAdvice(status.peers);
   const label =
     status.peers > 0
       ? `${status.peers} ${status.peers === 1 ? "peer" : "peers"}`
       : "waiting for peers";
+  // A high peer count overrides the green "connected" tint with an amber warning
+  // tint, so the N^2-mesh degradation is visible at a glance.
+  const pillBg = advice.warn ? "#fdeede" : connected ? "#e7f6e9" : "#fff7e0";
+  const dotColor = advice.warn ? "#d06000" : connected ? "#2faf4a" : "#e0a000";
 
   return (
     <>
       <button
         type="button"
         data-testid="collab-status-pill"
-        title="Show the invite link / connection details"
+        data-peer-warn={advice.warn ? "true" : "false"}
+        title={
+          advice.warn
+            ? advice.message
+            : "Show the invite link / connection details"
+        }
         onClick={() => setShareOpen(true)}
         style={{
           ...pillBase,
           cursor: "pointer",
-          background: connected ? "#e7f6e9" : "#fff7e0",
+          background: pillBg,
         }}
       >
-        <StatusDot color={connected ? "#2faf4a" : "#e0a000"} />
+        <StatusDot color={dotColor} />
         <span data-testid="collab-status-label">{label}</span>
+        {advice.warn && (
+          <span data-testid="collab-peer-warn" title={advice.message}>
+            ⚠
+          </span>
+        )}
       </button>
       <button
         type="button"

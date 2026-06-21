@@ -1,7 +1,8 @@
 # Collaboration — optional P2P multiplayer (docs/37)
 
-Status: **Phase 4 complete** (task 1347) on top of **P3** (task 1346), **P2**
-(task 1345), **P1** (task 1344), and **P0** (task 1343). P0 shipped the
+Status: **Phase 5 complete — the feature is DONE** (task 1348) on top of **P4**
+(task 1347), **P3** (task 1346), **P2** (task 1345), **P1** (task 1344), and
+**P0** (task 1343). P0 shipped the
 foundation: a faithful, property-tested Yjs binding for the document model. P1
 added the **opt-in y-webrtc transport + shareable link + join flow**. P2 adds
 **awareness/presence** — live cursors, selection outlines,
@@ -13,10 +14,13 @@ honest privacy note + copyable invite link, a clear Start/Join/Leave control wit
 connection status, and the surfaced P2 presence — plus **out-of-band asset sync**:
 bitmap/sound/video BYTES are kept OUT of the CRDT (only a content-hash reference
 travels) and transferred lazily peer-to-peer over the same y-webrtc mesh, with a
-missing-asset placeholder until the bytes arrive. Still **default OFF**: no
-provider, network, signaling connection, or awareness exists until the user
-explicitly starts/joins a session; solo has zero overhead. Phase 5 builds the
-editor toggle on top.
+missing-asset placeholder until the bytes arrive. **P5 hardens** the whole
+feature (§13): peer-count realism (a warning past a soft mesh threshold, no
+artificial cap), reconnection / signaling-health surfacing, large-doc initial-
+sync + outbound-diff perf measurement, E2E-encryption verification, and the final
+ops/security/limits guidance. Still **default OFF**: no provider, network,
+signaling connection, or awareness exists until the user explicitly starts/joins
+a session; solo has zero overhead.
 
 > This binding is THE BET of the whole feature. Everything downstream assumes the
 > projection `FlashDocument → Y.Doc → FlashDocument` is the identity over the full
@@ -862,3 +866,206 @@ untracked dev-local fixture is absent in a fresh worktree — unrelated to P4.)
   own message reader's unknown-type branch (one `console.error` each) because we
   do not fork y-webrtc to register a new top-level message type. Functionally
   inert.
+
+---
+
+## 13. Phase 5 — hardening (task 1348, FINAL phase)
+
+P5 is the hardening pass that makes the feature shippable for real use. It adds
+**no new product surface beyond a few warnings** — it sets expectations, surfaces
+failure modes, measures the costs that matter, and proves the encryption claim.
+Everything stays **default OFF**; nothing here runs solo.
+
+### 13.1 Peer-count realism — graceful, no artificial cap
+
+y-webrtc forms a **full WebRTC mesh**: every peer holds a direct connection to
+every other peer, and each peer re-broadcasts every CRDT update + awareness
+change to all of its links. So the connection count grows **O(N²)** and per-peer
+bandwidth/CPU grows ~linearly with N. **Correctness is unaffected** — Yjs
+converges regardless of N (proven by the 6-peer mesh test, §13.6) — but
+**performance** degrades past a handful of peers: connection setup climbs, cursor
+presence gets jittery, and a weak peer can stall.
+
+We deliberately impose **no artificial cap** (the transport keeps working), but
+we **set expectations**: `peerCountAdvice(peers)` (`collab/peerCount.ts`) is a
+pure mapping from the provider's peer count to UI advice. Once participants exceed
+the soft threshold `PEER_COUNT_WARN_THRESHOLD` (**15**) it returns
+`warn: true` + a message suggesting the user split into smaller rooms. The warning
+surfaces in two places: the EditBar **status pill** turns amber with a ⚠ and the
+tooltip carries the message (`CollabControls.tsx`), and the Share dialog shows a
+non-blocking **banner** (`ShareDialog.tsx`). Guidance for users: **a handful of
+collaborators is the realistic Flash-authoring case and works smoothly; past ~15
+people, split into multiple rooms.**
+
+### 13.2 Reconnection edge cases — what Yjs gives free vs. what we add
+
+The **document** recovers automatically: a dropped peer that reconnects
+re-exchanges only the missing updates via the Yjs **state-vector** protocol, so
+the CRDT converges with no help from us (the multi-peer reconnection test in
+§13.6 proves a peer catches up on both the edits it missed AND pushes its own
+offline edits on reconnect). Two things are **not** free, and
+`attachReconnect` (`collab/reconnect.ts`, wired into every session and torn down
+in `stop()`) hardens them:
+
+1. **Awareness re-broadcast on (re)connect.** Presence is non-persistent and
+   expires (the §9.5 30 s TTL). While disconnected we stop hearing peers'
+   keepalives (they fade from our view) and our presence may be reaped on theirs.
+   On every provider `peers` event that **adds** a peer (initial join, churn, or
+   reconnect) the controller calls `awarenessController.flush()` — re-broadcasting
+   our full presence so the new/returning peer sees us immediately, without
+   waiting for our next field change.
+2. **Signaling-health surfacing** (see §13.5).
+
+### 13.3 Large-doc initial-sync + outbound-diff performance
+
+Measured by `packages/collab/src/__tests__/perf.test.ts` on a **large doc built
+from 4,000 real `@flash/core` mutations** (≈41 scenes, 244 library items,
+**268 KiB** on the wire). Numbers from a representative CI-class run (the test
+asserts loose guard rails to catch a 10× regression; the printed numbers are the
+deliverable):
+
+| Stage (one-time first sync) | Time |
+|---|---|
+| `materializeDoc` (host, once) | ~86 ms |
+| `encodeStateAsUpdate` (the first-sync payload) | ~20 ms |
+| `applyUpdate` (joiner) | ~25 ms |
+| `rebuildDoc` (joiner) | ~32 ms |
+| **TOTAL first sync** | **~163 ms** |
+
+**Outbound diff (the steady-state cost):** a **single scalar edit** (move one
+display object 1 px) on that 275 KB document produces a **31-byte** update —
+**0.011%** of the full-doc bytes — in **~3.4 ms**. This is the minimal-delta
+property (§1 / P0) holding on a big doc: the structural-sharing `diffDoc` descends
+only where references differ, so per-edit cost is independent of document size.
+
+**Conclusion / optimization:** no hotspot needs reworking. First sync is a
+sub-200 ms one-time host+joiner cost even for a multi-thousand-object document,
+and steady-state edits are tiny constant-size deltas. The dominant first-sync term
+is `materializeDoc` (a one-time host cost paid before anyone joins). The perf test
+stands as the regression guard.
+
+### 13.4 Offline Y-state persistence (y-indexeddb) — DEFERRED (documented skip)
+
+`y-indexeddb` would persist the `Y.Doc` to IndexedDB for offline editing / faster
+rejoin. **We deliberately do NOT add it**, because it would create a **competing
+persistence** with the existing **persistent-projects autosave** (task 1310),
+which writes the **derived snapshot** (`.fla` bytes) to IndexedDB and is the
+**authoritative restore path** on reload. Adding y-indexeddb means:
+
+- Two IndexedDB stores holding the **same state in two representations** (the Yjs
+  CRDT log vs. the serialized `.fla` snapshot), which can **diverge** — e.g. a
+  reload restores the autosave snapshot into a fresh store, but a persisted Y.Doc
+  from a *previous* session would then need reconciliation against it, and the two
+  could disagree about which is newer.
+- Unbounded growth of the Yjs update log (it never compacts the way a snapshot
+  does), and a second source of `QuotaExceededError` to handle.
+- A trust-model wrinkle: the persisted Y.Doc would retain whatever untrusted CRDT
+  state peers pushed (§11), surviving a reload, where today a reload always
+  re-derives from the validated snapshot.
+
+The autosave snapshot already gives the user-facing benefit (F5 restores
+in-progress work, even unnamed), and on rejoin the bytes a peer is missing are
+re-fetched via the state-vector protocol (document) + the asset channel (media).
+The faster-rejoin upside does not justify the divergence risk. **If revisited**,
+the safe design is to make the autosave snapshot remain authoritative and treat a
+persisted Y.Doc as a pure cache that is *discarded and rebuilt from the snapshot*
+on any mismatch — not a second source of truth.
+
+### 13.5 Signaling-server-down fallback
+
+The signaling server only brokers the WebRTC handshake (§8.4) — it never sees
+document bytes or the key. But if **every** configured signaling server is down, a
+**new** peer can never discover an existing one (already-connected peers keep
+working P2P over their established WebRTC links). P5 surfaces this:
+
+- **Health detection.** y-webrtc's provider emits a `status` `{connected}` event
+  and exposes `provider.connected` (true iff ≥1 signaling conn is up).
+  `attachReconnect` tracks it and fans changes out
+  (`session.signalingConnected` + `reconnect.onSignalingChange`).
+- **Clear error.** The Share dialog shows a red **"Signaling server
+  unreachable"** banner when the live session loses all signaling, explaining that
+  existing peers stay connected but no one new can join.
+- **User-editable URL + multiple servers.** The dialog's **Signaling server**
+  section (`SignalingSettings`) edits the persisted list (`signaling.ts`,
+  `localStorage`): one `wss://…` per line. Multiple entries give redundancy (a
+  peer connects to all of them); a user can point at a self-hosted server (the
+  y-webrtc repo ships a one-file Node signaling server). Changes take effect on the
+  next start/join. The default is the public Yjs server
+  (`wss://y-webrtc-eu.fly.dev`) — third-party, best-effort.
+
+### 13.6 Acceptance — tests (the gates)
+
+All green (full suites: `@flash/collab` 24/24, `@flash/authoring-ui` 1141/1141,
+`@flash/swf` 1472/1472, `@flash/core` 5528/5530 — the 2 `@flash/core` failures
+are the 3 `flash8-empty.fla` binary-writer fixture cases that ENOENT in a fresh
+worktree because that untracked dev-local fixture is absent; unrelated to P5).
+
+- **`collab/__tests__/multipeer.test.ts`** — **multi-peer + reconnection.** A
+  full-mesh loopback bus (mirroring y-webrtc's mesh, since real WebRTC is absent
+  in Node) drives REAL `@flash/core` mutations through real stores + `attachCollab`
+  bindings: **6 peers** — an edit on any peer reaches all others and all 6
+  documents converge byte-for-byte; a **dropped peer reconnects** and re-syncs
+  both the edits it missed and its own offline edits via the state-vector
+  exchange; **peer churn** — a peer leaves and a fresh peer joins mid-session,
+  adopting the full current state, and all converge.
+- **`collab/__tests__/reconnect.test.ts`** — the `attachReconnect` controller:
+  re-flushes presence on a peer ADD (not on a remove); reports signaling health
+  and fans only *changes* out; detach removes the handlers. Uses a real
+  `y-protocols/awareness` loopback so the presence re-broadcast genuinely arrives.
+- **`collab/__tests__/encryption.test.ts`** — **E2E-encryption verification.**
+  Exercises the **real y-webrtc crypto** (`y-webrtc/src/crypto.js` `deriveKey` /
+  `encrypt` / `decrypt` — the same code the live `WebrtcProvider` runs) on both a
+  real **document** update and a real **awareness** update: the correct key
+  round-trips to identical bytes; a **wrong password** (and a wrong room-name
+  salt) **cannot decrypt** (AES-GCM auth-tag failure) — so a peer with the wrong
+  `k` reads nothing; the plaintext secret never appears in the ciphertext bytes.
+- **`collab/__tests__/perf.test.ts`** — the §13.3 measurement + the minimal-delta
+  proof, with loose regression guard rails.
+- **`collab/__tests__/peerCount.test.ts`** — the `peerCountAdvice` mapping
+  (threshold boundary, non-finite clamping, message content).
+
+### 13.7 Operations & security — the final guidance
+
+- **Security model (unchanged, re-affirmed).** Google-Docs-style: **anyone with
+  the share link is a full read/write collaborator.** The room id + AES-GCM
+  password live in the URL **fragment** (`#room=…&k=…`), which browsers never
+  transmit, so the signaling server sees neither the data nor the key. Treat the
+  link like a password; to revoke access, start a **new** session (a fresh room +
+  key) and re-share. The wire is end-to-end encrypted (§13.6 proves it). The
+  **inbound model is validated** before it reaches the editor (§11). The one
+  residual vector is **peer-authored AS2 `script`/`asClasses` source**, which runs
+  in every collaborator's Ruffle sandbox — inherent to a doc-sharing model, the
+  same risk as opening someone else's `.fla` (§11 threat-model note). Do not share
+  a link with anyone you would not hand a `.fla` to run.
+- **Privacy.** Collaborators connect **peer-to-peer over WebRTC**, so their **IP
+  addresses are visible to one another**. There is **no server of ours**; the
+  public signaling server is third-party and handshake-only. All three points are
+  shown in the Share dialog's non-negotiable honest note (§12.1).
+- **Sizing.** Smooth for a handful of collaborators; the UI warns past ~15 (§13.1).
+  For larger groups, split into multiple rooms — there is no per-room participant
+  cap, only the mesh's N² reality.
+- **Signaling ops.** The public default is best-effort. For reliable / private use,
+  run the y-webrtc one-file Node signaling server and set its `wss://` URL (or
+  several, for redundancy) in the Share dialog's Signaling-server field (§13.5).
+- **Persistence.** No collab-specific persistence: the **autosave snapshot
+  remains authoritative** (§13.4). A reload re-derives everything from the
+  validated `.fla` snapshot; missing document/asset bytes are re-fetched from peers
+  on rejoin.
+
+### 13.8 Residual limitations (the honest, final list)
+
+- **N² mesh.** Large rooms degrade (performance, not correctness). No mediation
+  server / SFU; splitting rooms is the answer. (P5 §13.1.)
+- **No offline Y-state persistence.** Deferred by design to avoid competing with
+  the authoritative autosave (P5 §13.4). Rejoin re-syncs from peers.
+- **Peer code execution.** Remote AS2 source runs in your sandbox (§11 / §13.7) —
+  not fixable by transport hardening; a future per-peer trust gate is the only
+  remedy and is out of scope.
+- **Positional-array concurrent same-index insert** can interleave (P0 §6); atomic
+  geometry is **one-artist-per-shape** LWW (P0 §6); these are accepted CRDT-mapping
+  tradeoffs, not P5 regressions.
+- **Whole-asset data-channel messages** can stress the browser's buffer for very
+  large media; chunked transfer is a documented P4 follow-up (§12.6).
+- **Remote code-edit cursors** for `asClasses` Y.Text were scoped but deferred
+  (P2 §9.8).
+- **Benign y-webrtc log noise** from our asset frames (§12.6).

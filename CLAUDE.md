@@ -1024,6 +1024,38 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   `.fla`; only the storage SHAPE (script must be string) + class PATH are
   sanitized. Gate: `validate.test.ts` (13 cases incl. a peer injecting raw hostile
   Y.Doc state directly). Distinct from P5 transport/encryption (1348).
+- **P5 hardening = expectations + surfacing + measurement, NOT new product
+  surface (task 1348, FINAL collab phase; docs/37 §13).** Six items: (1)
+  **Peer-count realism** — y-webrtc is a FULL MESH (O(N²) connections, per-peer
+  fan-out ~linear in N); correctness is N-independent (Yjs converges; the 6-peer
+  mesh test proves it) but PERFORMANCE degrades past a handful. No artificial
+  cap; `peerCountAdvice(peers)` (`collab/peerCount.ts`) warns past
+  `PEER_COUNT_WARN_THRESHOLD`=15 participants, surfaced as an amber pill ⚠ +
+  Share-dialog banner. (2) **Reconnection** — Yjs re-syncs the DOCUMENT free via
+  the state-vector protocol; what's NOT free is AWARENESS (non-persistent, 30 s
+  TTL) so `attachReconnect` (`collab/reconnect.ts`) re-`flush()`es presence on
+  every provider `peers` event that ADDS a peer (join/churn/reconnect). (3)
+  **Large-doc perf** (`collab/perf.test.ts`): a 4000-mutation doc (~268 KiB,
+  41 scenes, 244 lib items) first-syncs in ~163 ms total (materialize ~86 +
+  encode ~20 + apply ~25 + rebuild ~32); a single scalar edit diffs to **31
+  bytes = 0.011%** of the full doc in ~3.4 ms — the minimal-delta property holds
+  on big docs, no hotspot to optimize. (4) **y-indexeddb DEFERRED** — would
+  compete with the authoritative persistent-projects autosave snapshot (task
+  1310): two IndexedDB representations of the same state that can diverge + a
+  trust-model wrinkle (persisted untrusted CRDT survives reload). Autosave stays
+  the single source of truth; rejoin re-syncs from peers. (5) **Signaling-down
+  fallback** — `provider.connected`/`status` event → `session.signalingConnected`
+  + `reconnect.onSignalingChange`; Share dialog shows a red "unreachable" banner +
+  an editable multi-URL signaling field (`SignalingSettings`, persisted in
+  localStorage, takes effect next start/join). (6) **E2E-encryption verification**
+  (`collab/encryption.test.ts`) — uses the REAL `y-webrtc/src/crypto.js`
+  deriveKey/encrypt/decrypt (imported by resolved file URL because y-webrtc's
+  `exports` map doesn't expose the `src/` subpath — `createRequire.resolve` +
+  `pathToFileURL`) on a real doc update AND a real awareness update: correct key
+  round-trips, WRONG password / wrong room-salt CANNOT decrypt (AES-GCM auth-tag
+  fail), plaintext never in ciphertext. Node 22 has WebCrypto global. Multi-peer
+  + reconnection gate: `collab/multipeer.test.ts` (a full-mesh loopback bus over
+  6 peers; drop/reconnect with state-vector catch-up both ways; churn).
 
 ### AS2 external classes / Class VFS (task 1300 P2)
 
