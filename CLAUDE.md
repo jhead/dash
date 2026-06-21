@@ -1079,6 +1079,32 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   replace + non-collab-hash left untouched, plus 1 jsdom integration through the
   real `CollabProvider`+`CollabControls`: Start sets `location.hash`, Leave clears).
 
+- **A navigated `#room=…&k=…` collab link is CONSENT-gated, never a silent auto-join
+  (task 1357 — joiner complement to 1354).** 1354 wrote the session fragment to the
+  address bar but deliberately read NOTHING at mount, so a freshly-navigated share link
+  was inert (user opened it, nothing happened). 1357 makes the joiner half act on the
+  link — but joining connects you to untrusted peers, exposes your IP/presence, and
+  merges a remote doc over your local one, so it raises an explicit CONSENT modal and
+  only constructs the y-webrtc provider AFTER the user confirms. Pure decision layer:
+  `collab/collabAutoJoin.ts detectIncomingCollabLink({win?, sessionLive, collabEnabled?})`
+  parses `location.href` and returns the link IFF it's a genuine invitation — `null` when
+  a session is already LIVE (the fragment is OURS: 1354 writes it via `replaceState` AFTER
+  `session` is set, so guarding on `sessionLive` breaks the self-join loop), when collab is
+  flag-disabled, or when the hash isn't a collab link. `CollabControls` runs the detection
+  ONCE at mount (a `useRef` guards re-runs) and renders `CollabJoinPrompt` (reuses the
+  Share dialog's `HonestNote`, now extracted to `collab/HonestNote.tsx` and shared by both).
+  Confirm → `CollabContext.join(link)` (constructs the provider, adopts on sync, re-writes
+  the canonical fragment). Decline → no provider is EVER constructed (so `joinCollab`/
+  `replaceDoc` never run, local doc untouched) + `clearCollabFragment()` so a reload won't
+  re-prompt. A navigated link is itself an explicit opt-in, so `CollabControls` passes
+  `collabEnabled: true` even though `COLLAB_ENABLED_DEFAULT` is false (that flag gates the
+  binding default, not this UI). Gate: `collab/__tests__/collabAutoJoin.test.ts` (4 pure
+  detection cases + 3 jsdom integration through CollabProvider+CollabControls: incoming link
+  prompts but does NOT construct a provider; Confirm → exactly 1 provider + status pill +
+  room link stays in the bar; Decline → 0 providers, fragment cleared, SAME doc reference).
+  Test gotcha: `joinCollab` awaits a provider "synced" event (or an 8 s timeout), so the
+  mock provider must emit `synced` on a microtask for a join to resolve promptly in tests.
+
 ### AS2 external classes / Class VFS (task 1300 P2)
 
 - **The ClassVfs INTERFACE + path helpers + hydrate/sync bridge are PURE and live in

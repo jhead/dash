@@ -822,12 +822,43 @@ and clearing on Leave bounds the local-history footprint. The shoulder-surf /
 screen-share consideration is inherent to any "the link is the password" model and
 is already called out in the honest note (§12.1).
 
-**No auto-join-on-load (still deliberate).** Writing the fragment does **not**
-re-enable silent auto-join: `parseCollabLink` is invoked only from the dialog's
-explicit **Join** action, and nothing reads `location.hash` at mount. So opening an
-existing `#room&k` URL still routes through the user's explicit Join (the
-join-confirmation), and our own freshly-written fragment is never double-handled.
-The fragment makes the bar **truthful while in a session**; it is cleared the
+**Consent-gated join-on-load (task 1357 — reconciles the earlier "no auto-join"
+note).** 1354 deliberately did NOT read `location.hash` at mount, so a freshly-
+navigated `#room=…&k=…` link was *inert* — a user who opened a shared link saw
+nothing happen, which is not the shareable-link UX they expect (the link IS the
+invitation; the secret `k` lives only in the fragment the inviter chose to share,
+so navigating to it is a deliberate join intent). 1357 makes the **joiner** half of
+the round-trip act on the link — but as a **consent gate, never a silent auto-
+connect**: joining connects you to untrusted peers, exposes your IP/presence to
+them, and merges a remote document over your local one, so the join must be
+*informed*.
+
+The decision layer is a pure helper, `collab/collabAutoJoin.ts`:
+
+- **`detectIncomingCollabLink({ win?, sessionLive, collabEnabled? })`** — at mount,
+  parse `window.location.href`'s fragment and return the `CollabLink` **iff** it is
+  a genuine incoming invitation. Returns `null` (no prompt) when: collab is disabled
+  by the flag; a session is already live (the fragment is **ours** — 1354 writes it
+  via `replaceState` *after* `session` is set, so guarding on `sessionLive` breaks
+  the self-join loop); there is no window; or the fragment is absent / not a collab
+  link. Injectable `win` keeps it DOM-free and unit-testable.
+
+`CollabControls` runs the detection **once** at mount (a ref guards re-runs) and, on
+an incoming link, raises **`CollabJoinPrompt`** — a modal reusing the Share dialog's
+shared `HonestNote` disclosure plus the prompt *"Join this collaboration session?
+You'll connect to other participants (your IP becomes visible to them) and the
+shared document will load."*:
+
+- **Join (confirm)** → calls the existing `CollabContext.join(link)`, which
+  constructs the y-webrtc provider, adopts the remote doc on first sync, AND re-
+  writes the canonical fragment (1354) so the address bar stays the room link.
+- **Dismiss (decline)** → does **not** join (no provider is ever constructed, so
+  `joinCollab`/`replaceDoc` never run and the local document is untouched) and calls
+  `clearCollabFragment()` so a reload does not re-prompt.
+
+The prompt is the **informed-exposure gate**: the link grants the capability, the
+explicit click confirms the human chose to expose themselves to that specific room.
+The fragment still makes the bar truthful while in a session, and is cleared the
 moment the session ends so a refresh never shows a room you are no longer in.
 
 ### 12.2 Out-of-band asset sync — the design

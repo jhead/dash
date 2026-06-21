@@ -26,6 +26,7 @@ import {
 } from "./signaling.js";
 import { peerCountAdvice } from "./peerCount.js";
 import { useCollabStatus } from "./CollabControls.js";
+import { HonestNote, honestNoteBox } from "./HonestNote.js";
 
 export interface ShareDialogProps {
   onClose: () => void;
@@ -60,17 +61,6 @@ const heading: React.CSSProperties = {
   fontWeight: "bold",
 };
 
-const noteBox: React.CSSProperties = {
-  background: "#fff6da",
-  border: "1px solid #e3c969",
-  borderRadius: 4,
-  padding: "8px 10px",
-  fontSize: 11.5,
-  lineHeight: 1.45,
-  margin: "12px 0",
-  color: "#5b4a10",
-};
-
 const primaryBtn: React.CSSProperties = {
   padding: "6px 14px",
   borderRadius: 4,
@@ -90,30 +80,6 @@ const plainBtn: React.CSSProperties = {
   cursor: "pointer",
   fontSize: 13,
 };
-
-function HonestNote(): React.ReactElement {
-  return (
-    <div style={noteBox} data-testid="collab-honest-note">
-      <strong>Before you share:</strong>
-      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-        <li>
-          Anyone with this link gets <strong>full edit access</strong> to the
-          document — treat it like a password.
-        </li>
-        <li>
-          Collaborators connect <strong>peer-to-peer over WebRTC</strong>, so
-          their IP addresses are visible to one another.
-        </li>
-        <li>
-          Your document is <strong>end-to-end encrypted</strong> and travels
-          directly between peers — there is <strong>no server of ours</strong> in
-          the middle (a public signaling server only brokers the initial
-          handshake; it never sees your data or the key).
-        </li>
-      </ul>
-    </div>
-  );
-}
 
 /**
  * The editable signaling-server field (P5 fallback / ops). The signaling server
@@ -328,7 +294,7 @@ export function ShareDialog({ onClose }: ShareDialogProps): React.ReactElement {
               <div
                 data-testid="collab-peer-warn-banner"
                 style={{
-                  ...noteBox,
+                  ...honestNoteBox,
                   background: "#fdeede",
                   borderColor: "#e0a060",
                   color: "#6a3500",
@@ -342,7 +308,7 @@ export function ShareDialog({ onClose }: ShareDialogProps): React.ReactElement {
               <div
                 data-testid="collab-signaling-down"
                 style={{
-                  ...noteBox,
+                  ...honestNoteBox,
                   background: "#fdecec",
                   borderColor: "#e09a9a",
                   color: "#7a1f1f",

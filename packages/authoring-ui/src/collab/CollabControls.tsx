@@ -11,9 +11,13 @@
  *
  * Nothing here runs or subscribes when solo beyond reading the (null) session.
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useCollab } from "./CollabContext.js";
 import { ShareDialog } from "./ShareDialog.js";
+import { CollabJoinPrompt } from "./CollabJoinPrompt.js";
+import { detectIncomingCollabLink } from "./collabAutoJoin.js";
+import { clearCollabFragment } from "./collabUrl.js";
+import type { CollabLink } from "./collabLink.js";
 import { peerCountAdvice } from "./peerCount.js";
 
 /** Coarse connection state surfaced to the user. */
@@ -113,13 +117,57 @@ function StatusDot({ color }: { color: string }): React.ReactElement {
  * The opt-in collaboration control. Lives in the EditBar right slot.
  */
 export function CollabControls(): React.ReactElement {
-  const { session, leave } = useCollab();
+  const { session, join, leave } = useCollab();
   const status = useCollabStatus();
   const [shareOpen, setShareOpen] = useState(false);
+
+  // Consent-gated auto-join (task 1357). On mount, if the address bar carries an
+  // incoming `#room=…&k=…` invitation AND there is no live session yet, raise a
+  // CONSENT prompt — we never silently connect (joining exposes the joiner's IP/
+  // presence and merges a remote doc over the local one). The detection runs ONCE
+  // before any session exists, so the fragment we ourselves write on Start/Join
+  // (task 1354, via replaceState AFTER `session` is set) never re-triggers it.
+  const [incomingLink, setIncomingLink] = useState<CollabLink | null>(null);
+  const detectedRef = useRef(false);
+  useEffect(() => {
+    if (detectedRef.current) return;
+    detectedRef.current = true;
+    // A navigated link is itself an explicit opt-in, so allow the prompt even
+    // though the solo-app collab default is off.
+    const link = detectIncomingCollabLink({
+      sessionLive: session !== null,
+      collabEnabled: true,
+    });
+    if (link) setIncomingLink(link);
+    // Run exactly once at mount (the deps are intentionally empty).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onConfirmJoin = useCallback(() => {
+    const link = incomingLink;
+    setIncomingLink(null);
+    if (!link) return;
+    // join() also re-writes the canonical fragment (task 1354), so the address bar
+    // stays the room link. Errors surface in the Share dialog if the user re-opens.
+    void join(link).catch(() => {
+      /* swallow — the session simply isn't established; local doc is intact. */
+    });
+  }, [incomingLink, join]);
+
+  const onDeclineJoin = useCallback(() => {
+    setIncomingLink(null);
+    // Clear the fragment so a reload doesn't re-prompt. We DID NOT join, so the
+    // local document is untouched (joinCollab / replaceDoc never ran).
+    clearCollabFragment();
+  }, []);
 
   const onLeave = useCallback(() => {
     leave();
   }, [leave]);
+
+  const joinPrompt = incomingLink ? (
+    <CollabJoinPrompt onConfirm={onConfirmJoin} onDecline={onDeclineJoin} />
+  ) : null;
 
   if (!session) {
     return (
@@ -134,6 +182,7 @@ export function CollabControls(): React.ReactElement {
           Collaborate…
         </button>
         {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
+        {joinPrompt}
       </>
     );
   }
@@ -185,6 +234,7 @@ export function CollabControls(): React.ReactElement {
         Leave
       </button>
       {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
+      {joinPrompt}
     </>
   );
 }

@@ -114,6 +114,21 @@ export {
 // ---------------------------------------------------------------------------
 export { ShareDialog } from "./ShareDialog.js";
 export { CollabControls, useCollabStatus, type CollabConnState } from "./CollabControls.js";
+export { HonestNote } from "./HonestNote.js";
+
+// ---------------------------------------------------------------------------
+// Consent-gated auto-join (task 1357): a navigated `#room=…&k=…` link raises an
+// explicit consent prompt before any provider is constructed — never a silent
+// auto-connect (the joiner's IP/presence is exposed; the local doc is merged).
+// ---------------------------------------------------------------------------
+export {
+  type AutoJoinWindowLike,
+  detectIncomingCollabLink,
+} from "./collabAutoJoin.js";
+export {
+  CollabJoinPrompt,
+  type CollabJoinPromptProps,
+} from "./CollabJoinPrompt.js";
 
 // ---------------------------------------------------------------------------
 // Phase 5 — hardening (task 1348 / docs 37 §13): peer-count realism,
