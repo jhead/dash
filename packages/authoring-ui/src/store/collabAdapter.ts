@@ -16,6 +16,8 @@
 import type { FlashDocument } from "@flash/core";
 import {
   FlashCollabBinding,
+  createCollabUndoManager,
+  type CollabUndoManager,
   type DocSource,
   type FlashCollabBindingOptions,
 } from "@flash/collab";
@@ -34,7 +36,14 @@ export function storeAsDocSource(store: DocumentStoreApi): DocSource {
 
 export interface AttachCollabResult {
   binding: FlashCollabBinding;
-  /** Detach the binding (does not destroy the Y.Doc). */
+  /**
+   * The per-origin collaborative UndoManager (P3). Tracks ONLY this peer's own
+   * edits and is registered as the store's undo/redo handler for the lifetime of
+   * the attachment, so the app's undo reverts only MY last edit (never a remote
+   * peer's concurrent edit).
+   */
+  undoManager: CollabUndoManager;
+  /** Detach the binding + UndoManager and restore solo (snapshot) undo. */
   detach: () => void;
 }
 
@@ -44,7 +53,11 @@ export interface AttachCollabResult {
  * wire). This function does NO networking.
  *
  * This is the single opt-in entry point — calling it is what turns collaboration
- * on for a given Shell/store instance.
+ * on for a given Shell/store instance. Beyond the P0 binding it now (P3) creates
+ * a per-origin `Y.UndoManager` and registers it as the store's undo handler:
+ * while attached, `store.undo()`/`store.redo()` route to the UndoManager (whose
+ * inverse edits flow back through the binding's inbound `replaceDoc`), and the
+ * snapshot stack is frozen. `detach()` unregisters it and restores solo undo.
  */
 export function attachCollab(
   store: DocumentStoreApi,
@@ -52,8 +65,18 @@ export function attachCollab(
   options?: FlashCollabBindingOptions,
 ): AttachCollabResult {
   const binding = new FlashCollabBinding(ydoc, storeAsDocSource(store), options);
+  const undoManager = createCollabUndoManager(binding);
+  // Route the app's undo/redo to the per-origin UndoManager and freeze the
+  // snapshot stack for the session's duration.
+  store.getState().setCollabUndo(undoManager);
   return {
     binding,
-    detach: () => binding.destroy(),
+    undoManager,
+    detach: () => {
+      // Restore solo (snapshot) undo FIRST, then tear the Yjs pieces down.
+      store.getState().setCollabUndo(null);
+      undoManager.destroy();
+      binding.destroy();
+    },
   };
 }

@@ -16,6 +16,8 @@
  */
 export { FlashCollabBinding, flashDocToYDoc, yDocToFlashDoc } from "./binding.js";
 export type { DocSource, FlashCollabBindingOptions } from "./binding.js";
+export { createCollabUndoManager } from "./undo.js";
+export type { CollabUndoManager, CollabUndoOptions } from "./undo.js";
 export { materializeDoc, diffDoc, rebuildDoc, getRoot, ROOT_KEY } from "./schema.js";
 export { jsonEqual, cloneJson } from "./json.js";
 export type { Json } from "./json.js";

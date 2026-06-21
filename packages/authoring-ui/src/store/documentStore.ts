@@ -21,6 +21,18 @@ import { historyReducer, type HistoryAction } from "./history.js";
  * Phase 1 will move the `withTimeline`/`withLibrary`/`withProperties` helpers in
  * here too; for now they remain in Shell and call `pushDoc` with the new doc.
  */
+/**
+ * A collaborative undo handler the store routes `undo`/`redo` to during a collab
+ * session (task 1346 P3). When registered, the app's undo/redo are served by a
+ * per-origin `Y.UndoManager` (so each peer undoes only its OWN edits) instead of
+ * the snapshot reducer. When `null` (solo — the default), undo/redo use the
+ * snapshot history EXACTLY as before, with zero change.
+ */
+export interface CollabUndoHandler {
+  undo(): void;
+  redo(): void;
+}
+
 export interface DocumentState {
   history: HistoryState;
   /** Record a new document state (clears the redo stack). */
@@ -32,6 +44,17 @@ export interface DocumentState {
   undo: () => void;
   redo: () => void;
   clearHistory: () => void;
+  /**
+   * Route undo/redo to a collab UndoManager for the duration of a session.
+   *
+   * Pass a handler to BEGIN a collab session: the current snapshot
+   * `HistoryState` is frozen aside and `undo`/`redo` delegate to the handler.
+   * Pass `null` to END the session: the frozen snapshot stack is restored, so
+   * solo undo continues exactly where it left off. While a handler is set, the
+   * snapshot stack is not consulted by undo/redo (inbound remote + UndoManager
+   * edits arrive via `replaceDoc`, which never pushes a snapshot entry).
+   */
+  setCollabUndo: (handler: CollabUndoHandler | null) => void;
 }
 
 export type DocumentStoreApi = StoreApi<DocumentState>;
@@ -40,15 +63,55 @@ export function createDocumentStore(initial: FlashDocument): DocumentStoreApi {
   return createStore<DocumentState>((set, get) => {
     const apply = (action: HistoryAction): void =>
       set({ history: historyReducer(get().history, action) });
+    // The active collab undo handler (null = solo). Kept in closure state, not in
+    // the store, so subscribing to document changes never sees it churn.
+    let collabUndo: CollabUndoHandler | null = null;
+    // The snapshot HistoryState frozen at session start, restored on session end.
+    let frozenHistory: HistoryState | null = null;
     return {
       history: createHistory(initial),
-      pushDoc: (next) => apply({ type: "PUSH", nextDoc: next }),
+      // While a collab session is active the snapshot stack is FROZEN: a local
+      // edit updates the present (so it syncs out + renders) but does NOT push a
+      // snapshot entry — undo/redo are served by the per-origin UndoManager
+      // instead. Solo (no handler), this is the unchanged PUSH/COMMIT_DRAG path.
+      pushDoc: (next) =>
+        apply(collabUndo ? { type: "REPLACE", nextDoc: next } : { type: "PUSH", nextDoc: next }),
       replaceDoc: (next) => apply({ type: "REPLACE", nextDoc: next }),
       commitDrag: (preDrag, final) =>
-        apply({ type: "COMMIT_DRAG", preDragDoc: preDrag, finalDoc: final }),
-      undo: () => apply({ type: "UNDO" }),
-      redo: () => apply({ type: "REDO" }),
+        apply(
+          collabUndo
+            ? { type: "REPLACE", nextDoc: final }
+            : { type: "COMMIT_DRAG", preDragDoc: preDrag, finalDoc: final },
+        ),
+      // SOLO: snapshot undo/redo, unchanged. COLLAB: delegate to the per-origin
+      // UndoManager (which replaceDoc's the undone state back through the binding).
+      undo: () => {
+        if (collabUndo) collabUndo.undo();
+        else apply({ type: "UNDO" });
+      },
+      redo: () => {
+        if (collabUndo) collabUndo.redo();
+        else apply({ type: "REDO" });
+      },
       clearHistory: () => apply({ type: "CLEAR" }),
+      setCollabUndo: (handler) => {
+        if (handler) {
+          // BEGIN: freeze the snapshot stack (so a session's edits don't grow it
+          // and an end-of-session restore lands where solo left off).
+          if (!collabUndo) frozenHistory = get().history;
+          collabUndo = handler;
+        } else {
+          // END: restore the frozen snapshot stack onto the CURRENT present, so
+          // the editor keeps the latest (possibly remotely-merged) document while
+          // its past/future are the pre-session snapshot stack.
+          collabUndo = null;
+          if (frozenHistory) {
+            const current = get().history.present;
+            set({ history: { ...frozenHistory, present: current, future: [] } });
+            frozenHistory = null;
+          }
+        }
+      },
     };
   });
 }

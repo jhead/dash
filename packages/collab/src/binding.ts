@@ -46,7 +46,11 @@ export class FlashCollabBinding {
   readonly ydoc: Y.Doc;
   readonly localOrigin: unknown;
   private readonly source: DocSource;
-  private readonly root: Y.Map<unknown>;
+  /**
+   * The Y.Doc root the binding projects into / rebuilds from. Exposed (read-only)
+   * so a per-origin `Y.UndoManager` (P3) can scope itself to exactly this subtree.
+   */
+  readonly root: Y.Map<unknown>;
   /** The document we last projected into / rebuilt from the Y.Doc. */
   private lastSynced: FlashDocument;
   private unsubscribeStore: (() => void) | null = null;

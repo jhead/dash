@@ -520,3 +520,94 @@ Full authoring-ui suite **1109/1109** green; collab P0 still **9/9**.
   the ClassesPanel uses the shared `ScriptEditor` whose textarea selection is not
   yet surfaced to awareness. The awareness shape has room for it (a future
   `codeCursor` field); not wired in P2.
+
+---
+
+## 10. Phase 3 — per-origin collaborative undo (task 1346)
+
+P3 makes undo **collaboration-aware**: during a session each peer undoes only its
+**own** edits, never a concurrent edit a remote peer made. Solo undo is untouched.
+
+### 10.1 The two undo models, and the seam between them
+
+There are two undo stacks, and exactly one is live at a time:
+
+- **SOLO — snapshot undo (unchanged).** The existing immutable snapshot history
+  (`@flash/core` `history/history.ts` + the store reducer in `store/history.ts`;
+  the current doc **is** `history.present`). `pushDoc` pushes a snapshot,
+  `undo`/`redo` walk `past`/`future`. **Zero change** to this path — same code,
+  same references, same tests.
+- **COLLAB — `Y.UndoManager` scoped to the local origin.** A `Y.UndoManager` over
+  the binding's root subtree with `trackedOrigins = new Set([localOrigin])`, where
+  `localOrigin` is the exact origin the P0 binding tags **outbound** transactions
+  with. Because every peer writes its edits under its own (distinct) `localOrigin`,
+  the UndoManager captures **only this peer's** changes — so an undo can never
+  revert a remote peer's edit.
+
+The seam is the **store's `undo`/`redo`**, which are already the single chokepoint
+every undo/redo path routes through (`commands/history.ts`, `Shell.tsx`,
+`agent/registry.ts`). The store gained `setCollabUndo(handler | null)`:
+
+- **`setCollabUndo(handler)`** (called on session attach) — `undo`/`redo` delegate
+  to the handler (the `Y.UndoManager`); the snapshot `HistoryState` is **frozen
+  aside**; and **local edits stop pushing snapshot entries** (`pushDoc` /
+  `commitDrag` behave like `replaceDoc` for the session's duration, so the snapshot
+  stack neither grows nor is consulted while collaborating).
+- **`setCollabUndo(null)`** (called on session detach) — the frozen snapshot stack
+  is **restored** onto the current present (which may be a remotely-merged doc), so
+  solo undo continues from where it left off before the session.
+
+### 10.2 How a collab undo flows back to the UI
+
+`manager.undo()` applies the **inverse** change to the `Y.Doc` inside a Yjs
+transaction whose origin is the UndoManager itself — **not** `localOrigin`. So the
+binding's INBOUND `observeDeep` (which ignores only `txn.origin === localOrigin`)
+fires, rebuilds the `FlashDocument`, and calls `applyRemote` → the store's
+`replaceDoc`. The undone state lands in the store and the stage re-renders, exactly
+the same path a remote peer's edit takes — and `replaceDoc` never pushes a snapshot
+entry, so the frozen stack stays clean. The undo's Y update also replicates to the
+other peers (an undo is just another edit), so all peers converge.
+
+### 10.3 Wiring
+
+`createCollabUndoManager(binding)` (`packages/collab/src/undo.ts`) is the only
+place `Y.UndoManager` is constructed — it stays in `@flash/collab` so Yjs never
+leaks into `@flash/core` or the solo path. `attachCollab` (`store/collabAdapter.ts`)
+now creates it, registers it via `store.setCollabUndo(...)`, and returns it on
+`AttachCollabResult.undoManager`; `detach()` calls `setCollabUndo(null)` (restoring
+solo undo) then destroys the manager and binding. The binding exposes its `root`
+`Y.Map` (read-only) so the UndoManager can scope to exactly that subtree.
+
+### 10.4 Acceptance
+
+`packages/authoring-ui/src/collab/__tests__/collabUndo.test.ts` — a 2-peer
+**loopback** session (the same in-process Yjs replication P1's convergence test
+uses, since y-webrtc needs a real WebRTC stack absent in Node):
+
+- **A's undo reverts only A's edit.** A and B each add a scene; A's undo removes
+  **only** A's scene on **both** peers, leaves B's scene intact, and does not grow
+  A's frozen snapshot stack. A's redo re-applies it and both peers converge.
+- **Symmetry** — the same holds for B's undo (each peer tracks its own origin).
+- **Solo undo/redo unchanged** — with no session, snapshot undo restores the exact
+  previous/next document references and stack depths.
+- **Session-end restores the snapshot stack** — a solo edit's undo entry frozen at
+  start is restored on `detach`, and solo undo works again afterward.
+
+Full authoring-ui suite **1113/1113** green; collab P0 still **9/9**.
+
+### 10.5 Honest limits / tradeoffs
+
+- **Correctness over reach: the snapshot stack is frozen, not merged.** During a
+  session, local edits do not accumulate snapshot undo entries — undo is served
+  solely by the per-origin UndoManager. This is the safe choice: routing collab
+  undo through the snapshot reducer would let an undo replay a *whole-document*
+  snapshot over the shared Y.Doc and **clobber a remote peer's concurrent edit**.
+  The tradeoff is that on session end the undo stack is the pre-session snapshot
+  stack (plus the current, possibly-merged present) — in-session edit history is
+  not converted into snapshot entries.
+- **Atomic-geometry inheritance.** The UndoManager undoes Y changes, so the same
+  whole-value LWW granularity as P0 applies (a `shape`/`filters`/`warp` edit undoes
+  atomically). Per-field scalar edits undo per field, matching the binding's map.
+- **One logical edit = one undo step** via `captureTimeout: 0` (the store emits one
+  transaction per `pushDoc`/`commitDrag`); rapid-edit coalescing is available but
+  off by default.
