@@ -789,6 +789,47 @@ that opens the dialog; in a session it shows a **connection-status pill**
 `peers`/`synced` events) and a **Leave** button. The P2 avatars + remote cursors +
 follow-a-peer are unchanged — P4 only makes the entry point discoverable.
 
+### 12.1a Address-bar reflection — the URL *is* the room link (task 1354)
+
+Following the Figma / Google-Docs model, the host's (and a joiner's) **browser
+address bar becomes the shareable room link** on Start/Join, so the URL itself is
+the thing you copy/bookmark and it reflects the live session — not just a string
+buried in the dialog. The Share dialog's **Copy** button is kept (the dialog is
+still the place to grab the link with one click), but the address bar is no longer
+silent.
+
+`collab/collabUrl.ts` is a tiny pure module (injectable `Window` for tests):
+
+- **`writeCollabFragment(link, win?)`** — on Start/Join, set the URL **fragment**
+  to `#room=…&k=…` via **`history.replaceState`** (NOT `pushState`), preserving
+  origin + path + query. `replaceState` is load-bearing twice over: the session is
+  *page state*, not a navigation, so it must not stack a back/forward entry, and
+  pushing would leak the secret-bearing fragment into **more** history entries.
+- **`clearCollabFragment(win?)`** — on **Leave** (and on a hard provider unmount /
+  page-close teardown), strip the fragment — but **only if it parses as a collab
+  link**, so an unrelated app/router hash is left untouched. This guarantees a dead
+  room link never lingers in the address bar after you leave.
+
+Both are wired in `CollabContext.tsx` (`start`/`join`/`leave` + the unmount
+cleanup) — the single place the editor reaches the session — so the pure session
+(`collabSession.ts`) and link (`collabLink.ts`) modules stay free of any DOM/
+`window` dependency.
+
+**Secret-in-the-address-bar note.** The link *is* the capability (`k` = the E2E
+key = full edit access). Fragments are never sent to a server, so writing it into
+the bar is still a no-server-round-trip operation; using `replaceState` (one entry)
+and clearing on Leave bounds the local-history footprint. The shoulder-surf /
+screen-share consideration is inherent to any "the link is the password" model and
+is already called out in the honest note (§12.1).
+
+**No auto-join-on-load (still deliberate).** Writing the fragment does **not**
+re-enable silent auto-join: `parseCollabLink` is invoked only from the dialog's
+explicit **Join** action, and nothing reads `location.hash` at mount. So opening an
+existing `#room&k` URL still routes through the user's explicit Join (the
+join-confirmation), and our own freshly-written fragment is never double-handled.
+The fragment makes the bar **truthful while in a session**; it is cleared the
+moment the session ends so a refresh never shows a room you are no longer in.
+
 ### 12.2 Out-of-band asset sync — the design
 
 P0 mapped a media item's `dataUri` as an ordinary scalar; the design point it

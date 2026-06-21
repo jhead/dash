@@ -24,6 +24,7 @@ import React, {
 import type { CollabSession, StartCollabOptions } from "./collabSession.js";
 import { joinCollab, startCollab } from "./collabSession.js";
 import type { CollabLink } from "./collabLink.js";
+import { clearCollabFragment, writeCollabFragment } from "./collabUrl.js";
 import { type CollabUser, getLocalUser } from "./localUser.js";
 import type { PeerPresence } from "./awarenessState.js";
 import { useStores } from "../store/StoreProvider.js";
@@ -65,6 +66,10 @@ export function CollabProvider({ children }: { children: React.ReactNode }): Rea
         return null;
       });
       const s = startCollab(documentStore, { ...options, uiStore, user: localUser });
+      // Figma/Docs model: reflect the live session into the address bar so the
+      // URL itself is the shareable room link. replaceState (not push) keeps the
+      // secret-bearing fragment out of the back/forward history (collabUrl.ts).
+      writeCollabFragment(s.link);
       setSession(s);
       return s;
     },
@@ -80,6 +85,9 @@ export function CollabProvider({ children }: { children: React.ReactNode }): Rea
           return null;
         });
         const s = await joinCollab(documentStore, link, { ...options, uiStore, user: localUser });
+        // Reflect the joined session into the address bar too, so a joiner's URL
+        // also becomes the canonical room link (bookmarkable, copyable).
+        writeCollabFragment(s.link);
         setSession(s);
         return s;
       } finally {
@@ -94,6 +102,9 @@ export function CollabProvider({ children }: { children: React.ReactNode }): Rea
       prev?.stop();
       return null;
     });
+    // Clear the collab fragment so a stale room link never lingers in the address
+    // bar after leaving (only clears if the hash IS a collab link — collabUrl.ts).
+    clearCollabFragment();
   }, []);
 
   // Tear the session down if the provider unmounts (page close / Shell unmount).
@@ -103,7 +114,12 @@ export function CollabProvider({ children }: { children: React.ReactNode }): Rea
   sessionRef.current = session;
   useEffect(() => {
     return () => {
-      sessionRef.current?.stop();
+      if (sessionRef.current) {
+        sessionRef.current.stop();
+        // On a hard unmount (page close / Shell teardown) the session is over —
+        // don't leave a now-dead room link in the address bar.
+        clearCollabFragment();
+      }
     };
   }, []);
 

@@ -19,6 +19,12 @@ export {
 } from "./collabLink.js";
 
 export {
+  type UrlWindowLike,
+  writeCollabFragment,
+  clearCollabFragment,
+} from "./collabUrl.js";
+
+export {
   DEFAULT_SIGNALING_SERVERS,
   parseSignalingServers,
   getSignalingServers,

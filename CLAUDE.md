@@ -1056,6 +1056,28 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   fail), plaintext never in ciphertext. Node 22 has WebCrypto global. Multi-peer
   + reconnection gate: `collab/multipeer.test.ts` (a full-mesh loopback bus over
   6 peers; drop/reconnect with state-vector catch-up both ways; churn).
+- **The address bar reflects the live session — URL fragment write on Start/Join,
+  clear on Leave (task 1354, Figma/Docs model).** Originally "Start collaborating"
+  minted the share link but surfaced it ONLY in the Share dialog's read-only input
+  + Copy button; `window.location` was never touched (no `history.*`/`location.*`
+  write anywhere in the collab path). Fix: `collab/collabUrl.ts` — a tiny PURE
+  module (injectable `Window` for tests) with `writeCollabFragment(link)` (set the
+  `#room=…&k=…` fragment via **`history.replaceState`**, preserving origin+path+
+  query) and `clearCollabFragment()` (strip it, but ONLY if the current hash parses
+  as a collab link, so an unrelated router hash is left alone). Wired in
+  `CollabContext.tsx` start/join/leave + the unmount teardown — the single session
+  touch point — keeping `collabSession.ts`/`collabLink.ts` DOM-free. **replaceState
+  not pushState** is load-bearing twice: the session is page state not a navigation
+  (no back/forward entry), AND pushing would leak the secret-bearing fragment into
+  more history entries. Auto-join-on-load stays deliberately OFF (`parseCollabLink`
+  is invoked only from the dialog's explicit Join; nothing reads `location.hash` at
+  mount), so writing our own fragment never double-handles / silently re-joins.
+  Gotcha: **jsdom's `history.replaceState` throws `SecurityError` on a cross-origin
+  URL** — an integration test must reset the URL with a same-origin path (e.g.
+  `replaceState(null,"","/editor?proj=42")`), not a fabricated `https://app.test/…`.
+  Gate: `collab/__tests__/collabUrl.test.ts` (5 pure-helper cases incl. single-`#`
+  replace + non-collab-hash left untouched, plus 1 jsdom integration through the
+  real `CollabProvider`+`CollabControls`: Start sets `location.hash`, Leave clears).
 
 ### AS2 external classes / Class VFS (task 1300 P2)
 
