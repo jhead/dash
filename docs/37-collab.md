@@ -119,6 +119,51 @@ sequence. Rebuild reads `__order` to restore order; reorders write only the orde
 array (objects untouched). Two peers reordering concurrently converge on a single
 deterministic order (Yjs array CRDT) with no object duplication.
 
+#### CRDT-safe order maintenance (the `__order` reconcile) — task 1359
+
+The `__order` array **must be reconciled with minimal, position-stable CRDT
+edits**, never a whole-array `delete(0,len)+insert(0,desired)` rewrite. A
+delete-all+insert-all is *destructive*: `Y.Array.delete` removes only the
+elements the writer has observed and `insert` always adds new CRDT items, so when
+two peers each rewrite the same `__order` concurrently (live drawing over a
+network, where their edits are genuine concurrent ops rather than causally
+ordered), peer A's delete does NOT remove peer B's concurrently-inserted id, and
+both peers' inserts survive and interleave. The result is **convergent
+corruption** — both peers agree on a `__order` with a *duplicated* id (a shape
+appears twice) or one that *drops* a real id (a drawn shape silently vanishes),
+since `rebuildKeyed` reads the object sequence straight from `__order`. This was
+the root cause of the "a shape drawn by one user is intermittently not seen /
+duplicated / has the wrong z-order" data-loss report.
+
+`reconcileOrderArray` (`schema.ts`) instead computes the **minimal insert/delete
+delta against the CURRENT `Y.Array` state** via a Longest-Common-Subsequence
+alignment: ids common to current and desired keep their CRDT identity (untouched),
+only genuinely-removed ids are deleted, and only genuinely-added ids are inserted
+at their position. A concurrent append then inserts *only the peer's own new id*
+at the tail — it commutes with the other peer's append, so both ids survive
+exactly once; a concurrent reorder moves only the ids that actually moved. For a
+single peer the result is exactly `desired`, so the P0 property-test identity (and
+the minimal-delta byte budget) is preserved. The same reconcile backs
+`reconcileAsClasses` (the `asClasses` path order) and the atomic
+`setPlainArray`/`reconcileJsonArray` arrays (classpaths/publishProfiles/folders).
+
+Defense-in-depth on **read**: `orderedKeys` (used by `rebuildKeyed` and
+`rebuildAsClasses`) dedupes any id appearing twice in `__order`, drops an id whose
+keyed `Y.Map`/`Y.Text` entry no longer exists (so a deleted object can't ghost),
+and APPENDS any live container key missing from `__order` (so a child whose
+order-insert was lost is never dropped). Thus even a corrupt `__order` can neither
+duplicate nor lose an object.
+
+Gate: `convergence.test.ts` binds two peers over an **asynchronous (buffered)
+loopback bus** — updates are delivered only on an explicit `flush()`, modeling
+real network latency so both peers' order rewrites are genuinely concurrent — and
+asserts that after sync both peers see ALL shapes exactly once with a consistent
+z-order, across the exact QA-repro sequence, 40 randomized interleavings, and
+concurrent add+reorder / add+delete / library-item / asClasses cases. (The
+synchronous P0 property test cannot reproduce this: a single source over a
+synchronous wire is causally ordered, so it never produces two concurrent `__order`
+rewrites.)
+
 ### `asClasses` is character-level
 
 AS2 class source is a `Y.Map<path, Y.Text>`. An edit splices the `Y.Text` with a

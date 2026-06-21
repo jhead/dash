@@ -203,13 +203,138 @@ function reconcileKeyed<T extends { id: string }>(
     if (!nextById.has(key)) container.delete(key);
   }
 
-  // Reconcile the order array to exactly the next id sequence.
-  const desired = next.map((i) => i.id);
+  // Reconcile the order array to the next id sequence with a MINIMAL,
+  // position-stable CRDT splice (see reconcileOrderArray). A whole-array
+  // delete-all+insert-all is destructive: two peers doing it concurrently each
+  // delete only the ids THEY observed and both re-insert, so a pre-existing id
+  // is duplicated and a concurrently-added id can be dropped. An incremental
+  // splice touches only the ids that actually changed, so concurrent appends/
+  // reorders/deletes commute and converge with no loss or duplication.
+  reconcileOrderArray(order, next.map((i) => i.id));
+}
+
+/**
+ * Reconcile a `Y.Array<string>` of ids to `desired` using the MINIMAL set of
+ * insert/delete CRDT ops, leaving every unchanged id untouched (never
+ * delete+re-insert). This is the key to convergence under concurrent edits:
+ *
+ *  - A concurrent APPEND inserts only the peer's OWN new id at the tail; the
+ *    other peer's delete pass never removes it (it's not in either's "stale"
+ *    set), so both ids survive exactly once.
+ *  - A concurrent REORDER moves only the ids that actually moved; an id common
+ *    to both current and desired keeps its CRDT identity (no destructive churn),
+ *    so Yjs merges the two splices deterministically with no duplication.
+ *
+ * Strategy: compute the Longest Common Subsequence (LCS) of `current` and
+ * `desired`. The LCS ids stay in place. Delete every `current` id NOT in the
+ * LCS (right-to-left so indices stay valid). Then insert every `desired` id NOT
+ * in the LCS at its correct position (left-to-right). For a single peer this
+ * yields exactly `desired`; the property-test identity is preserved.
+ *
+ * `desired` is assumed deduplicated (it comes from a keyed map's id list), but
+ * `current` may already be corrupt (a duplicate from an earlier destructive
+ * rewrite): any extra/duplicate `current` id not matched into the LCS is simply
+ * deleted, so this reconcile also REPAIRS a previously-corrupted order array.
+ */
+function reconcileOrderArray(order: Y.Array<string>, desired: readonly string[]): void {
   const current = order.toArray();
-  if (!arraysEqual(current, desired)) {
-    if (current.length > 0) order.delete(0, current.length);
-    if (desired.length > 0) order.insert(0, desired);
+  if (arraysEqual(current, desired)) return;
+
+  // Mark which current/desired positions are part of the LCS (kept in place).
+  const { keepCurrent, keepDesired } = lcsKeepMasks(current, desired);
+
+  // Delete unkept current ids, right-to-left so earlier indices stay valid.
+  for (let i = current.length - 1; i >= 0; i--) {
+    if (!keepCurrent[i]) order.delete(i, 1);
   }
+
+  // Insert unkept desired ids left-to-right at their target positions. After the
+  // deletions the array holds exactly the LCS in order, so walking `desired` and
+  // inserting each non-kept id at its running index lands every id correctly.
+  let pos = 0;
+  for (let j = 0; j < desired.length; j++) {
+    if (keepDesired[j]) {
+      pos++; // a kept id already occupies this slot
+    } else {
+      order.insert(pos, [desired[j]]);
+      pos++;
+    }
+  }
+}
+
+/**
+ * Longest-common-subsequence keep-masks: returns boolean arrays the length of
+ * `a`/`b` marking which elements belong to one chosen LCS alignment. Classic
+ * O(n·m) DP; the id arrays here are short (objects per keyframe / items per
+ * library), so this is not a hotspot.
+ */
+function lcsKeepMasks(
+  a: readonly string[],
+  b: readonly string[],
+): { keepCurrent: boolean[]; keepDesired: boolean[] } {
+  const n = a.length;
+  const m = b.length;
+  const keepCurrent = new Array<boolean>(n).fill(false);
+  const keepDesired = new Array<boolean>(m).fill(false);
+  if (n === 0 || m === 0) return { keepCurrent, keepDesired };
+
+  // dp[i][j] = LCS length of a[i:] and b[j:].
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  // Walk the DP to recover one alignment, marking matched positions.
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      keepCurrent[i] = true;
+      keepDesired[j] = true;
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+  return { keepCurrent, keepDesired };
+}
+
+/**
+ * Read an `__order` id sequence defensively: drop ids that appear twice and ids
+ * with no live entry in the container, and APPEND any container key missing from
+ * `__order` (so a concurrently-added child whose order-insert was lost is never
+ * dropped from the rebuilt document). Defense-in-depth: even if a destructive
+ * rewrite ever corrupts `__order`, rebuild can neither duplicate nor lose an
+ * object.
+ */
+function orderedKeys(container: Y.Map<unknown>, order: Y.Array<string> | undefined): string[] {
+  const live = new Set<string>();
+  for (const k of container.keys()) if (k !== ORDER_KEY) live.add(k);
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  if (order instanceof Y.Array) {
+    for (const id of order.toArray()) {
+      if (typeof id !== "string") continue;
+      if (seen.has(id)) continue; // dedupe a doubled id
+      if (!live.has(id)) continue; // drop an id with no live entry
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  // Append any live entry the order array omitted (preserve container key order
+  // for determinism), so a present object is never silently absent.
+  for (const id of live) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
 }
 
 function rebuildKeyed<T>(
@@ -220,10 +345,7 @@ function rebuildKeyed<T>(
   const container = parent.get(containerKey) as Y.Map<unknown> | undefined;
   if (!(container instanceof Y.Map)) return [];
   const order = container.get(ORDER_KEY) as Y.Array<string> | undefined;
-  const ids =
-    order instanceof Y.Array
-      ? order.toArray()
-      : [...container.keys()].filter((k) => k !== ORDER_KEY);
+  const ids = orderedKeys(container, order);
   const out: T[] = [];
   for (const id of ids) {
     const child = container.get(id) as Y.Map<unknown> | undefined;
@@ -258,11 +380,39 @@ function setPlainArray(
     parent.set(key, yarr);
   }
   const encoded = next.map(encode);
-  // Replace wholesale only when content differs (atomic array semantics).
-  const current = yarr.toArray();
-  if (!jsonArrayEqual(current, encoded)) {
-    if (current.length > 0) yarr.delete(0, current.length);
-    if (encoded.length > 0) yarr.insert(0, encoded);
+  // Reconcile with a MINIMAL, position-stable splice (same CRDT rationale as the
+  // keyed __order array): a whole-array delete-all+insert-all is destructive and
+  // two concurrent rewrites interleave into duplicates. These arrays
+  // (classpaths/publishProfiles/folders) change rarely and are usually edited by
+  // one peer, but the incremental splice removes that latent corruption too.
+  reconcileJsonArray(yarr, encoded);
+}
+
+/**
+ * The {@link reconcileOrderArray} algorithm generalized to arbitrary JSON
+ * elements compared structurally (via stable JSON stringify). Elements common to
+ * `current` and `desired` keep their CRDT identity; only genuinely added/removed
+ * elements are spliced. Single-peer result equals `desired` exactly.
+ */
+function reconcileJsonArray(yarr: Y.Array<unknown>, desired: readonly unknown[]): void {
+  const currentRaw = yarr.toArray();
+  if (jsonArrayEqual(currentRaw, desired)) return;
+
+  const current = currentRaw.map((v) => JSON.stringify(v));
+  const want = desired.map((v) => JSON.stringify(v));
+  const { keepCurrent, keepDesired } = lcsKeepMasks(current, want);
+
+  for (let i = currentRaw.length - 1; i >= 0; i--) {
+    if (!keepCurrent[i]) yarr.delete(i, 1);
+  }
+  let pos = 0;
+  for (let j = 0; j < desired.length; j++) {
+    if (keepDesired[j]) {
+      pos++;
+    } else {
+      yarr.insert(pos, [desired[j]]);
+      pos++;
+    }
   }
 }
 
@@ -546,12 +696,9 @@ function reconcileAsClasses(
     if (key === ORDER_KEY) continue;
     if (!nextByPath.has(key)) container.delete(key);
   }
-  const desired = next.map((c) => c.path);
-  const current = order.toArray();
-  if (!arraysEqual(current, desired)) {
-    if (current.length > 0) order.delete(0, current.length);
-    if (desired.length > 0) order.insert(0, desired);
-  }
+  // CRDT-safe incremental order reconcile (see reconcileOrderArray) — concurrent
+  // class adds/removes/reorders converge without a duplicated or dropped path.
+  reconcileOrderArray(order, next.map((c) => c.path));
 }
 
 /**
@@ -581,10 +728,10 @@ function rebuildAsClasses(root: Y.Map<unknown>): AsClassLike[] | undefined {
   const container = root.get("asClasses") as Y.Map<unknown> | undefined;
   if (!(container instanceof Y.Map)) return undefined;
   const order = container.get(ORDER_KEY) as Y.Array<string> | undefined;
-  const paths =
-    order instanceof Y.Array
-      ? order.toArray()
-      : [...container.keys()].filter((k) => k !== ORDER_KEY);
+  // Defensive read: dedupe doubled paths, drop paths with no live Y.Text, and
+  // append any class missing from __order so a concurrently-added class is never
+  // lost (symmetric with rebuildKeyed's orderedKeys).
+  const paths = orderedKeys(container, order);
   const out: AsClassLike[] = [];
   for (const path of paths) {
     const ytext = container.get(path) as Y.Text | undefined;
