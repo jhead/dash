@@ -153,6 +153,19 @@ beforeEach(() => {
   state = makeHarness();
 });
 
+/** Locate a display object by id in a doc_get `value` snapshot (scene 0/layer 0/frame 0). */
+function findObj(doc: Record<string, unknown>, id: string): Record<string, unknown> {
+  const scenes = doc["scenes"] as Array<Record<string, unknown>>;
+  const layers = (scenes[0]["timeline"] as Record<string, unknown>)["layers"] as Array<
+    Record<string, unknown>
+  >;
+  const frames = layers[0]["frames"] as Array<Record<string, unknown>>;
+  const objs = frames[0]["displayObjects"] as Array<Record<string, unknown>>;
+  const found = objs.find((o) => o["id"] === id);
+  if (!found) throw new Error(`findObj: no display object with id ${id}`);
+  return found;
+}
+
 // ---------------------------------------------------------------------------
 // Session & document
 // ---------------------------------------------------------------------------
@@ -1844,5 +1857,209 @@ describe("doc_load library-present invariant (task 1363)", () => {
     await dispatchAgentCommand("doc_load", { document: valid });
     // Same library reference back (no needless rebuild).
     expect(state.doc.library).toBe(valid.library);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Structural-input hardening (task 1367) — generalizes the 1363 doc_load fix
+// across the agent command surface: doc_load / file_load_fla doc-replacement
+// boundaries (normalizeAgentDoc) and the stage_update updates bag (whitelist +
+// type-check). A malformed structural payload must yield a CLEAR REJECTION or a
+// SAFE coercion — never an uncaught throw or silent corruption — and a VALID
+// payload must behave identically.
+// ---------------------------------------------------------------------------
+
+describe("doc_load structural validation (task 1367)", () => {
+  it("REJECTS non-object input (string/number/array/null) with a clear error", async () => {
+    for (const bad of ["not a doc", 42, [1, 2, 3], null] as unknown[]) {
+      await expect(
+        dispatchAgentCommand("doc_load", { document: bad })
+      ).rejects.toThrow(/must be a FlashDocument object/);
+    }
+    // The store doc is untouched (no corruption from the rejected payload).
+    expect(Array.isArray(state.doc.scenes)).toBe(true);
+    expect(state.doc.scenes.length).toBeGreaterThan(0);
+  });
+
+  it("BACKFILLS a doc missing scenes (no crash; ≥1 renderable scene)", async () => {
+    const { scenes: _omit, ...noScenes } = createDocument();
+    void _omit;
+    await dispatchAgentCommand("doc_load", { document: noScenes });
+    expect(Array.isArray(state.doc.scenes)).toBe(true);
+    expect(state.doc.scenes.length).toBe(1);
+    // The backfilled scene has a usable timeline.
+    expect(Array.isArray(state.doc.scenes[0].timeline.layers)).toBe(true);
+  });
+
+  it("DROPS structurally-thin scenes and backfills when none survive", async () => {
+    const base = createDocument();
+    const garbageScenes = {
+      ...base,
+      scenes: [{ id: "x", name: "broken" /* no timeline */ }, null, "nope"],
+    } as unknown as FlashDocument;
+    await dispatchAgentCommand("doc_load", { document: garbageScenes });
+    expect(state.doc.scenes.length).toBe(1);
+    expect(Array.isArray(state.doc.scenes[0].timeline.layers)).toBe(true);
+  });
+
+  it("KEEPS valid scenes and only drops the invalid ones", async () => {
+    const base = createDocument();
+    const mixed = {
+      ...base,
+      scenes: [base.scenes[0], { id: "bad", name: "no-timeline" }],
+    } as unknown as FlashDocument;
+    await dispatchAgentCommand("doc_load", { document: mixed });
+    expect(state.doc.scenes.length).toBe(1);
+    expect(state.doc.scenes[0].id).toBe(base.scenes[0].id);
+  });
+
+  it("BACKFILLS missing/malformed properties so the renderer never reads undefined", async () => {
+    const { properties: _omit, ...noProps } = createDocument();
+    void _omit;
+    await dispatchAgentCommand("doc_load", { document: noProps });
+    expect(typeof state.doc.properties.width).toBe("number");
+    expect(typeof state.doc.properties.height).toBe("number");
+    expect(typeof state.doc.properties.frameRate).toBe("number");
+    expect(typeof state.doc.properties.backgroundColor).toBe("string");
+    expect(state.doc.properties.grid).toBeDefined();
+  });
+
+  it("SYNTHESISES an id when the doc has none", async () => {
+    const { id: _omit, ...noId } = createDocument();
+    void _omit;
+    await dispatchAgentCommand("doc_load", { document: noId });
+    expect(typeof state.doc.id).toBe("string");
+    expect(state.doc.id.length).toBeGreaterThan(0);
+  });
+
+  it("preserves a valid doc's property VALUES (idempotent overlay)", async () => {
+    const valid = createDocument({
+      properties: createDocument().properties, // baseline
+    });
+    const withW = {
+      ...valid,
+      properties: { ...valid.properties, width: 1234, backgroundColor: "#abcdef" },
+    } as FlashDocument;
+    await dispatchAgentCommand("doc_load", { document: withW });
+    expect(state.doc.properties.width).toBe(1234);
+    expect(state.doc.properties.backgroundColor).toBe("#abcdef");
+  });
+});
+
+describe("file_load_fla structural validation (task 1367)", () => {
+  it("round-trips a saved fla through the SAME normalizer (still valid)", async () => {
+    await dispatchAgentCommand("doc_set_properties", { width: 777 });
+    const saved = (await dispatchAgentCommand("file_save_fla", {})) as {
+      flaBase64: string;
+    };
+    await dispatchAgentCommand("doc_set_properties", { width: 550 });
+    await dispatchAgentCommand("file_load_fla", { flaBase64: saved.flaBase64 });
+    // The loaded doc is normalized: invariants present, value preserved.
+    expect(state.doc.properties.width).toBe(777);
+    expect(Array.isArray(state.doc.scenes)).toBe(true);
+    expect(state.doc.scenes.length).toBeGreaterThan(0);
+    expect(Array.isArray(state.doc.library.items)).toBe(true);
+  });
+
+  it("surfaces a clear error for an undecodable / malformed fla blob", async () => {
+    await expect(
+      dispatchAgentCommand("file_load_fla", { flaBase64: btoa("not a real fla archive") })
+    ).rejects.toThrow();
+    // The store doc is untouched by the failed load.
+    expect(Array.isArray(state.doc.scenes)).toBe(true);
+  });
+});
+
+describe("stage_update structural validation (task 1367)", () => {
+  async function addTextObj(): Promise<string> {
+    const layerId = state.doc.scenes[0].timeline.layers[0].id;
+    const res = (await dispatchAgentCommand("stage_add_text", {
+      x: 0, y: 0, width: 100, height: 20, text: "Foo", layerId, frameIndex: 0,
+    })) as Record<string, unknown>;
+    return res["id"] as string;
+  }
+
+  it("REJECTS a wrong-typed numeric field (x as a string) with a clear error", async () => {
+    const id = await addTextObj();
+    await expect(
+      dispatchAgentCommand("stage_update", {
+        id,
+        updates: { x: "50" as unknown as number },
+      })
+    ).rejects.toThrow(/"x" must be a finite number/);
+    // No corruption: the object's x is unchanged from its initial 0.
+    const doc = (
+      (await dispatchAgentCommand("doc_get", {})) as Record<string, unknown>
+    )["value"] as Record<string, unknown>;
+    const obj = findObj(doc, id);
+    expect(obj["x"]).toBe(0);
+  });
+
+  it("REJECTS a NaN/Infinity numeric field", async () => {
+    const id = await addTextObj();
+    await expect(
+      dispatchAgentCommand("stage_update", { id, updates: { y: Number.NaN } })
+    ).rejects.toThrow(/"y" must be a finite number/);
+    await expect(
+      dispatchAgentCommand("stage_update", { id, updates: { scaleX: Number.POSITIVE_INFINITY } })
+    ).rejects.toThrow(/"scaleX" must be a finite number/);
+  });
+
+  it("REJECTS a wrong-typed boolean field (visible as an object)", async () => {
+    const id = await addTextObj();
+    await expect(
+      dispatchAgentCommand("stage_update", {
+        id,
+        updates: { visible: {} as unknown as boolean },
+      })
+    ).rejects.toThrow(/"visible" must be a boolean/);
+  });
+
+  it("REJECTS a malformed colorEffect (no string type)", async () => {
+    const id = await addTextObj();
+    await expect(
+      dispatchAgentCommand("stage_update", {
+        id,
+        updates: { colorEffect: { notType: 1 } as unknown as never },
+      })
+    ).rejects.toThrow(/"colorEffect" must be an object with a string "type"/);
+  });
+
+  it("DROPS unknown structural keys silently (safe coercion, no corruption)", async () => {
+    const id = await addTextObj();
+    await dispatchAgentCommand("stage_update", {
+      id,
+      updates: {
+        x: 30,
+        // a deep structural prop the generic bag must NOT forward:
+        shape: { paths: "garbage" } as unknown as never,
+        bogusProp: 999 as unknown as never,
+      },
+    });
+    const doc = (
+      (await dispatchAgentCommand("doc_get", {})) as Record<string, unknown>
+    )["value"] as Record<string, unknown>;
+    const obj = findObj(doc, id);
+    expect(obj["x"]).toBe(30); // the valid scalar applied
+    expect("bogusProp" in obj).toBe(false); // unknown key dropped
+    // `shape` on a TEXT object was never a valid update through this path; the
+    // text content is intact (no structural overwrite).
+    expect(obj["text"]).toBe("Foo");
+  });
+
+  it("APPLIES valid scalar updates identically (no behaviour change)", async () => {
+    const id = await addTextObj();
+    await dispatchAgentCommand("stage_update", {
+      id,
+      updates: { x: 12, y: 34, alpha: 0.5, visible: false },
+    });
+    const doc = (
+      (await dispatchAgentCommand("doc_get", {})) as Record<string, unknown>
+    )["value"] as Record<string, unknown>;
+    const obj = findObj(doc, id);
+    expect(obj["x"]).toBe(12);
+    expect(obj["y"]).toBe(34);
+    expect(obj["alpha"]).toBe(0.5);
+    expect(obj["visible"]).toBe(false);
   });
 });

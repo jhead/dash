@@ -274,6 +274,62 @@ Resource **subscriptions** (notify on doc change, with `rev`) are a follow-up.
   `symbolId`) as returned by `doc_summary` / `library_list`. No name-based fuzzy
   matching in MVP (names are not unique).
 
+### Structural-input validation model (tasks 1363 / 1367)
+
+Some tools take **structural** input (a whole document, a property bag) rather than
+typed scalars. A malformed structural payload that reaches a document/timeline
+mutation can crash an uncatchable reader (e.g. the collab outbound
+`externalizeAssets` subscription) or silently corrupt the document. The agent
+command surface enforces validation at **two layers**, because the two transports
+trust their input differently:
+
+1. **Schema layer (the model boundary).** The MCP plugin and the agent-chat tool
+   set validate the model's arguments against a Zod schema (`COMMAND_SCHEMAS`)
+   *before* dispatch. So the tighter a command's Zod schema, the more a model's
+   bad call is rejected with a self-correcting error before any handler runs.
+2. **Handler layer (the universal guard).** The raw `/__agent` WebSocket bridge
+   calls `dispatchAgentCommand` **without** running the Zod schema, so a
+   hand-crafted payload bypasses the schema entirely. Therefore any command whose
+   param flows into a `pushDoc` / `updateDisplayObject` / timeline / library
+   mutation also **validates-or-normalizes at the handler** (`packages/authoring-ui/
+   src/agent/registry.ts`). This layer is the one that can never be bypassed.
+
+The rule for any structural param: **reject with a clear error, or coerce to a
+safe value — never an uncaught throw, never corruption.** Concrete applications:
+
+- **`doc_load` / `file_load_fla` (doc-replacement boundaries).** Both replace the
+  whole document, so both route the incoming doc through `normalizeAgentDoc`
+  before `pushDoc`. It throws a clear error on non-object input and backfills the
+  load-bearing invariants — `id`, `properties` (overlay `createDocumentProperties`
+  defaults), `scenes` (drop scenes lacking a `timeline.layers` array; backfill one
+  default scene if none survive), and `library.items` (the original 1363 fix). A
+  valid doc passes through with identical values (idempotent). `file_load_fla`
+  additionally relies on `loadFla` throwing a clear `FLA open error: …` for a
+  malformed archive.
+- **`doc_load.document: z.unknown()` / `file_load_fla.flaBase64: z.string()` are
+  intentionally LEFT loose at the schema layer.** A full structural Zod schema for
+  the entire `FlashDocument` would be hundreds of lines, brittle against every
+  model change, and would reject legitimate round-tripped docs carrying optional
+  fields it didn't enumerate; the base64 string is already the correct scalar type.
+  The handler normalizer is the real defense for both.
+- **`stage_update.updates`.** Was an untyped `z.record(z.string(), z.unknown())`
+  bag cast straight into `updateDisplayObject`. The schema is now the enumerated
+  `DisplayObjectUpdatesSchema` (real scalar fields, correct types, unknown keys
+  stripped), and the handler runs `sanitizeDisplayObjectUpdates`: only known
+  scalar fields are forwarded, a known field with the wrong type is rejected with
+  a clear error, and deep structural values (`shape`/`filters`/`warp`) are NOT
+  exposed through the generic bag — they have dedicated tools.
+- **`timeline_set_tween.props`.** Tightened from `z.record(z.string(),
+  z.unknown())` to the enumerated `TweenPropsSchema` (motion + shape fields). The
+  handler already read each prop with a `typeof` guard, so it was already safe;
+  the schema tightening makes the model boundary reject garbage too.
+- **Intentionally left loose (legitimate flexibility):** `jsfl_run.source`
+  (an escape hatch that runs arbitrary JSFL by design — sandbox/policy is the 1282
+  concern, not structural validation); all `*Result` schemas using
+  `z.unknown()`/`z.any()` (`DocGetResult.value`, `SelectionGetResult.objects`,
+  `JsflRunResult.returnValue`, `FilterListResult.filters`) — these are **output**
+  shapes returned TO the model, not input, so they cannot crash or corrupt the doc.
+
 ## The `flash-agent` CLI (thin client)
 
 Most agents need no CLI — they connect as MCP clients. A **thin generic wrapper**

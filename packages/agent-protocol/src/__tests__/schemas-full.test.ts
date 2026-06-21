@@ -216,6 +216,39 @@ describe("StageUpdateParamsSchema", () => {
     expect(result.id).toBe("obj-1");
     expect((result.updates as Record<string, unknown>).x).toBe(100);
   });
+
+  // task 1367: the updates bag was z.record(z.string(), z.unknown()); it is now
+  // an enumerated DisplayObjectUpdatesSchema that strips unknown keys and rejects
+  // wrong-typed known scalars.
+  it("STRIPS unknown structural keys from the updates bag", () => {
+    const result = StageUpdateParamsSchema.parse({
+      id: "obj-1",
+      updates: { x: 1, shape: { paths: [] }, bogus: 42 } as Record<string, unknown>,
+    });
+    const updates = result.updates as Record<string, unknown>;
+    expect(updates.x).toBe(1);
+    expect("shape" in updates).toBe(false);
+    expect("bogus" in updates).toBe(false);
+  });
+
+  it("REJECTS a wrong-typed known scalar (x as a string)", () => {
+    expect(() =>
+      StageUpdateParamsSchema.parse({ id: "o", updates: { x: "50" } })
+    ).toThrow();
+  });
+
+  it("accepts a typed colorEffect via the enumerated schema", () => {
+    const result = StageUpdateParamsSchema.parse({
+      id: "o",
+      updates: { colorEffect: { type: "alpha", alpha: 50 } },
+    });
+    expect((result.updates as Record<string, unknown>).colorEffect).toBeDefined();
+  });
+
+  it("allows updates to be omitted entirely", () => {
+    const result = StageUpdateParamsSchema.parse({ id: "o", instanceName: "p" });
+    expect(result.id).toBe("o");
+  });
 });
 
 describe("StageRemoveParamsSchema", () => {
@@ -381,6 +414,43 @@ describe("TimelineSetTweenParamsSchema", () => {
       kind: null,
     });
     expect(result.kind).toBeNull();
+  });
+
+  // task 1367: props was z.record(z.string(), z.unknown()); now the enumerated
+  // TweenPropsSchema strips unknown keys and rejects wrong-typed known fields.
+  it("STRIPS unknown keys and keeps the known motion/shape props", () => {
+    const result = TimelineSetTweenParamsSchema.parse({
+      layerId: "l",
+      frameIndex: 0,
+      kind: "motion",
+      props: { ease: 25, rotate: "cw", garbage: { nested: true } } as Record<string, unknown>,
+    });
+    const props = result.props as Record<string, unknown>;
+    expect(props.ease).toBe(25);
+    expect(props.rotate).toBe("cw");
+    expect("garbage" in props).toBe(false);
+  });
+
+  it("REJECTS a wrong-typed known prop (ease as a string)", () => {
+    expect(() =>
+      TimelineSetTweenParamsSchema.parse({
+        layerId: "l",
+        frameIndex: 0,
+        kind: "motion",
+        props: { ease: "fast" },
+      })
+    ).toThrow();
+  });
+
+  it("REJECTS an out-of-enum rotate value", () => {
+    expect(() =>
+      TimelineSetTweenParamsSchema.parse({
+        layerId: "l",
+        frameIndex: 0,
+        kind: "motion",
+        props: { rotate: "spin" },
+      })
+    ).toThrow();
   });
 });
 

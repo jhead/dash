@@ -133,6 +133,14 @@ export type DocSummaryResult = z.infer<typeof DocSummaryResultSchema>;
 // ---------------------------------------------------------------------------
 
 export const DocLoadParamsSchema = z.object({
+  // INTENTIONALLY LOOSE (z.unknown): a full structural Zod schema for the whole
+  // FlashDocument (scenes → layers → frames → display-object union → shapes …)
+  // would be hundreds of lines, brittle against every model change, and would
+  // reject legitimate imported/round-tripped docs that carry optional fields the
+  // schema didn't enumerate. The real defense lives at the handler boundary:
+  // `normalizeAgentDoc` (registry.ts) rejects non-object input with a clear error
+  // and backfills the load-bearing invariants (id/properties/scenes/library) so a
+  // malformed payload can never reach `pushDoc` as a structurally-thin doc.
   document: z.unknown(),
 });
 export type DocLoadParams = z.infer<typeof DocLoadParamsSchema>;
@@ -268,15 +276,95 @@ export const StageAddBitmapParamsSchema = z.object({
 });
 export type StageAddBitmapParams = z.infer<typeof StageAddBitmapParamsSchema>;
 
+/**
+ * Color effect (alpha / tint / brightness / advanced). The numeric fields are
+ * variant-specific (see @flash/core ColorEffect); only `type` is required. Kept
+ * as a typed-but-passthrough object: the discriminant + the known numeric fields
+ * are validated, and the registry handler normalizes the value into a real
+ * ColorEffect (dropping out-of-shape fields) before it reaches the document.
+ */
+export const ColorEffectInputSchema = z
+  .object({
+    type: z.enum(["none", "brightness", "tint", "alpha", "advanced"]),
+    brightness: z.number().optional(),
+    tintColor: z.string().optional(),
+    tintAmount: z.number().optional(),
+    alpha: z.number().optional(),
+    redMult: z.number().optional(),
+    greenMult: z.number().optional(),
+    blueMult: z.number().optional(),
+    redOffset: z.number().optional(),
+    greenOffset: z.number().optional(),
+    blueOffset: z.number().optional(),
+    alphaMult: z.number().optional(),
+    alphaOffset: z.number().optional(),
+  })
+  .passthrough();
+
+/**
+ * The display-object update bag for stage_update. Previously this was an
+ * untyped `z.record(z.string(), z.unknown())` whose every key/value flowed
+ * straight into `updateDisplayObject` via a blind cast — so a string `x`, an
+ * object `scaleX`, or an unknown structural prop corrupted the display object or
+ * crashed the renderer/compiler. It now ENUMERATES the real, scalar
+ * DisplayObjectUpdates fields with their correct types. Zod's default behaviour
+ * STRIPS unknown keys (so a stray prop is dropped, not written), and the
+ * registry handler additionally type-checks each known field before the cast.
+ * NOTE: `shape`/`warp`/`filters`/`accessibility` are intentionally NOT exposed
+ * here — they are deep structural values that have dedicated tools
+ * (stage_add_shape, filter_add, …); allowing them through the generic update bag
+ * is the corruption vector this hardening closes.
+ */
+export const DisplayObjectUpdatesSchema = z
+  .object({
+    // transform scalars
+    x: z.number().optional(),
+    y: z.number().optional(),
+    scaleX: z.number().optional(),
+    scaleY: z.number().optional(),
+    rotation: z.number().optional(),
+    skewX: z.number().optional(),
+    skewY: z.number().optional(),
+    alpha: z.number().optional(),
+    width: z.number().optional(),
+    height: z.number().optional(),
+    visible: z.boolean().optional(),
+    // rendering
+    blendMode: z.string().optional(),
+    cacheAsBitmap: z.boolean().optional(),
+    colorEffect: ColorEffectInputSchema.optional(),
+    // symbol instance
+    loopMode: z.enum(["loop", "play-once", "single-frame"]).optional(),
+    firstFrame: z.number().int().min(0).optional(),
+    instanceName: z.string().optional(),
+    // text fields
+    text: z.string().optional(),
+    fontFamily: z.string().optional(),
+    fontSize: z.number().optional(),
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    align: z.enum(["left", "center", "right", "justify"]).optional(),
+    letterSpacing: z.number().optional(),
+    baselineShift: z.number().optional(),
+    textType: z.enum(["static", "dynamic", "input"]).optional(),
+    scrollable: z.boolean().optional(),
+    selectable: z.boolean().optional(),
+    linkUrl: z.string().optional(),
+    linkTarget: z.string().optional(),
+  })
+  .strip();
+export type DisplayObjectUpdates = z.infer<typeof DisplayObjectUpdatesSchema>;
+
 export const StageUpdateParamsSchema = z.object({
   id: z.string(),
   layerId: z.string().optional(),
   frameIndex: z.number().int().nonnegative().optional(),
-  updates: z.record(z.string(), z.unknown()),
+  updates: DisplayObjectUpdatesSchema.optional(),
   blendMode: z.string().optional().describe('Blend mode (normal, multiply, screen, overlay, etc.)'),
   loopMode: z.enum(['loop', 'play-once', 'single-frame']).optional(),
   firstFrame: z.number().int().min(0).optional(),
-  colorEffect: z.object({ type: z.string() }).passthrough().optional().describe('Color effect (alpha, tint, brightness, advanced)'),
+  colorEffect: ColorEffectInputSchema.optional().describe('Color effect (alpha, tint, brightness, advanced)'),
   instanceName: z.string().optional().describe(
     "AS2 instance name for a symbol/text instance (the name AS2 uses as _root.<name>). " +
     "Set/renames the instance name in place; must be a valid AS2 identifier or empty " +
@@ -422,11 +510,35 @@ export const TimelineSetFrameLabelParamsSchema = z.object({
 });
 export type TimelineSetFrameLabelParams = z.infer<typeof TimelineSetFrameLabelParamsSchema>;
 
+/**
+ * Tween options for timeline_set_tween. Previously an untyped
+ * `z.record(z.string(), z.unknown())`. The handler already reads each prop with
+ * a `typeof` guard (so a wrong-typed value was ignored, never written), but the
+ * schema now ENUMERATES the real motion + shape tween fields with their correct
+ * types so the model boundary rejects/strips garbage instead of forwarding it.
+ * Unknown keys are stripped (Zod default). Motion and shape fields coexist in
+ * one object because `kind` selects which subset the handler consults.
+ */
+export const TweenPropsSchema = z
+  .object({
+    ease: z.number().optional(),
+    // motion-only
+    rotate: z.enum(["none", "auto", "cw", "ccw"]).optional(),
+    rotateCount: z.number().optional(),
+    scale: z.boolean().optional(),
+    orientToPath: z.boolean().optional(),
+    sync: z.boolean().optional(),
+    // shape-only
+    blend: z.enum(["distributive", "angular"]).optional(),
+  })
+  .strip();
+export type TweenProps = z.infer<typeof TweenPropsSchema>;
+
 export const TimelineSetTweenParamsSchema = z.object({
   layerId: z.string(),
   frameIndex: z.number().int().nonnegative(),
   kind: z.enum(["motion", "shape"]).nullable(),
-  props: z.record(z.string(), z.unknown()).optional(),
+  props: TweenPropsSchema.optional(),
 });
 export type TimelineSetTweenParams = z.infer<typeof TimelineSetTweenParamsSchema>;
 
@@ -784,6 +896,12 @@ export const FileSaveFlaResultSchema = z.object({
 export type FileSaveFlaResult = z.infer<typeof FileSaveFlaResultSchema>;
 
 export const FileLoadFlaParamsSchema = z.object({
+  // `flaBase64: z.string()` is correctly typed — the scalar string IS the right
+  // schema for a base64 blob. The structural risk is downstream: `loadFla` can
+  // throw on a malformed archive (handled as a clear error) OR, in principle,
+  // produce a structurally-thin doc. The registry handler routes the loaded doc
+  // through the SAME `normalizeAgentDoc` as doc_load before `pushDoc`, so both
+  // doc-replacement boundaries enforce the load-bearing invariants identically.
   flaBase64: z.string(),
 });
 export type FileLoadFlaParams = z.infer<typeof FileLoadFlaParamsSchema>;

@@ -98,6 +98,9 @@ import {
   createBitmap,
   createSound,
   createLibrary,
+  createDocument,
+  createDocumentProperties,
+  createScene,
   addLibraryItem,
   removeLibraryItem,
   setSymbolLinkage,
@@ -242,25 +245,161 @@ function requireCallbacks(): AgentCallbacks {
 }
 
 /**
- * Guarantee the library-present invariant on a document accepted from the agent
- * `doc_load` tool (whose `document` param is `z.unknown()`). A doc that omits
+ * Guarantee the library-present invariant on a document. A doc that omits
  * `library`, or whose `library.items` is not an array, is normalised to carry an
  * empty/valid library so no downstream reader (notably the collab outbound
  * `externalizeAssets`, which runs in an uncatchable subscription) can throw on
  * `doc.library.items`. Treats an absent library as empty; preserves any existing
- * `folders`. Non-object input is returned unchanged (it is not a doc; the store
- * reducer / renderer surface the error there, not as a crash here).
+ * `folders`. Assumes a non-null object input (callers gate that).
  */
-function ensureDocLibrary(document: unknown): unknown {
-  if (typeof document !== "object" || document === null) return document;
-  const doc = document as { library?: unknown };
+function ensureDocLibrary(doc: Record<string, unknown>): Record<string, unknown> {
   const lib = doc.library as { items?: unknown; folders?: unknown } | undefined;
-  if (lib && Array.isArray(lib.items)) return document; // already valid
+  if (lib && Array.isArray(lib.items)) return doc; // already valid
   const folders = Array.isArray(lib?.folders) ? lib.folders : [];
   return {
     ...doc,
     library: createLibrary({ items: [], folders: folders as never[] }),
   };
+}
+
+/**
+ * One valid timeline layer for a backfilled scene — a normal layer carrying a
+ * single blank keyframe at frame 0, mirroring `createScene`'s default shape.
+ */
+function isValidScene(scene: unknown): boolean {
+  if (typeof scene !== "object" || scene === null) return false;
+  const s = scene as { timeline?: unknown };
+  const t = s.timeline as { layers?: unknown } | undefined;
+  return !!t && Array.isArray(t.layers);
+}
+
+/**
+ * Validate / normalize a document accepted from a doc-REPLACEMENT boundary
+ * (the agent `doc_load` and `file_load_fla` tools). Both tools take structural
+ * input that bypasses a real Zod schema (`document: z.unknown()` / a base64 blob
+ * decoded by `loadFla`), and the value flows straight into `pushDoc` →
+ * `history.present`, where any reader (renderer, SWF compiler, collab
+ * `externalizeAssets`) indexes its load-bearing invariants. Task 1363 backfilled
+ * ONLY `library.items`; this generalises to ALL the invariants a downstream
+ * reader assumes, so a malformed payload yields a CLEAR REJECTION (non-doc input)
+ * or a SAFE normalized doc — never an uncaught throw deep in a subscription, nor
+ * silent corruption.
+ *
+ * Rules (fail-clear, else coerce to safe):
+ *  - Non-object / null / array input  -> throw a clear Error (not a document).
+ *  - `id`          : keep if a non-empty string, else synthesise one.
+ *  - `properties`  : overlay `createDocumentProperties()` defaults so width/
+ *                    height/frameRate/backgroundColor/grid/... are always present
+ *                    and the renderer never reads `undefined`.
+ *  - `scenes`      : force to an array; drop scenes lacking a `timeline.layers`
+ *                    array; if none remain, backfill one default scene so the
+ *                    timeline panel + compiler always have ≥1 renderable scene.
+ *  - `library`     : the 1363 invariant (library.items is an array).
+ *  All other fields (asClasses, publishProfiles, flaSwfBlobs, …) pass through
+ *  untouched — they are optional and their own readers tolerate absence.
+ */
+export function normalizeAgentDoc(document: unknown): FlashDocument {
+  if (typeof document !== "object" || document === null || Array.isArray(document)) {
+    throw new Error(
+      "doc_load: `document` must be a FlashDocument object (got " +
+        (document === null ? "null" : Array.isArray(document) ? "array" : typeof document) +
+        ")"
+    );
+  }
+  let doc = document as Record<string, unknown>;
+
+  // id: keep a usable string, else synthesise from a fresh doc.
+  if (typeof doc.id !== "string" || doc.id.length === 0) {
+    doc = { ...doc, id: createDocument().id };
+  }
+
+  // properties: overlay defaults so every load-bearing field is finite/present.
+  // A valid doc already carries all of them, so this is idempotent for good docs.
+  const propsIn =
+    typeof doc.properties === "object" && doc.properties !== null
+      ? (doc.properties as Record<string, unknown>)
+      : {};
+  doc = { ...doc, properties: createDocumentProperties(propsIn) };
+
+  // scenes: must be a non-empty array of scenes with a valid timeline.
+  const scenesIn = Array.isArray(doc.scenes) ? doc.scenes : [];
+  const validScenes = scenesIn.filter(isValidScene);
+  doc = {
+    ...doc,
+    scenes: validScenes.length > 0 ? validScenes : [createScene("Scene 1")],
+  };
+
+  // library: the 1363 invariant.
+  doc = ensureDocLibrary(doc);
+
+  return doc as unknown as FlashDocument;
+}
+
+/**
+ * Whitelist + type-check the generic `stage_update` updates bag before it is
+ * cast into `updateDisplayObject`. The schema (`DisplayObjectUpdatesSchema`)
+ * already strips unknown keys for the model-facing tool surface, but the raw
+ * `/__agent` WebSocket bridge calls `dispatchAgentCommand` WITHOUT running the
+ * Zod schema, so a hand-crafted payload could still smuggle a wrong-typed scalar
+ * (e.g. `x:"50"`, `scaleX:{}`) straight onto a display object → render/compile
+ * crash or corruption. This handler-level pass is the universal guard:
+ *  - only KNOWN scalar fields are forwarded (unknown keys dropped silently —
+ *    the dedicated tools own deep structural values like shape/filters);
+ *  - a known field present with the WRONG type is rejected with a clear Error
+ *    (a no-op silent-drop would hide a real caller bug);
+ *  - `colorEffect` is shape-checked (object with a string `type`);
+ *  - `instanceName === ""` is normalised to `undefined` by the caller (clears it).
+ * Valid payloads are returned with identical values, so behaviour is unchanged.
+ */
+const NUMBER_UPDATE_FIELDS = [
+  "x", "y", "scaleX", "scaleY", "rotation", "skewX", "skewY", "alpha",
+  "width", "height", "firstFrame", "fontSize", "letterSpacing", "baselineShift",
+] as const;
+const STRING_UPDATE_FIELDS = [
+  "blendMode", "loopMode", "instanceName", "text", "fontFamily", "align",
+  "textType", "linkUrl", "linkTarget",
+] as const;
+const BOOLEAN_UPDATE_FIELDS = [
+  "visible", "cacheAsBitmap", "bold", "italic", "underline", "scrollable", "selectable",
+] as const;
+
+function sanitizeDisplayObjectUpdates(
+  raw: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of NUMBER_UPDATE_FIELDS) {
+    const v = raw[key];
+    if (v === undefined) continue;
+    if (typeof v !== "number" || !Number.isFinite(v)) {
+      throw new Error(`stage_update: "${key}" must be a finite number (got ${typeof v})`);
+    }
+    out[key] = v;
+  }
+  for (const key of STRING_UPDATE_FIELDS) {
+    const v = raw[key];
+    if (v === undefined) continue;
+    if (typeof v !== "string") {
+      throw new Error(`stage_update: "${key}" must be a string (got ${typeof v})`);
+    }
+    out[key] = v;
+  }
+  for (const key of BOOLEAN_UPDATE_FIELDS) {
+    const v = raw[key];
+    if (v === undefined) continue;
+    if (typeof v !== "boolean") {
+      throw new Error(`stage_update: "${key}" must be a boolean (got ${typeof v})`);
+    }
+    out[key] = v;
+  }
+  // colorEffect: must be an object with a string discriminant.
+  if (raw.colorEffect !== undefined) {
+    const ce = raw.colorEffect;
+    if (typeof ce !== "object" || ce === null || typeof (ce as { type?: unknown }).type !== "string") {
+      throw new Error('stage_update: "colorEffect" must be an object with a string "type"');
+    }
+    out.colorEffect = ce;
+  }
+  return out;
 }
 
 /**
@@ -706,12 +845,13 @@ const handlers: Record<string, AnyHandler> = {
   doc_load({ document }: { document: unknown }): OkRevResult {
     const cb = requireCallbacks();
     // The `document` param is `z.unknown()` (no structural validation), so an
-    // agent can push a doc that omits `library` (or whose `library`/`items` is
-    // malformed). A library-less doc in `history.present` later crashes the
-    // collab outbound `externalizeAssets` (and any other reader that does
-    // `doc.library.items`). Enforce the library-present invariant here, at the
-    // doc-replacement boundary, so the op can NEVER admit a library-less doc.
-    cb.pushDoc(ensureDocLibrary(document) as FlashDocument);
+    // agent can push an arbitrary object as the whole document. `normalizeAgentDoc`
+    // is the validate-or-normalize boundary: non-doc input is rejected with a
+    // clear error, and a structurally-thin doc (missing id/properties/scenes/
+    // library invariants) is backfilled to a safe shape so it can NEVER reach
+    // `pushDoc` in a form that later crashes the renderer / SWF compiler / collab
+    // outbound `externalizeAssets`.
+    cb.pushDoc(normalizeAgentDoc(document));
     return { ok: true, rev: _rev };
   },
 
@@ -1107,10 +1247,15 @@ const handlers: Record<string, AnyHandler> = {
     const layerId = resolveLayerId(cb, params.layerId);
     const frameIndex = resolveFrameIndex(cb, params.frameIndex);
     const doc = cb.getDoc();
+    // Whitelist + type-check the generic `updates` bag BEFORE merging. The raw
+    // `/__agent` bridge path bypasses the Zod schema, so this handler-level guard
+    // is what stops a wrong-typed scalar (e.g. x:"50") or an unknown structural
+    // prop from corrupting the display object / crashing the renderer.
+    const merged: Record<string, unknown> = sanitizeDisplayObjectUpdates(params.updates ?? {});
     // Merge top-level shorthand params into the updates object so callers can
     // pass colorEffect/blendMode/loopMode/firstFrame/cacheAsBitmap/instanceName
-    // directly without nesting them under an `updates` key.
-    const merged: Record<string, unknown> = { ...(params.updates ?? {}) };
+    // directly without nesting them under an `updates` key. (These arrive via the
+    // typed handler signature, so they are already shape-checked.)
     if (params.colorEffect !== undefined) merged.colorEffect = params.colorEffect;
     if (params.blendMode !== undefined) merged.blendMode = params.blendMode;
     if (params.loopMode !== undefined) merged.loopMode = params.loopMode;
@@ -2153,8 +2298,14 @@ const handlers: Record<string, AnyHandler> = {
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
+    // `loadFla` throws a clear "FLA open error: …" on a malformed archive (caught
+    // and surfaced as a tool error). On success, route the loaded doc through the
+    // SAME normalizer as doc_load so BOTH doc-replacement boundaries enforce the
+    // load-bearing invariants identically — a partially-parsed / structurally-thin
+    // legacy FLA can't push a library-less or scene-less doc (the 1363 class of
+    // crash applied here too, not just to doc_load).
     const doc = loadFla(bytes);
-    cb.pushDoc(doc);
+    cb.pushDoc(normalizeAgentDoc(doc));
     return { ok: true, rev: _rev };
   },
 
