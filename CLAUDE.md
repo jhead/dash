@@ -812,9 +812,33 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   (play/pause/restart) handle. Gate: `live-preview.spec.ts` (edit→reload;
   compile-error→last-good+overlay; fix→recover) + the 3 preview unit specs. The
   Ruffle bundle (`apps/desktop/public/ruffle/`) is GITIGNORED, so a fresh worktree
-  must symlink it from the main checkout to run the e2e. (Note: the worktree has
-  no `apps/desktop/public/` at all until you `mkdir -p` it and symlink `ruffle/`
-  inside.)
+  must materialize it to run the e2e. Run `node tools/copy-ruffle.mjs` (copies the
+  bundle from the installed `@ruffle-rs/ruffle` package — resolved from
+  `@flash/player`, where it's a dep — into `apps/desktop/public/ruffle/`); or
+  symlink it from the main checkout. (Note: the worktree has no
+  `apps/desktop/public/` at all until copy-ruffle / `mkdir -p` creates it.)
+- **The Ruffle asset URL MUST be base-relative, not root-absolute (task 1362 — GH
+  Pages 404).** Two independent defects broke ALL Ruffle playback on the
+  `jhead.github.io/dash/` deploy: (a) `RufflePlayer.tsx` defaulted `ruffleBaseUrl`
+  to a ROOT-ABSOLUTE `"/ruffle"`, so under the production Vite base `/dash/` the
+  script URL `/ruffle/ruffle.js` resolved to `jhead.github.io/ruffle/ruffle.js`
+  (404) instead of `.../dash/ruffle/ruffle.js` — the URL never consulted the base.
+  (b) the gitignored bundle was never copied into the Pages artifact, so even the
+  correct `/dash/ruffle/` path had no files. Fixes: (a) the default now derives
+  from `import.meta.env.BASE_URL` via the pure `resolveRuffleBaseUrl(viteBaseUrl())`
+  helper (`packages/player/src/ruffleAssetUrl.ts`) → `/dash/ruffle` in prod,
+  `/ruffle` in dev/Tauri (BASE_URL is `/dash/` only when `NODE_ENV=production`; dev
+  and Tauri both use `/`). `@flash/player` is path-aliased into the app's Vite
+  build, so `import.meta.env.BASE_URL` is statically substituted there. An explicit
+  `ruffleBaseUrl` prop still wins. Watch BASE_URL's trailing slash when
+  concatenating (helper handles it). (b) `pages.yml` runs `node tools/copy-ruffle.mjs`
+  BEFORE `vite build` so `public/ruffle/` exists and Vite copies it to
+  `dist/ruffle/` at the `/dash/` base. Verify by building with `NODE_ENV=production`
+  and grepping the emitted bundle: the loader builds `` `${l}/ruffle.js` `` where
+  `l = ruffleBaseUrl ?? resolveRuffleBaseUrl(viteBaseUrl())` and `index.html`
+  references `/dash/assets/...` (proving the base is applied). Gate:
+  `packages/player/src/__tests__/ruffleAssetUrl.test.ts` (resolves `/dash/` →
+  `/dash/ruffle`, `/` → `/ruffle`, trailing-slash + empty-base edge cases).
 - **Keypresses inside a Ruffle player must NOT leak to the authoring app — use a
   containment check, never `stopPropagation` (task 1324).** Many editor shortcuts
   are GLOBAL (`window`/`document` keydown listeners): tool hotkeys (`ToolsPanel.tsx`),

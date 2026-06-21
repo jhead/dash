@@ -14,8 +14,10 @@ export interface PlayerWindowProps {
    */
   onError?: (message: string) => void;
   /**
-   * Base URL where ruffle.js and its sibling assets are served.
-   * Defaults to "/ruffle" (relative to the app origin).
+   * Base URL where ruffle.js and its sibling assets are served. When omitted,
+   * RufflePlayer derives it from the Vite deployment base
+   * (`import.meta.env.BASE_URL`) so it resolves under a GitHub Pages sub-path
+   * (e.g. `/dash/ruffle`) as well as in local dev / Tauri (`/ruffle`).
    */
   ruffleBaseUrl?: string;
   /**

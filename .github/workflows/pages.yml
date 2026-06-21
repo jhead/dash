@@ -33,6 +33,13 @@ jobs:
       - name: Build packages
         run: pnpm --filter './packages/**' build
 
+      # The Ruffle bundle (apps/desktop/public/ruffle/) is gitignored, so it is
+      # absent on a fresh checkout. Copy it from the installed @ruffle-rs/ruffle
+      # package BEFORE the web build so Vite copies public/ruffle/ -> dist/ruffle/
+      # at the /dash/ base. Without this, /dash/ruffle/ruffle.js 404s on Pages.
+      - name: Materialize Ruffle bundle
+        run: node tools/copy-ruffle.mjs
+
       - name: Build web app
         run: pnpm --filter @flash/desktop run build
         env:

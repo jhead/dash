@@ -5,6 +5,7 @@ import {
   shouldSuppressRuffleLog,
   stripConsoleCssFormat,
 } from "./ruffleLogFilter.js";
+import { resolveRuffleBaseUrl, viteBaseUrl } from "./ruffleAssetUrl.js";
 
 export interface RufflePlayerProps {
   /** SWF bytes to play; null = blank/idle screen */
@@ -15,8 +16,13 @@ export interface RufflePlayerProps {
   /**
    * Base URL where the Ruffle self-hosted assets live.
    * Must be a path/URL that the browser can fetch (not a bare package specifier).
-   * Defaults to "/ruffle" — assumes ruffle.js and its sibling WASM/chunk files
-   * are served from the app's public/ruffle/ directory.
+   * When omitted, it is derived from the Vite deployment base
+   * (`import.meta.env.BASE_URL`) so it resolves correctly both in local dev /
+   * Tauri (base `/` → `/ruffle`) AND on GitHub Pages under a sub-path (base
+   * `/dash/` → `/dash/ruffle`). A ROOT-ABSOLUTE default like `/ruffle` would
+   * ignore the sub-path and 404 on Pages. ruffle.js and its sibling WASM/chunk
+   * files are served from the app's `public/ruffle/` directory (copied to
+   * `<base>/ruffle/` by Vite).
    */
   ruffleBaseUrl?: string;
   /**
@@ -72,12 +78,18 @@ export function RufflePlayer({
   swfBytes,
   width = 550,
   height = 400,
-  ruffleBaseUrl = "/ruffle",
+  ruffleBaseUrl,
   onError,
   onTrace,
   loadOptions,
   onControls,
 }: RufflePlayerProps): React.ReactElement {
+  // An explicit prop wins; otherwise derive the asset base from the Vite
+  // deployment base so the URL respects the GitHub Pages sub-path (`/dash/`)
+  // instead of a root-absolute `/ruffle` that 404s on Pages.
+  const effectiveRuffleBaseUrl =
+    ruffleBaseUrl ?? resolveRuffleBaseUrl(viteBaseUrl());
+
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<RufflePlayerElement | null>(null);
   const ruffleLoadedRef = useRef(false);
@@ -131,10 +143,12 @@ export function RufflePlayer({
         return;
       }
 
-      // Use the ruffleBaseUrl prop so we always get a real, fetchable URL.
-      // ruffle.js uses document.currentScript.src to locate its sibling WASM
-      // and chunk files, so they must live alongside ruffle.js at ruffleBaseUrl.
-      const ruffleUrl = `${ruffleBaseUrl}/ruffle.js`;
+      // Use the resolved base URL so we always get a real, fetchable URL that
+      // respects the Vite deployment base (e.g. `/dash/ruffle/ruffle.js` on
+      // GitHub Pages, `/ruffle/ruffle.js` in dev/Tauri). ruffle.js uses
+      // document.currentScript.src to locate its sibling WASM and chunk files,
+      // so they must live alongside ruffle.js at this base.
+      const ruffleUrl = `${effectiveRuffleBaseUrl}/ruffle.js`;
 
       const script = document.createElement("script");
       script.src = ruffleUrl;
@@ -145,7 +159,7 @@ export function RufflePlayer({
       );
       document.head.appendChild(script);
     });
-  }, [ruffleBaseUrl]);
+  }, [effectiveRuffleBaseUrl]);
 
   /** Create (or recreate) the Ruffle player element inside the container.
    *
