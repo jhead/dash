@@ -430,3 +430,92 @@ describe("async two-peer convergence — library items + asClasses (same keyed/o
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// task 1360: concurrent FIRST-creation of a PREVIOUSLY-ABSENT root container.
+//
+// The distinguishing case from the tests above: the base doc has NO asClasses
+// at all (a fresh createDocument() leaves the field undefined), so each peer's
+// first addAsClass INSTANTIATES the container on a previously-absent root key.
+// Before the fix, that was a root-MAP-KEY set resolved by Yjs LAST-WRITER-WINS:
+// both peers minted their own container and the loser's whole container (the
+// class it just added) was silently discarded — both peers converged to ONLY
+// the winner's class. After the fix the container is eagerly pre-created at
+// genesis (present on every peer before any edit), so the first adds are
+// converging sub-key writes and BOTH classes survive on BOTH peers.
+// ---------------------------------------------------------------------------
+
+describe("async two-peer convergence — concurrent FIRST-creation of an absent root container (task 1360)", () => {
+  it("two peers each first-create asClasses (each a different class) -> BOTH survive", () => {
+    // Base is a PLAIN doc: asClasses is undefined (the container does not exist).
+    const base = createDocument();
+    expect(base.asClasses).toBeUndefined();
+    const { ydocA, ydocB, srcA, srcB, bus, teardown } = twoPeersAsync(base);
+    try {
+      // Concurrently (before any sync) each peer adds its FIRST class — the very
+      // act that used to root-key-LWW one container over the other.
+      srcA.set(addAsClass(srcA.getDoc(), { path: "p/Foo.as", source: "class Foo {}" }));
+      srcB.set(addAsClass(srcB.getDoc(), { path: "p/Bar.as", source: "class Bar {}" }));
+
+      bus.flush();
+
+      const aClasses = rebuildDoc(ydocA).asClasses ?? [];
+      const bClasses = rebuildDoc(ydocB).asClasses ?? [];
+      const aPaths = aClasses.map((c) => c.path);
+      const bPaths = bClasses.map((c) => c.path);
+
+      // Convergent: both peers agree.
+      expect(aPaths).toEqual(bPaths);
+      // No duplicate / dropped path.
+      expect(new Set(aPaths).size).toBe(aPaths.length);
+      // The UNION of both first-created classes survives (NO silent loss).
+      expect([...aPaths].sort()).toEqual(["p/Bar.as", "p/Foo.as"]);
+      // The actual sources are intact (not just the keys).
+      const byPath = new Map(aClasses.map((c) => [c.path, c.source]));
+      expect(byPath.get("p/Foo.as")).toBe("class Foo {}");
+      expect(byPath.get("p/Bar.as")).toBe("class Bar {}");
+    } finally {
+      teardown();
+    }
+  });
+
+  it("two peers each first-create classpaths (a different root) -> BOTH survive (other absent root container)", () => {
+    // classpaths is the OTHER undefined->defined structural root container; prove
+    // the eager-genesis fix covers it too (audit requirement of task 1360).
+    const base = createDocument();
+    expect(base.classpaths).toBeUndefined();
+    const { ydocA, ydocB, srcA, srcB, bus, teardown } = twoPeersAsync(base);
+    try {
+      srcA.set({ ...srcA.getDoc(), classpaths: ["srcA"] });
+      srcB.set({ ...srcB.getDoc(), classpaths: ["srcB"] });
+
+      bus.flush();
+
+      const aCp = rebuildDoc(ydocA).classpaths ?? [];
+      const bCp = rebuildDoc(ydocB).classpaths ?? [];
+      // Convergent.
+      expect(aCp).toEqual(bCp);
+      // No duplicate.
+      expect(new Set(aCp).size).toBe(aCp.length);
+      // The union of both peers' first-set values survives — neither root-key-LWW'd.
+      expect([...aCp].sort()).toEqual(["srcA", "srcB"]);
+    } finally {
+      teardown();
+    }
+  });
+
+  it("an absent asClasses round-trips as ABSENT despite eager container pre-creation", () => {
+    // Guards the P0 round-trip identity: eagerly creating the empty container at
+    // genesis must NOT resurrect the field as a spurious [] on a doc that never
+    // had asClasses.
+    const base = createDocument();
+    const { ydocA, srcB, bus, teardown } = twoPeersAsync(base);
+    try {
+      bus.flush();
+      expect(rebuildDoc(ydocA).asClasses).toBeUndefined();
+      expect(srcB.getDoc().asClasses).toBeUndefined();
+    } finally {
+      teardown();
+    }
+  });
+});

@@ -44,6 +44,12 @@ const DOC_STRUCTURAL = new Set([
   "classpaths",
   "publishProfiles",
   "flaSwfBlobs",
+  // Presence companion keys for the optional Y.Array root containers (task 1360).
+  // Treated as structural so the atomic field reader/writer never materializes,
+  // diffs, or rebuilds them as model fields — they are pure CRDT bookkeeping.
+  "classpaths__present",
+  "publishProfiles__present",
+  "flaSwfBlobs__present",
 ]);
 const SCENE_STRUCTURAL = new Set(["timeline"]);
 const LAYER_STRUCTURAL = new Set(["frames"]);
@@ -55,8 +61,104 @@ const EMPTY_STRUCTURAL = new Set<string>();
 /** Key under which a keyed Y.Map's deterministic order array lives. */
 const ORDER_KEY = "__order";
 
+/**
+ * Presence sentinel inside an EAGERLY pre-created optional root container.
+ *
+ * == Why this exists (task 1360 — concurrent-genesis root-key LWW) ==
+ * An optional root container (`asClasses`, `classpaths`, `publishProfiles`,
+ * `flaSwfBlobs`) starts UNDEFINED on a fresh `createDocument()`. If the binding
+ * created the container lazily on first use — `root.set("asClasses", new Y.Map())`
+ * — two peers that FIRST-CREATE the same absent root key concurrently each mint
+ * their own container and Yjs resolves the conflicting ROOT-MAP-KEY writes by
+ * LAST-WRITER-WINS: the loser's whole container (the class they just added) is
+ * silently discarded. The race is the container INSTANTIATION on a root key, not
+ * member adds once the container exists (those merge — the always-present
+ * `library` regime).
+ *
+ * FIX: the container is created ONCE, deterministically, at genesis/materialize
+ * (`ensureOptionalContainer`) so the root key exists from the first synced state
+ * BEFORE any peer edits. Subsequent first-adds are then sub-key writes
+ * (`container.set(path, …)` / `yarr.insert(…)`) which merge, never a root-key
+ * LWW. The container is NEVER deleted (deleting the key would re-open the same
+ * race on a later re-add); to represent an absent OR present-empty model field we
+ * instead toggle this sentinel:
+ *   - `__present` absent / not `true`  => the model field is ABSENT (rebuild ->
+ *     `undefined`), even though the empty container exists in Y. This preserves
+ *     the P0 round-trip identity: a doc with no `asClasses` rebuilds with no
+ *     `asClasses`, not a spurious `[]`.
+ *   - `__present === true`              => the model field is PRESENT (rebuild ->
+ *     its entries, possibly `[]` after removing the last class).
+ * The sentinel is an idempotent boolean LWW on the SAME container that exists
+ * from genesis, so two peers both turning it `true` converge with no loss.
+ */
+const PRESENT_KEY = "__present";
+
 /** The single root key on the Y.Doc holding the projected document. */
 export const ROOT_KEY = "doc";
+
+/**
+ * Get-or-create an optional root CONTAINER (a Y.Map or Y.Array) under `key`,
+ * WITHOUT a root-key LWW on a concurrent first-creation. Idempotent: if a peer
+ * (or our own genesis) already created it, the existing instance is returned
+ * untouched, so two peers calling this in concurrent transactions both observe a
+ * single converged container. The container is created with NO `__present`
+ * sentinel, i.e. it reads back as an absent model field until a real value marks
+ * it present (see {@link PRESENT_KEY}).
+ */
+function ensureOptionalMap(root: Y.Map<unknown>, key: string): Y.Map<unknown> {
+  const existing = root.get(key);
+  if (existing instanceof Y.Map) return existing;
+  const container = new Y.Map();
+  root.set(key, container);
+  return container;
+}
+function ensureOptionalArray(root: Y.Map<unknown>, key: string): Y.Array<unknown> {
+  const existing = root.get(key);
+  if (existing instanceof Y.Array) return existing;
+  const container = new Y.Array();
+  root.set(key, container);
+  return container;
+}
+
+/**
+ * Mark a Y.Map optional container present/absent via an INTERNAL `__present` key.
+ * Idempotent LWW: two peers both setting it `true` write the same value on the
+ * SAME shared container key, so they converge with no loss or duplication.
+ */
+function setMapPresence(container: Y.Map<unknown>, present: boolean): void {
+  if (present) {
+    if (container.get(PRESENT_KEY) !== true) container.set(PRESENT_KEY, true);
+  } else if (container.has(PRESENT_KEY)) {
+    container.delete(PRESENT_KEY);
+  }
+}
+
+/**
+ * Presence companion ROOT key for an optional Y.Array container. A Y.Array has no
+ * place for an internal sentinel: a marker element at index 0 is NOT idempotent —
+ * two peers concurrently inserting their own marker both land (the index-0 insert
+ * does not deduplicate), so the marker would double. A SCALAR boolean root key is
+ * idempotent LWW (both peers set the same value), so it converges cleanly.
+ */
+function arrayPresenceKey(key: string): string {
+  return `${key}${PRESENT_KEY}`;
+}
+function setArrayPresence(root: Y.Map<unknown>, key: string, present: boolean): void {
+  const pKey = arrayPresenceKey(key);
+  if (present) {
+    if (root.get(pKey) !== true) root.set(pKey, true);
+  } else if (root.has(pKey)) {
+    root.delete(pKey);
+  }
+}
+
+/** Is an eagerly-created Y container marked present (model field non-undefined)? */
+function isMapPresent(container: Y.Map<unknown>): boolean {
+  return container.get(PRESENT_KEY) === true;
+}
+function isArrayPresent(root: Y.Map<unknown>, key: string): boolean {
+  return root.get(arrayPresenceKey(key)) === true;
+}
 
 // ---------------------------------------------------------------------------
 // flaSwfBlobs — the one non-JSON field (Uint8Array bytes). Import-only; never
@@ -313,7 +415,7 @@ function lcsKeepMasks(
  */
 function orderedKeys(container: Y.Map<unknown>, order: Y.Array<string> | undefined): string[] {
   const live = new Set<string>();
-  for (const k of container.keys()) if (k !== ORDER_KEY) live.add(k);
+  for (const k of container.keys()) if (k !== ORDER_KEY && k !== PRESENT_KEY) live.add(k);
 
   const out: string[] = [];
   const seen = new Set<string>();
@@ -389,6 +491,35 @@ function setPlainArray(
 }
 
 /**
+ * Reconcile an OPTIONAL root Y.Array container (`classpaths` / `publishProfiles`
+ * / `flaSwfBlobs`) that may be ABSENT on the model. Unlike {@link setPlainArray},
+ * an absent (`undefined`) field does NOT delete the root key — the eagerly
+ * pre-created container is kept and merely marked not-present (see
+ * {@link PRESENT_KEY} for the concurrent-genesis-LWW rationale, task 1360). The
+ * presence marker occupies element 0; the real values follow it, reconciled by
+ * the same minimal splice.
+ */
+function setOptionalPlainArray(
+  root: Y.Map<unknown>,
+  key: string,
+  next: readonly unknown[] | undefined,
+  encode: (v: unknown) => Json = (v) => cloneJson(v as Json),
+): void {
+  const yarr = ensureOptionalArray(root, key);
+  if (next === undefined) {
+    setArrayPresence(root, key, false);
+    // Drop any leftover real values (an absent field has no contents).
+    if (yarr.length > 0) yarr.delete(0, yarr.length);
+    return;
+  }
+  setArrayPresence(root, key, true);
+  // Reconcile the values with the same minimal, position-stable splice as
+  // setPlainArray; presence is tracked on the sibling scalar key, not in-band.
+  const encoded = next.map(encode);
+  reconcileJsonArray(yarr, encoded);
+}
+
+/**
  * The {@link reconcileOrderArray} algorithm generalized to arbitrary JSON
  * elements compared structurally (via stable JSON stringify). Elements common to
  * `current` and `desired` keep their CRDT identity; only genuinely added/removed
@@ -423,6 +554,23 @@ function rebuildPlainArray<T>(
 ): T[] | undefined {
   const yarr = parent.get(key) as Y.Array<unknown> | undefined;
   if (!(yarr instanceof Y.Array)) return undefined;
+  return yarr.toArray().map((v) => decode(v as Json));
+}
+
+/**
+ * Rebuild an OPTIONAL root Y.Array container, honoring its presence companion
+ * key: an eagerly pre-created but not-present container rebuilds to `undefined`
+ * (the model field was absent), while a present container rebuilds its values,
+ * possibly `[]`.
+ */
+function rebuildOptionalPlainArray<T>(
+  root: Y.Map<unknown>,
+  key: string,
+  decode: (v: Json) => T = (v) => cloneJson(v) as T,
+): T[] | undefined {
+  const yarr = root.get(key) as Y.Array<unknown> | undefined;
+  if (!(yarr instanceof Y.Array)) return undefined;
+  if (!isArrayPresent(root, key)) return undefined;
   return yarr.toArray().map((v) => decode(v as Json));
 }
 
@@ -660,15 +808,21 @@ function reconcileAsClasses(
   prev: readonly AsClassLike[] | undefined,
   next: readonly AsClassLike[] | undefined,
 ): void {
+  // EAGER + STABLE: the container is always created (genesis or here) and NEVER
+  // deleted, so a concurrent first-`addAsClass` is a sub-key write on a shared
+  // container, not a root-key LWW (task 1360). An absent model field is recorded
+  // by clearing the presence sentinel, not by removing the root key.
+  const container = ensureOptionalMap(root, "asClasses");
   if (next === undefined) {
-    if (root.has("asClasses")) root.delete("asClasses");
+    setMapPresence(container, false);
+    // An absent field carries no classes: drop any leftover entries + order.
+    for (const key of [...container.keys()]) {
+      if (key === PRESENT_KEY) continue;
+      container.delete(key);
+    }
     return;
   }
-  let container = root.get("asClasses") as Y.Map<unknown> | undefined;
-  if (!(container instanceof Y.Map)) {
-    container = new Y.Map();
-    root.set("asClasses", container);
-  }
+  setMapPresence(container, true);
   // Preserve authored order via a sibling order array.
   let order = container.get(ORDER_KEY) as Y.Array<string> | undefined;
   if (!(order instanceof Y.Array)) {
@@ -693,7 +847,7 @@ function reconcileAsClasses(
     }
   }
   for (const key of [...container.keys()]) {
-    if (key === ORDER_KEY) continue;
+    if (key === ORDER_KEY || key === PRESENT_KEY) continue;
     if (!nextByPath.has(key)) container.delete(key);
   }
   // CRDT-safe incremental order reconcile (see reconcileOrderArray) — concurrent
@@ -727,6 +881,9 @@ function applyTextEdit(ytext: Y.Text, nextSource: string): void {
 function rebuildAsClasses(root: Y.Map<unknown>): AsClassLike[] | undefined {
   const container = root.get("asClasses") as Y.Map<unknown> | undefined;
   if (!(container instanceof Y.Map)) return undefined;
+  // An eagerly pre-created container with no presence sentinel means the model
+  // field was ABSENT — rebuild it as `undefined`, preserving round-trip identity.
+  if (!isMapPresent(container)) return undefined;
   const order = container.get(ORDER_KEY) as Y.Array<string> | undefined;
   // Defensive read: dedupe doubled paths, drop paths with no live Y.Text, and
   // append any class missing from __order so a concurrently-added class is never
@@ -774,10 +931,14 @@ export function materializeDoc(ydoc: Y.Doc, doc: FlashDocument): void {
   root.set("library", ylib);
   materializeLibrary(ylib, d.library);
 
+  // Optional root containers are EAGERLY created here (even when the model field
+  // is undefined) so the root key exists from genesis on every peer, making a
+  // concurrent first-add a converging sub-key write rather than a root-key LWW
+  // that loses one peer's contents (task 1360).
   reconcileAsClasses(root, undefined, d.asClasses);
-  setPlainArray(root, "classpaths", d.classpaths);
-  setPlainArray(root, "publishProfiles", d.publishProfiles);
-  setPlainArray(
+  setOptionalPlainArray(root, "classpaths", d.classpaths);
+  setOptionalPlainArray(root, "publishProfiles", d.publishProfiles);
+  setOptionalPlainArray(
     root,
     "flaSwfBlobs",
     d.flaSwfBlobs,
@@ -812,12 +973,12 @@ export function diffDoc(ydoc: Y.Doc, prev: FlashDocument | undefined, next: Flas
   }
 
   if (p?.asClasses !== n.asClasses) reconcileAsClasses(root, p?.asClasses, n.asClasses);
-  if (p?.classpaths !== n.classpaths) setPlainArray(root, "classpaths", n.classpaths);
+  if (p?.classpaths !== n.classpaths) setOptionalPlainArray(root, "classpaths", n.classpaths);
   if (p?.publishProfiles !== n.publishProfiles) {
-    setPlainArray(root, "publishProfiles", n.publishProfiles);
+    setOptionalPlainArray(root, "publishProfiles", n.publishProfiles);
   }
   if (p?.flaSwfBlobs !== n.flaSwfBlobs) {
-    setPlainArray(root, "flaSwfBlobs", n.flaSwfBlobs, (v) => blobToJson(v as RawBlob));
+    setOptionalPlainArray(root, "flaSwfBlobs", n.flaSwfBlobs, (v) => blobToJson(v as RawBlob));
   }
 }
 
@@ -835,13 +996,13 @@ export function rebuildDoc(ydoc: Y.Doc): FlashDocument {
   const asClasses = rebuildAsClasses(root);
   if (asClasses !== undefined) out.asClasses = asClasses;
 
-  const classpaths = rebuildPlainArray<string>(root, "classpaths");
+  const classpaths = rebuildOptionalPlainArray<string>(root, "classpaths");
   if (classpaths !== undefined) out.classpaths = classpaths;
 
-  const publishProfiles = rebuildPlainArray(root, "publishProfiles");
+  const publishProfiles = rebuildOptionalPlainArray(root, "publishProfiles");
   if (publishProfiles !== undefined) out.publishProfiles = publishProfiles;
 
-  const flaSwfBlobs = rebuildPlainArray<RawBlob>(root, "flaSwfBlobs", (v) => jsonToBlob(v));
+  const flaSwfBlobs = rebuildOptionalPlainArray<RawBlob>(root, "flaSwfBlobs", (v) => jsonToBlob(v));
   if (flaSwfBlobs !== undefined) out.flaSwfBlobs = flaSwfBlobs;
 
   return out as unknown as FlashDocument;

@@ -85,10 +85,10 @@ Root: a single `Y.Map` under key `"doc"` on the `Y.Doc`.
 | `properties` (and all its fields) | per-field `Y.Map` entries on the root | per-field merge of doc props |
 | `scenes` | `Y.Array<Y.Map(scene)>` | **positional** |
 | `library` | `Y.Map` | container |
-| `asClasses` | `Y.Map<path, Y.Text>` | **character-level** |
-| `classpaths` | `Y.Array<string>` (atomic replace) | whole-array LWW |
-| `publishProfiles` | `Y.Array<atomic profile>` | whole-array LWW |
-| `flaSwfBlobs` | `Y.Array<atomic blob>` (bytes → base64) | whole-array LWW (import-only) |
+| `asClasses` | `Y.Map<path, Y.Text>` (eager genesis, see §1360) | **character-level**; concurrent first-create converges |
+| `classpaths` | `Y.Array<string>` (eager genesis) | whole-array LWW; concurrent first-create converges |
+| `publishProfiles` | `Y.Array<atomic profile>` (eager genesis) | whole-array LWW; concurrent first-create converges |
+| `flaSwfBlobs` | `Y.Array<atomic blob>` (bytes → base64; eager genesis) | whole-array LWW (import-only) |
 | `Scene` | `Y.Map`: `id`/`name`/`flaItemId` per-field; `timeline` → `Y.Map` | per-field |
 | `Timeline` | `Y.Map { layers: Y.Array<Y.Map(layer)> }` | layers **positional** |
 | `Layer` | `Y.Map`: scalars per-field; `frames` → `Y.Array<Y.Map(frame)>` | frames **positional** |
@@ -182,6 +182,57 @@ absent**, never as a key holding `undefined`. The binding therefore:
 - deletes a `Y.Map` key when a field disappears in a later edit,
 - compares with a JSON-structural equality that treats `{a:1}` and
   `{a:1,b:undefined}` as equal.
+
+### Concurrent first-creation of an absent root container — eager genesis (task 1360)
+
+The four **optional structural root containers** — `asClasses`, `classpaths`,
+`publishProfiles`, `flaSwfBlobs` — start **undefined** on a fresh
+`createDocument()` (the container does not exist until first use). The naive
+binding created them lazily on first use: `root.set("asClasses", new Y.Map())`.
+That is a **root-MAP-KEY set**, and Yjs resolves two conflicting writes to the
+same key by **last-writer-wins on the KEY**. So if two peers each FIRST-CREATE the
+same absent container concurrently — peer A adds `Foo.as`, peer B adds `Bar.as`,
+before either creation has synced — each mints its own `Y.Map`, one overwrites the
+other, and the **loser's whole container (the class it just added) is silently
+discarded**. Both peers converge to only the winner's class. This is *convergent
+data loss* (both agree on the wrong result), 100 % in the losing ordering.
+
+This is **orthogonal to the `__order` reconcile (task 1359)**: that bug is a
+positional-array CRDT interleave *inside an existing container*; this one is the
+container **instantiation** on a root key, *before* any `__order` handling. Once
+the container exists and is shared, concurrent member adds already converge (the
+always-present `library` regime) — the race is purely at genesis.
+
+**Fix — eager, deterministic genesis + a presence sentinel.** `materializeDoc`
+now creates every optional root container **eagerly at genesis** (via
+`ensureOptionalMap` / `ensureOptionalArray`), even when the model field is
+`undefined`, and the container is **never deleted** thereafter (deleting the key
+would re-open the same race on a later re-add). With the key present from the first
+synced state, a subsequent first-add is a **sub-key write on a shared container**
+(`container.set(path, …)` / `yarr.insert(…)`) — which merges — not a root-key LWW.
+
+To keep the **round-trip identity** (an absent field must rebuild as absent, not as
+a spurious empty `[]`), an eagerly-created container records whether the *model*
+field is present via an **idempotent boolean sentinel**:
+
+- a `Y.Map` container (`asClasses`) carries an internal `__present` key;
+- a `Y.Array` container (`classpaths` / `publishProfiles` / `flaSwfBlobs`) carries
+  a **sibling scalar root key** `<key>__present` — an internal index-0 marker is
+  *not* idempotent (two concurrent index-0 inserts both land → a doubled marker),
+  but a scalar boolean is (both peers set the same value → converge).
+
+Rebuild returns `undefined` when the sentinel is absent (model field was absent)
+and the contents — possibly `[]` after removing the last entry — when it is set.
+Two peers both turning the sentinel `true` is an idempotent same-value LWW on a
+shared key, so it converges with no loss. The companion `<key>__present` keys are
+treated as **structural** so the atomic field reader never leaks them into the
+rebuilt model.
+
+Gate: `convergence.test.ts` — "concurrent FIRST-creation of an absent root
+container": two peers each first-create `asClasses` (different classes) → BOTH
+survive on BOTH peers; same for `classpaths`; plus an absent-`asClasses` doc still
+round-trips as **absent** despite the eager container. The P0 7,200-step property
+test (which exercises `removeAsClass` to an empty `asClasses: []`) still holds.
 
 ### The one non-JSON field: `flaSwfBlobs`
 
