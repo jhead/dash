@@ -1,0 +1,10 @@
+{
+  "id": "1348-7a6qgp-collab-p5-hardening-peer-count-realism-reconnect",
+  "title": "Collab P5: hardening \u2014 peer-count realism, reconnection, large-doc sync perf, optional y-indexeddb, e2e",
+  "description": "Depends on Collab P4 (final phase). Harden the multiplayer feature: (1) Peer-count realism \u2014 graceful behavior + a clear UI message past ~15 peers (WebRTC full-mesh N^2 degradation; no artificial cap, but set expectations). (2) Reconnection edge cases (signaling drop, peer churn, awareness re-broadcast on reconnect). (3) Large-doc initial sync perf \u2014 the first state-vector exchange of a multi-MB doc + the outbound diff cost on big docs; optimize/measure. (4) Optional y-indexeddb for offline Y-state persistence / faster rejoin (the existing autosave of the derived snapshot remains; only add if it doesn't create competing-persistence bugs). (5) Signaling-server-down fallback (user-supplied URL field, clear error). (6) E2E-encryption verification (room password actually encrypts doc + awareness; wrong k can't read). VERIFY: build + all tests green (only ~3 task-1207 fixtures acceptable); a multi-peer (5+) convergence test; reconnection test; perf numbers reported; encryption test. Finalize docs/37-collab.md (limits, security, ops). ACQUIRE lock; commit incl task file; push rebase-retry. Sequential after P4.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-06-21T17:35:04Z",
+  "updated_at": "2026-06-21T17:35:04Z"
+}

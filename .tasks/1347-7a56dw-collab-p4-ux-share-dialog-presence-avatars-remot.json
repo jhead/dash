@@ -1,0 +1,10 @@
+{
+  "id": "1347-7a56dw-collab-p4-ux-share-dialog-presence-avatars-remot",
+  "title": "Collab P4: UX (share dialog, presence avatars, remote cursors, follow-peer) + out-of-band asset sync",
+  "description": "Depends on Collab P3. (1) UX: a Share dialog that generates/show the #room&k link with an HONEST note (peer IPs are visible to collaborators via WebRTC; link = full edit access; doc data is E2E-encrypted + serverless); presence avatars (who's here, colors, names); remote cursors + selection outlines on the stage; follow-a-peer control; a clear opt-in/leave-session control and connection status. (2) OUT-OF-BAND ASSET SYNC: the CRDT holds only assetId+content-hash for bitmaps/sounds/video (per P0); implement peer-to-peer byte transfer over a y-webrtc data channel, content-addressed by hash, lazy request/response (a joiner requests assets it lacks); show a missing-asset placeholder until fetched. Mirror the existing externalization in packages/core/src/fla/zip.ts. VERIFY: build + authoring-ui tests green (only ~3 task-1207 fixtures acceptable); tests for the share-link round-trip (parse #room&k), asset hash/request/receive, placeholder-then-resolve; a 2-peer e2e where a joiner with no assets fetches a bitmap and renders it. Update docs/37-collab.md. ACQUIRE lock; commit incl task file; push rebase-retry. Conflict hotspots: Shell, StageArea, new collab UI + asset-channel module. Sequential after P3.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-21T17:35:04Z",
+  "updated_at": "2026-06-21T17:35:04Z"
+}

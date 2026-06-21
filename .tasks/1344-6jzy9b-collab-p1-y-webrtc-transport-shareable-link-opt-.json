@@ -1,0 +1,10 @@
+{
+  "id": "1344-6jzy9b-collab-p1-y-webrtc-transport-shareable-link-opt-",
+  "title": "Collab P1: y-webrtc transport + shareable link + opt-in join (no own server)",
+  "description": "Depends on Collab P0 (the @flash/collab Y.Doc binding). Add P2P transport via y-webrtc (Yjs-native: WebRTC mesh + PUBLIC signaling + room-password E2E encryption; the room id is the share link). NO server of our own. (1) Construct the y-webrtc provider ONLY on opt-in (off by default \u2014 no provider/network/awareness at startup) bound to the existing documentStore's Y.Doc from P0. (2) Share LINK format: put the secret in the URL FRAGMENT so signaling never sees it: #room=<random-room-id>&k=<E2E-password>; room id = y-webrtc room name; k = room password (E2E key). (3) Join flow: opening a link prompts a join confirmation, then constructs the provider; local doc merges with the Y.Doc on first sync (Yjs state-vector exchange). 'Start collaborating' generates room+k and shows the link. (4) Reconnection handled by y-webrtc/Yjs (only missing updates exchanged). (5) Expose a user-editable signaling-server URL (public default; document the third-party dependency + that signaling only brokers handshakes, never doc bytes). VERIFY: build + tests green (only ~3 task-1207 fixtures acceptable); a test/e2e with two in-process or two-browser peers editing the same doc and converging (use the P0 property/round-trip harness over the real provider where feasible, or a mock signaling). Update docs/37-collab.md. ACQUIRE lock; commit incl task file; push rebase-retry. Conflict hotspots: documentStore, Shell. Sequential after P0.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-21T17:34:30Z",
+  "updated_at": "2026-06-21T17:34:30Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "1346-7a3p6z-collab-p3-per-origin-yjs-undomanager-collaborato",
+  "title": "Collab P3: per-origin Yjs UndoManager (collaborators undo only their own edits)",
+  "description": "Depends on Collab P2. Adopt Y.UndoManager scoped to the local origin (trackedOrigins = set([localOrigin])) so each collaborator undoes only their OWN edits. Reconcile with the existing snapshot history (history/history.ts + store/history.ts; the current doc IS history.present): SOLO (no collab session) keeps the existing snapshot undo EXACTLY as-is (zero change). During a COLLAB session, route undo/redo to the Y.UndoManager instead of the snapshot reducer; inbound remote updates already use replaceDoc (no snapshot entry) so the stack isn't polluted; freeze/bypass the snapshot stack during the session and restore it on session end. VERIFY: build + tests green (only ~3 task-1207 fixtures acceptable); tests: in a 2-peer session, peer A undo reverts only A's last edit (not B's concurrent edit); solo undo/redo unchanged; session-end restores snapshot undo. Update docs/37-collab.md. ACQUIRE lock; commit incl task file; push rebase-retry. Conflict hotspots: documentStore (undo routing), store/history.ts. Sequential after P2 \u2014 real semantic seam, scope carefully.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-06-21T17:35:04Z",
+  "updated_at": "2026-06-21T17:35:04Z"
+}
