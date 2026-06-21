@@ -34,10 +34,25 @@ export interface CollabStatus {
 /**
  * Subscribe to the live collaboration connection status. Re-renders on peer
  * join/leave and on sync. Returns `{ state: "solo" }` when there is no session.
+ *
+ * Participant count comes from the AWARENESS controller (the CURRENT set of
+ * present peers — `awareness.getStates()` minus self), NOT y-webrtc's
+ * connection-level `peers` event (task 1365). The connection event has NO TTL:
+ * an unclean leave (tab close, network drop, crash) lingers in
+ * `room.webrtcConns/bcConns` forever and never emits a shrunk array, so the old
+ * `Math.max(webrtcPeers, bcPeers)` count only ever GREW — it stuck at the
+ * high-water-mark and never decremented. Awareness, by contrast, prunes on a
+ * clean leave instantly (`setLocalState(null)`) and on an unclean drop within
+ * ~30 s (the built-in `outdatedTimeout`), so deriving the count from it makes
+ * the pill DECREMENT on leave/disconnect/timeout and agree with the presence
+ * avatars (which already read awareness via `usePeers` — a single source of
+ * truth). The connection `peers` event stays the authority for signaling/
+ * reconnect health (reconnect.ts); it is just not the participant-count source.
  */
 export function useCollabStatus(): CollabStatus {
   const { session } = useCollab();
-  const [peers, setPeers] = useState(0);
+  const controller = session?.awarenessController;
+  const [peers, setPeers] = useState(() => controller?.getPeers().length ?? 0);
   const [synced, setSynced] = useState(false);
 
   useEffect(() => {
@@ -48,20 +63,28 @@ export function useCollabStatus(): CollabStatus {
     }
     setSynced(session.synced);
 
-    const onPeers = (e: { webrtcPeers?: unknown[]; bcPeers?: unknown[] }) => {
-      const w = e.webrtcPeers?.length ?? 0;
-      const b = e.bcPeers?.length ?? 0;
-      setPeers(Math.max(w, b));
-    };
     const onSynced = () => setSynced(true);
-
-    session.provider.on("peers", onPeers);
     session.provider.on("synced", onSynced);
+
+    // Recompute the count from the CURRENT awareness state map on every change
+    // (awareness fires for added, updated, AND removed/timed-out clients), so a
+    // leave/disconnect/TTL-drop SHRINKS the count — it is never an append-only
+    // tally. `getPeers()` reads `awareness.getStates()` minus self each time.
+    let unsubPeers: (() => void) | undefined;
+    if (controller) {
+      setPeers(controller.getPeers().length);
+      unsubPeers = controller.onPeersChange((p) => setPeers(p.length));
+    } else {
+      // A session with no awareness controller (headless / pre-presence) has no
+      // present peers to count.
+      setPeers(0);
+    }
+
     return () => {
-      session.provider.off("peers", onPeers);
       session.provider.off("synced", onSynced);
+      unsubPeers?.();
     };
-  }, [session]);
+  }, [session, controller]);
 
   if (!session) return { state: "solo", peers: 0, synced: false };
   // A live session is "connected": the provider is up and on the mesh. A host
