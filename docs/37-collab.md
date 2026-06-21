@@ -830,7 +830,7 @@ The **honest note** is shown in every state and is non-negotiable: (1) anyone
 with the link gets **full edit access** — treat it like a password; (2)
 collaborators connect **peer-to-peer over WebRTC**, so their **IP addresses are
 visible** to one another; (3) the document is **end-to-end encrypted** and travels
-**directly between peers** — there is **no server of ours** in the middle (the
+**directly between users** — there is **no server of ours** in the middle (the
 public signaling server only brokers the handshake; it never sees the data or the
 key, which lives only in the URL fragment).
 

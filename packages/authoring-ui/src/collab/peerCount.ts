@@ -51,7 +51,7 @@ export function peerCountAdvice(peers: number): PeerCountAdvice {
     participants,
     warn,
     message: warn
-      ? `${participants} people are in this session. ` +
+      ? `${participants} users are in this session. ` +
         `Collaboration uses a peer-to-peer mesh, so large groups (over ` +
         `${PEER_COUNT_WARN_THRESHOLD}) can get slow or unstable — consider ` +
         `splitting into smaller rooms.`

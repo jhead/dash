@@ -191,8 +191,8 @@ export function CollabControls(): React.ReactElement {
   const advice = peerCountAdvice(status.peers);
   const label =
     status.peers > 0
-      ? `${status.peers} ${status.peers === 1 ? "peer" : "peers"}`
-      : "waiting for peers";
+      ? `${status.peers} ${status.peers === 1 ? "user" : "users"}`
+      : "waiting for others";
   // A high peer count overrides the green "connected" tint with an amber warning
   // tint, so the N^2-mesh degradation is visible at a glance.
   const pillBg = advice.warn ? "#fdeede" : connected ? "#e7f6e9" : "#fff7e0";

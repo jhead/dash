@@ -37,7 +37,7 @@ export function HonestNote(): React.ReactElement {
         </li>
         <li>
           Your document is <strong>end-to-end encrypted</strong> and travels
-          directly between peers — there is <strong>no server of ours</strong> in
+          directly between users — there is <strong>no server of ours</strong> in
           the middle (a public signaling server only brokers the initial
           handshake; it never sees your data or the key).
         </li>

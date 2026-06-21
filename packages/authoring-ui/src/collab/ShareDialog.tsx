@@ -300,7 +300,7 @@ export function ShareDialog({ onClose }: ShareDialogProps): React.ReactElement {
                   color: "#6a3500",
                 }}
               >
-                <strong>Large session ({peerAdvice.participants} people).</strong>{" "}
+                <strong>Large session ({peerAdvice.participants} users).</strong>{" "}
                 {peerAdvice.message}
               </div>
             )}
@@ -314,7 +314,7 @@ export function ShareDialog({ onClose }: ShareDialogProps): React.ReactElement {
                   color: "#7a1f1f",
                 }}
               >
-                <strong>Signaling server unreachable.</strong> Peers already
+                <strong>Signaling server unreachable.</strong> Users already
                 connected stay connected, but no one new can join until a
                 signaling server is reachable. Check your connection or set a
                 different server below.
