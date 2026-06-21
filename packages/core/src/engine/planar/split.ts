@@ -129,3 +129,19 @@ export function splitOnMove(
 
   return { extracted, remainder };
 }
+
+/**
+ * Delete a PARTIAL selection (faces / segments) of a merged planar shape: returns
+ * the REMAINDER (the map with the selected region(s) removed), or `null` when the
+ * entire shape was selected (e.g. a single-fill rect = one face → nothing remains,
+ * so the whole display object should be removed). This is `splitOnMove` with a zero
+ * delta where the extracted half is discarded — the authentic Flash 8 Delete on a
+ * Selection-tool sub-selection (docs/36 §3). (task 1361)
+ */
+export function deleteSubSelection(
+  ps: PlanarShape,
+  keys: readonly SubKey[],
+  remainderId: string
+): Shape | null {
+  return splitOnMove(ps, keys, 0, 0, `${remainderId}-del`, remainderId).remainder;
+}

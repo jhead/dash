@@ -106,6 +106,7 @@ export {
   pickInRect,
   subSelectionPolylines,
   splitOnMove,
+  deleteSubSelection,
   // P4 — curve-preserving eraser on the planar arrangement + Flash 8 modes.
   planarEraseShape,
   faucetEraseShape,

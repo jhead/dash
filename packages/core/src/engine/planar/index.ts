@@ -85,7 +85,7 @@ export {
   subSelectionPolylines,
 } from "./subselection.js";
 export type { FaceKey, SegmentKey, SubKey, SubSelection } from "./subselection.js";
-export { splitOnMove } from "./split.js";
+export { splitOnMove, deleteSubSelection } from "./split.js";
 export type { SplitResult } from "./split.js";
 
 // P4 — curve-preserving eraser on the planar arrangement + Flash 8 modes.

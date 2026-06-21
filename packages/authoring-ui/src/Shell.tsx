@@ -8,6 +8,7 @@ import {
   updateDisplayObject,
   livePlanarShape,
   splitOnMove,
+  deleteSubSelection,
   planarEraseShape,
   faucetEraseShape,
   buildEraserPolygon,
@@ -1687,9 +1688,54 @@ export function Shell(): React.ReactElement {
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
   );
 
+  /**
+   * Delete the currently selected PLANAR SUBSELECTION (one or more fill faces /
+   * line segments of a merged vector shape) in one undo step. Reuses the
+   * split-on-move read-back with a ZERO delta: the `remainder` is the shape minus
+   * the selected region(s); the `extracted` half is discarded (not re-added). When
+   * the whole shape was selected (e.g. a single-fill rect — one face) the remainder
+   * is null and the display object is removed entirely. Returns true if it handled
+   * a subselection delete. (task 1361)
+   */
+  const handleDeleteSubSelection = useCallback((): boolean => {
+    const sel = subSelection;
+    if (!sel || sel.keys.length === 0) return false;
+    const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+    if (!layerId) return false;
+    pushDoc(
+      withTimelineLive((t) => {
+        const layer = t.layers.find((l) => l.id === layerId);
+        const kf = layer ? getGoverningKeyframe(layer, currentFrame) : undefined;
+        if (!kf) return t;
+        const target = (kf.displayObjects as DisplayObject[]).find(
+          (o): o is ShapeDisplayObject => o.type === "shape" && o.id === sel.shapeId
+        );
+        if (!target) return t;
+        const ps = livePlanarShape(target.shape);
+        // `remainder` is the map with the selected faces/edges removed; null when
+        // the whole shape was selected (single-face rect → display object removed).
+        const remainder = deleteSubSelection(ps, sel.keys, target.shape.id);
+        const others = (kf.displayObjects as DisplayObject[]).filter((o) => o.id !== target.id);
+        const next: DisplayObject[] = [...others];
+        if (remainder) {
+          next.push({ type: "shape", id: target.id, shape: remainder, x: target.x, y: target.y });
+        }
+        return setKeyframeDisplayObjects(t, layerId, currentFrame, next);
+      })
+    );
+    setSubSelection(null);
+    return true;
+  }, [subSelection, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimelineLive, setSubSelection]);
+
   /** Delete all currently selected display objects in one undo step. */
   const handleDeleteSelected = useCallback(() => {
-    if (selectedShapeIds.length === 0) return;
+    // Vector shapes selected via the Selection tool live in the SUBSELECTION
+    // model, not selectedShapeIds (planar-merge P5 cutover). Delete that region(s)
+    // first; only fall through to the standard-selection path when there is none.
+    if (selectedShapeIds.length === 0) {
+      handleDeleteSubSelection();
+      return;
+    }
     const layerId = timeline.layers[safeActiveLayerIndex]?.id;
     if (!layerId) return;
     pushDoc(withTimeline((t) => {
@@ -1700,7 +1746,7 @@ export function Shell(): React.ReactElement {
       return result;
     }));
     setSelectedShapeIds([]);
-  }, [selectedShapeIds, timeline, currentFrame, safeActiveLayerIndex, pushDoc, withTimeline]);
+  }, [selectedShapeIds, timeline, currentFrame, safeActiveLayerIndex, pushDoc, withTimeline, handleDeleteSubSelection]);
 
   // ---------------------------------------------------------------------------
   // Clipboard handlers

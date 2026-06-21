@@ -8,8 +8,17 @@ function run(fn: (e: EditorActions) => void): (ctx: CommandContext) => void {
   };
 }
 
-const hasSelection = (ctx: CommandContext): boolean =>
-  ctx.ui.getState().selectedShapeIds.length > 0;
+const hasSelection = (ctx: CommandContext): boolean => {
+  const ui = ctx.ui.getState();
+  // A vector shape selected via the Selection tool goes into the planar
+  // SUBSELECTION model, not selectedShapeIds (the planar-merge P5 cutover made
+  // partial-select always-on for the Selection tool). Delete must be enabled for
+  // EITHER selection model, else Delete/Backspace no-op on a selected vector
+  // shape (task 1361).
+  if (ui.selectedShapeIds.length > 0) return true;
+  const sub = ui.subSelection;
+  return sub != null && sub.keys.length > 0;
+};
 
 /**
  * Commands for editor operations whose logic still lives as Shell handlers

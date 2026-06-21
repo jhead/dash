@@ -71,4 +71,52 @@ describe("commands integration", () => {
     registry.dispatch("edit.deselectAll", ctx);
     expect(ui.getState().selectedShapeIds).toEqual([]);
   });
+
+  // task 1361 — Delete with a selected VECTOR SHAPE.
+  // A vector shape selected via the Selection tool populates the planar
+  // SUBSELECTION model, not selectedShapeIds. Before the fix, edit.delete's
+  // isEnabled gate only consulted selectedShapeIds, so Delete/Backspace was
+  // DISABLED (no-op) for a selected vector shape.
+  describe("edit.delete enablement (task 1361)", () => {
+    it("is disabled with no selection of either kind", () => {
+      const { registry, ctx } = setup();
+      expect(registry.isEnabled("edit.delete", ctx)).toBe(false);
+    });
+
+    it("is enabled by a standard selection (selectedShapeIds)", () => {
+      const { registry, ctx, ui } = setup();
+      ui.getState().setSelectedShapeIds(["text-1"]);
+      expect(registry.isEnabled("edit.delete", ctx)).toBe(true);
+    });
+
+    it("is enabled by a planar subselection of a vector shape", () => {
+      const { registry, ctx, ui } = setup();
+      // No standard selection — only a subselection, as the Selection tool sets
+      // for a vector shape.
+      expect(ui.getState().selectedShapeIds).toEqual([]);
+      ui.getState().setSubSelection({
+        shapeId: "shape-1",
+        keys: [{ kind: "face", interior: "1000,1000" }],
+      });
+      expect(registry.isEnabled("edit.delete", ctx)).toBe(true);
+    });
+
+    it("dispatch with a subselection delegates to the editor deleteSelected service", () => {
+      const deleteSelected = vi.fn();
+      const doc = createDocumentStore(createDocument());
+      const ui = createUiStore();
+      const ctx: CommandContext = {
+        doc,
+        ui,
+        services: { editor: { deleteSelected } as never },
+      };
+      const registry = createPopulatedRegistry();
+      ui.getState().setSubSelection({
+        shapeId: "shape-1",
+        keys: [{ kind: "face", interior: "1000,1000" }],
+      });
+      registry.dispatch("edit.delete", ctx);
+      expect(deleteSelected).toHaveBeenCalledTimes(1);
+    });
+  });
 });
