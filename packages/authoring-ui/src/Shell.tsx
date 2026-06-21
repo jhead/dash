@@ -1017,7 +1017,12 @@ export function Shell(): React.ReactElement {
   // round-tripped through React state) by passing an override for the dragged
   // pane. The uiStore-change subscription below also calls this on tab/visibility/
   // view-pref changes.
-  const sizeRefs = useRef({ rightPaneWidth: 240, timelineHeight: 210, bottomDockHeight: 180 });
+  const sizeRefs = useRef({
+    rightPaneWidth: 240,
+    timelineHeight: 210,
+    bottomDockHeight: 180,
+    layerColumnWidth: 130,
+  });
   const persistLayout = useCallback(
     (sizeOverride?: Partial<typeof sizeRefs.current>) => {
       const sizes = { ...sizeRefs.current, ...sizeOverride };
@@ -1041,12 +1046,55 @@ export function Shell(): React.ReactElement {
     persistedLayout.bottomDockHeight, 80, 600, "y", false,
     (size) => persistLayout({ bottomDockHeight: size })
   );
+  // Timeline LAYERS column width: the divider between the layers list and the
+  // frames grid. axis "x" + invert: the handle sits to the RIGHT of the column,
+  // so dragging right (cur - start) GROWS it. Bounds mirror
+  // PANE_BOUNDS.layerColumnWidth. Persists on drag-end like the others (1366).
+  const layersResize = useResize(
+    persistedLayout.layerColumnWidth, 90, 400, "x", true,
+    (size) => persistLayout({ layerColumnWidth: size })
+  );
   // Keep the size refs current so persistLayout always reads live sizes.
   sizeRefs.current = {
     rightPaneWidth: rightResize.size,
     timelineHeight: timelineResize.size,
     bottomDockHeight: bottomResize.size,
+    layerColumnWidth: layersResize.size,
   };
+
+  // Keyboard a11y for the layers/frames divider: Left/Right (×10 with Shift)
+  // nudge the column width, Home/End jump to the bounds. Each step clamps to
+  // [90,400] and persists, matching the drag path.
+  const handleLayerColumnResizeKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const STEP = e.shiftKey ? 10 : 1;
+      const cur = layersResize.size;
+      let next = cur;
+      switch (e.key) {
+        case "ArrowLeft":
+          next = cur - STEP;
+          break;
+        case "ArrowRight":
+          next = cur + STEP;
+          break;
+        case "Home":
+          next = 90;
+          break;
+        case "End":
+          next = 400;
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+      next = Math.max(90, Math.min(400, next));
+      if (next !== cur) {
+        layersResize.setSize(next);
+        persistLayout({ layerColumnWidth: next });
+      }
+    },
+    [layersResize, persistLayout]
+  );
 
   // Persist the durable uiStore slice (tabs, collapse state, view prefs, panel
   // visibility, last tool) whenever one of those fields changes (task 1297). We
@@ -1060,6 +1108,7 @@ export function Shell(): React.ReactElement {
           rightPaneWidth: 0, // sizes excluded from the change key; they persist on drag-end
           timelineHeight: 0,
           bottomDockHeight: 0,
+          layerColumnWidth: 0,
         })
       );
     prevKey = durableKey(uiStore.getState());
@@ -3849,6 +3898,9 @@ export function Shell(): React.ReactElement {
                   symbolType={editContext.symbolType}
                   onFrameDoubleClick={handleFrameDoubleClick}
                   onSelectedFrameRangeChange={setSelectedFrameRange}
+                  layerColumnWidth={layersResize.size}
+                  onLayerColumnResizePointerDown={layersResize.onPointerDown}
+                  onLayerColumnResizeKeyDown={handleLayerColumnResizeKeyDown}
                 />
               </div>
             )}

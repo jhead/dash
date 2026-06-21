@@ -53,6 +53,16 @@ the **layer footer** and **status bar** stay pinned to the bottom; only the midd
 region (layer rows + frame grid) scrolls. Horizontal scrolling of the frame grid is
 driven by the H-scrollbar in the status bar and stays in sync with the ruler.
 
+The **divider between the LAYERS column and the FRAMES grid is draggable** (task
+1366): grab it (col-resize cursor) and drag to set the layers-column width; the frame
+grid reflows into the remaining space. It reuses the Shell's shared `useResize` hook —
+the same one that drives the right-pane / timeline / bottom-dock dividers — so it has
+the identical pointer-capture drag + min/max clamp + persist-on-release behaviour, and
+is keyboard-accessible (`role="separator"`, ArrowLeft/Right to nudge ±1px, Shift for
+±10px, Home/End to jump to the bounds). The chosen width is persisted across reloads as
+`layerColumnWidth` in `editorLayout` (localStorage; clamped to
+`PANE_BOUNDS.layerColumnWidth` = [90, 400], default 130).
+
 ## Frame grid metrics
 
 | Element | Value | Notes |
@@ -128,7 +138,7 @@ All metrics are constants at the top of `packages/authoring-ui/src/Timeline.tsx`
 | `BASE_FRAME_H` | row height at scale 1 (38); scaled by `uiScale` |
 | `BASE_DOT_SIZE` / `BASE_DOT_BOTTOM` | keyframe dot geometry at scale 1; scaled by `uiScale` |
 | `RULER_H` | ruler row height (fixed, not scaled) |
-| `LAYER_COL_WIDTH` | layer column width (fixed) |
+| `LAYER_COL_WIDTH` | layer column DEFAULT width (130); now user-resizable via the layers/frames divider and persisted as `layerColumnWidth` in `editorLayout`. The live value is passed in as the `layerColumnWidth` prop (clamped to `LAYER_COL_MIN_WIDTH`..`LAYER_COL_MAX_WIDTH`). |
 | `STATUS_BAR_H` | timeline status bar height (fixed) |
 
 Sub-components: `FrameCell` (one cell), the layer-row map, the layer footer, the status

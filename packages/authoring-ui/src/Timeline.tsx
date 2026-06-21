@@ -61,6 +61,14 @@ import {
 
 const LAYER_COL_WIDTH = 130;
 /**
+ * Min/max for the (now draggable) layers-column width. MUST match
+ * `PANE_BOUNDS.layerColumnWidth` in editorLayout.ts — the Shell's `useResize`
+ * clamps to those bounds; these mirror them so a directly-rendered Timeline (no
+ * Shell) clamps identically.
+ */
+const LAYER_COL_MIN_WIDTH = 90;
+const LAYER_COL_MAX_WIDTH = 400;
+/**
  * Base metrics are the raw Flash-8-measured sizes (uiScale = 1). The component
  * multiplies the frame-cell geometry by the `uiScale` preference; chrome that
  * carries text (ruler, status bar, layer column) stays at a fixed size so it
@@ -129,6 +137,25 @@ export interface TimelineProps {
   onFrameDoubleClick?: (layerIndex: number, frameIndex: number) => void;
   /** Called whenever the frame selection range changes (for Shell to track) */
   onSelectedFrameRangeChange?: (range: { layerId: string; start: number; end: number } | null) => void;
+  /**
+   * Width (px) of the LAYERS column (left of the frames grid). Controlled by the
+   * Shell so it can be persisted across reloads via editorLayout (task 1366).
+   * Defaults to the historical fixed 130px when not supplied.
+   */
+  layerColumnWidth?: number;
+  /**
+   * Pointer-down handler for the draggable divider between the layers column and
+   * the frames grid. Supplied by the Shell's shared `useResize` hook so this
+   * divider behaves exactly like the other editor dividers (col-resize cursor,
+   * pointer-capture drag, min/max clamp, persist-on-release). When omitted the
+   * divider is a static separator (e.g. in tests that render Timeline directly).
+   */
+  onLayerColumnResizePointerDown?: (e: React.PointerEvent) => void;
+  /**
+   * Keyboard handler for the layers/frames divider (ArrowLeft/Right to resize),
+   * mirroring an accessible separator. Supplied by the Shell.
+   */
+  onLayerColumnResizeKeyDown?: (e: React.KeyboardEvent) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -711,7 +738,17 @@ export function Timeline({
   symbolType,
   onFrameDoubleClick,
   onSelectedFrameRangeChange,
+  layerColumnWidth,
+  onLayerColumnResizePointerDown,
+  onLayerColumnResizeKeyDown,
 }: TimelineProps): React.ReactElement {
+  // The layers-column width is controlled by the Shell (persisted via
+  // editorLayout). Fall back to the historical fixed width + clamp defensively
+  // so a bad value can never break the layout when Timeline is rendered directly.
+  const layerColW = Math.max(
+    LAYER_COL_MIN_WIDTH,
+    Math.min(LAYER_COL_MAX_WIDTH, layerColumnWidth ?? LAYER_COL_WIDTH)
+  );
   // Scaled frame-cell geometry. The chrome (ruler, layer column, status bar)
   // stays fixed so text remains legible; only the cell grid scales.
   const scale = uiScale > 0 ? uiScale : 1;
@@ -1219,9 +1256,10 @@ export function Timeline({
         {/* Layer list */}
         <div
           style={{
-            width: LAYER_COL_WIDTH,
+            width: layerColW,
             flexShrink: 0,
-            borderRight: `${chrome.borderThin}px solid ${chrome.separator}`,
+            // The visual edge is now drawn by the draggable divider that
+            // follows this column (see below), so no borderRight here.
             display: "flex",
             flexDirection: "column",
             background: chrome.panelBg,
@@ -1502,6 +1540,38 @@ export function Timeline({
             })}
           </div>
         </div>
+
+        {/* Draggable divider between the LAYERS column and the FRAMES grid.
+            Reuses the Shell's shared `useResize` hook (via the
+            onLayerColumnResize* props) so it matches the editor's other
+            dividers: col-resize cursor, pointer-capture drag, min/max clamp,
+            persist-on-release, plus ArrowLeft/Right keyboard resize. Rendered as
+            an accessible separator. When no handler is supplied (e.g. a direct
+            Timeline render) it is an inert hairline. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize layers column"
+          aria-valuenow={Math.round(layerColW)}
+          aria-valuemin={LAYER_COL_MIN_WIDTH}
+          aria-valuemax={LAYER_COL_MAX_WIDTH}
+          tabIndex={onLayerColumnResizePointerDown ? 0 : -1}
+          data-testid="timeline-layers-resizer"
+          onPointerDown={onLayerColumnResizePointerDown}
+          onKeyDown={onLayerColumnResizeKeyDown}
+          title="Drag to resize the layers column"
+          style={{
+            width: 5,
+            flexShrink: 0,
+            alignSelf: "stretch",
+            cursor: onLayerColumnResizePointerDown ? "col-resize" : "default",
+            // Sit the visible hairline at the column edge; the 5px hit area
+            // straddles it so it's easy to grab (like the Shell dividers).
+            background: chrome.separator,
+            outline: "none",
+            touchAction: "none",
+          }}
+        />
 
         {/* Frame area */}
         <div
@@ -1792,7 +1862,7 @@ export function Timeline({
             (left), Delete Layer (trash) on the right. */}
         <div
           style={{
-            width: LAYER_COL_WIDTH,
+            width: layerColW,
             flexShrink: 0,
             height: STATUS_BAR_H,
             background: chrome.insetFieldStrip,

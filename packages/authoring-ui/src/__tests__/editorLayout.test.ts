@@ -52,6 +52,7 @@ describe("editorLayout persistence", () => {
       rightPaneWidth: 320,
       timelineHeight: 300,
       bottomDockHeight: 250,
+      layerColumnWidth: 180,
       rightPaneCollapsed: true,
       timelineCollapsed: true,
       rightTab: "properties" as const,
@@ -98,13 +99,52 @@ describe("editorLayout persistence", () => {
       STORAGE_KEY,
       JSON.stringify({
         version: EDITOR_LAYOUT_SCHEMA_VERSION,
-        layout: { rightPaneWidth: 99999, timelineHeight: 1, bottomDockHeight: -50 },
+        layout: {
+          rightPaneWidth: 99999,
+          timelineHeight: 1,
+          bottomDockHeight: -50,
+          layerColumnWidth: 99999,
+        },
       })
     );
     const loaded = loadEditorLayout();
     expect(loaded.rightPaneWidth).toBe(PANE_BOUNDS.rightPaneWidth.max);
     expect(loaded.timelineHeight).toBe(PANE_BOUNDS.timelineHeight.min);
     expect(loaded.bottomDockHeight).toBe(PANE_BOUNDS.bottomDockHeight.min);
+    expect(loaded.layerColumnWidth).toBe(PANE_BOUNDS.layerColumnWidth.max);
+  });
+
+  // Task 1366 — the Timeline layers-column width persists set -> stored ->
+  // restored, exactly like the other resizable dividers.
+  it("round-trips the timeline layers-column width (set -> persisted -> restored)", () => {
+    saveEditorLayout({ ...DEFAULT_EDITOR_LAYOUT, layerColumnWidth: 210 });
+    // Persisted in the versioned payload under the durable key.
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(raw.layout.layerColumnWidth).toBe(210);
+    // And restored on the next load.
+    expect(loadEditorLayout().layerColumnWidth).toBe(210);
+  });
+
+  it("clamps a too-small persisted layers-column width up to the min", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: EDITOR_LAYOUT_SCHEMA_VERSION,
+        layout: { layerColumnWidth: 10 },
+      })
+    );
+    expect(loadEditorLayout().layerColumnWidth).toBe(PANE_BOUNDS.layerColumnWidth.min);
+  });
+
+  it("defaults a non-finite / missing layers-column width", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: EDITOR_LAYOUT_SCHEMA_VERSION,
+        layout: { layerColumnWidth: "wide" },
+      })
+    );
+    expect(loadEditorLayout().layerColumnWidth).toBe(PANE_BOUNDS.layerColumnWidth.default);
   });
 
   it("falls back to defaults on malformed JSON", () => {
@@ -195,6 +235,7 @@ describe("layoutToUiInit / uiStateToLayout (store seeding + extraction)", () => 
     expect(init).not.toHaveProperty("rightPaneWidth");
     expect(init).not.toHaveProperty("timelineHeight");
     expect(init).not.toHaveProperty("bottomDockHeight");
+    expect(init).not.toHaveProperty("layerColumnWidth");
   });
 
   it("round-trips uiState -> layout -> uiInit for durable fields", () => {
@@ -211,8 +252,10 @@ describe("layoutToUiInit / uiStateToLayout (store seeding + extraction)", () => 
       rightPaneWidth: 280,
       timelineHeight: 220,
       bottomDockHeight: 190,
+      layerColumnWidth: 170,
     });
     expect(layout.rightPaneWidth).toBe(280);
+    expect(layout.layerColumnWidth).toBe(170);
     expect(layout.rightTab).toBe("properties");
     expect(layout.bottomTab).toBeNull();
     expect(layout.snapToPixels).toBe(true);

@@ -48,6 +48,11 @@ export const PANE_BOUNDS = {
   rightPaneWidth: { min: 160, max: 600, default: 240 },
   timelineHeight: { min: 100, max: 760, default: 210 },
   bottomDockHeight: { min: 80, max: 600, default: 180 },
+  // Timeline LAYERS column (left of the frames grid) width. Default 130 matches
+  // the historical fixed `LAYER_COL_WIDTH` in Timeline.tsx; min keeps the
+  // show/lock/outline toggle icons + a layer name readable, max stops the column
+  // from crowding out the frame grid.
+  layerColumnWidth: { min: 90, max: 400, default: 130 },
 } as const;
 
 /** The durable layout/view-preference snapshot persisted to localStorage. */
@@ -58,6 +63,8 @@ export interface EditorLayout {
   timelineHeight: number;
   /** Bottom dock (Actions/Sound/Output) height, px. */
   bottomDockHeight: number;
+  /** Timeline LAYERS column (left of the frames grid) width, px. */
+  layerColumnWidth: number;
   /** Whether the right pane is collapsed (clamped to viewport on restore). */
   rightPaneCollapsed: boolean;
   /** Whether the timeline dock is collapsed. */
@@ -94,6 +101,7 @@ export const DEFAULT_EDITOR_LAYOUT: EditorLayout = {
   rightPaneWidth: PANE_BOUNDS.rightPaneWidth.default,
   timelineHeight: PANE_BOUNDS.timelineHeight.default,
   bottomDockHeight: PANE_BOUNDS.bottomDockHeight.default,
+  layerColumnWidth: PANE_BOUNDS.layerColumnWidth.default,
   rightPaneCollapsed: false,
   timelineCollapsed: false,
   rightTab: "library",
@@ -152,6 +160,7 @@ function normalize(raw: unknown): EditorLayout {
     rightPaneWidth: clampPane(o.rightPaneWidth, PANE_BOUNDS.rightPaneWidth),
     timelineHeight: clampPane(o.timelineHeight, PANE_BOUNDS.timelineHeight),
     bottomDockHeight: clampPane(o.bottomDockHeight, PANE_BOUNDS.bottomDockHeight),
+    layerColumnWidth: clampPane(o.layerColumnWidth, PANE_BOUNDS.layerColumnWidth),
     rightPaneCollapsed: boolOr(o.rightPaneCollapsed, d.rightPaneCollapsed),
     timelineCollapsed: boolOr(o.timelineCollapsed, d.timelineCollapsed),
     rightTab: enumOr(o.rightTab, RIGHT_TABS, d.rightTab),
@@ -231,7 +240,7 @@ export function saveEditorLayout(layout: EditorLayout): void {
  */
 export type PersistedUiSlice = Omit<
   EditorLayout,
-  "rightPaneWidth" | "timelineHeight" | "bottomDockHeight" | "activeTool"
+  "rightPaneWidth" | "timelineHeight" | "bottomDockHeight" | "layerColumnWidth" | "activeTool"
 >;
 
 /** Project an EditorLayout into the partial UiData used to seed createUiStore. */
@@ -266,12 +275,18 @@ export function layoutToUiInit(
 /** Extract the durable layout snapshot from current uiStore data + the three pane sizes. */
 export function uiStateToLayout(
   ui: UiData,
-  sizes: { rightPaneWidth: number; timelineHeight: number; bottomDockHeight: number }
+  sizes: {
+    rightPaneWidth: number;
+    timelineHeight: number;
+    bottomDockHeight: number;
+    layerColumnWidth: number;
+  }
 ): EditorLayout {
   return {
     rightPaneWidth: sizes.rightPaneWidth,
     timelineHeight: sizes.timelineHeight,
     bottomDockHeight: sizes.bottomDockHeight,
+    layerColumnWidth: sizes.layerColumnWidth,
     rightPaneCollapsed: ui.rightPaneCollapsed,
     timelineCollapsed: ui.timelineCollapsed,
     rightTab: ui.rightTab,
