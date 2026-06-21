@@ -18,6 +18,7 @@
 import * as Y from "yjs";
 import type { FlashDocument } from "@flash/core";
 import { materializeDoc, diffDoc, rebuildDoc } from "./schema.js";
+import { validateInboundDoc } from "./validate.js";
 
 /**
  * The minimal local-document interface the binding needs. The authoring-ui
@@ -73,7 +74,9 @@ export class FlashCollabBinding {
       ydoc.transact(() => materializeDoc(ydoc, initial), this.localOrigin);
       this.lastSynced = initial;
     } else {
-      const adopted = rebuildDoc(ydoc);
+      // Adopting another peer's existing Y.Doc — UNTRUSTED. Validate before it
+      // reaches the app; fail safe to the local `initial` doc on garbage.
+      const adopted = validateInboundDoc(rebuildDoc(ydoc), initial);
       this.lastSynced = adopted;
       this.applyingRemote = true;
       try {
@@ -83,11 +86,14 @@ export class FlashCollabBinding {
       }
     }
 
-    // INBOUND.
+    // INBOUND. A remote update is UNTRUSTED state from any peer with the link.
+    // Rebuild, then validate+normalize before it reaches `applyRemote`/replaceDoc
+    // so one peer's malformed/hostile CRDT state can never crash or corrupt the
+    // others' editor; on un-saveable garbage we keep the last-good document.
     this.observer = (_events, txn) => {
       if (this.destroyed) return;
       if (txn.origin === this.localOrigin) return; // ignore our own writes
-      const rebuilt = rebuildDoc(this.ydoc);
+      const rebuilt = validateInboundDoc(rebuildDoc(this.ydoc), this.lastSynced);
       this.lastSynced = rebuilt;
       this.applyingRemote = true;
       try {
@@ -139,7 +145,13 @@ export function flashDocToYDoc(doc: FlashDocument, origin: unknown = { collab: "
   return ydoc;
 }
 
-/** Convenience: rebuild a FlashDocument from a Y.Doc. */
-export function yDocToFlashDoc(ydoc: Y.Doc): FlashDocument {
-  return rebuildDoc(ydoc);
+/**
+ * Convenience: rebuild a FlashDocument from a Y.Doc, validated + normalized for
+ * untrusted state. Any peer can populate a shared Y.Doc, so the rebuilt result
+ * is run through {@link validateInboundDoc} before it is returned — a one-shot
+ * late-join read gets the same hardening as the live binding's inbound path.
+ * Pass `fallback` (e.g. the local doc) to fail safe to it on un-saveable garbage.
+ */
+export function yDocToFlashDoc(ydoc: Y.Doc, fallback?: FlashDocument): FlashDocument {
+  return validateInboundDoc(rebuildDoc(ydoc), fallback);
 }

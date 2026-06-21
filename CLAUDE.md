@@ -999,6 +999,31 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   atomic geometry is one-artist-per-shape; `flaSwfBlobs` (Uint8Array, import-only,
   never produced by a mutation) is mapped atomically as base64 outside the test
   surface; bitmap/sound/video bytes intentionally NOT in Y (out-of-band in P4).
+- **Inbound CRDT state is UNTRUSTED — validate/normalize before replaceDoc (task
+  1350).** The trust model is "anyone with the link is a full collaborator", so a
+  peer's Y.Doc is untrusted input. `rebuildDoc` ends in a CAST (`... as unknown as
+  FlashDocument`), not a check, so a malicious/buggy peer could push garbage that
+  the renderer/SWF compiler index structurally → crash/DoS, doc corruption for
+  everyone, or `asClasses` path traversal on a later class sync. Fix:
+  `validateInboundDoc` (`packages/collab/src/validate.ts`), a TOTAL function (never
+  throws) run on every inbound rebuild BEFORE `applyRemote`/`replaceDoc` — in the
+  binding's deep observer, the late-join constructor adoption, AND the one-shot
+  `yDocToFlashDoc`. It DROPS display objects/library items with unknown
+  `type`/`itemType` or missing string `id`, COERCES `NaN`/`Infinity` coords to
+  finite, forces structural children to arrays, clamps document properties to sane
+  finite values, runs every `asClasses.path` through `normalizeClassPath`
+  (traversal/NUL/empty rejected; absolute trimmed to relative), and bounds array
+  length + value depth (cyclic-ish/oversized payloads truncated, not OOM). FAIL
+  SAFE: non-object input keeps the last-good doc (binding passes `lastSynced` as
+  fallback). It is IDENTITY on a valid doc (`validateInboundDoc(valid) ≡ valid`),
+  so the P0 property/round-trip gates (which call `rebuildDoc` directly) are
+  untouched — `validateProperties` overlays `createDocumentProperties()` defaults
+  but a valid doc already carries all those fields, so the overlay is idempotent.
+  NOT covered: the AS2 `script`/`asClasses`-source EXECUTION vector (peer code runs
+  in your Ruffle sandbox) — inherent to doc-sharing, same as opening someone's
+  `.fla`; only the storage SHAPE (script must be string) + class PATH are
+  sanitized. Gate: `validate.test.ts` (13 cases incl. a peer injecting raw hostile
+  Y.Doc state directly). Distinct from P5 transport/encryption (1348).
 
 ### AS2 external classes / Class VFS (task 1300 P2)
 

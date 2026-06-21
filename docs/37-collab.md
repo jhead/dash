@@ -611,3 +611,99 @@ Full authoring-ui suite **1113/1113** green; collab P0 still **9/9**.
 - **One logical edit = one undo step** via `captureTimeout: 0` (the store emits one
   transaction per `pushDoc`/`commitDrag`); rapid-edit coalescing is available but
   off by default.
+
+## 11. Trust model & inbound validation (task 1350)
+
+**The peers are untrusted.** The collab trust model is Google-Docs-style: anyone
+with the share link is a full read/write collaborator (the room id + E2E password
+live in the URL fragment, §8.2). There is no per-peer authorization. A peer is
+therefore *untrusted input*: it may be malicious, or simply a buggy/old client,
+and it can put **arbitrary CRDT state** into the shared `Y.Doc`. Yjs replicates
+that state to everyone, and the binding's inbound path (`rebuildDoc` →
+`applyRemote` → `replaceDoc`) turns it back into a live `FlashDocument`.
+
+**Why a verbatim rebuild is dangerous.** `rebuildDoc` ends in
+`... as unknown as FlashDocument` — a cast, not a check. Without validation, a
+peer's malformed state flows straight into the model that the renderer and the
+SWF compiler index *structurally* (e.g. `scenes[0]`, `frame.displayObjects.map`,
+`obj.x * 20`). A hostile/buggy peer could thereby:
+
+1. **Crash / DoS** every collaborator's editor — a non-array where an array is
+   expected, an unknown display-object `type` the renderer doesn't handle, `NaN`/
+   `Infinity` coordinates that poison layout maths, or an oversized/deeply-nested
+   payload that exhausts memory or the stack.
+2. **Corrupt the shared doc** for everyone (one bad delta, broadcast to all).
+3. **Traverse the filesystem** on a later class sync — `asClasses` paths arrive
+   keyed by a raw `path`; a crafted `../`/absolute/NUL path could escape the
+   class-VFS root (`WebClassVfs`/`TauriClassVfs` disk mirror) when the joiner
+   syncs classes to disk. `normalizeClassPath` is the existing defence, but the
+   rebuild did not invoke it.
+
+### The defence: `validateInboundDoc` (`packages/collab/src/validate.ts`)
+
+Every inbound rebuild is now run through `validateInboundDoc(rebuildDoc(ydoc),
+lastGood)` **before** it reaches `applyRemote`/`replaceDoc` — in the binding's
+deep observer, in the late-join constructor adoption, and in the one-shot
+`yDocToFlashDoc` helper. It is a **total function**: it never throws and always
+returns a structurally-valid `FlashDocument`.
+
+It is *defensive normalization*, not a full schema. It enforces the shape
+invariants downstream consumers actually rely on and **drops or coerces** anything
+that violates them (logging one capped warning per piece), rather than throwing or
+propagating garbage:
+
+- **Top level**: `id`→string; `properties`→a valid `DocumentProperties` (built
+  from `createDocumentProperties()` defaults, then sane finite/clamped `width`/
+  `height`/`frameRate`, string `backgroundColor`); `scenes`→a **non-empty** array
+  of valid scenes (a fresh scene if none survive — scene 0 is indexed
+  unconditionally); `library`→`{items, folders}` (arrays).
+- **Scenes / layers / frames / timelines**: each must be an object with its
+  structural children present as arrays; missing/ wrong-type children become empty
+  arrays; an id-less scene is dropped.
+- **Display objects**: dropped unless `type` is a **known** discriminant (`shape`/
+  `instance`/`drawing-object`/`text`/`bitmap`/`video`/`group`) AND `id` is a
+  non-empty string; `x`/`y` (and any nested numeric in an atomic field) coerced
+  from `NaN`/`Infinity` to a finite value.
+- **Library items**: dropped unless `itemType` is known (`symbol`/`bitmap`/
+  `sound`/`video`/`font`/`component`) AND `id` is a string; duplicate ids dropped;
+  symbols get a validated nested timeline.
+- **`asClasses`**: each `path` is run through `normalizeClassPath` — traversal
+  (`..`), absolute, NUL-byte and empty paths are **rejected and dropped**;
+  `source` is coerced to a string. (Absolute paths are *trimmed* to relative by
+  `normalizeClassPath`, matching the rest of the VFS, not dropped.)
+- **Resource bounds**: arrays are capped (`MAX_ARRAY_LEN`) and the generic
+  atomic-value sanitizer is depth-bounded (`MAX_VALUE_DEPTH`), so a cyclic-ish or
+  oversized payload is truncated instead of hanging/OOMing.
+
+**Fail safe.** When the input is too broken to be a document at all (e.g. not an
+object), the binding passes the **last-good** document as the fallback, so a
+garbage update keeps the previous valid state rather than blanking the editor.
+
+**Valid state is unaffected.** The validator is identity-equivalent on a
+well-formed document (`validateInboundDoc(validDoc)` deep-equals `validDoc`), so
+legitimate remote edits propagate unchanged. The P0 property/round-trip gates
+(which exercise `rebuildDoc` directly) are untouched.
+
+### What this does NOT cover (the script vector — explicit threat-model note)
+
+Peer-supplied AS2 frame `script` text and `asClasses` *source* are compiled and
+run on **every collaborator's machine**. This is **inherent to a doc-sharing
+model** — exactly the same risk as opening someone else's `.fla` — and cannot be
+neutralized by shape validation without breaking collaboration. The validator
+sanitizes the *storage shape* of scripts (must be a string) and the *path* of
+classes (no traversal), but a peer who can edit the doc can author code that runs
+in your Test-Movie/Live-Preview Ruffle sandbox. A future hardening could gate
+adopting remote AS2/`asClasses` behind explicit per-peer trust/confirmation; this
+is noted as an open item, distinct from the transport/encryption hardening (P5,
+task 1348) which protects the wire but not the inbound *model*.
+
+### Acceptance
+
+`packages/collab/src/__tests__/validate.test.ts` (13 cases): direct-validator
+coercion/dropping (unknown kinds, missing ids, NaN coords, wrong-type structural
+fields, clamped properties, oversized arrays, deeply-nested payloads, traversal/
+NUL/absolute `asClasses` paths) + full binding scenarios (a peer injecting raw
+hostile Y.Doc state does not crash the other peer; `yDocToFlashDoc` validates a
+late-join read; valid remote edits still propagate unchanged). The P0
+`binding.test.ts` (9) + `property.test.ts` (the 7,200-mutation identity gate) all
+still pass — valid state is unaffected.
