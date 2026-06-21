@@ -97,6 +97,7 @@ import {
   createSymbolInLibrary,
   createBitmap,
   createSound,
+  createLibrary,
   addLibraryItem,
   removeLibraryItem,
   setSymbolLinkage,
@@ -238,6 +239,28 @@ export function clearAgentCallbacks(): void {
 function requireCallbacks(): AgentCallbacks {
   if (!_callbacks) throw new Error("Editor not ready: agent callbacks not wired");
   return _callbacks;
+}
+
+/**
+ * Guarantee the library-present invariant on a document accepted from the agent
+ * `doc_load` tool (whose `document` param is `z.unknown()`). A doc that omits
+ * `library`, or whose `library.items` is not an array, is normalised to carry an
+ * empty/valid library so no downstream reader (notably the collab outbound
+ * `externalizeAssets`, which runs in an uncatchable subscription) can throw on
+ * `doc.library.items`. Treats an absent library as empty; preserves any existing
+ * `folders`. Non-object input is returned unchanged (it is not a doc; the store
+ * reducer / renderer surface the error there, not as a crash here).
+ */
+function ensureDocLibrary(document: unknown): unknown {
+  if (typeof document !== "object" || document === null) return document;
+  const doc = document as { library?: unknown };
+  const lib = doc.library as { items?: unknown; folders?: unknown } | undefined;
+  if (lib && Array.isArray(lib.items)) return document; // already valid
+  const folders = Array.isArray(lib?.folders) ? lib.folders : [];
+  return {
+    ...doc,
+    library: createLibrary({ items: [], folders: folders as never[] }),
+  };
 }
 
 /**
@@ -682,7 +705,13 @@ const handlers: Record<string, AnyHandler> = {
 
   doc_load({ document }: { document: unknown }): OkRevResult {
     const cb = requireCallbacks();
-    cb.pushDoc(document as FlashDocument);
+    // The `document` param is `z.unknown()` (no structural validation), so an
+    // agent can push a doc that omits `library` (or whose `library`/`items` is
+    // malformed). A library-less doc in `history.present` later crashes the
+    // collab outbound `externalizeAssets` (and any other reader that does
+    // `doc.library.items`). Enforce the library-present invariant here, at the
+    // doc-replacement boundary, so the op can NEVER admit a library-less doc.
+    cb.pushDoc(ensureDocLibrary(document) as FlashDocument);
     return { ok: true, rev: _rev };
   },
 

@@ -1800,3 +1800,49 @@ describe("symbol-edit mode routing", () => {
     expect(sceneCount).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// doc_load — library-present invariant (regression, task 1363)
+// ---------------------------------------------------------------------------
+//
+// The agent `doc_load` tool accepts `document: z.unknown()` and used to blind-cast
+// + pushDoc, so an agent could put a library-less doc into history.present, which
+// later crashed the collab outbound externalizeAssets (full-app crash). doc_load
+// must NEVER admit a library-less doc.
+describe("doc_load library-present invariant (task 1363)", () => {
+  it("normalises a doc with NO library to carry an empty library", async () => {
+    const { library: _omit, ...noLibrary } = createDocument();
+    void _omit;
+
+    const result = (await dispatchAgentCommand("doc_load", {
+      document: noLibrary,
+    })) as Record<string, unknown>;
+    expect(result.ok).toBe(true);
+
+    // The doc actually pushed into the store now has a valid empty library.
+    expect(state.doc.library).toBeDefined();
+    expect(Array.isArray(state.doc.library.items)).toBe(true);
+    expect(state.doc.library.items).toEqual([]);
+    expect(Array.isArray(state.doc.library.folders)).toBe(true);
+  });
+
+  it("normalises a doc whose library.items is malformed (not an array)", async () => {
+    const base = createDocument();
+    const malformed = {
+      ...base,
+      library: { items: undefined, folders: [] },
+    } as unknown as FlashDocument;
+
+    await dispatchAgentCommand("doc_load", { document: malformed });
+
+    expect(Array.isArray(state.doc.library.items)).toBe(true);
+    expect(state.doc.library.items).toEqual([]);
+  });
+
+  it("leaves a doc with a valid library untouched", async () => {
+    const valid = createDocument();
+    await dispatchAgentCommand("doc_load", { document: valid });
+    // Same library reference back (no needless rebuild).
+    expect(state.doc.library).toBe(valid.library);
+  });
+});

@@ -61,8 +61,16 @@ export function externalizeAssets(
   doc: FlashDocument,
   store: AssetStore,
 ): FlashDocument {
+  // DEFENCE-IN-DEPTH: this runs inside the collab outbound `onLocalChange`
+  // subscription (an UNCATCHABLE callback). A buggy/agent/peer-produced doc may
+  // have an absent or malformed `library` (e.g. the `doc_load` agent tool admits
+  // an unvalidated doc with no `library` into `history.present`). Treat an absent
+  // library / items as empty and NEVER throw — a degraded doc must not take down
+  // the whole app.
+  const sourceItems = doc.library?.items;
+  if (!Array.isArray(sourceItems)) return doc;
   let changed = false;
-  const items = doc.library.items.map((item): LibraryItem => {
+  const items = sourceItems.map((item): LibraryItem => {
     if (!isMediaItem(item)) return item;
     const uri = item.dataUri;
     if (!uri || isAssetHashRef(uri) || uri.startsWith("asset:")) return item;
@@ -76,6 +84,9 @@ export function externalizeAssets(
   });
   if (!changed) return doc;
   return { ...doc, library: { ...doc.library, items } };
+  // NB: `changed` can only be true when at least one media item was rewritten,
+  // which requires `sourceItems` to be a non-empty array, so `doc.library` is a
+  // real object here — the spread reconstructs a valid library.
 }
 
 /** Result of resolving a remote document's externalized asset references. */
@@ -100,9 +111,13 @@ export function internalizeAssets(
   doc: FlashDocument,
   store: AssetStore,
 ): InternalizeResult {
+  // DEFENCE-IN-DEPTH: an absent/malformed library degrades to "no assets to
+  // resolve", never a throw (mirrors `externalizeAssets`).
+  const sourceItems = doc.library?.items;
+  if (!Array.isArray(sourceItems)) return { doc, missing: [] };
   let changed = false;
   const missingSet = new Set<string>();
-  const items = doc.library.items.map((item): LibraryItem => {
+  const items = sourceItems.map((item): LibraryItem => {
     if (!isMediaItem(item)) return item;
     const hash = parseAssetHashRef(item.dataUri);
     if (hash === null) return item;
@@ -121,7 +136,9 @@ export function internalizeAssets(
 
 /** True if the document still references any externalized asset by hash. */
 export function hasUnresolvedAssets(doc: FlashDocument): boolean {
-  return doc.library.items.some(
+  const items = doc.library?.items;
+  if (!Array.isArray(items)) return false;
+  return items.some(
     (item) => isMediaItem(item) && isAssetHashRef(item.dataUri),
   );
 }
@@ -129,7 +146,9 @@ export function hasUnresolvedAssets(doc: FlashDocument): boolean {
 /** Every distinct asset hash referenced (resolved or not) by the document. */
 export function referencedAssetHashes(doc: FlashDocument): string[] {
   const set = new Set<string>();
-  for (const item of doc.library.items) {
+  const items = doc.library?.items;
+  if (!Array.isArray(items)) return [];
+  for (const item of items) {
     if (!isMediaItem(item)) continue;
     const hash = parseAssetHashRef(item.dataUri);
     if (hash !== null) set.add(hash);
