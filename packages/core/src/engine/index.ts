@@ -129,7 +129,7 @@ export type {
 } from "./planar/index.js";
 
 // Renderer
-export { CanvasRenderer, initCanvas } from "./renderer.js";
+export { CanvasRenderer, initCanvas, renderDisplayObject } from "./renderer.js";
 
 // Frame snapshot
 export { snapshotFrame } from "./snapshot.js";

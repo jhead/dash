@@ -4,6 +4,11 @@ import { deserializeDocument } from "./deserialize.js";
 import { isOle2, tryLoadRealFla } from "./ole.js";
 import { saveRealFla as saveRealFlaImpl } from "./write/fla-write.js";
 import { normalizeClassPath } from "../vfs/path.js";
+import {
+  bytesToBase64,
+  dataUriToBytes,
+  mimeFromDataUri,
+} from "./asset-hash.js";
 import type { FlashDocument } from "../model/types.js";
 
 /** Canonicalize a class path read from a zip entry key; raw on failure. */
@@ -57,15 +62,6 @@ const EXT_TO_MIME: Record<string, string> = {
 };
 
 /**
- * Extract the MIME type from a data URI header.
- * Returns "application/octet-stream" if the header is missing or unrecognised.
- */
-function mimeFromDataUri(dataUri: string): string {
-  const match = /^data:([^;,]+)/.exec(dataUri);
-  return match?.[1] ?? "application/octet-stream";
-}
-
-/**
  * Return the file extension (including leading dot) that corresponds to a MIME
  * type.  Falls back to ".bin" for unknown types.
  */
@@ -79,26 +75,6 @@ function extForMime(mime: string): string {
  */
 function mimeForExt(ext: string): string {
   return EXT_TO_MIME[ext] ?? "application/octet-stream";
-}
-
-/**
- * Decode a data URI to raw bytes.
- */
-function dataUriToBytes(dataUri: string): Uint8Array {
-  const base64 = dataUri.split(',')[1] ?? '';
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-/**
- * Encode raw bytes to a base64 string.
- */
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
 }
 
 /**

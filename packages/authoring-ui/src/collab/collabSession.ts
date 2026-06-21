@@ -42,6 +42,10 @@ import {
 } from "./collabLink.js";
 import { type CollabUser, getLocalUser } from "./localUser.js";
 import { getSignalingServers } from "./signaling.js";
+import { attachAssetSync, type AssetSyncController } from "./assetSync.js";
+import type { AssetStore } from "./assetStore.js";
+import type { AssetTransport } from "./assetChannel.js";
+import { webrtcAssetTransport } from "./webrtcAssetTransport.js";
 
 /** A live collaboration session. Owns the Y.Doc, binding, and provider. */
 export interface CollabSession {
@@ -68,6 +72,16 @@ export interface CollabSession {
    * start/join; undefined otherwise (headless / doc-only sessions).
    */
   readonly awarenessController?: AwarenessController;
+  /**
+   * The out-of-band asset-sync controller (P4). Keeps bitmap/sound/video BYTES
+   * out of the CRDT (the Y.Doc carries only an `asset-hash:` reference) and
+   * lazily transfers them peer-to-peer over the y-webrtc mesh. Present when a
+   * `documentStore` flow constructed it (start/join always do); the content
+   * store is also reachable via `assetStore` for the renderer.
+   */
+  readonly assetSync?: AssetSyncController;
+  /** The content-addressed asset byte store (shared with the renderer). */
+  readonly assetStore?: AssetStore;
   /** True once the provider has reached its first sync with a peer/room. */
   readonly synced: boolean;
   /** Build the full shareable URL from a base (e.g. `location.origin + path`). */
@@ -95,6 +109,13 @@ export interface StartCollabOptions {
   uiStore?: UiStoreApi;
   /** Override the local user identity (defaults to the persisted local user). */
   user?: CollabUser;
+  /**
+   * Override the asset transport (tests inject a loopback transport; production
+   * defaults to a transport riding the y-webrtc mesh). Pass `null` to disable
+   * out-of-band asset sync entirely (media bytes then stay inline in the CRDT,
+   * the pre-P4 behavior — used by headless/doc-only sessions).
+   */
+  assetTransport?: AssetTransport | null;
 }
 
 function buildProvider(
@@ -119,6 +140,7 @@ function makeSession(
   signaling: string[],
   user: CollabUser,
   awarenessController: AwarenessController | undefined,
+  assetSync: AssetSyncController | undefined,
 ): CollabSession {
   let synced = false;
   provider.on("synced", () => {
@@ -133,6 +155,8 @@ function makeSession(
     user,
     awareness: provider.awareness,
     awarenessController,
+    assetSync,
+    assetStore: assetSync?.store,
     get synced() {
       return synced;
     },
@@ -144,6 +168,7 @@ function makeSession(
       // awareness TTL is only the fallback for an ungraceful drop).
       awarenessController?.detach();
       binding.detach();
+      assetSync?.destroy();
       provider.destroy();
       ydoc.destroy();
     },
@@ -165,17 +190,51 @@ export function startCollab(
   const user = options.user ?? getLocalUser();
   const ydoc = new Y.Doc();
 
-  // START: attach FIRST so the binding seeds the local doc into the empty Y.Doc
-  // (the host's document becomes the shared session state), then connect.
-  const binding = attachCollab(store, ydoc);
+  // Bring up the provider first so the P4 asset transport can ride its mesh.
+  // (For a fresh host room the Y.Doc is empty and there is nothing to adopt, so
+  // attaching the binding after the provider still seeds the local doc.)
   const provider = buildProvider(link, ydoc, signaling);
+
+  // P4: out-of-band asset sync. Constructed BEFORE the binding so the binding's
+  // seeding externalize() runs through the hook (stashing the host's own asset
+  // bytes so a joiner's request is answerable). `assetTransport: null` disables.
+  const assetSync = makeAssetSync(store, provider, options);
+
+  // START: attach the binding — it seeds the local doc into the empty Y.Doc
+  // (the host's document becomes the shared session state), externalizing media
+  // bytes out of the CRDT via the asset hook.
+  const binding = attachCollab(store, ydoc, { assets: assetSync?.hook });
 
   // P2: bridge the uiStore to the provider's awareness channel (presence).
   const awarenessController = options.uiStore
     ? attachAwareness(provider.awareness, options.uiStore, user)
     : undefined;
 
-  return makeSession(link, ydoc, provider, binding, signaling, user, awarenessController);
+  return makeSession(
+    link,
+    ydoc,
+    provider,
+    binding,
+    signaling,
+    user,
+    awarenessController,
+    assetSync,
+  );
+}
+
+/**
+ * Construct the P4 asset-sync controller for a session, or `undefined` when
+ * out-of-band sync is disabled (`assetTransport: null`). The transport defaults
+ * to one riding the provider's WebRTC mesh; tests inject a loopback transport.
+ */
+function makeAssetSync(
+  store: DocumentStoreApi,
+  provider: WebrtcProvider,
+  options: StartCollabOptions,
+): AssetSyncController | undefined {
+  if (options.assetTransport === null) return undefined;
+  const transport = options.assetTransport ?? webrtcAssetTransport(provider);
+  return attachAssetSync(store, transport);
 }
 
 /**
@@ -205,14 +264,28 @@ export async function joinCollab(
 
   await waitForSync(provider, syncTimeoutMs);
 
-  const binding = attachCollab(store, ydoc);
+  // P4: asset sync over the live mesh. Built before the binding so the adoption
+  // internalize() (which finds the externalized refs the host wrote) can request
+  // the missing bytes immediately.
+  const assetSync = makeAssetSync(store, provider, options);
+
+  const binding = attachCollab(store, ydoc, { assets: assetSync?.hook });
 
   // P2: bridge the uiStore to the provider's awareness channel (presence).
   const awarenessController = options.uiStore
     ? attachAwareness(provider.awareness, options.uiStore, user)
     : undefined;
 
-  return makeSession(link, ydoc, provider, binding, signaling, user, awarenessController);
+  return makeSession(
+    link,
+    ydoc,
+    provider,
+    binding,
+    signaling,
+    user,
+    awarenessController,
+    assetSync,
+  );
 }
 
 /** Resolve when the provider first syncs, or after `timeoutMs`. */

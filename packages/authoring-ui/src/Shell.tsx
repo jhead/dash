@@ -92,6 +92,7 @@ import {
   RemoteCursorsConnected,
   LibraryPanelConnected,
 } from "./collab/CollabPresence";
+import { CollabControls } from "./collab/CollabControls";
 import { AgentChatPanel } from "./agentchat/AgentChatPanel";
 import { StatusBar } from "./StatusBar";
 import type { ToolId } from "./tools/types";
@@ -3667,7 +3668,12 @@ export function Shell(): React.ReactElement {
         textAlign={textFormat.align}
         textColor={textFormat.color}
         onTextFormatChange={handleTextFormatChange}
-        rightSlot={<PresenceAvatarsConnected />}
+        rightSlot={
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <PresenceAvatarsConnected />
+            <CollabControls />
+          </div>
+        }
       />
       <div style={styles.centerRegion}>
         {/* Tools-panel host wrapper. Width MUST track the panel's own width

@@ -742,6 +742,58 @@ function renderBitmapObject(
   }
 }
 
+/**
+ * Renders a "missing asset" placeholder for a bitmap whose bytes are not yet
+ * available (collab P4: the asset is referenced by content hash but the bytes
+ * have not been fetched from a peer yet). A light hatched box at the bitmap's
+ * placement bounds with a small label, so the user sees WHERE the asset will
+ * appear and that it is still loading — instead of nothing.
+ */
+function renderMissingBitmapPlaceholder(
+  ctx: CanvasRenderingContext2D,
+  obj: BitmapDisplayObject,
+): void {
+  const w = obj.width * (obj.scaleX ?? 1);
+  const h = obj.height * (obj.scaleY ?? 1);
+  if (w <= 0 || h <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = obj.visible === false ? 0 : (obj.alpha ?? 1) * 0.9;
+  ctx.translate(obj.x, obj.y);
+  if (obj.rotation) ctx.rotate((obj.rotation * Math.PI) / 180);
+  // Background.
+  ctx.fillStyle = "#ececec";
+  ctx.fillRect(0, 0, w, h);
+  // Diagonal hatch.
+  ctx.strokeStyle = "#c7c7c7";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const step = 8;
+  for (let d = -h; d < w; d += step) {
+    ctx.moveTo(d, 0);
+    ctx.lineTo(d + h, h);
+  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.clip();
+  ctx.stroke();
+  ctx.restore();
+  // Dashed border.
+  ctx.strokeStyle = "#9a9a9a";
+  ctx.setLineDash([4, 3]);
+  ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+  ctx.setLineDash([]);
+  // Label (only if there's room).
+  if (w >= 40 && h >= 18) {
+    ctx.fillStyle = "#6a6a6a";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("loading…", w / 2, h / 2);
+  }
+  ctx.restore();
+}
+
 // ---------------------------------------------------------------------------
 // Video placeholder rendering
 // ---------------------------------------------------------------------------
@@ -1557,7 +1609,7 @@ function renderSymbolInstance(
 // Display object dispatch
 // ---------------------------------------------------------------------------
 
-function renderDisplayObject(
+export function renderDisplayObject(
   ctx: CanvasRenderingContext2D,
   obj: DisplayObject,
   imageCache: Map<string, HTMLImageElement>,
@@ -1632,6 +1684,11 @@ function renderDisplayObject(
       const img = imageCache.get(obj.libraryItemId);
       if (img && img.complete && img.naturalWidth > 0) {
         renderBitmapObject(ctx, obj, img);
+      } else {
+        // No image bytes available yet. During a collab session a bitmap may
+        // reference an asset whose bytes have not yet been fetched from a peer
+        // (collab P4): draw a "missing asset" placeholder until it resolves.
+        renderMissingBitmapPlaceholder(ctx, obj);
       }
       break;
     }

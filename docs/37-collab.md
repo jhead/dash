@@ -1,14 +1,21 @@
 # Collaboration — optional P2P multiplayer (docs/37)
 
-Status: **Phase 2 complete** (task 1345) on top of **P1** (task 1344) and **P0**
-(task 1343). P0 shipped the foundation: a faithful, property-tested Yjs binding
-for the document model. P1 added the **opt-in y-webrtc transport + shareable link
-+ join flow**. P2 adds **awareness/presence** — live cursors, selection outlines,
+Status: **Phase 4 complete** (task 1347) on top of **P3** (task 1346), **P2**
+(task 1345), **P1** (task 1344), and **P0** (task 1343). P0 shipped the
+foundation: a faithful, property-tested Yjs binding for the document model. P1
+added the **opt-in y-webrtc transport + shareable link + join flow**. P2 adds
+**awareness/presence** — live cursors, selection outlines,
 scene/frame/tool/edit-context presence, presence avatars, follow-a-peer, and a
 Library "editing this symbol" badge — riding the same encrypted y-webrtc mesh via
-`y-protocols/awareness`. Still **default OFF**: no provider, network, signaling
-connection, or awareness exists until the user explicitly starts/joins a session;
-solo has zero overhead. Phases 3–5 build asset transport, conflict UX, and the
+`y-protocols/awareness`. P3 makes **undo collaboration-aware** (a per-origin
+`Y.UndoManager`). P4 adds the **collaboration UX** — a Share dialog with an
+honest privacy note + copyable invite link, a clear Start/Join/Leave control with
+connection status, and the surfaced P2 presence — plus **out-of-band asset sync**:
+bitmap/sound/video BYTES are kept OUT of the CRDT (only a content-hash reference
+travels) and transferred lazily peer-to-peer over the same y-webrtc mesh, with a
+missing-asset placeholder until the bytes arrive. Still **default OFF**: no
+provider, network, signaling connection, or awareness exists until the user
+explicitly starts/joins a session; solo has zero overhead. Phase 5 builds the
 editor toggle on top.
 
 > This binding is THE BET of the whole feature. Everything downstream assumes the
@@ -707,3 +714,151 @@ hostile Y.Doc state does not crash the other peer; `yDocToFlashDoc` validates a
 late-join read; valid remote edits still propagate unchanged). The P0
 `binding.test.ts` (9) + `property.test.ts` (the 7,200-mutation identity gate) all
 still pass — valid state is unaffected.
+
+---
+
+## 12. Phase 4 — collaboration UX + out-of-band asset sync (task 1347)
+
+P4 makes collaboration *usable* (a real Share dialog + opt-in/leave control +
+connection status, with the P2 presence surfaced where you'd expect it) and
+closes the one byte-size hole P0 deliberately left open: bitmap/sound/video bytes
+are transferred **out of band**, never through the CRDT.
+
+### 12.1 The Share dialog + controls
+
+`collab/ShareDialog.tsx` is the opt-in entry point (default OFF: nothing
+constructs a provider or opens a connection until the user clicks Start/Join):
+
+- **Start** mints a fresh room + E2E key, seeds the current document into the
+  session, and shows the invite link (`session.shareUrl(location.origin +
+  pathname)`) with a **Copy** button.
+- **Join** parses a pasted invite (`parseCollabLink`) and connects.
+- A live session re-opens to grab the link again.
+
+The **honest note** is shown in every state and is non-negotiable: (1) anyone
+with the link gets **full edit access** — treat it like a password; (2)
+collaborators connect **peer-to-peer over WebRTC**, so their **IP addresses are
+visible** to one another; (3) the document is **end-to-end encrypted** and travels
+**directly between peers** — there is **no server of ours** in the middle (the
+public signaling server only brokers the handshake; it never sees the data or the
+key, which lives only in the URL fragment).
+
+`collab/CollabControls.tsx` lives in the EditBar's right slot next to the P2
+presence avatars (`Shell.tsx` `rightSlot`): solo shows a **"Collaborate…"** button
+that opens the dialog; in a session it shows a **connection-status pill**
+(connecting / connected + peer count, via `useCollabStatus` reading the provider's
+`peers`/`synced` events) and a **Leave** button. The P2 avatars + remote cursors +
+follow-a-peer are unchanged — P4 only makes the entry point discoverable.
+
+### 12.2 Out-of-band asset sync — the design
+
+P0 mapped a media item's `dataUri` as an ordinary scalar; the design point it
+recorded was that **large bytes must never enter the CRDT** in a real session.
+P4 enforces that at the **collab adapter boundary** — NOT inside the
+`@flash/collab` binding — so the P0 property test (which has no asset store)
+keeps round-tripping `dataUri` as a plain scalar and stays the gate (still
+**9/9**). Two pure transforms (`collab/assetExternalize.ts`), mirroring the
+`.fla` zip externalization (`zip.ts`, where a `dataUri` becomes a short
+`asset:<path>` reference + separate bytes):
+
+- **OUTBOUND** (`externalizeAssets`, wired into the adapter's `getDoc`): before
+  the local doc is projected into the Y.Doc, replace each bitmap/sound/video
+  `data:` URI with an **`asset-hash:<sha256>`** reference and stash the bytes in
+  the local `AssetStore` (`collab/assetStore.ts`, content-addressed by hash). The
+  Y.Doc only ever carries the short reference.
+- **INBOUND** (`internalizeAssets`, wired into the adapter's `applyRemote`): after
+  a remote doc is rebuilt, resolve each `asset-hash:` reference back to a real
+  `dataUri` **if** the bytes are held locally; otherwise leave the reference (a
+  **missing-asset placeholder** the renderer draws) and collect the hash to fetch.
+
+The content hash is a pure, synchronous, dependency-free SHA-256
+(`@flash/core` `fla/asset-hash.ts`) — `@flash/core` must import cleanly in
+Node/browser/Tauri (no `node:crypto`, no async `crypto.subtle`), and the outbound
+diff path is synchronous. `zip.ts` was refactored to reuse the same base64 /
+dataUri helpers.
+
+### 12.3 The asset channel — lazy, content-addressed, pull-based
+
+`collab/assetChannel.ts` `AssetSyncEngine` drives a tiny request/response
+protocol over a transport-agnostic `AssetTransport`:
+
+- A peer missing the bytes for a referenced hash **broadcasts a REQUEST**.
+- A peer holding those bytes **answers with a RESPONSE** carrying them.
+- The requester stores the bytes; the `AssetStore` fires `onAssetAvailable`,
+  which **re-internalizes** `history.present` and `replaceDoc`s it (not
+  `pushDoc` — the resolution is exactly like a remote edit landing, so it is not
+  a local undo entry). The placeholder resolves to the real bitmap/sound/video.
+
+Outstanding requests **retry** on a timer (default 4 s) so a holder that joins
+*after* the first request still answers. The request issued during an inbound
+apply is **deferred to a microtask** so the placeholder doc lands in the store
+before a (synchronous, in test) response arrives.
+
+The **production transport** (`collab/webrtcAssetTransport.ts`) rides the SAME
+WebRTC peer connections y-webrtc already maintains — no new server, no second
+signaling connection. Frames carry a 4-byte magic prefix so our data listener can
+distinguish them; they also reach y-webrtc's own reader, which logs a benign
+`console.error` on the unknown type (no functional effect — the cost of not
+forking y-webrtc). The **test transport** is an in-process loopback mesh
+(`createLoopbackTransports`), mirroring P1's convergence wire, so the whole
+protocol is unit-testable without a real WebRTC stack (absent in Node).
+
+The session (`collab/collabSession.ts`) constructs the asset sync controller
+(`collab/assetSync.ts`) before the binding so the host's seeding `externalize`
+stashes its own asset bytes (answerable immediately) and the joiner's adoption
+`internalize` requests the missing ones. `session.assetStore` / `assetSync` are
+exposed; teardown is wired into `stop()`.
+
+### 12.4 Missing-asset placeholder
+
+`engine/renderer.ts` `renderMissingBitmapPlaceholder` draws a hatched box with a
+dashed border + "loading…" label at the bitmap's placement bounds whenever the
+image cache has no bytes for it — so a referenced-but-not-yet-fetched bitmap
+shows **where** it will appear and that it is loading, instead of nothing. Once
+the bytes arrive and the doc resolves, the normal `dataUri` → image-cache path
+draws the real bitmap. (Sound/video already render their own placeholders.)
+
+### 12.5 Acceptance
+
+`packages/authoring-ui/src/collab/__tests__/` (P4) + `@flash/core`:
+
+- **`asset-hash.test.ts`** (core) — SHA-256 matches `node:crypto` + FIPS vectors
+  across block boundaries; base64 / dataUri round-trip; content-addressing
+  (same bytes → same hash regardless of MIME); the `asset-hash:` ref scheme.
+- **`assetChannel.test.ts`** — externalize replaces the `dataUri` with a hash ref
+  and stashes bytes (idempotent); internalize resolves held bytes / reports
+  missing; the request/response protocol over a loopback (fetch by hash, no
+  request when already held, retry + late-joining holder answers).
+- **`assetSync2peer.test.ts`** — the **2-peer gate**: A hosts a bitmap; B
+  late-joins with NO assets; the CRDT carries only the hash; B sees the
+  placeholder, requests by hash, A answers, and B's doc resolves to the real
+  bytes (content hash matches). Plus a renderer assertion that an unresolved
+  bitmap draws the placeholder, then the real image once resolved.
+- **`shareDialog.test.ts`** (jsdom) — the dialog shows the honest note + Start/
+  Join controls solo; **Start surfaces a link that parses back to the session's
+  room + key** (the P1 round-trip, now through the dialog) with the secret in the
+  fragment; the controls show a status pill + Leave in a session and return to
+  solo on Leave.
+
+Full authoring-ui suite **1127/1127** green; collab P0 property test still
+**9/9**. (The 3 `flash8-empty.fla` binary-writer fixtures fail only because that
+untracked dev-local fixture is absent in a fresh worktree — unrelated to P4.)
+
+### 12.6 Honest limits / tradeoffs
+
+- **Externalization is at the adapter, not the binding.** This is deliberate: it
+  keeps the P0 property test (no asset store) the faithful gate, and means the
+  "bytes out of the CRDT" guarantee holds for **live sessions** (which always
+  attach the asset hook), while a binding used with no hook still round-trips
+  `dataUri` as a scalar.
+- **Whole-asset messages.** An asset is sent as a single data-channel message;
+  simple-peer chunks large buffers internally, but very large bitmaps/sounds may
+  still stress a browser's data-channel buffer. Chunked transfer + backpressure
+  is a documented follow-up.
+- **No persistence.** The `AssetStore` is in-memory; a reload re-derives it from
+  the freshly-loaded document (exactly like the renderer's image cache). Bytes
+  are re-fetched from peers on rejoin.
+- **Benign y-webrtc log noise.** Our magic-prefixed asset frames hit y-webrtc's
+  own message reader's unknown-type branch (one `console.error` each) because we
+  do not fork y-webrtc to register a new top-level message type. Functionally
+  inert.

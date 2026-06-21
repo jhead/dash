@@ -24,12 +24,39 @@ import {
 import type * as Y from "yjs";
 import type { DocumentStoreApi } from "./documentStore.js";
 
+/**
+ * Optional out-of-band asset hook (collab P4). When supplied, media bytes are
+ * kept OUT of the CRDT: outbound docs are externalized (dataUri → asset-hash
+ * ref + bytes stashed locally) and inbound docs are internalized (refs resolved
+ * to bytes held locally; missing ones requested over the asset channel).
+ */
+export interface CollabAssetHook {
+  /** Outbound: strip media bytes, stash them, return the externalized doc. */
+  externalize(doc: FlashDocument): FlashDocument;
+  /**
+   * Inbound: resolve externalized refs against locally-held bytes and request
+   * any that are missing over the asset channel. Returns the resolved doc.
+   */
+  internalize(doc: FlashDocument): FlashDocument;
+}
+
 /** Wrap a document store as the generic DocSource the binding consumes. */
-export function storeAsDocSource(store: DocumentStoreApi): DocSource {
+export function storeAsDocSource(
+  store: DocumentStoreApi,
+  assets?: CollabAssetHook,
+): DocSource {
   return {
-    getDoc: () => store.getState().history.present,
+    // OUTBOUND: externalize media bytes so the Y.Doc only ever carries the
+    // small content-hash reference (P4: large bytes never enter the CRDT).
+    getDoc: () => {
+      const doc = store.getState().history.present;
+      return assets ? assets.externalize(doc) : doc;
+    },
+    // INBOUND: resolve asset references to bytes held locally (missing ones are
+    // requested over the asset channel and re-applied when they arrive).
     // Remote edits use replaceDoc so they do NOT push a local undo entry.
-    applyRemote: (doc: FlashDocument) => store.getState().replaceDoc(doc),
+    applyRemote: (doc: FlashDocument) =>
+      store.getState().replaceDoc(assets ? assets.internalize(doc) : doc),
     subscribe: (listener) => store.subscribe(listener),
   };
 }
@@ -62,9 +89,13 @@ export interface AttachCollabResult {
 export function attachCollab(
   store: DocumentStoreApi,
   ydoc: Y.Doc,
-  options?: FlashCollabBindingOptions,
+  options?: FlashCollabBindingOptions & { assets?: CollabAssetHook },
 ): AttachCollabResult {
-  const binding = new FlashCollabBinding(ydoc, storeAsDocSource(store), options);
+  const binding = new FlashCollabBinding(
+    ydoc,
+    storeAsDocSource(store, options?.assets),
+    options,
+  );
   const undoManager = createCollabUndoManager(binding);
   // Route the app's undo/redo to the per-origin UndoManager and freeze the
   // snapshot stack for the session's duration.

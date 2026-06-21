@@ -73,3 +73,38 @@ export {
 
 export { RemoteCursorsOverlay } from "./RemoteCursorsOverlay.js";
 export { PresenceAvatars } from "./PresenceAvatars.js";
+
+// ---------------------------------------------------------------------------
+// Phase 4 — out-of-band asset sync (docs 37 §11): bitmap/sound/video BYTES are
+// kept OUT of the CRDT (only a content-hash reference travels) and transferred
+// lazily peer-to-peer over the y-webrtc mesh, with a missing-asset placeholder
+// until the bytes arrive.
+// ---------------------------------------------------------------------------
+export { AssetStore, type StoredAsset } from "./assetStore.js";
+export {
+  externalizeAssets,
+  internalizeAssets,
+  hasUnresolvedAssets,
+  referencedAssetHashes,
+  isAssetHashRef,
+  type InternalizeResult,
+} from "./assetExternalize.js";
+export {
+  AssetSyncEngine,
+  createLoopbackTransports,
+  type AssetTransport,
+  type AssetSyncEngineOptions,
+} from "./assetChannel.js";
+export { webrtcAssetTransport } from "./webrtcAssetTransport.js";
+export {
+  attachAssetSync,
+  type AssetSyncController,
+  type AttachAssetSyncOptions,
+} from "./assetSync.js";
+
+// ---------------------------------------------------------------------------
+// Phase 4 — collaboration UX: the Share dialog + start/join/leave controls and
+// connection status.
+// ---------------------------------------------------------------------------
+export { ShareDialog } from "./ShareDialog.js";
+export { CollabControls, useCollabStatus, type CollabConnState } from "./CollabControls.js";
