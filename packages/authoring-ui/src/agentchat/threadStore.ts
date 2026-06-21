@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { ModelMessage } from "ai";
-import type { AgentRunState } from "./agentLoop.js";
+import type { AgentRunState, AgentTurnUsage } from "./agentLoop.js";
 
 // ---------------------------------------------------------------------------
 // Agent Chat thread store (task 1291) — PERSISTED conversation state.
@@ -72,6 +72,92 @@ export interface AssistantTurn {
 
 export type Turn = UserTurn | AssistantTurn;
 
+/**
+ * Running per-thread token + cost totals (task 1337), summed across EVERY turn
+ * in the thread and persisted alongside the transcript so they survive a reload
+ * / thread-switch. A fresh thread starts at all-zero.
+ *
+ * `cost` is the running USD total. `costKnown` is false until at least one turn
+ * contributed a cost (so the UI can distinguish "$0.00" from "cost unknown").
+ * `costHasEstimate` records whether ANY contributing turn's cost was COMPUTED
+ * from pricing rather than reported by OpenRouter — when true the UI labels the
+ * total 'est.'.
+ */
+export interface ThreadUsage {
+  /** Total tokens consumed by the whole thread (sum of all turns). */
+  totalTokens: number;
+  /** Total input (prompt) tokens for the thread. */
+  inputTokens: number;
+  /** Total output (completion) tokens for the thread. */
+  outputTokens: number;
+  /** Running USD cost for the thread (only meaningful when `costKnown`). */
+  cost: number;
+  /** True once any turn contributed a known cost. */
+  costKnown: boolean;
+  /** True when any contributing turn's cost was estimated from pricing. */
+  costHasEstimate: boolean;
+}
+
+/** A zero-valued thread usage — the starting total for a fresh thread. */
+export function emptyThreadUsage(): ThreadUsage {
+  return {
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cost: 0,
+    costKnown: false,
+    costHasEstimate: false,
+  };
+}
+
+/**
+ * Fold one turn's {@link AgentTurnUsage} into a thread's running {@link
+ * ThreadUsage}, returning a NEW total (pure — safe for setState + unit testing).
+ * Tokens always accumulate. Cost accumulates only when the turn carried one;
+ * the first known cost flips `costKnown`, and an estimated turn-cost flips
+ * `costHasEstimate` so the whole-thread total is labeled 'est.'.
+ */
+export function accumulateUsage(
+  prev: ThreadUsage,
+  turn: AgentTurnUsage
+): ThreadUsage {
+  const next: ThreadUsage = {
+    totalTokens: prev.totalTokens + nonNeg(turn.totalTokens),
+    inputTokens: prev.inputTokens + nonNeg(turn.inputTokens),
+    outputTokens: prev.outputTokens + nonNeg(turn.outputTokens),
+    cost: prev.cost,
+    costKnown: prev.costKnown,
+    costHasEstimate: prev.costHasEstimate,
+  };
+  if (typeof turn.cost === "number" && Number.isFinite(turn.cost)) {
+    next.cost = prev.cost + turn.cost;
+    next.costKnown = true;
+    if (turn.costIsEstimated) next.costHasEstimate = true;
+  }
+  return next;
+}
+
+/** Clamp a value to a finite, non-negative number (0 for junk). */
+function nonNeg(n: number): number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Validate + coerce a parsed usage blob into a well-formed {@link ThreadUsage}. */
+function normalizeUsage(raw: unknown): ThreadUsage {
+  if (!raw || typeof raw !== "object") return emptyThreadUsage();
+  const o = raw as Record<string, unknown>;
+  const num = (v: unknown): number =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
+  return {
+    totalTokens: num(o.totalTokens),
+    inputTokens: num(o.inputTokens),
+    outputTokens: num(o.outputTokens),
+    cost: num(o.cost),
+    costKnown: o.costKnown === true,
+    costHasEstimate: o.costHasEstimate === true,
+  };
+}
+
 /** One conversation thread. */
 export interface ChatThread {
   id: string;
@@ -81,6 +167,8 @@ export interface ChatThread {
   transcript: Turn[];
   /** The model-message history (assistant + tool), preserved for multi-turn context. */
   history: ModelMessage[];
+  /** Running token + cost totals for the thread (task 1337). */
+  usage: ThreadUsage;
   createdAt: number;
   updatedAt: number;
 }
@@ -123,6 +211,26 @@ export interface ThreadState {
   ) => void;
   /** Append model response messages (assistant + tool) to the active thread's history. */
   appendActiveHistory: (messages: ModelMessage[]) => void;
+  /**
+   * Fold one completed turn's token + cost usage into a thread's running totals
+   * (task 1337). Targets the thread the turn ran on (NOT necessarily the active
+   * one — a turn can finish after the user switched away), and ALWAYS persists
+   * (a completed turn's totals must survive a refresh). No-op for unknown ids.
+   */
+  addThreadUsage: (threadId: string, usage: AgentTurnUsage) => void;
+  /**
+   * Add JUST a cost amount (USD) to a thread's running total, without touching
+   * tokens (task 1337). Used to fill in a COMPUTED ('est.') cost asynchronously
+   * AFTER the turn's tokens were already accumulated — so the footer can show
+   * tokens immediately and gain a cost estimate once pricing resolves, with no
+   * double-counting of tokens. Always persists; no-op for unknown ids / non-
+   * finite costs.
+   */
+  addThreadCost: (
+    threadId: string,
+    cost: number,
+    estimated: boolean
+  ) => void;
 }
 
 /** A run status that will never change again (the stream has ended). */
@@ -159,6 +267,7 @@ function createEmptyThread(): ChatThread {
     title: DEFAULT_THREAD_TITLE,
     transcript: [],
     history: [],
+    usage: emptyThreadUsage(),
     createdAt: now,
     updatedAt: now,
   };
@@ -238,6 +347,7 @@ function normalizeThread(raw: unknown): ChatThread | null {
         : DEFAULT_THREAD_TITLE,
     transcript,
     history,
+    usage: normalizeUsage(o.usage),
     createdAt: typeof o.createdAt === "number" ? o.createdAt : now,
     updatedAt: typeof o.updatedAt === "number" ? o.updatedAt : now,
   };
@@ -343,6 +453,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
               transcript: [],
               history: [],
               title: DEFAULT_THREAD_TITLE,
+              usage: emptyThreadUsage(),
               updatedAt: Date.now(),
             }
           : t
@@ -406,6 +517,53 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
           ? { ...t, history: [...t.history, ...messages], updatedAt: Date.now() }
           : t
       );
+      return persist({ ...s, threads });
+    });
+  },
+
+  addThreadUsage: (threadId, usage) => {
+    set((s) => {
+      if (!s.threads.some((t) => t.id === threadId)) return s;
+      const threads = s.threads.map((t) =>
+        t.id === threadId
+          ? {
+              ...t,
+              usage: accumulateUsage(t.usage ?? emptyThreadUsage(), usage),
+              updatedAt: Date.now(),
+            }
+          : t
+      );
+      // A completed turn's totals must persist (survive reload) — always save.
+      return persist({ ...s, threads });
+    });
+  },
+
+  addThreadCost: (threadId, cost, estimated) => {
+    if (typeof cost !== "number" || !Number.isFinite(cost)) return;
+    set((s) => {
+      const target = s.threads.find((t) => t.id === threadId);
+      if (!target) return s;
+      // Guard against a late deferred estimate landing on a thread that was
+      // CLEARED (or never had tokens) between turn-end and pricing resolution:
+      // a cleared thread is reset to zero tokens, so adding cost would orphan a
+      // cost with no tokens (invisible, and stale once new tokens arrive). The
+      // estimate always follows an addThreadUsage that recorded tokens, so a
+      // zero-token thread here means it was reset in the interim — drop it.
+      if ((target.usage ?? emptyThreadUsage()).totalTokens <= 0) return s;
+      const threads = s.threads.map((t) => {
+        if (t.id !== threadId) return t;
+        const prev = t.usage ?? emptyThreadUsage();
+        return {
+          ...t,
+          usage: {
+            ...prev,
+            cost: prev.cost + cost,
+            costKnown: true,
+            costHasEstimate: prev.costHasEstimate || estimated,
+          },
+          updatedAt: Date.now(),
+        };
+      });
       return persist({ ...s, threads });
     });
   },

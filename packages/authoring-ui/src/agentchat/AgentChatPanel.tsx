@@ -10,7 +10,14 @@ import { useShallow } from "zustand/react/shallow";
 import { chrome, chromeFont, halo, inputStyle, buttonStyle } from "../theme/flash8Theme.js";
 import { usePreferences } from "../preferences.js";
 import { AgentSettings } from "./AgentSettings.js";
-import { createDashOpenRouter, getModel } from "./openrouterClient.js";
+import {
+  createDashOpenRouter,
+  getModel,
+  fetchOpenRouterModels,
+  parseModelPricing,
+  computeCostFromPricing,
+  type OpenRouterModelPricing,
+} from "./openrouterClient.js";
 import { buildAgentTools } from "./tools.js";
 import { AGENT_SYSTEM_PROMPT } from "./systemPrompt.js";
 import {
@@ -22,6 +29,7 @@ import {
   type AgentRunState,
   type AgentEntry,
   type AgentToolEntry,
+  type AgentTurnUsage,
 } from "./agentLoop.js";
 import { AgentMarkdown } from "./AgentMarkdown.js";
 import {
@@ -29,9 +37,11 @@ import {
   selectThreadsByRecency,
   selectActiveThread,
   DEFAULT_THREAD_TITLE,
+  emptyThreadUsage,
   type Turn as StoredTurn,
   type UserTurn as StoredUserTurn,
   type AssistantTurn as StoredAssistantTurn,
+  type ThreadUsage,
 } from "./threadStore.js";
 
 // ---------------------------------------------------------------------------
@@ -156,8 +166,13 @@ export function AgentChatPanel(
   const appendUserAndAssistant = useThreadStore((s) => s.appendUserAndAssistant);
   const patchAssistantRun = useThreadStore((s) => s.patchAssistantRun);
   const appendActiveHistory = useThreadStore((s) => s.appendActiveHistory);
+  const addThreadUsage = useThreadStore((s) => s.addThreadUsage);
+  const addThreadCost = useThreadStore((s) => s.addThreadCost);
 
   const turns: Turn[] = activeThread?.transcript ?? [];
+  // Running per-thread token + cost totals (task 1337). Defaults to all-zero for
+  // a thread without a stored usage blob (e.g. one created before this feature).
+  const threadUsage: ThreadUsage = activeThread?.usage ?? emptyThreadUsage();
 
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
@@ -165,6 +180,15 @@ export function AgentChatPanel(
   const [threadMenuOpen, setThreadMenuOpen] = useState(false);
 
   const controllerRef = useRef<AbortController | null>(null);
+
+  // Per-model pricing cache for the COMPUTED cost fallback (task 1337). The
+  // primary cost path is OpenRouter's REPORTED cost (no fetch needed); we only
+  // fetch the catalog lazily — and once — when a completed turn had NO reported
+  // cost, so the common case adds zero network. Maps model id -> pricing (or
+  // null when the model has no pricing / the catalog couldn't be loaded).
+  const pricingCacheRef = useRef<Map<string, OpenRouterModelPricing | null>>(
+    new Map()
+  );
 
   // The id of the assistant turn currently being streamed (so onState patches
   // the right entry).
@@ -204,6 +228,63 @@ export function AgentChatPanel(
   // default). The missing-key case is handled with a friendly banner, not a
   // silently-dead button.
   const canSend = !running && input.trim().length > 0 && hasKey;
+
+  // Resolve the selected model's per-token pricing for the COMPUTED-cost
+  // fallback (task 1337). Lazily fetches + caches the OpenRouter catalog the
+  // first time a turn lacks a reported cost; subsequent calls hit the cache.
+  // Returns undefined on any failure (missing key, network, no pricing) so the
+  // caller degrades to "tokens only, cost unknown".
+  const resolveModelPricing = useCallback(
+    async (modelId: string): Promise<OpenRouterModelPricing | undefined> => {
+      const cache = pricingCacheRef.current;
+      if (cache.has(modelId)) return cache.get(modelId) ?? undefined;
+      if (!hasKey) return undefined;
+      try {
+        const models = await fetchOpenRouterModels(apiKey.trim());
+        for (const m of models) {
+          cache.set(m.id, parseModelPricing(m.raw) ?? null);
+        }
+        // Mark unseen ids as null so we don't refetch for a missing model.
+        if (!cache.has(modelId)) cache.set(modelId, null);
+        return cache.get(modelId) ?? undefined;
+      } catch {
+        // Don't poison the cache on a transient failure — leave it unset so a
+        // later turn can retry once.
+        return undefined;
+      }
+    },
+    [hasKey, apiKey]
+  );
+
+  // Finalize a completed turn's usage and fold it into the thread total
+  // (task 1337). Tokens (+ OpenRouter's REPORTED cost, when present) are
+  // accumulated SYNCHRONOUSLY so the footer updates the instant the turn ends.
+  // When NO cost was reported, a COMPUTED estimate is filled in afterwards via a
+  // deferred, fire-and-forget pricing lookup (`addThreadCost`) — so a slow/failed
+  // catalog fetch never blocks the run from settling, and the tokens still show.
+  const recordTurnUsage = useCallback(
+    (threadId: string, modelId: string, turnUsage: AgentTurnUsage) => {
+      // 1) Tokens + any reported cost, immediately.
+      addThreadUsage(threadId, turnUsage);
+      // 2) If cost is still unknown, compute an estimate from the pricing of the
+      //    model THIS turn ran on (modelId — captured at send time, NOT the
+      //    current selector, which the user may have changed since). Deferred +
+      //    fire-and-forget; never throws (resolveModelPricing swallows failures).
+      //    `addThreadCost` itself is a no-op if the thread was cleared/deleted in
+      //    the meantime, so a late estimate can't orphan cost onto a reset thread.
+      if (turnUsage.cost === undefined) {
+        void resolveModelPricing(modelId).then((pricing) => {
+          const computed = computeCostFromPricing(
+            pricing,
+            turnUsage.inputTokens,
+            turnUsage.outputTokens
+          );
+          if (computed !== undefined) addThreadCost(threadId, computed, true);
+        });
+      }
+    },
+    [resolveModelPricing, addThreadUsage, addThreadCost]
+  );
 
   // The core run: append the user+assistant turns and drive one agent turn to a
   // terminal state. Shared by Send (composer text) and Continue (resume after a
@@ -264,7 +345,7 @@ export function AgentChatPanel(
     try {
       const provider = createDashOpenRouter(apiKey.trim(), {});
       const languageModel = getModel(provider, effectiveModel);
-      const { state, responseMessages } = await runTurn({
+      const { state, responseMessages, usage } = await runTurn({
         model: languageModel,
         system: AGENT_SYSTEM_PROMPT,
         tools,
@@ -304,6 +385,16 @@ export function AgentChatPanel(
       ) {
         appendActiveHistory(responseMessages);
       }
+      // Fold this turn's token + cost usage into the ORIGIN thread's running
+      // total (task 1337). Always targets the origin thread (even if the user
+      // switched away), so the per-thread counter is correct regardless of the
+      // active thread. Only when the turn actually consumed tokens.
+      if (usage && originThreadId && usage.totalTokens > 0) {
+        // `effectiveModel` here is the model THIS turn ran on (the same value
+        // passed to getModel above), so a deferred pricing estimate uses the
+        // right model even if the user switches the selector before it resolves.
+        recordTurnUsage(originThreadId, effectiveModel, usage);
+      }
     } catch (err) {
       // runTurn folds errors into state; this is a final safety net for an
       // unexpected throw (e.g. createDashOpenRouter / getModel).
@@ -334,6 +425,7 @@ export function AgentChatPanel(
       patchAssistantRun,
       appendUserAndAssistant,
       appendActiveHistory,
+      recordTurnUsage,
     ]
   );
 
@@ -554,6 +646,21 @@ export function AgentChatPanel(
           )
         )}
       </div>
+
+      {/* --- Usage footer (per-thread token + cost total, task 1337) --- */}
+      {(() => {
+        const line = formatUsageLine(threadUsage);
+        if (!line) return null;
+        return (
+          <div
+            style={styles.usageBar}
+            data-testid="agent-usage"
+            title="Total tokens and cost for this conversation"
+          >
+            {line}
+          </div>
+        );
+      })()}
 
       {/* --- Composer --- */}
       <div style={styles.composer}>
@@ -805,6 +912,38 @@ export function formatThreadTime(ts: number, now: number = Date.now()): string {
   } catch {
     return `${day}d`;
   }
+}
+
+/**
+ * Format a thread's running token + cost total into a compact one-line summary
+ * for the Agent pane footer (task 1337), e.g. `12,345 tokens · $0.0123` or, when
+ * the cost was computed from pricing, `12,345 tokens · ~$0.0123 est.`. When no
+ * cost is known the cost segment is dropped: `12,345 tokens`. Returns null for a
+ * truly empty thread (no tokens consumed) so the footer is hidden.
+ */
+export function formatUsageLine(usage: ThreadUsage): string | null {
+  if (!usage || usage.totalTokens <= 0) return null;
+  const tokens = `${usage.totalTokens.toLocaleString("en-US")} tokens`;
+  if (!usage.costKnown) return tokens;
+  return `${tokens} · ${formatCost(usage.cost, usage.costHasEstimate)}`;
+}
+
+/**
+ * Format a USD cost. Tiny non-zero costs (< $0.0001) show as `<$0.0001` so a
+ * real-but-small cost never collapses to a misleading `$0.0000`. Estimated
+ * costs get a leading `~` and a trailing ` est.` label.
+ */
+export function formatCost(cost: number, estimated: boolean): string {
+  const prefix = estimated ? "~" : "";
+  const suffix = estimated ? " est." : "";
+  let body: string;
+  if (cost > 0 && cost < 0.0001) {
+    body = "<$0.0001";
+  } else {
+    // 4 dp is enough to show sub-cent agent turns without noise.
+    body = `$${cost.toFixed(4)}`;
+  }
+  return `${prefix}${body}${suffix}`;
 }
 
 /** A tool result that carries a rendered image as a base64 PNG (stage_screenshot). */
@@ -1244,6 +1383,19 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "50%",
     display: "inline-block",
     animation: "agent-spin 0.7s linear infinite",
+  },
+  usageBar: {
+    flex: "0 0 auto",
+    borderTop: `1px solid ${chrome.separator}`,
+    background: chrome.insetFieldStrip,
+    padding: "3px 8px",
+    fontSize: 10,
+    color: halo.disabledText,
+    textAlign: "right",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    fontVariantNumeric: "tabular-nums",
   },
   composer: {
     flex: "0 0 auto",

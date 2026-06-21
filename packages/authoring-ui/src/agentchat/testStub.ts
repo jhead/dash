@@ -81,7 +81,16 @@ export function makeStubRunTurn(
           parts.push({
             type: "finish",
             finishReason: "tool-calls",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            // V3 provider usage shape (LanguageModelV3Usage): token counts are
+            // nested under `.total` so the AI SDK's `asLanguageModelUsage`
+            // aggregates them into `result.totalUsage` (task 1337). A flat
+            // `{inputTokens:1}` would read as `undefined` and the per-thread
+            // usage footer would never populate.
+            usage: {
+              inputTokens: { total: 1 },
+              outputTokens: { total: 1 },
+              totalTokens: 2,
+            },
           });
         } else {
           // Subsequent step(s): after the tool result is in context, emit a
@@ -94,7 +103,16 @@ export function makeStubRunTurn(
           parts.push({
             type: "finish",
             finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            // V3 provider usage shape (LanguageModelV3Usage): token counts are
+            // nested under `.total` so the AI SDK's `asLanguageModelUsage`
+            // aggregates them into `result.totalUsage` (task 1337). A flat
+            // `{inputTokens:1}` would read as `undefined` and the per-thread
+            // usage footer would never populate.
+            usage: {
+              inputTokens: { total: 1 },
+              outputTokens: { total: 1 },
+              totalTokens: 2,
+            },
           });
         }
 

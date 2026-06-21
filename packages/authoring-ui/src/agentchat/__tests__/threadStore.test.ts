@@ -48,6 +48,8 @@ const {
   MAX_THREADS,
   MAX_TURNS_PER_THREAD,
   MAX_TITLE_LEN,
+  emptyThreadUsage,
+  accumulateUsage,
 } = mod;
 
 afterAll(() => {
@@ -270,6 +272,7 @@ describe("parse / quota failure fallback", () => {
             title: "t",
             transcript: [],
             history: [],
+            usage: emptyThreadUsage(),
             createdAt: 1,
             updatedAt: 2,
           },
@@ -294,6 +297,7 @@ describe("storage bounding (quota hygiene)", () => {
       title: `T${i}`,
       transcript: [],
       history: [],
+      usage: emptyThreadUsage(),
       createdAt: i,
       updatedAt: i, // higher index = more recent
     }));
@@ -320,6 +324,7 @@ describe("storage bounding (quota hygiene)", () => {
           title: "Big",
           transcript,
           history: [],
+          usage: emptyThreadUsage(),
           createdAt: 1,
           updatedAt: 2,
         },
@@ -611,13 +616,242 @@ describe("selectors", () => {
   it("selectThreadsByRecency sorts most-recent first", () => {
     useThreadStore.setState({
       threads: [
-        { id: "old", title: "Old", transcript: [], history: [], createdAt: 1, updatedAt: 1 },
-        { id: "new", title: "New", transcript: [], history: [], createdAt: 2, updatedAt: 9 },
-        { id: "mid", title: "Mid", transcript: [], history: [], createdAt: 3, updatedAt: 5 },
+        { id: "old", title: "Old", transcript: [], history: [], usage: emptyThreadUsage(), createdAt: 1, updatedAt: 1 },
+        { id: "new", title: "New", transcript: [], history: [], usage: emptyThreadUsage(), createdAt: 2, updatedAt: 9 },
+        { id: "mid", title: "Mid", transcript: [], history: [], usage: emptyThreadUsage(), createdAt: 3, updatedAt: 5 },
       ],
       activeThreadId: "new",
     });
     const ordered = selectThreadsByRecency(useThreadStore.getState());
     expect(ordered.map((t) => t.id)).toEqual(["new", "mid", "old"]);
+  });
+});
+
+// --- Per-thread token + cost accumulation (task 1337) -----------------------
+
+describe("usage accumulation (accumulateUsage)", () => {
+  it("sums tokens and cost across multiple turns", () => {
+    let u = emptyThreadUsage();
+    u = accumulateUsage(u, {
+      totalTokens: 140,
+      inputTokens: 100,
+      outputTokens: 40,
+      cost: 0.002,
+      costIsEstimated: false,
+    });
+    u = accumulateUsage(u, {
+      totalTokens: 60,
+      inputTokens: 50,
+      outputTokens: 10,
+      cost: 0.001,
+      costIsEstimated: false,
+    });
+    expect(u.totalTokens).toBe(200);
+    expect(u.inputTokens).toBe(150);
+    expect(u.outputTokens).toBe(50);
+    expect(u.cost).toBeCloseTo(0.003, 10);
+    expect(u.costKnown).toBe(true);
+    expect(u.costHasEstimate).toBe(false);
+  });
+
+  it("accumulates tokens even when a turn has no cost (costKnown stays false)", () => {
+    const u = accumulateUsage(emptyThreadUsage(), {
+      totalTokens: 100,
+      inputTokens: 80,
+      outputTokens: 20,
+      costIsEstimated: false,
+    });
+    expect(u.totalTokens).toBe(100);
+    expect(u.costKnown).toBe(false);
+    expect(u.cost).toBe(0);
+  });
+
+  it("flips costHasEstimate when any contributing turn cost is estimated", () => {
+    let u = accumulateUsage(emptyThreadUsage(), {
+      totalTokens: 10,
+      inputTokens: 8,
+      outputTokens: 2,
+      cost: 0.001,
+      costIsEstimated: false,
+    });
+    expect(u.costHasEstimate).toBe(false);
+    u = accumulateUsage(u, {
+      totalTokens: 10,
+      inputTokens: 8,
+      outputTokens: 2,
+      cost: 0.002,
+      costIsEstimated: true,
+    });
+    expect(u.costKnown).toBe(true);
+    expect(u.costHasEstimate).toBe(true);
+    expect(u.cost).toBeCloseTo(0.003, 10);
+  });
+});
+
+describe("addThreadUsage (store action)", () => {
+  it("folds a completed turn into the target thread's running total", () => {
+    const id = useThreadStore.getState().newThread();
+    useThreadStore.getState().addThreadUsage(id, {
+      totalTokens: 140,
+      inputTokens: 100,
+      outputTokens: 40,
+      cost: 0.002,
+      costIsEstimated: false,
+    });
+    useThreadStore.getState().addThreadUsage(id, {
+      totalTokens: 60,
+      inputTokens: 40,
+      outputTokens: 20,
+      cost: 0.001,
+      costIsEstimated: false,
+    });
+    const thread = useThreadStore.getState().threads.find((t) => t.id === id);
+    expect(thread?.usage.totalTokens).toBe(200);
+    expect(thread?.usage.cost).toBeCloseTo(0.003, 10);
+    expect(thread?.usage.costKnown).toBe(true);
+  });
+
+  it("targets the ORIGIN thread, not the active one (turn finished after a switch)", () => {
+    const a = useThreadStore.getState().newThread();
+    const b = useThreadStore.getState().newThread(); // b becomes active
+    expect(useThreadStore.getState().activeThreadId).toBe(b);
+    useThreadStore.getState().addThreadUsage(a, {
+      totalTokens: 100,
+      inputTokens: 80,
+      outputTokens: 20,
+      cost: 0.005,
+      costIsEstimated: false,
+    });
+    const ta = useThreadStore.getState().threads.find((t) => t.id === a);
+    const tb = useThreadStore.getState().threads.find((t) => t.id === b);
+    expect(ta?.usage.totalTokens).toBe(100);
+    expect(tb?.usage.totalTokens).toBe(0); // active thread untouched
+  });
+
+  it("is a no-op for an unknown thread id", () => {
+    const id = useThreadStore.getState().newThread();
+    expect(() =>
+      useThreadStore.getState().addThreadUsage("nope", {
+        totalTokens: 10,
+        inputTokens: 5,
+        outputTokens: 5,
+        costIsEstimated: false,
+      })
+    ).not.toThrow();
+    const thread = useThreadStore.getState().threads.find((t) => t.id === id);
+    expect(thread?.usage.totalTokens).toBe(0);
+  });
+});
+
+describe("addThreadCost (deferred estimate fill, store action)", () => {
+  it("adds cost to a thread without touching tokens, marking it estimated", () => {
+    const id = useThreadStore.getState().newThread();
+    useThreadStore.getState().addThreadUsage(id, {
+      totalTokens: 100,
+      inputTokens: 80,
+      outputTokens: 20,
+      costIsEstimated: false,
+    });
+    // Tokens accumulated, cost still unknown (no reported cost).
+    let t = useThreadStore.getState().threads.find((x) => x.id === id);
+    expect(t?.usage.totalTokens).toBe(100);
+    expect(t?.usage.costKnown).toBe(false);
+    // Deferred computed-cost fill.
+    useThreadStore.getState().addThreadCost(id, 0.004, true);
+    t = useThreadStore.getState().threads.find((x) => x.id === id);
+    expect(t?.usage.totalTokens).toBe(100); // tokens untouched
+    expect(t?.usage.cost).toBeCloseTo(0.004, 10);
+    expect(t?.usage.costKnown).toBe(true);
+    expect(t?.usage.costHasEstimate).toBe(true);
+  });
+
+  it("ignores a non-finite cost and an unknown thread id", () => {
+    const id = useThreadStore.getState().newThread();
+    expect(() => {
+      useThreadStore.getState().addThreadCost(id, NaN, true);
+      useThreadStore.getState().addThreadCost("nope", 0.01, true);
+    }).not.toThrow();
+    const t = useThreadStore.getState().threads.find((x) => x.id === id);
+    expect(t?.usage.costKnown).toBe(false);
+  });
+
+  it("drops a late estimate onto a thread cleared to zero tokens (no orphan cost)", () => {
+    const id = useThreadStore.getState().newThread();
+    useThreadStore.getState().addThreadUsage(id, {
+      totalTokens: 100,
+      inputTokens: 80,
+      outputTokens: 20,
+      costIsEstimated: false,
+    });
+    // User clears the thread before the deferred pricing estimate resolves.
+    useThreadStore.getState().clearActiveThread();
+    // The late estimate must NOT land on the now-empty thread.
+    useThreadStore.getState().addThreadCost(id, 0.004, true);
+    const t = useThreadStore.getState().threads.find((x) => x.id === id);
+    expect(t?.usage.totalTokens).toBe(0);
+    expect(t?.usage.cost).toBe(0);
+    expect(t?.usage.costKnown).toBe(false);
+  });
+});
+
+describe("usage persistence round-trip", () => {
+  it("persists per-thread usage and restores it via loadThreads", () => {
+    const id = useThreadStore.getState().newThread();
+    useThreadStore.getState().addThreadUsage(id, {
+      totalTokens: 1234,
+      inputTokens: 1000,
+      outputTokens: 234,
+      cost: 0.0123,
+      costIsEstimated: true,
+    });
+    // Reload from the SAME backing localStorage (mem) — simulates a refresh.
+    const loaded = loadThreads();
+    const restored = loaded.threads.find((t) => t.id === id);
+    expect(restored?.usage.totalTokens).toBe(1234);
+    expect(restored?.usage.cost).toBeCloseTo(0.0123, 10);
+    expect(restored?.usage.costKnown).toBe(true);
+    expect(restored?.usage.costHasEstimate).toBe(true);
+  });
+
+  it("a brand-new thread starts at zero usage", () => {
+    const id = useThreadStore.getState().newThread();
+    const thread = useThreadStore.getState().threads.find((t) => t.id === id);
+    expect(thread?.usage).toEqual(emptyThreadUsage());
+  });
+
+  it("clearActiveThread resets the running usage to zero", () => {
+    const id = useThreadStore.getState().newThread();
+    useThreadStore.getState().addThreadUsage(id, {
+      totalTokens: 500,
+      inputTokens: 400,
+      outputTokens: 100,
+      cost: 0.01,
+      costIsEstimated: false,
+    });
+    useThreadStore.getState().clearActiveThread();
+    const thread = useThreadStore.getState().threads.find((t) => t.id === id);
+    expect(thread?.usage).toEqual(emptyThreadUsage());
+  });
+
+  it("normalizes a legacy persisted thread with no usage field to zero", () => {
+    mem.setItem(
+      "flash8.agentThreads",
+      JSON.stringify({
+        threads: [
+          {
+            id: "legacy",
+            title: "Legacy",
+            transcript: [],
+            history: [],
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+        activeThreadId: "legacy",
+      })
+    );
+    const loaded = loadThreads();
+    const legacy = loaded.threads.find((t) => t.id === "legacy");
+    expect(legacy?.usage).toEqual(emptyThreadUsage());
   });
 });

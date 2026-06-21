@@ -61,8 +61,11 @@ backend; the only network calls go **directly from your browser to
 - **`openrouterClient.ts`** — wraps `@openrouter/ai-sdk-provider`.
   `createDashOpenRouter(apiKey)` returns a provider bound to your key (with
   `HTTP-Referer` / `X-Title` attribution headers); `getModel(provider, id)`
-  resolves a `LanguageModel` handle; `fetchOpenRouterModels(apiKey)` fetches the
-  live model catalog for the selector.
+  resolves a `LanguageModel` handle (with usage accounting enabled so OpenRouter
+  reports cost inline, task 1337); `fetchOpenRouterModels(apiKey)` fetches the
+  live model catalog for the selector. `parseModelPricing` /
+  `computeCostFromPricing` derive a per-token cost estimate from a model's catalog
+  pricing (the cost-from-pricing fallback).
 - **`tools.ts`** — `buildAgentTools()` generates the AI SDK v6 tool set by
   iterating the agent-protocol command registry (`ALL_COMMANDS` +
   `COMMAND_SCHEMAS` + `COMMAND_DESCRIPTIONS`). Each tool's `inputSchema` is the
@@ -88,8 +91,10 @@ backend; the only network calls go **directly from your browser to
   tool surface, and a *read-before-write* working style.
 - **`agentLoop.ts`** — `runAgentTurn()` runs one turn through the AI SDK v6
   `streamText` multi-step tool loop and folds its `fullStream` into a renderable
-  transcript via the pure reducer `reduceAgentEvent`. `classifyAgentError()` maps
-  raw failures into friendly, actionable buckets (see *Error handling*).
+  transcript via the pure reducer `reduceAgentEvent`. It also returns the turn's
+  token + cost `AgentTurnUsage` (from `result.totalUsage` + per-step OpenRouter
+  cost, task 1337 — see *Token usage & cost*). `classifyAgentError()` maps raw
+  failures into friendly, actionable buckets (see *Error handling*).
 - **`AgentChatPanel.tsx`** — the panel: collapsible Settings, the **thread
   switcher** (`New chat` + a dropdown of past conversations), the transcript
   (user bubbles + assistant turns with streamed text, *thinking*, tool-call
@@ -158,6 +163,7 @@ interface ChatThread {
   title: string;          // derived from the first user message (truncated); "New chat" until then
   transcript: Turn[];     // the rendered messages (user bubbles + assistant runs)
   history: ModelMessage[];// the AI-SDK ModelMessage[] multi-turn context (assistant + tool)
+  usage: ThreadUsage;     // running per-thread token + cost totals (task 1337)
   createdAt: number;
   updatedAt: number;
 }
@@ -166,7 +172,8 @@ interface ThreadState {
   activeThreadId: string | null;
   // actions:
   newThread, selectThread, deleteThread, clearActiveThread,
-  appendUserAndAssistant, patchActiveAssistantRun, appendActiveHistory
+  appendUserAndAssistant, patchAssistantRun, appendActiveHistory,
+  addThreadUsage, addThreadCost
 }
 ```
 
@@ -206,6 +213,78 @@ interface ThreadState {
   first), and each thread's `transcript`/`history` is trimmed to the most recent
   `MAX_TURNS_PER_THREAD` / `MAX_HISTORY_PER_THREAD` entries
   (`boundForStorage` / `trimThread`).
+
+---
+
+## Token usage & cost (per thread, task 1337)
+
+Each thread shows a compact running total of the tokens and cost it has consumed,
+rendered as a footer line just above the composer:
+
+```
+12,345 tokens · $0.0123          (cost reported by OpenRouter)
+12,345 tokens · ~$0.0123 est.    (cost computed from the model's pricing)
+12,345 tokens                    (tokens known, cost unavailable)
+```
+
+It updates the moment a turn completes, **sums across all turns** in the thread,
+**persists** (survives reload / thread-switch), and a **new thread starts at 0**.
+A thread with no tokens yet hides the line entirely.
+
+### How tokens are captured
+
+`runAgentTurn` (`agentLoop.ts`) reads the AI SDK v6 `streamText` result's
+**`result.totalUsage`** — the SDK's sum of every step's `LanguageModelUsage`
+across the multi-step tool loop, so a turn that called N tools still reports one
+combined `{ inputTokens, outputTokens, totalTokens }`. It returns this as an
+`AgentTurnUsage` on `RunAgentResult` (alongside `state` + `responseMessages`).
+Reading usage is wrapped in `try/catch` so an aborted/errored turn degrades to no
+usage rather than failing the run.
+
+### How cost is determined (reported vs computed)
+
+Two sources, in priority order — chosen to be the **most accurate without a
+fragile extra round-trip**:
+
+1. **REPORTED (preferred, no extra request).** `getModel` enables OpenRouter
+   *usage accounting* — `provider.chat(id, { usage: { include: true } })` — so
+   OpenRouter returns the request's **actual USD cost inline in the same
+   streaming response**. It rides back on each step's
+   `providerMetadata.openrouter.usage.cost`; `runAgentTurn` **sums it across the
+   tool-loop steps** (`sumOpenRouterReportedCost`). This is exact and adds zero
+   network round-trips. Marked **not** estimated.
+2. **COMPUTED (fallback, labeled `est.`).** When no step reported a cost (the
+   route/model didn't return one), the panel computes
+   `inputTokens × pricing.prompt + outputTokens × pricing.completion` from the
+   selected model's per-token pricing (`computeCostFromPricing`), pulled from the
+   OpenRouter `/models` catalog (`parseModelPricing` reads the `pricing` block).
+   The catalog is fetched **lazily and cached** — only the first time a turn
+   lacks a reported cost — and the lookup is **deferred / fire-and-forget**
+   (`addThreadCost`), so the footer shows tokens immediately and the estimate
+   fills in once pricing resolves; a slow/failed fetch never blocks the run or
+   hides the token count.
+
+The `GET /api/v1/generation?id=` endpoint was deliberately **not** used: it is a
+separate per-request round-trip, whereas usage-accounting returns the same figure
+inline. When neither a reported nor a computed cost is available, the line shows
+tokens only.
+
+### Accumulation & persistence
+
+- `addThreadUsage(threadId, turnUsage)` folds one turn's tokens + reported cost
+  into the thread's `ThreadUsage` via the pure `accumulateUsage` reducer. It
+  targets the **origin** thread (the one the turn ran on, even if the user
+  switched away mid-flight) and **always persists** (a completed turn's totals
+  must survive a refresh — unlike streaming deltas, which are memory-only).
+- `addThreadCost(threadId, cost, estimated)` adds *just* the deferred computed
+  cost without touching tokens (no double-count), flipping `costHasEstimate` so
+  the whole-thread total is labeled `est.`.
+- `ThreadUsage` is `{ totalTokens, inputTokens, outputTokens, cost, costKnown,
+  costHasEstimate }`; `costKnown` distinguishes a genuine `$0.0000` from "cost
+  unknown". `normalizeUsage` coerces a legacy persisted thread (no `usage` field)
+  to all-zero, and `clearActiveThread` resets the totals.
+- The footer text comes from the pure `formatUsageLine` / `formatCost` helpers in
+  `AgentChatPanel.tsx` (tiny non-zero costs render as `<$0.0001`).
 
 ---
 
@@ -324,13 +403,24 @@ agent-protocol registry automatically appears in **both** surfaces.
   and the **`threadStore`** (`threadStore.test.ts`): round-tripping threads
   through a mocked `localStorage`, new/switch/clear/delete, restore-active-on-
   remount, title derivation, storage bounding/trimming, and the parse/quota
-  failure fallbacks. `pnpm --filter @flash/authoring-ui run test -- --run agentchat`.
+  failure fallbacks. **Token usage + cost (`usage.test.ts`, task 1337)**: per-turn
+  usage capture from the SDK total usage + per-step provider metadata
+  (`buildTurnUsage` / `sumOpenRouterReportedCost`), cost-from-pricing
+  (`parseModelPricing` / `computeCostFromPricing`), and the footer formatters
+  (`formatUsageLine` / `formatCost`). `threadStore.test.ts` adds usage
+  **accumulation across turns** (`accumulateUsage` / `addThreadUsage`), the
+  deferred estimate fill (`addThreadCost`), origin-thread targeting, the
+  **persistence round-trip** of `usage`, and legacy-thread normalization.
+  `pnpm --filter @flash/authoring-ui run test -- --run agentchat`.
 - **E2E oracle** (`apps/desktop/e2e/agent-chat-drives-stage.spec.ts`): opens the
   Agent tab and runs the **real** loop (`runAgentTurn` → `streamText`) against a
   **stubbed** `MockLanguageModelV3` (from `ai/test`) whose stream emits a
   `stage_add_shape` (rect) tool call — **no real key or network**. It asserts the
   shape appears in the live document, proving end-to-end: *model tool-call →
-  `buildAgentTools` execute → `dispatchAgentCommand` → document mutation*.
+  `buildAgentTools` execute → `dispatchAgentCommand` → document mutation*. It also
+  asserts the **per-thread usage footer** (`data-testid="agent-usage"`) appears
+  with the turn's token total (task 1337), proving the usage capture wires through
+  the production loop.
 
   The test seam: in test mode the Shell exposes
   `window.__agentChatTestStub.makeStubRunTurn([...])`; the spec installs the

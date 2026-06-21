@@ -23,7 +23,9 @@ import {
   streamText,
   stepCountIs,
   type LanguageModel,
+  type LanguageModelUsage,
   type ModelMessage,
+  type StepResult,
   type ToolSet,
   type TextStreamPart,
 } from "ai";
@@ -539,10 +541,125 @@ export interface RunAgentOptions {
   onState: (state: AgentRunState) => void;
 }
 
+// --- Per-turn token usage + cost --------------------------------------------
+
+/**
+ * Token + cost usage for a SINGLE agent turn, summed across every step of the
+ * multi-step tool loop (task 1337). `runAgentTurn` derives this from the AI SDK
+ * v6 `streamText` result so the panel can accumulate a running per-thread total.
+ *
+ * Tokens come from `result.totalUsage` (the SDK's sum of all step usages).
+ *
+ * Cost has two sources, in priority order:
+ *   1. REPORTED — OpenRouter's own per-request cost (usd), surfaced via
+ *      `providerMetadata.openrouter.usage.cost` on each step when the request
+ *      enabled usage accounting (`usage:{include:true}`). We SUM it across steps
+ *      and mark `costIsEstimated=false`. No extra round-trip: the cost rides back
+ *      in the same streaming response. This is the most accurate figure.
+ *   2. COMPUTED — when no reported cost is available (provider didn't return one,
+ *      or the model isn't OpenRouter), the caller computes cost from the selected
+ *      model's per-token pricing and marks `costIsEstimated=true` ('est.').
+ *
+ * When cost is unknown entirely, `cost` is `undefined` (the UI still shows tokens).
+ */
+export interface AgentTurnUsage {
+  /** Total tokens for the turn (input + output), summed across all steps. */
+  totalTokens: number;
+  /** Input (prompt) tokens, summed across all steps. */
+  inputTokens: number;
+  /** Output (completion) tokens, summed across all steps. */
+  outputTokens: number;
+  /** Cost in USD for the turn, when known (reported or computed). */
+  cost?: number;
+  /** True when `cost` was COMPUTED from pricing (an estimate), not reported. */
+  costIsEstimated: boolean;
+}
+
+/** A zero-valued usage (no tokens, no cost) — the neutral accumulator element. */
+export function emptyTurnUsage(): AgentTurnUsage {
+  return { totalTokens: 0, inputTokens: 0, outputTokens: 0, costIsEstimated: false };
+}
+
+/** Coerce a possibly-undefined token count to a finite, non-negative number. */
+function tokenCount(n: number | undefined): number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Sum the OpenRouter REPORTED cost (USD) across all steps of a turn, reading
+ * each step's `providerMetadata.openrouter.usage.cost`. Returns `undefined` when
+ * NO step carried a reported cost (so the caller can fall back to computing it
+ * from pricing). Pure + dependency-free for unit testing — accepts the minimal
+ * step shape, so tests can pass plain objects.
+ *
+ * Summing (not max) is correct: each AI SDK tool-loop step is a SEPARATE
+ * OpenRouter request, and the provider populates a FRESH per-request
+ * `openrouter.usage` for each (it is `const openrouterUsage = {}` per `doStream`
+ * in @openrouter/ai-sdk-provider), so each step's `cost` is that step's own
+ * request cost — incremental, not a running cumulative — and the turn's true
+ * cost is their sum.
+ */
+export function sumOpenRouterReportedCost(
+  steps: ReadonlyArray<{ providerMetadata?: unknown }>
+): number | undefined {
+  let total = 0;
+  let sawAny = false;
+  for (const step of steps) {
+    const cost = openRouterStepCost(step.providerMetadata);
+    if (cost !== undefined) {
+      sawAny = true;
+      total += cost;
+    }
+  }
+  return sawAny ? total : undefined;
+}
+
+/** Extract one step's OpenRouter reported cost (USD), or undefined. */
+function openRouterStepCost(providerMetadata: unknown): number | undefined {
+  if (!providerMetadata || typeof providerMetadata !== "object") return undefined;
+  const or = (providerMetadata as Record<string, unknown>).openrouter;
+  if (!or || typeof or !== "object") return undefined;
+  const usage = (or as Record<string, unknown>).usage;
+  if (!usage || typeof usage !== "object") return undefined;
+  const cost = (usage as Record<string, unknown>).cost;
+  return typeof cost === "number" && Number.isFinite(cost) ? cost : undefined;
+}
+
+/**
+ * Build the per-turn {@link AgentTurnUsage} from the SDK total usage + the per-
+ * step list (for the reported cost). Tokens always come through; cost is the
+ * summed OpenRouter reported cost when present, else left undefined for the
+ * caller to fill from pricing. Pure for unit testing.
+ */
+export function buildTurnUsage(
+  totalUsage: LanguageModelUsage,
+  steps: ReadonlyArray<{ providerMetadata?: unknown }>
+): AgentTurnUsage {
+  const inputTokens = tokenCount(totalUsage.inputTokens);
+  const outputTokens = tokenCount(totalUsage.outputTokens);
+  const totalTokens =
+    tokenCount(totalUsage.totalTokens) || inputTokens + outputTokens;
+  const reported = sumOpenRouterReportedCost(steps);
+  return {
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    cost: reported,
+    costIsEstimated: false,
+  };
+}
+
 export interface RunAgentResult {
   state: AgentRunState;
   /** New model messages (assistant + tool) to append for the next turn. */
   responseMessages: ModelMessage[];
+  /**
+   * Token + cost usage for THIS turn (summed across the tool-loop steps), or
+   * undefined if usage was unavailable (abort/error before any step finished).
+   * Cost here is the OpenRouter REPORTED cost when present; the caller fills in a
+   * computed estimate when it is missing (task 1337).
+   */
+  usage?: AgentTurnUsage;
 }
 
 /**
@@ -610,5 +727,20 @@ export async function runAgentTurn(
     responseMessages = [];
   }
 
-  return { state, responseMessages };
+  // Capture per-turn token usage + cost (task 1337). `totalUsage` is the SDK's
+  // sum across every step of the tool loop; the per-step `providerMetadata`
+  // carries OpenRouter's reported cost (when usage accounting is on). Both are
+  // promises that may reject on a hard abort/error — degrade to no usage.
+  let usage: AgentTurnUsage | undefined;
+  try {
+    const [totalUsage, steps] = await Promise.all([
+      result.totalUsage,
+      result.steps as Promise<StepResult<ToolSet>[]>,
+    ]);
+    usage = buildTurnUsage(totalUsage, steps);
+  } catch {
+    usage = undefined;
+  }
+
+  return { state, responseMessages, usage };
 }

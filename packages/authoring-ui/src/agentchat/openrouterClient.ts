@@ -67,12 +67,19 @@ export function createDashOpenRouter(
  * Resolve a chat language-model handle by id (e.g.
  * "anthropic/claude-sonnet-4.5") from a configured provider. This is the handle
  * the AI SDK agent loop (P3) passes to `generateText` / `streamText` / `Agent`.
+ *
+ * Usage accounting is ENABLED (`usage:{include:true}`, task 1337): OpenRouter
+ * then returns the request's ACTUAL cost (USD) inline in the same streaming
+ * response — surfaced via `providerMetadata.openrouter.usage.cost` — with NO
+ * extra round-trip. The agent loop sums it across the tool-loop steps to show a
+ * precise per-thread cost; when a model/route doesn't report a cost the panel
+ * falls back to computing one from the model's pricing.
  */
 export function getModel(
   provider: OpenRouterProvider,
   modelId: string
 ): LanguageModel {
-  return provider.chat(modelId);
+  return provider.chat(modelId, { usage: { include: true } });
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +101,65 @@ export interface OpenRouterModel {
   context_length?: number;
   /** The untrimmed catalog entry, for callers needing pricing/etc. */
   raw: Record<string, unknown>;
+}
+
+/**
+ * Per-token pricing for a model (USD), parsed from a `/models` entry's
+ * `pricing` block (task 1337). OpenRouter reports prices as decimal STRINGS of
+ * USD PER TOKEN (e.g. `"0.000003"`), so `prompt`/`completion` are already
+ * per-token and multiply directly with token counts.
+ */
+export interface OpenRouterModelPricing {
+  /** USD per prompt (input) token. */
+  prompt: number;
+  /** USD per completion (output) token. */
+  completion: number;
+}
+
+/**
+ * Extract per-token pricing from a raw `/models` entry (its `.raw` field). The
+ * pricing values are decimal strings; non-numeric / missing fields yield
+ * `undefined` so the caller can degrade gracefully (show tokens, no cost). Pure
+ * for unit testing.
+ */
+export function parseModelPricing(
+  raw: Record<string, unknown> | undefined | null
+): OpenRouterModelPricing | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const pricing = (raw as Record<string, unknown>).pricing;
+  if (!pricing || typeof pricing !== "object") return undefined;
+  const p = pricing as Record<string, unknown>;
+  const prompt = toPrice(p.prompt);
+  const completion = toPrice(p.completion);
+  // Require BOTH sides: a cost computed from a half-populated price table would
+  // value the missing side's tokens at $0 and present a confidently-wrong
+  // estimate. Better to degrade to "cost unknown" (tokens-only) than mislead.
+  if (prompt === undefined || completion === undefined) return undefined;
+  return { prompt, completion };
+}
+
+/** Coerce a pricing field (string or number) into a finite non-negative number. */
+function toPrice(v: unknown): number | undefined {
+  const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+/**
+ * Compute the COST (USD) of a turn from per-token pricing and token counts
+ * (task 1337): `inputTokens*prompt + outputTokens*completion`. Used as the
+ * fallback when OpenRouter did not report a cost. Returns `undefined` when
+ * pricing is missing so the UI shows tokens with an unknown cost. Pure.
+ */
+export function computeCostFromPricing(
+  pricing: OpenRouterModelPricing | undefined,
+  inputTokens: number,
+  outputTokens: number
+): number | undefined {
+  if (!pricing) return undefined;
+  const inTok = Number.isFinite(inputTokens) && inputTokens > 0 ? inputTokens : 0;
+  const outTok =
+    Number.isFinite(outputTokens) && outputTokens > 0 ? outputTokens : 0;
+  return inTok * pricing.prompt + outTok * pricing.completion;
 }
 
 /** Thrown when the model catalog cannot be fetched or parsed. */

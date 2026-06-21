@@ -151,5 +151,15 @@ test.describe("Agent Chat drives the stage", () => {
     await expect(
       page.locator('[data-testid="agent-status-error"]')
     ).toHaveCount(0);
+
+    // Per-thread usage footer (task 1337): the turn's token total is captured
+    // from the real `streamText` result and folded into the active thread, so a
+    // compact "N tokens …" line appears. The mock model reports 2 tokens/step ×
+    // 2 steps (tool round + final answer) = 4 tokens; cost is unknown offline
+    // (no catalog/pricing fetch), so the line is tokens-only. Proves the usage
+    // capture wires end-to-end through the production loop.
+    const usage = page.locator('[data-testid="agent-usage"]');
+    await expect(usage).toBeVisible();
+    await expect(usage).toContainText("tokens");
   });
 });
