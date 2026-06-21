@@ -123,7 +123,9 @@ export function useLivePreview(params: UseLivePreviewParams): UseLivePreviewResu
     if (!active) return;
     if (lastStartKeyRef.current === startKey) return;
     lastStartKeyRef.current = startKey;
-    controllerRef.current?.request();
+    // Immediate (no debounce) so a start scene/frame override re-seeks snappily,
+    // matching the comment above. The previous call debounced (~350ms).
+    controllerRef.current?.request({ immediate: true });
   }, [active, startKey]);
 
   // When auto-reload is OFF, a freshly-opened doc still needs one compile to

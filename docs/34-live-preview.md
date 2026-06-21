@@ -57,11 +57,24 @@ user-initiated Publish / Test Movie). `publishToBytes()` now delegates to it.
 ### Start-from-scene / frame
 
 SWF has no start-frame field and the bundled Ruffle API has no pre-tick seek, so
-`preview/startAt.ts` does the Flash-author trick: it prepends a
-`gotoAndPlay(frame)` (or `gotoAndPlay("Scene", frame)` for a later scene) to the
-movie's first keyframe on a SHALLOW-CLONED document, then compiles the clone.
-The real editor document is never mutated, and any author script on that frame
-still runs after the seek. Frame numbers are clamped to the scene length.
+`preview/startAt.ts` does the Flash-author trick: it prepends a `gotoAndPlay` /
+`gotoAndStop` to the movie's first keyframe on a SHALLOW-CLONED document, then
+compiles the clone. The real editor document is never mutated, and any author
+script on that frame still runs after the seek. Frame numbers are clamped to the
+scene length.
+
+The seek always targets an **absolute frame number** on the compiled main
+timeline — `gotoAndPlay(absFrame)`, never the two-argument scene-NAME form. The
+compiled timeline is the concatenation of every scene's frames, so a target
+"scene S, frame F" maps to `absFrame = (sum of frameCount of scenes 0..S-1) + F`
+(the per-scene length uses the same `layerFrameCount` the SWF compiler uses, so
+the offset lands exactly where the compiler placed that scene). This matters
+(task 1339): the AS2 compiler's `gotoAndPlay`/`gotoAndStop` builtins only support
+the single-arg NUMERIC form — they compile `args[0]` and emit
+`ActionGotoFrame2`, dropping any second argument and never resolving a scene
+name. The old `gotoAndPlay("Scene", frame)` form pushed the scene name as a
+FRAME LABEL (scenes are not frame labels), so the goto found nothing and the
+preview silently stayed on frame 1; the start-scene override appeared ignored.
 
 ## Error handling
 

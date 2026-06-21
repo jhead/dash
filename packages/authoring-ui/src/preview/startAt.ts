@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import type { FlashDocument } from "@flash/core";
-import { getGoverningKeyframe } from "@flash/core";
+import { getGoverningKeyframe, layerFrameCount } from "@flash/core";
 
 export interface StartAt {
   /** 0-based scene index to begin at. */
@@ -26,8 +26,24 @@ export interface StartAt {
 }
 
 /**
- * Build the AS2 seek statement. For the FIRST scene we can goto a frame number
- * directly; for a later scene we target it by name so playback jumps scenes.
+ * Build the AS2 seek statement.
+ *
+ * The compiled SWF main timeline is the CONCATENATION of every scene's frames
+ * (the compiler's per-scene frame loop emits scene 0's frames, then scene 1's,
+ * …; see packages/swf/src/compiler/frames.ts + scenelabels.ts). So a target
+ * "scene S, frame F" maps to the ABSOLUTE 1-based frame number:
+ *
+ *   absFrame = (sum of frameCount of scenes 0..S-1) + F
+ *
+ * We emit `gotoAndPlay(absFrame)` / `gotoAndStop(absFrame)` — the single-arg
+ * NUMERIC form the AS2 compiler actually supports (it pushes the number and
+ * emits ActionGotoFrame2). The earlier two-argument scene-NAME form
+ * `gotoAndPlay("SceneName", frame)` was a no-op at runtime: the compiler only
+ * compiles arg0, pushing the scene name as a FRAME LABEL (scenes are not frame
+ * labels), so GotoFrame2 found nothing and stayed on frame 1, and arg1 (the
+ * frame) was dropped entirely. Computing the absolute frame needs NO compiler
+ * change and lands in the correct scene+frame. (Task 1339.)
+ *
  * Frame numbers are 1-based in AS2.
  */
 export function buildStartScript(
@@ -37,30 +53,40 @@ export function buildStartScript(
   const sceneCount = doc.scenes.length;
   if (sceneCount === 0) return null;
   const sceneIdx = clampInt(startAt.sceneIndex, 0, sceneCount - 1);
-  const scene = doc.scenes[sceneIdx];
   const maxFrame = sceneFrameCount(doc, sceneIdx);
   const frame = clampInt(startAt.frame, 1, Math.max(1, maxFrame));
   // No-op when we'd just start at scene 0 / frame 1 playing.
   if (sceneIdx === 0 && frame === 1 && !startAt.hold) return null;
   const verb = startAt.hold ? "gotoAndStop" : "gotoAndPlay";
-  if (sceneIdx === 0) {
-    return `${verb}(${frame});`;
+  // Cumulative frame offset of all scenes BEFORE the target scene — this is the
+  // absolute frame at which the target scene begins on the concatenated main
+  // timeline. The per-scene base must match the compiler's scene length exactly
+  // (it uses layerFrameCount), so reuse sceneFrameCount (also layerFrameCount).
+  let sceneStartOffset = 0;
+  for (let i = 0; i < sceneIdx; i++) {
+    sceneStartOffset += sceneFrameCount(doc, i);
   }
-  // Target a later scene by name (Flash supports gotoAndPlay("Scene", frame)).
-  const sceneName = (scene.name || `Scene ${sceneIdx + 1}`).replace(/"/g, '\\"');
-  return `${verb}("${sceneName}", ${frame});`;
+  const absFrame = sceneStartOffset + frame;
+  return `${verb}(${absFrame});`;
 }
 
-/** Count the number of frames in scene `sceneIdx` (the longest layer span). */
+/**
+ * Count the number of frames in scene `sceneIdx` (the longest layer span).
+ * Uses the SAME `layerFrameCount` the SWF compiler uses for its per-scene frame
+ * loop (packages/swf/src/compiler/depth.ts sceneFrameCount), so the absolute
+ * frame computed by buildStartScript lands exactly where the compiler placed
+ * that scene's frames. `layerFrameCount` prefers the explicit `frameCount`
+ * field and only falls back to max-keyframe-index+1 — the old local count here
+ * used only the keyframe index, which could under-count a scene whose duration
+ * extends past its last keyframe and so mis-place every later scene's offset.
+ */
 export function sceneFrameCount(doc: FlashDocument, sceneIdx: number): number {
   const scene = doc.scenes[sceneIdx];
   if (!scene) return 1;
   let max = 1;
   for (const layer of scene.timeline.layers) {
-    for (const f of layer.frames) {
-      // Frame.index is 0-based; convert to a 1-based count.
-      if (f.index + 1 > max) max = f.index + 1;
-    }
+    const count = layerFrameCount(layer);
+    if (count > max) max = count;
   }
   return max;
 }
