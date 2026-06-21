@@ -137,7 +137,9 @@ function rectShapeObj(id: string, x: number) {
   return { type: 'shape', id, shape, x, y: 0, scaleX: 1, scaleY: 1, rotation: 0 };
 }
 
-function makeNestedMcDoc() {
+function makeNestedMcDoc(opts?: { loopMode?: string; moveAcrossFrames?: boolean }) {
+  const loopMode = opts?.loopMode;
+  const moveAcrossFrames = opts?.moveAcrossFrames ?? false;
   const mcId = 'symbol-nested-mc';
   const mcSymbol = {
     id: mcId, name: 'NestedMC', itemType: 'symbol', symbolType: 'movieclip',
@@ -163,7 +165,11 @@ function makeNestedMcDoc() {
   const inst = {
     type: 'instance', id: 'mc-inst', symbolId: mcId, instanceName: 'mcInst',
     x: 50, y: 50, scaleX: 1, scaleY: 1, rotation: 0, alpha: 1, blendMode: 'normal',
+    ...(loopMode ? { loopMode } : {}),
   };
+  // Frame-2 instance: same id (persists at depth) but moved → emits via the MOVE
+  // path, which is where the un-graphic-gated single-frame synthesis lived (1340).
+  const instFrame2 = moveAcrossFrames ? { ...inst, x: 250 } : inst;
 
   return {
     id: 'nested-mc-doc',
@@ -184,7 +190,7 @@ function makeNestedMcDoc() {
           // own _currentframe. The MC is the same persistent instance.
           frames: [
             frame(0, true, [inst], 'trace("cf=" + mcInst._currentframe);'),
-            frame(1, false, [inst], 'trace("cf=" + mcInst._currentframe);'),
+            frame(1, moveAcrossFrames, [instFrame2], 'trace("cf=" + mcInst._currentframe);'),
           ],
         }],
       },
@@ -235,6 +241,46 @@ test.describe('Nested MovieClip advances its own timeline (task 1340)', () => {
 
     // The crux: the nested MovieClip's own playhead must advance past 1. A
     // frozen sprite (the reported-but-not-real defect) would trace cf=1 forever.
+    expect(currentFrames.length).toBeGreaterThan(0);
+    expect(Math.max(...currentFrames)).toBeGreaterThan(1);
+  });
+
+  // Regression for the REAL 1340 defect (user-confirmed Symbol 6 freeze in
+  // Magnet.fla Scene 5). Binary-imported instances default loopMode to
+  // "single-frame". When such a MOVIECLIP persists AND moves across a
+  // multi-frame root layer, it emits via the MOVE path (frames.ts ~1435), which
+  // — unlike the first-placement path — was NOT graphic-gated and synthesized
+  // onClipEvent(load){ gotoAndStop(1) } onto the moved movieclip, freezing it on
+  // frame 1 from the second root frame on. (The first-placement-only test above
+  // never caught this — that path was already gated; the prior "not a bug"
+  // conclusion was an isolation-test artifact.) The fix gates the move path on
+  // symbolType==="graphic" exactly like first-placement.
+  test('a moved single-frame-loopMode movieclip still ticks past frame 1 (move-path graphic gate)', async ({ page }) => {
+    const doc = makeNestedMcDoc({ loopMode: 'single-frame', moveAcrossFrames: true });
+
+    await page.evaluate((d) => {
+      (window as unknown as { __flashTest: { loadDocument: (x: unknown) => void } })
+        .__flashTest.loadDocument(d);
+    }, doc);
+    await page.waitForTimeout(300);
+
+    const swfBase64: string = await page.evaluate(async () => {
+      return (window as unknown as { __flashTest: { publish: () => Promise<string> } })
+        .__flashTest.publish();
+    });
+    expect(typeof swfBase64).toBe('string');
+    expect(swfBase64.length).toBeGreaterThan(0);
+
+    await ensureRuffleLoaded(page);
+    const traces = await collectTracesViaObserver(page, swfBase64, 'nested-mc-move-player', 2500);
+
+    const currentFrames = traces
+      .filter((t) => t.startsWith('cf='))
+      .map((t) => Number(t.slice(3)))
+      .filter((n) => Number.isFinite(n));
+
+    // With the bug, the synthesized gotoAndStop(1) on the move tag froze the MC:
+    // cf would stay 1 forever. After the fix the nested clip keeps playing.
     expect(currentFrames.length).toBeGreaterThan(0);
     expect(Math.max(...currentFrames)).toBeGreaterThan(1);
   });

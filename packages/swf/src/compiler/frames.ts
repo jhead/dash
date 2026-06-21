@@ -1432,8 +1432,19 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                   writer.writeTag(Tag.PlaceObject3, filtersPlaceBody);
                 } else {
                   // Compute effective clip actions (loopMode, firstFrame, explicit clipActions).
-                  const moveLoopMode = displayObj.loopMode ?? "loop";
-                  const moveFirstFrame = displayObj.firstFrame ?? 0;
+                  // loopMode / firstFrame (Loop / Play Once / Single Frame) are GRAPHIC-symbol
+                  // properties; movieclip and button instances play their own timeline
+                  // independently, so loopMode MUST be ignored for them here — exactly as the
+                  // first-placement path does (isGraphicInstance, ~885). Without this gate, a
+                  // movieclip that PERSISTS and MOVES across frames (e.g. a binary-imported
+                  // instance whose loopMode defaults to "single-frame", placed on a multi-frame
+                  // root layer and tweened — Magnet.fla Scene 5 / Symbol 6) wrongly received a
+                  // synthesized onClipEvent(load){ gotoAndStop(1) } on the MOVE tag and froze on
+                  // frame 1 from the second frame onward, while the first-placement frame played.
+                  const moveRefSymbol = symbolById.get(displayObj.symbolId);
+                  const moveIsGraphic = moveRefSymbol?.symbolType === "graphic";
+                  const moveLoopMode = moveIsGraphic ? (displayObj.loopMode ?? "loop") : "loop";
+                  const moveFirstFrame = moveIsGraphic ? (displayObj.firstFrame ?? 0) : 0;
                   let moveEffectiveClipActions = displayObj.clipActions ?? [];
                   if (moveLoopMode === "play-once") {
                     moveEffectiveClipActions = [...moveEffectiveClipActions, {

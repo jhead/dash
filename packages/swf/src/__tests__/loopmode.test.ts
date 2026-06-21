@@ -646,6 +646,93 @@ describe("loopMode: movieclip instances ignore loopMode (regression)", () => {
     expect(po2!.body[0]! & 0x80).toBe(0);
   });
 
+  // -------------------------------------------------------------------------
+  // Regression (task 1340): the MOVE / persist path must be graphic-gated too.
+  //
+  // The first-placement path was gated (isGraphicInstance, frames.ts ~885), but
+  // the MOVE path (frames.ts ~1435) computed loopMode straight from the instance
+  // with NO symbolType check. A movieclip that PERSISTS and MOVES across a
+  // multi-frame root layer (binary-imported instances default loopMode to
+  // "single-frame") therefore got a synthesized onClipEvent(load){ gotoAndStop(1) }
+  // on its MOVE PlaceObject2 — the nested clip played on its first frame, then
+  // FROZE on frame 1 from the second root frame onward. This is Magnet.fla
+  // Scene 5 / Symbol 6 (user-confirmed visible freeze). The earlier "not a bug"
+  // conclusion was an isolation-test artifact: it only placed the MC on ONE root
+  // frame (first-placement path, already gated) and never exercised the move path.
+  // -------------------------------------------------------------------------
+  it("movieclip persisting+moving across a multi-frame root does NOT get synthesized loop-control on the move tag", () => {
+    const sym = makeMovieClipWithFrames("sym-6", "Symbol 6", 4);
+    // Same instance id at depth across two keyframes, moved on frame 2 → MOVE path.
+    const instA: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-6",
+      x: 0,
+      y: 0,
+      loopMode: "single-frame", // as binary import gives it
+      firstFrame: 0,
+    };
+    const instB: SymbolInstance = { ...instA, x: 100 };
+    const doc: FlashDocument = {
+      id: "doc-1",
+      properties: BASE_PROPS,
+      scenes: [
+        {
+          id: "scene-1",
+          name: "Scene 1",
+          timeline: {
+            layers: [makeLayer([makeEmptyFrame(0, [instA]), makeEmptyFrame(1, [instB])])],
+          },
+        },
+      ],
+      library: { items: [sym], folders: [] },
+    };
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    // Every PlaceObject2 (first place AND the move/modify) must lack HasClipActions
+    // (0x80) — no synthesized gotoAndStop(1) for a movieclip on any frame.
+    const placeTags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+    expect(placeTags.length).toBeGreaterThanOrEqual(2); // place + move
+    for (const t of placeTags) {
+      expect(t.body[0]! & 0x80).toBe(0); // no HasClipActions on any placement
+    }
+  });
+
+  it("GRAPHIC instance persisting+moving across a multi-frame root STILL gets single-frame loop-control (move path gate is symbolType-specific)", () => {
+    // The gate must not suppress the legitimate graphic-symbol synthesis on the
+    // move path; a graphic with loopMode single-frame should freeze (gotoAndStop).
+    const sym = makeSymbolWithFrames("sym-1", "MyClip", 4); // symbolType: graphic
+    const instA: SymbolInstance = {
+      id: "inst-1",
+      type: "instance",
+      symbolId: "sym-1",
+      x: 0,
+      y: 0,
+      loopMode: "single-frame",
+      firstFrame: 0,
+    };
+    const instB: SymbolInstance = { ...instA, x: 100 };
+    const doc: FlashDocument = {
+      id: "doc-1",
+      properties: BASE_PROPS,
+      scenes: [
+        {
+          id: "scene-1",
+          name: "Scene 1",
+          timeline: {
+            layers: [makeLayer([makeEmptyFrame(0, [instA]), makeEmptyFrame(1, [instB])])],
+          },
+        },
+      ],
+      library: { items: [sym], folders: [] },
+    };
+    const bytes = compileDocument(doc);
+    const tags = parseSWFTags(bytes);
+    const placeTags = tags.filter((t) => t.code === TAG_PLACE_OBJECT2);
+    // At least one placement (the move) carries HasClipActions for the graphic.
+    expect(placeTags.some((t) => (t.body[0]! & 0x80) !== 0)).toBe(true);
+  });
+
   it("movieclip instance still honours EXPLICIT clipActions (HasClipActions set)", () => {
     // Real onClipEvent handlers on a movieclip must still be emitted.
     const sym = makeMovieClipWithFrames("sym-1", "MyClip", 4);
