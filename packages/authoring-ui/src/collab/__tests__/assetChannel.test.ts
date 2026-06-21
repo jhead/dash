@@ -11,10 +11,15 @@ import {
   hashDataUri,
   isAssetHashRef,
   parseAssetHashRef,
+  sha256Hex,
   type FlashDocument,
 } from "@flash/core";
 import { AssetStore } from "../assetStore.js";
-import { AssetSyncEngine, createLoopbackTransports } from "../assetChannel.js";
+import {
+  AssetSyncEngine,
+  createLoopbackTransports,
+  MAX_ASSET_BYTES,
+} from "../assetChannel.js";
 import {
   externalizeAssets,
   internalizeAssets,
@@ -92,12 +97,14 @@ describe("externalize / internalize", () => {
 
 describe("AssetSyncEngine request/response over loopback", () => {
   it("a requester fetches missing bytes from a holder by hash", () => {
-    const uri = pngDataUri(5);
-    const hash = hashDataUri(uri);
+    // The holder stores bytes under their CANONICAL content hash (the requester
+    // verifies sha256(received) === requested hash before accepting — task 1352).
+    const bytes = new Uint8Array([1, 2, 3]);
+    const hash = sha256Hex(bytes);
 
     const [tA, tB] = createLoopbackTransports(2);
     const holder = new AssetStore();
-    holder.put(hash, new Uint8Array([1, 2, 3]), "image/png");
+    holder.put(hash, bytes, "image/png");
     const requester = new AssetStore();
 
     const engHolder = new AssetSyncEngine(tA, holder);
@@ -150,6 +157,9 @@ describe("AssetSyncEngine request/response over loopback", () => {
 
   it("late-joining holder answers a re-broadcast retry", () => {
     let scheduled: (() => void) | null = null;
+    // Bytes stored under their canonical content hash (verified on accept — 1352).
+    const h1Bytes = new Uint8Array([4, 5, 6]);
+    const h1 = sha256Hex(h1Bytes);
     const [tA, tB] = createLoopbackTransports(2);
     const requester = new AssetStore();
     const holder = new AssetStore();
@@ -164,19 +174,149 @@ describe("AssetSyncEngine request/response over loopback", () => {
         scheduled = null;
       },
     });
-    engReq.request("h1");
-    expect(requester.has("h1")).toBe(false);
+    engReq.request(h1);
+    expect(requester.has(h1)).toBe(false);
 
     // Holder joins with the bytes and an engine on the mesh.
-    holder.put("h1", new Uint8Array([4, 5, 6]), "image/png");
+    holder.put(h1, h1Bytes, "image/png");
     const engHolder = new AssetSyncEngine(tA, holder);
 
     // Retry fires → re-broadcast → holder answers.
     scheduled!();
-    expect(requester.has("h1")).toBe(true);
-    expect(Array.from(requester.get("h1")!.bytes)).toEqual([4, 5, 6]);
+    expect(requester.has(h1)).toBe(true);
+    expect(Array.from(requester.get(h1)!.bytes)).toEqual([4, 5, 6]);
 
     engReq.destroy();
     engHolder.destroy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adversarial inbound RESPONSE hardening (task 1352): size cap + hash verify.
+// The asset channel accepts RESPONSE frames from ANY joined peer, so an inbound
+// frame is untrusted. These cases prove (1) an oversized RESPONSE is dropped
+// without an unbounded copy and the placeholder stays, and (2) a RESPONSE whose
+// sha256(bytes) != requested hash is dropped (the content-addressed store is
+// never poisoned), while (3) the honest holder's correct bytes still resolve.
+// ---------------------------------------------------------------------------
+
+/** Hand-frame a RESPONSE (type=2) the way the engine's encoder does, so a test
+ *  can inject crafted/oversized/wrong bytes for a hash. */
+function makeResponseFrame(hash: string, mime: string, bytes: Uint8Array): Uint8Array {
+  const enc = new TextEncoder();
+  const h = enc.encode(hash);
+  const m = enc.encode(mime);
+  const out = new Uint8Array(2 + h.length + 2 + m.length + bytes.length);
+  const dv = new DataView(out.buffer);
+  let o = 0;
+  out[o++] = 2; // MSG_RESPONSE
+  out[o++] = h.length;
+  out.set(h, o);
+  o += h.length;
+  dv.setUint16(o, m.length, true);
+  o += 2;
+  out.set(m, o);
+  o += m.length;
+  out.set(bytes, o);
+  return out;
+}
+
+/** A transport whose inbound frames the test drives directly (`deliver`), and
+ *  which records every outbound broadcast (so we can prove no copy was made). */
+function injectableTransport(): {
+  transport: ReturnType<typeof createLoopbackTransports>[number];
+  deliver: (frame: Uint8Array) => void;
+} {
+  const listeners = new Set<(f: Uint8Array) => void>();
+  return {
+    transport: {
+      broadcast: () => {},
+      onMessage: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      destroy: () => listeners.clear(),
+    },
+    deliver: (frame) => {
+      for (const fn of listeners) fn(frame);
+    },
+  };
+}
+
+describe("AssetSyncEngine inbound RESPONSE hardening (task 1352)", () => {
+  it("drops an OVERSIZED RESPONSE without internalizing it (placeholder stays, no copy)", () => {
+    const { transport, deliver } = injectableTransport();
+    const store = new AssetStore();
+    // Spy on put so we can prove the engine never tried to internalize/copy.
+    let putCalls = 0;
+    const realPut = store.put.bind(store);
+    store.put = (h, b, m) => {
+      putCalls++;
+      realPut(h, b, m);
+    };
+    const eng = new AssetSyncEngine(transport, store);
+
+    // Mark the hash as wanted so the engine would otherwise accept the response.
+    eng.request("oversized");
+
+    // Body one byte over the cap. The decode layer must reject it (return null)
+    // BEFORE `bytes.slice()`, so put is never reached → no unbounded allocation.
+    const huge = new Uint8Array(MAX_ASSET_BYTES + 1);
+    const frame = makeResponseFrame("oversized", "image/png", huge);
+    deliver(frame);
+
+    expect(store.has("oversized")).toBe(false); // placeholder stays
+    expect(putCalls).toBe(0); // never internalized → no copy made
+    expect(eng.outstanding()).toContain("oversized"); // still unresolved
+    eng.destroy();
+  });
+
+  it("drops a HASH-MISMATCH RESPONSE: arbitrary bytes for a hash never poison the store", () => {
+    const { transport, deliver } = injectableTransport();
+    const store = new AssetStore();
+    const eng = new AssetSyncEngine(transport, store);
+
+    // The victim wants the bytes for `wantHash` (sha256 of the HONEST bytes).
+    const honest = new Uint8Array([10, 20, 30, 40]);
+    const wantHash = sha256Hex(honest);
+    eng.request(wantHash);
+
+    // A malicious peer answers `wantHash` with ARBITRARY (poisoned) bytes.
+    const poisoned = new Uint8Array([99, 98, 97, 96, 95]);
+    expect(sha256Hex(poisoned)).not.toBe(wantHash);
+    deliver(makeResponseFrame(wantHash, "image/png", poisoned));
+
+    // Rejected: store never poisoned, placeholder stays until correct bytes come.
+    expect(store.has(wantHash)).toBe(false);
+    expect(eng.outstanding()).toContain(wantHash);
+
+    // The HONEST holder later answers with bytes that DO hash to wantHash → accepted.
+    deliver(makeResponseFrame(wantHash, "image/png", honest));
+    expect(store.has(wantHash)).toBe(true);
+    expect(Array.from(store.get(wantHash)!.bytes)).toEqual([10, 20, 30, 40]);
+    expect(eng.outstanding()).not.toContain(wantHash);
+    eng.destroy();
+  });
+
+  it("a VALID RESPONSE (sha256 matches, within cap) still resolves over loopback", () => {
+    // The honest 2-peer path: holder's bytes hash to the requested hash → accepted.
+    const bytes = new Uint8Array([1, 2, 3, 4, 5, 6]);
+    const hash = sha256Hex(bytes);
+
+    const [tA, tB] = createLoopbackTransports(2);
+    const holder = new AssetStore();
+    holder.put(hash, bytes, "image/png");
+    const requester = new AssetStore();
+
+    const engHolder = new AssetSyncEngine(tA, holder);
+    const engReq = new AssetSyncEngine(tB, requester);
+
+    expect(engReq.request(hash)).toBe(true);
+    expect(requester.has(hash)).toBe(true);
+    expect(Array.from(requester.get(hash)!.bytes)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(engReq.outstanding()).toEqual([]);
+
+    engHolder.destroy();
+    engReq.destroy();
   });
 });

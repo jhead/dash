@@ -23,10 +23,23 @@
  * documented follow-up. For typical authoring assets this is sufficient.
  */
 import type { WebrtcProvider } from "y-webrtc";
-import type { AssetTransport } from "./assetChannel.js";
+import { MAX_ASSET_BYTES, type AssetTransport } from "./assetChannel.js";
 
 /** 4-byte magic identifying an asset-channel frame ("DAS1"). */
 const MAGIC = new Uint8Array([0x44, 0x41, 0x53, 0x31]);
+
+/**
+ * Hard upper bound on the size of a single inbound asset-channel data-channel
+ * message (collab P4 security hardening / task 1352). An asset frame is the
+ * 4-byte MAGIC + the engine frame (1-byte type + hash + u16 mimeLen + mime +
+ * raw bytes), so the largest legitimate frame is `MAX_ASSET_BYTES` plus a small
+ * fixed header. A peer that pushes a buffer larger than this is dropped right at
+ * the TRANSPORT, before it is ever handed to the engine — enforcing the cap here
+ * (in addition to the decode/accept layer) bounds the accumulated buffer so an
+ * oversized message cannot drive an unbounded `subarray`/copy downstream. The
+ * +1024 slack generously covers the type/hash/mime header.
+ */
+const MAX_ASSET_FRAME_BYTES = MAX_ASSET_BYTES + 1024;
 
 function hasMagic(buf: Uint8Array): boolean {
   if (buf.length < MAGIC.length) return false;
@@ -74,6 +87,11 @@ export function webrtcAssetTransport(provider: WebrtcProvider): AssetTransport {
     if (destroyed) return;
     const buf = toUint8(data);
     if (!buf || !hasMagic(buf)) return; // not ours — y-webrtc handles it
+    // SIZE CAP (task 1352): drop an oversized asset frame from an untrusted peer
+    // before handing it to the engine, so a multi-hundred-MB / GB data-channel
+    // message can never drive an unbounded copy. The engine's decode/accept layer
+    // re-enforces the cap; this is the outermost guard.
+    if (buf.length > MAX_ASSET_FRAME_BYTES) return;
     const frame = buf.subarray(MAGIC.length);
     for (const fn of listeners) fn(frame);
   };

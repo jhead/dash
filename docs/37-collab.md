@@ -902,6 +902,54 @@ untracked dev-local fixture is absent in a fresh worktree — unrelated to P4.)
   do not fork y-webrtc to register a new top-level message type. Functionally
   inert.
 
+### 12.7 Inbound asset trust — size cap + content-hash verification (task 1352)
+
+The asset channel accepts a RESPONSE from **any joined peer** (the same
+Google-Docs-style "anyone with the link is a collaborator" trust model as the
+doc; §9), and P4 wired the Share dialog so this surface is now reachable
+end-to-end by a real peer. An inbound RESPONSE frame is therefore **untrusted
+input** and is validated before any bytes are internalized:
+
+- **SIZE CAP — `MAX_ASSET_BYTES` (64 MiB), exported from `collab/assetChannel.ts`.**
+  Without a cap a peer could answer a request with a multi-hundred-MB / GB payload;
+  `bytes.slice()` (and the later base64 data-URI re-encode on resolution) would
+  allocate a full copy per receiver → OOM / tab crash for everyone in the room.
+  The cap is enforced at **three layers** so no single oversized allocation can
+  slip through: (1) the **transport** (`webrtcAssetTransport.onPeerData`) drops a
+  data-channel message larger than `MAX_ASSET_BYTES + 1024` (header slack) before
+  it ever reaches the engine; (2) the **decode** layer (`assetChannel.decode`)
+  returns `null` for a RESPONSE whose declared body exceeds the cap, *before*
+  `frame.subarray`/`.slice()` materializes a copy; (3) the **accept** layer
+  (`AssetSyncEngine.handle`) re-checks the actual byte length defensively. 64 MiB
+  is generous for authoring bitmaps/sounds/video (a 4K 32-bit bitmap is ~33 MB)
+  while bounding the worst case. (Chunked/streaming transfer + back-pressure
+  remains the documented follow-up from §12.6; this bounds the single-frame path
+  that exists today.)
+- **CONTENT-HASH VERIFICATION.** The `AssetStore` is **content-addressed** — the
+  Y.Doc references a library item by `asset-hash:<sha256>` and the bytes are
+  supposed to be the bytes whose sha256 equals that hash. `AssetSyncEngine.handle`
+  recomputes `sha256Hex(receivedBytes)` (the canonical hash from `@flash/core`
+  `fla/asset-hash.ts`) and **drops the RESPONSE unless it equals the requested
+  hash**. A malicious peer answering a request for hash X with arbitrary or crafted
+  (e.g. malformed-image) bytes is thus a **no-op**: the store is never poisoned,
+  the victim's legit library item is never overwritten, the image decoder never
+  sees attacker-controlled bytes, and the **missing-asset placeholder stays** until
+  the honest holder's correct bytes arrive (first-correct-writer-wins, not
+  first-writer-wins). Unverified bytes are **never** internalized.
+- **Acceptance** (`assetChannel.test.ts`, task 1352): an oversized RESPONSE is
+  dropped without `put` ever being called (placeholder stays, no unbounded copy); a
+  hash-mismatch RESPONSE is rejected (store not poisoned) while the honest holder's
+  matching bytes still resolve; the valid 2-peer path (`assetSync2peer.test.ts`)
+  still resolves end-to-end.
+
+**Transport/E2E asymmetry (recorded, not a leak).** The DOC and AWARENESS ride
+y-webrtc's password-derived AES-GCM E2E layer (§13); ASSET frames bypass it (own
+MAGIC prefix + raw `peer.send`) and rely only on the WebRTC DTLS channel
+encryption. No server/relay sees the bytes (direct P2P), so there is no
+clear-text-via-signaling leak, but assets are not under the room-password E2E
+layer the doc is. Acceptable for now; a follow-up could wrap asset frames in the
+same room-key crypto.
+
 ---
 
 ## 13. Phase 5 — hardening (task 1348, FINAL phase)

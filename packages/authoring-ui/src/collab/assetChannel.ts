@@ -21,10 +21,36 @@
  *   REQUEST  : [type][u8 hashLen][hash utf8]
  *   RESPONSE : [type][u8 hashLen][hash utf8][u16 mimeLen][mime utf8][bytes…]
  */
+import { sha256Hex } from "@flash/core";
 import type { AssetStore } from "./assetStore.js";
 
 const MSG_REQUEST = 1;
 const MSG_RESPONSE = 2;
+
+/**
+ * Maximum accepted size, in bytes, of a single inbound asset's RAW bytes
+ * (collab P4 security hardening / task 1352; docs 37 §11).
+ *
+ * The asset channel accepts RESPONSE frames from any joined peer (the trust
+ * model is "anyone with the share link is a collaborator"), so an inbound frame
+ * is UNTRUSTED. Without a cap a malicious or buggy peer could answer a request
+ * with a multi-hundred-MB / GB payload; `bytes.slice()` (and the later base64
+ * data-URI re-encode in `assetSync`/`assetExternalize`) would then allocate a
+ * full copy per receiver → OOM / tab crash for everyone in the room.
+ *
+ * 64 MiB is generous for authoring bitmaps/sounds/video clips (a 4K 32-bit
+ * bitmap is ~33 MB) while still bounding the worst-case allocation. The cap is
+ * enforced at THREE layers so no single oversized allocation can slip through:
+ *   1. the transport — reject an oversized inbound buffer before it is handed to
+ *      the engine (`webrtcAssetTransport`),
+ *   2. the decode/accept layer — `decode` rejects a RESPONSE whose declared body
+ *      exceeds the cap (so `.slice()` is never reached); `handle` re-checks the
+ *      actual byte length defensively, and
+ *   3. the store — `AssetStore.put` is a final guard.
+ * Chunked transfer + back-pressure (streaming many small frames) remains a
+ * documented follow-up; this cap bounds the SINGLE-frame path that exists today.
+ */
+export const MAX_ASSET_BYTES = 64 * 1024 * 1024;
 
 /**
  * A bidirectional, content-agnostic byte transport for the asset channel.
@@ -97,6 +123,11 @@ function decode(frame: Uint8Array): Decoded {
     if (frame.length < o + mimeLen) return null;
     const mime = dec.decode(frame.subarray(o, o + mimeLen));
     o += mimeLen;
+    // SIZE CAP (task 1352): the body is the entire remainder of the frame and is
+    // UNTRUSTED. Reject an oversized declared body HERE, before `frame.subarray`
+    // is materialized into a copy downstream — a multi-hundred-MB payload must
+    // never reach `bytes.slice()` / the base64 re-encode (no unbounded alloc).
+    if (frame.length - o > MAX_ASSET_BYTES) return null;
     const bytes = frame.subarray(o);
     return { type: "response", hash, mime, bytes };
   }
@@ -213,6 +244,17 @@ export class AssetSyncEngine {
     // RESPONSE: store the bytes (fires onAssetAvailable → resolves placeholder).
     // Defensive: ignore a response we did not need or already have.
     if (msg.type === "response" && !this.store.has(msg.hash)) {
+      // SIZE CAP (task 1352): re-check the ACTUAL byte length defensively. `decode`
+      // already bounded the declared body, but this guards any future caller and
+      // keeps the cap enforced right at the accept point.
+      if (msg.bytes.length > MAX_ASSET_BYTES) return;
+      // CONTENT-HASH VERIFICATION (task 1352): the store is content-ADDRESSED — a
+      // peer answering a request for hash X with arbitrary/crafted bytes would
+      // poison the store (and the victim's library item / image decoder). Recompute
+      // the canonical sha256 of the received bytes and DROP the response unless it
+      // matches the requested hash. Never internalize unverified bytes; the missing-
+      // asset placeholder stays until the correct (honest) bytes arrive.
+      if (sha256Hex(msg.bytes) !== msg.hash) return;
       // Copy out of the shared frame buffer — `subarray` aliases it.
       this.store.put(msg.hash, msg.bytes.slice(), msg.mime);
     }
