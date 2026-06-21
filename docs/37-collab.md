@@ -695,6 +695,41 @@ well-formed document (`validateInboundDoc(validDoc)` deep-equals `validDoc`), so
 legitimate remote edits propagate unchanged. The P0 property/round-trip gates
 (which exercise `rebuildDoc` directly) are untouched.
 
+### `rebuildDoc` must not crash *before* the validator runs (task 1351)
+
+`validateInboundDoc` runs on the **output** of `rebuildDoc` — so `rebuildDoc`
+itself has to be crash-proof, or the validator never gets a chance. The one place
+it wasn't: every **atomic** (non-structural) field is read back with `cloneJson`
+(`packages/collab/src/json.ts`), a recursive plain-JSON deep clone. A peer can
+store a **live Yjs type** (`Y.Map`/`Y.Array`/`Y.Text`) as the value of *any*
+atomic field at *any* level (doc-level `properties`/`id`, a display object's `x`,
+a scene/layer/frame/library-item scalar). `ymap.get(key)` returns that live
+object, and cloning it recursed through Yjs's **cyclic internal item graph** →
+`RangeError: Maximum call stack size exceeded`, thrown inside the binding's
+`observeDeep` observer *before* `validateInboundDoc` could run. Any peer with the
+share link could thus crash every collaborator — the exact DoS the validator
+claims to defend.
+
+The fix is in `cloneJson` (a pure hardening; a well-formed doc only ever stores
+plain JSON atomically, so valid-doc behaviour is **identity**):
+
+- It **drops any non-plain-JSON object** — a value whose prototype is not
+  `Object.prototype`/`null` (i.e. a class instance such as a live Yjs type) is
+  returned as `undefined` and the key is omitted; a Yjs type nested inside a
+  plain array becomes `null` (array length preserved). The live graph is **never
+  walked**. (`json.ts` stays Yjs-free — the check is structural, not
+  `instanceof Y.AbstractType`.)
+- Recursion is **depth-bounded** at `MAX_CLONE_DEPTH = 64` — kept equal to the
+  validator's `MAX_VALUE_DEPTH` so the two limits agree — so a pathologically deep
+  payload that reaches the clone is truncated instead of overflowing the stack.
+
+`rebuildFields` then drops a key whose cloned value is `undefined`, so a hostile
+Y-type-in-atomic-slot rebuilds as an **absent** field, which the validator
+re-defaults (e.g. `properties` → `createDocumentProperties()`). Gate: the
+`rebuildDoc stack-overflow hardening` cases in `validate.test.ts` (doc-level +
+display-object-level Y-type-in-atomic driven through the real binding, plus a
+5000-deep plain payload).
+
 ### What this does NOT cover (the script vector — explicit threat-model note)
 
 Peer-supplied AS2 frame `script` text and `asClasses` *source* are compiled and

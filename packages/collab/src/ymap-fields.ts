@@ -94,7 +94,11 @@ export function rebuildFields(
   const out: Record<string, unknown> = {};
   for (const key of ymap.keys()) {
     if (structuralKeys.has(key)) continue;
-    out[key] = cloneJson(ymap.get(key) as Json);
+    // `cloneJson` returns `undefined` for a malformed (e.g. live Yjs-type) value
+    // that a hostile peer stored in this atomic slot — drop the key entirely so
+    // an absent/garbage field rebuilds as ABSENT, never as `undefined`.
+    const cloned = cloneJson(ymap.get(key) as Json);
+    if (cloned !== undefined) out[key] = cloned;
   }
   return out;
 }

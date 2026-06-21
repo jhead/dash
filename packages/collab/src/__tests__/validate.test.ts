@@ -401,3 +401,135 @@ describe("validateInboundDoc — binding inbound path (full peer scenario)", () 
     }
   });
 });
+
+/**
+ * Stack-overflow hardening (task 1351).
+ *
+ * `rebuildDoc` reads every ATOMIC (non-structural) field with a recursive deep
+ * clone (`cloneJson`). A peer can store a LIVE Yjs type (Y.Map / Y.Array / Y.Text)
+ * as the value of any atomic field at any node level; before the fix the clone
+ * recursed through Yjs's cyclic internal item graph and threw "Maximum call stack
+ * size exceeded" — INSIDE the binding's inbound observer, BEFORE `validateInboundDoc`
+ * could run, so a single peer with the share link could crash every collaborator.
+ *
+ * The fix hardens `cloneJson` to DROP non-plain-JSON values (and depth-bound the
+ * recursion), so `rebuildDoc` / the binding observer never crash; the malformed
+ * field is dropped and the live FlashDocument stays valid.
+ */
+describe("rebuildDoc stack-overflow hardening (Y-type in atomic field)", () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it("rebuildDoc does NOT stack-overflow on a doc-level Y-type in an atomic field", () => {
+    // The exact REPRO from the task: `properties` is a doc-level atomic field
+    // (NOT in DOC_STRUCTURAL); storing a Y.Map there used to crash rebuildDoc.
+    const yd = new Y.Doc();
+    const root = yd.getMap("doc");
+    yd.transact(() => {
+      root.set("id", "doc");
+      root.set("properties", new Y.Map()); // Y-type in an atomic slot
+      root.set("rogueArray", new Y.Array()); // and a Y.Array, also atomic
+    }, { wire: "remote" });
+
+    let rebuilt: FlashDocument | undefined;
+    expect(() => {
+      rebuilt = rebuildDoc(yd);
+    }).not.toThrow();
+    // The malformed atomic Y-types are dropped, not propagated.
+    expect((rebuilt as unknown as Record<string, unknown>).properties).toBeUndefined();
+    expect((rebuilt as unknown as Record<string, unknown>).rogueArray).toBeUndefined();
+    // And the full validator then yields a structurally-valid doc.
+    assertValidDoc(validateInboundDoc(rebuilt));
+  });
+
+  it("rebuildDoc does NOT stack-overflow on a Y-type nested inside a plain-JSON atomic value", () => {
+    const yd = new Y.Doc();
+    const root = yd.getMap("doc");
+    const evil = new Y.Map();
+    yd.transact(() => {
+      root.set("id", "doc");
+      // A plain-JSON array stored atomically that CONTAINS a live Y type.
+      root.set("mixed", [1, evil, 3]);
+    }, { wire: "remote" });
+
+    let rebuilt: FlashDocument | undefined;
+    expect(() => {
+      rebuilt = rebuildDoc(yd);
+    }).not.toThrow();
+    // Array length preserved; the Y-type element coerced to null (never walked).
+    expect((rebuilt as unknown as Record<string, unknown>).mixed).toEqual([1, null, 3]);
+  });
+
+  it("rebuildDoc depth-bounds a deeply-nested plain payload instead of overflowing", () => {
+    const yd = new Y.Doc();
+    const root = yd.getMap("doc");
+    // Build a 5000-deep plain object — far beyond any legitimate atomic value.
+    let deep: Record<string, unknown> = {};
+    let cur = deep;
+    for (let i = 0; i < 5000; i++) {
+      const next: Record<string, unknown> = {};
+      cur.c = next;
+      cur = next;
+    }
+    yd.transact(() => {
+      root.set("id", "doc");
+      root.set("deep", deep);
+    }, { wire: "remote" });
+
+    expect(() => rebuildDoc(yd)).not.toThrow();
+  });
+
+  it("a peer storing a Y-type in a DISPLAY-OBJECT atomic field cannot crash the other peer", () => {
+    const initial = createDocument();
+    const srcA = new FakeDocSource(initial);
+    const ydocA = new Y.Doc();
+    const ydocB = new Y.Doc(); // the malicious peer's raw Y.Doc
+    const unwire = wireYDocs(ydocA, ydocB);
+    const bindingA = new FlashCollabBinding(ydocA, srcA);
+    Y.applyUpdate(ydocB, Y.encodeStateAsUpdate(ydocA), { wire: "remote" });
+
+    try {
+      // The malicious peer adds a display object whose `x` (an atomic scalar
+      // field) is a LIVE Y.Map. Pre-fix this stack-overflowed in A's observer.
+      expect(() => {
+        ydocB.transact(() => {
+          const root = getRoot(ydocB);
+          const scenes = root.get("scenes") as Y.Array<Y.Map<unknown>>;
+          const layer = (scenes.get(0).get("timeline") as Y.Map<unknown>)
+            .get("layers") as Y.Array<Y.Map<unknown>>;
+          const frame = (layer.get(0).get("frames") as Y.Array<Y.Map<unknown>>).get(0);
+          let dispContainer = frame.get("displayObjects") as Y.Map<unknown> | undefined;
+          if (!(dispContainer instanceof Y.Map)) {
+            dispContainer = new Y.Map();
+            frame.set("displayObjects", dispContainer);
+            dispContainer.set("__order", new Y.Array<string>());
+          }
+          const evil = new Y.Map();
+          dispContainer.set("evil", evil);
+          evil.set("id", "evil");
+          evil.set("type", "shape"); // KNOWN type so it would otherwise be kept
+          evil.set("x", new Y.Map()); // <- Y-type in an atomic scalar field
+          const order = dispContainer.get("__order") as Y.Array<string>;
+          order.insert(order.length, ["evil"]);
+        }, { wire: "malicious" });
+      }).not.toThrow();
+
+      // Peer A survived, validated, and still holds a valid doc.
+      const aDoc = srcA.getDoc();
+      assertValidDoc(aDoc);
+      const objs = aDoc.scenes[0].timeline.layers[0].frames[0].displayObjects;
+      const evil = objs.find((o) => o.id === "evil") as ShapeDisplayObject | undefined;
+      // The object is kept (known type, has id) but its hostile `x` was dropped by
+      // the clone, then re-defaulted to a finite 0 by the validator.
+      if (evil) expect(Number.isFinite(evil.x)).toBe(true);
+    } finally {
+      bindingA.destroy();
+      unwire();
+    }
+  });
+});
