@@ -1371,6 +1371,16 @@ export function encodePlaceObject2WithCXForm(
  * @param y          Y position in pixels
  * @param clipDepth  The highest depth of the masked layers (the clip region
  *                   covers depths depth+1 … clipDepth inclusive)
+ * @param transform  Optional scale/rotation/skew for the mask object
+ * @param instanceName Optional AS2 instance name. A mask clip can carry a name
+ *                   AND a clip depth at once (HasName | HasClipDepth). Without
+ *                   this, a named/scripted MovieClip used as a mask loses its
+ *                   name and `_root.<name>` resolves to undefined (task 1349).
+ * @param clipActions Optional onClipEvent clip actions, emitted alongside the
+ *                   clip depth (HasClipActions | HasClipDepth) so a mask clip's
+ *                   load/enterFrame handlers still fire. Field order per the SWF
+ *                   spec (and Ruffle's read_place_object_2_or_3): Matrix, [Name],
+ *                   [ClipDepth], [ClipActions].
  */
 export function encodePlaceObject2WithClipDepth(
   charId: number,
@@ -1378,12 +1388,22 @@ export function encodePlaceObject2WithClipDepth(
   x: number,
   y: number,
   clipDepth: number,
-  transform?: { scaleX?: number; scaleY?: number; rotation?: number; skewX?: number; skewY?: number }
+  transform?: { scaleX?: number; scaleY?: number; rotation?: number; skewX?: number; skewY?: number },
+  instanceName?: string,
+  clipActions?: readonly ClipAction[]
 ): Uint8Array {
   const bw = new BitWriter();
 
-  // Flags: HasCharacter (0x02) | HasMatrix (0x04) | HasClipDepth (0x40) = 0x46
-  bw.writeUI8(0x46);
+  const hasName = !!(instanceName && instanceName.length > 0);
+  const hasClipActions = !!(clipActions && clipActions.length > 0);
+
+  // Flags: HasCharacter (0x02) | HasMatrix (0x04) | HasClipDepth (0x40) = 0x46.
+  // Optionally add HasName (0x20) and/or HasClipActions (0x80); a mask clip can
+  // legally carry all four together (task 1349).
+  let flags = 0x46;
+  if (hasName) flags |= 0x20;
+  if (hasClipActions) flags |= 0x80;
+  bw.writeUI8(flags);
 
   // Depth: UI16
   bw.writeUI16LE(depth);
@@ -1426,10 +1446,57 @@ export function encodePlaceObject2WithClipDepth(
   }
   bw.flushBits();
 
-  // ClipDepth: UI16 (written after MATRIX, no CXFORM or Name present)
+  // Optional: instance name (HasName) — written after MATRIX, before ClipDepth
+  // (SWF field order: …, [Name], [ClipDepth], …).
+  if (hasName) {
+    bw.writeString(instanceName!);
+  }
+
+  // ClipDepth: UI16 (written after MATRIX/[Name], before any clip actions)
   bw.writeUI16LE(clipDepth);
 
+  // Optional: clip actions (HasClipActions) — last field, after ClipDepth.
+  if (hasClipActions) {
+    writeClipActionsBlock(bw, clipActions!);
+  }
+
   return bw.getBytes();
+}
+
+/**
+ * Write the trailing CLIPACTIONS block of a PlaceObject2/3 body:
+ *   Reserved UI16 = 0
+ *   AllEventFlags UI32 (union of every record's event flags)
+ *   for each ClipAction: ClipEventFlags UI32, ActionRecordSize UI32, ActionBytes[]
+ *   Terminator UI32 = 0
+ * Each record's bytecode is terminated with ActionEnd (0x00) — compileAS2 does
+ * not emit it. Shared by encodePlaceObject2WithClipActions / …MoveWithClipActions
+ * / …WithClipDepth so the layout stays identical across all clip-action emitters.
+ */
+function writeClipActionsBlock(bw: BitWriter, clipActions: readonly ClipAction[]): void {
+  const records: Array<{ flags: number; bytecode: Uint8Array }> = [];
+  let allEventFlags = 0;
+  for (const action of clipActions) {
+    const eventFlag = CLIP_EVENT_FLAGS[action.event] ?? 0;
+    allEventFlags |= eventFlag;
+    const raw = compileAS2(action.script);
+    // Append ActionEnd (0x00) terminator — required by SWF spec and Ruffle's parser.
+    const bytecode = new Uint8Array(raw.length + 1);
+    bytecode.set(raw);
+    records.push({ flags: eventFlag, bytecode });
+  }
+
+  // Reserved UI16 = 0 (required by SWF spec before AllEventFlags; Ruffle reads this).
+  bw.writeUI16LE(0);
+  // AllEventFlags: UI32.
+  bw.writeUI32LE(allEventFlags);
+  for (const record of records) {
+    bw.writeUI32LE(record.flags);
+    bw.writeUI32LE(record.bytecode.length);
+    bw.writeBytes(record.bytecode);
+  }
+  // Terminator: UI32 = 0.
+  bw.writeUI32LE(0x00000000);
 }
 
 // ---------------------------------------------------------------------------
@@ -1546,40 +1613,8 @@ export function encodePlaceObject2WithClipActions(
     bw.writeString(instanceName);
   }
 
-  // Compile each action and build records.
-  // Each record's bytecode must end with ActionEnd (0x00) per SWF spec §8.4.6.2.
-  // compileAS2 does NOT emit ActionEnd, so we append it here (same as DoAction).
-  const records: Array<{ flags: number; bytecode: Uint8Array }> = [];
-  let allEventFlags = 0;
-  for (const action of clipActions) {
-    const eventFlag = CLIP_EVENT_FLAGS[action.event] ?? 0;
-    allEventFlags |= eventFlag;
-    const raw = compileAS2(action.script);
-    // Append ActionEnd (0x00) terminator — required by SWF spec and Ruffle's parser
-    const bytecode = new Uint8Array(raw.length + 1);
-    bytecode.set(raw);
-    // bytecode[raw.length] is already 0x00 (ActionEnd)
-    records.push({ flags: eventFlag, bytecode });
-  }
-
-  // Reserved UI16 = 0 (required by SWF spec before AllEventFlags; Ruffle reads this)
-  bw.writeUI16LE(0);
-
-  // AllEventFlags: UI32 (union of all event flags in this record set)
-  bw.writeUI32LE(allEventFlags);
-
-  // Emit each CLIPACTIONRECORD
-  for (const record of records) {
-    // ClipEventFlags: UI32
-    bw.writeUI32LE(record.flags);
-    // ActionRecordSize: UI32 (byte count of bytecode including 0x00 ActionEnd)
-    bw.writeUI32LE(record.bytecode.length);
-    // Action bytes (including ActionEnd at the end)
-    bw.writeBytes(record.bytecode);
-  }
-
-  // Terminator: UI32 = 0x00000000
-  bw.writeUI32LE(0x00000000);
+  // Clip actions (Reserved/AllEventFlags/records/terminator) — shared layout.
+  writeClipActionsBlock(bw, clipActions);
 
   return bw.getBytes();
 }
@@ -1617,37 +1652,8 @@ export function encodePlaceObject2MoveWithClipActions(
   // Depth: UI16
   bw.writeUI16LE(depth);
 
-  // Compile each action and build records.
-  const records: Array<{ flags: number; bytecode: Uint8Array }> = [];
-  let allEventFlags = 0;
-  for (const action of clipActions) {
-    const eventFlag = CLIP_EVENT_FLAGS[action.event] ?? 0;
-    allEventFlags |= eventFlag;
-    const raw = compileAS2(action.script);
-    // Append ActionEnd (0x00) terminator — required by SWF spec and Ruffle's parser
-    const bytecode = new Uint8Array(raw.length + 1);
-    bytecode.set(raw);
-    records.push({ flags: eventFlag, bytecode });
-  }
-
-  // Reserved UI16 = 0 (required by SWF spec before AllEventFlags; Ruffle reads this)
-  bw.writeUI16LE(0);
-
-  // AllEventFlags: UI32 (union of all event flags in this record set)
-  bw.writeUI32LE(allEventFlags);
-
-  // Emit each CLIPACTIONRECORD
-  for (const record of records) {
-    // ClipEventFlags: UI32
-    bw.writeUI32LE(record.flags);
-    // ActionRecordSize: UI32 (byte count of bytecode including 0x00 ActionEnd)
-    bw.writeUI32LE(record.bytecode.length);
-    // Action bytes (including ActionEnd at the end)
-    bw.writeBytes(record.bytecode);
-  }
-
-  // Terminator: UI32 = 0x00000000
-  bw.writeUI32LE(0x00000000);
+  // Clip actions (Reserved/AllEventFlags/records/terminator) — shared layout.
+  writeClipActionsBlock(bw, clipActions);
 
   return bw.getBytes();
 }

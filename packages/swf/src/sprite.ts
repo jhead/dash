@@ -913,9 +913,21 @@ export function encodeDefineSprite(
             }
             const hasClipActions = effectiveClipActions.length > 0;
 
-            // Task 1126: mask layer — place instance with HasClipDepth
+            // Task 1126: mask layer — place instance with HasClipDepth.
+            // Task 1349: ALSO carry the instance name + clip actions so a named,
+            // scripted MovieClip used as a mask INSIDE a symbol keeps its name
+            // (_root/relative path) and its onClipEvent handlers.
             if (clipDepth !== undefined) {
-              const placeBody = encodePlaceObject2WithClipDepth(refCharId, depth, x, y, clipDepth, instanceTransform);
+              const placeBody = encodePlaceObject2WithClipDepth(
+                refCharId,
+                depth,
+                x,
+                y,
+                clipDepth,
+                instanceTransform,
+                instName,
+                hasClipActions ? effectiveClipActions : undefined
+              );
               spriteTags.push(encodeTag(Tag.PlaceObject2, placeBody));
             } else {
             // Bug 1103 fix: encode colorEffect / visible=false / filters / blend mode

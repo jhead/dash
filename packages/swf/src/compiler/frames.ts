@@ -500,7 +500,11 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                       }
                     : undefined;
                 if (clipDepth !== undefined) {
-                  // Mask layer: place with HasClipDepth so the shape clips the layers below
+                  // Mask layer: place with HasClipDepth so the shape clips the
+                  // layers below. ShapeDisplayObject / DrawingObject carry no
+                  // instanceName/clipActions in the model, so none are emitted
+                  // here — task 1349's name+clipActions fix is the symbol-instance
+                  // mask path; this shape path is left byte-identical.
                   const placeBody = encodePlaceObject2WithClipDepth(
                     charId,
                     depth,
@@ -856,24 +860,6 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                   }
                 }
 
-                // Mask layer: symbol instance as mask — place with HasClipDepth.
-                if (clipDepth !== undefined) {
-                  const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
-                    ? { scaleX, scaleY, rotation, skewX, skewY }
-                    : undefined;
-                  const placeBody = encodePlaceObject2WithClipDepth(
-                    charId,
-                    depth,
-                    x,
-                    y,
-                    clipDepth,
-                    instanceTransform
-                  );
-                  writer.writeTag(Tag.PlaceObject2, placeBody);
-                  depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey, filtersKey: thisFiltersKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
-                  continue;
-                }
-
                 // Resolve loopMode and firstFrame for graphic symbol instances.
                 // loopMode / firstFrame (Loop / Play Once / Single Frame) only
                 // apply to GRAPHIC symbols; movieclip and button instances play
@@ -882,6 +868,11 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                 // below (e.g. single-frame → gotoAndStop(1)) from freezing a
                 // nested movieclip on frame 0. loopMode defaults to "loop" (no
                 // extra encoding needed).
+                //
+                // NOTE (task 1349): this block is computed BEFORE the mask
+                // (clipDepth) branch so a mask-layer clip keeps its instance name
+                // AND its (authored + loopMode-synthesized) clip actions alongside
+                // HasClipDepth — they are NOT mutually exclusive in SWF.
                 const refSymbol = symbolById.get(displayObj.symbolId);
                 const isGraphicInstance = refSymbol?.symbolType === "graphic";
                 const loopMode = isGraphicInstance ? (displayObj.loopMode ?? "loop") : "loop";
@@ -924,6 +915,30 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                   effectiveClipActions = [...effectiveClipActions, seekAction];
                 }
                 const hasClipActions = effectiveClipActions.length > 0;
+
+                // Mask layer: symbol instance as mask — place with HasClipDepth,
+                // but ALSO carry the instance name + clip actions so a named,
+                // scripted MovieClip used as a mask keeps `_root.<name>` AND its
+                // onClipEvent handlers (task 1349: the ballmask load handler / the
+                // _root.ballmask scene-transition path were silently dropped).
+                if (clipDepth !== undefined) {
+                  const instanceTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0 || skewX !== 0 || skewY !== 0)
+                    ? { scaleX, scaleY, rotation, skewX, skewY }
+                    : undefined;
+                  const placeBody = encodePlaceObject2WithClipDepth(
+                    charId,
+                    depth,
+                    x,
+                    y,
+                    clipDepth,
+                    instanceTransform,
+                    displayObj.instanceName ?? undefined,
+                    hasClipActions ? effectiveClipActions : undefined
+                  );
+                  writer.writeTag(Tag.PlaceObject2, placeBody);
+                  depthState.set(depth, { objId, x, y, scaleX, scaleY, rotation, skewX, skewY, ratio: -1, colorEffectKey: thisColorEffectKey, filtersKey: thisFiltersKey, clipActionsKey: thisClipActionsKey, letterSpacingKey: thisLetterSpacingKey, restrictKey: thisRestrictKey });
+                  continue;
+                }
 
                 // Compute CXForm once — used in both the blend/filter and cacheAsBitmap paths.
                 const instCXForm = displayObj.colorEffect
