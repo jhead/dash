@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { tryLoadRealFla } from "../ole.js";
+import { tryLoadRealFla, __readAllStreamsForTest } from "../ole.js";
+import { parseFla8Timeline } from "../flash8-binary.js";
 import type { Layer } from "../../model/types.js";
 
 const MAGNET_FLA = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/Magnet.fla");
@@ -28,25 +29,96 @@ describe("Magnet.fla inspection", () => {
     ]);
   });
 
-  it("has 'menu' frame label in Scene 5 at frame 1", () => {
+  // Task 1342 — Scene 5 ('Page 5') Ball-layer frame count + 'menu' label position.
+  //
+  // The QA report said Scene 5 "should be 1 frame" with 'menu' on "frame 1", and that
+  // our import wrongly shows 2 frames with 'menu' on "frame 2". The raw byte evidence
+  // refutes that: the 'Page 5' stream physically contains TWO distinct, fully-formed
+  // CPicFrame records on the 'Ball' layer — a leading EMPTY keyframe (dur=1, label="",
+  // script="", 0 elements) followed by the content keyframe (dur=1, label='menu',
+  // script='stop()', 3 elements = Symbol 2 + Symbol 9 + static text). Both records are
+  // present in the bytes (the empty frame's label BomString and the 'menu'/'stop()'
+  // BomStrings were located in the stream), so there is NO phantom keyframe being
+  // fabricated by the parser. Real Flash 8 reading the same file would likewise show a
+  // blank keyframe at frame 1 and the menu content at frame 2; the "should be 1 frame"
+  // recollection is an off-by-one (UI frame 2 = 0-based model index 1).
+  //
+  // The acceptance is therefore: the model import must faithfully match the raw
+  // parseFla8Timeline ground truth. This test DERIVES its expectation from that ground
+  // truth (rather than hard-coding the old, misleadingly-named `frame.index === 1`
+  // assertion) and asserts the import reproduces it exactly.
+  it("Scene 5 Ball layer imports its full ground-truth frame count + 'menu' label (task 1342)", () => {
     const bytes = new Uint8Array(readFileSync(MAGNET_FLA));
+
+    // --- ground truth: raw timeline parse of the 'Page 5' stream ----------------
+    const streams = __readAllStreamsForTest(bytes);
+    let page5: Uint8Array | undefined;
+    for (const [name, data] of streams) {
+      if (/Page 5$/.test(name)) page5 = data;
+    }
+    if (!page5) throw new Error("Page 5 stream not found");
+    const rawTl = parseFla8Timeline(page5);
+
+    // The raw scene span is the max layer span (sum of per-layer frame durations).
+    const rawSceneSpan = Math.max(
+      ...rawTl.layers.map((l) =>
+        Math.max(1, l.frames.reduce((sum, f) => sum + Math.max(1, f.duration), 0)),
+      ),
+    );
+    const rawBall = rawTl.layers.find((l) => l.name === "Ball");
+    if (!rawBall) throw new Error("raw Ball layer not found");
+
+    // Ground-truth invariants we depend on (assert them so a future fixture/parse
+    // change that alters the truth makes THIS test fail loudly rather than silently
+    // pinning a stale expectation):
+    expect(rawBall.frames.length).toBe(2); // leading empty kf + content kf
+    expect(rawSceneSpan).toBe(2); // scene span driven by Ball's two keyframes
+    const rawMenuIdx = rawBall.frames.findIndex((f) => f.label === "menu");
+    expect(rawMenuIdx).toBe(1); // 'menu' is the SECOND keyframe (0-based)
+    expect(rawBall.frames[rawMenuIdx]!.script).toBe("stop()");
+    expect(rawBall.frames[rawMenuIdx]!.elements.length).toBe(3);
+    expect(rawBall.frames[0]!.label).toBe(""); // leading keyframe is unlabelled…
+    expect(rawBall.frames[0]!.elements.length).toBe(0); // …and empty
+
+    // --- subject: the model import must match that ground truth ------------------
     const doc = tryLoadRealFla(bytes);
     if (!doc) throw new Error("failed to load");
-
     const scene5 = doc.scenes[1];
     expect(scene5.name).toBe("Scene 5");
 
-    let menuFound = false;
-    for (const layer of scene5.timeline.layers) {
-      for (const frame of layer.frames) {
-        if (frame.label === "menu" && frame.isKeyframe) {
-          expect(frame.index).toBe(1);
-          expect(frame.labelType).toBe("name");
-          menuFound = true;
-        }
-      }
-    }
-    expect(menuFound).toBe(true);
+    const modelBall = scene5.timeline.layers.find((l: Layer) => l.name === "Ball");
+    expect(modelBall).toBeDefined();
+
+    // Frame count parity: the imported Ball layer keeps BOTH keyframes (the leading
+    // blank one is NOT dropped) — this is the "imports its full frame count" fix.
+    expect(modelBall!.frames.length).toBe(rawBall.frames.length);
+    expect(modelBall!.frameCount).toBe(rawSceneSpan);
+
+    // The 'menu' label rides the SAME 0-based keyframe index as the ground truth
+    // (index 1 = UI frame 2), with the correct label type and frame script.
+    const menuFrame = modelBall!.frames.find((f) => f.label === "menu");
+    expect(menuFrame).toBeDefined();
+    expect(menuFrame!.index).toBe(rawMenuIdx);
+    expect(menuFrame!.labelType).toBe("name");
+    expect(menuFrame!.isKeyframe).toBe(true);
+    expect(menuFrame!.script).toBe("stop()");
+    expect(menuFrame!.displayObjects.length).toBe(3);
+
+    // The leading keyframe imports as an empty keyframe at index 0 (the off-by-one
+    // the QA report perceived: 'menu' on UI frame 2, not frame 1, because frame 1 is
+    // genuinely blank in the authored file).
+    const leadFrame = modelBall!.frames.find((f) => f.index === 0);
+    expect(leadFrame).toBeDefined();
+    expect(leadFrame!.label).toBe("");
+    expect(leadFrame!.isEmpty).toBe(true);
+    expect(leadFrame!.displayObjects.length).toBe(0);
+
+    // And exactly one 'menu' label exists across the whole scene (no duplication).
+    let menuCount = 0;
+    for (const layer of scene5.timeline.layers)
+      for (const frame of layer.frames)
+        if (frame.label === "menu" && frame.isKeyframe) menuCount++;
+    expect(menuCount).toBe(1);
   });
 
   it("scene AA (scene 0) has Ball/Walls/Magnets as masked under Layer 5 mask", () => {
