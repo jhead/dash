@@ -286,7 +286,27 @@ function writeCPicFrame(
   w.u16(0); // morphTag
   w.u32((frame.motionOrientToPath ? 0x01 : 0) | (frame.motionSnap ? 0x02 : 0));
   w.u16(0); // oblistTag
-  writeBomString(w, ""); // tweenInstanceName
+  writeBomString(w, ""); // tweenInstanceName (fs > 15)
+
+  // Frame schema-tail completion (fs = 0x18 = 24). After the tweenInstanceName the reader
+  // (`readCPicFrameNode` in flash8-binary.ts) consumes a fixed run of higher-schema fields
+  // gated on fs: `fs>19 skip(4)`, `fs>20 skip(4)`, `fs>=22 skip(4)`, then `fs>=24` the
+  // Flash-8 ease-curve header (`u32 useSingleEaseCurve; u32 hasCustomEase`). Because we
+  // stamp fs=0x18 the writer MUST emit these 20 bytes too — otherwise the reader over-reads
+  // the frame body by exactly 20 bytes and the layer name / trailer (and the rest of the
+  // stream) parse off-by-20, corrupting ANY non-empty-template frame (e.g. a frame-sound
+  // keyframe) regardless of the layer-name length. The byte values are taken verbatim from
+  // the genuine empty-keyframe fixture (flash8-empty.fla PAGE_FRAME_BODY tail): the
+  // empty-template path emits these via the const body, so the full-serialization path here
+  // must match it: `01 00 00 00 / 00 00 00 00 / 00 00 00 00 / useSingleEaseCurve=1 /
+  // hasCustomEase=0`. We emit `hasCustomEase=0` (no per-property bezier point arrays follow):
+  // tween easing is carried by the s16 `acceleration` field above (`easeAccel`), so no
+  // custom-curve stream is written.
+  w.u32(1); // fs > 19 skip(4) — matches the genuine empty-keyframe body
+  w.u32(0); // fs > 20 skip(4)
+  w.u32(0); // fs >= 22 skip(4)
+  w.u32(1); // fs >= 24 useSingleEaseCurve
+  w.u32(0); // fs >= 24 hasCustomEase = 0 (acceleration-based ease; no curve stream)
 }
 
 function easeAccel(frame: Frame): number {

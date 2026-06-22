@@ -666,6 +666,21 @@ if (== CS4 and motion object present):
   BomString tweenInstanceName
 ```
 
+A Flash 8 frame stamps `frameVersionB = 0x18`, so the `>= F8` ease-curve header
+(`u32 useSingleEaseCurve; u32 hasCustomEase`) is **mandatory** — a writer that emits the
+schema byte 0x18 must also emit these two u32s (and, for a frame whose easing is carried by
+the s16 `acceleration` field rather than a bezier, `hasCustomEase = 0` so no custom-ease
+table follows). Omitting them while still stamping 0x18 makes a reader over-read the frame
+body by exactly the 8 bytes of this header (plus any preceding higher-schema skip fields the
+reader consumes for fs=0x18), which shifts the parse of the following `CPicLayer` name and
+trailer — corrupting the whole stream. A genuine empty Flash 8 keyframe stores
+`useSingleEaseCurve = 1, hasCustomEase = 0` here; the clone's empty-keyframe template carries
+those bytes, so the full-serialization path (a non-empty or sound-bearing keyframe) must
+match it. (Task 1369: the writer used to stop after `tweenInstanceName` and drop this header,
+so any frame on the full path — e.g. a frame-sound keyframe — failed to round-trip; the
+breakage looked layer-name-length-dependent only because the 20-byte shift landed on
+different bytes per name length.)
+
 ### 11.1 Key mode
 
 The `keyMode` field encodes the keyframe's nature and its tween options. A plain keyframe is the

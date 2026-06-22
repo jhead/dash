@@ -135,6 +135,86 @@ describe("saveRealFla — layers", () => {
   });
 });
 
+// Regression for task 1369: a frame written via the FULL serialization path (NOT the
+// empty-keyframe template) stamps frame schema fs=0x18, and the reader consumes a fixed
+// 20-byte higher-schema tail after the tweenInstanceName (`fs>19/>20/>=22 skip(4)` +
+// `fs>=24` ease-curve header `useSingleEaseCurve/hasCustomEase`). The writer used to omit
+// those 20 bytes, so the reader over-read the frame body by exactly 20 bytes and the layer
+// name / trailer parsed off-by-20. The corruption appeared LAYER-NAME-LENGTH-dependent (a
+// 1-char 'L' truncated; the 7-char default 'Layer 1' fell back to a default reconstruction)
+// because the off-by-20 landed on different bytes per name length, but the root cause is the
+// missing frame-tail bytes, NOT the layer-name field. These cases force the full path (a
+// frame sound makes isEmptyKeyframe() false) and assert ANY valid layer-name length
+// round-trips through both the lenient reader (parseFla8Timeline) and the full importer
+// (tryLoadRealFla) with the frame sound link rebuilt and no parse warnings.
+describe("saveRealFla — short/edge layer names round-trip on the full frame path (task 1369)", () => {
+  function soundDocWithLayerName(layerName: string): FlashDocument {
+    const snd = createSound("boom.mp3");
+    const sound: SoundLinkage = {
+      libraryItemId: snd.id,
+      syncMode: "start",
+      repeatCount: 3,
+      inPoint: 100,
+      outPoint: 5000,
+    };
+    const frame = createFrame(0, { isKeyframe: true, isEmpty: true, sound });
+    const layer = createLayer(layerName, "normal", { frames: [frame], frameCount: 1 });
+    return baseDoc([sceneWith("Scene 1", [layer])], {
+      library: { items: [snd], folders: [] },
+    });
+  }
+
+  // 1-char (the task's repro), plus a spread of edge lengths around the BomString single-byte
+  // length-prefix boundary and a few short ones the off-by-20 used to mangle.
+  const NAMES = ["L", "La", "Lay", "AB", "ABCD", "ABCDE", "ABCDEF", "Layer 1", "X".repeat(40)];
+
+  for (const name of NAMES) {
+    it(`layer name ${JSON.stringify(name)} (len ${name.length}) round-trips via parseFla8Timeline`, () => {
+      const page = __readAllStreamsForTest(saveRealFla(soundDocWithLayerName(name))).get("Page 1")!;
+      const tl = parseFla8Timeline(page);
+      expect(tl.layers.map((l) => l.name)).toEqual([name]);
+      // The §11 sound sub-block must still decode (full path emitted it).
+      expect(tl.layers[0]!.frames[0]!.soundLoop).toBe(3);
+      expect(tl.layers[0]!.frames[0]!.inPoint).toBe(100);
+    });
+
+    it(`layer name ${JSON.stringify(name)} (len ${name.length}) round-trips via tryLoadRealFla`, () => {
+      const warnings: string[] = [];
+      const orig = console.warn;
+      console.warn = (...a: unknown[]) => {
+        warnings.push(a.map(String).join(" "));
+      };
+      let out: ReturnType<typeof tryLoadRealFla>;
+      try {
+        out = tryLoadRealFla(saveRealFla(soundDocWithLayerName(name)));
+      } finally {
+        console.warn = orig;
+      }
+      expect(out).not.toBeNull();
+      expect(out!.scenes[0]!.timeline.layers.map((l) => l.name)).toEqual([name]);
+      // The frame-sound LINK is rebuilt (the full importer resolved it) and the page parsed
+      // cleanly — the regression manifested as a "could not parse page"/"truncated" warning.
+      const f = out!.scenes[0]!.timeline.layers[0]!.frames[0]!;
+      expect(f.sound).not.toBeNull();
+      expect(f.sound!.repeatCount).toBe(3);
+      expect(warnings.filter((w) => /could not parse page|truncated/.test(w))).toEqual([]);
+    });
+  }
+
+  it("a non-empty SHAPE frame with a 1-char layer name is a strict-valid CArchive timeline", () => {
+    // The shape path also takes the full serialization path; confirm the strict validator
+    // (the real-Flash acceptance bar) accepts it for a short name too.
+    const doc = baseDoc([sceneWith("Scene 1", [layerWith("L", "normal", [solidRectShape(10, 10)])])]);
+    const streams = __readAllStreamsForTest(saveRealFla(doc));
+    validateContentsStream(streams.get("Contents")!);
+    const page = validateTimelineStream(streams.get("Page 1")!);
+    expect(page.classes.sort()).toEqual(["CPicFrame", "CPicLayer", "CPicPage"]);
+    expect(tryLoadRealFla(saveRealFla(doc))!.scenes[0]!.timeline.layers.map((l) => l.name)).toEqual([
+      "L",
+    ]);
+  });
+});
+
 // Content-bearing timelines are asserted against the STRICT CArchive validator
 // (real-Flash byte structure), not against the lenient importer's round-trip. The
 // writer's contract is byte-compatibility with Flash 8; importer round-tripping is
