@@ -1,0 +1,10 @@
+{
+  "id": "1370-1nm7m8-fla-writer-add-bomstring-length-prefix-boundary-",
+  "title": "FLA writer: add BomString length-prefix boundary round-trip tests (255/256/0xffff escalation)",
+  "description": "Test-only hardening surfaced by a byte-path audit of the FLA writer (no bug found \u2014 coverage gap). The BomString writer (packages/core/src/fla/write/carchive-write.ts writeBomLength/writeBomString) escalates the length prefix: len<0xff -> single u8; 0xff<=len<0xffff -> 0xff + u16; len>=0xffff -> 0xff + u16(0xffff) + u32. The reader (packages/core/src/fla/flash8-binary.ts readCString/BomString) mirrors this. These ESCALATION BOUNDARIES are currently UNTESTED \u2014 exactly the class of off-by-one byte boundary that hid task 1369. ADD round-trip tests that exercise BomString values of length 254, 255, 256, 65534, 65535, 65536 code units through the writer->reader (and full tryLoadRealFla where practical) for the real BomString call sites: layer names, frame labels, symbol classNames (AS2 linkage), and library item display names. Assert each round-trips byte-exactly and re-imports to the same string (incl. multi-byte UTF-16 chars at the boundary). NO production code change expected \u2014 if a test reveals an actual escalation bug, STOP and report it (do not silently 'fix' byte logic without oracle verification). VERIFY: build + core fla suite green (flash8-empty.fla gates may SKIP per task 1207 \u2014 expected); new boundary tests pass; nothing else regressed. ACQUIRE lock; commit incl task file; push origin/main rebase-retry (keep origin .counter on conflict). Update docs/21-fla-binary-format.md BomString section if it helps clarify the escalation spec.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-22T20:54:32Z",
+  "updated_at": "2026-06-22T20:54:32Z"
+}
