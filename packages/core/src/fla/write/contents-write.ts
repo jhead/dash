@@ -108,6 +108,21 @@ export interface ContentsMediaEntry {
   kind: "bitmap" | "sound" | "video";
 }
 
+/**
+ * Media-catalog record class name per kind. Bitmaps + sounds are emitted as real
+ * CArchive objects whose body the importer scans to resolve a frame `soundId` /
+ * bitmap `mediaId` → library item; videos are not yet catalogued here (the
+ * importer discovers them from the FLV payload in the `Media N` stream).
+ */
+const MEDIA_CLASS_BY_KIND: Record<ContentsMediaEntry["kind"], string | null> = {
+  bitmap: "CMediaBits",
+  sound: "CMediaSound",
+  video: null,
+};
+
+/** CMedia* record schema byte (genuine Flash 8 = 6; see evaporatingdrip/Magnet). */
+const MEDIA_RECORD_SCHEMA = 6;
+
 export interface ContentsInput {
   /** Kept for API compatibility; the real contentsVersion (0x3F) is always emitted. */
   formatVersion: number;
@@ -198,6 +213,61 @@ function writeSymbolTail(w: ByteWriter, sym: ContentsSymbolEntry): void {
   w.bytes(tailAfter);
 }
 
+/**
+ * §8.6 media catalog — one CMedia* CArchive object per library media item.
+ *
+ * Emitted AFTER the scene/symbol CDocumentPage records and BEFORE the §8.4 stage
+ * block, exactly where the genuine fixtures place them (evaporatingdrip's
+ * CMediaBits for "Media 4" sits between the last CDocumentPage and the stage
+ * fields; Magnet's CMediaSound likewise). Each record is a real NEWCLASS object
+ * on the first use of its class and a §5.2 backref thereafter, so the running
+ * combined-table index advances (two slots per class: one for the class
+ * declaration, one because every object header — NEWCLASS or backref — bumps the
+ * object counter). The post-stage template is position-independent (it
+ * self-declares CColorDef/CQTAudioSettings and holds no backref to any earlier
+ * class), so this index advance never invalidates it.
+ *
+ * Record body (verified byte-for-byte against the genuine `CMediaBits "Media 4"`
+ * record in `fixtures/evaporatingdrip.fla` and the `CMediaSound "Media 16"`
+ * record in `fixtures/Magnet.fla`):
+ *
+ *   [class tag]                       NEWCLASS CMediaBits/CMediaSound (schema 1)
+ *                                     on first use, else 0x8000|index backref
+ *   u8  recordSchema = 6
+ *   u8  streamNameLen                 code units of "Media N"
+ *   UTF-16LE "Media N"                stream name (no BOM marker)
+ *   BomString displayName             library display name
+ *   u16 0                             original-path length placeholder (the
+ *                                     fixtures store the author's source path
+ *                                     here; we have none, so emit an empty run)
+ *   BomString ""                      source path (empty)
+ *
+ * The importer (`flash8-binary.ts` `registerCMediaSoundObject` / the bitmap media
+ * scan) reads only through the displayName and keys the record by the "Media N"
+ * number, so the trailing source-path field — the only machine-specific tail
+ * field in the genuine record — is emitted empty/deterministic. Frame sounds then
+ * resolve `soundId → libraryItemId` via this catalog on full `tryLoadRealFla`.
+ */
+function writeMediaCatalog(w: ByteWriter, ct: ClassTable, media: ContentsMediaEntry[]): void {
+  for (const m of media) {
+    const className = MEDIA_CLASS_BY_KIND[m.kind];
+    if (className === null) continue; // videos not catalogued here
+    // Class tag: NEWCLASS (schema 1) on first use of this class, backref after.
+    ct.useClass(w, className, 1);
+    // Record body.
+    w.u8(MEDIA_RECORD_SCHEMA);
+    const streamName = `Media ${m.num}`;
+    w.u8(streamName.length); // single-byte code-unit count (7..14 per importer)
+    for (let i = 0; i < streamName.length; i++) w.u16(streamName.charCodeAt(i));
+    writeBomString(w, m.displayName);
+    // Source-path field: u16 length placeholder + empty BomString. The genuine
+    // record carries the author's original-asset path here; the writer has no
+    // such path, so emit a deterministic empty run. The importer never reads it.
+    w.u16(0);
+    writeBomString(w, "");
+  }
+}
+
 export function writeContents(input: ContentsInput): Uint8Array {
   const w = new ByteWriter(20000);
   const ct = new ClassTable();
@@ -235,6 +305,12 @@ export function writeContents(input: ContentsInput): Uint8Array {
     // writeAsLinkage block (the per-symbol "AS 2.0 class" Flash 8 reads back).
     writeSymbolTail(w, sym);
   }
+
+  // -- §8.6 media catalog (CMediaBits / CMediaSound) -------------------------
+  // Emitted between the CDocumentPage chain and the stage block, mirroring the
+  // genuine fixtures. Advances the §5.2 index but leaves the position-independent
+  // post-stage template (CColorDef/CQTAudioSettings) valid.
+  writeMediaCatalog(w, ct, input.media);
 
   // -- §8.4 stage + document properties block --------------------------------
   writeStageBlock(w, input);

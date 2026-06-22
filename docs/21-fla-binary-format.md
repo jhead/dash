@@ -504,6 +504,39 @@ creation time, a second version byte, the family name as a `String`, a bold flag
 a constant marker byte of 0x12, an item identifier, a parent folder identifier, and an
 `AsLinkage`.
 
+### 8.10 Media catalog (CMediaSound / CMediaBits)
+
+Imported media — sounds, bitmaps, and video — store their payload in a separate `Media N <time>`
+stream (section 1), but the library entry that links a `Media N` payload to a display name (and,
+for a frame sound, to the `soundId` index of section 11) lives in the `Contents` stream as a
+`CMedia*` CArchive object. These records appear **after** the scene/symbol `CDocumentPage` chain
+and **before** the stage block of section 8.4 — the same position the genuine fixtures use
+(`evaporatingdrip.fla` places its `CMediaBits "Media 4"` there; `Magnet.fla` its `CMediaSound`).
+
+Two classes carry the same body shape, distinguished only by the class name: `CMediaBits` for an
+imported bitmap and `CMediaSound` for an imported sound. As with every CArchive object the first
+use of a class is a `new class` declaration and later uses are backrefs, so each class advances the
+running combined-table index of section 5.2 (one slot for the class declaration, one because every
+object header bumps the object counter). The post-stage default block of section 8.4 self-declares
+its own `CColorDef` and `CQTAudioSettings` and holds no backref to any earlier class, so inserting
+media records ahead of it never invalidates it.
+
+```
+[class tag]                              // new class CMediaBits / CMediaSound (schema 1), else backref
+u8  recordSchema = 6                     // mediaSoundVersionC / the CMedia* record schema
+u8  streamNameLen                        // code units of "Media N" (7..14)
+String "Media N"                         // UTF-16LE, no BOM marker — the Media stream number
+BomString displayName                    // library display name
+... source-path and per-media tail ...   // section 18-style payload metadata; not modeled
+```
+
+A reader keys the record by the `Media N` number parsed from the stream name and reads only through
+the display name: a frame sound's `soundId` (section 11) indexes this list to recover its library
+item, and a bitmap placement's `mediaId` (section 18.1) does the same. The trailing fields after the
+display name carry the author's original-asset path and per-media metadata (sample rate, timestamps);
+a writer that has no such source path emits a deterministic empty run there, which round-trips
+correctly because the reader never consumes it.
+
 ---
 
 ## 9. Timeline streams

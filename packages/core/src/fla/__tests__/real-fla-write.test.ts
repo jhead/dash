@@ -17,7 +17,7 @@ import { parseFla8Timeline } from "../flash8-binary.js";
 import { createDocument, createDocumentProperties } from "../../model/document.js";
 import { createScene } from "../../model/scene.js";
 import { createLayer, createFrame } from "../../model/timeline.js";
-import { createSymbol, createSound } from "../../model/library.js";
+import { createSymbol, createSound, createBitmap } from "../../model/library.js";
 import type { FlashDocument, Frame, Layer, Scene, SoundLinkage } from "../../model/types.js";
 import type {
   ShapeDisplayObject,
@@ -333,3 +333,160 @@ describe("saveRealFla — frame sound (§11 sound sub-block)", () => {
     expect(tl.layers[0]!.frames[0]!.soundId).toBe(0);
   });
 });
+
+// The Contents media catalog (CMediaSound / CMediaBits records, §8.6) is what lets
+// the FULL importer (tryLoadRealFla) rebuild a saved frame sound's library LINK: the
+// importer resolves a frame's `soundId` to a library item by scanning the "Media N"
+// CMediaSound catalog. Before this catalog was written, a saved frame sound was
+// byte-correct in the Page stream but its library link was dropped on re-import
+// (the importer warned "frame sound id N not found in library"). These tests assert
+// the round-trip now RESOLVES frame.sound.libraryItemId with no such warning.
+describe("saveRealFla — Contents media catalog (CMediaSound/CMediaBits)", () => {
+  function captureWarnings<T>(fn: () => T): { result: T; warnings: string[] } {
+    const warnings: string[] = [];
+    const orig = console.warn;
+    console.warn = (...a: unknown[]) => {
+      warnings.push(a.map(String).join(" "));
+    };
+    try {
+      return { result: fn(), warnings };
+    } finally {
+      console.warn = orig;
+    }
+  }
+
+  it("a saved sound library item + frame sound round-trips with libraryItemId RESOLVED", () => {
+    const snd = createSound("boom.mp3");
+    const sound: SoundLinkage = {
+      libraryItemId: snd.id,
+      syncMode: "start",
+      repeatCount: 3,
+      inPoint: 100,
+      outPoint: 5000,
+    };
+    // createLayer's default "Layer 1" name is used (the byte layout the §11 sound
+    // sub-block round-trip in this file is verified against).
+    const frame = createFrame(0, { isKeyframe: true, isEmpty: true, sound });
+    const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount: 1 });
+    const doc = baseDoc([sceneWith("Scene 1", [layer])], {
+      library: { items: [snd], folders: [] },
+    });
+
+    const { result: out, warnings } = captureWarnings(() => tryLoadRealFla(saveRealFla(doc)));
+
+    // The sound library item is rebuilt from the CMediaSound catalog record.
+    const soundItem = out.library.items.find((i) => i.itemType === "sound");
+    expect(soundItem).toBeDefined();
+    expect(soundItem!.name).toBe("boom.mp3");
+
+    // The frame sound resolves to that library item — the LINK is rebuilt.
+    const f = out.scenes[0]!.timeline.layers[0]!.frames[0]!;
+    expect(f.sound).not.toBeNull();
+    expect(f.sound!.libraryItemId).toBe(soundItem!.id);
+    expect(f.sound!.syncMode).toBe("start");
+    expect(f.sound!.repeatCount).toBe(3);
+    expect(f.sound!.inPoint).toBe(100);
+    expect(f.sound!.outPoint).toBe(5000);
+
+    // No "not found in library" warning (the regression this catalog fixes), and the
+    // page stream parsed cleanly.
+    expect(warnings.filter((w) => /not found in library/.test(w))).toEqual([]);
+    expect(warnings.filter((w) => /could not parse page/.test(w))).toEqual([]);
+  });
+
+  it("emits a CMediaSound NEWCLASS record whose body matches what the importer reads", () => {
+    const snd = createSound("boom.mp3");
+    const sound: SoundLinkage = { libraryItemId: snd.id, syncMode: "event", repeatCount: 1 };
+    const frame = createFrame(0, { isKeyframe: true, isEmpty: true, sound });
+    const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount: 1 });
+    const doc = baseDoc([sceneWith("Scene 1", [layer])], {
+      library: { items: [snd], folders: [] },
+    });
+    const c = __readAllStreamsForTest(saveRealFla(doc)).get("Contents")!;
+
+    // Exactly one CMediaSound NEWCLASS declaration (schema-1 class, schema-6 record).
+    expect(countClassDecls(c, "CMediaSound")).toBe(1);
+    // The record body: schema u8 = 6, then the "Media 1" stream name in UTF-16LE,
+    // then a BomString display name "boom.mp3" — the exact bytes registerCMediaSoundObject reads.
+    const decl = indexOf(c, asciiOf("CMediaSound"));
+    expect(decl).toBeGreaterThan(0);
+    const bodyStart = decl + "CMediaSound".length;
+    expect(c[bodyStart]).toBe(6); // record schema
+    const streamNameLen = c[bodyStart + 1]!;
+    expect(streamNameLen).toBe("Media 1".length);
+    const streamName = utf16Read(c, bodyStart + 2, streamNameLen);
+    expect(streamName).toBe("Media 1");
+    // displayName BomString right after the stream name.
+    const bomAt = bodyStart + 2 + streamNameLen * 2;
+    expect(c[bomAt]).toBe(0xff);
+    expect(c[bomAt + 1]).toBe(0xfe);
+    expect(c[bomAt + 2]).toBe(0xff);
+    const dispLen = c[bomAt + 3]!;
+    expect(utf16Read(c, bomAt + 4, dispLen)).toBe("boom.mp3");
+  });
+
+  it("emits a CMediaBits record byte-identical (through displayName) to the evaporatingdrip layout", () => {
+    // evaporatingdrip.fla's genuine CMediaBits record for "Media 4" (display "metal")
+    // is: NEWCLASS CMediaBits(schema 1) / record-schema 6 / "Media N" / BomString name.
+    // We emit a single bitmap "metal" (→ Media 1) and assert the record header+body
+    // through the displayName is byte-identical to that genuine layout, modulo the
+    // stream number ("Media 1" here vs "Media 4" in the fixture — same field shape).
+    const ORACLE_MEDIA1 = new Uint8Array([
+      0xff, 0xff, 0x01, 0x00, 0x0a, 0x00, // NEWCLASS, schema 1, nameLen 10
+      0x43, 0x4d, 0x65, 0x64, 0x69, 0x61, 0x42, 0x69, 0x74, 0x73, // "CMediaBits"
+      0x06, 0x07, // record schema 6, stream-name len 7
+      0x4d, 0x00, 0x65, 0x00, 0x64, 0x00, 0x69, 0x00, 0x61, 0x00, 0x20, 0x00, 0x31, 0x00, // "Media 1"
+      0xff, 0xfe, 0xff, 0x05, // BomString marker + len 5
+      0x6d, 0x00, 0x65, 0x00, 0x74, 0x00, 0x61, 0x00, 0x6c, 0x00, // "metal"
+    ]);
+    const bmp = createBitmap("metal", {
+      // 1x1 transparent PNG so a Media stream is written.
+      dataUri:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    });
+    const doc = baseDoc([sceneWith("Scene 1", [])], {
+      library: { items: [bmp], folders: [] },
+    });
+    const c = __readAllStreamsForTest(saveRealFla(doc)).get("Contents")!;
+
+    // Locate the CMediaBits class decl and assert the full header+body through
+    // displayName matches the genuine field layout.
+    const decl = indexOf(c, asciiOf("CMediaBits"));
+    expect(decl).toBeGreaterThan(0);
+    const recordStart = decl - 6; // back up to the FFFF tag
+    const actual = c.subarray(recordStart, recordStart + ORACLE_MEDIA1.length);
+    expect(Array.from(actual)).toEqual(Array.from(ORACLE_MEDIA1));
+  });
+});
+
+function indexOf(haystack: Uint8Array, needle: Uint8Array): number {
+  outer: for (let i = 0; i + needle.length <= haystack.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+
+function asciiOf(s: string): Uint8Array {
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+
+function utf16Read(data: Uint8Array, at: number, len: number): string {
+  let s = "";
+  for (let i = 0; i < len; i++) s += String.fromCharCode(data[at + i * 2]! | (data[at + i * 2 + 1]! << 8));
+  return s;
+}
+
+function countClassDecls(data: Uint8Array, name: string): number {
+  const ascii = asciiOf(name);
+  let n = 0;
+  for (let i = 0; i + 6 + name.length <= data.length; i++) {
+    if (data[i] === 0xff && data[i + 1] === 0xff) {
+      const len = data[i + 4]! | (data[i + 5]! << 8);
+      if (len === name.length && indexOf(data.subarray(i + 6, i + 6 + name.length), ascii) === 0) n++;
+    }
+  }
+  return n;
+}
