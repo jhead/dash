@@ -168,6 +168,28 @@ non-unicode mode the prefix counts bytes and the body is in the document's code 
 A `BomString` is a `String` preceded by the three bytes `FF FE FF` in unicode mode. An empty
 Flash 8 BomString is therefore `FF FE FF 00`.
 
+The escalation has three tiers, keyed off the *code-unit* length `n` (the writer is
+`writeBomLength` in `write/carchive-write.ts`; the canonical reader is `readCString` in
+`flash8-binary.ts`). The boundary bytes are:
+
+| `n`                       | length-prefix bytes (after the `FF FE FF` marker) |
+|---------------------------|---------------------------------------------------|
+| `n < 0xFF` (≤ 254)        | `u8(n)`                                            |
+| `0xFF ≤ n < 0xFFFF`       | `FF`, `u16(n)`                                     |
+| `n ≥ 0xFFFF` (≥ 65535)    | `FF`, `u16(0xFFFF)`, `u32(n)`                      |
+
+Note `n == 0xFFFF` takes the third tier: it is written `FF FFFF <u32 0x0000FFFF>`, not the
+two-tier form, because the second-tier guard is `n < 0xFFFF` (strict). The reader mirrors this
+by treating a decoded u16 length of `0xFFFF` as the "read a u32 next" sentinel. These three
+points (254/255 and 65534/65535) are the off-by-one boundaries pinned by
+`__tests__/bomstring-length-boundary.test.ts`.
+
+> Known divergence (task 1371): the *secondary* Contents-stream scanner `tryReadBomStringAt`
+> (used for symbol display names, scene names, AS2 linkage ids/classNames, paths, media and font
+> names) implements only the first two tiers and under-reads any BomString of length ≥ 0xFFFF.
+> The writer and the primary `readCString` reader are correct; only that scanner needs the u32
+> tier added to match. The boundary suite quarantines those cases (`it.fails`) until 1371 lands.
+
 ### 4.2 Matrix
 
 A matrix occupies 24 bytes in the order `a, b, c, d, tx, ty`. The scale and skew terms `a`, `b`,

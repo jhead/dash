@@ -4155,3 +4155,21 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     fonts,
   };
 }
+
+/**
+ * Test-only hook: decode a single CString/BomString from `bytes` starting at
+ * `offset`, returning the decoded value and the absolute byte offset just past
+ * it. Drives the REAL production `readCString` (the inverse of the writer's
+ * `writeBomString`/`writeBomLength`), so boundary tests exercise the actual
+ * reader code path — not a re-implementation. Not part of the public API; used
+ * only by the FLA writer/reader round-trip suites.
+ */
+export function __readBomStringForTest(
+  bytes: Uint8Array,
+  offset = 0,
+): { value: string; next: number } {
+  const r = new Reader(bytes);
+  r.pos = offset;
+  const value = readCString(r);
+  return { value, next: r.pos };
+}
