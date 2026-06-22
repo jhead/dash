@@ -59,6 +59,29 @@ export interface BuildAgentToolsOptions {
 }
 
 /**
+ * Commands the Agent Chat loop is NOT allowed to call. These are EXCLUDED from
+ * the generated tool set entirely, so the chat LLM never sees them and cannot
+ * invoke them in the autonomous multi-step loop.
+ *
+ * Per the explicit user decision on task 1282 (SAFETY follow-up): the agent
+ * chat does NOT need the two full-document-REPLACE loaders, so we simply DROP
+ * them rather than building a confirmation/allowlist layer. The destructive
+ * *_remove commands (stage_remove, library_remove, timeline_remove_layer/frame,
+ * scene_remove) and file_save_fla / publish_swf were explicitly APPROVED to keep
+ * auto-running and are intentionally NOT in this list.
+ *
+ *   - doc_load:       replaces the whole document with caller-provided JSON.
+ *   - file_load_fla:  replaces the whole document by loading a .fla.
+ *
+ * To amend the agent-chat tool surface, edit this constant — it is the single
+ * source of truth for what the chat loop may not call. NOTE: this is the AGENT
+ * CHAT path only; the programmatic/external MCP+JSFL registry
+ * (../agent/registry.ts) is unaffected and still serves these commands.
+ */
+export const AGENT_CHAT_EXCLUDED_COMMANDS: ReadonlySet<AgentCommand> =
+  new Set<AgentCommand>(["doc_load", "file_load_fla"]);
+
+/**
  * Commands whose result carries a rendered image as base64 PNG, so the tool
  * must deliver it to the model as a real image content part (not text base64).
  * Today only `stage_screenshot` qualifies; the per-tool override below is keyed
@@ -152,14 +175,18 @@ export function summarizePublishSwf(
 
 /**
  * The generated tool set, keyed by command name. This is the value P3 passes to
- * the AI SDK agent loop as `{ tools }`.
+ * the AI SDK agent loop as `{ tools }`. `Partial` because the commands in
+ * {@link AGENT_CHAT_EXCLUDED_COMMANDS} are intentionally omitted (the chat loop
+ * may not call them).
  */
-export type AgentToolSet = Record<AgentCommand, Tool>;
+export type AgentToolSet = Partial<Record<AgentCommand, Tool>>;
 
 /**
- * Build the AI SDK v6 tool set covering every agent-protocol command.
+ * Build the AI SDK v6 tool set covering every agent-protocol command EXCEPT the
+ * ones in {@link AGENT_CHAT_EXCLUDED_COMMANDS} (the chat loop is not allowed to
+ * call those, so they are never registered as tools the model can see).
  *
- * For each command in `ALL_COMMANDS`:
+ * For each non-excluded command in `ALL_COMMANDS`:
  *   tool({
  *     description: COMMAND_DESCRIPTIONS[name],
  *     inputSchema: COMMAND_SCHEMAS[name],   // the command's Zod params schema
@@ -173,6 +200,10 @@ export function buildAgentTools(options: BuildAgentToolsOptions = {}): AgentTool
   const tools = {} as Record<AgentCommand, Tool>;
 
   for (const name of ALL_COMMANDS) {
+    // SAFETY (task 1282): never register an excluded command as a tool, so the
+    // chat LLM cannot call it in the autonomous loop.
+    if (AGENT_CHAT_EXCLUDED_COMMANDS.has(name)) continue;
+
     const inputSchema = COMMAND_SCHEMAS[name];
     const description = COMMAND_DESCRIPTIONS[name];
 

@@ -19,7 +19,7 @@ trade-offs, and how the chat maps onto the MCP/agent-protocol tool surface.
 | **Where** | Right pane → **Agent** tab (`AgentChatPanel`) |
 | **LLM access** | [OpenRouter](https://openrouter.ai) via the **Vercel AI SDK v6** |
 | **Key storage** | `localStorage` in your browser only (BYOK) — never sent to a Dash server |
-| **Tooling** | Auto-generated from `@flash/agent-protocol` — one tool per command (68 commands) |
+| **Tooling** | Auto-generated from `@flash/agent-protocol` — one tool per command (73 of 75 commands; `doc_load` + `file_load_fla` are denylisted, see below) |
 | **Execution** | Tool `execute` → `dispatchAgentCommand` → the live document store (undoable) |
 | **History** | Persisted to `localStorage`; multiple named threads (`threadStore.ts`) — survives tab-switch + page refresh |
 | **Code** | `packages/authoring-ui/src/agentchat/` |
@@ -72,6 +72,16 @@ backend; the only network calls go **directly from your browser to
   command's own Zod schema, and its `execute` calls `dispatchAgentCommand(name,
   args)`. Errors are caught and returned as a structured `{ error }` object (so a
   failed tool — including the "editor not ready" guard — never crashes the loop).
+  - **Denylist (`AGENT_CHAT_EXCLUDED_COMMANDS`, task 1282).** The chat tool set
+    EXCLUDES the two full-document-REPLACE loaders — `doc_load` and
+    `file_load_fla` — so the autonomous loop can never wipe/replace the whole
+    document. They are simply never registered as tools (no confirmation/allowlist
+    layer). The destructive `*_remove` commands (`stage_remove`, `library_remove`,
+    `timeline_remove_layer`/`_frame`, `scene_remove`) and `file_save_fla` /
+    `publish_swf` are intentionally KEPT auto-running (all mutations go through
+    `pushDoc`, so they are undoable). This denylist is the AGENT CHAT path only;
+    the programmatic MCP/JSFL registry (`agent/registry.ts`) still serves all
+    commands. To amend the chat surface, edit that one constant in `tools.ts`.
   - **Vision / `stage_screenshot` (image tool results).** Most tools return a
     JSON object that the AI SDK serializes as a *text* (`type:'json'`)
     tool-result. `stage_screenshot` is special: its result carries a rendered PNG
@@ -372,12 +382,14 @@ messages and decides whether to nudge you back to Settings:
 ## Mapping to the MCP tool surface
 
 The chat does **not** define its own tools. `buildAgentTools()` enumerates the
-**exact same** `@flash/agent-protocol` command registry that the MCP server
+**same** `@flash/agent-protocol` command registry that the MCP server
 (`docs/19-agent-interface.md`) exposes, so the in-app agent and an external MCP
-client (or the `flash-agent` CLI) drive Dash through one shared command set
-(currently **68 commands**): `editor_status`, `doc_get` / `doc_summary`,
-`stage_add_shape` / `stage_add_text` / `stage_place_instance` / `stage_update` /
-`stage_remove` / `stage_arrange` / `stage_group`, timeline ops
+client (or the `flash-agent` CLI) drive Dash through one shared command set —
+minus the two `AGENT_CHAT_EXCLUDED_COMMANDS` (`doc_load` / `file_load_fla`),
+which the chat denylists (see above) but the MCP path still serves. That leaves
+**73 of 75 commands** on the chat path: `editor_status`, `doc_get` /
+`doc_summary`, `stage_add_shape` / `stage_add_text` / `stage_place_instance` /
+`stage_update` / `stage_remove` / `stage_arrange` / `stage_group`, timeline ops
 (`timeline_add_layer`, `timeline_insert_keyframe`, …), library ops, `script_set`,
 `publish_swf`, `history_undo` / `history_redo`, and more.
 
@@ -387,7 +399,7 @@ The difference is only the **transport**:
 |---|---|---|
 | Client | LLM in your browser (OpenRouter) | External MCP client / CLI |
 | Transport | AI SDK v6 tool call → `dispatchAgentCommand` (in-process) | HTTP/WebSocket bridge → `dispatchAgentCommand` |
-| Tools | `buildAgentTools()` (generated from the registry) | MCP tools (generated from the same registry) |
+| Tools | `buildAgentTools()` (registry minus `AGENT_CHAT_EXCLUDED_COMMANDS`) | MCP tools (full registry — `doc_load` / `file_load_fla` included) |
 | Mutation | Live document store (undoable) | Live document store (undoable) |
 | Key/host | BYOK, no server | Your MCP host config |
 

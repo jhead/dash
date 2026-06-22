@@ -23,16 +23,44 @@ vi.mock("../../agent/registry.js", () => ({
     dispatchMock(command, params),
 }));
 
-import { buildAgentTools, type AgentToolError } from "../tools.js";
+import {
+  buildAgentTools,
+  AGENT_CHAT_EXCLUDED_COMMANDS,
+  type AgentToolError,
+} from "../tools.js";
+
+/** ALL_COMMANDS minus the denylisted commands — the commands actually exposed. */
+const EXPOSED_COMMANDS = ALL_COMMANDS.filter(
+  (c) => !AGENT_CHAT_EXCLUDED_COMMANDS.has(c)
+);
 
 describe("buildAgentTools — coverage", () => {
-  it("produces exactly one tool per command in ALL_COMMANDS", () => {
+  it("produces exactly one tool per NON-EXCLUDED command in ALL_COMMANDS", () => {
     const tools = buildAgentTools();
     const toolNames = Object.keys(tools).sort();
-    const commandNames = [...ALL_COMMANDS].sort();
+    const commandNames = [...EXPOSED_COMMANDS].sort();
 
-    expect(toolNames.length).toBe(ALL_COMMANDS.length);
+    expect(toolNames.length).toBe(EXPOSED_COMMANDS.length);
     expect(toolNames).toEqual(commandNames);
+  });
+
+  it("does NOT expose the denylisted document-replace commands, but DOES keep the approved destructive/side-effecting ones (task 1282)", () => {
+    const tools = buildAgentTools();
+
+    // The two full-document-replace loaders are dropped: the chat LLM never sees
+    // them as tools and so can never call them in the autonomous loop.
+    expect(AGENT_CHAT_EXCLUDED_COMMANDS.has("doc_load")).toBe(true);
+    expect(AGENT_CHAT_EXCLUDED_COMMANDS.has("file_load_fla")).toBe(true);
+    expect(tools.doc_load).toBeUndefined();
+    expect(tools.file_load_fla).toBeUndefined();
+
+    // The user explicitly approved keeping these auto-running, so they MUST
+    // still be exposed: a representative *_remove command, a save, and publish.
+    expect(tools.stage_remove, "stage_remove kept").toBeDefined();
+    expect(tools.publish_swf, "publish_swf kept").toBeDefined();
+    expect(tools.file_save_fla, "file_save_fla kept").toBeDefined();
+    expect(tools.scene_remove, "scene_remove kept").toBeDefined();
+    expect(tools.timeline_remove_layer, "timeline_remove_layer kept").toBeDefined();
   });
 
   it("exposes the AS2 class authoring tools to the chat bridge", () => {
@@ -45,28 +73,29 @@ describe("buildAgentTools — coverage", () => {
       "class_check",
     ];
     for (const name of classCommands) {
-      expect(tools[name], name).toBeDefined();
-      expect(typeof tools[name].description, name).toBe("string");
+      const t = tools[name];
+      expect(t, name).toBeDefined();
+      expect(typeof t!.description, name).toBe("string");
     }
   });
 
-  it("gives every tool a non-empty description and an inputSchema", () => {
+  it("gives every exposed tool a non-empty description and an inputSchema", () => {
     const tools = buildAgentTools();
-    for (const name of ALL_COMMANDS) {
+    for (const name of EXPOSED_COMMANDS) {
       const t = tools[name];
       expect(t, name).toBeDefined();
-      expect(typeof t.description, name).toBe("string");
-      expect((t.description as string).length, name).toBeGreaterThan(0);
-      expect(t.inputSchema, name).toBeDefined();
+      expect(typeof t!.description, name).toBe("string");
+      expect((t!.description as string).length, name).toBeGreaterThan(0);
+      expect(t!.inputSchema, name).toBeDefined();
     }
   });
 
   it("uses the command's own agent-protocol Zod schema as inputSchema", () => {
     const tools = buildAgentTools();
-    for (const name of ALL_COMMANDS) {
+    for (const name of EXPOSED_COMMANDS) {
       // Identity check: the tool's inputSchema must be the SAME schema object
       // exported for that command in the protocol registry.
-      expect(tools[name].inputSchema, name).toBe(COMMAND_SCHEMAS[name]);
+      expect(tools[name]!.inputSchema, name).toBe(COMMAND_SCHEMAS[name]);
     }
   });
 });
@@ -87,7 +116,7 @@ describe("buildAgentTools — execute dispatches via the registry", () => {
     };
 
     // AI SDK tool.execute(args, options) — options is unused by our bridge.
-    const result = await tools.stage_add_shape.execute!(args, {} as never);
+    const result = await tools.stage_add_shape!.execute!(args, {} as never);
 
     expect(dispatchMock).toHaveBeenCalledTimes(1);
     expect(dispatchMock).toHaveBeenCalledWith("stage_add_shape", args);
@@ -99,7 +128,7 @@ describe("buildAgentTools — execute dispatches via the registry", () => {
     dispatchMock.mockResolvedValue({ ok: true });
 
     const tools = buildAgentTools();
-    await tools.playback_play.execute!(undefined as never, {} as never);
+    await tools.playback_play!.execute!(undefined as never, {} as never);
 
     expect(dispatchMock).toHaveBeenCalledWith("playback_play", {});
   });
@@ -113,7 +142,7 @@ describe("buildAgentTools — error handling (never throws past the loop)", () =
     );
 
     const tools = buildAgentTools();
-    const result = (await tools.editor_status.execute!(
+    const result = (await tools.editor_status!.execute!(
       {},
       {} as never
     )) as AgentToolError;
@@ -128,7 +157,7 @@ describe("buildAgentTools — error handling (never throws past the loop)", () =
     dispatchMock.mockRejectedValue(new Error('Unknown layerId "nope"'));
 
     const tools = buildAgentTools();
-    const result = (await tools.timeline_remove_layer.execute!(
+    const result = (await tools.timeline_remove_layer!.execute!(
       { layerId: "nope" },
       {} as never
     )) as AgentToolError;
@@ -151,7 +180,7 @@ describe("buildAgentTools — stage_screenshot delivers an image, not base64 tex
     }));
 
     const tools = buildAgentTools({ dispatch });
-    const screenshot = tools.stage_screenshot;
+    const screenshot = tools.stage_screenshot!;
 
     // The tool must define a toModelOutput override (without it the AI SDK
     // serializes the result as JSON text — base64 the model can't decode).
@@ -193,9 +222,9 @@ describe("buildAgentTools — stage_screenshot delivers an image, not base64 tex
     });
 
     const tools = buildAgentTools({ dispatch });
-    const output = await tools.stage_screenshot.execute!({}, {} as never);
+    const output = await tools.stage_screenshot!.execute!({}, {} as never);
 
-    const modelOutput = await tools.stage_screenshot.toModelOutput!({
+    const modelOutput = await tools.stage_screenshot!.toModelOutput!({
       toolCallId: "call-2",
       input: {},
       output,
@@ -206,8 +235,8 @@ describe("buildAgentTools — stage_screenshot delivers an image, not base64 tex
 
   it("does NOT add toModelOutput to non-image tools (they stay JSON text)", () => {
     const tools = buildAgentTools();
-    expect(tools.stage_add_shape.toModelOutput).toBeUndefined();
-    expect(tools.doc_summary.toModelOutput).toBeUndefined();
+    expect(tools.stage_add_shape!.toModelOutput).toBeUndefined();
+    expect(tools.doc_summary!.toModelOutput).toBeUndefined();
   });
 });
 
@@ -226,7 +255,7 @@ describe("buildAgentTools — publish_swf summarizes (no base64 to the model)", 
     }));
 
     const tools = buildAgentTools({ dispatch });
-    const publish = tools.publish_swf;
+    const publish = tools.publish_swf!;
 
     // The tool must define a toModelOutput override (without it the AI SDK
     // serializes the whole result as JSON text — base64 the model can't use).
@@ -267,7 +296,7 @@ describe("buildAgentTools — publish_swf summarizes (no base64 to the model)", 
     }));
 
     const tools = buildAgentTools({ dispatch });
-    const output = (await tools.publish_swf.execute!({}, {} as never)) as {
+    const output = (await tools.publish_swf!.execute!({}, {} as never)) as {
       swfBase64: string;
     };
     // The chip / app still gets the bytes; only the MODEL channel is stripped.
@@ -280,9 +309,9 @@ describe("buildAgentTools — publish_swf summarizes (no base64 to the model)", 
     });
 
     const tools = buildAgentTools({ dispatch });
-    const output = await tools.publish_swf.execute!({}, {} as never);
+    const output = await tools.publish_swf!.execute!({}, {} as never);
 
-    const modelOutput = await tools.publish_swf.toModelOutput!({
+    const modelOutput = await tools.publish_swf!.toModelOutput!({
       toolCallId: "call-pub-2",
       input: {},
       output,
@@ -307,7 +336,7 @@ describe("buildAgentTools — injectable dispatch", () => {
     const seen: AgentCommand[] = [];
     // Smoke-call a couple of tools through the injected dispatcher.
     for (const name of ["doc_summary", "history_undo"] as AgentCommand[]) {
-      await tools[name].execute!({}, {} as never);
+      await tools[name]!.execute!({}, {} as never);
       seen.push(name);
     }
 
