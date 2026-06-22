@@ -2,9 +2,9 @@
   "id": "1371-1bdzus-bug-fla-contents-reader-tryreadbomstringat-drops",
   "title": "BUG: FLA Contents reader tryReadBomStringAt drops the u32 length tier (>=0xffff BomStrings under-read)",
   "description": "Surfaced by task 1370 BomString boundary suite (packages/core/src/fla/__tests__/bomstring-length-boundary.test.ts). The Contents-stream BomString scanner tryReadBomStringAt (packages/core/src/fla/flash8-binary.ts:3524) mirrors only the first two escalation tiers of the writer writeBomLength (u8; 0xff+u16) and is MISSING the third tier (0xff + u16(0xffff) + u32) that the canonical readCString (~line 787-790) and the writer (write/carchive-write.ts writeBomLength) both implement. For a BomString of length >=0xffff code units the writer emits FF FE FF FF, u16(0xffff), u32(len), chars; tryReadBomStringAt reads len=0xff then u16=0xffff and STOPS, using 0xffff as the literal length and consuming the 4 u32-length bytes as the first two content chars (decoded value starts with U+FFFF U+0000 then the real chars) and desyncs every following field. WRITER IS CORRECT (primitive writeBomString->readCString round-trips at all boundaries incl 65535/65536); readCString is correct; ONLY tryReadBomStringAt diverges. Blast radius = all 11 tryReadBomStringAt call sites: symbol display names, scene names, AS2 linkage identifiers, classNames, source/full paths, media display names, font names. FIX: extend tryReadBomStringAt with the third tier exactly like readCString: after reading the u16 length, if that u16 equals 0xffff then read a u32 length and advance the cursor 4 more bytes. VERIFY against an oracle before committing the decode change (real Flash 8 fixture with a >=64Ki code-unit name if obtainable; otherwise the in-repo readCString oracle, which is fixture-verified). The 8 quarantined it.fails cases in bomstring-length-boundary.test.ts must flip to passing once fixed. Practical reachability is low (64Ki+ char names) but it is a true correctness divergence and exactly the off-by-tier class that hid task 1369. Task 1370 left byte/decode logic UNCHANGED per its STOP-on-bug rule.",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-06-22T21:02:03Z",
-  "updated_at": "2026-06-22T21:02:33Z"
+  "updated_at": "2026-06-22T21:15:45Z"
 }

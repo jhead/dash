@@ -35,6 +35,7 @@ import {
 } from "../write/carchive-write.js";
 import {
   __readBomStringForTest,
+  __tryReadBomStringAtForTest,
   parseFla8Timeline,
   parseFla8Contents,
 } from "../flash8-binary.js";
@@ -61,13 +62,14 @@ const BOUNDARY_LENS = [254, 255, 256, 65534, 65535, 65536];
 // names, frame labels) read via the canonical `readCString`, which handles this
 // tier and round-trips. The CONTENTS-stream call sites (symbol display names,
 // AS2 classNames, scene names, linkage ids, paths, media names) read via the
-// separate scanner `tryReadBomStringAt`, which is MISSING the u32 tier — a real
-// reader bug surfaced by this suite and filed for triage as task 1371. Those
-// cases are quarantined with `it.fails` below: they prove the divergence and
-// flip to passing the moment 1371 extends tryReadBomStringAt to match
-// readCString. Per task 1370's STOP-on-bug rule, this suite does NOT touch the
-// byte/decode logic.
-const isU32Tier = (len: number) => len >= 0xffff;
+// separate scanner `tryReadBomStringAt`. That scanner USED TO BE MISSING the
+// u32 tier (a real reader bug surfaced by this suite and triaged as task 1371):
+// for a >=0xffff-code-unit BomString it stopped at the u16=0xffff sentinel,
+// taking 0xffff as the literal length and consuming the u32 length bytes as
+// content — desyncing every following Contents field. Task 1371 extended
+// tryReadBomStringAt to mirror readCString byte-for-byte across all three tiers,
+// so the previously-quarantined u32-tier Contents cases (className + display
+// name at 65535/65536) now PASS as ordinary assertions.
 
 /** ASCII filler of exactly `n` code units (each char is one UTF-16 code unit). */
 function ascii(n: number): string {
@@ -174,6 +176,73 @@ describe("BomString primitive — writeBomString -> readCString at the escalatio
       expect(bytes[next]! | (bytes[next + 1]! << 8)).toBe(0x1234);
       expect(next).toBe(bytes.length - 2);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (a2) Contents-stream scanner tryReadBomStringAt — direct three-tier parity.
+//
+// The Contents call sites scan with tryReadBomStringAt (FF FE FF + escalating
+// length), NOT readCString. Task 1371 extended it with the third (u32) tier.
+// Drive the writer (writeBomString emits FF FE FF + writeBomLength) into the
+// scanner and assert it decodes byte-for-byte identically to readCString on all
+// three tiers, leaving the cursor exactly past the string (so following Contents
+// fields stay in sync). This is the focused unit guard for the scanner itself.
+// ---------------------------------------------------------------------------
+describe("BomString scanner — tryReadBomStringAt matches readCString on all three length tiers", () => {
+  for (const len of BOUNDARY_LENS) {
+    for (const [label, make] of [
+      ["ASCII", ascii],
+      ["multibyte tail", withMultibyteTail],
+    ] as const) {
+      it(`len ${len} (${label}) decodes byte-for-byte like readCString and consumes the exact bytes`, () => {
+        const s = make(len);
+        const w = new ByteWriter(len * 2 + 16);
+        writeBomString(w, s);
+        const bytes = w.finish();
+
+        // Scanner decodes the full value and reports the end just past it.
+        const scanned = __tryReadBomStringAtForTest(bytes, 0);
+        expect(scanned).not.toBeNull();
+        expect(scanned!.value).toBe(s);
+        expect(scanned!.end).toBe(bytes.length);
+
+        // Byte-for-byte parity with the canonical reader (same value + cursor).
+        const canonical = __readBomStringForTest(bytes, 0);
+        expect(scanned!.value).toBe(canonical.value);
+        expect(scanned!.end).toBe(canonical.next);
+      });
+    }
+  }
+
+  it("scans a BomString embedded between other bytes, leaving the cursor exactly past it (u32 tier)", () => {
+    // The 65535/65536-code-unit cases are the u32 tier added by 1371. A wrong
+    // length width here would consume the trailing sentinel and desync the scan.
+    for (const len of [65535, 65536]) {
+      const s = withMultibyteTail(len);
+      const w = new ByteWriter(len * 2 + 16);
+      w.u32(0xdeadbeef);
+      writeBomString(w, s);
+      w.u16(0x1234); // sentinel after the string
+      const bytes = w.finish();
+
+      const scanned = __tryReadBomStringAtForTest(bytes, 4);
+      expect(scanned).not.toBeNull();
+      expect(scanned!.value).toBe(s);
+      expect(bytes[scanned!.end]! | (bytes[scanned!.end + 1]! << 8)).toBe(0x1234);
+      expect(scanned!.end).toBe(bytes.length - 2);
+    }
+  });
+
+  it("returns null when there is no FF FE FF marker at pos (scanner contract intact)", () => {
+    const bytes = new Uint8Array([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]);
+    expect(__tryReadBomStringAtForTest(bytes, 0)).toBeNull();
+  });
+
+  it("returns null when the u32 length tier is truncated (bounds check intact)", () => {
+    // FF FE FF, u8=0xff, u16=0xffff, then a TRUNCATED u32 (only 2 of 4 bytes).
+    const bytes = new Uint8Array([0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00]);
+    expect(__tryReadBomStringAtForTest(bytes, 0)).toBeNull();
   });
 });
 
@@ -289,9 +358,7 @@ describe("BomString call site — SYMBOL className (AS2 linkage) boundary round-
       ["ASCII", ascii],
       ["multibyte tail", withMultibyteTail],
     ] as const) {
-      // u32-tier cases are quarantined: tryReadBomStringAt under-reads them (task 1371).
-      const tc = isU32Tier(len) ? it.fails : it;
-      tc(`className len ${len} (${label}) round-trips through the writeAsLinkage block`, () => {
+      it(`className len ${len} (${label}) round-trips through the writeAsLinkage block`, () => {
         const className = make(len);
         const sym = createSymbol("Ball", "movieclip", {
           linkage: {
@@ -330,9 +397,7 @@ describe("BomString call site — LIBRARY ITEM display name boundary round-trip 
       ["ASCII", ascii],
       ["multibyte tail", withMultibyteTail],
     ] as const) {
-      // u32-tier cases are quarantined: tryReadBomStringAt under-reads them (task 1371).
-      const tc = isU32Tier(len) ? it.fails : it;
-      tc(`symbol display name len ${len} (${label}) round-trips through the CDocumentPage record`, () => {
+      it(`symbol display name len ${len} (${label}) round-trips through the CDocumentPage record`, () => {
         const displayName = make(len);
         const sym = createSymbol(displayName, "movieclip");
         const doc = baseDoc([sceneWith("Scene 1", [createLayer("Layer 1", "normal", {

@@ -3530,6 +3530,16 @@ function tryReadBomStringAt(buf: Uint8Array, pos: number): { value: string; end:
     if (p + 2 > buf.length) return null;
     len = buf[p]! | (buf[p + 1]! << 8);
     p += 2;
+    // Third escalation tier (mirrors readCString ~787-790 and the writer's
+    // writeBomLength): a u16 length of 0xffff signals that the real length is
+    // carried by a following u32. Without this, a >=0xffff-code-unit BomString
+    // is under-read — 0xffff taken as the literal length, the u32 bytes consumed
+    // as content — desyncing every following Contents field.
+    if (len === 0xffff) {
+      if (p + 4 > buf.length) return null;
+      len = (buf[p]! | (buf[p + 1]! << 8) | (buf[p + 2]! << 16) | (buf[p + 3]! << 24)) >>> 0;
+      p += 4;
+    }
   }
   if (p + len * 2 > buf.length) return null;
   return { value: utf16le(buf.subarray(p, p + len * 2)), end: p + len * 2 };
@@ -4172,4 +4182,19 @@ export function __readBomStringForTest(
   r.pos = offset;
   const value = readCString(r);
   return { value, next: r.pos };
+}
+
+/**
+ * Test-only hook: drive the REAL Contents-stream BomString scanner
+ * `tryReadBomStringAt` (the FF FE FF scanner used by all 11 Contents call
+ * sites). Returns `null` when no BomString is present at `pos`, otherwise the
+ * decoded value and the absolute byte offset just past it. Used by the
+ * length-boundary suite to pin the scanner's three length-escalation tiers
+ * (u8; 0xff + u16; 0xff + u16(0xffff) + u32) byte-for-byte against `readCString`.
+ */
+export function __tryReadBomStringAtForTest(
+  buf: Uint8Array,
+  pos: number,
+): { value: string; end: number } | null {
+  return tryReadBomStringAt(buf, pos);
 }

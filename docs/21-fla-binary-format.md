@@ -184,11 +184,13 @@ by treating a decoded u16 length of `0xFFFF` as the "read a u32 next" sentinel. 
 points (254/255 and 65534/65535) are the off-by-one boundaries pinned by
 `__tests__/bomstring-length-boundary.test.ts`.
 
-> Known divergence (task 1371): the *secondary* Contents-stream scanner `tryReadBomStringAt`
-> (used for symbol display names, scene names, AS2 linkage ids/classNames, paths, media and font
-> names) implements only the first two tiers and under-reads any BomString of length ≥ 0xFFFF.
-> The writer and the primary `readCString` reader are correct; only that scanner needs the u32
-> tier added to match. The boundary suite quarantines those cases (`it.fails`) until 1371 lands.
+Both readers implement all three tiers identically: the primary `readCString` and the
+*secondary* Contents-stream scanner `tryReadBomStringAt` (used for symbol display names, scene
+names, AS2 linkage ids/classNames, paths, media and font names) each escalate u8 → `FF` + u16 →
+`FF` + u16(0xFFFF) + u32, byte-for-byte with the writer. (Task 1371 added the u32 tier to
+`tryReadBomStringAt`, which previously stopped at the two-tier form and under-read any BomString
+of length ≥ 0xFFFF; the boundary suite now exercises both readers against the writer across all
+three tiers, including a direct `tryReadBomStringAt` parity test.)
 
 ### 4.2 Matrix
 
