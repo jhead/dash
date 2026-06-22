@@ -1,0 +1,10 @@
+{
+  "id": "1369-5bogyn-fla-writer-timeline-write-truncates-page-n-strea",
+  "title": "FLA writer: timeline-write truncates Page N stream for very short layer names (e.g. 'L')",
+  "description": "Surfaced by task 1224 (commit 05dd752). In the FLA writer timeline-write path (packages/core/src/fla/write/timeline-write.ts, task 1205 domain), saving a layer with a very short name (e.g. a 1-char name like 'L') truncates the 'Page N' stream / produces an incorrect byte layout, so it does not round-trip. The default 'Layer 1' name parses fine, which is why 1224's media-catalog round-trip test uses that name. REPRO: save a doc whose layer name is 'L' (or other very short names) and re-import via tryLoadRealFla; the Page N stream is malformed/truncated. Root-cause the length/offset handling for short layer-name BomStrings in timeline-write (likely an off-by-one or a fixed-width assumption about the name field) and fix so any valid layer name length round-trips. VERIFY: build + core fla tests green (flash8-empty.fla gates may SKIP per 1207 \u2014 not a failure); add a round-trip regression for short (1-char) and empty/edge-length layer names; do not regress 1205's existing Page N byte tests or 1224's media-catalog test. Byte-fidelity-sensitive (1205 domain): validate against a real fixture where possible and STOP+report rather than merge if bytes can't be confirmed. ACQUIRE lock; commit incl task file; push origin/main rebase-retry (keep origin .counter on conflict).",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-06-22T20:16:57Z",
+  "updated_at": "2026-06-22T20:16:57Z"
+}
