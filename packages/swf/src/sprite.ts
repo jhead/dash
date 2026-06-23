@@ -749,18 +749,34 @@ export function encodeDefineSprite(
           } else if (displayObj.type === "shape" && displayObj.visible === false) {
             const zeroCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
             spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, zeroCXForm, objTransform)));
-          } else if (hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters)) {
+          } else if (
+            hasEnabledFilters((displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters) ||
+            (displayObj.type === "shape" && !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal")
+          ) {
+            // Task 1373 (mirrors the SCENE path frames.ts ~line 516 + the sprite
+            // shape MOVE branch below): a symbol-internal ShapeDisplayObject can
+            // carry BOTH a non-normal blendMode AND enabled filters (independent
+            // fields), so they must combine into ONE PlaceObject3 that sets
+            // HasFilterList (flags2 0x01) AND HasBlendMode (0x02), writing the
+            // FILTERLIST then the blend-mode byte (SWF field order: cxform -> ratio
+            // -> name -> filterlist -> blendmode -> cacheAsBitmap). The previous
+            // chain tested filters FIRST in isolation and emitted a filters-only
+            // PO3 (no HasBlendMode), so a shape with both silently DROPPED the blend
+            // (the task-1240 scene-path defect, never fixed here): red+multiply+glow
+            // over cyan rendered RED instead of BLACK in Ruffle. When blend is
+            // present route to encodePlaceObject3WithBlendMode passing the filter
+            // list as the `filters` arg so a single PO3 carries both; filters-only
+            // (blend normal/absent) falls through to the filters-only encoder.
             let shapeCXForm = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
               ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect) ?? undefined
               : undefined;
             if (!shapeCXForm && displayObj.type === "shape" && (displayObj as { alpha?: number }).alpha !== undefined && (displayObj as { alpha: number }).alpha !== 1) {
               shapeCXForm = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: Math.round(Math.max(0, Math.min(1, (displayObj as { alpha: number }).alpha)) * 256), redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
             }
-            const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, objTransform, undefined, undefined, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap, shapeCXForm);
-            spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
-          } else if (displayObj.type === "shape" && !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal") {
-            // Bug 1139 fix: blend mode on first placement requires PlaceObject3
-            const placeBody = encodePlaceObject3WithBlendMode(charId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, objTransform, undefined, undefined, false, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap);
+            const shapeHasBlend = displayObj.type === "shape" && !!(displayObj as { blendMode?: string }).blendMode && (displayObj as { blendMode: string }).blendMode !== "normal";
+            const placeBody = shapeHasBlend
+              ? encodePlaceObject3WithBlendMode(charId, depth, x, y, (displayObj as { blendMode: string }).blendMode, (displayObj as { filters?: readonly import("@flash/core").FlashFilter[] }).filters, objTransform, undefined, shapeCXForm, false, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap)
+              : encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, objTransform, undefined, undefined, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap, shapeCXForm);
             spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
             spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y, objTransform)));

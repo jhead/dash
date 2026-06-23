@@ -499,36 +499,26 @@ test.describe('task 1372: multi-flag PlaceObject Ruffle oracles', () => {
   // -------------------------------------------------------------------------
   // (c) SYMBOL-INTERNAL shape with filters+blend (sprite.ts path), mirrors (a).
   //
-  // *** REAL, ORACLE-CONFIRMED BUG — filed for triage, see docs note below. ***
+  // *** FIXED by task 1373 — this is now an ACTIVE passing regression oracle. ***
   //
-  // This oracle FAILS today because the sprite.ts shape FIRST-PLACEMENT branch
-  // (packages/swf/src/sprite.ts ~line 752) checks `hasEnabledFilters` BEFORE the
-  // blend branch and routes to `encodePlaceObject3WithFilters` — which sets
-  // HasFilterList + HasCacheAsBitmap but DROPS HasBlendMode. So a symbol-internal
-  // shape carrying BOTH a non-normal blendMode AND filters loses the blend.
+  // The sprite.ts shape FIRST-PLACEMENT branch (packages/swf/src/sprite.ts ~line
+  // 752) used to check `hasEnabledFilters` BEFORE the blend branch and route to
+  // `encodePlaceObject3WithFilters` — which set HasFilterList + HasCacheAsBitmap
+  // but DROPPED HasBlendMode. So a symbol-internal shape carrying BOTH a non-normal
+  // blendMode AND filters lost the blend. Task 1373 reordered that branch to mirror
+  // the SCENE path (frames.ts) and the sprite shape MOVE branch: a non-normal blend
+  // now routes to `encodePlaceObject3WithBlendMode` carrying the filter list, so a
+  // single PlaceObject3 sets HasFilterList AND HasBlendMode (AND HasCacheAsBitmap).
   //
-  // It is NOT a byte-only nicety: it is runtime-observable in real bundled Ruffle.
-  // With a red shape (255,0,0) + multiply blend over a cyan (0,255,255) backdrop:
-  //   • the SCENE path (frames.ts, correct) emits a PO3 with HasBlendMode → Ruffle
-  //     renders the interior BLACK (red×cyan multiply ≈ 0,0,0);
-  //   • the SPRITE path (sprite.ts, buggy) drops the blend → Ruffle renders the
-  //     interior plain RED (255,0,0).
-  // (Verified by the diagnostic run during task 1372.)
+  // This was NOT a byte-only nicety: it was runtime-observable in real bundled
+  // Ruffle. With a red shape (255,0,0) + multiply blend over a cyan (0,255,255)
+  // backdrop both the scene path and the sprite path now render the interior BLACK
+  // (red×cyan multiply ≈ 0,0,0) — see (c-runtime) below for the parity proof.
   //
-  // The fix is the SAME shape as the scene-path fix the encoder already carries
-  // (frames.ts combines blend+filters into one `encodePlaceObject3WithBlendMode`)
-  // and as the sprite MOVE path (sprite.ts ~line 995 already orders blend-first):
-  // reorder the sprite shape FIRST-PLACEMENT branch to detect a non-normal blend
-  // and pass the filter list to `encodePlaceObject3WithBlendMode`. Per task 1372
-  // (and CLAUDE.md), byte logic must NOT be patched without oracle confirmation
-  // outside the holder's scope — this is filed, not fixed here.
-  //
-  // Marked test.fixme so the suite stays GREEN while the bug is open; the body is
-  // the regression oracle that must PASS once the sprite path is fixed (remove the
-  // .fixme then). It asserts BOTH the structural three-flag co-occurrence AND the
-  // runtime multiply render.
+  // This oracle asserts BOTH the structural three-flag co-occurrence inside the
+  // DefineSprite AND the runtime filter render.
   // -------------------------------------------------------------------------
-  test.fixme('(c) sprite-internal shape with blend+filters+cacheAsBitmap: a PO3 inside the DefineSprite has all three flags AND the blend renders (KNOWN BUG: sprite.ts drops HasBlendMode when filters present)', async ({ page }, testInfo: TestInfo) => {
+  test('(c) sprite-internal shape with blend+filters+cacheAsBitmap: a PO3 inside the DefineSprite has all three flags AND the blend renders', async ({ page }, testInfo: TestInfo) => {
     const bg = '#cccccc';
     const bgRgb = hexToRgb(bg);
     const fill: RGBA = { r: 255, g: 0, b: 0, a: 255 };
@@ -566,38 +556,38 @@ test.describe('task 1372: multi-flag PlaceObject Ruffle oracles', () => {
   });
 
   // -------------------------------------------------------------------------
-  // (c-bug) The RUNTIME PROOF of the sprite-path blend drop, kept ACTIVE so the
-  // confirmed defect is pinned and audited until it's fixed. Same blend+filter
-  // shape placed scene-level (correct) vs symbol-internal (buggy) over a cyan
-  // backdrop where `multiply` visibly differs: the scene interior renders BLACK,
-  // the sprite interior renders plain RED (blend dropped). When the sprite path
-  // is fixed, BOTH render black and THIS test fails → flip it to assert equality
-  // and delete the .fixme on (c) above. (Active = the audit sees the bug is real
-  // and still open; it does not block the suite because it asserts the CURRENT
-  // wrong behaviour, with a clear note that it must be inverted on fix.)
+  // (c-runtime) The RUNTIME PARITY PROOF (was (c-bug), inverted by task 1373).
+  // Same blend+filter shape placed scene-level (always correct) vs symbol-internal
+  // (was buggy, now fixed) over a cyan backdrop where `multiply` visibly differs.
+  // Before 1373 the scene interior rendered BLACK while the sprite interior rendered
+  // plain RED (sprite blend dropped). After 1373 BOTH paths emit a PlaceObject3 with
+  // HasBlendMode alongside HasFilterList, so BOTH interiors render the multiplied
+  // dark colour (red×cyan ≈ 0,0,0). This pins that the sprite path now MATCHES the
+  // scene path both structurally and at runtime in real bundled Ruffle.
   // -------------------------------------------------------------------------
-  test('(c-bug) sprite-internal blend+filters drop is real and runtime-observable in Ruffle (PINS the open defect)', async ({ page }, testInfo: TestInfo) => {
+  test('(c-runtime) sprite-internal blend+filters now matches the scene path: both keep HasBlendMode AND multiply renders dark in Ruffle', async ({ page }, testInfo: TestInfo) => {
     const cyan = '#00ffff';
     const red: RGBA = { r: 255, g: 0, b: 0, a: 255 };
 
     // Scene path (correct): multiply blend applied → interior BLACK.
     const sceneB64 = await publishDoc(page, makeMultiFlagShapeDoc({ box: SHAPE, fill: red, bg: cyan, withFilter: true, blend: 'multiply' }));
-    // Sprite path (buggy): multiply blend dropped → interior RED.
+    // Sprite path (fixed): multiply blend now preserved → interior BLACK too.
     const spriteB64 = await publishDoc(page, makeSpriteInternalMultiFlagDoc({ box: SHAPE, fill: red, bg: cyan, withFilter: true, blend: 'multiply' }));
 
-    // Structural witness: scene PO3 has HasBlendMode, sprite PO3 does NOT.
+    // Structural witness: BOTH scene PO3 and sprite PO3 now carry HasBlendMode.
     const { parseSwfTagsDeep, decodePlaceObject3 } = await import('./helpers/swf-parse');
     const sceneFlags = parseSwfTagsDeep(Buffer.from(sceneB64, 'base64')).filter((t) => t.type === 70).map((t) => decodePlaceObject3(t.body));
     const spriteFlags = parseSwfTagsDeep(Buffer.from(spriteB64, 'base64')).filter((t) => t.type === 70).map((t) => decodePlaceObject3(t.body));
     const sceneBlendPO3 = sceneFlags.find((d) => d.hasFilterList);
     const spriteBlendPO3 = spriteFlags.find((d) => d.hasFilterList);
     expect(sceneBlendPO3?.hasBlendMode, 'scene path keeps HasBlendMode alongside filters (correct)').toBe(true);
-    // THE DEFECT: the sprite path drops HasBlendMode when filters are present.
-    expect(spriteBlendPO3?.hasBlendMode, 'KNOWN BUG: sprite path DROPS HasBlendMode when filters present').toBe(false);
+    // THE FIX: the sprite path now keeps HasBlendMode when filters are present.
+    expect(spriteBlendPO3?.hasBlendMode, 'task 1373: sprite path now KEEPS HasBlendMode when filters present').toBe(true);
+    expect(spriteBlendPO3?.hasFilterList, 'sprite path still carries the FILTERLIST alongside the blend').toBe(true);
 
-    // Runtime witness in real Ruffle: scene interior BLACK, sprite interior RED.
-    const sceneShot = await renderSwfInRuffle(page, sceneB64, '__mf_cbug_scene__');
-    const spriteShot = await renderSwfInRuffle(page, spriteB64, '__mf_cbug_sprite__');
+    // Runtime witness in real Ruffle: scene interior BLACK and sprite interior BLACK.
+    const sceneShot = await renderSwfInRuffle(page, sceneB64, '__mf_cruntime_scene__');
+    const spriteShot = await renderSwfInRuffle(page, spriteB64, '__mf_cruntime_sprite__');
     const interior = (buf: Buffer) => {
       const img = PNG.sync.read(buf);
       const sx = img.width / 550, sy = img.height / 400;
@@ -610,12 +600,12 @@ test.describe('task 1372: multi-flag PlaceObject Ruffle oracles', () => {
       return n ? { r: r / n, g: g / n, b: b / n } : { r: 0, g: 0, b: 0 };
     };
     const si = interior(sceneShot), pi = interior(spriteShot);
-    testInfo.annotations.push({ type: 'measurement', description: `(c-bug) scene interior=(${si.r.toFixed(0)},${si.g.toFixed(0)},${si.b.toFixed(0)}) sprite interior=(${pi.r.toFixed(0)},${pi.g.toFixed(0)},${pi.b.toFixed(0)})` });
+    testInfo.annotations.push({ type: 'measurement', description: `(c-runtime) scene interior=(${si.r.toFixed(0)},${si.g.toFixed(0)},${si.b.toFixed(0)}) sprite interior=(${pi.r.toFixed(0)},${pi.g.toFixed(0)},${pi.b.toFixed(0)})` });
 
     // Scene (correct, blend applied): multiply red×cyan ≈ black.
     expect(si.r + si.g + si.b, 'scene path: multiply blend renders the interior dark (correct)').toBeLessThan(120);
-    // Sprite (buggy, blend dropped): plain red survives.
-    expect(pi.r, 'sprite path: blend dropped → interior is still red (THE DEFECT)').toBeGreaterThan(180);
-    expect(pi.g + pi.b, 'sprite path: interior is red, not the multiplied dark colour (THE DEFECT)').toBeLessThan(140);
+    // Sprite (fixed, blend preserved): also the multiplied dark colour, NOT plain red.
+    expect(pi.r, 'sprite path: blend preserved → interior is no longer plain red').toBeLessThan(180);
+    expect(pi.r + pi.g + pi.b, 'sprite path: multiply blend renders the interior dark (matches scene)').toBeLessThan(120);
   });
 });

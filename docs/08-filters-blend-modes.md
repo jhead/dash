@@ -147,25 +147,29 @@ Blend modes map to the SWF `PlaceObject3` blend-mode field and `MovieClip.blendM
     whose Move keeps clipActions** → the onClipEvent(enterFrame) fires after the move (trace)
     AND the moved blend+filter clip renders its glow halo (pixel). **PASSING / pinned.**
   - **(c) SYMBOL-INTERNAL (sprite.ts) shape with blend+filters+cacheAsBitmap** — mirrors (a)
-    at the DefineSprite level. **OPEN BUG, see below.**
-- **OPEN BUG (filed by task 1372, oracle-confirmed, NOT yet fixed): the SPRITE-INTERNAL shape
-  FIRST-PLACEMENT path drops HasBlendMode when filters are present.** This is the exact 1240
-  defect, never fixed in `packages/swf/src/sprite.ts`. The sprite shape first-placement branch
-  (`sprite.ts` ~line 752) tests `hasEnabledFilters()` FIRST and emits a filters-only
-  `encodePlaceObject3WithFilters` (no blend byte); the blend branch is the unreachable `else if`
-  — so a symbol-internal shape with BOTH a non-normal blendMode AND filters silently DROPS the
-  blend. It is runtime-observable in Ruffle: a red shape + `multiply` blend + glow over a cyan
-  backdrop renders BLACK via the scene path (correct) but plain RED via the sprite path (blend
-  dropped). The sprite shape MOVE branch (`sprite.ts` ~line 995) is already correct (it checks
-  `hasShapeBlend` first and passes the filter list) — so the fix mirrors that branch and the
-  scene path: reorder the sprite first-placement branch to call
-  `encodePlaceObject3WithBlendMode(charId, depth, x, y, blendMode, filters, …)` when a
-  non-normal blend is present. Pinned by `multiflag-placeobject-1372.spec.ts`: test `(c)` is
-  `test.fixme` (the regression oracle that goes green on fix — remove `.fixme` then), and test
-  `(c-bug)` is ACTIVE and asserts the CURRENT wrong behaviour (sprite PO3 lacks HasBlendMode;
-  interior renders red not multiplied) so the open defect stays audited until fixed (invert it
-  on fix). Per task 1372/CLAUDE.md the byte logic was NOT patched without a separate triaged
-  task. Follow-up task: `1373-*` (sprite-internal blend+filters PlaceObject3 blend drop).
+    at the DefineSprite level: one PlaceObject3 inside the DefineSprite with
+    HasBlendMode+HasFilterList+HasCacheAsBitmap, asserted structurally AND by a pixel oracle.
+    **PASSING / pinned (fixed by task 1373).**
+  - **(c-runtime) sprite-internal blend+filters now matches the scene path** — the same
+    red+`multiply`+glow shape over a cyan backdrop renders the multiplied dark interior via
+    BOTH the scene path and the sprite path in real Ruffle. **PASSING / pinned.**
+- **FIXED (task 1373): the SPRITE-INTERNAL shape FIRST-PLACEMENT path now keeps HasBlendMode
+  when filters are present, matching the scene path.** This was the exact 1240 defect, never
+  fixed in `packages/swf/src/sprite.ts` until now. The sprite shape first-placement branch
+  (`sprite.ts` ~line 752) used to test `hasEnabledFilters()` FIRST and emit a filters-only
+  `encodePlaceObject3WithFilters` (no blend byte), leaving the blend branch as an unreachable
+  `else if` — so a symbol-internal shape with BOTH a non-normal blendMode AND filters silently
+  DROPPED the blend (runtime-observable in Ruffle: a red shape + `multiply` blend + glow over a
+  cyan backdrop rendered BLACK via the scene path but plain RED via the sprite path). The fix
+  mirrors the already-correct sprite shape MOVE branch (`sprite.ts` ~line 995, which checks the
+  blend first and passes the filter list) and the scene path (`frames.ts`): the combined branch
+  now detects a non-normal blend and routes to
+  `encodePlaceObject3WithBlendMode(charId, depth, x, y, blendMode, filters, …)`, so a single
+  PlaceObject3 carries the FILTERLIST then the blend byte (SWF field order cxform → ratio → name
+  → filterlist → blendmode → cacheAsBitmap); filters-only and blend-only fall through unchanged.
+  Pinned by `multiflag-placeobject-1372.spec.ts` tests `(c)` and `(c-runtime)` (both active/
+  passing) plus the symbol-internal unit gate `blendmode.test.ts` tests 10-12 (mirroring the
+  scene-path tests 7-9).
 - Blend modes = GPU blend-state + custom fragment composites; Layer forces an offscreen group
   buffer so Alpha/Erase operate on the composited group.
 - Keep a filter/blend pipeline cache keyed on parameters + source bitmap hash.

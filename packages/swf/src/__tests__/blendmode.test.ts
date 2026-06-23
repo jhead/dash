@@ -491,4 +491,139 @@ describe("SWF blend mode encoding", () => {
       expect(po3[0].body[po3[0].body.length - 1]).toBe(SWF_BLEND_MODE["screen"]);
     }
   });
+
+  // -------------------------------------------------------------------------
+  // Tests 10-12 (task 1373): the SYMBOL-INTERNAL (sprite.ts) shape path must
+  // mirror the SCENE path (tests 7-9). A ShapeDisplayObject placed INSIDE a
+  // movieclip symbol that carries BOTH a non-normal blendMode AND filters must
+  // emit ONE PlaceObject3 (inside the DefineSprite body) with HasFilterList AND
+  // HasBlendMode. The sprite first-placement branch used to test filters FIRST
+  // and drop the blend; this gate pins the fix.
+  // -------------------------------------------------------------------------
+
+  const TAG_DEFINE_SPRITE = 39;
+
+  // Parse the PlaceObject3 tags that live INSIDE a DefineSprite body. The
+  // DefineSprite body is: UI16 spriteId, UI16 frameCount, then a nested tag
+  // stream (same record-header encoding as the top-level stream).
+  function placeObject3sInsideSprites(swf: Uint8Array): SwfTag[] {
+    const out: SwfTag[] = [];
+    for (const tag of parseTags(swf)) {
+      if (tag.code !== TAG_DEFINE_SPRITE) continue;
+      const body = tag.body;
+      // Skip spriteId (2) + frameCount (2); the rest is a nested tag stream.
+      let pos = 4;
+      while (pos < body.length) {
+        const recordHeader = body[pos] | (body[pos + 1] << 8);
+        const tagCode = (recordHeader >> 6) & 0x3ff;
+        let bodyLength = recordHeader & 0x3f;
+        let headerSize = 2;
+        if (bodyLength === 0x3f) {
+          bodyLength =
+            body[pos + 2] |
+            (body[pos + 3] << 8) |
+            (body[pos + 4] << 16) |
+            (body[pos + 5] << 24);
+          headerSize = 6;
+        }
+        const bodyStart = pos + headerSize;
+        if (tagCode === TAG_PLACE_OBJECT3) {
+          out.push({ code: tagCode, body: body.slice(bodyStart, bodyStart + bodyLength) });
+        }
+        pos = bodyStart + bodyLength;
+        if (tagCode === TAG_END) break;
+      }
+    }
+    return out;
+  }
+
+  // Build a doc whose only on-stage content is an INSTANCE of a movieclip symbol;
+  // the symbol's timeline holds one shape carrying the given blend/filters. This
+  // routes the shape through sprite.ts (the DefineSprite builder), not frames.ts.
+  function makeSpriteInternalDoc(shapeExtra: Record<string, unknown>): FlashDocument {
+    const sym: Symbol = {
+      ...makeSymbol("sym-internal"),
+      timeline: {
+        layers: [makeLayer("sym-layer", [makeFrame([makeShapeObj("sym-shape", shapeExtra)], 0)])],
+      },
+    };
+    const inst = {
+      id: "inst-1",
+      type: "instance" as const,
+      symbolId: "sym-internal",
+      x: 0,
+      y: 0,
+    };
+    return makeDoc(
+      [makeScene([makeLayer("layer", [makeFrame([inst])])])],
+      [sym],
+    );
+  }
+
+  it("10. SYMBOL-INTERNAL shape with filter + blendMode='multiply' emits ONE sprite PlaceObject3 with both flags (task 1373)", () => {
+    const swf = compileDocument(
+      makeSpriteInternalDoc({ blendMode: "multiply" as const, filters: [makeBlurFilter()] }),
+    );
+    const spritePO3 = placeObject3sInsideSprites(swf);
+    // Exactly one PlaceObject3 inside the DefineSprite for the multi-flag shape.
+    expect(spritePO3.length).toBe(1);
+    const flags2 = spritePO3[0].body[1];
+    expect(flags2 & 0x01).toBe(0x01); // HasFilterList
+    expect(flags2 & 0x02).toBe(0x02); // HasBlendMode — was DROPPED before task 1373
+    expect(flags2 & 0x10).toBe(0); // HasImage must NOT be set
+    // Blend byte (multiply = 3) is the final byte; FILTERLIST precedes it.
+    const body = spritePO3[0].body;
+    expect(body[body.length - 1]).toBe(SWF_BLEND_MODE["multiply"]);
+    let foundBlur = false;
+    for (let i = 7; i < body.length - 2; i++) {
+      if (body[i] === 1 && body[i + 1] === 1) {
+        foundBlur = true;
+        break;
+      }
+    }
+    expect(foundBlur).toBe(true);
+  });
+
+  it("11. SYMBOL-INTERNAL shape with blend+filters writes FILTERLIST before the blend byte (task 1373)", () => {
+    const swf = compileDocument(
+      makeSpriteInternalDoc({ blendMode: "overlay" as const, filters: [makeBlurFilter()] }),
+    );
+    const body = placeObject3sInsideSprites(swf)[0].body;
+    const flags2 = body[1];
+    expect(flags2 & 0x01).toBe(0x01); // HasFilterList
+    expect(flags2 & 0x02).toBe(0x02); // HasBlendMode
+    // Blend byte is the final byte; the Blur FILTERLIST entry appears earlier.
+    expect(body[body.length - 1]).toBe(SWF_BLEND_MODE["overlay"]);
+    let blurOffset = -1;
+    for (let i = 7; i < body.length - 2; i++) {
+      if (body[i] === 1 && body[i + 1] === 1) {
+        blurOffset = i;
+        break;
+      }
+    }
+    expect(blurOffset).toBeGreaterThan(0);
+    expect(blurOffset).toBeLessThan(body.length - 1); // filters precede blend
+  });
+
+  it("12. SYMBOL-INTERNAL filter-only and blend-only shapes stay correct (task 1373 no-regress)", () => {
+    // Filter-only symbol-internal shape: HasFilterList set, HasBlendMode clear.
+    {
+      const swf = compileDocument(makeSpriteInternalDoc({ filters: [makeBlurFilter()] }));
+      const spritePO3 = placeObject3sInsideSprites(swf);
+      expect(spritePO3.length).toBe(1);
+      const flags2 = spritePO3[0].body[1];
+      expect(flags2 & 0x01).toBe(0x01); // HasFilterList
+      expect(flags2 & 0x02).toBe(0); // HasBlendMode clear
+    }
+    // Blend-only symbol-internal shape: HasBlendMode set, HasFilterList clear.
+    {
+      const swf = compileDocument(makeSpriteInternalDoc({ blendMode: "screen" as const }));
+      const spritePO3 = placeObject3sInsideSprites(swf);
+      expect(spritePO3.length).toBe(1);
+      const flags2 = spritePO3[0].body[1];
+      expect(flags2 & 0x02).toBe(0x02); // HasBlendMode
+      expect(flags2 & 0x01).toBe(0); // HasFilterList clear
+      expect(spritePO3[0].body[spritePO3[0].body.length - 1]).toBe(SWF_BLEND_MODE["screen"]);
+    }
+  });
 });
