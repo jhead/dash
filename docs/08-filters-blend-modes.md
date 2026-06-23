@@ -133,6 +133,39 @@ Blend modes map to the SWF `PlaceObject3` blend-mode field and `MovieClip.blendM
   filter list). Gates: `__tests__/blendmode.test.ts` tests 7–9 (shape filter+blend → one PO3
   with both flags + correct blend byte + intact FILTERLIST; filters-only and blend-only stay
   correct; encoder writes filters before the blend byte).
+- **Ruffle-pinned multi-flag PlaceObject combos (task 1372).** Field-order/flag-co-occurrence
+  on PlaceObject2/3 has regressed before (1238 dropped HasFilterList; 1240 dropped HasBlendMode
+  on the scene shape path; 1349 dropped HasName/HasClipActions), and per CLAUDE.md the Ruffle
+  oracle — not byte-presence — is the acceptance truth. `apps/desktop/e2e/multiflag-placeobject-1372.spec.ts`
+  now pins these combinations in REAL bundled Ruffle:
+  - **(a) SCENE shape with blendMode≠normal + enabled filters + cacheAsBitmap** → one
+    PlaceObject3 with HasBlendMode+HasFilterList+HasCacheAsBitmap. Asserted structurally
+    (decoded in encoder field order FILTERLIST→BlendMode→is_bitmap_cached, via the
+    multi-flag-aware decoder in `apps/desktop/e2e/helpers/swf-parse.ts`) AND by a pixel oracle
+    (glow halo renders, no Ruffle parse error). **PASSING / pinned.**
+  - **(b) INSTANCE MOVE carrying blend+filters on its PlaceObject3 alongside a SEPARATE clip
+    whose Move keeps clipActions** → the onClipEvent(enterFrame) fires after the move (trace)
+    AND the moved blend+filter clip renders its glow halo (pixel). **PASSING / pinned.**
+  - **(c) SYMBOL-INTERNAL (sprite.ts) shape with blend+filters+cacheAsBitmap** — mirrors (a)
+    at the DefineSprite level. **OPEN BUG, see below.**
+- **OPEN BUG (filed by task 1372, oracle-confirmed, NOT yet fixed): the SPRITE-INTERNAL shape
+  FIRST-PLACEMENT path drops HasBlendMode when filters are present.** This is the exact 1240
+  defect, never fixed in `packages/swf/src/sprite.ts`. The sprite shape first-placement branch
+  (`sprite.ts` ~line 752) tests `hasEnabledFilters()` FIRST and emits a filters-only
+  `encodePlaceObject3WithFilters` (no blend byte); the blend branch is the unreachable `else if`
+  — so a symbol-internal shape with BOTH a non-normal blendMode AND filters silently DROPS the
+  blend. It is runtime-observable in Ruffle: a red shape + `multiply` blend + glow over a cyan
+  backdrop renders BLACK via the scene path (correct) but plain RED via the sprite path (blend
+  dropped). The sprite shape MOVE branch (`sprite.ts` ~line 995) is already correct (it checks
+  `hasShapeBlend` first and passes the filter list) — so the fix mirrors that branch and the
+  scene path: reorder the sprite first-placement branch to call
+  `encodePlaceObject3WithBlendMode(charId, depth, x, y, blendMode, filters, …)` when a
+  non-normal blend is present. Pinned by `multiflag-placeobject-1372.spec.ts`: test `(c)` is
+  `test.fixme` (the regression oracle that goes green on fix — remove `.fixme` then), and test
+  `(c-bug)` is ACTIVE and asserts the CURRENT wrong behaviour (sprite PO3 lacks HasBlendMode;
+  interior renders red not multiplied) so the open defect stays audited until fixed (invert it
+  on fix). Per task 1372/CLAUDE.md the byte logic was NOT patched without a separate triaged
+  task. Follow-up task: `1373-*` (sprite-internal blend+filters PlaceObject3 blend drop).
 - Blend modes = GPU blend-state + custom fragment composites; Layer forces an offscreen group
   buffer so Alpha/Erase operate on the composited group.
 - Keep a filter/blend pipeline cache keyed on parameters + source bitmap hash.

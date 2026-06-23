@@ -83,6 +83,52 @@ export function parseSwfTags(rawOrDecompressed: Buffer): SwfTag[] {
   return tags;
 }
 
+/**
+ * Parse a RAW tag stream (no SWF header / FrameSize prefix) starting at `start`.
+ * Used to walk the nested control-tag stream inside a DefineSprite body.
+ */
+function parseTagStream(bytes: Buffer, start: number): SwfTag[] {
+  let offset = start;
+  const tags: SwfTag[] = [];
+  while (offset <= bytes.length - 2) {
+    const tagWord = bytes.readUInt16LE(offset);
+    const tagType = tagWord >> 6;
+    const tagShortLen = tagWord & 0x3f;
+    offset += 2;
+    let tagLen = tagShortLen;
+    if (tagShortLen === 0x3f) {
+      if (offset + 4 > bytes.length) break;
+      tagLen = bytes.readUInt32LE(offset);
+      offset += 4;
+    }
+    tags.push({ type: tagType, body: bytes.subarray(offset, offset + tagLen) });
+    offset += tagLen;
+    if (tagType === 0) break; // End tag terminates the sprite stream
+  }
+  return tags;
+}
+
+/**
+ * Parse every top-level tag PLUS the nested control tags inside each
+ * DefineSprite (tag 39). A DefineSprite body is `UI16 spriteId, UI16 frameCount`
+ * then its own tag stream — so a symbol-internal PlaceObject3 (the sprite.ts
+ * emit path) lives there, not at top level. Returns the flattened union so an
+ * oracle can find a sprite-internal placement with the same finder it uses for
+ * scene-level placements (task 1372).
+ */
+export function parseSwfTagsDeep(rawOrDecompressed: Buffer): SwfTag[] {
+  const top = parseSwfTags(rawOrDecompressed);
+  const out: SwfTag[] = [];
+  for (const tag of top) {
+    out.push(tag);
+    if (tag.type === 39) {
+      // DefineSprite: skip spriteId (UI16) + frameCount (UI16), then walk nested.
+      out.push(...parseTagStream(tag.body, 4));
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // PlaceObject3 FILTERLIST decoder (task 1242)
 // ---------------------------------------------------------------------------
@@ -99,11 +145,21 @@ export interface DecodedFilter {
 
 /**
  * Decoded PlaceObject3 (tag 70): whether it carried a FILTERLIST and, if so,
- * the decoded filters.
+ * the decoded filters. The multi-flag fields (task 1372) record whether the
+ * HasBlendMode / HasCacheAsBitmap bits of flags2 were set and, when present, the
+ * trailing BlendMode UI8 and is_bitmap_cached UI8 values — so an oracle can pin
+ * that a single PlaceObject3 carried filters + blend + cacheAsBitmap together,
+ * in the exact encoder field order, with no parse drift.
  */
 export interface DecodedPlaceObject3 {
   hasFilterList: boolean;
+  hasBlendMode: boolean;
+  hasCacheAsBitmap: boolean;
   filters: DecodedFilter[];
+  /** BlendMode UI8 (only meaningful when hasBlendMode); undefined otherwise. */
+  blendMode?: number;
+  /** is_bitmap_cached UI8 (only meaningful when hasCacheAsBitmap); undefined otherwise. */
+  isBitmapCached?: number;
 }
 
 /**
@@ -170,7 +226,12 @@ export function decodePlaceObject3(body: Buffer): DecodedPlaceObject3 {
   const hasCXForm = (flags1 & (1 << 3)) !== 0;
   const hasRatio = (flags1 & (1 << 4)) !== 0;
   const hasName = (flags1 & (1 << 5)) !== 0;
+  // flags2 (high byte of the LE u16 PlaceFlag), per packages/swf/src/filters.ts:
+  //   bit 0 (0x01): HasFilterList, bit 1 (0x02): HasBlendMode,
+  //   bit 2 (0x04): HasCacheAsBitmap.
   const hasFilterList = (flags2 & (1 << 0)) !== 0;
+  const hasBlendMode = (flags2 & (1 << 1)) !== 0;
+  const hasCacheAsBitmap = (flags2 & (1 << 2)) !== 0;
 
   p += 2; // Depth UI16
   if (hasCharacter && !hasMove) p += 2; // CharacterId UI16
@@ -231,7 +292,16 @@ export function decodePlaceObject3(body: Buffer): DecodedPlaceObject3 {
     }
   }
 
-  return { hasFilterList, filters };
+  // BlendMode UI8 then is_bitmap_cached UI8 — in the exact encoder field order
+  // (packages/swf/src/filters.ts encodePlaceObject3WithBlendMode): FILTERLIST,
+  // BlendMode, is_bitmap_cached. Reading them here (task 1372) proves the three
+  // multi-flag fields co-occur in one PlaceObject3 with no parse drift.
+  let blendMode: number | undefined;
+  let isBitmapCached: number | undefined;
+  if (hasBlendMode) blendMode = body[p++];
+  if (hasCacheAsBitmap) isBitmapCached = body[p++];
+
+  return { hasFilterList, hasBlendMode, hasCacheAsBitmap, filters, blendMode, isBitmapCached };
 }
 
 /**
@@ -251,4 +321,25 @@ export function findSoleFilteredPlaceObject3(rawSwf: Buffer): DecodedPlaceObject
     );
   }
   return withFilters[0];
+}
+
+/**
+ * Find the single PlaceObject3 (tag 70) carrying ALL THREE of HasFilterList,
+ * HasBlendMode and HasCacheAsBitmap (task 1372). Returns every such tag so a
+ * multi-flag oracle can assert exactly the expected co-occurrence count (a scene
+ * placement, a sprite-internal placement, or a move can each emit one). Throws
+ * if there are none — the multi-flag fixtures always place at least one.
+ */
+export function findMultiFlagPlaceObject3s(rawSwf: Buffer): DecodedPlaceObject3[] {
+  const tags = parseSwfTagsDeep(rawSwf);
+  const multi = tags
+    .filter((t) => t.type === 70)
+    .map((t) => decodePlaceObject3(t.body))
+    .filter((d) => d.hasFilterList && d.hasBlendMode && d.hasCacheAsBitmap && d.filters.length > 0);
+  if (multi.length === 0) {
+    throw new Error(
+      'expected at least 1 PlaceObject3 with HasFilterList+HasBlendMode+HasCacheAsBitmap, found 0',
+    );
+  }
+  return multi;
 }
