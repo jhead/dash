@@ -1,0 +1,10 @@
+{
+  "id": "1420-1tf9t4-fla-writer-morph-tween-geometry-text-field-filte",
+  "title": "FLA writer: morph-tween geometry + text-field filter list on save (1386 deferred)",
+  "description": "Task 1386 deferred: (a) shape-tween morph geometry \u2014 writer emits `morphTag=0`, losing DefineMorphShape end-geometry; (b) text-field authoring filter list (\u00a716.2 wider format). Fix in packages/core/src/fla/write/*.ts with round-trip tests. Related read-side morph decoding is task 1415. See docs/21-fla-binary-format.md \u00a722. Acceptance: morph tween geometry and text-field filters survive a save\u2192load round-trip. NOTE: byte layouts here are less certain \u2014 validate against a real fixture (morph-shape-tween-mx.fla exists) before asserting byte-identity; if a sub-part can't be verified, land what's verifiable and note the rest.",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-07-02T02:47:11Z",
+  "updated_at": "2026-07-02T02:47:11Z"
+}

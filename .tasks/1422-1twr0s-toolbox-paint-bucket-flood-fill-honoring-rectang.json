@@ -1,0 +1,10 @@
+{
+  "id": "1422-1twr0s-toolbox-paint-bucket-flood-fill-honoring-rectang",
+  "title": "Toolbox: paint-bucket flood-fill honoring + Rectangle Alt-click dialog + Pen anchor editing (1388 deferred)",
+  "description": "Task 1388 deferred three tool behaviors whose UI options now exist but aren't fully honored: (a) paint-bucket Gap Size / Lock Fill flood-fill honoring (coordinate with task 1389 StageArea fill work); (b) Rectangle Alt-click exact-dimensions dialog; (c) Pen sub-tools \u2014 Add/Delete/Convert Anchor editing behaviors (bindings exist; editing ops don't). Implement in packages/authoring-ui. Acceptance: each behaves per Flash 8 docs/04-toolbox.md. Split into separate commits/tasks later if it grows.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T02:47:11Z",
+  "updated_at": "2026-07-02T02:47:11Z"
+}

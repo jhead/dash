@@ -1,0 +1,10 @@
+{
+  "id": "1421-1tp0ci-toolbox-honor-brush-paint-modes-tablet-pressure-",
+  "title": "Toolbox: honor brush paint modes + tablet pressure/tilt in engine (1388 deferred)",
+  "description": "Task 1388 (commit 7c88b41) exposed + persisted brush paint mode (Normal/Fills/Behind/Selection/Inside) and Pressure/Tilt toggles in tool state, but the ENGINE does not yet honor non-Normal paint modes or tablet pressure/tilt when committing brush strokes (planar-merge / pointer path). Implement engine honoring in packages/core (planar/brush path) + wire the pointer pressure. Acceptance: painting with Behind/Fills/Selection/Inside modes composites correctly; pressure varies nib width. See docs/04-toolbox.md follow-ups.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T02:47:11Z",
+  "updated_at": "2026-07-02T02:47:11Z"
+}
