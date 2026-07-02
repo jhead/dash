@@ -832,3 +832,97 @@ describe("planar/arrangement — rotation comparator total order (task 1399)", (
     expect(anyArr.compareOutgoing(left, right)).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Interior-hole refill on rebuild (task 1425) — fill assignment must be
+// WINDING/PARITY aware within a shape's same-Fill loops.
+// ---------------------------------------------------------------------------
+
+describe("planar/build — interior holes survive rebuild (task 1425)", () => {
+  /** A CW (reversed) rect loop — a HOLE cut against a CCW outer loop of the same fill. */
+  function holeRectPath(x: number, y: number, w: number, h: number, fill: Fill): ShapePath {
+    // Reverse of rectPath: (x,y) -> (x+w,y) -> (x+w,y+h) -> (x,y+h) -> back (CW).
+    return {
+      start: { x, y },
+      segments: [
+        { type: "line", to: { x: x + w, y } },
+        { type: "line", to: { x: x + w, y: y + h } },
+        { type: "line", to: { x, y: y + h } },
+        { type: "line", to: { x, y } },
+      ],
+      fill,
+      closed: true,
+    };
+  }
+
+  it("WINDING-COUNT PROOF: an outer loop + its enclosed hole loop toggle to EMPTY", () => {
+    // planarShapeToShape emits an interior hole as a SEPARATE closed loop that
+    // SHARES the outer loop's Fill object reference (rendering cuts the hole via
+    // non-zero winding). The hole centroid is enclosed by BOTH loops -> an even
+    // enclosure count -> it must resolve to NO fill on any rebuild. This is the
+    // exact idempotence the interactive eraser depends on.
+    const holeCentroid: Point = { x: 100, y: 50 };
+
+    // The two loops that a hole read-back produces, sharing ONE Fill object.
+    const outer = rectPath(0, 0, 200, 100, RED);
+    const hole = holeRectPath(80, 40, 40, 20, RED); // RED === RED (same object ref)
+
+    // Enclosure count at the hole centroid = 2 (inside outer AND inside hole).
+    const chord = (p: ShapePath): Point[] => {
+      const poly: Point[] = [p.start];
+      for (const s of p.segments) poly.push(s.to);
+      return poly;
+    };
+    const enclosures =
+      (pointInPolygon(holeCentroid, chord(outer)) ? 1 : 0) +
+      (pointInPolygon(holeCentroid, chord(hole)) ? 1 : 0);
+    expect(enclosures).toBe(2); // even -> hole
+
+    const shapeWithHole: Shape = { id: "holed", paths: [outer, hole] };
+    const ps = buildArrangementFromShapes([shapeWithHole]);
+
+    // The hole face must be EMPTY (fill null); the surrounding ring must stay RED.
+    const holeFace = locateFace(ps, holeCentroid);
+    expect(holeFace?.fill ?? null).toBeNull();
+    const ringFace = locateFace(ps, { x: 10, y: 50 });
+    expect(ringFace?.fill ?? null).not.toBeNull();
+  });
+
+  it("read-back -> rebuild is IDEMPOTENT for a shape with an interior hole", () => {
+    const outer = rectPath(0, 0, 200, 100, RED);
+    const hole = holeRectPath(80, 40, 40, 20, RED);
+    const shapeWithHole: Shape = { id: "holed", paths: [outer, hole] };
+
+    // First rebuild (read-back).
+    const ps1 = buildArrangementFromShapes([shapeWithHole]);
+    const back1 = planarShapeToShape(ps1, "r1");
+    // Second rebuild from the read-back result — the hole must persist.
+    const ps2 = buildArrangementFromShapes([back1]);
+    const holeFace = locateFace(ps2, { x: 100, y: 50 });
+    expect(holeFace?.fill ?? null).toBeNull();
+  });
+
+  it("NO REGRESSION: two SEPARATE same-color shapes still UNION (overlap stays filled)", () => {
+    // Distinct Fill object references (authored shapes) must NOT parity-cancel:
+    // their overlap is a same-color union, still filled.
+    const a = rectShape("a", 0, 0, 100, 100, RED);
+    const b = rectShape("b", 50, 50, 100, 100, { ...RED }); // distinct Fill object
+    const ps = buildArrangementFromShapes([a, b]);
+    const overlap = locateFace(ps, { x: 75, y: 75 });
+    expect(overlap?.fill ?? null).not.toBeNull();
+  });
+
+  it("NO REGRESSION: different-color island still carves a hole (top wins)", () => {
+    // Blue square fully inside a red square: the island resolves to BLUE, the ring
+    // stays RED (unchanged different-color cut).
+    const red = rectShape("red", 0, 0, 200, 200, RED);
+    const blue = rectShape("blue", 80, 80, 40, 40, BLUE);
+    const ps = buildArrangementFromShapes([red, blue]);
+    const island = locateFace(ps, { x: 100, y: 100 });
+    const ring = locateFace(ps, { x: 10, y: 100 });
+    expect(island?.fill ?? null).not.toBeNull();
+    expect(ring?.fill ?? null).not.toBeNull();
+    // island fill differs from ring fill (blue vs red).
+    expect(island?.fill).not.toBe(ring?.fill);
+  });
+});

@@ -6,7 +6,9 @@ import {
   buildEraserStamp,
   livePlanarShape,
   buildArrangementFromShapes,
+  planarShapeToShape,
   faceArea,
+  locateFace,
   pointInPolygon,
   edgeAt,
 } from "../planar/index.js";
@@ -724,3 +726,66 @@ function colorArea(shape: Shape | null, fill: Fill): number {
 
 // keep livePlanarShape referenced (used indirectly by faucet)
 void livePlanarShape;
+
+// ---------------------------------------------------------------------------
+// Interior erased holes must PERSIST across rebuilds (task 1425).
+//
+// The interactive eraser chains a planar rebuild per pointermove (each move
+// erases into the PREVIOUS result). Before the fix, assignFaceFillsBySampling
+// was last-covering-wins with no parity, so a read-back hole loop (which carries
+// the outer fill) re-filled the hole on the next rebuild — only the LAST stamp
+// stayed erased and the whole swept trail behind the cursor re-filled.
+// ---------------------------------------------------------------------------
+
+describe("planar eraser — interior holes persist across rebuilds (task 1425)", () => {
+  /** True when the point resolves to NO fill (an erased hole) in a rebuilt map. */
+  function isEmptyAt(shape: Shape, pt: Point): boolean {
+    const ps = buildArrangementFromShapes([shape]);
+    const face = locateFace(ps, pt);
+    return (face?.fill ?? null) === null;
+  }
+
+  it("REPRO 1: a chained 3-increment interactive erase leaves ALL stamp centers erased", () => {
+    // Red rect 0..200 x 0..100; sweep the eraser along y=50 like StageArea does:
+    // each segment erases into the previous result.
+    let cur: Shape = rectShape("sq", 0, 0, 200, 100, RED);
+    const xs = [30, 50, 70, 90];
+    for (let i = 1; i < xs.length; i++) {
+      const stamp = buildEraserStamp(
+        [{ x: xs[i - 1], y: 50 }, { x: xs[i], y: 50 }],
+        8
+      );
+      const res = planarEraseShape(cur, stamp);
+      expect(res.shape).not.toBeNull();
+      cur = res.shape!;
+    }
+    // Every stamp center along the swept trail must remain erased (a hole).
+    for (const cx of [50, 70, 90]) {
+      expect(isEmptyAt(cur, { x: cx, y: 50 })).toBe(true);
+    }
+    // The un-erased body is still filled.
+    expect(isEmptyAt(cur, { x: 150, y: 20 })).toBe(false);
+  });
+
+  it("REPRO 2: erase a hole, then an overlapping commit does NOT refill the hole", () => {
+    const square = rectShape("sq", 0, 0, 100, 100, RED);
+    const holed = planarEraseShape(square, buildEraserStamp([{ x: 50, y: 50 }], 15)).shape!;
+    expect(isEmptyAt(holed, { x: 50, y: 50 })).toBe(true);
+
+    // An overlapping blue rect at the corner pulls the whole shape through the
+    // kernel again (a real overlapping merge commit). The interior hole must stay.
+    const blue = rectShape("blue", 80, 80, 60, 60, BLUE);
+    const ps = buildArrangementFromShapes([holed, blue]);
+    const merged = planarShapeToShape(ps, "merged");
+    expect(isEmptyAt(merged, { x: 50, y: 50 })).toBe(true);
+  });
+
+  it("REPRO 3: picking (livePlanarShape/locateFace) sees the erased hole as EMPTY", () => {
+    const square = rectShape("sq", 0, 0, 100, 100, RED);
+    const holed = planarEraseShape(square, buildEraserStamp([{ x: 50, y: 50 }], 15)).shape!;
+    // The LIVE planar map used by paint-bucket / selection / faucet.
+    const live = livePlanarShape(holed);
+    const face = locateFace(live, { x: 50, y: 50 });
+    expect(face?.fill ?? null).toBeNull();
+  });
+});

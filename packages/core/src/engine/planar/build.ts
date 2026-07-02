@@ -64,20 +64,54 @@ export function buildArrangementFromShapes(shapes: readonly Shape[]): ReturnType
   // later-drawn fill wins where colors differ, and same-color fills union (any
   // covering loop colors the region).  This is what makes the planar faces carry
   // the correct merge result regardless of overlapping/coincident boundaries.
-  const fillRegions: { poly: Point[]; fill: number }[] = [];
+  //
+  // WINDING/PARITY (task 1425): a shape read back from the planar map emits an
+  // interior HOLE as a SEPARATE closed loop that CARRIES the outer loop's fill and
+  // SHARES its Fill OBJECT reference (the renderer cuts the hole via the non-zero
+  // winding rule; see planarShapeToShape / renderShape). Treating every loop as an
+  // independent last-covering-wins region re-fills the hole on any rebuild (the
+  // outer silhouette covers the hole centroid), so an erased interior hole
+  // silently self-reverts. We therefore GROUP a shape's loops that share ONE Fill
+  // object into a single region and test membership by EVEN-ODD parity across the
+  // group: a point enclosed by an outer loop AND its hole loop toggles OUT (even
+  // enclosure count) = no fill. Authored shapes carry a DISTINCT Fill object per
+  // path, so each becomes its own single-loop group (parity == plain containment)
+  // — same-color union / different-color cut (top group wins) are unchanged.
+  const fillRegions: { poly: Point[]; fill: number; group: number }[] = [];
+  // Stable id per (source shape, Fill object identity). Keyed by object ref so
+  // two shapes never share a group even if they use an equal-valued Fill.
+  const groupOf = new Map<string, number>();
+  const fillObjId = new Map<Fill, number>();
+  const objIdFor = (f: Fill): number => {
+    let id = fillObjId.get(f);
+    if (id === undefined) {
+      id = fillObjId.size;
+      fillObjId.set(f, id);
+    }
+    return id;
+  };
 
+  let shapeIdx = 0;
   for (const shape of shapes) {
     for (const path of shape.paths) {
       for (const e of pathToInputEdges(path, internFill, internLine)) {
         arr.insertEdge(e);
       }
       if (path.fill && path.closed) {
+        const key = `${shapeIdx}:${objIdFor(path.fill)}`;
+        let group = groupOf.get(key);
+        if (group === undefined) {
+          group = groupOf.size;
+          groupOf.set(key, group);
+        }
         fillRegions.push({
           poly: chordPolygon(shapePathToEdgeGeometries(path)),
           fill: internFill(path.fill),
+          group,
         });
       }
     }
+    shapeIdx++;
   }
 
   const ps = arr.build();
@@ -87,14 +121,31 @@ export function buildArrangementFromShapes(shapes: readonly Shape[]): ReturnType
 
 /**
  * Resolve every bounded face's fill by sampling an interior point against the
- * source fill regions in draw order: the LAST region (topmost) covering the
- * point wins.  Faces covered by no region are background (null).  This realizes
- * merge semantics (same-color union, different-color cut) on the planar map.
+ * source fill regions, GROUPED by (source shape, Fill object identity) in draw
+ * order.  A group "covers" the point when an ODD number of its loops enclose it
+ * (even-odd parity) — so an outer loop plus its enclosed hole loop toggle OUT
+ * (task 1425).  The LAST covering group (topmost in draw order) wins; faces
+ * covered by no group are background (null).  This realizes merge semantics
+ * (same-color union, different-color cut) AND keeps interior holes empty across
+ * rebuilds.
  */
 function assignFaceFillsBySampling(
   ps: PlanarShape,
-  regions: readonly { poly: Point[]; fill: number }[]
+  regions: readonly { poly: Point[]; fill: number; group: number }[]
 ): void {
+  // Bucket regions by group, preserving first-appearance order = draw order.
+  const groupOrder: number[] = [];
+  const byGroup = new Map<number, { poly: Point[]; fill: number }[]>();
+  for (const r of regions) {
+    let bucket = byGroup.get(r.group);
+    if (!bucket) {
+      bucket = [];
+      byGroup.set(r.group, bucket);
+      groupOrder.push(r.group);
+    }
+    bucket.push(r);
+  }
+
   for (const f of ps.faces) {
     if (f.unbounded) {
       f.fill = null;
@@ -106,8 +157,13 @@ function assignFaceFillsBySampling(
       continue;
     }
     let resolved: number | null = null;
-    for (const r of regions) {
-      if (pointInPolygon(pt, r.poly)) resolved = r.fill;
+    for (const g of groupOrder) {
+      const bucket = byGroup.get(g)!;
+      // Even-odd across the group's loops: an outer + hole enclosure cancels.
+      let enclosures = 0;
+      for (const r of bucket) if (pointInPolygon(pt, r.poly)) enclosures++;
+      // All loops of a group share one Fill object -> one interned index.
+      if (enclosures % 2 === 1) resolved = bucket[0].fill;
     }
     f.fill = resolved;
   }

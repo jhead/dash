@@ -136,7 +136,7 @@ A curve-aware half-edge planar subdivision (arrangement). Modules:
 | `intersect.ts` | The three intersection primitives — `intersectSegSeg` (analytic, incl. collinear-overlap), `intersectSegCurve` (quadratic root solve against the segment's line), `intersectCurveCurve` (recursive subdivision). All return **parameter pairs** `{tA, tB}` + the snapped point, so the arrangement can split each edge at the exact place while keeping the curve. `intersectEdges` dispatches on line vs curve. |
 | `arrangement.ts` | `Arrangement` — the mutable DCEL builder. `insertEdge` splits the new edge AND every existing edge it crosses at all intersections (curve-preserving), merges coincident vertices (exact twip-key compare), builds the **rotation system** around each vertex (CCW angular order of outgoing half-edges), links `next`/`prev` into face cycles, and **extracts faces** with proper **hole nesting** (a CW boundary cycle inside a CCW face becomes that face's hole; disconnected islands attach correctly). `build()` returns an immutable `PlanarShape`. |
 | `query.ts` | `locateFace` / `pointInFace` (point-in-face, smallest-containing wins), `faceArea` (shoelace, holes subtracted), `faceBoundaryPolygon` / `traceCycle`, `faceInteriorPoint`, `eulerCharacteristic`, and `Shape ↔ arrangement` conversions. |
-| `build.ts` | High-level builders: `buildArrangementFromShapes` (intern + dedupe fill/line styles, insert all paths, then **resolve each face's fill by interior-point sampling against the source regions in draw order** — last/topmost wins, which realizes same-color union + different-color cut on the planar map), `buildArrangement` (raw edges), `pathToInputEdges` (orientation-normalize a fill path so the interior is on the LEFT). |
+| `build.ts` | High-level builders: `buildArrangementFromShapes` (intern + dedupe fill/line styles, insert all paths, then **resolve each face's fill by interior-point sampling against the source regions, GROUPED by (source shape, Fill object identity) with EVEN-ODD parity WITHIN a group and last/topmost group wins ACROSS groups** — realizes same-color union + different-color cut, AND keeps interior holes empty across rebuilds; see the winding-aware note below), `buildArrangement` (raw edges), `pathToInputEdges` (orientation-normalize a fill path so the interior is on the LEFT). |
 
 Public surface (re-exported from `@flash/core` `engine/index.ts`): the `planar`
 namespace (to avoid the `snapPoint` clash with `engine/snap.ts`), plus the
@@ -237,6 +237,27 @@ the topmost fill wins each face (P0's interior-point sampling), and a face's hol
 are emitted as additional loops sharing the **same `Fill` object reference** so the
 renderer's non-zero-winding batching (engine/renderer.ts) cuts the hole. Curves are
 preserved (quadratic controls survive the trace).
+
+**Fill sampling is WINDING/PARITY aware — interior holes survive rebuild (task
+1425).** The read-back above emits an interior hole as a SEPARATE closed loop that
+CARRIES the outer fill and SHARES its `Fill` OBJECT reference. `assignFaceFillsBySampling`
+used to be plain last-covering-wins per loop: on ANY rebuild (`buildArrangementFromShapes`
+/ `livePlanarShape` / the interactive eraser, which chains a rebuild per pointermove)
+the outer silhouette re-covered the hole centroid and the hole self-reverted to the
+fill — an erased interior hole would refill, only the last eraser stamp staying erased.
+The fix groups a shape's loops by **(source shape, `Fill` object identity)** and tests
+membership by **even-odd parity across the group**: a point enclosed by an outer loop
+AND its hole loop toggles OUT (even enclosure count = no fill), exactly mirroring the
+renderer's non-zero-winding hole cut. The **last covering GROUP** (topmost in draw
+order) still wins, so same-color union / different-color cut / islands are unchanged.
+Authored shapes carry a **distinct `Fill` object per path**, so each is its own
+single-loop group (parity == plain containment) — the grouping is the very distinction
+that separates a genuine hole (shared-reference loops) from two overlapping same-color
+authored fills (distinct references, which must UNION, not parity-cancel). Gates:
+`planar.test.ts` "interior holes survive rebuild" (winding-count proof + read-back
+idempotence + no-regression union/island) and `planar-eraser.test.ts` "interior holes
+persist across rebuilds" (chained interactive erase, erase-then-overlapping-commit,
+picking).
 
 **Kernel gap fixed for P1 (coincident edges).** P0's `Arrangement.addTwinPair`
 created a NEW half-edge pair even when a geometrically coincident undirected edge
