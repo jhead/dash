@@ -282,7 +282,12 @@ function writeCPicLayer(
     const blobsForFrame = pending.blobs;
     if (blobsForFrame.length > 0) pending.blobs = [];
     ct.useClass(w, "CPicFrame", 1);
-    writeCPicFrame(w, ct, f, Math.max(1, span), idx, blobsForFrame);
+    // Shape-tween morph geometry (§13): the morph end shape is the NEXT keyframe's
+    // raw graphics. Only a shape-tween start keyframe with a following keyframe
+    // emits a CPicMorphShape (task 1420).
+    const morphEnd =
+      f.tweenType === "shape" && next ? extractRawShapes(next) : [];
+    writeCPicFrame(w, ct, f, Math.max(1, span), idx, blobsForFrame, morphEnd);
   }
   // Post-frames lead-in (§10.2): null child tag, sentinel regpoint, F8 skip(2).
   ct.writeNull(w); // 00 00
@@ -329,6 +334,7 @@ function writeCPicFrame(
   duration: number,
   idx: WriteIndex,
   swfBlobs: readonly FlaSwfBlob[] = [],
+  morphEndShapes: readonly ShapeDisplayObject[] = [],
 ): void {
   // §11: u8 frameVersion = 0x04, u8 0x00.
   w.u8(0x04).u8(0x00);
@@ -364,19 +370,10 @@ function writeCPicFrame(
   //   3. Write the merged raw-shape geometry as the frame's INLINE shape body.
   // This keeps the running CArchive class table to {CPicPage,CPicLayer,CPicFrame}
   // for a shape-only doc (no spurious CPicShape NEWCLASS that derails the reader).
-  const rawShapes: ShapeDisplayObject[] = [];
-  const placed: DisplayObject[] = [];
-  for (const obj of frame.displayObjects) {
-    if (obj.type === "shape") {
-      rawShapes.push(obj);
-    } else if (obj.type === "drawing-object") {
-      // A drawing object's geometry merges into the inline shape too (it has no
-      // separate placeable identity in this writer).
-      rawShapes.push({ type: "shape", id: obj.id, shape: obj.shape, x: obj.x, y: obj.y });
-    } else {
-      placed.push(obj);
-    }
-  }
+  const rawShapes = extractRawShapes(frame);
+  const placed: DisplayObject[] = frame.displayObjects.filter(
+    (obj) => obj.type !== "shape" && obj.type !== "drawing-object",
+  );
 
   // Children = placed objects only (shapes are skipped — they go inline below).
   for (const obj of placed) {
@@ -434,7 +431,23 @@ function writeCPicFrame(
   w.u32(rotateFlaValue(frame.motionRotate));
   w.u32(frame.motionRotateCount | 0);
   w.u32(frame.labelType === "comment" ? 1 : frame.labelType === "anchor" ? 2 : 0);
-  w.u16(0); // morphTag
+  // morphTag (§13). A SHAPE tween whose next keyframe supplies the target geometry
+  // emits the CPicMorphShape end-shape + morph style tables here in place of the
+  // zero tag (task 1420). The reader (readCPicFrameNode in flash8-binary.ts) treats
+  // a non-zero morphTag as the CArchive class tag of the CPicMorphShape: it backs up
+  // 2 bytes, decodes the object via decodeMorphData, then repositions to the NEXT
+  // CPicFrame WITHOUT reading the remaining frame-tail fields (it `return`s from
+  // finishFrame). So we mirror that exactly — write the morph object, then RETURN
+  // (no orient/snap, oblist, tweenInstanceName, or ease-curve tail). An empty doc
+  // has no shape tweens, so this branch never runs for it (byte-neutral).
+  if (frame.tweenType === "shape" && morphEndShapes.length > 0) {
+    writeMorphShape(
+      w, ct, rawShapes, morphEndShapes,
+      frame.shapeBlend === "angular" ? 1 : 0, idx,
+    );
+    return;
+  }
+  w.u16(0); // morphTag (no shape-tween morph geometry)
   w.u32((frame.motionOrientToPath ? 0x01 : 0) | (frame.motionSnap ? 0x02 : 0));
   w.u16(0); // oblistTag
   writeBomString(w, ""); // tweenInstanceName (fs > 15)
@@ -781,6 +794,237 @@ function writeMergedShapeGeometry(w: ByteWriter, shapes: readonly ShapeDisplayOb
   }
   w.u8(0); // edge terminator
   w.u32(0); // cubicCount (schema > 4 post-edge stream)
+}
+
+/**
+ * Partition a frame's raw vector graphics (the shapes that merge into the frame's
+ * inline CPicShape body) out of its display objects. Object-Drawing objects are
+ * treated as raw shapes too (they have no separate placeable identity here). Used
+ * both by the inline-shape body and by the shape-tween morph writer (which needs
+ * the NEXT keyframe's raw graphics as the morph end geometry). Task 1420.
+ */
+function extractRawShapes(frame: Frame): ShapeDisplayObject[] {
+  const out: ShapeDisplayObject[] = [];
+  for (const obj of frame.displayObjects) {
+    if (obj.type === "shape") {
+      out.push(obj);
+    } else if (obj.type === "drawing-object") {
+      out.push({ type: "shape", id: obj.id, shape: obj.shape, x: obj.x, y: obj.y });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// CPicMorphShape (§13) — shape-tween end geometry + morph style tables
+// ---------------------------------------------------------------------------
+
+/** One contour of a shape, in ABSOLUTE pixel coords (the shape offset baked in). */
+interface MorphRun {
+  /** 1-based index into the run set's fill table (0 = no fill). */
+  fill1: number;
+  /** 1-based index into the run set's stroke table (0 = no stroke). */
+  line: number;
+  start: Point;
+  segs: readonly PathSegment[];
+}
+
+/**
+ * Flatten shapes into per-contour runs + a shared fill/stroke table. Each path's
+ * segments are re-based to absolute pixels (identity inline matrix), matching
+ * `writeMergedShapeGeometry`'s convention. Only paths that carry a fill or a
+ * stroke become runs (others contribute nothing to the morph).
+ */
+function buildMorphRuns(shapes: readonly ShapeDisplayObject[]): {
+  fills: Fill[];
+  strokes: Stroke[];
+  runs: MorphRun[];
+} {
+  const fills: Fill[] = [];
+  const strokes: Stroke[] = [];
+  const runs: MorphRun[] = [];
+  for (const shape of shapes) {
+    const ox = shape.x;
+    const oy = shape.y;
+    for (const p of shape.shape.paths) {
+      const fill1 = p.fill ? (fills.push(p.fill), fills.length) : 0;
+      const line = p.stroke ? (strokes.push(p.stroke), strokes.length) : 0;
+      if (fill1 === 0 && line === 0) continue;
+      const segs: PathSegment[] = p.segments.map((s) =>
+        s.type === "line"
+          ? { type: "line", to: { x: ox + s.to.x, y: oy + s.to.y } }
+          : {
+              type: "curve",
+              control: { x: ox + s.control.x, y: oy + s.control.y },
+              to: { x: ox + s.to.x, y: oy + s.to.y },
+            },
+      );
+      runs.push({ fill1, line, start: { x: ox + p.start.x, y: oy + p.start.y }, segs });
+    }
+  }
+  return { fills, strokes, runs };
+}
+
+/**
+ * Emit the CPicMorphShape object that carries a shape tween's END-keyframe
+ * geometry and morph style tables (§13 / §13.1). This is the exact inverse of
+ * `flash8-binary.ts decodeMorphData` (the VERIFIED read decoder pinned against
+ * `morph-shape-tween-mx.fla`, task 1415):
+ *
+ *   CPicMorphShape class tag (via the ClassTable)
+ *   u8 morphSchema = 0        // 0 => the decoder skips no registration point
+ *   u8 flags = 0
+ *   u16 0                     // empty CPicObjBase children list (null terminator)
+ *   CMorphSegment*            // one per contour, terminated by a null class tag:
+ *     s32 strokeStartIdx, strokeEndIdx, fillStartIdx, fillEndIdx  (0-based, -1=none)
+ *     s32 startA.x, startA.y  // start-keyframe pen origin (SWF twips)
+ *     s32 startB.x, startB.y  // end-keyframe   pen origin
+ *     u16 curveCount
+ *     CMorphCurve[curveCount]:
+ *       s32 controlA.x/y, anchorA.x/y   // start-keyframe edge
+ *       s32 controlB.x/y, anchorB.x/y   // end-keyframe   edge
+ *       u8 isLine; u8 0 ×3
+ *   u16 fillCount;   morphFillStyle[]   // §13.1 (END-keyframe styles)
+ *   u16 strokeCount; morphStrokeStyle[] // §13.2 (10 bytes each)
+ *   u8 shapeTweenBlend                  // 0=distributive, 1=angular
+ *
+ * Coordinates are plain SWF twips (px*20), NOT the 8.8 twips used by the inline
+ * CPicShape edge stream. The morph fill/stroke tables carry the END styles; each
+ * emitted CMorphSegment carries its END fill/stroke index (the decoder builds the
+ * end shape from the "B" points + the end indices). The "A" (start) geometry is
+ * best-effort — the decoder IGNORES it (the start keyframe supplies the start
+ * shape via its own inline CPicShape) — so it is filled from the start shape when
+ * its contour structure matches the end shape, else mirrored from the end shape.
+ * Verified end-to-end by round-tripping the emitted bytes through
+ * `__decodeMorphDataForTest` (write→read).
+ */
+function writeMorphShape(
+  w: ByteWriter,
+  ct: ClassTable,
+  startShapes: readonly ShapeDisplayObject[],
+  endShapes: readonly ShapeDisplayObject[],
+  shapeTweenBlend: number,
+  idx: WriteIndex,
+): void {
+  const end = buildMorphRuns(endShapes);
+  const start = buildMorphRuns(startShapes);
+
+  const morphTwips = (px: number): void => {
+    w.s32(Math.round(px * 20));
+  };
+
+  // CPicMorphShape header (schema 0 => no registration-point tail on the decoder).
+  ct.useClass(w, "CPicMorphShape", 1);
+  w.u8(0); // morphSchema
+  w.u8(0); // flags
+  ct.writeNull(w); // empty CPicObjBase children list
+
+  // One CMorphSegment per end contour.
+  for (let i = 0; i < end.runs.length; i++) {
+    const er = end.runs[i]!;
+    // Pair a start contour with the same segment count for the "A" geometry;
+    // otherwise mirror the end contour (the decoder ignores "A" anyway).
+    const sr =
+      start.runs[i] && start.runs[i]!.segs.length === er.segs.length ? start.runs[i]! : er;
+
+    ct.useClass(w, "CMorphSegment", 1);
+    const fillEndIdx = er.fill1 > 0 ? er.fill1 - 1 : -1;
+    const strokeEndIdx = er.line > 0 ? er.line - 1 : -1;
+    // Start indices are decoder-ignored; keep them self-consistent with the end.
+    w.s32(strokeEndIdx); // strokeStartIdx
+    w.s32(strokeEndIdx); // strokeEndIdx
+    w.s32(fillEndIdx); // fillStartIdx
+    w.s32(fillEndIdx); // fillEndIdx
+    morphTwips(sr.start.x); // startA
+    morphTwips(sr.start.y);
+    morphTwips(er.start.x); // startB
+    morphTwips(er.start.y);
+    w.u16(er.segs.length);
+
+    let penAx = sr.start.x;
+    let penAy = sr.start.y;
+    let penBx = er.start.x;
+    let penBy = er.start.y;
+    for (let c = 0; c < er.segs.length; c++) {
+      const es = er.segs[c]!;
+      const as = sr.segs[c] ?? es;
+      ct.useClass(w, "CMorphCurve", 1);
+      const isLine = es.type === "line";
+      const eCtrl =
+        es.type === "curve" ? es.control : { x: (penBx + es.to.x) / 2, y: (penBy + es.to.y) / 2 };
+      const aCtrl =
+        as.type === "curve" ? as.control : { x: (penAx + as.to.x) / 2, y: (penAy + as.to.y) / 2 };
+      // controlA / anchorA (start-keyframe edge).
+      morphTwips(aCtrl.x);
+      morphTwips(aCtrl.y);
+      morphTwips(as.to.x);
+      morphTwips(as.to.y);
+      // controlB / anchorB (end-keyframe edge).
+      morphTwips(eCtrl.x);
+      morphTwips(eCtrl.y);
+      morphTwips(es.to.x);
+      morphTwips(es.to.y);
+      w.u8(isLine ? 1 : 0);
+      w.raw(0x00, 0x00, 0x00); // padding
+      penAx = as.to.x;
+      penAy = as.to.y;
+      penBx = es.to.x;
+      penBy = es.to.y;
+    }
+  }
+  ct.writeNull(w); // segment-list terminator
+
+  // Morph fill/stroke tables (END-keyframe styles) then the blend byte.
+  w.u16(end.fills.length);
+  for (const f of end.fills) writeMorphFillStyle(w, f, idx);
+  w.u16(end.strokes.length);
+  for (const s of end.strokes) writeMorphStrokeStyle(w, s);
+  w.u8(shapeTweenBlend & 0xff);
+}
+
+/**
+ * §13.1 morph fill style — inverse of `flash8-binary.ts readMorphFillStyle`.
+ * Wire form (verified against morph-shape-tween-mx.fla): RGBA + u16 subtype, then
+ * per subtype a gradient (matrix + u8 stopCount + {u8 ratio; RGBA}) or bitmap
+ * (matrix + u16 mediaId); solid carries nothing more. NOTE: this is NARROWER than
+ * the inline-shape fill (`writeFillStyle`) — it has NO F8 gradient focal/flow
+ * extras and the subtype is a u16 (not u8 subtype + u8 more-flags).
+ */
+function writeMorphFillStyle(w: ByteWriter, fill: Fill, idx: WriteIndex): void {
+  if (fill.type === "solid") {
+    writeRGBA(w, fill.color);
+    w.u16(0x0000); // subtype: solid
+    return;
+  }
+  if (fill.type === "linear-gradient" || fill.type === "radial-gradient") {
+    const stops =
+      fill.stops.length > 0 ? fill.stops : [{ ratio: 0, color: { r: 0, g: 0, b: 0, a: 255 } }];
+    writeRGBA(w, stops[0]!.color); // base color (decoder ignores it for gradients)
+    w.u16(fill.type === "radial-gradient" ? 0x12 : 0x10); // gradient (0x10) +0x02 radial
+    writeMatrix(w, gradientMatrix(fill));
+    w.u8(Math.min(255, stops.length));
+    for (const s of stops) {
+      w.u8(s.ratio & 0xff);
+      writeRGBA(w, s.color);
+    }
+    return;
+  }
+  // bitmap fill.
+  writeRGBA(w, { r: 255, g: 255, b: 255, a: 255 });
+  w.u16(0x40 | (fill.repeat ? 0 : 0x01) | (fill.smooth ? 0x02 : 0)); // subtype: bitmap
+  writeMatrix(w, fill.matrix ?? identity());
+  w.u16(idx.mediaNumById.get(fill.bitmapId) ?? 0); // mediaId
+}
+
+/**
+ * §13.2 morph stroke style — inverse of `flash8-binary.ts readMorphStrokeStyle`:
+ * exactly ten bytes (RGBA + u32 width-in-twips + u16 0). Cap/join/scale detail is
+ * NOT stored in the morph table, so those model fields are dropped on this path.
+ */
+function writeMorphStrokeStyle(w: ByteWriter, stroke: Stroke): void {
+  writeRGBA(w, stroke.color);
+  w.u32(Math.round((stroke.width || 0) * 20));
+  w.u16(0x0000);
 }
 
 const SPREAD_BITS: Record<string, number> = { extend: 0, reflect: 1, repeat: 2 };
@@ -1158,6 +1402,221 @@ function qualityPasses(quality: number | undefined): number {
   return quality && quality > 0 ? quality : 1;
 }
 
+// ---------------------------------------------------------------------------
+// FLA authoring filter list (§16.2) — the WIDER text-field / display-object form
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit the FLA authoring filter block stored inside a CPicText (ts >= 0x0d),
+ * the inverse of `flash8-binary.ts readFlaFilterList` / `readOneFlaFilter`
+ * (byte-verified against flacomdoc + the golden-v2 fixture). The writer used to
+ * hardcode `hasFilters = 0`, dropping every text-field filter on save even though
+ * the importer fully decodes them (task 1386 deferred, done in 1420).
+ *
+ * Wire format:
+ *   u8 hasFilters (0 = none, 1 = present)
+ *   if present: UI32 count, then `count` FLA-format filter records
+ *   u16 trailing bytes (ALWAYS present, even when no filters)
+ *
+ * This is DISTINCT from the SWF-format list (`writeSwfFilterList`) used by symbol
+ * instances/bitmaps: the FLA form is a wider, fixed-length-per-type record set.
+ * A text field with no filters emits `00 00 00` — byte-identical to the old
+ * behaviour, so filterless text (and the empty doc) is byte-neutral.
+ *
+ * Supported (round-trip verified via the importer): drop-shadow, blur, glow,
+ * bevel, gradientGlow, gradientBevel, adjustColor. Unsupported here (documented
+ * gap, dropped on save): convolution, displacementMap, and raw color-matrix.
+ */
+function writeFlaFilterBlock(w: ByteWriter, filters: readonly FlashFilter[] | undefined): void {
+  const list = (filters ?? []).filter((f) => f.enabled !== false && isSupportedFlaFilter(f));
+  if (list.length === 0) {
+    w.u8(0); // hasFilters = 0
+    w.u16(0); // trailing
+    return;
+  }
+  w.u8(1); // hasFilters
+  w.u32(list.length);
+  for (const f of list) writeOneFlaFilter(w, f);
+  w.u16(0); // trailing
+}
+
+function isSupportedFlaFilter(f: FlashFilter): boolean {
+  switch (f.type) {
+    case "drop-shadow":
+    case "blur":
+    case "glow":
+    case "bevel":
+    case "gradientGlow":
+    case "gradientBevel":
+    case "adjustColor":
+      return true;
+    default:
+      return false; // convolution / displacementMap / raw color-matrix
+  }
+}
+
+/** Model strength (0–255) -> the FLA wire u16 (value * 100). */
+function flaStrengthU16(strength: number): number {
+  return Math.max(0, Math.min(0xffff, Math.round(strength * 100)));
+}
+
+/**
+ * Write one FLA-format filter record. Field order + lengths mirror
+ * `readOneFlaFilter` exactly (each record is a fixed length keyed by its type
+ * byte). Reserved / sub-header bytes are emitted with the documented constant
+ * values; the reader skips them, so only the modelled fields drive round-trip.
+ */
+function writeOneFlaFilter(w: ByteWriter, f: FlashFilter): void {
+  switch (f.type) {
+    case "drop-shadow": {
+      w.u8(0x00);
+      w.raw(0x04, 0x01); // sub-header
+      w.u32(1); // enabled + reserved
+      writeRGBA(w, { r: f.color.r, g: f.color.g, b: f.color.b, a: Math.round(f.alpha * 255) });
+      w.f32(f.distance);
+      w.f32(f.blurX);
+      w.f32(f.blurY);
+      w.f32(filterAngleRadians(f.angle));
+      w.u32(f.inner ? 1 : 0);
+      w.u32(f.knockout ? 1 : 0);
+      w.u32(qualityPasses(f.quality));
+      w.u16(flaStrengthU16(f.strength));
+      w.u16(0); // strength hi reserved
+      w.u8(f.hideObject ? 1 : 0);
+      w.raw(0x00, 0x00, 0x00); // reserved
+      return;
+    }
+    case "blur": {
+      w.u8(0x01);
+      w.raw(0x03, 0x04, 0x01); // sub-header
+      w.u32(1); // enabled + reserved
+      w.u32(0xffffffff); // reserved
+      w.f32(5.0); // 5.0 constant
+      w.f32(f.blurX);
+      w.f32(f.blurY);
+      w.f32(Math.PI / 4); // 45deg constant
+      w.u32(0).u32(0); // 8 reserved
+      w.u32(qualityPasses(f.quality));
+      w.raw(0x64, 0x00); // strength-ish constant
+      w.u32(0); // reserved
+      w.u16(0); // reserved
+      return;
+    }
+    case "glow": {
+      w.u8(0x02);
+      w.raw(0x03, 0x04, 0x01); // sub-header
+      w.u32(1); // enabled + reserved
+      writeRGBA(w, { r: f.color.r, g: f.color.g, b: f.color.b, a: Math.round(f.alpha * 255) });
+      w.f32(5.0); // 5.0 constant
+      w.f32(f.blurX);
+      w.f32(f.blurY);
+      w.f32(Math.PI / 4); // 45deg constant
+      w.u32(f.inner ? 1 : 0);
+      w.u32(f.knockout ? 1 : 0);
+      w.u32(qualityPasses(f.quality));
+      w.u16(flaStrengthU16(f.strength));
+      w.u16(0); // strength hi reserved
+      w.u32(0); // reserved
+      return;
+    }
+    case "bevel": {
+      w.u8(0x03);
+      w.raw(0x03, 0x04, 0x01); // sub-header
+      w.u32(1); // enabled + reserved
+      writeRGBA(w, {
+        r: f.shadowColor.r, g: f.shadowColor.g, b: f.shadowColor.b,
+        a: Math.round(f.shadowAlpha * 255),
+      });
+      w.f32(f.distance);
+      w.f32(f.blurX);
+      w.f32(f.blurY);
+      w.f32(filterAngleRadians(f.angle));
+      w.u32(f.bevelType === "inner" ? 1 : 0);
+      w.u32(f.knockout ? 1 : 0);
+      w.u32(qualityPasses(f.quality));
+      w.u16(flaStrengthU16(f.strength));
+      w.u16(0); // strength hi reserved
+      w.u32(0); // reserved
+      writeRGBA(w, {
+        r: f.highlightColor.r, g: f.highlightColor.g, b: f.highlightColor.b,
+        a: Math.round(f.highlightAlpha * 255),
+      });
+      w.u32(f.bevelType === "full" ? 1 : 0); // onTop (type == full)
+      return;
+    }
+    case "gradientGlow":
+    case "gradientBevel": {
+      if (f.type === "gradientBevel") {
+        w.u8(0x07);
+        w.u8(0x00); // extra leading byte before the sub-header
+      } else {
+        w.u8(0x04);
+      }
+      w.raw(0x01, 0x04, 0x01); // sub-header
+      w.u32(1); // enabled + reserved
+      w.raw(0x00, 0x00, 0x00, 0xff); // reserved
+      w.f32(f.distance);
+      w.f32(f.blurX);
+      w.f32(f.blurY);
+      w.f32(filterAngleRadians(f.angle));
+      w.u32(f.inner ? 1 : 0);
+      w.u32(f.knockout ? 1 : 0);
+      w.u32(qualityPasses(f.quality));
+      w.u16(flaStrengthU16(f.strength));
+      w.u16(0); // strength hi reserved
+      w.u32(0); // reserved
+      const stops = f.gradient;
+      w.u32(stops.length);
+      w.u32(0); // reserved
+      const onTop = f.type === "gradientBevel" && f.bevelType === "full";
+      w.u32(onTop ? 1 : 0);
+      for (const s of stops) {
+        const c = parseHexColor(s.color);
+        w.u8(s.ratio & 0xff);
+        w.raw(0x00, 0x00, 0x00); // reserved
+        writeRGBA(w, { r: c.r, g: c.g, b: c.b, a: Math.round(s.alpha * 255) });
+      }
+      return;
+    }
+    case "adjustColor": {
+      w.u8(0x06);
+      w.raw(0x01, 0x01); // sub-header
+      w.u32(1); // enabled + reserved
+      w.f32(f.brightness);
+      w.f32(f.contrast);
+      w.f32(f.saturation);
+      w.f32(f.hue);
+      return;
+    }
+    default:
+      return; // filtered out by isSupportedFlaFilter
+  }
+}
+
+/**
+ * Test-only: serialize a CPicMorphShape from start/end shapes into a standalone
+ * byte buffer (a fresh ClassTable so its class tags are NEWCLASS declarations),
+ * the exact bytes the reader's `decodeMorphData` consumes after the morphTag.
+ * Lets `__decodeMorphDataForTest` verify the write↔read morph inverse without a
+ * full FLA (task 1420).
+ */
+export function __writeMorphShapeForTest(
+  startShapes: readonly ShapeDisplayObject[],
+  endShapes: readonly ShapeDisplayObject[],
+  shapeTweenBlend: number,
+  idx?: WriteIndex,
+): Uint8Array {
+  const w = new ByteWriter(256);
+  const ct = new ClassTable();
+  const index: WriteIndex = idx ?? {
+    symbolNumById: new Map(),
+    mediaNumById: new Map(),
+    symbolTypeById: new Map(),
+  };
+  writeMorphShape(w, ct, startShapes, endShapes, shapeTweenBlend, index);
+  return w.finish();
+}
+
 /**
  * Inverse of `flash8-import.ts` `toColorEffect`: encode a model {@link ColorEffect}
  * into the §12 CXFORM channel block the reader (`readCPicSymbolFields`) decodes —
@@ -1346,16 +1805,20 @@ function writeCPicText(w: ByteWriter, ct: ClassTable, obj: TextDisplayObject): v
   // ts >= 9 tail: instanceName, accessibility, reserved, scrollable, reserved,
   // (ts>=0x0c) two CStrings, (ts>=0x0d) filter block.
   writeBomString(w, obj.instanceName ?? "");
-  w.u8(0); // accessibility absent
-  w.u32(0); // 4 reserved
+  // NO separate "accessibility" byte: the reader (readAccessibilityMaybe) only
+  // PEEKS the next byte and, when it is 0, returns WITHOUT consuming it — the
+  // following 4 reserved bytes' first byte doubles as the "no accessibility"
+  // marker. The old writer emitted an extra u8(0) here, a 1-byte overrun that
+  // shifted the reader past the scrollable flag and corrupted the §16.2 filter
+  // block (why text-field filters were deferred in 1386; fixed in 1420).
+  w.u32(0); // 4 reserved (first byte = accessibility-absent marker)
   w.u8(obj.scrollable ? 1 : 0); // scrollable
   w.u8(0).u8(0).u8(0); // 3 reserved
   // ts >= 0x0c
   writeBomString(w, ""); // reserved
   writeBomString(w, ""); // font embed ranges
-  // ts >= 0x0d: hasFilters marker + trailing u16.
-  w.u8(0); // hasFilters = 0
-  w.u16(0); // trailing
+  // ts >= 0x0d: FLA authoring filter block (§16.2 wider format) + trailing u16.
+  writeFlaFilterBlock(w, obj.filters);
 }
 
 /**

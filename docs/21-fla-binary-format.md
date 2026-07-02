@@ -1391,8 +1391,9 @@ dropping data the reader decodes):
   stored as SWF math-convention radians (the importer negates + normalises); blur/dropshadow/glow
   passes live in the flags byte, bevel/gradient passes in the low nibble. Symbol-instance filters
   precede the blend-mode byte + 2 reserved; bitmap filters follow the media id. `adjustColor`,
-  `convolution`, and `displacementMap` are **not** emitted (they need a lossy color-matrix decompose
-  on re-import) and text-field filters use the wider §16.2 authoring form — both remain gaps.
+  `convolution`, and `displacementMap` are **not** emitted on this SWF path (they need a lossy
+  color-matrix decompose on re-import). Text-field filters use the wider §16.2 authoring form
+  (`writeFlaFilterBlock`, emitted as of task 1420 — see below; `adjustColor` DOES round-trip there).
 - **Instance color effects (§12 / §14 CXFORM).** `colorEffectChannels` now encodes all four model
   effect kinds — brightness, tint, and advanced in addition to alpha — as the per-channel
   `u16 mult (256 = 1.0) + s16 off` block in (alpha, red, green, blue) order, the inverse of the
@@ -1449,9 +1450,48 @@ dropping data the reader decodes):
   to `flash8-empty.fla`. Round-trips are verified in `real-fla-write.test.ts` (mask association +
   guides survive save→load).
 
+**Emitted as of task 1420** (two write gaps deferred by task 1386, now closed):
+
+- **Shape-tween morph geometry (§13).** A shape-tween start keyframe now emits a `CPicMorphShape`
+  in place of the zero `morphTag`, carrying the END-keyframe geometry + morph style tables — the exact
+  inverse of `decodeMorphData` (the read decoder pinned against `morph-shape-tween-mx.fla` by task
+  1415). `writeMorphShape` (`timeline-write.ts`) emits, via the `ClassTable`: the `CPicMorphShape`
+  class tag, `u8 morphSchema=0` + `u8 flags=0` + a null children terminator, then one `CMorphSegment`
+  per contour (`s32 strokeStartIdx, strokeEndIdx, fillStartIdx, fillEndIdx` 0-based/-1=none; `s32`
+  start-A + start-B pen origins; `u16 curveCount`; then `CMorphCurve[]` each carrying `controlA/anchorA`
+  (start) + `controlB/anchorB` (end) + `u8 isLine` + 3 pad), a null terminator, the morph fill table
+  (§13.1 — RGBA + `u16` subtype, gradients carry matrix + `u8` stop count + `{u8 ratio; RGBA}`, bitmaps
+  matrix + `u16` mediaId) and stroke table (§13.2 — RGBA + `u32` width-twips + `u16 0`), then the
+  `u8 shapeTweenBlend` byte. Coordinates are **plain SWF twips (px·20)**, NOT the 8.8 twips of the
+  inline CPicShape edge stream. The reader treats a non-zero `morphTag` as the morph class tag, decodes
+  the object, and repositions to the next `CPicFrame` WITHOUT reading the frame tail — so the writer
+  mirrors that and RETURNS after the morph (no orient/snap, oblist, tweenInstanceName, or ease tail on a
+  shape-tween start keyframe). The morph tables carry the END styles; each segment's END fill/stroke
+  index drives the decoded end shape. The **"A" (start) geometry is best-effort** — the decoder ignores
+  it (the start keyframe's own CPicShape supplies the start shape), so it is filled from the start shape
+  when its contour structure matches the end shape, else mirrored from the end shape; likewise the
+  segment START style indices are decoder-ignored and kept self-consistent with the end indices.
+  Verified by (a) a write→read unit round-trip through `__decodeMorphDataForTest` (geometry, solid +
+  gradient fills, stroke, curve edge, blend byte) and (b) a full `morph-shape-tween-mx.fla`
+  import→save→re-import that preserves both keyframes' geometry and whose emitted morph decodes via the
+  real `decodeMorphData` path (no skip-fallback warning). An empty doc has no shape tweens → this branch
+  never runs, so the byte gates are unaffected.
+- **Text-field authoring filters (§16.2 wider form).** `writeFlaFilterBlock` emits the CPicText
+  filter block (`u8 hasFilters`; if present `u32 count` + FLA-format records + `u16` trailing; else just
+  the `u16` trailing) — the inverse of `readFlaFilterList` / `readOneFlaFilter`. This is the WIDER
+  fixed-length-per-type authoring form (drop-shadow 0x00, blur 0x01, glow 0x02, bevel 0x03,
+  gradient-glow 0x04, gradient-bevel 0x07, adjust-color 0x06), DISTINCT from the SWF filter-record form
+  (`writeSwfFilterList`) used by symbol instances/bitmaps. `adjustColor` round-trips its four params
+  directly here (unlike the SWF path, which cannot). Only ENABLED, modelled filters are emitted;
+  convolution / displacementMap / raw color-matrix stay dropped. **Coupled fix:** the CPicText tail
+  emitted a spurious `u8` "accessibility absent" byte, but `readAccessibilityMaybe` only PEEKS that byte
+  (returning WITHOUT consuming it when 0) — a 1-byte overrun that shifted the reader past the
+  `scrollable` flag and corrupted the filter block (why text filters were deferred in 1386). The byte is
+  removed: the 4 reserved bytes' first byte doubles as the "no accessibility" marker. A filterless text
+  field emits `00 00 00` here, byte-identical to before for that field; the empty doc has no text fields,
+  so the byte gates are unaffected.
+
 **Still deferred on the write path** (data-loss remains; not yet round-trippable):
 
-- **Shape-tween morph geometry (§13).** The CPicFrame `morphTag` is written as 0; end-shape morph
-  geometry is not emitted.
-- **Text-field filters (§16.2 authoring form)** and the envelope-level clamp / FixedPageTail
-  scene-vs-symbol reuse noted in §8.7 / §16.
+- **Convolution / displacementMap / raw color-matrix filters** on any object (no lossless model form),
+  the envelope-level clamp, and the FixedPageTail scene-vs-symbol reuse noted in §8.7 / §16.

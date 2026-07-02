@@ -16,7 +16,8 @@ import { dirname, resolve } from "node:path";
 import { saveRealFla } from "../write/fla-write.js";
 import { isOle2, tryLoadRealFla, __readAllStreamsForTest } from "../ole.js";
 import { validateContentsStream, validateTimelineStream } from "../write/carchive-validate.js";
-import { parseFla8Timeline } from "../flash8-binary.js";
+import { parseFla8Timeline, __decodeMorphDataForTest } from "../flash8-binary.js";
+import { __writeMorphShapeForTest } from "../write/timeline-write.js";
 import { createDocument, createDocumentProperties } from "../../model/document.js";
 import { createScene } from "../../model/scene.js";
 import { createLayer, createFrame } from "../../model/timeline.js";
@@ -26,6 +27,7 @@ import type {
   ColorEffect,
   Fill,
   ShapeDisplayObject,
+  Stroke,
   SymbolInstance,
   TextDisplayObject,
 } from "../../engine/types.js";
@@ -1369,3 +1371,259 @@ function countClassDecls(data: Uint8Array, name: string): number {
   }
   return n;
 }
+
+// ---------------------------------------------------------------------------
+// Shape-tween morph geometry (§13) — CPicMorphShape write path (task 1420)
+// ---------------------------------------------------------------------------
+
+/** A closed quad (line segments) with a solid fill + stroke, at an offset. */
+function morphQuad(
+  ox: number, oy: number, w: number, h: number,
+  fill: Fill, stroke: Stroke,
+): ShapeDisplayObject {
+  return {
+    type: "shape",
+    id: "m1",
+    x: ox,
+    y: oy,
+    shape: {
+      id: "mg1",
+      paths: [
+        {
+          start: { x: 0, y: 0 },
+          segments: [
+            { type: "line", to: { x: w, y: 0 } },
+            { type: "line", to: { x: w, y: h } },
+            { type: "line", to: { x: 0, y: 0 } },
+          ],
+          fill,
+          stroke,
+          closed: true,
+        },
+      ],
+    },
+  };
+}
+
+describe("writeMorphShape — write↔read morph inverse via decodeMorphData (task 1420)", () => {
+  it("round-trips end geometry, solid fill, stroke, and blend byte", () => {
+    const green = { r: 0, g: 255, b: 0, a: 255 };
+    const stroke = {
+      type: "solid" as const, color: green, width: 4,
+      caps: "round" as const, joints: "round" as const, miterLimit: 3,
+    };
+    const start = morphQuad(0, 0, 20, 20, { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } }, stroke);
+    const end = morphQuad(10, 20, 30, 40, { type: "solid", color: { r: 0, g: 0, b: 255, a: 255 } }, stroke);
+
+    const bytes = __writeMorphShapeForTest([start], [end], 1);
+    const { end: decoded, blend } = __decodeMorphDataForTest(bytes, [], []);
+
+    expect(blend).toBe(1); // angular
+    expect(decoded).not.toBeNull();
+    // Tables carry the END-keyframe styles.
+    expect(decoded!.fills).toHaveLength(1);
+    expect(decoded!.fills[0]).toMatchObject({ kind: "solid", color: { r: 0, g: 0, b: 255, a: 255 } });
+    expect(decoded!.strokes).toHaveLength(1);
+    expect(decoded!.strokes[0]).toMatchObject({ color: green, width: 4 });
+
+    // END geometry: absolute (offset baked): (10,20) → (40,20) → (40,60) → (10,20).
+    expect(decoded!.edges).toHaveLength(3);
+    const e = decoded!.edges;
+    expect([e[0]!.fromX, e[0]!.fromY]).toEqual([10, 20]);
+    expect([e[0]!.toX, e[0]!.toY]).toEqual([40, 20]);
+    expect([e[1]!.toX, e[1]!.toY]).toEqual([40, 60]);
+    expect([e[2]!.toX, e[2]!.toY]).toEqual([10, 20]);
+    // Each edge carries the end fill (index 1) + stroke (index 1); fill0 unused.
+    for (const edge of e) {
+      expect(edge.fill1).toBe(1);
+      expect(edge.line).toBe(1);
+      expect(edge.fill0).toBe(0);
+    }
+  });
+
+  it("round-trips a gradient morph fill (matrix + stops) and a curve edge", () => {
+    const gradFill: Fill = {
+      type: "linear-gradient",
+      angle: 0,
+      matrix: { a: 0.05, b: 0, c: 0, d: 0.05, tx: 12, ty: 34 },
+      stops: [
+        { ratio: 0, color: { r: 255, g: 0, b: 0, a: 255 } },
+        { ratio: 255, color: { r: 0, g: 0, b: 255, a: 255 } },
+      ],
+    };
+    const endShape: ShapeDisplayObject = {
+      type: "shape",
+      id: "g1",
+      x: 0,
+      y: 0,
+      shape: {
+        id: "gg1",
+        paths: [
+          {
+            start: { x: 0, y: 0 },
+            segments: [
+              { type: "curve", control: { x: 25, y: 10 }, to: { x: 50, y: 0 } },
+              { type: "line", to: { x: 0, y: 0 } },
+            ],
+            fill: gradFill,
+            closed: true,
+          },
+        ],
+      },
+    };
+    const bytes = __writeMorphShapeForTest([endShape], [endShape], 0);
+    const { end: decoded, blend } = __decodeMorphDataForTest(bytes, [], []);
+
+    expect(blend).toBe(0); // distributive
+    expect(decoded!.fills).toHaveLength(1);
+    const f = decoded!.fills[0]!;
+    expect(f.kind).toBe("linear-gradient");
+    if (f.kind === "linear-gradient") {
+      expect(f.stops.map((s) => s.color)).toEqual([
+        { r: 255, g: 0, b: 0, a: 255 },
+        { r: 0, g: 0, b: 255, a: 255 },
+      ]);
+      expect(f.matrix.a).toBeCloseTo(0.05, 4);
+      expect(f.matrix.tx).toBeCloseTo(12, 4);
+    }
+    // The curve edge survives: from (0,0) via control (25,10) to (50,0).
+    const curve = decoded!.edges.find((ed) => ed.kind === "curve");
+    expect(curve).toBeDefined();
+    expect([curve!.toX, curve!.toY]).toEqual([50, 0]);
+    expect([curve!.ctrlX, curve!.ctrlY]).toEqual([25, 10]);
+  });
+});
+
+describe("saveRealFla — shape tween morph geometry round-trips (morph-shape-tween-mx.fla)", () => {
+  const MORPH_FLA = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../fixtures/morph-shape-tween-mx.fla",
+  );
+
+  it("re-save→re-import preserves the two keyframes and shape geometry, and the emitted morph decodes cleanly (no skip fallback)", () => {
+    const doc = tryLoadRealFla(new Uint8Array(readFileSync(MORPH_FLA)));
+    expect(doc).not.toBeNull();
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let doc2: FlashDocument | null;
+    try {
+      doc2 = tryLoadRealFla(saveRealFla(doc!));
+      // Our emitted CPicMorphShape must decode via the real decodeMorphData path,
+      // NOT the skip-forward fallback (whose warning would appear here).
+      const skipWarnings = warnSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("morph data") && m.includes("skipped"));
+      expect(skipWarnings).toEqual([]);
+    } finally {
+      warnSpy.mockRestore();
+    }
+    expect(doc2).not.toBeNull();
+
+    const layer = doc2!.scenes[0]!.timeline.layers[0]!;
+    const keyframes = layer.frames.filter((f) => f.isKeyframe);
+    expect(keyframes.length).toBe(2);
+    expect(keyframes[0]!.tweenType).toBe("shape");
+
+    const startShape = keyframes[0]!.displayObjects[0] as ShapeDisplayObject;
+    const endShape = keyframes[1]!.displayObjects[0] as ShapeDisplayObject;
+    expect(startShape.type).toBe("shape");
+    expect(endShape.type).toBe("shape");
+    // Both quadrilateral keyframes survive the re-save.
+    expect(startShape.shape.paths[0]!.segments.length).toBe(4);
+    expect(endShape.shape.paths[0]!.segments.length).toBe(4);
+    // Distinct start/end geometry (the tween is still a real morph).
+    const sp = startShape.shape.paths[0]!.start;
+    const ep = endShape.shape.paths[0]!.start;
+    expect(Math.abs(sp.x - ep.x) > 0.01 || Math.abs(sp.y - ep.y) > 0.01).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Text-field authoring filter list (§16.2) — CPicText filter block (task 1420)
+// ---------------------------------------------------------------------------
+
+describe("saveRealFla — text-field filter list round-trips (task 1420)", () => {
+  function textWithFilters(filters: FlashFilter[]): FlashDocument {
+    const text = textObj({ instanceName: "tf", textType: "dynamic", filters });
+    return baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [text])])]);
+  }
+  function reimportedText(filters: FlashFilter[]): TextDisplayObject {
+    const out = tryLoadRealFla(saveRealFla(textWithFilters(filters)));
+    expect(out).not.toBeNull();
+    const el = out!.scenes[0]!.timeline.layers[0]!.frames[0]!.displayObjects.find(
+      (o) => o.type === "text",
+    ) as TextDisplayObject | undefined;
+    expect(el).toBeDefined();
+    return el!;
+  }
+
+  it("a drop-shadow filter on a text field survives (was: hasFilters always 0)", () => {
+    const el = reimportedText([
+      {
+        type: "drop-shadow",
+        color: { r: 12, g: 34, b: 56, a: 255 },
+        alpha: 1,
+        blurX: 8,
+        blurY: 8,
+        angle: 45,
+        distance: 5,
+        strength: 2,
+        inner: false,
+        knockout: false,
+        hideObject: false,
+        quality: 1,
+        enabled: true,
+      },
+    ]);
+    expect(el.filters?.length).toBe(1);
+    const f = el.filters![0]!;
+    expect(f.type).toBe("drop-shadow");
+    if (f.type === "drop-shadow") {
+      expect(f.color).toMatchObject({ r: 12, g: 34, b: 56 });
+      expect(f.blurX).toBeCloseTo(8, 3);
+      expect(f.blurY).toBeCloseTo(8, 3);
+      expect(f.distance).toBeCloseTo(5, 3);
+      expect(Math.round(f.angle)).toBe(45);
+      expect(f.strength).toBe(2);
+    }
+  });
+
+  it("an adjustColor filter on a text field round-trips its four params", () => {
+    const el = reimportedText([
+      { type: "adjustColor", brightness: 20, contrast: -10, saturation: 30, hue: 90, enabled: true },
+    ]);
+    expect(el.filters?.length).toBe(1);
+    const f = el.filters![0]!;
+    expect(f.type).toBe("adjustColor");
+    if (f.type === "adjustColor") {
+      expect(f.brightness).toBeCloseTo(20, 3);
+      expect(f.contrast).toBeCloseTo(-10, 3);
+      expect(f.saturation).toBeCloseTo(30, 3);
+      expect(f.hue).toBeCloseTo(90, 3);
+    }
+  });
+
+  it("multiple filters (blur + glow) round-trip in order and a disabled one is dropped", () => {
+    const el = reimportedText([
+      { type: "blur", blurX: 6, blurY: 6, quality: 2, enabled: true },
+      {
+        type: "glow", color: { r: 255, g: 0, b: 0, a: 255 }, alpha: 1, blurX: 4, blurY: 4,
+        strength: 3, inner: false, knockout: false, quality: 1, enabled: true,
+      },
+      { type: "blur", blurX: 99, blurY: 99, quality: 1, enabled: false },
+    ]);
+    expect(el.filters?.map((f) => f.type)).toEqual(["blur", "glow"]);
+    const blur = el.filters![0]!;
+    if (blur.type === "blur") {
+      expect(blur.blurX).toBeCloseTo(6, 3);
+    }
+  });
+
+  it("a text field with NO filters emits the byte-neutral empty block (structure stays valid)", () => {
+    const doc = baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [textObj({})])])]);
+    const streams = __readAllStreamsForTest(saveRealFla(doc));
+    validateContentsStream(streams.get("Contents")!);
+    const page = validateTimelineStream(streams.get("Page 1")!);
+    expect(page.classes).toContain("CPicText");
+  });
+});

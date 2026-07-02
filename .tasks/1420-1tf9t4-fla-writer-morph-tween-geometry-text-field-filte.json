@@ -1,10 +1,10 @@
 {
   "id": "1420-1tf9t4-fla-writer-morph-tween-geometry-text-field-filte",
   "title": "FLA writer: morph-tween geometry + text-field filter list on save (1386 deferred)",
-  "description": "Task 1386 deferred: (a) shape-tween morph geometry \u2014 writer emits `morphTag=0`, losing DefineMorphShape end-geometry; (b) text-field authoring filter list (\u00a716.2 wider format). Fix in packages/core/src/fla/write/*.ts with round-trip tests. Related read-side morph decoding is task 1415. See docs/21-fla-binary-format.md \u00a722. Acceptance: morph tween geometry and text-field filters survive a save\u2192load round-trip. NOTE: byte layouts here are less certain \u2014 validate against a real fixture (morph-shape-tween-mx.fla exists) before asserting byte-identity; if a sub-part can't be verified, land what's verifiable and note the rest.",
-  "status": "open",
+  "description": "DONE (see commit). Closed both write-path gaps deferred by 1386: (a) shape-tween morph geometry \u2014 writeMorphShape emits CPicMorphShape (end geometry + morph fill/stroke tables + blend byte) at the morphTag position, exact inverse of decodeMorphData (1415); (b) text-field \u00a716.2 authoring filter list via writeFlaFilterBlock, plus fixed a latent 1-byte CPicText tail overrun (spurious accessibility byte) that had blocked text filters. Byte-neutral for empty doc; 3 byte gates + Magnet/morph round-trips green. Tests in real-fla-write.test.ts.",
+  "status": "done",
   "effort": "high",
   "priority": "medium",
   "created_at": "2026-07-02T02:47:11Z",
-  "updated_at": "2026-07-02T02:47:11Z"
+  "updated_at": "2026-07-02T04:21:51Z"
 }
