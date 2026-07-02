@@ -143,3 +143,23 @@ All metrics are constants at the top of `packages/authoring-ui/src/Timeline.tsx`
 
 Sub-components: `FrameCell` (one cell), the layer-row map, the layer footer, the status
 bar, `PlayheadMarker`, `OnionRangeMarker`, `FrameCounterInput`.
+
+## Keyboard focus ownership
+
+The Timeline panel root carries `data-timeline-panel="true"` and self-grabs focus on
+mousedown (`tabIndex 0`). Its own `window` keydown handler acts **only while that focus
+holds** (`panelRef.contains(document.activeElement)`) and consumes: `F5`/`F6`/`F7`
+(insert frame / keyframe / blank keyframe), `ArrowLeft`/`ArrowRight` (frame scrub),
+`Enter` (play toggle), `Ctrl/Cmd+C`/`X`/`V` (frame clipboard), and
+`Delete`/`Backspace` (remove frame).
+
+Those same keys are also claimed by the Stage / global command handlers
+(`StageArea.tsx`'s Enter-playback, Delete, and Ctrl+C/X/V/D listeners, plus the
+`useCommandKeyboard` dispatcher in `dispatch/keyboard.ts`). To stop a single keypress
+from firing on both sides — historically `Delete` removed a frame **and** deleted the
+selected stage object (data loss), `Enter` toggled play twice, `Ctrl+C/X/V` hit both the
+frame and shape clipboards — those handlers now yield to a focused Timeline via
+`isTimelinePanelFocused()` (`dispatch/timelineFocus.ts`), the mirror of the Ruffle-focus
+guard `isWithinRufflePlayer`. The command dispatcher yields **only** the Timeline-owned
+bindings (`isTimelineOwnedBinding`), so global commands the Timeline does not consume —
+undo/redo, group, duplicate, text formatting — keep working while the Timeline is focused.

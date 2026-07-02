@@ -1,10 +1,10 @@
 {
   "id": "1376-9hhdyr-ui-timeline-and-stage-global-keydown-handlers-do",
   "title": "UI: Timeline and Stage global keydown handlers double-fire (Delete deletes both frame and stage object)",
-  "description": "Timeline registers a window keydown handler active whenever its panel is focused (packages/authoring-ui/src/Timeline.tsx:883-955; panel is tabIndex 0 and self-focuses on mousedown 1218-1227). StageArea registers separate window keydown handlers for Enter/playback (StageArea.tsx:3684-3698), Delete (3717-3733), and clipboard Ctrl+C/X/V/D (3736-3765) that only bail on Ruffle focus + INPUT/TEXTAREA/contentEditable, never on timeline focus. Neither side calls stopImmediatePropagation, so both fire for one key: Enter toggles play twice (net no-op), Delete/Backspace removes a frame AND deletes the selected stage object (data loss), Ctrl+C/X/V copies/cuts frames AND the shape clipboard simultaneously. Fix: gate StageArea global handlers on !timelinePanelHasFocus or route all shortcuts through one dispatcher (dispatch/keyboard.ts), or have the Timeline handler stopImmediatePropagation when it consumes a key. Confidence: confirmed interaction wiring; runtime double-effect mechanically certain.",
-  "status": "open",
+  "description": "Fixed: single Delete/Enter/Ctrl+C/X/V keypress no longer double-fires between the Timeline panel and Stage/global handlers. Added data-timeline-panel marker + shared isTimelinePanelFocused() (dispatch/timelineFocus.ts), mirroring isWithinRufflePlayer. StageArea Enter/Delete/clipboard handlers early-return when the Timeline is focused; useCommandKeyboard yields ONLY Timeline-owned bindings (isTimelineOwnedBinding) so undo/redo/group/duplicate/text still work while Timeline focused. VERIFY: 'pnpm --filter ./packages/** build' exit 0; 'pnpm --filter @flash/authoring-ui test --run' => 104 files, 1226 tests, all pass (new: timelineFocus.test.ts 5, keyboardTimelineFocus.test.ts 5, keyboardBindings isTimelineOwnedBinding 7). docs/20-timeline-ui-layout.md updated (Keyboard focus ownership).",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-07-02T01:13:36Z",
-  "updated_at": "2026-07-02T01:13:36Z"
+  "updated_at": "2026-07-02T01:34:32Z"
 }

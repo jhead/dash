@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { resolveKeyBinding, type KeyChord } from "../dispatch/keyboard.js";
+import {
+  resolveKeyBinding,
+  isTimelineOwnedBinding,
+  type KeyChord,
+} from "../dispatch/keyboard.js";
 
 const chord = (key: string, mods: Partial<KeyChord> = {}): KeyChord => ({ key, ...mods });
 
@@ -53,5 +57,42 @@ describe("resolveKeyBinding", () => {
   it("returns null for unmapped chords", () => {
     expect(resolveKeyBinding(chord("q"))).toBeNull();
     expect(resolveKeyBinding(chord("1", { ctrlKey: true }))).toBeNull();
+  });
+});
+
+describe("isTimelineOwnedBinding (task 1376)", () => {
+  const owned = (key: string, mods: Partial<KeyChord> = {}) => {
+    const b = resolveKeyBinding(chord(key, mods));
+    expect(b).not.toBeNull();
+    return isTimelineOwnedBinding(b!);
+  };
+
+  it("claims the keys the Timeline panel handler consumes", () => {
+    // Insert frame / keyframe / blank keyframe.
+    expect(owned("F5")).toBe(true);
+    expect(owned("F6")).toBe(true);
+    expect(owned("F7")).toBe(true);
+    // Play toggle.
+    expect(owned("Enter")).toBe(true);
+    // Frame clipboard (Timeline's Ctrl+V ignores Shift, so paste-in-place too).
+    expect(owned("c", { ctrlKey: true })).toBe(true);
+    expect(owned("x", { ctrlKey: true })).toBe(true);
+    expect(owned("v", { ctrlKey: true })).toBe(true);
+    expect(owned("v", { ctrlKey: true, shiftKey: true })).toBe(true);
+    // Remove frame.
+    expect(owned("Delete")).toBe(true);
+    expect(owned("Backspace")).toBe(true);
+    // Arrow scrubbing / nudge.
+    expect(owned("ArrowLeft")).toBe(true);
+    expect(owned("ArrowRight", { shiftKey: true })).toBe(true);
+  });
+
+  it("does NOT claim commands the Timeline leaves to the global dispatcher", () => {
+    expect(owned("z", { ctrlKey: true })).toBe(false); // undo
+    expect(owned("z", { ctrlKey: true, shiftKey: true })).toBe(false); // redo
+    expect(owned("g", { ctrlKey: true })).toBe(false); // group
+    expect(owned("d", { ctrlKey: true })).toBe(false); // duplicate
+    expect(owned("a", { ctrlKey: true })).toBe(false); // select all
+    expect(owned("b", { ctrlKey: true, shiftKey: true })).toBe(false); // bold
   });
 });

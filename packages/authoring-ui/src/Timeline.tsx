@@ -1217,6 +1217,7 @@ export function Timeline({
     <div
       ref={panelRef}
       tabIndex={0}
+      data-timeline-panel="true"
       onMouseDown={(e) => {
         // Explicitly grab keyboard focus when the user clicks anywhere in the
         // Timeline panel, so Delete / arrow-key shortcuts work immediately.

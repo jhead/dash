@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { isWithinRufflePlayer } from "./playerFocus.js";
+import { isTimelinePanelFocused } from "./timelineFocus.js";
 
 export interface CommandKeyboardOptions {
   /** Dispatch a command by id (disabled commands no-op in the registry). */
@@ -72,6 +73,39 @@ export function resolveKeyBinding(e: KeyChord): KeyBinding {
 }
 
 /**
+ * Command ids the Timeline panel's OWN keydown handler also consumes when it is
+ * focused (F5/F6/F7 insert-frame, Enter play-toggle, Ctrl+C/X/V frame clipboard,
+ * Delete/Backspace remove-frame). When the Timeline is focused these must be
+ * handled by the Timeline alone; the global dispatcher yields them to avoid a
+ * single keypress firing twice (e.g. Delete removing a frame AND deleting the
+ * selected stage object = data loss — task 1376). Note the Timeline's Ctrl+V
+ * handler ignores Shift, so Ctrl+Shift+V (`edit.pasteInPlace`) is owned too.
+ * Commands the Timeline does NOT consume (undo/redo, group, duplicate, text
+ * formatting, …) still dispatch while the Timeline is focused.
+ */
+const TIMELINE_OWNED_COMMAND_IDS: ReadonlySet<string> = new Set([
+  "timeline.insertFrame",
+  "timeline.insertKeyframe",
+  "timeline.insertBlankKeyframe",
+  "playback.toggle",
+  "edit.copy",
+  "edit.cut",
+  "edit.paste",
+  "edit.pasteInPlace",
+  "edit.delete",
+]);
+
+/**
+ * Should this resolved binding be yielded to a focused Timeline panel? True for
+ * arrow-key nudges (the Timeline uses Left/Right for frame scrubbing) and for any
+ * command in `TIMELINE_OWNED_COMMAND_IDS`.
+ */
+export function isTimelineOwnedBinding(binding: NonNullable<KeyBinding>): boolean {
+  if (binding.type === "nudge") return true;
+  return TIMELINE_OWNED_COMMAND_IDS.has(binding.id);
+}
+
+/**
  * Global keyboard → command dispatch. Replaces useKeyboardShortcuts: every
  * binding resolves to a command id dispatched through the registry, so the
  * keyboard shares one source of truth (and enabled-state) with the menu/agent.
@@ -90,6 +124,10 @@ export function useCommandKeyboard(opts: CommandKeyboardOptions): void {
 
       const binding = resolveKeyBinding(e);
       if (!binding) return;
+      // Yield Timeline-owned keys to a focused Timeline panel so a single
+      // keypress isn't handled by both (task 1376). Non-Timeline commands
+      // (undo/redo, group, duplicate, …) still dispatch while it is focused.
+      if (isTimelinePanelFocused() && isTimelineOwnedBinding(binding)) return;
       const { dispatch, onNudge } = ref.current;
       if (binding.type === "nudge") {
         e.preventDefault();
