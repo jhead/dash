@@ -512,6 +512,16 @@ the background color (`@+56`), and the grid color (`@+60`) are read back into
 `doc.properties.rulerUnits` and `doc.properties.grid`. The ruler-units type maps to the model's
 `RulerUnits` (both inches variants collapse to `inches`).
 
+The marker is **not guaranteed unique** in the Contents stream — the variable-length catalog,
+property maps, and `CColorDef` color table that precede the stage block can coincidentally contain
+the same five bytes. The importer therefore does not trust a blind first byte-match: it scans every
+occurrence and accepts the first whose adjacent frame-rate field (`@+65..66`) decodes to a plausible
+value (1–120 fps), which is the structural discriminator for a genuine stage block. In all real
+fixtures (Magnet, evaporatingdrip, golden, empty) the marker occurs exactly once and validates, so
+this only hardens against a spurious earlier match — a first-match reader would otherwise lock onto
+a decoy and drop every stage field. See `parseFla8Contents` in `flash8-binary.ts` and the
+`contents-anchor.test.ts` gate.
+
 ### 8.5 Linkage
 
 `AsLinkage` carries a library item's ActionScript export and runtime-sharing settings and is

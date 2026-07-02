@@ -3783,44 +3783,64 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
   // @+2, gridSpacingX*20 @+21, background @+56, grid color @+60, fps @+65..66.
   let anchor = -1;
   {
-    anchor = findBytes(bytes, [0x03, 0xb4, 0x00, 0x00, 0x00], 0);
-    if (anchor >= 14) {
-      const fpsInt = bytes[anchor - 4]!;
-      const fpsFrac = bytes[anchor - 5]!;
+    // The `03 B4 00 00 00` marker is NOT guaranteed unique in the Contents
+    // stream: the variable-length catalog / property-map / color-table runs that
+    // precede the §8.4 stage block can coincidentally contain the same five
+    // bytes. A blind first-byte-match that then bails when its adjacent fps
+    // field is bogus would silently miss the real stage block (leaving every
+    // field null) instead of continuing to the genuine marker. So scan EVERY
+    // occurrence and accept the first whose surrounding fields parse as a
+    // plausible stage block — the frame-rate sanity gate (1–120 fps) is the
+    // structural discriminator. In every real fixture (Magnet, evaporatingdrip,
+    // golden, empty) the marker occurs exactly once and validates, so this is
+    // behaviour-preserving there while hardening against a spurious earlier hit.
+    const MARKER = [0x03, 0xb4, 0x00, 0x00, 0x00];
+    for (
+      let cand = findBytes(bytes, MARKER, 0);
+      cand >= 0;
+      cand = findBytes(bytes, MARKER, cand + 1)
+    ) {
+      if (cand < 14) continue;
+      const fpsInt = bytes[cand - 4]!;
+      const fpsFrac = bytes[cand - 5]!;
       const fps = fpsInt + fpsFrac / 256;
-      if (fps >= 1 && fps <= 120) {
-        info.frameRate = fps;
-        info.backgroundColor = {
-          r: bytes[anchor - 14]!,
-          g: bytes[anchor - 13]!,
-          b: bytes[anchor - 12]!,
+      // Frame rate is the structural gate: a real stage block always carries a
+      // plausible fps here. A coincidental byte match in catalog data will not.
+      if (fps < 1 || fps > 120) continue;
+
+      anchor = cand;
+      info.frameRate = fps;
+      info.backgroundColor = {
+        r: bytes[cand - 14]!,
+        g: bytes[cand - 13]!,
+        b: bytes[cand - 12]!,
+        a: 255,
+      };
+      // The grid color (@+60), ruler-units (@+0), grid-visible (@+2), and
+      // grid-spacing (@+21) fields all live at or before the middle of the
+      // stage block, so they need the anchor to be at least 70 bytes in. A
+      // crafted/truncated Contents that carries only the bg/fps tail still
+      // recovers fps/bg above.
+      if (cand >= 70) {
+        // Grid color at @+60 (= cand-10..-8).
+        info.gridColor = {
+          r: bytes[cand - 10]!,
+          g: bytes[cand - 9]!,
+          b: bytes[cand - 8]!,
           a: 255,
         };
-        // The grid color (@+60), ruler-units (@+0), grid-visible (@+2), and
-        // grid-spacing (@+21) fields all live at or before the middle of the
-        // stage block, so they need the anchor to be at least 70 bytes in. A
-        // crafted/truncated Contents that carries only the bg/fps tail still
-        // recovers fps/bg above.
-        if (anchor >= 70) {
-          // Grid color at @+60 (= anchor-10..-8).
-          info.gridColor = {
-            r: bytes[anchor - 10]!,
-            g: bytes[anchor - 9]!,
-            b: bytes[anchor - 8]!,
-            a: 255,
-          };
-          // Ruler-units descriptor at @+0 (= anchor-70).
-          const ru = bytes[anchor - 70]!;
-          if (ru <= 5) info.rulerUnitType = ru;
-          // gridVisible byte at @+2 (= anchor-68) is 3 when visible, 0 otherwise.
-          info.gridVisible = bytes[anchor - 68]! !== 0;
-          // gridSpacingX*20 (u16) at @+21 (= anchor-49).
-          const gs20 = bytes[anchor - 49]! | (bytes[anchor - 48]! << 8);
-          if (gs20 > 0 && gs20 % 20 === 0 && gs20 <= 8192 * 20) {
-            info.gridSpacingPx = gs20 / 20;
-          }
+        // Ruler-units descriptor at @+0 (= cand-70).
+        const ru = bytes[cand - 70]!;
+        if (ru <= 5) info.rulerUnitType = ru;
+        // gridVisible byte at @+2 (= cand-68) is 3 when visible, 0 otherwise.
+        info.gridVisible = bytes[cand - 68]! !== 0;
+        // gridSpacingX*20 (u16) at @+21 (= cand-49).
+        const gs20 = bytes[cand - 49]! | (bytes[cand - 48]! << 8);
+        if (gs20 > 0 && gs20 % 20 === 0 && gs20 <= 8192 * 20) {
+          info.gridSpacingPx = gs20 / 20;
         }
       }
+      break;
     }
   }
 
