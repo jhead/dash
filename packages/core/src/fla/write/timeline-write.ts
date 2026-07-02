@@ -22,8 +22,9 @@
  * `tryLoadRealFla`, but is NOT yet byte-verified against a Win7 Flash 8 oracle.
  */
 
-import type { Frame, Layer, Timeline } from "../../model/types.js";
+import type { EaseCurve, Frame, Layer, Timeline } from "../../model/types.js";
 import type {
+  ColorEffect,
   DisplayObject,
   ShapeDisplayObject,
   SymbolInstance,
@@ -34,6 +35,7 @@ import type {
   PathSegment,
   Point,
 } from "../../engine/types.js";
+import type { FlashFilter } from "../../engine/filters.js";
 import {
   ByteWriter,
   ClassTable,
@@ -268,7 +270,7 @@ function writeCPicFrame(
   if (rawShapes.length === 0) {
     writeEmptyShapeData(w);
   } else {
-    writeMergedShapeGeometry(w, rawShapes);
+    writeMergedShapeGeometry(w, rawShapes, idx);
   }
 
   // Frame fields. fs (frame schema) = 0x18 (frameVersionB).
@@ -311,8 +313,69 @@ function writeCPicFrame(
   w.u32(1); // fs > 19 skip(4) — matches the genuine empty-keyframe body
   w.u32(0); // fs > 20 skip(4)
   w.u32(0); // fs >= 22 skip(4)
-  w.u32(1); // fs >= 24 useSingleEaseCurve
-  w.u32(0); // fs >= 24 hasCustomEase = 0 (acceleration-based ease; no curve stream)
+  // fs >= 24 Flash-8 ease-curve header + optional per-property Bézier point arrays.
+  // The empty-keyframe template emits `useSingleEaseCurve=1, hasCustomEase=0` (no
+  // curve stream); a motion tween carrying a custom ease curve emits the full table
+  // so it round-trips (task 1386) instead of collapsing to the s16 acceleration.
+  writeEaseCurveTable(w, frame);
+}
+
+/**
+ * fs>=24 ease-curve table — inverse of `readCPicFrameNode`'s ease block:
+ *   u32 useSingleEaseCurve; u32 hasCustomEase;
+ *   if hasCustomEase != 0: 6 point-arrays (position, rotation, scale, color,
+ *   filters, all). Each array: u32 numPoints, then per point f64 x,y (endpoints
+ *   written TWICE). A model {@link EaseCurve} is emitted as the 4-point Bézier
+ *   (0,0),(x1,y1),(x2,y2),(1,1).
+ */
+function writeEaseCurveTable(w: ByteWriter, frame: Frame): void {
+  const perProp = [
+    frame.easeForPosition, frame.easeForRotation, frame.easeForScale,
+    frame.easeForColor, frame.easeForFilters,
+  ];
+  const hasPerProp = frame.tweenType === "motion" && perProp.some((c) => c != null);
+  const hasSingle = frame.tweenType === "motion" && frame.motionEaseCurve != null;
+
+  if (!hasPerProp && !hasSingle) {
+    w.u32(1); // useSingleEaseCurve
+    w.u32(0); // hasCustomEase = 0 (acceleration-based ease; no curve stream)
+    return;
+  }
+  if (hasPerProp) {
+    w.u32(0); // useSingleEaseCurve = 0 (per-property curves follow)
+    w.u32(1); // hasCustomEase
+    // index 0 = position (reader recovers motionEaseCurve from curves[0]).
+    writeEaseCurveOrEmpty(w, frame.easeForPosition ?? frame.motionEaseCurve ?? null);
+    writeEaseCurveOrEmpty(w, frame.easeForRotation ?? null);
+    writeEaseCurveOrEmpty(w, frame.easeForScale ?? null);
+    writeEaseCurveOrEmpty(w, frame.easeForColor ?? null);
+    writeEaseCurveOrEmpty(w, frame.easeForFilters ?? null);
+    writeEaseCurveOrEmpty(w, frame.motionEaseCurve ?? null); // index 5 = all
+    return;
+  }
+  // Single curve governs all properties (reader uses curves[5]).
+  w.u32(1); // useSingleEaseCurve = 1
+  w.u32(1); // hasCustomEase
+  for (let i = 0; i < 5; i++) w.u32(0); // indices 0..4 empty
+  writeEaseCurveOrEmpty(w, frame.motionEaseCurve ?? null); // index 5
+}
+
+function writeEaseCurveOrEmpty(w: ByteWriter, curve: EaseCurve | null): void {
+  if (!curve) {
+    w.u32(0); // numPoints = 0
+    return;
+  }
+  w.u32(4); // (0,0) c1 c2 (1,1)
+  writeEasePoint(w, 0, 0, true);
+  writeEasePoint(w, curve.x1, curve.y1, false);
+  writeEasePoint(w, curve.x2, curve.y2, false);
+  writeEasePoint(w, 1, 1, true);
+}
+
+/** One ease-curve point; endpoints are written twice (the reader consumes the dup). */
+function writeEasePoint(w: ByteWriter, x: number, y: number, duplicate: boolean): void {
+  w.f64(x).f64(y);
+  if (duplicate) w.f64(x).f64(y);
 }
 
 function easeAccel(frame: Frame): number {
@@ -449,7 +512,7 @@ function writeEmptyShapeData(w: ByteWriter): void {
  * offset is baked into its edge coordinates because the inline shape carries an
  * identity matrix (the offset is NOT a separate placement).
  */
-function writeMergedShapeGeometry(w: ByteWriter, shapes: readonly ShapeDisplayObject[]): void {
+function writeMergedShapeGeometry(w: ByteWriter, shapes: readonly ShapeDisplayObject[], idx: WriteIndex): void {
   // Build merged fill + stroke style tables (1-based indices) across all shapes.
   const fills: Fill[] = [];
   const strokes: Stroke[] = [];
@@ -492,7 +555,7 @@ function writeMergedShapeGeometry(w: ByteWriter, shapes: readonly ShapeDisplayOb
   w.u8(0x05); // internal shape-data schema (>4 => cubic post-stream present)
   w.u32(edgeCount); // edge count hint
   w.u16(fills.length);
-  for (const f of fills) writeFillStyle(w, f);
+  for (const f of fills) writeFillStyle(w, f, idx);
   w.u16(strokes.length);
   for (const s of strokes) writeLineStyle(w, s);
 
@@ -577,10 +640,25 @@ function writeMergedShapeGeometry(w: ByteWriter, shapes: readonly ShapeDisplayOb
   w.u32(0); // cubicCount (schema > 4 post-edge stream)
 }
 
-function writeFillStyle(w: ByteWriter, fill: Fill): void {
-  // Only solid fills are written byte-faithfully; gradients/bitmaps fall back to
-  // a solid approximation (their first stop / a neutral color) to keep the
-  // stream parseable. (Gradient/bitmap fill writing is approximated — see report.)
+const SPREAD_BITS: Record<string, number> = { extend: 0, reflect: 1, repeat: 2 };
+
+/**
+ * §12.1 fill style — the inverse of `flash8-binary.ts readFillStyle` (F8 caps
+ * form). Every fill leads with an RGBA base color + subtype byte + more_flags
+ * byte; gradients/bitmaps then carry a transform matrix and their extra fields:
+ *
+ *   solid:    RGBA, subtype 0x00, more_flags 0
+ *   gradient: RGBA(first stop), subtype 0x10 (linear) | 0x12 (radial), 0,
+ *             matrix, u8 numStops,
+ *             F8 extras: focal*255, 00 00 00, flow(spread<<6|linearRGB<<4), 00 00 00,
+ *             { u8 position, RGBA }[numStops]
+ *   bitmap:   RGBA white, subtype 0x40 | (clipped?0x01) | (smooth?0x02), 0,
+ *             matrix, u32 mediaId
+ *
+ * Previously gradients were written as their first stop (a solid) and bitmap fills
+ * as solid white, silently dropping data the importer fully decodes (task 1386).
+ */
+function writeFillStyle(w: ByteWriter, fill: Fill, idx: WriteIndex): void {
   if (fill.type === "solid") {
     writeRGBA(w, fill.color);
     w.u8(0x00); // subtype: solid
@@ -588,16 +666,46 @@ function writeFillStyle(w: ByteWriter, fill: Fill): void {
     return;
   }
   if (fill.type === "linear-gradient" || fill.type === "radial-gradient") {
-    const first = fill.stops[0]?.color ?? { r: 0, g: 0, b: 0, a: 255 };
-    writeRGBA(w, first);
-    w.u8(0x00); // approximated as solid
-    w.u8(0);
+    const stops = fill.stops.length > 0 ? fill.stops : [{ ratio: 0, color: { r: 0, g: 0, b: 0, a: 255 } }];
+    writeRGBA(w, stops[0]!.color); // base color (reader ignores it for gradients)
+    const radial = fill.type === "radial-gradient";
+    w.u8(radial ? 0x12 : 0x10); // subtype: gradient (bit 0x10), +0x02 for radial
+    w.u8(0); // more_flags
+    writeMatrix(w, gradientMatrix(fill));
+    w.u8(Math.min(255, stops.length)); // numStops
+    // F8 gradient extras. The focal ratio is a SIGNED byte / 255, so clamp to
+    // [-128,127] (0.5 rounds to 128 which the reader would decode as negative).
+    const focal = radial ? Math.max(-128, Math.min(127, Math.round((fill.focalPoint ?? 0) * 255))) : 0;
+    w.u8(focal & 0xff);
+    w.raw(0x00, 0x00, 0x00);
+    const spread = SPREAD_BITS[fill.spreadMode ?? "extend"] ?? 0;
+    const linearRGB = fill.interpolation === "linearRGB" ? 1 : 0;
+    w.u8(((spread & 0x3) << 6) | (linearRGB << 4));
+    w.raw(0x00, 0x00, 0x00);
+    for (const s of stops) {
+      w.u8(s.ratio & 0xff);
+      writeRGBA(w, s.color);
+    }
     return;
   }
-  // bitmap fill -> approximate as solid white.
-  writeRGBA(w, { r: 255, g: 255, b: 255, a: 255 });
-  w.u8(0x00);
-  w.u8(0);
+  // bitmap fill.
+  writeRGBA(w, { r: 255, g: 255, b: 255, a: 255 }); // base color (reader ignores it)
+  // subtype 0x40 base; bit0 set => clipped (no repeat); bit1 set => smoothed.
+  const subtype = 0x40 | (fill.repeat ? 0 : 0x01) | (fill.smooth ? 0x02 : 0);
+  w.u8(subtype);
+  w.u8(0); // more_flags
+  writeMatrix(w, fill.matrix ?? identity());
+  w.u32(idx.mediaNumById.get(fill.bitmapId) ?? 0); // mediaId
+}
+
+/** Resolve a gradient's transform matrix (preserved from import, or from `angle`). */
+function gradientMatrix(fill: Fill & { type: "linear-gradient" | "radial-gradient" }): WMatrix {
+  if (fill.matrix) return fill.matrix;
+  if (fill.type === "linear-gradient") {
+    const rad = ((fill.angle ?? 0) * Math.PI) / 180;
+    return { a: Math.cos(rad), b: Math.sin(rad), c: -Math.sin(rad), d: Math.cos(rad), tx: 0, ty: 0 };
+  }
+  return identity();
 }
 
 const CAP_BYTE: Record<string, number> = { round: 0, none: 1, square: 2 };
@@ -728,8 +836,8 @@ function writeSymbolBaseFields(
   w.u16(0);
   // symbolSchema >= 0x0e => skip(3).
   w.u8(0).u8(0).u8(0);
-  // symbolSchema >= 0x13 => filterCount(u8) + (no filters) + blendMode(u8) + skip(2).
-  w.u8(0); // filterCount = 0 (filters approximated/omitted)
+  // symbolSchema >= 0x13 => filterCount(u8) + filter records + blendMode(u8) + skip(2).
+  writeSwfFilterList(w, obj.filters);
   w.u8(blendModeByte(obj.blendMode));
   w.u16(0); // 2 reserved bytes
   // symbolSchema >= 0x16 (CS4) not used (0x13).
@@ -770,7 +878,159 @@ function blendModeByte(mode: SymbolInstance["blendMode"]): number {
   return i < 0 ? 0 : i;
 }
 
-function colorEffectChannels(obj: { colorEffect?: { type: string; alpha?: number } | undefined }): {
+// ---------------------------------------------------------------------------
+// Filters (§12 symbol instance / §16 bitmap) — SWF-format filter records
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit a SWF-format filter list — `u8 filterCount` then one record per filter —
+ * the inverse of `flash8-binary.ts readFilterList`/`readOneFilter`. The writer
+ * used to hardcode `filterCount = 0`, dropping every filter on save even though
+ * the importer fully decodes them (task 1386). Only ENABLED filters with a
+ * modelled SWF wire form are emitted; the count reflects exactly what is written
+ * so the reader's blend-mode/trailer fields stay aligned.
+ *
+ * Unsupported here (documented gap): adjustColor (needs a lossy color-matrix
+ * decompose on re-import), convolution, and displacementMap.
+ */
+function writeSwfFilterList(w: ByteWriter, filters: readonly FlashFilter[] | undefined): void {
+  const list = (filters ?? []).filter((f) => f.enabled !== false && isSupportedSwfFilter(f));
+  w.u8(list.length & 0xff);
+  for (const f of list) writeSwfFilter(w, f);
+}
+
+function isSupportedSwfFilter(f: FlashFilter): boolean {
+  switch (f.type) {
+    case "drop-shadow":
+    case "blur":
+    case "glow":
+    case "bevel":
+    case "gradientGlow":
+    case "gradientBevel":
+      return true;
+    default:
+      return false; // adjustColor / convolution / displacementMap
+  }
+}
+
+/** SWF Fixed16 (i32 = value * 65536). */
+function writeFixed16(w: ByteWriter, v: number): void {
+  w.s32(Math.round(v * 65536));
+}
+/** SWF Fixed8 (i16 = value * 256), clamped to the s16 range. */
+function writeFixed8(w: ByteWriter, v: number): void {
+  w.s16(Math.max(-32768, Math.min(32767, Math.round(v * 256))));
+}
+/**
+ * Inverse of the importer's `toDegrees` (which negates + normalises): store the
+ * angle as SWF math-convention radians so a round-trip recovers the model degrees.
+ */
+function filterAngleRadians(deg: number): number {
+  return (-deg * Math.PI) / 180;
+}
+
+function writeSwfFilter(w: ByteWriter, f: FlashFilter): void {
+  switch (f.type) {
+    case "drop-shadow": {
+      w.u8(0);
+      writeRGBA(w, { r: f.color.r, g: f.color.g, b: f.color.b, a: Math.round(f.alpha * 255) });
+      writeFixed16(w, f.blurX);
+      writeFixed16(w, f.blurY);
+      writeFixed16(w, filterAngleRadians(f.angle));
+      writeFixed16(w, f.distance);
+      writeFixed8(w, f.strength);
+      w.u8(
+        (f.inner ? 0x80 : 0) | (f.knockout ? 0x40 : 0) | (f.hideObject ? 0 : 0x20) |
+        (qualityPasses(f.quality) & 0x1f),
+      );
+      return;
+    }
+    case "blur": {
+      w.u8(1);
+      writeFixed16(w, f.blurX);
+      writeFixed16(w, f.blurY);
+      w.u8((qualityPasses(f.quality) << 3) & 0xf8);
+      return;
+    }
+    case "glow": {
+      w.u8(2);
+      writeRGBA(w, { r: f.color.r, g: f.color.g, b: f.color.b, a: Math.round(f.alpha * 255) });
+      writeFixed16(w, f.blurX);
+      writeFixed16(w, f.blurY);
+      writeFixed8(w, f.strength);
+      w.u8((f.inner ? 0x80 : 0) | (f.knockout ? 0x40 : 0) | (qualityPasses(f.quality) & 0x1f));
+      return;
+    }
+    case "bevel": {
+      w.u8(3);
+      writeRGBA(w, {
+        r: f.highlightColor.r, g: f.highlightColor.g, b: f.highlightColor.b,
+        a: Math.round(f.highlightAlpha * 255),
+      });
+      writeRGBA(w, {
+        r: f.shadowColor.r, g: f.shadowColor.g, b: f.shadowColor.b,
+        a: Math.round(f.shadowAlpha * 255),
+      });
+      writeFixed16(w, f.blurX);
+      writeFixed16(w, f.blurY);
+      writeFixed16(w, filterAngleRadians(f.angle));
+      writeFixed16(w, f.distance);
+      writeFixed8(w, f.strength);
+      w.u8(
+        (f.bevelType === "inner" ? 0x80 : 0) | (f.knockout ? 0x40 : 0) |
+        (f.bevelType === "full" ? 0x10 : 0) | (qualityPasses(f.quality) & 0x0f),
+      );
+      return;
+    }
+    case "gradientGlow":
+    case "gradientBevel": {
+      w.u8(f.type === "gradientGlow" ? 4 : 7);
+      const stops = f.gradient;
+      w.u8(stops.length & 0xff);
+      for (const s of stops) {
+        const c = parseHexColor(s.color);
+        writeRGBA(w, { r: c.r, g: c.g, b: c.b, a: Math.round(s.alpha * 255) });
+      }
+      for (const s of stops) w.u8(s.ratio & 0xff);
+      writeFixed16(w, f.blurX);
+      writeFixed16(w, f.blurY);
+      writeFixed16(w, filterAngleRadians(f.angle));
+      writeFixed16(w, f.distance);
+      writeFixed8(w, f.strength);
+      const onTop = f.type === "gradientBevel" && f.bevelType === "full";
+      const inner = f.inner;
+      w.u8(
+        (inner ? 0x80 : 0) | (f.knockout ? 0x40 : 0) | (f.compositeSource ? 0x20 : 0) |
+        (onTop ? 0x10 : 0) | (f.quality & 0x0f),
+      );
+      return;
+    }
+    default:
+      return; // filtered out by isSupportedSwfFilter
+  }
+}
+
+/** Model quality (1|2|3) -> SWF render-pass count; defaults to 1. */
+function qualityPasses(quality: number | undefined): number {
+  return quality && quality > 0 ? quality : 1;
+}
+
+/**
+ * Inverse of `flash8-import.ts` `toColorEffect`: encode a model {@link ColorEffect}
+ * into the §12 CXFORM channel block the reader (`readCPicSymbolFields`) decodes —
+ * per channel a u16 multiplier (256 = 1.0) + s16 offset, in (alpha,red,green,blue)
+ * order. Covers all four modelled effect kinds so brightness/tint/advanced round-
+ * trip instead of collapsing to identity (the old writer only handled `alpha`).
+ *
+ * Encodings mirror Flash 8's CXFORM (verified via the importer's decode):
+ *   - alpha:      aMult = alpha% * 256; RGB identity.
+ *   - brightness: b>=0 → mult = 256*(1-b/100), off = 255*b/100 (all RGB);
+ *                 b<0  → mult = 256*(1+b/100), off = 0. Alpha identity.
+ *   - tint:       RGB mult = 256*(1-amt/100), off = channel * amt/100. Alpha identity.
+ *   - advanced:   mult = pct% * 256 (clamped ≥0 — the wire mult is unsigned u16);
+ *                 off = channel offset (-255..255).
+ */
+interface CXFormChannels {
   aMult: number;
   aOff: number;
   rMult: number;
@@ -779,14 +1039,58 @@ function colorEffectChannels(obj: { colorEffect?: { type: string; alpha?: number
   gOff: number;
   bMult: number;
   bOff: number;
-} {
-  const ident = { aMult: 256, aOff: 0, rMult: 256, rOff: 0, gMult: 256, gOff: 0, bMult: 256, bOff: 0 };
+}
+
+function clampMult(v: number): number {
+  return Math.max(0, Math.min(0xffff, Math.round(v)));
+}
+
+function colorEffectChannels(obj: { colorEffect?: ColorEffect | undefined }): CXFormChannels {
+  const ident: CXFormChannels = {
+    aMult: 256, aOff: 0, rMult: 256, rOff: 0, gMult: 256, gOff: 0, bMult: 256, bOff: 0,
+  };
   const ce = obj.colorEffect;
-  if (!ce) return ident;
-  if (ce.type === "alpha" && ce.alpha != null) {
-    return { ...ident, aMult: Math.round((ce.alpha / 100) * 256) };
+  if (!ce || ce.type === "none") return ident;
+  switch (ce.type) {
+    case "alpha": {
+      const a = ce.alpha ?? 100;
+      return { ...ident, aMult: clampMult((a / 100) * 256) };
+    }
+    case "brightness": {
+      const b = ce.brightness ?? 0;
+      if (b >= 0) {
+        const m = clampMult(256 * (1 - b / 100));
+        const o = Math.round((255 * b) / 100);
+        return { aMult: 256, aOff: 0, rMult: m, rOff: o, gMult: m, gOff: o, bMult: m, bOff: o };
+      }
+      const m = clampMult(256 * (1 + b / 100));
+      return { aMult: 256, aOff: 0, rMult: m, rOff: 0, gMult: m, gOff: 0, bMult: m, bOff: 0 };
+    }
+    case "tint": {
+      const amt = ce.tintAmount ?? 0;
+      const { r, g, b } = parseTintColor(ce.tintColor);
+      const m = clampMult(256 * (1 - amt / 100));
+      const off = (c: number) => Math.round((c * amt) / 100);
+      return { aMult: 256, aOff: 0, rMult: m, rOff: off(r), gMult: m, gOff: off(g), bMult: m, bOff: off(b) };
+    }
+    case "advanced": {
+      const mult = (p: number | undefined) => clampMult(((p ?? 100) / 100) * 256);
+      return {
+        aMult: mult(ce.alphaMult), aOff: ce.alphaOffset ?? 0,
+        rMult: mult(ce.redMult), rOff: ce.redOffset ?? 0,
+        gMult: mult(ce.greenMult), gOff: ce.greenOffset ?? 0,
+        bMult: mult(ce.blueMult), bOff: ce.blueOffset ?? 0,
+      };
+    }
+    default:
+      return ident;
   }
-  return ident; // other effects approximated as identity (documented gap)
+}
+
+/** Parse a `#rrggbb` tint color into 0–255 channels (defaults to black). */
+function parseTintColor(hex: string | undefined): { r: number; g: number; b: number } {
+  const c = parseHexColor(hex ?? "#000000");
+  return { r: c.r, g: c.g, b: c.b };
 }
 
 /** CPicSprite tail (§12.2): g (trailer version) + TimelineSubObject + name + reserved. */
@@ -843,7 +1147,7 @@ function writeCPicBitmap(w: ByteWriter, ct: ClassTable, obj: BitmapDisplayObject
   w.u8(2); // schema (>=2 => filterCount byte present)
   writeMatrix(w, { a: obj.scaleX ?? 1, b: 0, c: 0, d: obj.scaleY ?? 1, tx: obj.x, ty: obj.y });
   w.u16(idx.mediaNumById.get(obj.libraryItemId) ?? 0); // mediaId
-  w.u8(0); // filterCount = 0
+  writeSwfFilterList(w, obj.filters); // §16 filterCount + records
 }
 
 // ---------------------------------------------------------------------------

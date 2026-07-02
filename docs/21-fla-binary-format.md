@@ -1271,3 +1271,51 @@ order has not been pinned. The embedded-clip video class `CPicVideo`, section 18
 from the placed `CPicVideoStream` and is not laid out. The internal body of an imported SWF,
 section 18.3, is an opaque decomposition of the movie that a reader skips rather than parses; only
 its placement header and intrinsic-size metadata are decoded.
+
+---
+
+## 22. Writer coverage (real-FLA save path)
+
+`packages/core/src/fla/write/timeline-write.ts` emits the timeline streams. The reader
+(`flash8-binary.ts`) is the inverse oracle: each writer field is verified by round-tripping the
+saved stream back through `parseFla8Timeline` / `tryLoadRealFla`
+(`packages/core/src/fla/__tests__/real-fla-write.test.ts`).
+
+**Emitted as of task 1386** (previously written as zero/identity/first-stop-solid, silently
+dropping data the reader decodes):
+
+- **Instance / bitmap filters (§16, SWF filter-record form).** `writeSwfFilterList` emits
+  `u8 filterCount` + one SWF filter record per ENABLED filter, the inverse of `readOneFilter`:
+  drop-shadow (0), blur (1), glow (2), bevel (3), gradient-glow (4), gradient-bevel (7). Angles are
+  stored as SWF math-convention radians (the importer negates + normalises); blur/dropshadow/glow
+  passes live in the flags byte, bevel/gradient passes in the low nibble. Symbol-instance filters
+  precede the blend-mode byte + 2 reserved; bitmap filters follow the media id. `adjustColor`,
+  `convolution`, and `displacementMap` are **not** emitted (they need a lossy color-matrix decompose
+  on re-import) and text-field filters use the wider §16.2 authoring form — both remain gaps.
+- **Instance color effects (§12 / §14 CXFORM).** `colorEffectChannels` now encodes all four model
+  effect kinds — brightness, tint, and advanced in addition to alpha — as the per-channel
+  `u16 mult (256 = 1.0) + s16 off` block in (alpha, red, green, blue) order, the inverse of the
+  importer's `toColorEffect`. Tint/advanced channels drift ≤2 per channel through the integer offset
+  quantisation.
+- **Shape gradient / bitmap fills (§12.1).** `writeFillStyle` emits linear (0x10) / radial (0x12)
+  gradients — transform matrix, stop table, F8 focal byte (signed, /255), spread + linear-RGB flow
+  byte — and bitmap fills (0x40 | clipped 0x01 | smooth 0x02, matrix, `u32` media id). Gradients were
+  previously written as their first stop (a solid) and bitmap fills as solid white.
+- **Custom per-property motion ease (§11.2).** `writeEaseCurveTable` emits the fs≥24
+  `useSingleEaseCurve / hasCustomEase` header plus the six ordered point arrays (position, rotation,
+  scale, color, filters, all) when a motion-tween keyframe carries a `motionEaseCurve` or per-property
+  ease curve. A model `EaseCurve {x1,y1,x2,y2}` is written as the 4-point Bézier (0,0),(x1,y1),(x2,y2),
+  (1,1) with endpoints duplicated. Non-custom frames still emit `useSingleEaseCurve=1, hasCustomEase=0`.
+
+**Still deferred on the write path** (data-loss remains; not yet round-trippable):
+
+- **Layer parent / mask back-links (§10.2).** `parentReference` is written as 0 and a masked layer
+  writes `layerType = 0`, so the mask→masked association is lost on re-save (a `mask` layer's own type
+  byte is preserved; `guide`/`guided`/`folder` types are preserved). Reconstructing this needs the
+  mask layer's §5.2 running object index, which the writer does not track.
+- **Document guides.** The CPicPage tail (`PAGE_TAIL`) hardcodes `guideCount = 0`; document guides
+  (`doc.properties.guides`) are not emitted. They are authoring-only and not decoded by the importer.
+- **Shape-tween morph geometry (§13).** The CPicFrame `morphTag` is written as 0; end-shape morph
+  geometry is not emitted.
+- **Text-field filters (§16.2 authoring form)** and the envelope-level clamp / FixedPageTail
+  scene-vs-symbol reuse noted in §8.7 / §16.

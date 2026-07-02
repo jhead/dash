@@ -18,12 +18,15 @@ import { createDocument, createDocumentProperties } from "../../model/document.j
 import { createScene } from "../../model/scene.js";
 import { createLayer, createFrame } from "../../model/timeline.js";
 import { createSymbol, createSound, createBitmap } from "../../model/library.js";
-import type { FlashDocument, Frame, Layer, Scene, SoundLinkage } from "../../model/types.js";
+import type { EaseCurve, FlashDocument, Frame, Layer, Scene, SoundLinkage } from "../../model/types.js";
 import type {
+  ColorEffect,
+  Fill,
   ShapeDisplayObject,
   SymbolInstance,
   TextDisplayObject,
 } from "../../engine/types.js";
+import type { FlashFilter } from "../../engine/filters.js";
 
 function frameWith(objects: Frame["displayObjects"]): Frame {
   return createFrame(0, { isEmpty: objects.length === 0, displayObjects: objects });
@@ -588,6 +591,338 @@ describe("saveRealFla — Contents media catalog (CMediaSound/CMediaBits)", () =
     const recordStart = decl - 6; // back up to the FFFF tag
     const actual = c.subarray(recordStart, recordStart + ORACLE_MEDIA1.length);
     expect(Array.from(actual)).toEqual(Array.from(ORACLE_MEDIA1));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// task 1386: features the writer used to silently DROP even though the importer
+// fully decodes them. Each block writes the feature, reads it back through the
+// importer's own reader (parseFla8Timeline / tryLoadRealFla) — the inverse oracle
+// — and asserts it is preserved.
+// ---------------------------------------------------------------------------
+
+function graphicInstanceDoc(inst: Partial<SymbolInstance>): FlashDocument {
+  const sym = createSymbol("MyGraphic", "graphic");
+  const instance: SymbolInstance = {
+    type: "instance",
+    id: "inst1",
+    symbolId: sym.id,
+    x: 100,
+    y: 60,
+    scaleX: 1,
+    scaleY: 1,
+    rotation: 0,
+    ...inst,
+  };
+  return baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [instance])])], {
+    library: { items: [sym], folders: [] },
+  });
+}
+
+function firstInstance(doc: FlashDocument): SymbolInstance | undefined {
+  for (const layer of doc.scenes[0]!.timeline.layers) {
+    for (const f of layer.frames) {
+      const inst = f.displayObjects.find((o) => o.type === "instance");
+      if (inst) return inst as SymbolInstance;
+    }
+  }
+  return undefined;
+}
+
+describe("saveRealFla — instance color effects (§12 CXFORM) round-trip (task 1386)", () => {
+  it("brightness round-trips (was: only alpha encoded, others dropped to identity)", () => {
+    for (const brightness of [-60, -20, 40, 80]) {
+      const ce: ColorEffect = { type: "brightness", brightness };
+      const out = tryLoadRealFla(saveRealFla(graphicInstanceDoc({ colorEffect: ce })));
+      const inst = firstInstance(out!);
+      expect(inst?.colorEffect?.type).toBe("brightness");
+      expect(inst?.colorEffect?.brightness).toBe(brightness);
+    }
+  });
+
+  it("tint round-trips (color + amount)", () => {
+    const ce: ColorEffect = { type: "tint", tintColor: "#ff3300", tintAmount: 60 };
+    const out = tryLoadRealFla(saveRealFla(graphicInstanceDoc({ colorEffect: ce })));
+    const inst = firstInstance(out!);
+    expect(inst?.colorEffect?.type).toBe("tint");
+    expect(inst?.colorEffect?.tintAmount).toBe(60);
+    // The tint color round-trips within the CXFORM offset quantisation (offset is an
+    // integer 0..255, so a channel can drift ±1–2 after the mult/offset recovery).
+    const hex = inst!.colorEffect!.tintColor!;
+    const ch = (i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+    expect(Math.abs(ch(0) - 0xff)).toBeLessThanOrEqual(2);
+    expect(Math.abs(ch(1) - 0x33)).toBeLessThanOrEqual(2);
+    expect(Math.abs(ch(2) - 0x00)).toBeLessThanOrEqual(2);
+  });
+
+  it("advanced (per-channel mult+offset) round-trips", () => {
+    const ce: ColorEffect = {
+      type: "advanced",
+      redMult: 50, greenMult: 75, blueMult: 100, alphaMult: 90,
+      redOffset: 20, greenOffset: -10, blueOffset: 5, alphaOffset: 0,
+    };
+    const out = tryLoadRealFla(saveRealFla(graphicInstanceDoc({ colorEffect: ce })));
+    const inst = firstInstance(out!);
+    expect(inst?.colorEffect?.type).toBe("advanced");
+    expect(inst?.colorEffect?.redMult).toBe(50);
+    expect(inst?.colorEffect?.greenMult).toBe(75);
+    expect(inst?.colorEffect?.redOffset).toBe(20);
+    expect(inst?.colorEffect?.greenOffset).toBe(-10);
+  });
+
+  it("alpha still round-trips (unchanged behaviour)", () => {
+    const out = tryLoadRealFla(saveRealFla(graphicInstanceDoc({ colorEffect: { type: "alpha", alpha: 50 } })));
+    const inst = firstInstance(out!);
+    expect(inst?.colorEffect?.type).toBe("alpha");
+    expect(inst?.colorEffect?.alpha).toBe(50);
+  });
+});
+
+describe("saveRealFla — instance filters (SWF filter list) round-trip (task 1386)", () => {
+  it("a drop-shadow filter round-trips (was: filterCount always 0)", () => {
+    const filters: FlashFilter[] = [
+      {
+        type: "drop-shadow",
+        distance: 4, angle: 45, color: { r: 10, g: 20, b: 30, a: 255 }, alpha: 0.8,
+        blurX: 6, blurY: 6, strength: 2, inner: false, knockout: false, hideObject: false,
+        quality: 2, enabled: true,
+      },
+    ];
+    const out = tryLoadRealFla(saveRealFla(graphicInstanceDoc({ filters })));
+    const inst = firstInstance(out!);
+    expect(inst?.filters?.length).toBe(1);
+    const f = inst!.filters![0]!;
+    expect(f.type).toBe("drop-shadow");
+    if (f.type === "drop-shadow") {
+      expect(f.color).toEqual({ r: 10, g: 20, b: 30, a: 255 });
+      expect(Math.round(f.alpha * 100)).toBe(80);
+      expect(f.blurX).toBeCloseTo(6, 3);
+      expect(Math.round(f.angle)).toBe(45);
+    }
+  });
+
+  it("a blur + glow stack round-trips in order", () => {
+    const filters: FlashFilter[] = [
+      { type: "blur", blurX: 8, blurY: 4, quality: 3, enabled: true },
+      {
+        type: "glow", color: { r: 255, g: 0, b: 0, a: 255 }, alpha: 1, blurX: 5, blurY: 5,
+        strength: 3, quality: 1, inner: true, knockout: false, enabled: true,
+      },
+    ];
+    const out = tryLoadRealFla(saveRealFla(graphicInstanceDoc({ filters })));
+    const inst = firstInstance(out!);
+    expect(inst?.filters?.map((f) => f.type)).toEqual(["blur", "glow"]);
+    const blur = inst!.filters![0]!;
+    if (blur.type === "blur") {
+      expect(blur.blurX).toBeCloseTo(8, 3);
+      expect(blur.blurY).toBeCloseTo(4, 3);
+    }
+    const glow = inst!.filters![1]!;
+    if (glow.type === "glow") {
+      expect(glow.color).toEqual({ r: 255, g: 0, b: 0, a: 255 });
+      expect(glow.inner).toBe(true);
+    }
+  });
+
+  it("a movieclip (sprite) instance with a filter still parses its trailer (name preserved)", () => {
+    const sym = createSymbol("MyClip", "movieclip");
+    const instance: SymbolInstance = {
+      type: "instance", id: "i1", symbolId: sym.id, x: 20, y: 20, scaleX: 1, scaleY: 1, rotation: 0,
+      instanceName: "clipA",
+      filters: [{ type: "blur", blurX: 4, blurY: 4, quality: 1, enabled: true }],
+    };
+    const doc = baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [instance])])], {
+      library: { items: [sym], folders: [] },
+    });
+    const out = tryLoadRealFla(saveRealFla(doc));
+    const inst = firstInstance(out!);
+    expect(inst?.instanceName).toBe("clipA");
+    expect(inst?.filters?.[0]?.type).toBe("blur");
+  });
+
+  it("a disabled filter is NOT emitted (count reflects only enabled)", () => {
+    const filters: FlashFilter[] = [
+      { type: "blur", blurX: 4, blurY: 4, quality: 1, enabled: false },
+      { type: "blur", blurX: 9, blurY: 9, quality: 1, enabled: true },
+    ];
+    const out = tryLoadRealFla(saveRealFla(graphicInstanceDoc({ filters })));
+    const inst = firstInstance(out!);
+    expect(inst?.filters?.length).toBe(1);
+    const f = inst!.filters![0]!;
+    if (f.type === "blur") expect(f.blurX).toBeCloseTo(9, 3);
+  });
+});
+
+describe("saveRealFla — shape gradient/bitmap fills round-trip (task 1386)", () => {
+  function gradientRectDoc(fill: Fill): FlashDocument {
+    const shape: ShapeDisplayObject = {
+      type: "shape",
+      id: "s1",
+      x: 0,
+      y: 0,
+      shape: {
+        id: "g1",
+        paths: [
+          {
+            start: { x: 0, y: 0 },
+            segments: [
+              { type: "line", to: { x: 80, y: 0 } },
+              { type: "line", to: { x: 80, y: 50 } },
+              { type: "line", to: { x: 0, y: 50 } },
+              { type: "line", to: { x: 0, y: 0 } },
+            ],
+            fill,
+            closed: true,
+          },
+        ],
+      },
+    };
+    return baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [shape])])]);
+  }
+
+  function firstShapeFill(doc: FlashDocument) {
+    const tl = parseFla8Timeline(__readAllStreamsForTest(saveRealFla(doc)).get("Page 1")!);
+    const el = tl.layers[0]!.frames[0]!.elements.find((e) => e.type === "shape");
+    return (el as { fills: Array<Record<string, unknown>> }).fills[0]!;
+  }
+
+  it("a linear gradient round-trips (stops + spread + interpolation) — was: written as first-stop solid", () => {
+    const fill: Fill = {
+      type: "linear-gradient",
+      angle: 0,
+      matrix: { a: 2, b: 0, c: 0, d: 2, tx: 3, ty: 4 },
+      stops: [
+        { ratio: 0, color: { r: 255, g: 0, b: 0, a: 255 } },
+        { ratio: 128, color: { r: 0, g: 255, b: 0, a: 255 } },
+        { ratio: 255, color: { r: 0, g: 0, b: 255, a: 255 } },
+      ],
+      spreadMode: "reflect",
+      interpolation: "linearRGB",
+    };
+    const f = firstShapeFill(gradientRectDoc(fill)) as {
+      kind: string; stops: Array<{ position: number; color: Record<string, number> }>;
+      spreadMode?: number; linearRGB?: boolean; matrix: Record<string, number>;
+    };
+    expect(f.kind).toBe("linear-gradient");
+    expect(f.stops.map((s) => s.position)).toEqual([0, 128, 255]);
+    expect(f.stops[0]!.color).toEqual({ r: 255, g: 0, b: 0, a: 255 });
+    expect(f.stops[2]!.color).toEqual({ r: 0, g: 0, b: 255, a: 255 });
+    expect(f.spreadMode).toBe(1); // reflect
+    expect(f.linearRGB).toBe(true);
+    expect(f.matrix.a).toBeCloseTo(2, 3);
+    expect(f.matrix.tx).toBeCloseTo(3, 3);
+  });
+
+  it("a radial gradient round-trips (focal + stops) — was: written as first-stop solid", () => {
+    const fill: Fill = {
+      type: "radial-gradient",
+      focalPoint: 0.5,
+      matrix: { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 },
+      stops: [
+        { ratio: 0, color: { r: 255, g: 255, b: 255, a: 255 } },
+        { ratio: 255, color: { r: 0, g: 0, b: 0, a: 255 } },
+      ],
+    };
+    const f = firstShapeFill(gradientRectDoc(fill)) as {
+      kind: string; focalRatio: number; stops: Array<{ position: number }>;
+    };
+    expect(f.kind).toBe("radial-gradient");
+    expect(f.stops.map((s) => s.position)).toEqual([0, 255]);
+    expect(f.focalRatio).toBeCloseTo(0.5, 2);
+  });
+
+  it("a bitmap fill round-trips (media id + repeat/smooth) — was: written as solid white", () => {
+    const bmp = createBitmap("tex", {
+      dataUri:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    });
+    const shape: ShapeDisplayObject = {
+      type: "shape", id: "s1", x: 0, y: 0,
+      shape: {
+        id: "g1",
+        paths: [
+          {
+            start: { x: 0, y: 0 },
+            segments: [
+              { type: "line", to: { x: 60, y: 0 } },
+              { type: "line", to: { x: 60, y: 40 } },
+              { type: "line", to: { x: 0, y: 40 } },
+              { type: "line", to: { x: 0, y: 0 } },
+            ],
+            fill: { type: "bitmap", bitmapId: bmp.id, repeat: false, smooth: true },
+            closed: true,
+          },
+        ],
+      },
+    };
+    const doc = baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [shape])])], {
+      library: { items: [bmp], folders: [] },
+    });
+    const tl = parseFla8Timeline(__readAllStreamsForTest(saveRealFla(doc)).get("Page 1")!);
+    const el = tl.layers[0]!.frames[0]!.elements.find((e) => e.type === "shape");
+    const f = (el as { fills: Array<Record<string, unknown>> }).fills[0]! as {
+      kind: string; bitmapId: number; repeat: boolean; smooth: boolean;
+    };
+    expect(f.kind).toBe("bitmap");
+    expect(f.bitmapId).toBe(1); // the lone bitmap => Media 1
+    expect(f.repeat).toBe(false);
+    expect(f.smooth).toBe(true);
+  });
+});
+
+describe("saveRealFla — custom per-property motion ease round-trips (task 1386)", () => {
+  function motionTweenDoc(overrides: Partial<Frame>): FlashDocument {
+    const sym = createSymbol("G", "graphic");
+    const inst: SymbolInstance = {
+      type: "instance", id: "i1", symbolId: sym.id, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0,
+    };
+    const frame = createFrame(0, {
+      isKeyframe: true,
+      isEmpty: false,
+      tweenType: "motion",
+      displayObjects: [inst],
+      ...overrides,
+    });
+    const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount: 10 });
+    return baseDoc([sceneWith("Scene 1", [layer])], { library: { items: [sym], folders: [] } });
+  }
+
+  it("a single custom ease curve round-trips (was: hasCustomEase always 0)", () => {
+    const curve: EaseCurve = { x1: 0.25, y1: 0.1, x2: 0.75, y2: 0.9 };
+    const tl = parseFla8Timeline(
+      __readAllStreamsForTest(saveRealFla(motionTweenDoc({ motionEaseCurve: curve }))).get("Page 1")!,
+    );
+    const f = tl.layers[0]!.frames[0]!;
+    expect(f.motionEaseCurve).not.toBeNull();
+    expect(f.motionEaseCurve!.x1).toBeCloseTo(0.25, 4);
+    expect(f.motionEaseCurve!.y1).toBeCloseTo(0.1, 4);
+    expect(f.motionEaseCurve!.x2).toBeCloseTo(0.75, 4);
+    expect(f.motionEaseCurve!.y2).toBeCloseTo(0.9, 4);
+  });
+
+  it("per-property ease curves round-trip (position + scale)", () => {
+    const pos: EaseCurve = { x1: 0.1, y1: 0.2, x2: 0.3, y2: 0.4 };
+    const scale: EaseCurve = { x1: 0.6, y1: 0.7, x2: 0.8, y2: 1.2 };
+    const tl = parseFla8Timeline(
+      __readAllStreamsForTest(
+        saveRealFla(motionTweenDoc({ easeForPosition: pos, easeForScale: scale })),
+      ).get("Page 1")!,
+    );
+    const f = tl.layers[0]!.frames[0]!;
+    expect(f.easeForPosition?.x1).toBeCloseTo(0.1, 4);
+    expect(f.easeForPosition?.y2).toBeCloseTo(0.4, 4);
+    expect(f.easeForScale?.x1).toBeCloseTo(0.6, 4);
+    expect(f.easeForScale?.y2).toBeCloseTo(1.2, 4);
+  });
+
+  it("a motion tween WITHOUT a custom curve still emits the no-curve header (validates)", () => {
+    const doc = motionTweenDoc({ motionEase: 50 });
+    const streams = __readAllStreamsForTest(saveRealFla(doc));
+    validateContentsStream(streams.get("Contents")!);
+    const page = validateTimelineStream(streams.get("Page 1")!);
+    expect(page.classes).toContain("CPicFrame");
+    const tl = parseFla8Timeline(streams.get("Page 1")!);
+    expect(tl.layers[0]!.frames[0]!.motionEaseCurve).toBeNull();
   });
 });
 
