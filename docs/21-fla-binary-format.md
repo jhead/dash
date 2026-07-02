@@ -1333,6 +1333,26 @@ dropping data the reader decodes):
   ease curve. A model `EaseCurve {x1,y1,x2,y2}` is written as the 4-point Bézier (0,0),(x1,y1),(x2,y2),
   (1,1) with endpoints duplicated. Non-custom frames still emit `useSingleEaseCurve=1, hasCustomEase=0`.
 
+**Emitted as of task 1409** (preserved CPicSwf placements — previously silently dropped):
+
+- **CPicSwf embedded-SWF placements (§16).** The importer captures each `CPicSwf` record's raw body
+  verbatim on `doc.flaSwfBlobs` "for lossless re-export" (`flash8-import.ts` `collectSwfBlobs`); the
+  writer now closes that loop. `saveRealFla` groups the blobs by `sceneIndex` and passes each scene's
+  blobs to `writeTimelineStream`, which emits them into the FIRST `CPicFrame` of the originating
+  `Page N` stream — one `CPicSwf` class tag (via the `ClassTable`, keeping the §5.2 running index
+  consistent) followed by the captured body bytes per blob. The captured body is exactly the range
+  `readCPicSwf` consumes (from just after the class tag through its `skipToNextBoundary` re-sync
+  landing), and emitting the blobs LAST in the frame means the frame's own null-terminator + INT_MIN
+  registration sentinel forms the 10-byte object-tail signature that terminates the final blob's
+  re-sync scan on read-back. An import→export→re-import round-trip of `fixtures/Magnet.fla` (4
+  placements) recovers all four blob bodies byte-identically (`real-fla-write.test.ts`, "CPicSwf blob
+  preservation").
+  - **Symbol-timeline CPicSwf blobs are still dropped** (with a `console.warn` on save). A blob
+    captured from a `Symbol N` stream carries `sceneIndex: undefined` and no symbol reference (the
+    importer does not record which symbol the record came from), so the writer cannot route it back to
+    the correct `Symbol N` stream. Preserving these needs the importer to tag each symbol-timeline blob
+    with its originating symbol at capture time — a read-path change tracked separately.
+
 **Still deferred on the write path** (data-loss remains; not yet round-trippable):
 
 - **Layer parent / mask back-links (§10.2).** `parentReference` is written as 0 and a masked layer

@@ -9,11 +9,20 @@
  *   - `Symbol N`  — one stream per library symbol
  *   - `Media N`   — bitmap payloads (raw image bytes)
  *
- * Deterministic: no Date.now / randomness. CPicSwf is never emitted (out of
- * scope). Targets Flash 8 (formatVersion 0x49) only.
+ * Deterministic: no Date.now / randomness. Targets Flash 8 (formatVersion 0x49)
+ * only.
+ *
+ * CPicSwf (embedded/imported SWF placements) are NOT authored by this editor, but
+ * the importer preserves each such record's raw bytes on `doc.flaSwfBlobs` "for
+ * lossless re-export" (see flash8-import.ts collectSwfBlobs). saveRealFla closes
+ * that loop (task 1409): scene-timeline blobs (`sceneIndex` set) are re-emitted
+ * into their originating `Page N` stream so an import->export round-trip preserves
+ * them. Symbol-timeline blobs (`sceneIndex` undefined) cannot be routed — the
+ * importer does not yet record which symbol they came from — so they are dropped
+ * with a warning (see the §22 note in docs/21-fla-binary-format.md).
  */
 
-import type { FlashDocument } from "../../model/types.js";
+import type { FlashDocument, FlaSwfBlob } from "../../model/types.js";
 import { writeCfb } from "./cfb-write.js";
 import { writeTimelineStream, type WriteIndex } from "./timeline-write.js";
 import {
@@ -82,6 +91,30 @@ export function saveRealFla(doc: FlashDocument): Uint8Array {
 
   const idx: WriteIndex = { symbolNumById, mediaNumById, symbolTypeById };
 
+  // ---- Preserved CPicSwf blobs (task 1409) ---------------------------------
+  // Group the importer-captured embedded-SWF placement bytes by their scene index
+  // so each scene's blobs are re-emitted into its own `Page N` stream. Blobs with
+  // an undefined sceneIndex are symbol-timeline placements; the importer does not
+  // record which symbol they belong to, so they cannot be re-routed and are dropped.
+  const swfBlobsByScene = new Map<number, FlaSwfBlob[]>();
+  let droppedSymbolBlobs = 0;
+  for (const blob of doc.flaSwfBlobs ?? []) {
+    if (blob.sceneIndex === undefined) {
+      droppedSymbolBlobs += 1;
+      continue;
+    }
+    const list = swfBlobsByScene.get(blob.sceneIndex);
+    if (list) list.push(blob);
+    else swfBlobsByScene.set(blob.sceneIndex, [blob]);
+  }
+  if (droppedSymbolBlobs > 0) {
+    console.warn(
+      `[FLA save] dropping ${droppedSymbolBlobs} symbol-timeline CPicSwf blob(s): ` +
+        `the importer does not record which symbol they came from, so they cannot be ` +
+        `re-emitted (see docs/21-fla-binary-format.md §22).`,
+    );
+  }
+
   // ---- Symbol timeline streams ---------------------------------------------
   for (const sym of symbols) {
     const num = symbolNumById.get(sym.id)!;
@@ -95,7 +128,10 @@ export function saveRealFla(doc: FlashDocument): Uint8Array {
   const sceneEntries: ContentsSceneEntry[] = [];
   doc.scenes.forEach((scene, i) => {
     const pageStreamName = `Page ${i + 1}`;
-    streams.set(pageStreamName, writeTimelineStream(scene.timeline, idx));
+    streams.set(
+      pageStreamName,
+      writeTimelineStream(scene.timeline, idx, swfBlobsByScene.get(i) ?? []),
+    );
     sceneEntries.push({ pageStreamName, sceneName: scene.name });
   });
 

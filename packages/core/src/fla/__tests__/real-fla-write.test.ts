@@ -9,7 +9,10 @@
  * structural round-trip checks against the inverse-oracle importer.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { saveRealFla } from "../write/fla-write.js";
 import { isOle2, tryLoadRealFla, __readAllStreamsForTest } from "../ole.js";
 import { validateContentsStream, validateTimelineStream } from "../write/carchive-validate.js";
@@ -92,6 +95,143 @@ describe("saveRealFla — container + document properties", () => {
     expect(out!.properties.height).toBe(480);
     expect(out!.properties.frameRate).toBe(24);
     expect(out!.properties.backgroundColor.toLowerCase()).toBe("#336699");
+  });
+});
+
+describe("saveRealFla — CPicSwf blob preservation (task 1409)", () => {
+  const MAGNET_FLA = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../fixtures/Magnet.fla",
+  );
+
+  /** Byte-equality of two Uint8Arrays. */
+  function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  /** Multiset match: every blob in `want` has a byte-identical partner in `got`. */
+  function blobSetMatches(
+    want: readonly { bytes: Uint8Array }[],
+    got: readonly { bytes: Uint8Array }[],
+  ): boolean {
+    if (want.length !== got.length) return false;
+    const used = new Array(got.length).fill(false);
+    for (const w of want) {
+      let hit = false;
+      for (let j = 0; j < got.length; j++) {
+        if (!used[j] && bytesEqual(w.bytes, got[j]!.bytes)) {
+          used[j] = true;
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) return false;
+    }
+    return true;
+  }
+
+  it("re-emits scene CPicSwf blobs byte-identically across a full import→export→re-import (Magnet.fla)", () => {
+    const bytes = new Uint8Array(readFileSync(MAGNET_FLA));
+    const doc1 = tryLoadRealFla(bytes);
+    expect(doc1).not.toBeNull();
+
+    // Magnet.fla carries four embedded-SWF placements, all on scene timelines.
+    const sceneBlobs1 = (doc1!.flaSwfBlobs ?? []).filter((b) => b.sceneIndex !== undefined);
+    expect(sceneBlobs1.length).toBeGreaterThan(0);
+
+    const doc2 = tryLoadRealFla(saveRealFla(doc1!));
+    expect(doc2).not.toBeNull();
+    const sceneBlobs2 = (doc2!.flaSwfBlobs ?? []).filter((b) => b.sceneIndex !== undefined);
+
+    // The preserved bytes survive the round-trip verbatim (the data-loss class the
+    // flaSwfBlobs mechanism exists to prevent).
+    expect(blobSetMatches(sceneBlobs1, sceneBlobs2)).toBe(true);
+    // ...and land back on their originating scenes.
+    expect(sceneBlobs2.map((b) => b.sceneIndex).sort()).toEqual(
+      sceneBlobs1.map((b) => b.sceneIndex).sort(),
+    );
+  });
+
+  it("routes a scene blob into its Page stream and recovers it byte-identically (synthetic doc)", () => {
+    // Take a real CPicSwf record body from Magnet.fla so the reader's re-sync scan
+    // sees authentic bytes, then place it on a small synthetic 2-scene document.
+    const magnet = tryLoadRealFla(new Uint8Array(readFileSync(MAGNET_FLA)));
+    const sample = (magnet!.flaSwfBlobs ?? []).find((b) => b.sceneIndex !== undefined);
+    expect(sample).toBeDefined();
+
+    const blob = { bytes: sample!.bytes, matrix: sample!.matrix, sceneIndex: 1 };
+    const doc = baseDoc(
+      [
+        sceneWith("Scene 1", [layerWith("Layer 1", "normal", [])]),
+        sceneWith("Scene 2", [layerWith("Layer 1", "normal", [])]),
+      ],
+      { flaSwfBlobs: [blob] },
+    );
+
+    const out = tryLoadRealFla(saveRealFla(doc));
+    expect(out).not.toBeNull();
+    const recovered = out!.flaSwfBlobs ?? [];
+    expect(recovered.length).toBe(1);
+    expect(bytesEqual(recovered[0]!.bytes, blob.bytes)).toBe(true);
+    expect(recovered[0]!.sceneIndex).toBe(1);
+  });
+
+  it("preserves multiple blobs on the same scene (framed by shared CPicSwf class tag)", () => {
+    const magnet = tryLoadRealFla(new Uint8Array(readFileSync(MAGNET_FLA)));
+    const samples = (magnet!.flaSwfBlobs ?? []).filter((b) => b.sceneIndex !== undefined);
+    expect(samples.length).toBeGreaterThanOrEqual(2);
+
+    const blobs = samples.slice(0, 2).map((b) => ({
+      bytes: b.bytes,
+      matrix: b.matrix,
+      sceneIndex: 0,
+    }));
+    const doc = baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [])])], {
+      flaSwfBlobs: blobs,
+    });
+
+    const out = tryLoadRealFla(saveRealFla(doc));
+    expect(out).not.toBeNull();
+    const recovered = (out!.flaSwfBlobs ?? []).filter((b) => b.sceneIndex === 0);
+    expect(recovered.length).toBe(2);
+    expect(blobSetMatches(blobs, recovered)).toBe(true);
+  });
+
+  it("drops symbol-timeline blobs (sceneIndex undefined) with a warning", () => {
+    const magnet = tryLoadRealFla(new Uint8Array(readFileSync(MAGNET_FLA)));
+    const sample = (magnet!.flaSwfBlobs ?? []).find((b) => b.sceneIndex !== undefined);
+    expect(sample).toBeDefined();
+
+    // A symbol-timeline blob carries no sceneIndex; the writer cannot re-route it.
+    const orphan = { bytes: sample!.bytes, matrix: sample!.matrix };
+    const doc = baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [])])], {
+      flaSwfBlobs: [orphan],
+    });
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const out = tryLoadRealFla(saveRealFla(doc));
+      expect(out).not.toBeNull();
+      // No scene hosts the orphan, so it is not re-imported.
+      expect((out!.flaSwfBlobs ?? []).length).toBe(0);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes("symbol-timeline CPicSwf"))).toBe(
+        true,
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does not perturb a document with no blobs (regression)", () => {
+    const doc = baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [])])]);
+    const withUndef = saveRealFla({ ...doc, flaSwfBlobs: undefined });
+    const withEmpty = saveRealFla({ ...doc, flaSwfBlobs: [] });
+    expect(withUndef.length).toBe(withEmpty.length);
+    const out = tryLoadRealFla(withEmpty);
+    expect(out).not.toBeNull();
+    expect(out!.flaSwfBlobs).toBeUndefined();
   });
 });
 

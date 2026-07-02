@@ -22,7 +22,7 @@
  * `tryLoadRealFla`, but is NOT yet byte-verified against a Win7 Flash 8 oracle.
  */
 
-import type { EaseCurve, Frame, Layer, Timeline } from "../../model/types.js";
+import type { EaseCurve, FlaSwfBlob, Frame, Layer, Timeline } from "../../model/types.js";
 import type {
   ColorEffect,
   DisplayObject,
@@ -76,13 +76,30 @@ export interface WriteIndex {
 // Top-level
 // ---------------------------------------------------------------------------
 
-export function writeTimelineStream(timeline: Timeline, idx: WriteIndex): Uint8Array {
+export function writeTimelineStream(
+  timeline: Timeline,
+  idx: WriteIndex,
+  swfBlobs: readonly FlaSwfBlob[] = [],
+): Uint8Array {
   const w = new ByteWriter(1024);
   const ct = new ClassTable();
   w.u8(0x01); // root marker
   ct.useClass(w, "CPicPage", 1);
-  writeCPicPage(w, ct, timeline, idx);
+  // Preserved CPicSwf blobs (task 1409): the importer captures every embedded-SWF
+  // placement's raw record body verbatim for lossless re-export. Re-emit them into
+  // this timeline stream, framed by CPicSwf class tags, so an import->export
+  // round-trip does not silently drop the placements. A shared mutable holder lets
+  // the FIRST CPicFrame written across the whole page consume the blobs exactly once
+  // (blobs carry only a scene index, not a layer/frame, so any frame is a faithful
+  // host — the reader's collectSwfBlobs walks every frame and re-collects them).
+  const pending: PendingSwfBlobs = { blobs: swfBlobs };
+  writeCPicPage(w, ct, timeline, idx, pending);
   return w.finish();
+}
+
+/** Mutable holder for the still-to-emit CPicSwf blobs (see writeTimelineStream). */
+interface PendingSwfBlobs {
+  blobs: readonly FlaSwfBlob[];
 }
 
 /** True for a default empty keyframe (no display objects). */
@@ -125,7 +142,13 @@ function closeObjBase(w: ByteWriter, ct: ClassTable, reg?: { x: number; y: numbe
 // CPicPage (§8.1)
 // ---------------------------------------------------------------------------
 
-function writeCPicPage(w: ByteWriter, ct: ClassTable, timeline: Timeline, idx: WriteIndex): void {
+function writeCPicPage(
+  w: ByteWriter,
+  ct: ClassTable,
+  timeline: Timeline,
+  idx: WriteIndex,
+  pending: PendingSwfBlobs,
+): void {
   // §10.1: u8 pageVersion = 0x04, u8 0x00.
   w.u8(0x04).u8(0x00);
   // Children: layers BOTTOM-TO-TOP. The model stores top-to-bottom (li=0 = top),
@@ -133,7 +156,7 @@ function writeCPicPage(w: ByteWriter, ct: ClassTable, timeline: Timeline, idx: W
   const bottomToTop = [...timeline.layers].reverse();
   for (const layer of bottomToTop) {
     ct.useClass(w, "CPicLayer", 1);
-    writeCPicLayer(w, ct, layer, idx);
+    writeCPicLayer(w, ct, layer, idx, pending);
   }
   // CPicPage tail (§10.1). Byte-matches the genuine empty fixture: the null child
   // tag, sentinel registration point, F8 skip(2), pageVersionB, nextLayerId,
@@ -154,7 +177,13 @@ const LAYER_TYPE_BYTE: Record<Layer["type"], number> = {
   masked: 0, // masked children carry layerType 0 + a parentLayerRef
 };
 
-function writeCPicLayer(w: ByteWriter, ct: ClassTable, layer: Layer, idx: WriteIndex): void {
+function writeCPicLayer(
+  w: ByteWriter,
+  ct: ClassTable,
+  layer: Layer,
+  idx: WriteIndex,
+  pending: PendingSwfBlobs,
+): void {
   // §10.2: u8 layerVersion = 0x04, u8 0x00.
   w.u8(0x04).u8(0x00);
   // Children: frames (only keyframes become CPicFrame records).
@@ -164,8 +193,12 @@ function writeCPicLayer(w: ByteWriter, ct: ClassTable, layer: Layer, idx: WriteI
     const f = frameList[i]!;
     const next = frameList[i + 1];
     const span = next ? next.index - f.index : Math.max(1, layer.frameCount - f.index);
+    // The very first CPicFrame written across the whole page hosts the preserved
+    // CPicSwf blobs (task 1409); clear the holder so they are emitted exactly once.
+    const blobsForFrame = pending.blobs;
+    if (blobsForFrame.length > 0) pending.blobs = [];
     ct.useClass(w, "CPicFrame", 1);
-    writeCPicFrame(w, ct, f, Math.max(1, span), idx);
+    writeCPicFrame(w, ct, f, Math.max(1, span), idx, blobsForFrame);
   }
   // Post-frames lead-in (§10.2): null child tag, sentinel regpoint, F8 skip(2).
   ct.writeNull(w); // 00 00
@@ -201,11 +234,15 @@ function writeCPicFrame(
   frame: Frame,
   duration: number,
   idx: WriteIndex,
+  swfBlobs: readonly FlaSwfBlob[] = [],
 ): void {
   // §11: u8 frameVersion = 0x04, u8 0x00.
   w.u8(0x04).u8(0x00);
 
-  if (isEmptyKeyframe(frame)) {
+  // A frame hosting preserved CPicSwf blobs (task 1409) MUST take the full
+  // serialization path: the empty-keyframe template (PAGE_FRAME_BODY) hardcodes
+  // the whole child list, so an otherwise-empty keyframe would drop the blobs.
+  if (swfBlobs.length === 0 && isEmptyKeyframe(frame)) {
     // Empty keyframe: emit the genuine empty-keyframe body verbatim (the null
     // child tag, sentinel regpoint, inherited empty CPicShape, and the frame
     // fields). The big-endian frameId is stamped deterministically. The template
@@ -250,6 +287,18 @@ function writeCPicFrame(
   // Children = placed objects only (shapes are skipped — they go inline below).
   for (const obj of placed) {
     writeElement(w, ct, obj, idx);
+  }
+  // Preserved CPicSwf blobs (task 1409): re-emit each captured record body verbatim
+  // as a trailing frame child, framed by a CPicSwf class tag via the ClassTable so
+  // the §5.2 running index stays consistent. The blob body is exactly the range the
+  // importer's `readCPicSwf` captured (from just after the class tag through its
+  // `skipToNextBoundary` re-sync landing), so the class tag emitted here reconstructs
+  // the record the reader re-captures. Emitting them LAST means the frame's own
+  // NULL-terminator + INT_MIN registration sentinel below forms the 10-byte object-
+  // tail signature that terminates the final blob's re-sync scan on read-back.
+  for (const blob of swfBlobs) {
+    ct.useClass(w, "CPicSwf", 1);
+    w.bytes(blob.bytes);
   }
   // Close the frame's CPicObjBase (schema=4, from the `04 00` header above): end
   // of children, sentinel registration point, then the schema>2 / schema>3 skip
