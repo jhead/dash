@@ -864,6 +864,17 @@ propagating garbage:
 - **Resource bounds**: arrays are capped (`MAX_ARRAY_LEN`) and the generic
   atomic-value sanitizer is depth-bounded (`MAX_VALUE_DEPTH`), so a cyclic-ish or
   oversized payload is truncated instead of hanging/OOMing.
+- **`flaSwfBlobs`** (the import-only, non-JSON `bytes: Uint8Array` field) is
+  bounded on **both count and total bytes** (`MAX_FLA_SWF_BLOBS` = 4096 entries;
+  `MAX_FLA_SWF_BLOB_BYTES` = 64 MiB retained across all entries), and every entry
+  must be a `{bytes}` blob object (a `Uint8Array`, or a base64 `string` in the
+  direct pre-decode form) — anything else is dropped. This closes a
+  memory-amplification vector: the schema layer (`jsonToBlob`) already inflates
+  each entry's base64 into a real `Uint8Array` on rebuild, and everything kept is
+  held in memory and **re-serialized on every save**, so an uncapped array of
+  arbitrary objects let a hostile peer push unbounded blob data. The non-`bytes`
+  metadata is run through the atomic sanitizer; the typed `bytes` array is left
+  untouched (the sanitizer only understands plain JSON and would mangle it).
 
 **Fail safe.** When the input is too broken to be a document at all (e.g. not an
 object), the binding passes the **last-good** document as the fallback, so a

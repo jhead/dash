@@ -62,6 +62,20 @@ import type { FlashDocument } from "@flash/core";
 const MAX_ARRAY_LEN = 100_000;
 /** Max recursion depth for the generic deep-sanitizer of atomic field values. */
 const MAX_VALUE_DEPTH = 64;
+/**
+ * Max number of import-only `flaSwfBlobs` entries kept from an untrusted peer.
+ * A real SWF import produces a handful of blobs; a hostile peer could push an
+ * arbitrarily long array, so we clamp well below the generic {@link MAX_ARRAY_LEN}.
+ */
+const MAX_FLA_SWF_BLOBS = 4_096;
+/**
+ * Max TOTAL decoded bytes retained across all `flaSwfBlobs`. This is the real
+ * memory-amplification bound: each entry's `bytes` base64 was already inflated
+ * into a Uint8Array by the schema layer (`jsonToBlob`), and everything we keep
+ * is held in memory and re-serialized on every save. 64 MiB comfortably covers a
+ * legitimate imported SWF while denying an unbounded push.
+ */
+const MAX_FLA_SWF_BLOB_BYTES = 64 * 1024 * 1024;
 
 /** Known display-object discriminants (the `type` field). */
 const KNOWN_DISPLAY_OBJECT_TYPES = new Set([
@@ -485,12 +499,57 @@ export function validateInboundDoc(
   }
 
   // flaSwfBlobs is import-only and never produced by a mutation; its entries
-  // carry a `bytes: Uint8Array` that `sanitizeAtomic` would mangle (it only
-  // understands plain JSON). The schema layer already decoded it from base64, so
-  // we only enforce that it is an ARRAY and leave the (typed-array-bearing)
-  // entries untouched.
+  // carry a `bytes: Uint8Array` (already decoded from base64 by the schema layer,
+  // `jsonToBlob`) that `sanitizeAtomic` would mangle (it only understands plain
+  // JSON). A hostile peer could otherwise push an arbitrarily long array of
+  // arbitrary objects and amplify a large base64 payload into large in-memory
+  // buffers re-serialized on every save. We therefore CAP the count and the total
+  // retained bytes, DROP any entry that is not a `{bytes}` blob object, and
+  // sanitize the non-`bytes` metadata while leaving the typed array untouched.
   if (raw.flaSwfBlobs !== undefined) {
-    out.flaSwfBlobs = asArray(raw.flaSwfBlobs);
+    const rawBlobs = asArray(raw.flaSwfBlobs);
+    const len = Math.min(rawBlobs.length, MAX_FLA_SWF_BLOBS);
+    if (rawBlobs.length > MAX_FLA_SWF_BLOBS) {
+      warn(
+        `flaSwfBlobs has ${rawBlobs.length} entries; truncated to ${MAX_FLA_SWF_BLOBS}`,
+      );
+    }
+    const blobs: unknown[] = [];
+    let totalBytes = 0;
+    for (let i = 0; i < len; i++) {
+      const entry = rawBlobs[i];
+      if (!isPlainObject(entry)) {
+        warn("flaSwfBlobs entry is not an object; dropped");
+        continue;
+      }
+      // `bytes` is the decoded Uint8Array in the real rebuild path; tolerate a
+      // raw base64 string too (a direct caller passing the pre-decode form).
+      const bytes = entry.bytes;
+      const byteLen =
+        bytes instanceof Uint8Array
+          ? bytes.length
+          : typeof bytes === "string"
+            ? bytes.length
+            : -1;
+      if (byteLen < 0) {
+        warn("flaSwfBlobs entry has no string/Uint8Array `bytes`; dropped");
+        continue;
+      }
+      if (totalBytes + byteLen > MAX_FLA_SWF_BLOB_BYTES) {
+        warn(
+          `flaSwfBlobs exceeded ${MAX_FLA_SWF_BLOB_BYTES}-byte budget; remaining entries dropped`,
+        );
+        break;
+      }
+      totalBytes += byteLen;
+      // Sanitize the plain-JSON metadata (everything except the typed `bytes`),
+      // then re-attach the untouched `bytes`.
+      const { bytes: _b, ...rest } = entry;
+      const sanitized = (sanitizeAtomic(rest, 0) as Record<string, unknown>) ?? {};
+      sanitized.bytes = bytes;
+      blobs.push(sanitized);
+    }
+    out.flaSwfBlobs = blobs;
   }
 
   return out as unknown as FlashDocument;

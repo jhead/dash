@@ -281,6 +281,71 @@ describe("validateInboundDoc — direct coercion / dropping", () => {
     expect(() => validateInboundDoc(raw as unknown)).not.toThrow();
     assertValidDoc(validateInboundDoc(raw as unknown));
   });
+
+  it("caps the flaSwfBlobs COUNT so a hostile peer cannot push an unbounded array", () => {
+    // 10k entries, each a valid tiny blob; the cap is 4096.
+    const rawBlobs = Array.from({ length: 10_000 }, () => ({
+      bytes: new Uint8Array([1, 2, 3]),
+    }));
+    const raw = { ...createDocument(), flaSwfBlobs: rawBlobs };
+    const out = validateInboundDoc(raw as unknown);
+    assertValidDoc(out);
+    expect(out.flaSwfBlobs).toBeDefined();
+    expect(out.flaSwfBlobs!.length).toBe(4_096);
+  });
+
+  it("caps the flaSwfBlobs TOTAL BYTES so a hostile peer cannot amplify memory", () => {
+    // Each entry carries a 1 MiB Uint8Array; the total budget is 64 MiB, so only
+    // the first 64 survive and the rest are dropped.
+    const oneMiB = () => ({ bytes: new Uint8Array(1024 * 1024) });
+    const rawBlobs = Array.from({ length: 200 }, oneMiB);
+    const raw = { ...createDocument(), flaSwfBlobs: rawBlobs };
+    const out = validateInboundDoc(raw as unknown);
+    assertValidDoc(out);
+    expect(out.flaSwfBlobs!.length).toBe(64);
+    const total = out.flaSwfBlobs!.reduce(
+      (n, b) => n + (b as { bytes: Uint8Array }).bytes.length,
+      0,
+    );
+    expect(total).toBeLessThanOrEqual(64 * 1024 * 1024);
+  });
+
+  it("drops flaSwfBlobs entries that are not {bytes} blob objects", () => {
+    const raw = {
+      ...createDocument(),
+      flaSwfBlobs: [
+        { bytes: new Uint8Array([1]) }, // valid (typed array)
+        { bytes: "aGVsbG8=" }, // valid (raw base64 string, direct-caller form)
+        42, // scalar — dropped
+        null, // dropped
+        [], // array — dropped
+        { name: "no bytes" }, // object without `bytes` — dropped
+        { bytes: 123 }, // `bytes` is a number — dropped
+      ],
+    };
+    const out = validateInboundDoc(raw as unknown);
+    assertValidDoc(out);
+    expect(out.flaSwfBlobs!.length).toBe(2);
+  });
+
+  it("keeps valid flaSwfBlobs (bytes + metadata) and sanitizes the metadata", () => {
+    const bytes = new Uint8Array([9, 8, 7]);
+    const raw = {
+      ...createDocument(),
+      // NaN in metadata should be sanitized to 0; bytes must survive untouched.
+      flaSwfBlobs: [{ bytes, name: "swf1", w: NaN }],
+    };
+    const out = validateInboundDoc(raw as unknown);
+    assertValidDoc(out);
+    const blob = out.flaSwfBlobs![0] as {
+      bytes: Uint8Array;
+      name: string;
+      w: number;
+    };
+    expect(blob.bytes).toBe(bytes); // same typed array reference, un-mangled
+    expect(blob.name).toBe("swf1");
+    expect(blob.w).toBe(0); // NaN sanitized
+  });
 });
 
 describe("validateInboundDoc — binding inbound path (full peer scenario)", () => {
