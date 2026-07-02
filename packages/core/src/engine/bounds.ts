@@ -34,8 +34,11 @@ function effectiveHeight(obj: DisplayObject): number {
 export function getTransformedBounds(obj: DisplayObject): Bounds {
   // Raw vector shapes / drawing objects carry no width/height — their geometry
   // lives in shape.paths. Delegate to the geometry-aware shape bounds, which
-  // also accounts for the object's own scale/rotation transform.
-  if (obj.type === 'shape' || obj.type === 'drawing-object') {
+  // also accounts for the object's own scale/rotation transform. Guard on the
+  // presence of `shape`: a lightweight/placeholder shape object (e.g. a remote
+  // presence selection target) may lack geometry, in which case we fall back to
+  // its x/y/width/height rather than dereferencing an undefined shape.
+  if ((obj.type === 'shape' || obj.type === 'drawing-object') && (obj as any).shape) {
     return transformedShapeBounds(obj as ShapeDisplayObject | DrawingObject);
   }
 
@@ -114,7 +117,7 @@ export function getUnionBounds(objects: DisplayObject[]): Bounds | null {
  * x/y/width/height.
  */
 function simpleBox(obj: DisplayObject): { x: number; y: number; w: number; h: number } {
-  if (obj.type === 'shape' || obj.type === 'drawing-object') {
+  if ((obj.type === 'shape' || obj.type === 'drawing-object') && (obj as any).shape) {
     const b = transformedShapeBounds(obj as ShapeDisplayObject | DrawingObject);
     return { x: b.x, y: b.y, w: b.width, h: b.height };
   }

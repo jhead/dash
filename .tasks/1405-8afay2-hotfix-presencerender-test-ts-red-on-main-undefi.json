@@ -1,0 +1,10 @@
+{
+  "id": "1405-8afay2-hotfix-presencerender-test-ts-red-on-main-undefi",
+  "title": "HOTFIX: presenceRender.test.ts red on main \u2014 undefined.paths",
+  "description": "ROOT CAUSE: task 1378 (commit 11fe408) made getTransformedBounds/simpleBox in packages/core/src/engine/bounds.ts unconditionally delegate type shape/drawing-object to transformedShapeBounds, which reads obj.shape.paths. A lightweight presence selection target (RemoteCursorsOverlay, task 1345) carries x/y/width/height but no .shape, so shapeBounds(undefined) threw 'Cannot read properties of undefined (reading paths)'. FIX: guard both delegation sites on the presence of obj.shape; a shape lacking geometry falls back to x/y/width/height. VERIFY: full ordered build exit 0; @flash/authoring-ui 1226 passed (presenceRender 6/6 green); @flash/core 5672 passed.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-07-02T01:40:40Z",
+  "updated_at": "2026-07-02T01:53:35Z"
+}
