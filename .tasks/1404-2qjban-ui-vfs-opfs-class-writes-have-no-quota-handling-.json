@@ -2,9 +2,9 @@
   "id": "1404-2qjban-ui-vfs-opfs-class-writes-have-no-quota-handling-",
   "title": "UI/VFS: OPFS class writes have no quota handling and are fire-and-forget (silent persist failure)",
   "description": "packages/authoring-ui/src/vfs/opfs.ts:115-126 WebClassVfs.write() calls createWritable()/write()/close() with no try/catch for QuotaExceededError (unlike projectStore.put which wraps quota into a non-fatal ProjectQuotaError). ClassesPanel.handleScriptChange (:296) fires void vfs.write(...), so an OPFS quota rejection is unhandled and swallowed by the microtask \u2014 the class edit silently fails to persist to OPFS while doc.asClasses was already updated synchronously; on Tauri the on-disk classes/ file then diverges from the doc. Fix: wrap write() to detect quota and surface a one-time warning; don't leave void vfs.write(...) unobserved in handleScriptChange. Confidence: confirmed.",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-07-02T01:16:08Z",
-  "updated_at": "2026-07-02T01:16:08Z"
+  "updated_at": "2026-07-02T02:06:53Z"
 }

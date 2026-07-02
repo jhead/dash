@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { WebClassVfs, isOpfsAvailable } from "../vfs/opfs.js";
+import { ClassVfsQuotaError } from "../vfs/quota.js";
 
 // ---------------------------------------------------------------------------
 // A minimal in-memory fake of the OPFS FileSystem*Handle API surface that
@@ -191,5 +192,78 @@ describe("WebClassVfs (OPFS backend)", () => {
     const vfs = new WebClassVfs({ rootDirName: "proj-42" });
     await vfs.write("Foo.as", "x");
     expect(origin.dirs.has("proj-42")).toBe(true);
+  });
+});
+
+// Task 1404 — a QuotaExceededError from the OPFS write path must surface as a
+// typed ClassVfsQuotaError, not a swallowed rejection.
+describe("WebClassVfs quota handling", () => {
+  function installQuotaOpfs(where: "write" | "close"): void {
+    class QuotaWritable {
+      constructor(private file: FakeFile) {}
+      write(s: string): Promise<void> {
+        if (where === "write") {
+          return Promise.reject(
+            new DOMException("full", "QuotaExceededError")
+          );
+        }
+        this.file.data = s;
+        return Promise.resolve();
+      }
+      close(): Promise<void> {
+        if (where === "close") {
+          return Promise.reject(
+            new DOMException("full", "QuotaExceededError")
+          );
+        }
+        return Promise.resolve();
+      }
+    }
+    // A dir tree whose leaf file hands back a quota-throwing writable.
+    const origin = new FakeDirHandle();
+    const realCreate = FakeFileHandle.prototype.createWritable;
+    FakeFileHandle.prototype.createWritable = function (
+      this: FakeFileHandle
+    ): Promise<FakeWritable> {
+      return Promise.resolve(
+        new QuotaWritable(this.file) as unknown as FakeWritable
+      );
+    };
+    setNavigator({
+      storage: {
+        getDirectory: () =>
+          Promise.resolve(origin as unknown as FileSystemDirectoryHandle),
+      },
+    });
+    // Restore after the test so other suites keep the normal writable.
+    (installQuotaOpfs as unknown as { restore: () => void }).restore = () => {
+      FakeFileHandle.prototype.createWritable = realCreate;
+    };
+  }
+
+  it("maps a QuotaExceededError during write() to ClassVfsQuotaError", async () => {
+    installQuotaOpfs("write");
+    try {
+      const vfs = new WebClassVfs();
+      const p = vfs.write("com/example/Foo.as", "class Foo {}");
+      await expect(p).rejects.toBeInstanceOf(ClassVfsQuotaError);
+      await p.catch((err: ClassVfsQuotaError) =>
+        expect(err.path).toBe("com/example/Foo.as")
+      );
+    } finally {
+      (installQuotaOpfs as unknown as { restore: () => void }).restore();
+    }
+  });
+
+  it("maps a QuotaExceededError during close() to ClassVfsQuotaError", async () => {
+    installQuotaOpfs("close");
+    try {
+      const vfs = new WebClassVfs();
+      await expect(vfs.write("Foo.as", "x")).rejects.toBeInstanceOf(
+        ClassVfsQuotaError
+      );
+    } finally {
+      (installQuotaOpfs as unknown as { restore: () => void }).restore();
+    }
   });
 });

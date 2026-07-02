@@ -1,5 +1,6 @@
 import type { IdentifiedClassVfs, ClassVfsEntry } from "@flash/core";
 import { normalizeClassPath, splitClassPath } from "@flash/core";
+import { withQuotaMapping } from "./quota.js";
 
 // ---------------------------------------------------------------------------
 // WebClassVfs — OPFS (Origin Private File System) backend.
@@ -113,16 +114,24 @@ export class WebClassVfs implements IdentifiedClassVfs {
   }
 
   async write(path: string, source: string): Promise<void> {
-    const { dirs, file } = splitClassPath(path);
-    const root = await this.rootDir(true);
-    const dir = await this.resolveDir(root, dirs, true);
-    const fileHandle = await dir.getFileHandle(file, { create: true });
-    const writable = await fileHandle.createWritable();
-    try {
-      await writable.write(source);
-    } finally {
-      await writable.close();
-    }
+    // A full origin-storage budget makes createWritable/write/close reject with
+    // a QuotaExceededError. Map it to a typed ClassVfsQuotaError (task 1404) so
+    // the caller surfaces a one-time warning instead of the rejection being
+    // swallowed as an unobserved fire-and-forget promise.
+    await withQuotaMapping(path, async () => {
+      const { dirs, file } = splitClassPath(path);
+      const root = await this.rootDir(true);
+      const dir = await this.resolveDir(root, dirs, true);
+      const fileHandle = await dir.getFileHandle(file, { create: true });
+      const writable = await fileHandle.createWritable();
+      try {
+        await writable.write(source);
+      } finally {
+        // close() is where a buffered quota overrun typically surfaces; keep it
+        // inside the mapped body so that rejection is translated too.
+        await writable.close();
+      }
+    });
   }
 
   async remove(path: string): Promise<void> {

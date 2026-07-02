@@ -1,5 +1,6 @@
 import type { IdentifiedClassVfs, ClassVfsEntry } from "@flash/core";
 import { normalizeClassPath } from "@flash/core";
+import { withQuotaMapping } from "./quota.js";
 
 // ---------------------------------------------------------------------------
 // IndexedDbClassVfs — the OPFS fallback for browsers without
@@ -92,10 +93,15 @@ export class IndexedDbClassVfs implements IdentifiedClassVfs {
   }
 
   async write(path: string, source: string): Promise<void> {
-    const key = normalizeClassPath(path);
-    const store = await this.tx("readwrite");
-    await reqAsync(store.put(source, key));
-    await this.txDone(store);
+    // Mirror the OPFS backend: translate a QuotaExceededError into a typed
+    // ClassVfsQuotaError (task 1404) so a full-storage failure is a surfaceable
+    // warning, not a swallowed rejection.
+    await withQuotaMapping(path, async () => {
+      const key = normalizeClassPath(path);
+      const store = await this.tx("readwrite");
+      await reqAsync(store.put(source, key));
+      await this.txDone(store);
+    });
   }
 
   async remove(path: string): Promise<void> {

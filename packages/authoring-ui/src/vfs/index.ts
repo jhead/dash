@@ -29,6 +29,9 @@ export type { TauriClassVfsOptions } from "./tauri.js";
 export { createClassVfs } from "./factory.js";
 export type { CreateClassVfsOptions } from "./factory.js";
 
+// Quota handling for the class-write path (task 1404).
+export { ClassVfsQuotaError, isQuotaError, withQuotaMapping } from "./quota.js";
+
 // Re-export the pure core layer so consumers (the P4 Classes panel) can import
 // the full VFS surface from a single module.
 export type {

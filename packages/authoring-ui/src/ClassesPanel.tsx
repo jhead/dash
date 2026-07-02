@@ -15,6 +15,7 @@ import {
 } from "@flash/core";
 import { ScriptEditor } from "./ActionsPanel";
 import { createClassVfs } from "./vfs/factory.js";
+import { ClassVfsQuotaError, isQuotaError } from "./vfs/quota.js";
 import {
   buildClassTree,
   classNameToPath,
@@ -108,6 +109,14 @@ export function ClassesPanel({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameName, setRenameName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Non-fatal warning shown when a VFS write fails to PERSIST (e.g. OPFS/
+  // IndexedDB storage quota exceeded, task 1404). The edit still lives in
+  // `doc.asClasses` (folded synchronously below), so this only tells the user
+  // local mirroring is degraded — it is not data loss within the session.
+  const [persistWarning, setPersistWarning] = useState<string | null>(null);
+  // Warn about a full-storage quota only ONCE (a keystroke-rate stream of
+  // rejections must not spam the banner). Reset when a later write succeeds.
+  const quotaWarnedRef = useRef(false);
 
   const editTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // True while the editor has an unflushed edit that is NOT yet reflected by a
@@ -287,13 +296,54 @@ export function ClassesPanel({
     };
   }, []);
 
+  // Surface a VFS write/persist failure without aborting the session — the edit
+  // already lives in `doc.asClasses`, so a failed OPFS/IndexedDB mirror is a
+  // degraded-persistence warning, not data loss (task 1404). Quota errors warn
+  // exactly once; any other write failure is reported with its message.
+  const reportVfsWriteError = useCallback((err: unknown): void => {
+    if (err instanceof ClassVfsQuotaError || isQuotaError(err)) {
+      if (quotaWarnedRef.current) return;
+      quotaWarnedRef.current = true;
+      setPersistWarning(
+        "Local storage is full — class edits are kept in the document (and " +
+          "will be saved with the project) but could not be mirrored to local " +
+          "storage. Free up space to restore local class persistence."
+      );
+      return;
+    }
+    setPersistWarning(
+      `Failed to persist class to local storage: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }, []);
+
+  // Observe a fire-and-forget VFS write so a rejection (quota/I-O) is surfaced
+  // instead of being swallowed by the microtask. On success, clear a prior
+  // warning and re-arm the one-time quota notice.
+  const observeVfsWrite = useCallback(
+    (p: Promise<void>): void => {
+      p.then(
+        () => {
+          if (quotaWarnedRef.current) quotaWarnedRef.current = false;
+          setPersistWarning((prev) => (prev === null ? prev : null));
+        },
+        reportVfsWriteError
+      );
+    },
+    [reportVfsWriteError]
+  );
+
   // --- Editor edit ---------------------------------------------------------
   const handleScriptChange = useCallback(
     (next: string) => {
       setSource(next);
       const vfs = vfsRef.current;
       if (!vfs || selected === null) return;
-      void vfs.write(selected, next);
+      // Awaited-via-callback, NOT fire-and-forget: a QuotaExceededError (or any
+      // write failure) is now observed and surfaced as a one-time warning
+      // (task 1404) rather than being dropped by the microtask.
+      observeVfsWrite(vfs.write(selected, next));
       // (a) DATA-LOSS FIX: fold the edit into `doc.asClasses` SYNCHRONOUSLY so
       // any compile/persist that reads the doc (Test Movie, Publish, Live
       // Preview recompile, autosave, Save) sees this exact edit immediately —
@@ -322,7 +372,7 @@ export function ClassesPanel({
         void syncToDoc();
       }, EDIT_SYNC_DELAY_MS);
     },
-    [selected, syncToDoc, pushDoc]
+    [selected, syncToDoc, pushDoc, observeVfsWrite]
   );
 
   // --- Add ----------------------------------------------------------------
@@ -355,6 +405,12 @@ export function ClassesPanel({
       await vfs.write(path, defaultClassSource(path));
       await refresh();
       await syncToDoc();
+    } catch (e) {
+      // A write failure here (quota/I-O) means the new class was NOT persisted;
+      // surface it as a one-time warning instead of an unhandled rejection
+      // (task 1404) and keep the create input open.
+      reportVfsWriteError(e);
+      return;
     } finally {
       vfsOpInFlightRef.current -= 1;
     }
@@ -362,7 +418,7 @@ export function ClassesPanel({
     setNewName("");
     setError(null);
     setSelected(path);
-  }, [newName, existingSet, refresh, syncToDoc]);
+  }, [newName, existingSet, refresh, syncToDoc, reportVfsWriteError]);
 
   // --- Remove -------------------------------------------------------------
   const handleRemove = useCallback(
@@ -421,6 +477,11 @@ export function ClassesPanel({
         await vfs.remove(renaming);
         await refresh();
         await syncToDoc();
+      } catch (e) {
+        // Rename write failed (quota/I-O): surface a one-time warning rather
+        // than an unhandled rejection (task 1404) and keep the rename open.
+        reportVfsWriteError(e);
+        return;
       } finally {
         vfsOpInFlightRef.current -= 1;
       }
@@ -429,7 +490,7 @@ export function ClassesPanel({
     setRenaming(null);
     setRenameName("");
     setError(null);
-  }, [renaming, renameName, existingSet, refresh, syncToDoc]);
+  }, [renaming, renameName, existingSet, refresh, syncToDoc, reportVfsWriteError]);
 
   // --- Tree ----------------------------------------------------------------
   const tree = useMemo(() => buildClassTree(paths), [paths]);
@@ -686,6 +747,43 @@ export function ClassesPanel({
             }}
           >
             {error}
+          </div>
+        )}
+
+        {persistWarning && (
+          <div
+            data-testid="class-persist-warning"
+            role="alert"
+            style={{
+              flexShrink: 0,
+              background: "#FFF6E0",
+              borderTop: `${chrome.borderThin}px solid #E0A100`,
+              padding: "3px 8px",
+              fontSize: 12,
+              color: "#7A5200",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 6,
+            }}
+          >
+            <span style={{ flex: 1 }}>⚠ {persistWarning}</span>
+            <button
+              type="button"
+              aria-label="Dismiss warning"
+              onClick={() => setPersistWarning(null)}
+              style={{
+                flexShrink: 0,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: "#7A5200",
+                fontSize: 12,
+                lineHeight: 1,
+                padding: 0,
+              }}
+            >
+              ✕
+            </button>
           </div>
         )}
       </div>

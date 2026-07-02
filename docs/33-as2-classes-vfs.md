@@ -97,6 +97,29 @@ writeTextFile/remove/exists`). Detection mirrors `hooks/useFileActions.ts`'s
 In `@flash/core`. Used headlessly (Node/SSR) and as the reference implementation
 the contract tests pin. Also the factory's last resort when no storage exists.
 
+### Write quota handling (task 1404)
+
+OPFS and IndexedDB writes reject with a `QuotaExceededError` when the origin's
+storage budget is exhausted. Both web backends run their write body through
+`withQuotaMapping(path, …)` (`vfs/quota.ts`), which re-throws such a rejection as
+a typed **`ClassVfsQuotaError`** (carrying `path` + `cause`), mirroring
+`projects/projectStore.ts`'s `ProjectQuotaError`. For OPFS this covers the buffered
+overrun that surfaces on `writable.close()`, not just `write()`. Any non-quota error
+propagates unchanged so genuine I/O failures are still surfaced. `isQuotaError()`
+detects `QuotaExceededError` / Firefox's `NS_ERROR_DOM_QUOTA_REACHED` / a
+`ClassVfsQuotaError` / a quota-mentioning message.
+
+This matters because the write is **not fatal**: the Classes panel folds every edit
+into `doc.asClasses` synchronously (task 1317), so the in-memory document — the
+authoritative source for compile/save — already holds the edit. A full-storage write
+only degrades the local mirror. Previously the panel's `handleScriptChange` issued a
+fire-and-forget `void vfs.write(...)`, so a quota rejection vanished into the
+microtask and the on-disk `classes/` mirror silently diverged from the doc. The panel
+now **observes** the write promise (`observeVfsWrite`), surfacing a one-time,
+dismissable amber warning (`data-testid="class-persist-warning"`) on a quota (or any
+write) failure and clearing it once a later write succeeds. The awaited create/rename
+write paths catch the same error rather than emitting an unhandled rejection.
+
 ### Factory
 
 `createClassVfs(options?)` picks the backend:
@@ -369,7 +392,11 @@ pick it by name when linking a library symbol.
   traversal rejection, `MemoryClassVfs` round-trip, and the hydrate/sync
   doc<->VFS round-trip (edit, add, delete, no-churn, prune).
 - `@flash/authoring-ui` `src/__tests__/`:
-  - `vfsOpfs.test.ts` — `WebClassVfs` against an in-memory fake OPFS handle tree.
+  - `vfsOpfs.test.ts` — `WebClassVfs` against an in-memory fake OPFS handle tree,
+    incl. quota mapping: a `QuotaExceededError` on `write()` or `close()` surfaces
+    as a `ClassVfsQuotaError` (task 1404).
+  - `vfsQuota.test.ts` — `isQuotaError` / `withQuotaMapping` / `ClassVfsQuotaError`
+    (task 1404): quota detection across browsers + non-quota pass-through.
   - `vfsIndexedDb.test.ts` — `IndexedDbClassVfs` against `fake-indexeddb`.
   - `vfsTauri.test.ts` — `TauriClassVfs` against a mocked `@tauri-apps/plugin-fs`.
   - `vfsFactorySync.test.ts` — factory backend selection + a hydrate/sync
@@ -379,7 +406,9 @@ pick it by name when linking a library symbol.
     identifiers, traversal), `defaultClassSource`.
   - `classesPanel.test.ts` — the Classes panel mounted with an injected
     `MemoryClassVfs`: empty state, hydrate+select, and tree add/remove/rename +
-    editor load/save all update BOTH the VFS and `doc.asClasses` via `pushDoc`.
+    editor load/save all update BOTH the VFS and `doc.asClasses` via `pushDoc`;
+    plus the task-1404 quota case (an edit whose VFS write hits the storage quota
+    still folds into `doc.asClasses` AND surfaces the persist warning).
   - `editorLayout.test.ts` — the `"classes"` bottom-dock tab round-trips through
     layout persistence.
   - `symbolLinkageClassAutocomplete.test.ts` — `deriveAsClassNames`: `.as` path →

@@ -410,4 +410,76 @@ describe("ClassesPanel", () => {
     expect(paths).toContain("com/example/Renamed.as");
     expect(paths).not.toContain("Foo.as");
   });
+
+  // --- task 1404: OPFS/IndexedDB write quota is surfaced, not swallowed -------
+  //
+  // A quota-exceeded write() used to be a fire-and-forget `void vfs.write(...)`
+  // whose rejection vanished into the microtask. Now the write is observed: the
+  // edit still folds into `doc.asClasses` synchronously (no in-session loss),
+  // AND a one-time non-fatal warning is surfaced to the user.
+
+  /**
+   * Wrap a MemoryClassVfs, delegating writes to the real backend until `.full`
+   * is set — then every write() rejects with a quota DOMException. This lets the
+   * initial `hydrateVfsFromDoc` (which writes the embed) succeed so the editor
+   * mounts, and only the subsequent EDIT write hits the quota.
+   */
+  function quotaVfs(base: IdentifiedClassVfs): IdentifiedClassVfs & {
+    full: boolean;
+  } {
+    return {
+      kind: base.kind,
+      full: false,
+      write(p: string, s: string): Promise<void> {
+        if (this.full) {
+          return Promise.reject(new DOMException("full", "QuotaExceededError"));
+        }
+        return base.write(p, s);
+      },
+      read: (p: string) => base.read(p),
+      list: () => base.list(),
+      remove: (p: string) => base.remove(p),
+      exists: (p: string) => base.exists(p),
+    } as IdentifiedClassVfs & { full: boolean };
+  }
+
+  it("(1404) an edit whose VFS write hits the storage quota still folds into the doc AND surfaces a warning", async () => {
+    let doc = createDocument();
+    doc = addAsClass(doc, { path: "Foo.as", source: "class Foo {}" });
+    const vfs = quotaVfs(createMemoryClassVfs());
+    let pushed: FlashDocument | null = null;
+    const { el, r } = mountIsolated(doc, (d) => (pushed = d), vfs);
+    await flush();
+
+    // Storage is now full: the next edit write() will reject with quota.
+    vfs.full = true;
+
+    const textarea = el.querySelector("textarea")!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value"
+      )!.set!;
+      setter.call(textarea, "class Foo { var edited; }");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      // let the rejected write() promise settle so the .catch runs
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flush();
+
+    // (a) The edit still reached the doc synchronously — NO in-session data loss.
+    expect(pushed).not.toBeNull();
+    const src = (pushed!.asClasses ?? []).find((c) => c.path === "Foo.as")
+      ?.source;
+    expect(src).toBe("class Foo { var edited; }");
+
+    // (b) The failure was surfaced, not swallowed.
+    const warn = el.querySelector('[data-testid="class-persist-warning"]');
+    expect(warn).not.toBeNull();
+    expect(warn?.textContent ?? "").toMatch(/storage/i);
+
+    act(() => r.unmount());
+    el.remove();
+  });
 });
