@@ -226,3 +226,52 @@ describe("complex bitwise expression", () => {
     expect(compilesOk("var flags = 0; flags |= 0x01; flags &= 0xFF;")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Compound shift-assignment operators  <<=  >>=  >>>=
+// (regression: these used to tokenize as << / >> / >>> followed by =, so the
+//  parser threw 'unexpected token =' and aborted the whole script — task 1380)
+// ---------------------------------------------------------------------------
+
+describe("compound left-shift assignment (<<=)", () => {
+  it("x <<= 1 compiles without error", () => {
+    expect(compilesOk("var x = 4; x <<= 1;")).toBe(true);
+  });
+
+  it("x <<= 1 loads, shifts (ActionBitLShift 0x63), and stores (ActionSetVariable 0x1d)", () => {
+    const bytes = compileAS2("var x = 4; x <<= 1;");
+    expect(containsByte(bytes, 0x63)).toBe(true); // ActionBitLShift
+    expect(containsByte(bytes, 0x1c)).toBe(true); // ActionGetVariable (load)
+    expect(containsByte(bytes, 0x1d)).toBe(true); // ActionSetVariable (store)
+  });
+});
+
+describe("compound signed right-shift assignment (>>=)", () => {
+  it("x >>= 2 compiles without error", () => {
+    expect(compilesOk("var x = 16; x >>= 2;")).toBe(true);
+  });
+
+  it("x >>= 2 loads, shifts (ActionBitRShift 0x64), and stores (ActionSetVariable 0x1d)", () => {
+    const bytes = compileAS2("var x = 16; x >>= 2;");
+    expect(containsByte(bytes, 0x64)).toBe(true); // ActionBitRShift
+    expect(containsByte(bytes, 0x1c)).toBe(true); // ActionGetVariable (load)
+    expect(containsByte(bytes, 0x1d)).toBe(true); // ActionSetVariable (store)
+  });
+});
+
+describe("compound unsigned right-shift assignment (>>>=)", () => {
+  it("x >>>= 3 compiles without error", () => {
+    expect(compilesOk("var x = 256; x >>>= 3;")).toBe(true);
+  });
+
+  it("x >>>= 3 loads, shifts (ActionBitURShift 0x65), and stores (ActionSetVariable 0x1d)", () => {
+    const bytes = compileAS2("var x = 256; x >>>= 3;");
+    expect(containsByte(bytes, 0x65)).toBe(true); // ActionBitURShift
+    expect(containsByte(bytes, 0x1c)).toBe(true); // ActionGetVariable (load)
+    expect(containsByte(bytes, 0x1d)).toBe(true); // ActionSetVariable (store)
+  });
+
+  it("member-target shift assignment (this.n >>>= 1) compiles", () => {
+    expect(compilesOk("this.n >>>= 1;")).toBe(true);
+  });
+});
