@@ -2093,7 +2093,14 @@ export function StageArea({
           for (let i = shapeDisplayObjects.length - 1; i >= 0; i--) {
             const obj = shapeDisplayObjects[i];
             if ((obj.x ?? 0) !== 0 || (obj.y ?? 0) !== 0 || !isMergeableShape(obj.shape)) continue;
-            const { shape: next } = faucetEraseShape(obj.shape, { x: stageX, y: stageY });
+            // Zoom-adjust the ~3px pick tolerance (task 1432) so the faucet feels
+            // equally precise at every zoom (fixed 3px reads as 12 stage-px at 400%).
+            const { shape: next } = faucetEraseShape(
+              obj.shape,
+              { x: stageX, y: stageY },
+              obj.shape.id,
+              3 / internalZoom,
+            );
             if (next === null) {
               onShapeDelete?.(obj.id);
               break;

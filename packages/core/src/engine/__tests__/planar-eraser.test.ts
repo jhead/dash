@@ -735,6 +735,98 @@ describe("planar/P4 — faucet (whole fill / whole line)", () => {
     // Fill survives.
     expect(totalFillArea(shape)).toBeGreaterThan(0);
   });
+
+  // Task 1432: clicking one of two CROSSING lines must delete ONLY the clicked
+  // line, not both. The old flood-fill BFS jumped across the crossing vertex into
+  // the perpendicular line and wiped everything.
+  it("faucet on one of two crossing lines leaves the other line intact", () => {
+    const merged = mergeShapes([
+      strokeLineShape("h", 0, 50, 100, 50), // horizontal
+      strokeLineShape("v", 50, 0, 50, 100), // vertical, crosses at (50,50)
+    ]);
+    expect(countPaths(merged).strokes).toBeGreaterThanOrEqual(2);
+    // Click on the horizontal line's LEFT arm (away from the crossing).
+    const { shape } = faucetEraseShape(merged, { x: 10, y: 50 });
+    expect(shape).not.toBeNull();
+    // The vertical line must survive: a stroke should still pass through a point
+    // on the vertical arm that is NOT on the (now-deleted) horizontal line.
+    const survivor = livePlanarShape(shape!);
+    const stroked = survivor.halfEdges.filter(
+      (he) => he.lineStyle !== null && he.lineStyle !== undefined,
+    );
+    expect(stroked.length).toBeGreaterThan(0);
+    // Some surviving stroke lies on the vertical arm (x≈50) well away from y=50.
+    const onVertical = stroked.some((he) => {
+      const m = edgeAt(he.geometry, 0.5);
+      return Math.abs(m.x - 50) < 2 && (m.y < 40 || m.y > 60);
+    });
+    expect(onVertical).toBe(true);
+    // And NO surviving stroke lies on the horizontal arm we clicked (y≈50, x<40).
+    const onClickedArm = stroked.some((he) => {
+      const m = edgeAt(he.geometry, 0.5);
+      return Math.abs(m.y - 50) < 2 && m.x < 40;
+    });
+    expect(onClickedArm).toBe(false);
+  });
+
+  // Task 1432: a style boundary (black line touching a red line) is never crossed.
+  it("faucet on a black line touching a red line leaves the red line", () => {
+    const black = strokeLineShape("b", 0, 0, 50, 0); // uses STROKE (black)
+    const redStroke: Stroke = { ...STROKE, color: { r: 255, g: 0, b: 0, a: 255 } };
+    const red: Shape = {
+      id: "r",
+      paths: [
+        {
+          start: { x: 50, y: 0 },
+          segments: [{ type: "line", to: { x: 100, y: 0 } }],
+          closed: false,
+          stroke: redStroke,
+        },
+      ],
+    };
+    const merged = mergeShapes([black, red]);
+    // Click on the black arm.
+    const { shape } = faucetEraseShape(merged, { x: 25, y: 0 });
+    expect(shape).not.toBeNull();
+    const survivor = livePlanarShape(shape!);
+    const stroked = survivor.halfEdges.filter(
+      (he) => he.lineStyle !== null && he.lineStyle !== undefined,
+    );
+    // Red arm (x in 50..100) survives; black arm (x in 0..50) is gone.
+    const redSurvives = stroked.some((he) => {
+      const m = edgeAt(he.geometry, 0.5);
+      return m.x > 50 && m.x < 100;
+    });
+    const blackGone = !stroked.some((he) => {
+      const m = edgeAt(he.geometry, 0.5);
+      return m.x > 0 && m.x < 50;
+    });
+    expect(redSurvives).toBe(true);
+    expect(blackGone).toBe(true);
+  });
+
+  // Task 1432: faucet on a fill deletes ONLY that contiguous fill region.
+  it("faucet on a fill deletes only that contiguous fill", () => {
+    // Two spatially-disjoint SAME-color fills — de-duped to one fill index by the
+    // arrangement, so a fill-index match would wrongly bite both. The faucet's
+    // connected-component walk must delete only the clicked silhouette.
+    const merged = mergeShapes([
+      rectShape("a", 0, 0, 40, 100, BLUE),
+      rectShape("b", 60, 0, 40, 100, BLUE),
+    ]);
+    const before = totalFillArea(merged);
+    expect(before).toBeGreaterThan(0);
+    const { shape } = faucetEraseShape(merged, { x: 20, y: 50 }); // inside rect "a"
+    expect(shape).not.toBeNull();
+    const after = totalFillArea(shape);
+    // Roughly half the fill remains (the untouched disjoint rect "b").
+    expect(after).toBeGreaterThan(0);
+    expect(after).toBeCloseTo(before / 2, -2);
+    // The far rect "b" must still be pickable as a fill.
+    const live = livePlanarShape(shape!);
+    const farFace = locateFace(live, { x: 80, y: 50 });
+    expect(farFace?.fill).not.toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

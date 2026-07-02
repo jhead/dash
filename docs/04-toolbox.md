@@ -124,7 +124,19 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   crossing hole, no joint thinning, and no hairpin notch; the merge fold reads it back as one
   silhouette. (The unused legacy `engine/brushtool.ts addBrushStroke` outline builder was removed.)
 - **Eraser modes**: Erase Normal, Erase Fills, Erase Lines, Erase Selected Fills, Erase Inside.
-  **Faucet** deletes an entire fill or stroke in one click. Double-click eraser = clear stage.
+  **Faucet** deletes a fill or a LINE in one click. Double-click eraser = clear stage.
+- **Faucet line scope stops at crossings and style boundaries (task 1432).** `faucetEraseShape`
+  (`planar/eraser.ts`) used to flood-fill EVERY stroked edge sharing a vertex, ignoring stroke
+  style and crossings — so clicking one of two crossing lines wiped BOTH entire lines. The
+  stroke run now FOLLOWS the clicked line as one line: through a corner (degree-2 vertex — the
+  single same-style continuation is always taken, so a rectangle outline still deletes in one
+  click), but across a crossing/junction (degree > 2) it takes ONLY the geometric continuation
+  (the arm within 45° of straight-through), so an unrelated crossing line survives; a style
+  boundary (different `lineStyle`, e.g. a black line touching a red one) is never crossed. The
+  exact Flash-8 inter-intersection scope is oracle-unconfirmed; this connected-same-style-run-
+  through-corners-not-crossings reading is the documented assumption (see the task 1432 note).
+  The ~3px stroke pick tolerance is now zoom-adjusted (`3 / zoom` from `StageArea`) so the
+  faucet feels equally precise at 25% and 400% zoom.
 - **Erase Selected Fills restricts to the current selection (task 1428).** The mode's engine
   (`planar/eraser.ts`, mode `"selected"`) skips every face unless the caller supplies a
   `selectedFaceFilter` predicate. That predicate is now built from the live selection by the

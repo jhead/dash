@@ -242,16 +242,24 @@ export function planarEraseShape(
 export function faucetEraseShape(
   shape: Shape,
   pt: Point,
-  resultId = shape.id
+  resultId = shape.id,
+  /**
+   * Pick tolerance in STAGE pixels for hitting a stroke (default 3, matching
+   * Flash's ~3px). The caller SHOULD pass a zoom-adjusted value (`3 / zoom`) so
+   * the faucet feels equally precise at every zoom (task 1432): at 400% a fixed
+   * 3px reads as 12 stage-px of slop, at 25% it is nearly impossible to hit.
+   */
+  tol = 3
 ): PlanarEraseResult {
   const ps = livePlanarShape(shape);
 
   // 1) Try a stroke under the point first (within a small tolerance against each
   //    stroked edge's curve).
-  const strokeHit = pickStrokeNear(ps, pt);
+  const strokeHit = pickStrokeNear(ps, pt, tol);
   if (strokeHit >= 0) {
-    // Delete the whole connected line: all stroked edges reachable across shared
-    // vertices through stroked-only connectivity.
+    // Delete the clicked LINE — the connected same-style run that FOLLOWS the
+    // clicked stroke through corners, but does NOT jump across a crossing into an
+    // unrelated line (task 1432). See {@link connectedStrokeRun}.
     const erasedEdges = connectedStrokeRun(ps, strokeHit);
     const result = planarShapeToShape(ps, resultId, {
       edgeFilter: (heId) => {
@@ -316,12 +324,77 @@ function distPointToSeg(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
-/** BFS the connected run of stroked edges reachable from `startHe` via shared vertices. */
+/**
+ * Minimum straight-through-ness (dot of travel direction with the continuation's
+ * outgoing direction) required to FOLLOW the clicked line across a crossing /
+ * junction (degree > 2 vertex). cos(45°): a genuine line continuation deviates
+ * < 45° from straight; a crossing/perpendicular-junction arm is ~90° off and is
+ * left untouched. Corners (degree-2 vertices) are followed unconditionally, so
+ * this threshold only gates multi-way vertices.
+ */
+const STRAIGHT_THROUGH_MIN_DOT = Math.SQRT1_2; // = cos(45°) ≈ 0.7071
+
+/** Two stroked edges share a line style iff their lineStyle indices are equal. */
+function sameLineStyle(ps: PlanarShape, a: number, b: number): boolean {
+  return ps.halfEdges[a].lineStyle === ps.halfEdges[b].lineStyle;
+}
+
+/**
+ * Unit direction of undirected edge `canon` LEAVING one of its endpoint vertices
+ * `v` (the tangent at `v`, pointing away from `v` into the edge). Curve-aware:
+ * uses the control point when present, falling back to the far endpoint for a
+ * degenerate (zero-length first span) curve.
+ */
+function dirLeavingVertex(ps: PlanarShape, canon: number, v: number): Point {
+  const he = ps.halfEdges[canon];
+  // Use whichever half-edge is oriented away from v (origin === v), so p0 is at v.
+  const g = he.origin === v ? he.geometry : ps.halfEdges[he.twin].geometry;
+  const bx = g.control ? g.control.x : g.p1.x;
+  const by = g.control ? g.control.y : g.p1.y;
+  let dx = bx - g.p0.x;
+  let dy = by - g.p0.y;
+  if (dx === 0 && dy === 0) {
+    dx = g.p1.x - g.p0.x;
+    dy = g.p1.y - g.p0.y;
+  }
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: dx / len, y: dy / len };
+}
+
+/**
+ * The stroked LINE the faucet deletes when clicking `startHe`: the connected run
+ * of same-style stroked edges that FOLLOWS the clicked stroke as one line — through
+ * corners (walk continues), but NOT jumping across a crossing/junction into an
+ * unrelated line (task 1432).
+ *
+ * The old implementation flood-filled ALL stroked edges sharing any vertex,
+ * ignoring stroke style AND crossings, so clicking one of two crossing lines
+ * deleted BOTH entire lines (repro in task 1432). Real Flash 8's faucet deletes
+ * the stroke you clicked (its connected segment scope); an intersection SPLITS
+ * strokes into segments and the faucet never wipes a different line that merely
+ * crosses the clicked one.
+ *
+ * Scope rule (line-segment scope marked "needs-oracle-verification" in the task —
+ * this is the most Flash-faithful reading we can justify without a live oracle):
+ *   - At a **corner** (degree-2 vertex: exactly one OTHER same-style edge) the
+ *     line simply continues — follow it. This deletes a rectangle outline / any
+ *     bent polyline in one click (the documented rectangle-outline workflow).
+ *   - At a **crossing / junction** (degree > 2) follow ONLY the geometric
+ *     continuation — the single other same-style edge whose direction carries
+ *     the line straight through (within {@link STRAIGHT_THROUGH_MIN_DOT}). The
+ *     perpendicular arms of a crossing line are NOT followed, so the crossing
+ *     line survives. If no arm continues straight (a T where the clicked line
+ *     dead-ends at the junction) the walk stops there.
+ *   - A **style boundary** (different lineStyle index, e.g. a black line touching
+ *     a red line) is never crossed.
+ */
 function connectedStrokeRun(ps: PlanarShape, startHe: number): Set<number> {
   const out = new Set<number>();
-  const stack = [canonicalEdge(ps, startHe)];
-  out.add(stack[0]);
-  // Build vertex -> outgoing stroked half-edges adjacency.
+  const start = canonicalEdge(ps, startHe);
+  out.add(start);
+
+  // vertex -> incident stroked edges (each incident edge contributes exactly one
+  // outgoing half-edge at the vertex, i.e. the half-edge whose origin === vertex).
   const byVertex = new Map<number, number[]>();
   for (const he of ps.halfEdges) {
     if (he.lineStyle === null || he.lineStyle === undefined) continue;
@@ -329,17 +402,54 @@ function connectedStrokeRun(ps: PlanarShape, startHe: number): Set<number> {
     arr.push(he.id);
     byVertex.set(he.origin, arr);
   }
+
+  /** Canonical same-style edges incident to `v`, excluding `exclude`. */
+  const incidentEdges = (v: number, exclude: number): number[] => {
+    const seen = new Set<number>();
+    for (const heId of byVertex.get(v) ?? []) {
+      const c = canonicalEdge(ps, heId);
+      if (c !== exclude && sameLineStyle(ps, c, exclude)) seen.add(c);
+    }
+    return [...seen];
+  };
+
+  /**
+   * The single edge that continues line `from` past vertex `v`, or -1 to stop.
+   * Degree-2 (one candidate): the corner continuation, followed unconditionally.
+   * Degree > 2: the straightest continuation, only if near-collinear.
+   */
+  const continuation = (from: number, v: number): number => {
+    const cands = incidentEdges(v, from);
+    if (cands.length === 0) return -1;
+    if (cands.length === 1) return cands[0];
+    // Travel direction INTO v along `from` = opposite of `from` leaving v. The
+    // straight continuation leaves v in that same travel direction, i.e. opposite
+    // to `from` leaving v → most-negative dot(fromDir, candDir).
+    const fromDir = dirLeavingVertex(ps, from, v);
+    let best = -1;
+    let bestScore = -Infinity;
+    for (const c of cands) {
+      const d = dirLeavingVertex(ps, c, v);
+      const score = -(fromDir.x * d.x + fromDir.y * d.y); // straightness
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    return bestScore >= STRAIGHT_THROUGH_MIN_DOT ? best : -1;
+  };
+
+  const stack = [start];
   while (stack.length > 0) {
-    const u = stack.pop()!;
-    const he = ps.halfEdges[u];
-    const tw = ps.halfEdges[he.twin];
-    for (const vtx of [he.origin, tw.origin]) {
-      for (const out2 of byVertex.get(vtx) ?? []) {
-        const c = canonicalEdge(ps, out2);
-        if (!out.has(c)) {
-          out.add(c);
-          stack.push(c);
-        }
+    const c = stack.pop()!;
+    const he = ps.halfEdges[c];
+    const v0 = he.origin;
+    const v1 = ps.halfEdges[he.twin].origin;
+    for (const v of [v0, v1]) {
+      const nxt = continuation(c, v);
+      if (nxt >= 0 && !out.has(nxt)) {
+        out.add(nxt);
+        stack.push(nxt);
       }
     }
   }
