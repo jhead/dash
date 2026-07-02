@@ -143,6 +143,14 @@ export function useToolHandlers(deps: ToolHandlersDeps) {
     setToolState((prev) => ({ ...prev, eraserSize: size }));
   }, [setToolState]);
 
+  const handleEraserModeChange = useCallback((mode: "normal" | "fills" | "lines" | "selected" | "inside") => {
+    setToolState((prev) => ({ ...prev, eraserMode: mode }));
+  }, [setToolState]);
+
+  const handleEraserFaucetChange = useCallback((faucet: boolean) => {
+    setToolState((prev) => ({ ...prev, eraserFaucet: faucet }));
+  }, [setToolState]);
+
   const handleFreeTransformModeChange = useCallback((mode: FreeTransformMode) => {
     setToolState((prev) => ({ ...prev, freeTransformMode: mode }));
   }, [setToolState]);
@@ -186,6 +194,8 @@ export function useToolHandlers(deps: ToolHandlersDeps) {
     handlePencilModeChange,
     handleBrushSizeChange,
     handleEraserSizeChange,
+    handleEraserModeChange,
+    handleEraserFaucetChange,
     handleFreeTransformModeChange,
     handleLassoPolygonModeChange,
     handleLassoMagicWandChange,

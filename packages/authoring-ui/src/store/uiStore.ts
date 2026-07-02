@@ -70,6 +70,8 @@ export const DEFAULT_TOOL_STATE: ToolState = {
   pencilMode: "ink",
   brushSize: 8,
   eraserSize: 16,
+  eraserMode: "normal",
+  eraserFaucet: false,
   freeTransformMode: "rotate-scale",
   lassoPolygonMode: false,
   lassoMagicWand: false,

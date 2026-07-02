@@ -2,9 +2,9 @@
   "id": "1387-13abo0-ui-eraser-modes-fills-lines-selected-inside-and-",
   "title": "UI: eraser modes (Fills/Lines/Selected/Inside) and Faucet are implemented in the engine but unreachable from the toolbox",
   "description": "The engine work (done in task 1322) is fully consumed but has no UI. tools/types.ts:57-59 defines eraserMode (normal|fills|lines|selected|inside) and eraserFaucet; StageArea.tsx:1608-1609,2043,2964-2965 consume them (faucet click + planar erase mode); Shell.tsx:4027-4028 threads them in. But ToolsPanel.tsx:719-741 renders ONLY eraser size buttons, and neither ToolsPanelProps/ToolsPanelExtraProps (:185-212) nor useToolHandlers.ts expose onEraserModeChange/onEraserFaucetChange. So the user can never leave eraserMode 'normal'/faucet false. docs/04 requires Erase Normal/Fills/Lines/Selected Fills/Erase Inside + Faucet + double-click-eraser=clear-stage. Fix: add erase-mode selector + Faucet toggle to the eraser Options block and wire setToolState callbacks (mirror the pencil-mode block at ToolsPanel.tsx:672-693). Confidence: confirmed.",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-07-02T01:14:51Z",
-  "updated_at": "2026-07-02T01:14:51Z"
+  "updated_at": "2026-07-02T01:51:38Z"
 }

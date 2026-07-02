@@ -186,6 +186,8 @@ export interface ToolsPanelExtraProps {
   onPencilModeChange?: (mode: "straighten" | "smooth" | "ink") => void;
   onBrushSizeChange?: (size: number) => void;
   onEraserSizeChange?: (size: number) => void;
+  onEraserModeChange?: (mode: "normal" | "fills" | "lines" | "selected" | "inside") => void;
+  onEraserFaucetChange?: (faucet: boolean) => void;
   onFreeTransformModeChange?: (mode: FreeTransformMode) => void;
   onLassoPolygonModeChange?: (polygonMode: boolean) => void;
   onLassoMagicWandChange?: (magicWand: boolean) => void;
@@ -203,6 +205,8 @@ export interface ToolsPanelProps {
   onPencilModeChange?: (mode: "straighten" | "smooth" | "ink") => void;
   onBrushSizeChange?: (size: number) => void;
   onEraserSizeChange?: (size: number) => void;
+  onEraserModeChange?: (mode: "normal" | "fills" | "lines" | "selected" | "inside") => void;
+  onEraserFaucetChange?: (faucet: boolean) => void;
   onFreeTransformModeChange?: (mode: FreeTransformMode) => void;
   onLassoPolygonModeChange?: (polygonMode: boolean) => void;
   onLassoMagicWandChange?: (magicWand: boolean) => void;
@@ -511,6 +515,20 @@ function NoColorX(): React.ReactElement {
 const BRUSH_SIZES = [2, 4, 8, 16, 32];
 const ERASER_SIZES = [8, 16, 24, 32, 48];
 
+// Flash 8 eraser modes (planar erase). Short labels fit the 30×12 option button;
+// the full name is in the tooltip. See docs/04-toolbox.md.
+const ERASER_MODES: {
+  mode: "normal" | "fills" | "lines" | "selected" | "inside";
+  label: string;
+  title: string;
+}[] = [
+  { mode: "normal", label: "Nrm", title: "Erase Normal" },
+  { mode: "fills", label: "Fill", title: "Erase Fills" },
+  { mode: "lines", label: "Line", title: "Erase Lines" },
+  { mode: "selected", label: "Sel", title: "Erase Selected Fills" },
+  { mode: "inside", label: "Ins", title: "Erase Inside" },
+];
+
 // Small tool-option toggle button: light chrome, sunken bevel when active,
 // raised Halo highlight on hover. All three states use LONGHAND borders (bevel
 // or transparentBorder) so React never strands a stale longhand when toggling
@@ -559,6 +577,8 @@ export function ToolsPanel({
   onPencilModeChange,
   onBrushSizeChange,
   onEraserSizeChange,
+  onEraserModeChange,
+  onEraserFaucetChange,
   onFreeTransformModeChange,
   onLassoPolygonModeChange,
   onLassoMagicWandChange,
@@ -717,26 +737,60 @@ export function ToolsPanel({
       )}
 
       {toolState.activeTool === "eraser" && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px", padding: "2px 0" }}>
-          {ERASER_SIZES.map((size) => (
-            <button
-              key={size}
-              type="button"
-              style={{
-                width: Math.min(size / 2, 26) + "px",
-                height: Math.min(size / 2, 10) + "px",
-                background: (toolState.eraserSize ?? 16) === size ? chrome.textDefault : chrome.bevelDark,
-                border: `1px solid ${chrome.separator}`,
-                cursor: "pointer",
-                padding: 0,
-                margin: "1px auto",
-                display: "block",
-                borderRadius: "1px",
-              }}
-              onClick={() => onEraserSizeChange?.(size)}
-              title={`Eraser size: ${size}px`}
-            />
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", padding: "2px 0", width: "100%" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
+            {ERASER_SIZES.map((size) => (
+              <button
+                key={size}
+                type="button"
+                style={{
+                  width: Math.min(size / 2, 26) + "px",
+                  height: Math.min(size / 2, 10) + "px",
+                  background: (toolState.eraserSize ?? 16) === size ? chrome.textDefault : chrome.bevelDark,
+                  border: `1px solid ${chrome.separator}`,
+                  cursor: "pointer",
+                  padding: 0,
+                  margin: "1px auto",
+                  display: "block",
+                  borderRadius: "1px",
+                }}
+                onClick={() => onEraserSizeChange?.(size)}
+                title={`Eraser size: ${size}px`}
+              />
+            ))}
+          </div>
+
+          {/* Erase mode selector — Normal / Fills / Lines / Selected Fills /
+              Erase Inside (Flash 8 planar erase modes). Mirrors the pencil-mode
+              block; wired to setToolState via onEraserModeChange. */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
+            {ERASER_MODES.map(({ mode, label, title }) => {
+              const active = (toolState.eraserMode ?? "normal") === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  style={optBtnStyle(active, isHovered(`eraser:${mode}`))}
+                  onClick={() => onEraserModeChange?.(mode)}
+                  {...hoverProps(`eraser:${mode}`)}
+                  title={title}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Faucet toggle — a single click deletes a whole fill or line. */}
+          <button
+            type="button"
+            style={optBtnStyle(toolState.eraserFaucet ?? false, isHovered("eraser:faucet"))}
+            onClick={() => onEraserFaucetChange?.(!(toolState.eraserFaucet ?? false))}
+            {...hoverProps("eraser:faucet")}
+            title="Faucet — click to delete an entire fill or line"
+          >
+            Faucet
+          </button>
         </div>
       )}
 

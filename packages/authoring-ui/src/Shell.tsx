@@ -1464,7 +1464,8 @@ export function Shell(): React.ReactElement {
     handleToolChange, handleStrokeColorChange, handleFillColorChange, handleFillChange,
     handleStrokeChangeFromPanel, handleMixerFillColorChange, handleSelectSwatch, handleAddSwatch,
     handleRemoveSwatch, handleSwatchesLoad, handleMixerStrokeColorChange, handleObjectDrawingToggle,
-    handlePencilModeChange, handleBrushSizeChange, handleEraserSizeChange, handleFreeTransformModeChange,
+    handlePencilModeChange, handleBrushSizeChange, handleEraserSizeChange,
+    handleEraserModeChange, handleEraserFaucetChange, handleFreeTransformModeChange,
     handleLassoPolygonModeChange, handleLassoMagicWandChange, handleMagicWandThresholdChange,
     handleMagicWandSmoothingChange, handlePolyStarOptionsChange,
   } = useToolHandlers({ uiStore, pushDoc, withTimeline, timeline, safeActiveLayerIndex, currentFrame, selectedShapeId });
@@ -3838,6 +3839,8 @@ export function Shell(): React.ReactElement {
             onPencilModeChange={handlePencilModeChange}
             onBrushSizeChange={handleBrushSizeChange}
             onEraserSizeChange={handleEraserSizeChange}
+            onEraserModeChange={handleEraserModeChange}
+            onEraserFaucetChange={handleEraserFaucetChange}
             onFreeTransformModeChange={handleFreeTransformModeChange}
             onLassoPolygonModeChange={handleLassoPolygonModeChange}
             onLassoMagicWandChange={handleLassoMagicWandChange}
