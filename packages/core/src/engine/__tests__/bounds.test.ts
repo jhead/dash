@@ -1,6 +1,31 @@
 import { describe, it, expect } from "vitest";
 import { getTransformedBounds, getUnionBounds, getBoundingBox, getSelectionBounds, objectsOverlap, objectContainsPoint } from "../bounds.js";
-import type { DisplayObject } from "../types.js";
+import { createRectShape } from "../shapes.js";
+import type { DisplayObject, ShapeDisplayObject, DrawingObject } from "../types.js";
+
+const SOLID = { type: "solid", color: { r: 0, g: 0, b: 0, a: 255 } } as const;
+
+/** A merge-model raw shape: geometry in shape.paths, object anchored at (x,y). */
+function makeShape(
+  geomX: number, geomY: number, geomW: number, geomH: number,
+  x = 0, y = 0, extra: Partial<ShapeDisplayObject> = {}
+): ShapeDisplayObject {
+  return {
+    type: "shape", id: "sh1",
+    shape: createRectShape(geomX, geomY, geomX + geomW, geomY + geomH, SOLID, null),
+    x, y, ...extra,
+  } as ShapeDisplayObject;
+}
+
+function makeDrawingObject(
+  geomX: number, geomY: number, geomW: number, geomH: number, x = 0, y = 0
+): DrawingObject {
+  return {
+    type: "drawing-object", id: "do1",
+    shape: createRectShape(geomX, geomY, geomX + geomW, geomY + geomH, SOLID, null),
+    x, y,
+  } as DrawingObject;
+}
 
 describe("getTransformedBounds", () => {
   it("non-rotated object returns unchanged bounds", () => {
@@ -77,6 +102,32 @@ describe("getTransformedBounds", () => {
     expect(b.width).toBeCloseTo(50, 1);
     expect(b.height).toBeCloseTo(200, 1);
   });
+
+  // --- task 1378: shapes/drawing-objects carry geometry in shape.paths ---
+
+  it("shape returns geometry bounds, not zero-size at origin (task 1378)", () => {
+    const obj = makeShape(20, 30, 100, 60);
+    expect(getTransformedBounds(obj)).toEqual({ x: 20, y: 30, width: 100, height: 60 });
+  });
+
+  it("shape honours its own scale transform", () => {
+    const obj = makeShape(0, 0, 100, 50, 0, 0, { scaleX: 2 });
+    const b = getTransformedBounds(obj);
+    expect(b.width).toBeCloseTo(200, 5);
+    expect(b.height).toBeCloseTo(50, 5);
+  });
+
+  it("shape honours its own 90° rotation transform", () => {
+    const obj = makeShape(0, 0, 100, 50, 0, 0, { rotation: 90 });
+    const b = getTransformedBounds(obj);
+    expect(b.width).toBeCloseTo(50, 1);
+    expect(b.height).toBeCloseTo(100, 1);
+  });
+
+  it("drawing-object returns geometry bounds offset by x/y", () => {
+    const obj = makeDrawingObject(0, 0, 40, 40, 100, 200);
+    expect(getTransformedBounds(obj)).toEqual({ x: 100, y: 200, width: 40, height: 40 });
+  });
 });
 
 describe("getUnionBounds", () => {
@@ -99,6 +150,14 @@ describe("getUnionBounds", () => {
     const u = getUnionBounds([a, b]);
     expect(u).toEqual({ x: 0, y: 0, width: 150, height: 150 });
   });
+
+  it("shape-only selection yields real union bounds, not {0,0,0,0} (task 1378)", () => {
+    // Two merge-model shapes anchored at the origin with disjoint geometry.
+    const a = makeShape(0, 0, 40, 40);
+    const b = makeShape(100, 100, 40, 40);
+    const u = getUnionBounds([a, b]);
+    expect(u).toEqual({ x: 0, y: 0, width: 140, height: 140 });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -115,9 +174,20 @@ describe("getBoundingBox", () => {
     expect(getBoundingBox(obj)).toEqual({ x: 10, y: 20, width: 100, height: 50 });
   });
 
-  it("returns zeros for object with no positional properties", () => {
-    const obj = { type: "shape", id: "s1", shape: { id: "s1", paths: [] } } as DisplayObject;
+  it("empty-paths shape at the origin returns zeros", () => {
+    const obj = { type: "shape", id: "s1", shape: { id: "s1", paths: [] }, x: 0, y: 0 } as DisplayObject;
     expect(getBoundingBox(obj)).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+  });
+
+  it("shape reflects its path geometry, not zero-size at the object origin (task 1378)", () => {
+    // Merge-model shape: geometry at (30,40) 100x60, object anchored at origin.
+    const obj = makeShape(30, 40, 100, 60);
+    expect(getBoundingBox(obj)).toEqual({ x: 30, y: 40, width: 100, height: 60 });
+  });
+
+  it("drawing-object reflects its path geometry (task 1378)", () => {
+    const obj = makeDrawingObject(10, 20, 40, 50, 5, 5);
+    expect(getBoundingBox(obj)).toEqual({ x: 15, y: 25, width: 40, height: 50 });
   });
 });
 
@@ -194,6 +264,16 @@ describe("objectsOverlap", () => {
     const b = makeBitmap(60, 60, 80, 80);
     expect(objectsOverlap(a, b)).toBe(objectsOverlap(b, a));
   });
+
+  it("shapes overlap by real geometry, not all-at-origin (task 1378)", () => {
+    // Both anchored at origin; before the fix every shape was a zero-size box
+    // at (0,0) so disjoint geometry would wrongly report overlap.
+    const a = makeShape(0, 0, 40, 40);
+    const b = makeShape(100, 100, 40, 40);
+    expect(objectsOverlap(a, b)).toBe(false);
+    const c = makeShape(20, 20, 40, 40);
+    expect(objectsOverlap(a, c)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -229,5 +309,11 @@ describe("objectContainsPoint", () => {
   it("point just above top edge returns false", () => {
     const obj = makeBitmap(0, 10, 100, 100);
     expect(objectContainsPoint(obj, 50, 9)).toBe(false);
+  });
+
+  it("shape containment uses geometry bounds (task 1378)", () => {
+    const obj = makeShape(50, 50, 100, 100);
+    expect(objectContainsPoint(obj, 100, 100)).toBe(true);
+    expect(objectContainsPoint(obj, 0, 0)).toBe(false); // origin is outside the geometry
   });
 });

@@ -1,4 +1,5 @@
-import type { DisplayObject, Rect, SymbolInstance } from './types.js';
+import type { DisplayObject, Rect, SymbolInstance, ShapeDisplayObject, DrawingObject } from './types.js';
+import { transformedShapeBounds } from './shapes.js';
 
 export interface Bounds {
   x: number;       // left edge
@@ -31,6 +32,13 @@ function effectiveHeight(obj: DisplayObject): number {
  * Returns bounds in parent coordinate space.
  */
 export function getTransformedBounds(obj: DisplayObject): Bounds {
+  // Raw vector shapes / drawing objects carry no width/height — their geometry
+  // lives in shape.paths. Delegate to the geometry-aware shape bounds, which
+  // also accounts for the object's own scale/rotation transform.
+  if (obj.type === 'shape' || obj.type === 'drawing-object') {
+    return transformedShapeBounds(obj as ShapeDisplayObject | DrawingObject);
+  }
+
   const x = ('x' in obj ? (obj as any).x : 0) ?? 0;
   const y = ('y' in obj ? (obj as any).y : 0) ?? 0;
   const w = effectiveWidth(obj);
@@ -96,17 +104,31 @@ export function getUnionBounds(objects: DisplayObject[]): Bounds | null {
 // Simple axis-aligned bounding box helpers (no rotation/scale)
 // ---------------------------------------------------------------------------
 
-function getObjX(obj: DisplayObject): number { return (obj as any).x ?? 0; }
-function getObjY(obj: DisplayObject): number { return (obj as any).y ?? 0; }
-function getObjW(obj: DisplayObject): number { return effectiveWidth(obj); }
-function getObjH(obj: DisplayObject): number { return effectiveHeight(obj); }
+/**
+ * Return the simple axis-aligned bounding box {x,y,w,h} of a display object.
+ *
+ * For raw shapes / drawing objects (which carry no width/height — their
+ * geometry lives in shape.paths) this delegates to the geometry-aware
+ * transformedShapeBounds so callers see real extents instead of a zero-size
+ * box anchored at the origin. All other object types use their raw
+ * x/y/width/height.
+ */
+function simpleBox(obj: DisplayObject): { x: number; y: number; w: number; h: number } {
+  if (obj.type === 'shape' || obj.type === 'drawing-object') {
+    const b = transformedShapeBounds(obj as ShapeDisplayObject | DrawingObject);
+    return { x: b.x, y: b.y, w: b.width, h: b.height };
+  }
+  return { x: (obj as any).x ?? 0, y: (obj as any).y ?? 0, w: effectiveWidth(obj), h: effectiveHeight(obj) };
+}
 
 /**
- * Return the axis-aligned bounding box of a display object using its raw
- * x/y/width/height properties (no rotation or scale adjustment).
+ * Return the axis-aligned bounding box of a display object. For shapes and
+ * drawing objects this reflects the actual path geometry; for other object
+ * types it uses their raw x/y/width/height (no rotation or scale adjustment).
  */
 export function getBoundingBox(obj: DisplayObject): Rect {
-  return { x: getObjX(obj), y: getObjY(obj), width: getObjW(obj), height: getObjH(obj) };
+  const { x, y, w, h } = simpleBox(obj);
+  return { x, y, width: w, height: h };
 }
 
 /**
@@ -117,7 +139,7 @@ export function getSelectionBounds(objects: readonly DisplayObject[]): Rect | nu
   if (objects.length === 0) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const obj of objects) {
-    const x = getObjX(obj), y = getObjY(obj), w = getObjW(obj), h = getObjH(obj);
+    const { x, y, w, h } = simpleBox(obj);
     if (x < minX) minX = x;
     if (y < minY) minY = y;
     if (x + w > maxX) maxX = x + w;
@@ -131,9 +153,9 @@ export function getSelectionBounds(objects: readonly DisplayObject[]): Rect | nu
  * (exclusive — touching edges do not count as overlap).
  */
 export function objectsOverlap(a: DisplayObject, b: DisplayObject): boolean {
-  const ax = getObjX(a), ay = getObjY(a), aw = getObjW(a), ah = getObjH(a);
-  const bx = getObjX(b), by = getObjY(b), bw = getObjW(b), bh = getObjH(b);
-  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  const ba = simpleBox(a);
+  const bb = simpleBox(b);
+  return ba.x < bb.x + bb.w && ba.x + ba.w > bb.x && ba.y < bb.y + bb.h && ba.y + ba.h > bb.y;
 }
 
 /**
@@ -141,6 +163,6 @@ export function objectsOverlap(a: DisplayObject, b: DisplayObject): boolean {
  * the display object's axis-aligned bounding box.
  */
 export function objectContainsPoint(obj: DisplayObject, px: number, py: number): boolean {
-  const x = getObjX(obj), y = getObjY(obj), w = getObjW(obj), h = getObjH(obj);
+  const { x, y, w, h } = simpleBox(obj);
   return px >= x && px <= x + w && py >= y && py <= y + h;
 }
