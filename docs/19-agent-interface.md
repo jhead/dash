@@ -48,8 +48,10 @@ MCP clients (Claude Code, Cursor, custom agents, flash-agent CLI)
         ▼
 vite-plugin-agent-mcp  (apps/desktop, Node side of the dev server)
   • McpServer from @modelcontextprotocol/sdk
-  • one MCP tool per editor command; resources for doc/library/scripts
+  • tool set GENERATED from the @flash/agent-protocol registry (one tool per
+    ALL_COMMANDS entry); resources for doc/library/scripts
   • validates params (zod schemas shared via @flash/agent-protocol)
+  • bounds request bodies + WS frames (MAX_BODY_BYTES) to cap memory use
         │  private WS bridge — ws://localhost:1420/__agent (role=editor)
         ▼
 Editor page (packages/authoring-ui/src/agent/)
@@ -79,8 +81,18 @@ AgentCommandRegistry ──► @flash/core mutations ──► pushDoc() ──�
   document outside history.
 - **`@flash/agent-protocol`** (`packages/agent-protocol`): zod schemas + TS types for
   every command's params/result, shared by the plugin (MCP tool `inputSchema`,
-  validation) and the editor registry (dispatch typing). One definition per command;
-  the MCP tool list is generated from it.
+  validation) and the editor registry (dispatch typing). One definition per command.
+  It is the **single source of truth** for the tool surface: `ALL_COMMANDS` +
+  `COMMAND_SCHEMAS` + `COMMAND_DESCRIPTIONS`. **Both** transports build their tool set
+  by iterating it — the MCP plugin (`registerAgentCommandTools`) and the in-browser
+  Agent Chat bridge (`authoring-ui/agentchat/tools.ts`) — so a command added or a
+  schema tightened in the protocol flows to both with no per-tool edit and the two
+  transports **cannot drift** (task 1393). Because both generate from these schemas,
+  each schema must describe the params the registry handler actually honors (e.g.
+  `stage_add_shape.fill` accepts a solid string *or* a gradient descriptor;
+  `stage_place_instance` carries scale/rotation/blendMode/colorEffect/loopMode/
+  firstFrame; `stage_add_text` carries the input-text/layout extras) — a narrower
+  schema would silently hide real, working functionality from the model.
 
 ### Why host MCP in the dev server
 
@@ -103,6 +115,14 @@ Dev-tool posture, same as `__flashTest`:
 - Optional shared secret: if `FLASH_AGENT_TOKEN` is set in the dev server's env, MCP
   requests must carry it as a bearer token — useful when port 1420 is forwarded. Not
   required for MVP local use.
+- **Request-size bounds (task 1393).** The `/mcp` HTTP body accumulator and the
+  `/__agent` WebSocket server were previously unbounded — a local peer could stream an
+  arbitrarily large payload and exhaust the dev-server's memory. Both are now capped at
+  `MAX_BODY_BYTES` (default 64 MiB, override via `FLASH_AGENT_MAX_BYTES`): an oversized
+  HTTP body aborts with **413 Payload Too Large**, an oversized WS frame trips ws's
+  `maxPayload` (1009 close). The cap is deliberately generous — `doc_load` /
+  `file_load_fla` / `library_import_*` carry base64 blobs and full-document / SWF / FLA
+  replies flow back over the same WS — but finite.
 
 ## Connecting (OOTB)
 

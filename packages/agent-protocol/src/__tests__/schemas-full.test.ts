@@ -706,3 +706,90 @@ describe("stage_set_instance_name schema", () => {
     expect(() => StageSetInstanceNameParamsSchema.parse({ name: "player" })).toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// task 1393: the schemas are the single source of truth for BOTH transports
+// (the MCP plugin now generates its tool set from them, exactly like the
+// in-browser Agent Chat bridge). They must therefore describe the params the
+// registry handler actually honors, not a narrower subset.
+// ---------------------------------------------------------------------------
+
+describe("StageAddShapeParamsSchema — gradient fill (task 1393)", () => {
+  it("still accepts a solid #RRGGBB string fill", () => {
+    const r = StageAddShapeParamsSchema.parse({
+      kind: "rect", x1: 0, y1: 0, x2: 10, y2: 10, fill: "#123456",
+    });
+    expect(r.fill).toBe("#123456");
+  });
+
+  it("accepts a linear gradient descriptor with stops", () => {
+    const r = StageAddShapeParamsSchema.parse({
+      kind: "rect", x1: 0, y1: 0, x2: 10, y2: 10,
+      fill: {
+        type: "linear",
+        angle: 45,
+        stops: [
+          { color: "#000000", ratio: 0 },
+          { color: "#ffffff", ratio: 1, alpha: 0.5 },
+        ],
+      },
+    });
+    expect(typeof r.fill).toBe("object");
+  });
+
+  it("rejects a gradient with fewer than 2 stops", () => {
+    expect(() =>
+      StageAddShapeParamsSchema.parse({
+        kind: "rect", x1: 0, y1: 0, x2: 10, y2: 10,
+        fill: { type: "radial", stops: [{ color: "#000", ratio: 0 }] },
+      })
+    ).toThrow();
+  });
+});
+
+describe("StageAddTextParamsSchema — honored extras (task 1393)", () => {
+  it("accepts the input-text / layout extras the handler applies", () => {
+    const r = StageAddTextParamsSchema.parse({
+      x: 0, y: 0, width: 100, height: 20, text: "hi",
+      multiline: true,
+      wordWrap: true,
+      instanceName: "field1",
+      password: false,
+      maxChars: 10,
+      hasBorder: true,
+      html: false,
+      autoSize: true,
+      letterSpacing: 1,
+      leading: 2,
+      restrict: "0-9",
+    });
+    expect(r.multiline).toBe(true);
+    expect(r.maxChars).toBe(10);
+    expect(r.instanceName).toBe("field1");
+  });
+});
+
+describe("StagePlaceInstanceParamsSchema — transform params (task 1393)", () => {
+  it("accepts scale/rotation/blendMode/colorEffect/loopMode/firstFrame", () => {
+    const r = StagePlaceInstanceParamsSchema.parse({
+      symbolId: "sym-1", x: 0, y: 0,
+      scaleX: 2, scaleY: 0.5, rotation: 90,
+      blendMode: "multiply",
+      colorEffect: { type: "alpha", alpha: 50 },
+      loopMode: "single-frame",
+      firstFrame: 3,
+    });
+    expect(r.scaleX).toBe(2);
+    expect(r.blendMode).toBe("multiply");
+    expect(r.loopMode).toBe("single-frame");
+    expect(r.firstFrame).toBe(3);
+  });
+
+  it("rejects an unknown blend mode", () => {
+    expect(() =>
+      StagePlaceInstanceParamsSchema.parse({
+        symbolId: "s", x: 0, y: 0, blendMode: "not-a-mode",
+      })
+    ).toThrow();
+  });
+});

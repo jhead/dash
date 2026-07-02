@@ -187,13 +187,81 @@ export type HistoryDepthResult = z.infer<typeof HistoryDepthResultSchema>;
 // Stage & selection
 // ---------------------------------------------------------------------------
 
+/**
+ * The Flash 8 blend modes an instance can carry. Kept as a shared enum so
+ * stage_place_instance and the stage_update bag advertise the identical set the
+ * registry handler validates against.
+ */
+export const BlendModeSchema = z.enum([
+  "normal", "layer", "multiply", "screen", "lighten", "darken",
+  "difference", "add", "subtract", "invert", "alpha", "erase",
+  "overlay", "hardlight",
+]);
+export type BlendMode = z.infer<typeof BlendModeSchema>;
+
+/**
+ * Color effect (alpha / tint / brightness / advanced). The numeric fields are
+ * variant-specific (see @flash/core ColorEffect); only `type` is required. Kept
+ * as a typed-but-passthrough object: the discriminant + the known numeric fields
+ * are validated, and the registry handler normalizes the value into a real
+ * ColorEffect (dropping out-of-shape fields) before it reaches the document.
+ *
+ * Defined here (ahead of the stage schemas) because stage_place_instance,
+ * DisplayObjectUpdatesSchema, and stage_update all reference it.
+ */
+export const ColorEffectInputSchema = z
+  .object({
+    type: z.enum(["none", "brightness", "tint", "alpha", "advanced"]),
+    brightness: z.number().optional(),
+    tintColor: z.string().optional(),
+    tintAmount: z.number().optional(),
+    alpha: z.number().optional(),
+    redMult: z.number().optional(),
+    greenMult: z.number().optional(),
+    blueMult: z.number().optional(),
+    redOffset: z.number().optional(),
+    greenOffset: z.number().optional(),
+    blueOffset: z.number().optional(),
+    alphaMult: z.number().optional(),
+    alphaOffset: z.number().optional(),
+  })
+  .passthrough();
+
+/**
+ * A gradient fill descriptor accepted by stage_add_shape's `fill`. Ratios/alpha
+ * are 0.0–1.0 at the boundary (the registry handler converts them to the 0–255
+ * SWF form). This is the SAME shape the registry's `buildFill` consumes, so the
+ * documented tool surface matches what the handler actually honors.
+ */
+export const GradientFillInputSchema = z.object({
+  type: z.enum(["linear", "radial"]).describe("Gradient type"),
+  stops: z
+    .array(
+      z.object({
+        color: z.string().describe("Stop color #RRGGBB"),
+        alpha: z.number().min(0).max(1).optional().describe("Stop opacity 0–1 (default 1)"),
+        ratio: z.number().min(0).max(1).describe("Stop position 0.0–1.0 (start to end)"),
+      })
+    )
+    .min(2)
+    .max(8)
+    .describe("Gradient color stops (2–8)"),
+  angle: z.number().optional().describe("Gradient angle in degrees (linear only; 0 = left-to-right)"),
+  focalPoint: z.number().min(-1).max(1).optional().describe("Focal point offset -1 to 1 (radial only)"),
+  spreadMode: z.enum(["extend", "reflect", "repeat"]).optional().describe("Spread mode outside gradient bounds"),
+});
+export type GradientFillInput = z.infer<typeof GradientFillInputSchema>;
+
 export const StageAddShapeParamsSchema = z.object({
   kind: z.enum(["rect", "oval", "line"]),
   x1: z.number(),
   y1: z.number(),
   x2: z.number(),
   y2: z.number(),
-  fill: z.string().optional(),
+  fill: z
+    .union([z.string(), GradientFillInputSchema])
+    .optional()
+    .describe("Fill: a #RRGGBB solid color string, or a gradient descriptor (omit for no fill)"),
   stroke: z.string().optional(),
   strokeWidth: z.number().optional(),
   layerId: z.string().optional(),
@@ -214,6 +282,22 @@ export const StageAddTextParamsSchema = z.object({
   bold: z.boolean().optional(),
   italic: z.boolean().optional(),
   align: z.enum(["left", "center", "right", "justify"]).optional(),
+  multiline: z.boolean().optional().describe("Allow multiple lines of text"),
+  wordWrap: z.boolean().optional().describe("Wrap text within the bounding box"),
+  instanceName: z.string().optional().describe("AS2 instance name for scripting (_root.<name>)"),
+  password: z.boolean().optional().describe("Mask characters as password dots (input text only)"),
+  maxChars: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe("Maximum characters the user can enter (input text only; 0 = no limit)"),
+  hasBorder: z.boolean().optional().describe("Draw a border rectangle around the text field"),
+  html: z.boolean().optional().describe("Enable HTML markup in the text field"),
+  autoSize: z.boolean().optional().describe("Automatically resize the field to fit its content"),
+  letterSpacing: z.number().optional().describe("Letter spacing / tracking in pixels"),
+  leading: z.number().optional().describe("Extra line spacing in pixels"),
+  restrict: z.string().optional().describe("Character restriction pattern for input text (e.g. '0-9')"),
   layerId: z.string().optional(),
   frameIndex: z.number().int().nonnegative().optional(),
 });
@@ -239,6 +323,21 @@ export const StagePlaceInstanceParamsSchema = z.object({
   ),
   layerId: z.string().optional(),
   frameIndex: z.number().int().nonnegative().optional(),
+  scaleX: z.number().optional().describe("Horizontal scale factor (1 = no scale, 2 = 200%)"),
+  scaleY: z.number().optional().describe("Vertical scale factor (1 = no scale, 2 = 200%)"),
+  rotation: z.number().optional().describe("Rotation in degrees (clockwise)"),
+  blendMode: BlendModeSchema.optional().describe("Flash 8 blend mode"),
+  colorEffect: ColorEffectInputSchema.optional().describe("Color effect applied to this instance"),
+  loopMode: z
+    .enum(["loop", "play-once", "single-frame"])
+    .optional()
+    .describe("Graphic symbol loop mode (loop | play-once | single-frame)"),
+  firstFrame: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe("Starting frame index for play-once or single-frame mode (0-based)"),
 });
 export type StagePlaceInstanceParams = z.infer<typeof StagePlaceInstanceParamsSchema>;
 
@@ -275,31 +374,6 @@ export const StageAddBitmapParamsSchema = z.object({
   frameIndex: z.number().int().nonnegative().optional(),
 });
 export type StageAddBitmapParams = z.infer<typeof StageAddBitmapParamsSchema>;
-
-/**
- * Color effect (alpha / tint / brightness / advanced). The numeric fields are
- * variant-specific (see @flash/core ColorEffect); only `type` is required. Kept
- * as a typed-but-passthrough object: the discriminant + the known numeric fields
- * are validated, and the registry handler normalizes the value into a real
- * ColorEffect (dropping out-of-shape fields) before it reaches the document.
- */
-export const ColorEffectInputSchema = z
-  .object({
-    type: z.enum(["none", "brightness", "tint", "alpha", "advanced"]),
-    brightness: z.number().optional(),
-    tintColor: z.string().optional(),
-    tintAmount: z.number().optional(),
-    alpha: z.number().optional(),
-    redMult: z.number().optional(),
-    greenMult: z.number().optional(),
-    blueMult: z.number().optional(),
-    redOffset: z.number().optional(),
-    greenOffset: z.number().optional(),
-    blueOffset: z.number().optional(),
-    alphaMult: z.number().optional(),
-    alphaOffset: z.number().optional(),
-  })
-  .passthrough();
 
 /**
  * The display-object update bag for stage_update. Previously this was an

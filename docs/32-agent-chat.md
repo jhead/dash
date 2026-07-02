@@ -406,6 +406,22 @@ The difference is only the **transport**:
 Because both paths converge on `dispatchAgentCommand`, a tool added to the
 agent-protocol registry automatically appears in **both** surfaces.
 
+**Both surfaces are now GENERATED, so they cannot drift (task 1393).** The MCP
+plugin used to *hand-code* its tool schemas, which silently diverged from the
+registry: ~7 commands (the `class_*` AS2-class ops, `selection_pick_at`,
+`stage_set_instance_name`) were unreachable over MCP, `filter_add`'s type enum was
+narrow (missing `gradientGlow` / `gradientBevel` / `colorMatrix`), and
+`stage_update` re-exposed an untyped `updates` bag. The plugin now builds its tool
+set with `registerAgentCommandTools()`, iterating the exact same `ALL_COMMANDS` /
+`COMMAND_SCHEMAS` / `COMMAND_DESCRIPTIONS` that `buildAgentTools()` uses — so the
+two transports advertise byte-identical schemas (the MCP `stage_screenshot`
+special-cases the base64 PNG into an image content block, just as the chat's
+`toModelOutput` does). The consequence for the protocol: each schema must describe
+the params the registry handler actually honors, since a narrow schema now hides
+real functionality from **both** surfaces at once (this is why the protocol
+schemas carry `stage_add_shape`'s gradient fill, `stage_place_instance`'s
+transform params, and `stage_add_text`'s input-text/layout extras).
+
 ---
 
 ## Verification

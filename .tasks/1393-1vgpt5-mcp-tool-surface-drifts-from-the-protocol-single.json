@@ -2,9 +2,9 @@
   "id": "1393-1vgpt5-mcp-tool-surface-drifts-from-the-protocol-single",
   "title": "MCP tool surface drifts from the protocol single-source-of-truth (missing commands, enum drift, untyped update bag, unbounded body)",
   "description": "packages/vite-plugin-agent-mcp/src/index.ts hand-codes tool schemas that diverge from packages/agent-protocol/src/index.ts COMMAND_SCHEMAS (the documented single source). (1) Missing 7 tools present in ALL_COMMANDS/COMMAND_SCHEMAS: class_list/class_get/class_set/class_remove/class_check (AS2 external-class mgmt, a shipped feature), selection_pick_at, stage_set_instance_name \u2014 an MCP client cannot reach any of them. (2) filter_add type enum: plugin :971 allows ['dropShadow','blur','glow','bevel'] but protocol :935 also allows gradientGlow/gradientBevel/colorMatrix (done task 1090 fixed the protocol side; plugin still narrow); quality also drifts (int 1-3 vs bare number). (3) stage_update :601 uses updates: z.record(z.string(), z.unknown()) \u2014 re-opening the corruption vector the protocol closed via the enumerated .strip()-ed DisplayObjectUpdatesSchema (protocol :318-357,363); stage_place_instance/stage_add_text advertise many params absent from protocol schemas (silent no-op or bypass). (4) request body parsing :1730-1746 accumulates with no size cap and WebSocketServer :1760 sets no maxPayload. Fix: generate the MCP tool set from COMMAND_SCHEMAS (import the protocol Zod schemas) so the two transports cannot drift; cap body length + set maxPayload. Confidence: confirmed.",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "medium",
   "created_at": "2026-07-02T01:15:28Z",
-  "updated_at": "2026-07-02T01:15:28Z"
+  "updated_at": "2026-07-02T01:49:29Z"
 }

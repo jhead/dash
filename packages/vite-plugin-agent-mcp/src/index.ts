@@ -21,13 +21,16 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { z } from "zod";
+import {
+  ALL_COMMANDS,
+  COMMAND_SCHEMAS,
+  COMMAND_DESCRIPTIONS,
+} from "@flash/agent-protocol";
 import type {
+  AgentCommand,
   BridgeRequest,
   BridgeResponse,
   BridgeNotification,
-  EditorStatusResult,
-  DocGetResult,
   DocSummaryResult,
 } from "@flash/agent-protocol";
 
@@ -157,6 +160,114 @@ function errorContent(message: string): {
 }
 
 // ---------------------------------------------------------------------------
+// Generated tool surface
+//
+// The MCP tool set is BUILT from the agent-protocol command registry rather
+// than hand-coded, so it can never drift from ALL_COMMANDS / COMMAND_SCHEMAS /
+// COMMAND_DESCRIPTIONS (the documented single source of truth) — the same
+// registry the in-browser Agent Chat tool bridge iterates. Adding a command to
+// the protocol automatically exposes it here; a schema/enum fix in the protocol
+// (e.g. filter_add's type enum, the typed stage_update bag) flows through with
+// no per-tool edit. Every command's Zod params schema becomes the tool's
+// inputSchema, so an MCP client sees the exact field-level validation the rest
+// of the system enforces.
+// ---------------------------------------------------------------------------
+
+/** Human-readable tool title derived from the snake_case command name. */
+function humanizeCommand(name: string): string {
+  return name
+    .split("_")
+    .map((w) => (w.length > 0 ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+/**
+ * Loosely-typed view of `McpServer.registerTool`. The generated loop registers
+ * one tool per command with the command's own Zod schema as `inputSchema`; the
+ * SDK's per-call generic inference cannot follow the ALL_COMMANDS union, so we
+ * bind through this structural type (inputSchema is a real Zod schema at runtime
+ * and the handler returns a CallToolResult-shaped object).
+ */
+type LooseRegisterTool = (
+  name: string,
+  config: { title?: string; description?: string; inputSchema?: unknown },
+  handler: (args: Record<string, unknown>) => Promise<unknown>
+) => unknown;
+
+/**
+ * Commands whose result carries a rendered image (base64 PNG) that must be
+ * returned as a real MCP image content block, not a JSON text dump. Mirrors the
+ * Agent Chat bridge's IMAGE_RESULT_COMMANDS.
+ */
+const IMAGE_RESULT_COMMANDS = new Set<AgentCommand>(["stage_screenshot"]);
+
+/** Register one MCP tool per agent-protocol command onto the given server. */
+function registerAgentCommandTools(server: McpServer): void {
+  const register = server.registerTool.bind(server) as unknown as LooseRegisterTool;
+
+  for (const command of ALL_COMMANDS) {
+    const inputSchema = COMMAND_SCHEMAS[command];
+    const description = COMMAND_DESCRIPTIONS[command];
+    const config = { title: humanizeCommand(command), description, inputSchema };
+
+    if (IMAGE_RESULT_COMMANDS.has(command)) {
+      register(command, config, async (args) => {
+        const result = (await forwardToEditor(command, args)) as {
+          pngBase64: string;
+          width: number;
+          height: number;
+        };
+        return {
+          content: [
+            {
+              type: "image" as const,
+              data: result.pngBase64,
+              mimeType: "image/png" as const,
+            },
+            {
+              type: "text" as const,
+              text: JSON.stringify({ width: result.width, height: result.height }),
+            },
+          ],
+        };
+      });
+      continue;
+    }
+
+    register(command, config, async (args) => callTool(command, args));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Request-size bounds (DoS hardening)
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum bytes accepted for a single MCP HTTP request body OR a single
+ * `/__agent` WebSocket frame. The body accumulator and the WS server were
+ * previously unbounded, so a hostile local peer could stream an arbitrarily
+ * large payload and exhaust the dev-server's memory. The cap is deliberately
+ * generous — doc_load / file_load_fla / library_import_* carry base64 blobs,
+ * and full-document / SWF / FLA responses flow back over the same WS — but
+ * finite. Override with FLASH_AGENT_MAX_BYTES (bytes).
+ */
+export const MAX_BODY_BYTES: number = (() => {
+  const raw = process.env["FLASH_AGENT_MAX_BYTES"];
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 64 * 1024 * 1024;
+})();
+
+/** Thrown by parseBody when the accumulated body exceeds MAX_BODY_BYTES. */
+export class RequestBodyTooLargeError extends Error {
+  readonly limit: number;
+  constructor(limit: number) {
+    super(`Request body exceeds the ${limit}-byte limit`);
+    this.name = "RequestBodyTooLargeError";
+    this.limit = limit;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Handle bridge push notifications (editor → plugin → MCP clients)
 // ---------------------------------------------------------------------------
 
@@ -210,1114 +321,15 @@ function createMcpServerForRequest(): McpServer {
   );
 
   // =========================================================================
-  // Session & Document
+  // Tools — GENERATED from the agent-protocol command registry.
+  //
+  // Every MCP tool is built from ALL_COMMANDS / COMMAND_SCHEMAS /
+  // COMMAND_DESCRIPTIONS (the documented single source of truth), so this
+  // transport cannot drift from the protocol or the in-browser Agent Chat
+  // tool bridge (authoring-ui/agentchat/tools.ts), which builds its tool set
+  // the same way. See registerAgentCommandTools() below.
   // =========================================================================
-
-  server.registerTool(
-    "editor_status",
-    {
-      title: "Editor Status",
-      description:
-        "Returns the current editor status: alive flag, document name/size/fps/bg-color, scene/layer/frame counts, active tool, edit context, and the document revision (`rev`).",
-      inputSchema: undefined,
-    },
-    async () => {
-      const result = (await forwardToEditor("editor_status")) as EditorStatusResult;
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
-    }
-  );
-
-  server.registerTool(
-    "doc_get",
-    {
-      title: "Get Document (or subtree)",
-      description:
-        "Returns the document or a subtree at the given JSON Pointer path (e.g. '/scenes/0/timeline/layers/1'). " +
-        "Omit `path` for the full document. Use `doc_summary` first — the full document can be very large.",
-      inputSchema: z.object({
-        path: z
-          .string()
-          .optional()
-          .describe(
-            "JSON Pointer (RFC 6901). Empty string or omit for the full document."
-          ),
-      }),
-    },
-    async ({ path }) => {
-      const result = (await forwardToEditor("doc_get", { path })) as DocGetResult;
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
-    }
-  );
-
-  server.registerTool(
-    "doc_summary",
-    {
-      title: "Document Summary",
-      description:
-        "Token-light outline of the document: scenes → layers (id, name, type, frameCount) → keyframes (index, objectCount, hasScript, tween) plus library list. " +
-        "This is the recommended first call before any authoring operation.",
-      inputSchema: undefined,
-    },
-    async () => {
-      const result = (await forwardToEditor("doc_summary")) as DocSummaryResult;
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
-    }
-  );
-
-  server.registerTool(
-    "doc_load",
-    {
-      title: "Load Document",
-      description: "Replace the current document with the provided document JSON (pushes to history).",
-      inputSchema: z.object({
-        document: z.unknown().describe("FlashDocument JSON to load"),
-      }),
-    },
-    async ({ document }) => callTool("doc_load", { document })
-  );
-
-  server.registerTool(
-    "doc_set_properties",
-    {
-      title: "Set Document Properties",
-      description: "Update document properties: width, height, frameRate, backgroundColor (#RRGGBB).",
-      inputSchema: z.object({
-        width: z.number().positive().optional().describe("Stage width in px"),
-        height: z.number().positive().optional().describe("Stage height in px"),
-        frameRate: z.number().positive().optional().describe("Frames per second"),
-        backgroundColor: z.string().optional().describe("Background color as #RRGGBB"),
-      }),
-    },
-    async (params) => callTool("doc_set_properties", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "history_undo",
-    {
-      title: "Undo",
-      description: "Undo the last document mutation.",
-      inputSchema: undefined,
-    },
-    async () => callTool("history_undo")
-  );
-
-  server.registerTool(
-    "history_redo",
-    {
-      title: "Redo",
-      description: "Redo the last undone mutation.",
-      inputSchema: undefined,
-    },
-    async () => callTool("history_redo")
-  );
-
-  server.registerTool(
-    "history_depth",
-    {
-      title: "History Depth",
-      description: "Returns the number of available undo and redo steps.",
-      inputSchema: undefined,
-    },
-    async () => callTool("history_depth")
-  );
-
-  // =========================================================================
-  // Scene management
-  // =========================================================================
-
-  server.registerTool(
-    "scene_add",
-    {
-      title: "Add Scene",
-      description:
-        "Add a new scene to the document. The new scene is appended at the end. " +
-        "Returns sceneIndex, sceneName, and rev.",
-      inputSchema: z.object({
-        name: z.string().optional().describe("Scene name (auto-generated if omitted)"),
-      }),
-    },
-    async (params) => callTool("scene_add", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "scene_remove",
-    {
-      title: "Remove Scene",
-      description:
-        "Remove a scene by 0-based index. Cannot remove the only scene. " +
-        "Returns ok and rev.",
-      inputSchema: z.object({
-        index: z.number().int().nonnegative().describe("0-based scene index to remove"),
-      }),
-    },
-    async (params) => callTool("scene_remove", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "scene_rename",
-    {
-      title: "Rename Scene",
-      description: "Rename a scene by 0-based index. Returns ok and rev.",
-      inputSchema: z.object({
-        index: z.number().int().nonnegative().describe("0-based scene index"),
-        name: z.string().describe("New scene name"),
-      }),
-    },
-    async (params) => callTool("scene_rename", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "scene_select",
-    {
-      title: "Select Scene",
-      description: "Switch the active scene by 0-based index. Returns ok and rev.",
-      inputSchema: z.object({
-        index: z.number().int().nonnegative().describe("0-based scene index to activate"),
-      }),
-    },
-    async (params) => callTool("scene_select", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "scene_duplicate",
-    {
-      title: "Duplicate Scene",
-      description:
-        "Duplicate the current scene. The copy is inserted immediately after the source scene " +
-        "and becomes the active scene. Returns sceneIndex, sceneName, and rev.",
-      inputSchema: undefined,
-    },
-    async () => callTool("scene_duplicate")
-  );
-
-  server.registerTool(
-    "scene_reorder",
-    {
-      title: "Reorder Scene",
-      description:
-        "Move a scene to a different position in the scene list. " +
-        "`sceneIndex` is the 0-based index of the scene to move; " +
-        "`insertBefore` is the 0-based position to insert it before (use a large number or scene count to move to end). " +
-        "Returns ok.",
-      inputSchema: z.object({
-        sceneIndex: z.number().int().min(0).describe('0-based index of scene to move'),
-        insertBefore: z.number().int().min(0).describe('0-based index to insert before (large value = end)'),
-      }),
-    },
-    async (params) => callTool("scene_reorder", params as Record<string, unknown>)
-  );
-
-  // =========================================================================
-  // Stage & selection
-  // =========================================================================
-
-  server.registerTool(
-    "stage_add_shape",
-    {
-      title: "Add Shape",
-      description:
-        "Add a rectangle, oval, or line to the stage. " +
-        "x1/y1 = top-left, x2/y2 = bottom-right (or end point for line). " +
-        "Colors are #RRGGBB strings. fill can be a solid hex color string or a gradient object. " +
-        "Returns the new object id and rev.",
-      inputSchema: z.object({
-        kind: z.enum(["rect", "oval", "line"]).describe("Shape kind"),
-        x1: z.number().describe("Left/start x"),
-        y1: z.number().describe("Top/start y"),
-        x2: z.number().describe("Right/end x"),
-        y2: z.number().describe("Bottom/end y"),
-        fill: z.union([
-          z.string().describe("Solid fill color #RRGGBB"),
-          z.object({
-            type: z.enum(["linear", "radial"]).describe("Gradient type"),
-            stops: z.array(z.object({
-              color: z.string().describe("Stop color #RRGGBB"),
-              alpha: z.number().min(0).max(1).optional().default(1).describe("Stop opacity 0–1"),
-              ratio: z.number().min(0).max(1).describe("Stop position 0.0–1.0 (start to end)"),
-            })).min(2).max(8).describe("Gradient color stops (2–8)"),
-            angle: z.number().optional().describe("Gradient angle in degrees (linear only; 0 = left-to-right)"),
-            focalPoint: z.number().min(-1).max(1).optional().describe("Focal point offset -1 to 1 (radial only)"),
-            spreadMode: z.enum(["extend", "reflect", "repeat"]).optional().describe("Spread mode outside gradient bounds"),
-          }).describe("Gradient fill"),
-        ]).optional().describe("Fill: #RRGGBB solid color, or a gradient descriptor (omit for no fill)"),
-        stroke: z.string().optional().describe("Stroke color #RRGGBB"),
-        strokeWidth: z.number().optional().describe("Stroke width in px"),
-        layerId: z.string().optional().describe("Target layer id (default: active layer)"),
-        frameIndex: z.number().int().nonnegative().optional().describe("Target frame (default: current)"),
-      }),
-    },
-    async (params) => callTool("stage_add_shape", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_add_text",
-    {
-      title: "Add Text",
-      description: "Add a text object to the stage. Returns the new object id and rev.",
-      inputSchema: z.object({
-        x: z.number(),
-        y: z.number(),
-        width: z.number().positive(),
-        height: z.number().positive(),
-        text: z.string(),
-        textType: z.enum(["static", "dynamic", "input"]).optional(),
-        fontFamily: z.string().optional(),
-        fontSize: z.number().positive().optional(),
-        color: z.string().optional().describe("Color as #RRGGBB"),
-        bold: z.boolean().optional(),
-        italic: z.boolean().optional(),
-        align: z.enum(["left", "center", "right", "justify"]).optional(),
-        multiline: z.boolean().optional().describe("Allow multiple lines of text"),
-        wordWrap: z.boolean().optional().describe("Wrap text within the bounding box"),
-        instanceName: z.string().optional().describe("AS2 instance name for scripting (_root.<name>)"),
-        password: z.boolean().optional().describe("Mask characters as password dots (input text only)"),
-        maxChars: z.number().int().nonnegative().optional().describe("Maximum characters the user can enter (input text only; 0 = no limit)"),
-        hasBorder: z.boolean().optional().describe("Draw a border rectangle around the text field"),
-        html: z.boolean().optional().describe("Enable HTML markup in the text field"),
-        autoSize: z.boolean().optional().describe("Automatically resize the field to fit its content"),
-        letterSpacing: z.number().optional().describe("Letter spacing / tracking in pixels"),
-        leading: z.number().optional().describe("Extra line spacing in pixels"),
-        restrict: z.string().optional().describe("Character restriction pattern for input text (e.g. '0-9')"),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-      }),
-    },
-    async (params) => callTool("stage_add_text", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_place_instance",
-    {
-      title: "Place Symbol Instance",
-      description:
-        "Place a symbol from the library on the stage. " +
-        "Accepts optional creation-time visual properties (scale, rotation, blendMode, colorEffect, loopMode, firstFrame). " +
-        "Returns the new instance id and rev.",
-      inputSchema: z.object({
-        symbolId: z.string().describe("Library symbol id"),
-        x: z.number(),
-        y: z.number(),
-        name: z.string().optional().describe("AS2 instance name"),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-        scaleX: z.number().optional().describe("Horizontal scale factor (1 = no scale, 2 = 200%)"),
-        scaleY: z.number().optional().describe("Vertical scale factor (1 = no scale, 2 = 200%)"),
-        rotation: z.number().optional().describe("Rotation in degrees (clockwise)"),
-        blendMode: z
-          .enum([
-            "normal", "layer", "multiply", "screen", "lighten", "darken",
-            "difference", "add", "subtract", "invert", "alpha", "erase",
-            "overlay", "hardlight",
-          ])
-          .optional()
-          .describe("Flash 8 blend mode"),
-        colorEffect: z
-          .object({
-            type: z.enum(["none", "brightness", "tint", "alpha", "advanced"]),
-            brightness: z.number().optional().describe("Brightness -100..100 (type=brightness)"),
-            tintColor: z.string().optional().describe("Tint color #RRGGBB (type=tint)"),
-            tintAmount: z.number().optional().describe("Tint amount 0..100 (type=tint)"),
-            alpha: z.number().optional().describe("Alpha 0..100 (type=alpha)"),
-            redMult: z.number().optional(),
-            greenMult: z.number().optional(),
-            blueMult: z.number().optional(),
-            redOffset: z.number().optional(),
-            greenOffset: z.number().optional(),
-            blueOffset: z.number().optional(),
-            alphaMult: z.number().optional(),
-            alphaOffset: z.number().optional(),
-          })
-          .optional()
-          .describe("Color effect applied to this instance"),
-        loopMode: z
-          .enum(["loop", "play-once", "single-frame"])
-          .optional()
-          .describe("Graphic symbol loop mode (loop | play-once | single-frame)"),
-        firstFrame: z
-          .number()
-          .int()
-          .nonnegative()
-          .optional()
-          .describe("Starting frame index for play-once or single-frame mode (0-based)"),
-      }),
-    },
-    async (params) => callTool("stage_place_instance", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_add_video",
-    {
-      title: "Place Video On Stage",
-      description:
-        "Place a VideoItem from the library on the stage as a video display object. Defaults to the video's native dimensions when width/height are omitted. Returns the new object id and rev.",
-      inputSchema: z.object({
-        videoItemId: z.string().describe("Library VideoItem id"),
-        x: z.number(),
-        y: z.number(),
-        width: z.number().positive().optional().describe("Display width (defaults to native)"),
-        height: z.number().positive().optional().describe("Display height (defaults to native)"),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-      }),
-    },
-    async (params) => callTool("stage_add_video", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_add_bitmap",
-    {
-      title: "Place Bitmap On Stage",
-      description:
-        "Place a BitmapItem from the library on the stage as a bitmap display object. Defaults to the bitmap's native dimensions when width/height are omitted. Returns the new object id and rev.",
-      inputSchema: z.object({
-        bitmapItemId: z.string().describe("Library BitmapItem id"),
-        x: z.number(),
-        y: z.number(),
-        width: z.number().positive().optional().describe("Display width (defaults to native)"),
-        height: z.number().positive().optional().describe("Display height (defaults to native)"),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-      }),
-    },
-    async (params) => callTool("stage_add_bitmap", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_update",
-    {
-      title: "Update Stage Object",
-      description:
-        "Update properties of a display object (x, y, scaleX, scaleY, rotation, alpha, text, blendMode, colorEffect, cacheAsBitmap, etc.). Returns ok and rev.",
-      inputSchema: z.object({
-        id: z.string().describe("Object id"),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-        updates: z.record(z.string(), z.unknown()).describe("Property updates to apply (may include cacheAsBitmap: boolean)"),
-        cacheAsBitmap: z.boolean().optional().describe("Enable bitmap caching for the display object"),
-      }),
-    },
-    async (params) => callTool("stage_update", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_remove",
-    {
-      title: "Remove Stage Objects",
-      description: "Remove display objects by id. Returns ok and rev.",
-      inputSchema: z.object({
-        ids: z.array(z.string()).describe("Object ids to remove"),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-      }),
-    },
-    async (params) => callTool("stage_remove", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_arrange",
-    {
-      title: "Arrange Stage Objects",
-      description: "Change z-order of display objects: front/back/forward/backward.",
-      inputSchema: z.object({
-        ids: z.array(z.string()),
-        op: z.enum(["front", "back", "forward", "backward"]),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-      }),
-    },
-    async (params) => callTool("stage_arrange", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_group",
-    {
-      title: "Group Objects",
-      description: "Group display objects into a group. Returns ok and rev.",
-      inputSchema: z.object({
-        ids: z.array(z.string()),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-      }),
-    },
-    async (params) => callTool("stage_group", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_ungroup",
-    {
-      title: "Ungroup Object",
-      description: "Ungroup a group display object, returning its children to the frame. Returns ok and rev.",
-      inputSchema: z.object({
-        id: z.string().describe("Group object id"),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-      }),
-    },
-    async (params) => callTool("stage_ungroup", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_move_selection",
-    {
-      title: "Move Selection",
-      description:
-        "Move all currently selected objects by the given pixel delta (dx, dy). " +
-        "Returns movedCount (number of objects moved).",
-      inputSchema: z.object({
-        dx: z.number().describe('Horizontal delta in pixels'),
-        dy: z.number().describe('Vertical delta in pixels'),
-      }),
-    },
-    async (params) => callTool("stage_move_selection", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_find_instances",
-    {
-      title: "Find Symbol Instances",
-      description:
-        "Find all instances of a named library symbol across all scenes, layers, and keyframes. " +
-        "Returns an array of { id, x, y, layerIndex, frameIndex, sceneIndex }.",
-      inputSchema: z.object({
-        symbolName: z.string().describe('Library item name to search for'),
-      }),
-    },
-    async (params) => callTool("stage_find_instances", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_get_bounds",
-    {
-      title: "Get Object Bounds",
-      description:
-        "Get the axis-aligned bounding box of a display object by id. " +
-        "Returns { x, y, width, height } in stage coordinates. " +
-        "Returns { x:0, y:0, width:0, height:0 } if the object is not found.",
-      inputSchema: z.object({
-        id: z.string().describe('Display object id'),
-      }),
-    },
-    async (params) => callTool("stage_get_bounds", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_duplicate",
-    {
-      title: "Duplicate Stage Objects",
-      description:
-        "Duplicate one or more display objects, placing the copies offset from the originals. " +
-        "Returns { duplicatedIds } — the ids of the newly created copies.",
-      inputSchema: z.object({
-        ids: z.array(z.string()).describe('Display object ids to duplicate'),
-        offsetX: z.number().optional().default(10).describe('X offset for duplicates (default: 10)'),
-        offsetY: z.number().optional().default(10).describe('Y offset for duplicates (default: 10)'),
-      }),
-    },
-    async (params) => callTool("stage_duplicate", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "selection_get",
-    {
-      title: "Get Selection",
-      description: "Returns the currently selected object ids and their data.",
-      inputSchema: undefined,
-    },
-    async () => callTool("selection_get")
-  );
-
-  server.registerTool(
-    "selection_set",
-    {
-      title: "Set Selection",
-      description: "Set the stage selection by id list, or pass all:true to select everything.",
-      inputSchema: z.object({
-        ids: z.array(z.string()).optional(),
-        all: z.boolean().optional(),
-      }),
-    },
-    async (params) => callTool("selection_set", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "view_set",
-    {
-      title: "Set View",
-      description: "Update viewport zoom, pan, current frame, or active layer.",
-      inputSchema: z.object({
-        zoom: z.number().positive().optional().describe("Zoom factor (1.0 = 100%)"),
-        panX: z.number().optional(),
-        panY: z.number().optional(),
-        currentFrame: z.number().int().nonnegative().optional(),
-        activeLayerId: z.string().optional(),
-      }),
-    },
-    async (params) => callTool("view_set", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "tool_select",
-    {
-      title: "Select Tool",
-      description: "Select the active drawing/editing tool by id (e.g. 'selection', 'pen', 'rectangle', 'text').",
-      inputSchema: z.object({
-        toolId: z.string(),
-      }),
-    },
-    async (params) => callTool("tool_select", params as Record<string, unknown>)
-  );
-
-  // =========================================================================
-  // Timeline
-  // =========================================================================
-
-  server.registerTool(
-    "timeline_add_layer",
-    {
-      title: "Add Layer",
-      description: "Add a new layer to the active timeline. Returns the new layerId and rev.",
-      inputSchema: z.object({
-        name: z.string().optional(),
-        type: z.enum(["normal", "guide", "guided", "mask", "masked", "folder"]).optional(),
-      }),
-    },
-    async (params) => callTool("timeline_add_layer", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_remove_layer",
-    {
-      title: "Remove Layer",
-      description: "Remove a layer by id. Returns ok and rev.",
-      inputSchema: z.object({
-        layerId: z.string(),
-      }),
-    },
-    async (params) => callTool("timeline_remove_layer", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_update_layer",
-    {
-      title: "Update Layer",
-      description: "Rename, lock, hide, or change the type of a layer. Returns ok and rev.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        name: z.string().optional(),
-        locked: z.boolean().optional(),
-        visible: z.boolean().optional(),
-        type: z.enum(["normal", "guide", "guided", "mask", "masked", "folder"]).optional(),
-      }),
-    },
-    async (params) => callTool("timeline_update_layer", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_insert_frame",
-    {
-      title: "Insert Frame (F5)",
-      description: "Insert a regular frame at frameIndex, shifting later keyframes right. Returns ok and rev.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        frameIndex: z.number().int().nonnegative(),
-      }),
-    },
-    async (params) => callTool("timeline_insert_frame", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_insert_keyframe",
-    {
-      title: "Insert Keyframe (F6)",
-      description: "Insert a keyframe at frameIndex, copying content from the governing keyframe. Returns ok and rev.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        frameIndex: z.number().int().nonnegative(),
-      }),
-    },
-    async (params) => callTool("timeline_insert_keyframe", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_insert_blank_keyframe",
-    {
-      title: "Insert Blank Keyframe (F7)",
-      description: "Insert an empty keyframe at frameIndex. Returns ok and rev.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        frameIndex: z.number().int().nonnegative(),
-      }),
-    },
-    async (params) => callTool("timeline_insert_blank_keyframe", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_remove_frame",
-    {
-      title: "Remove Frame (Shift+F5)",
-      description: "Remove the frame at frameIndex. Returns ok and rev.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        frameIndex: z.number().int().nonnegative(),
-      }),
-    },
-    async (params) => callTool("timeline_remove_frame", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_set_frame_label",
-    {
-      title: "Set Frame Label",
-      description: "Set the label (and optional labelType: name/comment/anchor) on a keyframe. Returns ok and rev.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        frameIndex: z.number().int().nonnegative(),
-        label: z.string(),
-        labelType: z.enum(["name", "comment", "anchor"]).optional(),
-      }),
-    },
-    async (params) => callTool("timeline_set_frame_label", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_set_sound",
-    {
-      title: "Set Frame Sound",
-      description: "Attach a sound library item to a keyframe, or pass libraryItemId=null to clear. Returns ok and rev.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        frameIndex: z.number().int().nonnegative(),
-        libraryItemId: z.string().nullable().describe("Library SoundItem id, or null to clear the sound"),
-        syncMode: z.enum(["event", "start", "stop", "stream"]).optional().describe("Sync mode (default: event)"),
-        repeatCount: z.number().int().nonnegative().optional().describe("Number of times to repeat (0 = loop; default: 1)"),
-      }),
-    },
-    async (params) => callTool("timeline_set_sound", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_set_tween",
-    {
-      title: "Set Tween",
-      description: "Set or clear a motion/shape tween on a keyframe. kind=null clears any tween. Returns ok and rev.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        frameIndex: z.number().int().nonnegative(),
-        kind: z.enum(["motion", "shape"]).nullable(),
-        props: z.record(z.string(), z.unknown()).optional().describe("Tween options. Motion: ease (-100..100), rotate ('none'|'cw'|'ccw'|'auto'), rotateCount (number), scale (boolean), orientToPath (boolean), sync (boolean). Shape: ease (-100..100), blend ('distributive'|'angular')."),
-      }),
-    },
-    async (params) => callTool("timeline_set_tween", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_goto_frame",
-    {
-      title: "Go to Frame",
-      description: "Move the playhead to the given 0-based frame index.",
-      inputSchema: z.object({
-        frameIndex: z.number().int().nonnegative(),
-      }),
-    },
-    async (params) => callTool("timeline_goto_frame", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_copy_frames",
-    {
-      title: "Copy Frames",
-      description: "Copy a range of frames to the clipboard.",
-      inputSchema: z.object({
-        startFrame: z.number().int().min(0).optional().describe("First frame index to copy (0-based, defaults to current frame)"),
-        endFrame: z.number().int().min(0).optional().describe("Last frame index to copy (inclusive, defaults to startFrame)"),
-        layerIndex: z.number().int().min(0).optional().describe("Layer index (defaults to all layers)"),
-      }),
-    },
-    async (params) => callTool("timeline_copy_frames", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "timeline_paste_frames",
-    {
-      title: "Paste Frames",
-      description: "Paste previously copied frames at a destination frame.",
-      inputSchema: z.object({
-        frameIndex: z.number().int().min(0).optional().describe("Destination frame index (0-based, defaults to current frame)"),
-        replaceFrames: z.boolean().optional().describe("Replace existing frames instead of inserting"),
-      }),
-    },
-    async (params) => callTool("timeline_paste_frames", params as Record<string, unknown>)
-  );
-
-  // =========================================================================
-  // Filters
-  // =========================================================================
-
-  server.registerTool(
-    "filter_add",
-    {
-      title: "Add Filter",
-      description:
-        "Add a visual filter (drop shadow, blur, glow, or bevel) to selected display objects. " +
-        "Pass `ids` to target specific objects, or omit to use the current selection. " +
-        "Returns success and rev.",
-      inputSchema: z.object({
-        type: z.enum(['dropShadow', 'blur', 'glow', 'bevel']).describe('Filter type'),
-        enabled: z.boolean().optional().describe('Whether filter is enabled (default true)'),
-        ids: z.array(z.string()).optional().describe('Target object ids (defaults to current selection)'),
-        layerId: z.string().optional().describe('Layer id (defaults to active layer)'),
-        frameIndex: z.number().int().nonnegative().optional().describe('Frame index (defaults to current frame)'),
-        blurX: z.number().optional().describe('Horizontal blur radius'),
-        blurY: z.number().optional().describe('Vertical blur radius'),
-        strength: z.number().optional().describe('Filter strength (0–255)'),
-        angle: z.number().optional().describe('Angle in degrees'),
-        distance: z.number().optional().describe('Offset distance in pixels'),
-        quality: z.number().int().min(1).max(3).optional().describe('Render quality: 1=Low, 2=Med, 3=High'),
-        color: z.string().optional().describe('Filter color as #RRGGBB'),
-        alpha: z.number().min(0).max(1).optional().describe('Alpha 0–1'),
-        inner: z.boolean().optional().describe('Inner shadow/glow mode'),
-        knockout: z.boolean().optional().describe('Knockout mode'),
-        hideObject: z.boolean().optional().describe('Hide source object (drop shadow only)'),
-      }),
-    },
-    async (params) => callTool("filter_add", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "filter_remove",
-    {
-      title: "Remove Filter",
-      description:
-        "Remove a filter by 0-based index from selected display objects. " +
-        "Pass `ids` to target specific objects, or omit to use the current selection. " +
-        "Returns success and rev.",
-      inputSchema: z.object({
-        index: z.number().int().min(0).describe('0-based filter index to remove'),
-        ids: z.array(z.string()).optional().describe('Target object ids (defaults to current selection)'),
-        layerId: z.string().optional().describe('Layer id (defaults to active layer)'),
-        frameIndex: z.number().int().nonnegative().optional().describe('Frame index (defaults to current frame)'),
-      }),
-    },
-    async (params) => callTool("filter_remove", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "filter_list",
-    {
-      title: "List Filters",
-      description:
-        "Get the filters array of a display object. " +
-        "Pass `id` to target a specific object, or omit to use the first selected object. " +
-        "Returns filters array and rev.",
-      inputSchema: z.object({
-        id: z.string().optional().describe('Object id to query (defaults to first selected object)'),
-        layerId: z.string().optional().describe('Layer id (defaults to active layer)'),
-        frameIndex: z.number().int().nonnegative().optional().describe('Frame index (defaults to current frame)'),
-      }),
-    },
-    async (params) => callTool("filter_list", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "playback_play",
-    {
-      title: "Play",
-      description: "Start playback.",
-      inputSchema: undefined,
-    },
-    async () => callTool("playback_play")
-  );
-
-  server.registerTool(
-    "playback_stop",
-    {
-      title: "Stop",
-      description: "Stop playback.",
-      inputSchema: undefined,
-    },
-    async () => callTool("playback_stop")
-  );
-
-  // =========================================================================
-  // Code (AS2)
-  // =========================================================================
-
-  server.registerTool(
-    "script_get",
-    {
-      title: "Get Script",
-      description: "Get the AS2 script attached to the governing keyframe at or before frameIndex.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        frameIndex: z.number().int().nonnegative(),
-      }),
-    },
-    async (params) => callTool("script_get", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "script_set",
-    {
-      title: "Set Script",
-      description:
-        "Set the AS2 script on the governing keyframe. The script is ALWAYS saved to the document " +
-        "regardless of compile errors (Flash 8 parity — broken scripts are allowed on disk). " +
-        "A compile check runs and results are returned in `diagnostics`; callers must inspect " +
-        "diagnostics for error-severity entries. Always returns ok:true; rev reflects the new document revision.",
-      inputSchema: z.object({
-        layerId: z.string(),
-        frameIndex: z.number().int().nonnegative(),
-        script: z.string(),
-      }),
-    },
-    async (params) => callTool("script_set", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "script_check",
-    {
-      title: "Check Script",
-      description: "Compile-check an AS2 script and return diagnostics WITHOUT mutating the document.",
-      inputSchema: z.object({
-        script: z.string(),
-      }),
-    },
-    async (params) => callTool("script_check", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "script_list",
-    {
-      title: "List Scripts",
-      description: "List all keyframes that carry AS2 scripts, with first-line previews.",
-      inputSchema: undefined,
-    },
-    async () => callTool("script_list")
-  );
-
-  // =========================================================================
-  // Library
-  // =========================================================================
-
-  server.registerTool(
-    "library_list",
-    {
-      title: "List Library",
-      description: "List all items in the document library (symbols, bitmaps, sounds, etc.).",
-      inputSchema: undefined,
-    },
-    async () => callTool("library_list")
-  );
-
-  server.registerTool(
-    "library_create_symbol",
-    {
-      title: "Create Symbol",
-      description: "Create a new empty symbol in the library. Returns symbolId and rev.",
-      inputSchema: z.object({
-        name: z.string(),
-        symbolType: z.enum(["movieclip", "button", "graphic"]),
-      }),
-    },
-    async (params) => callTool("library_create_symbol", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "library_convert_to_symbol",
-    {
-      title: "Convert to Symbol",
-      description:
-        "Convert display objects (by id) into a new library symbol, replacing them with an instance. " +
-        "Returns symbolId, instanceId, and rev.",
-      inputSchema: z.object({
-        ids: z.array(z.string()),
-        name: z.string(),
-        symbolType: z.enum(["movieclip", "button", "graphic"]),
-        layerId: z.string().optional(),
-        frameIndex: z.number().int().nonnegative().optional(),
-      }),
-    },
-    async (params) => callTool("library_convert_to_symbol", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "library_rename",
-    {
-      title: "Rename Library Item",
-      description: "Rename a library item by id. Returns ok and rev.",
-      inputSchema: z.object({
-        itemId: z.string(),
-        name: z.string(),
-      }),
-    },
-    async (params) => callTool("library_rename", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "library_remove",
-    {
-      title: "Remove Library Item",
-      description: "Remove a library item by id. Returns ok and rev.",
-      inputSchema: z.object({
-        itemId: z.string(),
-      }),
-    },
-    async (params) => callTool("library_remove", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "library_set_linkage",
-    {
-      title: "Set Symbol AS2 Linkage",
-      description:
-        "Set the AS2 linkage properties on a library symbol, enabling `attachMovie()` / `new ClassName()` access at runtime. " +
-        "Pass `exportForActionScript: true` and a `linkageId` string to export the symbol. " +
-        "Pass `exportInFirstFrame: true` to include it in frame 1 (required for `attachMovie` from frame 1 scripts). " +
-        "Returns ok and rev.",
-      inputSchema: z.object({
-        symbolId: z.string().describe("Library symbol id"),
-        linkageId: z.string().optional().describe("Linkage identifier used in attachMovie() or new ClassName() calls"),
-        exportForActionScript: z.boolean().optional().describe("Export this symbol for ActionScript"),
-        exportInFirstFrame: z.boolean().optional().describe("Export in the first frame of the SWF"),
-      }),
-    },
-    async (params) => callTool("library_set_linkage", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "library_import_bitmap",
-    {
-      title: "Import Bitmap",
-      description:
-        "Add a bitmap image to the library from base64-encoded data. " +
-        "Returns itemId and rev.",
-      inputSchema: z.object({
-        data: z.string().describe("Base64-encoded image data (no data: URI prefix)"),
-        name: z.string().optional().describe("Library item name (auto-generated if omitted)"),
-        mimeType: z.string().optional().describe("MIME type e.g. image/png or image/jpeg"),
-      }),
-    },
-    async (params) => callTool("library_import_bitmap", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "library_import_sound",
-    {
-      title: "Import Sound",
-      description:
-        "Add a sound to the library from base64-encoded audio data. " +
-        "Returns itemId and rev.",
-      inputSchema: z.object({
-        data: z.string().describe("Base64-encoded audio data (no data: URI prefix)"),
-        name: z.string().describe("Library item name"),
-        mimeType: z.string().optional().describe("MIME type e.g. audio/mp3 or audio/wav"),
-      }),
-    },
-    async (params) => callTool("library_import_sound", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "library_use_count",
-    {
-      title: "Library Use Count",
-      description:
-        "Count how many symbol instances of a named library item exist across all scenes, layers, and keyframes. " +
-        "Returns { count }.",
-      inputSchema: z.object({
-        name: z.string().describe('Library item name'),
-      }),
-    },
-    async (params) => callTool("library_use_count", params as Record<string, unknown>)
-  );
-
-  // =========================================================================
-  // Output & escape hatches
-  // =========================================================================
-
-  server.registerTool(
-    "jsfl_run",
-    {
-      title: "Run JSFL Script",
-      description:
-        "Execute a JSFL (JavaScript Flash Language) script. Mutations land in history. " +
-        "Returns traces, returnValue, error, and rev.",
-      inputSchema: z.object({
-        source: z.string().describe("JSFL source code to execute"),
-      }),
-    },
-    async (params) => callTool("jsfl_run", params as Record<string, unknown>)
-  );
-
-  server.registerTool(
-    "stage_screenshot",
-    {
-      title: "Stage Screenshot",
-      description:
-        "Render the current stage to a PNG and return it as an MCP image content block. " +
-        "Uses 1:1 DPR with background compositing. Use sparingly — prefer doc_get for structure.",
-      inputSchema: z.object({
-        frameIndex: z.number().int().nonnegative().optional().describe("Frame to render (default: current)"),
-      }),
-    },
-    async (params) => {
-      const result = await forwardToEditor("stage_screenshot", params as Record<string, unknown>) as {
-        pngBase64: string;
-        width: number;
-        height: number;
-      };
-      return {
-        content: [
-          {
-            type: "image" as const,
-            data: result.pngBase64,
-            mimeType: "image/png" as const,
-          },
-          {
-            type: "text" as const,
-            text: JSON.stringify({ width: result.width, height: result.height }),
-          },
-        ],
-      };
-    }
-  );
-
-  server.registerTool(
-    "publish_swf",
-    {
-      title: "Publish SWF",
-      description: "Compile the current document to SWF. Returns swfBase64 and byteLength.",
-      inputSchema: undefined,
-    },
-    async () => callTool("publish_swf")
-  );
-
-  server.registerTool(
-    "file_save_fla",
-    {
-      title: "Save FLA",
-      description: "Serialize the current document to the FLA format and return it as base64.",
-      inputSchema: undefined,
-    },
-    async () => callTool("file_save_fla")
-  );
-
-  server.registerTool(
-    "file_load_fla",
-    {
-      title: "Load FLA",
-      description: "Load a previously saved FLA (as base64) into the editor, replacing the current document.",
-      inputSchema: z.object({
-        flaBase64: z.string().describe("Base64-encoded FLA bytes"),
-      }),
-    },
-    async (params) => callTool("file_load_fla", params as Record<string, unknown>)
-  );
+  registerAgentCommandTools(server);
 
   // =========================================================================
   // Resources
@@ -1726,22 +738,44 @@ async function handleMcpRequest(
   }
 }
 
-/** Parse the request body for POST requests. */
-async function parseBody(req: IncomingMessage): Promise<unknown> {
+/**
+ * Parse the request body for POST requests, aborting if it exceeds
+ * `maxBytes` (default MAX_BODY_BYTES). The accumulator tracks the raw byte
+ * length and rejects with a RequestBodyTooLargeError (→ HTTP 413) the moment
+ * the cap is crossed, destroying the socket so no further data is buffered.
+ */
+async function parseBody(
+  req: IncomingMessage,
+  maxBytes: number = MAX_BODY_BYTES
+): Promise<unknown> {
   if (req.method !== "POST") return undefined;
   return new Promise<unknown>((resolve, reject) => {
-    let data = "";
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let aborted = false;
     req.on("data", (chunk: Buffer) => {
-      data += chunk.toString();
+      if (aborted) return;
+      total += chunk.length;
+      if (total > maxBytes) {
+        aborted = true;
+        reject(new RequestBodyTooLargeError(maxBytes));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
     });
     req.on("end", () => {
+      if (aborted) return;
+      const data = Buffer.concat(chunks).toString("utf8");
       try {
         resolve(data ? JSON.parse(data) : undefined);
       } catch {
         reject(new Error("Invalid JSON body"));
       }
     });
-    req.on("error", reject);
+    req.on("error", (err) => {
+      if (!aborted) reject(err);
+    });
   });
 }
 
@@ -1757,7 +791,10 @@ export function agentMcpPlugin(): Plugin {
       // -------------------------------------------------------------------
       // /__agent WebSocket bridge (editor page → plugin)
       // -------------------------------------------------------------------
-      const wss = new WebSocketServer({ noServer: true });
+      // maxPayload bounds a single inbound WS frame (the previously-unbounded
+      // /__agent bridge); a hostile peer streaming an oversized message now
+      // trips ws's 1009 (Message Too Big) close instead of exhausting memory.
+      const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY_BYTES });
 
       // Attach to the Vite HTTP server's upgrade event
       server.httpServer?.on(
@@ -1849,6 +886,11 @@ export function agentMcpPlugin(): Plugin {
           }
           handleMcpRequest(req, res).catch((err: Error) => {
             if (!res.headersSent) {
+              if (err instanceof RequestBodyTooLargeError) {
+                res.writeHead(413, { "Content-Type": "text/plain" });
+                res.end("Payload too large: " + err.message);
+                return;
+              }
               res.writeHead(500, { "Content-Type": "text/plain" });
               res.end("Internal server error: " + err.message);
             }
@@ -1868,6 +910,6 @@ export function agentMcpPlugin(): Plugin {
 }
 
 // Re-export for tests
-export { errorContent, createMcpServerForRequest };
+export { errorContent, createMcpServerForRequest, parseBody, humanizeCommand };
 
 export default agentMcpPlugin;
