@@ -2432,25 +2432,28 @@ class Compiler {
       // So we push deepest-first: coords first (if constrain), then constrain flag,
       // then lockCenter, then target last (top of stack).
       if (name === 'startDrag') {
-        if (expr.args.length === 0) {
+        const n = expr.args.length;
+        if (n >= 3) {
+          // startDrag(target, lockCenter, left, top, right, bottom) — with constrain.
+          // The 3–5 arg forms are non-standard AVM1; pad the missing constraint
+          // coordinates with 0 rather than reading past the end of the args list.
+          this.compileExpr(expr.args[2]!);                                 // left   (x_min) — deepest
+          if (n > 3) this.compileExpr(expr.args[3]!); else this.pushInt(0); // top    (y_min)
+          if (n > 4) this.compileExpr(expr.args[4]!); else this.pushInt(0); // right  (x_max)
+          if (n > 5) this.compileExpr(expr.args[5]!); else this.pushInt(0); // bottom (y_max)
+          this.pushInt(1);                 // do_constrain = true
+          this.compileExpr(expr.args[1]!); // lockCenter
+          this.compileExpr(expr.args[0]!); // target — TOP of stack
+        } else if (n >= 1) {
+          // startDrag(target) or startDrag(target, lockCenter) — no constrain
+          this.pushInt(0);                                                  // do_constrain = false (deepest)
+          if (n >= 2) this.compileExpr(expr.args[1]!); else this.pushInt(0); // lockCenter (default false)
+          this.compileExpr(expr.args[0]!);                                  // target — TOP of stack
+        } else {
           // startDrag() — drag 'this', no lock, no constrain
           this.pushInt(0);      // do_constrain = false (deepest)
           this.pushInt(0);      // lockCenter = false
           this.pushString('');  // target = "" (self) — TOP of stack
-        } else if (expr.args.length >= 2 && expr.args.length < 6) {
-          // startDrag(target, lockCenter) — no constrain
-          this.pushInt(0);                 // do_constrain = false (deepest)
-          this.compileExpr(expr.args[1]!); // lockCenter
-          this.compileExpr(expr.args[0]!); // target — TOP of stack
-        } else {
-          // startDrag(target, lockCenter, left, top, right, bottom) — with constrain
-          this.compileExpr(expr.args[2]!); // left   (x_min) — deepest
-          this.compileExpr(expr.args[3]!); // top    (y_min)
-          this.compileExpr(expr.args[4]!); // right  (x_max)
-          this.compileExpr(expr.args[5]!); // bottom (y_max)
-          this.pushInt(1);                 // do_constrain = true
-          this.compileExpr(expr.args[1]!); // lockCenter
-          this.compileExpr(expr.args[0]!); // target — TOP of stack
         }
         this.emit(0x27); // ActionStartDrag
         this.pushUndefined();
