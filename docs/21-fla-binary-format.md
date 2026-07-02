@@ -662,13 +662,20 @@ skip(2)                                 // 00 00
 s32 0x80000000, s32 0x80000000          // sentinel registration point
 if (>= F8) skip(2)                      // 00 00
 u8 pageVersionB = 0x07
-u16 nextLayerId, u8 0x00
-if (== MX2004) u16 nextFolderId, u8 0x00
-if (>= F8) u16 currentFrame, u8 0x00, skip(3)
+u16 nextLayerId
+if (>= F8) u16 currentFrame, skip(4)
 if (>= F5):
   u32 guideCount
-  guide[guideCount] { u32 direction; u32 valueTwips }   // direction 0 horizontal, 1 vertical
+  guide[guideCount] { u32 direction; s32 valueTwips }   // direction 0 horizontal, 1 vertical
 ```
+
+The pre-guide run after `pageVersionB` is **8 bytes** for Flash 8 — `u16 nextLayerId`,
+`u16 currentFrame`, then a four-byte zero run — followed by the `u32 guideCount`. This is
+byte-verified against `flash8-empty.fla`: the reader (`readCPicPage` in `flash8-binary.ts` —
+`skip(2)`, `skip(2)`, `skip(4)`, then `u32 guideCount`) and the writer (`writeCPicPage` in
+`write/timeline-write.ts`, which splits the `PAGE_TAIL` template around the two model-derived
+`u16`s) agree exactly. (Earlier revisions of this section modeled the two `u16` fields each with a
+trailing `u8 0x00` plus a `skip(3)`, a 9-byte run that is off by one against the real bytes.)
 
 `nextLayerId` is the id Flash would assign the next new layer on the page. The writer emits it
 **model-derived** as `layers.length + 1` (a fresh single-layer page → 2), NOT from a template
@@ -768,24 +775,35 @@ if (>= F5) u8 frameVersionC = 4, skip(3), u8 0x01, skip(3)
 if (>= MX) u8 frameId high byte, u8 frameId low byte, skip(6)   // frameId is big-endian here
 if (>= CS3) skip(4)
 if (>= F3):
-  u32 motionTweenRotate                  // 0 none, 1 clockwise, 2 counter-clockwise
-  u16 rotateTimes
-  skip(2)
-  u32 comment                            // the label is a comment
-  MorphShape or skip(2)                  // section 13, the two bytes 00 00 when no morph
-  u8 shapeTweenBlend                     // 0 distributive, 1 angular
-  u8 0x00, u32 0, BomString ""
-if (>= F5) skip(4), u8 soundEffect, skip(3)   // soundEffect 0 through 7
-if (>= MX) u32 anchor                     // the label is a named anchor
+  u32 motionTweenRotate                  // 1 none, 2 auto, 3 clockwise, 4 counter-clockwise
+  u32 rotateTimes                          // extra full rotations beyond the base interpolation
+  u32 labelType                            // 0 none, 1 comment, 2 named anchor
+  MorphShape or u16 0x0000               // section 13; a non-zero tag is the CPicMorphShape
+                                          //   class tag of a shape-tween start keyframe — the
+                                          //   record ENDS after the morph object (see below)
+  u32 orientSnap                           // bit 0x01 orient to path, bit 0x02 snap to guide
+  u16 oblistTag                            // 0x0000 when no trailing object list
+  BomString tweenInstanceName
 if (>= F8):
+  skip(4), skip(4), skip(4)
   u32 useSingleEaseCurve
   u32 hasCustomEase
   if (hasCustomEase) CustomEaseTable      // section 11.2
 if (== CS4 and motion object present):
   BomString motionObjectXML
   u32 visibleAnimationKeyframes
-  BomString tweenInstanceName
 ```
+
+There is a **single** `u32 labelType` (0 none / 1 comment / 2 named anchor), not two separate
+`comment` and `anchor` fields: the reader (`readCPicFrameNode` in `flash8-binary.ts`) reads one
+`labelType` word and the writer (`write/timeline-write.ts`, `frame.labelType === "comment" ? 1 :
+… ? 2 : 0`) emits one. `motionTweenRotate` is `1 none / 2 auto / 3 clockwise / 4 counter-clockwise`
+(the writer's `rotateFlaValue`, verified against `fixtures/Magnet.fla` per tasks 0860/0936); the
+"auto" value has no counterpart in the older `0/1/2` reading. When the `MorphShape` tag is non-zero
+the record ends immediately after the inline `CPicMorphShape` object (whose trailing byte is the
+`shapeTweenBlend`, section 13); the `orientSnap`/`oblist`/ease tail is present only on a non-morph
+frame. The `orientSnap` bit layout (0x01 orient-to-path, 0x02 snap) is best-effort and not
+confirmed against a real fixture.
 
 A Flash 8 frame stamps `frameVersionB = 0x18`, so the `>= F8` ease-curve header
 (`u32 useSingleEaseCurve; u32 hasCustomEase`) is **mandatory** — a writer that emits the
@@ -1197,9 +1215,16 @@ if (>= F8) FilterList, u16 0x0000
 ### 17.1 Text flags
 
 The `textFlags` byte holds bit 0x01 for non-static text, 0x02 for dynamic, 0x04 for password,
-0x08 for word wrap, 0x10 for multiline, 0x20 for embedded outlines, and 0x40 for a border. Bit
+0x08 for word wrap, 0x10 for multiline, 0x20 for a background fill, and 0x40 for a border. Bit
 0x80 marks dynamic HTML text that is not selectable. The selectable property of static text is bit
 0 of `staticFlags`; the scrollable property is the `scrollable` byte in the tail.
+
+Bit 0x20 is a **background fill**, not "embedded outlines" (an earlier revision): both the reader
+(`readCPicText` in `flash8-binary.ts`, `hasBackground: (textFlags & 0x20) !== 0`) and the writer
+(`textFlagsByte` in `write/timeline-write.ts`, `if (obj.hasBackground) f |= 0x20`) treat it as the
+field's background fill (task 0927). The bit position round-trips, but the background-vs-outlines
+*semantics* are taken from flacomdoc and are not yet pinned by a real-Flash text-with-background
+fixture.
 
 ### 17.2 Embed flag
 
@@ -1274,7 +1299,10 @@ u32 0x00000001
 u16 videoId
 ```
 
-The embedded-clip variant `CPicVideo` is a separate class and is not laid out here.
+This `CPicVideoStream` layout is **inferred** from flacomdoc and has **no reader in this repo and
+no confirming fixture**: the importer dispatches only on the class name `CPicVideo` (`readCPicVideo`
+in `flash8-binary.ts`), whose layout is itself inferred (`CPicObjBase`, a schema byte, a matrix,
+and a `u16 mediaId`) with no video fixture to verify it. Neither video form is fixture-verified.
 
 ### 18.3 Imported SWF
 
@@ -1388,8 +1416,9 @@ Confidence levels for the structures in this document:
 | Component metadata | 15 | Verified |
 | Authoring filter list | 16.2 | Verified |
 | Text records | 17 | Verified |
-| Bitmap and video instances | 18.1, 18.2 | Verified |
-| Embedded video variant | 18.2 | Inferred |
+| Bitmap instance | 18.1 | Verified |
+| Video instance (CPicVideoStream doc layout) | 18.2 | Inferred |
+| Embedded video variant (CPicVideo, the class the reader dispatches on) | 18.2 | Inferred |
 | Imported SWF header and metadata | 18.3 | Observed |
 | Imported SWF body | 18.3 | Undecoded |
 | Color effect, accessibility, scale-9 grid | 19 | Verified |
@@ -1400,8 +1429,10 @@ Confidence levels for the structures in this document:
 
 Three areas are not fully specified. The interleaving of the tween, comment, morph, and sound
 sub-blocks within a frame record, section 11, is established field by field but its exact byte
-order has not been pinned. The embedded-clip video class `CPicVideo`, section 18.2, is distinct
-from the placed `CPicVideoStream` and is not laid out. The internal body of an imported SWF,
+order has not been pinned. Neither video form of section 18.2 is fixture-verified: the
+`CPicVideoStream` layout is inferred with no reader, and the `CPicVideo` variant the reader
+actually dispatches on has an inferred layout with no confirming fixture. The internal body of an
+imported SWF,
 section 18.3, is an opaque decomposition of the movie that a reader skips rather than parses; only
 its placement header and intrinsic-size metadata are decoded.
 
