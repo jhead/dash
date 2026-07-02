@@ -24,6 +24,10 @@ function fixture(name: string): Uint8Array {
  * After the fix:
  *  - No "bitmap placement references unknown media" warnings are emitted.
  *  - Bitmap library items for media IDs 12–15 are present in the document.
+ *
+ * Task 1412: these bitmaps now keep their AUTHORED CMediaBits display names
+ * (Media 12 = "Tangerine Fusion", 13 = "Sage Foam", 14 = "Quantum Foam",
+ * 15 = "Metallic Foam") instead of a generic "Bitmap N".
  */
 describe("bitmap media IDs 12-15 resolved (task 0894)", () => {
   it("no 'bitmap placement references unknown media' warnings for Magnet.fla", () => {
@@ -47,16 +51,20 @@ describe("bitmap media IDs 12-15 resolved (task 0894)", () => {
         "should have no unresolved bitmap media placements",
       ).toHaveLength(0);
 
-      // Bitmap library items for media IDs 12–15 must be present.
+      // Bitmap library items for media IDs 12–15 must be present, carrying
+      // their authored CMediaBits display names (task 1412).
       const bitmapNames =
         doc?.library.items
           .filter((i) => (i as Record<string, unknown>).itemType === "bitmap")
           .map((i) => (i as Record<string, unknown>).name as string) ?? [];
 
-      for (const n of [12, 13, 14, 15]) {
-        expect(bitmapNames, `should contain Bitmap ${n}`).toContain(
-          `Bitmap ${n}`,
-        );
+      for (const authored of [
+        "Tangerine Fusion",
+        "Sage Foam",
+        "Quantum Foam",
+        "Metallic Foam",
+      ]) {
+        expect(bitmapNames, `should contain "${authored}"`).toContain(authored);
       }
     } finally {
       console.warn = origWarn;

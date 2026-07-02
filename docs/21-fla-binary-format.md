@@ -600,10 +600,16 @@ BomString displayName                    // library display name
 
 A reader keys the record by the `Media N` number parsed from the stream name and reads only through
 the display name: a frame sound's `soundId` (section 11) indexes this list to recover its library
-item, and a bitmap placement's `mediaId` (section 18.1) does the same. The trailing fields after the
-display name carry the author's original-asset path and per-media metadata (sample rate, timestamps);
-a writer that has no such source path emits a deterministic empty run there, which round-trips
-correctly because the reader never consumes it.
+item, and a bitmap placement's `mediaId` (section 18.1) does the same. The importer builds one
+`Media N → displayName` map per class — `CMediaSound` populates the sound table and `CMediaBits`
+populates the bitmap table — so an imported bitmap keeps its authored library name (e.g. `metal`,
+`ball.png`) instead of a generic `Bitmap N`; the `Bitmap N` label survives only as the fallback for
+a record with no decodable display name. Both classes share the `Media N` stream-name shape, so the
+scan discriminates them by their distinct CArchive backref tags (the `CMediaBits` tag found after the
+`CMediaBits` class declaration is excluded from the sound scan and vice versa). The trailing fields
+after the display name carry the author's original-asset path and per-media metadata (sample rate,
+timestamps); a writer that has no such source path emits a deterministic empty run there, which
+round-trips correctly because the reader never consumes it.
 
 ---
 

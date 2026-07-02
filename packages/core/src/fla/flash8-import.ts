@@ -2051,7 +2051,10 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
       continue;
     }
     if (!decoded) continue;
-    const bitmapItem = createBitmap(`Bitmap ${mediaNum}`, {
+    // Prefer the authored library display name from the CMediaBits catalog;
+    // fall back to a generic "Bitmap N" when the record carried no name.
+    const bitmapName = contents.bitmaps.get(mediaNum)?.name ?? `Bitmap ${mediaNum}`;
+    const bitmapItem = createBitmap(bitmapName, {
       dataUri: decodedBitmapToDataUri(decoded),
       originalWidth: decoded.width,
       originalHeight: decoded.height,

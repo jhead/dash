@@ -672,6 +672,17 @@ export interface Fla8VideoInfo {
   readonly name: string;
 }
 
+export interface Fla8BitmapInfo {
+  /**
+   * Library display name of the bitmap item, decoded from the BomString that
+   * follows the "Media N" stream name in each CMediaBits Contents-stream object
+   * (same body shape as CMediaSound — see docs/21 §8.10 and the writer's
+   * `write/contents-write.ts writeMediaCatalog`). Without this the importer
+   * renames every bitmap to a generic "Bitmap N".
+   */
+  readonly name: string;
+}
+
 export interface Fla8FontInfo {
   /**
    * Library display name of the font item (usually the font family name,
@@ -713,6 +724,8 @@ export interface Fla8ContentsInfo {
   readonly sounds: Map<number, Fla8SoundInfo>;
   /** video/media stream number -> info (for "Video N" or "Media N" FLV entries) */
   readonly videos: Map<number, Fla8VideoInfo>;
+  /** bitmap media stream number -> info (from CMediaBits catalog records) */
+  readonly bitmaps: Map<number, Fla8BitmapInfo>;
   /** font stream number -> info (for "Font N" embedded font library entries) */
   readonly fonts: Map<number, Fla8FontInfo>;
 }
@@ -3623,6 +3636,35 @@ function registerCMediaSoundObject(
   }
 }
 
+/**
+ * Attempt to read a CMediaBits object body at `bodyStart` in the Contents
+ * stream and register the bitmap in `out` if the body looks valid. Shares the
+ * exact body layout of a CMediaSound record (see `registerCMediaSoundObject`):
+ *   [schema u8][nameLen u8]["Media N" UTF-16 LE][BomString displayName]...
+ * The BomString display name is the authored library name (e.g. "ball.png").
+ */
+function registerCMediaBitsObject(
+  bytes: Uint8Array,
+  bodyStart: number,
+  out: Map<number, Fla8BitmapInfo>,
+): void {
+  if (bodyStart + 2 > bytes.length) return;
+  const nameLen = bytes[bodyStart + 1]!;
+  if (nameLen < 7 || nameLen > 14) return;
+  const nameEnd = bodyStart + 2 + nameLen * 2;
+  if (nameEnd > bytes.length) return;
+  const streamName = utf16le(bytes.subarray(bodyStart + 2, nameEnd));
+  const m = /^Media (\d+)$/.exec(streamName);
+  if (!m) return;
+  const num = parseInt(m[1]!, 10);
+  const s = tryReadBomStringAt(bytes, nameEnd);
+  if (!s) return;
+  const name = s.value;
+  if (name.length > 0 && !name.includes("/") && !name.startsWith(".\\")) {
+    if (!out.has(num)) out.set(num, { name });
+  }
+}
+
 export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
   const formatVersion = bytes.length > 0 ? bytes[0]! : 0;
   const unicode = formatVersion >= 0x38; // MX2004 and later store UTF-16 strings
@@ -4058,19 +4100,23 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     }
   }
 
-    // --- (b) CMediaSound objects referencing "Media N" stream names ---
-    // Flash 8/CS-era FLAs (like Magnet.fla) use CMediaSound class objects in the
-    // Contents stream instead of "Sound N" OLE stream names. Each CMedia body:
+    // --- (b) CMediaSound / CMediaBits objects referencing "Media N" names ---
+    // Flash 8/CS-era FLAs (like Magnet.fla) use CMediaSound (sounds) and
+    // CMediaBits (bitmaps) class objects in the Contents stream instead of
+    // "Sound N" OLE stream names. Both share the same body shape:
     //   [schema u8][nameLen u8]["Media N" UTF-16 LE][BomString displayName]...
+    // (see docs/21 §8.10 and the writer's `write/contents-write.ts`).
     //
-    // We discover the CMediaSound CArchive class backref tag empirically:
-    //   1. Find the "CMediaSound" FFFF class declaration.
-    //   2. Register the first (inline) body that immediately follows.
-    //   3. Discover the CMediaBits backref: first backref-tagged "Media N" body
-    //      after the "CMediaBits" FFFF declaration.
-    //   4. Discover the CMediaSound backref: first backref-tagged "Media N" body
-    //      after the inline sound body whose tag != CMediaBits backref.
-    //   5. Scan all [cmsSoundBackref][schema=6][nameLen]["Media N"][BomString].
+    // We discover each CMedia* CArchive class backref tag empirically:
+    //   1. Find the "CMediaBits"/"CMediaSound" FFFF class declaration.
+    //   2. Register the first (inline) body that immediately follows the decl.
+    //   3. Discover its backref tag: the first backref-tagged "Media N" body
+    //      after that class declaration.
+    //   4. Scan all [backref][schema=6][nameLen]["Media N"][BomString] bodies.
+    // The CMediaBits catalog carries the authored bitmap library display names
+    // (e.g. "ball.png") so imported bitmaps keep their names instead of being
+    // renamed to a generic "Bitmap N".
+    const bitmaps = new Map<number, Fla8BitmapInfo>();
     if (unicode) {
       // Find a FFFF class declaration for the given ASCII class name.
       const findCMediaClassDecl = (name: string): number => {
@@ -4118,19 +4164,36 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
         return -1;
       };
 
+      // -- CMediaBits (bitmap) catalog --
+      // "CMediaBits" is 10 ASCII chars, so the inline body starts at
+      // declPos + FFFF(2) + schema(2) + nameLen(2) + name(10).
+      const cmBitsDeclPos = findCMediaClassDecl("CMediaBits");
+      const cmBitsBodyStart = cmBitsDeclPos >= 0 ? cmBitsDeclPos + 6 + 10 : -1;
+      const cmBitsBackref =
+        cmBitsDeclPos >= 0 ? findFirstCMediaBackref(cmBitsBodyStart, -1) : -1;
+      if (cmBitsDeclPos >= 0) {
+        registerCMediaBitsObject(bytes, cmBitsBodyStart, bitmaps);
+        if (cmBitsBackref >= 0) {
+          const cmbTag: number[] = [cmBitsBackref & 0xff, (cmBitsBackref >> 8) & 0xff];
+          let pos = cmBitsBodyStart;
+          for (;;) {
+            const idx = findBytes(bytes, cmbTag, pos);
+            if (idx < 0) break;
+            pos = idx + 1;
+            registerCMediaBitsObject(bytes, idx + 2, bitmaps);
+          }
+        }
+      }
+
+      // -- CMediaSound (sound) catalog --
       const cmsDeclPos = findCMediaClassDecl("CMediaSound");
       if (cmsDeclPos >= 0) {
         // First object body is inlined right after: FFFF(2)+schema(2)+nameLen(2)+name(11)
         const cmsBodyStart = cmsDeclPos + 6 + 11;
         registerCMediaSoundObject(bytes, cmsBodyStart, sounds);
 
-        // Discover the CMediaBits (bitmap) backref to exclude it.
-        const cmBitsDeclPos = findCMediaClassDecl("CMediaBits");
-        const cmBitsBackref =
-          cmBitsDeclPos >= 0 ? findFirstCMediaBackref(cmBitsDeclPos + 6 + 10, -1) : -1;
-
         // CMediaSound backref = first backref-tagged CMedia body after inline body
-        // that differs from the CMediaBits backref.
+        // that differs from the CMediaBits backref (which shares the "Media N" shape).
         const cmsSoundBackref = findFirstCMediaBackref(cmsBodyStart, cmBitsBackref);
 
         if (cmsSoundBackref >= 0) {
@@ -4252,6 +4315,7 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     symbols,
     sounds,
     videos,
+    bitmaps,
     fonts,
   };
 }
