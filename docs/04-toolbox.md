@@ -136,17 +136,31 @@ building on the eraser modes + Faucet of task 1387):
   Straighten reshape the selected raw shape via `smoothPath` / `simplifyPath`
   (`tools/selectionSmooth.ts`).
 - **Rectangle** — the numeric **corner radius** is honored on commit
-  (`createRoundedRectShape`); 0 = square corners. (The Alt-click exact-dimensions dialog
-  remains a follow-up.)
+  (`createRoundedRectShape`); 0 = square corners. **Alt-clicking** the stage with the
+  Rectangle (or Oval) tool opens an **exact-dimensions dialog** (width / height, plus
+  corner radius for the Rectangle) instead of starting a drag; on OK the shape is created
+  at the click point at the entered size (task 1422, `StageArea` `exactSizeDialog`).
 - **Brush** — nib **shape** (round/square) is honored in the brush commit
   (`brushPointsToShape`). **Paint mode** (Normal/Fills/Behind/Selection/Inside), **Lock Fill**,
   **Pressure**, **Tilt** are exposed and persisted; the planar-merge honoring of the
   non-Normal paint modes and tablet pressure/tilt is a follow-up on the merge/pointer path.
-- **Paint Bucket** — **Gap Size** (Don't/Small/Medium/Large) and **Lock Fill** are exposed and
-  persisted; the flood-fill honoring lives with the Paint Bucket fill path (task 1389).
+- **Paint Bucket** — **Gap Size** (Don't/Small/Medium/Large) and **Lock Fill** are now honored
+  by the fill path (task 1422, building on task 1389's region fill):
+  - **Gap Size** maps to a pixel tolerance (`gapSizeToPx` — small 4 / medium 8 / large 16 px,
+    zoom-adjusted). When a click lands in no enclosed region, `bucketFillRegion` bridges the
+    outline's nearby open endpoints (invisible fill-only boundary edges, `gapBridges`) and
+    retries, so a fill closes small breaks in an outline before flooding. `none` = never bridge.
+  - **Lock Fill** stamps a gradient with an explicit `matrix` anchored to a FIXED reference
+    rect (the first region filled while locked, held in `StageArea` `lockedFillRectRef`), via
+    `lockGradientToRect`, so consecutive locked fills share one gradient frame and read as a
+    single continuous fill. When off, each fill auto-fits its own region. Solid fills are
+    unaffected; bitmap-fill continuity remains a follow-up.
 - **Pen** — the sub-tool selector (Pen / Add Anchor `=` / Delete Anchor `-` / Convert Anchor
-  `C`, keys bound while the Pen tool is active) sets `penSubTool`; the anchor add/delete/convert
-  editing behaviors on the path are a follow-up.
+  `C`, keys bound while the Pen tool is active) sets `penSubTool`, and the editing behaviors are
+  now honored (task 1422, `tools/penEdit.ts` wired in `StageArea`): with a sub-tool active a
+  click on an existing shape **adds** an anchor by splitting the nearest segment (de Casteljau
+  for curves), **deletes** the nearest anchor and rejoins its neighbors, or **converts** the
+  nearest anchor between corner (straight) and smooth (curved) — instead of drawing a new path.
 
 ## Customize Tools Panel
 

@@ -4061,6 +4061,9 @@ export function Shell(): React.ReactElement {
                 brushSize={toolState.brushSize}
                 brushShape={toolState.brushShape}
                 rectCornerRadius={toolState.rectCornerRadius}
+                bucketGapSize={toolState.bucketGapSize}
+                bucketLockFill={toolState.bucketLockFill}
+                penSubTool={toolState.penSubTool}
                 eraserSize={toolState.eraserSize}
                 eraserMode={toolState.eraserMode}
                 eraserFaucet={toolState.eraserFaucet}

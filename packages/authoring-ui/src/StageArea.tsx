@@ -3,8 +3,9 @@ import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
 import { createOvalShape, createRectShape, createRoundedRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, splitOnMove as planarSplitOnMove, planarEraseShape, faucetEraseShape, isMergeableShape, hitTestPoint, type EraserMode } from "@flash/core";
-import { bucketFillRegion, sampleAttributeAt } from "./tools/fillSample.js";
-import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
+import { bucketFillRegion, sampleAttributeAt, gapSizeToPx, lockGradientToRect, type LockFillRect } from "./tools/fillSample.js";
+import { addAnchorAt, deleteAnchorAt, convertAnchorAt } from "./tools/penEdit.js";
+import type { FreeTransformMode, PolyStarOptions, PaintBucketGapSize, PenSubTool } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
 import { isTimelinePanelFocused } from "./dispatch/timelineFocus.js";
@@ -931,6 +932,12 @@ export interface StageAreaProps {
   brushShape?: "round" | "square";
   /** Rectangle corner radius in px (0 = square). Default 0. */
   rectCornerRadius?: number;
+  /** Paint Bucket Gap Size — close small outline gaps before flooding. Default 'none'. */
+  bucketGapSize?: PaintBucketGapSize;
+  /** Paint Bucket Lock Fill — continue a gradient across fills. Default false. */
+  bucketLockFill?: boolean;
+  /** Pen active sub-tool (pen/add-anchor/delete-anchor/convert-anchor). Default 'pen'. */
+  penSubTool?: PenSubTool;
   eraserSize?: number;
   /** Flash 8 eraser mode (planar path, flag ON): normal/fills/lines/selected/inside. */
   eraserMode?: EraserMode;
@@ -1642,6 +1649,9 @@ export function StageArea({
   brushSize = 8,
   brushShape = "round",
   rectCornerRadius = 0,
+  bucketGapSize = "none",
+  bucketLockFill = false,
+  penSubTool = "pen",
   eraserSize = 16,
   eraserMode = "normal",
   eraserFaucet = false,
@@ -1713,6 +1723,15 @@ export function StageArea({
   // Drawing tool state
   const [drawPreview, setDrawPreview] = useState<DrawPreview | null>(null);
   const drawStartRef = useRef<{ stageX: number; stageY: number } | null>(null);
+  // Rectangle/Oval Alt-click exact-dimensions dialog (task 1422).
+  const [exactSizeDialog, setExactSizeDialog] = useState<{
+    tool: "rect" | "oval";
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    cornerRadius: number;
+  } | null>(null);
   const selectionDragRef = useRef<{
     shapeId: string;
     startMouseX: number;
@@ -1836,6 +1855,14 @@ export function StageArea({
     origAnchorX: number;
     origAnchorY: number;
   } | null>(null);
+
+  // Paint Bucket Lock Fill anchor: the reference rect (first region filled while
+  // Lock Fill is ON) that subsequent locked fills share so the gradient reads as
+  // one continuous fill. Cleared whenever Lock Fill is toggled off.
+  const lockedFillRectRef = useRef<LockFillRect | null>(null);
+  useEffect(() => {
+    if (!bucketLockFill) lockedFillRectRef.current = null;
+  }, [bucketLockFill]);
 
   // Pencil tool state
   const pencilPointsRef = useRef<Point[]>([]);
@@ -2049,6 +2076,26 @@ export function StageArea({
         return;
       }
 
+      // Rectangle / Oval Alt-click: open the exact-dimensions dialog at the click
+      // point instead of starting a drag (task 1422 / docs/04). The shape is
+      // created on confirm with the entered width/height (+ corner radius).
+      if (
+        e.button === 0 && e.altKey &&
+        (activeTool === "rect" || activeTool === "oval")
+      ) {
+        e.preventDefault();
+        const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        setExactSizeDialog({
+          tool: activeTool,
+          x: stageX,
+          y: stageY,
+          width: 100,
+          height: 100,
+          cornerRadius: activeTool === "rect" ? (rectCornerRadius || 0) : 0,
+        });
+        return;
+      }
+
       // Drawing tools: start a draw gesture
       if (e.button === 0 && activeTool && SHAPE_DRAW_TOOLS.has(activeTool as "oval" | "rect" | "line")) {
         e.preventDefault();
@@ -2140,6 +2187,20 @@ export function StageArea({
       if (e.button === 0 && activeTool === "fill") {
         e.preventDefault();
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+        // Paint Bucket Gap Size: close small outline breaks before flooding.
+        const gapPx = gapSizeToPx(bucketGapSize) / internalZoom;
+        // Paint Bucket Lock Fill: for a gradient, anchor the fill to a fixed
+        // reference rect (set on the first locked fill) so consecutive locked
+        // fills share one gradient frame → a single continuous fill.
+        const applyLockFill = (obj: ShapeDisplayObject, fill: Fill | null): Fill | null => {
+          if (!bucketLockFill || !fill) return fill;
+          if (fill.type !== "linear-gradient" && fill.type !== "radial-gradient") return fill;
+          if (!lockedFillRectRef.current) {
+            const b = transformedShapeBounds(obj);
+            lockedFillRectRef.current = { x: b.x, y: b.y, width: b.width, height: b.height };
+          }
+          return lockGradientToRect(fill, lockedFillRectRef.current);
+        };
         if (onShapeUpdate) {
           // Only shapes whose bbox contains the point are candidates (cheap
           // pre-filter); topmost first.
@@ -2157,8 +2218,9 @@ export function StageArea({
               const next = bucketFillRegion(
                 obj.shape,
                 { x: stageX, y: stageY },
-                propFill ?? null,
+                applyLockFill(obj, propFill ?? null),
                 obj.shape.id,
+                gapPx,
               );
               if (next) {
                 onShapeUpdate(obj.id, next);
@@ -2171,8 +2233,9 @@ export function StageArea({
             // real point-in-geometry hit test, then recolor all paths. This still
             // fixes the "clicked in empty bbox" bug (bbox alone no longer matches).
             if (hitTestPoint(obj, stageX, stageY)) {
-              if (propFill) {
-                const newPaths = obj.shape.paths.map((p) => ({ ...p, fill: propFill }));
+              const lockedFill = applyLockFill(obj, propFill ?? null);
+              if (lockedFill) {
+                const newPaths = obj.shape.paths.map((p) => ({ ...p, fill: lockedFill }));
                 onShapeUpdate(obj.id, { ...obj.shape, paths: newPaths });
               } else {
                 const newPaths = obj.shape.paths.map((p) => {
@@ -2354,6 +2417,34 @@ export function StageArea({
       if (e.button === 0 && activeTool === "pen") {
         e.preventDefault();
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
+
+        // Pen sub-tools (task 1422): Add / Delete / Convert Anchor edit an
+        // EXISTING path rather than drawing a new one. Operate in the clicked
+        // shape's own space (offset shapes translate the click by -x,-y).
+        if (penSubTool !== "pen" && onShapeUpdate) {
+          const tolPx = 6 / internalZoom;
+          const candidates = [...shapeDisplayObjects].reverse().filter((obj) => {
+            const b = transformedShapeBounds(obj);
+            const pad = tolPx;
+            return (
+              stageX >= b.x - pad && stageX <= b.x + b.width + pad &&
+              stageY >= b.y - pad && stageY <= b.y + b.height + pad
+            );
+          });
+          for (const obj of candidates) {
+            const local = { x: stageX - (obj.x ?? 0), y: stageY - (obj.y ?? 0) };
+            let edited: Shape | null = null;
+            if (penSubTool === "add-anchor") edited = addAnchorAt(obj.shape, local, tolPx);
+            else if (penSubTool === "delete-anchor") edited = deleteAnchorAt(obj.shape, local, tolPx);
+            else if (penSubTool === "convert-anchor") edited = convertAnchorAt(obj.shape, local, tolPx);
+            if (edited) {
+              onShapeUpdate(obj.id, edited);
+              return;
+            }
+          }
+          return;
+        }
+
         // Check if clicking near the first anchor to close the path
         if (penState.anchors.length >= 2) {
           const first = penState.anchors[0];
@@ -2893,7 +2984,7 @@ export function StageArea({
         setSelIsMarqueeSelecting(true);
       }
     },
-    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, partialSelectEnabled, onSubSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, lassoPolygonMode, lassoMagicWand, magicWandThreshold, magicWandSmoothing, bitmapDisplayObjects, bitmapLibraryItems, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, otherLayerSelectables, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick, simpleButtonsEnabled, hoveredButtonId]
+    [spaceHeld, activeTool, internalPanX, internalPanY, internalZoom, toStageCoords, shapeDisplayObjects, onShapeSelect, partialSelectEnabled, onSubSelect, onShapeCreated, selectedShapeId, selectedShapeIds, textDisplayObjects, onTextPlace, penState, penSubTool, subselState, onShapeUpdate, onEyedropperSample, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, bucketGapSize, bucketLockFill, rectCornerRadius, lassoPolygonMode, lassoMagicWand, magicWandThreshold, magicWandSmoothing, bitmapDisplayObjects, bitmapLibraryItems, lassoPolyVertices, freeTransformMode, parentSceneGraph, onExitSymbolEdit, symbolInstanceDisplayObjects, otherLayerSelectables, library, editMultipleFrames, onionFrames, onEditMultipleFrameClick, simpleButtonsEnabled, hoveredButtonId]
   );
 
   const onMouseMove = useCallback(
@@ -5430,6 +5521,100 @@ export function StageArea({
             }
           }}
         />
+      )}
+
+      {/* Rectangle / Oval exact-dimensions dialog (Alt-click; task 1422). */}
+      {exactSizeDialog && (
+        <div
+          role="dialog"
+          aria-label={exactSizeDialog.tool === "rect" ? "Rectangle Settings" : "Oval Settings"}
+          data-testid="exact-size-dialog"
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            zIndex: 1000,
+            background: themeChrome.panelBg,
+            border: `1px solid ${themeChrome.separator}`,
+            borderRadius: 4,
+            padding: 12,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            color: themeChrome.textDefault,
+            fontSize: 11,
+            minWidth: 180,
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div style={{ fontWeight: "bold", marginBottom: 8 }}>
+            {exactSizeDialog.tool === "rect" ? "Rectangle Settings" : "Oval Settings"}
+          </div>
+          <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span>Width:</span>
+            <input
+              type="number"
+              data-testid="exact-size-width"
+              min={1}
+              value={exactSizeDialog.width}
+              onChange={(e) =>
+                setExactSizeDialog((prev) => prev && { ...prev, width: Number(e.target.value) })
+              }
+              style={{ width: 80 }}
+            />
+          </label>
+          <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span>Height:</span>
+            <input
+              type="number"
+              data-testid="exact-size-height"
+              min={1}
+              value={exactSizeDialog.height}
+              onChange={(e) =>
+                setExactSizeDialog((prev) => prev && { ...prev, height: Number(e.target.value) })
+              }
+              style={{ width: 80 }}
+            />
+          </label>
+          {exactSizeDialog.tool === "rect" && (
+            <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span>Corner radius:</span>
+              <input
+                type="number"
+                data-testid="exact-size-radius"
+                min={0}
+                value={exactSizeDialog.cornerRadius}
+                onChange={(e) =>
+                  setExactSizeDialog((prev) => prev && { ...prev, cornerRadius: Math.max(0, Number(e.target.value)) })
+                }
+                style={{ width: 80 }}
+              />
+            </label>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 10 }}>
+            <button type="button" onClick={() => setExactSizeDialog(null)}>Cancel</button>
+            <button
+              type="button"
+              data-testid="exact-size-ok"
+              onClick={() => {
+                const d = exactSizeDialog;
+                const w = Math.max(1, d.width);
+                const h = Math.max(1, d.height);
+                let shape: Shape;
+                if (d.tool === "oval") {
+                  shape = createOvalShape(d.x, d.y, d.x + w, d.y + h, null, null);
+                } else if (d.cornerRadius > 0) {
+                  shape = createRoundedRectShape(d.x, d.y, w, h, d.cornerRadius, null, null);
+                } else {
+                  shape = createRectShape(d.x, d.y, d.x + w, d.y + h, null, null);
+                }
+                onShapeCreated?.(shape, 0, 0);
+                setExactSizeDialog(null);
+              }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

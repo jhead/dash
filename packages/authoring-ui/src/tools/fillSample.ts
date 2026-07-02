@@ -19,7 +19,7 @@
  * space — see engine/planar/live.ts).
  */
 
-import type { Fill, Point, PlanarShape, Shape } from "@flash/core";
+import type { Fill, Point, PlanarShape, Shape, ShapePath } from "@flash/core";
 import {
   buildArrangementFromShapes,
   planarShapeToShape,
@@ -27,6 +27,18 @@ import {
   pickAt as planarPickAt,
   planar,
 } from "@flash/core";
+
+/** Paint Bucket Gap Size → gap-closing tolerance in px (0 = don't close gaps). */
+export function gapSizeToPx(
+  gap: "none" | "small" | "medium" | "large" | undefined,
+): number {
+  switch (gap) {
+    case "small": return 4;
+    case "medium": return 8;
+    case "large": return 16;
+    default: return 0;
+  }
+}
 
 /**
  * The connected region under the cursor: faces reachable from `startFace` across
@@ -57,6 +69,54 @@ function connectedRegion(ps: PlanarShape, startFace: number): Set<number> {
   return out;
 }
 
+/** Endpoints of every OPEN (non-closed) path — the candidate gap ends. */
+function openPathEndpoints(shape: Shape): Point[] {
+  const pts: Point[] = [];
+  for (const p of shape.paths) {
+    if (p.closed) continue;
+    pts.push(p.start);
+    if (p.segments.length > 0) {
+      pts.push(p.segments[p.segments.length - 1].to);
+    }
+  }
+  return pts;
+}
+
+/**
+ * Gap Size honoring: synthesize invisible bridge edges that close small breaks
+ * in an outline so a leaky region becomes enclosed and fillable. Each open-path
+ * endpoint is joined to its nearest OTHER open endpoint within `gapPx`. The
+ * bridges carry NO fill and NO stroke, so they only add a topological boundary
+ * (a straight fill edge across the gap) — they never render as a visible line,
+ * matching Flash's "Close … Gaps" behavior.
+ */
+function gapBridges(shape: Shape, gapPx: number): ShapePath[] {
+  if (gapPx <= 0) return [];
+  const pts = openPathEndpoints(shape);
+  const bridges: ShapePath[] = [];
+  const used = new Set<number>();
+  for (let i = 0; i < pts.length; i++) {
+    if (used.has(i)) continue;
+    let best = -1;
+    let bestD = gapPx;
+    for (let j = 0; j < pts.length; j++) {
+      if (j === i || used.has(j)) continue;
+      const d = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+      if (d > 0.0001 && d <= bestD) { bestD = d; best = j; }
+    }
+    if (best >= 0) {
+      used.add(i);
+      used.add(best);
+      bridges.push({
+        start: pts[i],
+        segments: [{ type: "line", to: pts[best] }],
+        closed: false,
+      });
+    }
+  }
+  return bridges;
+}
+
 /**
  * Paint-bucket a single enclosed region under `pt` (in the shape's own space).
  *
@@ -65,16 +125,29 @@ function connectedRegion(ps: PlanarShape, startFace: number): Set<number> {
  * no enclosed region under the point — the caller then leaves the shape untouched
  * and (if desired) tries the next shape. This fixes clicking in an empty part of
  * a shape's bbox and clicking a different region of the same object.
+ *
+ * `gapPx` (Paint Bucket Gap Size) closes small outline breaks before flooding:
+ * when the raw click lands in no enclosed region and `gapPx > 0`, the outline's
+ * open endpoints are bridged (see {@link gapBridges}) and the fill is retried.
  */
 export function bucketFillRegion(
   shape: Shape,
   pt: Point,
   fill: Fill | null,
   resultId: string = shape.id,
+  gapPx: number = 0,
 ): Shape | null {
   // Build a FRESH arrangement (not the memoized live map) — we mutate face fills.
-  const ps = buildArrangementFromShapes([shape]);
-  const face = planar.locateFace(ps, pt);
+  let ps = buildArrangementFromShapes([shape]);
+  let face = planar.locateFace(ps, pt);
+  if ((!face || face.unbounded) && gapPx > 0) {
+    // Gap Size: retry over an arrangement with the outline's gaps bridged.
+    const bridges = gapBridges(shape, gapPx);
+    if (bridges.length > 0) {
+      ps = buildArrangementFromShapes([{ ...shape, paths: [...shape.paths, ...bridges] }]);
+      face = planar.locateFace(ps, pt);
+    }
+  }
   if (!face || face.unbounded) return null;
 
   const region = connectedRegion(ps, face.id);
@@ -111,4 +184,62 @@ export function sampleAttributeAt(
   const key = planarPickAt(ps, pt, tolPx);
   if (!key) return null;
   return key.kind === "segment" ? "stroke" : "fill";
+}
+
+/** An axis-aligned reference rectangle for a locked gradient anchor. */
+export interface LockFillRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Paint Bucket Lock Fill honoring for gradient fills.
+ *
+ * Without Lock Fill each filled region auto-fits the gradient to its own
+ * bounding box (the renderer/encoder default when a gradient carries no
+ * `matrix`), so adjacent fills restart the gradient. With Lock Fill ON the
+ * gradient is stamped with an explicit `matrix` anchored to a FIXED reference
+ * rectangle (the first region filled while locked), so every subsequent locked
+ * fill shares one coordinate frame and the gradient reads as a single
+ * continuous fill spanning the objects.
+ *
+ * The matrix uses the shared SWF gradient-space convention honored by both the
+ * stage renderer (`engine/renderer.ts`) and the SWF encoder (`swf/shapes.ts`):
+ * a/b/c/d are 16.16-scale floats (screen-twips per gradient-twip; gradient space
+ * spans ±16384 twips) and tx/ty are in pixels. Solid/bitmap fills pass through
+ * unchanged (Lock Fill is a no-op for solids; bitmap continuity is a follow-up).
+ */
+export function lockGradientToRect(fill: Fill, rect: LockFillRect): Fill {
+  if (fill.type !== "linear-gradient" && fill.type !== "radial-gradient") {
+    return fill;
+  }
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const halfLen = Math.max(rect.width, rect.height, 1) / 2;
+  // Scale that maps ±16384 gradient twips onto ±halfLen px:
+  //   a * 16384 / 20 = halfLen  →  a = halfLen * 20 / 16384
+  const s = (halfLen * 20) / 16384;
+  if (fill.type === "linear-gradient") {
+    const rad = ((fill.angle ?? 0) * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    return {
+      ...fill,
+      matrix: {
+        a: cos * s,
+        b: sin * s,
+        c: -sin * s,
+        d: cos * s,
+        tx: cx,
+        ty: cy,
+      },
+    };
+  }
+  // radial: unit circle radius 16384 twips → centre (tx,ty) px, radius halfLen px.
+  return {
+    ...fill,
+    matrix: { a: s, b: 0, c: 0, d: s, tx: cx, ty: cy },
+  };
 }

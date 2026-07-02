@@ -1,10 +1,10 @@
 {
   "id": "1422-1twr0s-toolbox-paint-bucket-flood-fill-honoring-rectang",
   "title": "Toolbox: paint-bucket flood-fill honoring + Rectangle Alt-click dialog + Pen anchor editing (1388 deferred)",
-  "description": "Task 1388 deferred three tool behaviors whose UI options now exist but aren't fully honored: (a) paint-bucket Gap Size / Lock Fill flood-fill honoring (coordinate with task 1389 StageArea fill work); (b) Rectangle Alt-click exact-dimensions dialog; (c) Pen sub-tools \u2014 Add/Delete/Convert Anchor editing behaviors (bindings exist; editing ops don't). Implement in packages/authoring-ui. Acceptance: each behaves per Flash 8 docs/04-toolbox.md. Split into separate commits/tasks later if it grows.",
-  "status": "open",
+  "description": "Implemented all three deferred toolbox behaviors in packages/authoring-ui (build on 1388/1389).\n(a) Paint Bucket Gap Size + Lock Fill: bucketFillRegion gains gapPx (bridges nearby open outline endpoints via gapBridges, invisible fill-only boundary edges, then retries locate); gapSizeToPx maps small/medium/large=4/8/16px zoom-adjusted. Lock Fill stamps a gradient matrix anchored to a fixed reference rect (lockGradientToRect + StageArea lockedFillRectRef) for continuity.\n(b) Rectangle/Oval Alt-click exact-dimensions dialog: StageArea exactSizeDialog modal (width/height + corner radius for rect); creates shape at click on OK.\n(c) Pen Add/Delete/Convert Anchor editing: tools/penEdit.ts (addAnchorAt splits nearest segment w/ de Casteljau for curves; deleteAnchorAt removes anchor+rejoins; convertAnchorAt toggles corner<->smooth), wired in StageArea pen pointerdown gated on penSubTool.\nThreaded bucketGapSize/bucketLockFill/penSubTool props Shell->StageArea.\nVerify: pnpm --filter './packages/**' build exit 0. pnpm --filter @flash/authoring-ui test: 1285 tests pass (113 files); the single 'error' is the pre-existing classesPanel unhandled rejection (task 1423 hotfix), no new failures. New tests: fillSample.test.ts (+10: gap/lock) and penEdit.test.ts (8) all pass.\nDocs: docs/04-toolbox.md updated for the three now-honored behaviors.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-07-02T02:47:11Z",
-  "updated_at": "2026-07-02T02:47:11Z"
+  "updated_at": "2026-07-02T03:18:56Z"
 }
