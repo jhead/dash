@@ -39,11 +39,16 @@ function ceilDiv(a: number, b: number): number {
 /**
  * Serialize a set of named streams into a binary CFB container.
  *
- * The directory tree is built as a degenerate red-black tree: the root storage
- * points (childId) at the first stream, and every stream chains to the next via
- * its rightSibling pointer. The reader (`collectStreamEntries`) walks this
- * by sibling/child links and keys purely on stream name, so a linear chain is
- * sufficient and valid.
+ * The directory is emitted as a proper MS-CFB red-black tree (see
+ * `writeDirectory`): the root storage's `childId` points at the balanced tree of
+ * stream entries, whose `leftSibling`/`rightSibling` pointers form a binary
+ * search tree ordered by the [MS-CFB] §2.6.4 name comparison (UTF-16 length
+ * first, then case-insensitive uppercase codepoint order). This satisfies the
+ * lookup invariant that a strict CFB consumer (OLE32/MFC, real Flash 8) relies
+ * on when it walks the tree comparatively to `OpenStream("Contents")` — an
+ * unsorted chain would misdirect that walk into NOSTREAM. dash's own reader
+ * (`collectStreamEntries`) visits every sibling regardless of order, so it round-
+ * trips either shape.
  */
 export function writeCfb(streams: Map<string, Uint8Array>): Uint8Array {
   const entries: StreamEntry[] = [];
@@ -319,6 +324,30 @@ function buildHeader(opts: {
   return h;
 }
 
+/** Directory-entry color byte per [MS-CFB] §2.6.1: 0x00 = red, 0x01 = black. */
+const COLOR_RED = 0;
+const COLOR_BLACK = 1;
+
+/**
+ * MS-CFB directory name comparison ([MS-CFB] §2.6.4). Names are compared FIRST by
+ * their length in UTF-16 code units (shorter sorts first), then, for equal-length
+ * names, character by character on the UPPERCASE variant of each code unit. This
+ * is the ordering OLE32/MFC uses to walk the red-black tree when opening a stream
+ * by name, so the emitted tree must be a BST under exactly this comparator.
+ */
+export function cfbNameCompare(a: string, b: string): number {
+  if (a.length !== b.length) return a.length - b.length;
+  for (let i = 0; i < a.length; i++) {
+    const ca = a.charCodeAt(i);
+    const cb = b.charCodeAt(i);
+    if (ca === cb) continue;
+    const ua = String.fromCharCode(ca).toUpperCase().charCodeAt(0);
+    const ub = String.fromCharCode(cb).toUpperCase().charCodeAt(0);
+    if (ua !== ub) return ua - ub;
+  }
+  return 0;
+}
+
 function writeDirectory(
   buf: Uint8Array,
   entries: StreamEntry[],
@@ -332,6 +361,7 @@ function writeDirectory(
     idx: number,
     name: string,
     type: number,
+    color: number,
     childId: number,
     leftSib: number,
     rightSib: number,
@@ -348,7 +378,7 @@ function writeDirectory(
     dv.setUint16(base + chars * 2, 0, true); // NUL terminator
     dv.setUint16(base + 64, (chars + 1) * 2, true); // nameLen incl NUL, in bytes
     buf[base + 66] = type;
-    buf[base + 67] = 1; // color flag: 1 = black (valid for a degenerate tree)
+    buf[base + 67] = color; // 0 = red, 1 = black
     dv.setUint32(base + 68, leftSib, true);
     dv.setUint32(base + 72, rightSib, true);
     dv.setUint32(base + 76, childId, true);
@@ -358,15 +388,47 @@ function writeDirectory(
     dv.setUint32(base + 124, 0, true); // size high (v3 = 0)
   };
 
-  // Root entry (index 0) — its stream is the mini-stream.
-  const firstChild = entries.length > 0 ? 1 : NOSTREAM;
-  writeEntry(0, "Root Entry", DE_ROOT, firstChild, NOSTREAM, NOSTREAM, rootStartSector, rootStreamSize);
+  // ---- Build the red-black directory tree over the stream entries -----------
+  // Physical layout keeps the root at index 0 and each stream at index i+1 (so
+  // the stream-data/start-sector mapping is unchanged); only the tree POINTERS
+  // are derived from the sorted order. We sort the stream entries by the CFB
+  // name comparator, build a height-balanced BST (recursive middle), and color
+  // the deepest level red so the result is a valid red-black tree.
+  const n = entries.length;
+  const left = new Array<number>(n + 1).fill(NOSTREAM);
+  const right = new Array<number>(n + 1).fill(NOSTREAM);
+  const depth = new Array<number>(n + 1).fill(0);
 
-  // Stream entries (indices 1..N), chained as a linear right-sibling list.
-  for (let i = 0; i < entries.length; i++) {
+  // Sorted physical indices (1..n) by name.
+  const sorted = entries
+    .map((e, i) => ({ e, idx: i + 1 }))
+    .sort((a, b) => cfbNameCompare(a.e.name, b.e.name));
+
+  let maxDepth = 0;
+  const build = (lo: number, hi: number, d: number): number => {
+    if (lo > hi) return NOSTREAM;
+    const mid = (lo + hi) >> 1;
+    const node = sorted[mid]!.idx;
+    depth[node] = d;
+    if (d > maxDepth) maxDepth = d;
+    left[node] = build(lo, mid - 1, d + 1);
+    right[node] = build(mid + 1, hi, d + 1);
+    return node;
+  };
+  const treeRoot = n > 0 ? build(0, n - 1, 0) : NOSTREAM;
+
+  // Root entry (index 0) — its stream is the mini-stream; its child is the tree.
+  writeEntry(0, "Root Entry", DE_ROOT, COLOR_BLACK, treeRoot, NOSTREAM, NOSTREAM, rootStartSector, rootStreamSize);
+
+  // Stream entries (indices 1..N) with the BST sibling pointers and RB coloring.
+  // A recursive-middle balanced BST keeps every leaf within the bottom two
+  // levels, so coloring only the deepest-level nodes red (and never the tree
+  // root) yields equal black-height on every root-to-leaf path.
+  for (let i = 0; i < n; i++) {
     const e = entries[i]!;
     const idx = i + 1;
-    const rightSib = i + 1 < entries.length ? idx + 1 : NOSTREAM;
-    writeEntry(idx, e.name, DE_STREAM, NOSTREAM, NOSTREAM, rightSib, startSectorOf(e), e.data.length);
+    const isTreeRoot = idx === treeRoot;
+    const color = !isTreeRoot && depth[idx] === maxDepth && maxDepth > 0 ? COLOR_RED : COLOR_BLACK;
+    writeEntry(idx, e.name, DE_STREAM, color, NOSTREAM, left[idx]!, right[idx]!, startSectorOf(e), e.data.length);
   }
 }

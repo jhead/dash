@@ -111,8 +111,21 @@ streams are small and are stored this way; reading them through the main FAT yie
 bytes.
 
 Each directory entry is 128 bytes: a UTF-16 name at offset 0 of `(nameLen@64 - 2) / 2`
-characters, a type byte at 66, left, right, and child sibling pointers at 68, 72, and 76, the
-starting sector at 116, and the 64-bit size split across 120 and 124.
+characters, a type byte at 66, a colour byte at 67 (`0` red, `1` black), left, right, and child
+sibling pointers at 68, 72, and 76, the starting sector at 116, and the 64-bit size split across
+120 and 124.
+
+The directory entries are not a flat list: within each storage, the child entries form a
+**red-black tree** ([MS-CFB] §2.6.4) whose left/right pointers are a binary search tree ordered
+by the CFB **name comparison** — shorter UTF-16 names sort first, and equal-length names compare
+character-by-character on their uppercase (case-insensitive) form. The parent storage's child
+pointer (the root entry's `childId` for the top-level streams) points at the tree root. A strict
+consumer (OLE32/MFC, real Flash 8) looks a stream up by walking this tree comparatively — compare
+the target name to the node, descend left if smaller and right if larger — so the ordering must be
+correct or the walk misses the stream. A lenient reader (this repo's `ole.ts`, `fla_cfb.py`) can
+instead visit every sibling recursively, which is order-independent. The writer (`cfb-write.ts`)
+emits a balanced red-black tree so both kinds of consumer succeed; a degenerate/unsorted chain
+round-trips through the lenient reader but breaks the strict one.
 
 The streams a reader expects are `Contents`, the document catalog described in section 8; one
 `Page N <time>` stream per scene and one `Symbol N` or `S N <time>` stream per library symbol,
