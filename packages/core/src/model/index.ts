@@ -83,6 +83,7 @@ export {
   addDisplayObject,
   setKeyframeDisplayObjects,
   commitShapeToTimeline,
+  commitBrushStrokeToTimeline,
   removeDisplayObject,
   updateDisplayObject,
   convertToKeyframes,

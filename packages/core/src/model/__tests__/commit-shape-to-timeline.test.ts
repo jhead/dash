@@ -20,6 +20,7 @@ import type { DrawingObject, ShapeDisplayObject } from "../../engine/types.js";
 import { buildArrangementFromShapes, faceArea } from "../../engine/planar/index.js";
 import {
   commitShapeToTimeline,
+  commitBrushStrokeToTimeline,
   createFrame,
   createLayer,
   createTimeline,
@@ -225,5 +226,54 @@ describe("commitShapeToTimeline — draw-on-tween (does not corrupt the tween)",
     expect(after).not.toBeNull();
     // Tween type is preserved on the start keyframe.
     expect(kf0.tweenType).toBe("shape");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// commitBrushStrokeToTimeline — paint modes wired to the commit (task 1421)
+// ---------------------------------------------------------------------------
+
+describe("commitBrushStrokeToTimeline — brush paint modes", () => {
+  it("normal mode is identical to commitShapeToTimeline", () => {
+    const { timeline, layerId } = timelineWith([]);
+    const stroke = shapeObj("brush", rectShape("brush", 0, 0, 40, 40, BLUE));
+    const a = commitShapeToTimeline(timeline, layerId, 0, stroke);
+    const b = commitBrushStrokeToTimeline(timeline, layerId, 0, stroke, "normal");
+    expect(committedShapes(b, layerId).length).toBe(committedShapes(a, layerId).length);
+    expect(areaOfFill(committedShapes(b, layerId), BLUE)).toBeCloseTo(40 * 40, 0);
+  });
+
+  it("Paint Fills over empty canvas commits nothing (timeline unchanged)", () => {
+    const { timeline, layerId } = timelineWith([]);
+    const stroke = shapeObj("brush", rectShape("brush", 0, 0, 40, 40, BLUE));
+    const next = commitBrushStrokeToTimeline(timeline, layerId, 0, stroke, "fills");
+    expect(next).toBe(timeline); // no-op
+  });
+
+  it("Paint Behind paints only the empty portion over an existing fill", () => {
+    // Existing red rect (0,0)-(100,100); brush straddles it into empty space.
+    const { timeline, layerId } = timelineWith([
+      shapeObj("bg", rectShape("bg", 0, 0, 100, 100, RED)),
+    ]);
+    const stroke = shapeObj("brush", rectShape("brush", 50, 50, 100, 100, BLUE));
+    const next = commitBrushStrokeToTimeline(timeline, layerId, 0, stroke, "behind");
+    const shapes = committedShapes(next, layerId);
+    // The red fill is untouched (behind paints only in empty areas).
+    expect(areaOfFill(shapes, RED)).toBeCloseTo(100 * 100, 0);
+    // Blue only covers the L-shaped empty region: 100x100 straddle minus the
+    // 50x50 overlap that stays red = 10000 - 2500 = 7500.
+    expect(areaOfFill(shapes, BLUE)).toBeCloseTo(7500, 0);
+  });
+
+  it("Paint Fills paints only over the existing fill (top-wins cut)", () => {
+    const { timeline, layerId } = timelineWith([
+      shapeObj("bg", rectShape("bg", 0, 0, 100, 100, RED)),
+    ]);
+    const stroke = shapeObj("brush", rectShape("brush", 50, 50, 100, 100, BLUE));
+    const next = commitBrushStrokeToTimeline(timeline, layerId, 0, stroke, "fills");
+    const shapes = committedShapes(next, layerId);
+    // Blue only over the 50x50 overlap; the rest of red remains (10000 - 2500).
+    expect(areaOfFill(shapes, BLUE)).toBeCloseTo(2500, 0);
+    expect(areaOfFill(shapes, RED)).toBeCloseTo(7500, 0);
   });
 });

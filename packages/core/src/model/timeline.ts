@@ -2,7 +2,9 @@ import type { EaseCurve, Frame, LabelType, Layer, LayerType, Timeline } from "./
 import type { DisplayObject, ObjectAccessibility, ShapeDisplayObject } from "../engine/types.js";
 
 import type { FlashFilter } from "../engine/filters.js";
+import type { Point } from "../engine/types.js";
 import { planarMergeCommit } from "../engine/planar/merge.js";
+import { clipBrushStroke, type BrushPaintMode } from "../engine/planar/brushpaint.js";
 import { getGoverningKeyframe } from "./timeline-query.js";
 
 /** Widened update type that covers both shape transforms and text fields. */
@@ -1139,6 +1141,66 @@ export function commitShapeToTimeline(
   return mergedList
     ? setKeyframeDisplayObjects(timeline, layerId, frameIndex, mergedList as DisplayObject[])
     : addDisplayObject(timeline, layerId, frameIndex, shapeObj);
+}
+
+/**
+ * Brush-stroke commit honoring Flash 8 paint modes (Normal / Fills / Behind /
+ * Selection / Inside). The incoming ribbon is first CLIPPED to the region the
+ * mode allows (via {@link clipBrushStroke} on the planar face model), then folded
+ * into the layer exactly like {@link commitShapeToTimeline} (merge-on-commit).
+ *
+ * - "normal" behaves identically to {@link commitShapeToTimeline}.
+ * - The other modes may leave NOTHING to paint (e.g. Paint Fills over empty
+ *   canvas); in that case the timeline is returned UNCHANGED.
+ *
+ * @param paintMode    The active brush paint mode.
+ * @param selectedIds  Ids of currently-selected display objects (for "selection").
+ * @param startPoint   Stroke start point in stage space (for "inside").
+ */
+export function commitBrushStrokeToTimeline(
+  timeline: Timeline,
+  layerId: string,
+  frameIndex: number,
+  incoming: ShapeDisplayObject,
+  paintMode: BrushPaintMode,
+  selectedIds: readonly string[] = [],
+  startPoint: Point | null = null
+): Timeline {
+  if (paintMode === "normal") {
+    return commitShapeToTimeline(timeline, layerId, frameIndex, incoming);
+  }
+
+  const layer = timeline.layers.find((l) => l.id === layerId);
+  const kf = layer ? getGoverningKeyframe(layer, frameIndex) : undefined;
+  const existingObjs = (kf?.displayObjects ?? []).filter(
+    (o): o is ShapeDisplayObject => o.type === "shape"
+  );
+  const selSet = new Set(selectedIds);
+
+  const clipped = clipBrushStroke(
+    { shape: incoming.shape, x: incoming.x, y: incoming.y },
+    paintMode,
+    {
+      existing: existingObjs.map((o) => ({ shape: o.shape, x: o.x, y: o.y })),
+      selection: existingObjs
+        .filter((o) => selSet.has(o.id))
+        .map((o) => ({ shape: o.shape, x: o.x, y: o.y })),
+      startPoint,
+    }
+  );
+
+  // The mode masked the whole stroke away — paint nothing.
+  if (!clipped || clipped.paths.length === 0) return timeline;
+
+  // The clipped ribbon is in stage space (place at 0,0); merge it in normally.
+  const clippedObj: ShapeDisplayObject = {
+    ...incoming,
+    id: clipped.id,
+    shape: clipped,
+    x: 0,
+    y: 0,
+  };
+  return commitShapeToTimeline(timeline, layerId, frameIndex, clippedObj);
 }
 
 /**

@@ -372,13 +372,76 @@ function squareDabPath(cx: number, cy: number, half: number, fill: Fill): ShapeP
   };
 }
 
+/**
+ * A captured brush sample: stage position plus tablet pressure/tilt. `pressure`
+ * is the pointer pressure 0..1 (1 for a mouse); `tilt` is the normalized tilt
+ * magnitude 0..1 (0 for a mouse). See task 1421.
+ */
+interface BrushSample {
+  x: number;
+  y: number;
+  pressure: number;
+  tilt: number;
+}
+
+/**
+ * Read tablet PRESSURE (0..1) and normalized TILT magnitude (0..1) from a pointer
+ * event. The stage handlers are typed as `React.MouseEvent` but are wired to
+ * `onPointerDown/Move/Up`, so the runtime event is a PointerEvent — we read the
+ * pen fields through a cast. A mouse reports no meaningful pressure/tilt, so it
+ * returns full pressure (1) and no tilt (0); only pen/touch drive variation.
+ */
+function pointerPressureTilt(e: React.MouseEvent): { pressure: number; tilt: number } {
+  const pe = e as unknown as PointerEvent;
+  const isPen = pe.pointerType === "pen" || pe.pointerType === "touch";
+  const pressure =
+    isPen && typeof pe.pressure === "number" && pe.pressure > 0 ? pe.pressure : 1;
+  let tilt = 0;
+  if (isPen && (typeof pe.tiltX === "number" || typeof pe.tiltY === "number")) {
+    const tx = pe.tiltX ?? 0;
+    const ty = pe.tiltY ?? 0;
+    tilt = Math.min(1, Math.hypot(tx, ty) / 90);
+  }
+  return { pressure, tilt };
+}
+
+/**
+ * The effective half-width at one sample. When `varyWidth` is on, tablet pressure
+ * scales the nib (a light touch = a thin line, full press = the set size); tilt
+ * (when enabled) widens the nib modestly, mimicking a laid-over pen. When off,
+ * the nib is a constant `baseHalf`. Pressure never fully collapses the nib
+ * (floored at 15%) so a stroke is always visible.
+ */
+export function brushHalfAt(
+  s: { pressure?: number; tilt?: number },
+  baseHalf: number,
+  varyPressure: boolean,
+  varyTilt: boolean
+): number {
+  let scale = 1;
+  if (varyPressure) {
+    const p = Math.max(0, Math.min(1, s.pressure ?? 1));
+    scale *= 0.15 + 0.85 * p;
+  }
+  if (varyTilt) {
+    const t = Math.max(0, Math.min(1, s.tilt ?? 0));
+    scale *= 1 + 0.5 * t;
+  }
+  return baseHalf * scale;
+}
+
 function brushPointsToShape(
-  points: Point[],
+  points: readonly BrushSample[] | readonly Point[],
   brushSize: number,
   fill: Fill,
-  nib: "round" | "square" = "round"
+  nib: "round" | "square" = "round",
+  varyPressure = false,
+  varyTilt = false
 ): Shape {
-  const half = brushSize / 2;
+  const baseHalf = brushSize / 2;
+  const pts = points as readonly Partial<BrushSample>[] & readonly Point[];
+  const halfAt = (i: number): number =>
+    brushHalfAt(pts[i] ?? {}, baseHalf, varyPressure, varyTilt);
 
   // Single dab (click or near-zero drag): a round nib = a circle of diameter
   // brushSize centered on the point; a square nib = a square. Flash 8's brush is
@@ -386,6 +449,7 @@ function brushPointsToShape(
   if (points.length < 2) {
     if (points.length === 0) return { id: nextDrawId(), paths: [] };
     const p = points[0];
+    const half = halfAt(0);
     const dab = nib === "square" ? squareDabPath(p.x, p.y, half, fill) : circlePath(p.x, p.y, half, fill);
     return { id: nextDrawId(), paths: [dab] };
   }
@@ -393,9 +457,12 @@ function brushPointsToShape(
   const forward: Point[] = [];
   const backward: Point[] = [];
   const tangents: { x: number; y: number }[] = [];
+  const halves: number[] = [];
 
   for (let i = 0; i < points.length; i++) {
     const curr = points[i];
+    const half = halfAt(i);
+    halves.push(half);
     // Compute tangent direction
     const prev = points[Math.max(0, i - 1)];
     const next = points[Math.min(points.length - 1, i + 1)];
@@ -436,7 +503,7 @@ function brushPointsToShape(
       forward[forward.length - 1],
       backward[backward.length - 1],
       endDir,
-      half
+      halves[halves.length - 1]
     );
   }
 
@@ -450,7 +517,7 @@ function brushPointsToShape(
   if (nib !== "square") {
     const firstPt = points[0];
     const startDir = { x: -tangents[0].x, y: -tangents[0].y };
-    appendRoundCap(segments, firstPt, backward[0], forward[0], startDir, half);
+    appendRoundCap(segments, firstPt, backward[0], forward[0], startDir, halves[0]);
   }
 
   const path: ShapePath = {
@@ -857,7 +924,12 @@ export interface StageAreaProps {
   // Drawing tool props
   currentFrame?: number;
   shapeDisplayObjects?: ShapeDisplayObject[];
-  onShapeCreated?: (shape: Shape, x: number, y: number) => void;
+  onShapeCreated?: (
+    shape: Shape,
+    x: number,
+    y: number,
+    meta?: { brushStartPoint?: Point }
+  ) => void;
   selectedShapeId?: string | null;
   /** Full set of selected display object IDs (for multi-selection). */
   selectedShapeIds?: string[];
@@ -930,6 +1002,10 @@ export interface StageAreaProps {
   brushSize?: number;
   /** Brush nib shape (round/square). Default 'round'. */
   brushShape?: "round" | "square";
+  /** Vary nib width with tablet pressure (task 1421). Default false. */
+  brushPressure?: boolean;
+  /** Vary nib width with tablet tilt (task 1421). Default false. */
+  brushTilt?: boolean;
   /** Rectangle corner radius in px (0 = square). Default 0. */
   rectCornerRadius?: number;
   /** Paint Bucket Gap Size — close small outline gaps before flooding. Default 'none'. */
@@ -1648,6 +1724,8 @@ export function StageArea({
   pencilMode = "ink",
   brushSize = 8,
   brushShape = "round",
+  brushPressure = false,
+  brushTilt = false,
   rectCornerRadius = 0,
   bucketGapSize = "none",
   bucketLockFill = false,
@@ -1868,8 +1946,10 @@ export function StageArea({
   const pencilPointsRef = useRef<Point[]>([]);
   const [pencilPreviewPoints, setPencilPreviewPoints] = useState<Point[]>([]);
 
-  // Brush tool state
-  const brushPointsRef = useRef<Point[]>([]);
+  // Brush tool state. Points carry tablet PRESSURE (0..1) and TILT so the nib
+  // width can vary along the stroke (task 1421). `pressure` defaults to 1 for a
+  // mouse (no tablet); `tilt` is the normalized tilt magnitude 0..1.
+  const brushPointsRef = useRef<BrushSample[]>([]);
   const [brushPreviewPoints, setBrushPreviewPoints] = useState<Point[]>([]);
 
   // Eraser tool state
@@ -2113,11 +2193,11 @@ export function StageArea({
         return;
       }
 
-      // Brush tool: start capturing brush stroke
+      // Brush tool: start capturing brush stroke (with tablet pressure/tilt).
       if (e.button === 0 && activeTool === "brush") {
         e.preventDefault();
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
-        brushPointsRef.current = [{ x: stageX, y: stageY }];
+        brushPointsRef.current = [{ x: stageX, y: stageY, ...pointerPressureTilt(e) }];
         setBrushPreviewPoints([{ x: stageX, y: stageY }]);
         return;
       }
@@ -3077,12 +3157,12 @@ export function StageArea({
         return;
       }
 
-      // Brush tool: accumulate points
+      // Brush tool: accumulate points (with tablet pressure/tilt).
       if (activeTool === "brush" && brushPointsRef.current.length > 0) {
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
-        brushPointsRef.current.push({ x: stageX, y: stageY });
+        brushPointsRef.current.push({ x: stageX, y: stageY, ...pointerPressureTilt(e) });
         if (brushPointsRef.current.length % 3 === 0) {
-          setBrushPreviewPoints([...brushPointsRef.current]);
+          setBrushPreviewPoints(brushPointsRef.current.map((p) => ({ x: p.x, y: p.y })));
         }
         return;
       }
@@ -3760,9 +3840,19 @@ export function StageArea({
       // produces a round nib circle, not nothing).
       if (activeTool === "brush" && brushPointsRef.current.length >= 1) {
         const fillColor: Fill = propFill ?? { type: "solid", color: hexToColor(propStrokeColor) };
-        const shape = brushPointsToShape(brushPointsRef.current, brushSize, fillColor, brushShape);
+        const samples = brushPointsRef.current;
+        const shape = brushPointsToShape(
+          samples,
+          brushSize,
+          fillColor,
+          brushShape,
+          brushPressure,
+          brushTilt
+        );
+        // Stroke start point (stage space) drives the "Paint Inside" mode.
+        const start = samples[0];
         if (shape.paths.length > 0) {
-          onShapeCreated?.(shape, 0, 0);
+          onShapeCreated?.(shape, 0, 0, { brushStartPoint: { x: start.x, y: start.y } });
         }
         brushPointsRef.current = [];
         setBrushPreviewPoints([]);
@@ -3840,7 +3930,7 @@ export function StageArea({
       drawStartRef.current = null;
       setDrawPreview(null);
     },
-    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, brushShape, rectCornerRadius, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, partialSelectEnabled, onSubSelect, onSubSplitMove, internalZoom, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
+    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, brushShape, brushPressure, brushTilt, rectCornerRadius, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, partialSelectEnabled, onSubSelect, onSubSplitMove, internalZoom, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
   );
 
   // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place.

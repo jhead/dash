@@ -45,7 +45,7 @@ function translatePath(path: ShapePath, dx: number, dy: number): ShapePath {
 }
 
 /** Bake a display object's (x, y) offset into its shape geometry (stage space). */
-function toStageSpaceShape(obj: { shape: Shape; x: number; y: number }): Shape {
+export function toStageSpaceShape(obj: { shape: Shape; x: number; y: number }): Shape {
   return {
     id: obj.shape.id,
     paths: obj.shape.paths.map((p) => translatePath(p, obj.x, obj.y)),

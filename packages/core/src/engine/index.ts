@@ -111,6 +111,8 @@ export {
   planarEraseShape,
   faucetEraseShape,
   buildEraserStamp,
+  // Brush paint-mode compositing (Flash 8 Paint Fills/Behind/Selection/Inside).
+  clipBrushStroke,
 } from "./planar/index.js";
 export type {
   InputEdge,
@@ -127,6 +129,9 @@ export type {
   EraserMode,
   PlanarEraseOptions,
   PlanarEraseResult,
+  BrushPaintMode,
+  BrushPaintContext,
+  PlacedShape,
 } from "./planar/index.js";
 
 // Renderer

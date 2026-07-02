@@ -4,6 +4,7 @@ import {
   addDisplayObject,
   setKeyframeDisplayObjects,
   commitShapeToTimeline,
+  commitBrushStrokeToTimeline,
   removeDisplayObject,
   updateDisplayObject,
   livePlanarShape,
@@ -1485,7 +1486,7 @@ export function Shell(): React.ReactElement {
   // ---------------------------------------------------------------------------
 
   const handleShapeCreated = useCallback(
-    (shape: Shape, x: number, y: number) => {
+    (shape: Shape, x: number, y: number, meta?: { brushStartPoint?: { x: number; y: number } }) => {
       const layerId = timeline.layers[safeActiveLayerIndex]?.id;
       if (!layerId) return;
       // Re-create shape with tool colors applied
@@ -1585,11 +1586,36 @@ export function Shell(): React.ReactElement {
       // Object Drawing shapes (type:"drawing-object") always append discrete.
       // withTimelineLive reads the LIVE store present so back-to-back commits
       // accumulate (CLAUDE.md "MCP agent stale-closure bug").
+      //
+      // The BRUSH honors its paint mode (Normal/Fills/Behind/Selection/Inside,
+      // task 1421): non-Normal modes clip the stroke to a region derived from the
+      // existing art / selection / stroke-start before merging. Object Drawing
+      // brush strokes stay discrete (drawing-object bypasses the fold), so only
+      // merge-mode brush shapes take the paint-mode path.
+      if (activeTool === "brush" && obj.type === "shape") {
+        const brushMode = toolState.brushMode ?? "normal";
+        const start = meta?.brushStartPoint ?? null;
+        pushDoc(
+          withTimelineLive((t) =>
+            commitBrushStrokeToTimeline(
+              t,
+              layerId,
+              currentFrame,
+              obj,
+              brushMode,
+              selectedShapeIds,
+              start
+            )
+          )
+        );
+        return;
+      }
+
       pushDoc(
         withTimelineLive((t) => commitShapeToTimeline(t, layerId, currentFrame, obj))
       );
     },
-    [timeline, currentFrame, activeLayerIndex, toolState, pushDoc, withTimelineLive]
+    [timeline, currentFrame, activeLayerIndex, toolState, selectedShapeIds, pushDoc, withTimelineLive]
   );
 
   // Commit a merge-mode shape AS-IS (preserving its own fills/strokes) through
@@ -4060,6 +4086,8 @@ export function Shell(): React.ReactElement {
                 pencilMode={toolState.pencilMode}
                 brushSize={toolState.brushSize}
                 brushShape={toolState.brushShape}
+                brushPressure={toolState.brushPressure}
+                brushTilt={toolState.brushTilt}
                 rectCornerRadius={toolState.rectCornerRadius}
                 bucketGapSize={toolState.bucketGapSize}
                 bucketLockFill={toolState.bucketLockFill}

@@ -1,10 +1,10 @@
 {
   "id": "1421-1tp0ci-toolbox-honor-brush-paint-modes-tablet-pressure-",
   "title": "Toolbox: honor brush paint modes + tablet pressure/tilt in engine (1388 deferred)",
-  "description": "Task 1388 (commit 7c88b41) exposed + persisted brush paint mode (Normal/Fills/Behind/Selection/Inside) and Pressure/Tilt toggles in tool state, but the ENGINE does not yet honor non-Normal paint modes or tablet pressure/tilt when committing brush strokes (planar-merge / pointer path). Implement engine honoring in packages/core (planar/brush path) + wire the pointer pressure. Acceptance: painting with Behind/Fills/Selection/Inside modes composites correctly; pressure varies nib width. See docs/04-toolbox.md follow-ups.",
-  "status": "open",
+  "description": "Implemented engine honoring of brush paint modes + tablet pressure/tilt.\n\nCORE (packages/core):\n- engine/planar/brushpaint.ts: clipBrushStroke() clips the brush ribbon on the planar face model per mode \u2014 Fills (over existing fills), Behind (over empty), Selection (within selection), Inside (start-region-locked). Reuses buildArrangementFromShapes / locateFace / pointInFace / planarShapeToShape.\n- model/timeline.ts: commitBrushStrokeToTimeline() clips then folds via commitShapeToTimeline; normal delegates unchanged; a fully-masked stroke commits nothing.\n- engine/planar/merge.ts: exported toStageSpaceShape.\n- Exports wired through planar/index, engine/index, model/index.\n\nUI (packages/authoring-ui):\n- StageArea: brushPointsToShape now varies nib width per-sample; brushHalfAt (pressure floored 15%, tilt widens); pointerPressureTilt reads PointerEvent pressure/tiltX/tiltY; brush samples carry pressure/tilt; brushStartPoint threaded via onShapeCreated meta. New props brushPressure/brushTilt.\n- Shell: handleShapeCreated routes merge-mode brush strokes to commitBrushStrokeToTimeline with brushMode + selectedShapeIds + startPoint.\n\nTESTS:\n- core engine/__tests__/brush-paintmode.test.ts (10) \u2014 clip per mode + pressure width.\n- core model/__tests__/commit-shape-to-timeline.test.ts +4 \u2014 timeline wrapper (normal/fills/behind/no-op).\n- authoring-ui __tests__/brushPressure.test.ts (6) \u2014 brushHalfAt pressure/tilt gating.\n\nVERIFY: full ordered build exit 0. @flash/core 5764 passed/1 skipped. @flash/authoring-ui 1291 passed (exit 0). docs/04-toolbox.md updated.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-07-02T02:47:11Z",
-  "updated_at": "2026-07-02T02:47:11Z"
+  "updated_at": "2026-07-02T03:41:16Z"
 }

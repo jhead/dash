@@ -69,8 +69,17 @@ export {
   foldShapeIntoLayer,
   foldShapeIntoLayerCulled,
   planarMergeCommit,
+  toStageSpaceShape,
 } from "./merge.js";
 export type { FoldResult, CulledFoldResult, MergeableLike } from "./merge.js";
+
+// Brush paint-mode compositing (Flash 8 Paint Fills/Behind/Selection/Inside).
+export { clipBrushStroke } from "./brushpaint.js";
+export type {
+  BrushPaintMode,
+  BrushPaintContext,
+  PlacedShape,
+} from "./brushpaint.js";
 
 // P3 — live planar map + partial face/segment selection + split-on-move.
 export { livePlanarShape } from "./live.js";

@@ -81,7 +81,19 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   rasterizes the bitmap and feeds the result into the existing selection pipeline.
 - **Pen sub-tools**: Pen (add point on path), Add Anchor (`=`), Delete Anchor (`-`),
   Convert Anchor (`C`). Cursor feedback for closing paths / continuing.
-- **Brush paint modes**: Paint Normal, Paint Fills, Paint Behind, Paint Selection, Paint Inside.
+- **Brush paint modes** (honored on commit, task 1421): Paint Normal, Paint Fills, Paint
+  Behind, Paint Selection, Paint Inside. The stroke ribbon is clipped to a region derived
+  from the existing layer art before it merges — Fills = only over existing solid fills,
+  Behind = only over empty space, Selection = only within the current selection, Inside =
+  locked to the fill (or empty region) the stroke STARTED in. Realized on the planar face
+  model in `@flash/core` `engine/planar/brushpaint.ts` (`clipBrushStroke`); wired at commit
+  by `commitBrushStrokeToTimeline` (`model/timeline.ts`). A mode that masks the whole stroke
+  away (e.g. Paint Fills over empty canvas) commits nothing.
+- **Brush tablet Pressure / Tilt** (task 1421): when enabled, pointer pressure scales the nib
+  width along the stroke (light touch = thin, full press = the set size, floored at 15% so a
+  stroke is never invisible) and tilt widens the nib modestly. Captured from the PointerEvent
+  in `StageArea` (`pointerPressureTilt` → `brushHalfAt`); a mouse reports full pressure / no
+  tilt, so the toggles only affect pen/touch input.
 - **Eraser modes**: Erase Normal, Erase Fills, Erase Lines, Erase Selected Fills, Erase Inside.
   **Faucet** deletes an entire fill or stroke in one click. Double-click eraser = clear stage.
 - **Paint Bucket Gap Size** lets fills close small gaps in outlines; **Lock Fill** continues a
@@ -141,9 +153,10 @@ building on the eraser modes + Faucet of task 1387):
   corner radius for the Rectangle) instead of starting a drag; on OK the shape is created
   at the click point at the entered size (task 1422, `StageArea` `exactSizeDialog`).
 - **Brush** — nib **shape** (round/square) is honored in the brush commit
-  (`brushPointsToShape`). **Paint mode** (Normal/Fills/Behind/Selection/Inside), **Lock Fill**,
-  **Pressure**, **Tilt** are exposed and persisted; the planar-merge honoring of the
-  non-Normal paint modes and tablet pressure/tilt is a follow-up on the merge/pointer path.
+  (`brushPointsToShape`). **Paint mode** (Normal/Fills/Behind/Selection/Inside) is honored on
+  commit via `clipBrushStroke` + `commitBrushStrokeToTimeline` (task 1421); **Pressure** and
+  **Tilt** vary the nib width from the tablet PointerEvent (task 1421). **Lock Fill** (continue
+  a gradient/bitmap across strokes) is exposed and persisted; its honoring remains a follow-up.
 - **Paint Bucket** — **Gap Size** (Don't/Small/Medium/Large) and **Lock Fill** are now honored
   by the fill path (task 1422, building on task 1389's region fill):
   - **Gap Size** maps to a pixel tolerance (`gapSizeToPx` — small 4 / medium 8 / large 16 px,
