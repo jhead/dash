@@ -136,6 +136,22 @@ export function ClassesPanel({
   // the (about-to-be-pushed) doc yet.
   const vfsOpInFlightRef = useRef(0);
 
+  // True while the panel is mounted. Async reconciles (`syncToDoc`) and observed
+  // VFS writes (`observeVfsWrite`) resolve on a microtask that can land AFTER the
+  // Classes tab is closed (unmount) — most notably the unmount FLUSH itself kicks
+  // off an async `syncToDoc` whose `pushDoc` would otherwise run post-unmount
+  // ("Cannot update an unmounted root"). Every state push/setState that happens
+  // after an `await` is gated on this ref. The synchronous per-keystroke fold in
+  // `handleScriptChange` already captured the latest edit into `doc.asClasses`
+  // BEFORE unmount, so skipping the post-unmount reconcile loses no data.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Re-list the VFS into `paths` (and prune a stale selection).
   const refresh = useCallback(async (): Promise<readonly string[]> => {
     const vfs = vfsRef.current;
@@ -157,6 +173,11 @@ export function ClassesPanel({
     const vfs = vfsRef.current;
     if (!vfs) return;
     const { doc: nextDoc } = await syncDocFromVfs(docRef.current, vfs);
+    // The panel may have unmounted while the async reconcile was in flight (e.g.
+    // the unmount flush kicked this off). Pushing after unmount updates a
+    // torn-down root — bail out. The synchronous per-keystroke fold already put
+    // the latest edit in `doc.asClasses`, so nothing is lost.
+    if (!mountedRef.current) return;
     // syncDocFromVfs returns the SAME reference when nothing changed, so this
     // never churns history needlessly.
     if (nextDoc !== docRef.current) {
@@ -325,10 +346,16 @@ export function ClassesPanel({
     (p: Promise<void>): void => {
       p.then(
         () => {
+          // The write may resolve after the tab is closed; don't setState on an
+          // unmounted panel.
+          if (!mountedRef.current) return;
           if (quotaWarnedRef.current) quotaWarnedRef.current = false;
           setPersistWarning((prev) => (prev === null ? prev : null));
         },
-        reportVfsWriteError
+        (err: unknown) => {
+          if (!mountedRef.current) return;
+          reportVfsWriteError(err);
+        }
       );
     },
     [reportVfsWriteError]

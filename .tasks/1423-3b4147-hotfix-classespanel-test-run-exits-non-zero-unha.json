@@ -1,0 +1,10 @@
+{
+  "id": "1423-3b4147-hotfix-classespanel-test-run-exits-non-zero-unha",
+  "title": "HOTFIX: classesPanel test run exits non-zero \u2014 unhandled 'update unmounted root' + JSFL fetch rejection",
+  "description": "HOTFIX: classesPanel test run exited non-zero from ONE unhandled rejection 'Cannot update an unmounted root.' (ClassesPanel.tsx:165 pushDoc inside async syncToDoc, kicked off by the unmount flush / debounced reconcile, resolving AFTER unmount). Fix: added a mountedRef (set false in an unmount cleanup) and gated the post-await pushDoc in syncToDoc and the setPersistWarning callbacks in observeVfsWrite on it. Sync per-keystroke fold already captured edits pre-unmount, so no data loss. The alleged JSFL fetch rejection is NOT unhandled \u2014 runtime.ts _importRemoteUrl already try/catches fetch and returns the doc (only a console.warn). Evidence: pnpm --filter @flash/authoring-ui test EXIT=0 (111 files, 1263 tests, no Errors line); full ordered build EXIT=0.",
+  "status": "done",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-07-02T03:00:47Z",
+  "updated_at": "2026-07-02T03:08:54Z"
+}
