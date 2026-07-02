@@ -2,9 +2,9 @@
   "id": "1389-13cjpt-ui-stagearea-fill-sample-correctness-paint-bucke",
   "title": "UI: StageArea fill/sample correctness \u2014 paint bucket fills whole shape via bbox, eyedropper samples by shape not region, plus wheel/async footguns",
   "description": "packages/authoring-ui/src/StageArea.tsx interaction correctness. (1) Paint Bucket (:2094-2118) hit-tests with transformedShapeBounds (axis-aligned bbox) then applies the fill to ALL paths of the hit shape (hit.shape.paths.map) \u2014 clicking anywhere in a shape's bbox (even outside actual geometry or in a different enclosed region) recolors the whole object instead of the enclosed region under the cursor. Fix: use planar point-in-region pick to select the target face. (2) Eyedropper (:2122-2135) hit-tests by bbox then onEyedropperSample(hit.id); Shell.tsx:2712-2744 auto-switches Paint Bucket vs Ink Bottle by whether the shape HAS a fill, not by whether the click landed on stroke vs fill \u2014 docs/04 wants auto-switch keyed on the sampled attribute at the click location. (3) Magic-wand async select (:2152-2160) magicWandSelect(...).then(...) has no .catch() -> unhandled rejection on pointer-down if the bitmap decode rejects; add .catch that clears lasso state. (4) onWheel (:1936-1947, attached via React onWheel prop :4818) calls e.preventDefault() but React 17+ registers wheel as a passive root listener so preventDefault is a no-op (console warning + ancestor can scroll during wheel-zoom); attach a manual non-passive wheel listener via addEventListener({passive:false}). Confidence: confirmed (except onWheel visible impact needs-repro).",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-07-02T01:14:51Z",
-  "updated_at": "2026-07-02T01:14:51Z"
+  "updated_at": "2026-07-02T02:50:15Z"
 }

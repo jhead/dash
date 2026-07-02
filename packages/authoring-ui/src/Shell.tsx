@@ -2721,7 +2721,7 @@ export function Shell(): React.ReactElement {
   const selectedLayerIndex = safeActiveLayerIndex;
 
   const handleEyedropperSample = useCallback(
-    (shapeId: string) => {
+    (shapeId: string, sampled?: "fill" | "stroke") => {
       const shape = shapeDisplayObjects.find((s) => s.id === shapeId);
       if (!shape) return;
       const firstPath = shape.shape.paths[0];
@@ -2739,8 +2739,18 @@ export function Shell(): React.ReactElement {
           const { r, g, b } = newStroke.color;
           newStrokeColor = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
         }
-        // Auto-switch tool: sampled fill → paint bucket; sampled stroke only → ink bottle
-        const nextTool: ToolId = firstPath.fill ? "fill" : "ink-bottle";
+        // Auto-switch tool keyed on WHAT was under the cursor (task 1389 / docs/04):
+        // a click on a stroke → Ink Bottle, a click on a fill → Paint Bucket. When
+        // the click attribute is unknown (non-mergeable shape / bbox fallback), fall
+        // back to the shape's fill presence.
+        const nextTool: ToolId =
+          sampled === "stroke"
+            ? "ink-bottle"
+            : sampled === "fill"
+              ? "fill"
+              : firstPath.fill
+                ? "fill"
+                : "ink-bottle";
         return {
           ...prev,
           fill: newFill,

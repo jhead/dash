@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
-import { createOvalShape, createRectShape, createRoundedRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, splitOnMove as planarSplitOnMove, planarEraseShape, faucetEraseShape, isMergeableShape, type EraserMode } from "@flash/core";
+import { createOvalShape, createRectShape, createRoundedRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, splitOnMove as planarSplitOnMove, planarEraseShape, faucetEraseShape, isMergeableShape, hitTestPoint, type EraserMode } from "@flash/core";
+import { bucketFillRegion, sampleAttributeAt } from "./tools/fillSample.js";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
@@ -940,7 +941,12 @@ export interface StageAreaProps {
   /** Stroke opacity 0-100; 0 means no stroke */
   strokeAlpha?: number;
   fill?: Fill | null;
-  onEyedropperSample?: (shapeId: string) => void;
+  /**
+   * Eyedropper sampled a shape. `sampled` reports whether the click landed on a
+   * fill or a stroke at the click location (undefined when it could not be
+   * determined), so the caller can auto-switch to Paint Bucket vs Ink Bottle.
+   */
+  onEyedropperSample?: (shapeId: string, sampled?: "fill" | "stroke") => void;
   // Free Transform options
   freeTransformMode?: FreeTransformMode;
   /** Called when gradient transform tool drags a handle and updates the fill on a shape. */
@@ -1964,38 +1970,41 @@ export function StageArea({
     };
   }, [computeFitZoom, onZoomChange, onPanChange]);
 
-  // Mouse wheel → zoom centered on cursor
-  const onWheel = useCallback(
-    (e: React.WheelEvent<HTMLDivElement>) => {
+  // Mouse wheel → zoom centered on cursor.
+  //
+  // Task 1389: React 17+ registers `wheel` as a PASSIVE root listener, so calling
+  // e.preventDefault() from a React onWheel prop is a no-op (console warning +
+  // the page/ancestor scrolls during a wheel-zoom). Attach a manual NON-passive
+  // listener via addEventListener({ passive: false }) so preventDefault actually
+  // suppresses the scroll. The cursor anchor + previous zoom are captured here
+  // (synchronously, before the state update) so the pan-correction effect below
+  // keeps the point under the cursor fixed.
+  const wheelCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const prevWheelZoomRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const workArea = workAreaRef.current;
+    if (!workArea) return;
+    const onWheelNative = (e: WheelEvent) => {
       e.preventDefault();
+      const rect = workArea.getBoundingClientRect();
+      wheelCursorRef.current = {
+        x: e.clientX - rect.left - rect.width / 2,
+        y: e.clientY - rect.top - rect.height / 2,
+      };
+      prevWheelZoomRef.current = internalZoomRef.current;
       setInternalZoom((prevZoom) => {
         const direction: 1 | -1 = e.deltaY < 0 ? 1 : -1;
         const nextZoom = nearestZoomLevel(prevZoom, direction);
         if (nextZoom === prevZoom) return prevZoom;
         return nextZoom;
       });
-    },
-    []
-  );
+    };
+    workArea.addEventListener("wheel", onWheelNative, { passive: false });
+    return () => workArea.removeEventListener("wheel", onWheelNative);
+  }, []);
 
   // After wheel zoom, adjust pan to keep the cursor-point fixed and notify parent
-  const wheelCursorRef = useRef<{ x: number; y: number } | null>(null);
-  const prevWheelZoomRef = useRef<number | null>(null);
-
-  const onWheelCapture = useCallback(
-    (e: React.WheelEvent<HTMLDivElement>) => {
-      const workArea = workAreaRef.current;
-      if (!workArea) return;
-      const rect = workArea.getBoundingClientRect();
-      wheelCursorRef.current = {
-        x: e.clientX - rect.left - rect.width / 2,
-        y: e.clientY - rect.top - rect.height / 2,
-      };
-      prevWheelZoomRef.current = internalZoom;
-    },
-    [internalZoom]
-  );
-
   useEffect(() => {
     const cursor = wheelCursorRef.current;
     const prevZoom = prevWheelZoomRef.current;
@@ -2121,49 +2130,97 @@ export function StageArea({
         return;
       }
 
-      // Paint Bucket tool: click to apply fill to a shape
-      // propFill === null means "No Color" — remove the fill from the shape
+      // Paint Bucket tool: click to fill the ENCLOSED REGION under the cursor.
+      // propFill === null means "No Color" — remove the fill from that region.
+      // Task 1389: previously this hit-tested by axis-aligned bbox and repainted
+      // EVERY path of the shape, so clicking outside the geometry (but in the
+      // bbox) or in a different enclosed region recolored the whole object. We
+      // now pick the actual planar face under the point and recolor only its
+      // connected region.
       if (e.button === 0 && activeTool === "fill") {
         e.preventDefault();
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
-        const hit = [...shapeDisplayObjects].reverse().find((obj) => {
-          const bounds = transformedShapeBounds(obj);
-          return (
-            stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
-            stageY >= bounds.y && stageY <= bounds.y + bounds.height
-          );
-        });
-        if (hit && onShapeUpdate) {
-          if (propFill) {
-            // Apply the current fill to all paths
-            const newPaths = hit.shape.paths.map((p) => ({ ...p, fill: propFill }));
-            onShapeUpdate(hit.id, { ...hit.shape, paths: newPaths });
-          } else {
-            // No Color selected: remove fill from all paths
-            const newPaths = hit.shape.paths.map((p) => {
-              const { fill: _fill, ...rest } = p;
-              return rest as typeof p;
-            });
-            onShapeUpdate(hit.id, { ...hit.shape, paths: newPaths });
+        if (onShapeUpdate) {
+          // Only shapes whose bbox contains the point are candidates (cheap
+          // pre-filter); topmost first.
+          const candidates = [...shapeDisplayObjects].reverse().filter((obj) => {
+            const bounds = transformedShapeBounds(obj);
+            return (
+              stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
+              stageY >= bounds.y && stageY <= bounds.y + bounds.height
+            );
+          });
+          for (const obj of candidates) {
+            // Merged shapes are committed at (0,0) with geometry in stage space,
+            // so stage space == the shape's own space. Use the planar region fill.
+            if (isMergeableShape(obj.shape) && (obj.x ?? 0) === 0 && (obj.y ?? 0) === 0) {
+              const next = bucketFillRegion(
+                obj.shape,
+                { x: stageX, y: stageY },
+                propFill ?? null,
+                obj.shape.id,
+              );
+              if (next) {
+                onShapeUpdate(obj.id, next);
+                return;
+              }
+              // No region under the cursor for this shape — try the next one.
+              continue;
+            }
+            // Non-mergeable (gradient/bitmap fill, transformed): fall back to a
+            // real point-in-geometry hit test, then recolor all paths. This still
+            // fixes the "clicked in empty bbox" bug (bbox alone no longer matches).
+            if (hitTestPoint(obj, stageX, stageY)) {
+              if (propFill) {
+                const newPaths = obj.shape.paths.map((p) => ({ ...p, fill: propFill }));
+                onShapeUpdate(obj.id, { ...obj.shape, paths: newPaths });
+              } else {
+                const newPaths = obj.shape.paths.map((p) => {
+                  const { fill: _fill, ...rest } = p;
+                  return rest as typeof p;
+                });
+                onShapeUpdate(obj.id, { ...obj.shape, paths: newPaths });
+              }
+              return;
+            }
           }
         }
         return;
       }
 
-      // Eyedropper tool: click to sample fill/stroke from a shape
+      // Eyedropper tool: sample the fill/stroke of the shape under the cursor and
+      // report WHICH attribute (fill vs stroke) was under the click so the caller
+      // auto-switches to Paint Bucket vs Ink Bottle keyed on the click location
+      // (task 1389 / docs/04), not merely on whether the shape has a fill.
       if (e.button === 0 && activeTool === "eyedropper") {
         e.preventDefault();
         const { stageX, stageY } = toStageCoords(e.clientX, e.clientY);
-        const hit = [...shapeDisplayObjects].reverse().find((obj) => {
+        const candidates = [...shapeDisplayObjects].reverse().filter((obj) => {
           const bounds = transformedShapeBounds(obj);
           return (
             stageX >= bounds.x && stageX <= bounds.x + bounds.width &&
             stageY >= bounds.y && stageY <= bounds.y + bounds.height
           );
         });
-        if (hit) {
-          onEyedropperSample?.(hit.id);
+        let hitId: string | null = null;
+        let sampled: "fill" | "stroke" | undefined;
+        for (const obj of candidates) {
+          if (isMergeableShape(obj.shape) && (obj.x ?? 0) === 0 && (obj.y ?? 0) === 0) {
+            const s = sampleAttributeAt(obj.shape, { x: stageX, y: stageY }, 4 / internalZoom);
+            if (s) {
+              hitId = obj.id;
+              sampled = s;
+              break;
+            }
+          } else if (hitTestPoint(obj, stageX, stageY)) {
+            hitId = obj.id;
+            break;
+          }
         }
+        // Fallback: nothing matched the actual geometry — sample the topmost
+        // bbox candidate so the eyedropper stays forgiving near thin strokes.
+        if (!hitId && candidates.length > 0) hitId = candidates[0].id;
+        if (hitId) onEyedropperSample?.(hitId, sampled);
         return;
       }
 
@@ -2189,6 +2246,13 @@ export function StageArea({
                     else onShapeSelect?.(null);
                     setLassoPoints(polygon);
                   }
+                })
+                // Task 1389: a rejected bitmap decode (or a throw in the handler
+                // above) would otherwise surface as an unhandled promise rejection
+                // on pointer-down. Clear the in-progress lasso and log instead.
+                .catch((err) => {
+                  console.warn("[magic wand] selection failed:", err);
+                  setLassoPoints([]);
                 });
             } else {
               // Bitmap item not found — log for debugging
@@ -4867,8 +4931,6 @@ export function StageArea({
     <div
       ref={workAreaRef}
       style={workAreaStyle}
-      onWheelCapture={onWheelCapture}
-      onWheel={onWheel}
       onPointerDown={(e) => {
         // Capture the pointer so a drag that leaves the element still delivers
         // move/up here (robust off-element drags on both mouse and touch).

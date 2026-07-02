@@ -86,6 +86,18 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   **Faucet** deletes an entire fill or stroke in one click. Double-click eraser = clear stage.
 - **Paint Bucket Gap Size** lets fills close small gaps in outlines; **Lock Fill** continues a
   gradient/bitmap across multiple shapes.
+- **Paint Bucket / Eyedropper hit the actual region under the cursor, not the bbox
+  (task 1389).** The `StageArea` Paint Bucket ("fill") handler picks the planar face under
+  the click via `bucketFillRegion` (`authoring-ui/src/tools/fillSample.ts`, over the
+  `livePlanarShape`/`buildArrangementFromShapes` merge map) and recolors ONLY that
+  enclosed region's connected component (stroked seams bound the region; No Color removes
+  just that region's fill). Clicking an empty part of a shape's bbox is now a no-op instead
+  of repainting the whole object; a different enclosed region of the same object recolors
+  independently. Non-mergeable shapes (gradient/bitmap fill, transformed) fall back to a
+  real point-in-geometry hit test (`hitTestPoint`) and fill all paths. The Eyedropper
+  reports WHICH attribute — fill vs stroke — was under the click (`sampleAttributeAt` via
+  planar `pickAt`), and `Shell.handleEyedropperSample` auto-switches to Paint Bucket (fill)
+  or Ink Bottle (stroke) on that, not merely on whether the shape has a fill.
 - **Rectangle/Oval** with Alt/Option-click open an exact-dimensions dialog; Rectangle radius
   can be set numerically (incl. inverted corners).
 
