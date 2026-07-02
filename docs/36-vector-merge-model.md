@@ -324,7 +324,10 @@ unit-tested without React):
   kernel space — stage == local == kernel, removing offset bugs.
 * **`subselection.ts` — stable, serializable keys.** Half-edge / face ids are
   array indices that change on rebuild, so a selection references **geometry**: a
-  `FaceKey` is the `pointKey` of a deterministic interior point (`faceInteriorPoint`);
+  `FaceKey` is the `pointKey` of a deterministic interior point (`faceInteriorPoint`
+  — which probes centroid → bbox grid → interior diagonals, and returns `null`
+  rather than a point proven OUTSIDE the face, so a thin/acute sliver never yields
+  a mis-classified fill or an unstable key; every caller handles `null`);
   a `SegmentKey` is the two snapped endpoints (sorted, undirected) + the snapped
   midpoint (disambiguates curves sharing endpoints). `resolveFace`/`resolveSegment`
   map a key back to a live id (exact interior-point / endpoint+mid match, with a

@@ -110,7 +110,31 @@ export function faceInteriorPoint(ps: PlanarShape, face: PlanarFace): Point | nu
       if (inside({ x, y })) return { x, y };
     }
   }
-  return { x: cx, y: cy };
+  // Denser adaptive fallback for thin / acute slivers (which merge crossings
+  // genuinely produce): a razor-thin or concave face can defeat BOTH the
+  // centroid and the axis-aligned grid, yet the midpoint of an interior DIAGONAL
+  // — a chord between two NON-ADJACENT boundary points — still lands strictly
+  // inside. Probe those diagonals (skipping polygon edges, whose midpoint would
+  // sit on the boundary). Bounded by a sample budget so a large boundary stays
+  // cheap; the first interior hit returns immediately for a real sliver.
+  const n = poly.length;
+  let budget = 20000;
+  for (let i = 0; i < n; i++) {
+    for (let k = 2; k <= n - 2; k++) {
+      const j = (i + k) % n;
+      const mid = { x: (poly[i].x + poly[j].x) / 2, y: (poly[i].y + poly[j].y) / 2 };
+      if (inside(mid)) return mid;
+      if (--budget <= 0) return null;
+    }
+  }
+  // No interior point found. Return null rather than the centroid, which was
+  // already PROVEN OUTSIDE the face via inside(...) above. Returning a
+  // proven-outside point is strictly worse than null: it mis-classifies the
+  // face's fill (assignFaceFillsBySampling in build.ts samples it against the
+  // draw-order regions and can match a DIFFERENT region) and yields an unstable
+  // faceKey / pickInRect selection (subselection.ts). Every caller already
+  // handles a null return safely.
+  return null;
 }
 
 /** Absolute area of a face (its outer boundary minus its holes). */

@@ -1,10 +1,10 @@
 {
   "id": "1395-1vis9b-planar-faceinteriorpoint-returns-a-point-already",
   "title": "Planar: faceInteriorPoint returns a point already proven OUTSIDE the face (wrong fill for sliver faces)",
-  "description": "packages/core/src/engine/planar/query.ts:113: centroid tested at :92; if it fails, a 16x16 grid over the bbox is scanned (:106-112); if that also finds nothing it returns {x:cx,y:cy} \u2014 the same centroid already proven outside via inside(...) at :92. For a thin/acute sliver face (which merge crossings genuinely produce), 256 grid samples can all miss and the returned outside point is fed to assignFaceFillsBySampling (build.ts:103 -> pointInPolygon can match a DIFFERENT region containing that point -> wrong fill) and faceKey/resolveFace/pickInRect (subselection.ts -> wrong/unstable selection key). Every caller already handles a null return safely, so returning the known-bad point is strictly worse. Fix: return null when neither centroid nor grid yields an interior point (optionally after a denser adaptive scan). Add a test building an acute sliver face asserting fill classification. Confidence: confirmed logic error (product impact needs-repro).",
-  "status": "open",
+  "description": "FIXED. query.ts faceInteriorPoint no longer returns the proven-outside centroid at :113; after centroid+16x16 grid miss it probes interior DIAGONAL midpoints (non-adjacent boundary chords, budget-bounded), then returns null (never the outside centroid). All callers already handle null. Test: planar.test.ts 'faceInteriorPoint \u2014 never returns a point outside the face (task 1395)' (3 cases: precondition centroid-outside+grid-miss, invariant pointInFace, full-arrangement fill classification). Red-green proven: with fix 33/33 planar tests pass; reverting query.ts -> the invariant test FAILS (returns proven-outside centroid). Full core suite: 5630 passed | 8 skipped. Full ordered build exit 0. docs/36 contract note added.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-07-02T01:15:28Z",
-  "updated_at": "2026-07-02T01:15:28Z"
+  "updated_at": "2026-07-02T01:35:35Z"
 }

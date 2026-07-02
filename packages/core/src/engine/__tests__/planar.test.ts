@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import type { EdgeGeometry, Fill, Point, Shape, ShapePath, Stroke } from "../types.js";
+import type {
+  EdgeGeometry,
+  Fill,
+  HalfEdge,
+  PlanarFace,
+  PlanarShape,
+  PlanarVertex,
+  Point,
+  Shape,
+  ShapePath,
+  Stroke,
+} from "../types.js";
 import {
   Arrangement,
   buildArrangement,
@@ -7,6 +18,8 @@ import {
   eulerCharacteristic,
   faceArea,
   faceBoundaryPolygon,
+  faceInteriorPoint,
+  pointInPolygon,
   intersectSegSeg,
   intersectSegCurve,
   intersectCurveCurve,
@@ -565,5 +578,112 @@ describe("planar/P2 — a curved stroke across a fill splits it, curve-preservin
     expect(fillPaths.length).toBe(2);
     const anyCurve = merged.paths.some((p) => p.segments.some((s) => s.type === "curve"));
     expect(anyCurve).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// faceInteriorPoint — sliver faces (task 1395)
+//
+// faceInteriorPoint must NEVER return a point proven OUTSIDE the face. The old
+// implementation, when the centroid AND the 16x16 bbox grid both missed the
+// interior (which a thin / acute / concave sliver from merge crossings genuinely
+// produces), returned the centroid it had ALREADY proven outside. That
+// proven-outside point then mis-classified the face's fill (build.ts) and
+// destabilized its selection key (subselection.ts).
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal {@link PlanarShape} whose single bounded face's outer boundary
+ * is the given ordered (CCW) polygon of straight edges. Only the fields read by
+ * faceBoundaryPolygon / faceInteriorPoint are populated (twin/origin are unused
+ * by those; there are no holes).
+ */
+function planarShapeFromLoop(poly: readonly Point[]): { ps: PlanarShape; face: PlanarFace } {
+  const n = poly.length;
+  const vertices: PlanarVertex[] = poly.map((point, id) => ({ id, point, outgoing: id }));
+  const halfEdges: HalfEdge[] = poly.map((p, i) => ({
+    id: i,
+    origin: i,
+    twin: -1,
+    next: (i + 1) % n,
+    prev: (i - 1 + n) % n,
+    face: 0,
+    geometry: { p0: p, control: null, p1: poly[(i + 1) % n] },
+    fillLeft: 0,
+    fillRight: null,
+    lineStyle: null,
+  }));
+  const face: PlanarFace = { id: 0, outer: 0, holes: [], fill: 0, unbounded: false };
+  const ps: PlanarShape = { vertices, halfEdges, faces: [face], fills: [RED], lineStyles: [] };
+  return { ps, face };
+}
+
+describe("faceInteriorPoint — never returns a point outside the face (task 1395)", () => {
+  // A razor-thin, concave "L"-band sliver hugging the left + bottom edges of a
+  // large bbox. Its vertex centroid falls in the empty hollow (outside), and
+  // every one of the 16x16 = 256 grid samples (all at x >= 58.8 and y >= 58.8)
+  // lands in the hollow too — so BOTH the centroid probe and the grid scan miss.
+  const sliver: Point[] = [
+    { x: 0, y: 0 },
+    { x: 1000, y: 0 },
+    { x: 1000, y: 3 },
+    { x: 3, y: 3 },
+    { x: 3, y: 1000 },
+    { x: 0, y: 1000 },
+  ];
+
+  it("the sliver defeats the centroid and the grid (precondition)", () => {
+    const cx = sliver.reduce((s, p) => s + p.x, 0) / sliver.length;
+    const cy = sliver.reduce((s, p) => s + p.y, 0) / sliver.length;
+    // Centroid is provably OUTSIDE the face.
+    expect(pointInPolygon({ x: cx, y: cy }, sliver)).toBe(false);
+    // The whole 16x16 grid misses too.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of sliver) {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    const steps = 17;
+    let gridHits = 0;
+    for (let i = 1; i < steps; i++)
+      for (let j = 1; j < steps; j++) {
+        const x = minX + ((maxX - minX) * j) / steps;
+        const y = minY + ((maxY - minY) * i) / steps;
+        if (pointInPolygon({ x, y }, sliver)) gridHits++;
+      }
+    expect(gridHits).toBe(0);
+  });
+
+  it("returns an interior point (or null), NEVER the proven-outside centroid", () => {
+    const { ps, face } = planarShapeFromLoop(sliver);
+    const ip = faceInteriorPoint(ps, face);
+    // Must not hand back a point that is outside the face.
+    expect(ip).not.toBeNull();
+    if (ip) {
+      expect(pointInFace(ps, face, ip)).toBe(true);
+      // And specifically not the centroid (which is outside).
+      const cx = sliver.reduce((s, p) => s + p.x, 0) / sliver.length;
+      const cy = sliver.reduce((s, p) => s + p.y, 0) / sliver.length;
+      expect(ip.x === cx && ip.y === cy).toBe(false);
+    }
+  });
+
+  it("classifies the sliver's fill correctly through a full arrangement", () => {
+    // The reported product impact: assignFaceFillsBySampling feeds the interior
+    // point to pointInPolygon over the source regions. A thin RED cross-bar
+    // (a sliver) must classify as RED, not background — a proven-outside sample
+    // could match a different region or none.
+    const ps = buildArrangementFromShapes([
+      rectShape("bar", 0, 0, 400, 2, RED),
+    ]);
+    const bounded = ps.faces.filter((f) => !f.unbounded);
+    expect(bounded.length).toBeGreaterThan(0);
+    for (const f of bounded) {
+      const ip = faceInteriorPoint(ps, f);
+      if (ip) expect(pointInFace(ps, f, ip)).toBe(true);
+    }
+    // The thin bar reads back as a RED fill loop.
+    const merged = planarShapeToShape(ps, "m");
+    expect(merged.paths.some((p) => p.fill)).toBe(true);
   });
 });
