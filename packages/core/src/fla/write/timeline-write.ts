@@ -53,6 +53,8 @@ import { PAGE_FRAME_BODY, PAGE_TAIL } from "./empty-templates.js";
 const FIXED_FRAME_ID = 0xe14a;
 /** Big-endian frameId offset within PAGE_FRAME_BODY. */
 const FRAME_BODY_FRAMEID_OFFSET = 0x57;
+/** Little-endian u16 §11 frame-span duration offset within PAGE_FRAME_BODY (template = 1). */
+const FRAME_BODY_DURATION_OFFSET = 52;
 
 const INT_MIN = 0x80000000;
 /** Shape edge coordinates are 8.8 fixed-point twips: 1 px = 20*256 = 5120. */
@@ -204,12 +206,16 @@ function writeCPicFrame(
   if (isEmptyKeyframe(frame)) {
     // Empty keyframe: emit the genuine empty-keyframe body verbatim (the null
     // child tag, sentinel regpoint, inherited empty CPicShape, and the frame
-    // fields). The big-endian frameId is stamped deterministically. The duration
-    // for the default empty doc is the fixture's value; for a custom span we
-    // patch the duration field too.
+    // fields). The big-endian frameId is stamped deterministically. The template
+    // hardcodes the §11 duration field (little-endian u16 at bytes 52-53) to the
+    // fixture's value of 1; for a custom span we patch that field too so a blank
+    // keyframe held N frames round-trips as span=N instead of collapsing to 1.
     const body = new Uint8Array(PAGE_FRAME_BODY);
     body[FRAME_BODY_FRAMEID_OFFSET] = (FIXED_FRAME_ID >>> 8) & 0xff;
     body[FRAME_BODY_FRAMEID_OFFSET + 1] = FIXED_FRAME_ID & 0xff;
+    const span = Math.max(1, duration);
+    body[FRAME_BODY_DURATION_OFFSET] = span & 0xff;
+    body[FRAME_BODY_DURATION_OFFSET + 1] = (span >>> 8) & 0xff;
     w.bytes(body);
     return;
   }
