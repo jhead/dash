@@ -1465,10 +1465,20 @@ export function Shell(): React.ReactElement {
     handleStrokeChangeFromPanel, handleMixerFillColorChange, handleSelectSwatch, handleAddSwatch,
     handleRemoveSwatch, handleSwatchesLoad, handleMixerStrokeColorChange, handleObjectDrawingToggle,
     handlePencilModeChange, handleBrushSizeChange, handleEraserSizeChange,
+    handleBrushShapeChange, handleBrushModeChange, handleBrushLockFillChange,
+    handleBrushPressureChange, handleBrushTiltChange,
+    handleBucketGapSizeChange, handleBucketLockFillChange, handleRectCornerRadiusChange,
+    handlePenSubToolChange, handleSmoothSelection, handleStraightenSelection,
     handleEraserModeChange, handleEraserFaucetChange, handleFreeTransformModeChange,
     handleLassoPolygonModeChange, handleLassoMagicWandChange, handleMagicWandThresholdChange,
     handleMagicWandSmoothingChange, handlePolyStarOptionsChange,
   } = useToolHandlers({ uiStore, pushDoc, withTimeline, timeline, safeActiveLayerIndex, currentFrame, selectedShapeId });
+
+  // Selection-tool magnet toggles the document's Snap to Objects property (same
+  // property the View menu toggles). Task 1388.
+  const handleSnapToObjectsToggle = useCallback(() => {
+    pushDoc(withProperties((p) => ({ ...p, snapToObjects: !p.snapToObjects })));
+  }, [pushDoc, withProperties]);
 
   // ---------------------------------------------------------------------------
   // Handlers — shape drawing
@@ -3838,9 +3848,22 @@ export function Shell(): React.ReactElement {
             onObjectDrawingToggle={handleObjectDrawingToggle}
             onPencilModeChange={handlePencilModeChange}
             onBrushSizeChange={handleBrushSizeChange}
+            onBrushShapeChange={handleBrushShapeChange}
+            onBrushModeChange={handleBrushModeChange}
+            onBrushLockFillChange={handleBrushLockFillChange}
+            onBrushPressureChange={handleBrushPressureChange}
+            onBrushTiltChange={handleBrushTiltChange}
             onEraserSizeChange={handleEraserSizeChange}
             onEraserModeChange={handleEraserModeChange}
             onEraserFaucetChange={handleEraserFaucetChange}
+            onBucketGapSizeChange={handleBucketGapSizeChange}
+            onBucketLockFillChange={handleBucketLockFillChange}
+            onRectCornerRadiusChange={handleRectCornerRadiusChange}
+            onPenSubToolChange={handlePenSubToolChange}
+            snapToObjects={docProperties.snapToObjects}
+            onSnapToObjectsToggle={handleSnapToObjectsToggle}
+            onSmoothSelection={handleSmoothSelection}
+            onStraightenSelection={handleStraightenSelection}
             onFreeTransformModeChange={handleFreeTransformModeChange}
             onLassoPolygonModeChange={handleLassoPolygonModeChange}
             onLassoMagicWandChange={handleLassoMagicWandChange}
@@ -4026,6 +4049,8 @@ export function Shell(): React.ReactElement {
                 onRendererReady={(r) => { rendererRef.current = r; }}
                 pencilMode={toolState.pencilMode}
                 brushSize={toolState.brushSize}
+                brushShape={toolState.brushShape}
+                rectCornerRadius={toolState.rectCornerRadius}
                 eraserSize={toolState.eraserSize}
                 eraserMode={toolState.eraserMode}
                 eraserFaucet={toolState.eraserFaucet}

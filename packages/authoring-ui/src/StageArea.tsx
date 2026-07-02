@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
-import { createOvalShape, createRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, splitOnMove as planarSplitOnMove, planarEraseShape, faucetEraseShape, isMergeableShape, type EraserMode } from "@flash/core";
+import { createOvalShape, createRectShape, createRoundedRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, splitOnMove as planarSplitOnMove, planarEraseShape, faucetEraseShape, isMergeableShape, type EraserMode } from "@flash/core";
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
@@ -356,19 +356,36 @@ function appendRoundCap(
   segments.push({ type: "curve", control: c2, to });
 }
 
+function squareDabPath(cx: number, cy: number, half: number, fill: Fill): ShapePath {
+  return {
+    start: { x: cx - half, y: cy - half },
+    segments: [
+      { type: "line", to: { x: cx + half, y: cy - half } },
+      { type: "line", to: { x: cx + half, y: cy + half } },
+      { type: "line", to: { x: cx - half, y: cy + half } },
+      { type: "line", to: { x: cx - half, y: cy - half } },
+    ],
+    closed: true,
+    fill,
+  };
+}
+
 function brushPointsToShape(
   points: Point[],
   brushSize: number,
-  fill: Fill
+  fill: Fill,
+  nib: "round" | "square" = "round"
 ): Shape {
   const half = brushSize / 2;
 
   // Single dab (click or near-zero drag): a round nib = a circle of diameter
-  // brushSize centered on the point. Flash 8's brush is round by default.
+  // brushSize centered on the point; a square nib = a square. Flash 8's brush is
+  // round by default.
   if (points.length < 2) {
     if (points.length === 0) return { id: nextDrawId(), paths: [] };
     const p = points[0];
-    return { id: nextDrawId(), paths: [circlePath(p.x, p.y, half, fill)] };
+    const dab = nib === "square" ? squareDabPath(p.x, p.y, half, fill) : circlePath(p.x, p.y, half, fill);
+    return { id: nextDrawId(), paths: [dab] };
   }
 
   const forward: Point[] = [];
@@ -404,27 +421,35 @@ function brushPointsToShape(
     segments.push({ type: "line", to: forward[i] });
   }
 
-  // End cap: semicircle around the LAST point, bowing along +tangent.
-  const lastPt = points[points.length - 1];
-  const endDir = tangents[tangents.length - 1];
-  appendRoundCap(
-    segments,
-    lastPt,
-    forward[forward.length - 1],
-    backward[backward.length - 1],
-    endDir,
-    half
-  );
+  // End cap: round nib bows a semicircle around the LAST point; square nib uses
+  // a flat butt cap (a straight edge across to the backward side).
+  if (nib === "square") {
+    segments.push({ type: "line", to: backward[backward.length - 1] });
+  } else {
+    const lastPt = points[points.length - 1];
+    const endDir = tangents[tangents.length - 1];
+    appendRoundCap(
+      segments,
+      lastPt,
+      forward[forward.length - 1],
+      backward[backward.length - 1],
+      endDir,
+      half
+    );
+  }
 
   // Backward edge: backward[n-1] → backward[0].
   for (let i = backward.length - 2; i >= 0; i--) {
     segments.push({ type: "line", to: backward[i] });
   }
 
-  // Start cap: semicircle around the FIRST point, bowing along -tangent.
-  const firstPt = points[0];
-  const startDir = { x: -tangents[0].x, y: -tangents[0].y };
-  appendRoundCap(segments, firstPt, backward[0], forward[0], startDir, half);
+  // Start cap: round nib bows a semicircle around the FIRST point; square nib
+  // relies on the closing edge (backward[0] → start = forward[0]) as a flat cap.
+  if (nib !== "square") {
+    const firstPt = points[0];
+    const startDir = { x: -tangents[0].x, y: -tangents[0].y };
+    appendRoundCap(segments, firstPt, backward[0], forward[0], startDir, half);
+  }
 
   const path: ShapePath = {
     start: forward[0],
@@ -901,6 +926,10 @@ export interface StageAreaProps {
   // Draw tool options
   pencilMode?: "straighten" | "smooth" | "ink";
   brushSize?: number;
+  /** Brush nib shape (round/square). Default 'round'. */
+  brushShape?: "round" | "square";
+  /** Rectangle corner radius in px (0 = square). Default 0. */
+  rectCornerRadius?: number;
   eraserSize?: number;
   /** Flash 8 eraser mode (planar path, flag ON): normal/fills/lines/selected/inside. */
   eraserMode?: EraserMode;
@@ -1605,6 +1634,8 @@ export function StageArea({
   onRendererReady,
   pencilMode = "ink",
   brushSize = 8,
+  brushShape = "round",
+  rectCornerRadius = 0,
   eraserSize = 16,
   eraserMode = "normal",
   eraserFaucet = false,
@@ -3574,7 +3605,7 @@ export function StageArea({
       // produces a round nib circle, not nothing).
       if (activeTool === "brush" && brushPointsRef.current.length >= 1) {
         const fillColor: Fill = propFill ?? { type: "solid", color: hexToColor(propStrokeColor) };
-        const shape = brushPointsToShape(brushPointsRef.current, brushSize, fillColor);
+        const shape = brushPointsToShape(brushPointsRef.current, brushSize, fillColor, brushShape);
         if (shape.paths.length > 0) {
           onShapeCreated?.(shape, 0, 0);
         }
@@ -3615,7 +3646,17 @@ export function StageArea({
           if (drawPreview.tool === "oval") {
             shape = createOvalShape(x1, y1, x2, y2, null, null);
           } else if (drawPreview.tool === "rect") {
-            shape = createRectShape(x1, y1, x2, y2, null, null);
+            if (rectCornerRadius > 0) {
+              // createRoundedRectShape takes (x, y, width, height, radius, ...);
+              // the draw gesture gives two corners, so normalize to origin+size.
+              const rx = Math.min(x1, x2);
+              const ry = Math.min(y1, y2);
+              const rw = Math.abs(x2 - x1);
+              const rh = Math.abs(y2 - y1);
+              shape = createRoundedRectShape(rx, ry, rw, rh, rectCornerRadius, null, null);
+            } else {
+              shape = createRectShape(x1, y1, x2, y2, null, null);
+            }
           } else if (drawPreview.tool === "polystar") {
             // Compute center and radius from the drag gesture
             const cx = x1;
@@ -3644,7 +3685,7 @@ export function StageArea({
       drawStartRef.current = null;
       setDrawPreview(null);
     },
-    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, partialSelectEnabled, onSubSelect, onSubSplitMove, internalZoom, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
+    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, brushShape, rectCornerRadius, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, partialSelectEnabled, onSubSelect, onSubSplitMove, internalZoom, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
   );
 
   // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place.

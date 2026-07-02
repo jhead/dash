@@ -6,7 +6,7 @@ import {
   setBackgroundColor,
   setRulerUnits,
 } from "../document-mutations.js";
-import { createDocument } from "../document.js";
+import { createDocument, createDocumentProperties } from "../document.js";
 import type { FlashDocument } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -20,6 +20,17 @@ function makeDoc(): FlashDocument {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("default document properties (task 1388)", () => {
+  it("defaults Snap to Objects (the Selection magnet) ON, matching Flash 8", () => {
+    expect(createDocumentProperties().snapToObjects).toBe(true);
+    expect(createDocument().properties.snapToObjects).toBe(true);
+  });
+
+  it("still honours an explicit snapToObjects override", () => {
+    expect(createDocumentProperties({ snapToObjects: false }).snapToObjects).toBe(false);
+  });
+});
 
 describe("setDocumentWidth", () => {
   it("returns doc with new width", () => {

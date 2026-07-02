@@ -1,5 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { FreeTransformMode, PolyStarOptions, ToolId, ToolState } from "./tools/types";
+import type {
+  BrushPaintMode,
+  BrushShape,
+  FreeTransformMode,
+  PaintBucketGapSize,
+  PenSubTool,
+  PolyStarOptions,
+  ToolId,
+  ToolState,
+} from "./tools/types";
 import { OBJECT_DRAWING_TOOLS } from "./tools/types";
 import type { Fill } from "@flash/core";
 import { chrome, halo, chromeFont, bevel, metrics } from "./theme/flash8Theme.js";
@@ -185,9 +194,23 @@ const ZoomIcon = () => (
 export interface ToolsPanelExtraProps {
   onPencilModeChange?: (mode: "straighten" | "smooth" | "ink") => void;
   onBrushSizeChange?: (size: number) => void;
+  onBrushShapeChange?: (shape: BrushShape) => void;
+  onBrushModeChange?: (mode: BrushPaintMode) => void;
+  onBrushLockFillChange?: (lock: boolean) => void;
+  onBrushPressureChange?: (pressure: boolean) => void;
+  onBrushTiltChange?: (tilt: boolean) => void;
   onEraserSizeChange?: (size: number) => void;
   onEraserModeChange?: (mode: "normal" | "fills" | "lines" | "selected" | "inside") => void;
   onEraserFaucetChange?: (faucet: boolean) => void;
+  onBucketGapSizeChange?: (gap: PaintBucketGapSize) => void;
+  onBucketLockFillChange?: (lock: boolean) => void;
+  onRectCornerRadiusChange?: (radius: number) => void;
+  onPenSubToolChange?: (subTool: PenSubTool) => void;
+  /** Selection tool magnet (Snap to Objects) — a document property. */
+  snapToObjects?: boolean;
+  onSnapToObjectsToggle?: () => void;
+  onSmoothSelection?: () => void;
+  onStraightenSelection?: () => void;
   onFreeTransformModeChange?: (mode: FreeTransformMode) => void;
   onLassoPolygonModeChange?: (polygonMode: boolean) => void;
   onLassoMagicWandChange?: (magicWand: boolean) => void;
@@ -204,9 +227,22 @@ export interface ToolsPanelProps {
   onObjectDrawingToggle: () => void;
   onPencilModeChange?: (mode: "straighten" | "smooth" | "ink") => void;
   onBrushSizeChange?: (size: number) => void;
+  onBrushShapeChange?: (shape: BrushShape) => void;
+  onBrushModeChange?: (mode: BrushPaintMode) => void;
+  onBrushLockFillChange?: (lock: boolean) => void;
+  onBrushPressureChange?: (pressure: boolean) => void;
+  onBrushTiltChange?: (tilt: boolean) => void;
   onEraserSizeChange?: (size: number) => void;
   onEraserModeChange?: (mode: "normal" | "fills" | "lines" | "selected" | "inside") => void;
   onEraserFaucetChange?: (faucet: boolean) => void;
+  onBucketGapSizeChange?: (gap: PaintBucketGapSize) => void;
+  onBucketLockFillChange?: (lock: boolean) => void;
+  onRectCornerRadiusChange?: (radius: number) => void;
+  onPenSubToolChange?: (subTool: PenSubTool) => void;
+  snapToObjects?: boolean;
+  onSnapToObjectsToggle?: () => void;
+  onSmoothSelection?: () => void;
+  onStraightenSelection?: () => void;
   onFreeTransformModeChange?: (mode: FreeTransformMode) => void;
   onLassoPolygonModeChange?: (polygonMode: boolean) => void;
   onLassoMagicWandChange?: (magicWand: boolean) => void;
@@ -515,6 +551,32 @@ function NoColorX(): React.ReactElement {
 const BRUSH_SIZES = [2, 4, 8, 16, 32];
 const ERASER_SIZES = [8, 16, 24, 32, 48];
 
+// Flash 8 brush paint modes. Short labels fit the option button; full names in
+// the tooltip. See docs/04-toolbox.md.
+const BRUSH_MODES: { mode: BrushPaintMode; label: string; title: string }[] = [
+  { mode: "normal", label: "Nrm", title: "Paint Normal" },
+  { mode: "fills", label: "Fill", title: "Paint Fills" },
+  { mode: "behind", label: "Bhd", title: "Paint Behind" },
+  { mode: "selection", label: "Sel", title: "Paint Selection" },
+  { mode: "inside", label: "Ins", title: "Paint Inside" },
+];
+
+// Paint Bucket gap-size tolerances (close small outline gaps before filling).
+const GAP_SIZES: { gap: PaintBucketGapSize; label: string; title: string }[] = [
+  { gap: "none", label: "No", title: "Don't Close Gaps" },
+  { gap: "small", label: "Sm", title: "Close Small Gaps" },
+  { gap: "medium", label: "Md", title: "Close Medium Gaps" },
+  { gap: "large", label: "Lg", title: "Close Large Gaps" },
+];
+
+// Pen sub-tools: Pen (P), Add Anchor (=), Delete Anchor (-), Convert Anchor (C).
+const PEN_SUBTOOLS: { subTool: PenSubTool; label: string; title: string }[] = [
+  { subTool: "pen", label: "Pen", title: "Pen (P)" },
+  { subTool: "add-anchor", label: "+A", title: "Add Anchor Point (=)" },
+  { subTool: "delete-anchor", label: "-A", title: "Delete Anchor Point (-)" },
+  { subTool: "convert-anchor", label: "Cv", title: "Convert Anchor Point (C)" },
+];
+
 // Flash 8 eraser modes (planar erase). Short labels fit the 30×12 option button;
 // the full name is in the tooltip. See docs/04-toolbox.md.
 const ERASER_MODES: {
@@ -576,9 +638,22 @@ export function ToolsPanel({
   onObjectDrawingToggle,
   onPencilModeChange,
   onBrushSizeChange,
+  onBrushShapeChange,
+  onBrushModeChange,
+  onBrushLockFillChange,
+  onBrushPressureChange,
+  onBrushTiltChange,
   onEraserSizeChange,
   onEraserModeChange,
   onEraserFaucetChange,
+  onBucketGapSizeChange,
+  onBucketLockFillChange,
+  onRectCornerRadiusChange,
+  onPenSubToolChange,
+  snapToObjects,
+  onSnapToObjectsToggle,
+  onSmoothSelection,
+  onStraightenSelection,
   onFreeTransformModeChange,
   onLassoPolygonModeChange,
   onLassoMagicWandChange,
@@ -620,6 +695,14 @@ export function ToolsPanel({
         }
         return;
       }
+      // Pen sub-tools (only while the Pen tool is active): Add Anchor (=),
+      // Delete Anchor (-), Convert Anchor (C). Pen (P) resets to the base pen.
+      if (toolState.activeTool === "pen") {
+        if (e.key === "=" || e.key === "+") { onPenSubToolChange?.("add-anchor"); return; }
+        if (e.key === "-" || e.key === "_") { onPenSubToolChange?.("delete-anchor"); return; }
+        if (key === "c") { onPenSubToolChange?.("convert-anchor"); return; }
+        if (key === "p") { onPenSubToolChange?.("pen"); return; }
+      }
       const toolId = SHORTCUT_MAP[key];
       if (toolId) {
         onToolChange(toolId);
@@ -627,7 +710,7 @@ export function ToolsPanel({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [toolState.activeTool, onToolChange, onObjectDrawingToggle]);
+  }, [toolState.activeTool, onToolChange, onObjectDrawingToggle, onPenSubToolChange]);
 
   const showObjectDrawing = OBJECT_DRAWING_TOOLS.has(toolState.activeTool);
 
@@ -689,6 +772,112 @@ export function ToolsPanel({
       <div style={styles.divider} />
 
       {/* Tool options area */}
+
+      {/* Selection tool: magnet (Snap to Objects — a document property),
+          Smooth, Straighten. See docs/04-toolbox.md. */}
+      {toolState.activeTool === "selection" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px", padding: "2px 0", width: "100%" }}>
+          <button
+            type="button"
+            style={optBtnStyle(snapToObjects ?? false, isHovered("sel:magnet"))}
+            onClick={() => onSnapToObjectsToggle?.()}
+            {...hoverProps("sel:magnet")}
+            title="Snap to Objects (magnet)"
+          >
+            Mag
+          </button>
+          <button
+            type="button"
+            style={optBtnStyle(false, isHovered("sel:smooth"))}
+            onClick={() => onSmoothSelection?.()}
+            {...hoverProps("sel:smooth")}
+            title="Smooth — soften the selected shape's outline"
+          >
+            Smo
+          </button>
+          <button
+            type="button"
+            style={optBtnStyle(false, isHovered("sel:straighten"))}
+            onClick={() => onStraightenSelection?.()}
+            {...hoverProps("sel:straighten")}
+            title="Straighten — simplify the selected shape's outline"
+          >
+            Str
+          </button>
+        </div>
+      )}
+
+      {/* Rectangle tool: numeric corner radius. */}
+      {toolState.activeTool === "rect" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", padding: "2px 0", width: "100%" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
+            <span style={optLabelStyle()}>Corner</span>
+            <input
+              type="number"
+              min={0}
+              value={toolState.rectCornerRadius ?? 0}
+              onChange={(e) => onRectCornerRadiusChange?.(Math.max(0, parseInt(e.target.value) || 0))}
+              title="Rectangle corner radius (px)"
+              style={{ ...optFieldStyle(), width: "28px", textAlign: "center" }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Pen tool: Pen / Add Anchor / Delete Anchor / Convert Anchor sub-tools
+          (keys P / = / - / C). */}
+      {toolState.activeTool === "pen" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px", padding: "2px 0", width: "100%" }}>
+          {PEN_SUBTOOLS.map(({ subTool, label, title }) => {
+            const active = (toolState.penSubTool ?? "pen") === subTool;
+            return (
+              <button
+                key={subTool}
+                type="button"
+                style={optBtnStyle(active, isHovered(`pen:${subTool}`))}
+                onClick={() => onPenSubToolChange?.(subTool)}
+                {...hoverProps(`pen:${subTool}`)}
+                title={title}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Paint Bucket: Gap Size + Lock Fill. */}
+      {toolState.activeTool === "fill" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", padding: "2px 0", width: "100%" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
+            {GAP_SIZES.map(({ gap, label, title }) => {
+              const active = (toolState.bucketGapSize ?? "none") === gap;
+              return (
+                <button
+                  key={gap}
+                  type="button"
+                  style={optBtnStyle(active, isHovered(`bucket:${gap}`))}
+                  onClick={() => onBucketGapSizeChange?.(gap)}
+                  {...hoverProps(`bucket:${gap}`)}
+                  title={title}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            style={optBtnStyle(toolState.bucketLockFill ?? false, isHovered("bucket:lock"))}
+            onClick={() => onBucketLockFillChange?.(!(toolState.bucketLockFill ?? false))}
+            {...hoverProps("bucket:lock")}
+            title="Lock Fill — continue a gradient/bitmap fill across shapes"
+          >
+            Lock
+          </button>
+        </div>
+      )}
+
       {toolState.activeTool === "pencil" && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px", padding: "2px 0", width: "100%" }}>
           {(["straighten", "smooth", "ink"] as const).map((mode) => {
@@ -713,26 +902,97 @@ export function ToolsPanel({
       )}
 
       {toolState.activeTool === "brush" && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px", padding: "2px 0" }}>
-          {BRUSH_SIZES.map((size) => (
-            <button
-              key={size}
-              type="button"
-              style={{
-                width: Math.min(size, 26) + "px",
-                height: Math.min(size, 10) + "px",
-                background: (toolState.brushSize ?? 8) === size ? chrome.textDefault : chrome.bevelDark,
-                border: `1px solid ${chrome.separator}`,
-                borderRadius: "50%",
-                cursor: "pointer",
-                padding: 0,
-                margin: "1px auto",
-                display: "block",
-              }}
-              onClick={() => onBrushSizeChange?.(size)}
-              title={`Brush size: ${size}px`}
-            />
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", padding: "2px 0", width: "100%" }}>
+          {/* Brush size nibs (round preview). */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
+            {BRUSH_SIZES.map((size) => (
+              <button
+                key={size}
+                type="button"
+                style={{
+                  width: Math.min(size, 26) + "px",
+                  height: Math.min(size, 10) + "px",
+                  background: (toolState.brushSize ?? 8) === size ? chrome.textDefault : chrome.bevelDark,
+                  border: `1px solid ${chrome.separator}`,
+                  borderRadius: (toolState.brushShape ?? "round") === "round" ? "50%" : "1px",
+                  cursor: "pointer",
+                  padding: 0,
+                  margin: "1px auto",
+                  display: "block",
+                }}
+                onClick={() => onBrushSizeChange?.(size)}
+                title={`Brush size: ${size}px`}
+              />
+            ))}
+          </div>
+
+          {/* Brush nib shape — round / square. */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
+            {(["round", "square"] as const).map((shape) => {
+              const active = (toolState.brushShape ?? "round") === shape;
+              return (
+                <button
+                  key={shape}
+                  type="button"
+                  style={optBtnStyle(active, isHovered(`brush:shape:${shape}`))}
+                  onClick={() => onBrushShapeChange?.(shape)}
+                  {...hoverProps(`brush:shape:${shape}`)}
+                  title={shape === "round" ? "Round brush" : "Square brush"}
+                >
+                  {shape === "round" ? "Rnd" : "Sqr"}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Paint mode — Normal / Fills / Behind / Selection / Inside. Mirrors
+              the eraser-mode block; wired via onBrushModeChange. */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
+            {BRUSH_MODES.map(({ mode, label, title }) => {
+              const active = (toolState.brushMode ?? "normal") === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  style={optBtnStyle(active, isHovered(`brush:${mode}`))}
+                  onClick={() => onBrushModeChange?.(mode)}
+                  {...hoverProps(`brush:${mode}`)}
+                  title={title}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Lock Fill / Pressure / Tilt toggles. */}
+          <button
+            type="button"
+            style={optBtnStyle(toolState.brushLockFill ?? false, isHovered("brush:lock"))}
+            onClick={() => onBrushLockFillChange?.(!(toolState.brushLockFill ?? false))}
+            {...hoverProps("brush:lock")}
+            title="Lock Fill — continue a gradient/bitmap fill across strokes"
+          >
+            Lock
+          </button>
+          <button
+            type="button"
+            style={optBtnStyle(toolState.brushPressure ?? false, isHovered("brush:pressure"))}
+            onClick={() => onBrushPressureChange?.(!(toolState.brushPressure ?? false))}
+            {...hoverProps("brush:pressure")}
+            title="Use Pressure (tablet)"
+          >
+            Prs
+          </button>
+          <button
+            type="button"
+            style={optBtnStyle(toolState.brushTilt ?? false, isHovered("brush:tilt"))}
+            onClick={() => onBrushTiltChange?.(!(toolState.brushTilt ?? false))}
+            {...hoverProps("brush:tilt")}
+            title="Use Tilt (tablet)"
+          >
+            Tlt
+          </button>
         </div>
       )}
 

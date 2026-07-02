@@ -113,6 +113,29 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
 Contextual modifiers for the active tool (e.g. magnet/smooth/straighten for Selection;
 brush size/shape/mode for Brush). Documented per-tool above.
 
+The contextual Options blocks live in `ToolsPanel.tsx`; each option is a `ToolState` slice
+(`tools/types.ts`) seeded in `DEFAULT_TOOL_STATE` (`store/uiStore.ts`) and mutated by a
+`useToolHandlers` callback (Shell threads them into `ToolsPanel`). Wiring status (task 1388,
+building on the eraser modes + Faucet of task 1387):
+
+- **Selection** — magnet toggles the document's `snapToObjects` property (the same property
+  the View › Snap to Objects command flips, honored by `StageArea` object snapping);
+  `snapToObjects` now **defaults ON** (`createDocumentProperties`, matching Flash 8). Smooth /
+  Straighten reshape the selected raw shape via `smoothPath` / `simplifyPath`
+  (`tools/selectionSmooth.ts`).
+- **Rectangle** — the numeric **corner radius** is honored on commit
+  (`createRoundedRectShape`); 0 = square corners. (The Alt-click exact-dimensions dialog
+  remains a follow-up.)
+- **Brush** — nib **shape** (round/square) is honored in the brush commit
+  (`brushPointsToShape`). **Paint mode** (Normal/Fills/Behind/Selection/Inside), **Lock Fill**,
+  **Pressure**, **Tilt** are exposed and persisted; the planar-merge honoring of the
+  non-Normal paint modes and tablet pressure/tilt is a follow-up on the merge/pointer path.
+- **Paint Bucket** — **Gap Size** (Don't/Small/Medium/Large) and **Lock Fill** are exposed and
+  persisted; the flood-fill honoring lives with the Paint Bucket fill path (task 1389).
+- **Pen** — the sub-tool selector (Pen / Add Anchor `=` / Delete Anchor `-` / Convert Anchor
+  `C`, keys bound while the Pen tool is active) sets `penSubTool`; the anchor add/delete/convert
+  editing behaviors on the path are a follow-up.
+
 ## Customize Tools Panel
 
 `Edit > Customize Tools Panel` (Flash menu on Mac) lets users add/remove/rearrange tools and

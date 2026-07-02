@@ -36,7 +36,10 @@ export function createDocumentProperties(
     rulerUnits: "px",
     grid: createGridSettings(),
     guides: [],
-    snapToObjects: false,
+    // Flash 8 ships with the Selection tool's magnet (Snap to Objects) ON by
+    // default — see docs/04-toolbox.md. Round-trip tests set this explicitly,
+    // so the default change does not affect FLA (de)serialization fidelity.
+    snapToObjects: true,
     snapToPixels: false,
     snapToGuides: false,
     ...overrides,

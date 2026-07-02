@@ -8,8 +8,17 @@ import {
   type Timeline,
   type ShapeDisplayObject,
 } from "@flash/core";
-import type { FreeTransformMode, PolyStarOptions, ToolId } from "../tools/types";
+import type {
+  BrushPaintMode,
+  BrushShape,
+  FreeTransformMode,
+  PaintBucketGapSize,
+  PenSubTool,
+  PolyStarOptions,
+  ToolId,
+} from "../tools/types";
 import type { UiStoreApi } from "../store/uiStore.js";
+import { smoothShape, straightenShape } from "../tools/selectionSmooth.js";
 
 export interface ToolHandlersDeps {
   uiStore: UiStoreApi;
@@ -139,6 +148,42 @@ export function useToolHandlers(deps: ToolHandlersDeps) {
     setToolState((prev) => ({ ...prev, brushSize: size }));
   }, [setToolState]);
 
+  const handleBrushShapeChange = useCallback((shape: BrushShape) => {
+    setToolState((prev) => ({ ...prev, brushShape: shape }));
+  }, [setToolState]);
+
+  const handleBrushModeChange = useCallback((mode: BrushPaintMode) => {
+    setToolState((prev) => ({ ...prev, brushMode: mode }));
+  }, [setToolState]);
+
+  const handleBrushLockFillChange = useCallback((lock: boolean) => {
+    setToolState((prev) => ({ ...prev, brushLockFill: lock }));
+  }, [setToolState]);
+
+  const handleBrushPressureChange = useCallback((pressure: boolean) => {
+    setToolState((prev) => ({ ...prev, brushPressure: pressure }));
+  }, [setToolState]);
+
+  const handleBrushTiltChange = useCallback((tilt: boolean) => {
+    setToolState((prev) => ({ ...prev, brushTilt: tilt }));
+  }, [setToolState]);
+
+  const handleBucketGapSizeChange = useCallback((gap: PaintBucketGapSize) => {
+    setToolState((prev) => ({ ...prev, bucketGapSize: gap }));
+  }, [setToolState]);
+
+  const handleBucketLockFillChange = useCallback((lock: boolean) => {
+    setToolState((prev) => ({ ...prev, bucketLockFill: lock }));
+  }, [setToolState]);
+
+  const handleRectCornerRadiusChange = useCallback((radius: number) => {
+    setToolState((prev) => ({ ...prev, rectCornerRadius: Math.max(0, radius) }));
+  }, [setToolState]);
+
+  const handlePenSubToolChange = useCallback((subTool: PenSubTool) => {
+    setToolState((prev) => ({ ...prev, penSubTool: subTool }));
+  }, [setToolState]);
+
   const handleEraserSizeChange = useCallback((size: number) => {
     setToolState((prev) => ({ ...prev, eraserSize: size }));
   }, [setToolState]);
@@ -178,6 +223,39 @@ export function useToolHandlers(deps: ToolHandlersDeps) {
     }));
   }, [setToolState]);
 
+  // Selection-tool Smooth / Straighten: reshape the selected raw shape in place.
+  // Shares the shape-lookup path with handleFillChange (active layer's nearest
+  // preceding keyframe → the selected ShapeDisplayObject).
+  const transformSelectedShape = useCallback(
+    (transform: (shape: ShapeDisplayObject["shape"]) => ShapeDisplayObject["shape"]) => {
+      if (!selectedShapeId) return;
+      const layer = timeline.layers[safeActiveLayerIndex];
+      const layerId = layer?.id;
+      if (!layer || !layerId) return;
+      const kf = [...layer.frames]
+        .filter((f) => f.isKeyframe && f.index <= currentFrame)
+        .sort((a, b) => b.index - a.index)[0];
+      if (!kf) return;
+      const obj = kf.displayObjects.find((o) => o.id === selectedShapeId);
+      if (!obj || obj.type !== "shape") return;
+      const shapeObj = obj as ShapeDisplayObject;
+      pushDoc(withTimeline((t) =>
+        updateDisplayObject(t, layerId, currentFrame, selectedShapeId, {
+          shape: transform(shapeObj.shape),
+        })
+      ));
+    },
+    [selectedShapeId, timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimeline]
+  );
+
+  const handleSmoothSelection = useCallback(() => {
+    transformSelectedShape((shape) => smoothShape(shape));
+  }, [transformSelectedShape]);
+
+  const handleStraightenSelection = useCallback(() => {
+    transformSelectedShape((shape) => straightenShape(shape));
+  }, [transformSelectedShape]);
+
   return {
     handleToolChange,
     handleStrokeColorChange,
@@ -193,9 +271,20 @@ export function useToolHandlers(deps: ToolHandlersDeps) {
     handleObjectDrawingToggle,
     handlePencilModeChange,
     handleBrushSizeChange,
+    handleBrushShapeChange,
+    handleBrushModeChange,
+    handleBrushLockFillChange,
+    handleBrushPressureChange,
+    handleBrushTiltChange,
     handleEraserSizeChange,
     handleEraserModeChange,
     handleEraserFaucetChange,
+    handleBucketGapSizeChange,
+    handleBucketLockFillChange,
+    handleRectCornerRadiusChange,
+    handlePenSubToolChange,
+    handleSmoothSelection,
+    handleStraightenSelection,
     handleFreeTransformModeChange,
     handleLassoPolygonModeChange,
     handleLassoMagicWandChange,

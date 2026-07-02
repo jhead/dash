@@ -24,6 +24,18 @@ export type ToolId =
 export type FreeTransformMode = "rotate-scale" | "distort" | "envelope";
 export type PolyStarShapeType = "polygon" | "star";
 
+/** Brush nib shape (Flash 8 offers round + square, plus rotated variants). */
+export type BrushShape = "round" | "square";
+/**
+ * Flash 8 brush paint modes: Paint Normal / Paint Fills / Paint Behind /
+ * Paint Selection / Paint Inside.
+ */
+export type BrushPaintMode = "normal" | "fills" | "behind" | "selection" | "inside";
+/** Paint Bucket gap-closing tolerance. */
+export type PaintBucketGapSize = "none" | "small" | "medium" | "large";
+/** Pen tool sub-tools (Flash 8): Pen, Add Anchor, Delete Anchor, Convert Anchor. */
+export type PenSubTool = "pen" | "add-anchor" | "delete-anchor" | "convert-anchor";
+
 export interface PolyStarOptions {
   shapeType: PolyStarShapeType;
   sides: number;      // 3–32, default 5
@@ -48,6 +60,22 @@ export interface ToolState {
   pencilMode?: "straighten" | "smooth" | "ink";
   /** Brush tool size in pixels. Default 8 */
   brushSize?: number;
+  /** Brush nib shape. Default 'round' */
+  brushShape?: BrushShape;
+  /**
+   * Brush paint mode (Flash 8): Normal / Fills / Behind / Selection / Inside.
+   * Default 'normal'.
+   */
+  brushMode?: BrushPaintMode;
+  /**
+   * Lock Fill — a gradient/bitmap brush fill continues across strokes rather
+   * than restarting per stroke. Default false.
+   */
+  brushLockFill?: boolean;
+  /** Pressure sensitivity (tablet) modulates brush size. Default false. */
+  brushPressure?: boolean;
+  /** Tilt sensitivity (tablet) modulates brush angle. Default false. */
+  brushTilt?: boolean;
   /** Eraser tool size in pixels. Default 16 */
   eraserSize?: number;
   /**
@@ -57,6 +85,20 @@ export interface ToolState {
   eraserMode?: "normal" | "fills" | "lines" | "selected" | "inside";
   /** Faucet mode: a single click deletes a whole fill or line. Default false. */
   eraserFaucet?: boolean;
+  /** Paint Bucket gap size (close small outline gaps). Default 'none' */
+  bucketGapSize?: PaintBucketGapSize;
+  /**
+   * Paint Bucket Lock Fill — continue a gradient/bitmap fill across multiple
+   * shapes rather than restarting per fill. Default false.
+   */
+  bucketLockFill?: boolean;
+  /**
+   * Rectangle corner radius in pixels (0 = square corners). Applied when
+   * drawing with the Rectangle tool. Default 0.
+   */
+  rectCornerRadius?: number;
+  /** Pen tool active sub-tool. Default 'pen' */
+  penSubTool?: PenSubTool;
   /** Free Transform sub-mode. Default 'rotate-scale' */
   freeTransformMode?: FreeTransformMode;
   /** Lasso polygon mode toggle. Default false (freehand) */
