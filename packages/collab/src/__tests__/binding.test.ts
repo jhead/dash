@@ -263,6 +263,36 @@ describe("asClasses character-level merge (Y.Text)", () => {
       unwire();
     }
   });
+
+  it("(1390) two peers ADD DIFFERENT classes concurrently — both survive", () => {
+    // The collab data-loss the ClassesPanel fix guards against: two peers add a
+    // DIFFERENT `.as` class at the same time. The per-class Y.Map merge must keep
+    // BOTH — neither peer's class may be dropped on convergence.
+    let base = createDocument();
+    base = addAsClass(base, { path: "Shared.as", source: "class Shared {}" });
+    const { srcA, srcB, ydocA, ydocB, bindingA, bindingB, concurrent, unwire } =
+      twoPeers(base);
+    try {
+      concurrent(
+        () => srcA.set(addAsClass(srcA.getDoc(), { path: "p/Alpha.as", source: "class Alpha {}" })),
+        () => srcB.set(addAsClass(srcB.getDoc(), { path: "p/Beta.as", source: "class Beta {}" })),
+      );
+
+      for (const yd of [ydocA, ydocB]) {
+        const paths = (rebuildDoc(yd).asClasses ?? []).map((c) => c.path).sort();
+        expect(paths).toEqual(["Shared.as", "p/Alpha.as", "p/Beta.as"]);
+      }
+      // Both peers' live sources converged to the same 3-class set.
+      const pa = (srcA.getDoc().asClasses ?? []).map((c) => c.path).sort();
+      const pb = (srcB.getDoc().asClasses ?? []).map((c) => c.path).sort();
+      expect(pa).toEqual(pb);
+      expect(pa).toEqual(["Shared.as", "p/Alpha.as", "p/Beta.as"]);
+    } finally {
+      bindingA.destroy();
+      bindingB.destroy();
+      unwire();
+    }
+  });
 });
 
 describe("late-joining peer adopts existing Y.Doc state", () => {

@@ -214,4 +214,59 @@ describe("hydrateVfsFromDoc / syncDocFromVfs round-trip", () => {
     expect(changed).toEqual(["Foo.as"]);
     expect((next.asClasses ?? []).map((c) => c.path)).toEqual(["Foo.as"]);
   });
+
+  // --- task 1390: remove-mode governs pruning of doc-only classes ------------
+  //
+  // In a collab session a class can be present in `doc.asClasses` (merged from a
+  // remote peer via the per-class CRDT) but NOT yet mirrored into the local VFS.
+  // The default "all" prune treats that as a deletion and drops it, pushing a
+  // delete that wipes the peer's class for everyone. The remove-mode lets the
+  // edit-time reconcile keep such classes.
+  describe("remove mode (task 1390 concurrent-class drop)", () => {
+    // Build a doc holding a LOCAL class (mirrored to the VFS) and a REMOTE class
+    // that only exists in the doc (merged from a peer, not yet in the local VFS).
+    async function localPlusRemote(): Promise<{
+      doc: FlashDocument;
+      vfs: MemoryClassVfs;
+    }> {
+      let doc = docWithClasses([["Local.as", "class Local {}"]]);
+      const vfs = new MemoryClassVfs();
+      await hydrateVfsFromDoc(doc, vfs); // VFS mirrors ONLY Local.as
+      // A remote peer's class merges into the doc but is not in the local VFS.
+      doc = addAsClass(doc, { path: "Remote.as", source: "class Remote {}" });
+      return { doc, vfs };
+    }
+
+    it('DEFAULT ("all") drops a doc-only class (legacy save-time behaviour)', async () => {
+      const { doc, vfs } = await localPlusRemote();
+      const { doc: next, removed } = await syncDocFromVfs(doc, vfs);
+      expect(removed).toEqual(["Remote.as"]);
+      expect((next.asClasses ?? []).map((c) => c.path)).toEqual(["Local.as"]);
+    });
+
+    it('"none" NEVER drops a doc-only class — the remote peer\'s class survives', async () => {
+      const { doc, vfs } = await localPlusRemote();
+      const { doc: next, removed } = await syncDocFromVfs(doc, vfs, {
+        remove: "none",
+      });
+      expect(removed).toEqual([]);
+      const paths = (next.asClasses ?? []).map((c) => c.path).sort();
+      expect(paths).toEqual(["Local.as", "Remote.as"]);
+      // And the same reference is returned when nothing actually changed.
+      expect(next).toBe(doc);
+    });
+
+    it("a Set drops ONLY the explicitly-removed path, keeping the remote class", async () => {
+      // Local user removed Local.as via the VFS; a remote peer's Remote.as is in
+      // the doc but not the VFS. Prune only Local.as.
+      const { doc, vfs } = await localPlusRemote();
+      await vfs.remove("Local.as");
+      const { doc: next, removed } = await syncDocFromVfs(doc, vfs, {
+        remove: new Set(["Local.as"]),
+      });
+      expect(removed).toEqual(["Local.as"]);
+      const paths = (next.asClasses ?? []).map((c) => c.path);
+      expect(paths).toEqual(["Remote.as"]);
+    });
+  });
 });

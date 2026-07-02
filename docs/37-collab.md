@@ -186,6 +186,43 @@ regions of the same file both survive — the whole point of editing source
 collaboratively. (The same character-merge that the ClassesPanel already relies
 on conceptually, now CRDT-backed.)
 
+#### The ClassesPanel VFS reconcile must not prune a remote-added class (task 1390)
+
+The CRDT converges concurrent class edits fine, but the **local**
+`ClassesPanel` → VFS → `doc.asClasses` reconcile could still push a *delete* that
+wiped a peer's class for everyone. The panel mirrors `doc.asClasses` into a local
+`ClassVfs` editing surface; a keystroke arms a debounced full
+`syncDocFromVfs(doc, vfs)` reconcile. When a remote peer concurrently
+creates/edits a **different** class *while the local user is typing*, the merged
+class lands in `doc.asClasses` but the re-hydrate effect (guarded by
+`pendingEditRef` so it never clobbers in-progress typing) used to adopt the new
+doc reference **without mirroring that remote class into the VFS**. The debounced
+reconcile then read a VFS that was missing the remote class and — because
+`syncDocFromVfs` treated *"in the doc but not in the VFS"* as a deletion — produced
+a doc that **omitted** the peer's class and pushed it, round-tripping a delete
+through the binding that dropped the class on every peer.
+
+Two coupled fixes:
+
+- **`syncDocFromVfs(doc, vfs, { remove })`** gained a `SyncRemoveMode` governing
+  which doc classes may be dropped when absent from the VFS: `"all"` (default —
+  the save-time / open-mirror reconcile, VFS authoritative), `"none"` (the
+  edit-time debounced reconcile — a doc-only class is a *not-yet-mirrored remote
+  add*, never a deletion), or a `Set` of paths (the explicit remove/rename ops
+  prune **only** the path the local user actually removed, so a concurrent remote
+  add is not collateral-dropped). The default preserves every existing caller.
+- The panel's **pending-edit re-hydrate branch now mirrors the incoming (remote)
+  classes into the VFS** — every class except the one the user is actively editing
+  (its VFS copy holds the freshest local keystrokes; the CRDT-merged text is
+  already in `doc.asClasses`) — so the remote class surfaces in the local tree and
+  the debounced reconcile sees a consistent VFS.
+
+Gates: `packages/core/.../vfs-core.test.ts` (remove-mode: `"all"` drops,
+`"none"`/`Set` keep the remote class), `classesPanel.test.ts` (a remote class
+added while typing survives the debounce and appears in the tree; removing one
+class keeps a concurrent remote add), and `binding.test.ts` (two peers adding
+different classes concurrently both survive).
+
 ### Optional fields → key absence (round-trip fidelity)
 
 The model has many optional fields (`scaleX?`, `alpha?`, `quality?`, …). For the

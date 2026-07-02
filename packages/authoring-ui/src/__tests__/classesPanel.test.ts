@@ -282,6 +282,138 @@ describe("ClassesPanel", () => {
     el.remove();
   });
 
+  it("(1390) a remote peer's class added WHILE typing survives the debounced reconcile", async () => {
+    // COLLAB DATA-LOSS: the user is typing in class Foo (pendingEditRef true) when
+    // a remote peer concurrently CREATES a DIFFERENT class Bar. Per-class CRDT
+    // merge lands Bar in `doc.asClasses`, but the re-hydrate effect used to only
+    // adopt the new reference WITHOUT mirroring Bar into the local VFS. The
+    // debounced `syncDocFromVfs` then read a VFS missing Bar and (default prune)
+    // produced a doc that OMITTED Bar, pushing a delete that wiped Bar for
+    // everyone. Post-fix: the pending-edit branch mirrors Bar into the VFS AND the
+    // edit-time reconcile never prunes, so Bar survives (in the doc AND the tree).
+    let doc = createDocument();
+    doc = addAsClass(doc, { path: "Foo.as", source: "class Foo {}" });
+    const vfs = createMemoryClassVfs();
+    let lastPush: FlashDocument = doc;
+    const pushes: FlashDocument[] = [];
+    let remoteArrived = false;
+    const pushesAfterRemote: FlashDocument[] = [];
+    const { el, r, rerender } = mountIsolated(
+      doc,
+      (d) => {
+        lastPush = d;
+        pushes.push(d);
+        if (remoteArrived) pushesAfterRemote.push(d);
+      },
+      vfs
+    );
+    await flush();
+
+    // (1) Local user types in Foo.as — this arms the 600ms debounce (pending).
+    const textarea = el.querySelector("textarea")!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value"
+      )!.set!;
+      setter.call(textarea, "class Foo { var edited; }");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    // The synchronous per-keystroke fold already pushed Foo(edited).
+    expect(
+      (lastPush.asClasses ?? []).find((c) => c.path === "Foo.as")?.source
+    ).toBe("class Foo { var edited; }");
+
+    // (2) A remote peer's Bar.as merges in (new doc identity) WHILE the edit is
+    // still pending (timer not yet fired). Foo's text is unchanged remotely.
+    remoteArrived = true;
+    const remoteDoc = addAsClass(lastPush, {
+      path: "Bar.as",
+      source: "class Bar { var remote; }",
+    });
+    rerender(remoteDoc);
+    await flush();
+    await flush();
+
+    // The pending-edit branch mirrored the remote class into the local VFS and
+    // surfaced it in the tree (task 1390 — the previously-missing mirror step).
+    expect(await vfs.read("Bar.as")).toBe("class Bar { var remote; }");
+    expect(
+      el.querySelector('[data-testid="class-file-Bar.as"]')
+    ).not.toBeNull();
+
+    // (3) Let the debounced reconcile fire. It must NOT drop Bar.
+    await act(async () => {
+      await new Promise((res) => setTimeout(res, 700));
+    });
+    await flush();
+
+    // REGRESSION: pre-fix the debounced reconcile pushed a doc that DROPPED Bar.
+    // Post-fix it never prunes, so no push after the remote merge may omit Bar.
+    for (const p of pushesAfterRemote) {
+      expect((p.asClasses ?? []).map((c) => c.path)).toContain("Bar.as");
+    }
+
+    // The converged doc = the last push if one occurred, else the rendered
+    // remote doc (a clean reconcile is a no-op → no push). Either way it holds
+    // BOTH the local edit AND the remote class.
+    const effective =
+      pushesAfterRemote.length > 0
+        ? pushesAfterRemote[pushesAfterRemote.length - 1]!
+        : remoteDoc;
+    const byPath = new Map(
+      (effective.asClasses ?? []).map((c) => [c.path, c.source])
+    );
+    expect(byPath.get("Foo.as")).toBe("class Foo { var edited; }");
+    expect(byPath.get("Bar.as")).toBe("class Bar { var remote; }");
+
+    act(() => r.unmount());
+    el.remove();
+  });
+
+  it("(1390) removing one class keeps a concurrently-added remote class", async () => {
+    // The user explicitly removes class A while a remote peer's class C is in the
+    // doc. The remove must prune ONLY A — scoping the prune to the removed path —
+    // so C is not collateral-dropped by the reconcile.
+    let doc = createDocument();
+    doc = addAsClass(doc, { path: "A.as", source: "class A {}" });
+    doc = addAsClass(doc, { path: "B.as", source: "class B {}" });
+    const vfs = createMemoryClassVfs();
+    let latest: FlashDocument = doc;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { el, r, rerender } = mountIsolated(doc, (d) => (latest = d), vfs);
+    await flush();
+
+    // A remote peer's C.as merges into the doc (identity change, NOT pending —
+    // the normal re-hydrate mirrors C into the VFS too).
+    const withRemote = addAsClass(latest, {
+      path: "C.as",
+      source: "class C { var remote; }",
+    });
+    rerender(withRemote);
+    await flush();
+    await flush();
+
+    // Now remove A.as.
+    const removeBtn = el.querySelector<HTMLButtonElement>(
+      '[data-testid="class-remove-A.as"]'
+    )!;
+    await act(async () => {
+      removeBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flush();
+
+    const paths = (latest.asClasses ?? []).map((c) => c.path).sort();
+    expect(paths).not.toContain("A.as");
+    expect(paths).toContain("B.as");
+    expect(paths).toContain("C.as"); // remote class NOT collateral-dropped
+
+    act(() => r.unmount());
+    el.remove();
+  });
+
   it("(d) a no-op keystroke (identical source) does NOT push a history entry", async () => {
     // addAsClass always allocates a new doc, so the panel must compare source
     // itself; otherwise every keystroke — even one that re-emits identical text

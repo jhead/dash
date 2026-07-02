@@ -12,6 +12,7 @@ import {
   hydrateVfsFromDoc,
   syncDocFromVfs,
   addAsClass,
+  type SyncRemoveMode,
 } from "@flash/core";
 import { ScriptEditor } from "./ActionsPanel";
 import { createClassVfs } from "./vfs/factory.js";
@@ -169,10 +170,20 @@ export function ClassesPanel({
   // reads the whole VFS). Used by add/remove/rename and the deferred edit
   // reconcile. The per-keystroke doc update is handled SYNCHRONOUSLY by
   // `handleScriptChange` so this is never on the data-loss critical path.
-  const syncToDoc = useCallback(async (): Promise<void> => {
+  //
+  // `remove` governs which doc classes may be DROPPED when absent from the VFS
+  // (task 1390). It defaults to `"none"`: the debounced edit / unmount-flush
+  // reconcile must NEVER prune, because a class in `doc.asClasses` but not in the
+  // local VFS is a REMOTE peer's concurrently-added class (per-class CRDT merge)
+  // that hasn't been mirrored yet — pruning it would push a delete that wipes the
+  // peer's class for everyone. Only the explicit remove/rename ops pass the exact
+  // path(s) they removed so those legitimate local deletes still fold through.
+  const syncToDoc = useCallback(async (
+    remove: SyncRemoveMode = "none"
+  ): Promise<void> => {
     const vfs = vfsRef.current;
     if (!vfs) return;
-    const { doc: nextDoc } = await syncDocFromVfs(docRef.current, vfs);
+    const { doc: nextDoc } = await syncDocFromVfs(docRef.current, vfs, { remove });
     // The panel may have unmounted while the async reconcile was in flight (e.g.
     // the unmount flush kicked this off). Pushing after unmount updates a
     // torn-down root — bail out. The synchronous per-keystroke fold already put
@@ -245,11 +256,38 @@ export function ClassesPanel({
     const incoming = doc.asClasses;
     if (incoming === lastSyncedAsClassesRef.current) return; // our own / unchanged
     if (pendingEditRef.current) {
-      // A debounced editor edit is mid-flight; don't re-mirror over it. Adopt
-      // the reference so a later genuine external change is still detected once
-      // the edit settles. (The synchronous per-keystroke fold already put the
-      // latest text in the doc, so adopting here loses nothing.)
+      // A debounced editor edit is mid-flight. We must NOT prune-mirror over the
+      // user's typing, but we DO fold the incoming (remote) classes into the VFS
+      // (task 1390): when a remote peer concurrently creates/edits a DIFFERENT
+      // class, its per-class CRDT merge lands it in `doc.asClasses` — but if it
+      // is never mirrored into the local VFS, the pending debounced reconcile
+      // reads a VFS missing that class and would DROP it, pushing a delete that
+      // wipes the peer's class for everyone. Mirror every incoming class EXCEPT
+      // the file the user is actively editing (its VFS copy holds the freshest
+      // local keystrokes; the CRDT-merged text is already in `doc.asClasses`).
+      // Do NOT prune here — a class only in the VFS may be a local add not yet in
+      // the incoming (remote) snapshot.
       lastSyncedAsClassesRef.current = incoming;
+      const vfsForMirror = vfsRef.current;
+      if (vfsForMirror) {
+        const sel = selected;
+        let cancelledMirror = false;
+        void (async () => {
+          for (const cls of incoming ?? []) {
+            const p = normalizeClassPath(cls.path);
+            if (p === sel) continue;
+            const existing = await vfsForMirror.read(p);
+            if (existing === cls.source) continue;
+            await vfsForMirror.write(p, cls.source);
+          }
+          if (cancelledMirror || !mountedRef.current) return;
+          await refresh();
+        })().catch(() => {});
+        // The effect's own cleanup (below) sets `cancelled`; guard the mirror too.
+        return () => {
+          cancelledMirror = true;
+        };
+      }
       return;
     }
     if (vfsOpInFlightRef.current > 0) {
@@ -462,7 +500,10 @@ export function ClassesPanel({
       try {
         await vfs.remove(path);
         next = await refresh();
-        await syncToDoc();
+        // Prune ONLY the class the user explicitly removed; any other doc class
+        // absent from the VFS is a not-yet-mirrored remote add and must survive
+        // (task 1390).
+        await syncToDoc(new Set([normalizeClassPath(path)]));
       } finally {
         vfsOpInFlightRef.current -= 1;
       }
@@ -503,7 +544,9 @@ export function ClassesPanel({
         await vfs.write(path, body);
         await vfs.remove(renaming);
         await refresh();
-        await syncToDoc();
+        // A rename removes exactly the OLD path (the new path was just written);
+        // prune only that, preserving any concurrent remote add (task 1390).
+        await syncToDoc(new Set([normalizeClassPath(renaming)]));
       } catch (e) {
         // Rename write failed (quota/I-O): surface a one-time warning rather
         // than an unhandled rejection (task 1404) and keep the rename open.

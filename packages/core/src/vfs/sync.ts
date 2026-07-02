@@ -71,19 +71,46 @@ export async function hydrateVfsFromDoc(
 }
 
 /**
+ * Governs which `doc.asClasses` entries {@link syncDocFromVfs} may DROP when
+ * they are present in the document but absent from the VFS.
+ *
+ * A class in `doc.asClasses` but not in the VFS is ambiguous once collaboration
+ * is in play (task 1390):
+ *   - it may be a class the LOCAL user just removed via the VFS (a real delete),
+ *     or
+ *   - it may be a REMOTE peer's class that merged into `doc.asClasses` (per-class
+ *     CRDT merge) but has not yet been mirrored into the local VFS.
+ * Blindly pruning the second case deletes the peer's class for EVERYONE (the
+ * removal round-trips back through the collab binding). The mode lets each caller
+ * declare which removals are legitimate:
+ *   - `"all"`  (default): drop every doc class absent from the VFS — the
+ *     save-time / open-mirror reconcile where the VFS is authoritative and no
+ *     remote merges can be racing.
+ *   - `"none"`: never drop a doc class — the edit-time (debounced) reconcile,
+ *     where a class absent from the VFS is a not-yet-mirrored remote addition,
+ *     NOT a deletion.
+ *   - a `Set` of paths: drop ONLY these explicitly (locally) removed paths; any
+ *     OTHER doc class absent from the VFS is treated as a remote addition and
+ *     kept. Paths are compared normalized.
+ */
+export type SyncRemoveMode = "all" | "none" | ReadonlySet<string>;
+
+/**
  * Reconcile `doc.asClasses` from the current VFS contents. Called on save: the
  * VFS (which the panel/editor and — on Tauri — external editors have been
  * mutating) becomes the source of truth and is folded back into the immutable
  * document via the P0 mutations. Only `.as` files are considered.
  *
- * Returns a NEW document; the input is never mutated. A file present in the doc
- * but absent from the VFS is dropped from `asClasses` (it was deleted via the
- * VFS). A file whose source is byte-identical is left as-is (no needless history
- * churn).
+ * Returns a NEW document; the input is never mutated. A file whose source is
+ * byte-identical is left as-is (no needless history churn). Whether a file
+ * present in the doc but absent from the VFS is dropped is controlled by
+ * `options.remove` (see {@link SyncRemoveMode}); it defaults to `"all"` (the
+ * historical behaviour: any doc class missing from the VFS is dropped).
  */
 export async function syncDocFromVfs(
   doc: FlashDocument,
-  vfs: ClassVfs
+  vfs: ClassVfs,
+  options?: { readonly remove?: SyncRemoveMode }
 ): Promise<SyncResult> {
   const entries = await vfs.list();
   const vfsPaths = new Set<string>();
@@ -114,22 +141,28 @@ export async function syncDocFromVfs(
     changed.push(path);
   }
 
-  // Drop classes that no longer exist in the VFS.
+  // Drop classes that no longer exist in the VFS, subject to `remove` mode.
+  // "none" never drops (a doc-only class is a not-yet-mirrored remote add, not a
+  // deletion — task 1390); a Set drops only the explicitly-removed local paths.
+  const removeMode: SyncRemoveMode = options?.remove ?? "all";
   const removed: string[] = [];
-  for (const cls of next.asClasses ?? []) {
-    const path = normalizeClassPath(cls.path);
-    if (!vfsPaths.has(path)) {
-      removed.push(path);
+  if (removeMode !== "none") {
+    for (const cls of next.asClasses ?? []) {
+      const path = normalizeClassPath(cls.path);
+      if (vfsPaths.has(path)) continue;
+      if (removeMode === "all" || removeMode.has(path)) {
+        removed.push(path);
+      }
     }
-  }
-  if (removed.length > 0) {
-    const keep = new Set(vfsPaths);
-    next = {
-      ...next,
-      asClasses: (next.asClasses ?? []).filter((c) =>
-        keep.has(normalizeClassPath(c.path))
-      ),
-    };
+    if (removed.length > 0) {
+      const drop = new Set(removed);
+      next = {
+        ...next,
+        asClasses: (next.asClasses ?? []).filter(
+          (c) => !drop.has(normalizeClassPath(c.path))
+        ),
+      };
+    }
   }
 
   return { doc: next, changed, removed };

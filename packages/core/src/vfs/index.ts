@@ -22,4 +22,4 @@ export {
   hydrateVfsFromDoc,
   syncDocFromVfs,
 } from "./sync.js";
-export type { HydrateResult, SyncResult } from "./sync.js";
+export type { HydrateResult, SyncResult, SyncRemoveMode } from "./sync.js";

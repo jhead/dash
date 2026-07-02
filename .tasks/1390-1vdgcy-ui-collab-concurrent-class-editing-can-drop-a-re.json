@@ -1,10 +1,10 @@
 {
   "id": "1390-1vdgcy-ui-collab-concurrent-class-editing-can-drop-a-re",
   "title": "UI/collab: concurrent class editing can drop a remote peer's .as class",
-  "description": "packages/authoring-ui/src/ClassesPanel.tsx. When a remote peer edits/creates a DIFFERENT class while the local user is typing, doc.asClasses identity changes but the re-hydrate effect early-returns because pendingEditRef.current is true (:214-232) \u2014 it adopts the incoming reference WITHOUT mirroring the remote class into the local OPFS VFS. Then the local debounced syncToDoc (:313-323) runs syncDocFromVfs(docRef.current, vfs), which reads the VFS (still missing the remote class) and produces a doc that OMITS the peer's class; that doc is pushed back through the binding, deleting the peer's class for everyone. Outside the task-1317 solo cases. Fix: in syncDocFromVfs/the debounced reconcile only update/add classes present in the VFS and never delete a doc class the VFS didn't originate unless it was a local VFS remove (track via vfsOpInFlightRef); or re-hydrate the remote class into the VFS before reconciling even when an edit is pending. Confidence: needs-repro (concurrent class edits in a live session).",
-  "status": "open",
+  "description": "FIXED: concurrent class editing no longer drops a remote peer's .as class. Root cause: ClassesPanel debounced syncDocFromVfs treated 'in doc but not in local VFS' as a deletion; a remote peer's concurrently-added class (merged into doc.asClasses via per-class CRDT) was never mirrored to the local VFS during a pending edit, so the reconcile pushed a delete that wiped it for everyone. Fix: (1) syncDocFromVfs gained SyncRemoveMode ('all' default | 'none' | Set) \u2014 edit-time reconcile uses 'none' (never prunes doc-only classes = remote adds), remove/rename pass a Set of only the removed path; (2) the pending-edit re-hydrate branch now mirrors incoming remote classes into the VFS (skipping the file being typed) so they surface locally. Tests: core vfs-core.test.ts (remove-mode: all drops, none/Set keep), authoring-ui classesPanel.test.ts (remote class added while typing survives debounce + shows in tree; remove keeps concurrent remote add), collab binding.test.ts (two peers add different classes concurrently, both survive). Verify: pnpm --filter './packages/**' build exit 0; @flash/core 5753 passed; @flash/collab 46 passed; @flash/authoring-ui 1292 passed (exit 0). docs/37-collab.md updated.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-07-02T01:15:28Z",
-  "updated_at": "2026-07-02T01:15:28Z"
+  "updated_at": "2026-07-02T03:38:27Z"
 }
