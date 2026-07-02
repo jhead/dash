@@ -124,11 +124,21 @@ whenever the Output tab is open.
 
 ### No duplicate / no leak across the hot-reload loop
 
-- `RufflePlayer` registers exactly ONE trace observer per `load()` and restores
-  the original console methods on every reload and on unmount, so a debounced
-  hot-reload never stacks duplicate observers and never leaks one on
-  tab-switch/unmount. A changing `onTrace` callback identity does not reload
-  Ruffle (it is read through a ref).
+- `RufflePlayer` registers exactly ONE trace observer per `load()` so a
+  debounced hot-reload never stacks duplicate observers. A changing `onTrace`
+  callback identity does not reload Ruffle (it is read through a ref).
+- The console.log/console.warn scrape (Ruffle diagnostics → Output panel) is
+  patched through a REF-COUNTED module-level interceptor
+  (`consoleIntercept.ts` `installConsoleSink`), NOT a per-instance swap. It
+  captures the pristine console methods exactly once (first sink) and restores
+  them exactly once (last sink); a single shared wrapper fans out to every
+  registered sink. Each `RufflePlayer` registers one sink on first load and
+  removes it on unmount. This is required because BOTH the Test Movie modal and
+  the Live Preview tab embed `RufflePlayer`, so two instances can be mounted at
+  once — the old per-instance swap let instance B capture A's wrapper as its
+  "original", and an interleaved unmount (A restores the real console, then B
+  restores A's wrapper) left `console.log` permanently pointing at a stale
+  wrapper (task 1402). Ref-counting makes any mount/unmount interleaving safe.
 - `LivePreviewPanel` wraps `onTrace` so each NEW compiled SWF (a fresh
   `swfBytes` identity) emits a subtle `─── reload ───` separator on its first
   trace, lazily — a reload that produces no trace adds no separator. Lines keep
@@ -148,7 +158,9 @@ active top tab is persisted via `editorLayout`.
   controller debounces and supersedes so a fast typist never queues a stack of
   compiles.
 - No leaked Ruffle instances: `RufflePlayer` removes its `<ruffle-player>` and
-  restores console interceptors on unmount; `useLivePreview` disposes the
+  unregisters its console sink on unmount (the shared module-level interceptor
+  restores the pristine console methods only when the LAST player unmounts, so a
+  still-mounted sibling player keeps working); `useLivePreview` disposes the
   controller on tab-switch/unmount.
 
 ## Tests

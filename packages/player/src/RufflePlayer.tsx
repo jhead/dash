@@ -5,6 +5,7 @@ import {
   shouldSuppressRuffleLog,
   stripConsoleCssFormat,
 } from "./ruffleLogFilter.js";
+import { installConsoleSink } from "./consoleIntercept.js";
 import { resolveRuffleBaseUrl, viteBaseUrl } from "./ruffleAssetUrl.js";
 
 export interface RufflePlayerProps {
@@ -106,9 +107,11 @@ export function RufflePlayer({
   const loadOptionsRef = useRef(loadOptions);
   loadOptionsRef.current = loadOptions;
 
-  // Holds the original console methods so we can restore them on unmount.
-  const origConsoleLogRef = useRef<(typeof console.log) | null>(null);
-  const origConsoleWarnRef = useRef<(typeof console.warn) | null>(null);
+  // Unregister function for this instance's console sink. The console patch is
+  // ref-counted at module scope (see consoleIntercept.ts) so two concurrent
+  // players (e.g. the Test Movie modal AND the Live Preview tab) share one safe
+  // interceptor and never capture each other's wrapper as their "original".
+  const removeConsoleSinkRef = useRef<(() => void) | null>(null);
   // A reload-the-current-SWF thunk, set on each successful load so Restart can
   // re-run it without re-referencing createAndLoad before it is defined.
   const reloadCurrentRef = useRef<(() => void) | null>(null);
@@ -243,38 +246,29 @@ export function RufflePlayer({
       // (DEBUG/INFO — which is also how avm_trace appears) are suppressed here,
       // because trace() now arrives via the dedicated observer above and must
       // NOT be double-delivered through the INFO console route.
-      // Restore the originals on each new load (in case of reload).
-      if (origConsoleLogRef.current) {
-        console.log = origConsoleLogRef.current;
+      //
+      // The console patch is ref-counted at MODULE scope (consoleIntercept.ts):
+      // it captures the pristine console methods exactly once (first sink) and
+      // restores them exactly once (last sink), with a single shared wrapper
+      // fanning out to every registered sink. This is what makes two concurrent
+      // players safe — the old per-instance swap let instance B capture A's
+      // wrapper as its "original", so interleaved unmounts leaked a stale
+      // wrapper onto console.log permanently. We register this instance's sink
+      // once (idempotent across reloads) and remove it on unmount.
+      if (!removeConsoleSinkRef.current) {
+        removeConsoleSinkRef.current = installConsoleSink((_method, args) => {
+          // ERROR/WARN severity messages are forwarded; DEBUG/INFO spam
+          // (and the styled INFO avm_trace line) is suppressed — trace()
+          // arrives via the dedicated observer above.
+          if (!onTraceRef.current) return;
+          const cleaned = stripConsoleCssFormat(args);
+          if (shouldSuppressRuffleLog(args)) return;
+          const line = cleaned
+            .map((a) => (typeof a === "string" ? a : String(a)))
+            .join(" ");
+          onTraceRef.current(line);
+        });
       }
-      if (origConsoleWarnRef.current) {
-        console.warn = origConsoleWarnRef.current;
-      }
-      origConsoleLogRef.current = console.log;
-      origConsoleWarnRef.current = console.warn;
-      const capturedOrigLog = console.log;
-      const capturedOrigWarn = console.warn;
-
-      /** Forward a console call to onTrace after stripping %c tokens. */
-      const forwardToTrace = (args: unknown[]) => {
-        if (!onTraceRef.current) return;
-        const cleaned = stripConsoleCssFormat(args);
-        if (shouldSuppressRuffleLog(args)) return;
-        const line = cleaned.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
-        onTraceRef.current(line);
-      };
-
-      console.log = (...args: unknown[]) => {
-        capturedOrigLog(...args);
-        forwardToTrace(args);
-      };
-
-      // Intercept console.warn to catch Ruffle's styled diagnostic messages.
-      // ERROR/WARN severity messages are forwarded; DEBUG/INFO spam is suppressed.
-      console.warn = (...args: unknown[]) => {
-        capturedOrigWarn(...args);
-        forwardToTrace(args);
-      };
 
       // Load SWF from bytes via a Blob URL so we don't need a server
       const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/x-shockwave-flash" });
@@ -365,14 +359,12 @@ export function RufflePlayer({
       reloadCurrentRef.current = null;
       // Tell the embedder its controls are gone so it can't drive a dead player.
       onControlsRef.current?.(null);
-      // Restore original console methods if we installed interceptors.
-      if (origConsoleLogRef.current) {
-        console.log = origConsoleLogRef.current;
-        origConsoleLogRef.current = null;
-      }
-      if (origConsoleWarnRef.current) {
-        console.warn = origConsoleWarnRef.current;
-        origConsoleWarnRef.current = null;
+      // Unregister this instance's console sink. The module-level interceptor
+      // restores the pristine console methods only when the LAST sink is
+      // removed, so a still-mounted sibling player keeps working.
+      if (removeConsoleSinkRef.current) {
+        removeConsoleSinkRef.current();
+        removeConsoleSinkRef.current = null;
       }
     };
   }, []);
