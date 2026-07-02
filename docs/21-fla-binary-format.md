@@ -556,6 +556,19 @@ needs only its final 20 bytes, the scale-9 grid of section 19.3. The bytes prece
 constant for a given release; a reader either consumes the fixed count for its target release or
 resynchronizes to the next class tag.
 
+**Environment-volatile fields (not reproducible by a headless writer).** A few fields Flash writes
+into a saved document reflect the authoring *session/environment* rather than document content, so
+`saveRealFla(createDocument())` cannot bit-match them against a fixture authored on another machine.
+The byte-oracle (`empty-bytematch.test.ts`) allowlists them explicitly:
+- **`timeCreated`/`ItemID` u32s** at tail-relative `0x18` and `0x5C` — creation timestamps.
+- **Session item/creation counter u32** at tail-relative `0x1C` (right after `timeCreated`) — a
+  running count of items minted in the authoring session; differs per session.
+- **Saved IDE window/screen geometry** — three u32s in the `CONTENTS_POST_STAGE` trailer (the empty
+  doc's `Contents` offsets 16678 / 16681 / 16686): the authoring window WxH on the screen it was
+  saved on. Machine-specific.
+
+These are not writer bugs; a correct headless serializer simply has no session state to emit here.
+
 ### 8.8 Folder entries
 
 The folder list is a `u32` count followed by one record per folder. Each record carries a version
@@ -646,6 +659,11 @@ if (>= F5):
   u32 guideCount
   guide[guideCount] { u32 direction; u32 valueTwips }   // direction 0 horizontal, 1 vertical
 ```
+
+`nextLayerId` is the id Flash would assign the next new layer on the page. The writer emits it
+**model-derived** as `layers.length + 1` (a fresh single-layer page → 2), NOT from a template
+constant; this is what byte-matches `flash8-empty.fla` (`empty-bytematch.test.ts`). The importer
+does not read `nextLayerId` into the model, so deriving it never affects real-FLA round-trips.
 
 Guides are stored per timeline (each scene's `CPicPage`, and each symbol's), so the importer reads
 every page's guide array and **unions** them into the doc-level `doc.properties.guides`

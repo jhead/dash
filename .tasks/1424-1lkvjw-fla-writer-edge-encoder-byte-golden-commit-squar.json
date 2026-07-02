@@ -1,0 +1,10 @@
+{
+  "id": "1424-1lkvjw-fla-writer-edge-encoder-byte-golden-commit-squar",
+  "title": "FLA writer edge-encoder byte-golden: commit square-canon.fla + pin type bytes (0xF3/0x30) behind hasValidFla8Fixture",
+  "description": "Follow-up split from 1406. The flash8-empty.fla byte-oracle is now restored (fixture committed 32768 B; empty-bytematch/carchive-validate/contents-structure all RUN+PASS). REMAINING from 1406: square-canon.fla is still absent, so write/timeline-write.ts's claim that the shape edge-stream encoder was 'verified against square-canon.fla' (exact type bytes 0xF3,0x30,0x30,0x30) is still unreproducible and unguarded. Fix: commit a genuine square-canon.fla (requires a real Flash 8 oracle \u2014 an agent must NOT fabricate it) and add a byte-golden edge-encoder test behind the same hasValidFla8Fixture guard pattern. Blocked until a real Flash 8 binary is available.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T03:15:00Z",
+  "updated_at": "2026-07-02T03:15:00Z"
+}

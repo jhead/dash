@@ -161,7 +161,17 @@ function writeCPicPage(
   // CPicPage tail (§10.1). Byte-matches the genuine empty fixture: the null child
   // tag, sentinel registration point, F8 skip(2), pageVersionB, nextLayerId,
   // currentFrame, and guide count.
-  w.bytes(PAGE_TAIL);
+  //
+  // `nextLayerId` (u16 LE at PAGE_TAIL[13], right after pageVersionB 0x07 at [12])
+  // is MODEL-DERIVED, not a template constant: Flash 8 stores the id it would hand
+  // the next new layer, which for a fresh page is `layers.length + 1` (a
+  // single-layer doc → 2, matching flash8-empty.fla; the old hardcoded template
+  // value 3 was wrong for one layer). Splitting the const around this field keeps
+  // every other tail byte byte-exact. Not read back by the importer (the model
+  // carries no nextLayerId), so real-FLA round-trips are unaffected.
+  w.bytes(PAGE_TAIL.subarray(0, 13)); // …through pageVersionB 0x07
+  w.u16(timeline.layers.length + 1); // nextLayerId (model-derived)
+  w.bytes(PAGE_TAIL.subarray(15)); // currentFrame, guideCount, trailing skip
 }
 
 // ---------------------------------------------------------------------------

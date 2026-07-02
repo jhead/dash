@@ -7,9 +7,16 @@
  * empty-doc output literally IS a real Flash file and Flash will open it.
  *
  * Volatile bytes (verified against the fixture):
- *   - Contents: two u32 timeCreated/ItemID fields in the scene CDocumentPage
- *     FixedPageTail. Their absolute offsets are computed below.
+ *   - Contents: two u32 timeCreated/ItemID timestamp fields in the scene
+ *     CDocumentPage FixedPageTail (tail-relative 0x18 and 0x5C), plus a u32 session
+ *     item/creation counter at tail-relative 0x1C (abs 111), plus three u32 saved
+ *     IDE window/screen-geometry fields in the CONTENTS_POST_STAGE trailer (abs
+ *     16678 / 16681 / 16686). The counter and geometry are environment/session
+ *     state a headless deterministic writer cannot reproduce — not writer bugs.
  *   - Page 1: one big-endian u16 frameId in the empty-keyframe body.
+ *
+ * nextLayerId (Page 1 tail) is NOT volatile: it is model-derived (layers.length+1)
+ * by the writer, so it byte-matches the fixture with no allowance.
  *
  * Grid color is a model-default divergence, not volatile: Flash's empty default is
  * #c0c0c0 while createDocument()'s grid is #999999. The test builds the doc with
@@ -122,6 +129,19 @@ describe.runIf(FIXTURE_PRESENT)("gate 1 — empty doc byte-match vs flash8-empty
     const ts2 = tailStart + 0x5c;
     const allowed = new Set<number>();
     for (const base of [ts1, ts2]) for (let k = 0; k < 4; k++) allowed.add(base + k);
+    // Additional GENUINELY-VOLATILE fields Flash writes from the authoring session/
+    // environment. A headless, deterministic writer cannot reproduce them, so they
+    // are allowlisted (these are NOT writer bugs):
+    //   - tail-relative 0x1C (abs 111): a u32 session item/creation counter written
+    //     right after the timeCreated u32 at 0x18. The fixture's Flash session had a
+    //     different running item count (14) than createDocument() (12), so this u32
+    //     legitimately differs — it is not derivable from an empty document.
+    //   - CONTENTS_POST_STAGE trailer u32s at abs 16678 / 16681 / 16686: the saved
+    //     IDE window/screen geometry (authoring window WxH on the screen it was saved
+    //     on). Machine/session-specific; not reproducible by a headless writer.
+    const sessionCounter = tailStart + 0x1c; // abs 111
+    for (let k = 0; k < 4; k++) allowed.add(sessionCounter + k);
+    for (const base of [16678, 16681, 16686]) for (let k = 0; k < 4; k++) allowed.add(base + k);
     const unexpected = diff.filter((o) => !allowed.has(o));
     if (unexpected.length) {
       // eslint-disable-next-line no-console

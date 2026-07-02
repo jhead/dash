@@ -50,7 +50,15 @@ export const PAGE_LAYER_TAIL = b64(
   "AQAA/////0//T/8AAAAAAQAAAAAAAAEBAAAAAACAAAAAgAAABwMAAQAAAAAAAAAAAA==",
 );
 
-/** CPicPage tail (§10.1) for a default single-layer empty page: skip(2), sentinel regpoint, F8 skip(2), pageVersionB 0x07, nextLayerId, currentFrame, guideCount 0. */
+/**
+ * CPicPage tail (§10.1): skip(2), sentinel regpoint, F8 skip(2), pageVersionB 0x07,
+ * nextLayerId (u16 LE at index 13), currentFrame, guideCount 0.
+ *
+ * NOTE: the `nextLayerId` u16 at index 13 is a placeholder (3) — the writer OVERWRITES
+ * it with the model-derived value `layers.length + 1` (see timeline-write.ts
+ * writeCPicPage, which splits this const around index 13). Do not rely on the constant's
+ * value there.
+ */
 export const PAGE_TAIL = b64(
   "AAAAAACAAAAAgAAABwMAAQAAAAAAAAAAAA==",
 );
