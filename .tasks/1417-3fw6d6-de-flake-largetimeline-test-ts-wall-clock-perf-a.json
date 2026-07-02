@@ -1,0 +1,10 @@
+{
+  "id": "1417-3fw6d6-de-flake-largetimeline-test-ts-wall-clock-perf-a",
+  "title": "De-flake largetimeline.test.ts wall-clock perf assertion",
+  "description": "packages/core/src/**/largetimeline.test.ts has a wall-clock performance assertion (expects an operation < ~5ms) that intermittently fails under parallel CI/agent load (observed 10.3ms) while passing in isolation. This is a flaky test, not a real regression. Fix: replace the brittle absolute wall-clock threshold with a robust measure \u2014 e.g. a generous ceiling, an operation-count/complexity assertion, warmup + median of N runs, or mark it a non-gating perf benchmark. Acceptance: the test no longer fails under concurrent load and still guards against real O(n^2)-style blowups. Reference: surfaced by the task 1381 agent.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-07-02T02:12:40Z",
+  "updated_at": "2026-07-02T02:12:40Z"
+}

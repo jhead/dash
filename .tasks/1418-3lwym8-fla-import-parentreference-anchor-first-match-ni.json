@@ -1,0 +1,10 @@
+{
+  "id": "1418-3lwym8-fla-import-parentreference-anchor-first-match-ni",
+  "title": "FLA import: parentReference/anchor first-match nit at flash8-binary.ts ~3596",
+  "description": "In packages/core/src/fla/flash8-binary.ts (~line 3596) the 03 B4 00 00 00 anchor uses a first-match scan, which is a correctness nit (could match the wrong occurrence) rather than a DoS. It sits on shared import code and needs real-fixture validation. Fix: make the anchor match position-aware / structurally anchored instead of first-match, and validate against a real FLA fixture. Mark as \"unconfirmed / needs real-FLA fixture\" \u2014 verify before changing. Acceptance: anchored correctly with a fixture-backed test; no regression to Magnet/evaporatingdrip import. Reference: deferred by the task 1385 agent.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-07-02T02:12:48Z",
+  "updated_at": "2026-07-02T02:12:48Z"
+}
