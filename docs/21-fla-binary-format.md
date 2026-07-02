@@ -705,6 +705,17 @@ so any frame on the full path — e.g. a frame-sound keyframe — failed to roun
 breakage looked layer-name-length-dependent only because the 20-byte shift landed on
 different bytes per name length.)
 
+The clone writes an *empty* keyframe via the fast path (the 143-byte `PAGE_FRAME_BODY`
+template emitted verbatim, with only the big-endian frameId stamped). That template hardcodes
+the §11 `duration` field (little-endian `u16` at template bytes 52–53) to the fixture's value
+of `1`. A blank keyframe held N frames must patch that field with `max(1, span)` where `span`
+is the frame count until the next keyframe — otherwise every empty span is written `duration =
+1` and, because the importer's `convertLayer` does `frameIndex += f.duration`, each empty span
+collapses to a single frame on re-import: layer lengths shrink and later keyframes shift left.
+(Task 1384: `writeCPicFrame`'s empty-keyframe branch computed the span but ignored it; it now
+stamps the duration bytes. `createDocument`'s default frame is a 1-frame span, so `duration =
+1` there is unchanged and the empty-doc byte-match holds.)
+
 ### 11.1 Key mode
 
 The `keyMode` field encodes the keyframe's nature and its tween options. A plain keyframe is the

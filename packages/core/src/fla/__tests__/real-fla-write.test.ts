@@ -215,6 +215,58 @@ describe("saveRealFla — short/edge layer names round-trip on the full frame pa
   });
 });
 
+// Regression for task 1384: the empty-keyframe fast path (writeCPicFrame) emitted the
+// PAGE_FRAME_BODY template verbatim, and that template hardcodes the §11 span duration
+// (little-endian u16 at bytes 52-53) to 1. The computed span argument was ignored, so a
+// blank keyframe held N frames was written span=1; on re-import convertLayer does
+// `frameIndex += f.duration`, collapsing every empty span to a single frame (layer lengths
+// shrink, later keyframes shift). The fix patches the duration field with max(1, span).
+describe("saveRealFla — empty keyframe span/duration round-trips (task 1384)", () => {
+  function blankKeyframeLayer(frameCount: number): FlashDocument {
+    // One blank (empty) keyframe held `frameCount` frames.
+    const frame = createFrame(0, { isKeyframe: true, isEmpty: true });
+    const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount });
+    return baseDoc([sceneWith("Scene 1", [layer])]);
+  }
+
+  for (const span of [1, 2, 5, 24, 300]) {
+    it(`a blank keyframe held ${span} frame(s) writes span=${span} (lenient reader)`, () => {
+      const page = __readAllStreamsForTest(saveRealFla(blankKeyframeLayer(span))).get("Page 1")!;
+      const tl = parseFla8Timeline(page);
+      expect(tl.layers[0]!.frames[0]!.duration).toBe(span);
+    });
+
+    it(`a blank keyframe held ${span} frame(s) recovers frameCount=${span} (tryLoadRealFla)`, () => {
+      const out = tryLoadRealFla(saveRealFla(blankKeyframeLayer(span)));
+      expect(out).not.toBeNull();
+      const layer = out!.scenes[0]!.timeline.layers[0]!;
+      expect(layer.frameCount).toBe(span);
+      // The single blank keyframe stays a single keyframe at index 0.
+      expect(layer.frames.filter((f) => f.isKeyframe).map((f) => f.index)).toEqual([0]);
+    });
+  }
+
+  it("a later keyframe does not shift when an earlier blank span is multi-frame", () => {
+    // Blank keyframe at 0 held 10 frames, then a shape keyframe at 10.
+    const blank = createFrame(0, { isKeyframe: true, isEmpty: true });
+    const shapeKf = createFrame(10, {
+      isKeyframe: true,
+      isEmpty: false,
+      displayObjects: [solidRectShape(20, 20)],
+    });
+    const layer = createLayer("Layer 1", "normal", {
+      frames: [blank, shapeKf],
+      frameCount: 11,
+    });
+    const doc = baseDoc([sceneWith("Scene 1", [layer])]);
+    const out = tryLoadRealFla(saveRealFla(doc));
+    expect(out).not.toBeNull();
+    const kfs = out!.scenes[0]!.timeline.layers[0]!.frames.filter((f) => f.isKeyframe);
+    // Before the fix the blank span collapsed to 1 and the shape keyframe landed at index 1.
+    expect(kfs.map((f) => f.index)).toEqual([0, 10]);
+  });
+});
+
 // Content-bearing timelines are asserted against the STRICT CArchive validator
 // (real-Flash byte structure), not against the lenient importer's round-trip. The
 // writer's contract is byte-compatibility with Flash 8; importer round-tripping is
