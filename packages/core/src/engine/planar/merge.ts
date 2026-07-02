@@ -76,6 +76,19 @@ export interface FoldResult {
   readonly merged: Shape | null;
 }
 
+/** Options shared by the fold entry points. */
+export interface FoldOptions {
+  /**
+   * When true, strokes covered by a LATER-drawn fill are PRESERVED instead of
+   * consumed (task 1430). The merge fold's default is to CONSUME them — a fill
+   * drawn over a line replaces the covered run, matching Flash 8 Paint Normal.
+   * The brush paint modes that deliberately leave lines untouched (Paint Fills /
+   * Behind / Selection / Inside) set this flag; Paint Normal + plain fill commits
+   * leave it false so their fills eat the lines beneath them.
+   */
+  readonly preserveLines?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Spatial culling (task 1327, corrected by task 1329) — bounded per-stroke fold
 // on dense art, geometrically IDENTICAL to the full whole-layer rebuild.
@@ -187,7 +200,8 @@ function boundsOverlap(a: Bound, b: Bound, tol: number): boolean {
 export function foldShapeIntoLayer(
   existing: readonly { shape: Shape; x: number; y: number }[],
   incoming: { shape: Shape; x: number; y: number },
-  mergedId: string
+  mergedId: string,
+  options?: FoldOptions
 ): FoldResult {
   // Order matters: existing first (oldest -> newest), incoming last so it is the
   // topmost in draw order and wins different-color overlaps (last-drawn wins).
@@ -197,7 +211,13 @@ export function foldShapeIntoLayer(
 
   if (stageShapes.length === 0) return { merged: null };
 
-  const ps = buildArrangementFromShapes(stageShapes);
+  // The fold CONSUMES strokes under later-drawn fills (task 1430) unless the
+  // caller asked to preserve lines (the line-preserving brush paint modes). The
+  // shapes are already in draw order (oldest first, incoming last), which is
+  // exactly the order buildArrangementFromShapes indexes them by.
+  const ps = buildArrangementFromShapes(stageShapes, {
+    consumeStrokesUnderFills: !options?.preserveLines,
+  });
   const merged = planarShapeToShape(ps, mergedId);
   return { merged };
 }
@@ -246,7 +266,8 @@ export interface CulledFoldResult<T> {
 export function foldShapeIntoLayerCulled<T extends { shape: Shape; x: number; y: number }>(
   existing: readonly T[],
   incoming: T,
-  mergedId: string
+  mergedId: string,
+  options?: FoldOptions
 ): CulledFoldResult<T> {
   const incBBox = shapeStageBBox(incoming);
 
@@ -296,7 +317,7 @@ export function foldShapeIntoLayerCulled<T extends { shape: Shape; x: number; y:
     else untouched.push(existing[i]);
   }
 
-  const { merged } = foldShapeIntoLayer(overlapping, incoming, mergedId);
+  const { merged } = foldShapeIntoLayer(overlapping, incoming, mergedId, options);
   return { merged, untouched };
 }
 
@@ -323,7 +344,8 @@ export interface MergeableLike {
 export function planarMergeCommit<T extends MergeableLike>(
   layerObjects: readonly T[],
   incoming: T,
-  makeMergedObject: (shape: Shape) => T
+  makeMergedObject: (shape: Shape) => T,
+  options?: FoldOptions
 ): T[] | null {
   const mergeable: T[] = [];
   const passthrough: T[] = [];
@@ -344,7 +366,12 @@ export function planarMergeCommit<T extends MergeableLike>(
   // while producing a result geometrically IDENTICAL to the full whole-layer rebuild
   // — untouched shapes are disjoint from every folded shape, so they cannot interact
   // with the merged artwork in any way (including z-order).
-  const { merged, untouched } = foldShapeIntoLayerCulled(mergeable, incoming, incoming.shape.id);
+  const { merged, untouched } = foldShapeIntoLayerCulled(
+    mergeable,
+    incoming,
+    incoming.shape.id,
+    options
+  );
   if (!merged || merged.paths.length === 0) return null;
 
   const mergedObj = makeMergedObject(merged);

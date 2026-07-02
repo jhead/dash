@@ -32,7 +32,24 @@ import { edgeAt } from "./geometry.js";
  * bounded entirely by fill index k is a single region regardless of how many
  * source paths contributed its boundary).
  */
-export function buildArrangementFromShapes(shapes: readonly Shape[]): ReturnType<Arrangement["build"]> {
+export interface BuildArrangementOptions {
+  /**
+   * When true, a stroke half-edge whose midpoint is covered by a fill drawn
+   * strictly AFTER it (a later draw-order shape) has its stroke CONSUMED (its
+   * `lineStyle` cleared) so the covering fill replaces the line beneath it —
+   * authentic Flash 8 Paint Normal / fill-commit semantics (task 1430). Only the
+   * covered span is consumed; the arrangement has already split the stroke at the
+   * fill's boundary, so uncovered spans keep their stroke. Default false, so every
+   * direct/generic caller (live re-derive, sub-selection, brush masks, eraser,
+   * tests) is byte-identical to the previous behavior; the merge FOLD opts in.
+   */
+  readonly consumeStrokesUnderFills?: boolean;
+}
+
+export function buildArrangementFromShapes(
+  shapes: readonly Shape[],
+  options?: BuildArrangementOptions
+): ReturnType<Arrangement["build"]> {
   const fills: Fill[] = [];
   const lineStyles: Stroke[] = [];
   const fillIndex = new Map<string, number>();
@@ -77,7 +94,7 @@ export function buildArrangementFromShapes(shapes: readonly Shape[]): ReturnType
   // enclosure count) = no fill. Authored shapes carry a DISTINCT Fill object per
   // path, so each becomes its own single-loop group (parity == plain containment)
   // — same-color union / different-color cut (top group wins) are unchanged.
-  const fillRegions: { poly: Point[]; fill: number; group: number }[] = [];
+  const fillRegions: { poly: Point[]; fill: number; group: number; order: number }[] = [];
   // Stable id per (source shape, Fill object identity). Keyed by object ref so
   // two shapes never share a group even if they use an equal-valued Fill.
   const groupOf = new Map<string, number>();
@@ -94,7 +111,10 @@ export function buildArrangementFromShapes(shapes: readonly Shape[]): ReturnType
   let shapeIdx = 0;
   for (const shape of shapes) {
     for (const path of shape.paths) {
-      for (const e of pathToInputEdges(path, internFill, internLine)) {
+      // drawOrder = the source shape's draw index (0 = oldest), threaded onto
+      // stroke edges so stroke-under-fill consumption knows which fills post-date
+      // the stroke (task 1430).
+      for (const e of pathToInputEdges(path, internFill, internLine, shapeIdx)) {
         arr.insertEdge(e);
       }
       if (path.fill && path.closed) {
@@ -108,6 +128,7 @@ export function buildArrangementFromShapes(shapes: readonly Shape[]): ReturnType
           poly: chordPolygon(shapePathToEdgeGeometries(path)),
           fill: internFill(path.fill),
           group,
+          order: shapeIdx,
         });
       }
     }
@@ -116,7 +137,57 @@ export function buildArrangementFromShapes(shapes: readonly Shape[]): ReturnType
 
   const ps = arr.build();
   assignFaceFillsBySampling(ps, fillRegions);
+  if (options?.consumeStrokesUnderFills) consumeStrokesUnderFills(ps, fillRegions);
   return ps;
+}
+
+/**
+ * Merge-fold stroke-under-fill consumption (task 1430). In authentic Flash 8
+ * merge drawing, artwork drawn ON TOP replaces what is beneath it — INCLUDING
+ * strokes: brushing a fill (Paint Normal), or drawing any plain fill, over a
+ * pencil line ERASES the covered run of that line (this is exactly why Paint
+ * Fills / Behind / Inside exist — they are the modes that leave lines alone).
+ *
+ * The arrangement has already split every stroke at the boundaries of the fills
+ * it crosses, so each stroke half-edge is wholly inside or wholly outside any
+ * given fill region. For each stroked half-edge we clear its `lineStyle` (and its
+ * twin's) when its midpoint is covered by a fill region drawn STRICTLY LATER than
+ * the stroke (`region.order > he.drawOrder`). Strict draw-order is what keeps the
+ * P2 "line splits fill" case intact: a line drawn OVER an existing fill has the
+ * higher order, so that earlier fill never consumes it (the line still splits the
+ * fill); only a fill drawn after the line replaces it. A stroke and a fill from
+ * the SAME shape share an order, so a stroked-and-filled shape never eats its own
+ * boundary stroke.
+ *
+ * Clearing `lineStyle` (rather than filtering at emit) also makes the now-covered
+ * seam dissolvable in `planarShapeToShape`, so the covering fill reads back as one
+ * clean region instead of being split by a phantom line.
+ */
+function consumeStrokesUnderFills(
+  ps: PlanarShape,
+  regions: readonly { poly: Point[]; fill: number; group: number; order: number }[]
+): void {
+  if (regions.length === 0) return;
+  for (const he of ps.halfEdges) {
+    if (he.lineStyle === null || he.lineStyle === undefined) continue;
+    // Only the forward half-edge of each undirected edge needs testing; clear
+    // both. Skip the twin once handled (its lineStyle is already null).
+    const order = he.drawOrder ?? -1;
+    const mid = edgeAt(he.geometry, 0.5);
+    let covered = false;
+    for (const r of regions) {
+      if (r.order <= order) continue; // only fills drawn strictly AFTER consume
+      if (pointInPolygon(mid, r.poly)) {
+        covered = true;
+        break;
+      }
+    }
+    if (covered) {
+      he.lineStyle = null;
+      const twin = ps.halfEdges[he.twin];
+      if (twin) twin.lineStyle = null;
+    }
+  }
 }
 
 /**
@@ -188,7 +259,8 @@ export function buildArrangement(
 export function pathToInputEdges(
   path: ShapePath,
   internFill: (f: Fill) => number,
-  internLine: (s: Stroke) => number
+  internLine: (s: Stroke) => number,
+  drawOrder = -1
 ): InputEdge[] {
   const geoms = shapePathToEdgeGeometries(path);
   if (geoms.length === 0) return [];
@@ -215,6 +287,7 @@ export function pathToInputEdges(
     fillLeft: fillIdx,
     fillRight: null,
     lineStyle: lineIdx,
+    drawOrder,
   }));
 }
 

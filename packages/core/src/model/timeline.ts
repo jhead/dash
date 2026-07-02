@@ -1119,7 +1119,8 @@ export function commitShapeToTimeline(
   timeline: Timeline,
   layerId: string,
   frameIndex: number,
-  incoming: DisplayObject
+  incoming: DisplayObject,
+  options?: { readonly preserveLines?: boolean }
 ): Timeline {
   // Object Drawing + every non-shape display object: plain discrete append.
   if (incoming.type !== "shape") {
@@ -1136,7 +1137,8 @@ export function commitShapeToTimeline(
   const mergedList = planarMergeCommit<ShapeDisplayObject>(
     existing,
     shapeObj,
-    (s) => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 })
+    (s) => ({ type: "shape", id: s.id, shape: s, x: 0, y: 0 }),
+    { preserveLines: options?.preserveLines }
   );
   return mergedList
     ? setKeyframeDisplayObjects(timeline, layerId, frameIndex, mergedList as DisplayObject[])
@@ -1200,7 +1202,13 @@ export function commitBrushStrokeToTimeline(
     x: 0,
     y: 0,
   };
-  return commitShapeToTimeline(timeline, layerId, frameIndex, clippedObj);
+  // The non-normal paint modes (Fills / Behind / Selection / Inside) deliberately
+  // leave existing LINES untouched — only "normal" replaces the lines it covers
+  // (task 1430). Since "normal" already short-circuited above, every mode reaching
+  // here preserves lines.
+  return commitShapeToTimeline(timeline, layerId, frameIndex, clippedObj, {
+    preserveLines: true,
+  });
 }
 
 /**

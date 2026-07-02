@@ -372,6 +372,14 @@ export interface HalfEdge {
   fillRight: number | null;
   /** Line-style index, or null for no stroke. */
   lineStyle: number | null;
+  /**
+   * Draw-order index of the SOURCE shape that contributed this edge's stroke
+   * (0 = oldest, higher = later/topmost), or -1 if unknown. Used by the merge
+   * fold's stroke-under-fill consumption (a stroke is replaced by any fill drawn
+   * strictly AFTER it that covers it — Flash 8 Paint Normal semantics). Only the
+   * merge fold populates this; other arrangement builders leave it -1/absent.
+   */
+  drawOrder?: number;
 }
 
 /** A vertex (node) in the planar subdivision, at twip-snapped coordinates. */

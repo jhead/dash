@@ -81,6 +81,12 @@ export interface InputEdge {
   readonly fillRight?: number | null;
   /** Line-style index, or null for no stroke. */
   readonly lineStyle?: number | null;
+  /**
+   * Draw-order index of the source shape (0 = oldest). Threaded through splits so
+   * the merge fold can consume a stroke covered by a LATER-drawn fill. Defaults
+   * to -1 (unknown) for callers that don't supply it.
+   */
+  readonly drawOrder?: number;
 }
 
 interface MutVertex {
@@ -101,6 +107,8 @@ interface MutHalfEdge {
   fillLeft: number | null;
   fillRight: number | null;
   lineStyle: number | null;
+  /** Draw-order index of the source shape (0 = oldest), or -1 if unknown. */
+  drawOrder: number;
 }
 
 /**
@@ -294,7 +302,8 @@ export class Arrangement {
     geom: EdgeGeometry,
     fillLeft: number | null,
     fillRight: number | null,
-    lineStyle: number | null
+    lineStyle: number | null,
+    drawOrder = -1
   ): number {
     // Coincident-edge merge: if an undirected edge already runs a→b with the
     // same geometry, fold the new labels into it rather than adding a duplicate.
@@ -313,6 +322,13 @@ export class Arrangement {
       if (lineStyle !== null) {
         existing.lineStyle = lineStyle;
         twin.lineStyle = lineStyle;
+        // Track the LATEST stroke's draw order on a coincident edge so
+        // stroke-under-fill consumption sees the right order (a later stroke
+        // sharing an edge with an earlier one wins the recency it needs).
+        if (drawOrder > existing.drawOrder) {
+          existing.drawOrder = drawOrder;
+          twin.drawOrder = drawOrder;
+        }
       }
       return existing.id;
     }
@@ -330,6 +346,7 @@ export class Arrangement {
       fillLeft,
       fillRight,
       lineStyle,
+      drawOrder,
     };
     const rev: MutHalfEdge = {
       id: revId,
@@ -343,6 +360,7 @@ export class Arrangement {
       fillLeft: fillRight,
       fillRight: fillLeft,
       lineStyle,
+      drawOrder,
     };
     this.edges.push(fwd, rev);
     this.vertices[aId].outgoing.push(fwdId);
@@ -362,6 +380,7 @@ export class Arrangement {
     const fillLeft = input.fillLeft ?? null;
     const fillRight = input.fillRight ?? null;
     const lineStyle = input.lineStyle ?? null;
+    const drawOrder = input.drawOrder ?? -1;
 
     // Snap the input endpoints/control up front.
     let geom: EdgeGeometry = {
@@ -480,7 +499,7 @@ export class Arrangement {
       // rotation system and leaves orphan stroke fragments on read-back (the
       // stroked-ellipse centre-pick bug, task 1334). Skip lines AND curves.
       if (aId === bId) continue; // collapsed (was: only `&& control === null`)
-      this.addTwinPair(aId, bId, pg, fillLeft, fillRight, lineStyle);
+      this.addTwinPair(aId, bId, pg, fillLeft, fillRight, lineStyle, drawOrder);
     }
   }
 
@@ -495,6 +514,7 @@ export class Arrangement {
     const fillLeft = fwd.fillLeft;
     const fillRight = fwd.fillRight;
     const lineStyle = fwd.lineStyle;
+    const drawOrder = fwd.drawOrder;
     const geom = fwd.geometry;
 
     // Dedupe by the shared crossing point (task 1332) and order by parameter.
@@ -517,7 +537,7 @@ export class Arrangement {
       const aId = this.getOrCreateVertex(pg.p0);
       const bId = this.getOrCreateVertex(pg.p1);
       if (aId === bId) continue; // collapsed line OR zero-span curve (task 1334)
-      this.addTwinPair(aId, bId, pg, fillLeft, fillRight, lineStyle);
+      this.addTwinPair(aId, bId, pg, fillLeft, fillRight, lineStyle, drawOrder);
     }
   }
 
@@ -710,6 +730,7 @@ export class Arrangement {
       fillLeft: e.fillLeft,
       fillRight: e.fillRight,
       lineStyle: e.lineStyle,
+      drawOrder: e.drawOrder,
     }));
 
     return {

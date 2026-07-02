@@ -787,3 +787,117 @@ describe("planar read-back: multi-cycle stability is a fixed point (task 1335)",
     }
   });
 });
+
+// ===========================================================================
+// Stroke-under-fill CONSUMPTION (task 1430) — a fill drawn OVER a line replaces
+// the covered run of that line (Flash 8 Paint Normal / plain-fill-commit). Only
+// fills drawn STRICTLY AFTER a stroke consume it; a line drawn OVER a fill still
+// SPLITS it (P2, task 1320) and survives. The line-preserving brush paint modes
+// pass { preserveLines: true } to keep their lines intact.
+// ===========================================================================
+
+describe("planar merge — stroke-under-fill consumption (task 1430)", () => {
+  const PENCIL = {
+    color: { r: 0, g: 0, b: 0, a: 255 },
+    width: 1,
+    caps: "round" as const,
+    joints: "round" as const,
+  };
+  const lineShape = (id: string, x0: number, y0: number, x1: number, y1: number): Shape => ({
+    id,
+    paths: [
+      { start: { x: x0, y: y0 }, segments: [{ type: "line", to: { x: x1, y: y1 } }], closed: false, stroke: PENCIL },
+    ],
+  });
+  /** Midpoint of a single-segment stroke path. */
+  const strokeMid = (p: ShapePath): Point => {
+    const end = p.segments[p.segments.length - 1]!.to;
+    return { x: (p.start.x + end.x) / 2, y: (p.start.y + end.y) / 2 };
+  };
+  const strokesOf = (s: Shape): ShapePath[] => s.paths.filter((p) => p.stroke && !p.fill);
+  const strokeLen = (s: Shape): number =>
+    strokesOf(s).reduce((sum, p) => {
+      const end = p.segments[p.segments.length - 1]!.to;
+      return sum + Math.hypot(end.x - p.start.x, end.y - p.start.y);
+    }, 0);
+
+  it("REPRO: a fill brushed over the middle of a 100px line removes the covered span, keeps the ends", () => {
+    // 100px pencil line at y=50; a red fill rect covers x∈[25,75] (the middle).
+    const line = { shape: lineShape("l", 0, 50, 100, 50), x: 0, y: 0 };
+    const fill = { shape: rectShape("f", 25, 40, 50, 20, RED), x: 0, y: 0 };
+
+    const { merged } = foldShapeIntoLayer([line], fill, "m");
+    expect(merged).not.toBeNull();
+    const strokes = strokesOf(merged!);
+
+    // No surviving stroke segment lies UNDER the fill (25 < x < 75, on the line).
+    for (const p of strokes) {
+      const m = strokeMid(p);
+      const underFill = m.x > 25 + 0.1 && m.x < 75 - 0.1;
+      expect(underFill).toBe(false);
+    }
+    // Both uncovered ends survive: a segment left of the fill and one to the right.
+    expect(strokes.some((p) => strokeMid(p).x < 25)).toBe(true);
+    expect(strokes.some((p) => strokeMid(p).x > 75)).toBe(true);
+    // Total remaining stroke length ≈ the two 25px ends (the 50px middle is gone).
+    expect(strokeLen(merged!)).toBeCloseTo(50, 0);
+    // The red fill is intact.
+    expect(merged!.paths.some((p) => p.fill)).toBe(true);
+  });
+
+  it("draw ORDER matters: a line drawn OVER a fill still SPLITS it and survives (P2 intact)", () => {
+    // Fill first (order 0), line drawn ON TOP (order 1) — the earlier fill must
+    // NOT consume the later line; the line splits the fill and stays fully visible.
+    const fill = { shape: rectShape("f", 0, 0, 100, 100, RED), x: 0, y: 0 };
+    const line = { shape: lineShape("l", -10, 50, 110, 50), x: 0, y: 0 };
+
+    const { merged } = foldShapeIntoLayer([fill], line, "m");
+    expect(merged).not.toBeNull();
+    // The dividing span across the fill survives (a stroke midpoint inside the fill).
+    const strokes = strokesOf(merged!);
+    expect(strokes.some((p) => {
+      const m = strokeMid(p);
+      return m.x > 0 && m.x < 100 && m.y > 0 && m.y < 100;
+    })).toBe(true);
+  });
+
+  it("preserveLines: a line-preserving paint mode keeps the covered run", () => {
+    const line = { shape: lineShape("l", 0, 50, 100, 50), x: 0, y: 0 };
+    const fill = { shape: rectShape("f", 25, 40, 50, 20, RED), x: 0, y: 0 };
+
+    const consumed = foldShapeIntoLayer([line], fill, "m").merged!;
+    const preserved = foldShapeIntoLayer([line], fill, "m", { preserveLines: true }).merged!;
+
+    // With preserveLines the whole 100px line survives (nothing consumed).
+    expect(strokeLen(preserved)).toBeCloseTo(100, 0);
+    // Without it, the covered middle span is gone.
+    expect(strokeLen(consumed)).toBeLessThan(strokeLen(preserved) - 40);
+  });
+
+  it("a stroked-and-filled shape never consumes its OWN boundary stroke", () => {
+    // A single stroked rect (fill + coincident boundary stroke, same draw order).
+    const stroked: Shape = {
+      id: "sr",
+      paths: [
+        {
+          start: { x: 0, y: 0 },
+          segments: [
+            { type: "line", to: { x: 0, y: 50 } },
+            { type: "line", to: { x: 50, y: 50 } },
+            { type: "line", to: { x: 50, y: 0 } },
+            { type: "line", to: { x: 0, y: 0 } },
+          ],
+          closed: true,
+          fill: RED,
+          stroke: PENCIL,
+        },
+      ],
+    };
+    const ps = buildArrangementFromShapes([stroked], { consumeStrokesUnderFills: true });
+    const merged = planarShapeToShape(ps, "m");
+    // The boundary stroke survives (emitted as a combined fill+stroke loop or as
+    // stroke segments) — the shape's own fill does not eat its own outline.
+    const hasStroke = merged.paths.some((p) => p.stroke);
+    expect(hasStroke).toBe(true);
+  });
+});

@@ -82,6 +82,7 @@ consequences are the behaviors that *define* Flash drawing:
 | **Same-color overlap** | The two shapes **UNION** into one with no seam. | Both regions reference the same fill index; the shared internal edge has the same fill on both sides and disappears as a visible boundary. |
 | **Different-color overlap** | The top shape **CUTS** the one beneath (last-drawn wins on the overlap). | The overlap region's edges are re-labeled to the new fill; the underlying fill loses that area. |
 | **A line drawn across a fill** | **SPLITS** the fill into independently-selectable pieces. | The line inserts edges that subdivide the fill's region; each sub-region is its own traceable loop. |
+| **A fill drawn OVER a line** | **CONSUMES** the covered run of the line (the line disappears where the fill covers it; uncovered ends remain). | The fill drawn later replaces what is beneath it, strokes included — this is why the Brush's Paint Fills / Behind / Inside modes exist, to leave lines alone. See §3.0l. |
 | **Two crossing lines** | Become **four** segments meeting at the crossing. | The crossing point becomes a vertex; each line is split into two edges. |
 | **Selecting** | You select **segments and faces**, not whole objects — double-click selects a connected fill+its strokes; a single click selects one edge or one face. | There are no objects to select, only the planar pieces. |
 | **Erasing / overlap removal** | **TRUE subtraction** — erasing a band across a shape splits it; removing an overlapping island leaves a hole. | The boolean difference is expressed by re-labeling/removing edges and re-tracing faces. |
@@ -202,6 +203,7 @@ faces does this fill now occupy after the cut".
 | **P5+ (selection polish)** | **Full selection authenticity + polish:** lasso over the planar pieces, edit-curve handles on faces, snapping against the arrangement. | Optional follow-up. |
 | **Perf follow-up (task 1327)** | Incremental fold — avoid rebuilding the entire layer arrangement per stroke on dense art (traced bitmaps with 1000+ fills). Measured ~35/61/176 ms per stroke for 100/400/800 mergeable fills. Resolved via **spatial bbox-culling**: only the **transitive overlap closure** of the new stroke is folded through the kernel; shapes disjoint from the whole interacting cluster stay untouched. Per-stroke fold on a 1000-fill layer dropped ~239 ms → ~2 ms. See §3.0e. | **DONE (task 1327; correctness fixed by task 1329).** |
 | **Stroked-curve centre-pick (task 1334)** | A STROKED ellipse/oval (and any uniformly-stroked **curved** fill) could not be picked/dragged at its interior: re-building the live planar map from the committed shape shattered the interior into tiny faces (or none) so `pickAt` at the centre returned null, while a stroke-free oval picked fine. Root cause was a **coincident-curve** explosion: read-back emitted the stroked fill boundary as ~12 separate single-segment stroke fragments (+ sub-twip stubs); on rebuild the fill loop and those fragments are the SAME geometry split at different points, and `intersectCurveCurve` had NO coincidence handling — it flooded the arrangement with spurious crossings (~14.6k half-edges) so face tracing collapsed. Fixed at three layers (all curve-preserving). See §3.0h. | **DONE (task 1334).** |
+| **Stroke-under-fill consumption (task 1430)** | The fold never consumed strokes under a new fill: brushing Paint Normal (or committing any plain fill) over a pencil line left 100% of the covered line rendering on top. Real Flash 8 replaces the portion of a line a later fill covers. Fixed by threading a **draw-order index** onto stroke half-edges and clearing the `lineStyle` of any stroke whose midpoint is covered by a fill drawn STRICTLY LATER (the arrangement has already split the stroke at the fill boundary, so uncovered spans keep their stroke). Draw-order strictness keeps P2 line-splits-fill intact (a line drawn over a fill has the higher order and survives). See §3.0l. | **DONE (task 1430).** |
 
 ### 3.0 P1 implementation notes (task 1319)
 
@@ -975,6 +977,51 @@ whole planar suite stay green):
    `connectedFillComponent(startFace)` (the same silhouette walk the faucet uses), which cannot
    reach a disjoint region. Gate: `planar-eraser.test.ts` "Erase Inside spares a DISJOINT
    same-color region (task 1399)".
+
+### 3.0l Stroke-under-fill consumption — a top fill replaces the line beneath it (task 1430)
+
+**The defect.** The merge fold only applied top-wins draw order to FACE fills
+(`assignFaceFillsBySampling`). Stroke half-edges were emitted regardless of what
+covered them, so brushing Paint Normal — or committing any plain fill — over a
+pencil line left 100% of the covered line rendering ON TOP of the new fill (the
+renderer draws fills then strokes). In real Flash 8 a top-drawn fill REPLACES the
+portion of a line it covers; this is exactly why the Brush's Paint Fills / Behind
+/ Inside modes exist (they are the modes that leave lines alone).
+
+**The fix — draw-order-scoped, in the fold only.** A `drawOrder` index (0 =
+oldest, incoming last) is threaded from the source shape onto each stroke edge and
+survives every arrangement split (`InputEdge.drawOrder → MutHalfEdge.drawOrder →
+HalfEdge.drawOrder`, carried through `splitExistingEdge` and the coincident-edge
+merge). After `buildArrangementFromShapes` builds the arrangement and resolves
+face fills, `consumeStrokesUnderFills` clears the `lineStyle` (and its twin's) of
+any stroke half-edge whose midpoint is covered by a `fillRegions` entry drawn
+**strictly later** (`region.order > he.drawOrder`). The arrangement has already
+split the stroke at the boundary of every fill it crosses, so each stroke
+half-edge is wholly inside or wholly outside a given fill — the covered span is
+dropped, the uncovered ends survive.
+
+* **Strict draw-order is what keeps P2 (line-splits-fill) intact.** A line drawn
+  OVER an existing fill has the HIGHER order, so that earlier fill never consumes
+  it — the line still splits the fill and renders on top. Only a fill drawn AFTER
+  a line replaces it. A stroke and a fill from the SAME shape share an order, so a
+  stroked-and-filled shape never eats its own boundary stroke.
+* **Clearing `lineStyle` (not filtering at emit) also dissolves the covered
+  seam.** With the phantom line gone, `planarShapeToShape`'s `seamDissolvable`
+  test lets the covering fill read back as one clean region instead of being split
+  by an invisible line.
+* **Opt-in, fold-only.** `buildArrangementFromShapes` takes
+  `{ consumeStrokesUnderFills }` (default **false**), so every other caller (live
+  re-derive, sub-selection, brush region masks, eraser, direct tests) is
+  byte-identical to before. `foldShapeIntoLayer` / `foldShapeIntoLayerCulled` /
+  `planarMergeCommit` take `{ preserveLines }` and enable consumption unless it is
+  set. `commitShapeToTimeline` (Paint Normal + plain fills) consumes;
+  `commitBrushStrokeToTimeline` passes `preserveLines: true` for the Fills /
+  Behind / Selection / Inside modes so their clipped ribbons leave lines alone.
+* **Gate:** `planar-merge.test.ts` "stroke-under-fill consumption (task 1430)" —
+  the 100px-line-with-fill-over-the-middle repro (covered span gone, both ends
+  survive), the reversed line-over-fill case (line splits fill, survives),
+  `preserveLines` keeps the whole line, and a stroked-and-filled shape keeps its
+  own outline.
 
 ### 3.1 Key decisions
 
