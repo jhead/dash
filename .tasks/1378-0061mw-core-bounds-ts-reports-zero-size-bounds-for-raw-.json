@@ -2,9 +2,9 @@
   "id": "1378-0061mw-core-bounds-ts-reports-zero-size-bounds-for-raw-",
   "title": "Core: bounds.ts reports zero-size bounds for raw shapes / drawing-objects (breaks Align, Distribute, Snap, convert-to-symbol)",
   "description": "packages/core/src/engine/bounds.ts:11-26 effectiveWidth/effectiveHeight do (('width' in obj)?obj.width:0)??0, but ShapeDisplayObject (types.ts:465) and DrawingObject (types.ts:696) have NO width/height \u2014 their geometry lives in shape.paths. So these helpers return {width:0,height:0} anchored at obj.x/obj.y (typically (0,0) for merge-model shapes). Confirmed callers break: align.ts:117,168-203 alignObjects computes dx/dy from zero-size bounds -> all shapes collapse to same offset (Object-Drawing align, the canonical case, is wrong); snapObjects.ts:77 -> every shape becomes a zero-size snap point at origin; getUnionBounds (bounds.ts:85, used by convert-to-symbol/group registration in useShapeModifyHandlers/useTimelineEffectHandlers) yields {0,0,0,0} for shape-only selections; distributeObjects (align.ts:217+) same. Fix: delegate to the existing geometry-aware shapeBounds()/transformedShapeBounds() (packages/core/src/engine/shapes.ts:18,68) for type 'shape'/'drawing-object'. hittest.ts is NOT affected (ray-casts paths directly). Confidence: confirmed.",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-07-02T01:14:01Z",
-  "updated_at": "2026-07-02T01:14:01Z"
+  "updated_at": "2026-07-02T01:24:37Z"
 }
