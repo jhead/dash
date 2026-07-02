@@ -426,22 +426,28 @@ describe("rebuildDoc stack-overflow hardening (Y-type in atomic field)", () => {
   });
 
   it("rebuildDoc does NOT stack-overflow on a doc-level Y-type in an atomic field", () => {
-    // The exact REPRO from the task: `properties` is a doc-level atomic field
-    // (NOT in DOC_STRUCTURAL); storing a Y.Map there used to crash rebuildDoc.
+    // `properties` is now a STRUCTURAL nested Y.Map (task 1392) — its per-field
+    // entries are atomic. A hostile peer storing a live Y-type as one of those
+    // property slots (or in any doc-level atomic slot) must be DROPPED, not walked
+    // (the same cloneJson hardening, now one level deeper for a property field).
     const yd = new Y.Doc();
     const root = yd.getMap("doc");
+    const yprops = new Y.Map();
     yd.transact(() => {
       root.set("id", "doc");
-      root.set("properties", new Y.Map()); // Y-type in an atomic slot
-      root.set("rogueArray", new Y.Array()); // and a Y.Array, also atomic
+      root.set("properties", yprops);
+      yprops.set("width", new Y.Array()); // Y-type in an atomic PROPERTY slot
+      root.set("rogueArray", new Y.Array()); // and a Y-type in a doc-level atomic slot
     }, { wire: "remote" });
 
     let rebuilt: FlashDocument | undefined;
     expect(() => {
       rebuilt = rebuildDoc(yd);
     }).not.toThrow();
-    // The malformed atomic Y-types are dropped, not propagated.
-    expect((rebuilt as unknown as Record<string, unknown>).properties).toBeUndefined();
+    // The malformed atomic Y-type inside `properties` is dropped, not propagated.
+    const props = (rebuilt as unknown as Record<string, unknown>).properties as Record<string, unknown>;
+    expect(props.width).toBeUndefined();
+    // A doc-level atomic Y-type is likewise dropped.
     expect((rebuilt as unknown as Record<string, unknown>).rogueArray).toBeUndefined();
     // And the full validator then yields a structurally-valid doc.
     assertValidDoc(validateInboundDoc(rebuilt));

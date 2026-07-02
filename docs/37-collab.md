@@ -82,7 +82,7 @@ Root: a single `Y.Map` under key `"doc"` on the `Y.Doc`.
 | Model node | Y representation | Granularity |
 |---|---|---|
 | `FlashDocument` scalars (`id`, `accessibility`, `activePublishProfileId`) | root `Y.Map` entries | per-field |
-| `properties` (and all its fields) | per-field `Y.Map` entries on the root | per-field merge of doc props |
+| `properties` (and all its fields) | nested `Y.Map` on the root, one per-field entry per property | per-field merge of doc props (task 1392) |
 | `scenes` | `Y.Array<Y.Map(scene)>` | **positional** |
 | `library` | `Y.Map` | container |
 | `asClasses` | `Y.Map<path, Y.Text>` (eager genesis, see §1360) | **character-level**; concurrent first-create converges |
@@ -109,6 +109,20 @@ exactly the spec's requirement that `displayObject.shape` geometry be atomic
 (segments have no stable id; a finer merge would need a custom merge function,
 which is forbidden). Editing `x` on one peer and `y` on another merges; two peers
 editing the same `shape` converge to one of the two geometries, never a blend.
+
+### Document `properties` is a nested per-field `Y.Map` (task 1392)
+
+`FlashDocument.properties` follows the same per-field rule, one level down: it is a
+nested `Y.Map` on the root (created once at genesis/materialize, always present
+because `createDocument` always sets it), and each property is its own entry in
+that map. So two peers concurrently editing **different** doc properties — A the
+stage `width`, B the `frameRate`; or A toggling `snapToObjects`, B changing
+`backgroundColor` — both survive on merge, because each writes a distinct sub-key
+on the shared container (never a whole-`properties` last-writer-wins register).
+A property whose value is itself an object/array (`grid`, `guides`) is atomic
+whole-value LWW per the rule above. (Before task 1392 `properties` was one atomic
+root register, so any concurrent edit to two different property fields silently
+discarded one — contradicting this table; the code now matches the spec.)
 
 ### Keyed maps + order array
 
@@ -333,11 +347,15 @@ symbol nested timelines** (see `mutators.ts`).
 
 `binding.test.ts` adds CRDT-behavior tests: origin filtering (remote edit →
 `applyRemote`, own writes ignored, no echo), **per-field merge** (A edits `x`, B
-edits `y` of the same object → both survive), **atomic geometry LWW** (concurrent
-whole-`shape` edits converge to exactly one of the two values), **character-level
-`asClasses` merge** (disjoint inserts both survive), and **late-join adoption**.
+edits `y` of the same object → both survive), **per-field merge of document
+properties** (A edits stage `width` while B edits `frameRate`; A toggles
+`snapToObjects` while B changes `backgroundColor` → both survive, task 1392),
+**atomic geometry LWW** (concurrent whole-`shape` edits converge to exactly one of
+the two values), **character-level `asClasses` merge** (disjoint inserts both
+survive), and **late-join adoption**.
 
-Result: **9/9 tests pass** (`pnpm --filter @flash/collab test`).
+Result: **all tests pass** (`pnpm --filter @flash/collab test`; the P0 7,200-step
+property/round-trip identity gate is unaffected by the `properties` change).
 
 ---
 
