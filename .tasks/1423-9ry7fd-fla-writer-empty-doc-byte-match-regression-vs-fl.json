@@ -1,0 +1,10 @@
+{
+  "id": "1423-9ry7fd-fla-writer-empty-doc-byte-match-regression-vs-fl",
+  "title": "FLA writer: empty-doc byte-match regression vs flash8-empty.fla (from task 1386)",
+  "description": "empty-bytematch.test.ts gate 1 fails on origin/main (currently RED at HEAD beba93f): both 'Contents differs only at the two known volatile timestamp u32 fields' and 'Page 1 differs only at the known volatile big-endian frameId (2 bytes)' fail. Verified pre-existing and reproducible on a pristine checkout of origin/main with NONE of the task-1417 changes present (2 failed | 3 passed | 1 skipped in that file). Root cause context: the flash8-empty.fla fixture was committed in 93e96e0 (which flipped the task-1207 magic-keyed guard from skip->run), and task 1386 (d6ceebc, 'emit filters, color effects, gradient/bitmap fills, custom ease on real-FLA save') changed the writer output \u2014 so saveRealFla(createDocument()) no longer byte-matches the fixture Contents/Page-1 (the byte-perfect state documented in CLAUDE.md was pre-1386). Fix: reconcile the writer so an empty createDocument() round-trips byte-identically to flash8-empty.fla again (modulo the 2 volatile timestamp u32s + big-endian frameId), OR update the fixture/expectations if the new output is the intended Flash-8 form. Acceptance: pnpm --filter @flash/core test -> empty-bytematch.test.ts green; full core suite 0 failed. Surfaced by the task-1417 agent (largetimeline de-flake); the 1417 change is test-only and unrelated to this failure.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-07-02T02:53:22Z",
+  "updated_at": "2026-07-02T02:53:22Z"
+}
