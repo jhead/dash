@@ -91,6 +91,82 @@ describe("insertKeyframe — copies content from governing keyframe", () => {
     const copied = frameAt(result, 2)!.displayObjects[0];
     expect(copied).not.toBe(original);
   });
+
+  // Regression for task 1398: the old `{ ...o }` shallow clone left nested
+  // geometry/effects shared by reference between the two keyframes, so an
+  // in-place edit of one leaked into the other. The deep clone must fully
+  // isolate the shape geometry (shape.paths), filters, colorEffect, and warp.
+  it("deep-copies nested geometry — mutating one keyframe's shape.paths does not leak", () => {
+    const shape: ShapeDisplayObject = {
+      type: "shape",
+      id: "do-1",
+      x: 10,
+      y: 20,
+      shape: {
+        id: "shape-1",
+        paths: [
+          {
+            start: { x: 0, y: 0 },
+            segments: [{ type: "line", to: { x: 5, y: 5 } }],
+            fill: { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } },
+            closed: true,
+          },
+        ],
+      },
+    };
+    const tl = makeTimelineWithContent([shape]);
+    const layerId = layer0(tl).id;
+
+    const result = insertKeyframe(tl, layerId, 2);
+
+    const src = frameAt(result, 0)!.displayObjects[0] as ShapeDisplayObject;
+    const copy = frameAt(result, 2)!.displayObjects[0] as ShapeDisplayObject;
+
+    // The whole nested tree must be reference-independent.
+    expect(copy.shape).not.toBe(src.shape);
+    expect(copy.shape.paths).not.toBe(src.shape.paths);
+    expect(copy.shape.paths[0]).not.toBe(src.shape.paths[0]);
+
+    // Mutating the copy's nested geometry in place must NOT affect the source.
+    const mutablePaths = copy.shape.paths as unknown as Array<{
+      start: { x: number; y: number };
+    }>;
+    mutablePaths[0]!.start.x = 999;
+    mutablePaths.push({ start: { x: 1, y: 1 } });
+
+    expect(src.shape.paths).toHaveLength(1);
+    expect(src.shape.paths[0]!.start.x).toBe(0);
+  });
+
+  it("deep-copies filters and colorEffect — mutating the copy does not leak", () => {
+    const shape: ShapeDisplayObject = {
+      type: "shape",
+      id: "do-1",
+      x: 0,
+      y: 0,
+      shape: { id: "shape-1", paths: [] },
+      colorEffect: { type: "brightness", brightness: 50 },
+      filters: [{ type: "blur", blurX: 4, blurY: 4, quality: 1, enabled: true }],
+    };
+    const tl = makeTimelineWithContent([shape]);
+    const layerId = layer0(tl).id;
+
+    const result = insertKeyframe(tl, layerId, 2);
+
+    const src = frameAt(result, 0)!.displayObjects[0] as ShapeDisplayObject;
+    const copy = frameAt(result, 2)!.displayObjects[0] as ShapeDisplayObject;
+
+    expect(copy.filters).not.toBe(src.filters);
+    expect(copy.filters![0]).not.toBe(src.filters![0]);
+    expect(copy.colorEffect).not.toBe(src.colorEffect);
+
+    // Mutate the copied nested effects in place.
+    (copy.colorEffect as { brightness: number }).brightness = -100;
+    (copy.filters![0] as { blurX: number }).blurX = 999;
+
+    expect(src.colorEffect!.brightness).toBe(50);
+    expect(src.filters![0]!.blurX).toBe(4);
+  });
 });
 
 // ---------------------------------------------------------------------------

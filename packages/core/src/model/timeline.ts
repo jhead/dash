@@ -380,9 +380,16 @@ export function insertKeyframe(
         .filter((f) => f.isKeyframe && f.index <= frameIndex)
         .sort((a, b) => b.index - a.index)[0];
 
-      // Deep-copy the displayObjects so the new keyframe is independent
-      const copiedObjects: readonly import("../engine/types.js").DisplayObject[] =
-        governing ? governing.displayObjects.map((o) => ({ ...o })) : [];
+      // Deep-copy the displayObjects so the new keyframe is FULLY independent
+      // of the governing keyframe. A shallow `{ ...o }` would leave nested
+      // geometry (shape.paths), filters, colorEffect, warp, and group children
+      // shared by reference, so an in-place mutation of one keyframe's objects —
+      // or a shape tween treating the two frames as independent start/end —
+      // would silently corrupt both. `structuredClone` clones the whole tree
+      // (the model is plain data), honouring the deep-copy contract above.
+      const copiedObjects: readonly DisplayObject[] = governing
+        ? governing.displayObjects.map((o) => structuredClone(o))
+        : [];
 
       const newKeyframe = createFrame(frameIndex, {
         isKeyframe: true,

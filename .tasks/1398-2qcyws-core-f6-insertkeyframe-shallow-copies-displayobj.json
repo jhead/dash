@@ -2,9 +2,9 @@
   "id": "1398-2qcyws-core-f6-insertkeyframe-shallow-copies-displayobj",
   "title": "Core: F6 insertKeyframe shallow-copies displayObjects despite deep-copy contract (aliasing hazard)",
   "description": "packages/core/src/model/timeline.ts:383-385 comment says 'Deep-copy the displayObjects so the new keyframe is independent' but code does governing.displayObjects.map(o => ({...o})) \u2014 a shallow clone. Nested shape.paths, filters, colorEffect, warp stay shared by reference between source and new keyframe. The immutable-model convention mostly protects this, but any in-place mutation of a shape's nested arrays, or code relying on the two keyframes being truly independent for a shape tween's start/end, corrupts both keyframes. Latent aliasing hazard, not a live crash. Fix: deep-clone nested geometry/effect objects (or document the shared-reference invariant). Confidence: confirmed vs stated contract; real-world trigger needs a mutating caller.",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-07-02T01:16:08Z",
-  "updated_at": "2026-07-02T01:16:08Z"
+  "updated_at": "2026-07-02T01:51:50Z"
 }
