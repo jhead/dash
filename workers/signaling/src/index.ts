@@ -36,6 +36,7 @@ import {
   parseAllowedOrigins,
   parseSignalingFrame,
   type SignalingMessage,
+  type TokenBucketState,
 } from "./relay.js";
 
 /**
@@ -59,6 +60,12 @@ interface SocketState {
   topics: string[];
   /** Originating client IP (cf-connecting-ip), for the per-IP connection cap. */
   ip?: string;
+  /**
+   * Persisted publish token-bucket state, so the per-connection publish rate
+   * limit survives a hibernation wake (the in-memory relay is rebuilt empty on
+   * wake). Absent until the socket's first publish. See `relay.ts TokenBucket`.
+   */
+  bucket?: TokenBucketState;
 }
 
 const PING_TIMEOUT_MS = 30_000;
@@ -79,6 +86,15 @@ export class SignalingServer {
    * rehydrated lazily from each live socket's serialized attachment.
    */
   private relay = new SignalingRelay();
+  /**
+   * In-memory `connId → live WebSocket` index for O(K) publish fan-out. Rebuilt
+   * from the live sockets in `rehydrate()` after a hibernation wake (it, like the
+   * relay, is lost while the DO sleeps), and kept in sync on accept/close/error.
+   * Without it, delivering one publish to K subscribers cost O(K·N) — a linear
+   * `getWebSockets()` scan (with a `deserializeAttachment` per socket) per
+   * recipient, i.e. ~200k deserializes at the documented caps.
+   */
+  private sockets = new Map<string, WebSocket>();
   private rehydrated = false;
 
   constructor(state: DurableObjectState, env: Env) {
@@ -108,9 +124,11 @@ export class SignalingServer {
     if (this.rehydrated) return;
     this.rehydrated = true;
     this.relay = new SignalingRelay();
+    this.sockets = new Map();
     for (const ws of this.state.getWebSockets()) {
       const att = ws.deserializeAttachment() as SocketState | null;
       if (!att) continue;
+      this.sockets.set(att.id, ws);
       this.relay.addConnection(att.id);
       if (att.topics.length > 0) {
         this.relay.handleMessage(att.id, {
@@ -118,6 +136,9 @@ export class SignalingServer {
           topics: att.topics,
         });
       }
+      // Restore the publish rate-limit accounting that would otherwise reset to a
+      // full burst on every wake (silently dropping the abuse guard).
+      if (att.bucket) this.relay.restoreBucket(att.id, att.bucket);
     }
   }
 
@@ -127,13 +148,9 @@ export class SignalingServer {
     return att?.id ?? null;
   }
 
-  /** Find the live WebSocket for a connection id (for relay fan-out). */
+  /** Find the live WebSocket for a connection id (for relay fan-out) — O(1). */
   private socketFor(connId: string): WebSocket | null {
-    for (const ws of this.state.getWebSockets()) {
-      const att = ws.deserializeAttachment() as SocketState | null;
-      if (att?.id === connId) return ws;
-    }
-    return null;
+    return this.sockets.get(connId) ?? null;
   }
 
   /** Count live sockets globally and (optionally) for one client IP. */
@@ -197,6 +214,7 @@ export class SignalingServer {
     server.serializeAttachment(initial);
 
     this.rehydrate();
+    this.sockets.set(id, server);
     this.relay.addConnection(id);
     // Idle-timeout keepalive: the runtime auto-responds to pings, but if a peer
     // goes silent we want the socket reaped. The hibernation timeout is governed
@@ -238,6 +256,18 @@ export class SignalingServer {
     }
 
     const out = this.relay.handleMessage(id, message);
+
+    // Persist the publish rate-limit bucket after every publish (accepted OR
+    // dropped — `take` mutates the bucket either way) so the accounting survives
+    // a future hibernation wake. Topics don't change on a publish, so we only
+    // overlay the bucket onto the existing attachment.
+    if (message.type === "publish") {
+      const bucket = this.relay.bucketState(id);
+      if (bucket) {
+        const att = ws.deserializeAttachment() as SocketState | null;
+        if (att) ws.serializeAttachment({ ...att, bucket });
+      }
+    }
     for (const { to, message: outMsg } of out) {
       const target = to === id ? ws : this.socketFor(to);
       this.trySend(target, outMsg);
@@ -248,7 +278,10 @@ export class SignalingServer {
   async webSocketClose(ws: WebSocket): Promise<void> {
     this.rehydrate();
     const id = this.idOf(ws);
-    if (id !== null) this.relay.removeConnection(id);
+    if (id !== null) {
+      this.relay.removeConnection(id);
+      this.sockets.delete(id);
+    }
     try {
       ws.close();
     } catch {
@@ -260,7 +293,10 @@ export class SignalingServer {
   async webSocketError(ws: WebSocket): Promise<void> {
     this.rehydrate();
     const id = this.idOf(ws);
-    if (id !== null) this.relay.removeConnection(id);
+    if (id !== null) {
+      this.relay.removeConnection(id);
+      this.sockets.delete(id);
+    }
   }
 
   /** Recompute & persist a socket's subscription set into its attachment. */
@@ -286,7 +322,7 @@ export class SignalingServer {
         set.delete(t);
       }
     }
-    ws.serializeAttachment({ id, topics: [...set], ip: att.ip });
+    ws.serializeAttachment({ id, topics: [...set], ip: att.ip, bucket: att.bucket });
   }
 
   /** Send a JSON message to a socket, swallowing errors on a dead socket. */

@@ -502,6 +502,12 @@ numeric limits are constants in `workers/signaling/src/relay.ts` (`LIMITS`):
 | max message size | 64 KiB | frame dropped, socket closed (1009) |
 | per-connection publish rate | 60 burst / 20 per s | excess publishes dropped (token bucket) |
 
+The publish token bucket is **persisted across hibernation** (task 1401): its
+`{tokens,last}` state is serialized into the socket's attachment on every publish
+and restored when the DO wakes, so an idle→wake cycle no longer silently resets a
+draining connection back to a full burst. (The bucket refills from the persisted
+`last`, so a near-immediate wake stays drained while a long idle refills naturally.)
+
 **Origin allowlist** — the WS Upgrade `Origin` is checked against the
 `ALLOWED_ORIGINS` wrangler var (comma/space-separated). Empty / unset / `"*"` =
 allow any origin (the shipped default, so deploying never breaks stock clients); a
@@ -1410,9 +1416,15 @@ client stays **stock y-webrtc** (§8.1) — only the default signaling URL chang
 - **Hibernation:** the DO uses the **WebSocket Hibernation API**
   (`acceptWebSocket` + `webSocketMessage`/`webSocketClose`/`webSocketError`) so
   idle rooms cost nothing; each socket's subscription list is persisted via
-  `serializeAttachment` and rehydrated on wake. Ping/pong keepalive uses the
-  runtime auto-response + the JSON `ping` handler. Subscriptions are cleaned up on
+  `serializeAttachment` and rehydrated on wake (along with the publish
+  rate-limit token bucket — task 1401). Ping/pong keepalive uses the runtime
+  auto-response + the JSON `ping` handler. Subscriptions are cleaned up on
   close/error.
+- **O(K) publish fan-out (task 1401):** the DO keeps an in-memory
+  `connId → WebSocket` index (rebuilt in `rehydrate()`, kept in sync on
+  accept/close/error) so delivering a publish to K subscribers is K map lookups,
+  not K linear `getWebSockets()` scans each doing a `deserializeAttachment` per
+  socket (which at the documented caps was ~200k deserializes per publish).
 - **Pure, testable core:** the pub/sub fan-out lives in `src/relay.ts` — a
   transport-agnostic data structure with **no Cloudflare types**, unit-tested in
   plain Node (`test/relay.test.ts`, 23 cases: subscribe / publish-fans-out /

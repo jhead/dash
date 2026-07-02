@@ -80,6 +80,18 @@ export const LIMITS = {
 } as const;
 
 /**
+ * The persistable state of a {@link TokenBucket}: enough to reconstruct it
+ * across a Durable Object hibernation wake (where the in-memory relay is lost
+ * but per-socket attachments survive). Serialized into each socket's attachment.
+ */
+export interface TokenBucketState {
+  /** Current token count (fractional; refilled lazily on `take`). */
+  tokens: number;
+  /** The monotonic timestamp (ms) of the last `take`, for elapsed-refill math. */
+  last: number;
+}
+
+/**
  * A monotonic-clock token bucket for per-connection publish rate limiting. Kept
  * pure with an injected `now` (ms) so it is unit-testable with a fake clock.
  */
@@ -106,6 +118,17 @@ export class TokenBucket {
     if (this.tokens < 1) return false;
     this.tokens -= 1;
     return true;
+  }
+
+  /** Snapshot the mutable state for persistence across hibernation. */
+  snapshot(): TokenBucketState {
+    return { tokens: this.tokens, last: this.last };
+  }
+
+  /** Overwrite this bucket's state from a persisted snapshot. */
+  restore(state: TokenBucketState): void {
+    this.tokens = state.tokens;
+    this.last = state.last;
   }
 }
 
@@ -171,6 +194,33 @@ export class SignalingRelay {
       default:
         return [];
     }
+  }
+
+  /**
+   * Snapshot a connection's publish token bucket for persistence, or `null` if
+   * it has not published yet (no bucket allocated). The transport persists this
+   * into the socket's attachment so the rate-limit accounting survives a DO
+   * hibernation wake (which discards the in-memory relay).
+   */
+  bucketState(connId: string): TokenBucketState | null {
+    return this.buckets.get(connId)?.snapshot() ?? null;
+  }
+
+  /**
+   * Restore a connection's publish bucket from a persisted snapshot (used by the
+   * transport during rehydrate). Idempotent per connection: the last restore
+   * wins. Elapsed time since `state.last` is credited as refill on the next
+   * `take`, so a bucket drained just before hibernation stays (near) drained on a
+   * near-immediate wake, closing the reset-on-wake abuse hole.
+   */
+  restoreBucket(connId: string, state: TokenBucketState): void {
+    const bucket = new TokenBucket(
+      LIMITS.PUBLISH_BURST,
+      LIMITS.PUBLISH_REFILL_PER_SEC,
+      state.last,
+    );
+    bucket.restore(state);
+    this.buckets.set(connId, bucket);
   }
 
   /** Consume a publish token for `connId`, creating its bucket on first use. */
