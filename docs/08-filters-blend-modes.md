@@ -170,6 +170,37 @@ Blend modes map to the SWF `PlaceObject3` blend-mode field and `MovieClip.blendM
   Pinned by `multiflag-placeobject-1372.spec.ts` tests `(c)` and `(c-runtime)` (both active/
   passing) plus the symbol-internal unit gate `blendmode.test.ts` tests 10-12 (mirroring the
   scene-path tests 7-9).
+- **FIXED (task 1375): per-placement effects now survive MOVE re-emits on the bitmap and
+  shape paths (filter/blend/tint tweens no longer revert after frame 1).** Same class of
+  place-vs-move asymmetry as 1210/1240/1373, but on the effect-emit side: an effect handled
+  on FIRST placement was dropped when the posChanged/Move branch re-emitted the placement.
+  Because a motion tween makes `posChanged` fire every frame (position, scale, or the
+  `filtersKey`/`colorEffectKey` change-detection keys), the effect was lost for the WHOLE
+  tween. Four broken sites, all now routed through the shared `effectCXForm()` helper
+  (`packages/swf/src/placement-effects.ts`, which applies the SWF precedence
+  colorEffect > visible=false > standalone alpha):
+  - **Scene bitmap MOVE (`compiler/frames.ts`)** handled ONLY alpha/visible (via the old
+    `encodePlaceObject2WithAlpha`) — no blendMode/filters/colorEffect. A bitmap filter tween
+    emitted a plain PlaceObject2 on the move, so Ruffle dropped the filter after frame 1. Now
+    mirrors the first-placement PlaceObject3 routing (blend/filters → PO3 with cxform; else
+    PO2+CXForm; else plain move). The alpha/visible byte output is unchanged
+    (`encodePlaceObject2WithCXForm` with an alpha-only cxform is byte-identical to the old
+    `encodePlaceObject2WithAlpha`).
+  - **Scene shape MOVE else (`compiler/frames.ts`)** dropped a general `colorEffect`
+    (tint/brightness/advanced) — the move chain handled blend/filters/visible/alpha/cache but
+    fell through to a plain `PlaceObject2Move` for a standalone tint. Now a shape colorEffect
+    re-emits `PlaceObject2` with HasColorTransform (move). (visible=false / alpha handled by
+    the branches above.)
+  - **Sprite (symbol-internal) bitmap MOVE else + FIRST (`sprite.ts`)** — the move else was a
+    bare `encodePlaceObject2Move` (dropped colorEffect/visible/alpha); the first-placement
+    else handled colorEffect/visible but omitted standalone alpha. Both now use `effectCXForm`.
+  - **Sprite shape MOVE else + FIRST (`sprite.ts`)** had NO standalone colorEffect/alpha case
+    at all (only inside the filters/blend branches) — a symbol-internal shape tint/alpha tween
+    reverted after frame 1. Both now emit a CXForm placement via `effectCXForm`.
+  The change-detection keys (`filtersKey`, `colorEffectKey`) already fired the re-emit
+  correctly (tasks 1210); the only defect was the emit paths, so no key changes were needed.
+  Gate: `__tests__/placement-effect-move.test.ts` (scene + movieclip-internal bitmap-filter
+  and shape-tint tweens: every moved frame re-emits the effect, zero plain moves).
 - Blend modes = GPU blend-state + custom fragment composites; Layer forces an offscreen group
   buffer so Alpha/Erase operate on the composited group.
 - Keep a filter/blend pipeline cache keyed on parameters + source bitmap hash.
