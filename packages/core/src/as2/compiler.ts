@@ -11,6 +11,39 @@ import type {
 } from "./ast.js";
 
 // ---------------------------------------------------------------------------
+// Encoding limits + diagnostics
+// ---------------------------------------------------------------------------
+
+/** Largest value encodable in an unsigned 16-bit SWF field. */
+const UI16_MAX = 0xffff;
+/** Bounds of a signed 16-bit two's-complement SWF field (jump offsets). */
+const SI16_MIN = -0x8000;
+const SI16_MAX = 0x7fff;
+/**
+ * Max entries an ActionConstantPool can hold: the record's count and every
+ * type-9 push index are UI16, so indices must stay in 0..65535. The pool is
+ * capped to this many entries; strings that don't fit fall back to inline
+ * ActionPush (pushString handles the pool-miss), so a huge script degrades
+ * gracefully instead of wrapping the count/index and emitting a corrupt tag.
+ */
+const CONSTANT_POOL_MAX = 0xffff; // 65535 entries (the UI16 count field caps it) → indices 0..65534
+
+/**
+ * Thrown when a generated script exceeds an AVM1/SWF 16-bit encoding limit that
+ * cannot be encoded without silently corrupting the action stream (an
+ * over-long function body, jump offset, or record size). Carries the source
+ * line when one is available so the author can locate the offending code.
+ */
+export class CompileError extends Error {
+  readonly line?: number;
+  constructor(message: string, line?: number) {
+    super(line && line > 0 ? `${message} (line ${line})` : message);
+    this.name = "CompileError";
+    this.line = line;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ByteBuffer — growable byte array with back-patching support
 // ---------------------------------------------------------------------------
 
@@ -22,6 +55,14 @@ class ByteBuffer {
   }
 
   writeUI16(v: number): void {
+    // Backstop: refuse to silently truncate an out-of-range field. Semantic
+    // call sites (function body/header/record sizes) throw clearer CompileErrors
+    // before reaching here; this catches anything they miss instead of wrapping.
+    if (v < 0 || v > UI16_MAX) {
+      throw new CompileError(
+        `generated value ${v} exceeds the 16-bit encoding limit (${UI16_MAX})`
+      );
+    }
     this.write(v & 0xff);
     this.write((v >> 8) & 0xff);
   }
@@ -43,9 +84,19 @@ class ByteBuffer {
     this.bytes[pos + 1] = (u >> 8) & 0xff;
   }
 
-  /** Back-patch a signed 16-bit value. */
+  /** Back-patch a signed 16-bit value (jump/branch offset). */
   patchSI16(pos: number, value: number): void {
-    this.patchUI16(pos, value);
+    // AVM1 branch offsets are SI16; a body larger than ±32 KiB cannot be
+    // reached by a single ActionIf/ActionJump. Wrapping mod 65536 (the old
+    // behaviour) produced a silently-wrong branch target, so refuse it.
+    if (value < SI16_MIN || value > SI16_MAX) {
+      throw new CompileError(
+        `jump/branch offset ${value} is out of range for a 16-bit signed field ` +
+          `(${SI16_MIN}..${SI16_MAX}); the loop or if/else body is too large to encode`
+      );
+    }
+    // patchUI16 stores the low 16 bits, i.e. the two's-complement encoding.
+    this.patchUI16(pos, value & 0xffff);
   }
 
   getBytes(): Uint8Array {
@@ -441,8 +492,21 @@ function collectStrings(stmts: Statement[]): Map<string, number> {
  */
 function buildConstantPool(counts: Map<string, number>): Map<string, number> {
   const pool = new Map<string, number>();
+  const enc = new TextEncoder();
   let idx = 0;
+  // The ActionConstantPool record is bounded two ways, both UI16: the entry
+  // COUNT (≤ 65535) and the record PAYLOAD LENGTH (≤ 65535 bytes = 2 for the
+  // count field + Σ(stringBytes + 1 NUL)). Real Flash 8 caps the pool at
+  // whichever bound is hit first and INLINES the remaining strings. We do the
+  // same: pushString() falls back to an inline ActionPush on a pool miss, so a
+  // huge script compiles correctly (just larger) instead of wrapping the count
+  // or length and emitting a corrupt tag.
+  let payloadBytes = 2; // UI16 count field
   for (const [str] of counts) {
+    if (idx >= CONSTANT_POOL_MAX) break;
+    const entryBytes = enc.encode(str).length + 1; // string + NUL terminator
+    if (payloadBytes + entryBytes > UI16_MAX) break;
+    payloadBytes += entryBytes;
     pool.set(str, idx++);
   }
   return pool;
@@ -471,6 +535,15 @@ function encodeConstantPool(pool: Map<string, number>): Uint8Array {
 
   // payload = UI16 count + NUL-terminated strings
   const payloadLen = 2 + strByteLen;
+  // The ActionConstantPool record length is UI16. The entry count is already
+  // capped (buildConstantPool), but a few very large string literals can still
+  // overflow the total byte length — refuse rather than truncate it.
+  if (payloadLen > UI16_MAX) {
+    throw new CompileError(
+      `constant pool payload is ${payloadLen} bytes, which exceeds the 16-bit ` +
+        `record-length limit (${UI16_MAX}); reduce the number/size of string literals`
+    );
+  }
   // total = opcode(1) + UI16 length(2) + payload
   const total = 1 + 2 + payloadLen;
   const out = new Uint8Array(total);
@@ -1354,6 +1427,29 @@ class Compiler {
       2 +                 // FinallySize
       catchNameFieldLen;  // catch name (null-terminated); always >= 1 null byte
 
+    // TrySize/CatchSize/FinallySize and the record length are all UI16; a body
+    // over 65535 bytes would wrap the size field and desync the action stream.
+    for (const [size, which] of [
+      [tryBytes.length, "try"],
+      [catchBytes.length, "catch"],
+      [finallyBytes.length, "finally"],
+    ] as const) {
+      if (size > UI16_MAX) {
+        throw new CompileError(
+          `${which}-block body is ${size} bytes, exceeding the 16-bit ` +
+            `block-size limit (${UI16_MAX})`,
+          stmt.line
+        );
+      }
+    }
+    if (payloadLen > UI16_MAX) {
+      throw new CompileError(
+        `try record header is ${payloadLen} bytes, exceeding the 16-bit ` +
+          `action-length limit (${UI16_MAX})`,
+        stmt.line
+      );
+    }
+
     // Emit the record
     this.buf.write(0x8f); // ActionTry opcode
     this.buf.writeUI16(payloadLen);
@@ -1428,7 +1524,15 @@ class Compiler {
     this.compileStmt(stmt.body);
     const bodyLen = this.buf.length - bodyStart;
 
-    // 4. Back-patch the size field
+    // 4. Back-patch the size field (UI16 — a body over 65535 bytes cannot be
+    //    delimited without wrapping the size and corrupting the action stream).
+    if (bodyLen > UI16_MAX) {
+      throw new CompileError(
+        `with-block body is ${bodyLen} bytes, exceeding the 16-bit block-size ` +
+          `limit (${UI16_MAX})`,
+        stmt.line
+      );
+    }
     this.buf.patchUI16(sizeOffset, bodyLen);
   }
 
@@ -1684,7 +1788,10 @@ class Compiler {
         this.compileFunctionExpr(expr as FunctionDecl);
         break;
       default:
-        throw new Error(`Unsupported expression node type: ${(expr as any).kind ?? JSON.stringify(expr)}`);
+        throw new CompileError(
+          `Unsupported expression node type: ${(expr as any).kind ?? (expr as any).type ?? JSON.stringify(expr)}`,
+          (expr as any).line
+        );
 
     }
   }
@@ -1891,7 +1998,7 @@ class Compiler {
       case '<<':  this.emit(0x63); break; // ActionBitLShift
       case '>>':  this.emit(0x64); break; // ActionBitRShift
       case '>>>': this.emit(0x65); break; // ActionBitURShift
-      default:    throw new Error(`Unsupported compound-assignment operator: ${op}`);
+      default:    throw new CompileError(`Unsupported compound-assignment operator: ${op}`);
     }
   }
 
@@ -1956,7 +2063,7 @@ class Compiler {
         this.emit(0x17); // ActionPop — discard the right-hand type value
         break;
       default:
-        throw new Error(`Unsupported binary operator: ${op}`);
+        throw new CompileError(`Unsupported binary operator: ${op}`);
     }
   }
 
@@ -2806,7 +2913,7 @@ class Compiler {
    */
   private compileFunctionDeclStmt(decl: FunctionDecl): void {
     if (decl.name === null) return; // anonymous in statement position — skip
-    this.emitDefineFunction2(decl.name, decl.params, decl.body.body);
+    this.emitDefineFunction2(decl.name, decl.params, decl.body.body, null, decl.line);
   }
 
   /**
@@ -2814,7 +2921,7 @@ class Compiler {
    * Emits ActionDefineFunction2 with empty name (anonymous) — leaves function on stack.
    */
   private compileFunctionExpr(decl: FunctionDecl): void {
-    this.emitDefineFunction2('', decl.params, decl.body.body);
+    this.emitDefineFunction2('', decl.params, decl.body.body, null, decl.line);
   }
 
   /**
@@ -2838,7 +2945,8 @@ class Compiler {
     name: string,
     params: string[],
     body: Statement[],
-    superClass: string | null = null
+    superClass: string | null = null,
+    line = 0
   ): void {
     // Compile body into a sub-buffer so we know its size
     const subCompiler = new Compiler();
@@ -2846,6 +2954,31 @@ class Compiler {
     subCompiler.constantPool = this.constantPool; // inherit parent's constant pool
     subCompiler.compileStatements(body);
     const bodyBytes = subCompiler.buf.getBytes();
+
+    const fnLabel = name ? `function "${name}"` : "anonymous function";
+
+    // numParams is a UI16 field.
+    if (params.length > UI16_MAX) {
+      throw new CompileError(
+        `${fnLabel} declares ${params.length} parameters, exceeding the ` +
+          `16-bit parameter-count limit (${UI16_MAX})`,
+        line
+      );
+    }
+
+    // codeSize is a UI16 field that delimits the function body in the action
+    // stream. A body larger than 65535 bytes cannot be delimited: truncating it
+    // (the old `& 0xffff` behaviour) makes Ruffle log "Length mismatch in AVM1
+    // action: DefineFunction2" and re-sync past the following actions, silently
+    // corrupting the rest of the script. Refuse with a clear error instead.
+    if (bodyBytes.length > UI16_MAX) {
+      throw new CompileError(
+        `${fnLabel} compiles to ${bodyBytes.length} bytes, exceeding the ` +
+          `16-bit function-body (codeSize) limit (${UI16_MAX}); split it into ` +
+          `smaller functions`,
+        line
+      );
+    }
 
     // Build the payload
     const nameBytes = new TextEncoder().encode(name);
@@ -2880,6 +3013,17 @@ class Compiler {
       2 +                    // flags
       paramBytes.length +    // params
       2;                     // codeSize
+
+    // The record's declared length (header, excluding the trailing body) is a
+    // UI16. It can overflow independently of codeSize when the name/parameter
+    // names are very large.
+    if (payloadSize > UI16_MAX) {
+      throw new CompileError(
+        `${fnLabel} header is ${payloadSize} bytes, exceeding the 16-bit ` +
+          `action-length limit (${UI16_MAX}); reduce the number/length of parameters`,
+        line
+      );
+    }
 
     this.buf.write(0x8e); // ActionDefineFunction2
     this.buf.writeUI16(payloadSize);

@@ -97,6 +97,16 @@ Representative, not exhaustive — the goal is full Player 8 AS2 stdlib parity:
   our compiler output is validated against Ruffle + Flash Player 8 captures.
 - Authoring-time stage playback is geometry/tween preview only (no script execution).
   Running scripts means Test Movie: publish the SWF and play it in the embedded Ruffle.
+- **16-bit encoding limits raise a clear `CompileError`, never a corrupt tag (task 1403).**
+  Several AVM1 fields are UI16/SI16: the `ActionConstantPool` count + record length, the
+  `DefineFunction2` param count / header length / `codeSize`, `ActionWith`/`ActionTry`
+  body sizes, and `ActionIf`/`ActionJump` branch offsets. `compileAS2` (`as2/compiler.ts`)
+  used to wrap these mod 65536, silently truncating an over-long function body or branch
+  target (the "Length mismatch in AVM1 action" desync). Now: the **constant pool caps at
+  the UI16 payload budget** (real-Flash behaviour) and `pushString` inlines the overflow —
+  graceful, no error; a **function body / record header / jump offset** that overflows
+  throws `CompileError` (exported from `@flash/core`) carrying the source line. Gate:
+  `as2/__tests__/overflow-diagnostics.test.ts`.
 
 ## AS2 class compile pipeline (`doc.asClasses` → SWF)
 
