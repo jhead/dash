@@ -1,10 +1,10 @@
 {
   "id": "1383-0lsl57-swf-definebutton2-drops-grouped-artwork-and-neve",
   "title": "SWF: DefineButton2 drops grouped artwork and never emits filters/blend on button states",
-  "description": "packages/swf/src/buttons.ts. (a) Group flatten missing: the char-ID pre-pass (:210) and the state-collection loop (:389) iterate frame.displayObjects directly instead of routing through flattenDisplayObjects (as frames.ts:339 and sprite.ts:328/491/561 do). A type:'group' in a button keyframe is skipped in the pre-pass and objCharIdMap.get(obj.id) is undefined at :396 -> continue -> the group's children get no char IDs and vanish from the button. Fix: wrap both loops with flattenDisplayObjects. (b) buildButtonRecord (:108-142) hardcodes ButtonHasFilterList(bit4) and ButtonHasBlendMode(bit5) to 0 with no code to append a FILTERLIST/blend byte after the CXFORM; DefineButton2 supports both since SWF8. Also colorEffect is only captured for instance/text states not shape/bitmap (:408-410), and alpha/visible=false are not captured. Fix: set bit4/bit5 and append FILTERLIST/blend byte; capture colorEffect for shape/bitmap and alpha/visible. Acceptance: group-in-button and filter-on-button-state e2e (no such test exists today). Confidence: confirmed.",
-  "status": "open",
+  "description": "packages/swf/src/buttons.ts. DONE. (a) Both the char-ID pre-pass and state-collection loop now route through flattenDisplayObjects, so grouped artwork (type:'group') in a button keyframe expands into per-child ButtonRecords with the group offset applied (was: group skipped in pre-pass -> children got no char IDs -> vanished). (b) buildButtonRecord now sets ButtonHasFilterList (bit4) + ButtonHasBlendMode (bit5) and appends FILTERLIST (shared writeFilterList from filters.ts) then blend UI8 (SWF_BLEND_MODE) after the CXFORM per SWF8 spec order. colorEffect/alpha/visible captured for ALL state types (shape/bitmap/instance/text) via shared effectCXForm helper (task 1375). Exported writeFilterList from filters.ts. Tests: __tests__/buttons.test.ts tests 13-17 (group flatten -> 2 shapes + 2 records; blur filter -> bit4 + FILTERLIST id1; multiply blend -> bit5 + byte 3; filter+blend together; shape colorEffect -> non-identity CXFORM). Verify: full ordered build 'pnpm --filter ./packages/** build' exit 0; 'pnpm --filter @flash/swf test' 1484 passed (119 files); buttons.test.ts 17/17. Docs: docs/08-filters-blend-modes.md implementation notes. Confidence: confirmed.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-07-02T01:14:29Z",
-  "updated_at": "2026-07-02T01:14:29Z"
+  "updated_at": "2026-07-02T01:44:41Z"
 }

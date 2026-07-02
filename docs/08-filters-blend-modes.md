@@ -212,6 +212,26 @@ Blend modes map to the SWF `PlaceObject3` blend-mode field and `MovieClip.blendM
   correctly (tasks 1210); the only defect was the emit paths, so no key changes were needed.
   Gate: `__tests__/placement-effect-move.test.ts` (scene + movieclip-internal bitmap-filter
   and shape-tint tweens: every moved frame re-emits the effect, zero plain moves).
+- **DefineButton2 button-state records carry per-state FILTERLIST + blend byte, and flatten
+  grouped artwork (task 1383).** A button symbol's state artwork is encoded as `BUTTONRECORD`s
+  inside `DefineButton2` (tag 34), NOT PlaceObject3 — but the ButtonRecord flags byte has its
+  OWN `ButtonHasFilterList` (bit4, 0x10) and `ButtonHasBlendMode` (bit5, 0x20) since SWF8, with
+  the `FILTERLIST` written after the `CXFORMWITHALPHA` and the blend `UI8` written after the
+  FILTERLIST (spec order: CharacterId → PlaceDepth → MATRIX → CXFORM → [FILTERLIST] → [BlendMode]).
+  `packages/swf/src/buttons.ts` previously hardcoded both bits to 0 and never appended either
+  field, so a filtered/blended button face published flat. Fixes: (a) `buildButtonRecord` sets
+  bit4/bit5 and appends the FILTERLIST (via the shared `writeFilterList` from `filters.ts`,
+  gated on `hasEnabledFilters`) and the blend byte (via `SWF_BLEND_MODE`, skipping "normal");
+  (b) both the char-ID pre-pass and the state-collection loop now route through
+  `flattenDisplayObjects` (as the scene/sprite paths do) so a `type:"group"` in a button
+  keyframe expands into per-child records with the group offset applied — previously a group
+  was skipped in the pre-pass, its children got no char IDs, and the whole group vanished;
+  (c) `colorEffect`/`alpha`/`visible` are now captured for ALL state object types (shape,
+  bitmap, instance, text) via the shared `effectCXForm` helper (task 1375) — previously
+  `colorEffect` was captured only for instance/text and `alpha`/`visible=false` were dropped,
+  so a tinted or faded shape/bitmap face lost its color transform. Gate:
+  `__tests__/buttons.test.ts` tests 13–17 (group flatten, filter bit4+FILTERLIST, blend
+  bit5+byte, filter+blend together, shape colorEffect → non-identity CXFORM).
 - Blend modes = GPU blend-state + custom fragment composites; Layer forces an offscreen group
   buffer so Alpha/Erase operate on the composited group.
 - Keep a filter/blend pipeline cache keyed on parameters + source bitmap hash.

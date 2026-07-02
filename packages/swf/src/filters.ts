@@ -429,7 +429,7 @@ export function encodableFilters(filters: readonly FlashFilter[]): FlashFilter[]
  * skipped (with a dev-facing warning) so the remaining valid filters on the
  * same instance still apply instead of the whole list being rejected.
  */
-function writeFilterList(bw: BitWriter, filters: readonly FlashFilter[]): void {
+export function writeFilterList(bw: BitWriter, filters: readonly FlashFilter[]): void {
   const enabled = encodableFilters(filters);
   bw.writeUI8(enabled.length); // FilterCount
 

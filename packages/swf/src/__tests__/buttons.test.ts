@@ -578,6 +578,121 @@ describe("DefineButton2 export", () => {
       expect(r & 0x0f).toBe(0x0f); // UP|OVER|DOWN|HIT
     }
   });
+
+  it("13: grouped artwork in a button state is flattened into per-child ButtonRecords", () => {
+    // A type:"group" in a button keyframe must be expanded via
+    // flattenDisplayObjects: each child gets a char ID and its own ButtonRecord.
+    // Before the fix the group was skipped in the char-ID pre-pass, its children
+    // never got char IDs, and the whole group vanished from the button.
+    const group: import("@flash/core").DisplayObject = {
+      id: "grp-1",
+      type: "group",
+      x: 10,
+      y: 20,
+      children: [makeShapeObj("grp-child-a"), makeShapeObj("grp-child-b")],
+    } as import("@flash/core").DisplayObject;
+
+    const btn = makeButtonSymbol("btn13", [[group], [], [], []]);
+    const doc = makeDoc([btn]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    // Two DefineShape4 tags — one per grouped child — must be hoisted.
+    const shapeTags = tags.filter((t) => t.code === 83);
+    expect(shapeTags.length).toBe(2);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    expect(btn2Tags.length).toBe(1);
+
+    // Two ButtonRecords (one per child), each forward-filled to UP|OVER|DOWN|HIT.
+    const records = decodeButtonRecords(btn2Tags[0].body);
+    expect(records.length).toBe(2);
+    for (const r of records) expect(r & 0x0f).toBe(0x0f);
+  });
+
+  it("14: a filter on a button-state shape sets ButtonHasFilterList (bit4) and appends a FILTERLIST", () => {
+    const shape = makeShapeObj("shape-blur");
+    (shape as unknown as { filters: import("@flash/core").FlashFilter[] }).filters = [
+      { type: "blur", blurX: 4, blurY: 4, quality: 1, enabled: true },
+    ];
+    const btn = makeButtonSymbol("btn14", [[shape], [], [], []]);
+    const doc = makeDoc([btn]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    expect(btn2Tags.length).toBe(1);
+    const body = btn2Tags[0].body;
+
+    const rec = decodeFirstRecord(body);
+    expect(rec.flags & 0x10).toBe(0x10); // ButtonHasFilterList
+    expect(rec.flags & 0x20).toBe(0);    // no blend
+    // FILTERLIST begins right after the CXFORM: FilterCount UI8, then FilterID.
+    expect(body[rec.tailStart]).toBe(1);      // one filter
+    expect(body[rec.tailStart + 1]).toBe(1);  // FilterID 1 = Blur
+  });
+
+  it("15: a blend mode on a button-state shape sets ButtonHasBlendMode (bit5) and appends a blend byte", () => {
+    const shape = makeShapeObj("shape-mult");
+    (shape as unknown as { blendMode: string }).blendMode = "multiply";
+    const btn = makeButtonSymbol("btn15", [[shape], [], [], []]);
+    const doc = makeDoc([btn]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const btn2Tags = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2);
+    expect(btn2Tags.length).toBe(1);
+    const body = btn2Tags[0].body;
+
+    const rec = decodeFirstRecord(body);
+    expect(rec.flags & 0x20).toBe(0x20); // ButtonHasBlendMode
+    expect(rec.flags & 0x10).toBe(0);    // no filter → blend byte immediately after CXFORM
+    expect(body[rec.tailStart]).toBe(3); // SWF BlendMode 3 = multiply
+  });
+
+  it("16: a filter AND a blend on the same button-state shape set both bits and emit FILTERLIST then blend byte", () => {
+    const shape = makeShapeObj("shape-both");
+    (shape as unknown as { filters: import("@flash/core").FlashFilter[] }).filters = [
+      { type: "blur", blurX: 4, blurY: 4, quality: 1, enabled: true },
+    ];
+    (shape as unknown as { blendMode: string }).blendMode = "screen";
+    const btn = makeButtonSymbol("btn16", [[shape], [], [], []]);
+    const doc = makeDoc([btn]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const body = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2)[0].body;
+    const rec = decodeFirstRecord(body);
+    expect(rec.flags & 0x10).toBe(0x10); // filter
+    expect(rec.flags & 0x20).toBe(0x20); // blend
+    // FILTERLIST first (FilterCount=1, id=1 Blur), then a Blur body, then the
+    // blend byte is the FINAL byte before the null terminator.
+    expect(body[rec.tailStart]).toBe(1);       // FilterCount
+    expect(body[rec.tailStart + 1]).toBe(1);   // FilterID Blur
+    expect(body[body.length - 2]).toBe(4);     // SWF BlendMode 4 = screen (last before null)
+    expect(body[body.length - 1]).toBe(0x00);  // record-list null terminator
+  });
+
+  it("17: a colorEffect on a button-state SHAPE is captured (non-identity CXFORM)", () => {
+    // colorEffect used to be captured only for instance/text states; a tinted
+    // shape face silently lost its color transform.
+    const shape = makeShapeObj("shape-tint");
+    (shape as unknown as { colorEffect: import("@flash/core").ColorEffect }).colorEffect = {
+      type: "alpha",
+      alpha: 50,
+    };
+    const btn = makeButtonSymbol("btn17", [[shape], [], [], []]);
+    const doc = makeDoc([btn]);
+    const swf = compileDocument(doc);
+    const tags = parseTags(swf);
+
+    const body = tags.filter((t) => t.code === TAG_DEFINE_BUTTON2)[0].body;
+    // The CXFORM must be non-identity: an identity CXFORM encodes as a single
+    // 0x00 byte (no-add/no-mult). A 50% alpha sets HasMult, so the first CXFORM
+    // byte is non-zero. Locate the CXFORM start (after flags+charId+depth+matrix).
+    const cxStart = matrixEnd(body, 5 + 1 + 2 + 2);
+    expect(body[cxStart]).not.toBe(0x00);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -638,4 +753,61 @@ function decodeButtonRecords(body: Uint8Array): number[] {
     flags.push(f);
   }
   return flags;
+}
+
+// ---------------------------------------------------------------------------
+// Shared bit reader over a byte buffer, used by the tail-aware decoders below.
+// ---------------------------------------------------------------------------
+function makeBitReader(body: Uint8Array, start: number) {
+  let bytePos = start;
+  let bit = 0;
+  return {
+    read(n: number): number {
+      let v = 0;
+      for (let i = 0; i < n; i++) {
+        v = (v << 1) | ((body[bytePos]! >> (7 - bit)) & 1);
+        bit++;
+        if (bit === 8) { bit = 0; bytePos++; }
+      }
+      return v;
+    },
+    align() { if (bit !== 0) { bit = 0; bytePos++; } },
+    pos() { return bytePos; },
+  };
+}
+
+/** Byte offset just past the MATRIX that begins at `off`. */
+function matrixEnd(body: Uint8Array, off: number): number {
+  const b = makeBitReader(body, off);
+  if (b.read(1)) { const n = b.read(5); b.read(n); b.read(n); }
+  if (b.read(1)) { const n = b.read(5); b.read(n); b.read(n); }
+  const nt = b.read(5); b.read(nt); b.read(nt);
+  b.align();
+  return b.pos();
+}
+
+/** Byte offset just past the CXFORMWITHALPHA that begins at `off`. */
+function cxformEnd(body: Uint8Array, off: number): number {
+  const b = makeBitReader(body, off);
+  const hasAdd = b.read(1);
+  const hasMult = b.read(1);
+  const n = b.read(4);
+  if (hasMult) { b.read(n); b.read(n); b.read(n); b.read(n); }
+  if (hasAdd) { b.read(n); b.read(n); b.read(n); b.read(n); }
+  b.align();
+  return b.pos();
+}
+
+/**
+ * Decode the FIRST ButtonRecord: return its flags byte and `tailStart` — the
+ * byte offset just past the CXFORM, where a FILTERLIST (bit4) and/or a BlendMode
+ * byte (bit5) would begin.
+ */
+function decodeFirstRecord(body: Uint8Array): { flags: number; tailStart: number } {
+  let pos = 5;
+  const flags = body[pos]!;
+  pos += 1 + 2 + 2; // flags + CharacterId + PlaceDepth
+  pos = matrixEnd(body, pos);
+  pos = cxformEnd(body, pos);
+  return { flags, tailStart: pos };
 }

@@ -15,10 +15,13 @@
  *     each record: 1 byte flags, CharId UI16, Depth UI16, MATRIX, CXFORMWITHALPHA
  *   ButtonConditions (optional, none emitted for MVP)
  */
-import type { BitmapItem, ButtonHandler, ButtonSounds, ColorEffect, FlashDocument, Symbol } from "@flash/core";
+import type { BitmapItem, ButtonHandler, ButtonSounds, ColorEffect, FlashDocument, FlashFilter, Symbol } from "@flash/core";
 import { compileAS2, composeMatrix, toSWFMatrix } from "@flash/core";
 import { BitWriter } from "./bits.js";
-import { encodeCxformWithAlpha, colorEffectToCXForm, encodeCXFormWithAlpha } from "./cxform.js";
+import { encodeCxformWithAlpha, encodeCXFormWithAlpha } from "./cxform.js";
+import { hasEnabledFilters, writeFilterList, SWF_BLEND_MODE } from "./filters.js";
+import { effectCXForm } from "./placement-effects.js";
+import { flattenDisplayObjects } from "./compiler/display.js";
 import { edgeNumBits } from "./helpers.js";
 import { fontKey } from "./fonts.js";
 import { encodeDefineShape4, encodeBitmapFillShape } from "./shapes.js";
@@ -92,8 +95,8 @@ function encodeIdentityCxform(): Uint8Array {
  *
  * ButtonRecord flags byte layout (SWF spec, bit7..bit0):
  *   bit7-6: ButtonReserved = 0
- *   bit5:   ButtonHasBlendMode = 0
- *   bit4:   ButtonHasFilterList = 0
+ *   bit5:   ButtonHasBlendMode  (DefineButton2, SWF8+)
+ *   bit4:   ButtonHasFilterList (DefineButton2, SWF8+)
  *   bit3:   ButtonStateHitTest
  *   bit2:   ButtonStateDown
  *   bit1:   ButtonStateOver
@@ -104,6 +107,8 @@ function encodeIdentityCxform(): Uint8Array {
  *   PlaceDepth: UI16
  *   PlaceMatrix: MATRIX
  *   ColorTransform: CXFORMWITHALPHA  (DefineButton2 only)
+ *   FilterList: FILTERLIST           (only when ButtonHasFilterList / bit4)
+ *   BlendMode: UI8                   (only when ButtonHasBlendMode  / bit5)
  */
 function buildButtonRecord(
   stateUp: boolean,
@@ -119,11 +124,25 @@ function buildButtonRecord(
   rotation: number,
   skewX: number,
   skewY: number,
-  colorEffect?: ColorEffect
+  colorEffect?: ColorEffect,
+  alpha?: number,
+  visible?: boolean,
+  filters?: readonly FlashFilter[],
+  blendMode?: string
 ): Uint8Array {
   const bw = new BitWriter();
 
+  // A blend mode only takes a byte/flag when it is a non-"normal" mode with a
+  // real SWF BlendMode value; "normal" is the default and is left unencoded.
+  const hasBlend =
+    blendMode !== undefined &&
+    blendMode !== "normal" &&
+    SWF_BLEND_MODE[blendMode] !== undefined;
+  const hasFilters = hasEnabledFilters(filters);
+
   const flags =
+    (hasBlend ? 0x20 : 0) |
+    (hasFilters ? 0x10 : 0) |
     (stateHit ? 0x08 : 0) |
     (stateDown ? 0x04 : 0) |
     (stateOver ? 0x02 : 0) |
@@ -134,9 +153,20 @@ function buildButtonRecord(
   bw.writeUI16LE(depth);
   bw.writeBytes(encodeButtonMatrix(x, y, scaleX, scaleY, rotation, skewX, skewY));
 
-  // Encode CXFORMWITHALPHA: use colorEffect if present, otherwise identity
-  const cx = colorEffect ? colorEffectToCXForm(colorEffect) : null;
+  // Encode CXFORMWITHALPHA using the shared per-placement precedence
+  // (colorEffect > visible=false > standalone alpha; task 1375), otherwise identity.
+  const cx = effectCXForm({ colorEffect: colorEffect ?? null, visible, alpha });
   bw.writeBytes(cx !== null ? encodeCXFormWithAlpha(cx) : encodeIdentityCxform());
+
+  // FILTERLIST (DefineButton2, SWF8+): written after the CXFORM when bit4 is set.
+  if (hasFilters) {
+    writeFilterList(bw, filters!);
+  }
+
+  // BlendMode UI8 (DefineButton2, SWF8+): written after the FILTERLIST when bit5 is set.
+  if (hasBlend) {
+    bw.writeUI8(SWF_BLEND_MODE[blendMode]!);
+  }
 
   return bw.getBytes();
 }
@@ -207,7 +237,11 @@ export function encodeDefineButton2(
     for (const frame of layer.frames) {
       // Do not skip on isEmpty — the flag can be stale; iterate displayObjects directly.
       if (!frame.isKeyframe) continue;
-      for (const obj of frame.displayObjects) {
+      // Route through flattenDisplayObjects so grouped artwork (type:"group") is
+      // expanded into its placeable children with the group offset applied — a
+      // group in a button keyframe would otherwise be skipped here and its
+      // children left without char IDs, dropping the artwork from the button.
+      for (const obj of flattenDisplayObjects(frame.displayObjects)) {
         if (objCharIdMap.has(obj.id)) continue;
 
         if (obj.type === "shape" || obj.type === "drawing-object") {
@@ -333,6 +367,10 @@ export function encodeDefineButton2(
     skewX: number;
     skewY: number;
     colorEffect?: ColorEffect;
+    alpha?: number;
+    visible?: boolean;
+    filters?: readonly FlashFilter[];
+    blendMode?: string;
   }
 
   // Key: objId. The same display object placed in several states gets ONE
@@ -371,6 +409,10 @@ export function encodeDefineButton2(
     skewX: number;
     skewY: number;
     colorEffect?: ColorEffect;
+    alpha?: number;
+    visible?: boolean;
+    filters?: readonly FlashFilter[];
+    blendMode?: string;
   };
   // perState[stateIdx] is undefined when that state has no keyframe content of
   // its own (empty/blank); an array (possibly with entries) when it does.
@@ -386,7 +428,9 @@ export function encodeDefineButton2(
       const stateIdx = frame.index;
       if (stateIdx > STATE_HIT) continue; // ignore frames beyond state 3
 
-      for (const obj of frame.displayObjects) {
+      // Flatten groups so grouped artwork inside a button state is placed as its
+      // children (positions accumulated), matching the pre-pass above.
+      for (const obj of flattenDisplayObjects(frame.displayObjects)) {
         let objCid: number | undefined;
         if (obj.type === "instance") {
           objCid = charIdMap.get(obj.symbolId);
@@ -395,6 +439,18 @@ export function encodeDefineButton2(
         }
         if (objCid === undefined) continue;
 
+        // colorEffect / alpha / visible / blendMode are captured for EVERY state
+        // display-object type that carries them (shape, bitmap, instance, text),
+        // not just instance/text — a tinted or faded shape/bitmap face otherwise
+        // lost its color transform. filters/blendMode drive the DefineButton2
+        // FILTERLIST / BlendMode byte on this record.
+        const o = obj as {
+          colorEffect?: ColorEffect;
+          alpha?: number;
+          visible?: boolean;
+          filters?: readonly FlashFilter[];
+          blendMode?: string;
+        };
         const entry: StateObj = {
           objId: obj.id,
           objCharId: objCid,
@@ -405,9 +461,11 @@ export function encodeDefineButton2(
           rotation: (obj as { rotation?: number }).rotation ?? 0,
           skewX: (obj as { skewX?: number }).skewX ?? 0,
           skewY: (obj as { skewY?: number }).skewY ?? 0,
-          colorEffect: (obj.type === "instance" || obj.type === "text")
-            ? obj.colorEffect
-            : undefined,
+          colorEffect: o.colorEffect,
+          alpha: o.alpha,
+          visible: o.visible,
+          filters: o.filters,
+          blendMode: o.blendMode,
         };
         (perState[stateIdx] ??= []).push(entry);
       }
@@ -474,6 +532,10 @@ export function encodeDefineButton2(
           skewX: so.skewX,
           skewY: so.skewY,
           colorEffect: so.colorEffect,
+          alpha: so.alpha,
+          visible: so.visible,
+          filters: so.filters,
+          blendMode: so.blendMode,
         });
       } else {
         if (bits.up) existing.stateUp = true;
@@ -505,7 +567,11 @@ export function encodeDefineButton2(
         entry.rotation,
         entry.skewX,
         entry.skewY,
-        entry.colorEffect
+        entry.colorEffect,
+        entry.alpha,
+        entry.visible,
+        entry.filters,
+        entry.blendMode
       )
     );
   }
