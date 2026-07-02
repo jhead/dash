@@ -1319,6 +1319,51 @@ the safe design is to make the autosave snapshot remain authoritative and treat 
 persisted Y.Doc as a pure cache that is *discarded and rebuilt from the snapshot*
 on any mismatch — not a second source of truth.
 
+### 13.4a Autosave must NOT clobber the local NAMED project on join (task 1377)
+
+The persistent-projects autosave (§13.4, task 1310) subscribes to the document
+store and, on any `history.present` change, debounces a write to **two** slots:
+the reserved **current-working** recovery slot AND — when a project is open — the
+active **named** slot. Collaboration routes *every* remote peer edit, and the
+one-shot late-join adoption, through `replaceDoc` (§4), so those changes trip the
+same autosave subscription.
+
+That created a **silent data-loss** path:
+
+1. User opens their local named project **"A"**.
+2. User joins a share link → `joinCollab` attaches the binding, whose adoption
+   `replaceDoc`s the **remote** document into the editor (A is no longer the doc
+   in memory).
+3. ~1.5 s later the debounced autosave writes the **remote** doc into slot **"A"**
+   — and keeps rewriting it for the whole session. The user's original "A" is
+   irreversibly overwritten, even though they never chose to save.
+
+**Fix — suspend the named-slot write while a session is active.** A live session
+already registers a per-origin collab undo handler on the document store
+(`setCollabUndo`, §10). That handler is the single authoritative "session active"
+signal, so the store now exposes it as **`isCollabActive()`** (a plain getter, not
+reactive state — reading it never churns document subscribers). `useProjectActions`
+gates the named-slot write on `!documentStore.getState().isCollabActive()` in
+**both** the debounced persist and the visibility/unload durable-flush paths:
+
+- **During a session** only the **current-working** slot tracks the shared/remote
+  doc — that is accepted (it is the session-scoped recovery slot; §13.4), and a
+  rejoin re-syncs from peers. The **named** slot is left untouched, so project "A"
+  survives the entire session.
+- **The check is at persist (resolve) time, not schedule time**, so it is correct
+  even for the very first autosave scheduled by the join's adoption `replaceDoc`:
+  `attachCollab` sets the collab handler synchronously as the session starts, well
+  before the ~1.5 s debounce resolves.
+- **On leave** the handler is cleared (`setCollabUndo(null)` via `binding.detach`),
+  `isCollabActive()` returns false, and the named slot resumes receiving writes.
+
+Explicit user **Save / Save As** are unchanged (a conscious action, not the silent
+autosave path). The related "L5 reload restores the collab doc out-of-session"
+behavior is the current-working slot doing its job and is accepted per §13.4 — only
+the named-slot clobber is a defect. Gate: `collabAutosaveGuard.test.ts` (named
+project survives a join + any number of remote edits; resumes on leave; solo
+unchanged; and the REAL `attachCollab` path flips `isCollabActive()`).
+
 ### 13.5 Signaling-server-down fallback
 
 The signaling server only brokers the WebRTC handshake (§8.4) — it never sees

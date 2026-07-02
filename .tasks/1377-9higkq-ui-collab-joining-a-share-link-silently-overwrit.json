@@ -2,9 +2,9 @@
   "id": "1377-9higkq-ui-collab-joining-a-share-link-silently-overwrit",
   "title": "UI/collab: joining a share link silently overwrites the local named project slot (data loss)",
   "description": "packages/authoring-ui/src/projects/useProjectActions.ts:188-205 mounts autosave with no collab awareness; its documentStore.subscribe fires on any history.present change and persists to activeNameRef.current (the local named slot, store.put at 111-127). Collab adoption (joinCollab -> applyRemote -> replaceDoc, collabAdapter.ts:58-59) and every remote peer edit route through set({history}), tripping the autosave subscription. Sequence: user opens named project 'A' -> joins a share link -> remote doc replaces A in memory -> ~1.5s later autosave writes the REMOTE doc into slot 'A' and keeps rewriting it for the session. Original 'A' is irreversibly lost. The unload path (235-255) has the same clobber. Related: L5 reload restores the collab doc out-of-session (useProjectActions.ts:146-181) because the current-working slot also holds session state. NOTE: CLAUDE.md task-1348 item 4 accepts current-working-slot persistence but NOT the named-slot clobber. Fix: thread CollabContext.session into useProjectActions; while a session is active suspend autosave or restrict it to a session-scoped/current-working slot only, never the named slot; on leave resume against the named slot. Confidence: confirmed path (exact timing needs-repro).",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "high",
   "created_at": "2026-07-02T01:13:37Z",
-  "updated_at": "2026-07-02T01:13:37Z"
+  "updated_at": "2026-07-02T03:21:06Z"
 }

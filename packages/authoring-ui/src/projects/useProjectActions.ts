@@ -114,14 +114,31 @@ export function useProjectActions(deps: UseProjectActionsDeps): UseProjectAction
         // Defense-in-depth: stamp the write with the controller generation as a
         // monotonic per-slot seq so an out-of-order stale write is rejected by
         // the store even if it slips past the in-process supersession guard.
-        // Always update the current-working recovery slot.
+        // Always update the current-working recovery slot. During a collab
+        // session this holds the shared/remote doc — that is ACCEPTED (it is the
+        // session-scoped recovery slot; CLAUDE.md task-1348 item 4), and a rejoin
+        // re-syncs from peers.
         await autosaveCurrentWorking(store, bytes, generation);
         // If a named project was active AT SCHEDULE TIME, keep it in sync too.
         // `targetName` was captured when this save was scheduled — NOT read here
         // at resolve time — so a Save As that switched the active slot during the
         // debounce/persist window cannot redirect these (older) bytes into the
         // newly-named slot (BUG 2, task 1316).
-        if (targetName && targetName !== CURRENT_WORKING_KEY) {
+        //
+        // SUSPEND the named-slot write while a collab session is active (task
+        // 1377): joining a share link REPLACES the in-memory doc with the shared
+        // document, so writing it to the local named slot would silently clobber
+        // the user's own project — irreversible data loss. Checked HERE at persist
+        // time (not schedule time) so the guard is correct even for the very first
+        // autosave scheduled by the join's adoption replaceDoc (the collab handler
+        // is attached synchronously as the session starts, well before this
+        // debounced write resolves). On leave the handler is cleared and the named
+        // slot resumes receiving writes.
+        if (
+          targetName &&
+          targetName !== CURRENT_WORKING_KEY &&
+          !documentStore.getState().isCollabActive()
+        ) {
           await store.put(targetName, bytes, { seq: generation });
         }
       },
@@ -244,7 +261,13 @@ export function useProjectActions(deps: UseProjectActionsDeps): UseProjectAction
       void (async () => {
         try {
           await autosaveCurrentWorking(store, bytes, generation);
-          if (targetName && targetName !== CURRENT_WORKING_KEY) {
+          // Same collab guard as the debounced persist (task 1377): never flush
+          // the shared/remote session doc into the local named slot on unload.
+          if (
+            targetName &&
+            targetName !== CURRENT_WORKING_KEY &&
+            !documentStore.getState().isCollabActive()
+          ) {
             await store.put(targetName, bytes, { seq: generation });
           }
         } catch {
@@ -273,7 +296,7 @@ export function useProjectActions(deps: UseProjectActionsDeps): UseProjectAction
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("blur", onBlur);
     };
-  }, [disabled, tauri]);
+  }, [disabled, tauri, documentStore]);
 
   // -------------------------------------------------------------------------
   // Actions

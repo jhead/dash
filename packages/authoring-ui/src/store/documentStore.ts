@@ -55,6 +55,20 @@ export interface DocumentState {
    * edits arrive via `replaceDoc`, which never pushes a snapshot entry).
    */
   setCollabUndo: (handler: CollabUndoHandler | null) => void;
+  /**
+   * True while a collaboration session is attached (task 1377).
+   *
+   * A live session routes `undo`/`redo` through a per-origin collab handler
+   * (`setCollabUndo`), so `collabUndo != null` is the single, authoritative
+   * "session active" signal — and it lives on the store, which non-React
+   * consumers (e.g. the persistent-projects autosave in `useProjectActions`)
+   * already hold. This is a plain getter, NOT reactive state, so reading it
+   * never causes document subscribers to churn. Autosave uses it to SUSPEND
+   * writes to the named project slot while a session is active: the in-memory
+   * doc is then the shared/remote document, and persisting it to the local
+   * named slot would silently overwrite the user's own project (data loss).
+   */
+  isCollabActive: () => boolean;
 }
 
 export type DocumentStoreApi = StoreApi<DocumentState>;
@@ -94,6 +108,7 @@ export function createDocumentStore(initial: FlashDocument): DocumentStoreApi {
         else apply({ type: "REDO" });
       },
       clearHistory: () => apply({ type: "CLEAR" }),
+      isCollabActive: () => collabUndo !== null,
       setCollabUndo: (handler) => {
         if (handler) {
           // BEGIN: freeze the snapshot stack (so a session's edits don't grow it
