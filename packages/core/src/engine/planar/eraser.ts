@@ -178,6 +178,12 @@ export function planarEraseShape(
     const interior = faceInteriorPoint(ps, f);
     if (!interior) continue;
     if (!pointInEraser(interior, usableLoops)) continue;
+    // A face with NO fill has nothing to erase — skip it (task 1431). Otherwise a
+    // stamp that only covers empty regions (e.g. the eraser's own disk area, or a
+    // gesture that never intersects the artwork) would mark a fillless face as
+    // "erased" and defeat the no-op identity return below. Dropping a fillless
+    // face never changes the read-back (it emits no fill loop either way).
+    if (f.fill === null || f.fill === undefined) continue;
     // The face is under the eraser. Decide per mode whether to erase its fill.
     if (mode === "lines") continue; // lines-only: never erase fills.
     if (mode === "selected") {
@@ -192,18 +198,30 @@ export function planarEraseShape(
 
   // Which stroke half-edges are inside the erased region (midpoint test).
   const eraseStrokes = mode === "normal" || mode === "lines";
-  const erasedEdgeMid = (heId: number): boolean => {
-    if (!eraseStrokes) return false;
-    const he = ps.halfEdges[heId];
-    if (he.lineStyle === null || he.lineStyle === undefined) return false;
-    return pointInEraser(halfEdgeMidpoint(he.geometry), usableLoops);
-  };
+  const erasedStroke = new Set<number>();
+  if (eraseStrokes) {
+    for (const he of ps.halfEdges) {
+      if (he.lineStyle === null || he.lineStyle === undefined) continue;
+      if (pointInEraser(halfEdgeMidpoint(he.geometry), usableLoops)) {
+        erasedStroke.add(he.id);
+      }
+    }
+  }
+
+  // No-op increment (task 1431): the eraser passed the bbox pre-filter but its
+  // stamp did not actually remove any fill face OR trim any stroke. Rebuilding
+  // via planarShapeToShape would still return a NEW Shape (the eraser boundary
+  // edges split the geometry, so the read-back is a different object even though
+  // it renders identically), which churns the document/history and re-runs the
+  // read-back round-trip on every such move. Return the ORIGINAL reference so the
+  // caller's `next === shape` guard makes a no-op increment truly free.
+  if (erasedFace.size === 0 && erasedStroke.size === 0) return { shape };
 
   const result = planarShapeToShape(ps, resultId, {
     // A face is kept (participates in fill emission) unless it was erased.
     faceFilter: (fid) => !erasedFace.has(fid),
     // A stroke edge is kept unless its midpoint is inside the erased region.
-    edgeFilter: (heId) => !erasedEdgeMid(heId),
+    edgeFilter: (heId) => !erasedStroke.has(heId),
   });
 
   return { shape: result.paths.length > 0 ? result : null };

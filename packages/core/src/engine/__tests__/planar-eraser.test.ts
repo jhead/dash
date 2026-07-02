@@ -834,3 +834,36 @@ describe("planar eraser — interior holes persist across rebuilds (task 1425)",
     expect(face?.fill ?? null).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// task 1431 — a no-op increment must return the SAME Shape object reference so
+// callers (StageArea) can cheaply detect it (`next === shape`) and skip the
+// geometry / history churn a rebuilt-but-unchanged Shape would otherwise cause.
+// ---------------------------------------------------------------------------
+describe("planar eraser — no-op increment returns the identical object (task 1431)", () => {
+  it("a stamp that intersects NOTHING returns the original reference (identity-equal)", () => {
+    const square = rectShape("sq", 0, 0, 100, 100, RED);
+    // A stamp placed far from the shape: it passes usableLoops (>=3 pts) but
+    // erases no face and trims no stroke.
+    const stamp = buildEraserStamp([{ x: 500, y: 500 }], 10);
+    const { shape: next } = planarEraseShape(square, stamp);
+    expect(next).toBe(square);
+  });
+
+  it("Erase Lines over a FILL-ONLY shape erases nothing -> identical reference", () => {
+    const square = rectShape("sq", 0, 0, 100, 100, RED);
+    // The stamp sits right on the fill, but "lines" mode never touches fills and
+    // there are no strokes to trim -> a true no-op.
+    const stamp = buildEraserStamp([{ x: 50, y: 50 }], 20);
+    const { shape: next } = planarEraseShape(square, stamp, { mode: "lines" });
+    expect(next).toBe(square);
+  });
+
+  it("a stamp that DOES erase returns a NEW object (contrast)", () => {
+    const square = rectShape("sq", 0, 0, 100, 100, RED);
+    const stamp = buildEraserStamp([{ x: 50, y: 50 }], 15);
+    const { shape: next } = planarEraseShape(square, stamp);
+    expect(next).not.toBe(square);
+    expect(next).not.toBeNull();
+  });
+});

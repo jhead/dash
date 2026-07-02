@@ -144,6 +144,19 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   with the cursor and, once the drag crossed into a neighboring fill, began erasing that fill.
   The engine already confines correctly given the true gesture start (`connectedFillComponent`,
   task 1399); only the UI wiring fed it the wrong point.
+- **An eraser DRAG is ONE undo entry (task 1431).** Flash 8 treats a whole eraser gesture
+  (pointerdown→pointerup) as a single undoable edit; ours pushed one history entry PER
+  pointermove, so a one-second scrub stacked dozens of undo steps and Ctrl+Z after erasing
+  un-did only the last 1-sample sliver. The interactive `StageArea` eraser now mirrors the
+  shape-move `dragStartDocRef` pattern: per-increment edits go through the LIVE (no-history)
+  `onEraseGestureUpdate`/`onEraseGestureDelete` callbacks (`Shell` `replaceDoc` on the live
+  store present), and the single history step is committed at pointerup via `onEraseGestureEnd`
+  (reusing `Shell.handleShapeMoveEnd` → `commitDrag` from the pre-gesture snapshot). A Faucet
+  click stays one click = one entry. Additionally, `planarEraseShape`
+  (`core/engine/planar/eraser.ts`) now returns the SAME shape object (identity-equal) when an
+  increment erases no fill face and trims no stroke, so a no-op increment (hovering with the
+  button down, or a stamp over empty space) neither rebuilds geometry nor churns history —
+  fillless faces under the stamp (incl. the eraser's own disk) are no longer counted as erased.
 - **Paint Bucket Gap Size** lets fills close small gaps in outlines; **Lock Fill** continues a
   gradient/bitmap across multiple shapes.
 - **Paint Bucket / Eyedropper hit the actual region under the cursor, not the bbox

@@ -823,6 +823,18 @@ export interface StageAreaProps {
   onShapeWarp?: (id: string, warp: ShapeWarp) => void;
   /** Called by pen tool when a new path is complete (uses onShapeCreated); by subselection when geometry changes */
   onShapeUpdate?: (id: string, newShape: Shape) => void;
+  /**
+   * Eraser DRAG live update (task 1431): the WHOLE eraser gesture
+   * (pointerdown→pointerup) coalesces into ONE undo entry (Flash 8 = one undo per
+   * gesture). Per-increment updates go through this LIVE (no-history) callback and
+   * the single history step is committed at gesture end via {@link onEraseGestureEnd}.
+   * Falls back to {@link onShapeUpdate} when not supplied (one entry per move).
+   */
+  onEraseGestureUpdate?: (id: string, newShape: Shape) => void;
+  /** Eraser DRAG live delete (a fully-covered shape mid-gesture). See {@link onEraseGestureUpdate}. */
+  onEraseGestureDelete?: (id: string) => void;
+  /** Eraser gesture end (pointerup): commit the coalesced gesture as ONE undo step. */
+  onEraseGestureEnd?: () => void;
   // Bitmap display objects
   bitmapDisplayObjects?: BitmapDisplayObject[];
   /** All BitmapItems from the library, used to load images into the renderer. */
@@ -1558,6 +1570,9 @@ export function StageArea({
   onShapeRotate,
   onShapeWarp,
   onShapeUpdate,
+  onEraseGestureUpdate,
+  onEraseGestureDelete,
+  onEraseGestureEnd,
   guides = [],
   showGuides = true,
   snapToGuides = false,
@@ -3052,6 +3067,14 @@ export function StageArea({
           eraserPointsRef.current.push({ x: stageX, y: stageY });
           const half = eraserSize / 2;
 
+          // Coalesce the WHOLE eraser gesture into ONE undo entry (task 1431):
+          // per-increment edits go through the LIVE (no-history) gesture callbacks
+          // when supplied; the single history step is committed at pointerup via
+          // onEraseGestureEnd. Fall back to the per-call history callbacks (one
+          // undo per move) when the live path is not wired.
+          const eraseUpdate = onEraseGestureUpdate ?? onShapeUpdate;
+          const eraseDelete = onEraseGestureDelete ?? onShapeDelete;
+
           // Vector erase (Flash 8): boolean-subtract the eraser stamp from each
           // overlapping shape's geometry (in the shape's LOCAL coordinate space),
           // splitting/reshaping the vector rather than deleting the whole object.
@@ -3129,9 +3152,9 @@ export function StageArea({
               });
               if (next === null) {
                 erasedIdsRef.current.add(obj.id);
-                onShapeDelete?.(obj.id);
+                eraseDelete?.(obj.id);
               } else if (next !== obj.shape) {
-                onShapeUpdate?.(obj.id, next);
+                eraseUpdate?.(obj.id, next);
               }
               continue;
             }
@@ -3150,9 +3173,9 @@ export function StageArea({
             if (next === null) {
               // Whole shape covered → remove the display object.
               erasedIdsRef.current.add(obj.id);
-              onShapeDelete?.(obj.id);
+              eraseDelete?.(obj.id);
             } else if (next !== obj.shape) {
-              onShapeUpdate?.(obj.id, next);
+              eraseUpdate?.(obj.id, next);
             }
           }
         }
@@ -3560,7 +3583,7 @@ export function StageArea({
         setPressedButtonId(null);
       }
     },
-    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeWarp, freeTransformMode, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, selectedShapeIds, subSelection, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, eraserMode, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeWarp, freeTransformMode, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, selectedShapeIds, subSelection, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, eraserMode, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onEraseGestureUpdate, onEraseGestureDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
   );
 
   const onMouseUp = useCallback(
@@ -3758,11 +3781,14 @@ export function StageArea({
       setBrushPreviewPoints([]);
 
       // Eraser tool: finalize erase gesture (geometry already vector-subtracted
-      // incrementally per move in onMouseMove)
+      // incrementally per move in onMouseMove). Commit the whole gesture as ONE
+      // undo entry (task 1431) — the per-increment edits were LIVE (no-history)
+      // via onEraseGestureUpdate/Delete; this is the single history step.
       if (activeTool === "eraser") {
         eraserPointsRef.current = null;
         eraserGestureStartRef.current = null;
         erasedIdsRef.current = new Set();
+        onEraseGestureEnd?.();
         return;
       }
 
@@ -3827,7 +3853,7 @@ export function StageArea({
       drawStartRef.current = null;
       setDrawPreview(null);
     },
-    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, brushShape, brushPressure, brushTilt, rectCornerRadius, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, partialSelectEnabled, onSubSelect, onSubSplitMove, internalZoom, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
+    [drawPreview, onShapeCreated, activeTool, penState, pencilMode, propStrokeColor, propStrokeWidth, propStrokeAlpha, propFill, brushSize, brushShape, brushPressure, brushTilt, rectCornerRadius, shapeDisplayObjects, onShapeDelete, lassoPolygonMode, lassoPoints, onShapeSelect, onShapeSelectMultiple, partialSelectEnabled, onSubSelect, onSubSplitMove, internalZoom, polyStarOptions, onShapeMoveEnd, ftIsMarqueeSelecting, ftMarqueeStart, ftMarqueeEnd, selIsMarqueeSelecting, selMarqueeStart, selMarqueeEnd, onEraseGestureEnd, symbolInstanceDisplayObjects, textDisplayObjects, library, simpleButtonsEnabled]
   );
 
   // Escape key → cancel pen path or lasso; also propagates to Shell for exiting edit-in-place.

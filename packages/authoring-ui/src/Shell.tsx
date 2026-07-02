@@ -1826,6 +1826,40 @@ export function Shell(): React.ReactElement {
     [timeline, currentFrame, activeLayerIndex, pushDoc, withTimeline]
   );
 
+  // Eraser DRAG coalescing (task 1431): Flash 8 treats a whole eraser gesture
+  // (pointerdown→pointerup) as ONE undoable edit. Per-increment erase updates go
+  // through replaceDoc (NO history entry) accumulating on the LIVE store present,
+  // and a SINGLE history step is committed at gesture end from the pre-gesture
+  // snapshot — mirroring the shape-move dragStartDocRef pattern above (and REUSING
+  // it + handleShapeMoveEnd for the commit, since a move and an eraser gesture are
+  // mutually exclusive). Without this, handleShapeUpdate/Delete pushed one undo
+  // entry per pointermove, so a one-second scrub produced dozens of history steps
+  // and Ctrl+Z un-did only a single 1-sample sliver.
+  const handleEraseGestureUpdate = useCallback(
+    (id: string, newShape: Shape) => {
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      if (dragStartDocRef.current === null) {
+        dragStartDocRef.current = documentStore.getState().history.present;
+      }
+      replaceDoc(withTimelineLive((t) => updateDisplayObject(t, layerId, currentFrame, id, { shape: newShape })));
+    },
+    [timeline, currentFrame, activeLayerIndex, documentStore, replaceDoc, withTimelineLive]
+  );
+
+  const handleEraseGestureDelete = useCallback(
+    (id: string) => {
+      const layerId = timeline.layers[safeActiveLayerIndex]?.id;
+      if (!layerId) return;
+      if (dragStartDocRef.current === null) {
+        dragStartDocRef.current = documentStore.getState().history.present;
+      }
+      replaceDoc(withTimelineLive((t) => removeDisplayObject(t, layerId, currentFrame, id)));
+      setSelectedShapeIds((prev) => prev.filter((x) => x !== id));
+    },
+    [timeline, currentFrame, activeLayerIndex, documentStore, replaceDoc, withTimelineLive]
+  );
+
   /**
    * Delete the currently selected PLANAR SUBSELECTION (one or more fill faces /
    * line segments of a merged vector shape) in one undo step. Reuses the
@@ -4082,6 +4116,9 @@ export function Shell(): React.ReactElement {
                 onShapeRotate={handleShapeRotate}
                 onShapeWarp={handleShapeWarp}
                 onShapeUpdate={handleShapeUpdate}
+                onEraseGestureUpdate={handleEraseGestureUpdate}
+                onEraseGestureDelete={handleEraseGestureDelete}
+                onEraseGestureEnd={handleShapeMoveEnd}
                 onShapeGradientUpdate={handleShapeUpdate}
                 guides={guides}
                 showGuides={true}
