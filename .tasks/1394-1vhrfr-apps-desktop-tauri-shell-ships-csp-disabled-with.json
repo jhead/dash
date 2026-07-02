@@ -1,10 +1,10 @@
 {
   "id": "1394-1vhrfr-apps-desktop-tauri-shell-ships-csp-disabled-with",
   "title": "apps/desktop: Tauri shell ships CSP disabled with whole-home-directory fs scope",
-  "description": "apps/desktop/src-tauri/tauri.conf.json:26 sets security.csp = null and capabilities/default.json:6-16 grants fs:allow-read-file/write-file/exists with fs:scope-home-recursive. This is a Flash clone that opens untrusted .fla files and joins untrusted collab sessions; any script-injection foothold in the authoring webview (or a future dependency XSS) then has unrestricted read/write over the entire ~ home directory, and csp:null removes the primary in-webview mitigation. Fix: set a real security.csp (script-src 'self', etc.) and narrow the fs scope from /home/justin/** to project/document dirs or a dialog-granted scope. At minimum flag home-recursive as a pre-production hardening item. Confidence: confirmed.",
-  "status": "open",
+  "description": "apps/desktop Tauri hardening (CSP + fs scope). Implemented:\n- tauri.conf.json app.security.csp set from null to a restrictive policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' (no unsafe-inline/eval, no remote scripts) \u2014 blocks injected/remote scripts while Ruffle WASM still runs; img/media data:+blob:, style-src unsafe-inline, worker/child blob:, connect-src ws:/wss:+ipc: for collab+Tauri IPC. Added a looser devCsp for Vite HMR (localhost:1420, unsafe-inline/eval).\n- capabilities/default.json fs scope narrowed from fs:scope-home-recursive (~ whole home) to user content dirs only: document/download/desktop/picture/audio/video (recursive). Excludes ~/.ssh, ~/.aws, ~/.config, browser profiles. All fs access already goes through native open/save dialogs.\n- gen/schemas/capabilities.json (tracked, tauri-build generated) updated to mirror.\n- docs/00-overview-and-architecture.md: new 'Desktop shell security' section documenting the CSP + fs scope + manual verification steps.\n\nVerification: JSON well-formed (python json.load all 3). Full ordered build 'pnpm --filter ./packages/** build' exit 0. 'pnpm --filter @flash/desktop typecheck' exit 0. Cannot build/run the Tauri binary in this headless env; manual runtime verification (tauri dev/build: no CSP violations, Ruffle plays, collab connects, open/save/publish under scoped dirs) documented in docs. Follow-up noted: arbitrary out-of-scope file locations would need dialog-granted per-file runtime scope.",
+  "status": "done",
   "effort": "default",
   "priority": "medium",
   "created_at": "2026-07-02T01:15:28Z",
-  "updated_at": "2026-07-02T01:15:28Z"
+  "updated_at": "2026-07-02T01:25:12Z"
 }
