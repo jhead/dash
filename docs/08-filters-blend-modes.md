@@ -31,6 +31,17 @@ The seven filters and their parameters:
 - Filters can be **motion-tweened** (Pro); parameters interpolate across the tween.
 - If a filter exists on one keyframe but not the other, Flash adds a matching disabled filter
   so the tween is well-defined. This matching behavior must be reproduced.
+- **Implemented** (`packages/core/src/tween/interpolate.ts`, `interpolateFilters`): filters are
+  matched by position. When a filter is present at a position on one keyframe but absent on the
+  other, a type-matched "disabled" filter is synthesized on the missing side — a copy of the
+  present filter with its magnitude parameters zeroed (blur 0, strength 0, alpha 0; gradient stop
+  alphas 0; Adjust Color brightness/contrast/saturation/hue 0) — and the pair is interpolated
+  normally. An appearing filter (`[] → [blur]`) therefore fades in from zero across the tween and
+  a disappearing filter (`[blur] → []`) fades out to zero, instead of popping on/off at the end.
+  Non-magnitude fields (color, angle, distance, quality, knockout/inner flags, gradient stop
+  colors/ratios) are taken from the present filter so only the intensity animates. Convolution and
+  displacement-map filters carry no interpolated magnitude and so still snap. If both matched
+  filters exist but have different types, that position snaps to the `from` filter (unchanged).
 
 ## Blend modes
 

@@ -39,10 +39,15 @@ describe("interpolateFilters — null / empty cases", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Length mismatch → snap to from
+// Missing-filter matching (docs/08 — Animating filters)
+//
+// When a filter is present at a position on one keyframe but absent on the
+// other, Flash synthesizes a matching disabled (zero-strength) filter on the
+// other side so the parameter fades in/out across the tween instead of popping
+// on/off at the end.
 // ---------------------------------------------------------------------------
 
-describe("interpolateFilters — length mismatch snaps to from", () => {
+describe("interpolateFilters — missing-filter matching", () => {
   const blur: BlurFilter = { type: "blur", blurX: 10, blurY: 10, quality: 1, enabled: true };
   const glow: GlowFilter = {
     type: "glow",
@@ -56,21 +61,91 @@ describe("interpolateFilters — length mismatch snaps to from", () => {
     enabled: true,
   };
 
-  it("from has 1 filter, to has 2 → returns from (1 filter)", () => {
-    const result = interpolateFilters([blur], [blur, glow], 0.5);
-    expect(result).toHaveLength(1);
-    expect(result![0]).toEqual(blur);
+  it("appearing filter ([] → [blur]) fades in from zero, not null", () => {
+    const t0 = interpolateFilters([], [blur], 0) as BlurFilter[];
+    expect(t0).toHaveLength(1);
+    expect(t0[0].blurX).toBeCloseTo(0);
+    expect(t0[0].blurY).toBeCloseTo(0);
+
+    const mid = interpolateFilters([], [blur], 0.5) as BlurFilter[];
+    expect(mid[0].blurX).toBeCloseTo(5);
+    expect(mid[0].blurY).toBeCloseTo(5);
+
+    const t1 = interpolateFilters([], [blur], 1) as BlurFilter[];
+    expect(t1[0].blurX).toBeCloseTo(10);
+    expect(t1[0].blurY).toBeCloseTo(10);
+    // Non-animatable fields come from the present (to) filter.
+    expect(t1[0].quality).toBe(1);
+    expect(t1[0].enabled).toBe(true);
   });
 
-  it("from has 2 filters, to has 1 → returns from (2 filters)", () => {
-    const result = interpolateFilters([blur, glow], [blur], 0.5);
+  it("disappearing filter ([blur] → []) fades out to zero, not full-strength snap", () => {
+    const t0 = interpolateFilters([blur], [], 0) as BlurFilter[];
+    expect(t0).toHaveLength(1);
+    expect(t0[0].blurX).toBeCloseTo(10);
+
+    const mid = interpolateFilters([blur], [], 0.5) as BlurFilter[];
+    expect(mid[0].blurX).toBeCloseTo(5);
+    expect(mid[0].blurY).toBeCloseTo(5);
+
+    const t1 = interpolateFilters([blur], [], 1) as BlurFilter[];
+    expect(t1[0].blurX).toBeCloseTo(0);
+    expect(t1[0].blurY).toBeCloseTo(0);
+  });
+
+  it("from has 1 filter, to has 2 → matched to length 2, extra fades in", () => {
+    const result = interpolateFilters([blur], [blur, glow], 0.5) as [BlurFilter, GlowFilter];
     expect(result).toHaveLength(2);
-    expect(result![0]).toEqual(blur);
+    // Position 0: identical blur on both sides → unchanged.
+    expect(result[0]).toEqual(blur);
+    // Position 1: glow present only on `to` → fades in (half strength/alpha/blur).
+    expect(result[1].type).toBe("glow");
+    expect(result[1].strength).toBeCloseTo(1); // 0 → 2 at t=0.5
+    expect(result[1].alpha).toBeCloseTo(0.5); // 0 → 1 at t=0.5
+    expect(result[1].blurX).toBeCloseTo(3); // 0 → 6 at t=0.5
+    // Non-animatable fields preserved from the present filter.
+    expect(result[1].color).toEqual({ r: 255, g: 0, b: 0, a: 255 });
   });
 
-  it("from empty, to has filters → returns null (no from to snap to)", () => {
-    const result = interpolateFilters([], [blur], 0.5);
-    expect(result).toBeNull();
+  it("from has 2 filters, to has 1 → matched to length 2, extra fades out", () => {
+    const result = interpolateFilters([blur, glow], [blur], 0.5) as [BlurFilter, GlowFilter];
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual(blur);
+    // Position 1: glow present only on `from` → fades out.
+    expect(result[1].type).toBe("glow");
+    expect(result[1].strength).toBeCloseTo(1); // 2 → 0 at t=0.5
+    expect(result[1].alpha).toBeCloseTo(0.5); // 1 → 0 at t=0.5
+  });
+
+  it("appearing drop-shadow fades strength and alpha in from zero", () => {
+    const shadow: DropShadowFilter = {
+      type: "drop-shadow",
+      distance: 8,
+      angle: 90,
+      color: { r: 10, g: 20, b: 30, a: 255 },
+      alpha: 0.8,
+      blurX: 8,
+      blurY: 8,
+      strength: 4,
+      inner: false,
+      knockout: false,
+      hideObject: false,
+      quality: 2,
+      enabled: true,
+    };
+    const t0 = interpolateFilters(null, [shadow], 0) as DropShadowFilter[];
+    expect(t0[0].strength).toBeCloseTo(0);
+    expect(t0[0].alpha).toBeCloseTo(0);
+    expect(t0[0].blurX).toBeCloseTo(0);
+    // Non-magnitude fields (angle/distance/color) come from the present filter immediately.
+    expect(t0[0].angle).toBeCloseTo(90);
+    expect(t0[0].distance).toBeCloseTo(8);
+    expect(t0[0].color).toEqual({ r: 10, g: 20, b: 30, a: 255 });
+
+    const t1 = interpolateFilters(null, [shadow], 1) as DropShadowFilter[];
+    expect(t1[0].strength).toBeCloseTo(4);
+    expect(t1[0].alpha).toBeCloseTo(0.8);
+    expect(t1[0].blurX).toBeCloseTo(8);
   });
 });
 

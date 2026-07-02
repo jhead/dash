@@ -494,13 +494,58 @@ function parseHexColorToRGBA(hex: string): Color {
 }
 
 /**
+ * Build a type-matched "disabled" (zero-strength / identity) copy of a filter.
+ *
+ * Flash's missing-filter matching rule (docs/08 — Animating filters): when a
+ * filter exists on one keyframe but not the other, Flash synthesizes a matching
+ * filter on the other keyframe so the tween is well-defined. The synthesized
+ * filter shares the present filter's type and non-animatable fields (color,
+ * quality, angle/distance, knockout/inner flags, gradient stops) but has its
+ * magnitude parameters zeroed — blur 0, strength 0, alpha 0 — so interpolating
+ * against it fades the effect in (appearing) or out (disappearing) rather than
+ * snapping it on/off at the tween's end.
+ */
+function disabledFilterFor(f: FlashFilter): FlashFilter {
+  switch (f.type) {
+    case "blur":
+      return { ...f, blurX: 0, blurY: 0 };
+    case "drop-shadow":
+      return { ...f, blurX: 0, blurY: 0, strength: 0, alpha: 0 };
+    case "glow":
+      return { ...f, blurX: 0, blurY: 0, strength: 0, alpha: 0 };
+    case "bevel":
+      return { ...f, blurX: 0, blurY: 0, strength: 0, highlightAlpha: 0, shadowAlpha: 0 };
+    case "gradientGlow":
+    case "gradientBevel":
+      return {
+        ...f,
+        blurX: 0,
+        blurY: 0,
+        strength: 0,
+        gradient: f.gradient.map((stop) => ({ ...stop, alpha: 0 })),
+      };
+    case "adjustColor":
+      return { ...f, brightness: 0, contrast: 0, saturation: 0, hue: 0 };
+    default:
+      // Convolution / displacement-map carry no scalar magnitude the tween
+      // engine interpolates, so there is nothing to fade — return as-is.
+      return f;
+  }
+}
+
+/**
  * Interpolate two filter arrays at normalized time t (0..1).
  *
  * Rules:
  * - Filters are matched by position (filter[0] ↔ filter[0], etc.).
- * - If the lengths differ or types at a position don't match, snap to `from`
- *   (no interpolation for that filter).
- * - If both arrays are null/undefined, returns null.
+ * - Missing-filter matching (docs/08 — Animating filters): when a filter is
+ *   present at a position on one keyframe but absent on the other, Flash adds a
+ *   matching disabled (zero-strength) filter on the other side so the parameter
+ *   fades in (appearing) or out (disappearing) across the tween instead of
+ *   popping on/off at the end. Reproduced here via `disabledFilterFor`.
+ * - If the types at a matched position differ, snap to `from` (no interpolation
+ *   for that filter).
+ * - If both arrays are null/undefined/empty, returns null.
  *
  * @param from  Filter array from start keyframe (may be null/undefined)
  * @param to    Filter array from end keyframe (may be null/undefined)
@@ -517,12 +562,22 @@ export function interpolateFilters(
 
   if (fromFilters.length === 0 && toFilters.length === 0) return null;
 
-  // If lengths differ, snap to from
-  if (fromFilters.length !== toFilters.length) {
-    return fromFilters.length > 0 ? fromFilters : null;
+  const length = Math.max(fromFilters.length, toFilters.length);
+  const result: FlashFilter[] = [];
+  for (let i = 0; i < length; i++) {
+    const f = fromFilters[i];
+    const g = toFilters[i];
+    if (f && g) {
+      result.push(interpolateSingleFilter(f, g, t));
+    } else if (f) {
+      // Disappearing filter: fade toward a matched disabled filter.
+      result.push(interpolateSingleFilter(f, disabledFilterFor(f), t));
+    } else if (g) {
+      // Appearing filter: fade in from a matched disabled filter.
+      result.push(interpolateSingleFilter(disabledFilterFor(g), g, t));
+    }
   }
-
-  return fromFilters.map((f, i) => interpolateSingleFilter(f, toFilters[i], t));
+  return result;
 }
 
 /**
