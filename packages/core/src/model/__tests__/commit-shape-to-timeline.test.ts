@@ -243,11 +243,16 @@ describe("commitBrushStrokeToTimeline — brush paint modes", () => {
     expect(areaOfFill(committedShapes(b, layerId), BLUE)).toBeCloseTo(40 * 40, 0);
   });
 
-  it("Paint Fills over empty canvas commits nothing (timeline unchanged)", () => {
+  // FLASH 8 GROUND TRUTH: "Paint Fills" paints over fills AND empty areas (only
+  // existing LINES are spared) — GEOMETRICALLY identical to Paint Normal. The old
+  // test here asserted the "only-over-existing-fills" BUG (that Paint Fills over
+  // empty canvas is a no-op); corrected to the authentic behavior in task 1429.
+  it("Paint Fills over empty canvas commits the FULL ribbon", () => {
     const { timeline, layerId } = timelineWith([]);
     const stroke = shapeObj("brush", rectShape("brush", 0, 0, 40, 40, BLUE));
     const next = commitBrushStrokeToTimeline(timeline, layerId, 0, stroke, "fills");
-    expect(next).toBe(timeline); // no-op
+    expect(next).not.toBe(timeline);
+    expect(areaOfFill(committedShapes(next, layerId), BLUE)).toBeCloseTo(40 * 40, 0);
   });
 
   it("Paint Behind paints only the empty portion over an existing fill", () => {
@@ -265,15 +270,61 @@ describe("commitBrushStrokeToTimeline — brush paint modes", () => {
     expect(areaOfFill(shapes, BLUE)).toBeCloseTo(7500, 0);
   });
 
-  it("Paint Fills paints only over the existing fill (top-wins cut)", () => {
+  it("Paint Fills paints across a fill AND the empty background (top-wins over the fill)", () => {
     const { timeline, layerId } = timelineWith([
       shapeObj("bg", rectShape("bg", 0, 0, 100, 100, RED)),
     ]);
     const stroke = shapeObj("brush", rectShape("brush", 50, 50, 100, 100, BLUE));
     const next = commitBrushStrokeToTimeline(timeline, layerId, 0, stroke, "fills");
     const shapes = committedShapes(next, layerId);
-    // Blue only over the 50x50 overlap; the rest of red remains (10000 - 2500).
-    expect(areaOfFill(shapes, BLUE)).toBeCloseTo(2500, 0);
+    // Blue covers the ENTIRE 100x100 straddle — the 50x50 over red (top-wins) PLUS
+    // the 7500 empty L-region (Paint Fills paints empty areas too). Red keeps the
+    // 7500 it isn't covered on. Geometrically identical to Paint Normal.
+    expect(areaOfFill(shapes, BLUE)).toBeCloseTo(10000, 0);
     expect(areaOfFill(shapes, RED)).toBeCloseTo(7500, 0);
+  });
+
+  it("Paint Fills leaves an existing LINE intact where it crosses (joint w/ task 1430)", () => {
+    // Red fill (0,0)-(100,100) crossed by a horizontal green LINE (a stroke-only
+    // path). A Paint Fills stroke drawn over both must paint the fill/empty but
+    // leave the line's covered segment — merge commits with preserveLines:true.
+    const linePath: ShapePath = {
+      start: { x: -20, y: 50 },
+      segments: [{ type: "line", to: { x: 160, y: 50 } }],
+      stroke: {
+        color: { r: 0, g: 200, b: 0, a: 255 },
+        width: 4,
+        caps: "round" as const,
+        joints: "round" as const,
+      },
+      closed: false,
+    };
+    const lineObj: ShapeDisplayObject = {
+      type: "shape",
+      id: "line",
+      shape: { id: "line", paths: [linePath] },
+      x: 0,
+      y: 0,
+    };
+    const { timeline, layerId } = timelineWith([
+      shapeObj("bg", rectShape("bg", 0, 0, 100, 100, RED)),
+      lineObj,
+    ]);
+    const stroke = shapeObj("brush", rectShape("brush", 20, 20, 60, 60, BLUE));
+    const next = commitBrushStrokeToTimeline(timeline, layerId, 0, stroke, "fills");
+    const shapes = committedShapes(next, layerId);
+    // The blue ribbon painted (over fill + empty).
+    expect(areaOfFill(shapes, BLUE)).toBeGreaterThan(0);
+    // The green line survives: at least one stroked path remains in the artwork.
+    const hasGreenStroke = shapes.some((s) =>
+      s.paths.some(
+        (p) =>
+          p.stroke != null &&
+          p.stroke.color.r === 0 &&
+          p.stroke.color.g === 200 &&
+          p.stroke.color.b === 0
+      )
+    );
+    expect(hasGreenStroke).toBe(true);
   });
 });

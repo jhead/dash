@@ -81,14 +81,31 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   rasterizes the bitmap and feeds the result into the existing selection pipeline.
 - **Pen sub-tools**: Pen (add point on path), Add Anchor (`=`), Delete Anchor (`-`),
   Convert Anchor (`C`). Cursor feedback for closing paths / continuing.
-- **Brush paint modes** (honored on commit, task 1421): Paint Normal, Paint Fills, Paint
-  Behind, Paint Selection, Paint Inside. The stroke ribbon is clipped to a region derived
-  from the existing layer art before it merges — Fills = only over existing solid fills,
-  Behind = only over empty space, Selection = only within the current selection, Inside =
-  locked to the fill (or empty region) the stroke STARTED in. Realized on the planar face
-  model in `@flash/core` `engine/planar/brushpaint.ts` (`clipBrushStroke`); wired at commit
-  by `commitBrushStrokeToTimeline` (`model/timeline.ts`). A mode that masks the whole stroke
-  away (e.g. Paint Fills over empty canvas) commits nothing.
+- **Brush paint modes** (honored on commit, task 1421; Paint Fills corrected task 1429):
+  Paint Normal, Paint Fills, Paint Behind, Paint Selection, Paint Inside. Authentic Flash 8
+  semantics (Using Flash, Brush tool modifiers):
+  - **Paint Normal** — paints over lines AND fills (and empty space); replaces the lines it
+    covers.
+  - **Paint Fills** — paints over fills AND empty areas, leaving only existing LINES
+    (strokes) unaffected. It is GEOMETRICALLY identical to Paint Normal; the sole distinction
+    is that lines are spared. It therefore does paint on empty canvas (a common misconception,
+    and the pre-1429 bug, was that it only paints over existing fills — it does not clip to
+    them).
+  - **Paint Behind** — paints only where the layer is EMPTY, leaving lines and fills
+    unaffected.
+  - **Paint Selection** — paints only within the current selection's filled region(s).
+  - **Paint Inside** — locked to the fill (or empty region) the stroke STARTED in; crossing
+    a boundary is clipped away.
+
+  The ribbon geometry is clipped to the mode's region before it merges (Behind / Selection /
+  Inside), while Fills and Normal do NOT clip. Line preservation for the non-Normal modes is
+  enforced at merge time, not by the clip: `commitBrushStrokeToTimeline` folds with
+  `preserveLines: true` (task 1430) so Fills/Behind/Selection/Inside leave existing strokes
+  intact, whereas Normal replaces them. Realized on the planar face model in `@flash/core`
+  `engine/planar/brushpaint.ts` (`clipBrushStroke`); wired at commit by
+  `commitBrushStrokeToTimeline` (`model/timeline.ts`). A mode that masks the whole stroke
+  away (e.g. Paint Behind entirely over a fill, or Paint Selection with nothing selected)
+  commits nothing.
 - **Brush tablet Pressure / Tilt** (task 1421): when enabled, pointer pressure scales the nib
   width along the stroke (light touch = thin, full press = the set size, floored at 15% so a
   stroke is never invisible) and tilt widens the nib modestly. Captured from the PointerEvent

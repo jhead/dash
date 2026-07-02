@@ -64,22 +64,31 @@ describe("clipBrushStroke — normal", () => {
 });
 
 // ---------------------------------------------------------------------------
-// clipBrushStroke — Fills (only over existing fills)
+// clipBrushStroke — Fills (over fills AND empty areas; only LINES are spared)
 // ---------------------------------------------------------------------------
 
+// FLASH 8 GROUND TRUTH (Using Flash, Brush tool modifiers): "Paint Fills" paints
+// over fills AND empty areas — it is GEOMETRICALLY identical to Paint Normal. The
+// ONLY thing it does NOT touch is existing LINES (strokes). Line preservation is
+// handled at merge time (commitBrushStrokeToTimeline → preserveLines, task 1430),
+// so clipBrushStroke does no clipping at all for "fills": it returns the whole
+// ribbon. (The old tests below asserted the "only-over-existing-fills" BUG — that
+// Paint Fills paints nothing on empty canvas and clips at fill boundaries — which
+// was never Flash 8 behavior. Corrected: task 1429.)
 describe("clipBrushStroke — fills", () => {
-  it("keeps only the part over an existing fill", () => {
+  it("paints across a fill AND the empty background (both sides kept)", () => {
     const existing = [rect("bg", 0, 0, 100, 100, RED)];
     // Ribbon straddles the red rect: (50,50)-(150,150) — half over red, half empty.
     const out = clipBrushStroke(ribbon(50, 50, 100, 100), "fills", { existing });
     expect(out).not.toBeNull();
-    expect(pointInShape(out!, { x: 75, y: 75 })).toBe(true); // over red
-    expect(pointInShape(out!, { x: 130, y: 130 })).toBe(false); // over empty
+    expect(pointInShape(out!, { x: 75, y: 75 })).toBe(true); // over red → painted
+    expect(pointInShape(out!, { x: 130, y: 130 })).toBe(true); // over empty → ALSO painted
   });
 
-  it("returns null over empty canvas (nothing to paint on)", () => {
+  it("commits the FULL ribbon over empty canvas", () => {
     const out = clipBrushStroke(ribbon(0, 0, 50, 50), "fills", { existing: [] });
-    expect(out).toBeNull();
+    expect(out).not.toBeNull();
+    expect(pointInShape(out!, { x: 25, y: 25 })).toBe(true); // empty canvas → painted
   });
 });
 

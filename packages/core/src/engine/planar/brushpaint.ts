@@ -8,9 +8,14 @@
  * the layer top-wins like any other shape. The non-Normal paint modes CLIP the
  * ribbon to a region derived from the existing artwork BEFORE it merges:
  *
- *   - **Normal**    — no clip; paint over everything (default merge).
- *   - **Fills**     — paint only where an existing solid FILL already is; empty
- *                     areas and (kept) lines are left untouched.
+ *   - **Normal**    — no clip; paint over everything (default merge), replacing
+ *                     any lines it covers.
+ *   - **Fills**     — paint over fills AND empty areas, exactly like Normal
+ *                     GEOMETRICALLY; the ONLY difference from Normal is that
+ *                     existing LINES (strokes) are left intact under the stroke.
+ *                     Line-preservation is not a clip: it is handled at merge time
+ *                     (`commitBrushStrokeToTimeline` passes `preserveLines:true`,
+ *                     task 1430), so this mode does not clip the ribbon at all.
  *   - **Behind**    — paint only where the layer is EMPTY (behind existing art).
  *   - **Selection** — paint only within the currently-selected fill region(s).
  *   - **Inside**    — start-region-locked: the stroke paints only inside the
@@ -272,15 +277,17 @@ export function clipBrushStroke(
 
   switch (mode) {
     case "fills": {
-      // Paint only over existing fills. Region = existing filled faces.
-      if (existingStage.length === 0) return null;
-      const regionPS = buildArrangementFromShapes(existingStage);
-      keep = (pt) => {
-        const f = locateFace(regionPS, pt);
-        return f !== null && f.fill !== null;
-      };
-      boundaries = existingStage.map(toBoundaryShape);
-      break;
+      // Flash 8 "Paint Fills" paints over BOTH existing fills AND empty areas —
+      // it is GEOMETRICALLY identical to Paint Normal. Its sole distinction is
+      // that it leaves existing LINES (strokes) untouched, and that is enforced
+      // downstream at merge time (`commitBrushStrokeToTimeline` folds the ribbon
+      // with `preserveLines:true`, task 1430), NOT here. So there is nothing to
+      // clip: paint the whole ribbon anywhere on the canvas.
+      //
+      // (The former implementation clipped to existing filled faces only —
+      // painting nothing on empty canvas and clipping at fill boundaries — which
+      // matched the "only-over-existing-fills" bug, not Flash 8. Fixed: task 1429.)
+      return ribbon;
     }
     case "behind": {
       // Paint only where empty. Region = complement of existing filled faces.
