@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ToolId } from "./tools/types";
 import type { PlacedInstance } from "./PropertiesPanel";
-import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
-import { createOvalShape, createRectShape, createRoundedRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, splitOnMove as planarSplitOnMove, planarEraseShape, faucetEraseShape, isMergeableShape, hitTestPoint, type EraserMode } from "@flash/core";
+import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
+import { createOvalShape, createRectShape, createRoundedRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, splitOnMove as planarSplitOnMove, planarEraseShape, faucetEraseShape, isMergeableShape, buildBrushRibbon, hitTestPoint, type EraserMode, type BrushStampSample } from "@flash/core";
 import { bucketFillRegion, sampleAttributeAt, gapSizeToPx, lockGradientToRect, type LockFillRect } from "./tools/fillSample.js";
 import { resolveSelectedFaceFilter } from "./eraserSelection.js";
 import { addAnchorAt, deleteAnchorAt, convertAnchorAt } from "./tools/penEdit.js";
@@ -303,77 +303,6 @@ function pencilPointsToShape(
 }
 
 /**
- * Build a closed circular ShapePath (4 quadratic-Bézier quarter arcs) centered
- * at (cx,cy) with the given radius. Used for the round brush nib / single dab.
- *
- * For a 90° quadratic arc the control point sits at the intersection of the two
- * endpoint tangents — i.e. the corner of the axis-aligned bounding box. That
- * approximation is round enough to be visually indistinguishable from a true
- * circle at brush sizes, and matches Flash 8's round brush tip.
- */
-function circlePath(cx: number, cy: number, radius: number, fill: Fill): ShapePath {
-  const r = radius;
-  // Cardinal points (start at the right, go clockwise: right→bottom→left→top).
-  const right = { x: cx + r, y: cy };
-  const bottom = { x: cx, y: cy + r };
-  const left = { x: cx - r, y: cy };
-  const top = { x: cx, y: cy - r };
-  // Corner control points (tangent intersections).
-  const br = { x: cx + r, y: cy + r };
-  const bl = { x: cx - r, y: cy + r };
-  const tl = { x: cx - r, y: cy - r };
-  const tr = { x: cx + r, y: cy - r };
-  return {
-    start: right,
-    segments: [
-      { type: "curve" as const, control: br, to: bottom },
-      { type: "curve" as const, control: bl, to: left },
-      { type: "curve" as const, control: tl, to: top },
-      { type: "curve" as const, control: tr, to: right },
-    ],
-    closed: true,
-    fill,
-  };
-}
-
-/**
- * Append a semicircular cap (two quadratic quarter arcs) to `segments`, bowing
- * AWAY from the ribbon along `dir`. The cap connects `from` to `to`, both on the
- * circle of radius `half` centered at `center`; `dir` is the unit outward
- * direction (the stroke tangent at that end). Each quarter arc's control point
- * is the tangent intersection (endpoint + dir*half), matching `circlePath`.
- */
-function appendRoundCap(
-  segments: PathSegment[],
-  center: Point,
-  from: Point,
-  to: Point,
-  dir: { x: number; y: number },
-  half: number
-): void {
-  // Far tip of the cap on the circle = center + dir*half.
-  const tip = { x: center.x + dir.x * half, y: center.y + dir.y * half };
-  const c1 = { x: from.x + dir.x * half, y: from.y + dir.y * half };
-  const c2 = { x: to.x + dir.x * half, y: to.y + dir.y * half };
-  segments.push({ type: "curve", control: c1, to: tip });
-  segments.push({ type: "curve", control: c2, to });
-}
-
-function squareDabPath(cx: number, cy: number, half: number, fill: Fill): ShapePath {
-  return {
-    start: { x: cx - half, y: cy - half },
-    segments: [
-      { type: "line", to: { x: cx + half, y: cy - half } },
-      { type: "line", to: { x: cx + half, y: cy + half } },
-      { type: "line", to: { x: cx - half, y: cy + half } },
-      { type: "line", to: { x: cx - half, y: cy - half } },
-    ],
-    closed: true,
-    fill,
-  };
-}
-
-/**
  * A captured brush sample: stage position plus tablet pressure/tilt. `pressure`
  * is the pointer pressure 0..1 (1 for a mouse); `tilt` is the normalized tilt
  * magnitude 0..1 (0 for a mouse). See task 1421.
@@ -431,6 +360,15 @@ export function brushHalfAt(
   return baseHalf * scale;
 }
 
+/**
+ * Build the brush ribbon as the boolean UNION of a nib STAMP at each sample plus
+ * a bridging capsule per segment (Flash 8 "solid fill swept along the path").
+ * The geometry + union-sampling contract live in `@flash/core`
+ * ({@link buildBrushRibbon}); here we only turn the captured pressure/tilt samples
+ * into per-sample nib half-widths. This construction fixes the self-crossing HOLE
+ * (a single doubly-wound outline sampled even-odd as OUTSIDE), the joint thinning
+ * (averaged normals narrow by cos(θ/2)), and the hairpin bowtie — see task 1426.
+ */
 function brushPointsToShape(
   points: readonly BrushSample[] | readonly Point[],
   brushSize: number,
@@ -441,93 +379,15 @@ function brushPointsToShape(
 ): Shape {
   const baseHalf = brushSize / 2;
   const pts = points as readonly Partial<BrushSample>[] & readonly Point[];
-  const halfAt = (i: number): number =>
-    brushHalfAt(pts[i] ?? {}, baseHalf, varyPressure, varyTilt);
-
-  // Single dab (click or near-zero drag): a round nib = a circle of diameter
-  // brushSize centered on the point; a square nib = a square. Flash 8's brush is
-  // round by default.
-  if (points.length < 2) {
-    if (points.length === 0) return { id: nextDrawId(), paths: [] };
-    const p = points[0];
-    const half = halfAt(0);
-    const dab = nib === "square" ? squareDabPath(p.x, p.y, half, fill) : circlePath(p.x, p.y, half, fill);
-    return { id: nextDrawId(), paths: [dab] };
-  }
-
-  const forward: Point[] = [];
-  const backward: Point[] = [];
-  const tangents: { x: number; y: number }[] = [];
-  const halves: number[] = [];
-
+  const stampSamples: BrushStampSample[] = [];
   for (let i = 0; i < points.length; i++) {
-    const curr = points[i];
-    const half = halfAt(i);
-    halves.push(half);
-    // Compute tangent direction
-    const prev = points[Math.max(0, i - 1)];
-    const next = points[Math.min(points.length - 1, i + 1)];
-    const tx = next.x - prev.x;
-    const ty = next.y - prev.y;
-    const tlen = Math.hypot(tx, ty) || 1;
-    const txu = tx / tlen;
-    const tyu = ty / tlen;
-    tangents.push({ x: txu, y: tyu });
-    // Perpendicular to tangent (left side).
-    const nx = -tyu;
-    const ny = txu;
-    forward.push({ x: curr.x + nx * half, y: curr.y + ny * half });
-    backward.push({ x: curr.x - nx * half, y: curr.y - ny * half });
+    stampSamples.push({
+      x: points[i].x,
+      y: points[i].y,
+      half: brushHalfAt(pts[i] ?? {}, baseHalf, varyPressure, varyTilt),
+    });
   }
-
-  // Sweep a ribbon with ROUND caps at both ends so the stroke head/tail are
-  // semicircles, not square butts. Walk the forward (left) edge start→end, cap
-  // around the end point, walk the backward (right) edge end→start, cap around
-  // the start point, then close.
-  const segments: PathSegment[] = [];
-
-  // Forward edge: forward[0] → forward[n-1].
-  for (let i = 1; i < forward.length; i++) {
-    segments.push({ type: "line", to: forward[i] });
-  }
-
-  // End cap: round nib bows a semicircle around the LAST point; square nib uses
-  // a flat butt cap (a straight edge across to the backward side).
-  if (nib === "square") {
-    segments.push({ type: "line", to: backward[backward.length - 1] });
-  } else {
-    const lastPt = points[points.length - 1];
-    const endDir = tangents[tangents.length - 1];
-    appendRoundCap(
-      segments,
-      lastPt,
-      forward[forward.length - 1],
-      backward[backward.length - 1],
-      endDir,
-      halves[halves.length - 1]
-    );
-  }
-
-  // Backward edge: backward[n-1] → backward[0].
-  for (let i = backward.length - 2; i >= 0; i--) {
-    segments.push({ type: "line", to: backward[i] });
-  }
-
-  // Start cap: round nib bows a semicircle around the FIRST point; square nib
-  // relies on the closing edge (backward[0] → start = forward[0]) as a flat cap.
-  if (nib !== "square") {
-    const firstPt = points[0];
-    const startDir = { x: -tangents[0].x, y: -tangents[0].y };
-    appendRoundCap(segments, firstPt, backward[0], forward[0], startDir, halves[0]);
-  }
-
-  const path: ShapePath = {
-    start: forward[0],
-    segments,
-    closed: true,
-    fill,
-  };
-  return { id: nextDrawId(), paths: [path] };
+  return buildBrushRibbon(nextDrawId(), stampSamples, fill, nib);
 }
 
 // ---------------------------------------------------------------------------

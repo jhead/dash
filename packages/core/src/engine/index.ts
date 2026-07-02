@@ -114,6 +114,8 @@ export {
   buildEraserStamp,
   // Brush paint-mode compositing (Flash 8 Paint Fills/Behind/Selection/Inside).
   clipBrushStroke,
+  // Brush ribbon geometry (Flash 8 nib sweep — stamp union).
+  buildBrushRibbon,
 } from "./planar/index.js";
 export type {
   InputEdge,
@@ -133,6 +135,7 @@ export type {
   BrushPaintMode,
   BrushPaintContext,
   PlacedShape,
+  BrushStampSample,
 } from "./planar/index.js";
 
 // Renderer
@@ -264,10 +267,6 @@ export { placeLibraryItem } from "./libraryplace.js";
 
 // Z-order operations
 export { bringToFront, sendToBack, bringForward, sendBackward } from "./zorder.js";
-
-// Brush tool stroke builder
-export type { BrushPoint } from "./brushtool.js";
-export { addBrushStroke } from "./brushtool.js";
 
 // Display object factory helpers
 export {

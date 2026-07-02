@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from "vitest";
 import type { BitmapFill, Fill, SolidStroke, ShapePath, ShapeDisplayObject, Point } from "@flash/core";
-import { transformedShapeBounds } from "@flash/core";
+import { transformedShapeBounds, buildBrushRibbon, type BrushStampSample } from "@flash/core";
 
 // ---------------------------------------------------------------------------
 // Inline copies of the pure helper logic from StageArea.tsx
@@ -250,95 +250,20 @@ function pencilPointsToShape(
   return { id: "draw-1", paths: [path] };
 }
 
-type PathSeg = ShapePath["segments"][number];
-
-function circlePath(cx: number, cy: number, radius: number, fill: Fill): ShapePath {
-  const r = radius;
-  const right = { x: cx + r, y: cy };
-  const bottom = { x: cx, y: cy + r };
-  const left = { x: cx - r, y: cy };
-  const top = { x: cx, y: cy - r };
-  const br = { x: cx + r, y: cy + r };
-  const bl = { x: cx - r, y: cy + r };
-  const tl = { x: cx - r, y: cy - r };
-  const tr = { x: cx + r, y: cy - r };
-  return {
-    start: right,
-    segments: [
-      { type: "curve" as const, control: br, to: bottom },
-      { type: "curve" as const, control: bl, to: left },
-      { type: "curve" as const, control: tl, to: top },
-      { type: "curve" as const, control: tr, to: right },
-    ],
-    closed: true,
-    fill,
-  };
-}
-
-function appendRoundCap(
-  segments: PathSeg[],
-  center: Point,
-  from: Point,
-  to: Point,
-  dir: { x: number; y: number },
-  half: number
-): void {
-  const tip = { x: center.x + dir.x * half, y: center.y + dir.y * half };
-  const c1 = { x: from.x + dir.x * half, y: from.y + dir.y * half };
-  const c2 = { x: to.x + dir.x * half, y: to.y + dir.y * half };
-  segments.push({ type: "curve", control: c1, to: tip });
-  segments.push({ type: "curve", control: c2, to });
-}
-
+// The brush ribbon is now built by the shared `@flash/core` stamp-union builder
+// (task 1426): a nib disk per sample + a bridging capsule per segment, each a
+// distinct-Fill simple loop so fill sampling resolves them as a UNION. This thin
+// wrapper mirrors StageArea's `brushPointsToShape` (constant nib half-width; no
+// pressure/tilt in these geometry tests).
 function brushPointsToShape(
   points: Point[],
   brushSize: number,
-  fill: Fill
+  fill: Fill,
+  nib: "round" | "square" = "round"
 ): { id: string; paths: ShapePath[] } {
   const half = brushSize / 2;
-  if (points.length < 2) {
-    if (points.length === 0) return { id: "draw-empty", paths: [] };
-    const p = points[0];
-    return { id: "draw-1", paths: [circlePath(p.x, p.y, half, fill)] };
-  }
-  const forward: Point[] = [];
-  const backward: Point[] = [];
-  const tangents: { x: number; y: number }[] = [];
-  for (let i = 0; i < points.length; i++) {
-    const curr = points[i];
-    const prev = points[Math.max(0, i - 1)];
-    const next = points[Math.min(points.length - 1, i + 1)];
-    const tx = next.x - prev.x;
-    const ty = next.y - prev.y;
-    const tlen = Math.hypot(tx, ty) || 1;
-    const txu = tx / tlen;
-    const tyu = ty / tlen;
-    tangents.push({ x: txu, y: tyu });
-    const nx = -tyu;
-    const ny = txu;
-    forward.push({ x: curr.x + nx * half, y: curr.y + ny * half });
-    backward.push({ x: curr.x - nx * half, y: curr.y - ny * half });
-  }
-  const segments: PathSeg[] = [];
-  for (let i = 1; i < forward.length; i++) {
-    segments.push({ type: "line", to: forward[i] });
-  }
-  const lastPt = points[points.length - 1];
-  const endDir = tangents[tangents.length - 1];
-  appendRoundCap(segments, lastPt, forward[forward.length - 1], backward[backward.length - 1], endDir, half);
-  for (let i = backward.length - 2; i >= 0; i--) {
-    segments.push({ type: "line", to: backward[i] });
-  }
-  const firstPt = points[0];
-  const startDir = { x: -tangents[0].x, y: -tangents[0].y };
-  appendRoundCap(segments, firstPt, backward[0], forward[0], startDir, half);
-  const path: ShapePath = {
-    start: forward[0],
-    segments,
-    closed: true,
-    fill,
-  };
-  return { id: "draw-1", paths: [path] };
+  const samples: BrushStampSample[] = points.map((p) => ({ x: p.x, y: p.y, half }));
+  return buildBrushRibbon("draw-1", samples, fill, nib) as { id: string; paths: ShapePath[] };
 }
 
 function anchorsToShapePath(
@@ -693,17 +618,34 @@ describe("Pencil tool — straighten shape recognition", () => {
   });
 });
 
-describe("Brush tool", () => {
-  it("creates a closed filled shape from brush points", () => {
+/** All anchors (start + segment endpoints) across every path of a shape. */
+function allAnchors(shape: { paths: ShapePath[] }): Point[] {
+  const out: Point[] = [];
+  for (const p of shape.paths) {
+    out.push(p.start, ...p.segments.map((s) => s.to));
+  }
+  return out;
+}
+
+describe("Brush tool (stamp-union ribbon — task 1426)", () => {
+  it("creates closed filled stamp loops from brush points", () => {
     const pts = [
       { x: 0, y: 50 }, { x: 50, y: 50 }, { x: 100, y: 50 },
     ];
     const shape = brushPointsToShape(pts, 10, RED);
-    expect(shape.paths).toHaveLength(1);
-    expect(shape.paths[0].closed).toBe(true);
-    expect(shape.paths[0].fill).toBe(RED);
-    // Should produce 2*n points (forward + backward) closed
-    expect(shape.paths[0].segments.length).toBeGreaterThan(0);
+    // A disk per sample + a capsule per segment (3 disks + 2 capsules = 5 loops).
+    expect(shape.paths).toHaveLength(5);
+    for (const p of shape.paths) {
+      expect(p.closed).toBe(true);
+      expect(p.segments.length).toBeGreaterThan(0);
+    }
+    // Every loop carries the SAME fill VALUE but a DISTINCT Fill OBJECT (so build
+    // sampling groups each as its own region → last-covering-wins UNION).
+    for (const p of shape.paths) {
+      expect(p.fill).toEqual(RED);
+      expect(p.fill).not.toBe(RED);
+    }
+    expect(new Set(shape.paths.map((p) => p.fill)).size).toBe(shape.paths.length);
   });
 
   it("returns empty paths only for zero points", () => {
@@ -716,7 +658,6 @@ describe("Brush tool", () => {
     expect(shape.paths).toHaveLength(1);
     const path = shape.paths[0];
     expect(path.closed).toBe(true);
-    expect(path.fill).toBe(RED);
     // Round dab is built from CURVE segments (quadratic arcs), not 4 straight
     // rectangle edges. A square head would be all "line" segments.
     expect(path.segments.every((s) => s.type === "curve")).toBe(true);
@@ -737,30 +678,29 @@ describe("Brush tool", () => {
     expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(2 * radius, 5);
   });
 
-  it("perpendicular extrusion creates width roughly equal to brushSize", () => {
-    const pts = [{ x: 0, y: 50 }, { x: 100, y: 50 }]; // horizontal line
-    const shape = brushPointsToShape(pts, 20, RED);
-    const path = shape.paths[0];
-    const ys = [path.start.y, ...path.segments.map((s) => s.to.y)];
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    expect(maxY - minY).toBeCloseTo(20, 0);
+  it("a single SQUARE dab produces an axis-aligned square (line segments)", () => {
+    const shape = brushPointsToShape([{ x: 50, y: 50 }], 20, RED, "square");
+    expect(shape.paths).toHaveLength(1);
+    expect(shape.paths[0].segments.every((s) => s.type === "line")).toBe(true);
   });
 
-  it("a straight stroke has ROUND end caps (semicircle arcs), not flat butt ends", () => {
+  it("perpendicular extrusion creates width roughly equal to brushSize", () => {
     const pts = [{ x: 0, y: 50 }, { x: 100, y: 50 }]; // horizontal line, half=10
     const shape = brushPointsToShape(pts, 20, RED);
-    const path = shape.paths[0];
-    // The ribbon ends are capped by curve segments (the round caps), so the path
-    // contains curve segments — a square/butt end would be all straight lines.
-    const curves = path.segments.filter((s) => s.type === "curve");
-    expect(curves.length).toBeGreaterThanOrEqual(4); // 2 caps × 2 quarter arcs
+    const ys = allAnchors(shape).map((p) => p.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(20, 0);
+  });
 
-    // The end cap bulges PAST the last point: its far tip reaches x = 100 + half.
-    const xs = [path.start.x, ...path.segments.map((s) => s.to.x)];
+  it("a straight stroke has ROUND end caps (the end nib disks bulge past the tips)", () => {
+    const pts = [{ x: 0, y: 50 }, { x: 100, y: 50 }]; // horizontal line, half=10
+    const shape = brushPointsToShape(pts, 20, RED);
+    // The end/start nib disks reach half PAST the last/first samples: x=110 / x=-10.
+    const xs = allAnchors(shape).map((p) => p.x);
     expect(Math.max(...xs)).toBeCloseTo(110, 5); // 100 + half(10)
-    // The start cap bulges PAST the first point: x reaches 0 - half.
     expect(Math.min(...xs)).toBeCloseTo(-10, 5); // 0 - half(10)
+    // The caps are round disks → curve segments present in the ribbon.
+    const curves = shape.paths.flatMap((p) => p.segments).filter((s) => s.type === "curve");
+    expect(curves.length).toBeGreaterThanOrEqual(8); // 2 end disks × 4 arcs
   });
 });
 

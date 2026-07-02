@@ -27,7 +27,7 @@
  * Pure data — no canvas, no React.
  */
 
-import type { Point, Shape, ShapePath } from "../types.js";
+import type { Fill, Point, Shape, ShapePath, PathSegment } from "../types.js";
 import { buildArrangementFromShapes } from "./build.js";
 import {
   faceInteriorPoint,
@@ -108,13 +108,131 @@ function shapeChordPolys(shape: Shape): Point[][] {
 
 /** True when `pt` lies inside the filled area of `shape` (any of its fill polys). */
 function pointInShapeFill(polys: readonly Point[][], pt: Point): boolean {
-  // Even-odd across all polygons approximates the filled interior well enough for
-  // a ribbon (a simple, mostly-convex outline). Nested hole loops toggle out.
-  let inside = false;
+  // The brush ribbon is the UNION of overlapping simple convex stamps (disk per
+  // sample + capsule per segment; see {@link buildBrushRibbon}). A point is in
+  // the ribbon fill iff it is inside ANY stamp — a UNION test, NOT even-odd:
+  // even-odd would cancel the overlap regions (self-crossings, joints) back into
+  // holes, exactly the task-1426 defect. The stamps carry no nested hole loops.
   for (const poly of polys) {
-    if (pointInPolygon(pt, poly)) inside = !inside;
+    if (pointInPolygon(pt, poly)) return true;
   }
-  return inside;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Brush ribbon geometry (Flash 8 nib sweep) — task 1426
+// ---------------------------------------------------------------------------
+
+/** One brush sample: stage position + the nib HALF-width to stamp there. */
+export interface BrushStampSample {
+  readonly x: number;
+  readonly y: number;
+  /** Nib half-width: radius for a round nib, half-side for a square nib. */
+  readonly half: number;
+}
+
+/**
+ * A distinct-identity clone of a fill. Each ribbon stamp MUST carry its own Fill
+ * object so {@link import("./build.js").buildArrangementFromShapes} groups it as
+ * its own single-loop region (keyed by Fill object identity) → last-covering-wins
+ * UNION. Sharing one Fill object across the stamps would collapse them into a
+ * single even-odd group and re-open the holes at overlaps (task 1426 root cause).
+ */
+function cloneFill(fill: Fill): Fill {
+  return { ...fill } as Fill;
+}
+
+/** Closed round nib disk as 4 quadratic quarter-arcs (curve-preserving). */
+function diskPath(cx: number, cy: number, r: number, fill: Fill): ShapePath {
+  const segments: PathSegment[] = [
+    { type: "curve", control: { x: cx + r, y: cy + r }, to: { x: cx, y: cy + r } },
+    { type: "curve", control: { x: cx - r, y: cy + r }, to: { x: cx - r, y: cy } },
+    { type: "curve", control: { x: cx - r, y: cy - r }, to: { x: cx, y: cy - r } },
+    { type: "curve", control: { x: cx + r, y: cy - r }, to: { x: cx + r, y: cy } },
+  ];
+  return { start: { x: cx + r, y: cy }, segments, closed: true, fill };
+}
+
+/** Closed square nib stamp (axis-aligned). */
+function squarePath(cx: number, cy: number, h: number, fill: Fill): ShapePath {
+  const segments: PathSegment[] = [
+    { type: "line", to: { x: cx + h, y: cy - h } },
+    { type: "line", to: { x: cx + h, y: cy + h } },
+    { type: "line", to: { x: cx - h, y: cy + h } },
+    { type: "line", to: { x: cx - h, y: cy - h } },
+  ];
+  return { start: { x: cx - h, y: cy - h }, segments, closed: true, fill };
+}
+
+/**
+ * Bridging capsule quad between two samples: the (possibly trapezoidal, for a
+ * varying nib width) rectangle whose long sides are the outer tangents of the
+ * two nib circles. Round joints/caps are supplied by the disks stamped at each
+ * end, so this quad only needs to bridge the straight run. Null for a
+ * zero-length segment.
+ */
+function capsulePath(
+  a: BrushStampSample,
+  b: BrushStampSample,
+  fill: Fill
+): ShapePath | null {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9) return null;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const p0 = { x: a.x + nx * a.half, y: a.y + ny * a.half };
+  const p1 = { x: b.x + nx * b.half, y: b.y + ny * b.half };
+  const p2 = { x: b.x - nx * b.half, y: b.y - ny * b.half };
+  const p3 = { x: a.x - nx * a.half, y: a.y - ny * a.half };
+  const segments: PathSegment[] = [
+    { type: "line", to: p1 },
+    { type: "line", to: p2 },
+    { type: "line", to: p3 },
+    { type: "line", to: p0 },
+  ];
+  return { start: p0, segments, closed: true, fill };
+}
+
+/**
+ * Build a brush ribbon as the boolean UNION of a nib STAMP at every sample plus
+ * a bridging CAPSULE per segment — the Flash 8 brush "solid fill swept along the
+ * path" (task 1426). This mirrors the eraser's disk+capsule stamp construction
+ * ({@link import("./eraser.js").buildEraserStamp}).
+ *
+ * Emitting many overlapping simple convex loops — EACH with its own distinct
+ * Fill object — makes `buildArrangementFromShapes` fill sampling resolve the
+ * ribbon as an exact UNION (last-covering-wins across the distinct-Fill groups,
+ * per task 1425). The result:
+ *   - a stroke that crosses itself has NO hole at the crossing (the old single
+ *     doubly-wound outline read even-odd → OUTSIDE → a hole);
+ *   - a hairpin does not bowtie into an even-odd notch;
+ *   - a sharp joint keeps full width (no averaged-normal cos(θ/2) thinning).
+ * The subsequent merge fold reads the union back as one dissolved silhouette.
+ *
+ * A single sample → one dab (round circle / square). Zero samples → empty shape.
+ */
+export function buildBrushRibbon(
+  id: string,
+  samples: readonly BrushStampSample[],
+  fill: Fill,
+  nib: "round" | "square" = "round"
+): Shape {
+  const paths: ShapePath[] = [];
+  if (samples.length === 0) return { id, paths };
+  const stamp = (s: BrushStampSample): ShapePath =>
+    nib === "square"
+      ? squarePath(s.x, s.y, s.half, cloneFill(fill))
+      : diskPath(s.x, s.y, s.half, cloneFill(fill));
+
+  paths.push(stamp(samples[0]));
+  for (let i = 1; i < samples.length; i++) {
+    const cap = capsulePath(samples[i - 1], samples[i], cloneFill(fill));
+    if (cap) paths.push(cap);
+    paths.push(stamp(samples[i]));
+  }
+  return { id, paths };
 }
 
 // ---------------------------------------------------------------------------

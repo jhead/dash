@@ -94,6 +94,18 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   stroke is never invisible) and tilt widens the nib modestly. Captured from the PointerEvent
   in `StageArea` (`pointerPressureTilt` → `brushHalfAt`); a mouse reports full pressure / no
   tilt, so the toggles only affect pen/touch input.
+- **Brush ribbon is a STAMP UNION, not one outline (task 1426).** The nib is swept along the
+  path as the boolean UNION of a nib STAMP at every sample (round disk / square) plus a bridging
+  CAPSULE quad per segment — the same disk+capsule construction as the eraser's `buildEraserStamp`.
+  Built by `buildBrushRibbon` in `@flash/core` `engine/planar/brushpaint.ts`; `StageArea`'s
+  `brushPointsToShape` only turns pressure/tilt samples into per-sample nib half-widths and calls
+  it. Each stamp loop carries its OWN (distinct-identity) Fill object so `buildArrangementFromShapes`
+  fill sampling resolves the loops as a last-covering-wins UNION (task 1425), NOT even-odd. This
+  replaced the old single forward+backward+caps outline, which self-intersected: a stroke that
+  crossed itself wound the outline twice and the crossing sampled even-odd as OUTSIDE → a HOLE; and
+  averaged-normal joints thinned the ribbon by cos(θ/2) and bowtied at hairpins. The union has no
+  crossing hole, no joint thinning, and no hairpin notch; the merge fold reads it back as one
+  silhouette. (The unused legacy `engine/brushtool.ts addBrushStroke` outline builder was removed.)
 - **Eraser modes**: Erase Normal, Erase Fills, Erase Lines, Erase Selected Fills, Erase Inside.
   **Faucet** deletes an entire fill or stroke in one click. Double-click eraser = clear stage.
 - **Erase Selected Fills restricts to the current selection (task 1428).** The mode's engine

@@ -1,0 +1,168 @@
+/**
+ * Oracle tests for the Flash 8 brush RIBBON geometry (task 1426).
+ *
+ * Flash 8's brush paints a solid FILL: the nib swept along the path, self-unioning
+ * where the stroke overlaps itself. The old builder emitted the ribbon as ONE
+ * closed outline (forward offsets + reversed backward offsets + caps); a stroke
+ * that crossed itself wound that outline TWICE and the crossing region sampled
+ * even-odd as OUTSIDE → a HOLE. Averaged-normal joints also thinned the ribbon by
+ * cos(θ/2) and bowtied at hairpins.
+ *
+ * The fix ({@link buildBrushRibbon}) is a STAMP UNION — a disk per sample + a
+ * capsule per segment, each carrying a distinct Fill object so the arrangement's
+ * fill sampling resolves them as a last-covering-wins UNION. This file pins the
+ * three defects: no hole at a self-crossing, no null-fill notch at a hairpin, and
+ * full width at a sharp joint. A contrast case proves the naive single-outline
+ * DOES hole (so the assertions actually detect the bug).
+ */
+
+import { describe, it, expect } from "vitest";
+import type { Fill, Point, Shape, ShapePath, PathSegment } from "../types.js";
+import { buildBrushRibbon, type BrushStampSample } from "../planar/brushpaint.js";
+import { buildArrangementFromShapes } from "../planar/build.js";
+import { locateFace } from "../planar/query.js";
+
+const RED: Fill = { type: "solid", color: { r: 255, g: 0, b: 0, a: 255 } };
+
+/** True when the sampled arrangement has a non-null fill at `pt`. */
+function filledAt(shape: Shape, pt: Point): boolean {
+  const ps = buildArrangementFromShapes([shape]);
+  const f = locateFace(ps, pt);
+  return f !== null && f.fill !== null;
+}
+
+/** Samples with a constant half-width. */
+function samples(pts: readonly Point[], half: number): BrushStampSample[] {
+  return pts.map((p) => ({ x: p.x, y: p.y, half }));
+}
+
+/**
+ * The OLD single-outline ribbon builder (averaged normals + one closed loop),
+ * reconstructed here so the contrast test can prove it holes at a self-crossing.
+ */
+function naiveOutlineRibbon(pts: readonly Point[], half: number, fill: Fill): Shape {
+  const forward: Point[] = [];
+  const backward: Point[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const prev = pts[Math.max(0, i - 1)];
+    const next = pts[Math.min(pts.length - 1, i + 1)];
+    const tx = next.x - prev.x;
+    const ty = next.y - prev.y;
+    const tlen = Math.hypot(tx, ty) || 1;
+    const nx = -ty / tlen;
+    const ny = tx / tlen;
+    forward.push({ x: pts[i].x + nx * half, y: pts[i].y + ny * half });
+    backward.push({ x: pts[i].x - nx * half, y: pts[i].y - ny * half });
+  }
+  const segments: PathSegment[] = [];
+  for (let i = 1; i < forward.length; i++) segments.push({ type: "line", to: forward[i] });
+  for (let i = backward.length - 1; i >= 0; i--) segments.push({ type: "line", to: backward[i] });
+  segments.push({ type: "line", to: forward[0] });
+  const path: ShapePath = { start: forward[0], segments, closed: true, fill };
+  return { id: "naive", paths: [path] };
+}
+
+describe("brush ribbon — self-crossing (task 1426)", () => {
+  // A path that runs right along y=50, loops up and comes back DOWN through itself
+  // at x≈60 — the crossing region is covered twice.
+  const crossing: Point[] = [
+    { x: 20, y: 50 },
+    { x: 100, y: 50 },
+    { x: 100, y: 10 },
+    { x: 60, y: 10 },
+    { x: 60, y: 90 },
+  ];
+
+  it("contrast: the naive single-outline ribbon PUNCHES A HOLE at the crossing", () => {
+    const ribbon = naiveOutlineRibbon(crossing, 8, RED);
+    // The crossing point reads even-odd OUTSIDE → hole (this is the bug).
+    expect(filledAt(ribbon, { x: 60, y: 50 })).toBe(false);
+  });
+
+  it("stamp-union ribbon has NO hole at the self-crossing", () => {
+    const ribbon = buildBrushRibbon("s", samples(crossing, 8), RED);
+    expect(filledAt(ribbon, { x: 60, y: 50 })).toBe(true);
+  });
+
+  it("stamp-union ribbon still fills a singly-covered point", () => {
+    const ribbon = buildBrushRibbon("s", samples(crossing, 8), RED);
+    expect(filledAt(ribbon, { x: 40, y: 50 })).toBe(true);
+  });
+
+  it("stamp-union ribbon leaves genuinely-outside points empty", () => {
+    const ribbon = buildBrushRibbon("s", samples(crossing, 8), RED);
+    // Well inside the loop's open middle (above the y=50 bar, left of the x=60 arm).
+    expect(filledAt(ribbon, { x: 40, y: 25 })).toBe(false);
+    expect(filledAt(ribbon, { x: 200, y: 200 })).toBe(false);
+  });
+});
+
+describe("brush ribbon — hairpin (task 1426)", () => {
+  // Go right, then reverse straight back almost on top of the outbound run.
+  const hairpin: Point[] = [
+    { x: 20, y: 50 },
+    { x: 100, y: 50 },
+    { x: 100, y: 56 },
+    { x: 20, y: 56 },
+  ];
+
+  it("no interior null-fill notch at the hairpin turn", () => {
+    const ribbon = buildBrushRibbon("s", samples(hairpin, 10), RED);
+    // The turn region around the far end (x≈100) must be solid, not a bowtie notch.
+    expect(filledAt(ribbon, { x: 100, y: 53 })).toBe(true);
+    expect(filledAt(ribbon, { x: 96, y: 53 })).toBe(true);
+    // The overlap of the two nearly-collinear runs stays filled (would be even-odd
+    // cancelled by a single doubly-wound outline).
+    expect(filledAt(ribbon, { x: 60, y: 52 })).toBe(true);
+  });
+});
+
+describe("brush ribbon — sharp joint keeps full width (task 1426)", () => {
+  // A right-angle L. Averaged-normal offsetting narrows the inside of the corner
+  // by cos(θ/2); the round-joint stamp union keeps the full nib radius.
+  const elbow: Point[] = [
+    { x: 20, y: 20 },
+    { x: 80, y: 20 },
+    { x: 80, y: 80 },
+  ];
+  const half = 12;
+
+  it("the corner is filled out to the full nib radius (no cos(θ/2) thinning)", () => {
+    const ribbon = buildBrushRibbon("s", samples(elbow, half), RED);
+    // The outer corner: a round nib centred at the elbow (80,20) reaches to
+    // (80+half, 20-half)/√2 diagonally; a point just inside that radius must fill.
+    const d = (half - 2) / Math.SQRT2;
+    expect(filledAt(ribbon, { x: 80 + d, y: 20 - d })).toBe(true);
+    // The elbow centre itself and the two arms are solid.
+    expect(filledAt(ribbon, { x: 80, y: 20 })).toBe(true);
+    expect(filledAt(ribbon, { x: 50, y: 20 })).toBe(true);
+    expect(filledAt(ribbon, { x: 80, y: 50 })).toBe(true);
+  });
+});
+
+describe("brush ribbon — degenerate inputs", () => {
+  it("zero samples → empty shape", () => {
+    expect(buildBrushRibbon("s", [], RED).paths).toHaveLength(0);
+  });
+
+  it("a single sample → one round dab (curve segments)", () => {
+    const ribbon = buildBrushRibbon("s", samples([{ x: 50, y: 50 }], 10), RED);
+    expect(ribbon.paths).toHaveLength(1);
+    expect(ribbon.paths[0].segments.every((s) => s.type === "curve")).toBe(true);
+    expect(filledAt(ribbon, { x: 50, y: 50 })).toBe(true);
+  });
+
+  it("a single square dab → one axis-aligned square (line segments)", () => {
+    const ribbon = buildBrushRibbon("s", samples([{ x: 50, y: 50 }], 10), RED, "square");
+    expect(ribbon.paths).toHaveLength(1);
+    expect(ribbon.paths[0].segments.every((s) => s.type === "line")).toBe(true);
+    expect(filledAt(ribbon, { x: 55, y: 55 })).toBe(true);
+  });
+
+  it("each stamp carries a DISTINCT Fill object (union grouping, not even-odd)", () => {
+    const ribbon = buildBrushRibbon("s", samples([{ x: 0, y: 0 }, { x: 20, y: 0 }], 6), RED);
+    const fills = ribbon.paths.map((p) => p.fill);
+    const uniq = new Set(fills);
+    expect(uniq.size).toBe(ribbon.paths.length);
+  });
+});

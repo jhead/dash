@@ -2,18 +2,12 @@
  * Tests for brush paint-mode compositing (task 1421):
  *   - clipBrushStroke honors Fills / Behind / Selection / Inside on the planar
  *     face model.
- *   - addBrushStroke pressure varies the nib width.
  */
 
 import { describe, it, expect } from "vitest";
 import type { Fill, Point, Shape, ShapePath } from "../types.js";
 import { clipBrushStroke, pointInPolygon } from "../planar/index.js";
 import type { PlacedShape } from "../planar/index.js";
-import { addBrushStroke } from "../brushtool.js";
-import type { BrushPoint } from "../brushtool.js";
-import { createDocument } from "../../model/document.js";
-import { createFrame, createLayer, createTimeline } from "../../model/timeline.js";
-import type { FlashDocument, ShapeDisplayObject } from "../../model/types.js";
 
 // ---------------------------------------------------------------------------
 // fixtures
@@ -169,40 +163,3 @@ describe("clipBrushStroke — inside", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// addBrushStroke — pressure varies nib width
-// ---------------------------------------------------------------------------
-
-function makeDoc(): FlashDocument {
-  const frame = createFrame(0, { isKeyframe: true, isEmpty: true });
-  const layer = createLayer("Layer 1", "normal", { frames: [frame], frameCount: 1 });
-  const doc = createDocument();
-  return {
-    ...doc,
-    scenes: [{ ...doc.scenes[0], timeline: createTimeline({ layers: [layer] }) }],
-  };
-}
-function strokeBBoxHeight(doc: FlashDocument): number {
-  const kf = doc.scenes[0].timeline.layers[0].frames.find((f) => f.isKeyframe && f.index === 0);
-  const obj = kf!.displayObjects[kf!.displayObjects.length - 1] as ShapeDisplayObject;
-  const ys: number[] = [];
-  for (const p of obj.shape.paths) {
-    ys.push(p.start.y, ...p.segments.map((s) => s.to.y));
-  }
-  return Math.max(...ys) - Math.min(...ys);
-}
-
-describe("addBrushStroke — pressure varies width", () => {
-  const horiz = (pressure: number): BrushPoint[] => [
-    { x: 0, y: 0, pressure },
-    { x: 100, y: 0, pressure },
-  ];
-
-  it("a lighter pressure produces a thinner stroke", () => {
-    const full = strokeBBoxHeight(addBrushStroke(makeDoc(), 0, 0, 0, horiz(1.0), "#000000", 20));
-    const light = strokeBBoxHeight(addBrushStroke(makeDoc(), 0, 0, 0, horiz(0.5), "#000000", 20));
-    expect(full).toBeGreaterThan(light);
-    // Half pressure ≈ half the ribbon height.
-    expect(light).toBeCloseTo(full / 2, 1);
-  });
-});
