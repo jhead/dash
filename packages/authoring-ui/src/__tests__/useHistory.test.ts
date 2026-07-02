@@ -21,8 +21,8 @@ import {
 } from "@flash/core";
 import type { HistoryState } from "@flash/core";
 import type { FlashDocument } from "@flash/core";
-import { historyReducer } from "../hooks/useHistory.js";
-import type { HistoryAction } from "../hooks/useHistory.js";
+import { historyReducer } from "../store/history.js";
+import type { HistoryAction } from "../store/history.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

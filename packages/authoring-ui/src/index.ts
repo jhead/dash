@@ -18,8 +18,6 @@ export type { ClassesPanelProps } from "./ClassesPanel";
 export { StatusBar } from "./StatusBar";
 export type { StatusBarProps } from "./StatusBar";
 export { Shell } from "./Shell";
-export { useHistory } from "./hooks/useHistory";
-export type { UseHistoryResult } from "./hooks/useHistory";
 
 // Swappable theme system (task 1265): frozen flash8Theme tokens/helpers + the swap API
 // (setThemeMode / activeTheme / getThemeColor / subscribeTheme), value-sets

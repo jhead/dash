@@ -323,8 +323,11 @@ Two notes carried forward:
   `commitDrag.finalDoc` is the authoritative sync point. The binding syncs on
   every change (each is one small transaction); a future phase may coalesce
   interim drag frames if the provider's update rate warrants it.
-- `hooks/useHistory.ts` is a *separate* React-reducer history used only by tests;
-  it is not wired to the live store, so it is not a live bypass.
+- The undo/redo history has a *single* source of truth: the `documentStore`'s
+  `HistoryState`. (A former `hooks/useHistory.ts` React-reducer kept a parallel
+  history + its own global keydown listener but was never mounted; it was removed
+  in task 1391 so there is no divergent stack or double-binding bypass. The pure
+  reducer now lives only in `store/history.ts`.)
 
 ---
 

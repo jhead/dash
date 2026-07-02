@@ -12,8 +12,8 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { historyReducer } from "../hooks/useHistory.js";
-import type { HistoryAction } from "../hooks/useHistory.js";
+import { historyReducer } from "../store/history.js";
+import type { HistoryAction } from "../store/history.js";
 import { createHistory } from "@flash/core";
 import type { FlashDocument } from "@flash/core";
 

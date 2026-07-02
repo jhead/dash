@@ -9,10 +9,15 @@ import {
 // ---------------------------------------------------------------------------
 // Pure history reducer
 //
-// Extracted from hooks/useHistory.ts so it can be reused by the Zustand
-// documentStore WITHOUT pulling React into the store module graph. The React
-// hook (hooks/useHistory.ts) re-exports `historyReducer`/`HistoryAction` so the
-// existing useHistory.test.ts import path stays valid.
+// This is the SINGLE source of truth for undo/redo history transitions. The
+// Zustand documentStore (store/documentStore.ts) owns the one live HistoryState
+// and routes every mutation (pushDoc/replaceDoc/commitDrag/undo/redo) through
+// this reducer, so there is exactly one history stack in the app. Keyboard
+// undo/redo (Ctrl+Z / Ctrl+Shift+Z) flows through the command registry
+// (dispatch/keyboard.ts → commands/history.ts) into that same store — never a
+// second listener. (The former React `useHistory` hook, which kept its own
+// parallel reducer + a global keydown listener, was dead code and was removed in
+// task 1391 to eliminate the divergent/double-binding hazard.)
 // ---------------------------------------------------------------------------
 
 export type HistoryAction =
