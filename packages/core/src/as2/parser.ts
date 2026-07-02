@@ -13,6 +13,87 @@ import type {
 
 const EOF_TOKEN: Token = { type: 'eof', value: '', line: 0, col: 0, pos: 0 };
 
+const HEX_DIGIT = /^[0-9a-fA-F]$/;
+
+/**
+ * Decode the escape sequences in a string-literal body (the text between the
+ * surrounding quotes) with a single left-to-right scan, consuming one escape
+ * at a time.
+ *
+ * A chained sequence of global `.replace()` calls (the previous approach) is
+ * WRONG because it is not aware of escape boundaries: running `\n -> newline`
+ * before `\\ -> \` makes `"a\\nb"` (a literal backslash followed by `n`)
+ * decode to `a<newline>b` instead of the correct `a\nb`. Any string with a
+ * literal backslash before an escape letter (Windows paths like `C:\new`,
+ * regex fragments) was corrupted. A single scan processes the escaping
+ * backslash atomically, so `\\` is consumed as one escaped backslash and the
+ * following letter is left as a literal character.
+ *
+ * Supported: `\n \t \r \b \f \v \0 \' \" \\`, `\xNN` (2 hex), `\uNNNN`
+ * (4 hex). An unknown or malformed escape is preserved verbatim (backslash
+ * kept), matching the prior behaviour for sequences none of the old rules
+ * matched.
+ */
+function unescapeStringLiteral(body: string): string {
+  let out = '';
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch !== '\\') {
+      out += ch;
+      continue;
+    }
+    // `ch` is a backslash — consume the single escape that follows.
+    const next = body[i + 1];
+    if (next === undefined) {
+      // Trailing lone backslash: preserve it.
+      out += '\\';
+      break;
+    }
+    switch (next) {
+      case 'n': out += '\n'; i++; break;
+      case 't': out += '\t'; i++; break;
+      case 'r': out += '\r'; i++; break;
+      case 'b': out += '\b'; i++; break;
+      case 'f': out += '\f'; i++; break;
+      case 'v': out += '\v'; i++; break;
+      case '0': out += '\0'; i++; break;
+      case "'": out += "'"; i++; break;
+      case '"': out += '"'; i++; break;
+      case '\\': out += '\\'; i++; break;
+      case 'x': {
+        const h = body.slice(i + 2, i + 4);
+        if (h.length === 2 && HEX_DIGIT.test(h[0]!) && HEX_DIGIT.test(h[1]!)) {
+          out += String.fromCharCode(parseInt(h, 16));
+          i += 3;
+        } else {
+          // Malformed \x — preserve verbatim.
+          out += '\\x';
+          i++;
+        }
+        break;
+      }
+      case 'u': {
+        const h = body.slice(i + 2, i + 6);
+        if (h.length === 4 && [...h].every(c => HEX_DIGIT.test(c))) {
+          out += String.fromCharCode(parseInt(h, 16));
+          i += 5;
+        } else {
+          // Malformed \u — preserve verbatim.
+          out += '\\u';
+          i++;
+        }
+        break;
+      }
+      default:
+        // Unknown escape — preserve the backslash and the character.
+        out += '\\' + next;
+        i++;
+        break;
+    }
+  }
+  return out;
+}
+
 const ASSIGN_OPS = new Set(['=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=', '>>>=']);
 
 class Parser {
@@ -1034,16 +1115,7 @@ class Parser {
       this.advance();
       // strip surrounding quotes
       const raw = t.value;
-      const inner = raw.slice(1, -1)
-        .replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-        .replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-        .replace(/\\0/g, '\0')
-        .replace(/\\n/g, '\n')
-        .replace(/\\t/g, '\t')
-        .replace(/\\r/g, '\r')
-        .replace(/\\'/g, "'")
-        .replace(/\\"/g, '"')
-        .replace(/\\\\/g, '\\');
+      const inner = unescapeStringLiteral(raw.slice(1, -1));
       return { type: 'Literal', value: inner, raw, ...this.base(t) };
     }
 
