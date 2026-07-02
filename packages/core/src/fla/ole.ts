@@ -187,12 +187,25 @@ function followChain(fat: Uint32Array, start: number): number[] {
 
 function readStream(bytes: Uint8Array, fat: Uint32Array, startSector: number, size: number, sectorSize: number): Uint8Array {
   const chain = followChain(fat, startSector);
-  const result = new Uint8Array(size);
+  // Clamp the declared size to the bytes actually reachable through the sector
+  // chain (and never beyond the whole file). The directory-entry size field is
+  // an attacker-controlled u32: a crafted .fla can declare ~2 GB in a tiny file
+  // and force a multi-GB zero-fill allocation here (decompression-bomb DoS).
+  // The sector chain can never yield more than `chain.length * sectorSize`
+  // bytes, so anything above that is bogus and safe to drop.
+  const available = Math.min(chain.length * sectorSize, bytes.length);
+  const safeSize = Math.max(0, Math.min(size, available));
+  if (size > available) {
+    console.warn(
+      `[FLA import] stream declares ${size} bytes but only ${available} are reachable; clamping.`,
+    );
+  }
+  const result = new Uint8Array(safeSize);
   let written = 0;
   for (const sector of chain) {
-    if (written >= size) break;
+    if (written >= safeSize) break;
     const data = getSectorData(bytes, sector, sectorSize);
-    const toCopy = Math.min(sectorSize, size - written);
+    const toCopy = Math.min(sectorSize, safeSize - written);
     result.set(data.subarray(0, toCopy), written);
     written += toCopy;
   }
@@ -288,15 +301,20 @@ function readMiniStream(
   size: number,
   miniSectorSize: number,
 ): Uint8Array {
-  const result = new Uint8Array(size);
+  // Clamp against the actual mini-stream length. Both the directory-entry size
+  // and the header's mini-stream cutoff are attacker-controlled, so a crafted
+  // .fla could route a huge declared size down the mini path; a mini stream can
+  // never hold more data than the mini-stream buffer itself.
+  const safeSize = Math.max(0, Math.min(size, miniStream.length));
+  const result = new Uint8Array(safeSize);
   let written = 0;
   let cur = startSector;
   const visited = new Set<number>();
-  while (cur !== ENDOFCHAIN && cur !== FREESECT && written < size) {
+  while (cur !== ENDOFCHAIN && cur !== FREESECT && written < safeSize) {
     if (visited.has(cur)) break;
     visited.add(cur);
     const offset = cur * miniSectorSize;
-    const toCopy = Math.min(miniSectorSize, size - written);
+    const toCopy = Math.min(miniSectorSize, safeSize - written);
     result.set(miniStream.subarray(offset, offset + toCopy), written);
     written += toCopy;
     cur = miniFat[cur] ?? ENDOFCHAIN;

@@ -313,6 +313,31 @@ returns to the parent. A record body has no length prefix, so the reader advance
 field by field using the layout for that record. A record that cannot be interpreted is handled
 by the resynchronization procedure of section 7.
 
+### 6.1 Untrusted input: allocation guards
+
+A `.fla` is untrusted input, and several size fields are attacker-controlled. The reader clamps
+every allocation derived from such a field so a crafted or corrupt file cannot force a
+multi-gigabyte allocation (a decompression / allocation "bomb") and OOM the importer.
+
+- **Directory-entry stream size (section 2).** The 32-bit directory-entry size field can declare
+  far more bytes than the file actually contains — for example ~2 GB inside a few-KB file. When
+  reading a stream, the reader clamps the declared size to the bytes actually reachable through
+  the stream's sector chain (`chain.length * sectorSize`, and never beyond the whole file); when
+  reading a mini-stream it clamps to the length of the root mini-stream buffer. The excess is
+  dropped and a warning is logged. This applies to both the ordinary FAT path and the mini-FAT
+  path, and defends against the header's mini-stream cutoff being set large enough to route an
+  oversized entry down the mini path (`packages/core/src/fla/ole.ts`).
+
+- **Bitmap dimensions and zlib payloads (section 18).** A `Media N` bitmap declares its width and
+  height as `u16` values (up to 65535 each — a ~17 GB RGBA buffer), and a lossless container's
+  pixels are a `zlib` stream that can expand without bound. Before allocating any pixel buffer the
+  decoder rejects a bitmap whose dimensions exceed a sane budget (either side above 16384, or more
+  than 16.7 Mpx total, bounding an RGBA buffer to 64 MiB). Every inflate on the import path is run
+  into a fixed-size output buffer — sized to exactly `width * height * 4` for a lossless container,
+  or a 64 MiB cap for a `zlib`-wrapped JPEG/PNG — so a zlib bomb stops at the cap instead of
+  growing (`fflate` does not grow a caller-supplied buffer). The same dimension guard covers the
+  GIF-header placeholder path (`packages/core/src/fla/media.ts`).
+
 ---
 
 ## 7. Resynchronization
