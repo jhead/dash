@@ -167,6 +167,69 @@ describe("TokenBucket", () => {
   });
 });
 
+describe("TokenBucket — snapshot / restore (hibernation persistence)", () => {
+  it("snapshot captures the live token count + last-take time", () => {
+    const b = new TokenBucket(3, 1, 0);
+    b.take(0);
+    const s = b.snapshot();
+    expect(s.tokens).toBe(2);
+    expect(s.last).toBe(0);
+  });
+
+  it("restore rehydrates a drained bucket so it stays drained", () => {
+    const drained = new TokenBucket(3, 1, 0);
+    drained.take(0);
+    drained.take(0);
+    drained.take(0);
+    expect(drained.take(0)).toBe(false);
+    const s = drained.snapshot();
+
+    // A fresh bucket restored from that snapshot is still empty at the same instant.
+    const revived = new TokenBucket(3, 1, s.last);
+    revived.restore(s);
+    expect(revived.take(0)).toBe(false);
+    // ...and refills from the persisted `last`, not from a full reset.
+    expect(revived.take(3000)).toBe(true);
+  });
+});
+
+describe("SignalingRelay — publish rate-limit survives hibernation", () => {
+  it("bucketState is null before any publish, then reflects consumption", () => {
+    const r = new SignalingRelay();
+    r.handleMessage("a", { type: "subscribe", topics: ["room"] }, 0);
+    expect(r.bucketState("a")).toBeNull();
+    r.handleMessage("a", { type: "publish", topic: "room" }, 0);
+    const s = r.bucketState("a");
+    expect(s).not.toBeNull();
+    expect(s?.tokens).toBe(LIMITS.PUBLISH_BURST - 1);
+  });
+
+  it("a drained bucket, persisted then restored into a NEW relay, stays drained", () => {
+    // Simulate a pre-hibernation relay: drain the bucket at t=0.
+    const before = new SignalingRelay();
+    before.handleMessage("a", { type: "subscribe", topics: ["room"] }, 0);
+    before.handleMessage("b", { type: "subscribe", topics: ["room"] }, 0);
+    for (let i = 0; i < LIMITS.PUBLISH_BURST; i++) {
+      before.handleMessage("a", { type: "publish", topic: "room" }, 0);
+    }
+    expect(before.handleMessage("a", { type: "publish", topic: "room" }, 0)).toEqual([]);
+    const persisted = before.bucketState("a");
+    expect(persisted).not.toBeNull();
+
+    // Simulate a hibernation wake: a brand-new relay rehydrated from attachments.
+    const after = new SignalingRelay();
+    after.handleMessage("a", { type: "subscribe", topics: ["room"] }, 0);
+    after.handleMessage("b", { type: "subscribe", topics: ["room"] }, 0);
+    after.restoreBucket("a", persisted!);
+    // Without restore this would reset to a full burst; with it, still limited.
+    expect(after.handleMessage("a", { type: "publish", topic: "room" }, 0)).toEqual([]);
+    // And it refills over time from the persisted timestamp.
+    expect(
+      after.handleMessage("a", { type: "publish", topic: "room" }, 1000).length,
+    ).toBeGreaterThan(0);
+  });
+});
+
 describe("guard: max message size (frameByteLength)", () => {
   it("normal flow — a typical handshake frame is well under the cap", () => {
     const frame = JSON.stringify({

@@ -1,10 +1,10 @@
 {
   "id": "1401-2qg742-workers-signaling-publish-fan-out-is-o-n-k-and-p",
   "title": "workers/signaling: publish fan-out is O(N*K) and per-connection rate-limit resets across hibernation",
-  "description": "workers/signaling/src/index.ts. (1) Publish fan-out :241-244 calls socketFor(to) per recipient; socketFor (:131-137) linear-scans state.getWebSockets() and deserializeAttachment() on every socket (idOf/connectionCounts share the pattern). At the documented caps (100 subs/topic, 2000 global conns) one publish can trigger ~200k deserialize calls -> CPU-bound relay + mild amplification lever. Fix: keep an in-memory Map<connId,WebSocket> (rebuilt in rehydrate) for O(K) fan-out. (2) Rate-limit state loss :107-122 rehydrate does new SignalingRelay() so the TokenBucket map (relay.ts:128) starts empty after a hibernation wake \u2014 each connection's bucket is recreated at full PUBLISH_BURST; subscriptions survive (serialized attachments) but rate-limit accounting does not, silently resetting a documented abuse guard on every idle->wake. Fix: persist bucket state in the attachment/DO storage, or document publish-rate limiting as best-effort per active period. Confidence: confirmed.",
-  "status": "open",
+  "description": "workers/signaling O(N*K) fan-out + rate-limit hibernation reset. DONE.\n\nFix (1) fan-out: DO now keeps an in-memory connId->WebSocket Map (rebuilt in rehydrate(), synced on accept/close/error); socketFor() is O(1) lookup instead of an O(N) getWebSockets()+deserializeAttachment scan per recipient (~200k deserializes/publish at caps).\nFix (2) rate-limit: TokenBucket state {tokens,last} is persisted into each socket's attachment on every publish and restored in rehydrate() via new SignalingRelay.bucketState()/restoreBucket() (+ TokenBucket.snapshot()/restore()). A drained bucket no longer resets to full burst on hibernation wake; it refills from the persisted timestamp.\n\nFiles: workers/signaling/src/{relay.ts,index.ts}, test/guards.test.ts (+4 tests), docs/37-collab.md.\n\nVerify: pnpm --filter './packages/**' build -> exit 0 (all Done). workers/signaling: pnpm typecheck (tsc --noEmit) clean; pnpm test -> 52 passed (relay 23 + guards 29); wrangler deploy --dry-run builds worker OK (15.93 KiB, DO+Vars bindings intact).",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-07-02T01:16:08Z",
-  "updated_at": "2026-07-02T01:16:08Z"
+  "updated_at": "2026-07-02T01:23:52Z"
 }
