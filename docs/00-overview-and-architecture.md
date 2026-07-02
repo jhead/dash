@@ -91,6 +91,43 @@ Flash 8 shipped in two editions; we target the **Professional 8** feature supers
 - **Exports**: `.swf` (v8), projector (self-contained app), images (PNG/JPEG/GIF), and
   HTML embed pages. See `14-publishing-export.md`.
 
+## Desktop shell security
+
+The desktop shell is Tauri (`apps/desktop/src-tauri`). Because the authoring webview
+opens untrusted `.fla` files and can join untrusted collaboration sessions, the shell is
+locked down so that a script-injection foothold (or a future dependency XSS) cannot
+escalate into arbitrary host access.
+
+- **Content Security Policy.** `tauri.conf.json` sets `app.security.csp` (previously
+  `null`, which disabled the primary in-webview mitigation). The production policy keeps
+  `default-src 'self'` and, crucially, `script-src 'self' 'wasm-unsafe-eval'` — no
+  `'unsafe-inline'`, no `'unsafe-eval'`, no remote script origins — so injected `<script>`
+  markup and remote script loads are blocked while Ruffle's WebAssembly still
+  instantiates. `img-src`/`media-src` allow `data:`/`blob:` (bitmap/sound/video imports
+  render as data URIs and object URLs); `style-src` allows `'unsafe-inline'` for CSS-in-JS
+  style tags; `worker-src`/`child-src` allow `blob:` for Ruffle's workers; `connect-src`
+  allows `ws:`/`wss:` for the collab signaling/WebRTC handshake (see docs/37) plus Tauri's
+  `ipc:` transport. A separate, looser `devCsp` (adds `'unsafe-inline'`/`'unsafe-eval'`
+  and `http://localhost:1420`) keeps the Vite dev server + HMR working under `tauri dev`;
+  the strict `csp` applies to the packaged build.
+- **Filesystem scope.** `capabilities/default.json` grants `fs:allow-read-file` /
+  `write-file` / `exists`, but the path scope is narrowed from `fs:scope-home-recursive`
+  (the entire `~`) to the user's own content directories only:
+  `fs:scope-document-recursive`, `download`, `desktop`, `picture`, `audio`, `video`. This
+  is where `.fla` projects, published `.swf`s and imported media actually live, while
+  sensitive dotfiles (`~/.ssh`, `~/.aws`, `~/.config`, browser profiles, shell history)
+  are no longer reachable even if the webview is compromised. All file access is already
+  routed through native open/save dialogs (`useFileActions`/`usePublish`), so the user
+  still chooses each file explicitly.
+
+> Manual verification (cannot be exercised from a headless CI/build box): run
+> `pnpm --filter @flash/desktop tauri dev` and `... tauri build`, then confirm (1) the app
+> loads with no CSP violations in the webview console, (2) Ruffle Test Movie / Live
+> Preview play, (3) a collab session connects, and (4) Open/Save/Publish and media import
+> work for files under Documents/Downloads/Desktop. Files outside the scoped directories
+> are intentionally rejected; picking arbitrary locations would require a follow-up that
+> grants per-file runtime scope from the dialog result.
+
 ## Glossary (Flash-specific terms)
 
 - **Stage** — the rectangular authoring/playback canvas.
