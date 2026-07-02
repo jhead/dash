@@ -16,7 +16,6 @@ import { SwfWriter } from "../writer.js";
 import {
   encodePlaceObject2,
   encodePlaceObject2Move,
-  encodePlaceObject2WithAlpha,
   encodePlaceObject2WithName,
   encodePlaceObject2WithCXForm,
   encodePlaceObject2WithClipDepth,
@@ -32,6 +31,7 @@ import {
   hasEnabledFilters,
 } from "../filters.js";
 import { colorEffectToCXForm } from "../cxform.js";
+import { effectCXForm } from "../placement-effects.js";
 import { encodeDefineButton2 } from "../buttons.js";
 import { encodeSoundStreamBlock, encodeSoundStreamBlockMp3 } from "../audio.js";
 import { encodeStartSound, encodeStartSound2 } from "../sounds.js";
@@ -1243,6 +1243,28 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
                 }
                 const placeBody = encodePlaceObject3WithCacheAsBitmap(charId, depth, x, y, objTransform, shapeCacheMoveCXForm);
                 writer.writeTag(Tag.PlaceObject3, placeBody);
+              } else if (
+                displayObj.type === "shape" &&
+                displayObj.colorEffect &&
+                colorEffectToCXForm(displayObj.colorEffect) !== null
+              ) {
+                // Task 1375: a general colorEffect (tint/brightness/advanced) must
+                // survive the MOVE re-emit. A color tween makes posChanged fire
+                // every frame, and the plain PlaceObject2 move below dropped the
+                // tint after frame 1 (colorEffectKey serializes it, so posChanged
+                // DOES fire — only the emit was wrong). visible=false and
+                // standalone alpha are handled by the branches above.
+                const shapeMoveColorCXForm = colorEffectToCXForm(displayObj.colorEffect)!;
+                const placeBody = encodePlaceObject2WithCXForm(
+                  charId,
+                  depth,
+                  x,
+                  y,
+                  shapeMoveColorCXForm,
+                  objTransform,
+                  true // move = true
+                );
+                writer.writeTag(Tag.PlaceObject2, placeBody);
               } else {
                 // Character changed at same depth — use Move+Character flags
                 const newCharId =
@@ -1334,19 +1356,56 @@ export function runFrameLoop(ctx: FrameLoopContext): void {
               const bmpTransform = (scaleX !== 1 || scaleY !== 1 || rotation !== 0)
                 ? { scaleX, scaleY, rotation }
                 : undefined;
-              const isHidden = displayObj.visible === false;
-              const hasAlpha =
-                (displayObj.alpha !== undefined && displayObj.alpha !== 1) || isHidden;
-              if (hasAlpha) {
-                // Move with color transform — emit Move+HasMatrix+HasColorTransform
-                const placeBody = encodePlaceObject2WithAlpha(
+              // Task 1375: per-placement effects (blendMode/filters/colorEffect,
+              // plus visible=false / standalone alpha) must survive the MOVE
+              // re-emit. Motion tweens make posChanged fire every frame, so the
+              // old alpha-only move path dropped a bitmap filter/tint tween after
+              // frame 1 (it emitted a plain PlaceObject2 and Ruffle discarded the
+              // filter). Mirror the first-placement PlaceObject3/CXForm routing.
+              const hasBlend = !!displayObj.blendMode && displayObj.blendMode !== "normal";
+              const bmpMoveCXForm = effectCXForm(displayObj);
+              if (hasBlend || hasEnabledFilters(displayObj.filters)) {
+                const placeBody = hasBlend
+                  ? encodePlaceObject3WithBlendMode(
+                      charId,
+                      depth,
+                      x,
+                      y,
+                      displayObj.blendMode!,
+                      displayObj.filters,
+                      bmpTransform,
+                      undefined,
+                      bmpMoveCXForm ?? undefined,
+                      true, // move = true
+                      undefined,
+                      !!displayObj.cacheAsBitmap
+                    )
+                  : encodePlaceObject3WithFilters(
+                      charId,
+                      depth,
+                      x,
+                      y,
+                      displayObj.filters!,
+                      bmpTransform,
+                      undefined,
+                      undefined,
+                      true, // move = true
+                      !!displayObj.cacheAsBitmap,
+                      bmpMoveCXForm ?? undefined
+                    );
+                writer.writeTag(Tag.PlaceObject3, placeBody);
+              } else if (bmpMoveCXForm !== null) {
+                // colorEffect (tint/brightness/advanced) / visible=false / alpha:
+                // re-emit Move+HasMatrix+HasColorTransform (byte-identical to the
+                // old encodePlaceObject2WithAlpha for the alpha/visible cases).
+                const placeBody = encodePlaceObject2WithCXForm(
                   charId,
                   depth,
                   x,
                   y,
-                  isHidden ? 0 : displayObj.alpha!,
+                  bmpMoveCXForm,
                   bmpTransform,
-                  true
+                  true // move = true
                 );
                 writer.writeTag(Tag.PlaceObject2, placeBody);
               } else {

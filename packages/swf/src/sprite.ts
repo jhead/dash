@@ -36,6 +36,7 @@ import { encodeDefineText, encodeDefineEditText, encodePlaceObject2ForText, enco
 import { Tag } from "./tags.js";
 import { resolvePhotoJpegBytes, type PhotoBitmapOptions } from "./bitmaps.js";
 import { colorEffectToCXForm } from "./cxform.js";
+import { effectCXForm } from "./placement-effects.js";
 import { fontKey } from "./fonts.js";
 import { encodeStartSound, encodeStartSound2 } from "./sounds.js";
 import { encodeDefineButton2 } from "./buttons.js";
@@ -779,7 +780,20 @@ export function encodeDefineSprite(
               : encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, objTransform, undefined, undefined, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap, shapeCXForm);
             spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y, objTransform)));
+            // Task 1375: a symbol-internal shape with a standalone colorEffect
+            // (tint/brightness/advanced) or alpha (no filter/blend/visible)
+            // previously emitted a plain PlaceObject2 that dropped the effect.
+            // Emit a CXForm placement instead (matches the scene path + the
+            // sprite shape MOVE branch below). visible=false was handled above.
+            const shapeFirstCXForm =
+              displayObj.type === "shape"
+                ? effectCXForm(displayObj as { colorEffect?: import("@flash/core").ColorEffect; alpha?: number })
+                : null;
+            if (shapeFirstCXForm !== null) {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, shapeFirstCXForm, objTransform)));
+            } else {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2(charId, depth, x, y, objTransform)));
+            }
           }
         } else if (displayObj.type === "text") {
           const charId = objCharIdMap.get(objId)!;
@@ -844,14 +858,10 @@ export function encodeDefineSprite(
                 : encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, undefined, undefined, undefined, undefined, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap, bmpCXForm);
               spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
             } else {
-              // Bug 1103 fix: encode colorEffect / visible=false
-              const isHidden = (displayObj as { visible?: boolean }).visible === false;
-              let cxform = (displayObj as { colorEffect?: import("@flash/core").ColorEffect }).colorEffect
-                ? colorEffectToCXForm((displayObj as { colorEffect: import("@flash/core").ColorEffect }).colorEffect)
-                : null;
-              if (cxform === null && isHidden) {
-                cxform = { redMult: 256, greenMult: 256, blueMult: 256, alphaMult: 0, redAdd: 0, greenAdd: 0, blueAdd: 0, alphaAdd: 0 };
-              }
+              // Bug 1103 fix: encode colorEffect / visible=false.
+              // Task 1375: also honour a standalone alpha (a bitmap with only an
+              // alpha value — no colorEffect/visible — previously dropped it here).
+              const cxform = effectCXForm(displayObj as { colorEffect?: import("@flash/core").ColorEffect; visible?: boolean; alpha?: number });
               if (cxform !== null) {
                 spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, cxform)));
               } else {
@@ -1025,7 +1035,19 @@ export function encodeDefineSprite(
             const placeBody = encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, objTransform, undefined, undefined, true, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap, shapeMoveCXForm);
             spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
           } else {
-            spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, objTransform, replaceChar)));
+            // Task 1375: a standalone colorEffect (tint/brightness/advanced) or
+            // alpha on the MOVE re-emit (no filter/blend/visible) was dropped by
+            // the plain PlaceObject2 move, so a symbol-internal shape tint/alpha
+            // tween reverted after frame 1. Emit a CXForm move instead.
+            const shapeMoveColorCXForm =
+              displayObj.type === "shape"
+                ? effectCXForm(displayObj as { colorEffect?: import("@flash/core").ColorEffect; alpha?: number })
+                : null;
+            if (shapeMoveColorCXForm !== null) {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, shapeMoveColorCXForm, objTransform, true)));
+            } else {
+              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, objTransform, replaceChar)));
+            }
           }
         } else if (displayObj.type === "text") {
           const charId = objCharIdMap.get(objId)!;
@@ -1088,7 +1110,15 @@ export function encodeDefineSprite(
                 : encodePlaceObject3WithFilters(charId, depth, x, y, (displayObj as { filters: readonly import("@flash/core").FlashFilter[] }).filters!, undefined, undefined, undefined, true, !!(displayObj as { cacheAsBitmap?: boolean }).cacheAsBitmap, bmpCXForm);
               spriteTags.push(encodeTag(Tag.PlaceObject3, placeBody));
             } else {
-              spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar)));
+              // Task 1375: colorEffect / visible=false / standalone alpha must
+              // survive the MOVE re-emit — the bare PlaceObject2 move dropped them,
+              // so a symbol-internal bitmap tint/alpha tween reverted after frame 1.
+              const bmpMoveCXForm = effectCXForm(displayObj as { colorEffect?: import("@flash/core").ColorEffect; visible?: boolean; alpha?: number });
+              if (bmpMoveCXForm !== null) {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2WithCXForm(charId, depth, x, y, bmpMoveCXForm, undefined, true)));
+              } else {
+                spriteTags.push(encodeTag(Tag.PlaceObject2, encodePlaceObject2Move(charId, depth, x, y, undefined, replaceChar)));
+              }
             }
           }
         } else if (displayObj.type === "instance") {
