@@ -35,6 +35,51 @@ const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 // GIF87a and GIF89a both start with "GIF8" (0x47 0x49 0x46 0x38).
 const GIF_MAGIC = [0x47, 0x49, 0x46, 0x38];
 
+// ---------------------------------------------------------------------------
+// Decompression-bomb / oversized-allocation guards (FLA import path)
+//
+// Bitmap width/height on the import path are attacker-controlled u16 values
+// (up to 65535 each -> ~4.3 Gpx -> ~17 GB for an RGBA buffer), and the zlib
+// payload of a lossless container can expand without bound. A crafted "Media N"
+// stream can therefore OOM the importer. Cap dimensions before allocating the
+// pixel buffer and cap every inflate against a fixed output budget so a zlib
+// bomb stops instead of growing.
+// ---------------------------------------------------------------------------
+
+/** Reject either dimension above this (well beyond any real Flash bitmap). */
+const MAX_BITMAP_DIMENSION = 16384;
+/** Reject total pixels above this; bounds an RGBA buffer to 64 MiB (4096*4096). */
+const MAX_BITMAP_PIXELS = 16_777_216;
+/** Cap for inflating a zlib-wrapped image (form d) so a bomb cannot expand. */
+const MAX_INFLATED_MEDIA_BYTES = 64 * 1024 * 1024;
+
+/**
+ * True when `width` x `height` is a plausible bitmap size. Rejects the
+ * decompression-bomb dimensions before any pixel buffer is allocated.
+ */
+function isSaneBitmapSize(width: number, height: number): boolean {
+  return (
+    Number.isInteger(width) &&
+    Number.isInteger(height) &&
+    width > 0 &&
+    height > 0 &&
+    width <= MAX_BITMAP_DIMENSION &&
+    height <= MAX_BITMAP_DIMENSION &&
+    width * height <= MAX_BITMAP_PIXELS
+  );
+}
+
+/**
+ * Cheap zlib-header sniff so we only allocate a large inflate buffer for input
+ * that actually is a zlib stream. zlib CMF/FLG: low nibble of CMF is the
+ * compression method (8 = deflate) and (CMF<<8 | FLG) must be a multiple of 31.
+ */
+function looksLikeZlib(data: Uint8Array): boolean {
+  if (data.length < 2) return false;
+  if ((data[0]! & 0x0f) !== 0x08) return false;
+  return (((data[0]! << 8) | data[1]!) % 31) === 0;
+}
+
 function startsWith(data: Uint8Array, magic: number[]): boolean {
   if (data.length < magic.length) return false;
   for (let i = 0; i < magic.length; i++) {
@@ -166,6 +211,9 @@ function decodeLossless(data: Uint8Array): { width: number; height: number; rgba
   // offset 2: rowSize (u16, unused)
   const width = dv.getUint16(4, true);
   const height = dv.getUint16(6, true);
+  // Reject implausible dimensions before allocating any pixel buffer — a
+  // crafted container can declare 65535x65535 (~17 GB RGBA).
+  if (!isSaneBitmapSize(width, height)) return null;
   // offsets 8..23: four u32 frame bounds (twips, unused)
   // offset 24: flags, offset 25: variant
   const variant = data[25]!;
@@ -194,13 +242,18 @@ function decodeLossless(data: Uint8Array): { width: number; height: number; rgba
     compressed = data.subarray(26);
   }
 
+  // Inflate into a fixed output buffer sized to exactly the pixels we need.
+  // fflate does not grow a caller-supplied buffer, so a zlib bomb stops at the
+  // cap instead of expanding without bound (dimensions are already clamped, so
+  // width*height*4 is at most 64 MiB).
+  const needed = width * height * 4;
   let inflated: Uint8Array;
   try {
-    inflated = unzlibSync(compressed);
+    inflated = unzlibSync(compressed, { out: new Uint8Array(needed) });
   } catch {
     return null;
   }
-  if (inflated.length < width * height * 4) return null;
+  if (inflated.length < needed) return null;
 
   // Reorder ABGR (premultiplied alpha) -> straight RGBA, un-premultiplying.
   const rgba = new Uint8Array(width * height * 4);
@@ -268,6 +321,9 @@ export function decodeMediaBitmap(data: Uint8Array): DecodedBitmap | null {
     const h = data[8]! | (data[9]! << 8);
     const width = w > 0 ? w : 1;
     const height = h > 0 ? h : 1;
+    // Guard against an oversized GIF header (u16 each -> up to 65535) forcing a
+    // multi-GB placeholder allocation.
+    if (!isSaneBitmapSize(width, height)) return null;
     // Build a transparent RGBA pixel array and encode as PNG.
     const rgba = new Uint8Array(width * height * 4); // all zeros = transparent black
     return {
@@ -291,27 +347,31 @@ export function decodeMediaBitmap(data: Uint8Array): DecodedBitmap | null {
     };
   }
 
-  // (d) plain zlib-wrapped JPEG/PNG
-  try {
-    const dec = unzlibSync(data);
-    if (startsWith(dec, JPEG_MAGIC)) {
-      return {
-        bytes: dec,
-        mimeType: "image/jpeg",
-        ...jpegDimensions(dec),
-        compressionType: "photo",
-      };
+  // (d) plain zlib-wrapped JPEG/PNG. Only attempt (and only allocate the cap
+  // buffer) when the payload actually looks like zlib, and cap the inflate so a
+  // zlib bomb in a crafted Media stream cannot expand without bound.
+  if (looksLikeZlib(data)) {
+    try {
+      const dec = unzlibSync(data, { out: new Uint8Array(MAX_INFLATED_MEDIA_BYTES) });
+      if (startsWith(dec, JPEG_MAGIC)) {
+        return {
+          bytes: dec,
+          mimeType: "image/jpeg",
+          ...jpegDimensions(dec),
+          compressionType: "photo",
+        };
+      }
+      if (startsWith(dec, PNG_MAGIC)) {
+        return {
+          bytes: dec,
+          mimeType: "image/png",
+          ...pngDimensions(dec),
+          compressionType: "lossless",
+        };
+      }
+    } catch {
+      // not a valid zlib stream (or exceeded the inflate cap)
     }
-    if (startsWith(dec, PNG_MAGIC)) {
-      return {
-        bytes: dec,
-        mimeType: "image/png",
-        ...pngDimensions(dec),
-        compressionType: "lossless",
-      };
-    }
-  } catch {
-    // not a zlib stream
   }
 
   return null;

@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { isOle2, tryLoadRealFla } from "../ole.js";
+import { isOle2, tryLoadRealFla, __readAllStreamsForTest } from "../ole.js";
 import { loadFla } from "../zip.js";
 
 // ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ function buildMinimalOle2Header(): Uint8Array {
  *   Sector 1: Directory (one root entry + one stream entry)
  *   Sector 2: Stream data (the "Flash content")
  */
-function buildMinimalOle2WithStream(streamData: Uint8Array): Uint8Array {
+function buildMinimalOle2WithStream(streamData: Uint8Array, declaredSizeOverride?: number): Uint8Array {
   const SECTOR_SIZE = 512;
   const ENDOFCHAIN32 = 0xFFFFFFFE;
   const FREESECT32   = 0xFFFFFFFF;
@@ -161,8 +161,8 @@ function buildMinimalOle2WithStream(streamData: Uint8Array): Uint8Array {
   writeU32(buf, entry1Off + 76, FREESECT32); // no children
   // Start sector = 2
   writeU32(buf, entry1Off + 116, 2);
-  // Size
-  const dataSize = Math.min(streamData.length, SECTOR_SIZE);
+  // Size (may be overridden to simulate a crafted/oversized directory entry).
+  const dataSize = declaredSizeOverride ?? Math.min(streamData.length, SECTOR_SIZE);
   writeU32(buf, entry1Off + 120, dataSize);
   // Mark as "large" stream (> miniStreamCutoff)
   // miniStreamCutoff = 4096, dataSize < 4096, so mini-stream applies.
@@ -360,6 +360,34 @@ describe("tryLoadRealFla: stage dimension extraction", () => {
 // ---------------------------------------------------------------------------
 // 6. loadFla still works for normal zip/JSON format after the OLE2 check
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 7. Unbounded-allocation guard: a crafted directory-entry size must be
+//    clamped to the bytes actually reachable through the sector chain.
+// ---------------------------------------------------------------------------
+
+describe("tryLoadRealFla: oversized directory-entry size is clamped", () => {
+  it("clamps a ~1.5 GB declared stream size to the reachable sector bytes", () => {
+    // The "Contents" stream lives in a single 512-byte sector but declares a
+    // ~1.5 GB size. Before the clamp this forced a multi-GB zero-fill; after
+    // it, the read is bounded to the one reachable sector (512 bytes).
+    const HUGE = 0x60000000; // ~1.5 GB
+    const ole2Bytes = buildMinimalOle2WithStream(new Uint8Array(512).fill(0x42), HUGE);
+    const streams = __readAllStreamsForTest(ole2Bytes);
+    const contents = streams.get("Contents");
+    expect(contents).toBeDefined();
+    // Clamped to the single reachable 512-byte sector, NOT the declared 1.5 GB.
+    expect(contents!.length).toBe(512);
+  });
+
+  it("does not OOM or throw when opening a bomb-sized entry via tryLoadRealFla", () => {
+    const HUGE = 0x60000000;
+    const ole2Bytes = buildMinimalOle2WithStream(new Uint8Array(512).fill(0), HUGE);
+    // Must complete quickly and return a document (falls back to skeleton).
+    const doc = tryLoadRealFla(ole2Bytes);
+    expect(doc).not.toBeNull();
+  });
+});
 
 describe("loadFla: normal zip format still works", () => {
   it("normal zip FLA round-trips correctly after OLE2 detection was added", async () => {

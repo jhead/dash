@@ -189,3 +189,73 @@ describe("decodeMediaBitmap", () => {
     expect(b64.length).toBeGreaterThan(0);
   });
 });
+
+describe("decodeMediaBitmap: decompression-bomb / oversized-allocation guards", () => {
+  /**
+   * Build a Flash lossless (form c) header with ARBITRARY declared dimensions
+   * and a tiny body. Used to exercise the dimension guard without ever
+   * allocating the huge pixel buffer a real makeLossless(w,h) would.
+   */
+  function makeLosslessHeader(w: number, h: number, body: Uint8Array): Uint8Array {
+    const header = new Uint8Array(26);
+    const dv = new DataView(header.buffer);
+    header[0] = 0x03;
+    header[1] = 0x05;
+    dv.setUint16(2, (w * 4) & 0xffff, true); // rowSize
+    dv.setUint16(4, w & 0xffff, true);
+    dv.setUint16(6, h & 0xffff, true);
+    header[24] = 0; // flags
+    header[25] = 1; // variant = chunked zlib
+    const out = new Uint8Array(header.length + body.length);
+    out.set(header, 0);
+    out.set(body, header.length);
+    return out;
+  }
+
+  it("rejects a lossless container declaring bomb dimensions (65535x65535)", () => {
+    // Chunk terminator only; the decoder must bail on the size BEFORE any
+    // pixel-buffer or inflate allocation (65535*65535*4 ≈ 17 GB).
+    const term = new Uint8Array([0x00, 0x00]);
+    const bomb = makeLosslessHeader(65535, 65535, term);
+    expect(decodeMediaBitmap(bomb)).toBeNull();
+  });
+
+  it("rejects a lossless container whose pixel count exceeds the budget", () => {
+    // 8192 x 8192 = 67 Mpx > 16.7 Mpx budget, even though each dimension alone
+    // is within MAX_BITMAP_DIMENSION.
+    const term = new Uint8Array([0x00, 0x00]);
+    expect(decodeMediaBitmap(makeLosslessHeader(8192, 8192, term))).toBeNull();
+  });
+
+  it("still decodes a within-budget lossless container", () => {
+    const px = new Uint8Array(4 * 4 * 4);
+    for (let i = 0; i < 4 * 4; i++) px[i * 4] = 255; // opaque
+    const z = zlibSync(px, { level: 6 });
+    const body = new Uint8Array(2 + z.length + 2);
+    const bv = new DataView(body.buffer);
+    bv.setUint16(0, z.length, true);
+    body.set(z, 2);
+    bv.setUint16(2 + z.length, 0, true);
+    const r = decodeMediaBitmap(makeLosslessHeader(4, 4, body));
+    expect(r).not.toBeNull();
+    expect(r!.width).toBe(4);
+    expect(r!.height).toBe(4);
+  });
+
+  it("rejects a GIF header declaring bomb dimensions", () => {
+    // "GIF89a" + width 65535 + height 65535 (little-endian u16).
+    const gif = new Uint8Array([
+      0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0xff, 0xff, 0xff, 0xff,
+    ]);
+    expect(decodeMediaBitmap(gif)).toBeNull();
+  });
+
+  it("caps a zlib bomb on the form-d path instead of OOMing", () => {
+    // ~120 MB of zeros compresses to a tiny stream; the inflate is capped at
+    // 64 MiB and the (zeroed) output is not JPEG/PNG, so the decoder returns
+    // null without allocating gigabytes.
+    const bomb = zlibSync(new Uint8Array(120 * 1024 * 1024), { level: 6 });
+    expect(bomb.length).toBeLessThan(1_000_000);
+    expect(decodeMediaBitmap(bomb)).toBeNull();
+  });
+});
