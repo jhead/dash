@@ -1955,6 +1955,11 @@ export function StageArea({
 
   // Eraser tool state
   const eraserPointsRef = useRef<Point[] | null>(null);
+  // Erase-Inside anchor: the stage-space point where the CURRENT eraser gesture
+  // STARTED (captured once at pointerdown). Erase Inside must stay locked to the
+  // fill the gesture began in for the whole drag (Flash 8 semantics), so this
+  // must NOT drift to follow the cursor per-increment (task 1427).
+  const eraserGestureStartRef = useRef<Point | null>(null);
   // Tracks erased object IDs during the current drag to avoid double-deleting
   const erasedIdsRef = useRef<Set<string>>(new Set());
   // Eraser cursor position in stage coords (for circle overlay)
@@ -2225,6 +2230,10 @@ export function StageArea({
           return;
         }
         eraserPointsRef.current = [{ x: stageX, y: stageY }];
+        // Lock the Erase-Inside anchor to the gesture start (task 1427). Reused
+        // for every pointermove increment so the region lock never drifts to the
+        // previous cursor sample and erases neighboring fills.
+        eraserGestureStartRef.current = { x: stageX, y: stageY };
         erasedIdsRef.current = new Set();
         return;
       }
@@ -3248,7 +3257,14 @@ export function StageArea({
               const stamp = buildEraserPolygon(sweptStage, half);
               const { shape: next } = planarEraseShape(obj.shape, stamp, {
                 mode: eraserMode,
-                insideAt: eraserMode === "inside" ? sweptStage[0] : undefined,
+                // Erase Inside stays locked to the region the gesture STARTED in
+                // (captured once at pointerdown), NOT the previous cursor sample
+                // of this increment — otherwise the lock drifts across fills as
+                // the drag proceeds and erases neighboring regions (task 1427).
+                insideAt:
+                  eraserMode === "inside"
+                    ? eraserGestureStartRef.current ?? sweptStage[0]
+                    : undefined,
                 selectedFaceFilter: selFaceFilter,
               });
               if (next === null) {
@@ -3885,6 +3901,7 @@ export function StageArea({
       // incrementally per move in onMouseMove)
       if (activeTool === "eraser") {
         eraserPointsRef.current = null;
+        eraserGestureStartRef.current = null;
         erasedIdsRef.current = new Set();
         return;
       }

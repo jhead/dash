@@ -106,6 +106,15 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   regions erasable (selected strokes never select a fill); an object with nothing selected
   is a no-op. So with nothing selected the mode erases nothing, matching Flash 8 (previously
   neither caller passed the predicate, so the shipped button was a silent no-op).
+- **Erase Inside stays locked to the region the gesture STARTED in (task 1427).** Flash 8's
+  Erase Inside erases only the fill under the pointer at pointerdown, stopping at its boundary
+  for the whole drag (starting on empty erases nothing). The interactive `StageArea` eraser
+  captures that anchor point ONCE at pointerdown (`eraserGestureStartRef`) and passes it as
+  `planarEraseShape`'s `insideAt` for EVERY pointermove increment. Previously it passed
+  `sweptStage[0]` — the previous cursor sample of the current increment — so the lock drifted
+  with the cursor and, once the drag crossed into a neighboring fill, began erasing that fill.
+  The engine already confines correctly given the true gesture start (`connectedFillComponent`,
+  task 1399); only the UI wiring fed it the wrong point.
 - **Paint Bucket Gap Size** lets fills close small gaps in outlines; **Lock Fill** continues a
   gradient/bitmap across multiple shapes.
 - **Paint Bucket / Eyedropper hit the actual region under the cursor, not the bbox
