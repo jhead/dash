@@ -13,6 +13,8 @@ import {
   addDisplayObject,
   setBackgroundColor,
   setFrameRate,
+  setDocumentWidth,
+  updateDocumentProperties,
   addAsClass,
   updateAsClass,
   type FlashDocument,
@@ -147,6 +149,57 @@ describe("per-field merge (concurrent disjoint scalar edits)", () => {
         const obj = d.scenes[0].timeline.layers[0].frames[0].displayObjects[0] as ShapeDisplayObject;
         expect(obj.x).toBe(99);
         expect(obj.y).toBe(77);
+      }
+    } finally {
+      bindingA.destroy();
+      bindingB.destroy();
+      unwire();
+    }
+  });
+});
+
+describe("per-field merge of document properties (task 1392)", () => {
+  it("A edits stage width while B edits frameRate — both survive", () => {
+    const base = createDocument();
+    const { srcA, srcB, ydocA, ydocB, bindingA, bindingB, concurrent, unwire } = twoPeers(base);
+    try {
+      const w0 = srcA.getDoc().properties.width;
+      const fr0 = srcA.getDoc().properties.frameRate;
+
+      // Concurrent edits to DIFFERENT property fields from the same base.
+      concurrent(
+        () => srcA.set(setDocumentWidth(srcA.getDoc(), w0 + 123)),
+        () => srcB.set(setFrameRate(srcB.getDoc(), fr0 + 24)),
+      );
+
+      // Both Y.Docs converge to BOTH edits — neither field clobbers the other.
+      for (const yd of [ydocA, ydocB]) {
+        const props = rebuildDoc(yd).properties;
+        expect(props.width).toBe(w0 + 123);
+        expect(props.frameRate).toBe(fr0 + 24);
+      }
+    } finally {
+      bindingA.destroy();
+      bindingB.destroy();
+      unwire();
+    }
+  });
+
+  it("A toggles snapToObjects while B changes backgroundColor — both survive", () => {
+    const base = createDocument();
+    const { srcA, srcB, ydocA, ydocB, bindingA, bindingB, concurrent, unwire } = twoPeers(base);
+    try {
+      const snap0 = srcA.getDoc().properties.snapToObjects;
+
+      concurrent(
+        () => srcA.set(updateDocumentProperties(srcA.getDoc(), { snapToObjects: !snap0 })),
+        () => srcB.set(setBackgroundColor(srcB.getDoc(), "#123456")),
+      );
+
+      for (const yd of [ydocA, ydocB]) {
+        const props = rebuildDoc(yd).properties;
+        expect(props.snapToObjects).toBe(!snap0);
+        expect(props.backgroundColor).toBe("#123456");
       }
     } finally {
       bindingA.destroy();

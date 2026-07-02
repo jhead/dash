@@ -10,7 +10,8 @@
  *
  * The mapping (see docs/37-collab.md for the full table):
  *   root Y.Map "doc"
- *     id, properties.*, accessibility, activePublishProfileId   (atomic fields)
+ *     id, accessibility, activePublishProfileId                 (atomic fields)
+ *     properties    -> Y.Map (per-field entries; concurrent field edits merge)
  *     scenes        -> Y.Array<Y.Map(scene)>                    (positional)
  *     library       -> Y.Map(library)
  *     asClasses     -> Y.Map<path, Y.Text>                      (char-level)
@@ -38,6 +39,13 @@ import { materializeFields, diffFields, rebuildFields } from "./ymap-fields.js";
 // ---------------------------------------------------------------------------
 
 const DOC_STRUCTURAL = new Set([
+  // `properties` is projected as its OWN nested Y.Map (per-field entries) so two
+  // peers concurrently editing DIFFERENT doc properties (stage width vs frameRate,
+  // snap toggle vs backgroundColor) merge per-field instead of clobbering the whole
+  // object via a single whole-value LWW register (task 1392; docs/37 §2 table). It
+  // is therefore structural at the root: the atomic field reader/writer skips it and
+  // materializeDoc/diffDoc/rebuildDoc handle the nested map explicitly.
+  "properties",
   "scenes",
   "library",
   "asClasses",
@@ -51,6 +59,13 @@ const DOC_STRUCTURAL = new Set([
   "publishProfiles__present",
   "flaSwfBlobs__present",
 ]);
+// `properties` is projected as a nested Y.Map whose OWN fields are all atomic
+// per-field entries. A field whose value is itself an object/array (`grid`,
+// `guides`) is one deep-cloned whole-value register (whole-value LWW) exactly as
+// the per-field rule prescribes; scalar fields (`width`/`height`/`frameRate`/
+// `backgroundColor`/`snapTo*`/…) each get their own entry, so concurrent edits to
+// distinct fields converge with no loss.
+const PROPERTIES_STRUCTURAL = new Set<string>();
 const SCENE_STRUCTURAL = new Set(["timeline"]);
 const LAYER_STRUCTURAL = new Set(["frames"]);
 const FRAME_STRUCTURAL = new Set(["displayObjects"]);
@@ -903,6 +918,7 @@ function rebuildAsClasses(root: Y.Map<unknown>): AsClassLike[] | undefined {
 
 interface DocLike {
   id: string;
+  properties: Record<string, unknown>;
   scenes: readonly SceneLike[];
   library: LibraryLike;
   asClasses?: readonly AsClassLike[];
@@ -922,6 +938,14 @@ export function materializeDoc(ydoc: Y.Doc, doc: FlashDocument): void {
   const root = getRoot(ydoc);
   const d = doc as unknown as DocLike;
   materializeFields(root, d as Record<string, unknown>, DOC_STRUCTURAL);
+
+  // `properties` -> a nested Y.Map with per-field entries (task 1392). It is
+  // ALWAYS present on a valid document (`createDocument` sets it) and the map is
+  // created once here at genesis, so concurrent field edits are sub-key writes on
+  // the shared map that merge — never a root-key or whole-value LWW.
+  const yprops = new Y.Map();
+  root.set("properties", yprops);
+  materializeFields(yprops, d.properties, PROPERTIES_STRUCTURAL);
 
   const yscenes = new Y.Array<Y.Map<unknown>>();
   root.set("scenes", yscenes);
@@ -953,6 +977,18 @@ export function diffDoc(ydoc: Y.Doc, prev: FlashDocument | undefined, next: Flas
   const n = next as unknown as DocLike;
 
   diffFields(root, p as Record<string, unknown> | undefined, n as Record<string, unknown>, DOC_STRUCTURAL);
+
+  // `properties` per-field reconcile into its nested Y.Map (task 1392). Only the
+  // fields that actually changed are written, so a concurrent edit to a different
+  // property field on another peer is untouched and both survive on merge.
+  if (p?.properties !== n.properties) {
+    let yprops = root.get("properties") as Y.Map<unknown> | undefined;
+    if (!(yprops instanceof Y.Map)) {
+      yprops = new Y.Map();
+      root.set("properties", yprops);
+    }
+    diffFields(yprops, p?.properties, n.properties, PROPERTIES_STRUCTURAL);
+  }
 
   if (p?.scenes !== n.scenes) {
     let yscenes = root.get("scenes") as Y.Array<Y.Map<unknown>> | undefined;
@@ -986,6 +1022,15 @@ export function diffDoc(ydoc: Y.Doc, prev: FlashDocument | undefined, next: Flas
 export function rebuildDoc(ydoc: Y.Doc): FlashDocument {
   const root = getRoot(ydoc);
   const out = rebuildFields(root, DOC_STRUCTURAL);
+
+  // `properties` from its nested Y.Map (task 1392). A missing/garbage container
+  // (only reachable via a hostile peer — a valid doc always carries it) leaves
+  // `properties` absent, which `validateInboundDoc` re-defaults; a normal doc
+  // rebuilds the object field-for-field, preserving the round-trip identity.
+  const yprops = root.get("properties") as Y.Map<unknown> | undefined;
+  if (yprops instanceof Y.Map) {
+    out.properties = rebuildFields(yprops, PROPERTIES_STRUCTURAL);
+  }
 
   const yscenes = root.get("scenes") as Y.Array<Y.Map<unknown>> | undefined;
   out.scenes = yscenes instanceof Y.Array ? rebuildPositional(yscenes, rebuildScene) : [];
