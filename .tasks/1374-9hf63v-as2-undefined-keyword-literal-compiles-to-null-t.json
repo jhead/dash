@@ -1,10 +1,10 @@
 {
   "id": "1374-9hf63v-as2-undefined-keyword-literal-compiles-to-null-t",
   "title": "AS2: 'undefined' keyword literal compiles to null (type 2) not undefined (type 3)",
-  "description": "packages/core/src/as2/parser.ts:1062-1064 intercepts the 'undefined' keyword in parsePrimary and returns Literal(value:null,raw:'undefined'), so compileIdentifier's pushUndefined() path (compiler.ts:1745) is dead for the keyword. Verified emitted bytecode: 'var x = undefined;' pushes ActionPush type 2 (null); 'if (x === undefined)' does StrictEquals against null. AVM1 distinguishes null vs undefined: 'x === undefined' is always false when x is truly undefined, 'typeof undefined' yields \"null\", and 'return undefined' stores null. Only '== undefined' still works (AVM1 null==undefined). Breaks very common AS2 defensive code. Fix: map the 'undefined' keyword to an undefined-producing node (dedicated literal pushed as type 3, or return Identifier{name:'undefined'} so pushUndefined() runs). Acceptance: bytecode test that 'x===undefined' uses ActionPush type 3 and typeof undefined === 'undefined'. Confidence: confirmed by running built compiler.",
-  "status": "open",
+  "description": "FIXED. Root cause: parser.ts parsePrimary intercepted the 'undefined' keyword and returned Literal{value:null,raw:'undefined'}, so compileLiteral pushed ActionPush type 2 (null) instead of type 3 (undefined) \u2014 breaking ===/typeof/return undefined in AVM1 (null!=undefined for strict eq). Fix: parser now returns Identifier{name:'undefined'}, routing through compileIdentifier's pushUndefined() (ActionPush type 3). compileIdentifier (line 1745) and scanExpr (line 267, no string-pool add) already fully supported this. Acceptance test: packages/core/src/as2/__tests__/undefined-keyword.test.ts (6 cases) decodes ActionPush type tags: 'var x=undefined' pushes type 3 not 2; 'x===undefined' pushes type 3 + StrictEquals 0x66; 'return undefined' type 3; 'typeof undefined' type 3 + ActionTypeOf 0x44; 'null' still type 2 (no regression); undefined-as-arg type 3. Build: pnpm --filter './packages/**' build exit 0. Tests: pnpm --filter @flash/core test = 5633 passed | 8 skipped (incl. the 6 new).",
+  "status": "done",
   "effort": "default",
   "priority": "high",
   "created_at": "2026-07-02T01:13:36Z",
-  "updated_at": "2026-07-02T01:13:36Z"
+  "updated_at": "2026-07-02T01:25:28Z"
 }

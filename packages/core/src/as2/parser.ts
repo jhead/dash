@@ -1060,8 +1060,13 @@ class Parser {
           this.advance();
           return { type: 'Literal', value: null, raw: 'null', ...this.base(t) };
         case 'undefined':
+          // NOT a null literal — the `undefined` keyword must compile to AVM1
+          // undefined (ActionPush type 3), not null (type 2). Emitting an
+          // Identifier routes it through compileIdentifier's pushUndefined()
+          // path so `x === undefined`, `typeof undefined`, and `return undefined`
+          // behave correctly (AVM1 distinguishes null from undefined). (task 1374)
           this.advance();
-          return { type: 'Literal', value: null, raw: 'undefined', ...this.base(t) };
+          return { type: 'Identifier', name: 'undefined', ...this.base(t) };
         case 'NaN':
           this.advance();
           return { type: 'Literal', value: NaN, raw: 'NaN', ...this.base(t) };
