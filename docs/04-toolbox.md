@@ -96,6 +96,16 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   tilt, so the toggles only affect pen/touch input.
 - **Eraser modes**: Erase Normal, Erase Fills, Erase Lines, Erase Selected Fills, Erase Inside.
   **Faucet** deletes an entire fill or stroke in one click. Double-click eraser = clear stage.
+- **Erase Selected Fills restricts to the current selection (task 1428).** The mode's engine
+  (`planar/eraser.ts`, mode `"selected"`) skips every face unless the caller supplies a
+  `selectedFaceFilter` predicate. That predicate is now built from the live selection by the
+  shared `resolveSelectedFaceFilter` (`authoring-ui/src/eraserSelection.ts`) and threaded
+  into `planarEraseShape` by BOTH the interactive `StageArea` erase path and the
+  `Shell.handleEraseOnLayer` agent/oracle bridge: a WHOLE-object selection makes every fill
+  in that object erasable; a partial planar sub-selection makes only its selected face
+  regions erasable (selected strokes never select a fill); an object with nothing selected
+  is a no-op. So with nothing selected the mode erases nothing, matching Flash 8 (previously
+  neither caller passed the predicate, so the shipped button was a silent no-op).
 - **Paint Bucket Gap Size** lets fills close small gaps in outlines; **Lock Fill** continues a
   gradient/bitmap across multiple shapes.
 - **Paint Bucket / Eyedropper hit the actual region under the cursor, not the bbox

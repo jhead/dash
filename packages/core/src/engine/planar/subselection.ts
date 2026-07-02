@@ -20,6 +20,7 @@ import {
   faceBoundaryPolygon,
   faceInteriorPoint,
   locateFace,
+  pointInPolygon,
   traceCycle,
 } from "./query.js";
 
@@ -377,6 +378,49 @@ export function pickInRect(ps: PlanarShape, rect: Rect): SubKey[] {
     }
   }
   return keys;
+}
+
+// ---------------------------------------------------------------------------
+// Erase Selected Fills — the predicate planarEraseShape's "selected" mode needs
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the "Erase Selected Fills" face predicate (task 1428): given the LIVE
+ * planar map of a merged shape and a partial selection's keys, return a predicate
+ * over a stage/kernel-space interior point that is TRUE iff the point lies inside
+ * one of the SELECTED fill FACES (outer boundary minus holes). Selected line
+ * SEGMENTS never make a fill erasable, matching Flash 8 (Erase Selected Fills
+ * leaves strokes untouched). Returns `null` when no fill face is selected, so the
+ * caller can treat the whole object as un-erasable.
+ *
+ * This is the predicate {@link import("./eraser.js").planarEraseShape}'s
+ * `"selected"` mode requires: without a caller supplying it, that mode skips EVERY
+ * face and is a silent no-op (it erases nothing). The predicate is evaluated
+ * against interior points of the eraser's OWN rebuilt arrangement, so it must test
+ * geometric CONTAINMENT (not a face-id / interior-key match, which would not
+ * survive the eraser's re-split of the selected face).
+ */
+export function buildSelectedFaceFilter(
+  ps: PlanarShape,
+  keys: readonly SubKey[]
+): ((pt: Point) => boolean) | null {
+  const faceKeys = keys.filter((k): k is FaceKey => k.kind === "face");
+  if (faceKeys.length === 0) return null;
+  const regions: { outer: Point[]; holes: Point[][] }[] = [];
+  for (const key of faceKeys) {
+    const fid = resolveFace(ps, key);
+    if (fid < 0) continue;
+    const f = ps.faces[fid];
+    regions.push({
+      outer: faceBoundaryPolygon(ps, f),
+      holes: f.holes.map((h) => traceCycle(ps, h)),
+    });
+  }
+  if (regions.length === 0) return null;
+  return (pt: Point): boolean =>
+    regions.some(
+      (r) => pointInPolygon(pt, r.outer) && !r.holes.some((h) => pointInPolygon(pt, h))
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -54,6 +54,7 @@ import type {
   FlashFilter,
   Frame,
   Library,
+  Point,
   SceneGraph,
   Shape,
   ShapeDisplayObject,
@@ -77,6 +78,7 @@ import { EditBar } from "./EditBar";
 import { ToolsPanel } from "./ToolsPanel";
 import { StageArea } from "./StageArea";
 import type { ViewMode, OnionFrame } from "./StageArea";
+import { resolveSelectedFaceFilter } from "./eraserSelection.js";
 import { Rulers } from "./Rulers";
 import { Timeline } from "./Timeline";
 import { usePreferences } from "./preferences";
@@ -1723,11 +1725,26 @@ export function Shell(): React.ReactElement {
             )
               continue;
             const shp = (target as ShapeDisplayObject).shape;
+            // "Erase Selected Fills" (task 1428): supply the face predicate the
+            // "selected" mode requires, built from the CURRENT selection — a
+            // whole-object selection erases every fill in it, a partial planar
+            // sub-selection only its selected faces. A target with nothing
+            // selected is skipped (no-op), so with no selection nothing erases.
+            let selFaceFilter: ((interior: Point) => boolean) | undefined;
+            if (!faucet && mode === "selected") {
+              const res = resolveSelectedFaceFilter(target.id, shp, {
+                selectedShapeIds,
+                subSelection,
+              });
+              if (res.kind === "skip") continue;
+              selFaceFilter = res.filter;
+            }
             const { shape: next } = faucet
               ? faucetEraseShape(shp, points[0])
               : planarEraseShape(shp, buildEraserPolygon(points, radius), {
                   mode,
                   insideAt: mode === "inside" ? points[0] : undefined,
+                  selectedFaceFilter: selFaceFilter,
                 });
             if (next === shp) return t;
             const others = objs.filter((o) => o.id !== target.id);
@@ -1741,7 +1758,7 @@ export function Shell(): React.ReactElement {
         })
       );
     },
-    [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimelineLive]
+    [timeline, safeActiveLayerIndex, currentFrame, pushDoc, withTimelineLive, selectedShapeIds, subSelection]
   );
 
   // During a drag gesture, use `replaceDoc` (no history entry).

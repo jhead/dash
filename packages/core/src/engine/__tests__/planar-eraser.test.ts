@@ -7,6 +7,8 @@ import {
   livePlanarShape,
   buildArrangementFromShapes,
   planarShapeToShape,
+  buildSelectedFaceFilter,
+  pickAt,
   faceArea,
   locateFace,
   pointInPolygon,
@@ -660,6 +662,49 @@ describe("planar/P4 — eraser modes", () => {
     const redAfter = colorArea(out, RED);
     expect(redAfter).toBeLessThan(redBefore);
     expect(blueAfter).toBeCloseTo(blueBefore, -1);
+  });
+
+  it("buildSelectedFaceFilter turns a sub-selection into the Erase-Selected predicate (task 1428)", () => {
+    const merged = mergeShapes([
+      rectShape("b", 0, 0, 50, 100, BLUE),
+      rectShape("r", 50, 0, 50, 100, RED),
+    ]);
+    const blueBefore = colorArea(merged, BLUE);
+    const redBefore = colorArea(merged, RED);
+    const live = livePlanarShape(merged);
+    // Sub-select ONLY the red fill (interior x>50).
+    const redKey = pickAt(live, { x: 75, y: 50 });
+    expect(redKey?.kind).toBe("face");
+    const filter = buildSelectedFaceFilter(live, [redKey!]);
+    expect(filter).not.toBeNull();
+    // The predicate accepts the red interior and rejects the blue interior.
+    expect(filter!({ x: 75, y: 50 })).toBe(true);
+    expect(filter!({ x: 25, y: 50 })).toBe(false);
+    const stamp = buildEraserStamp(
+      [
+        { x: 40, y: 50 },
+        { x: 60, y: 50 },
+      ],
+      14
+    );
+    const out = planarEraseShape(merged, stamp, {
+      mode: "selected",
+      selectedFaceFilter: filter!,
+    }).shape;
+    expect(colorArea(out, RED)).toBeLessThan(redBefore);
+    expect(colorArea(out, BLUE)).toBeCloseTo(blueBefore, -1);
+  });
+
+  it("buildSelectedFaceFilter is null when only a line SEGMENT is selected (strokes never select a fill)", () => {
+    const merged = mergeShapes([
+      rectShape("r", 0, 0, 100, 100, BLUE),
+      strokeLineShape("s", -10, 50, 110, 50),
+    ]);
+    const live = livePlanarShape(merged);
+    const segKey = pickAt(live, { x: 50, y: 50 }); // on the stroke line
+    expect(segKey?.kind).toBe("segment");
+    expect(buildSelectedFaceFilter(live, [segKey!])).toBeNull();
+    expect(buildSelectedFaceFilter(live, [])).toBeNull();
   });
 });
 

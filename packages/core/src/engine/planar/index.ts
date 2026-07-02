@@ -92,6 +92,7 @@ export {
   pickConnected,
   pickInRect,
   subSelectionPolylines,
+  buildSelectedFaceFilter,
 } from "./subselection.js";
 export type { FaceKey, SegmentKey, SubKey, SubSelection } from "./subselection.js";
 export { splitOnMove, deleteSubSelection } from "./split.js";

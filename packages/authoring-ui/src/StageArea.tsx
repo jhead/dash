@@ -4,6 +4,7 @@ import type { PlacedInstance } from "./PropertiesPanel";
 import type { BitmapDisplayObject, BitmapItem, Fill, Library, Shape, ShapeDisplayObject, ShapePath, PathSegment, SceneGraph, SolidStroke, Symbol as FlashSymbol, SymbolInstance, TextDisplayObject, Viewport, Guide, Point, Timeline as TimelineModel, MagicWandSmoothing, ShapeWarp, WarpCorners, WarpEdges, SubSelection } from "@flash/core";
 import { createOvalShape, createRectShape, createRoundedRectShape, createLineShape, createPolygonShape, createStarShape, CanvasRenderer, transformedShapeBounds, hexToColor, getTweenedFrame, getGoverningKeyframe, getGuideLayerPath, findGuideLayerAbove, magicWandSelectPixels, pointInPolygon, shouldClosePolygon, POLYGON_CLOSE_DISTANCE, identityWarp, evalWarp, buildEraserPolygon, eraseShape, livePlanarShape, pickAt as planarPickAt, pickConnected as planarPickConnected, pickInRect as planarPickInRect, subSelectionPolylines, splitOnMove as planarSplitOnMove, planarEraseShape, faucetEraseShape, isMergeableShape, hitTestPoint, type EraserMode } from "@flash/core";
 import { bucketFillRegion, sampleAttributeAt, gapSizeToPx, lockGradientToRect, type LockFillRect } from "./tools/fillSample.js";
+import { resolveSelectedFaceFilter } from "./eraserSelection.js";
 import { addAnchorAt, deleteAnchorAt, convertAnchorAt } from "./tools/penEdit.js";
 import type { FreeTransformMode, PolyStarOptions, PaintBucketGapSize, PenSubTool } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
@@ -3212,6 +3213,24 @@ export function StageArea({
             });
             if (!touches) continue;
 
+            // "Erase Selected Fills" (Flash 8): restrict erasure to the current
+            // selection. Build the per-object face predicate planarEraseShape's
+            // "selected" mode requires (task 1428 — previously NEVER supplied, so
+            // the mode silently erased nothing). A WHOLE-object selection makes
+            // every fill in it erasable; a partial planar sub-selection makes only
+            // its selected FACE regions erasable (selected strokes never select a
+            // fill). An object with nothing selected is skipped entirely — a true
+            // no-op — so with no selection the mode erases nothing at all.
+            let selFaceFilter: ((interior: Point) => boolean) | undefined;
+            if (eraserMode === "selected") {
+              const res = resolveSelectedFaceFilter(obj.id, obj.shape, {
+                selectedShapeIds,
+                subSelection,
+              });
+              if (res.kind === "skip") continue; // nothing selected here → no-op
+              selFaceFilter = res.filter;
+            }
+
             // P4: when this is a merged mergeable shape (placed at 0,0, geometry
             // in stage space), erase on the planar mesh — curve-preserving
             // cut/trim with Flash 8 eraser modes. Otherwise fall back to the
@@ -3230,6 +3249,7 @@ export function StageArea({
               const { shape: next } = planarEraseShape(obj.shape, stamp, {
                 mode: eraserMode,
                 insideAt: eraserMode === "inside" ? sweptStage[0] : undefined,
+                selectedFaceFilter: selFaceFilter,
               });
               if (next === null) {
                 erasedIdsRef.current.add(obj.id);
@@ -3664,7 +3684,7 @@ export function StageArea({
         setPressedButtonId(null);
       }
     },
-    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeWarp, freeTransformMode, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, eraserMode, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeWarp, freeTransformMode, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, selectedShapeIds, subSelection, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, eraserMode, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
   );
 
   const onMouseUp = useCallback(
