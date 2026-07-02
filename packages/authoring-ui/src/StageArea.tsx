@@ -6,6 +6,7 @@ import { createOvalShape, createRectShape, createLineShape, createPolygonShape, 
 import type { FreeTransformMode, PolyStarOptions } from "./tools/types";
 import { content as themeContent, halo as themeHalo, chrome as themeChrome } from "./theme/flash8Theme";
 import { isWithinRufflePlayer } from "./dispatch/playerFocus.js";
+import { isTimelinePanelFocused } from "./dispatch/timelineFocus.js";
 
 // Text-edit overlay (<textarea>) chrome. The textarea's text content box is inset from
 // its top-left by border + padding; the canvas paints text with its top-left exactly at
@@ -3684,6 +3685,9 @@ export function StageArea({
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (isWithinRufflePlayer(e)) return;
+      // Yield to the Timeline panel when it is focused: it toggles playback on
+      // Enter itself, so acting here too would toggle twice (net no-op).
+      if (isTimelinePanelFocused()) return;
       if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
         if (activeTool === "lasso" && lassoPolyVerticesRef.current.length >= 3) return;
         const target = e.target as HTMLElement;
@@ -3717,6 +3721,10 @@ export function StageArea({
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (isWithinRufflePlayer(e)) return;
+      // Yield to the Timeline panel when it is focused: Delete/Backspace there
+      // removes a frame. Acting here too would ALSO delete the selected stage
+      // object from that frame — a double-fire causing data loss.
+      if (isTimelinePanelFocused()) return;
       if ((e.key === "Delete" || e.key === "Backspace") && (selectedShapeIds.length > 0 || selectedShapeId)) {
         const target = e.target as HTMLElement;
         if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
@@ -3736,6 +3744,10 @@ export function StageArea({
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (isWithinRufflePlayer(e)) return;
+      // Yield to the Timeline panel when it is focused: Ctrl+C/X/V there operate
+      // on the FRAME clipboard. Acting here too would copy/cut/paste frames AND
+      // the shape clipboard simultaneously on a single keypress.
+      if (isTimelinePanelFocused()) return;
       const isModifier = e.ctrlKey || e.metaKey;
       if (!isModifier) return;
       const target = e.target as HTMLElement;
