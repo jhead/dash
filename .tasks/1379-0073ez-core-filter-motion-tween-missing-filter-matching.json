@@ -1,0 +1,10 @@
+{
+  "id": "1379-0073ez-core-filter-motion-tween-missing-filter-matching",
+  "title": "Core: filter motion-tween missing-filter matching not implemented (docs/08 deviation)",
+  "description": "packages/core/src/tween/interpolate.ts:510-526 interpolateFilters snaps when keyframes have different filter-list lengths: returns fromFilters (or null when from is empty). docs/08 (Animating filters) requires: 'If a filter exists on one keyframe but not the other, Flash adds a matching disabled filter so the tween is well-defined. This matching behavior must be reproduced.' Effect: a filter appearing ([] -> [blur]) shows NO filter on all in-betweens then pops on at the end; a disappearing filter stays full-strength then pops off. Flash instead fades params in/out via a synthesized disabled/zero-strength filter. Only caller is interpolateTween:572. Fix: pad the shorter list with a type-matched identity/disabled filter (blur 0, strength 0, alpha 0) per positional type before pairwise interpolation. Confidence: confirmed gap.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T01:14:01Z",
+  "updated_at": "2026-07-02T01:14:01Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "1401-2qg742-workers-signaling-publish-fan-out-is-o-n-k-and-p",
+  "title": "workers/signaling: publish fan-out is O(N*K) and per-connection rate-limit resets across hibernation",
+  "description": "workers/signaling/src/index.ts. (1) Publish fan-out :241-244 calls socketFor(to) per recipient; socketFor (:131-137) linear-scans state.getWebSockets() and deserializeAttachment() on every socket (idOf/connectionCounts share the pattern). At the documented caps (100 subs/topic, 2000 global conns) one publish can trigger ~200k deserialize calls -> CPU-bound relay + mild amplification lever. Fix: keep an in-memory Map<connId,WebSocket> (rebuilt in rehydrate) for O(K) fan-out. (2) Rate-limit state loss :107-122 rehydrate does new SignalingRelay() so the TokenBucket map (relay.ts:128) starts empty after a hibernation wake \u2014 each connection's bucket is recreated at full PUBLISH_BURST; subscriptions survive (serialized attachments) but rate-limit accounting does not, silently resetting a documented abuse guard on every idle->wake. Fix: persist bucket state in the attachment/DO storage, or document publish-rate limiting as best-effort per active period. Confidence: confirmed.",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-07-02T01:16:08Z",
+  "updated_at": "2026-07-02T01:16:08Z"
+}

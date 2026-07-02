@@ -1,0 +1,10 @@
+{
+  "id": "1375-9hga8m-swf-placement-re-emit-drops-per-placement-effect",
+  "title": "SWF: placement re-emit drops per-placement effects on bitmap/shape MOVE paths (filter/blend/tint tweens broken)",
+  "description": "Class of place-vs-move asymmetry: a per-placement effect handled on first placement is dropped on posChanged/Move re-emit. Because motion tweens make posChanged fire every frame, the effect is lost for the whole tween. Sites: (1) HIGH scene bitmap move packages/swf/src/compiler/frames.ts:1332-1362 handles only alpha/visible, no blendMode/filters/colorEffect -> a bitmap filter tween (filtersKey is in posChanged) emits plain PlaceObject2, Ruffle drops the filter after frame 1. First-placement (frames.ts:704-739) uses PlaceObject3 correctly. (2) sprite bitmap move sprite.ts:1077-1093 bare encodePlaceObject2Move else -> drops colorEffect/visible/alpha; also first-placement sprite.ts:846-859 omits standalone alpha. (3) scene shape move frames.ts:1246-1259 else drops general colorEffect (tint/brightness/advanced); colorEffectKey serializes it so posChanged fires. (4) sprite shape sprite.ts:749-782 (first) and 1008-1029 (move) have no colorEffect case at all. Root fix: factor a single 'encode placement for (displayObj, move) with full effect set' helper shared by frames.ts and sprite.ts (check blend/filters/colorEffect/visible/alpha, emit PlaceObject3 when needed). Acceptance: Ruffle e2e for bitmap+filter tween and shape+tint tween. Confidence: confirmed; no current test covers bitmap+blend/filter.",
+  "status": "open",
+  "effort": "high",
+  "priority": "high",
+  "created_at": "2026-07-02T01:13:36Z",
+  "updated_at": "2026-07-02T01:13:36Z"
+}

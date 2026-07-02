@@ -1,0 +1,10 @@
+{
+  "id": "1391-1vejl3-ui-two-independent-undo-redo-history-stacks-useh",
+  "title": "UI: two independent undo/redo history stacks (useHistory reducer vs documentStore)",
+  "description": "packages/authoring-ui/src/hooks/useHistory.ts:66-117 keeps its own useReducer(historyReducer) state AND binds a global document keydown listener dispatching UNDO/REDO into that reducer. packages/authoring-ui/src/store/documentStore.ts:62-116 is the collab/autosave/preview source of truth (CLAUDE.md: 'the single hook point is the store apply()'). If useHistory is still mounted alongside the store, its Ctrl+Z mutates a different history than collab/autosave observe -> undo won't propagate / desync. If it is dead code, its global keydown listener is a latent double-binding hazard. Fix: confirm Shell uses only documentStore for undo/redo; if so remove useHistory's keydown effect (or the hook). Confidence: needs-repro (depends on whether Shell still mounts useHistory; both are exported/live).",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T01:15:28Z",
+  "updated_at": "2026-07-02T01:15:28Z"
+}

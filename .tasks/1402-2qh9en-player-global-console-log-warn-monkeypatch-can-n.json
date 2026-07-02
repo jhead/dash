@@ -1,0 +1,10 @@
+{
+  "id": "1402-2qh9en-player-global-console-log-warn-monkeypatch-can-n",
+  "title": "player: global console.log/warn monkeypatch can nest/leak with two concurrent RufflePlayer instances",
+  "description": "packages/player/src/RufflePlayer.tsx:247-254 (swap-in) and :369-376 (unmount restore): each instance replaces global console.log/console.warn and stores the 'original' in its own ref. Both the Test Movie modal and the Live Preview tab embed RufflePlayer, so two instances can mount at once; instance B captures A's wrapper as its 'original', and if unmounts interleave (A before B), A restores the real console then B restores A's wrapper -> console.log permanently points at a stale wrapper. Not fatal (the stale wrapper forwards to a null onTraceRef no-op) but a real global-state leak. Fix: guard the swap with a module-level nesting counter/owner token, or capture the pristine original once at module load. Confidence: needs-repro (interleaved unmount).",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-07-02T01:16:08Z",
+  "updated_at": "2026-07-02T01:16:08Z"
+}

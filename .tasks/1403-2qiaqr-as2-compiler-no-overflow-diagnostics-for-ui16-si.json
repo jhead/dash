@@ -1,0 +1,10 @@
+{
+  "id": "1403-2qiaqr-as2-compiler-no-overflow-diagnostics-for-ui16-si",
+  "title": "AS2 compiler: no overflow diagnostics for UI16/SI16 limits (constant pool, DefineFunction2 size, jump offsets)",
+  "description": "packages/core/src/as2/compiler.ts silently wraps several 16-bit fields instead of erroring on very large generated scripts. buildConstantPool (:442-449) assigns unbounded indices; encodeConstantPool writes the count as strings.length&0xff,(>>8)&0xff (:481-482) and pushString writes a type-9 index the same way (:541) -> >65535 pooled strings wrap silently. emitDefineFunction2 payloadSize/codeSize and ActionConstantPool payloadLen are UI16 -> a function body >65535 bytes truncates codeSize, reproducing the exact 'Length mismatch' desync the DefineFunction2 learning warns about. patchSI16 (:47) wraps mod 65536 -> a loop/if body >32767 bytes yields wrong branch targets silently. Also compiler-thrown errors (:1687,1894,1959) and synthesized field-init/getURL fallback nodes carry no source location (report line 0). Fix: cap/flush the pool at 65535 (pushString already inlines on pool-miss), throw a clear error if any function body/header/jump exceeds the 16-bit range, and attach source locations to compiler errors. Confidence: confirmed logic (real trigger needs a very large script).",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-07-02T01:16:08Z",
+  "updated_at": "2026-07-02T01:16:08Z"
+}

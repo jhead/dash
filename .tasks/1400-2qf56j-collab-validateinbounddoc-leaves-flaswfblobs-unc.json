@@ -1,0 +1,10 @@
+{
+  "id": "1400-2qf56j-collab-validateinbounddoc-leaves-flaswfblobs-unc",
+  "title": "collab: validateInboundDoc leaves flaSwfBlobs uncapped and unsanitized (memory-amplification)",
+  "description": "packages/collab/src/validate.ts:492-493 out.flaSwfBlobs = asArray(raw.flaSwfBlobs) with no MAX_ARRAY_LEN clamp (unlike every other array in the file) and entries pass through untouched. A hostile peer can inject an arbitrarily long array of arbitrary objects; on rebuild rebuildOptionalPlainArray -> jsonToBlob -> base64ToBytes (schema.ts:200-208) decodes each bytes base64 string into a real Uint8Array, amplifying a large base64 payload into large in-memory buffers re-serialized on save. flaSwfBlobs is import-only and never rendered so impact is bounded to memory + save size. Fix: apply Math.min(len, MAX_ARRAY_LEN) and validate each entry is an object with a string bytes before keeping. Confidence: confirmed by inspection (needs-repro for practical impact).",
+  "status": "open",
+  "effort": "default",
+  "priority": "low",
+  "created_at": "2026-07-02T01:16:08Z",
+  "updated_at": "2026-07-02T01:16:08Z"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "1384-0ltkel-fla-saverealfla-drops-empty-keyframe-span-durati",
+  "title": "FLA: saveRealFla drops empty-keyframe span/duration (writes hardcoded duration=1) \u2014 round-trip loss",
+  "description": "packages/core/src/fla/write/timeline-write.ts:204-215 empty-keyframe branch of writeCPicFrame emits PAGE_FRAME_BODY verbatim (only patching big-endian frameId at 0x57). The template hardcodes u16 duration=1 (empty-templates.ts PAGE_FRAME_BODY, duration u16 at bytes 52-53 = 01 00). The computed duration arg is ignored, despite the block comment claiming 'for a custom span we patch the duration field too'. A blank keyframe held N frames is written span=1. On re-import convertLayer does frameIndex += f.duration (flash8-import.ts:1376), so every empty span collapses to one frame \u2014 layer lengths shrink and later keyframes shift. Fix: after copying PAGE_FRAME_BODY, patch bytes 52-53 with max(1,duration), or drop the fast path when duration!==1. Acceptance: round-trip test with a multi-frame blank keyframe. Confidence: confirmed (template decoded).",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T01:14:29Z",
+  "updated_at": "2026-07-02T01:14:29Z"
+}

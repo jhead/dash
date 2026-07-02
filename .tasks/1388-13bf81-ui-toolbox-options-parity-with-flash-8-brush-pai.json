@@ -1,0 +1,10 @@
+{
+  "id": "1388-13bf81-ui-toolbox-options-parity-with-flash-8-brush-pai",
+  "title": "UI: toolbox Options parity with Flash 8 (brush paint modes, paint-bucket gap/lock, rectangle corner radius, pen sub-tools, selection tool options)",
+  "description": "Multiple docs/04 tool-option gaps, grouped because they all touch ToolsPanel.tsx + tools/types.ts (splitting = prohibitive merge conflicts). (1) Brush: ToolsPanel.tsx:695-717 renders only size; missing brush shape, paint mode (Normal/Fills/Behind/Selection/Inside), Lock Fill, Pressure, Tilt (grep brushMode/brushShape/lockFill/paintMode = absent entirely). Add ToolState fields + Options block + honor paint mode in the brush commit path. (2) Paint Bucket: missing Gap Size (Don't/Small/Medium/Large) + Lock Fill. (3) Rectangle: no corner-radius field/UI and no Alt-click exact-dimensions dialog (docs/04 lists both). (4) Pen sub-tools Add Anchor(=)/Delete Anchor(-)/Convert Anchor(C) absent (no Options block, no key bindings). (5) Selection tool has NO Options block at all \u2014 docs/04 requires the magnet (Snap to Objects), Smooth, Straighten buttons; snapToObjects exists only as a doc/View-menu property, not a tool modifier. (6) snapToObjects defaults false (core/src/model/document.ts:39 and StageArea.tsx:1587) but docs/04 says magnet is on by default \u2014 change createDocumentProperties default to true (verify FLA round-trip tests). Confidence: confirmed (features absent, not just broken).",
+  "status": "open",
+  "effort": "high",
+  "priority": "medium",
+  "created_at": "2026-07-02T01:14:51Z",
+  "updated_at": "2026-07-02T01:14:51Z"
+}

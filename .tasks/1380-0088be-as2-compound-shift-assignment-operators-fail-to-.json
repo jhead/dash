@@ -1,0 +1,10 @@
+{
+  "id": "1380-0088be-as2-compound-shift-assignment-operators-fail-to-",
+  "title": "AS2: compound shift-assignment operators <<= >>= >>>= fail to parse (hard error)",
+  "description": "packages/core/src/as2/tokenizer.ts:134-141: the 3-char op table has only ===,!==,>>>; the 2-char table has <<,>> (and a dead >>>). There is no production for <<=/>>=/>>>=, so 'x <<= 1' tokenizes as << then =, and the parser throws 'unexpected token =' \u2014 aborting the whole script. The compiler already expects these: emitArithOp (compiler.ts:1891-1893) and ASSIGN_OPS (parser.ts:16) list them. Verified: 'x<<=1','x>>=1','x>>>=1' all throw. Fix: add <<= / >>= / >>>= handling in the tokenizer (4-char check for >>>= and 3-char for <<=/>>= before the 2-char pass). Confidence: confirmed by running built compiler.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T01:14:01Z",
+  "updated_at": "2026-07-02T01:14:01Z"
+}

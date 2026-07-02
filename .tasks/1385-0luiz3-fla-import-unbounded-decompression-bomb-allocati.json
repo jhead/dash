@@ -1,0 +1,10 @@
+{
+  "id": "1385-0luiz3-fla-import-unbounded-decompression-bomb-allocati",
+  "title": "FLA import: unbounded/decompression-bomb allocations from attacker-controlled sizes (OLE reader + media decode)",
+  "description": "Two malformed-input DoS paths in FLA import. (1) packages/core/src/fla/ole.ts:191 readStream new Uint8Array(size) and :291 readMiniStream: size comes straight from the 32-bit directory-entry size field (parseDirectoryEntries:224) with no clamp against actual file length; a crafted .fla can declare ~2GB in a tiny file forcing a multi-GB zero-fill (sub-RangeError values like 1.5GB succeed and pin memory; several entries OOM). (2) packages/core/src/fla/media.ts:199 unzlibSync in decodeLossless, :206 new Uint8Array(width*height*4) with width/height attacker-controlled u16 (up to 65535 each -> ~17GB) and no inflate output cap; a zlib bomb or huge-dimension 'Media N' stream OOMs on the normal decodeMediaBitmap import path (:296 form-d same). Also related low: flash8-binary.ts:3596 stage anchor uses the first match of 03 B4 00 00 00 which can mis-anchor on real files containing that byte run earlier. Fix: clamp entry.size to remaining file bytes in readStream/readMiniStream; cap inflated size and reject width*height beyond a pixel budget before allocating. Confidence: confirmed by inspection (exact OOM threshold needs-repro).",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T01:14:29Z",
+  "updated_at": "2026-07-02T01:14:29Z"
+}

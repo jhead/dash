@@ -1,0 +1,10 @@
+{
+  "id": "1392-1vfmww-collab-document-properties-merges-whole-value-lw",
+  "title": "collab: document 'properties' merges whole-value LWW, contradicting the docs/37 per-field-merge spec",
+  "description": "packages/collab/src/schema.ts:40-53 DOC_STRUCTURAL omits 'properties', so materializeDoc/diffDoc route it through materializeFields/diffFields (ymap-fields.ts:29-34) which does ymap.set('properties', cloneJson(wholeObject)) \u2014 one CRDT register, whole-value last-writer-wins. docs/37 \u00a72 table and \u00a75/\u00a78 P0 acceptance state 'properties (and all its fields) | per-field Y.Map entries on the root | per-field merge of doc props'. Two peers concurrently editing different doc properties (A stage width, B frameRate; or snap toggle vs backgroundColor) -> one change silently discarded on convergence. The property/round-trip test can't catch it (single-doc sequential); binding.test.ts per-field-merge only covers a display object's x vs y. Fix: either (a) flatten properties.* into per-field root entries to match the spec, or (b) correct docs/37 to state properties are atomic LWW. Confidence: confirmed.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T01:15:28Z",
+  "updated_at": "2026-07-02T01:15:28Z"
+}

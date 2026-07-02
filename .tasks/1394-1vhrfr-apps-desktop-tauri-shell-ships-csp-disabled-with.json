@@ -1,0 +1,10 @@
+{
+  "id": "1394-1vhrfr-apps-desktop-tauri-shell-ships-csp-disabled-with",
+  "title": "apps/desktop: Tauri shell ships CSP disabled with whole-home-directory fs scope",
+  "description": "apps/desktop/src-tauri/tauri.conf.json:26 sets security.csp = null and capabilities/default.json:6-16 grants fs:allow-read-file/write-file/exists with fs:scope-home-recursive. This is a Flash clone that opens untrusted .fla files and joins untrusted collab sessions; any script-injection foothold in the authoring webview (or a future dependency XSS) then has unrestricted read/write over the entire ~ home directory, and csp:null removes the primary in-webview mitigation. Fix: set a real security.csp (script-src 'self', etc.) and narrow the fs scope from /home/justin/** to project/document dirs or a dialog-granted scope. At minimum flag home-recursive as a pre-production hardening item. Confidence: confirmed.",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T01:15:28Z",
+  "updated_at": "2026-07-02T01:15:28Z"
+}

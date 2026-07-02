@@ -1,0 +1,10 @@
+{
+  "id": "1374-9hf63v-as2-undefined-keyword-literal-compiles-to-null-t",
+  "title": "AS2: 'undefined' keyword literal compiles to null (type 2) not undefined (type 3)",
+  "description": "packages/core/src/as2/parser.ts:1062-1064 intercepts the 'undefined' keyword in parsePrimary and returns Literal(value:null,raw:'undefined'), so compileIdentifier's pushUndefined() path (compiler.ts:1745) is dead for the keyword. Verified emitted bytecode: 'var x = undefined;' pushes ActionPush type 2 (null); 'if (x === undefined)' does StrictEquals against null. AVM1 distinguishes null vs undefined: 'x === undefined' is always false when x is truly undefined, 'typeof undefined' yields \"null\", and 'return undefined' stores null. Only '== undefined' still works (AVM1 null==undefined). Breaks very common AS2 defensive code. Fix: map the 'undefined' keyword to an undefined-producing node (dedicated literal pushed as type 3, or return Identifier{name:'undefined'} so pushUndefined() runs). Acceptance: bytecode test that 'x===undefined' uses ActionPush type 3 and typeof undefined === 'undefined'. Confidence: confirmed by running built compiler.",
+  "status": "open",
+  "effort": "default",
+  "priority": "high",
+  "created_at": "2026-07-02T01:13:36Z",
+  "updated_at": "2026-07-02T01:13:36Z"
+}

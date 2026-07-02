@@ -1,0 +1,10 @@
+{
+  "id": "1390-1vdgcy-ui-collab-concurrent-class-editing-can-drop-a-re",
+  "title": "UI/collab: concurrent class editing can drop a remote peer's .as class",
+  "description": "packages/authoring-ui/src/ClassesPanel.tsx. When a remote peer edits/creates a DIFFERENT class while the local user is typing, doc.asClasses identity changes but the re-hydrate effect early-returns because pendingEditRef.current is true (:214-232) \u2014 it adopts the incoming reference WITHOUT mirroring the remote class into the local OPFS VFS. Then the local debounced syncToDoc (:313-323) runs syncDocFromVfs(docRef.current, vfs), which reads the VFS (still missing the remote class) and produces a doc that OMITS the peer's class; that doc is pushed back through the binding, deleting the peer's class for everyone. Outside the task-1317 solo cases. Fix: in syncDocFromVfs/the debounced reconcile only update/add classes present in the VFS and never delete a doc class the VFS didn't originate unless it was a local VFS remove (track via vfsOpInFlightRef); or re-hydrate the remote class into the VFS before reconciling even when an edit is pending. Confidence: needs-repro (concurrent class edits in a live session).",
+  "status": "open",
+  "effort": "default",
+  "priority": "medium",
+  "created_at": "2026-07-02T01:15:28Z",
+  "updated_at": "2026-07-02T01:15:28Z"
+}
