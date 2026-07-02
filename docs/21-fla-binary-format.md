@@ -927,6 +927,38 @@ if (>= F8):
 A pre-Flash-8 stroke is ten bytes, with no cap, join, or miter fields and no trailing fill.
 Adding 0x8000 to `styleParam2` selects sharp corners from MX onward.
 
+#### Non-solid stroke styles (`styleParam1` / `styleParam2`)
+
+For a plain solid stroke both parameter words are 0. Dashed/dotted/ragged/stippled/hatched
+strokes pack their parameters here. The codec (`fla/stroke-style.ts`
+`decodeStrokeStyle`/`encodeStrokeStyle`, read from `readLineStyle`, written from
+`writeLineStyle`) uses the byte-verified layout from JPEXS flacomdoc
+(`TimelineConverter.java` / `FlaWriter.writeStrokeBegin`):
+
+| Style   | Selection / packing                                                                 |
+|---------|--------------------------------------------------------------------------------------|
+| solid   | `styleParam1 = 0`, `styleParam2 = 0`                                                  |
+| dashed  | `styleParam1 = dashLen*20`, `styleParam2 = gapLen*20` (only style using styleParam1)  |
+| dotted  | `styleParam2 = 0x10 * round(dotSpace*10) + 0x02`                                      |
+| ragged  | `styleParam2 = 0x08*pattern + 0x40*waveHeight + 0x100*waveLength + 0x03`              |
+| stipple | `styleParam2 = 0x08*dotSize + 0x20*variation + 0x80*density + 0x04`                   |
+| hatched | `styleParam2 = 0x08*thickness + 0x20*space + 0x200*jiggle + 0x80*rotate + 0x800*curve + 0x2000*length + 0x05` |
+
+The low three bits of `styleParam2` are the style selector (2=dotted, 3=ragged, 4=stipple,
+5=hatched); a non-zero `styleParam1` marks a dashed stroke; both words 0 is solid. The
+0x8000 sharp-corners flag is masked off on read (the editor model has no sharp-corner field)
+and never set on write.
+
+Caveat: the editor model's enum option lists do not line up one-for-one with Flash 8's real
+XFL option lists for the multi-choice ragged/stipple/hatch sub-fields, so each model enum is
+packed by its *ordinal position* into flacomdoc's exact bit field. Read is the exact inverse
+of write (round-trip is exact) and the selector bits + bit positions match flacomdoc; only
+the enum-value↔ordinal correspondence for those sub-fields is unverified against a real
+Flash 8 fixture. An out-of-range sub-field decoded from a real file is clamped to the model's
+first option so an authored non-solid stroke still imports as the correct style *type* rather
+than silently reverting to solid. Numeric sub-fields (dash/dot spacing, in twips) are
+faithful to flacomdoc's encoding.
+
 ### 12.3 Edge stream
 
 Each edge record begins with a type byte, an optional style change, and then the edge's

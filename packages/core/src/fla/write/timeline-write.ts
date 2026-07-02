@@ -47,6 +47,7 @@ import {
   type WMatrix,
 } from "./carchive-write.js";
 import { PAGE_FRAME_BODY, PAGE_TAIL } from "./empty-templates.js";
+import { encodeStrokeStyle } from "../stroke-style.js";
 
 /**
  * Deterministic frameId stamped into the big-endian frameId field of an empty
@@ -1100,11 +1101,18 @@ const JOIN_BYTE: Record<string, number> = { round: 0, bevel: 1, miter: 2 };
 const SCALE_MODE_BYTE: Record<string, number> = { normal: 0, horizontal: 1, vertical: 2, none: 3 };
 
 function writeLineStyle(w: ByteWriter, s: Stroke): void {
-  // caps = true layout: RGBA, u16 width twips, u32 styleParams, pixelHinting,
-  // scaleMode, capStyle, joinStyle, miterFrac, miterInt, then a full fill style.
+  // caps = true layout: RGBA, u16 width twips, u16 styleParam1, u16 styleParam2,
+  // pixelHinting, scaleMode, capStyle, joinStyle, miterFrac, miterInt, then a full
+  // fill style.
   writeRGBA(w, s.color);
   w.u16(Math.round((s.width || 0) * 20));
-  w.u32(0); // styleParam1 + styleParam2
+  // styleParam1 + styleParam2 (§12.2): non-solid stroke style (dashed/dotted/
+  // ragged/stippled/hatched). A solid/undefined style encodes to {0, 0}, keeping
+  // the bytes identical to the prior solid-only writer (empty-doc byte gates).
+  // Exact inverse of the decodeStrokeStyle() the importer's readLineStyle uses.
+  const { param1, param2 } = encodeStrokeStyle(s.style);
+  w.u16(param1);
+  w.u16(param2);
   w.u8(s.pixelHinting ? 1 : 0);
   w.u8(SCALE_MODE_BYTE[s.strokeScaleMode ?? "normal"] ?? 0);
   w.u8(CAP_BYTE[s.caps] ?? 0);

@@ -51,6 +51,8 @@
  */
 
 import type { TweenEaseType } from "../model/types.js";
+import type { StrokeStyle } from "../engine/types.js";
+import { decodeStrokeStyle } from "./stroke-style.js";
 
 // ---------------------------------------------------------------------------
 // Parsed-data types (intermediate representation, converted to the document
@@ -125,6 +127,11 @@ export interface Fla8Stroke {
    *   none       — stroke does not scale (NoHScale + NoVScale in SWF)
    */
   readonly scaleMode: "normal" | "horizontal" | "vertical" | "none";
+  /**
+   * Non-solid stroke style (dashed/dotted/ragged/stippled/hatched) decoded from
+   * the §12.2 styleParam1/styleParam2 words. Absent for a plain solid stroke.
+   */
+  readonly style?: StrokeStyle;
 }
 
 export interface Fla8Edge {
@@ -1569,7 +1576,11 @@ function readLineStyle(ctx: ParseCtx, caps: boolean): Fla8Stroke {
   //   then a full fill style (solid for plain strokes)
   const color = readColorRGBA(r);
   const widthTwips = r.u16();
-  r.skip(4); // styleParam1 + styleParam2 (dash/dot/ragged parameters)
+  // styleParam1 + styleParam2 (§12.2): dash/dot/ragged/stipple/hatch parameters.
+  // Decoded into the model StrokeStyle (was previously skipped, losing the style).
+  const styleParam1 = r.u16();
+  const styleParam2 = r.u16();
+  const style = decodeStrokeStyle(styleParam1, styleParam2);
   let cap: Fla8Stroke["cap"] = "round";
   let join: Fla8Stroke["join"] = "round";
   let miterLimit = 3;
@@ -1594,7 +1605,16 @@ function readLineStyle(ctx: ParseCtx, caps: boolean): Fla8Stroke {
     const fill = readFillStyle(ctx, caps);
     if (fill.kind === "solid") finalColor = fill.color;
   }
-  return { color: finalColor, width: widthTwips / 20, cap, join, miterLimit, pixelHinting, scaleMode };
+  return {
+    color: finalColor,
+    width: widthTwips / 20,
+    cap,
+    join,
+    miterLimit,
+    pixelHinting,
+    scaleMode,
+    ...(style ? { style } : {}),
+  };
 }
 
 function readCoordDelta(r: Reader, type: number): [number, number] {

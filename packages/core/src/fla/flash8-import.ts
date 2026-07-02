@@ -176,6 +176,7 @@ export function strokeFromFla8(s: Fla8Stroke): Stroke {
       miterLimit: s.miterLimit,
       ...(s.pixelHinting ? { pixelHinting: true } : {}),
       ...(s.scaleMode && s.scaleMode !== "normal" ? { strokeScaleMode: s.scaleMode } : {}),
+      ...(s.style ? { style: s.style } : {}),
     };
   }
   return {
@@ -188,6 +189,7 @@ export function strokeFromFla8(s: Fla8Stroke): Stroke {
     miterLimit: s.miterLimit,
     ...(s.pixelHinting ? { pixelHinting: true } : {}),
     ...(s.scaleMode && s.scaleMode !== "normal" ? { strokeScaleMode: s.scaleMode } : {}),
+    ...(s.style ? { style: s.style } : {}),
   };
 }
 
