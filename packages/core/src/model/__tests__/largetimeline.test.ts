@@ -25,6 +25,38 @@ function makeLargeLayer(frameCount: number, keyframeEvery: number = 24): Layer {
   };
 }
 
+/**
+ * Robust timing helper for perf-guard tests.
+ *
+ * These operations are all O(n) linear scans that take microseconds in
+ * isolation. A single un-warmed `performance.now()` sample is dominated by JIT
+ * warmup and — under parallel CI/agent load — by scheduler noise (an early
+ * version of this suite asserted a bare `< 5ms` and intermittently measured
+ * 10.3ms while passing in isolation). We instead JIT-warm the callback and take
+ * the MEDIAN of N samples, which discards transient scheduling spikes. The
+ * ceilings are deliberately generous: their only job is to catch a real
+ * algorithmic regression (an O(n²) blowup on a ~10k-frame layer would cost
+ * hundreds of ms to seconds — orders of magnitude over these ceilings), not to
+ * benchmark absolute speed.
+ */
+function medianTimeMs(
+  fn: () => void,
+  { warmup = 5, runs = 15 }: { warmup?: number; runs?: number } = {},
+): number {
+  for (let i = 0; i < warmup; i++) fn();
+  const samples: number[] = [];
+  for (let i = 0; i < runs; i++) {
+    const start = performance.now();
+    fn();
+    samples.push(performance.now() - start);
+  }
+  samples.sort((a, b) => a - b);
+  const mid = Math.floor(samples.length / 2);
+  return samples.length % 2 === 0
+    ? (samples[mid - 1] + samples[mid]) / 2
+    : samples[mid];
+}
+
 describe("Large timeline performance", () => {
   it("creates 9999 frame layer correctly", () => {
     const layer = makeLargeLayer(9999);
@@ -32,23 +64,28 @@ describe("Large timeline performance", () => {
     expect(layer.frameCount).toBe(9999);
   });
 
-  it("getAllKeyframes on 9999-frame layer is fast (< 50ms)", () => {
+  it("getAllKeyframes on 9999-frame layer stays O(n) (median well under ceiling)", () => {
     const layer = makeLargeLayer(9999, 24);
-    const start = performance.now();
-    const keys = getAllKeyframes(layer);
-    const elapsed = performance.now() - start;
+    const elapsed = medianTimeMs(() => {
+      getAllKeyframes(layer);
+    });
+    // Generous ceiling: guards against an O(n^2) regression without flaking
+    // under concurrent load. A quadratic scan of ~10k frames would be >>50ms.
     expect(elapsed).toBeLessThan(50);
     // Every 24th frame is a keyframe
-    expect(keys.length).toBeGreaterThan(400);
+    expect(getAllKeyframes(layer).length).toBeGreaterThan(400);
   });
 
-  it("getKeyframeAt on 9999-frame layer is fast (< 5ms)", () => {
+  it("getKeyframeAt on 9999-frame layer stays O(n) (median well under ceiling)", () => {
     const layer = makeLargeLayer(9999, 24);
-    const start = performance.now();
-    const kf = getKeyframeAt(layer, 9998);
-    const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(5);
-    expect(kf).toBeDefined();
+    const elapsed = medianTimeMs(() => {
+      getKeyframeAt(layer, 9998);
+    });
+    // A single linear scan of ~10k frames is microseconds; the ceiling exists
+    // only to catch a real O(n^2) blowup (which would cost hundreds of ms+),
+    // so it is generous enough to never fail on scheduler noise.
+    expect(elapsed).toBeLessThan(50);
+    expect(getKeyframeAt(layer, 9998)).toBeDefined();
   });
 
   it("getKeyframeAt(0) returns first keyframe", () => {
@@ -71,13 +108,14 @@ describe("Large timeline performance", () => {
     expect(keys.length).toBe(Math.floor(9998 / 24) + 1);
   });
 
-  it("copyFrames of large range is fast (< 50ms)", () => {
+  it("copyFrames of large range stays O(n) (median well under ceiling)", () => {
     const layer = makeLargeLayer(9999);
-    const start = performance.now();
-    const copy = copyFrames(layer, 0, 9998);
-    const elapsed = performance.now() - start;
+    const elapsed = medianTimeMs(() => {
+      copyFrames(layer, 0, 9998);
+    });
+    // Generous ceiling to catch an O(n^2) regression, robust to CI/agent load.
     expect(elapsed).toBeLessThan(50);
-    expect(copy).toHaveLength(9999);
+    expect(copyFrames(layer, 0, 9998)).toHaveLength(9999);
   });
 
   it("layer with 9999 frames: last frame has correct index", () => {
