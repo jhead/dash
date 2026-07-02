@@ -17,6 +17,9 @@ import type {
   Frame,
   SoundLinkage,
   FlaSwfBlob,
+  Guide,
+  GridSettings,
+  RulerUnits,
 } from "../model/types.js";
 import type {
   ButtonHandler,
@@ -33,7 +36,7 @@ import type {
   TextDisplayObject,
 } from "../engine/types.js";
 import type { AdjustColorFilter, ConvolutionFilter, FlashFilter } from "../engine/filters.js";
-import { createDocument, createDocumentProperties } from "../model/document.js";
+import { createDocument, createDocumentProperties, createGridSettings } from "../model/document.js";
 import { createScene } from "../model/scene.js";
 import { createFrame, createLayer } from "../model/timeline.js";
 import { createSymbol, createSound, createBitmap, createVideo, createFont, createSymbolLinkage, createLibraryFolder } from "../model/library.js";
@@ -1281,6 +1284,18 @@ const LAYER_TYPES: Record<number, LayerType> = {
   5: "masked",
 };
 
+// §8.4 rulerUnitType -> model RulerUnits. The binary distinguishes fractional
+// (0) from decimal (1) inches; the model has a single "inches", so both map to
+// it. Anything unrecognised falls back to "px".
+const RULER_UNIT_TYPES: Record<number, RulerUnits> = {
+  0: "inches",
+  1: "inches",
+  2: "points",
+  3: "cm",
+  4: "mm",
+  5: "px",
+};
+
 const SOUND_SYNC_MODES: Record<number, SoundLinkage["syncMode"]> = {
   0: "event",
   1: "start",
@@ -1376,11 +1391,15 @@ function convertLayer(
     frameIndex += f.duration;
   }
   const frameCount = Math.max(1, frameIndex);
+  // The binary stores a row-height MULTIPLIER (1 = the base 20 px row); the
+  // model carries the row height in pixels (docs/21 §10.2).
+  const height = Math.max(1, l.heightMultiplier) * 20;
   return createLayer(l.name || `Layer ${index + 1}`, LAYER_TYPES[l.layerType] ?? "normal", {
     visible: !l.hidden,
     locked: l.locked,
     outlineMode: l.outlineMode,
     outlineColor: l.outlineColor ? toHex(l.outlineColor) : "#0000ff",
+    height,
     frames: frames.length > 0 ? frames : [createFrame(0)],
     frameCount,
   });
@@ -2173,6 +2192,23 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     }
   }
 
+  // Ruler guides are stored per-timeline in the binary (each CPicPage tail),
+  // but the model carries a single doc-level guide list. Union the guides read
+  // from every scene, de-duplicating by orientation + rounded position so two
+  // scenes that share the authored default guides do not double them up.
+  const guideAcc: Guide[] = [];
+  const guideSeen = new Set<string>();
+  const addGuides = (parsed: { guides: { direction: number; valueTwips: number }[] }): void => {
+    for (const g of parsed.guides) {
+      const orientation: Guide["orientation"] = g.direction === 1 ? "vertical" : "horizontal";
+      const position = g.valueTwips / 20;
+      const key = `${orientation}:${Math.round(position * 100)}`;
+      if (guideSeen.has(key)) continue;
+      guideSeen.add(key);
+      guideAcc.push({ id: `guide-${orientation}-${guideAcc.length}`, orientation, position });
+    }
+  };
+
   const scenes: Scene[] = [];
   for (let i = 0; i < orderedPages.length; i++) {
     const p = orderedPages[i]!;
@@ -2181,6 +2217,7 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
     try {
       const parsedTimeline = parseFla8Timeline(p.bytes);
       collectSwfBlobs(parsedTimeline, i, flaSwfBlobs);
+      addGuides(parsedTimeline);
       timeline = convertTimeline(
         parsedTimeline,
         symbolIdByIndex,
@@ -2246,11 +2283,31 @@ export function buildFla8Document(streams: Map<string, Uint8Array>): FlashDocume
   }
 
   // --- document properties -----------------------------------------------------
+  // Grid settings + ruler units come from the §8.4 stage block; guides are the
+  // union collected above. Fall back to the model defaults when a field could
+  // not be decoded.
+  const gridOverrides: { -readonly [K in keyof GridSettings]?: GridSettings[K] } = {};
+  if (contents.gridVisible !== null) gridOverrides.showGrid = contents.gridVisible;
+  if (contents.gridSpacingPx !== null && contents.gridSpacingPx > 0) {
+    gridOverrides.gridWidth = contents.gridSpacingPx;
+    gridOverrides.gridHeight = contents.gridSpacingPx;
+  }
+  if (contents.gridColor !== null) gridOverrides.gridColor = toHex(contents.gridColor);
+  const grid = createGridSettings(gridOverrides);
+
+  const rulerUnits: RulerUnits =
+    contents.rulerUnitType !== null
+      ? (RULER_UNIT_TYPES[contents.rulerUnitType] ?? "px")
+      : "px";
+
   const properties = createDocumentProperties({
     width: contents.width ?? 550,
     height: contents.height ?? 400,
     frameRate: contents.frameRate ?? 12,
     backgroundColor: contents.backgroundColor ? toHex(contents.backgroundColor) : "#ffffff",
+    rulerUnits,
+    grid,
+    guides: guideAcc,
   });
 
   return createDocument({

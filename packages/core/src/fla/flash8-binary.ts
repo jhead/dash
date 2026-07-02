@@ -537,6 +537,12 @@ export interface Fla8Layer {
   /** Whether the layer is shown as outlines in the authoring tool */
   readonly outlineMode: boolean;
   readonly outlineColor: Fla8Color | null;
+  /**
+   * Row-height multiplier from the CPicLayer F4+ properties block (docs/21
+   * §10.2 `heightMultiplier`).  The panel row height in pixels is this value
+   * times the base 20 px row (a normal layer stores 1 → 20 px).  Defaults to 1.
+   */
+  readonly heightMultiplier: number;
   readonly frames: Fla8Frame[];
   /**
    * Raw 2-byte trailer field that follows `layerType` (docs/21 §10.2
@@ -558,8 +564,21 @@ export interface Fla8Layer {
   readonly ownObjectIndex: number;
 }
 
+/**
+ * A ruler guide read from a CPicPage tail (docs/21 §10.1).  Guides are stored
+ * per-timeline in the binary; the doc-level model unions them on import.
+ */
+export interface Fla8Guide {
+  /** 0 = horizontal guide (a y-position), 1 = vertical guide (an x-position). */
+  readonly direction: number;
+  /** Position in twips (20 units per pixel). */
+  readonly valueTwips: number;
+}
+
 export interface Fla8Timeline {
   readonly layers: Fla8Layer[];
+  /** Ruler guides carried in the CPicPage tail (docs/21 §10.1). */
+  readonly guides: Fla8Guide[];
 }
 
 export interface Fla8SymbolInfo {
@@ -674,6 +693,18 @@ export interface Fla8ContentsInfo {
   readonly height: number | null;
   readonly frameRate: number | null;
   readonly backgroundColor: Fla8Color | null;
+  /**
+   * Ruler-units descriptor from the §8.4 stage block:
+   * 0 inches, 1 decimal inches, 2 points, 3 cm, 4 mm, 5 pixels.
+   * null when the stage block could not be located.
+   */
+  readonly rulerUnitType: number | null;
+  /** Grid visibility (`gridVisible ? 3 : 0` byte at @+2 of the stage block). */
+  readonly gridVisible: boolean | null;
+  /** Grid spacing in pixels (§8.4 `gridSpacingX*20` at @+21, divided by 20). */
+  readonly gridSpacingPx: number | null;
+  /** Grid line color (§8.4 grid RGB at @+60). */
+  readonly gridColor: Fla8Color | null;
   /** page stream name -> scene display name */
   readonly sceneNames: Map<string, string>;
   /** symbol stream number -> info */
@@ -1103,7 +1134,7 @@ interface CPicObjBase {
 }
 
 type ParsedNode =
-  | { cls: "CPicPage"; layers: ParsedLayerNode[] }
+  | { cls: "CPicPage"; layers: ParsedLayerNode[]; guides: Fla8Guide[] }
   | ParsedLayerNode
   | ParsedFrameNode
   | { cls: "element"; element: Fla8Element }
@@ -1258,6 +1289,11 @@ function deserializeClass(name: string, ctx: ParseCtx): ParsedNode {
 function readCPicPage(ctx: ParseCtx): ParsedNode {
   const { r } = ctx;
   const base = readCPicObjBase(ctx);
+  // docs/21 §10.1: the page tail closes with `u32 guideCount` followed by
+  // `{u32 direction; u32 valueTwips}[guideCount]` (direction 0 horizontal,
+  // 1 vertical). Decode the guide array so per-scene ruler guides survive
+  // import (they are unioned into the doc-level model by buildFla8Document).
+  const guides: Fla8Guide[] = [];
   try {
     const ps = r.u8();
     if (ps !== 4) r.skip(2);
@@ -1265,7 +1301,13 @@ function readCPicPage(ctx: ParseCtx): ParsedNode {
     if (ps >= 7) r.skip(4);
     if (ps >= 3) {
       const cnt = r.u32();
-      if (cnt > 0 && cnt < 10000) r.skip(cnt * 8);
+      if (cnt > 0 && cnt < 10000) {
+        for (let i = 0; i < cnt; i++) {
+          const direction = r.u32();
+          const valueTwips = r.s32();
+          guides.push({ direction, valueTwips });
+        }
+      }
     }
   } catch (err) {
     if (!(err instanceof FlaEofError)) throw err;
@@ -1274,7 +1316,7 @@ function readCPicPage(ctx: ParseCtx): ParsedNode {
   for (const c of base.children) {
     if (c.cls === "CPicLayer") layers.push(c);
   }
-  return { cls: "CPicPage", layers };
+  return { cls: "CPicPage", layers, guides };
 }
 
 // --- CPicLayer ---------------------------------------------------------------
@@ -1293,6 +1335,7 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
   let locked = false;
   let outlineMode = false;
   let outlineColor: Fla8Color | null = null;
+  let heightMultiplier = 1;
 
   try {
     const ls = r.u8();
@@ -1305,14 +1348,17 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
     } else {
       // F4+ layout (verified against flacomdoc writeLayerContents):
       // isSelected, hidden, locked, u32 sentinel(FFFFFFFF), RGBA outline color,
-      // showOutlines, 7 bytes (heightMultiplier at [3]), layerType
+      // showOutlines, 00 00 00, heightMultiplier, 00 00 00, layerType
       r.skip(1); // isSelected
       hidden = r.u8() !== 0;
       locked = r.u8() !== 0;
       r.skip(4); // 0xFFFFFFFF sentinel
       outlineColor = readColorRGBA(r);
       outlineMode = r.u8() !== 0; // showOutlines flag
-      r.skip(7); // 00 00 00 heightMultiplier 00 00 00
+      r.skip(3); // 00 00 00
+      const hm = r.u8(); // heightMultiplier (row-height multiplier)
+      if (hm >= 1 && hm <= 64) heightMultiplier = hm;
+      r.skip(3); // 00 00 00
       layerType = r.u8();
     }
   } catch (err) {
@@ -1350,6 +1396,7 @@ function readCPicLayer(ctx: ParseCtx): ParsedLayerNode {
       locked,
       outlineMode,
       outlineColor,
+      heightMultiplier,
       frames,
       parentLayerRef,
       ownObjectIndex,
@@ -3495,7 +3542,7 @@ export function parseFla8Timeline(bytes: Uint8Array): Fla8Timeline {
   }
   const page = readCPicPage(ctx);
   if (page.cls !== "CPicPage") throw new Error("internal: root did not parse as a page");
-  return { layers: page.layers.map((l) => l.layer) };
+  return { layers: page.layers.map((l) => l.layer), guides: page.guides };
 }
 
 // ---------------------------------------------------------------------------
@@ -3585,12 +3632,27 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     height: number | null;
     frameRate: number | null;
     backgroundColor: Fla8Color | null;
-  } = { width: null, height: null, frameRate: null, backgroundColor: null };
+    rulerUnitType: number | null;
+    gridVisible: boolean | null;
+    gridSpacingPx: number | null;
+    gridColor: Fla8Color | null;
+  } = {
+    width: null,
+    height: null,
+    frameRate: null,
+    backgroundColor: null,
+    rulerUnitType: null,
+    gridVisible: null,
+    gridSpacingPx: null,
+    gridColor: null,
+  };
 
-  // -- background color + frame rate -----------------------------------------
-  // flacomdoc writes a fixed run ending in:
+  // -- background color + frame rate + grid/ruler ----------------------------
+  // The §8.4 stage block is a fixed run whose tail is:
   //   bgR bgG bgB FF gridR gridG gridB FF 00 fpsFrac fpsInt 00 00 00 03 B4 00 00 00
-  // Anchor on "03 B4 00 00 00" and read backwards.
+  // Anchor on "03 B4 00 00 00" (block offset @+70) and read fields relative to
+  // it. Block-relative offsets (docs/21 §8.4): rulerUnitType @+0, gridVisible
+  // @+2, gridSpacingX*20 @+21, background @+56, grid color @+60, fps @+65..66.
   let anchor = -1;
   {
     anchor = findBytes(bytes, [0x03, 0xb4, 0x00, 0x00, 0x00], 0);
@@ -3606,6 +3668,30 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
           b: bytes[anchor - 12]!,
           a: 255,
         };
+        // The grid color (@+60), ruler-units (@+0), grid-visible (@+2), and
+        // grid-spacing (@+21) fields all live at or before the middle of the
+        // stage block, so they need the anchor to be at least 70 bytes in. A
+        // crafted/truncated Contents that carries only the bg/fps tail still
+        // recovers fps/bg above.
+        if (anchor >= 70) {
+          // Grid color at @+60 (= anchor-10..-8).
+          info.gridColor = {
+            r: bytes[anchor - 10]!,
+            g: bytes[anchor - 9]!,
+            b: bytes[anchor - 8]!,
+            a: 255,
+          };
+          // Ruler-units descriptor at @+0 (= anchor-70).
+          const ru = bytes[anchor - 70]!;
+          if (ru <= 5) info.rulerUnitType = ru;
+          // gridVisible byte at @+2 (= anchor-68) is 3 when visible, 0 otherwise.
+          info.gridVisible = bytes[anchor - 68]! !== 0;
+          // gridSpacingX*20 (u16) at @+21 (= anchor-49).
+          const gs20 = bytes[anchor - 49]! | (bytes[anchor - 48]! << 8);
+          if (gs20 > 0 && gs20 % 20 === 0 && gs20 <= 8192 * 20) {
+            info.gridSpacingPx = gs20 / 20;
+          }
+        }
       }
     }
   }
@@ -4158,6 +4244,10 @@ export function parseFla8Contents(bytes: Uint8Array): Fla8ContentsInfo {
     height: info.height,
     frameRate: info.frameRate,
     backgroundColor: info.backgroundColor,
+    rulerUnitType: info.rulerUnitType,
+    gridVisible: info.gridVisible,
+    gridSpacingPx: info.gridSpacingPx,
+    gridColor: info.gridColor,
     sceneNames,
     symbols,
     sounds,

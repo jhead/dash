@@ -493,6 +493,12 @@ records, the QuickTime audio settings, the folder list of section 8.8, the font 
 section 8.9, the ruler guides, the document accessibility data of section 19.2, and a version and
 metadata trailer.
 
+The importer decodes this block anchor-relative to the `03 B4 00 00 00` marker at `@+70`: the
+ruler-units descriptor (`@+0`), the grid-visible byte (`@+2`), the grid spacing (`@+21`, twips),
+the background color (`@+56`), and the grid color (`@+60`) are read back into
+`doc.properties.rulerUnits` and `doc.properties.grid`. The ruler-units type maps to the model's
+`RulerUnits` (both inches variants collapse to `inches`).
+
 ### 8.5 Linkage
 
 `AsLinkage` carries a library item's ActionScript export and runtime-sharing settings and is
@@ -621,6 +627,13 @@ if (>= F5):
   u32 guideCount
   guide[guideCount] { u32 direction; u32 valueTwips }   // direction 0 horizontal, 1 vertical
 ```
+
+Guides are stored per timeline (each scene's `CPicPage`, and each symbol's), so the importer reads
+every page's guide array and **unions** them into the doc-level `doc.properties.guides`
+(de-duplicated by orientation + position, since the model has no per-timeline guide list). Each
+`valueTwips` is divided by 20 for the model's pixel position; `direction` 0 → horizontal, 1 →
+vertical. The heightMultiplier of section 10.2 (`@+3` of the layer's `00 00 00 hm 00 00 00` run) is
+read into the model's per-layer row height (`height = heightMultiplier * 20` px).
 
 ### 10.2 Layer record
 
