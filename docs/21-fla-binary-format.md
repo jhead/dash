@@ -665,6 +665,12 @@ if (>= F5):
 constant; this is what byte-matches `flash8-empty.fla` (`empty-bytematch.test.ts`). The importer
 does not read `nextLayerId` into the model, so deriving it never affects real-FLA round-trips.
 
+`currentFrame` is the authoring playhead position (1-based) for this timeline. The writer emits it
+**model-derived** as an explicit `u16` (= 1) rather than baked into the tail template blob: the
+model carries no persisted per-timeline playhead, so a freshly-opened timeline sits on frame 1 —
+which is also the genuine empty fixture's value, so the byte-match holds. Like `nextLayerId`, the
+importer does not read it back (task 1414).
+
 Guides are stored per timeline (each scene's `CPicPage`, and each symbol's), so the importer reads
 every page's guide array and **unions** them into the doc-level `doc.properties.guides`
 (de-duplicated by orientation + position, since the model has no per-timeline guide list). Each
@@ -709,6 +715,12 @@ if (>= MX):
 A layer's parent reference, and the ancestor chain links for nested normal layers, are the running
 object indices of section 5.2 for the parent and ancestor layers, not their positions in the layer
 array. The pre-Flash-5 mask back-link block does not appear in Flash 8.
+
+`isSelected` is the layer's authoring **selection** state — it is unrelated to lock/visibility. The
+model carries no per-layer selection, so the writer emits `1` for the topmost panel layer (li=0)
+and `0` for the rest, matching a freshly-opened doc (whose sole Layer 1 is selected) and the empty
+fixture; the importer does not read it back (task 1414 — the earlier `locked || !visible ? 0 : 1`
+heuristic conflated selection with lock/visibility, e.g. wrongly deselecting a locked layer).
 
 ---
 
@@ -1155,6 +1167,14 @@ characters                               // UTF-16LE in unicode mode
 ```
 
 When the field uses a device font the two anti-alias floats are written as eight zero bytes.
+
+The writer emits **one binary run per model run** (task 1414). A field imported with multiple
+formatting spans is carried in the model as `html: true` + `htmlText` (the Flash HTML subset from
+the importer's `buildHtmlText`); the writer parses `htmlText` back into runs so each span's
+font/size/color/bold/italic and `charPosition` (superscript/subscript) survive the save. Earlier the
+writer always emitted a SINGLE run built from the top-level style fields, flattening every span but
+the first (verified authored-data loss), and stamped `charPosition = 0` and `textVersionB = 0x01`
+unconditionally — it now writes the per-run `charPosition` and the correct `textVersionB = 0x0C`.
 
 ---
 

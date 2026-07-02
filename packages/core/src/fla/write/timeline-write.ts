@@ -153,10 +153,14 @@ function writeCPicPage(
   w.u8(0x04).u8(0x00);
   // Children: layers BOTTOM-TO-TOP. The model stores top-to-bottom (li=0 = top),
   // so reverse for the binary (§9).
+  // Flash selects a single layer per timeline when the doc is opened; the model
+  // carries no per-layer selection state, so the topmost panel layer (li=0) is the
+  // selected one (matches a fresh Flash doc, whose sole Layer 1 is selected). §10.2.
+  const selectedLayer = timeline.layers[0];
   const bottomToTop = [...timeline.layers].reverse();
   for (const layer of bottomToTop) {
     ct.useClass(w, "CPicLayer", 1);
-    writeCPicLayer(w, ct, layer, idx, pending);
+    writeCPicLayer(w, ct, layer, idx, pending, layer === selectedLayer);
   }
   // CPicPage tail (§10.1). Byte-matches the genuine empty fixture: the null child
   // tag, sentinel registration point, F8 skip(2), pageVersionB, nextLayerId,
@@ -169,9 +173,19 @@ function writeCPicPage(
   // value 3 was wrong for one layer). Splitting the const around this field keeps
   // every other tail byte byte-exact. Not read back by the importer (the model
   // carries no nextLayerId), so real-FLA round-trips are unaffected.
+  //
+  // `currentFrame` (u16 LE at PAGE_TAIL[15], right after nextLayerId) is the
+  // authoring playhead position for this timeline. The model carries no persisted
+  // playhead, so a freshly-opened timeline sits on frame 1 (1-based) — which is what
+  // the genuine empty fixture stores. Emit it MODEL-DERIVED (an explicit u16) rather
+  // than baked into the opaque template blob, so it is a clear, valid field instead
+  // of a copied fixture constant. Clamped to >= 1 (frame 1 always exists). Not read
+  // back by the importer, so real-FLA round-trips are unaffected.
+  const currentFrame = 1; // fresh-timeline playhead (frame 1); model has no persisted playhead
   w.bytes(PAGE_TAIL.subarray(0, 13)); // …through pageVersionB 0x07
   w.u16(timeline.layers.length + 1); // nextLayerId (model-derived)
-  w.bytes(PAGE_TAIL.subarray(15)); // currentFrame, guideCount, trailing skip
+  w.u16(currentFrame); // currentFrame (model-derived; empty-fixture value is 1)
+  w.bytes(PAGE_TAIL.subarray(17)); // u8 0x00, skip(3), guideCount, trailing
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +207,7 @@ function writeCPicLayer(
   layer: Layer,
   idx: WriteIndex,
   pending: PendingSwfBlobs,
+  isSelected: boolean,
 ): void {
   // §10.2: u8 layerVersion = 0x04, u8 0x00.
   w.u8(0x04).u8(0x00);
@@ -218,7 +233,13 @@ function writeCPicLayer(
   w.u8(0x0b);
   writeBomString(w, layer.name);
   // F4+ properties block. Defaults match a genuine new layer.
-  w.u8(layer.locked || !layer.visible ? 0 : 1); // isSelected (a fresh layer is selected)
+  // isSelected (§10.2) is the layer's authoring SELECTION state — unrelated to
+  // lock/visibility (the old `locked || !visible ? 0 : 1` heuristic conflated them,
+  // e.g. wrongly marking a locked layer unselected). The model carries no selection
+  // state, so the topmost layer (li=0) is the selected one (a fresh Flash doc opens
+  // with its sole Layer 1 selected — byte-matches flash8-empty.fla). Not read back
+  // by the importer, so real-FLA round-trips are unaffected.
+  w.u8(isSelected ? 1 : 0); // isSelected
   w.u8(layer.visible ? 0 : 1); // hidden
   w.u8(layer.locked ? 1 : 0); // locked
   w.u32(0xffffffff); // skip(4) sentinel
@@ -1244,11 +1265,18 @@ function writeCPicText(w: ByteWriter, ct: ClassTable, obj: TextDisplayObject): v
   // embedFlag & 0x20 not set.
   // ts >= 0x0e not used.
 
-  // Runs. embedFlag & 0x40 not set => loop of (u16 charCount, run, chars).
-  if (obj.text.length > 0) {
-    w.u16(obj.text.length);
-    writeTextRunFields(w, obj, ts);
-    for (let i = 0; i < obj.text.length; i++) w.u16(obj.text.charCodeAt(i)); // unicode chars
+  // Runs (§17.3). embedFlag & 0x40 not set => a loop of (u16 charCount, run fields,
+  // chars) terminated by a u16 0. A field imported from a real FLA with multiple
+  // formatting spans is carried in the model as `html`/`htmlText` (task 0871); emit
+  // ONE binary run per model run so each span's font/size/color/bold/italic/charPos
+  // survives the save (was: always collapsed to a SINGLE run built from the
+  // top-level fontFamily/fontSize/color/bold/italic — verified authored-data loss).
+  const runs = textRunsToEmit(obj);
+  for (const run of runs) {
+    if (run.text.length === 0) continue; // a 0 charCount would terminate the loop early
+    w.u16(run.text.length);
+    writeTextRunFields(w, obj, ts, run);
+    for (let i = 0; i < run.text.length; i++) w.u16(run.text.charCodeAt(i)); // unicode chars
   }
   w.u16(0); // charCount = 0 terminates the run loop.
 
@@ -1267,20 +1295,133 @@ function writeCPicText(w: ByteWriter, ct: ClassTable, obj: TextDisplayObject): v
   w.u16(0); // trailing
 }
 
-/** One text run's formatting block (§15.2). Mirrors `readTextRunFields` (ts=0x0d). */
-function writeTextRunFields(w: ByteWriter, obj: TextDisplayObject, ts: number): void {
+/**
+ * The per-run style that varies between formatting spans of one text field. The
+ * paragraph-level fields (align, leading, indent, margins, letterSpacing, link,
+ * orientation, antiAlias) are taken from the top-level {@link TextDisplayObject};
+ * only these vary per run (they are exactly what `buildHtmlText` captures when the
+ * importer flattens multi-run text into `html`/`htmlText`).
+ */
+interface EmitTextRun {
+  text: string;
+  fontFamily: string;
+  fontSize: number;
+  color: WColor;
+  bold: boolean;
+  italic: boolean;
+  /** 0 = normal, 1 = superscript, 2 = subscript (charPos byte, §17.3). */
+  characterPosition: 0 | 1 | 2;
+}
+
+/**
+ * Resolve the formatting runs to serialize for a text field. A multi-run field is
+ * carried in the model as `html: true` + `htmlText` (the Flash HTML subset
+ * `buildHtmlText` emits on import); parse it back into per-run styling so each span
+ * round-trips. Everything else is a single run built from the top-level style
+ * fields (including the top-level `characterPosition`, which was previously written
+ * as 0 unconditionally).
+ */
+function textRunsToEmit(obj: TextDisplayObject): EmitTextRun[] {
+  if (obj.html && obj.htmlText && obj.htmlText.length > 0) {
+    const parsed = parseHtmlTextRuns(obj.htmlText, obj);
+    if (parsed.length > 0) return parsed;
+  }
+  if (obj.text.length === 0) return [];
+  return [
+    {
+      text: obj.text,
+      fontFamily: obj.fontFamily || "Arial",
+      fontSize: obj.fontSize,
+      color: { r: obj.color.r, g: obj.color.g, b: obj.color.b, a: obj.color.a },
+      bold: obj.bold,
+      italic: obj.italic,
+      characterPosition: obj.characterPosition ?? 0,
+    },
+  ];
+}
+
+/**
+ * Parse the Flash HTML subset produced by the importer's `buildHtmlText` back into
+ * per-run styling. Each run is a `<font face size color>` wrapper optionally
+ * enclosing `<b>`/`<i>`/`<sup>`/`<sub>`. A field with no `<font>` wrappers (hand-
+ * authored / degenerate HTML) becomes a single run using the top-level style.
+ */
+function parseHtmlTextRuns(html: string, obj: TextDisplayObject): EmitTextRun[] {
+  const runs: EmitTextRun[] = [];
+  const fontRe = /<font\b([^>]*)>([\s\S]*?)<\/font>/gi;
+  let m: RegExpExecArray | null;
+  let matchedAny = false;
+  const topColor: WColor = { r: obj.color.r, g: obj.color.g, b: obj.color.b, a: obj.color.a };
+  while ((m = fontRe.exec(html)) !== null) {
+    matchedAny = true;
+    const attrs = m[1] ?? "";
+    const inner = m[2] ?? "";
+    const face = htmlAttr(attrs, "face") ?? (obj.fontFamily || "Arial");
+    const sizeStr = htmlAttr(attrs, "size");
+    const size = sizeStr ? parseFloat(sizeStr) : obj.fontSize;
+    const colorStr = htmlAttr(attrs, "color");
+    const color = colorStr ? parseHexColor(colorStr) : { ...topColor };
+    const bold = /<b\b[^>]*>/i.test(inner);
+    const italic = /<i\b[^>]*>/i.test(inner);
+    const charPos: 0 | 1 | 2 = /<sup\b[^>]*>/i.test(inner) ? 1 : /<sub\b[^>]*>/i.test(inner) ? 2 : 0;
+    const text = unescapeHtml(inner.replace(/<[^>]+>/g, ""));
+    if (text.length === 0) continue;
+    runs.push({
+      text,
+      fontFamily: face,
+      fontSize: Number.isFinite(size) && size > 0 ? size : obj.fontSize,
+      color,
+      bold,
+      italic,
+      characterPosition: charPos,
+    });
+  }
+  if (!matchedAny) {
+    const text = unescapeHtml(html.replace(/<[^>]+>/g, ""));
+    if (text.length > 0) {
+      runs.push({
+        text,
+        fontFamily: obj.fontFamily || "Arial",
+        fontSize: obj.fontSize,
+        color: { ...topColor },
+        bold: obj.bold,
+        italic: obj.italic,
+        characterPosition: obj.characterPosition ?? 0,
+      });
+    }
+  }
+  return runs;
+}
+
+/** Read a `name="value"` attribute from an HTML tag's attribute string. */
+function htmlAttr(attrs: string, name: string): string | undefined {
+  const m = new RegExp(`${name}\\s*=\\s*"([^"]*)"`, "i").exec(attrs);
+  return m ? m[1] : undefined;
+}
+
+/** Inverse of the importer's `escapeHtml` (unescape &amp; last). */
+function unescapeHtml(s: string): string {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
+/**
+ * One text run's formatting block (§17.3). Mirrors `readTextRunFields` (ts=0x0d).
+ * Per-run style (font/size/color/bold/italic/charPos) comes from `run`; the
+ * paragraph-level fields come from the top-level `obj`.
+ */
+function writeTextRunFields(w: ByteWriter, obj: TextDisplayObject, ts: number, run: EmitTextRun): void {
   const unicode = ts >= 0x0c;
-  w.u8(1); // run version
-  w.u16(Math.round(obj.fontSize * 20)); // size*20
+  w.u8(0x0c); // textVersionB — real Flash 8 stamps 0x0C (docs/21 §17.3 / §3), not 0x01
+  w.u16(Math.round(run.fontSize * 20)); // size*20
   // fontName: plain unicode string (not CS4).
-  writePlainStringUnicode(w, obj.fontFamily || "Arial");
-  writeRGBA(w, obj.color);
+  writePlainStringUnicode(w, run.fontFamily || "Arial");
+  writeRGBA(w, run.color);
   w.u16(0); // font category
-  w.u8(obj.bold ? 1 : 0);
-  w.u8(obj.italic ? 1 : 0);
+  w.u8(run.bold ? 1 : 0);
+  w.u8(run.italic ? 1 : 0);
   w.u8(0); // reserved
   w.u8(obj.autoKern ? 1 : 0);
-  w.u8(0); // charPos
+  w.u8(run.characterPosition); // charPos: 0 normal, 1 super, 2 sub (was hardcoded 0)
   w.u8(ALIGN_BYTE[obj.align] ?? 0);
   w.u16(Math.round((obj.leading ?? 0) * 20));
   w.u16(Math.round((obj.indent ?? 0) * 20));

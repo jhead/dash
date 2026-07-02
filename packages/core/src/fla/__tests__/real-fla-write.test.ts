@@ -1066,6 +1066,198 @@ describe("saveRealFla — custom per-property motion ease round-trips (task 1386
   });
 });
 
+// ---------------------------------------------------------------------------
+// task 1414: FLA writer fidelity leftovers outside task 1386.
+//   (1) multi-run text was collapsed to a single run (authored-data loss) +
+//       characterPosition (charPos byte) was written 0 always;
+//   (2) the text-run schema byte was 0x01 (real Flash 8 writes 0x0C, docs/21 §17.3);
+//   (3) PAGE_TAIL currentFrame was baked from the empty fixture, not model-derived;
+//   (4) layer isSelected was synthesized from `locked || !visible` (unrelated).
+// ---------------------------------------------------------------------------
+
+function textObj(overrides: Partial<TextDisplayObject>): TextDisplayObject {
+  return {
+    type: "text",
+    id: "t1",
+    x: 30,
+    y: 40,
+    width: 200,
+    height: 24,
+    text: "Hello",
+    textType: "static",
+    fontFamily: "Arial",
+    fontSize: 18,
+    bold: false,
+    italic: false,
+    color: { r: 10, g: 20, b: 30, a: 255 },
+    align: "left",
+    multiline: false,
+    wordWrap: false,
+    ...overrides,
+  };
+}
+
+function textElement(doc: FlashDocument): {
+  runs: Array<{
+    text: string; fontName: string; fontSize: number;
+    color: { r: number; g: number; b: number; a: number };
+    bold: boolean; italic: boolean; characterPosition?: 0 | 1 | 2;
+  }>;
+  text: string;
+} {
+  const tl = parseFla8Timeline(__readAllStreamsForTest(saveRealFla(doc)).get("Page 1")!);
+  const el = tl.layers[0]!.frames[0]!.elements.find((e) => e.type === "text");
+  return el as unknown as ReturnType<typeof textElement>;
+}
+
+describe("saveRealFla — multi-run text round-trips per run (task 1414)", () => {
+  it("a 2-run rich-text field survives with per-run font/size/color/bold/italic (was: collapsed to run 0)", () => {
+    // The importer flattens multiple runs into html/htmlText (buildHtmlText).
+    const htmlText =
+      '<font face="Arial" size="18" color="#ff0000"><b>Hello</b></font>' +
+      '<font face="Times New Roman" size="24" color="#00ff00"><i>World</i></font>';
+    const text = textObj({ text: "HelloWorld", html: true, htmlText });
+    const el = textElement(baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [text])])]));
+
+    expect(el.runs.length).toBe(2);
+    const [r0, r1] = el.runs;
+    expect(r0!.text).toBe("Hello");
+    expect(r0!.fontName).toBe("Arial");
+    expect(r0!.fontSize).toBe(18);
+    expect(r0!.bold).toBe(true);
+    expect(r0!.italic).toBe(false);
+    expect(r0!.color).toEqual({ r: 255, g: 0, b: 0, a: 255 });
+
+    expect(r1!.text).toBe("World");
+    expect(r1!.fontName).toBe("Times New Roman");
+    expect(r1!.fontSize).toBe(24);
+    expect(r1!.italic).toBe(true);
+    expect(r1!.bold).toBe(false);
+    expect(r1!.color).toEqual({ r: 0, g: 255, b: 0, a: 255 });
+  });
+
+  it("per-run superscript/subscript (characterPosition) round-trips through htmlText", () => {
+    const htmlText =
+      '<font face="Arial" size="12" color="#000000">x</font>' +
+      '<font face="Arial" size="12" color="#000000"><sup>2</sup></font>' +
+      '<font face="Arial" size="12" color="#000000"><sub>i</sub></font>';
+    const text = textObj({ text: "x2i", html: true, htmlText });
+    const el = textElement(baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [text])])]));
+    expect(el.runs.map((r) => r.characterPosition ?? 0)).toEqual([0, 1, 2]);
+  });
+
+  it("a single-run field's top-level characterPosition round-trips (charPos byte, was written 0)", () => {
+    const text = textObj({ text: "sup", characterPosition: 1 });
+    const el = textElement(baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [text])])]));
+    expect(el.runs.length).toBe(1);
+    expect(el.runs[0]!.characterPosition).toBe(1);
+  });
+
+  it("HTML entities in run text are unescaped on the way back to characters", () => {
+    const htmlText = '<font face="Arial" size="12" color="#000000">a &amp; b &lt; c</font>';
+    const text = textObj({ text: "a & b < c", html: true, htmlText });
+    const el = textElement(baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [text])])]));
+    expect(el.runs.length).toBe(1);
+    expect(el.runs[0]!.text).toBe("a & b < c");
+  });
+});
+
+/** Find the byte index of the first UTF-16LE code unit of `str` in `data`. */
+function findUtf16(data: Uint8Array, str: string): number {
+  outer: for (let i = 0; i + str.length * 2 <= data.length; i++) {
+    for (let j = 0; j < str.length; j++) {
+      if (data[i + j * 2] !== (str.charCodeAt(j) & 0xff)) continue outer;
+      if (data[i + j * 2 + 1] !== ((str.charCodeAt(j) >> 8) & 0xff)) continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+
+describe("saveRealFla — text run schema byte is 0x0C (task 1414 item 2, docs/21 §17.3)", () => {
+  it("stamps textVersionB = 0x0C (was 0x01) before the run size/fontFamily", () => {
+    // A run is `u16 charCount, u8 textVersionB, u16 size*20, PlainStringUnicode font`.
+    // Use a unique font name so the plain-string locate can't collide; the run
+    // version byte sits 4 bytes before the font's first UTF-16 code unit
+    // (len byte + 2 size bytes + 1 run-version byte).
+    const text = textObj({ text: "hi", fontFamily: "Zapfino" });
+    const page = __readAllStreamsForTest(
+      saveRealFla(baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [text])])])),
+    ).get("Page 1")!;
+    const fontAt = findUtf16(page, "Zapfino");
+    expect(fontAt).toBeGreaterThan(0);
+    expect(page[fontAt - 1]).toBe("Zapfino".length); // plain-string length prefix
+    expect(page[fontAt - 4]).toBe(0x0c); // textVersionB
+  });
+});
+
+/** Read the CPicPage tail's nextLayerId / currentFrame u16s (last 25 bytes, §10.1). */
+function pageTailFields(page: Uint8Array): { nextLayerId: number; currentFrame: number } {
+  const base = page.length - 25; // tail is the final 25 bytes (guideCount = 0)
+  const u16 = (o: number) => page[base + o]! | (page[base + o + 1]! << 8);
+  return { nextLayerId: u16(13), currentFrame: u16(15) };
+}
+
+describe("saveRealFla — PAGE_TAIL nextLayerId + currentFrame are model-derived (task 1414 item 3)", () => {
+  for (const n of [1, 2, 3, 5]) {
+    it(`a ${n}-layer timeline stamps nextLayerId=${n + 1} and currentFrame=1`, () => {
+      const layers = Array.from({ length: n }, (_, i) => layerWith(`L${i}`, "normal", []));
+      const page = __readAllStreamsForTest(saveRealFla(baseDoc([sceneWith("Scene 1", layers)]))).get(
+        "Page 1",
+      )!;
+      const { nextLayerId, currentFrame } = pageTailFields(page);
+      expect(nextLayerId).toBe(n + 1);
+      expect(currentFrame).toBe(1);
+    });
+  }
+});
+
+/** Find a layer's isSelected byte (immediately after its name BomString, §10.2). */
+function isSelectedByte(page: Uint8Array, layerName: string): number {
+  // BomString = FF FE FF, u8 len, then UTF-16LE name; isSelected follows the name.
+  const nameAt = findUtf16(page, layerName);
+  expect(nameAt).toBeGreaterThan(0);
+  // Confirm the BOM marker + length prefix precede the name (guards against a stray hit).
+  expect(page[nameAt - 4]).toBe(0xff);
+  expect(page[nameAt - 3]).toBe(0xfe);
+  expect(page[nameAt - 2]).toBe(0xff);
+  expect(page[nameAt - 1]).toBe(layerName.length);
+  return page[nameAt + layerName.length * 2]!;
+}
+
+describe("saveRealFla — layer isSelected is selection state, not locked||!visible (task 1414 item 4)", () => {
+  it("only the top layer (li=0) is selected; others are 0", () => {
+    const layers = [
+      layerWith("Alpha", "normal", []), // li=0 (top) → selected
+      layerWith("Beta", "normal", []),
+      layerWith("Gamma", "normal", []),
+    ];
+    const page = __readAllStreamsForTest(saveRealFla(baseDoc([sceneWith("Scene 1", layers)]))).get(
+      "Page 1",
+    )!;
+    expect(isSelectedByte(page, "Alpha")).toBe(1);
+    expect(isSelectedByte(page, "Beta")).toBe(0);
+    expect(isSelectedByte(page, "Gamma")).toBe(0);
+  });
+
+  it("a LOCKED+HIDDEN top layer is still selected (old heuristic wrongly emitted 0)", () => {
+    const top = createLayer("Locky", "normal", {
+      locked: true,
+      visible: false,
+      frames: [createFrame(0)],
+      frameCount: 1,
+    });
+    const bottom = layerWith("Plain", "normal", []);
+    const page = __readAllStreamsForTest(
+      saveRealFla(baseDoc([sceneWith("Scene 1", [top, bottom])])),
+    ).get("Page 1")!;
+    // Selection is decoupled from lock/visibility: the top layer is selected (1)
+    // even though it is locked+hidden; the old `locked||!visible?0:1` gave 0.
+    expect(isSelectedByte(page, "Locky")).toBe(1);
+    expect(isSelectedByte(page, "Plain")).toBe(0);
+  });
+});
+
 function indexOf(haystack: Uint8Array, needle: Uint8Array): number {
   outer: for (let i = 0; i + needle.length <= haystack.length; i++) {
     for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) continue outer;
