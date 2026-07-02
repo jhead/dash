@@ -129,5 +129,19 @@ result interpolates on stage (via `getTweenedFrame`) and compiles to a smooth SW
   dropped these and the movie never stopped on that frame. Gate: `ruffle-oracle-defects.test.ts`.
 - Shape tweening requires point-correspondence solving honoring shape hints, then emitting
   morph data for SWF and interpolated geometry for the live stage.
+- **Tint color-effect interpolation must not fade through black when one keyframe has no
+  color effect (task 1397).** In `tween/interpolate.ts` `interpolateColorEffect`, a `'none'`
+  side carries no `tintColor` of its own, so the missing endpoint HOLDS the other side's
+  color and only `tintAmount` ramps. Lerping the color black→target instead (the old default
+  of `{0,0,0}`) gave a `'none'`→red tween a mid-point of `(128,0,0)` @ 50% amount — a ~63/255
+  color error — instead of red @ 50%. Both sides being tint still lerps both colors.
+- **Shape hints must preserve curve control points, not facet the morph into a polyline
+  (task 1397).** `reorderPathByAnchor` (`tween/interpolate.ts`) rotates a closed path so the
+  hint-anchored vertex is index 0. It now treats the path as a cyclic list of edges and
+  rotates the edge payloads (line/curve, control points intact) instead of rebuilding every
+  edge as a straight `line`. DefineMorphShape2 (tag 84) emits real curve records, so the old
+  "morphshape uses line segments anyway" flattening silently faceted both shapes whenever a
+  shape hint was enabled on a curved morph. Gate: `shapehint-interpolation.test.ts`
+  ("preserve curves").
 - Timeline Effects are macros that expand into the document model (symbols + tweens) so they
   round-trip and remain re-editable.

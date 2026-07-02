@@ -2,9 +2,9 @@
   "id": "1397-2qbukf-core-tween-interpolation-fidelity-tint-fades-fro",
   "title": "Core: tween interpolation fidelity \u2014 tint fades from black, and shape hints flatten curves to polylines",
   "description": "Two confirmed but low-impact fidelity bugs in packages/core/src/tween/interpolate.ts. (1) tint from black: :260-279 when fromType/toType is 'none' the missing side's tintColor defaults to {0,0,0} (:267-268) while only tintAmount ramps -> tintColor lerps black->target instead of holding the tinted side's color (amount 0.5 gives (128,0,0) instead of (255,0,0), ~63/255 error mid-tween). Fix: when one side is 'none' use the OTHER side's tintColor for both endpoints, ramp only tintAmount. (2) shape hints flatten curves: :822-845 reorderPathByAnchor rebuilds each path from endpoint vertices only as LINE segments (:835-838), dropping all quadratic control points, so enabling a shape hint on a curved morph silently facets both shapes. The comment claims 'morphshape uses line segments anyway' but DefineMorphShape2 (tag 84) emits curve records. Fix: preserve control points when reordering by anchor. Confidence: confirmed.",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-07-02T01:16:08Z",
-  "updated_at": "2026-07-02T01:16:08Z"
+  "updated_at": "2026-07-02T01:52:31Z"
 }

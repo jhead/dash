@@ -205,3 +205,94 @@ describe("interpolateShapeTween — with shape hints", () => {
     expect(emptyPath.start.y).toBeCloseTo(noHintsPath.start.y);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests — hints must NOT flatten curves into polylines (task 1397)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a closed quad whose four edges are all quadratic curves.
+ *
+ * Vertices (in order): TL, TR, BR, BL. `startIdx` rotates the starting vertex so
+ * a shape hint can be forced to reorder the path (pivot != 0).
+ */
+function makeCurvedQuad(
+  id: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  startIdx = 0
+): ShapeDisplayObject {
+  const corners = [
+    { x: x1, y: y1 }, // 0: TL
+    { x: x2, y: y1 }, // 1: TR
+    { x: x2, y: y2 }, // 2: BR
+    { x: x1, y: y2 }, // 3: BL
+  ];
+  const rotated = [...corners.slice(startIdx), ...corners.slice(0, startIdx)];
+  // One curve segment per edge, closing back to the first vertex.
+  const cyclic = [...rotated, rotated[0]!];
+  const segments = cyclic.slice(1).map((to, i) => {
+    const from = cyclic[i]!;
+    return {
+      type: "curve" as const,
+      // Control bulges the edge outward so it is a genuine (non-degenerate) curve.
+      control: { x: (from.x + to.x) / 2 + 15, y: (from.y + to.y) / 2 - 15 },
+      to,
+    };
+  });
+  return {
+    type: "shape",
+    id,
+    shape: {
+      id: `sh-${id}`,
+      paths: [{ start: rotated[0]!, segments, closed: true }],
+    },
+    x: 0,
+    y: 0,
+  };
+}
+
+describe("interpolateShapeTween — shape hints preserve curves (task 1397)", () => {
+  it("a hinted curved morph keeps curve segments instead of faceting to lines", () => {
+    // End quad is rotated (BR-first) so the TL↔TL hint forces a vertex reorder.
+    const startObjs = [makeCurvedQuad("s", 0, 0, 100, 100, 0)];
+    const endObjs = [makeCurvedQuad("e", 200, 200, 300, 300, 2)];
+
+    const startHints: ShapeHint[] = [{ id: "a", x: 0, y: 0 }];
+    const endHints: ShapeHint[] = [{ id: "a", x: 200, y: 200 }];
+
+    const result = interpolateShapeTween(
+      startObjs, endObjs, 0.5, 0, "distributive",
+      null, startHints, endHints
+    );
+    const path = (result[0] as ShapeDisplayObject).shape.paths[0]!;
+
+    // Every edge must remain a quadratic curve — the reorder must not drop
+    // control points and flatten the morph into a polyline.
+    expect(path.segments.length).toBe(4);
+    expect(path.segments.every((s) => s.type === "curve")).toBe(true);
+  });
+
+  it("reordering by hint preserves the same curve count as the unhinted morph", () => {
+    const startObjs = [makeCurvedQuad("s", 0, 0, 100, 100, 0)];
+    const endObjs = [makeCurvedQuad("e", 200, 200, 300, 300, 2)];
+
+    const noHints = interpolateShapeTween(startObjs, endObjs, 0.5, 0, "distributive");
+    const noHintsPath = (noHints[0] as ShapeDisplayObject).shape.paths[0]!;
+
+    const startHints: ShapeHint[] = [{ id: "a", x: 0, y: 0 }];
+    const endHints: ShapeHint[] = [{ id: "a", x: 200, y: 200 }];
+    const withHints = interpolateShapeTween(
+      startObjs, endObjs, 0.5, 0, "distributive",
+      null, startHints, endHints
+    );
+    const withHintsPath = (withHints[0] as ShapeDisplayObject).shape.paths[0]!;
+
+    const curveCount = (segs: typeof noHintsPath.segments) =>
+      segs.filter((s) => s.type === "curve").length;
+    expect(curveCount(withHintsPath.segments)).toBe(curveCount(noHintsPath.segments));
+    expect(curveCount(withHintsPath.segments)).toBe(4);
+  });
+});

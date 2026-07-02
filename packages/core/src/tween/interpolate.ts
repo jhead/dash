@@ -263,12 +263,18 @@ export function interpolateColorEffect(
       // Interpolate tintAmount
       const p = lerp(fromP, toP, t);
 
-      // Interpolate tint color channels
-      const fromColor = fromType === "tint" ? parseHexColor(from!.tintColor ?? "#000000") : { r: 0, g: 0, b: 0 };
-      const toColor = toType === "tint" ? parseHexColor(to!.tintColor ?? "#000000") : { r: 0, g: 0, b: 0 };
-      const r = lerp(fromColor.r, toColor.r, t);
-      const g = lerp(fromColor.g, toColor.g, t);
-      const b = lerp(fromColor.b, toColor.b, t);
+      // Resolve each side's tint colour. A 'none' side carries no colour of its
+      // own; the missing endpoint must HOLD the other side's colour so the tint
+      // fades in/out via tintAmount alone instead of lerping the colour through
+      // black. (A 'none'→red tween at t=0.5 must be red @ 50% amount, not
+      // (128,0,0) @ 50% — the latter is a ~63/255 mid-tween colour error.)
+      const fromColor = fromType === "tint" ? parseHexColor(from!.tintColor ?? "#000000") : null;
+      const toColor = toType === "tint" ? parseHexColor(to!.tintColor ?? "#000000") : null;
+      const startColor = fromColor ?? toColor ?? { r: 0, g: 0, b: 0 };
+      const endColor = toColor ?? fromColor ?? { r: 0, g: 0, b: 0 };
+      const r = lerp(startColor.r, endColor.r, t);
+      const g = lerp(startColor.g, endColor.g, t);
+      const b = lerp(startColor.b, endColor.b, t);
 
       if (p === 0) return null;
       return {
@@ -858,39 +864,56 @@ function pathVertices(path: ShapePath): Point[] {
 }
 
 /**
- * Rotate an array so that element at `pivotIdx` becomes index 0.
- * Works for both closed paths (rotation makes sense) and open paths (clamp pivot to 0).
+ * True when two points are numerically coincident (within a sub-twip epsilon).
  */
-function rotateArray<T>(arr: T[], pivotIdx: number): T[] {
-  if (pivotIdx === 0 || arr.length === 0) return arr;
-  return [...arr.slice(pivotIdx), ...arr.slice(0, pivotIdx)];
+function pointsCoincident(a: Point, b: Point): boolean {
+  return Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6;
 }
 
 /**
  * Reorder a ShapePath's vertices so that the vertex closest to `anchorPt` comes first.
  * Only meaningful for closed paths; for open paths returns the path unchanged.
  *
- * The path is reconstructed from the reordered vertex list as straight-line segments
- * (control points from curve segments are not preserved — morphshape uses line segments
- * anyway for SWF encoding).
+ * Curve control points ARE preserved: the path is treated as a cyclic list of edges
+ * (each edge carrying its original line/curve payload) that is simply rotated so the
+ * anchored vertex becomes the new start. Curved morphs (DefineMorphShape2 / tag 84
+ * emits real curve records) must not be silently faceted into polylines when a shape
+ * hint is enabled.
  */
 function reorderPathByAnchor(path: ShapePath, anchorPt: Point): ShapePath {
   if (!path.closed) return path;
 
-  const verts = pathVertices(path);
-  if (verts.length <= 1) return path;
+  // pathVertices returns [start, seg0.to, seg1.to, ...]; a closed path may or may
+  // not carry an explicit closing segment whose `to` coincides with `start`.
+  const rawVerts = pathVertices(path);
+  if (rawVerts.length <= 1) return path;
+
+  const explicitClose = pointsCoincident(
+    rawVerts[rawVerts.length - 1]!,
+    rawVerts[0]!
+  );
+  // n = distinct vertices forming the closed cycle (drop a duplicated closing vertex).
+  const n = explicitClose ? rawVerts.length - 1 : rawVerts.length;
+  if (n <= 1) return path;
+  const verts = rawVerts.slice(0, n);
 
   const pivotIdx = closestVertexIndex(anchorPt, verts);
   if (pivotIdx === 0) return path;
 
-  const reordered = rotateArray(verts, pivotIdx);
+  // edgePayload(i) is the segment leaving verts[i] and arriving at verts[(i+1) % n].
+  // path.segments[i] is the payload arriving at rawVerts[i+1]; when the path had no
+  // explicit closing segment, the final edge (verts[n-1] → verts[0]) is a straight
+  // line back to the original start.
+  const edgePayload = (i: number): PathSegment => {
+    if (i < path.segments.length) return path.segments[i]!;
+    return { type: "line", to: verts[0]! };
+  };
 
-  // Reconstruct segments as line segments from the reordered vertices
-  const newStart = reordered[0]!;
-  const newSegments = reordered.slice(1).map((pt) => ({
-    type: "line" as const,
-    to: pt,
-  }));
+  const newStart = verts[pivotIdx]!;
+  const newSegments: PathSegment[] = [];
+  for (let k = 0; k < n; k++) {
+    newSegments.push(edgePayload((pivotIdx + k) % n));
+  }
 
   return {
     ...path,

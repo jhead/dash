@@ -120,6 +120,25 @@ describe("interpolateColorEffect — tint", () => {
     expect(result!.tintAmount).toBeCloseTo(50);
   });
 
+  it("'none'→tint holds the tinted colour (does NOT fade through black) (task 1397)", () => {
+    const none: ColorEffect = { type: "none" };
+    const to: ColorEffect = { type: "tint", tintColor: "#ff0000", tintAmount: 100 };
+    const result = interpolateColorEffect(none, to, 0.5);
+    expect(result!.type).toBe("tint");
+    // Only the amount ramps; the colour must stay red, NOT lerp black→red (=(128,0,0)).
+    expect(result!.tintColor!.toLowerCase()).toBe("#ff0000");
+    expect(result!.tintAmount).toBeCloseTo(50);
+  });
+
+  it("tint→'none' holds the tinted colour (does NOT fade through black) (task 1397)", () => {
+    const from: ColorEffect = { type: "tint", tintColor: "#00ff00", tintAmount: 100 };
+    const none: ColorEffect = { type: "none" };
+    const result = interpolateColorEffect(from, none, 0.5);
+    expect(result!.type).toBe("tint");
+    expect(result!.tintColor!.toLowerCase()).toBe("#00ff00");
+    expect(result!.tintAmount).toBeCloseTo(50);
+  });
+
   it("returns null when tintAmount = 0 (identity)", () => {
     const from: ColorEffect = { type: "tint", tintColor: "#ff0000", tintAmount: 0 };
     const to: ColorEffect = { type: "tint", tintColor: "#0000ff", tintAmount: 0 };
