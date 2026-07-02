@@ -214,6 +214,26 @@ function coincidentOverlap(a: EdgeGeometry, b: EdgeGeometry): Intersection[] | n
   const ON_TOL = Math.max(SNAP_EPS * 4, 0.05);
   const SAMPLES = 24;
 
+  // SPATIAL REJECTION (task 1396). This routine samples B at SAMPLES+1 points and
+  // runs a 32-step coarse scan + 24-iter ternary refine (~1400 `edgeAt` evals) for
+  // EVERY curve/curve pair — before any bbox test — which dominated dense-edit fold
+  // cost. Short-circuit when the two curves' exact bounding boxes are disjoint by
+  // more than the on-curve tolerance: no B sample can then lie within ON_TOL of A,
+  // so `onA` would stay empty and this would return null regardless. It is strictly
+  // behavior-preserving — the only pairs skipped are ones that provably have no
+  // coincident overlap (and the transversal `recurse` in intersectCurveCurve also
+  // bails immediately on the same disjoint boxes).
+  const ba = edgeBBox(a);
+  const bb = edgeBBox(b);
+  if (
+    ba.maxX < bb.minX - ON_TOL ||
+    bb.maxX < ba.minX - ON_TOL ||
+    ba.maxY < bb.minY - ON_TOL ||
+    bb.maxY < ba.minY - ON_TOL
+  ) {
+    return null;
+  }
+
   // Nearest parameter on `a` to a point: coarse scan + ternary-search refine.
   const nearestParamOnA = (pt: Point): { t: number; d: number } => {
     let bestT = 0;

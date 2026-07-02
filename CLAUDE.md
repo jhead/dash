@@ -944,6 +944,25 @@ task if something non-obvious was discovered. Goal: avoid re-researching the sam
   PERF 500-fill bounded). `foldShapeIntoLayer` (whole-layer) is kept for tests/explicit callers.
   Note: the merge wiring in `Shell.tsx` is unchanged — `planarMergeCommit`'s signature/result
   contract is identical, the culling is internal.
+- **`Arrangement.insertEdge` now has an intra-arrangement spatial broad-phase — the
+  residual `O(E²)` the task-1327 shape-set cull could NOT reach (task 1396).** The 1327
+  cull bounds which SHAPES fold; inside the kernel `insertEdge` still scanned every forward
+  half-edge per insert, so a stroke spanning a dense cluster (or any large region) rebuilt
+  `O(E²)`. Two behavior-preserving fixes (intersection SET, and thus the arrangement, is
+  byte-identical — only provably-disjoint pairs are skipped): (1) `intersect.ts
+  coincidentOverlap` early-returns `null` when `edgeBBox(a)`/`edgeBBox(b)` are disjoint by
+  more than its `ON_TOL`, skipping the ~1400-`edgeAt` coincidence sampling it ran FIRST for
+  EVERY curve/curve pair regardless of distance; (2) `arrangement.ts` buckets each forward
+  half-edge into a coarse uniform grid (`gridCell`=16 px, +2-twip margin, `largeEdges`
+  overflow) so `insertEdge` only tests candidates sharing a cell — an intersection point is
+  a twip-snapped point ON both curves so it always lies in both exact bboxes and shares a
+  cell (never culled). Candidates are re-sorted ascending forward-id (the exhaustive order)
+  so split-map tie-breaks are unchanged; retired edges stay in the grid, skipped by the
+  `origin<0` guard. `new Arrangement(fills, lines, {spatialIndex:false})` restores the
+  exhaustive scan (the equivalence-test fallback); `Arrangement.edgeTestCount` exposes the
+  pairwise-test count for the perf assertion. Gate: `planar.test.ts` "spatial broad-phase
+  (task 1396)" (indexed `build()` `toEqual` non-indexed on a multi-cluster input; indexed
+  does < ⅓ the edge tests). See docs/36 §3.0f.
 - **Whole-shape drag in merge mode = split-on-move (geometry translates, NOT the object
   offset).** A drawn shape commits as one merged shape at (0,0) with geometry in stage
   space. The selection tool's `partialSelectEnabled` path (active whenever the selection

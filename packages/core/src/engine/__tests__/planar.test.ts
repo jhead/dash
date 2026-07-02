@@ -687,3 +687,72 @@ describe("faceInteriorPoint — never returns a point outside the face (task 139
     expect(merged.paths.some((p) => p.fill)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// spatial broad-phase (task 1396) — behavior-preserving perf optimization
+// ---------------------------------------------------------------------------
+
+describe("planar/arrangement — spatial broad-phase (task 1396)", () => {
+  // A non-trivial input: several spread-out clusters, each with two overlapping
+  // squares (real crossings that split edges), a diagonal, and a curve. Because
+  // the clusters are far apart, cross-cluster pairs are bbox-disjoint and must be
+  // culled by the broad-phase, while intra-cluster crossings must still be found.
+  function nonTrivialEdges(): InputEdge[] {
+    const edges: InputEdge[] = [];
+    const clusters = 12;
+    for (let k = 0; k < clusters; k++) {
+      const cx = (k % 4) * 200; // spread across x = 0..600
+      const cy = Math.floor(k / 4) * 200; // spread across y = 0..400
+      edges.push(...rectEdges(cx, cy, 20, 20, 0));
+      edges.push(...rectEdges(cx + 10, cy + 10, 20, 20, 0));
+      edges.push({
+        geometry: line({ x: cx, y: cy }, { x: cx + 30, y: cy + 30 }),
+        lineStyle: 0,
+      });
+      edges.push({
+        geometry: curve(
+          { x: cx, y: cy + 15 },
+          { x: cx + 15, y: cy + 40 },
+          { x: cx + 30, y: cy + 15 }
+        ),
+        lineStyle: 0,
+      });
+    }
+    return edges;
+  }
+
+  function buildWith(spatialIndex: boolean): { ps: PlanarShape; tests: number } {
+    const arr = new Arrangement([RED], [STROKE], { spatialIndex });
+    for (const e of nonTrivialEdges()) arr.insertEdge(e);
+    return { ps: arr.build(), tests: arr.edgeTestCount };
+  }
+
+  it("produces byte-identical arrangement output with vs without the index", () => {
+    const withIdx = buildWith(true);
+    const without = buildWith(false);
+    // Full structural equality: vertices, half-edges (twin/next/prev/face/fill),
+    // faces, and style tables must all match the exhaustive scan exactly.
+    expect(withIdx.ps).toEqual(without.ps);
+  });
+
+  it("rejects the vast majority of pairwise edge tests via bbox culling", () => {
+    const withIdx = buildWith(true);
+    const without = buildWith(false);
+    // The exhaustive scan is O(E²); the broad-phase must do dramatically fewer
+    // intersection tests on this spread-out input (a perf sanity assertion).
+    expect(without.tests).toBeGreaterThan(0);
+    expect(withIdx.tests).toBeLessThan(without.tests / 3);
+  });
+
+  it("coincidentOverlap early-out is behavior-preserving for curve/curve pairs", () => {
+    // Coincident curves are still detected (the bbox fast-path does NOT skip an
+    // overlapping pair) …
+    const a = curve({ x: 0, y: 0 }, { x: 10, y: 20 }, { x: 20, y: 0 });
+    const coincident = intersectCurveCurve(a, a);
+    expect(coincident.length).toBeGreaterThanOrEqual(1);
+    // … while bbox-disjoint curves report no intersection (and skip the ~1400
+    // edgeAt-eval coincidence sampling).
+    const far = curve({ x: 500, y: 500 }, { x: 510, y: 520 }, { x: 520, y: 500 });
+    expect(intersectCurveCurve(a, far)).toHaveLength(0);
+  });
+});

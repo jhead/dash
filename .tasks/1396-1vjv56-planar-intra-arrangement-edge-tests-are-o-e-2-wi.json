@@ -2,9 +2,9 @@
   "id": "1396-1vjv56-planar-intra-arrangement-edge-tests-are-o-e-2-wi",
   "title": "Planar: intra-arrangement edge tests are O(E^2) with no spatial rejection (perf/DoS on dense edits)",
   "description": "Two residual O(E^2) cost paths beyond the documented task-1327 shape-set cull (which only bounds which shapes fold, not intra-arrangement edge work). (1) intersect.ts:175 intersectCurveCurve calls coincidentOverlap(a,b) FIRST, before any bbox check (the boxesOverlap guard lives only inside recurse :309); coincidentOverlap (:211) samples B at 25 points and runs nearestParamOnA (32-step + 24-iter) per point -> ~1400 edgeAt evals for EVERY curve/curve pair regardless of distance. (2) arrangement.ts:243 insertEdge linearly scans all existing forward half-edges (:279-291); building an N-edge arrangement is O(E^2), and the WeakMap memo is keyed on Shape identity so every immutable edit produces a new Shape -> a dense merged region pays a fresh O(E^2) rebuild on the next pick/commit (live.ts:31 rebuilds from scratch). Fix: early-return null from coincidentOverlap when edgeBBox(a)/edgeBBox(b) are disjoint by > ON_TOL (edgeBBox already imported); add a coarse spatial bucket/interval index inside Arrangement so insertEdge only tests bbox-overlapping candidates. Confidence: confirmed (correctness unaffected, cost only).",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "medium",
   "created_at": "2026-07-02T01:15:28Z",
-  "updated_at": "2026-07-02T01:15:28Z"
+  "updated_at": "2026-07-02T01:50:29Z"
 }

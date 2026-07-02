@@ -630,6 +630,43 @@ culled == full rebuild for arbitrary overlapping layouts, and a transitive-closu
 shape overlapping a folded shape but not the stroke is still folded). All three FAIL on the
 pre-1329 direct-overlap cull and PASS after.
 
+### 3.0f Intra-arrangement broad-phase — spatial rejection in `insertEdge` and `coincidentOverlap` (task 1396)
+
+The task-1327 shape-set cull bounds **which shapes** enter a fold, but once a shape's edges
+are handed to `Arrangement.insertEdge` the kernel itself was still `O(E²)` **within** the
+arrangement it builds — the residual cost the cull could not touch (a single stroke that
+genuinely spans a dense cluster, or any large authored region, still paid it). Two hot paths
+were fixed, both **behavior-preserving** (the set of intersections found — and therefore the
+arrangement — is byte-identical; only provably non-intersecting pairs are skipped):
+
+1. **`intersect.ts intersectCurveCurve` → `coincidentOverlap`.** The coincidence fast-path ran
+   FIRST, before any bbox test, sampling curve B at 25 points and running a 32-step coarse
+   scan + 24-iter ternary refine (~1400 `edgeAt` evals) for EVERY curve/curve pair regardless
+   of distance. `coincidentOverlap` now early-returns `null` when `edgeBBox(a)`/`edgeBBox(b)`
+   are disjoint by more than its on-curve tolerance `ON_TOL`: no B sample can then lie within
+   `ON_TOL` of A, so it would have returned `null` anyway (and the transversal `recurse` bails
+   on the same disjoint boxes). Strictly a short-circuit of a null result.
+
+2. **`arrangement.ts insertEdge` — coarse uniform grid.** `insertEdge` scanned ALL even-indexed
+   (forward) half-edges to find crossings, so building an N-edge arrangement was `O(E²)`. A
+   coarse uniform grid (`gridCell` = 16 px) now buckets each forward half-edge by the cells its
+   bbox covers (grown by a 2-twip safety margin that exceeds twip snapping); `insertEdge` only
+   intersection-tests the candidates whose bbox shares a cell with the new edge, plus a small
+   `largeEdges` overflow list for edges spanning too many cells. An intersection point is a
+   twip-snapped point ON both curves, so it lies inside each curve's exact bbox — a genuine
+   crossing therefore ALWAYS shares a grid cell and is never culled. Candidates are re-sorted
+   into ascending forward-id order (the exhaustive scan's order) so the split-map tie-breaks
+   are unchanged. New forward edges register in the grid as they are created (`addTwinPair`);
+   retired (split-away) edges stay in the grid but are skipped by the existing `origin < 0`
+   guard.
+
+**Verification.** `planar.test.ts` "spatial broad-phase (task 1396)": builds a non-trivial
+multi-cluster input into two `Arrangement`s — one with the index, one with `{spatialIndex:
+false}` (an exhaustive-scan fallback kept for exactly this comparison) — and asserts the
+`build()` outputs are structurally identical (`toEqual`), plus a perf sanity assertion that the
+indexed build does < ⅓ the pairwise edge tests of the exhaustive scan (exposed via
+`Arrangement.edgeTestCount`). All existing planar oracle/property tests stay green unchanged.
+
 ### 3.0g The merge-correctness oracle is RASTER ground-truth, not abstract face-area (task 1330)
 
 **The unsound oracle.** The `planar-merge.test.ts` merge-correctness checks (the 1329

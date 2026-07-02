@@ -32,6 +32,7 @@ import type {
 import {
   dist2,
   edgeAt,
+  edgeBBox,
   edgeTangent as edgeTangentAt,
   outgoingDirection,
   pointKey,
@@ -121,9 +122,125 @@ export class Arrangement {
   readonly fills: Fill[];
   readonly lineStyles: Stroke[];
 
-  constructor(fills: Fill[] = [], lineStyles: Stroke[] = []) {
+  // -- spatial broad-phase (task 1396) -------------------------------------
+  //
+  // insertEdge used to test the incoming edge against EVERY existing forward
+  // half-edge (a linear scan), so building an N-edge arrangement was O(E²) — the
+  // dominant cost on dense edits / large traced-bitmap folds. A coarse uniform
+  // grid buckets each forward half-edge by the cells its bounding box covers, so
+  // insertEdge only intersection-tests candidates whose bbox is near the new
+  // edge's. This is a PERFORMANCE optimization only: the culled pairs are exactly
+  // the ones whose bounding boxes are disjoint (beyond a safety margin that
+  // comfortably exceeds twip snapping), which can never produce an intersection —
+  // so the SET of intersections found, and thus the arrangement, is identical to
+  // the exhaustive scan. Candidates are re-sorted into ascending forward-id order
+  // (the exhaustive scan's order) so tie-breaks in the split maps are unchanged.
+  /** When false, insertEdge falls back to the exhaustive scan (used by tests). */
+  private readonly useSpatialIndex: boolean;
+  /** Grid cell edge length, in px (coarse). */
+  private readonly gridCell = 16;
+  /** Cell key (`cx,cy`) → forward half-edge ids whose bbox covers that cell. */
+  private grid = new Map<string, number[]>();
+  /** Forward edges whose bbox spans too many cells to bucket; always tested. */
+  private largeEdges: number[] = [];
+  /** Diagnostic (tests): pairwise intersect tests performed across all inserts. */
+  private _edgeTests = 0;
+
+  /**
+   * Bbox safety margin (px) when bucketing/querying. A returned intersection is a
+   * twip-snapped point ON both curves, so it lies within each curve's EXACT bbox;
+   * snapping can only move it by ≤ SNAP_EPS (0.025 px). A 2-twip (0.1 px) margin
+   * comfortably covers that, so no genuine crossing is ever culled.
+   */
+  private static readonly GRID_MARGIN = 0.1;
+  /**
+   * If an edge's bbox covers more cells than this, it is not bucketed (it would
+   * pollute too many cells); it goes in `largeEdges` and is always a candidate.
+   * A query edge spanning more than this many cells falls back to the full scan.
+   */
+  private static readonly MAX_SPAN_CELLS = 256;
+
+  constructor(
+    fills: Fill[] = [],
+    lineStyles: Stroke[] = [],
+    options?: { readonly spatialIndex?: boolean }
+  ) {
     this.fills = fills;
     this.lineStyles = lineStyles;
+    this.useSpatialIndex = options?.spatialIndex ?? true;
+  }
+
+  /** Diagnostic (tests): total pairwise edge intersection tests done. */
+  get edgeTestCount(): number {
+    return this._edgeTests;
+  }
+
+  // -- spatial broad-phase helpers -----------------------------------------
+
+  private cellRange(g: EdgeGeometry): {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+    cells: number;
+  } {
+    const bb = edgeBBox(g);
+    const m = Arrangement.GRID_MARGIN;
+    const c = this.gridCell;
+    const x0 = Math.floor((bb.minX - m) / c);
+    const y0 = Math.floor((bb.minY - m) / c);
+    const x1 = Math.floor((bb.maxX + m) / c);
+    const y1 = Math.floor((bb.maxY + m) / c);
+    return { x0, y0, x1, y1, cells: (x1 - x0 + 1) * (y1 - y0 + 1) };
+  }
+
+  /** All forward (even) half-edge ids, ascending. */
+  private allForwardIds(): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < this.edges.length; i += 2) out.push(i);
+    return out;
+  }
+
+  /** Register a newly-created forward half-edge in the spatial grid. */
+  private registerInGrid(fwdId: number, g: EdgeGeometry): void {
+    if (!this.useSpatialIndex) return;
+    const r = this.cellRange(g);
+    if (r.cells > Arrangement.MAX_SPAN_CELLS) {
+      this.largeEdges.push(fwdId);
+      return;
+    }
+    for (let cy = r.y0; cy <= r.y1; cy++) {
+      for (let cx = r.x0; cx <= r.x1; cx++) {
+        const key = cx + "," + cy;
+        let bucket = this.grid.get(key);
+        if (!bucket) {
+          bucket = [];
+          this.grid.set(key, bucket);
+        }
+        bucket.push(fwdId);
+      }
+    }
+  }
+
+  /**
+   * Forward half-edge ids that could intersect an edge with geometry `g`, in
+   * ascending id order (matching the exhaustive scan's order so split-map
+   * tie-breaks are identical). Over-inclusive by construction: any edge whose
+   * (margin-expanded) bbox shares a grid cell with `g`, plus all `largeEdges`.
+   */
+  private candidateForwardIds(g: EdgeGeometry): number[] {
+    if (!this.useSpatialIndex) return this.allForwardIds();
+    const r = this.cellRange(g);
+    if (r.cells > Arrangement.MAX_SPAN_CELLS) return this.allForwardIds();
+    const seen = new Set<number>();
+    for (let cy = r.y0; cy <= r.y1; cy++) {
+      for (let cx = r.x0; cx <= r.x1; cx++) {
+        const bucket = this.grid.get(cx + "," + cy);
+        if (bucket) for (const id of bucket) seen.add(id);
+      }
+    }
+    for (const id of this.largeEdges) seen.add(id);
+    return [...seen].sort((a, b) => a - b);
   }
 
   // -- vertex management ---------------------------------------------------
@@ -230,6 +347,7 @@ export class Arrangement {
     this.edges.push(fwd, rev);
     this.vertices[aId].outgoing.push(fwdId);
     this.vertices[bId].outgoing.push(revId);
+    this.registerInGrid(fwdId, geom);
     return fwdId;
   }
 
@@ -276,8 +394,9 @@ export class Arrangement {
     // existingEdgeId (forward) -> point-key -> split
     const existingSplits = new Map<number, Map<string, Split>>();
 
-    const forwardIds: number[] = [];
-    for (let i = 0; i < this.edges.length; i += 2) forwardIds.push(i);
+    // Spatial broad-phase (task 1396): only test bbox-near candidates, in the
+    // same ascending forward-id order the exhaustive scan used.
+    const forwardIds = this.candidateForwardIds(geom);
 
     for (const eid of forwardIds) {
       const e = this.edges[eid];
@@ -288,6 +407,7 @@ export class Arrangement {
       // the same region (e.g. a second parallel chord / an eraser band's two
       // sides both crossing a fill's boundary edge). Skip them. (task 1322)
       if (e.origin < 0) continue;
+      this._edgeTests++;
       const hits = intersectEdges(geom, e.geometry);
       for (const h of hits) {
         const pt = snapPoint(h.point);
