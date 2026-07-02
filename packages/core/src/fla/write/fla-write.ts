@@ -130,7 +130,16 @@ export function saveRealFla(doc: FlashDocument): Uint8Array {
     const pageStreamName = `Page ${i + 1}`;
     streams.set(
       pageStreamName,
-      writeTimelineStream(scene.timeline, idx, swfBlobsByScene.get(i) ?? []),
+      // Ruler guides are stored per-scene in the binary (each CPicPage tail); the
+      // model carries a single doc-level list (the read side unions + de-dupes
+      // across scenes — flash8-import.ts). Emit the doc guides into every scene so
+      // a save→load round-trip recovers them. Symbol timelines get no guides.
+      writeTimelineStream(
+        scene.timeline,
+        idx,
+        swfBlobsByScene.get(i) ?? [],
+        doc.properties.guides,
+      ),
     );
     sceneEntries.push({ pageStreamName, sceneName: scene.name });
   });

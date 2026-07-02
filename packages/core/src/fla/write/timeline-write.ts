@@ -22,7 +22,7 @@
  * `tryLoadRealFla`, but is NOT yet byte-verified against a Win7 Flash 8 oracle.
  */
 
-import type { EaseCurve, FlaSwfBlob, Frame, Layer, Timeline } from "../../model/types.js";
+import type { EaseCurve, FlaSwfBlob, Frame, Guide, Layer, Timeline } from "../../model/types.js";
 import type {
   ColorEffect,
   DisplayObject,
@@ -80,6 +80,7 @@ export function writeTimelineStream(
   timeline: Timeline,
   idx: WriteIndex,
   swfBlobs: readonly FlaSwfBlob[] = [],
+  guides: readonly Guide[] = [],
 ): Uint8Array {
   const w = new ByteWriter(1024);
   const ct = new ClassTable();
@@ -93,7 +94,7 @@ export function writeTimelineStream(
   // (blobs carry only a scene index, not a layer/frame, so any frame is a faithful
   // host — the reader's collectSwfBlobs walks every frame and re-collects them).
   const pending: PendingSwfBlobs = { blobs: swfBlobs };
-  writeCPicPage(w, ct, timeline, idx, pending);
+  writeCPicPage(w, ct, timeline, idx, pending, guides);
   return w.finish();
 }
 
@@ -148,6 +149,7 @@ function writeCPicPage(
   timeline: Timeline,
   idx: WriteIndex,
   pending: PendingSwfBlobs,
+  guides: readonly Guide[] = [],
 ): void {
   // §10.1: u8 pageVersion = 0x04, u8 0x00.
   w.u8(0x04).u8(0x00);
@@ -158,9 +160,30 @@ function writeCPicPage(
   // selected one (matches a fresh Flash doc, whose sole Layer 1 is selected). §10.2.
   const selectedLayer = timeline.layers[0];
   const bottomToTop = [...timeline.layers].reverse();
+  // Mask→masked association (§10.2). The model stores a mask layer immediately
+  // ABOVE its contiguous masked children (top-to-bottom: mask at li=k, masked at
+  // li=k+1…). In the binary a masked child carries layerType 0 (normal) plus a
+  // `parentReference` naming its mask by the mask's §5.2 running object index, so
+  // the reader (`resolveMaskedLayers`) can rebuild the group. The mask is written
+  // AFTER its masked children (they are more background-ward → earlier in the
+  // bottom-to-top stream), so the reference is a FORWARD reference: capture every
+  // layer's own running index as it is written, note each masked layer's
+  // parentReference byte offset, then back-patch once the mask's index is known.
+  const maskByMaskedLayer = computeMaskByMaskedLayer(timeline.layers);
+  const runningIndexByLayer = new Map<Layer, number>();
+  const maskedPatches: { maskLayer: Layer; offset: number }[] = [];
   for (const layer of bottomToTop) {
     ct.useClass(w, "CPicLayer", 1);
-    writeCPicLayer(w, ct, layer, idx, pending, layer === selectedLayer);
+    // Capture AFTER useClass and minus one → equals the reader's ownObjectIndex
+    // for this layer (see ClassTable.nextObjectIndex).
+    runningIndexByLayer.set(layer, ct.nextObjectIndex() - 1);
+    const parentRefOffset = writeCPicLayer(w, ct, layer, idx, pending, layer === selectedLayer);
+    const mask = maskByMaskedLayer.get(layer);
+    if (mask) maskedPatches.push({ maskLayer: mask, offset: parentRefOffset });
+  }
+  for (const { maskLayer, offset } of maskedPatches) {
+    const maskIdx = runningIndexByLayer.get(maskLayer);
+    if (maskIdx !== undefined) w.patchU16(offset, maskIdx);
   }
   // CPicPage tail (§10.1). Byte-matches the genuine empty fixture: the null child
   // tag, sentinel registration point, F8 skip(2), pageVersionB, nextLayerId,
@@ -185,7 +208,38 @@ function writeCPicPage(
   w.bytes(PAGE_TAIL.subarray(0, 13)); // …through pageVersionB 0x07
   w.u16(timeline.layers.length + 1); // nextLayerId (model-derived)
   w.u16(currentFrame); // currentFrame (model-derived; empty-fixture value is 1)
-  w.bytes(PAGE_TAIL.subarray(17)); // u8 0x00, skip(3), guideCount, trailing
+  w.bytes(PAGE_TAIL.subarray(17, 21)); // pageVersionB(0x07) >= 7 skip(4)
+  // Ruler guides (§10.1): `u32 guideCount` then `{u32 direction; s32 valueTwips}`
+  // per guide (direction 0 = horizontal, 1 = vertical; value in twips = px*20).
+  // The tail's final u32 in PAGE_TAIL was a hardcoded guideCount=0; emit the
+  // model's guides instead (inverse of readCPicPage's guide decode). An empty
+  // doc has no guides → guideCount 0, byte-identical to flash8-empty.fla.
+  w.u32(guides.length);
+  for (const g of guides) {
+    w.u32(g.orientation === "vertical" ? 1 : 0);
+    w.s32(Math.round(g.position * 20));
+  }
+}
+
+/**
+ * Map each masked layer to its owning mask layer (§10.2). The model lists a mask
+ * layer immediately above its contiguous run of `masked` children (top-to-bottom);
+ * a non-mask/non-masked layer ends the group. Guide/guided/folder layers round-trip
+ * by their own layerType and are not part of a mask group.
+ */
+function computeMaskByMaskedLayer(layers: readonly Layer[]): Map<Layer, Layer> {
+  const map = new Map<Layer, Layer>();
+  let currentMask: Layer | null = null;
+  for (const layer of layers) {
+    if (layer.type === "mask") {
+      currentMask = layer;
+    } else if (layer.type === "masked") {
+      if (currentMask) map.set(layer, currentMask);
+    } else {
+      currentMask = null;
+    }
+  }
+  return map;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +255,11 @@ const LAYER_TYPE_BYTE: Record<Layer["type"], number> = {
   masked: 0, // masked children carry layerType 0 + a parentLayerRef
 };
 
+/**
+ * Serialize one CPicLayer. Returns the byte offset of the `parentReference` u16
+ * in the layer trailer so the caller can back-patch a masked layer's forward
+ * reference to its mask's §5.2 running object index (see writeCPicPage).
+ */
 function writeCPicLayer(
   w: ByteWriter,
   ct: ClassTable,
@@ -208,7 +267,7 @@ function writeCPicLayer(
   idx: WriteIndex,
   pending: PendingSwfBlobs,
   isSelected: boolean,
-): void {
+): number {
   // §10.2: u8 layerVersion = 0x04, u8 0x00.
   w.u8(0x04).u8(0x00);
   // Children: frames (only keyframes become CPicFrame records).
@@ -249,10 +308,14 @@ function writeCPicLayer(
   w.u8(Math.max(1, Math.round((layer.height || 20) / 20)) || 1); // heightMultiplier
   w.raw(0x00, 0x00, 0x00); // skip(3)
   w.u8(LAYER_TYPE_BYTE[layer.type] ?? 0); // layerType
-  // MX block: parent reference (0 = none), open, autoNamed.
-  w.u16(0); // parentReference (u16 0 when no parent)
+  // MX block: parent reference (0 = none), open, autoNamed. A masked layer's
+  // parentReference is back-patched by writeCPicPage to its mask's running index;
+  // every other layer keeps 0. Return this field's offset for that patch.
+  const parentRefOffset = w.length;
+  w.u16(0); // parentReference (placeholder; patched for masked layers)
   w.u8(1); // open
   w.u8(1); // autoNamed
+  return parentRefOffset;
 }
 
 // ---------------------------------------------------------------------------

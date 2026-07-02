@@ -278,6 +278,86 @@ describe("saveRealFla — layers", () => {
   });
 });
 
+// Regression for task 1419(a): the masked→mask association is carried in the binary
+// by the masked child's CPicLayer `parentReference` (§10.2), which names its mask by
+// the mask's §5.2 running object index. The writer used to emit parentReference=0 for
+// every layer, so masked children round-tripped as plain "normal" layers (their mask
+// membership was lost). The writer now back-patches each masked layer's
+// parentReference to its mask's running index; the reader (resolveMaskedLayers)
+// promotes them back to type "masked".
+describe("saveRealFla — layer mask back-links (task 1419)", () => {
+  it("recovers a mask + its masked children association on save→load", () => {
+    // Model top-to-bottom: a mask above its two contiguous masked children, then a
+    // plain layer that is NOT part of the group.
+    const layers = [
+      layerWith("Mask", "mask", []),
+      layerWith("Masked A", "masked", []),
+      layerWith("Masked B", "masked", []),
+      layerWith("Plain", "normal", []),
+    ];
+    const doc = baseDoc([sceneWith("Scene 1", layers)]);
+    const out = tryLoadRealFla(saveRealFla(doc));
+    expect(out).not.toBeNull();
+    const ls = out!.scenes[0]!.timeline.layers;
+    const typeByName = new Map(ls.map((l) => [l.name, l.type] as const));
+    expect(typeByName.get("Mask")).toBe("mask");
+    expect(typeByName.get("Masked A")).toBe("masked");
+    expect(typeByName.get("Masked B")).toBe("masked");
+    expect(typeByName.get("Plain")).toBe("normal");
+    // The mask stays immediately above its masked children (model invariant).
+    const names = ls.map((l) => l.name);
+    expect(names.indexOf("Masked A")).toBe(names.indexOf("Mask") + 1);
+    expect(names.indexOf("Masked B")).toBe(names.indexOf("Mask") + 2);
+  });
+
+  it("does not misattribute a plain layer below a normal layer as masked", () => {
+    // No mask layer at all → nothing should become "masked".
+    const layers = [layerWith("A", "normal", []), layerWith("B", "normal", [])];
+    const doc = baseDoc([sceneWith("Scene 1", layers)]);
+    const out = tryLoadRealFla(saveRealFla(doc));
+    expect(out!.scenes[0]!.timeline.layers.every((l) => l.type === "normal")).toBe(true);
+  });
+});
+
+// Regression for task 1419(b): document ruler guides are stored per-scene in each
+// CPicPage tail (§10.1) as `u32 guideCount` + `{u32 direction; s32 valueTwips}`. The
+// writer hardcoded guideCount=0, dropping every guide on save. It now emits the model's
+// doc-level guides into each scene; the reader unions + de-dupes them back.
+describe("saveRealFla — document guides (task 1419)", () => {
+  function docWithGuides(guides: { id: string; orientation: "horizontal" | "vertical"; position: number }[]) {
+    return baseDoc([sceneWith("Scene 1", [layerWith("Layer 1", "normal", [])])], {
+      properties: createDocumentProperties({
+        width: 640,
+        height: 480,
+        frameRate: 24,
+        backgroundColor: "#336699",
+        guides,
+      }),
+    });
+  }
+
+  it("recovers horizontal + vertical guides (orientation + position) on save→load", () => {
+    const doc = docWithGuides([
+      { id: "g1", orientation: "horizontal", position: 100 },
+      { id: "g2", orientation: "vertical", position: 250.5 },
+    ]);
+    const out = tryLoadRealFla(saveRealFla(doc));
+    expect(out).not.toBeNull();
+    const gs = out!.properties.guides
+      .map((g) => ({ orientation: g.orientation, position: g.position }))
+      .sort((a, b) => a.orientation.localeCompare(b.orientation) || a.position - b.position);
+    expect(gs).toEqual([
+      { orientation: "horizontal", position: 100 },
+      { orientation: "vertical", position: 250.5 },
+    ]);
+  });
+
+  it("a doc with no guides recovers an empty guide list (regression)", () => {
+    const out = tryLoadRealFla(saveRealFla(docWithGuides([])));
+    expect(out!.properties.guides).toEqual([]);
+  });
+});
+
 // Regression for task 1369: a frame written via the FULL serialization path (NOT the
 // empty-keyframe template) stamps frame schema fs=0x18, and the reader consumes a fixed
 // 20-byte higher-schema tail after the tweenInstanceName (`fs>19/>20/>=22 skip(4)` +

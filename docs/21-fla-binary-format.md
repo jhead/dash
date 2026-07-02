@@ -1418,14 +1418,29 @@ dropping data the reader decodes):
     the correct `Symbol N` stream. Preserving these needs the importer to tag each symbol-timeline blob
     with its originating symbol at capture time — a read-path change tracked separately.
 
+**Emitted as of task 1419** (two write gaps deferred by task 1386, now closed):
+
+- **Layer parent / mask back-links (§10.2).** A masked layer writes `layerType = 0` plus a
+  `parentReference` (u16) naming its mask by the mask's §5.2 running object index — the inverse of
+  `resolveMaskedLayers`. Because a mask is written AFTER its masked children (they are more
+  background-ward → earlier in the bottom-to-top stream), the reference is a FORWARD reference:
+  `writeCPicPage` captures every layer's own running index (`ClassTable.nextObjectIndex()` after the
+  `useClass` call, minus one — matching the reader's `ownObjectIndex`), records each masked layer's
+  `parentReference` byte offset, and back-patches it (`ByteWriter.patchU16`) once the mask's index is
+  known. `computeMaskByMaskedLayer` derives the association from the model (a `mask` layer immediately
+  above its contiguous `masked` children). A mask/`guide`/`guided`/`folder` layer's own type byte was
+  already preserved; this closes the masked→mask link. An empty doc has no masks, so every
+  `parentReference` stays 0 → bytes unchanged.
+- **Document guides (§10.1).** The CPicPage tail emits `u32 guideCount` + `{u32 direction; s32
+  valueTwips}` per guide (direction 0 horizontal / 1 vertical; twips = px·20) — the inverse of
+  `readCPicPage`'s guide decode. `doc.properties.guides` are written into EVERY scene's `Page N` tail
+  (guides are per-scene in the binary; the reader unions + de-dupes across scenes into the doc-level
+  list); symbol timelines get none. An empty doc has no guides → `guideCount` stays 0, byte-identical
+  to `flash8-empty.fla`. Round-trips are verified in `real-fla-write.test.ts` (mask association +
+  guides survive save→load).
+
 **Still deferred on the write path** (data-loss remains; not yet round-trippable):
 
-- **Layer parent / mask back-links (§10.2).** `parentReference` is written as 0 and a masked layer
-  writes `layerType = 0`, so the mask→masked association is lost on re-save (a `mask` layer's own type
-  byte is preserved; `guide`/`guided`/`folder` types are preserved). Reconstructing this needs the
-  mask layer's §5.2 running object index, which the writer does not track.
-- **Document guides.** The CPicPage tail (`PAGE_TAIL`) hardcodes `guideCount = 0`; document guides
-  (`doc.properties.guides`) are not emitted. They are authoring-only and not decoded by the importer.
 - **Shape-tween morph geometry (§13).** The CPicFrame `morphTag` is written as 0; end-shape morph
   geometry is not emitted.
 - **Text-field filters (§16.2 authoring form)** and the envelope-level clamp / FixedPageTail

@@ -2,9 +2,9 @@
   "id": "1419-1t4ifo-fla-writer-emit-layer-mask-back-links-document-g",
   "title": "FLA writer: emit layer mask back-links + document guides on save (1386 deferred)",
   "description": "Task 1386 (commit d6ceebc) restored filters/color-effects/fills/custom-ease on the real-FLA save path but DEFERRED two data-loss write gaps: (a) layer parent/mask back-links \u2014 `masked` layer association is lost because the writer doesn't track the mask layer's \u00a75.2 running object index (mask/guide/guided/folder layer TYPES already round-trip; the masked-to-mask association does not); (b) document guides \u2014 `PAGE_TAIL` hardcodes `guideCount=0`. Fix both in packages/core/src/fla/write/*.ts with write\u2192read round-trip tests. Read-side complement for guides is task 1411. See docs/21-fla-binary-format.md \u00a722. Acceptance: masked-layer association and document guides survive a save\u2192load round-trip.",
-  "status": "open",
+  "status": "done",
   "effort": "high",
   "priority": "medium",
   "created_at": "2026-07-02T02:47:10Z",
-  "updated_at": "2026-07-02T02:47:10Z"
+  "updated_at": "2026-07-02T03:49:18Z"
 }

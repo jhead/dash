@@ -87,6 +87,17 @@ export class ByteWriter {
     return this;
   }
 
+  /**
+   * Overwrite a little-endian u16 at an already-written byte `offset` (< length).
+   * Used to back-patch a forward reference — e.g. a masked layer's
+   * `parentReference` field, whose value (the mask layer's §5.2 running object
+   * index) is not known until the mask is written later in the stream (§10.2).
+   */
+  patchU16(offset: number, v: number): void {
+    this.buf[offset] = v & 0xff;
+    this.buf[offset + 1] = (v >>> 8) & 0xff;
+  }
+
   /** Emit a [V*] constant byte run verbatim. */
   raw(...b: number[]): this {
     return this.bytes(b);
@@ -228,5 +239,16 @@ export class ClassTable {
   /** Write a NULL tag (end of a children list). */
   writeNull(w: ByteWriter): void {
     w.u16(TAG_NULL);
+  }
+
+  /**
+   * The §5.2 running object index the NEXT object header (`useClass`) will occupy
+   * — mirrors `ArchiveReader.nextObjectIndex`. Captured immediately AFTER a
+   * `useClass` call and minus one, this equals the reader's `ownObjectIndex` for
+   * that object (the value a later masked layer's `parentReference` must carry to
+   * name its mask; see timeline-write.ts writeCPicPage and docs/21 §10.2).
+   */
+  nextObjectIndex(): number {
+    return 1 + this.definedCount + this.objectCount;
   }
 }
