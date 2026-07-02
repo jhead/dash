@@ -968,48 +968,69 @@ from CS3 onward.
 
 ## 13. Morph shape records
 
-A `CPicMorphShape` holds the geometry of a shape tween as a set of morph segments, each a list of
-morph curves, followed by the interpolated fill and stroke tables.
+A `CPicMorphShape` holds the geometry of a shape tween as a set of morph segments (one per
+contour), each carrying a list of morph curves, followed by the start-then-end fill and stroke
+tables. It is serialised inline in the shape-tween start `CPicFrame` tail (after the `morphTag`
+u16, section 11), NOT as a CArchive child of the frame.
+
+Layout below is **verified** against `fixtures/morph-shape-tween-mx.fla` (a color-changing tween:
+white→black gradient + green 10px stroke morphing to red→blue gradient + yellow 2px stroke). Two
+prior guesses were wrong and are corrected here: the segment/curve fields follow their class tag
+**directly — there is NO `CPicObjBase` (schema/flags/children) prefix**, and the geometry is plain
+`s32` **SWF twips** (1 px = 20 twips), not `Point8_24` fixed-point.
 
 ```
 new class CPicMorphShape
-skip(57)                                 // two identity matrices and flags, constant
-u16 segmentCount
-segment[segmentCount] {
-  new class CMorphSegment
-  u32 strokeIndex1, strokeIndex2, fillIndex1, fillIndex2   // 0xFFFFFFFF for none
-  Point8_24 startA
-  Point8_24 startB
+u8  schema, u8 flags, u16 0x0000         // CPicObjBase; then a ~57-byte header of two
+                                         // identity matrices + flags (skipped via boundary scan)
+segment[] {                              // CArchive list; terminated by u16 0x0000
+  class CMorphSegment                    // NEWCLASS first, then backref (0x8000|idx)
+  s32 strokeStartIdx, strokeEndIdx       // 0-BASED index into MorphStroke[]; -1 (0xFFFFFFFF) = none
+  s32 fillStartIdx,   fillEndIdx         // 0-BASED index into MorphFill[];   -1 = none
+  s32 startA.x, startA.y                 // start-keyframe pen origin (SWF twips)
+  s32 startB.x, startB.y                 // end-keyframe   pen origin (SWF twips)
   u16 curveCount
   curve[curveCount] {
-    new class CMorphCurve
-    Point8_24 controlA, anchorA, controlB, anchorB
-    u8 isLine
-    skip(3)                              // 00 00 00
+    class CMorphCurve                    // NEWCLASS first, then backref
+    s32 controlA.x, controlA.y, anchorA.x, anchorA.y   // start-keyframe control + anchor
+    s32 controlB.x, controlB.y, anchorB.x, anchorB.y   // end-keyframe   control + anchor
+    u8  isLine                           // 1 = straight edge; control is the from→to midpoint
+    u8  0x00, 0x00, 0x00                 // padding
   }
 }
 u16 0x0000                               // segment list terminator
 u16 fillCount
-MorphFill[fillCount]                     // section 13.1
+MorphFill[fillCount]                     // section 13.1 — start styles first, then end styles
 u16 strokeCount
-MorphStroke[strokeCount]                 // section 13.2
+MorphStroke[strokeCount]                 // section 13.2 — start styles first, then end styles
+u8  shapeTweenBlend                      // 0 = distributive, 1 = angular
 ```
+
+The four segment index fields pair start/end: `*StartIdx` selects the START-keyframe style and
+`*EndIdx` the END-keyframe style, both 0-based into the tables below. In the fixture a fill contour
+reads `[strokeStart=0, strokeEnd=1, fillStart=0, fillEnd=1]` → start = `MorphStroke[0]` (green) +
+`MorphFill[0]` (white→black), end = `MorphStroke[1]` (yellow) + `MorphFill[1]` (red→blue), matching
+the two keyframes' own `CPicShape`s exactly. On import only the end ("B") geometry/styles are
+reconstructed into `pendingMorphEndShape` (using `*EndIdx` and the B control/anchor points); the
+start keyframe already supplies its own shape, so the "A" points/indices are read but not rebuilt.
 
 ### 13.1 Morph fill
 
-A morph fill has the same four forms as a shape fill. The discriminator is the first byte: 0x00
-introduces a null or solid fill and 0xFF introduces a bitmap fill, with the type word
-distinguishing the remaining cases.
+A morph fill uses the same wire form as a shape fill (section 12) but **without** the Flash 8
+gradient focal/flow extras: an `RGBA` base color, then a `u16 subtype`, then per-subtype data. The
+subtype bits are the same as a shape fill — `0x10` = gradient (bit `0x02` distinguishes radial from
+linear), `0x40` = bitmap, neither = solid.
 
 ```
-null:     u8 0x00, 0x00, 0x00, 0x00, u16 0x0000
-solid:    u8 R, G, B, A, u16 0x0000
-gradient: u8 0x00, 0x00, 0x00, 0xFF, u16 type, Matrix, u8 stopCount, stop[]{ u8 ratio; RGBA }
-bitmap:   u8 0xFF, 0x00, 0x00, 0xFF, u8 type, u8 0x00, Matrix, u16 bitmapId
+solid:    RGBA, u16 subtype (no 0x10/0x40 bit)
+gradient: RGBA, u16 subtype (0x10 | 0x02?), Matrix, u8 stopCount, stop[]{ u8 ratio; RGBA }
+bitmap:   RGBA, u16 subtype (0x40 | ...), Matrix, u16 bitmapId
 ```
 
-The gradient type here is a 16-bit value, unlike the 8-bit type in a shape fill, and there is no
-focal or flow block.
+The gradient type is a 16-bit value (unlike the 8-bit subtype in a shape fill) and there is no
+focal or flow block. Verified against `morph-shape-tween-mx.fla`: `MorphFill[0]` decodes to a
+linear gradient whose matrix (`a≈0.0244`, `tx=40`) and stops (white→black) match the start
+keyframe's own gradient exactly, and `MorphFill[1]` to the end keyframe's red→blue gradient.
 
 ### 13.2 Morph stroke
 

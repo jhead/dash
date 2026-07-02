@@ -3198,67 +3198,96 @@ function frameTailEndScan(r: Reader): void {
 }
 
 /**
- * Decode the CPicMorphShape (and its CMorphSegment/CMorphCurve children) that
- * follows the morph-tag field in a shape-tweened CPicFrame, producing the
- * end-keyframe shape geometry.
+ * Read one morph fill style entry from the CPicMorphShape fill table (§13.1).
  *
- * The morph object is serialised inline in the CPicFrame tail — it is NOT a
- * child of the CPicFrame in the CArchive children list. After decoding, the
- * reader is positioned at the next sibling CPicFrame's class tag (the end
- * keyframe) or at the null terminator of the parent CPicLayer's children list.
+ * Wire form (verified against morph-shape-tween-mx.fla): the same four shapes
+ * as a plain shape fill, but WITHOUT the F8 gradient focal/flow extras.
+ *   RGBA(4) + u16 subtype, then per subtype:
+ *     solid/null (subtype & 0x10 == 0 && & 0x40 == 0): nothing more
+ *     gradient   (subtype & 0x10): Matrix(24) + u8 stopCount + stopCount×{u8 ratio; RGBA}
+ *     bitmap     (subtype & 0x40): Matrix(24) + u16 bitmapId
  *
- * CPicMorphShape binary layout (observed in MX/F8 fixtures):
- *   - CArchive class tag (NEWCLASS or backref for CPicMorphShape)
- *   - CPicObjBase header: schema(u8), flags(u8), then children loop which
- *     immediately encounters a "bad" tag (0x0001) triggering skipToNextBoundary;
- *     the scanner re-positions at the first CMorphSegment or CMorphCurve NEWCLASS.
- *   - CArchive loop of CMorphSegment / CMorphCurve objects terminated by null(u16=0):
- *       CMorphSegment: CPicObjBase(schema=0,null) + 7×s32 + 1×u16
- *         s32 fields: styleFlags, fill0Style, fill1Style, fromX, fromY, toX, toY
- *         All coordinates in SWF twips (1 px = 20 twips).
- *       CMorphCurve: CPicObjBase(variable schema, null) + reg-point + extra bytes
- *         + 6×s32 per-class fields:
- *         s32 fields: ctrlX, ctrlY, anchorX, anchorY, ???, ???
- *         Coordinates in SWF twips.
- *   - After null: CPicMorphShape reg point (8 bytes if CPicMorphShape schema > 0)
- *
- * The decoded edges are stored in ctx.pendingMorphEndShape with the same fills
- * and strokes as the start keyframe shape, to be consumed by finishFrame() of
- * the subsequent end CPicFrame if that frame has no elements of its own.
- *
- * Falls back to the old forward-scan if decoding fails for any reason.
+ * The gradient sub-bit 0x02 distinguishes radial (0x12) from linear (0x10).
+ * Verified: fill[0] decodes to a linear gradient whose matrix (a≈0.0244,
+ * tx=40) and stops (white→black) match the start keyframe's gradient exactly.
  */
-/**
- * Skip one morph fill style entry (writeMorphFillStylePart format).
- * Layout by subtype (stored as u16 at offset +4):
- *   Solid/null (subtype=0):  4 (RGBA) + 2 (u16=0) = 6 bytes total
- *   Gradient (0x10/0x12):   4 (RGBA) + 2 (type) + 24 (matrix) + 1 (count) + count×5
- *   Bitmap (0x40+):         4 (RGBA) + 2 (type) + 24 (matrix) + 2 (bitmapId) = 32 bytes
- */
-function skipMorphFillStyle(r: Reader): void {
-  r.skip(4); // RGBA
+function readMorphFillStyle(r: Reader): Fla8Fill {
+  const color = readColorRGBA(r);
   const subtype = r.u16();
   if (subtype & 0x10) {
-    // Gradient (linear 0x10 or radial 0x12)
-    r.skip(24); // matrix (6×u32)
-    const count = r.u8();
-    r.skip(count * 5); // each entry: 1 ratio + 4 RGBA
-  } else if (subtype & 0x40) {
-    // Bitmap fill
-    r.skip(24); // matrix
-    r.skip(2);  // bitmapId (u16)
+    const matrix = readMatrix(r);
+    const numStops = r.u8();
+    const stops: Fla8GradientStop[] = [];
+    for (let i = 0; i < numStops; i++) {
+      const position = r.u8();
+      const stopColor = readColorRGBA(r);
+      if (stops.length < 15) stops.push({ position, color: stopColor });
+    }
+    return {
+      kind: subtype & 0x02 ? "radial-gradient" : "linear-gradient",
+      matrix,
+      stops,
+      focalRatio: 0,
+    };
   }
-  // subtype == 0: solid/null — already consumed the 2 bytes above, done
+  if (subtype & 0x40) {
+    const matrix = readMatrix(r);
+    const bitmapId = r.u16();
+    const repeat = (subtype & 0x01) === 0;
+    const smooth = (subtype & 0x02) !== 0;
+    return { kind: "bitmap", matrix, bitmapId, repeat, smooth };
+  }
+  return { kind: "solid", color };
 }
 
 /**
- * Decode the CPicMorphShape (and its CMorphSegment/CMorphCurve children) that
- * follows the morph-tag field in a shape-tweened CPicFrame, producing the
- * end-keyframe shape geometry.
+ * Read one morph stroke style entry (§13.2): exactly ten bytes — an RGBA
+ * color, a u32 width in twips, and a u16 zero.  Cap/join/scale detail is not
+ * stored in the morph table (unlike an F8 shape stroke), so those default.
+ */
+function readMorphStrokeStyle(r: Reader): Fla8Stroke {
+  const color = readColorRGBA(r);
+  const widthTwips = r.u32();
+  r.skip(2); // trailing u16 (observed 0x0000)
+  return {
+    color,
+    width: widthTwips / 20,
+    cap: "round",
+    join: "round",
+    miterLimit: 3,
+    pixelHinting: false,
+    scaleMode: "normal",
+  };
+}
+
+/**
+ * Decode the CPicMorphShape (its CMorphSegment/CMorphCurve list plus the morph
+ * fill/stroke style tables) that follows the morph-tag field in a shape-tweened
+ * CPicFrame, producing the END-keyframe shape geometry AND styles in
+ * ctx.pendingMorphEndShape (consumed by finishFrame() of the subsequent end
+ * CPicFrame only when that frame has no shape of its own).
  *
- * Returns the shapeTweenBlend byte (0=distributive, 1=angular) read from the
- * frame tail immediately after the morph fill/stroke style tables.  Returns 0
- * on any parse error (safe default: distributive).
+ * CPicMorphShape layout (docs/21 §13; verified against morph-shape-tween-mx.fla):
+ *   - CArchive class tag for CPicMorphShape + a ~57-byte header (two identity
+ *     matrices + flags) which the reader skips via skipToNextBoundary.
+ *   - A CArchive list of CMorphSegment objects terminated by null (u16 0):
+ *       CMorphSegment (fields DIRECTLY after the tag — no CPicObjBase prefix):
+ *         s32 strokeStartIdx, strokeEndIdx, fillStartIdx, fillEndIdx  (-1 = none,
+ *             0-based into the morph stroke/fill tables below)
+ *         s32 startA.x, startA.y  (start-keyframe pen origin, SWF twips)
+ *         s32 startB.x, startB.y  (end-keyframe   pen origin)
+ *         u16 curveCount
+ *         CMorphCurve[curveCount] (also no CPicObjBase):
+ *           s32 controlA.x/y, anchorA.x/y  (start-keyframe control + anchor)
+ *           s32 controlB.x/y, anchorB.x/y  (end-keyframe   control + anchor)
+ *           u8  isLine (1 = straight; control is the from→to midpoint)
+ *           u8  0x00 ×3
+ *   - u16 fillCount; morph fill styles (§13.1) — start styles then end styles.
+ *   - u16 strokeCount; morph stroke styles (§13.2, 10 bytes each).
+ *   - u8 shapeTweenBlend (0=distributive, 1=angular).
+ *
+ * Returns the shapeTweenBlend byte.  Falls back to a forward position scan (and
+ * returns 0) on any parse error, leaving pendingMorphEndShape null.
  */
 function decodeMorphData(
   ctx: ParseCtx,
@@ -3312,10 +3341,46 @@ function decodeMorphData(
     //    by a null class tag (0x0000).
     const SWF_TWIPS_PER_PX = 20;
     const edges: Fla8Edge[] = [];
-    let fill0 = 0;
+    // Morph edges carry the fill on the fill1 (right) side only; fill0 is unused.
+    const fill0 = 0;
     let fill1 = 0;
     let line = 0;
 
+
+    // Convert a 0-based morph-table style index (Flash stores -1 / 0xFFFFFFFF
+    // for "none") into the model's 1-based convention (0 = none).
+    const endStyleIndex = (raw: number): number => (raw >= 0 ? raw + 1 : 0);
+
+    // Each CMorphSegment describes ONE contour of the tween. Its fields follow
+    // the class tag directly — there is NO CPicObjBase (schema/flags/children)
+    // prefix, unlike most objects in this format (verified against
+    // morph-shape-tween-mx.fla: the fields begin immediately after the tag).
+    //
+    //   CMorphSegment:
+    //     s32 strokeStartIdx, strokeEndIdx, fillStartIdx, fillEndIdx
+    //         Each is a 0-BASED index into the morph stroke/fill table (§13.1/
+    //         §13.2) or -1 (0xFFFFFFFF) for "none". strokeStartIdx/fillStartIdx
+    //         are the START-keyframe styles, strokeEndIdx/fillEndIdx the END.
+    //         (Verified against morph-shape-tween-mx.fla, a color-changing
+    //         tween: seg indices [0,1,0,1] → start green stroke + white→black
+    //         gradient, end yellow stroke + red→blue gradient, matching the two
+    //         keyframes' own CPicShapes exactly.)
+    //     s32 startA.x, startA.y     start-keyframe pen origin (SWF twips)
+    //     s32 startB.x, startB.y     end-keyframe   pen origin (SWF twips)
+    //     u16 curveCount
+    //     CMorphCurve[curveCount]
+    //
+    //   CMorphCurve (again no CPicObjBase):
+    //     s32 controlA.x, controlA.y, anchorA.x, anchorA.y   start-keyframe edge
+    //     s32 controlB.x, controlB.y, anchorB.x, anchorB.y   end-keyframe edge
+    //     u8  isLine    (1 = straight edge; the control point is then the
+    //                    midpoint of from→to and is ignored)
+    //     u8  0x00 ×3   padding
+    //
+    // We build the END-keyframe geometry (the "B" points) here because
+    // pendingMorphEndShape supplies the end shape only when the end CPicFrame
+    // carries no shape of its own. The start ("A") geometry equals the start
+    // keyframe's own CPicShape (verified: A decodes to the start quad exactly).
     for (;;) {
       const childTag = ar.readClassTag();
       if (childTag.kind === "null") break;
@@ -3324,133 +3389,137 @@ function decodeMorphData(
         if (childTag.kind === "bad") skipToNextBoundary(ctx);
         break;
       }
-
-      // Each CMorphSegment / CMorphCurve uses CPicObjBase (schema, flags,
-      // null-terminated children list, optional reg point).
-      const cSchema = r.u8();
-      r.skip(1); // flags
-      // Children loop for this segment/curve (always empty in practice).
-      for (;;) {
-        const cChild = ar.readClassTag();
-        if (cChild.kind === "null") break;
-        if (cChild.kind === "bad") { skipToNextBoundary(ctx); break; }
-        if (cChild.kind === "object-backref") continue;
-        deserializeClass(cChild.name, ctx);
-      }
-      // Consume optional reg-point / schema-extra bytes.
-      if (cSchema > 0) r.skip(8);
-      if (cSchema > 2) r.skip(1);
-      if (cSchema > 3) r.skip(1);
-
-      // Per-class fields (coordinates in SWF twips).
-      if (childTag.name === "CMorphSegment") {
-        // Layout: styleFlags(s32) fill0Style(s32) fill1Style(s32)
-        //         fromX(s32) fromY(s32) toX(s32) toY(s32) trailing(u16)
-        const styleFlags = r.s32();
-        const fill0Style = r.s32();
-        const fill1Style = r.s32();
-        const fromX = r.s32() / SWF_TWIPS_PER_PX;
-        const fromY = r.s32() / SWF_TWIPS_PER_PX;
-        const toX = r.s32() / SWF_TWIPS_PER_PX;
-        const toY = r.s32() / SWF_TWIPS_PER_PX;
-        r.u16(); // trailing field (observed as 0x0004 in MX fixture; purpose unknown)
-        // Derive 1-based fill/line indices: use style indices from the segment,
-        // mapping -1 (none) to 0 and positive values as-is.
-        fill0 = fill0Style > 0 ? fill0Style : 0;
-        fill1 = styleFlags > 0 ? styleFlags : 0;
-        line = 0;
-        // Suppress the unused-variable warning for fill0Style / fill1Style;
-        // they are captured above and may be useful for future refinement.
-        void fill0Style; void fill1Style;
-        edges.push({
-          kind: "line",
-          fromX, fromY,
-          ctrlX: (fromX + toX) / 2,
-          ctrlY: (fromY + toY) / 2,
-          toX, toY,
-          fill0,
-          fill1,
-          line,
-        });
-      } else if (childTag.name === "CMorphCurve") {
-        // Layout (after CPicObjBase with its reg-point skip): 6×s32
-        //   ctrlX, ctrlY, anchorX, anchorY, unknown1, unknown2
-        // ctrlX/ctrlY are absolute SWF twips (the quadratic control point).
-        // anchorX/anchorY are absolute SWF twips (the curve end point).
-        const ctrlX = r.s32() / SWF_TWIPS_PER_PX;
-        const ctrlY = r.s32() / SWF_TWIPS_PER_PX;
-        const anchorX = r.s32() / SWF_TWIPS_PER_PX;
-        const anchorY = r.s32() / SWF_TWIPS_PER_PX;
-        r.s32(); // unknown1
-        r.s32(); // unknown2 (observed to be a style index; ignored for now)
-        // Reuse last edge's fill/line styles — curves in CPicMorphShape do not
-        // carry independent style indices; they inherit from the preceding segment.
-        edges.push({
-          kind: "curve",
-          fromX: edges.length > 0 ? edges[edges.length - 1]!.toX : ctrlX,
-          fromY: edges.length > 0 ? edges[edges.length - 1]!.toY : ctrlY,
-          ctrlX,
-          ctrlY,
-          toX: anchorX,
-          toY: anchorY,
-          fill0: fill0 ?? 0,
-          fill1: fill1 ?? 0,
-          line: line ?? 0,
-        });
-      } else {
-        // Unknown morph child — skip its data as best we can.
-        warnOnce(ctx, `unknown morph child class "${childTag.name}" skipped`);
+      if (childTag.name !== "CMorphSegment") {
+        // Unexpected class in the segment list — skip and stop.
+        warnOnce(ctx, `unexpected morph class "${childTag.name}" in segment list`);
         skipToNextBoundary(ctx);
+        break;
+      }
+
+      const strokeStartIdx = r.s32();
+      const strokeEndIdx = r.s32();
+      const fillStartIdx = r.s32();
+      const fillEndIdx = r.s32();
+      // Start-keyframe origin (unused for the end shape) and end-keyframe origin.
+      r.s32(); // startA.x
+      r.s32(); // startA.y
+      let penBx = r.s32() / SWF_TWIPS_PER_PX; // startB.x
+      let penBy = r.s32() / SWF_TWIPS_PER_PX; // startB.y
+      const curveCount = r.u16();
+      // We build the END keyframe, so use the END style indices. The morph
+      // fill/stroke tables list start styles first then end styles, so a 0-based
+      // end index maps to the model's 1-based fills[]/strokes[] entry as idx+1;
+      // -1 (none) → 0. The fill is carried on the fill1 (right) side, matching
+      // the end keyframe's own CPicShape (fill0 left is unused by morph edges).
+      // The START indices are captured for completeness (they build the start
+      // shape, which the tween's start CPicFrame already supplies directly).
+      fill1 = endStyleIndex(fillEndIdx);
+      line = endStyleIndex(strokeEndIdx);
+      void strokeStartIdx; void fillStartIdx;
+
+      for (let c = 0; c < curveCount; c++) {
+        const curveTag = ar.readClassTag();
+        if (curveTag.kind !== "class" || curveTag.name !== "CMorphCurve") {
+          // Structure desync — bail out of the whole segment loop cleanly.
+          if (curveTag.kind === "bad") skipToNextBoundary(ctx);
+          c = curveCount;
+          break;
+        }
+        r.s32(); // controlA.x
+        r.s32(); // controlA.y
+        r.s32(); // anchorA.x
+        r.s32(); // anchorA.y
+        const ctrlBx = r.s32() / SWF_TWIPS_PER_PX;
+        const ctrlBy = r.s32() / SWF_TWIPS_PER_PX;
+        const anchorBx = r.s32() / SWF_TWIPS_PER_PX;
+        const anchorBy = r.s32() / SWF_TWIPS_PER_PX;
+        const isLine = r.u8();
+        r.skip(3); // padding (observed 00 00 00)
+        if (isLine) {
+          edges.push({
+            kind: "line",
+            fromX: penBx, fromY: penBy,
+            ctrlX: (penBx + anchorBx) / 2,
+            ctrlY: (penBy + anchorBy) / 2,
+            toX: anchorBx, toY: anchorBy,
+            fill0, fill1, line,
+          });
+        } else {
+          edges.push({
+            kind: "curve",
+            fromX: penBx, fromY: penBy,
+            ctrlX: ctrlBx, ctrlY: ctrlBy,
+            toX: anchorBx, toY: anchorBy,
+            fill0, fill1, line,
+          });
+        }
+        penBx = anchorBx;
+        penBy = anchorBy;
       }
     }
 
-    // CPicMorphShape reg point after the null terminator (schema=2 > 0).
-    // Already consumed in the children-loop null branch above if schema > 0.
-
-    // 4. Store decoded end-shape for use by the subsequent end keyframe.
-    if (edges.length > 0) {
-      const identityMatrix: Fla8Matrix = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
-      ctx.pendingMorphEndShape = {
-        type: "shape",
-        matrix: identityMatrix,
-        fills: startFills,
-        strokes: startStrokes,
-        edges,
-      };
-    } else {
-      ctx.pendingMorphEndShape = null;
-    }
-
-    // 4.5. Attempt to read the morph fill/stroke style tables that follow the
-    //      segment list, then read the shapeTweenBlend byte (0=distributive,
-    //      1=angular).
+    // 4. Read the morph fill/stroke style tables that follow the segment list
+    //    (§13.1/§13.2), then the shapeTweenBlend byte (0=distributive,
+    //    1=angular).
     //
-    //      Binary layout (flacomdoc TimelineConverter.java ~line 2983):
-    //        u16 fillCount; fillCount × morphFillStyle (variable size)
-    //        u16 strokeCount; strokeCount × morphStrokeStyle (10 bytes each)
-    //        u8 shapeTweenBlend
+    //    Layout (verified against morph-shape-tween-mx.fla):
+    //      u16 fillCount; fillCount × morphFillStyle
+    //      u16 strokeCount; strokeCount × morphStrokeStyle (10 bytes each)
+    //      u8 shapeTweenBlend
     //
-    //      We save the position before attempting this parse.  On any error
-    //      the position is RESTORED so that the subsequent skipToNextCPicFrame
-    //      scan still starts from after the morph segment data, not mid-table.
+    //    Each morph fill uses the same wire form as a shape fill without the
+    //    F8 gradient focal/flow extras: RGBA(4) + u16 subtype, then per subtype
+    //    a matrix + u8 stopCount + stops (gradient), a matrix + u16 bitmapId
+    //    (bitmap), or nothing (solid). readMorphFillStyle() returns the decoded
+    //    Fla8Fill AND leaves the reader positioned after the entry so the
+    //    stroke table + shapeTweenBlend read correctly.
+    //
+    //    These tables carry the END-keyframe (interpolation-target) styles. On
+    //    any parse error the position is RESTORED so the subsequent
+    //    skipToNextCPicFrame scan starts from after the morph segment data.
     let shapeTweenBlend = 0;
+    let endFills: Fla8Fill[] | null = null;
+    let endStrokes: Fla8Stroke[] | null = null;
     const posAfterSegments = r.pos;
     try {
       const fillCount = r.u16();
-      // Sanity cap: morph shapes rarely have more than 64 fill styles
       if (fillCount <= 64) {
-        for (let i = 0; i < fillCount; i++) skipMorphFillStyle(r);
+        const fills: Fla8Fill[] = [];
+        for (let i = 0; i < fillCount; i++) fills.push(readMorphFillStyle(r));
         const strokeCount = r.u16();
-        // Sanity cap and size check before skipping
         if (strokeCount <= 64 && r.pos + strokeCount * 10 < r.buf.length) {
-          r.skip(strokeCount * 10); // each morph stroke style is exactly 10 bytes
+          const strokes: Fla8Stroke[] = [];
+          for (let i = 0; i < strokeCount; i++) strokes.push(readMorphStrokeStyle(r));
           shapeTweenBlend = r.u8();
+          endFills = fills;
+          endStrokes = strokes;
         }
       }
     } catch {
       // Parse error — restore position so skipToNextCPicFrame starts correctly.
       r.pos = posAfterSegments;
       shapeTweenBlend = 0;
+      endFills = null;
+      endStrokes = null;
+    }
+
+    // 4b. Store the decoded end-shape for use by the subsequent end keyframe.
+    //     Use the decoded end fill/stroke tables when they parsed cleanly;
+    //     otherwise fall back to the start keyframe's styles (the safe default
+    //     used before the tables were decoded).  The morph shares one style
+    //     table across both keyframes, so the per-edge fill0/fill1/line indices
+    //     (decoded from each CMorphSegment above) index into these end styles.
+    if (edges.length > 0) {
+      const identityMatrix: Fla8Matrix = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
+      ctx.pendingMorphEndShape = {
+        type: "shape",
+        matrix: identityMatrix,
+        fills: endFills ?? startFills,
+        strokes: endStrokes ?? startStrokes,
+        edges,
+      };
+    } else {
+      ctx.pendingMorphEndShape = null;
     }
 
     // 5. Re-position at the next CPicFrame backref or layer null terminator,
@@ -3532,6 +3601,23 @@ function skipMorphDataFallback(ctx: ParseCtx): void {
 // ---------------------------------------------------------------------------
 // Timeline stream entry point
 // ---------------------------------------------------------------------------
+
+/**
+ * Test-only: run decodeMorphData over a raw CPicMorphShape byte buffer and
+ * return the decoded end shape + shapeTweenBlend.  Used by unit tests to pin
+ * the morph fill/stroke table + segment style-index layout without a full FLA.
+ */
+export function __decodeMorphDataForTest(
+  bytes: Uint8Array,
+  startFills: Fla8Fill[],
+  startStrokes: Fla8Stroke[],
+): { end: Fla8Shape | null; blend: number } {
+  const r = new Reader(bytes);
+  const ar = new ArchiveReader(r);
+  const ctx: ParseCtx = { r, ar, warnings: new Set() };
+  const blend = decodeMorphData(ctx, startFills, startStrokes);
+  return { end: ctx.pendingMorphEndShape ?? null, blend };
+}
 
 /**
  * Parse a "Page N" / "Symbol N" timeline stream into layers/frames/elements.

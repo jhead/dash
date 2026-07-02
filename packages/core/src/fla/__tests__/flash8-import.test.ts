@@ -31,6 +31,7 @@ import {
   parseFla8Contents,
   parseFla8Timeline,
   textOrientationFromRunFields,
+  __decodeMorphDataForTest,
 } from "../flash8-binary.js";
 import { parseClipActions, parseButtonHandlers, toColorEffect, toFlashFilter, buildFla8Document, buildHtmlText, convertFla8Text, assignFolderParents, toObjectAccessibility } from "../flash8-import.js";
 import { getTweenSpans } from "../../model/timeline-query.js";
@@ -372,6 +373,161 @@ describe("shape tween FLA import (morph-shape-tween-mx.fla)", () => {
     // must default to "distributive" rather than returning undefined or "angular".
     const layer = doc.scenes[0]!.timeline.layers[0]!;
     expect(layer.frames[0]!.shapeBlend).toBe("distributive");
+  });
+
+  // Ground truth for the morph style decode (task 1415): this fixture is a
+  // COLOR-CHANGING tween. Its start and end CPicShapes carry different fills
+  // and strokes, and the CPicMorphShape morph tables list both. Asserting the
+  // two keyframes' own styles pins that the reader distinguishes them.
+  it("start and end keyframes carry DISTINCT fill and stroke styles", () => {
+    const layer = doc.scenes[0]!.timeline.layers[0]!;
+    const startShape = layer.frames[0]!.displayObjects[0] as ShapeDisplayObject;
+    const endShape = layer.frames[1]!.displayObjects[0] as ShapeDisplayObject;
+
+    const gradientStops = (s: ShapeDisplayObject) => {
+      const p = s.shape.paths.find((pp) => pp.fill?.type === "linear-gradient");
+      const fill = p?.fill;
+      return fill && fill.type === "linear-gradient" ? fill.stops.map((st) => st.color) : [];
+    };
+    const strokeColor = (s: ShapeDisplayObject) =>
+      s.shape.paths.find((pp) => pp.stroke)?.stroke?.color;
+
+    // Start: white → black gradient, green stroke.
+    const startStops = gradientStops(startShape);
+    expect(startStops.length).toBeGreaterThanOrEqual(2);
+    expect(startStops[0]).toMatchObject({ r: 255, g: 255, b: 255 });
+    expect(startStops[startStops.length - 1]!).toMatchObject({ r: 0, g: 0, b: 0 });
+    expect(strokeColor(startShape)).toMatchObject({ r: 0, g: 255, b: 0 });
+
+    // End: red → blue gradient, yellow stroke.
+    const endStops = gradientStops(endShape);
+    expect(endStops.length).toBeGreaterThanOrEqual(2);
+    expect(endStops[0]).toMatchObject({ r: 255, g: 0, b: 0 });
+    expect(endStops[endStops.length - 1]!).toMatchObject({ r: 0, g: 0, b: 255 });
+    expect(strokeColor(endShape)).toMatchObject({ r: 255, g: 255, b: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Morph (CPicMorphShape) low-level decode — decodeMorphData (task 1415)
+// ---------------------------------------------------------------------------
+
+describe("decodeMorphData — morph fill/stroke tables + segment style indices", () => {
+  // Build a synthetic CPicMorphShape byte buffer that decodeMorphData can parse:
+  // a single-segment, single-line contour whose START/END style indices point at
+  // different entries of the morph fill/stroke tables. Verifies the layout pinned
+  // against morph-shape-tween-mx.fla: fields follow each class tag directly (no
+  // CPicObjBase), the segment carries [strokeStart, strokeEnd, fillStart, fillEnd]
+  // as 0-based table indices (-1=none), and the end shape uses the END indices.
+  function buildMorphBytes(): Uint8Array {
+    const bytes: number[] = [];
+    const u8 = (v: number) => bytes.push(v & 0xff);
+    const u16 = (v: number) => { u8(v); u8(v >> 8); };
+    const s32 = (v: number) => { u8(v); u8(v >> 8); u8(v >> 16); u8(v >> 24); };
+    const cls = (name: string) => {
+      u16(0xffff); u16(1); u16(name.length);
+      for (const ch of name) u8(ch.charCodeAt(0));
+    };
+    const twips = (px: number) => s32(px * 20);
+
+    // CPicMorphShape header: class tag + schema(0) + flags(0) + null children.
+    cls("CPicMorphShape");
+    u8(0); // morphSchema = 0 (no reg point)
+    u8(0); // flags
+    u16(0x0000); // children null → step 2 breaks cleanly
+
+    // One CMorphSegment.
+    cls("CMorphSegment");
+    s32(0);   // strokeStartIdx → strokes[0]
+    s32(1);   // strokeEndIdx   → strokes[1] (end shape uses this → line=2)
+    s32(0);   // fillStartIdx   → fills[0]
+    s32(1);   // fillEndIdx     → fills[1] (end shape uses this → fill1=2)
+    twips(10); twips(10); // startA (start-keyframe origin, ignored)
+    twips(0); twips(0);   // startB (end-keyframe origin = (0,0))
+    u16(1); // curveCount = 1
+    cls("CMorphCurve");
+    twips(5); twips(0); twips(10); twips(0);   // controlA/anchorA (start, ignored)
+    twips(15); twips(0); twips(30); twips(0);  // controlB (midpoint) / anchorB=(30,0)
+    u8(1); u8(0); u8(0); u8(0); // isLine=1 + 3 pad
+
+    u16(0x0000); // segment-list terminator
+
+    // Morph fill table: fillCount=2 → [solid red, solid blue].
+    u16(2);
+    u8(255); u8(0); u8(0); u8(255); u16(0x0000); // fills[0] solid red
+    u8(0); u8(0); u8(255); u8(255); u16(0x0000); // fills[1] solid blue
+    // Morph stroke table: strokeCount=2 → [green w10, yellow w2].
+    u16(2);
+    u8(0); u8(255); u8(0); u8(255); s32(10 * 20); u16(0x0000); // strokes[0] green
+    u8(255); u8(255); u8(0); u8(255); s32(2 * 20); u16(0x0000); // strokes[1] yellow
+    u8(1); // shapeTweenBlend = 1 (angular)
+    return new Uint8Array(bytes);
+  }
+
+  it("decodes end geometry, end styles, and shapeTweenBlend from the tables", () => {
+    const { end, blend } = __decodeMorphDataForTest(buildMorphBytes(), [], []);
+    expect(blend).toBe(1); // angular
+    expect(end).not.toBeNull();
+    // Two fills + two strokes decoded from the morph tables.
+    expect(end!.fills).toHaveLength(2);
+    expect(end!.strokes).toHaveLength(2);
+    expect(end!.fills[1]).toMatchObject({ kind: "solid", color: { r: 0, g: 0, b: 255, a: 255 } });
+    expect(end!.strokes[1]).toMatchObject({ color: { r: 255, g: 255, b: 0, a: 255 }, width: 2 });
+
+    // One edge, the END-keyframe line from (0,0) to (30,0).
+    expect(end!.edges).toHaveLength(1);
+    const e = end!.edges[0]!;
+    expect(e.kind).toBe("line");
+    expect([e.fromX, e.fromY]).toEqual([0, 0]);
+    expect([e.toX, e.toY]).toEqual([30, 0]);
+
+    // Corrected style mapping: the edge references the END style slots
+    // (1-based: fillEndIdx 1 → fill1=2 → fills[1] blue; strokeEndIdx 1 →
+    // line=2 → strokes[1] yellow). fill0 (left) is unused.
+    expect(e.fill1).toBe(2);
+    expect(e.line).toBe(2);
+    expect(e.fill0).toBe(0);
+  });
+
+  it("maps a 'none' (-1) fill index to 0 and keeps the other side", () => {
+    // Rebuild with fillEndIdx = -1 (no end fill), strokeEndIdx = 0.
+    const src = buildMorphBytes();
+    // fillEndIdx is the 4th s32 of the CMorphSegment. Locate it by the fixed
+    // header size preceding it and patch to 0xFFFFFFFF; patch strokeEndIdx to 0.
+    // (Simpler: re-run the builder with an inline variant.)
+    const bytes: number[] = [];
+    const u8 = (v: number) => bytes.push(v & 0xff);
+    const u16 = (v: number) => { u8(v); u8(v >> 8); };
+    const s32 = (v: number) => { u8(v); u8(v >> 8); u8(v >> 16); u8(v >> 24); };
+    const cls = (name: string) => { u16(0xffff); u16(1); u16(name.length); for (const ch of name) u8(ch.charCodeAt(0)); };
+    const twips = (px: number) => s32(px * 20);
+    cls("CPicMorphShape"); u8(0); u8(0); u16(0);
+    cls("CMorphSegment");
+    s32(0); s32(0); s32(-1); s32(-1); // strokeStart0, strokeEnd0, fillStart none, fillEnd none
+    twips(0); twips(0); twips(0); twips(0); u16(1);
+    cls("CMorphCurve");
+    twips(0); twips(0); twips(0); twips(0);
+    twips(5); twips(0); twips(10); twips(0); u8(1); u8(0); u8(0); u8(0);
+    u16(0);
+    u16(1); u8(0); u8(0); u8(0); u8(255); u16(0); // 1 fill (solid black, unused)
+    u16(1); u8(0); u8(255); u8(0); u8(255); s32(10 * 20); u16(0); // 1 stroke green
+    u8(0);
+    void src;
+    const { end } = __decodeMorphDataForTest(new Uint8Array(bytes), [], []);
+    expect(end).not.toBeNull();
+    const e = end!.edges[0]!;
+    expect(e.fill1).toBe(0); // fillEnd = -1 → none
+    expect(e.line).toBe(1);  // strokeEnd = 0 → strokes[0]
+  });
+
+  // The single real fixture available (morph-shape-tween-mx.fla) always has an
+  // end CPicFrame carrying its OWN shape, so decodeMorphData's pendingMorphEndShape
+  // is decoded but never CONSUMED into the imported timeline (finishFrame injects
+  // it only when the end frame is empty). A real FLA whose shape-tween end frame
+  // has NO own shape — the path that surfaces the decoded end styles in the output
+  // document — is not available; that consumption path stays fixture-unverified.
+  it.skip("[needs fixture] end-frame-without-own-shape consumes decoded morph end shape", () => {
+    // Requires a real Flash 8 FLA with an empty end keyframe on a shape tween.
   });
 });
 
