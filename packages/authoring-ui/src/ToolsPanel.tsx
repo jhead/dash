@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type {
   BrushPaintMode,
   BrushShape,
+  EraserShape,
   FreeTransformMode,
   PaintBucketGapSize,
   PenSubTool,
@@ -200,6 +201,7 @@ export interface ToolsPanelExtraProps {
   onBrushPressureChange?: (pressure: boolean) => void;
   onBrushTiltChange?: (tilt: boolean) => void;
   onEraserSizeChange?: (size: number) => void;
+  onEraserShapeChange?: (shape: EraserShape) => void;
   onEraserModeChange?: (mode: "normal" | "fills" | "lines" | "selected" | "inside") => void;
   onEraserFaucetChange?: (faucet: boolean) => void;
   onBucketGapSizeChange?: (gap: PaintBucketGapSize) => void;
@@ -233,6 +235,7 @@ export interface ToolsPanelProps {
   onBrushPressureChange?: (pressure: boolean) => void;
   onBrushTiltChange?: (tilt: boolean) => void;
   onEraserSizeChange?: (size: number) => void;
+  onEraserShapeChange?: (shape: EraserShape) => void;
   onEraserModeChange?: (mode: "normal" | "fills" | "lines" | "selected" | "inside") => void;
   onEraserFaucetChange?: (faucet: boolean) => void;
   onBucketGapSizeChange?: (gap: PaintBucketGapSize) => void;
@@ -644,6 +647,7 @@ export function ToolsPanel({
   onBrushPressureChange,
   onBrushTiltChange,
   onEraserSizeChange,
+  onEraserShapeChange,
   onEraserModeChange,
   onEraserFaucetChange,
   onBucketGapSizeChange,
@@ -1018,6 +1022,26 @@ export function ToolsPanel({
                 title={`Eraser size: ${size}px`}
               />
             ))}
+          </div>
+
+          {/* Eraser nib shape — round / square (Flash 8 eraser Options offers 5
+              round + 5 square nibs). Mirrors the brush nib-shape block. */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
+            {(["round", "square"] as const).map((shape) => {
+              const active = (toolState.eraserShape ?? "round") === shape;
+              return (
+                <button
+                  key={shape}
+                  type="button"
+                  style={optBtnStyle(active, isHovered(`eraser:shape:${shape}`))}
+                  onClick={() => onEraserShapeChange?.(shape)}
+                  {...hoverProps(`eraser:shape:${shape}`)}
+                  title={shape === "round" ? "Round eraser" : "Square eraser"}
+                >
+                  {shape === "round" ? "Rnd" : "Sqr"}
+                </button>
+              );
+            })}
           </div>
 
           {/* Erase mode selector — Normal / Fills / Lines / Selected Fills /

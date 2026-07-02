@@ -230,6 +230,61 @@ describe("planar/P4 — eraser on the planar arrangement", () => {
   });
 });
 
+describe("planar/P4 — square eraser nib removes an AXIS-ALIGNED square (task 1433)", () => {
+  const bigFill = () => rectShape("f", 0, 0, 100, 100, BLUE);
+  const filledAt = (shape: Shape, pt: Point): boolean => {
+    const ps = buildArrangementFromShapes([shape]);
+    const f = locateFace(ps, pt);
+    return f !== null && f.fill !== null;
+  };
+
+  it("erases the axis-aligned corner a round nib would leave intact", () => {
+    const sqStamp = buildEraserStamp([{ x: 50, y: 50 }], 10, "square");
+    const { shape } = planarEraseShape(bigFill(), sqStamp, { mode: "normal" });
+    expect(shape).not.toBeNull();
+    // (58,58) is inside the axis-aligned [40,60]² erased square but ~11.3px from
+    // the centre → OUTSIDE a round eraser disk.
+    expect(filledAt(shape!, { x: 58, y: 58 })).toBe(false);
+    // A point just outside the erased square stays filled.
+    expect(filledAt(shape!, { x: 65, y: 65 })).toBe(true);
+  });
+
+  it("contrast: the round nib leaves that corner filled", () => {
+    const rndStamp = buildEraserStamp([{ x: 50, y: 50 }], 10, "round");
+    const { shape } = planarEraseShape(bigFill(), rndStamp, { mode: "normal" });
+    expect(filledAt(shape!, { x: 58, y: 58 })).toBe(true);
+  });
+
+  it("a 45° square drag erases a √2-wider band than an axis-aligned one", () => {
+    const diag = buildEraserStamp(
+      [
+        { x: 20, y: 20 },
+        { x: 80, y: 80 },
+      ],
+      8,
+      "square"
+    );
+    const { shape } = planarEraseShape(bigFill(), diag, { mode: "normal" });
+    // midpoint (50,50), perpendicular n=(-1,1)/√2; half-width along n = 8·√2 ≈ 11.3.
+    // A point 10px off the centre line is erased on the diagonal square drag…
+    const t = 10 / Math.SQRT2;
+    expect(filledAt(shape!, { x: 50 - t, y: 50 + t })).toBe(false);
+
+    // …whereas a horizontal square drag (half-width 8) leaves a 10px-off point.
+    const horiz = buildEraserStamp(
+      [
+        { x: 20, y: 50 },
+        { x: 80, y: 50 },
+      ],
+      8,
+      "square"
+    );
+    const { shape: hs } = planarEraseShape(bigFill(), horiz, { mode: "normal" });
+    expect(filledAt(hs!, { x: 50, y: 60 })).toBe(true); // 10px off → outside band
+    expect(filledAt(hs!, { x: 50, y: 55 })).toBe(false); // within the band
+  });
+});
+
 describe("planar/P4 — angled cut splits a band into two surviving sides (task 1332)", () => {
   // A horizontal brush band: x=0..200, y=95..105 (10px thick), solid fill.
   // A brush stroke is a CLOSED FILLED outline polygon (engine/brushtool.ts), so

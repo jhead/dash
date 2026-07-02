@@ -511,19 +511,85 @@ function capsuleRect(a: Point, b: Point, radius: number): Point[] | null {
   ];
 }
 
+/** Nib footprint shape for the eraser (mirrors the brush nib — Flash 8). */
+export type EraserNibShape = "round" | "square";
+
+/** Axis-aligned square stamp of half-side `half` centered at `center`. */
+function squarePolygon(center: Point, half: number): Point[] {
+  return [
+    { x: center.x - half, y: center.y - half },
+    { x: center.x + half, y: center.y - half },
+    { x: center.x + half, y: center.y + half },
+    { x: center.x - half, y: center.y + half },
+  ];
+}
+
 /**
- * Build the eraser stamp polygons for a drag (one disk per sample + a bridging
- * capsule between consecutive samples). Same shape as the legacy
- * {@link import("../eraser.js").buildEraserPolygon} but kept local so the planar
- * path has no dependency on the legacy module. A single click → one disk.
+ * Bridging parallelogram between two axis-aligned square stamps: swept by the two
+ * SILHOUETTE corners (extreme perpendicular to travel). Unioned with the square
+ * stamps this covers the Minkowski sum of the segment with the square (task 1433).
+ * Null for a zero-length segment.
  */
-export function buildEraserStamp(points: readonly Point[], radius: number): Point[][] {
+function squareBridge(a: Point, b: Point, half: number): Point[] | null {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (Math.hypot(dx, dy) < 1e-9) return null;
+  const corners: readonly Point[] = [
+    { x: -1, y: -1 },
+    { x: 1, y: -1 },
+    { x: 1, y: 1 },
+    { x: -1, y: 1 },
+  ];
+  const nx = -dy;
+  const ny = dx;
+  let cMax = corners[0];
+  let cMin = corners[0];
+  let dMax = -Infinity;
+  let dMin = Infinity;
+  for (const c of corners) {
+    const d = c.x * nx + c.y * ny;
+    if (d > dMax) {
+      dMax = d;
+      cMax = c;
+    }
+    if (d < dMin) {
+      dMin = d;
+      cMin = c;
+    }
+  }
+  return [
+    { x: a.x + cMax.x * half, y: a.y + cMax.y * half },
+    { x: b.x + cMax.x * half, y: b.y + cMax.y * half },
+    { x: b.x + cMin.x * half, y: b.y + cMin.y * half },
+    { x: a.x + cMin.x * half, y: a.y + cMin.y * half },
+  ];
+}
+
+/**
+ * Build the eraser stamp polygons for a drag (one nib STAMP per sample + a
+ * bridging quad between consecutive samples). Same shape as the legacy
+ * {@link import("../eraser.js").buildEraserPolygon} but kept local so the planar
+ * path has no dependency on the legacy module. A single click → one stamp.
+ *
+ * Round nib: disk + outer-tangent capsule. Square nib (Flash 8): axis-aligned
+ * square + silhouette-corner bridge — the Minkowski sum of the segment with an
+ * axis-aligned square, mirroring the brush square nib (task 1433).
+ */
+export function buildEraserStamp(
+  points: readonly Point[],
+  radius: number,
+  shape: EraserNibShape = "round"
+): Point[][] {
   if (points.length === 0 || radius <= 0) return [];
-  const loops: Point[][] = [diskPolygon(points[0], radius)];
+  const stamp = (c: Point): Point[] =>
+    shape === "square" ? squarePolygon(c, radius) : diskPolygon(c, radius);
+  const bridge = (a: Point, b: Point): Point[] | null =>
+    shape === "square" ? squareBridge(a, b, radius) : capsuleRect(a, b, radius);
+  const loops: Point[][] = [stamp(points[0])];
   for (let i = 1; i < points.length; i++) {
-    const bridge = capsuleRect(points[i - 1], points[i], radius);
-    if (bridge) loops.push(bridge);
-    loops.push(diskPolygon(points[i], radius));
+    const seg = bridge(points[i - 1], points[i]);
+    if (seg) loops.push(seg);
+    loops.push(stamp(points[i]));
   }
   return loops;
 }

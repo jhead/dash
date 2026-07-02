@@ -62,23 +62,92 @@ function diskPolygon(center: Point, radius: number, segments = DISK_SEGMENTS): P
  * so they compose without a numerically-fragile polygon-union pre-pass.  A
  * single click (one point) yields one disk.
  */
-export function buildEraserPolygon(points: readonly Point[], radius: number): Point[][] {
+export function buildEraserPolygon(
+  points: readonly Point[],
+  radius: number,
+  shape: EraserNibShape = "round"
+): Point[][] {
   if (points.length === 0 || radius <= 0) return [];
 
-  // Emit one disk per sample plus a bridging capsule rectangle between
-  // consecutive samples.  We deliberately DO NOT union these into a single hull:
+  // Emit one nib STAMP per sample plus a bridging quad between consecutive
+  // samples.  We deliberately DO NOT union these into a single hull:
   // `eraseShape` subtracts each eraser loop from the running survivors in turn,
   // so overlapping loops compose into a continuous erased band without needing a
-  // (numerically fragile) polygon-union pre-pass.  A single click → one disk.
-  const loops: Point[][] = [diskPolygon(points[0], radius)];
+  // (numerically fragile) polygon-union pre-pass.  A single click → one stamp.
+  //
+  // Round nib: disk stamp + outer-tangent capsule bridge (a constant-radius
+  // sweep).  Square nib (Flash 8): AXIS-ALIGNED square stamp + silhouette-corner
+  // bridge — the Minkowski sum of the segment with an axis-aligned square, so a
+  // diagonal drag erases a √2-wider band and the footprint is an axis-aligned
+  // square, mirroring the brush square nib (task 1433).
+  const stamp = (c: Point): Point[] =>
+    shape === "square" ? squarePolygon(c, radius) : diskPolygon(c, radius);
+  const bridge = (a: Point, b: Point): Point[] | null =>
+    shape === "square" ? squareBridge(a, b, radius) : capsuleRect(a, b, radius);
+
+  const loops: Point[][] = [stamp(points[0])];
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1];
     const b = points[i];
-    const bridge = capsuleRect(a, b, radius);
-    if (bridge) loops.push(bridge);
-    loops.push(diskPolygon(b, radius));
+    const seg = bridge(a, b);
+    if (seg) loops.push(seg);
+    loops.push(stamp(b));
   }
   return loops;
+}
+
+/** Nib footprint shape for the eraser (mirrors the brush nib — Flash 8). */
+export type EraserNibShape = "round" | "square";
+
+/** Axis-aligned square stamp of half-side `half` centered at `center`. */
+function squarePolygon(center: Point, half: number): Point[] {
+  return [
+    { x: center.x - half, y: center.y - half },
+    { x: center.x + half, y: center.y - half },
+    { x: center.x + half, y: center.y + half },
+    { x: center.x - half, y: center.y + half },
+  ];
+}
+
+/**
+ * Bridging parallelogram between two axis-aligned square stamps: swept by the
+ * two SILHOUETTE corners (extreme perpendicular to travel). Unioned with the
+ * square stamps this covers the Minkowski sum of the segment with the square.
+ * Returns null for a zero-length segment.
+ */
+function squareBridge(a: Point, b: Point, half: number): Point[] | null {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (Math.hypot(dx, dy) < 1e-9) return null;
+  const corners: readonly Point[] = [
+    { x: -1, y: -1 },
+    { x: 1, y: -1 },
+    { x: 1, y: 1 },
+    { x: -1, y: 1 },
+  ];
+  const nx = -dy;
+  const ny = dx;
+  let cMax = corners[0];
+  let cMin = corners[0];
+  let dMax = -Infinity;
+  let dMin = Infinity;
+  for (const c of corners) {
+    const d = c.x * nx + c.y * ny;
+    if (d > dMax) {
+      dMax = d;
+      cMax = c;
+    }
+    if (d < dMin) {
+      dMin = d;
+      cMin = c;
+    }
+  }
+  return [
+    { x: a.x + cMax.x * half, y: a.y + cMax.y * half },
+    { x: b.x + cMax.x * half, y: b.y + cMax.y * half },
+    { x: b.x + cMin.x * half, y: b.y + cMin.y * half },
+    { x: a.x + cMin.x * half, y: a.y + cMin.y * half },
+  ];
 }
 
 /**

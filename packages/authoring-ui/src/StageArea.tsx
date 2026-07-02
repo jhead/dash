@@ -888,6 +888,8 @@ export interface StageAreaProps {
   /** Pen active sub-tool (pen/add-anchor/delete-anchor/convert-anchor). Default 'pen'. */
   penSubTool?: PenSubTool;
   eraserSize?: number;
+  /** Eraser nib shape — round/square (Flash 8 eraser Options). Default 'round'. */
+  eraserShape?: "round" | "square";
   /** Flash 8 eraser mode (planar path, flag ON): normal/fills/lines/selected/inside. */
   eraserMode?: EraserMode;
   /** Faucet mode: a single click deletes a whole fill or line (planar path). */
@@ -1607,6 +1609,7 @@ export function StageArea({
   bucketLockFill = false,
   penSubTool = "pen",
   eraserSize = 16,
+  eraserShape = "round",
   eraserMode = "normal",
   eraserFaucet = false,
   strokeColor: propStrokeColor = "#000000",
@@ -3144,7 +3147,7 @@ export function StageArea({
               isMergeableShape(obj.shape);
 
             if (usePlanar) {
-              const stamp = buildEraserPolygon(sweptStage, half);
+              const stamp = buildEraserPolygon(sweptStage, half, eraserShape);
               const { shape: next } = planarEraseShape(obj.shape, stamp, {
                 mode: eraserMode,
                 // Erase Inside stays locked to the region the gesture STARTED in
@@ -3174,7 +3177,7 @@ export function StageArea({
             const sx = obj.scaleX ?? 1;
             const sy = obj.scaleY ?? 1;
             const localR = half / ((Math.abs(sx) + Math.abs(sy)) / 2 || 1);
-            const eraserLoops = buildEraserPolygon(localPts, localR);
+            const eraserLoops = buildEraserPolygon(localPts, localR, eraserShape);
 
             const next = eraseShape(obj.shape, eraserLoops);
             if (next === null) {
@@ -3590,7 +3593,7 @@ export function StageArea({
         setPressedButtonId(null);
       }
     },
-    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeWarp, freeTransformMode, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, selectedShapeIds, subSelection, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, eraserMode, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onEraseGestureUpdate, onEraseGestureDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
+    [internalZoom, onPanChange, activeTool, toStageCoords, onShapeMove, onShapeResize, onShapeRotate, onShapeWarp, freeTransformMode, onShapeUpdate, onShapeGradientUpdate, selectedShapeId, selectedShapeIds, subSelection, shapeDisplayObjects, onGuideMove, onGuideDelete, penState, subselState, eraserSize, eraserShape, eraserMode, lassoPolygonMode, snapToGuides, guides, snapToGrid, gridWidth, gridHeight, snapToObjects, snapToPixels, ftIsMarqueeSelecting, selIsMarqueeSelecting, onShapeDelete, onEraseGestureUpdate, onEraseGestureDelete, onCursorMove, simpleButtonsEnabled, symbolInstanceDisplayObjects, library, hoveredButtonId]
   );
 
   const onMouseUp = useCallback(

@@ -140,6 +140,53 @@ describe("brush ribbon — sharp joint keeps full width (task 1426)", () => {
   });
 });
 
+describe("brush ribbon — square nib sweeps an AXIS-ALIGNED square (task 1433)", () => {
+  // A 45° stroke. The OLD square nib merely flattened the end caps of the SAME
+  // perpendicular-offset ribbon as the round nib → a ROTATED constant-width band.
+  // The fix sweeps an axis-aligned square STAMP (Minkowski sum with the segment).
+  const diag: Point[] = [
+    { x: 0, y: 0 },
+    { x: 100, y: 100 },
+  ];
+
+  it("covers the axis-aligned corner a rotated round ribbon would MISS", () => {
+    const sq = buildBrushRibbon("s", samples(diag, 10), RED, "square");
+    // (9,-9) is inside the axis-aligned start square (|x|,|y| < 10) but ~12.7px
+    // from both the round disk centre AND the diagonal travel line → it is OUTSIDE
+    // a rotated round/capsule ribbon.
+    expect(filledAt(sq, { x: 9, y: -9 })).toBe(true);
+  });
+
+  it("contrast: the round nib does NOT cover that corner (proves square ≠ rotated round)", () => {
+    const rnd = buildBrushRibbon("s", samples(diag, 10), RED, "round");
+    expect(filledAt(rnd, { x: 9, y: -9 })).toBe(false);
+  });
+
+  it("a 45° square stroke is √2× wider (perpendicular) than an axis-aligned one", () => {
+    // Perpendicular to travel n=(-1,1)/√2. An axis-aligned square's support width
+    // along n is side·√2 ≈ 28.3 (half ≈ 14.1), vs 20 (half 10) for a horizontal
+    // stroke. A point 13px off the centre line is covered on the diagonal…
+    const sqDiag = buildBrushRibbon("s", samples(diag, 10), RED, "square");
+    const t = 13 / Math.SQRT2;
+    expect(filledAt(sqDiag, { x: 50 - t, y: 50 + t })).toBe(true);
+
+    // …but the same 13px perpendicular offset is NOT covered by a horizontal
+    // square stroke (its half-width is only the nib half-side = 10).
+    const horiz: Point[] = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ];
+    const sqHoriz = buildBrushRibbon("s", samples(horiz, 10), RED, "square");
+    expect(filledAt(sqHoriz, { x: 50, y: 13 })).toBe(false);
+    expect(filledAt(sqHoriz, { x: 50, y: 9 })).toBe(true);
+  });
+
+  it("the mid-stroke bridge is solid (no gap between the axis-aligned end stamps)", () => {
+    const sqDiag = buildBrushRibbon("s", samples(diag, 10), RED, "square");
+    expect(filledAt(sqDiag, { x: 50, y: 50 })).toBe(true);
+  });
+});
+
 describe("brush ribbon — degenerate inputs", () => {
   it("zero samples → empty shape", () => {
     expect(buildBrushRibbon("s", [], RED).paths).toHaveLength(0);

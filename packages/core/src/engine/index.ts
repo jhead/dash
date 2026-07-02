@@ -79,7 +79,7 @@ export {
 
 // Vector eraser (boolean subtract along the eraser path)
 export { buildEraserPolygon, subtractPolygon, eraseShape, pathToPolygon as eraserPathToPolygon } from "./eraser.js";
-export type { EraseOptions } from "./eraser.js";
+export type { EraseOptions, EraserNibShape } from "./eraser.js";
 
 // Curve-aware planar geometry kernel (Flash 8 merge-drawing foundation).
 // Exported as a namespace to avoid name clashes (e.g. snapPoint with ./snap.js);

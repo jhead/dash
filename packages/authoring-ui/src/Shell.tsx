@@ -1468,6 +1468,7 @@ export function Shell(): React.ReactElement {
     handleStrokeChangeFromPanel, handleMixerFillColorChange, handleSelectSwatch, handleAddSwatch,
     handleRemoveSwatch, handleSwatchesLoad, handleMixerStrokeColorChange, handleObjectDrawingToggle,
     handlePencilModeChange, handleBrushSizeChange, handleEraserSizeChange,
+    handleEraserShapeChange,
     handleBrushShapeChange, handleBrushModeChange, handleBrushLockFillChange,
     handleBrushPressureChange, handleBrushTiltChange,
     handleBucketGapSizeChange, handleBucketLockFillChange, handleRectCornerRadiusChange,
@@ -3941,6 +3942,7 @@ export function Shell(): React.ReactElement {
             onBrushPressureChange={handleBrushPressureChange}
             onBrushTiltChange={handleBrushTiltChange}
             onEraserSizeChange={handleEraserSizeChange}
+            onEraserShapeChange={handleEraserShapeChange}
             onEraserModeChange={handleEraserModeChange}
             onEraserFaucetChange={handleEraserFaucetChange}
             onBucketGapSizeChange={handleBucketGapSizeChange}
@@ -4147,6 +4149,7 @@ export function Shell(): React.ReactElement {
                 bucketLockFill={toolState.bucketLockFill}
                 penSubTool={toolState.penSubTool}
                 eraserSize={toolState.eraserSize}
+                eraserShape={toolState.eraserShape}
                 eraserMode={toolState.eraserMode}
                 eraserFaucet={toolState.eraserFaucet}
                 strokeColor={toolState.strokeColor}

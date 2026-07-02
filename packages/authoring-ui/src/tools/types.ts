@@ -26,6 +26,8 @@ export type PolyStarShapeType = "polygon" | "star";
 
 /** Brush nib shape (Flash 8 offers round + square, plus rotated variants). */
 export type BrushShape = "round" | "square";
+/** Eraser nib shape (Flash 8 eraser Options: 5 round + 5 square). */
+export type EraserShape = "round" | "square";
 /**
  * Flash 8 brush paint modes: Paint Normal / Paint Fills / Paint Behind /
  * Paint Selection / Paint Inside.
@@ -78,6 +80,8 @@ export interface ToolState {
   brushTilt?: boolean;
   /** Eraser tool size in pixels. Default 16 */
   eraserSize?: number;
+  /** Eraser nib shape — round / square (Flash 8 eraser Options). Default 'round' */
+  eraserShape?: EraserShape;
   /**
    * Flash 8 eraser mode (planar path, flag ON): Normal / Erase Fills /
    * Erase Lines / Erase Selected / Erase Inside. Default 'normal'.

@@ -123,8 +123,28 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   averaged-normal joints thinned the ribbon by cos(θ/2) and bowtied at hairpins. The union has no
   crossing hole, no joint thinning, and no hairpin notch; the merge fold reads it back as one
   silhouette. (The unused legacy `engine/brushtool.ts addBrushStroke` outline builder was removed.)
+- **The SQUARE nib sweeps an AXIS-ALIGNED square, not a rotated ribbon (task 1433).** For
+  `nib === "square"`, `buildBrushRibbon` stamps an axis-aligned square at every sample AND bridges
+  consecutive samples with the parallelogram swept by the square's two SILHOUETTE corners (the
+  corners extreme perpendicular to travel) — i.e. the Minkowski sum of the segment with the
+  axis-aligned square. Previously the square nib stamped axis-aligned squares at the ends but
+  bridged them with the round nib's perpendicular-offset CAPSULE, so the body of the stroke was a
+  ROTATED constant-width band. Consequences (real Flash 8 square brush): a 45° stroke is up to √2×
+  wider than an axis-aligned one at the same nib size, and stroke ends/joints keep axis-aligned
+  square corners rather than butt caps perpendicular to travel. ASSUMPTION: the task marks the exact
+  sweep profile "unconfirmed"; we implement the axis-aligned-square-stamp reading (consistent with
+  the single-click square dab and the stamp-union approach) rather than any rotated/oriented-square
+  variant. Gate: `brush-ribbon.test.ts` "square nib sweeps an AXIS-ALIGNED square".
 - **Eraser modes**: Erase Normal, Erase Fills, Erase Lines, Erase Selected Fills, Erase Inside.
   **Faucet** deletes a fill or a LINE in one click. Double-click eraser = clear stage.
+- **Eraser nib SHAPE — round / square (task 1433).** Flash 8's eraser Options offer a nib-shape
+  dropdown (round + square). `toolState.eraserShape` (default `"round"`) is plumbed from the
+  ToolsPanel eraser Options through `StageArea` into `buildEraserPolygon` / `buildEraserStamp`,
+  which mirror the brush nib: the round nib stamps a disk + outer-tangent capsule; the square nib
+  stamps an AXIS-ALIGNED square + silhouette-corner bridge (Minkowski sum with the segment), so a
+  square eraser removes an axis-aligned square footprint and a diagonal drag erases a √2-wider band.
+  Gate: `planar-eraser.test.ts` "square eraser nib removes an AXIS-ALIGNED square" +
+  `eraser.test.ts` "square nib: a single click yields ONE axis-aligned square stamp".
 - **Faucet line scope stops at crossings and style boundaries (task 1432).** `faucetEraseShape`
   (`planar/eraser.ts`) used to flood-fill EVERY stroked edge sharing a vertex, ignoring stroke
   style and crossings — so clicking one of two crossing lines wiped BOTH entire lines. The
@@ -247,6 +267,11 @@ building on the eraser modes + Faucet of task 1387):
   click on an existing shape **adds** an anchor by splitting the nearest segment (de Casteljau
   for curves), **deletes** the nearest anchor and rejoins its neighbors, or **converts** the
   nearest anchor between corner (straight) and smooth (curved) — instead of drawing a new path.
+- **Eraser** — the nib **shape** (round/square) is honored by the erase geometry (task 1433):
+  `eraserShape` flows from the ToolsPanel eraser Options through `StageArea` into
+  `buildEraserPolygon` / `buildEraserStamp`, giving an axis-aligned square footprint for the square
+  nib (mirrors the brush square nib). **Mode** (Normal/Fills/Lines/Selected/Inside), **Faucet**,
+  and **size** are honored as documented above.
 
 ## Customize Tools Panel
 

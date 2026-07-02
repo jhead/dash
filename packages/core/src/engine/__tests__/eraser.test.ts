@@ -243,6 +243,20 @@ describe("buildEraserPolygon", () => {
     expect(b.minY).toBeCloseTo(-10, 0);
     expect(b.maxY).toBeCloseTo(10, 0);
   });
+
+  it("square nib: a single click yields ONE axis-aligned square stamp (task 1433)", () => {
+    const loops = buildEraserPolygon([{ x: 0, y: 0 }], 10, "square");
+    expect(loops).toHaveLength(1);
+    // A 4-corner axis-aligned square [-10,10]² — area (20×20) = 400, NOT the
+    // ~300 of the round 24-gon disk.
+    expect(loops[0]).toHaveLength(4);
+    expect(polyArea(loops[0])).toBeCloseTo(400, 0);
+    const b = bboxOf(loops[0]);
+    expect(b.minX).toBeCloseTo(-10, 0);
+    expect(b.maxX).toBeCloseTo(10, 0);
+    expect(b.minY).toBeCloseTo(-10, 0);
+    expect(b.maxY).toBeCloseTo(10, 0);
+  });
 });
 
 // ---------------------------------------------------------------------------

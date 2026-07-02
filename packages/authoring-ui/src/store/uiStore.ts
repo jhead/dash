@@ -75,6 +75,7 @@ export const DEFAULT_TOOL_STATE: ToolState = {
   brushPressure: false,
   brushTilt: false,
   eraserSize: 16,
+  eraserShape: "round",
   eraserMode: "normal",
   eraserFaucet: false,
   bucketGapSize: "none",

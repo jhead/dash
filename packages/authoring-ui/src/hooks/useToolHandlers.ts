@@ -11,6 +11,7 @@ import {
 import type {
   BrushPaintMode,
   BrushShape,
+  EraserShape,
   FreeTransformMode,
   PaintBucketGapSize,
   PenSubTool,
@@ -188,6 +189,10 @@ export function useToolHandlers(deps: ToolHandlersDeps) {
     setToolState((prev) => ({ ...prev, eraserSize: size }));
   }, [setToolState]);
 
+  const handleEraserShapeChange = useCallback((shape: EraserShape) => {
+    setToolState((prev) => ({ ...prev, eraserShape: shape }));
+  }, [setToolState]);
+
   const handleEraserModeChange = useCallback((mode: "normal" | "fills" | "lines" | "selected" | "inside") => {
     setToolState((prev) => ({ ...prev, eraserMode: mode }));
   }, [setToolState]);
@@ -277,6 +282,7 @@ export function useToolHandlers(deps: ToolHandlersDeps) {
     handleBrushPressureChange,
     handleBrushTiltChange,
     handleEraserSizeChange,
+    handleEraserShapeChange,
     handleEraserModeChange,
     handleEraserFaucetChange,
     handleBucketGapSizeChange,

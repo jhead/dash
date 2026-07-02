@@ -201,6 +201,72 @@ function capsulePath(
 }
 
 /**
+ * Bridging quad between two AXIS-ALIGNED SQUARE stamps: the parallelogram swept
+ * by the square's two SILHOUETTE corners (the corners extreme in the direction
+ * PERPENDICULAR to travel) from sample `a` to sample `b`.
+ *
+ * Unioned with the axis-aligned square stamp at each end, this covers exactly the
+ * Minkowski sum of the segment with the axis-aligned square — the authentic
+ * Flash 8 square-nib sweep. Consequences (vs the old perpendicular-offset capsule
+ * that produced a ROTATED constant-width ribbon):
+ *   - a diagonal stroke is measurably wider (up to √2×) than an axis-aligned one
+ *     at the same nib size (the square's diagonal, not its side, faces across the
+ *     travel);
+ *   - the stroke ends and joints keep AXIS-ALIGNED square corners, not butt caps
+ *     perpendicular to travel.
+ *
+ * ASSUMPTION (task 1433 marks the exact sweep PROFILE "unconfirmed"): we take the
+ * real-Flash-8 reading of an axis-aligned square STAMP swept along the path
+ * (Minkowski sum), consistent with the single-click square dab and with the
+ * stamp-union construction of task 1426. Null for a zero-length segment.
+ */
+function squareBridgePath(
+  a: BrushStampSample,
+  b: BrushStampSample,
+  fill: Fill
+): ShapePath | null {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (Math.hypot(dx, dy) < 1e-9) return null;
+  // The 4 axis-aligned square corners as unit offsets from the center (y-down).
+  const corners: readonly Point[] = [
+    { x: -1, y: -1 },
+    { x: 1, y: -1 },
+    { x: 1, y: 1 },
+    { x: -1, y: 1 },
+  ];
+  // Silhouette corners = the corners extreme along the perpendicular to travel.
+  const nx = -dy;
+  const ny = dx;
+  let cMax = corners[0];
+  let cMin = corners[0];
+  let dMax = -Infinity;
+  let dMin = Infinity;
+  for (const c of corners) {
+    const d = c.x * nx + c.y * ny;
+    if (d > dMax) {
+      dMax = d;
+      cMax = c;
+    }
+    if (d < dMin) {
+      dMin = d;
+      cMin = c;
+    }
+  }
+  const q0 = { x: a.x + cMax.x * a.half, y: a.y + cMax.y * a.half };
+  const q1 = { x: b.x + cMax.x * b.half, y: b.y + cMax.y * b.half };
+  const q2 = { x: b.x + cMin.x * b.half, y: b.y + cMin.y * b.half };
+  const q3 = { x: a.x + cMin.x * a.half, y: a.y + cMin.y * a.half };
+  const segments: PathSegment[] = [
+    { type: "line", to: q1 },
+    { type: "line", to: q2 },
+    { type: "line", to: q3 },
+    { type: "line", to: q0 },
+  ];
+  return { start: q0, segments, closed: true, fill };
+}
+
+/**
  * Build a brush ribbon as the boolean UNION of a nib STAMP at every sample plus
  * a bridging CAPSULE per segment — the Flash 8 brush "solid fill swept along the
  * path" (task 1426). This mirrors the eraser's disk+capsule stamp construction
@@ -231,9 +297,19 @@ export function buildBrushRibbon(
       ? squarePath(s.x, s.y, s.half, cloneFill(fill))
       : diskPath(s.x, s.y, s.half, cloneFill(fill));
 
+  // The bridge between consecutive stamps MUST match the nib: a round nib bridges
+  // with an outer-tangent capsule; a SQUARE nib bridges with the parallelogram
+  // swept by its axis-aligned silhouette corners (task 1433). Using the capsule
+  // for a square nib would sweep a ROTATED constant-width ribbon between the
+  // axis-aligned end stamps — the exact defect this task fixes.
+  const bridge = (a: BrushStampSample, b: BrushStampSample): ShapePath | null =>
+    nib === "square"
+      ? squareBridgePath(a, b, cloneFill(fill))
+      : capsulePath(a, b, cloneFill(fill));
+
   paths.push(stamp(samples[0]));
   for (let i = 1; i < samples.length; i++) {
-    const cap = capsulePath(samples[i - 1], samples[i], cloneFill(fill));
+    const cap = bridge(samples[i - 1], samples[i]);
     if (cap) paths.push(cap);
     paths.push(stamp(samples[i]));
   }
