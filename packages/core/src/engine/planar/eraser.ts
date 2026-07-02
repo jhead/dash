@@ -155,11 +155,22 @@ export function planarEraseShape(
 
   // Which faces are inside the erased region (interior point inside the eraser).
   const erasedFace = new Set<number>();
-  // For "inside" mode: the fill index the gesture started in.
-  let insideFillIdx: number | null = null;
+  // For "inside" mode: the CONNECTED same-fill component the gesture started in.
+  //
+  // Task 1399: keying on the fill INDEX alone (startFace.fill) is wrong.
+  // buildArrangementFromShapes de-dupes fills by color, so two spatially-disjoint
+  // same-color regions share one fill index; erasing every face with `f.fill ===
+  // insideFillIdx` therefore ALSO bit a separate same-colored region the eraser
+  // merely passed over. Authentic Flash confines Erase-Inside to the connected
+  // fill you started in — so restrict to `connectedFillComponent(startFace)` (the
+  // same silhouette walk the faucet uses), which cannot reach a disjoint region.
+  let insideComponent: Set<number> | null = null;
   if (mode === "inside" && opts.insideAt) {
     const startFace = locateFace(ps, opts.insideAt);
-    insideFillIdx = startFace ? startFace.fill : null;
+    insideComponent =
+      startFace && startFace.fill !== null
+        ? connectedFillComponent(ps, startFace.id)
+        : null;
   }
 
   for (const f of ps.faces) {
@@ -173,8 +184,8 @@ export function planarEraseShape(
       if (!opts.selectedFaceFilter || !opts.selectedFaceFilter(interior)) continue;
     }
     if (mode === "inside") {
-      // Only erase the fill that the gesture started in.
-      if (insideFillIdx === null || f.fill !== insideFillIdx) continue;
+      // Only erase faces in the connected fill the gesture started in.
+      if (insideComponent === null || !insideComponent.has(f.id)) continue;
     }
     erasedFace.add(f.id);
   }

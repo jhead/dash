@@ -746,24 +746,32 @@ export class Arrangement {
 
   /**
    * CCW rotation-order comparator for two outgoing half-edges sharing a vertex.
-   * Primary key is the outgoing tangent angle; the secondary key (task 1336) is
-   * the edge's curvature SIDE, used only when the first-order tangents coincide
-   * (within {@link TANGENT_ANGLE_TIE}). Two curves leaving a vertex with the
-   * SAME tangent (the exact-tangency pinch) are separated by which way they bend:
-   * a more-CW-bending edge precedes a more-CCW-bending edge in the CCW ring, so
-   * the two tangent loops keep their interiors distinct. A line (no curvature)
-   * gets a zero bend signature and sorts deterministically between opposite-
-   * bending curves.
+   * Primary key is the outgoing tangent angle QUANTIZED to a {@link
+   * TANGENT_ANGLE_TIE} grid; the secondary key (task 1336) is the edge's
+   * curvature SIDE, used only when the first-order tangents fall in the SAME
+   * quantized bucket. Two curves leaving a vertex with the SAME tangent (the
+   * exact-tangency pinch) are separated by which way they bend: a more-CW-bending
+   * edge precedes a more-CCW-bending edge in the CCW ring, so the two tangent
+   * loops keep their interiors distinct. A line (no curvature) gets a zero bend
+   * signature and sorts deterministically between opposite-bending curves.
+   *
+   * Task 1399: the previous form compared the RAW angle when |Δangle| exceeded
+   * the tie threshold and the bend signature otherwise. That is NON-TRANSITIVE —
+   * three near-tangent edges whose angles chain across the threshold (A~B and
+   * B~C within tie, A~C beyond) could give cmp(A,B)>0, cmp(B,C)>0 yet cmp(A,C)<0,
+   * so `Array.sort` produced a platform-dependent rotation-ring order and could
+   * corrupt the next/prev linking and face tracing. Deriving BOTH sort keys from
+   * scalar values compared lexicographically — (quantized-angle bucket, bend) —
+   * is a TOTAL order by construction, so the sort is always well-defined. Exact
+   * tangency yields identical angles hence the same bucket, so the 1336 bend
+   * tie-break still fires there; only the rare "near-tangent but not identical,
+   * straddling a bucket edge" case now orders by angle (previously undefined).
    */
   private compareOutgoing(a: MutHalfEdge, b: MutHalfEdge): number {
-    const angA = this.angleOf(a);
-    const angB = this.angleOf(b);
-    let d = angA - angB;
-    // Wrap the difference into (-π, π] so a near-2π/near-0 pair counts as close.
-    if (d > Math.PI) d -= Math.PI * 2;
-    else if (d < -Math.PI) d += Math.PI * 2;
-    if (Math.abs(d) > TANGENT_ANGLE_TIE) return angA - angB;
-    // Tangents coincide: order by bend side (signed curvature proxy).
+    const qa = Math.round(this.angleOf(a) / TANGENT_ANGLE_TIE);
+    const qb = Math.round(this.angleOf(b) / TANGENT_ANGLE_TIE);
+    if (qa !== qb) return qa - qb;
+    // Same tangent bucket: order by bend side (signed curvature proxy).
     return this.bendSignature(a) - this.bendSignature(b);
   }
 

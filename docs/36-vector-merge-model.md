@@ -925,6 +925,36 @@ correct full union/cut in the actual `CanvasRenderer` + Ruffle and are NOT asser
 merge oracles still diff=0/220000; planar-adversarial / planar-subselection / planar-eraser /
 planar-merge unchanged; core suite green except the 3 pre-existing `flash8-empty.fla` fixtures.
 
+### 3.0k Latent edge-case hardening — total rotation order + Erase-Inside keying (task 1399)
+
+Two low-frequency latent defects, both fixed behavior-preservingly (all §3.0j oracles and the
+whole planar suite stay green):
+
+1. **Non-transitive rotation comparator → `compareOutgoing` now derives a TOTAL order.** The
+   1336 tie-break returned the RAW tangent angle when `|Δangle| > TANGENT_ANGLE_TIE` and the
+   `bendSignature` otherwise. That hybrid is not transitive: three near-tangent outgoing edges
+   whose angles chain across the threshold (A~B and B~C within the tie, A~C beyond) can give
+   `cmp(A,B)>0`, `cmp(B,C)>0` yet `cmp(A,C)<0`. `Array.sort` on a non-transitive comparator is
+   platform-dependent and can yield a garbage rotation-ring order → corrupted `next`/`prev`
+   linking and face tracing. Needs ≥3 tangent-coincident edges at one vertex, so it is rare, but
+   when it fires the arrangement is silently wrong. Fix: both sort keys are now derived from
+   scalars compared lexicographically — **`(round(angle / TANGENT_ANGLE_TIE), bendSignature)`** —
+   which is a total order by construction. Exact tangency yields identical angles hence the same
+   quantized bucket, so the 1336 bend tie-break still fires there; only the rare
+   near-tangent-but-not-identical pair straddling a bucket edge changes (it now orders by angle,
+   previously undefined). Gate: `planar.test.ts` "rotation comparator total order (task 1399)"
+   (a three-edge transitivity check that FAILS on the pre-fix hybrid, plus a 1336-preservation
+   case).
+2. **Erase-Inside keyed on a fill INDEX that de-dupes across disjoint regions.** `eraser.ts`
+   resolved `insideFillIdx = locateFace(insideAt).fill` (a style INDEX/color) and erased any
+   under-eraser face with `f.fill === insideFillIdx`. Because `buildArrangementFromShapes`
+   de-dupes fills by color, two spatially-disjoint same-color regions share ONE index, so
+   Erase-Inside also bit a SEPARATE same-colored region the eraser merely passed over (authentic
+   Flash confines it to the connected fill you started in). Fix: restrict to
+   `connectedFillComponent(startFace)` (the same silhouette walk the faucet uses), which cannot
+   reach a disjoint region. Gate: `planar-eraser.test.ts` "Erase Inside spares a DISJOINT
+   same-color region (task 1399)".
+
 ### 3.1 Key decisions
 
 1. **Curve-preserving.** Cuts subdivide quadratics with de Casteljau and keep

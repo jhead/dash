@@ -756,3 +756,79 @@ describe("planar/arrangement — spatial broad-phase (task 1396)", () => {
     expect(intersectCurveCurve(a, far)).toHaveLength(0);
   });
 });
+
+describe("planar/arrangement — rotation comparator total order (task 1399)", () => {
+  // A quadratic edge leaving the origin. Its outgoing tangent direction is the
+  // control point (∝ control − p0), and its bend SIDE is set by where p1 sits
+  // relative to the control.
+  const quad = (control: Point, p1: Point) =>
+    ({ geometry: { p0: { x: 0, y: 0 }, control, p1 } }) as unknown as Parameters<
+      // MutHalfEdge is private; compareOutgoing only reads `.geometry`.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any
+    >[0];
+  const polar = (angle: number, r: number): Point => ({
+    x: Math.cos(angle) * r,
+    y: Math.sin(angle) * r,
+  });
+
+  it("compareOutgoing is TRANSITIVE for three near-tangent edges chaining across the tie", () => {
+    // Three outgoing tangents at angles 0, 0.008, 0.016 rad: A~B and B~C are
+    // within the 0.01-rad tangent tie, but A~C (0.016) is BEYOND it. Their bend
+    // signatures descend A > B > C. The OLD comparator returned the raw angle
+    // beyond the tie and the bend within it, giving cmp(C,B)<=0, cmp(B,A)<=0 yet
+    // cmp(C,A)>0 — an intransitive order → platform-dependent Array.sort.
+    const A = quad(polar(0.0, 1000), { x: 1000, y: 2000 }); // strong +bend
+    const B = quad(polar(0.008, 1000), {
+      x: Math.cos(0.008) * 1000,
+      y: Math.sin(0.008) * 1000 + 20,
+    }); // small +bend
+    const C = quad(polar(0.016, 1000), {
+      x: Math.cos(0.016) * 1000,
+      y: Math.sin(0.016) * 1000 - 2000,
+    }); // strong −bend
+
+    const arr = new Arrangement();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyArr = arr as any;
+    const cmp = (x: unknown, y: unknown): number => anyArr.compareOutgoing(x, y);
+
+    // Precondition: the angles chain across the tie (documents the intent).
+    const ang = (e: unknown): number => anyArr.angleOf(e);
+    expect(Math.abs(ang(A) - ang(B))).toBeLessThan(0.01);
+    expect(Math.abs(ang(B) - ang(C))).toBeLessThan(0.01);
+    expect(Math.abs(ang(A) - ang(C))).toBeGreaterThan(0.01);
+
+    // Total-order check: for every ordered triple, cmp must respect transitivity
+    // of `<=` (no cycles). This FAILS on the old raw-angle/bend hybrid.
+    const edges = [A, B, C];
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        for (let k = 0; k < 3; k++) {
+          if (cmp(edges[i], edges[j]) <= 0 && cmp(edges[j], edges[k]) <= 0) {
+            expect(
+              cmp(edges[i], edges[k]),
+              `transitivity: (${i}<=${j}) && (${j}<=${k}) ⇒ (${i}<=${k})`
+            ).toBeLessThanOrEqual(0);
+          }
+        }
+      }
+    }
+
+    // Sorting the ring is now deterministic and matches the angular order.
+    const order = [C, A, B].sort((x, y) => cmp(x, y));
+    expect(order).toEqual([A, B, C]);
+  });
+
+  it("exact-tangency pinch still breaks the tie by bend side (task 1336 preserved)", () => {
+    // Two curves leaving with the IDENTICAL tangent (same control direction) but
+    // opposite bends must remain separable — same quantized bucket → bend order.
+    const left = quad({ x: 1000, y: 0 }, { x: 1000, y: 1000 }); // bends left (+)
+    const right = quad({ x: 1000, y: 0 }, { x: 1000, y: -1000 }); // bends right (−)
+    const arr = new Arrangement();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyArr = arr as any;
+    expect(anyArr.compareOutgoing(right, left)).toBeLessThan(0);
+    expect(anyArr.compareOutgoing(left, right)).toBeGreaterThan(0);
+  });
+});

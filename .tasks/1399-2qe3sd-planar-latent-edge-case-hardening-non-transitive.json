@@ -2,9 +2,9 @@
   "id": "1399-2qe3sd-planar-latent-edge-case-hardening-non-transitive",
   "title": "Planar: latent edge-case hardening \u2014 non-transitive rotation comparator and Erase-Inside keying on fill index",
   "description": "Two low-confidence latent issues in packages/core/src/engine/planar/. (1) arrangement.ts:638-648 compareOutgoing returns raw angle diff when |dAngle|>TANGENT_ANGLE_TIE (0.01) but falls back to a curvature bendSignature within the tie; three+ near-tangent outgoing edges whose angles chain across the threshold (A-B and B-C within tie, A-C beyond) yield an intransitive comparator -> Array.sort gives an undefined rotation-ring order -> corrupted next/prev linking and face tracing. Rare (needs >=3 tangent-coincident edges at one vertex). Fix: make the sort key total, e.g. (quantizedAngle, bendSignature). (2) eraser.ts:175-178 Erase-Inside resolves insideFillIdx from locateFace(insideAt).fill (a style INDEX/color) then erases any under-eraser face where f.fill===insideFillIdx; because buildArrangementFromShapes de-dupes fills by color, two spatially-disjoint same-color fills share one index, so Erase Inside also bites a separate same-colored region the eraser passes over (authentic Flash confines it to the connected fill you started in). Fix: restrict to the connected same-fill component of startFace via the existing connectedFillComponent (eraser.ts:321). Confidence: both suspected/needs-repro (oracle covers the common cases).",
-  "status": "open",
+  "status": "done",
   "effort": "default",
   "priority": "low",
   "created_at": "2026-07-02T01:16:08Z",
-  "updated_at": "2026-07-02T01:16:08Z"
+  "updated_at": "2026-07-02T02:25:33Z"
 }

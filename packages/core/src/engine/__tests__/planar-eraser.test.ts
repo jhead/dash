@@ -591,6 +591,50 @@ describe("planar/P4 — eraser modes", () => {
     expect(redAfter).toBeCloseTo(redBefore, -1);
   });
 
+  it("Erase Inside spares a DISJOINT same-color region (task 1399)", () => {
+    // Two spatially-disjoint BLUE rects. buildArrangementFromShapes de-dupes
+    // fills by color, so both share ONE fill index. An eraser that passes over
+    // BOTH, started inside rect1, must confine Erase-Inside to rect1's connected
+    // fill — keying on the fill INDEX would (wrongly) also bite rect2.
+    const merged = mergeShapes([
+      rectShape("b1", 0, 0, 40, 40, BLUE),
+      rectShape("b2", 100, 0, 40, 40, BLUE),
+    ]);
+    const box = (s: Shape | null, xmin: number, xmax: number): number => {
+      if (!s) return 0;
+      let a = 0;
+      for (const p of s.paths) {
+        if (!p.fill) continue;
+        const cx =
+          (p.start.x + p.segments.reduce((t, seg) => t + seg.to.x, 0)) /
+          (1 + p.segments.length);
+        if (cx >= xmin && cx <= xmax) a += pathNetArea(p);
+      }
+      return Math.abs(a);
+    };
+    const r1Before = box(merged, -10, 70);
+    const r2Before = box(merged, 70, 160);
+    expect(r1Before).toBeCloseTo(1600, -1);
+    expect(r2Before).toBeCloseTo(1600, -1);
+    // A horizontal eraser stroke sweeping through BOTH rects (y≈20).
+    const stamp = buildEraserStamp(
+      [
+        { x: 20, y: 20 },
+        { x: 120, y: 20 },
+      ],
+      8
+    );
+    const out = planarEraseShape(merged, stamp, {
+      mode: "inside",
+      insideAt: { x: 20, y: 20 },
+    }).shape;
+    const r1After = box(out, -10, 70);
+    const r2After = box(out, 70, 160);
+    // rect1 (the started-in fill) lost the swept band; rect2 is fully spared.
+    expect(r1After).toBeLessThan(r1Before);
+    expect(r2After).toBeCloseTo(r2Before, -1);
+  });
+
   it("Erase Selected mode: only erases the selected fill", () => {
     const merged = mergeShapes([
       rectShape("b", 0, 0, 50, 100, BLUE),
