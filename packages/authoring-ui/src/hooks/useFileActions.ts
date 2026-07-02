@@ -5,6 +5,7 @@ import { saveFla, saveRealFla, loadFla } from "@flash/core";
 import type { BitmapItem, SoundItem, FlashDocument } from "@flash/core";
 import type { VideoProbe } from "@flash/swf";
 import type { PendingVideoImport } from "../store/uiStore.js";
+import { grantRuntimeFsScope } from "./tauriFsScope.js";
 
 const FLA_FILTERS = [{ name: "Dash Document", extensions: ["fla"] }];
 
@@ -125,6 +126,10 @@ export function useFileActions() {
     if (!selected) return null;
 
     const path = typeof selected === "string" ? selected : selected;
+    // The static fs capability is narrowed to content dirs (task 1394); grant a
+    // per-file runtime scope for this user-chosen path so a .fla anywhere on
+    // disk is readable (task 1416).
+    await grantRuntimeFsScope(path);
     let bytes: Uint8Array;
     try {
       bytes = await readFile(path);
@@ -156,6 +161,7 @@ export function useFileActions() {
     }
     if (path) {
       try {
+        await grantRuntimeFsScope(path);
         const bytes = saveFla(doc);
         await writeFile(path, bytes);
         return path;
@@ -210,6 +216,7 @@ export function useFileActions() {
 
     // Ensure the path ends with .fla
     const savePath = chosen.endsWith(".fla") ? chosen : `${chosen}.fla`;
+    await grantRuntimeFsScope(savePath);
     try {
       const bytes = saveFla(doc);
       await writeFile(savePath, bytes);
@@ -273,6 +280,7 @@ export function useFileActions() {
     if (!chosen) return null;
 
     const savePath = chosen.endsWith(".fla") ? chosen : `${chosen}.fla`;
+    await grantRuntimeFsScope(savePath);
     try {
       const bytes = saveRealFla(doc);
       await writeFile(savePath, bytes);
@@ -314,6 +322,7 @@ export function useFileActions() {
     if (!selected) return null;
 
     const path = typeof selected === "string" ? selected : selected;
+    await grantRuntimeFsScope(path);
     let bytes: Uint8Array;
     try {
       bytes = await readFile(path);
@@ -387,6 +396,7 @@ export function useFileActions() {
     if (!selected) return null;
 
     const path = typeof selected === "string" ? selected : selected;
+    await grantRuntimeFsScope(path);
     let bytes: Uint8Array;
     try {
       bytes = await readFile(path);
@@ -466,6 +476,7 @@ export function useFileActions() {
     if (!selected) return null;
 
     const path = typeof selected === "string" ? selected : selected;
+    await grantRuntimeFsScope(path);
     let bytes: Uint8Array;
     try {
       bytes = await readFile(path);

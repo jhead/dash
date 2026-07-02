@@ -3,6 +3,7 @@ import { writeFile } from "@tauri-apps/plugin-fs";
 import { compileDocument, collectFontFaceRequests, resolveFontGlyphSources } from "@flash/swf";
 import type { FlashDocument, BitmapItem } from "@flash/core";
 import type { CompileOptions } from "@flash/swf";
+import { grantRuntimeFsScope } from "./tauriFsScope.js";
 
 export type { CompileOptions };
 
@@ -195,6 +196,9 @@ export function usePublish(doc: FlashDocument, compileOptions?: Omit<CompileOpti
     if (!chosen) return;
 
     const savePath = chosen.endsWith(".swf") ? chosen : `${chosen}.swf`;
+    // Grant a per-file runtime fs scope for the user-chosen output path so
+    // publishing outside the narrowed static content dirs works (task 1416).
+    await grantRuntimeFsScope(savePath);
     try {
       const bytes = await publishToBytes();
       await writeFile(savePath, bytes);

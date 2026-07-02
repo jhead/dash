@@ -119,14 +119,28 @@ escalate into arbitrary host access.
   are no longer reachable even if the webview is compromised. All file access is already
   routed through native open/save dialogs (`useFileActions`/`usePublish`), so the user
   still chooses each file explicitly.
+- **Per-file runtime scope for dialog-chosen paths (task 1416).** Narrowing the static
+  scope (above) meant a `.fla` — or an imported asset / a Save-As / Publish target —
+  located *outside* the content dirs could no longer be read or written. Rather than
+  widen the static capability back out, the shell grants a **per-file runtime scope** for
+  the exact path the user picks in a native dialog: `src-tauri/src/lib.rs` exposes an
+  `allow_fs_path` command that calls `app.fs_scope().allow_file(path)` (the plugin's
+  runtime `Scope`), and the frontend helper `grantRuntimeFsScope(path)`
+  (`authoring-ui/src/hooks/tauriFsScope.ts`) invokes it from every dialog site
+  (`useFileActions` open/save/export/import + `usePublish` publish-to-file) immediately
+  before the `readFile`/`writeFile`. The grant is **per-file, not per-directory** — opening
+  a file in `~` must not re-expose the whole home directory that the narrowing locked down
+  — and lasts only for the app session. Net effect: user-chosen files anywhere on disk
+  work, while a compromised webview still cannot reach a path the user never selected.
 
 > Manual verification (cannot be exercised from a headless CI/build box): run
 > `pnpm --filter @flash/desktop tauri dev` and `... tauri build`, then confirm (1) the app
 > loads with no CSP violations in the webview console, (2) Ruffle Test Movie / Live
 > Preview play, (3) a collab session connects, and (4) Open/Save/Publish and media import
-> work for files under Documents/Downloads/Desktop. Files outside the scoped directories
-> are intentionally rejected; picking arbitrary locations would require a follow-up that
-> grants per-file runtime scope from the dialog result.
+> work for files under Documents/Downloads/Desktop **and** for a `.fla` opened from an
+> arbitrary out-of-scope path (e.g. `/tmp` or a non-content project dir): the file opens,
+> re-saving to it succeeds, and publishing a `.swf` beside it succeeds — proving the
+> per-file runtime grant. A path the user never selected in a dialog stays unreadable.
 
 ## Glossary (Flash-specific terms)
 

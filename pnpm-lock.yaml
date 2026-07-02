@@ -129,6 +129,9 @@ importers:
       '@openrouter/ai-sdk-provider':
         specifier: ^2
         version: 2.9.1(ai@6.0.208(zod@4.4.3))(zod@4.4.3)
+      '@tauri-apps/api':
+        specifier: ^2.0.0
+        version: 2.11.0
       '@tauri-apps/plugin-dialog':
         specifier: ^2.0.3
         version: 2.7.1

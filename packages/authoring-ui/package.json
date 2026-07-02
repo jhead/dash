@@ -23,6 +23,7 @@
     "@flash/player": "workspace:*",
     "@flash/swf": "workspace:*",
     "@openrouter/ai-sdk-provider": "^2",
+    "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.3",
     "@tauri-apps/plugin-fs": "^2.5.1",
     "ai": "^6",
