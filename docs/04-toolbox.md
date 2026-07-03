@@ -112,8 +112,9 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   in `StageArea` (`pointerPressureTilt` → `brushHalfAt`); a mouse reports full pressure / no
   tilt, so the toggles only affect pen/touch input.
 - **Brush ribbon is a STAMP UNION, not one outline (task 1426).** The nib is swept along the
-  path as the boolean UNION of a nib STAMP at every sample (round disk / square) plus a bridging
-  CAPSULE quad per segment — the same disk+capsule construction as the eraser's `buildEraserStamp`.
+  path as the boolean UNION of a nib STAMP at every sample (round polygonal disk / square) plus a
+  bridging quad per segment — in the spirit of the eraser's `buildEraserStamp` disk+capsule (see
+  the task-1434 bullet below for the round stamp's exact construction).
   Built by `buildBrushRibbon` in `@flash/core` `engine/planar/brushpaint.ts`; `StageArea`'s
   `brushPointsToShape` only turns pressure/tilt samples into per-sample nib half-widths and calls
   it. Each stamp loop carries its OWN (distinct-identity) Fill object so `buildArrangementFromShapes`
@@ -135,6 +136,43 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   sweep profile "unconfirmed"; we implement the axis-aligned-square-stamp reading (consistent with
   the single-click square dab and the stamp-union approach) rather than any rotated/oriented-square
   variant. Gate: `brush-ribbon.test.ts` "square nib sweeps an AXIS-ALIGNED square".
+- **The ROUND nib constructs with SQUARE-NIB exactness — polygonal disk stamps whose tangent
+  vertices ARE the bridge corners (task 1434).** The square nib is exact by construction (its
+  bridge corners are the stamp's own corners: identical snapped vertices, collinear edges the
+  arrangement merges exactly); the round nib used to violate that two ways. (1) The disk stamp was
+  4 quadratics with CORNER control points — a **+6.07% squircle** (max radius 1.0607·r at the
+  diagonals vs the oval tool's +0.31% and the eraser 24-gon's ≤0.86%) → fat/squarish dabs and end
+  caps. (2) The capsule corners `s ± n·half` lay on the TRUE circle but were NOT vertices of the
+  disk boundary: at each sample the disk arc + the two capsule side edges formed a near-tangent
+  triple with sub-twip clearance that twip snapping fragmented into ~0.1px stubs — the union seal
+  broke, so a self-overlapping stroke painted its enclosed hole SOLID (~480px² spurious on the
+  audit loop) and band faces cracked to null. The rebuilt construction (`diskSegmentCount` /
+  `NibCornerRegistry` / `roundStampPath` / `roundBridgePath` in `planar/brushpaint.ts`):
+  - the disk stamp is an ALL-LINE **inscribed polygon on the true circle** (≥40 segments, sagitta
+    ≤0.31% — matching the oval tool; count scales up to 96 for large nibs; **zero** radial
+    overshoot), pre-snapped to the twip grid so the fill sampler's chord polygons are bit-identical
+    to the arrangement's input edges;
+  - every capsule tangent corner is registered per-sample in a corner REGISTRY and emitted as the
+    exact same Point in BOTH the disk polygon and the bridge quad — one shared snapped vertex per
+    junction, the square nib's own mechanism;
+  - corners of adjacent segments MERGE onto one canonical point whenever the inner-miter clearance
+    `sep²/(2h)` would be under 0.3px (below that the miter corridor is sub-twip → snapping slits
+    it, or spawns slivers the fill sampler cannot resolve); merged corners make consecutive quads
+    share the same end-edge diameter exactly, and an interior stamp whose disk is fully covered by
+    its two quads is skipped outright;
+  - disk arcs facing an adjacent sample (covered by that bridge quad) collapse to a SINGLE chord —
+    fine tessellation there would graze the tangent side edges within a fraction of a twip; only
+    UNCOVERED arcs (end caps, sharp-turn outer wedges) get fine chords.
+  Result: zero missing / zero spurious half-pixels vs the ideal Euclidean swept band on the audit
+  loop repro, end caps, dabs and hairpins across half ∈ {4, 8} × spacing ∈ {3, 8, 14} px (exact
+  square-nib parity, previously 153–3224 defects per case), and a ~2.7× FASTER merge fold than the
+  square nib on long strokes (fewer edges thanks to stamp skipping). Two sub-pixel KNOWN RESIDUALS
+  (strictly missing ≤7px² per stroke, never spurious) are kernel-scope and encoded as `it.fails`
+  cases: two independent stroke passes landing edges 1 twip apart (needs kernel snap-rounding) and
+  `faceInteriorPoint` picking a point inside the ≤0.02px split-vertex snap bulge (task 1435).
+  Gate: `brush-round-parity.test.ts` (round-vs-square raster-parity harness: renderer-faithful
+  nonzero-winding classification of the committed `foldShapeIntoLayer` output on a 0.5px grid +
+  circle-fidelity + shared-vertex invariants).
 - **Eraser modes**: Erase Normal, Erase Fills, Erase Lines, Erase Selected Fills, Erase Inside.
   **Faucet** deletes a fill or a LINE in one click. Double-click eraser = clear stage.
 - **Eraser nib SHAPE — round / square (task 1433).** Flash 8's eraser Options offer a nib-shape

@@ -204,6 +204,7 @@ faces does this fill now occupy after the cut".
 | **Perf follow-up (task 1327)** | Incremental fold — avoid rebuilding the entire layer arrangement per stroke on dense art (traced bitmaps with 1000+ fills). Measured ~35/61/176 ms per stroke for 100/400/800 mergeable fills. Resolved via **spatial bbox-culling**: only the **transitive overlap closure** of the new stroke is folded through the kernel; shapes disjoint from the whole interacting cluster stay untouched. Per-stroke fold on a 1000-fill layer dropped ~239 ms → ~2 ms. See §3.0e. | **DONE (task 1327; correctness fixed by task 1329).** |
 | **Stroked-curve centre-pick (task 1334)** | A STROKED ellipse/oval (and any uniformly-stroked **curved** fill) could not be picked/dragged at its interior: re-building the live planar map from the committed shape shattered the interior into tiny faces (or none) so `pickAt` at the centre returned null, while a stroke-free oval picked fine. Root cause was a **coincident-curve** explosion: read-back emitted the stroked fill boundary as ~12 separate single-segment stroke fragments (+ sub-twip stubs); on rebuild the fill loop and those fragments are the SAME geometry split at different points, and `intersectCurveCurve` had NO coincidence handling — it flooded the arrangement with spurious crossings (~14.6k half-edges) so face tracing collapsed. Fixed at three layers (all curve-preserving). See §3.0h. | **DONE (task 1334).** |
 | **Stroke-under-fill consumption (task 1430)** | The fold never consumed strokes under a new fill: brushing Paint Normal (or committing any plain fill) over a pencil line left 100% of the covered line rendering on top. Real Flash 8 replaces the portion of a line a later fill covers. Fixed by threading a **draw-order index** onto stroke half-edges and clearing the `lineStyle` of any stroke whose midpoint is covered by a fill drawn STRICTLY LATER (the arrangement has already split the stroke at the fill boundary, so uncovered spans keep their stroke). Draw-order strictness keeps P2 line-splits-fill intact (a line drawn over a fill has the higher order and survives). See §3.0l. | **DONE (task 1430).** |
+| **Round-nib tangent-seam geometry (task 1434)** | The brush ROUND nib's stamp union fragmented on the twip grid: the disk stamp (4 quadratics, corner controls → a **+6.07% squircle**) shared NO vertex with the capsule corners `s ± n·half`, so each sample carried a near-tangent arc+edge+edge triple with sub-twip clearance that snapping shattered into ~0.1px stubs — a self-overlapping stroke painted its enclosed hole SOLID (~480px² spurious) and band faces cracked to null; the SQUARE nib (whose bridge corners ARE its stamp corners) had zero defects. Rebuilt the round construction to the square nib's invariant: all-line inscribed-polygon disk stamps (≥40-gon, ≤0.31% sagitta, zero overshoot, pre-snapped to twips) whose tangent vertices are the EXACT bridge-quad corner Points (per-sample corner registry; miter-clearance corner merging; quad-covered arcs collapse to single chords; fully-covered interior stamps skipped). Exact square parity (0 defects) on the audit loop/caps/dabs across half {4,8} × spacing {3,8,14}. See §3.0m. | **DONE (task 1434).** |
 
 ### 3.0 P1 implementation notes (task 1319)
 
@@ -1092,6 +1093,88 @@ dropped, the uncovered ends survive.
   survive), the reversed line-over-fill case (line splits fill, survives),
   `preserveLines` keeps the whole line, and a stroked-and-filled shape keeps its
   own outline.
+
+### 3.0m Round-nib stamp geometry — square-nib exactness for the disk+capsule union (task 1434)
+
+The brush ribbon (§ task 1426) is a boolean UNION of per-sample nib stamps plus
+per-segment bridge quads. For the SQUARE nib that union is exact **by
+construction**: the bridge parallelogram's corners are the square stamp's own
+corners — the same computed coordinates snap to the same twip vertex, and the
+collinear straight edges merge exactly in the arrangement. The ROUND nib
+violated this two ways and produced the worst visual defects in the merge model:
+
+* **Squircle stamp.** `diskPath` was 4 quadratics whose control points sat at
+  the bounding-box CORNERS → max radius `0.75·√2·r = 1.0607r` at the diagonals
+  (+6.07%; the oval tool errs +0.31%, the eraser 24-gon ≤0.86%). Dabs and end
+  caps rendered visibly fat/squarish.
+* **Tangent-seam fragmentation.** The capsule corners `s ± n·half` lay ON the
+  true circle, but the squircle boundary is a different curve with no vertex
+  there: at every sample the disk arc and the two capsule side edges formed a
+  near-tangent TRIPLE whose mutual clearance stays sub-twip for ~1px. Twip
+  snapping fragmented the triple into ~0.1px stubs and the union boundary's seal
+  broke — one arrangement face connected the ribbon exterior to its interior, so
+  a self-overlapping loop painted its enclosed hole SOLID (~480px² spurious) and
+  adjacent band faces flipped to null (~1400 unpainted half-px grid points).
+
+**The fix** (all in `engine/planar/brushpaint.ts`; kernel untouched) makes the
+round nib satisfy the square nib's invariant — *every stamp/bridge junction is a
+shared snapped vertex; no near-tangent sub-twip pairs anywhere*:
+
+1. **All-line inscribed-polygon disk stamps.** `roundStampPath` emits an
+   inscribed polygon ON the true circle — `diskSegmentCount` ≥ 40 segments
+   (sagitta ≤0.31%, matching `createOvalShape`; scales to 96 for large nibs),
+   zero radial overshoot. All-line geometry also makes the kernel's
+   chord-polygon fill sampling EXACT for the ribbon (a line loop is its own
+   chord polygon) and every stamp/bridge interaction an exact line/line
+   crossing.
+2. **Shared corner registry.** `NibCornerRegistry` canonicalizes each sample's
+   capsule tangent corners; `roundBridgePath` (bridge quads) and
+   `roundStampPath` (disk polygons) emit the SAME Point values, so each
+   junction is one snapped vertex — the square-nib mechanism.
+3. **Miter-clearance corner merging.** Adjacent segments' corners at one sample
+   sit `sep = 2h·sin(δ/2)` apart; if kept distinct, their tangent side edges
+   cross with a perpendicular clearance of only `sep²/(2h)` — sub-twip for
+   gentle turns (snapping slits the corridor), and sliver-scale below ~0.3px
+   (unresolvable by interior-point fill sampling). Corners merge to one
+   canonical point whenever that clearance would be < 0.3px; consecutive quads
+   then share the same end-edge diameter EXACTLY, and the patched outgoing
+   quad's slab absorbs the turn's outer wedge. Shave ≤ 0.3px, visually nil.
+4. **Quad-covered arcs collapse to single chords; redundant stamps are
+   skipped.** Fine tessellation is emitted ONLY on arcs no bridge quad covers
+   (end caps, sharp-turn outer wedges — where no edge runs alongside). An arc
+   facing an adjacent sample lies under that bridge quad, and fine chords there
+   would graze the quad's tangent side edges within a fraction of a twip; the
+   single chord is strictly quad-interior. An interior stamp whose whole disk is
+   quad-covered (straight/gentle runs) is skipped — the two quads seal along
+   their shared diameter. Long strokes now fold ~2.7× FASTER than the square
+   nib (fewer edges).
+5. **Pre-snap to the twip grid.** Every emitted coordinate is snapped in the
+   builder, so the fill sampler's region polygons are bit-identical to the
+   arrangement's input edges (no ≤0.035px disagreement band along boundaries).
+
+**Acceptance** — `brush-round-parity.test.ts`, the round-vs-square raster-parity
+harness: commit through `foldShapeIntoLayer`, classify a 0.5px grid with the
+renderer's batched nonzero-winding rules, and require every point with
+`dist(pt, spine) ≤ half − 0.35` painted and every point `≥ half + 0.35` empty
+(Euclidean for round; the square oracle passes the Chebyshev analogue). Zero
+missing / zero spurious on: the audit's self-overlapping LOOP spine (verbatim +
+resampled at spacing 3/8/14, half 4/8 — previously 153–3224 defects per case),
+the 2-sample dab (audit's 124px² missing crescent), single dabs (half 4/8/16),
+diagonal end caps, hairpins (incl. exact 180° reversals), a spiral, zigzags,
+duplicate samples, and 12 random jitter walks (two documented exceptions below).
+Circle fidelity: max |radius − half| ≤ 0.5%·half + ½ twip (vs +6.07%).
+
+**Known residuals (kernel scope — task 1435 and beyond, encoded as `it.fails`):**
+two sub-pixel, strictly-MISSING (never spurious) cases survive in the extended
+adversarial sweep: (a) loop half=2/spacing=2 — two INDEPENDENT passes of the
+stroke land edges 1 twip apart (the leg's tangent corner vs the arm's diameter
+endpoint) and snapping slits the near-miss (~7px²); no stamp construction
+controls the relative alignment of independent passes — this needs kernel-level
+snap-rounding; (b) one random walk at half=9 — a sliver "dart" face at an
+unmergeable 44° turn whose `faceInteriorPoint` lands inside the ≤0.02px band
+between a split-vertex-SNAPPED arrangement edge and the straight region chord
+(the task-1435 sampler-robustness issue). The square nib passes both by
+axis-alignment luck, not by a copyable construction property.
 
 ### 3.1 Key decisions
 

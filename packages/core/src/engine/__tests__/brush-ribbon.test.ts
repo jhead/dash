@@ -192,10 +192,23 @@ describe("brush ribbon — degenerate inputs", () => {
     expect(buildBrushRibbon("s", [], RED).paths).toHaveLength(0);
   });
 
-  it("a single sample → one round dab (curve segments)", () => {
+  it("a single sample → one round dab (fine inscribed polygon, task 1434)", () => {
+    // The round stamp is an ALL-LINE inscribed polygon on the true circle (like
+    // the eraser's disk stamp, but ≥40 segments → ≤0.31% sagitta, matching the
+    // oval tool). The old 4-quadratic disk was a +6.07% squircle whose arcs also
+    // formed near-tangent triples with the capsule sides that twip snapping
+    // fragmented (task 1434) — curves are gone from the brush ribbon.
     const ribbon = buildBrushRibbon("s", samples([{ x: 50, y: 50 }], 10), RED);
     expect(ribbon.paths).toHaveLength(1);
-    expect(ribbon.paths[0].segments.every((s) => s.type === "curve")).toBe(true);
+    expect(ribbon.paths[0].segments.every((s) => s.type === "line")).toBe(true);
+    expect(ribbon.paths[0].segments.length).toBeGreaterThanOrEqual(40);
+    // Every vertex lies on the true circle (± twip snap): no squircle overshoot.
+    const pts = [ribbon.paths[0].start, ...ribbon.paths[0].segments.map((s) => (s as { to: { x: number; y: number } }).to)];
+    for (const p of pts) {
+      const r = Math.hypot(p.x - 50, p.y - 50);
+      expect(r).toBeGreaterThan(10 - 0.1);
+      expect(r).toBeLessThan(10 + 0.1);
+    }
     expect(filledAt(ribbon, { x: 50, y: 50 })).toBe(true);
   });
 

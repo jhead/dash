@@ -633,8 +633,11 @@ describe("Brush tool (stamp-union ribbon — task 1426)", () => {
       { x: 0, y: 50 }, { x: 50, y: 50 }, { x: 100, y: 50 },
     ];
     const shape = brushPointsToShape(pts, 10, RED);
-    // A disk per sample + a capsule per segment (3 disks + 2 capsules = 5 loops).
-    expect(shape.paths).toHaveLength(5);
+    // A capsule per segment + the end-cap disks. On a COLLINEAR run the interior
+    // disk is exactly covered by the two bridge quads (which share the same
+    // canonical end-edge diameter — task 1434) and is skipped:
+    // 2 end disks + 2 capsules = 4 loops.
+    expect(shape.paths).toHaveLength(4);
     for (const p of shape.paths) {
       expect(p.closed).toBe(true);
       expect(p.segments.length).toBeGreaterThan(0);
@@ -658,24 +661,25 @@ describe("Brush tool (stamp-union ribbon — task 1426)", () => {
     expect(shape.paths).toHaveLength(1);
     const path = shape.paths[0];
     expect(path.closed).toBe(true);
-    // Round dab is built from CURVE segments (quadratic arcs), not 4 straight
-    // rectangle edges. A square head would be all "line" segments.
-    expect(path.segments.every((s) => s.type === "curve")).toBe(true);
-    expect(path.segments).toHaveLength(4);
+    // Round dab is a FINE INSCRIBED POLYGON on the true circle (>=40 line
+    // segments, <=0.31% sagitta — task 1434). The old 4-quadratic disk was a
+    // +6.07% SQUIRCLE (corner control points), visibly fat at the diagonals.
+    expect(path.segments.every((s) => s.type === "line")).toBe(true);
+    expect(path.segments.length).toBeGreaterThanOrEqual(40);
 
-    // Geometry must lie on the circle of radius brushSize/2 (=10) about (50,50):
-    // every anchor (start + each segment endpoint) is ~radius from center.
+    // Geometry must lie ON the circle of radius brushSize/2 (=10) about (50,50):
+    // every vertex is radius from center (+- the twip snap the stamp bakes in).
     const radius = 10;
     const anchors = [path.start, ...path.segments.map((s) => s.to)];
     for (const a of anchors) {
       const d = Math.hypot(a.x - 50, a.y - 50);
-      expect(d).toBeCloseTo(radius, 5);
+      expect(Math.abs(d - radius)).toBeLessThan(0.05);
     }
     // Bounding box is the full diameter in BOTH axes (a circle, not a sliver).
     const xs = anchors.map((p) => p.x);
     const ys = anchors.map((p) => p.y);
-    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(2 * radius, 5);
-    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(2 * radius, 5);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(2 * radius, 1);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(2 * radius, 1);
   });
 
   it("a single SQUARE dab produces an axis-aligned square (line segments)", () => {
@@ -698,9 +702,17 @@ describe("Brush tool (stamp-union ribbon — task 1426)", () => {
     const xs = allAnchors(shape).map((p) => p.x);
     expect(Math.max(...xs)).toBeCloseTo(110, 5); // 100 + half(10)
     expect(Math.min(...xs)).toBeCloseTo(-10, 5); // 0 - half(10)
-    // The caps are round disks → curve segments present in the ribbon.
-    const curves = shape.paths.flatMap((p) => p.segments).filter((s) => s.type === "curve");
-    expect(curves.length).toBeGreaterThanOrEqual(8); // 2 end disks × 4 arcs
+    // The caps are round POLYGONAL disks (task 1434: all-line construction —
+    // curve arcs formed near-tangent triples with the capsule sides that twip
+    // snapping fragmented). Each cap contributes a fine half-circle fan: many
+    // vertices at nib radius from the end samples.
+    const anchors = allAnchors(shape);
+    const onEndCircles = anchors.filter((p) => {
+      const d0 = Math.hypot(p.x - 0, p.y - 50);
+      const d1 = Math.hypot(p.x - 100, p.y - 50);
+      return Math.abs(d0 - 10) < 0.05 || Math.abs(d1 - 10) < 0.05;
+    });
+    expect(onEndCircles.length).toBeGreaterThanOrEqual(40); // 2 caps x >=20 verts
   });
 });
 
