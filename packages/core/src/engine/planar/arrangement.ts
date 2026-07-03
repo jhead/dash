@@ -72,6 +72,38 @@ function nearEndpoint(pt: Point, endpoint: Point): boolean {
   return dist2(pt, endpoint) <= ENDPOINT_INCIDENCE_R2;
 }
 
+/**
+ * True when the snapped hit `pt` is a SHARED-VERTEX tangent touch of edges `a`
+ * and `b`: it lies within {@link ENDPOINT_INCIDENCE_R2} of an endpoint of BOTH
+ * edges AND those two near endpoints are the SAME snapped point — the vertex
+ * the edges genuinely share (task 1335's oval-arc touch signature).
+ *
+ * Task 1436 refinement: the original guard only required "near an endpoint of
+ * both edges", which ALSO matched a genuine transversal crossing that happens
+ * to land within 1.5 twips of two DISTINCT endpoints — e.g. two independent
+ * brush-stroke passes whose silhouettes cross right next to where both edges
+ * end, with the two endpoints ONE TWIP apart (never merged as a vertex). The
+ * suppressed split left a 1-twip slit at the junction through which face
+ * tracing leaked an unbounded/hole region into a covered one (loop h=2 sp=2:
+ * the enclosed-hole face swallowed a ~7px² band of the leg pass and painted it
+ * background). Requiring the near endpoints to be the SAME point keeps every
+ * true tangent touch suppressed (consecutive segments of one closed path share
+ * their vertex EXACTLY by construction) while letting the near-endpoint
+ * crossing register; the split point then canonicalizes onto the existing
+ * vertex (task-1435 hot-pixel pull), sealing the junction with one shared
+ * vertex.
+ */
+function sharedEndpointTouch(pt: Point, a: EdgeGeometry, b: EdgeGeometry): boolean {
+  for (const pa of [a.p0, a.p1]) {
+    if (!nearEndpoint(pt, pa)) continue;
+    for (const pb of [b.p0, b.p1]) {
+      if (!nearEndpoint(pt, pb)) continue;
+      if (pointKey(pa) === pointKey(pb)) return true;
+    }
+  }
+  return false;
+}
+
 /** A directed input edge handed to the arrangement. */
 export interface InputEdge {
   readonly geometry: EdgeGeometry;
@@ -492,20 +524,18 @@ export class Arrangement {
         // drift.
         //
         // The signature of a shared-vertex tangent touch is that the hit lands near
-        // an endpoint of BOTH edges at once (the vertex they share). A GENUINE
-        // crossing — even one near a vertex (e.g. an eraser-capsule edge cutting a
-        // band edge close to where the capsule edge ends) — is near an endpoint of
-        // AT MOST ONE of the two edges; the other edge passes through with the
-        // crossing solidly in its interior. So reject the interior split ONLY when
-        // the snapped point is within ENDPOINT_INCIDENCE_R2 of an endpoint of BOTH
-        // edges. This kills the oval's tangent-touch stubs (idempotent fixed-point
-        // read-back) without suppressing any real crossing — including the angled
-        // eraser cuts (planar-eraser.test.ts), where the crossing is near only the
-        // capsule edge's end, not the band edge's.
-        const newNear = nearEndpoint(pt, geom.p0) || nearEndpoint(pt, geom.p1);
-        const existingNear =
-          nearEndpoint(pt, e.geometry.p0) || nearEndpoint(pt, e.geometry.p1);
-        const sharedVertexTouch = newNear && existingNear;
+        // an endpoint of BOTH edges at once — AND those two endpoints are the SAME
+        // snapped point (the vertex they share; task-1436 refinement, see
+        // `sharedEndpointTouch`). A GENUINE crossing — even one near a vertex
+        // (e.g. an eraser-capsule edge cutting a band edge close to where the
+        // capsule edge ends, or two independent stroke passes whose silhouettes
+        // cross next to two DISTINCT endpoints a twip apart) — never involves a
+        // shared endpoint, so its split registers. This kills the oval's
+        // tangent-touch stubs (idempotent fixed-point read-back) without
+        // suppressing any real crossing — including the angled eraser cuts
+        // (planar-eraser.test.ts), where the crossing is near only the capsule
+        // edge's end, not the band edge's.
+        const sharedVertexTouch = sharedEndpointTouch(pt, geom, e.geometry);
         if (h.tA > 1e-7 && h.tA < 1 - 1e-7 && !sharedVertexTouch) {
           newSplits.set(ptKey, { t: h.tA, point: pt });
           canonicalPts.set(ptKey, pt);

@@ -464,8 +464,9 @@ describe("brush round nib — extended adversarial strokes (task 1434)", () => {
       let s = seed >>> 0;
       return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
     };
-    // Seed 2 at h=9 is EXCLUDED here: it is the one known random-walk residual
-    // (see the `fails` case below). All other sampled seeds are defect-free.
+    // Seed 2 at h=9 runs as its OWN dedicated case below (it was the one
+    // random-walk residual until the task-1436 faceInteriorPoint
+    // boundary-clearance fix; kept separate as a named regression).
     for (const seed of [1, 3, 5, 6, 7, 8]) {
       const rnd = lcg(seed * 7919);
       const pts: Point[] = [{ x: 50, y: 50 }];
@@ -487,32 +488,36 @@ describe("brush round nib — extended adversarial strokes (task 1434)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // KNOWN RESIDUALS (kernel/sampler scope — task 1435, not the construction).
-  // Marked `fails`: they assert ZERO defects and currently fail; when the
-  // kernel classification fix lands they start passing and vitest will flag
-  // these as unexpectedly-passing so they can be promoted to regular cases.
+  // FORMER KNOWN RESIDUALS (task 1436; were `it.fails` under task-1435 scope).
   //
-  //  - loop h=2 sp=2 (~27 half-px grid points ≈ 7px², strictly MISSING paint,
-  //    never spurious): two independent passes of the stroke land edges within
-  //    a twip of each other (the leg's tangent corner vs the arm's diameter
-  //    endpoint, 1 twip apart at the same y) — snapping slits the near-miss.
-  //    Fixable only by kernel-level snap-rounding; no stamp construction can
-  //    control the relative alignment of INDEPENDENT stroke passes.
-  //  - random walk seed=2 h=9 (2 grid points ≈ 0.5px²): a sliver "dart" face at
-  //    an unmergeable 44° sharp turn whose `faceInteriorPoint` lands inside the
-  //    ≤0.02px disagreement band between a split-vertex-SNAPPED arrangement
-  //    edge and the straight region chord the fill sampler tests against —
-  //    the faceInteriorPoint robustness issue owned by task 1435.
-  // The square nib passes both by axis-alignment luck (its edges are almost
-  // always axis-aligned or 45°, so near-parallel sub-twip approaches are rare),
-  // not by a construction property the round nib could copy.
+  //  - loop h=2 sp=2 (~27 half-px grid points ≈ 7px², strictly MISSING paint):
+  //    FIXED. Two independent passes of the stroke crossed within 1.5 twips of
+  //    two DISTINCT edge endpoints one twip apart (the leg's silhouette corner
+  //    vs the arm's silhouette endpoint at the same y); the task-1335
+  //    shared-vertex guard mis-read that genuine transversal crossing as a
+  //    tangent touch and suppressed the split, leaving a 1-twip slit through
+  //    which the enclosed-hole face leaked into the covered band. The guard now
+  //    requires the two near endpoints to be the SAME snapped point (a real
+  //    shared vertex) — see `sharedEndpointTouch` in planar/arrangement.ts —
+  //    so the crossing registers, canonicalizes onto the existing vertex, and
+  //    the junction seals. Promoted to a regular passing case below.
+  //  - random walk seed=2 h=9 (2 grid points ≈ 0.5px²): FIXED. A sliver "dart"
+  //    face at an unmergeable 44° sharp turn got a `faceInteriorPoint` grid
+  //    candidate lying EXACTLY on the face's own boundary line (an fp coin-toss
+  //    "inside"), i.e. within the ≤0.02px disagreement band between the
+  //    split-vertex-snapped arrangement edge and the straight region chord the
+  //    fill sampler tests against — so the whole face classified null.
+  //    `faceInteriorPoint` now requires each candidate to clear the boundary by
+  //    one twip (falling back to the max-clearance interior candidate for
+  //    thinner-than-2-twip faces) — see INTERIOR_CLEARANCE in planar/query.ts.
+  //    Promoted to a regular passing case below.
   // -------------------------------------------------------------------------
-  it.fails("KNOWN RESIDUAL (task 1435): loop h=2 sp=2 — independent-pass sub-twip near-miss", () => {
+  it("loop h=2 sp=2 — independent-pass sub-twip near-miss (fixed by task 1436)", () => {
     const samples = withHalf(resample(LOOP, 2), 2);
     expectZeroDefects(coverageDefects(commitRibbon("round", samples), samples, "euclid"), "loop h=2 sp=2");
   });
 
-  it.fails("KNOWN RESIDUAL (task 1435): walk seed=2 h=9 — faceInteriorPoint in the snap bulge", () => {
+  it("walk seed=2 h=9 — faceInteriorPoint boundary-clearance (fixed by task 1436)", () => {
     const lcg = (seed: number) => {
       let s = seed >>> 0;
       return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);

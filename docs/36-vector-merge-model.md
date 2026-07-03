@@ -945,6 +945,21 @@ passes through with the crossing solidly in its interior), so the "both edges" c
 every real crossing intact. (An earlier "near an endpoint of *either* edge" form was too broad
 — it suppressed a legitimate angled-eraser cut; the "both" form is the precise discriminator.)
 
+**Task-1436 refinement — the near endpoints must be the SAME snapped point.** The "both edges"
+form still had one false positive: a genuine transversal crossing that lands within 1.5 twips
+of two **DISTINCT** endpoints — two independent brush-stroke passes whose silhouettes cross
+right where both edges end, with the two endpoints ONE TWIP apart (so they never merged into a
+vertex). Suppressing that split left a 1-twip slit at the junction through which face tracing
+leaked a hole/background region into a covered one (the loop half=2/spacing=2 parity residual:
+~7px² of the leg pass painted background because the enclosed-hole face swallowed it). The
+guard (`sharedEndpointTouch`) now fires only when the near endpoint of the new edge and the
+near endpoint of the existing edge have the SAME `pointKey` — the vertex the edges genuinely
+share. A true tangent touch always satisfies this (consecutive path segments share their vertex
+EXACTLY by construction: `p1` of segment *i* IS `p0` of segment *i+1*, snapped identically), so
+the 1335 fixed-point property is untouched; the near-endpoint crossing now registers, and the
+1435 split-point canonicalization pulls it onto the existing vertex, sealing the junction with
+one shared vertex.
+
 **Net effect — a true fixed point.** Cycle 1 applies the unavoidable one-time twip-snap of the
 authored (off-grid) control points (sub-pixel; renders pixel-identical, so the single-commit
 oracles are unaffected). From cycle 2 onward the read-back is **byte-exact identical** to the
@@ -1164,17 +1179,36 @@ diagonal end caps, hairpins (incl. exact 180° reversals), a spiral, zigzags,
 duplicate samples, and 12 random jitter walks (two documented exceptions below).
 Circle fidelity: max |radius − half| ≤ 0.5%·half + ½ twip (vs +6.07%).
 
-**Known residuals (kernel scope — task 1435 and beyond, encoded as `it.fails`):**
-two sub-pixel, strictly-MISSING (never spurious) cases survive in the extended
-adversarial sweep: (a) loop half=2/spacing=2 — two INDEPENDENT passes of the
-stroke land edges 1 twip apart (the leg's tangent corner vs the arm's diameter
-endpoint) and snapping slits the near-miss (~7px²); no stamp construction
-controls the relative alignment of independent passes — this needs kernel-level
-snap-rounding; (b) one random walk at half=9 — a sliver "dart" face at an
-unmergeable 44° turn whose `faceInteriorPoint` lands inside the ≤0.02px band
-between a split-vertex-SNAPPED arrangement edge and the straight region chord
-(the task-1435 sampler-robustness issue). The square nib passes both by
-axis-alignment luck, not by a copyable construction property.
+**Former known residuals — both FIXED (task 1436; were `it.fails`, now regular
+passing cases in `brush-round-parity.test.ts`):** two sub-pixel, strictly-MISSING
+(never spurious) cases survived the 1434/1435 work in the extended adversarial
+sweep; both turned out to have minimal, provably-scoped kernel fixes:
+(a) **loop half=2/spacing=2 (~7px²)** — two INDEPENDENT passes of the stroke
+crossed within 1.5 twips of two DISTINCT edge endpoints one twip apart (the
+leg's silhouette corner at (62,45.2) vs the arm's silhouette endpoint at
+(62.05,45.2)). The task-1335 shared-vertex guard in `arrangement.ts insertEdge`
+required only "hit near an endpoint of BOTH edges" to suppress a split as a
+tangent touch, so it mis-read this genuine transversal crossing and left a
+1-twip slit through which the enclosed-hole face leaked into the covered band
+(one face spanning both → one interior sample → the band painted background).
+The guard now additionally requires the two near endpoints to be the SAME
+snapped point (`sharedEndpointTouch`) — the actual shared vertex the 1335 oval
+arcs have BY CONSTRUCTION — so every true tangent touch stays suppressed while
+the near-endpoint crossing registers and canonicalizes onto the existing vertex
+(the task-1435 hot-pixel pull), sealing the junction.
+(b) **one random walk at half=9 (0.5px²)** — a sliver "dart" face at an
+unmergeable 44° turn: `faceInteriorPoint`'s grid stage produced a candidate
+lying EXACTLY on the face's own boundary line (an fp coin-toss "inside"), i.e.
+inside the ≤0.02px disagreement band between the split-vertex-SNAPPED
+arrangement edge and the straight source-region chord the fill sampler tests
+against — flipping the whole face to null. `faceInteriorPoint` (query.ts) now
+requires every candidate (centroid → grid → diagonal, same preference order) to
+clear the flattened boundary by one twip (`INTERIOR_CLEARANCE`); a face too
+thin for any candidate to clear falls back to the maximum-clearance interior
+candidate seen — never worse than the old first-interior-hit, still provably
+inside. Both fixes landed with the FULL core suite green (no oracle/property/
+eraser/paint-bucket/subselection regression) and the mandated 1434 parity
+matrix still 0-defect.
 
 ### 3.1 Key decisions
 

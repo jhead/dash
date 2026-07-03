@@ -55,6 +55,37 @@ function isSubTwip(a: Point, b: Point): boolean {
   return Math.abs(a.x - b.x) < 0.05 && Math.abs(a.y - b.y) < 0.05;
 }
 
+/**
+ * Minimum interior-candidate clearance from the face boundary, in px (task
+ * 1436). One twip: comfortably above BOTH the ≤0.02px disagreement band
+ * between a split-vertex-SNAPPED arrangement edge and the straight source
+ * region chord the fill sampler tests against, AND the ≤~0.01px sagitta of the
+ * FACE_SAMPLES flattening the clearance is measured on. A candidate at least
+ * this far from the boundary is on the same side of every sub-twip-perturbed
+ * variant of that boundary, so classifying the face by it can never be flipped
+ * by snap noise.
+ */
+const INTERIOR_CLEARANCE = 0.05;
+
+/** Distance from `pt` to the nearest segment of a closed polygon. */
+function distToPolygonBoundary(pt: Point, poly: readonly Point[]): number {
+  let best = Infinity;
+  for (let i = 0, n = poly.length; i < n; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % n];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const t =
+      l2 < 1e-18 ? 0 : Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / l2));
+    const ex = a.x + t * dx - pt.x;
+    const ey = a.y + t * dy - pt.y;
+    const d2 = ex * ex + ey * ey;
+    if (d2 < best) best = d2;
+  }
+  return Math.sqrt(best);
+}
+
 /** Shoelace signed area of a polygon. Positive = CCW. */
 export function polygonSignedArea(poly: readonly Point[]): number {
   let a = 0;
@@ -98,7 +129,40 @@ export function faceInteriorPoint(ps: PlanarShape, face: PlanarFace): Point | nu
     for (const h of holeLoops) if (pointInEdgeLoop(pt, h)) return false;
     return true;
   };
-  if (inside({ x: cx, y: cy })) return { x: cx, y: cy };
+  // CANDIDATE SELECTION WITH BOUNDARY CLEARANCE (task 1436). `inside` proves a
+  // candidate interior to the face's own (snapped, split) boundary — but a
+  // candidate a HAIR inside that boundary can still sit on the WRONG side of
+  // the source-region chord the fill sampler compares against, because a
+  // split-vertex-snapped arrangement edge and the region's straight chord
+  // disagree by a sub-twip band (≤0.02px). A grid/diagonal candidate landing in
+  // that band flipped a whole sliver face's fill to null (random-walk seed=2
+  // h=9: a probe point EXACTLY on a dart face's boundary line passed the
+  // even-odd fp coin toss). So each interior candidate must ALSO clear the
+  // (flattened) boundary by {@link INTERIOR_CLEARANCE}; the first candidate
+  // meeting both tests wins (preserving the centroid→grid→diagonal preference
+  // order). A face too thin for ANY candidate to clear falls back to the
+  // max-clearance interior candidate seen — never worse than the old
+  // first-interior-hit, and still provably inside the face.
+  const holePolys = face.holes.map((h) => traceCycle(ps, h));
+  const clearanceOf = (pt: Point): number => {
+    let d = distToPolygonBoundary(pt, poly);
+    for (const hp of holePolys) d = Math.min(d, distToPolygonBoundary(pt, hp));
+    return d;
+  };
+  let bestFallback: Point | null = null;
+  let bestClearance = -1;
+  const consider = (pt: Point): Point | null => {
+    if (!inside(pt)) return null;
+    const c = clearanceOf(pt);
+    if (c >= INTERIOR_CLEARANCE) return pt;
+    if (c > bestClearance) {
+      bestClearance = c;
+      bestFallback = pt;
+    }
+    return null;
+  };
+  const fromCentroid = consider({ x: cx, y: cy });
+  if (fromCentroid) return fromCentroid;
   // Centroid can fall outside a non-convex face: scan along horizontal rays at
   // sampled y values, returning the midpoint of the first interior span.
   let minY = Infinity,
@@ -116,7 +180,8 @@ export function faceInteriorPoint(ps: PlanarShape, face: PlanarFace): Point | nu
     const y = minY + ((maxY - minY) * i) / steps;
     for (let j = 1; j < steps; j++) {
       const x = minX + ((maxX - minX) * j) / steps;
-      if (inside({ x, y })) return { x, y };
+      const hit = consider({ x, y });
+      if (hit) return hit;
     }
   }
   // Denser adaptive fallback for thin / acute slivers (which merge crossings
@@ -132,18 +197,20 @@ export function faceInteriorPoint(ps: PlanarShape, face: PlanarFace): Point | nu
     for (let k = 2; k <= n - 2; k++) {
       const j = (i + k) % n;
       const mid = { x: (poly[i].x + poly[j].x) / 2, y: (poly[i].y + poly[j].y) / 2 };
-      if (inside(mid)) return mid;
-      if (--budget <= 0) return null;
+      const hit = consider(mid);
+      if (hit) return hit;
+      if (--budget <= 0) return bestFallback;
     }
   }
-  // No interior point found. Return null rather than the centroid, which was
-  // already PROVEN OUTSIDE the face via inside(...) above. Returning a
-  // proven-outside point is strictly worse than null: it mis-classifies the
-  // face's fill (assignFaceFillsBySampling in build.ts samples it against the
-  // draw-order regions and can match a DIFFERENT region) and yields an unstable
-  // faceKey / pickInRect selection (subselection.ts). Every caller already
-  // handles a null return safely.
-  return null;
+  // No candidate cleared the boundary band: return the max-clearance interior
+  // candidate (a face thinner than 2·INTERIOR_CLEARANCE everywhere has no
+  // fully-cleared point — the best interior point found is still the right
+  // representative). When nothing was interior at all, this is null: returning
+  // the centroid — already PROVEN OUTSIDE the face via inside(...) above —
+  // would be strictly worse (it mis-classifies the face's fill in
+  // assignFaceFillsBySampling and yields an unstable faceKey / pickInRect
+  // selection). Every caller already handles a null return safely.
+  return bestFallback;
 }
 
 /** Absolute area of a face (its outer boundary minus its holes). */

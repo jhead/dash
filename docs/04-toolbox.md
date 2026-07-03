@@ -166,13 +166,19 @@ be reproduced exactly.** The panel has four sections: **Tools**, **View**, **Col
   Result: zero missing / zero spurious half-pixels vs the ideal Euclidean swept band on the audit
   loop repro, end caps, dabs and hairpins across half ∈ {4, 8} × spacing ∈ {3, 8, 14} px (exact
   square-nib parity, previously 153–3224 defects per case), and a ~2.7× FASTER merge fold than the
-  square nib on long strokes (fewer edges thanks to stamp skipping). Two sub-pixel KNOWN RESIDUALS
-  (strictly missing ≤7px² per stroke, never spurious) are kernel-scope and encoded as `it.fails`
-  cases: two independent stroke passes landing edges 1 twip apart (needs kernel snap-rounding) and
-  `faceInteriorPoint` picking a point inside the ≤0.02px split-vertex snap bulge (task 1435).
+  square nib on long strokes (fewer edges thanks to stamp skipping). The two sub-pixel residuals
+  that outlived 1434/1435 (strictly missing ≤7px² per stroke, never spurious; formerly `it.fails`)
+  were BOTH fixed by task 1436 with minimal kernel changes and promoted to regular passing cases:
+  (a) two independent stroke passes crossing next to two distinct endpoints one twip apart — the
+  task-1335 shared-vertex guard now requires the near endpoints to be the SAME snapped point
+  (`sharedEndpointTouch`, `planar/arrangement.ts`), so the genuine crossing registers and the
+  1-twip slit seals; (b) `faceInteriorPoint` picking a candidate inside the ≤0.02px split-vertex
+  snap bulge — candidates must now clear the face boundary by one twip (`INTERIOR_CLEARANCE`,
+  `planar/query.ts`), with a max-clearance fallback for thinner-than-2-twip slivers. See
+  docs/36 §3.0i + the round-nib parity section.
   Gate: `brush-round-parity.test.ts` (round-vs-square raster-parity harness: renderer-faithful
   nonzero-winding classification of the committed `foldShapeIntoLayer` output on a 0.5px grid +
-  circle-fidelity + shared-vertex invariants).
+  circle-fidelity + shared-vertex invariants), now with ZERO expected-failure cases.
 - **Eraser modes**: Erase Normal, Erase Fills, Erase Lines, Erase Selected Fills, Erase Inside.
   **Faucet** deletes a fill or a LINE in one click. Double-click eraser = clear stage.
 - **Eraser nib SHAPE — round / square (task 1433).** Flash 8's eraser Options offer a nib-shape
