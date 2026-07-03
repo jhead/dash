@@ -413,6 +413,49 @@ export class Arrangement {
     // existingEdgeId (forward) -> point-key -> split
     const existingSplits = new Map<number, Map<string, Split>>();
 
+    // SPLIT-POINT CANONICALIZATION (task 1435, hot-pixel style). Two crossings
+    // reported by DIFFERENT edge pairs can snap into ADJACENT twip cells — e.g.
+    // a dense round-brush/eraser stamp chain, where one new arc crosses two
+    // nearly-parallel earlier arcs one twip apart. The un-canonicalized result
+    // is a pair of vertices 1 twip apart joined by a degenerate 1-twip curve
+    // stub whose near-identical outgoing tangents corrupt the rotation-ring
+    // order → face tracing merges unrelated cycles (observed: THREE stamped
+    // disks → Euler V−E+F = −2, whole coverage regions un-locatable). Fix:
+    // before registering a split, pull its snapped point onto an EXISTING
+    // vertex (or an earlier split point of this same insert) lying within one
+    // twip (Chebyshev) — the same doctrine as twip snapping itself, extended
+    // one cell so near-coincident crossings share ONE vertex instead of
+    // minting sub-twip neighbors. Genuine distinct crossings are ≥ 2 twips
+    // apart and are never coalesced. Displacement is bounded by √2 twips
+    // (0.07px) — invisible, and both split sides still share the exact same
+    // point (the task-1332 pin), so shared-vertex merging is preserved.
+    const canonicalPts = new Map<string, Point>();
+    canonicalPts.set(pointKey(geom.p0), geom.p0);
+    canonicalPts.set(pointKey(geom.p1), geom.p1);
+    const canonicalize = (pt: Point): Point => {
+      const tx = Math.round(pt.x * 20);
+      const ty = Math.round(pt.y * 20);
+      let best: Point | null = null;
+      let bestD = Infinity;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const key = `${tx + dx},${ty + dy}`;
+          let cand = canonicalPts.get(key) ?? null;
+          if (!cand) {
+            const vid = this.vertexByKey.get(key);
+            if (vid !== undefined) cand = this.vertices[vid].point;
+          }
+          if (!cand) continue;
+          const d = dist2(pt, cand);
+          if (d < bestD) {
+            bestD = d;
+            best = cand;
+          }
+        }
+      }
+      return best ?? pt;
+    };
+
     // Spatial broad-phase (task 1396): only test bbox-near candidates, in the
     // same ascending forward-id order the exhaustive scan used.
     const forwardIds = this.candidateForwardIds(geom);
@@ -429,7 +472,7 @@ export class Arrangement {
       this._edgeTests++;
       const hits = intersectEdges(geom, e.geometry);
       for (const h of hits) {
-        const pt = snapPoint(h.point);
+        const pt = canonicalize(snapPoint(h.point));
         const ptKey = pointKey(pt);
         // Only register interior splits; endpoints become shared vertices
         // automatically when we create the new edge's vertices.
@@ -465,6 +508,7 @@ export class Arrangement {
         const sharedVertexTouch = newNear && existingNear;
         if (h.tA > 1e-7 && h.tA < 1 - 1e-7 && !sharedVertexTouch) {
           newSplits.set(ptKey, { t: h.tA, point: pt });
+          canonicalPts.set(ptKey, pt);
         }
         if (h.tB > 1e-7 && h.tB < 1 - 1e-7 && !sharedVertexTouch) {
           let set = existingSplits.get(eid);
@@ -473,6 +517,7 @@ export class Arrangement {
             existingSplits.set(eid, set);
           }
           set.set(ptKey, { t: h.tB, point: pt });
+          canonicalPts.set(ptKey, pt);
         }
       }
     }
@@ -665,14 +710,40 @@ export class Arrangement {
       for (const cid of c.edges) liveEdges[cid].face = id;
     }
 
+    // Which cycle each live half-edge belongs to (for the twin-sharing guard
+    // below).
+    const cycleOfEdge = new Map<number, Cycle>();
+    for (const c of cycles) for (const cid of c.edges) cycleOfEdge.set(cid, c);
+
     // Assign each CW cycle (hole / outer boundary) to its containing CCW face.
     for (const hole of cwCycles) {
       // A representative point of the hole boundary (a cycle vertex).
       const probe = hole.poly[0];
+      // TWIN-SHARING GUARD (task 1435). A CW cycle can NEVER be a hole of a
+      // face whose OUTER boundary shares an undirected edge with it: a hole
+      // boundary and the outer boundary of the same face have that face on
+      // their left, so a shared undirected edge would have the face on BOTH
+      // sides — an interior antenna, whose two half-edges always lie in ONE
+      // cycle, not two. In particular the REVERSE traversal of a face's own
+      // outer cycle (twin set == outer's edge set) must never be swallowed as
+      // that face's hole. Without this guard, floating-point rounding
+      // asymmetry (forward vs reverse shoelace summation order on non-integer
+      // twip coords) can make |CW area| < |CCW area| by ~1e-13, defeating the
+      // strictly-larger area test, and the on-boundary probe vertex can
+      // spuriously test "inside" — the face then contained its own reverse as
+      // a hole, faceArea collapsed to 0, faceInteriorPoint found no interior,
+      // and the fill was silently DROPPED (observed on a plain 5-vertex
+      // eraser-split remainder polygon).
+      const excluded = new Set<Cycle>();
+      for (const cid of hole.edges) {
+        const twinCycle = cycleOfEdge.get(liveEdges[cid].twin);
+        if (twinCycle) excluded.add(twinCycle);
+      }
       let container: Cycle | null = null;
       let containerArea = Infinity;
       for (const c of ccwCycles) {
         if (c === hole) continue;
+        if (excluded.has(c)) continue; // shares an undirected edge — not a hole
         if (Math.abs(c.area) <= Math.abs(hole.area)) continue; // must be larger
         if (pointInPoly(probe, c.poly)) {
           if (Math.abs(c.area) < containerArea) {

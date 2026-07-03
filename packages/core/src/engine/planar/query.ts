@@ -84,9 +84,18 @@ export function faceInteriorPoint(ps: PlanarShape, face: PlanarFace): Point | nu
   }
   cx /= poly.length;
   cy /= poly.length;
+  // Membership is tested against the TRUE curved boundary (exact ray/quadratic
+  // even-odd, task 1435), not the flattened `poly` — a candidate accepted here
+  // is provably interior to the actual face, so classification can never be
+  // flipped by the sagitta band between an arc and its inscribed chords. The
+  // flattened poly is still used for CANDIDATE GENERATION (centroid/bbox/
+  // diagonals), which keeps straight-edge faces byte-identical: for pure line
+  // boundaries the exact test IS the polygon test (same arithmetic).
+  const outerLoop = traceCycleGeometries(ps, face.outer);
+  const holeLoops = face.holes.map((h) => traceCycleGeometries(ps, h));
   const inside = (pt: Point): boolean => {
-    if (!pointInPolygon(pt, poly)) return false;
-    for (const h of face.holes) if (pointInPolygon(pt, traceCycle(ps, h))) return false;
+    if (!pointInEdgeLoop(pt, outerLoop)) return false;
+    for (const h of holeLoops) if (pointInEdgeLoop(pt, h)) return false;
     return true;
   };
   if (inside({ x: cx, y: cy })) return { x: cx, y: cy };
@@ -173,6 +182,124 @@ export function pointInPolygon(pt: Point, poly: readonly Point[]): boolean {
     const intersect =
       yi > pt.y !== yj > pt.y && pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// ---------------------------------------------------------------------------
+// Exact curve-aware even-odd membership (task 1435)
+// ---------------------------------------------------------------------------
+
+/**
+ * Crossing test for one LINE segment (p0→p1) against the horizontal ray from
+ * `pt` toward +x. BYTE-IDENTICAL arithmetic to the {@link pointInPolygon}
+ * segment predicate (with (xi,yi) = p1, (xj,yj) = p0), so a loop of pure line
+ * segments classifies exactly as its chord polygon did — the straight-edge
+ * invariance the planar oracles depend on.
+ */
+function lineRayCrosses(pt: Point, p0: Point, p1: Point): boolean {
+  const xi = p1.x,
+    yi = p1.y;
+  const xj = p0.x,
+    yj = p0.y;
+  return yi > pt.y !== yj > pt.y && pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
+}
+
+/**
+ * Number of crossings (0/1/2) of the horizontal +x ray from `pt` with the TRUE
+ * quadratic `g` — closed-form, no flattening. The curve is split at its
+ * y-extremum into y-MONOTONE pieces; each piece crosses the ray at most once,
+ * decided with the same strict half-open convention (`y > pt.y` at both ends)
+ * as {@link pointInPolygon}, so shared endpoints between consecutive edges are
+ * never double-counted.
+ */
+function quadRayCrossings(pt: Point, g: EdgeGeometry): number {
+  const y0 = g.p0.y;
+  const cy = (g.control as Point).y;
+  const y1 = g.p1.y;
+  // y(t) = A t² + B t + C with:
+  const A = y0 - 2 * cy + y1;
+  const B = 2 * (cy - y0);
+  // y-extremum at t = -B / (2A) — split there when strictly inside (0,1).
+  let tSplit = -1;
+  if (A !== 0) {
+    const te = (y0 - cy) / A;
+    if (te > 0 && te < 1) tSplit = te;
+  }
+  const yAt = (t: number): number =>
+    t === 0 ? y0 : t === 1 ? y1 : (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * cy + t * t * y1;
+
+  const pieces: readonly (readonly [number, number])[] =
+    tSplit > 0
+      ? [
+          [0, tSplit],
+          [tSplit, 1],
+        ]
+      : [[0, 1]];
+
+  let crossings = 0;
+  for (const [ta, tb] of pieces) {
+    const ya = yAt(ta);
+    const yb = yAt(tb);
+    if (ya > pt.y === yb > pt.y) continue; // no strict crossing on this piece
+    // Solve y(t) = pt.y on [ta, tb] (exactly one root — the piece is monotone).
+    const C = y0 - pt.y;
+    let t: number;
+    if (A === 0) {
+      t = -C / B; // degenerate quadratic: linear in t (B ≠ 0 when signs differ)
+    } else {
+      const disc = Math.max(0, B * B - 4 * A * C); // clamp fp noise near tangency
+      const sq = Math.sqrt(disc);
+      // Numerically stable pair of roots.
+      const q = -0.5 * (B + (B >= 0 ? sq : -sq));
+      const r1 = q / A;
+      const r2 = q !== 0 ? C / q : r1;
+      // Pick the root inside this monotone span (clamped against fp drift).
+      const mid = (ta + tb) / 2;
+      const in1 = r1 >= ta - 1e-9 && r1 <= tb + 1e-9;
+      const in2 = r2 >= ta - 1e-9 && r2 <= tb + 1e-9;
+      t = in1 && in2 ? (Math.abs(r1 - mid) <= Math.abs(r2 - mid) ? r1 : r2) : in1 ? r1 : r2;
+      t = Math.min(tb, Math.max(ta, t));
+    }
+    const x = edgeAt(g, t).x;
+    if (pt.x < x) crossings++;
+  }
+  return crossings;
+}
+
+/**
+ * EXACT even-odd membership of `pt` in the region bounded by a closed loop of
+ * edge geometries — the TRUE curves, not inscribed chords (task 1435).
+ *
+ * Rationale: `pointInPolygon` over a 6-chord flattening leaves a sagitta BAND
+ * (up to ~0.12px for a nib-size quarter-arc) between the true arc and its
+ * inscribed chords that mis-reads as outside. Fill-region classification
+ * samples ONE representative point per face, so a point landing in that band
+ * flipped the fill of the ENTIRE face (the round-dab crescent / dense-loop
+ * crack defect). Solving the ray/quadratic intersection in closed form kills
+ * the band entirely: when the arrangement is valid every face lies wholly
+ * inside or wholly outside each source region, so the exact test is correct
+ * for ANY interior point. Line segments use byte-identical arithmetic to
+ * {@link pointInPolygon}, so straight-edge inputs classify unchanged.
+ *
+ * The loop is assumed to chain head-to-tail; if the last point does not return
+ * to the first, an implicit straight closing segment is tested (matching the
+ * implicit wraparound of {@link pointInPolygon}).
+ */
+export function pointInEdgeLoop(pt: Point, loop: readonly EdgeGeometry[]): boolean {
+  if (loop.length === 0) return false;
+  let inside = false;
+  for (const g of loop) {
+    if (g.control === null) {
+      if (lineRayCrosses(pt, g.p0, g.p1)) inside = !inside;
+    } else if (quadRayCrossings(pt, g) % 2 === 1) {
+      inside = !inside;
+    }
+  }
+  const first = loop[0].p0;
+  const last = loop[loop.length - 1].p1;
+  if ((first.x !== last.x || first.y !== last.y) && lineRayCrosses(pt, last, first)) {
+    inside = !inside;
   }
   return inside;
 }

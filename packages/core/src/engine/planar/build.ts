@@ -13,11 +13,19 @@
  * Stroke-only paths are inserted as edges with a `lineStyle` and no fill.
  */
 
-import type { Fill, PlanarShape, Shape, ShapePath, Stroke, Point } from "../types.js";
+import type {
+  EdgeGeometry,
+  Fill,
+  PlanarShape,
+  Shape,
+  ShapePath,
+  Stroke,
+  Point,
+} from "../types.js";
 import { Arrangement, type InputEdge } from "./arrangement.js";
 import {
   faceInteriorPoint,
-  pointInPolygon,
+  pointInEdgeLoop,
   polygonSignedArea,
   shapePathToEdgeGeometries,
 } from "./query.js";
@@ -94,7 +102,12 @@ export function buildArrangementFromShapes(
   // enclosure count) = no fill. Authored shapes carry a DISTINCT Fill object per
   // path, so each becomes its own single-loop group (parity == plain containment)
   // — same-color union / different-color cut (top group wins) are unchanged.
-  const fillRegions: { poly: Point[]; fill: number; group: number; order: number }[] = [];
+  // Each region stores its TRUE segment geometry (lines + quadratics), not a
+  // pre-flattened chord polygon: membership is tested exactly against the
+  // curves via `pointInEdgeLoop` (task 1435). Inscribed 6-chord polys left a
+  // sagitta band (up to ~0.12px per nib-size quarter-arc) that read as OUTSIDE
+  // the region and flipped whole curved-boundary faces to the wrong fill.
+  const fillRegions: { loop: EdgeGeometry[]; fill: number; group: number; order: number }[] = [];
   // Stable id per (source shape, Fill object identity). Keyed by object ref so
   // two shapes never share a group even if they use an equal-valued Fill.
   const groupOf = new Map<string, number>();
@@ -125,7 +138,7 @@ export function buildArrangementFromShapes(
           groupOf.set(key, group);
         }
         fillRegions.push({
-          poly: chordPolygon(shapePathToEdgeGeometries(path)),
+          loop: shapePathToEdgeGeometries(path),
           fill: internFill(path.fill),
           group,
           order: shapeIdx,
@@ -165,7 +178,7 @@ export function buildArrangementFromShapes(
  */
 function consumeStrokesUnderFills(
   ps: PlanarShape,
-  regions: readonly { poly: Point[]; fill: number; group: number; order: number }[]
+  regions: readonly { loop: readonly EdgeGeometry[]; fill: number; group: number; order: number }[]
 ): void {
   if (regions.length === 0) return;
   for (const he of ps.halfEdges) {
@@ -177,7 +190,7 @@ function consumeStrokesUnderFills(
     let covered = false;
     for (const r of regions) {
       if (r.order <= order) continue; // only fills drawn strictly AFTER consume
-      if (pointInPolygon(mid, r.poly)) {
+      if (pointInEdgeLoop(mid, r.loop)) {
         covered = true;
         break;
       }
@@ -199,14 +212,22 @@ function consumeStrokesUnderFills(
  * covered by no group are background (null).  This realizes merge semantics
  * (same-color union, different-color cut) AND keeps interior holes empty across
  * rebuilds.
+ *
+ * Membership is EXACT against the region's true curves (`pointInEdgeLoop`,
+ * task 1435): when the arrangement is valid, every face lies entirely inside
+ * or entirely outside each source region, so the exact test makes the
+ * single-point-per-face design sound for curved boundaries too. (The old
+ * inscribed-6-chord test had a sagitta band that flipped whole faces; straight
+ * segments are tested with byte-identical arithmetic, so line-only inputs are
+ * unchanged.)
  */
 function assignFaceFillsBySampling(
   ps: PlanarShape,
-  regions: readonly { poly: Point[]; fill: number; group: number }[]
+  regions: readonly { loop: readonly EdgeGeometry[]; fill: number; group: number }[]
 ): void {
   // Bucket regions by group, preserving first-appearance order = draw order.
   const groupOrder: number[] = [];
-  const byGroup = new Map<number, { poly: Point[]; fill: number }[]>();
+  const byGroup = new Map<number, { loop: readonly EdgeGeometry[]; fill: number }[]>();
   for (const r of regions) {
     let bucket = byGroup.get(r.group);
     if (!bucket) {
@@ -232,7 +253,7 @@ function assignFaceFillsBySampling(
       const bucket = byGroup.get(g)!;
       // Even-odd across the group's loops: an outer + hole enclosure cancels.
       let enclosures = 0;
-      for (const r of bucket) if (pointInPolygon(pt, r.poly)) enclosures++;
+      for (const r of bucket) if (pointInEdgeLoop(pt, r.loop)) enclosures++;
       // All loops of a group share one Fill object -> one interned index.
       if (enclosures % 2 === 1) resolved = bucket[0].fill;
     }

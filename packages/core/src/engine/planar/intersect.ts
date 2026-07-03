@@ -364,17 +364,6 @@ const CLUSTER_RADIUS = 4;
 const CLUSTER_RADIUS2 = CLUSTER_RADIUS * CLUSTER_RADIUS;
 
 /**
- * Tangents are treated as PARALLEL (a grazing contact, not a transversal cross)
- * when |sin θ| between the two curve tangents at the cluster representative is
- * below this. A true transversal crossing meets at a clear angle; a tangency has
- * (near-)parallel tangents. 0.35 ≈ 20°: generous enough to catch the slightly-
- * off-parallel tangents the snapped flood produces, tight enough that a real
- * crossing (typically near-perpendicular for two circle boundaries) is never
- * mistaken for a tangency.
- */
-const TANGENT_PARALLEL_SIN = 0.35;
-
-/**
  * Collapse each GRAZING (near-tangent) spatial cluster of raw crossings to a
  * single pinned representative — the point of closest approach between the two
  * curves within the cluster's parameter span (task 1336). Transversal crossings
@@ -440,34 +429,168 @@ function collapseTangentClusters(
       if (m.tB > tBmax) tBmax = m.tB;
     }
 
-    const rep = closestApproach(a, b, tAmin, tAmax, tBmin, tBmax);
+    const spread = maxPointSpread(members);
 
-    // Grazing test: parallel curve tangents at the contact AND a real spatial
-    // spread (multiple distinct snapped points). A single tight transversal
-    // crossing that merely got reported a few times stays as its members
-    // (dedupe folds it); only a genuine near-tangent BAND collapses.
-    const dA = edgeTangent(a, rep.tA);
-    const dB = edgeTangent(b, rep.tB);
-    const lenA = Math.hypot(dA.x, dA.y);
-    const lenB = Math.hypot(dB.x, dB.y);
-    let parallel = false;
-    if (lenA > 1e-9 && lenB > 1e-9) {
-      const sin = Math.abs(dA.x * dB.y - dA.y * dB.x) / (lenA * lenB);
-      parallel = sin <= TANGENT_PARALLEL_SIN;
-    }
-    const spread = Math.max(
-      maxPointSpread(members),
-      0
-    );
-
-    if (parallel && spread > SNAP_EPS) {
-      // A genuine tangent contact: ONE pinned shared vertex.
-      out.push({ tA: clamp01(rep.tA), tB: clamp01(rep.tB), point: snapPoint(rep.point) });
+    if (spread > SNAP_EPS) {
+      // SPREAD-CLUSTER RESOLUTION (task 1435, generalizing the task-1336
+      // tangent pin). A cluster spanning MORE than one twip is the raw
+      // subdivision flood of a GRAZING BAND — either a (near-)tangency or a
+      // SHALLOW TRANSVERSAL crossing, where the two curves stay within snap
+      // distance over an arc of length ~SNAP_EPS/sin θ, so `recurse` converges
+      // in several adjacent leaf cells whose midpoints snap to DIFFERENT
+      // twips. `dedupe` (SNAP_EPS radius) keeps that whole stair of bogus
+      // split points and the arrangement shatters (observed: TWO plain
+      // overlapping round disks 2.33px apart, boundaries crossing at 23° →
+      // Euler V−E+F = −1, un-locatable faces, dropped paint under any dense
+      // brush/eraser stamp chain).
+      //
+      // Resolve the cluster to its TRUE crossing set: scan the signed
+      // side-of-B function along A over the cluster's parameter span — its
+      // sign flips exactly where A crosses B — and bisect each flip to the
+      // crossing. This handles every band shape correctly:
+      //   - shallow transversal crossing → exactly ONE refined point;
+      //   - near-tangent LENS (two genuine crossings a few px apart, which
+      //     single-linkage merges into one cluster) → BOTH crossings kept
+      //     (the old parallel-tangent pin collapsed them to one point,
+      //     dropping a real boundary crossing → Euler broke at disk spacing
+      //     ≈ 2r);
+      //   - true tangency / endpoint touch (no sign flip, curves meet within
+      //     half a twip) → ONE pinned closest-approach vertex, exactly the
+      //     task-1336 behavior;
+      //   - phantom graze (no sign flip and the curves never come within a
+      //     twip — the flood only proves they came within the recursion's
+      //     bbox slop, ~3·SNAP_EPS) → NO intersection at all. The old code
+      //     emitted a touch here, splitting an edge one twip away from a real
+      //     crossing on the neighboring arc and shattering the seam.
+      const refined = refineTransversalCluster(a, b, tAmin, tAmax);
+      if (refined.length > 0) {
+        for (const r of refined) out.push(r);
+      } else {
+        const rep = closestApproach(a, b, tAmin, tAmax, tBmin, tBmax);
+        const pa = edgeAt(a, rep.tA);
+        const pb = edgeAt(b, rep.tB);
+        const gap = Math.hypot(pa.x - pb.x, pa.y - pb.y);
+        if (gap <= SNAP_EPS) {
+          out.push({ tA: clamp01(rep.tA), tB: clamp01(rep.tB), point: snapPoint(rep.point) });
+        }
+        // else: no true contact — the flood was a phantom graze; emit nothing.
+      }
     } else {
-      // Not a tangency (transversal crossing reported multiply, or two close but
-      // angle-crossing hits): keep the members; dedupe folds the true duplicates.
+      // A single tight transversal crossing reported multiply (all members
+      // within one twip): keep the members; dedupe folds the true duplicates.
       for (const m of members) out.push(m);
     }
+  }
+  return out;
+}
+
+/**
+ * Nearest parameter on `g` to a point: coarse scan + ternary-search refine
+ * (same scheme as the projection inside {@link coincidentOverlap}).
+ */
+function nearestParamOn(g: EdgeGeometry, pt: Point): number {
+  let bestT = 0;
+  let bestD = Infinity;
+  const COARSE = 32;
+  for (let i = 0; i <= COARSE; i++) {
+    const t = i / COARSE;
+    const q = edgeAt(g, t);
+    const d = (q.x - pt.x) ** 2 + (q.y - pt.y) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      bestT = t;
+    }
+  }
+  let lo = Math.max(0, bestT - 1 / COARSE);
+  let hi = Math.min(1, bestT + 1 / COARSE);
+  for (let iter = 0; iter < 24; iter++) {
+    const m1 = lo + (hi - lo) / 3;
+    const m2 = hi - (hi - lo) / 3;
+    const q1 = edgeAt(g, m1);
+    const q2 = edgeAt(g, m2);
+    const d1 = (q1.x - pt.x) ** 2 + (q1.y - pt.y) ** 2;
+    const d2 = (q2.x - pt.x) ** 2 + (q2.y - pt.y) ** 2;
+    if (d1 < d2) hi = m2;
+    else lo = m1;
+  }
+  return (lo + hi) / 2;
+}
+
+/**
+ * Resolve a shallow-transversal raw-crossing cluster to the TRUE crossing(s)
+ * of curve A with curve B inside the cluster's A-parameter span (task 1435).
+ *
+ * The signed side function f(t) = cross(tangent_B(s*), A(t) − B(s*)) — with s*
+ * the nearest parameter on B — is zero exactly on B and flips sign when A
+ * crosses B, so each sign flip over the (slightly padded) span brackets one
+ * genuine crossing; a bisection then pins it to machine precision. This
+ * replaces the twip-quantized subdivision stair with the exact split point
+ * both curves share.
+ *
+ * VALIDATION: when the projection s* clamps to an endpoint of B, f measures
+ * the side of B's endpoint TANGENT LINE — which A can cross without touching
+ * the curve at all (e.g. two G1-adjacent snapped arcs of one oval: A crosses
+ * the extended tangent ~0.4px before the shared vertex). Every bisected root
+ * is therefore accepted only if A(t*) actually lies ON B (within SNAP_EPS);
+ * tangent-line artifacts miss by many twips and are dropped.
+ */
+function refineTransversalCluster(
+  a: EdgeGeometry,
+  b: EdgeGeometry,
+  tAmin: number,
+  tAmax: number
+): Intersection[] {
+  const pad = 0.02;
+  const lo = Math.max(0, tAmin - pad);
+  const hi = Math.min(1, tAmax + pad);
+  if (hi <= lo) return [];
+
+  const side = (t: number): number => {
+    const pt = edgeAt(a, t);
+    const s = nearestParamOn(b, pt);
+    const q = edgeAt(b, s);
+    const d = edgeTangent(b, s);
+    return d.x * (pt.y - q.y) - d.y * (pt.x - q.x);
+  };
+
+  const out: Intersection[] = [];
+  const STEPS = 32;
+  let prevT = lo;
+  let prevF = side(lo);
+  for (let i = 1; i <= STEPS; i++) {
+    const t = lo + ((hi - lo) * i) / STEPS;
+    const f = side(t);
+    if ((prevF < 0 && f > 0) || (prevF > 0 && f < 0)) {
+      let t0 = prevT;
+      let f0 = prevF;
+      let t1 = t;
+      for (let k = 0; k < 60; k++) {
+        const tm = (t0 + t1) / 2;
+        const fm = side(tm);
+        if (fm === 0) {
+          t0 = tm;
+          t1 = tm;
+          break;
+        }
+        if (fm < 0 === f0 < 0) {
+          t0 = tm;
+          f0 = fm;
+        } else {
+          t1 = tm;
+        }
+      }
+      const tA = clamp01((t0 + t1) / 2);
+      const pt = edgeAt(a, tA);
+      const s = nearestParamOn(b, pt);
+      const q = edgeAt(b, s);
+      // Accept only a REAL contact: A(t*) must lie on B, not merely on B's
+      // clamped-endpoint tangent line (see doc block).
+      if (Math.hypot(pt.x - q.x, pt.y - q.y) <= SNAP_EPS) {
+        out.push({ tA, tB: clamp01(s), point: snapPoint(pt) });
+      }
+    }
+    prevT = t;
+    prevF = f;
   }
   return out;
 }

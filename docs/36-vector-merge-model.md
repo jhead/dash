@@ -261,6 +261,76 @@ idempotence + no-regression union/island) and `planar-eraser.test.ts` "interior 
 persist across rebuilds" (chained interactive erase, erase-then-overlapping-commit,
 picking).
 
+**Fill classification is EXACT against the true curves — no more inscribed-chord
+sagitta band (task 1435).** Region membership used to flatten every fill loop to an
+INSCRIBED 6-chord polygon (`chordPolygon`) and test `pointInPolygon` against it, and
+`faceInteriorPoint` accepted candidates against a 16-sample flattened face boundary.
+For CURVED boundaries both leave a sagitta band (up to ~0.12px per nib-size
+quarter-arc) between the true arc and its chords that reads as the WRONG side; since
+classification samples ONE representative point per face, a point landing in that
+band flipped the fill of the ENTIRE face — a 2-sample round-brush dab classified its
+124px² crescent `fill=null` (~98px² visibly unpainted), and dense round-brush strokes
+cracked. Straight-edge inputs were immune (a chord IS the segment), which is why the
+square nib was flawless on identical strokes. Now: `fillRegions` carry their true
+`EdgeGeometry` loops and `assignFaceFillsBySampling` / `consumeStrokesUnderFills`
+test membership with **`pointInEdgeLoop`** (query.ts) — exact even-odd via closed-form
+ray/quadratic intersection (each quadratic split at its y-extremum into y-monotone
+pieces; same strict half-open endpoint convention as `pointInPolygon`), and
+`faceInteriorPoint` accepts candidates against the TRUE traced face boundary
+(`traceCycleGeometries` + `pointInEdgeLoop`), so the returned point is provably
+interior to the actual curved face. When the arrangement is valid every face lies
+wholly inside or outside each source region, so the exact test makes the
+single-point-per-face design sound. **Straight-edge inputs classify byte-identically**:
+the line branch of `pointInEdgeLoop` is arithmetic-identical to `pointInPolygon`,
+and candidate generation (centroid/grid/diagonals over the flattened poly) is
+untouched. (`locateFace`/`pointInFace` keep their 16-sample flattening: their band
+is ~0.015px, they test the CALLER's own point rather than amplifying one sample to
+a whole face, and picking is cursor-driven — not worth the churn.) Gates:
+`planar-curved-fill-1435.test.ts` (dab-crescent raster repro → zero unpainted;
+parity of every face against an independent fine-sampled true-curve oracle;
+straight-edge invariance vs a verbatim replica of the old chord classifier).
+
+**Kernel robustness for dense curved stamp chains (task 1435, three co-fixes).**
+The dense-loop round-brush repro exposed three stacked kernel defects beyond
+classification, each with a minimal-disk repro pinned in
+`planar-curved-fill-1435.test.ts` ("kernel topology micro-repros"):
+(1) **Shallow-transversal / lens cluster resolution (`intersect.ts`).** A shallow
+(but non-tangent) curve/curve crossing — e.g. two stamped disks 2.33px apart whose
+boundaries cross at 23° — smeared into 6–7 twip-distinct subdivision points that
+`dedupe` (SNAP_EPS) kept, shattering the arrangement (two plain overlapping disks →
+Euler −1); conversely at near-tangent spacing (d ≈ 2r) the task-1336 parallel-tangent
+pin collapsed a genuine two-crossing LENS into ONE point, dropping a real crossing.
+`collapseTangentClusters` now resolves every spatially-spread cluster by a signed
+side-of-B scan along A (sign flips exactly at true crossings; each flip bisected to
+machine precision and validated to lie ON both curves, so clamped-endpoint
+tangent-line artifacts are rejected): one flip → one refined crossing, two flips →
+both lens crossings, no flip → pin the closest approach ONLY if the curves genuinely
+meet within SNAP_EPS (a phantom graze that never comes within a twip now reports NO
+intersection, where it used to split an edge one twip off a real crossing).
+(2) **Split-point canonicalization (`arrangement.ts insertEdge`, hot-pixel style).**
+Crossings reported by DIFFERENT edge pairs can snap into ADJACENT twip cells (one
+new arc crossing two nearly-parallel earlier arcs), minting vertices 1 twip apart
+joined by degenerate curve stubs whose near-identical tangents corrupt the
+rotation-ring order (three stacked disks → Euler −2, whole regions un-locatable).
+Before registering, a split point is now pulled onto an existing vertex or an
+earlier split point of the same insert lying within one twip (Chebyshev), bounding
+the displacement by √2 twips while keeping the task-1332 shared-point pin. Genuine
+distinct crossings are ≥ 2 twips apart and never coalesce.
+(3) **Twin-sharing hole guard (`arrangement.ts build` Phase B).** Floating-point
+shoelace asymmetry (forward vs reverse summation on non-integer twip coords) can
+make |CW area| < |CCW area| by ~1e-13, defeating the strictly-larger containment
+test — a face could then swallow the REVERSE traversal of its own outer boundary as
+a "hole", collapsing `faceArea` to 0 and silently dropping the fill (observed on a
+plain 5-vertex eraser-split remainder). A CW cycle sharing an undirected edge with
+a CCW cycle can never be its hole (the shared edge would be an interior antenna,
+which lives in a single cycle), so such candidates are excluded outright.
+With all four fixes (classification + 1–3), the dense self-overlap loop repro
+rasters crack-free for the capsule ribbon at half 8 and for disk-only stamp chains
+at half 8 and 4. **Known residual (task 1434's charter, brushpaint.ts):** the
+capsule ribbon at half 4 still cracks (~81 grid points) because the capsule corner
+vertices are not vertices of the (squircle) disk stamp boundary — the tangent-seam
+geometry defect; 1434's tangent-vertex stamp construction owns that gate.
+
 **Kernel gap fixed for P1 (coincident edges).** P0's `Arrangement.addTwinPair`
 created a NEW half-edge pair even when a geometrically coincident undirected edge
 already existed — so two axis-aligned overlapping rects (whose top/bottom edges are
